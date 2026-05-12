@@ -524,6 +524,20 @@ class TestGocDocumentValid:
         doc = GocDocument.from_dict(data)
         assert doc.project_gitprovider_address is None
 
+    def test_project_gitprovider_url_uses_host_only(self):
+        data = {
+            **MINIMAL_GOC,
+            "project": {
+                "source": "project.cgs",
+                "repo_name": "repo",
+                "gitprovider": "github",
+                "project_owner_name": "owner",
+                "gitprovider_url": "git.example.com/some/path",
+            },
+        }
+        doc = GocDocument.from_dict(data)
+        assert doc.project_gitprovider_address == "git@git.example.com:owner/repo.git"
+
 
 class TestGocDocumentInvalid:
     def _assert_validation_error(self, data: dict, fragment: str) -> None:

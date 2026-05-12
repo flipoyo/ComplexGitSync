@@ -654,7 +654,8 @@ class GocDocument(ConfigDocument):
         if gitprovider_url:
             base = str(gitprovider_url).strip()
             parsed = urlsplit(base if "://" in base else f"https://{base}")
-            return parsed.netloc or parsed.path.strip("/")
+            host = parsed.netloc or parsed.path.strip("/").split("/", 1)[0]
+            return host
         if gitprovider == "gitlab":
             return "gitlab.com"
         return "github.com"
