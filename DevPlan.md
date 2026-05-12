@@ -1,7 +1,7 @@
 # ComplexGitSync DevPlan
 
 ## Purpose
-ComplexGitSync is a standalone sibling project that manages a nested Git repository tree from local `.cgs` project specifications and generated `.gts` Git Tree State snapshots.
+ComplexGitSync is a standalone project that manages a nested Git repository tree from local `.cgs` project specifications and generated `.gts` Git Tree State snapshots.
 
 The package must:
 - synchronize a root repository plus nested descendants by branch or tag
@@ -27,7 +27,7 @@ This document is the implementation contract for an IT agent.
 - Plugin-based extensibility
 
 ## Repository To Create
-Create a sibling repository named `ComplexGitSync` next to `cawaqsviz`.
+Create a repository named `ComplexGitSync`.
 
 Recommended root files:
 - `DevPlan.md`
