@@ -452,6 +452,7 @@ class GocDocument(ConfigDocument):
         repo_name   = "cawaqsviz"     # repository slug
         gitprovider = "gitlab"        # github | gitlab
         group_name  = "cawaqs/gviz"   # required for gitlab
+        # project_owner_name = "my-org"  # required for github
 
         [[actions]]
         command = "validate"
@@ -481,6 +482,7 @@ class GocDocument(ConfigDocument):
     _VALID_PROFILES = frozenset(("verbose", "whisper_sync"))
     _VALID_TRANSPORTS = frozenset(("ssh", "https"))
     _VALID_PROJECT_GITPROVIDERS = frozenset(("github", "gitlab"))
+    _DEFAULT_PROJECT_GITPROVIDER = "github"
 
     SESSION_DEFAULTS: dict[str, str] = {
         "interaction": "interactive",
@@ -510,7 +512,7 @@ class GocDocument(ConfigDocument):
                 f"[project].source must be a .cgs or .gts path; got: {source!r}"
             )
 
-        provider = str(project.get("gitprovider", "github"))
+        provider = str(project.get("gitprovider", self._DEFAULT_PROJECT_GITPROVIDER))
         if project.get("gitprovider") is not None and provider not in self._VALID_PROJECT_GITPROVIDERS:
             errors.append(
                 f"[project].gitprovider invalid: {provider!r} "
@@ -629,7 +631,7 @@ class GocDocument(ConfigDocument):
         if not repo_name:
             return None
 
-        provider = str(project.get("gitprovider", "github"))
+        provider = str(project.get("gitprovider", self._DEFAULT_PROJECT_GITPROVIDER))
         host = self._resolve_provider_host(provider, project.get("gitprovider_url"))
 
         if provider == "github":
