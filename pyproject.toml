@@ -12,11 +12,17 @@ license = { text = "EPL-2.0" }
 authors = [
     { name = "Nicolas Flipo" },
 ]
-dependencies = []
+dependencies = [
+    "tomli-w>=1.0,<2",
+]
 
 [project.optional-dependencies]
+yaml = [
+    "PyYAML>=6,<7",
+]
 dev = [
     "pytest>=8,<9",
+    "PyYAML>=6,<7",
 ]
 
 [project.scripts]

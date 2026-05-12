@@ -1,0 +1,52 @@
+# CaWaQS-Viz deployment orchestration script
+# ──────────────────────────────────────────────────────────────────────────────
+# This .goc (Git Orchestration Command) file defines the sequence of
+# ComplexGitSync operations to run for the standard CaWaQS-Viz deployment
+# workflow.  Run it with a future `cgitsync run` command or load it
+# programmatically with GocDocument.from_toml().
+
+[document]
+format_version = "1.0"
+
+# ── Session defaults ────────────────────────────────────────────────────────
+# These values apply to every action in the sequence unless overridden by
+# an individual action's [actions.session] override table (reserved for v2).
+
+[session]
+interaction = "interactive"   # interactive | direct
+profile     = "verbose"       # verbose | whisper_sync
+transport   = "ssh"           # ssh | https
+
+# ── Project entry-point ─────────────────────────────────────────────────────
+# Set source to a .cgs path for discovery-based commands (validate, clone,
+# restart, checkout) or a .gts path for replay-based commands (launch-release).
+
+[project]
+source = "cawaqsviz.cgs"
+name   = "CaWaQS-Viz"          # optional, used for display only
+
+# ── Action sequence ─────────────────────────────────────────────────────────
+# Actions are executed in order.  Each [[actions]] entry carries a mandatory
+# 'command' key and an optional [actions.args] sub-table for command-specific
+# parameters.
+
+[[actions]]
+# 1. Validate the .cgs spec before materialising anything.
+command = "validate"
+
+[[actions]]
+# 2. Clone the full project tree into the current directory.
+command = "clone"
+[actions.args]
+# target_dir = "./workspace"   # uncomment to clone into a subdirectory
+
+[[actions]]
+# 3. Switch the whole tree to the develop branch.
+command = "checkout"
+[actions.args]
+ref      = "develop"
+ref_type = "branch"
+
+[[actions]]
+# 4. Print the current tree state to confirm synchronisation.
+command = "tree"
