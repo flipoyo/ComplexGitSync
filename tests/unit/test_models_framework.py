@@ -63,3 +63,14 @@ def test_gittree_rename_rejects_existing_target_name():
 
     with pytest.raises(ValueError, match="target key already exists"):
         tree.force_repo_keys("repo-a", project_name_override="repo-b")
+
+
+def test_gittree_rename_updates_repo_key_for_new_name():
+    tree = GitTree()
+    tree.add_repo(GitRepo(project_owner_name="owner-a", project_name="repo-a"))
+
+    tree.force_repo_keys("repo-a", project_name_override="repo-c")
+
+    assert "repo-a" not in tree.repos
+    assert "repo-c" in tree.repos
+    assert tree.repos["repo-c"].project_name == "repo-c"
