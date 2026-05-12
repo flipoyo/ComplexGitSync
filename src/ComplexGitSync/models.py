@@ -38,7 +38,7 @@ class GitTree:
         self.repos[repo.project_name] = repo
 
     def force_repo_sha(self, project_name: str, commit_sha: str) -> None:
-        self.repos[project_name].commit_sha = commit_sha
+        self._get_repo(project_name).commit_sha = commit_sha
 
     def force_repo_keys(
         self,
@@ -51,12 +51,12 @@ class GitTree:
         gitprovider_url: str | None = None,
         access_protocol: AccessProtocol | None = None,
     ) -> None:
-        repo = self.repos[project_name]
+        repo = self._get_repo(project_name)
         if gitprovider is not None:
             repo.gitprovider = gitprovider
         if project_owner_name is not None:
             repo.project_owner_name = project_owner_name
-        if project_name_override is not None:
+        if project_name_override is not None and project_name_override != project_name:
             del self.repos[project_name]
             repo.project_name = project_name_override
             self.repos[project_name_override] = repo
@@ -67,6 +67,12 @@ class GitTree:
             repo.gitprovider_url = gitprovider_url
         if access_protocol is not None:
             repo.access_protocol = access_protocol
+
+    def _get_repo(self, project_name: str) -> GitRepo:
+        try:
+            return self.repos[project_name]
+        except KeyError as exc:
+            raise KeyError(f"Unknown repository '{project_name}' in GitTree correction method.") from exc
 
 
 @dataclass(slots=True)

@@ -1,3 +1,5 @@
+import pytest
+
 from ComplexGitSync.client import ComplexGitSyncClient
 from ComplexGitSync.models import AccessProtocol, GitProvider, GitRepo, GitTree
 
@@ -42,3 +44,13 @@ def test_client_loaded_state_uses_orchestre_tree_registration():
         GitRepo(project_owner_name="flipoyo", project_name="ComplexGitSync")
     )
     assert client.is_loaded() is True
+
+
+def test_gittree_correction_methods_fail_for_unknown_repo():
+    tree = GitTree()
+
+    with pytest.raises(KeyError, match="Unknown repository"):
+        tree.force_repo_sha("missing", "abc123")
+
+    with pytest.raises(KeyError, match="Unknown repository"):
+        tree.force_repo_keys("missing", project_owner_name="team-owner")
