@@ -57,13 +57,12 @@ def tag_ready_tree(
 ) -> OperationResult:
     require_ready(session, "tag")
     runner = git_runner or GitRunner()
+    _require_clean_worktrees(session)
     outcomes = []
     pre = session.tree_state
     for entry in parent_first_entries(session.registry):
         if not runner.is_git_repo(entry.absolute_path):
             continue
-        if entry.worktree_state == WorktreeState.DIRTY:
-            raise TreeNotReadyError(f"tag requires clean worktrees: {entry.name}")
         runner.tag(entry.absolute_path, tag_name, annotated=annotated)
         outcomes.append(RepoOutcome(entry.repo_id, entry.name, "tagged"))
     post = session.refresh_tree_state()
@@ -72,3 +71,9 @@ def tag_ready_tree(
 
 def snapshot_path(root_path: Path, project_name: str) -> Path:
     return (root_path / ".cgitsync" / "state" / f"{project_name}.gts").resolve()
+
+
+def _require_clean_worktrees(session: LoadedSession) -> None:
+    for entry in parent_first_entries(session.registry):
+        if entry.worktree_state == WorktreeState.DIRTY:
+            raise TreeNotReadyError(f"tag requires clean worktrees: {entry.name}")

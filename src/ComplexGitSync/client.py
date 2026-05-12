@@ -233,10 +233,21 @@ class ComplexGitSyncClient:
         session.refresh_tree_state()
         return build_tree_state(session.registry)
 
-    def clone(self, target_dir: str | Path | None = None, interaction: str | None = None, profile: str | None = None, transport: str | None = None) -> OperationResult:
+    def clone(
+        self,
+        target_dir: str | Path | None = None,
+        interaction: str | None = None,
+        profile: str | None = None,
+        transport: str | None = None,
+    ) -> OperationResult:
         raise GitSyncError("clone is not yet implemented for remote orchestration")
 
-    def restart(self, interaction: str | None = None, profile: str | None = None, transport: str | None = None) -> OperationResult:
+    def restart(
+        self,
+        interaction: str | None = None,
+        profile: str | None = None,
+        transport: str | None = None,
+    ) -> OperationResult:
         pre = self._require_session().refresh_tree_state()
         post = self.refresh_registry(refresh_nested=True, interaction=interaction, profile=profile).lifecycle_state
         if post != TreeLifecycleState.READY:
@@ -292,11 +303,7 @@ class ComplexGitSyncClient:
     def status(self, refresh_nested: bool = True, profile: str | None = None) -> str:
         session = self._require_session()
         state = self.get_tree_state(refresh_nested=refresh_nested)
-        default_profile = (
-            session.architecture.runtime.profile
-            if session.architecture
-            else session.snapshot.runtime.profile if session.snapshot else OutputProfile.VERBOSE
-        )
+        default_profile = self._default_profile(session)
         return (
             f"tree_state={state.lifecycle_state} ready={state.is_ready} "
             f"registry_complete={state.registry_complete}\n"
@@ -311,3 +318,11 @@ class ComplexGitSyncClient:
         if self.session is None:
             raise ArchitectureNotLoadedError("No project is currently loaded")
         return self.session
+
+    @staticmethod
+    def _default_profile(session: LoadedSession) -> OutputProfile:
+        if session.architecture:
+            return session.architecture.runtime.profile
+        if session.snapshot:
+            return session.snapshot.runtime.profile
+        return OutputProfile.VERBOSE
