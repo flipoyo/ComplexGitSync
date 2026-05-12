@@ -9,7 +9,7 @@
 
 ## T00 - Bootstrap Repository
 ### Goal
-Create the sibling repository structure and baseline packaging files.
+Create the repository structure and baseline packaging files.
 
 ### Deliverables
 - repository root folder `ComplexGitSync`
