@@ -450,7 +450,7 @@ class GocDocument(ConfigDocument):
         source      = "cawaqsviz.cgs" # relative path to .cgs or .gts
         name        = "CaWaQS-ViZ"    # project display name
         repo_name   = "cawaqsviz"     # repository slug
-        gitprovider = "gitlab"        # github | gitlab
+        gitprovider = "gitlab"        # GitHub | GitLab
         group_name  = "cawaqs/gviz"   # required for gitlab
         # project_owner_name = "my-org"  # required for github
 
@@ -650,6 +650,7 @@ class GocDocument(ConfigDocument):
 
     @staticmethod
     def _resolve_provider_host(gitprovider: str, gitprovider_url: Any) -> str:
+        """Resolve provider host; bare host/url values default to HTTPS URL parsing."""
         if gitprovider_url:
             base = str(gitprovider_url).strip()
             parsed = urlsplit(base if "://" in base else f"https://{base}")
