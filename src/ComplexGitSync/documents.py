@@ -450,7 +450,7 @@ class GocDocument(ConfigDocument):
         source      = "cawaqsviz.cgs" # relative path to .cgs or .gts
         name        = "CaWaQS-ViZ"    # project display name
         repo_name   = "cawaqsviz"     # repository slug
-        gitprovider = "gitlab"        # GitHub | GitLab
+        gitprovider = "gitlab"        # github | gitlab
         group_name  = "cawaqs/gviz"   # required for gitlab
         # project_owner_name = "my-org"  # required for github
 
@@ -655,7 +655,8 @@ class GocDocument(ConfigDocument):
             base = str(gitprovider_url).strip()
             parsed = urlsplit(base if "://" in base else f"https://{base}")
             host = parsed.netloc or parsed.path.strip("/").split("/", 1)[0]
-            return host
+            if host:
+                return host
         if gitprovider == "gitlab":
             return "gitlab.com"
         return "github.com"

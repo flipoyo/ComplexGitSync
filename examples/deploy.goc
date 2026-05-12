@@ -25,7 +25,7 @@ transport   = "ssh"           # ssh | https
 source = "cawaqsviz.cgs"
 name   = "CaWaQS-ViZ"          # project display name
 repo_name = "cawaqsviz"        # repository slug (distinct from project display name)
-gitprovider = "gitlab"         # GitHub | GitLab
+gitprovider = "gitlab"         # github | gitlab
 group_name = "cawaqs/gviz"     # required for gitlab address composition
 # gitprovider_address (computed with transport=ssh):
 # git@gitlab.com:cawaqs/gviz/cawaqsviz.git
