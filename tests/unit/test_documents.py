@@ -422,6 +422,21 @@ class TestGocDocumentValid:
         doc = GocDocument.from_dict(MINIMAL_GOC)
         assert doc.project_source == "project.cgs"
 
+    def test_project_name_and_repo_name_are_distinct(self):
+        data = {
+            **MINIMAL_GOC,
+            "project": {
+                "source": "project.cgs",
+                "name": "CaWaQS-ViZ",
+                "repo_name": "cawaqsviz",
+                "gitprovider": "gitlab",
+                "group_name": "cawaqs/gviz",
+            },
+        }
+        doc = GocDocument.from_dict(data)
+        assert doc.project_name == "CaWaQS-ViZ"
+        assert doc.project_repo_name == "cawaqsviz"
+
     def test_session_defaults_when_section_absent(self):
         doc = GocDocument.from_dict(MINIMAL_GOC)
         assert doc.interaction == "interactive"
@@ -460,6 +475,9 @@ class TestGocDocumentValid:
         examples = Path(__file__).parent.parent.parent / "examples"
         doc = GocDocument.from_toml(examples / "deploy.goc")
         assert doc.project_source == "cawaqsviz.cgs"
+        assert doc.project_name == "CaWaQS-ViZ"
+        assert doc.project_repo_name == "cawaqsviz"
+        assert doc.project_gitprovider_address == "git@gitlab.com:cawaqs/gviz/cawaqsviz.git"
         assert doc.interaction == "interactive"
         assert doc.transport == "ssh"
         assert len(doc.actions) == 4
@@ -470,6 +488,55 @@ class TestGocDocumentValid:
         doc = GocDocument.from_dict(MINIMAL_GOC)
         assert doc.session_setting("interaction") == "interactive"
         assert doc.session_setting("unknown_key") is None
+
+    def test_project_gitprovider_address_for_github_ssh(self):
+        data = {
+            **MINIMAL_GOC,
+            "project": {
+                "source": "project.cgs",
+                "repo_name": "HydroTwinAlphaSeries",
+                "gitprovider": "github",
+                "project_owner_name": "XXXX",
+            },
+        }
+        doc = GocDocument.from_dict(data)
+        assert doc.project_gitprovider_address == "git@github.com:XXXX/HydroTwinAlphaSeries.git"
+
+    def test_project_gitprovider_address_for_gitlab_https(self):
+        data = {
+            **MINIMAL_GOC,
+            "session": {"transport": "https"},
+            "project": {
+                "source": "project.cgs",
+                "repo_name": "cawaqsviz",
+                "gitprovider": "gitlab",
+                "group_name": "cawaqs/gviz",
+            },
+        }
+        doc = GocDocument.from_dict(data)
+        assert doc.project_gitprovider_address == "https://gitlab.com/cawaqs/gviz/cawaqsviz.git"
+
+    def test_project_provider_only_is_allowed_without_identity_fields(self):
+        data = {
+            **MINIMAL_GOC,
+            "project": {"source": "project.cgs", "gitprovider": "github"},
+        }
+        doc = GocDocument.from_dict(data)
+        assert doc.project_gitprovider_address is None
+
+    def test_project_gitprovider_url_uses_host_only(self):
+        data = {
+            **MINIMAL_GOC,
+            "project": {
+                "source": "project.cgs",
+                "repo_name": "repo",
+                "gitprovider": "github",
+                "project_owner_name": "owner",
+                "gitprovider_url": "git.example.com/some/path",
+            },
+        }
+        doc = GocDocument.from_dict(data)
+        assert doc.project_gitprovider_address == "git@git.example.com:owner/repo.git"
 
 
 class TestGocDocumentInvalid:
@@ -527,6 +594,38 @@ class TestGocDocumentInvalid:
             "actions": [{"command": "validate"}],
         }
         self._assert_validation_error(data, "transport")
+
+    def test_project_identity_missing_repo_name(self):
+        data = {
+            "document": {"format_version": "1.0"},
+            "project": {"source": "p.cgs", "gitprovider": "github", "project_owner_name": "owner"},
+            "actions": [{"command": "validate"}],
+        }
+        self._assert_validation_error(data, "repo_name")
+
+    def test_project_identity_missing_github_owner(self):
+        data = {
+            "document": {"format_version": "1.0"},
+            "project": {"source": "p.cgs", "repo_name": "repo", "gitprovider": "github"},
+            "actions": [{"command": "validate"}],
+        }
+        self._assert_validation_error(data, "project_owner_name")
+
+    def test_project_identity_missing_gitlab_group(self):
+        data = {
+            "document": {"format_version": "1.0"},
+            "project": {"source": "p.cgs", "repo_name": "repo", "gitprovider": "gitlab"},
+            "actions": [{"command": "validate"}],
+        }
+        self._assert_validation_error(data, "group_name")
+
+    def test_project_identity_invalid_provider(self):
+        data = {
+            "document": {"format_version": "1.0"},
+            "project": {"source": "p.cgs", "repo_name": "repo", "gitprovider": "bitbucket"},
+            "actions": [{"command": "validate"}],
+        }
+        self._assert_validation_error(data, "gitprovider")
 
     def test_empty_actions(self):
         data = {

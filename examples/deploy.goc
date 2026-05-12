@@ -23,7 +23,12 @@ transport   = "ssh"           # ssh | https
 
 [project]
 source = "cawaqsviz.cgs"
-name   = "CaWaQS-Viz"          # optional, used for display only
+name   = "CaWaQS-ViZ"          # project display name
+repo_name = "cawaqsviz"        # repository slug (distinct from project display name)
+gitprovider = "gitlab"         # github | gitlab
+group_name = "cawaqs/gviz"     # required for gitlab address composition
+# gitprovider_address (computed with transport=ssh):
+# git@gitlab.com:cawaqs/gviz/cawaqsviz.git
 
 # ── Action sequence ─────────────────────────────────────────────────────────
 # Actions are executed in order.  Each [[actions]] entry carries a mandatory
