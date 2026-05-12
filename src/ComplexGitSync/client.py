@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
 
+from .models import Orchestre
 
 @dataclass
 class ComplexGitSyncClient:
     """Bootstrap client shell for future implementation."""
 
-    session: Any | None = None
+    orchestre: Orchestre = field(default_factory=Orchestre)
 
     def is_loaded(self) -> bool:
-        return self.session is not None
+        return bool(self.orchestre.git_tree.repos)
