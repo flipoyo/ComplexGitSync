@@ -56,11 +56,12 @@ class GitTree:
             repo.gitprovider = gitprovider
         if project_owner_name is not None:
             repo.project_owner_name = project_owner_name
-        if project_name_override is not None and project_name_override != project_name:
-            del self.repos[project_name]
-            repo.project_name = project_name_override
-            self.repos[project_name_override] = repo
-            project_name = project_name_override
+        if project_name_override is not None:
+            if project_name_override != project_name:
+                del self.repos[project_name]
+                self.repos[project_name_override] = repo
+                project_name = project_name_override
+                repo.project_name = project_name_override
         if group_name is not None:
             repo.group_name = group_name
         if gitprovider_url is not None:
@@ -72,7 +73,7 @@ class GitTree:
         try:
             return self.repos[project_name]
         except KeyError as exc:
-            raise KeyError(f"Unknown repository '{project_name}' in GitTree correction method.") from exc
+            raise KeyError(f"Unknown repository '{project_name}' in GitTree.") from exc
 
 
 @dataclass(slots=True)

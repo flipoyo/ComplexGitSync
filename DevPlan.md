@@ -265,8 +265,10 @@ The registry must:
 - `gitprovider` where values are `github`, `gitlab`, or `custom`
 - `project_owner_name`
 - `project_name`
-- optional `group_name`
-- optional `gitprovider_url`
+
+### Optional Per-Repo Identity Keys
+- `group_name`
+- `gitprovider_url`
 
 ### Optional Per-Repo Keys
 - `default_branch`
