@@ -60,7 +60,6 @@ class GitTree:
             if project_name_override != project_name:
                 del self.repos[project_name]
                 self.repos[project_name_override] = repo
-                project_name = project_name_override
                 repo.project_name = project_name_override
         if group_name is not None:
             repo.group_name = group_name

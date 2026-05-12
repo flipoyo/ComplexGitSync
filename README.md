@@ -49,8 +49,9 @@ Planned commands include:
 
 ## Planned CI Version Policy
 Each push or merge increments package version in `YYYY.XX` format:
+- initial value for a new year should start at `YYYY.01`
 - if `XX < 99`, increment `XX`
-- if `XX == 99`, increment `YYYY` and reset `XX` to `01`
+- if `XX == 99`, increment `YYYY` and reset `XX` to `01` (for example `2025.99 -> 2026.01`)
 
 ## Repository Layout
 - `DevPlan.md`: implementation contract
