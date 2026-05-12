@@ -15,6 +15,7 @@ import json
 import tomllib
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import tomli_w
 
@@ -446,7 +447,11 @@ class GocDocument(ConfigDocument):
         transport   = "ssh"           # ssh | https
 
         [project]
-        source = "cawaqsviz.cgs"      # relative path to .cgs or .gts
+        source      = "cawaqsviz.cgs" # relative path to .cgs or .gts
+        name        = "CaWaQS-ViZ"    # project display name
+        repo_name   = "cawaqsviz"     # repository slug
+        gitprovider = "gitlab"        # github | gitlab
+        group_name  = "cawaqs/gviz"   # required for gitlab
 
         [[actions]]
         command = "validate"
@@ -475,6 +480,7 @@ class GocDocument(ConfigDocument):
     _VALID_INTERACTIONS = frozenset(("interactive", "direct"))
     _VALID_PROFILES = frozenset(("verbose", "whisper_sync"))
     _VALID_TRANSPORTS = frozenset(("ssh", "https"))
+    _VALID_PROJECT_GITPROVIDERS = frozenset(("github", "gitlab"))
 
     SESSION_DEFAULTS: dict[str, str] = {
         "interaction": "interactive",
@@ -493,11 +499,37 @@ class GocDocument(ConfigDocument):
             if self.read(f"project.{key}") is None:
                 errors.append(f"[project] missing required key: '{key}'")
 
+        project = self._data.get("project", {})
+        if not isinstance(project, dict):
+            errors.append("[project] must be a table")
+            project = {}
+
         source = self.read("project.source", "")
         if source and not (str(source).endswith(".cgs") or str(source).endswith(".gts")):
             errors.append(
                 f"[project].source must be a .cgs or .gts path; got: {source!r}"
             )
+
+        provider = str(project.get("gitprovider", "github"))
+        if project.get("gitprovider") is not None and provider not in self._VALID_PROJECT_GITPROVIDERS:
+            errors.append(
+                f"[project].gitprovider invalid: {provider!r} "
+                f"(choose from: {sorted(self._VALID_PROJECT_GITPROVIDERS)})"
+            )
+
+        identity_fields_present = any(
+            project.get(key)
+            for key in ("repo_name", "project_owner_name", "group_name", "gitprovider", "gitprovider_url")
+        )
+        if identity_fields_present:
+            if not project.get("repo_name"):
+                errors.append("[project] missing required key for address composition: 'repo_name'")
+            if provider == "github" and not project.get("project_owner_name"):
+                errors.append(
+                    "[project].project_owner_name is required when [project].gitprovider is 'github'"
+                )
+            if provider == "gitlab" and not project.get("group_name"):
+                errors.append("[project].group_name is required when [project].gitprovider is 'gitlab'")
 
         interaction = self.read("session.interaction", self.SESSION_DEFAULTS["interaction"])
         if interaction not in self._VALID_INTERACTIONS:
@@ -550,6 +582,21 @@ class GocDocument(ConfigDocument):
         return self.read("project.source")
 
     @property
+    def project_name(self) -> str | None:
+        """Return the display project name declared in ``[project]``."""
+        return self.read("project.name")
+
+    @property
+    def project_repo_name(self) -> str | None:
+        """Return the repository slug declared in ``[project].repo_name``."""
+        return self.read("project.repo_name")
+
+    @property
+    def project_gitprovider_address(self) -> str | None:
+        """Return the computed git provider address for ``[project]``."""
+        return self._compose_project_gitprovider_address()
+
+    @property
     def interaction(self) -> str:
         """Return the session interaction mode (default ``"interactive"``)."""
         return self.read("session.interaction", self.SESSION_DEFAULTS["interaction"])
@@ -572,3 +619,39 @@ class GocDocument(ConfigDocument):
     def session_setting(self, key: str) -> Any:
         """Return a session setting, falling back to :attr:`SESSION_DEFAULTS`."""
         return self._data.get("session", {}).get(key, self.SESSION_DEFAULTS.get(key))
+
+    def _compose_project_gitprovider_address(self) -> str | None:
+        project = self._data.get("project", {})
+        if not isinstance(project, dict):
+            return None
+
+        repo_name = project.get("repo_name")
+        if not repo_name:
+            return None
+
+        provider = str(project.get("gitprovider", "github"))
+        host = self._resolve_provider_host(provider, project.get("gitprovider_url"))
+
+        if provider == "github":
+            namespace = project.get("project_owner_name")
+        elif provider == "gitlab":
+            namespace = project.get("group_name")
+        else:
+            return None
+
+        if not namespace:
+            return None
+
+        if self.transport == "ssh":
+            return f"git@{host}:{namespace}/{repo_name}.git"
+        return f"https://{host}/{namespace}/{repo_name}.git"
+
+    @staticmethod
+    def _resolve_provider_host(gitprovider: str, gitprovider_url: Any) -> str:
+        if gitprovider_url:
+            base = str(gitprovider_url).strip()
+            parsed = urlsplit(base if "://" in base else f"https://{base}")
+            return parsed.netloc or parsed.path.strip("/")
+        if gitprovider == "gitlab":
+            return "gitlab.com"
+        return "github.com"
