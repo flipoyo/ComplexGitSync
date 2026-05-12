@@ -33,15 +33,6 @@ from .registry import build_registry_from_architecture, build_tree_state
 from .discovery import discover_nested_configs
 from .render import format_project_tree, format_registry_json
 
-
-def _as_output_profile(profile: str | OutputProfile | None, fallback: OutputProfile) -> OutputProfile:
-    if profile is None:
-        return fallback
-    try:
-        return OutputProfile(profile)
-    except ValueError as exc:
-        raise ConfigValidationError(f"Unsupported profile: {profile}") from exc
-
 @dataclass
 class ComplexGitSyncClient:
     """Public client for loading, validating, and inspecting ComplexGitSync sessions."""
@@ -176,7 +167,7 @@ class ComplexGitSyncClient:
         default_profile = (
             session.architecture.runtime.profile if session.architecture else OutputProfile.VERBOSE
         )
-        output_profile = _as_output_profile(profile, default_profile)
+        output_profile = self._as_output_profile(profile, default_profile)
         return format_project_tree(
             session.registry,
             include_current_ref=True if include_current_ref is None else include_current_ref,
@@ -307,7 +298,7 @@ class ComplexGitSyncClient:
         return (
             f"tree_state={state.lifecycle_state} ready={state.is_ready} "
             f"registry_complete={state.registry_complete}\n"
-            f"{format_project_tree(session.registry, profile=_as_output_profile(profile, default_profile))}"
+            f"{format_project_tree(session.registry, profile=self._as_output_profile(profile, default_profile))}"
         )
 
     def format_registry(self, refresh_nested: bool = False) -> str:
@@ -326,3 +317,14 @@ class ComplexGitSyncClient:
         if session.snapshot:
             return session.snapshot.runtime.profile
         return OutputProfile.VERBOSE
+
+    @staticmethod
+    def _as_output_profile(
+        profile: str | OutputProfile | None, fallback: OutputProfile
+    ) -> OutputProfile:
+        if profile is None:
+            return fallback
+        try:
+            return OutputProfile(profile)
+        except ValueError as exc:
+            raise ConfigValidationError(f"Unsupported profile: {profile}") from exc

@@ -46,8 +46,8 @@ class SyncState(StrEnum):
 
 
 class WorktreeState(StrEnum):
-    CLEAN = "clean"
-    DIRTY = "dirty"
+    CLEAN = "CLEAN"
+    DIRTY = "DIRTY"
 
 
 class InteractionMode(StrEnum):

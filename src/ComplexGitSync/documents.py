@@ -369,40 +369,46 @@ def _serialize_gts(snapshot: GitTreeStateSnapshot) -> str:
     )
 
     for entry in sorted(registry.values(), key=lambda value: value.repo_id):
-        lines.extend(
-            [
-                "",
-                "[[repo_state]]",
-                f"repo_id = {_toml_value(entry.repo_id)}",
-                f"name = {_toml_value(entry.name)}",
-                f"node_type = {_toml_value(entry.node_type)}",
-                f"parent_id = {_toml_value(entry.parent_id)}",
-                f"absolute_path = {_toml_value(str(entry.absolute_path))}",
-                f"relative_path = {_toml_value(str(entry.relative_path) if entry.relative_path else None)}",
-                f"source_cgs_path = {_toml_value(str(entry.source_cgs_path) if entry.source_cgs_path else None)}",
-                f"repo_lifecycle_state = {_toml_value(entry.repo_lifecycle_state)}",
-                f"sync_state = {_toml_value(entry.sync_state)}",
-                f"current_ref_kind = {_toml_value(entry.current_ref_kind)}",
-                f"current_ref_name = {_toml_value(entry.current_ref_name)}",
-                f"target_ref_kind = {_toml_value(entry.target_ref_kind)}",
-                f"target_ref_name = {_toml_value(entry.target_ref_name)}",
-                f"resolved_ref_kind = {_toml_value(entry.resolved_ref_kind)}",
-                f"resolved_ref_name = {_toml_value(entry.resolved_ref_name)}",
-                f"commit_sha = {_toml_value(entry.commit_sha)}",
-                f"fallback_branch = {_toml_value(entry.fallback_branch)}",
-                f"fallback_applied = {_toml_value(entry.fallback_applied)}",
-                f"fallback_reason = {_toml_value(entry.fallback_reason)}",
-                f"discovery_state = {_toml_value(entry.discovery_state)}",
-                f"worktree_state = {_toml_value(entry.worktree_state)}",
-                f"is_reachable = {_toml_value(entry.is_reachable)}",
-            ]
+        lines.extend(["", "[[repo_state]]"])
+        _append_toml_pair(lines, "repo_id", entry.repo_id)
+        _append_toml_pair(lines, "name", entry.name)
+        _append_toml_pair(lines, "node_type", entry.node_type)
+        _append_toml_pair(lines, "parent_id", entry.parent_id, optional=True)
+        _append_toml_pair(lines, "absolute_path", str(entry.absolute_path))
+        _append_toml_pair(
+            lines, "relative_path", str(entry.relative_path) if entry.relative_path else None, optional=True
         )
+        _append_toml_pair(
+            lines,
+            "source_cgs_path",
+            str(entry.source_cgs_path) if entry.source_cgs_path else None,
+            optional=True,
+        )
+        _append_toml_pair(lines, "repo_lifecycle_state", entry.repo_lifecycle_state)
+        _append_toml_pair(lines, "sync_state", entry.sync_state)
+        _append_toml_pair(lines, "current_ref_kind", entry.current_ref_kind)
+        _append_toml_pair(lines, "current_ref_name", entry.current_ref_name)
+        _append_toml_pair(lines, "target_ref_kind", entry.target_ref_kind, optional=True)
+        _append_toml_pair(lines, "target_ref_name", entry.target_ref_name, optional=True)
+        _append_toml_pair(lines, "resolved_ref_kind", entry.resolved_ref_kind)
+        _append_toml_pair(lines, "resolved_ref_name", entry.resolved_ref_name)
+        _append_toml_pair(lines, "commit_sha", entry.commit_sha)
+        _append_toml_pair(lines, "fallback_branch", entry.fallback_branch, optional=True)
+        _append_toml_pair(lines, "fallback_applied", entry.fallback_applied)
+        _append_toml_pair(lines, "fallback_reason", entry.fallback_reason, optional=True)
+        _append_toml_pair(lines, "discovery_state", entry.discovery_state)
+        _append_toml_pair(lines, "worktree_state", entry.worktree_state, optional=True)
+        _append_toml_pair(lines, "is_reachable", entry.is_reachable)
     return "\n".join(lines) + "\n"
 
 
 def _toml_value(value: Any) -> str:
-    if value is None:
-        return '""'
     if isinstance(value, bool):
         return "true" if value else "false"
     return json.dumps(str(value))
+
+
+def _append_toml_pair(lines: list[str], key: str, value: Any, *, optional: bool = False) -> None:
+    if optional and value is None:
+        return
+    lines.append(f"{key} = {_toml_value(value)}")

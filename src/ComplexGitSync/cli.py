@@ -51,7 +51,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
-        return int(exc.code)
+        return int(exc.code) if exc.code is not None else 0
     handler = getattr(args, "handler", None)
     if handler is None:
         parser.print_help()
