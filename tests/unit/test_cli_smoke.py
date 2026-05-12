@@ -13,7 +13,7 @@ def test_placeholder_command_returns_not_implemented(capsys):
     exit_code = main(["validate"])
     captured = capsys.readouterr()
     assert exit_code == 2
-    assert "not implemented yet" in captured.out
+    assert "--config" in captured.err
 
 
 def test_package_version_is_defined():
