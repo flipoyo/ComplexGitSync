@@ -119,7 +119,10 @@ def write_gts(
     snapshot: GitTreeStateSnapshot,
     output_path: str | Path | None = None,
 ) -> Path:
-    target = Path(output_path).resolve() if output_path else default_gts_path(snapshot.root_absolute_path, snapshot.project_name)
+    if output_path:
+        target = Path(output_path).resolve()
+    else:
+        target = default_gts_path(snapshot.root_absolute_path, snapshot.project_name)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(_serialize_gts(snapshot), encoding="utf-8")
     return target

@@ -173,7 +173,10 @@ class ComplexGitSyncClient:
         session = self._require_session()
         if refresh_nested:
             self.refresh_registry(refresh_nested=True)
-        output_profile = _as_output_profile(profile, session.architecture.runtime.profile if session.architecture else OutputProfile.VERBOSE)
+        default_profile = (
+            session.architecture.runtime.profile if session.architecture else OutputProfile.VERBOSE
+        )
+        output_profile = _as_output_profile(profile, default_profile)
         return format_project_tree(
             session.registry,
             include_current_ref=True if include_current_ref is None else include_current_ref,

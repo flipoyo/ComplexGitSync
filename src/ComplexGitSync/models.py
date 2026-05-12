@@ -74,6 +74,10 @@ class NodeType(StrEnum):
     LEAF = "leaf"
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 @dataclass(frozen=True)
 class RepoNode:
     repo_id: str
@@ -292,7 +296,7 @@ class GitTreeStateSnapshot:
     root_absolute_path: Path
     registry: DependencyTreeRegistry
     runtime: RuntimeOptions = field(default_factory=RuntimeOptions)
-    generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    generated_at: datetime = field(default_factory=utc_now)
     command_origin: str = "unknown"
     source_cgs_path: Path | None = None
     release_name: str | None = None
@@ -335,7 +339,3 @@ class OperationResult:
     warnings: tuple[str, ...] = ()
     log_path: Path | None = None
     output_gts_path: Path | None = None
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
