@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +24,7 @@ from .models import (
     RefKind,
     RepoNode,
     RepoLifecycleState,
+    RuntimeOptions,
     SyncState,
     TreeLifecycleState,
     WorktreeState,
@@ -38,7 +39,7 @@ class ComplexGitSyncClient:
     """Public client for loading, validating, and inspecting ComplexGitSync sessions."""
 
     session: LoadedSession | None = None
-    git_runner: GitRunner = GitRunner()
+    git_runner: GitRunner = field(default_factory=GitRunner)
 
     def is_loaded(self) -> bool:
         return self.session is not None
@@ -96,12 +97,7 @@ class ComplexGitSyncClient:
         session = self._require_session()
         if refresh_nested:
             self.refresh_registry(refresh_nested=True)
-        project_name = session.architecture.name if session.architecture else session.snapshot.project_name
-        root_path = (
-            session.architecture.root_path if session.architecture else session.snapshot.root_absolute_path
-        )
-        runtime = session.architecture.runtime if session.architecture else session.snapshot.runtime
-        source_cgs_path = session.architecture.config_path if session.architecture else session.snapshot.source_cgs_path
+        project_name, root_path, runtime, source_cgs_path = self._session_snapshot_inputs(session)
         snapshot = snapshot_from_registry(
             project_name,
             root_path,
@@ -317,6 +313,26 @@ class ComplexGitSyncClient:
         if session.snapshot:
             return session.snapshot.runtime.profile
         return OutputProfile.VERBOSE
+
+    @staticmethod
+    def _session_snapshot_inputs(
+        session: LoadedSession,
+    ) -> tuple[str, Path, RuntimeOptions, Path | None]:
+        if session.architecture:
+            return (
+                session.architecture.name,
+                session.architecture.root_path,
+                session.architecture.runtime,
+                session.architecture.config_path,
+            )
+        if session.snapshot:
+            return (
+                session.snapshot.project_name,
+                session.snapshot.root_absolute_path,
+                session.snapshot.runtime,
+                session.snapshot.source_cgs_path,
+            )
+        raise ArchitectureNotLoadedError("No project is currently loaded")
 
     @staticmethod
     def _as_output_profile(

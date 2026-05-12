@@ -206,7 +206,7 @@ class RepoRegistryEntry:
     nested_config: str | None = None
     remote_name: str | None = None
 
-    def clone(self) -> "RepoRegistryEntry":
+    def copy(self) -> "RepoRegistryEntry":
         return RepoRegistryEntry(**self.__dict__)
 
 
