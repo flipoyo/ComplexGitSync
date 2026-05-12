@@ -45,6 +45,11 @@ class SyncState(StrEnum):
     PENDING = "PENDING"
 
 
+class WorktreeState(StrEnum):
+    CLEAN = "clean"
+    DIRTY = "dirty"
+
+
 class InteractionMode(StrEnum):
     INTERACTIVE = "interactive"
     DIRECT = "direct"
@@ -189,7 +194,7 @@ class RepoRegistryEntry:
     fallback_branch: str | None = None
     fallback_applied: bool = False
     fallback_reason: str | None = None
-    worktree_state: str | None = None
+    worktree_state: WorktreeState | None = None
     is_reachable: bool = True
     ssh_url: str | None = None
     https_url: str | None = None

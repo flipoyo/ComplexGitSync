@@ -4,7 +4,7 @@ from pathlib import Path
 
 from .errors import TreeNotReadyError
 from .git_runner import GitRunner
-from .models import LoadedSession, OperationResult, RepoOutcome
+from .models import LoadedSession, OperationResult, RepoOutcome, WorktreeState
 from .registry import leaf_first_entries, parent_first_entries
 
 
@@ -62,7 +62,7 @@ def tag_ready_tree(
     for entry in parent_first_entries(session.registry):
         if not runner.is_git_repo(entry.absolute_path):
             continue
-        if entry.worktree_state == "dirty":
+        if entry.worktree_state == WorktreeState.DIRTY:
             raise TreeNotReadyError(f"tag requires clean worktrees: {entry.name}")
         runner.tag(entry.absolute_path, tag_name, annotated=annotated)
         outcomes.append(RepoOutcome(entry.repo_id, entry.name, "tagged"))

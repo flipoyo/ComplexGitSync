@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .errors import GitSyncError
-from .models import RefKind
+from .models import RefKind, WorktreeState
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class GitStatus:
     current_ref_kind: RefKind
     current_ref_name: str
     commit_sha: str
-    worktree_state: str
+    worktree_state: WorktreeState
 
 
 class GitRunner:
@@ -69,7 +69,7 @@ class GitRunner:
             current_ref_kind=kind,
             current_ref_name=name,
             commit_sha=sha,
-            worktree_state="clean" if not dirty else "dirty",
+            worktree_state=WorktreeState.CLEAN if not dirty else WorktreeState.DIRTY,
         )
 
     def checkout(self, cwd: str | Path, ref_name: str) -> None:

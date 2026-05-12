@@ -36,6 +36,7 @@ from .models import (
     RuntimeOptions,
     SyncState,
     TreeLifecycleState,
+    WorktreeState,
 )
 
 __all__ = [
@@ -72,6 +73,7 @@ __all__ = [
     "SyncState",
     "TreeLifecycleState",
     "TreeNotReadyError",
+    "WorktreeState",
 ]
 
 __version__ = "0.1.0"

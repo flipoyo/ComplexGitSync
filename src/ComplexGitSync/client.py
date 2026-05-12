@@ -12,7 +12,7 @@ from .documents import (
     snapshot_from_registry,
     write_gts,
 )
-from .errors import ArchitectureNotLoadedError, GitSyncError
+from .errors import ArchitectureNotLoadedError, ConfigValidationError, GitSyncError
 from .git_runner import GitRunner
 from .models import (
     GitTreeStateSnapshot,
@@ -26,6 +26,7 @@ from .models import (
     RepoLifecycleState,
     SyncState,
     TreeLifecycleState,
+    WorktreeState,
 )
 from .operations import commit_ready_tree, push_ready_tree, tag_ready_tree
 from .registry import build_registry_from_architecture, build_tree_state
@@ -34,7 +35,12 @@ from .render import format_project_tree, format_registry_json
 
 
 def _as_output_profile(profile: str | OutputProfile | None, fallback: OutputProfile) -> OutputProfile:
-    return OutputProfile(profile) if profile is not None else fallback
+    if profile is None:
+        return fallback
+    try:
+        return OutputProfile(profile)
+    except ValueError as exc:
+        raise ConfigValidationError(f"Unsupported profile: {profile}") from exc
 
 @dataclass
 class ComplexGitSyncClient:
@@ -210,7 +216,11 @@ class ComplexGitSyncClient:
                 entry.resolved_ref_name = status.current_ref_name
                 entry.commit_sha = status.commit_sha
                 entry.worktree_state = status.worktree_state
-                entry.sync_state = SyncState.ALIGNED if status.worktree_state == "clean" else SyncState.DIRTY
+                entry.sync_state = (
+                    SyncState.ALIGNED
+                    if status.worktree_state == WorktreeState.CLEAN
+                    else SyncState.DIRTY
+                )
                 entry.repo_lifecycle_state = RepoLifecycleState.READY
                 if entry.target_ref_name and entry.current_ref_name != entry.target_ref_name:
                     entry.repo_lifecycle_state = RepoLifecycleState.PENDING

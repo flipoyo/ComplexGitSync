@@ -14,7 +14,7 @@ def format_project_tree(
     profile: OutputProfile = OutputProfile.VERBOSE,
 ) -> str:
     lines: list[str] = []
-    for entry in _walk_tree(registry, None, 0):
+    for entry in _walk_tree(registry, None):
         bits = [entry.name]
         if include_node_type:
             bits.append(f"[{entry.node_type}]")
@@ -62,13 +62,11 @@ def format_registry_json(registry: DependencyTreeRegistry) -> str:
     return json.dumps(data, indent=2, sort_keys=True)
 
 
-def _walk_tree(
-    registry: DependencyTreeRegistry, parent_id: str | None, level: int
-) -> list[RepoRegistryEntry]:
+def _walk_tree(registry: DependencyTreeRegistry, parent_id: str | None) -> list[RepoRegistryEntry]:
     items: list[RepoRegistryEntry] = []
     for child in registry.children_of(parent_id):
         items.append(child)
-        items.extend(_walk_tree(registry, child.repo_id, level + 1))
+        items.extend(_walk_tree(registry, child.repo_id))
     return items
 
 

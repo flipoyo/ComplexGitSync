@@ -23,6 +23,7 @@ from .models import (
     RuntimeOptions,
     SyncState,
     TreeLifecycleState,
+    WorktreeState,
     utc_now,
 )
 from .registry import make_repo_id
@@ -237,14 +238,16 @@ def _parse_repo_state(item: dict[str, Any], source_path: Path) -> RepoRegistryEn
     absolute_path = Path(str(item["absolute_path"]))
     if not absolute_path.is_absolute():
         raise ConfigValidationError(f"repo_state.absolute_path must be absolute in {source_path}")
-    repo_id = str(item.get("repo_id") or make_repo_id(_optional_string(item.get("parent_id")), item.get("relative_path"), str(item["name"])))
+    parent_id = _optional_string(item.get("parent_id"))
+    relative_path = item.get("relative_path")
+    repo_id = str(item.get("repo_id") or make_repo_id(parent_id, relative_path, str(item["name"])))
     return RepoRegistryEntry(
         repo_id=repo_id,
         name=str(item["name"]),
         node_type=NodeType(item["node_type"]),
-        parent_id=_optional_string(item.get("parent_id")),
+        parent_id=parent_id,
         absolute_path=absolute_path.resolve(),
-        relative_path=Path(str(item["relative_path"])) if item.get("relative_path") else None,
+        relative_path=Path(str(relative_path)) if relative_path else None,
         source_cgs_path=_optional_path(item.get("source_cgs_path")),
         current_ref_kind=RefKind(item["current_ref_kind"]),
         current_ref_name=str(item["current_ref_name"]),
@@ -259,7 +262,7 @@ def _parse_repo_state(item: dict[str, Any], source_path: Path) -> RepoRegistryEn
         fallback_branch=_optional_string(item.get("fallback_branch")),
         fallback_applied=bool(item.get("fallback_applied", False)),
         fallback_reason=_optional_string(item.get("fallback_reason")),
-        worktree_state=_optional_string(item.get("worktree_state")),
+        worktree_state=WorktreeState(item["worktree_state"]) if item.get("worktree_state") else None,
         is_reachable=bool(item.get("is_reachable", True)),
     )
 
