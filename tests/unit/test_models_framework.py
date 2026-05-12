@@ -54,3 +54,12 @@ def test_gittree_correction_methods_fail_for_unknown_repo():
 
     with pytest.raises(KeyError, match="Unknown repository"):
         tree.force_repo_keys("missing", project_owner_name="team-owner")
+
+
+def test_gittree_rename_rejects_existing_target_name():
+    tree = GitTree()
+    tree.add_repo(GitRepo(project_owner_name="owner-a", project_name="repo-a"))
+    tree.add_repo(GitRepo(project_owner_name="owner-b", project_name="repo-b"))
+
+    with pytest.raises(ValueError, match="target key already exists"):
+        tree.force_repo_keys("repo-a", project_name_override="repo-b")

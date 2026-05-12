@@ -58,6 +58,11 @@ class GitTree:
             repo.project_owner_name = project_owner_name
         if project_name_override is not None:
             if project_name_override != project_name:
+                if project_name_override in self.repos:
+                    raise ValueError(
+                        f"Cannot rename repository '{project_name}' to '{project_name_override}': "
+                        "target key already exists in GitTree."
+                    )
                 del self.repos[project_name]
                 self.repos[project_name_override] = repo
                 repo.project_name = project_name_override
