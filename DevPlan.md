@@ -204,6 +204,11 @@ The registry must:
 - drive tree rendering, readiness gating, and `.gts` writing
 
 ## Object Model
+### Core Orchestration Types
+- `GitRepo`
+- `GitTree`
+- `Orchestre`
+
 ### Graph Types
 - `RepoNode`
 - `ParentRepo`
@@ -257,10 +262,11 @@ The registry must:
 - `log_level = "info"`
 
 ### Required Per-Repo Keys
-- `name`
-- `path`
-- `ssh_url`
-- `https_url`
+- `gitprovider` where values are `github`, `gitlab`, or `custom`
+- `project_owner_name`
+- `project_name`
+- optional `group_name`
+- optional `gitprovider_url`
 
 ### Optional Per-Repo Keys
 - `default_branch`
@@ -269,6 +275,12 @@ The registry must:
 - `transport`
 - `enabled`
 - `remote_name`
+- `access_protocol`
+
+### Per-Repo Defaults
+- `gitprovider = "github"`
+- `group_name = project_name`
+- `access_protocol = "ssh"` and may be set to `"https"` when required
 
 ### `nested_config` Values
 - `"auto"`
@@ -431,6 +443,19 @@ Optional for traceability:
 Recommended default paths:
 - `.cgitsync/state/<project_name>.gts`
 - `.cgitsync/releases/<release_name>.gts`
+
+## Correction API Requirement
+`GitTree` must expose correction helpers for:
+- forcing a repo commit SHA
+- forcing required repo identity keys (`gitprovider`, `project_owner_name`, `project_name`, optional `group_name`, optional `gitprovider_url`, and access protocol)
+
+These are framework-level correction paths for state reconciliation; they do not replace normal validation and synchronization flows.
+
+## CI Versioning Policy
+Every push or merge must increment the package version in this scheme:
+- `YYYY.XX` where `XX` is a two-digit rolling counter
+- if `XX < 99`, increment `XX`
+- if `XX == 99`, increment `YYYY` and reset `XX` to `01`
 
 ## Python API Contract
 ### Main Client

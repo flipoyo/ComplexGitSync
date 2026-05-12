@@ -40,6 +40,9 @@ Always preserve these events in file logs:
 - Record exact commit SHAs for replay and release reproducibility.
 - Keep names English and Pythonic, for example `LeafRepo`.
 - Keep CLI behavior aligned with Python API behavior.
+- Keep the bootstrap architecture object-oriented around `GitRepo`, `GitTree`, and `Orchestre`.
+- Treat per-repo identity keys as mandatory: `gitprovider`, `project_owner_name`, `project_name`, optional `group_name`, and optional `gitprovider_url`.
+- Default `gitprovider` to `github`, default `group_name` to `project_name`, and default access protocol to `ssh` (use `https` only when explicitly selected).
 
 ## Execution Order
 Use the ticket sequence in `DevPlanTicket.md`.
