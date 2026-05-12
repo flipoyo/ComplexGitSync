@@ -516,6 +516,14 @@ class TestGocDocumentValid:
         doc = GocDocument.from_dict(data)
         assert doc.project_gitprovider_address == "https://gitlab.com/cawaqs/gviz/cawaqsviz.git"
 
+    def test_project_provider_only_is_allowed_without_identity_fields(self):
+        data = {
+            **MINIMAL_GOC,
+            "project": {"source": "project.cgs", "gitprovider": "github"},
+        }
+        doc = GocDocument.from_dict(data)
+        assert doc.project_gitprovider_address is None
+
 
 class TestGocDocumentInvalid:
     def _assert_validation_error(self, data: dict, fragment: str) -> None:

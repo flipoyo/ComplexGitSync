@@ -519,7 +519,7 @@ class GocDocument(ConfigDocument):
 
         identity_fields_present = any(
             project.get(key)
-            for key in ("repo_name", "project_owner_name", "group_name", "gitprovider", "gitprovider_url")
+            for key in ("repo_name", "project_owner_name", "group_name", "gitprovider_url")
         )
         if identity_fields_present:
             if not project.get("repo_name"):
