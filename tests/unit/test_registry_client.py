@@ -139,6 +139,10 @@ def test_make_repo_id_normalizes_windows_style_paths():
     )
 
 
+def test_make_repo_id_falls_back_to_name_when_relative_path_is_missing():
+    assert make_repo_id("root", None, "child-repo") == "root:child-repo"
+
+
 def _write_root_cgs(tmp_path, *, nested_child: bool = False):
     nested_config = 'nested_config = "auto"\n' if nested_child else ""
     config_path = tmp_path / "project.cgs"

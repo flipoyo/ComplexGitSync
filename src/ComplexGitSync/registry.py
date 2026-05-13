@@ -196,6 +196,8 @@ class ProjectTreeState:
 
 def make_repo_id(parent_id: str | None, relative_path: PurePath | str | None, name: str) -> str:
     normalized = _normalize_repo_id_segment(relative_path)
+    if relative_path is None or normalized == "":
+        normalized = _normalize_repo_id_segment(name)
     if normalized in {"", "."}:
         return ROOT_REPO_ID if parent_id is None else parent_id
     return f"{parent_id or ROOT_REPO_ID}:{normalized}"
@@ -322,8 +324,7 @@ def _normalize_repo_id_segment(relative_path: PurePath | str | None) -> str:
         raw = relative_path.as_posix()
     else:
         raw = str(relative_path).replace("\\", "/")
-    normalized = str(PurePosixPath(raw))
-    return "" if normalized == "." else normalized
+    return PurePosixPath(raw).as_posix()
 
 
 def register_relative_path(
