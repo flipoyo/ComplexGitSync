@@ -81,8 +81,9 @@ pytest
 ## Current Bootstrap Scope
 The current scaffold intentionally provides:
 - packaging metadata
-- a minimal CLI entrypoint
+- an inspection-oriented CLI baseline for `validate`, `describe`, `tree`, and `registry`
 - a package skeleton aligned with the dev plan
+- the document/model layer plus a dependency-tree registry bootstrap
 - a smoke test and CI skeleton
 
 It does not attempt to implement the synchronization engine yet.
