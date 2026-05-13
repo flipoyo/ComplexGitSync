@@ -6,9 +6,11 @@ ComplexGitSync is a standalone Python package for synchronizing a root Git repos
 The repository is currently in implementation-bootstrap mode.
 
 The authoritative planning documents are:
-- `DevPlan.md`
-- `DevPlanTicket.md`
-- `AGENTS.md`
+- `DevSpecs.md`: reusable development philosophy
+- `AdditionalSpecs.md`: project-specific constraints
+- `Planning/InitialDevPlan.md`: original implementation contract
+- `Planning/InitialDevPlanTickets.md`: original ticket breakdown
+- `AGENTS.md`: agent entry-point and hard invariants
 
 ## Core Concepts
 - `.cgs` is the local authoring-spec format.
@@ -39,10 +41,9 @@ Planned commands include:
 
 ## Required Per-Repo Identity Keys (Plan Contract)
 - `gitprovider` (`github`, `gitlab`, `custom`) with default `github`
-- `project_owner_name`
+- `owner_name` — the repository namespace; called _owner_ on GitHub and _group_ on GitLab (`group_name` is accepted as an alias)
 - `project_name`
-- optional `group_name` (defaults to `project_name`)
-- optional `gitprovider_url`
+- `gitprovider_url` — required only when `gitprovider` is `custom`; inferred automatically for `github` and `gitlab`
 - access protocol defaults to `ssh` (`https` when explicitly requested)
 
 `GitTree` also provides correction hooks in the framework for forcing commit SHA values and repo identity keys.
@@ -56,14 +57,17 @@ Planned commands include:
 
 ## Planned CI Version Policy
 Each push or merge increments package version in `YYYY.XX` format:
-- initial value for a new year should start at `YYYY.01`
+- the very first release starts at `0000.01`
 - if `XX < 99`, increment `XX`
-- if `XX == 99`, increment `YYYY` and reset `XX` to `01` (for example `2025.99 -> 2026.01`)
+- if `XX == 99`, increment `YYYY` and reset `XX` to `01` (for example `0000.99 -> 0001.01`)
 
 ## Repository Layout
-- `DevPlan.md`: implementation contract
-- `DevPlanTicket.md`: ticket breakdown for an implementation agent
-- `AGENTS.md`: concise working rules for coding agents
+- `DevSpecs.md`: reusable, project-agnostic development philosophy
+- `AdditionalSpecs.md`: ComplexGitSync-specific constraints and refinements
+- `AGENTS.md`: agent entry-point — DevSpecs conformity declaration and hard invariants
+- `Planning/InitialDevPlan.md`: original implementation contract
+- `Planning/InitialDevPlanTickets.md`: original ticket breakdown for an implementation agent
+- `Planning/FIRSTAGENT.md`: working rules used by the first implementation agent
 - `src/ComplexGitSync/`: package source
 - `tests/`: unit and integration tests
 

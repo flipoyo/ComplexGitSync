@@ -279,12 +279,11 @@ The registry must:
 
 ### Required Per-Repo Keys
 - `gitprovider` where values are `github`, `gitlab`, or `custom`
-- `project_owner_name`
+- `owner_name` (called _owner_ on GitHub, _group_ on GitLab; `group_name` accepted as alias)
 - `project_name`
 
 ### Optional Per-Repo Identity Keys
-- `group_name`
-- `gitprovider_url`
+- `gitprovider_url` (required when `gitprovider` is `custom`; inferred for `github` and `gitlab`)
 
 ### Optional Per-Repo Keys
 - `default_branch`
@@ -465,7 +464,7 @@ Recommended default paths:
 ## Correction API Requirement
 `GitTree` must expose correction helpers for:
 - forcing a repo commit SHA
-- forcing required repo identity keys (`gitprovider`, `project_owner_name`, `project_name`, optional `group_name`, optional `gitprovider_url`, and access protocol)
+- forcing required repo identity keys (`gitprovider`, `owner_name`, `project_name`, optional `gitprovider_url`, and access protocol)
 
 These are framework-level correction paths for state reconciliation; they do not replace normal validation and synchronization flows.
 
