@@ -65,7 +65,8 @@ Each push or merge increments package version in `YYYY.XX` format:
 - `DevSpecs.md`: reusable, project-agnostic development philosophy
 - `AdditionalSpecs.md`: ComplexGitSync-specific constraints and refinements
 - `AGENTS.md`: agent entry-point — DevSpecs conformity declaration and hard invariants
-- `AGENT.md`: self-standing repository-layout notes for agent specs
+- `AGENT.md`: root-level agent-layout notes (`./DevSpec/DevSpecs.md`, `./AdditionalSpecs.md`)
+- `docs/AGENT.md`: docs-level agent-layout notes (`./DocSpec/DocSpecs.md`, `./AdditionalDocSpecs.md`)
 - `Planning/InitialDevPlan.md`: original implementation contract
 - `Planning/InitialDevPlanTickets.md`: original ticket breakdown for an implementation agent
 - `Planning/FIRSTAGENT.md`: working rules used by the first implementation agent
