@@ -1,198 +1,58 @@
+"""Registry domain model, builder functions, and backward-compatible re-exports.
+
+Domain classes now each live in their own module (DevSpecs § Object-Oriented
+Design).  This module re-exports all registry types and retains the builder
+functions that translate between document objects and the live registry.
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from enum import StrEnum
 from pathlib import Path, PurePath, PurePosixPath
 from typing import Any
 
 from .access_protocol import AccessProtocol
+from .dependency_tree_registry import DependencyTreeRegistry
+from .discovery_state import DiscoveryState
 from .documents import CgsDocument, GtsDocument
 from .errors import ConfigValidationError
 from .git_provider import GitProvider
+from .node_type import NodeType
+from .project_tree_state import ProjectTreeState
+from .ref_kind import RefKind
+from .repo_lifecycle_state import RepoLifecycleState
+from .repo_node import RepoNode
+from .repo_registry_entry import RepoRegistryEntry
+from .sync_state import SyncState
+from .tree_lifecycle_state import TreeLifecycleState
 
 ROOT_REPO_ID = "root"
 
-
-class TreeLifecycleState(StrEnum):
-    UNLOADED = "UNLOADED"
-    DECLARED = "DECLARED"
-    DISCOVERING = "DISCOVERING"
-    PENDING = "PENDING"
-    READY = "READY"
-    PARTIAL = "PARTIAL"
-    ERROR = "ERROR"
-
-
-class RepoLifecycleState(StrEnum):
-    DECLARED = "DECLARED"
-    PENDING = "PENDING"
-    READY = "READY"
-    FALLBACK_READY = "FALLBACK_READY"
-    MISSING = "MISSING"
-    ERROR = "ERROR"
-
-
-class DiscoveryState(StrEnum):
-    PENDING = "PENDING"
-    RESOLVED = "RESOLVED"
-    DISABLED = "DISABLED"
-    MISSING = "MISSING"
-    AMBIGUOUS = "AMBIGUOUS"
+__all__ = [
+    "ROOT_REPO_ID",
+    "DependencyTreeRegistry",
+    "DiscoveryState",
+    "NodeType",
+    "ProjectTreeState",
+    "RefKind",
+    "RepoLifecycleState",
+    "RepoNode",
+    "RepoRegistryEntry",
+    "SyncState",
+    "TreeLifecycleState",
+    "build_gts_document_from_registry",
+    "build_registry_from_cgs_document",
+    "build_registry_from_gts_document",
+    "build_tree_state",
+    "make_repo_id",
+    "promote_to_parent",
+    "register_relative_path",
+]
 
 
-class SyncState(StrEnum):
-    ALIGNED = "ALIGNED"
-    FALLBACK_APPLIED = "FALLBACK_APPLIED"
-    DETACHED_EXACT = "DETACHED_EXACT"
-    DIRTY = "DIRTY"
-    AHEAD = "AHEAD"
-    BEHIND = "BEHIND"
-    DIVERGED = "DIVERGED"
-    ERROR = "ERROR"
-    PENDING = "PENDING"
-
-
-class RefKind(StrEnum):
-    AUTO = "auto"
-    BRANCH = "branch"
-    TAG = "tag"
-    DETACHED = "detached"
-    UNKNOWN = "unknown"
-
-
-class NodeType(StrEnum):
-    ROOT = "root"
-    PARENT = "parent"
-    LEAF = "leaf"
-
-
-@dataclass(frozen=True)
-class RepoNode:
-    repo_id: str
-    name: str
-    absolute_path: Path
-    parent_id: str | None = None
-    relative_path: Path | None = None
-    source_cgs_path: Path | None = None
-    node_type: NodeType = NodeType.LEAF
-
-
-@dataclass
-class RepoRegistryEntry:
-    repo_id: str
-    name: str
-    node_type: NodeType
-    parent_id: str | None
-    absolute_path: Path
-    relative_path: Path | None = None
-    source_cgs_path: Path | None = None
-    current_ref_kind: RefKind | None = None
-    current_ref_name: str | None = None
-    target_ref_kind: RefKind | None = None
-    target_ref_name: str | None = None
-    resolved_ref_kind: RefKind | None = None
-    resolved_ref_name: str | None = None
-    commit_sha: str | None = None
-    repo_lifecycle_state: RepoLifecycleState = RepoLifecycleState.DECLARED
-    sync_state: SyncState = SyncState.PENDING
-    discovery_state: DiscoveryState = DiscoveryState.PENDING
-    fallback_branch: str | None = None
-    fallback_applied: bool = False
-    fallback_reason: str | None = None
-    worktree_state: str | None = None
-    is_reachable: bool = True
-    gitprovider: GitProvider = GitProvider.GITHUB
-    project_owner_name: str | None = None
-    project_name: str | None = None
-    group_name: str | None = None
-    gitprovider_url: str | None = None
-    access_protocol: AccessProtocol = AccessProtocol.SSH
-    default_branch: str | None = None
-    nested_config: str | None = None
-    remote_name: str | None = None
-
-
-@dataclass
-class DependencyTreeRegistry:
-    entries: dict[str, RepoRegistryEntry] = field(default_factory=dict)
-    lifecycle_state: TreeLifecycleState = TreeLifecycleState.UNLOADED
-
-    def add(self, entry: RepoRegistryEntry) -> RepoRegistryEntry:
-        self.entries[entry.repo_id] = entry
-        return entry
-
-    def get(self, repo_id: str) -> RepoRegistryEntry:
-        return self.entries[repo_id]
-
-    def values(self) -> list[RepoRegistryEntry]:
-        return list(self.entries.values())
-
-    def __iter__(self):
-        return iter(self.entries.values())
-
-    def children_of(self, parent_id: str | None) -> list[RepoRegistryEntry]:
-        return sorted(
-            [entry for entry in self.entries.values() if entry.parent_id == parent_id],
-            key=lambda entry: (str(entry.relative_path or ""), entry.name),
-        )
-
-    def is_complete(self) -> bool:
-        if not self.entries:
-            return False
-        for entry in self.entries.values():
-            if not entry.is_reachable:
-                return False
-            if entry.absolute_path is None:
-                return False
-            if entry.parent_id is not None and entry.relative_path is None:
-                return False
-        return True
-
-    def is_ready(self) -> bool:
-        if not self.is_complete():
-            return False
-        for entry in self.entries.values():
-            if entry.repo_lifecycle_state not in {
-                RepoLifecycleState.READY,
-                RepoLifecycleState.FALLBACK_READY,
-            }:
-                return False
-            if not entry.commit_sha:
-                return False
-            if entry.resolved_ref_kind is None or not entry.resolved_ref_name:
-                return False
-        return True
-
-    def recompute_tree_state(self) -> TreeLifecycleState:
-        if not self.entries:
-            self.lifecycle_state = TreeLifecycleState.UNLOADED
-        elif any(entry.repo_lifecycle_state == RepoLifecycleState.ERROR for entry in self.entries.values()):
-            self.lifecycle_state = TreeLifecycleState.ERROR
-        elif self.is_ready():
-            self.lifecycle_state = TreeLifecycleState.READY
-        elif any(
-            entry.repo_lifecycle_state == RepoLifecycleState.PENDING for entry in self.entries.values()
-        ):
-            self.lifecycle_state = TreeLifecycleState.PENDING
-        elif all(
-            entry.repo_lifecycle_state == RepoLifecycleState.DECLARED for entry in self.entries.values()
-        ):
-            self.lifecycle_state = TreeLifecycleState.DECLARED
-        else:
-            self.lifecycle_state = TreeLifecycleState.PARTIAL
-        return self.lifecycle_state
-
-    @property
-    def registry_complete(self) -> bool:
-        return self.is_complete()
-
-
-@dataclass(frozen=True)
-class ProjectTreeState:
-    lifecycle_state: TreeLifecycleState
-    is_ready: bool
-    registry_complete: bool
+# ---------------------------------------------------------------------------
+# Public builder / utility functions
+# ---------------------------------------------------------------------------
 
 
 def make_repo_id(parent_id: str | None, relative_path: PurePath | str | None, name: str) -> str:
@@ -424,6 +284,23 @@ def build_tree_state(registry: DependencyTreeRegistry) -> ProjectTreeState:
     )
 
 
+def register_relative_path(
+    seen_relative_paths: set[Path],
+    relative_path: Path,
+    *,
+    error_type: type[Exception],
+    context: str,
+) -> None:
+    if relative_path in seen_relative_paths:
+        raise error_type(f"duplicate relative_path '{relative_path}' under {context}")
+    seen_relative_paths.add(relative_path)
+
+
+# ---------------------------------------------------------------------------
+# Private helpers (also imported by discovery.py)
+# ---------------------------------------------------------------------------
+
+
 def _validate_repo_shape(repo: Any) -> None:
     if not isinstance(repo, dict):
         raise ConfigValidationError("Invalid .cgs document:\n  • each [[repos]] entry must be a table")
@@ -457,18 +334,6 @@ def _normalize_repo_id_segment(relative_path: PurePath | str | None) -> str:
     return PurePosixPath(raw).as_posix()
 
 
-def register_relative_path(
-    seen_relative_paths: set[Path],
-    relative_path: Path,
-    *,
-    error_type: type[Exception],
-    context: str,
-) -> None:
-    if relative_path in seen_relative_paths:
-        raise error_type(f"duplicate relative_path '{relative_path}' under {context}")
-    seen_relative_paths.add(relative_path)
-
-
 def _apply_repo_identity(
     entry: RepoRegistryEntry,
     repo: dict[str, Any],
@@ -500,7 +365,7 @@ def _as_optional_str(value: Any) -> str | None:
     return str(value)
 
 
-def _parse_optional_enum(enum_type: type[StrEnum], value: Any) -> Any:
+def _parse_optional_enum(enum_type: type, value: Any) -> Any:
     if value is None:
         return None
     return enum_type(str(value))
@@ -515,7 +380,7 @@ def _parse_gts_node_type(raw_value: str) -> NodeType:
     return NodeType.LEAF
 
 
-def _parse_enum(enum_type: type[StrEnum], value: Any, default: StrEnum) -> Any:
+def _parse_enum(enum_type: type, value: Any, default: Any) -> Any:
     if value is None:
         return default
     return enum_type(str(value))
