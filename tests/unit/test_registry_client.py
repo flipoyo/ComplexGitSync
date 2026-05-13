@@ -8,6 +8,7 @@ import pytest
 from ComplexGitSync.client import ComplexGitSyncClient
 from ComplexGitSync.errors import ConfigValidationError, NestedConfigDiscoveryError
 from ComplexGitSync.registry import NodeType, RepoLifecycleState, TreeLifecycleState, make_repo_id
+from ComplexGitSync.state_store import RuntimeStateStore
 
 
 def test_client_load_cgs_builds_reviewable_registry(tmp_path):
@@ -140,7 +141,8 @@ def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
         }
     )
 
-    client = ComplexGitSyncClient(git_runner=fake_runner)
+    state_store = RuntimeStateStore(base_dir=tmp_path / "runtime-state")
+    client = ComplexGitSyncClient(git_runner=fake_runner, state_store=state_store)
     registry = client.clone_cgs(config_path, target_dir=tmp_path / "workspace" / "demo")
     tree_state = client.get_tree_state()
 
@@ -157,6 +159,15 @@ def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
     assert docs_entry.repo_lifecycle_state == RepoLifecycleState.FALLBACK_READY
     assert docs_entry.resolved_ref_name == "main"
     assert [branch for _, _, branch in fake_runner.clones] == ["main", "autoTest", "main"]
+
+    snapshot_path = state_store.latest_snapshot_for(config_path)
+    assert snapshot_path is not None
+    assert snapshot_path == (tmp_path / "workspace" / "demo" / ".cgitsync" / "state" / "project.gts").resolve()
+
+    reloaded_client = ComplexGitSyncClient(state_store=state_store)
+    reloaded_registry = reloaded_client.load_runtime_or_cgs(config_path)
+    assert reloaded_client.get_tree_state().lifecycle_state == TreeLifecycleState.READY
+    assert reloaded_registry.get("root").absolute_path == root_entry.absolute_path
 
 
 def test_clone_cgs_uses_suffixed_target_when_default_root_is_occupied(tmp_path, monkeypatch):

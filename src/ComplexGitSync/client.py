@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
 import json
 
 from .discovery import discover_nested_configs
-from .documents import CgsDocument
+from .documents import CgsDocument, GtsDocument
 from .errors import GitSyncError
 from .git_runner import GitRunner
 from .orchestre import Orchestre
@@ -18,10 +19,15 @@ from .registry import (
     RepoLifecycleState,
     RepoRegistryEntry,
     SyncState,
+    TreeLifecycleState,
+    build_gts_document_from_registry,
     build_registry_from_cgs_document,
+    build_registry_from_gts_document,
     build_tree_state,
 )
+from .run_logger import CommandRunLogger
 from .render import format_project_tree, format_registry_json
+from .state_store import RuntimeStateStore
 
 @dataclass
 class ComplexGitSyncClient:
@@ -29,8 +35,11 @@ class ComplexGitSyncClient:
 
     orchestre: Orchestre = field(default_factory=Orchestre)
     git_runner: GitRunner = field(default_factory=GitRunner)
+    state_store: RuntimeStateStore = field(default_factory=RuntimeStateStore)
     registry: DependencyTreeRegistry | None = None
     source_path: Path | None = None
+    loaded_snapshot_path: Path | None = None
+    run_logger: CommandRunLogger | None = None
 
     def is_loaded(self) -> bool:
         return self.registry is not None or bool(self.orchestre.git_tree.repos)
@@ -41,13 +50,58 @@ class ComplexGitSyncClient:
         *,
         discover_nested: bool = False,
     ) -> DependencyTreeRegistry:
+        previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
         self.registry = build_registry_from_cgs_document(document, source_path)
         self.source_path = source_path
+        self.loaded_snapshot_path = None
         if discover_nested:
-            self.discover_nested_configs()
+            discovered = self.discover_nested_configs()
+            self._log_nested_discovery(discovered)
+        self._log_tree_transition(previous_tree_state, self.registry.lifecycle_state, reason="load_cgs")
         return self.registry
+
+    def load_gts(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
+        previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
+        resolved_snapshot_path = Path(snapshot_path).resolve()
+        document = GtsDocument.from_toml(resolved_snapshot_path)
+        self.registry = build_registry_from_gts_document(document)
+        self.source_path = (
+            Path(str(document.read("project.source_cgs_path"))).resolve()
+            if document.read("project.source_cgs_path")
+            else resolved_snapshot_path
+        )
+        self.loaded_snapshot_path = resolved_snapshot_path
+        self._log_event(
+            "gts_load",
+            snapshot_path=resolved_snapshot_path,
+            source_cgs_path=self.source_path if self.source_path.suffix == ".cgs" else None,
+        )
+        self._log_tree_transition(previous_tree_state, self.registry.lifecycle_state, reason="load_gts")
+        return self.registry
+
+    def load_runtime_or_cgs(
+        self,
+        config_path: str | Path,
+        *,
+        discover_nested: bool = False,
+    ) -> DependencyTreeRegistry:
+        source_path = Path(config_path).resolve()
+        snapshot_path = self.state_store.latest_snapshot_for(source_path)
+        if snapshot_path is not None and snapshot_path.stat().st_mtime >= source_path.stat().st_mtime:
+            return self.load_gts(snapshot_path)
+        return self.load_cgs(source_path, discover_nested=discover_nested)
+
+    def resolve_clone_root(
+        self,
+        config_path: str | Path,
+        *,
+        target_dir: str | Path | None = None,
+    ) -> Path:
+        source_path = Path(config_path).resolve()
+        document = CgsDocument.from_toml(source_path)
+        return self._resolve_project_root(document, source_path, target_dir)
 
     def clone_cgs(
         self,
@@ -55,6 +109,7 @@ class ComplexGitSyncClient:
         *,
         target_dir: str | Path | None = None,
     ) -> DependencyTreeRegistry:
+        previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
         project_root = self._resolve_project_root(document, source_path, target_dir)
@@ -73,6 +128,7 @@ class ComplexGitSyncClient:
                 cloned_any = True
 
             discovered = self.discover_nested_configs()
+            self._log_nested_discovery(discovered)
             if not cloned_any and not discovered:
                 break
 
@@ -80,6 +136,9 @@ class ComplexGitSyncClient:
         self.registry.recompute_tree_state()
         if not self.registry.is_ready():
             raise GitSyncError("Clone did not produce a READY tree.")
+        snapshot_path = self.write_gts_snapshot(command_origin="clone")
+        self.state_store.record_snapshot(source_path, snapshot_path)
+        self._log_tree_transition(previous_tree_state, self.registry.lifecycle_state, reason="clone_cgs")
         return self.registry
 
     def get_dependency_registry(self) -> DependencyTreeRegistry:
@@ -110,6 +169,36 @@ class ComplexGitSyncClient:
             "repo_count": len(registry.entries),
         }
         return json.dumps(summary, indent=2, sort_keys=True)
+
+    def write_gts_snapshot(
+        self,
+        *,
+        command_origin: str,
+        output_path: str | Path | None = None,
+    ) -> Path:
+        registry = self.get_dependency_registry()
+        root_entry = registry.get("root")
+        if output_path is None:
+            snapshot_name = f"{(self.source_path.stem if self.source_path else root_entry.name)}.gts"
+            resolved_output_path = root_entry.absolute_path / ".cgitsync" / "state" / snapshot_name
+        else:
+            resolved_output_path = Path(output_path).resolve()
+
+        resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
+        document = build_gts_document_from_registry(
+            registry,
+            command_origin=command_origin,
+            source_cgs_path=self.source_path,
+        )
+        document.to_toml(resolved_output_path)
+        self.loaded_snapshot_path = resolved_output_path
+        self._log_event(
+            "gts_write",
+            snapshot_path=resolved_output_path,
+            source_cgs_path=self.source_path,
+            tree_lifecycle_state=registry.lifecycle_state,
+        )
+        return resolved_output_path
 
     def _resolve_project_root(
         self,
@@ -150,6 +239,8 @@ class ComplexGitSyncClient:
         )
 
     def _clone_registry_entry(self, entry: RepoRegistryEntry) -> None:
+        previous_state = entry.repo_lifecycle_state
+        previous_sync_state = entry.sync_state
         remote_url = self._build_remote_url(entry)
         selected_branch = self._select_clone_branch(entry, remote_url)
 
@@ -173,6 +264,19 @@ class ComplexGitSyncClient:
         )
         entry.sync_state = SyncState.FALLBACK_APPLIED if fallback_applied else SyncState.ALIGNED
         entry.worktree_state = "CLEAN"
+        if fallback_applied:
+            self._log_event(
+                "fallback_applied",
+                repo_name=entry.name,
+                absolute_path=entry.absolute_path,
+                target_ref_kind=entry.target_ref_kind,
+                target_ref_name=entry.target_ref_name,
+                resolved_ref_kind=entry.resolved_ref_kind,
+                resolved_ref_name=entry.resolved_ref_name,
+                fallback_branch=entry.fallback_branch,
+                fallback_reason=entry.fallback_reason,
+            )
+        self._log_repo_transition(entry, previous_state, previous_sync_state)
 
     def _select_clone_branch(self, entry: RepoRegistryEntry, remote_url: str) -> str:
         target_branch = entry.target_ref_name or entry.default_branch
@@ -206,3 +310,68 @@ class ComplexGitSyncClient:
                 raise GitSyncError(
                     f"Nested configuration for {entry.name} is not resolved: {entry.discovery_state.value}"
                 )
+
+    def _log_event(self, event: str, *, level: int = logging.INFO, **fields: object) -> None:
+        if self.run_logger is None:
+            return
+        self.run_logger.log_event(event, level=level, **fields)
+
+    def _log_tree_transition(
+        self,
+        previous_state: TreeLifecycleState,
+        current_state: TreeLifecycleState,
+        *,
+        reason: str,
+    ) -> None:
+        if previous_state == current_state:
+            return
+        self._log_event(
+            "tree_state_transition",
+            previous_tree_state=previous_state,
+            tree_lifecycle_state=current_state,
+            reason=reason,
+        )
+
+    def _log_repo_transition(
+        self,
+        entry: RepoRegistryEntry,
+        previous_state: RepoLifecycleState,
+        previous_sync_state: SyncState,
+    ) -> None:
+        if previous_state == entry.repo_lifecycle_state and previous_sync_state == entry.sync_state:
+            return
+        self._log_event(
+            "repo_state_transition",
+            repo_name=entry.name,
+            absolute_path=entry.absolute_path,
+            previous_repo_lifecycle_state=previous_state,
+            repo_lifecycle_state=entry.repo_lifecycle_state,
+            previous_sync_state=previous_sync_state,
+            sync_state=entry.sync_state,
+            current_ref_kind=entry.current_ref_kind,
+            current_ref_name=entry.current_ref_name,
+            target_ref_kind=entry.target_ref_kind,
+            target_ref_name=entry.target_ref_name,
+            resolved_ref_kind=entry.resolved_ref_kind,
+            resolved_ref_name=entry.resolved_ref_name,
+            commit_sha=entry.commit_sha,
+            fallback_branch=entry.fallback_branch,
+            fallback_reason=entry.fallback_reason,
+        )
+
+    def _log_nested_discovery(self, discovered: tuple[str, ...]) -> None:
+        registry = self.registry
+        if registry is None:
+            return
+        for change in discovered:
+            _, _, repo_id = change.partition(":")
+            if repo_id not in registry.entries:
+                continue
+            entry = registry.get(repo_id)
+            self._log_event(
+                "nested_cgs_discovery",
+                repo_name=entry.name,
+                absolute_path=entry.absolute_path,
+                source_cgs_path=entry.source_cgs_path,
+                discovery_state=entry.discovery_state,
+            )

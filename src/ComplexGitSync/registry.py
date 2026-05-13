@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path, PurePath, PurePosixPath
 from typing import Any
 
 from .access_protocol import AccessProtocol
-from .documents import CgsDocument
+from .documents import CgsDocument, GtsDocument
 from .errors import ConfigValidationError
 from .git_provider import GitProvider
 
@@ -280,6 +281,129 @@ def build_registry_from_cgs_document(
     return registry
 
 
+def build_registry_from_gts_document(document: GtsDocument) -> DependencyTreeRegistry:
+    registry = DependencyTreeRegistry()
+    path_to_repo_id: dict[Path, str] = {}
+    project_source_cgs_path = document.read("project.source_cgs_path")
+
+    repo_states = sorted(
+        document.repo_states,
+        key=lambda repo: (len(Path(str(repo["absolute_path"])).parts), str(repo["absolute_path"])),
+    )
+
+    for repo_state in repo_states:
+        absolute_path = Path(str(repo_state["absolute_path"])).resolve()
+        parent_absolute_path = (
+            Path(str(repo_state["parent_absolute_path"])).resolve()
+            if repo_state.get("parent_absolute_path")
+            else None
+        )
+        is_root = parent_absolute_path is None
+        parent_id = None if is_root else path_to_repo_id[parent_absolute_path]
+        repo_id = (
+            ROOT_REPO_ID
+            if is_root
+            else make_repo_id(parent_id, repo_state.get("relative_path"), str(repo_state["name"]))
+        )
+
+        entry = RepoRegistryEntry(
+            repo_id=repo_id,
+            name=str(repo_state["name"]),
+            node_type=NodeType.ROOT if is_root else _parse_gts_node_type(str(repo_state.get("node_type", "leaf"))),
+            parent_id=parent_id,
+            absolute_path=absolute_path,
+            relative_path=(Path(str(repo_state["relative_path"])) if repo_state.get("relative_path") is not None else None),
+            source_cgs_path=(
+                Path(str(repo_state["source_cgs_path"])).resolve()
+                if repo_state.get("source_cgs_path")
+                else (Path(str(project_source_cgs_path)).resolve() if project_source_cgs_path else None)
+            ),
+            current_ref_kind=_parse_optional_enum(RefKind, repo_state.get("current_ref_kind")),
+            current_ref_name=_as_optional_str(repo_state.get("current_ref_name")),
+            target_ref_kind=_parse_optional_enum(RefKind, repo_state.get("target_ref_kind")),
+            target_ref_name=_as_optional_str(repo_state.get("target_ref_name")),
+            resolved_ref_kind=_parse_optional_enum(RefKind, repo_state.get("resolved_ref_kind")),
+            resolved_ref_name=_as_optional_str(repo_state.get("resolved_ref_name")),
+            commit_sha=_as_optional_str(repo_state.get("commit_sha")),
+            repo_lifecycle_state=RepoLifecycleState(str(repo_state["repo_lifecycle_state"])),
+            sync_state=SyncState(str(repo_state["sync_state"])),
+            discovery_state=DiscoveryState(str(repo_state.get("discovery_state", DiscoveryState.RESOLVED.value))),
+            fallback_branch=_as_optional_str(repo_state.get("fallback_branch")),
+            fallback_applied=bool(repo_state.get("fallback_applied", False)),
+            fallback_reason=_as_optional_str(repo_state.get("fallback_reason")),
+            worktree_state=_as_optional_str(repo_state.get("worktree_state")),
+            is_reachable=bool(repo_state.get("is_reachable", True)),
+            project_owner_name=_as_optional_str(repo_state.get("project_owner_name")),
+            project_name=_as_optional_str(repo_state.get("project_name")),
+            default_branch=_as_optional_str(repo_state.get("target_ref_name")),
+        )
+        registry.add(entry)
+        path_to_repo_id[absolute_path] = repo_id
+
+    registry.recompute_tree_state()
+    return registry
+
+
+def build_gts_document_from_registry(
+    registry: DependencyTreeRegistry,
+    *,
+    command_origin: str,
+    source_cgs_path: Path | None,
+) -> GtsDocument:
+    root_entry = registry.get(ROOT_REPO_ID)
+    tree_state = build_tree_state(registry)
+    data: dict[str, Any] = {
+        "document": {
+            "format_version": "1.0",
+            "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "command_origin": command_origin,
+        },
+        "project": {
+            "name": root_entry.name,
+            "root_absolute_path": str(root_entry.absolute_path),
+        },
+        "tree_state": {
+            "lifecycle_state": tree_state.lifecycle_state.value,
+            "is_ready": tree_state.is_ready,
+            "registry_complete": tree_state.registry_complete,
+        },
+        "repo_state": [],
+    }
+    if source_cgs_path is not None:
+        data["project"]["source_cgs_path"] = str(source_cgs_path)
+
+    for entry in sorted(registry.values(), key=lambda item: item.repo_id):
+        repo_data: dict[str, Any] = {
+            "name": entry.name,
+            "node_type": entry.node_type.value,
+            "absolute_path": str(entry.absolute_path),
+            "relative_path": str(entry.relative_path) if entry.relative_path is not None else None,
+            "repo_lifecycle_state": entry.repo_lifecycle_state.value,
+            "sync_state": entry.sync_state.value,
+            "current_ref_kind": entry.current_ref_kind.value if entry.current_ref_kind else None,
+            "current_ref_name": entry.current_ref_name,
+            "target_ref_kind": entry.target_ref_kind.value if entry.target_ref_kind else None,
+            "target_ref_name": entry.target_ref_name,
+            "resolved_ref_kind": entry.resolved_ref_kind.value if entry.resolved_ref_kind else None,
+            "resolved_ref_name": entry.resolved_ref_name,
+            "commit_sha": entry.commit_sha,
+            "discovery_state": entry.discovery_state.value,
+            "fallback_branch": entry.fallback_branch,
+            "fallback_applied": entry.fallback_applied,
+            "fallback_reason": entry.fallback_reason,
+            "worktree_state": entry.worktree_state,
+            "is_reachable": entry.is_reachable,
+            "source_cgs_path": str(entry.source_cgs_path) if entry.source_cgs_path else None,
+            "project_owner_name": entry.project_owner_name,
+            "project_name": entry.project_name,
+        }
+        if entry.parent_id is not None:
+            repo_data["parent_absolute_path"] = str(registry.get(entry.parent_id).absolute_path)
+        data["repo_state"].append({key: value for key, value in repo_data.items() if value is not None})
+
+    return GtsDocument.from_dict(data)
+
+
 def promote_to_parent(
     registry: DependencyTreeRegistry,
     repo_id: str,
@@ -374,6 +498,21 @@ def _as_optional_str(value: Any) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _parse_optional_enum(enum_type: type[StrEnum], value: Any) -> Any:
+    if value is None:
+        return None
+    return enum_type(str(value))
+
+
+def _parse_gts_node_type(raw_value: str) -> NodeType:
+    normalized = raw_value.lower()
+    if normalized in {"root", "rootrepo"}:
+        return NodeType.ROOT
+    if normalized in {"parent", "parentrepo"}:
+        return NodeType.PARENT
+    return NodeType.LEAF
 
 
 def _parse_enum(enum_type: type[StrEnum], value: Any, default: StrEnum) -> Any:

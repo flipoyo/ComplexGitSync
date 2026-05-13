@@ -40,8 +40,17 @@ non-zero on parse or validation error.
 $ cgitsync tree <spec.cgs>
 \end{lstlisting}
 
-Renders the dependency graph of the spec as a text tree. Useful for a quick
-visual sanity-check of parent/child relationships.
+Renders the dependency graph as a text tree. When a newer runtime snapshot is
+registered for the given \texttt{.cgs} file, \cgscli{} loads that
+\texttt{.gts} first so the tree reflects the current synchronised state.
+Without a newer snapshot, it falls back to the declared \texttt{.cgs}
+topology.
+
+The command also accepts a direct \texttt{.gts} input:
+
+\begin{lstlisting}[language=bash]
+$ cgitsync tree <snapshot.gts>
+\end{lstlisting}
 
 \subsection{\texttt{describe}}
 
@@ -73,7 +82,9 @@ after parent repositories are cloned, so explicit and automatic nested trees
 are materialised during the same command.
 
 On success, \texttt{clone} exits~0 and prints a READY summary including the
-selected root path.
+selected root path. It also writes a runtime snapshot to
+\texttt{<project-root>/.cgitsync/state/<spec-name>.gts} and registers that
+snapshot as the latest runtime state for the source \texttt{.cgs} file.
 
 \subsection{Planned Commands (not yet implemented)}
 
@@ -235,7 +246,17 @@ print(addr.to_https())  # https://github.com/my-org/my-repo.git
 \section{Configuration and Environment}
 
 \cgspkg{} reads no environment variables and uses no global configuration
-file. All configuration is supplied through the \texttt{.cgs} file.
+file for project topology. The logging and runtime-state subsystems use the
+user state directory by default:
+
+\begin{itemize}
+  \item logs: \texttt{~/.local/state/ComplexGitSync/logs/}
+  \item latest runtime-state mapping:
+        \texttt{~/.local/state/ComplexGitSync/runtime/}
+\end{itemize}
+
+If \texttt{XDG\_STATE\_HOME} is set, these directories are rooted there
+instead.
 
 % -----------------------------------------------------------------------
 \section{Error Reference}

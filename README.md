@@ -95,6 +95,9 @@ uv run cgitsync clone examples/complexgitsync.cgs --target-dir ./sandbox/Complex
 
 The clone flow prefers each repo's `default_branch` and falls back to its
 `fallback_branch` when the preferred branch is missing on the remote.
+After a successful clone, ComplexGitSync writes a runtime snapshot to
+`<project-root>/.cgitsync/state/<spec-name>.gts` and records it as the latest
+runtime state for that `.cgs` file.
 
 ## Inspecting the Dependency Tree
 
@@ -103,6 +106,11 @@ Render the declared dependency graph:
 ```bash
 uv run cgitsync tree examples/complexgitsync.cgs
 ```
+
+If a newer runtime snapshot exists for that `.cgs` file, `tree` renders the
+latest cloned state instead of the purely declared topology. That means the
+same command shows `READY` after a successful `clone`, rather than falling
+back to the initial `DECLARED`/`PENDING` registry.
 
 Inspect the resolved registry as JSON:
 
@@ -134,6 +142,16 @@ repository, the same orchestration plan can be used on trees that are
 partially on `autoTest` and partially still on `main`. At this stage, treat
 these `.goc` files as executable-ready plans for the remaining sync commands
 or load them programmatically with `GocDocument.from_toml()`.
+
+## Logs
+
+Every CLI command now writes a timestamped log file. By default the log files
+live under `~/.local/state/ComplexGitSync/logs/` on Linux, or under
+`$XDG_STATE_HOME/ComplexGitSync/logs/` when `XDG_STATE_HOME` is set.
+
+The log includes command start and end events, tree and repo state
+transitions, fallback decisions, nested `.cgs` discovery, and `.gts` loads and
+writes.
 
 ## Next Steps
 
