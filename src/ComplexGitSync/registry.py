@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from pathlib import Path
+from pathlib import Path, PurePath, PurePosixPath
 from typing import Any
 
 from .access_protocol import AccessProtocol
@@ -194,11 +194,11 @@ class ProjectTreeState:
     registry_complete: bool
 
 
-def make_repo_id(parent_id: str | None, relative_path: Path | str | None, name: str) -> str:
-    if parent_id is None:
-        return ROOT_REPO_ID
-    path_part = str(relative_path) if relative_path else name
-    return f"{parent_id}:{path_part}"
+def make_repo_id(parent_id: str | None, relative_path: PurePath | str | None, name: str) -> str:
+    normalized = _normalize_repo_id_segment(relative_path)
+    if normalized in {"", "."}:
+        return ROOT_REPO_ID if parent_id is None else parent_id
+    return f"{parent_id or ROOT_REPO_ID}:{normalized}"
 
 
 def build_registry_from_cgs_document(
@@ -313,6 +313,17 @@ def _is_root_repo_spec(
 def _normalise_relative_path(repo: dict[str, Any]) -> Path:
     raw = repo.get("relative_path") or repo.get("project_name")
     return Path(str(raw))
+
+
+def _normalize_repo_id_segment(relative_path: PurePath | str | None) -> str:
+    if relative_path is None:
+        return ""
+    if isinstance(relative_path, PurePath):
+        raw = relative_path.as_posix()
+    else:
+        raw = str(relative_path).replace("\\", "/")
+    normalized = str(PurePosixPath(raw))
+    return "" if normalized == "." else normalized
 
 
 def register_relative_path(

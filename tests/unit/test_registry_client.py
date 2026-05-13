@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import PureWindowsPath
 
 import pytest
 
 from ComplexGitSync.client import ComplexGitSyncClient
 from ComplexGitSync.errors import ConfigValidationError, NestedConfigDiscoveryError
-from ComplexGitSync.registry import NodeType, TreeLifecycleState
+from ComplexGitSync.registry import NodeType, TreeLifecycleState, make_repo_id
 
 
 def test_client_load_cgs_builds_reviewable_registry(tmp_path):
@@ -127,6 +128,15 @@ def test_registry_and_tree_rendering_are_serialized_for_review(tmp_path):
 
     assert "- demo [root]" in rendered_tree
     assert any(entry["repo_id"] == "root:deps/child-repo" for entry in rendered_registry)
+
+
+def test_make_repo_id_normalizes_windows_style_paths():
+    assert make_repo_id("root", PureWindowsPath("deps", "child-repo"), "child-repo") == (
+        "root:deps/child-repo"
+    )
+    assert make_repo_id("root:deps/child-repo", PureWindowsPath("docs"), "docs") == (
+        "root:deps/child-repo:docs"
+    )
 
 
 def _write_root_cgs(tmp_path, *, nested_child: bool = False):
