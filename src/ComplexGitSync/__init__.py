@@ -1,6 +1,6 @@
 """ComplexGitSync package."""
 
-__version__ = "0000.02"
+__version__ = "0000.03"
 
 from .access_protocol import AccessProtocol
 from .client import ComplexGitSyncClient
