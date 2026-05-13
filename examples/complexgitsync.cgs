@@ -1,0 +1,51 @@
+# ComplexGitSync self-standing project authoring spec
+# ──────────────────────────────────────────────────────────────────────────────
+# This .cgs file describes a self-standing ComplexGitSync tree where:
+# - the root repository is ComplexGitSync
+# - DevSpec is tracked as a nested dependency under agent_specs/DevSpec
+# - DocComplexGitSync is tracked under docs and owns a nested DocSpec repo
+
+[document]
+format_version = "1.0"
+
+[project]
+name                = "ComplexGitSync"
+default_branch      = "main"
+transport           = "ssh"
+default_remote_name = "origin"
+
+[runtime]
+interaction             = "interactive"
+profile                 = "verbose"
+warn_on_fallback        = true
+nested_config_discovery = true
+log_level               = "info"
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "ComplexGitSync"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+relative_path      = "."
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "DevSpec"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+relative_path      = "agent_specs/DevSpec"
+nested_config      = "disabled"
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "DocComplexGitSync"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+relative_path      = "docs"
+nested_config      = "doccomplexgitsync.cgs"

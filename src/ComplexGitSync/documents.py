@@ -229,7 +229,7 @@ class CgsDocument(ConfigDocument):
 
     Example usage::
 
-        doc = CgsDocument.from_toml("cawaqsviz.cgs")
+        doc = CgsDocument.from_toml("complexgitsync.cgs")
         doc.print()
         print(doc.project_name, doc.default_branch)
         for repo in doc.repos:
@@ -449,12 +449,11 @@ class GocDocument(ConfigDocument):
         transport   = "ssh"           # ssh | https
 
         [project]
-        source      = "cawaqsviz.cgs" # relative path to .cgs or .gts
-        name        = "CaWaQS-ViZ"    # project display name
-        repo_name   = "cawaqsviz"     # repository slug
-        gitprovider = "gitlab"        # github | gitlab
-        group_name  = "cawaqs/gviz"   # required for gitlab
-        # project_owner_name = "my-org"  # required for github
+        source      = "complexgitsync.cgs" # relative path to .cgs or .gts
+        name        = "ComplexGitSync"     # project display name
+        repo_name   = "ComplexGitSync"     # repository slug
+        gitprovider = "github"             # github | gitlab
+        project_owner_name = "flipoyo"     # required for github
 
         [[actions]]
         command = "validate"

@@ -65,11 +65,15 @@ Each push or merge increments package version in `YYYY.XX` format:
 - `DevSpecs.md`: reusable, project-agnostic development philosophy
 - `AdditionalSpecs.md`: ComplexGitSync-specific constraints and refinements
 - `AGENTS.md`: agent entry-point — DevSpecs conformity declaration and hard invariants
+- `AGENT.md`: self-standing repository-layout notes for agent specs
 - `Planning/InitialDevPlan.md`: original implementation contract
 - `Planning/InitialDevPlanTickets.md`: original ticket breakdown for an implementation agent
 - `Planning/FIRSTAGENT.md`: working rules used by the first implementation agent
 - `src/ComplexGitSync/`: package source
 - `tests/`: unit and integration tests
+- `examples/`: `.cgs`, `.goc`, and `.gts` examples including:
+  - self-standing ComplexGitSync (`complexgitsync.cgs`, `doccomplexgitsync.cgs`, `deploy.goc`)
+  - CaWaQS-ViZ (`cawaqsviz.cgs`, `htas.cgs`, `cawaqsviz_deploy.goc`, `cawaqsviz_snapshot.gts`)
 
 ## Bootstrap
 Recommended local bootstrap once the implementation starts (using the
