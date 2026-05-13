@@ -528,7 +528,10 @@ class TestGocDocumentValid:
         assert doc.project_name == "CaWaQS-ViZ"
         assert doc.project_repo_name == "cawaqsviz"
         assert doc.project_gitprovider_address == "git@gitlab.com:cawaqs/gviz/cawaqsviz.git"
+        assert doc.interaction == "interactive"
+        assert doc.transport == "ssh"
         assert len(doc.actions) == 4
+        assert doc.actions[0]["command"] == "validate"
 
     def test_session_setting_helper(self):
         doc = GocDocument.from_dict(MINIMAL_GOC)
