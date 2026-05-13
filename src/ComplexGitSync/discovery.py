@@ -17,6 +17,7 @@ from .registry import (
     _validate_repo_shape,
     make_repo_id,
     promote_to_parent,
+    register_relative_path,
 )
 from .access_protocol import AccessProtocol
 from .git_provider import GitProvider
@@ -56,11 +57,12 @@ def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]
                 continue
 
             relative_path = _normalise_relative_path(repo)
-            if relative_path in existing_child_paths:
-                raise NestedConfigDiscoveryError(
-                    f"Duplicate nested relative_path '{relative_path}' under {entry.absolute_path}"
-                )
-            existing_child_paths.add(relative_path)
+            register_relative_path(
+                existing_child_paths,
+                relative_path,
+                error_type=NestedConfigDiscoveryError,
+                context=str(entry.absolute_path),
+            )
 
             child_id = make_repo_id(entry.repo_id, relative_path, str(repo["project_name"]))
             if child_id in registry.entries:

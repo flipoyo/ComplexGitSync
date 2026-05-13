@@ -235,11 +235,12 @@ def build_registry_from_cgs_document(
             continue
 
         relative_path = _normalise_relative_path(repo)
-        if relative_path in seen_relative_paths:
-            raise ConfigValidationError(
-                f"Invalid .cgs document:\n  • duplicate relative_path under root: '{relative_path}'"
-            )
-        seen_relative_paths.add(relative_path)
+        register_relative_path(
+            seen_relative_paths,
+            relative_path,
+            error_type=ConfigValidationError,
+            context="root",
+        )
 
         entry = RepoRegistryEntry(
             repo_id=make_repo_id(ROOT_REPO_ID, relative_path, str(repo["project_name"])),
@@ -312,6 +313,18 @@ def _is_root_repo_spec(
 def _normalise_relative_path(repo: dict[str, Any]) -> Path:
     raw = repo.get("relative_path") or repo.get("project_name")
     return Path(str(raw))
+
+
+def register_relative_path(
+    seen_relative_paths: set[Path],
+    relative_path: Path,
+    *,
+    error_type: type[Exception],
+    context: str,
+) -> None:
+    if relative_path in seen_relative_paths:
+        raise error_type(f"duplicate relative_path '{relative_path}' under {context}")
+    seen_relative_paths.add(relative_path)
 
 
 def _apply_repo_identity(
