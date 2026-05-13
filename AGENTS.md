@@ -37,7 +37,7 @@ Before writing or reviewing any code, read these files in order:
 6. `README.md` — current status and bootstrap instructions.
 
 > The original first-agent working rules (the instructions that guided the
-> initial implementation) are preserved in `Planning/FIRSTAGENT.md`.
+> initial implementation) are preserved in `Planning/INITIALAGENT.md`.
 > Active planning files (`DevPlan.md` / `DevPlanTickets.md`), if present, take
 > precedence over the initial plan; see `DevSpecs.md § Planning` for the full
 > naming protocol.
@@ -64,6 +64,6 @@ These rules are non-negotiable and must never be violated:
 
 ## Execution Order
 
-Follow the ticket sequence in `Planning/DevPlanTicket.md`.
+Follow the ticket sequence in `Planning/InitialDevPlanTickets.md`.
 Do not jump to integration work before the registry, state model, and parsers
 exist.

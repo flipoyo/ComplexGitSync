@@ -52,10 +52,10 @@ lifecycle states.
 
 Package versions follow `YYYY.XX` calendar versioning.
 
-- The first release of a new year starts at `YYYY.01`.
+- The very first release of a project starts at `0000.01`.
 - Subsequent releases increment `XX` (01 → 02 → … → 99).
-- When `XX` reaches 99, the year increments and `XX` resets to `01`
-  (e.g. `2025.99 → 2026.01`).
+- When `XX` reaches 99, `YYYY` increments and `XX` resets to `01`
+  (e.g. `0000.99 → 0001.01`).
 - The authoritative version is kept in the project's packaging manifest
   (e.g. `pyproject.toml`); CI increments it automatically on every push or
   merge to the main branch.
@@ -119,9 +119,10 @@ active plans are always easy to identify.
 - **Active plan**: a working agent that must (re-)plan writes a fresh
   `DevPlan.md` and `DevPlanTickets.md`, overwriting any previous active plan.
 - **Version archive**: when a development phase is completed, the active plan
-  is saved as `YYYY.XXDevPlan.md` and `YYYY.XXDevPlanTickets.md` where
+  is saved as `YYYY.XXDevPlan.md` and `YYYY.XXDevPlanTickets.md`, and the
+  active agent instructions file is saved as `YYYY.XXAGENT.md`, where
   `YYYY.XX` is the version that was delivered. Developers decide which archived
-  plans to keep on explicit request.
+  files to keep on explicit request.
 - No planning document is ever hand-edited during an active implementation run;
   it is treated as read-only once the agent starts executing tickets.
 
@@ -137,8 +138,9 @@ Every project must ship end-user documentation alongside the source code.
 - Every `docs/` directory must contain at least two documents:
   - **Getting Started** — explains the main workflow step by step, from
     installation through first successful use.
-  - **User Guide** — fully documents every user-facing feature, command, and
-    configuration option.
+  - **User Guide** — fully documents every user-facing (client API) feature,
+    command, and configuration option. Internal implementation details are
+    explicitly out of scope.
 - The structure, style, and conventions for the `docs/` LaTeX project are
   defined in `docs/DocSpecs.md` (project-agnostic) together with any
   project-specific additions in `AdditionalSpecs.md`.

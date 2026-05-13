@@ -1,16 +1,16 @@
-# FIRSTAGENT
+# INITIALAGENT
 
 > **Historical record.** This file preserves the working instructions that
 > guided the first implementation agent. The planning files referenced below
-> have since been moved into the `Planning/` folder; current paths are
-> `Planning/DevPlan.md` and `Planning/DevPlanTicket.md`.
+> have since been renamed; current paths are
+> `Planning/InitialDevPlan.md` and `Planning/InitialDevPlanTickets.md`.
 
 ---
 
 ## First Read
 Before implementing code, read these files in order:
-1. `Planning/DevPlan.md`
-2. `Planning/DevPlanTicket.md`
+1. `Planning/InitialDevPlan.md`
+2. `Planning/InitialDevPlanTickets.md`
 3. `README.md`
 
 ## Repository Intent
@@ -52,5 +52,5 @@ Always preserve these events in file logs:
 - Default `gitprovider` to `github`, default `group_name` to `project_name`, and default access protocol to `ssh` (use `https` only when explicitly selected).
 
 ## Execution Order
-Use the ticket sequence in `Planning/DevPlanTicket.md`.
+Use the ticket sequence in `Planning/InitialDevPlanTickets.md`.
 Do not jump to integration work before the registry, state model, and parsers exist.
