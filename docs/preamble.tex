@@ -1,0 +1,39 @@
+% preamble.tex — shared macros, style, and title-page settings
+\documentclass[11pt,a4paper]{report}
+
+% Encoding and fonts
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+
+% Geometry
+\usepackage[margin=2.5cm]{geometry}
+
+% Hyperlinks
+\usepackage[hidelinks,colorlinks=false]{hyperref}
+
+% Code listings
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  showstringspaces=false,
+}
+
+% Todo notes (for marking stale sections)
+\usepackage{todonotes}
+\newcommand{\deprecated}[1]{\todo[color=orange!40]{DEPRECATED: #1}}
+
+% Product macros — update these when the package name or version changes
+\newcommand{\cgspkg}{\texttt{ComplexGitSync}}
+\newcommand{\cgscli}{\texttt{cgitsync}}
+\newcommand{\cgsversion}{0000.01}
+
+% Title-page information
+\title{%
+  \cgspkg{} \cgsversion \\[0.5em]
+  \large Documentation
+}
+\author{Nicolas Flipo}
+\date{\today}

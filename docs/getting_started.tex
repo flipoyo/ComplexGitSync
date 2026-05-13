@@ -1,0 +1,109 @@
+% getting_started.tex — step-by-step guide from installation to first use
+
+\chapter{Getting Started}
+
+This chapter guides a brand-new user from installation through the first
+successful synchronisation of a nested Git repository tree.
+
+% -----------------------------------------------------------------------
+\section{Prerequisites}
+
+\begin{itemize}
+  \item Python~3.11 or later.
+  \item Git~2.30 or later available on \texttt{PATH}.
+  \item (Optional) PyYAML~6.x for \texttt{.yml} document support.
+\end{itemize}
+
+% -----------------------------------------------------------------------
+\section{Installation}
+
+Install \cgspkg{} from PyPI:
+
+\begin{lstlisting}[language=bash]
+$ pip install ComplexGitSync
+\end{lstlisting}
+
+To include optional YAML support:
+
+\begin{lstlisting}[language=bash]
+$ pip install "ComplexGitSync[yaml]"
+\end{lstlisting}
+
+To install from source with developer extras (needed to run the test suite):
+
+\begin{lstlisting}[language=bash]
+$ git clone https://github.com/flipoyo/ComplexGitSync.git
+$ cd ComplexGitSync
+$ pip install -e ".[dev]"
+\end{lstlisting}
+
+Verify the installation:
+
+\begin{lstlisting}[language=bash]
+$ cgitsync --help
+\end{lstlisting}
+
+% -----------------------------------------------------------------------
+\section{Creating a Project Spec (\texttt{.cgs})}
+
+A \emph{local authoring spec} (\texttt{.cgs}) is a TOML file that describes
+the repository tree you want to manage. Create \texttt{project.cgs} in your
+project root:
+
+\begin{lstlisting}[language=toml]
+[document]
+format_version = "1.0"
+
+[project]
+name        = "my-project"
+repo_name   = "my-project"
+default_branch = "main"
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "my-org"
+project_name       = "my-project"
+relative_path      = "."
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "my-org"
+project_name       = "my-lib"
+relative_path      = "deps/my-lib"
+\end{lstlisting}
+
+Supported values for \texttt{gitprovider}: \texttt{github}, \texttt{gitlab},
+or \texttt{custom} (which requires a \texttt{gitprovider\_url} field).
+
+% -----------------------------------------------------------------------
+\section{Validating the Spec}
+
+Check that \cgscli{} can parse and resolve the spec without errors:
+
+\begin{lstlisting}[language=bash]
+$ cgitsync validate project.cgs
+\end{lstlisting}
+
+A successful run prints the registry summary with \texttt{lifecycle\_state:
+DECLARED} and exits with code~0.
+
+% -----------------------------------------------------------------------
+\section{Inspecting the Dependency Tree}
+
+Render the dependency graph as text:
+
+\begin{lstlisting}[language=bash]
+$ cgitsync tree project.cgs
+\end{lstlisting}
+
+% -----------------------------------------------------------------------
+\section{Next Steps}
+
+Once the spec is validated you can proceed to:
+\begin{itemize}
+  \item \textbf{clone} — check out the full tree from scratch.
+  \item \textbf{describe} — inspect a generated \texttt{.gts} snapshot.
+\end{itemize}
+
+Refer to Chapter~\ref{chap:user-guide} for complete command and API
+documentation.

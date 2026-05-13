@@ -25,3 +25,79 @@ jobs:
         run: uv sync --extra dev
       - name: Run tests
         run: uv run python -m pytest
+
+  version-increment:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Increment YYYY.XX version
+        run: |
+          python - <<'EOF'
+          import re, pathlib
+
+          pyproject = pathlib.Path("pyproject.toml")
+          text = pyproject.read_text(encoding="utf-8")
+
+          match = re.search(r'^version\s*=\s*"(\d{4})\.(\d{2})"', text, re.MULTILINE)
+          if not match:
+              raise SystemExit("ERROR: version in pyproject.toml is not in YYYY.XX format")
+
+          yyyy, xx = int(match.group(1)), int(match.group(2))
+          if xx < 99:
+              new_yyyy, new_xx = yyyy, xx + 1
+          else:
+              new_yyyy, new_xx = yyyy + 1, 1
+
+          new_version = f"{new_yyyy:04d}.{new_xx:02d}"
+          old_version = match.group(0).split('"')[1]
+
+          # Update pyproject.toml
+          new_text = re.sub(
+              r'^(version\s*=\s*")' + re.escape(old_version) + r'"',
+              rf'\g<1>{new_version}"',
+              text,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          pyproject.write_text(new_text, encoding="utf-8")
+
+          # Update __init__.py
+          init_path = pathlib.Path("src/ComplexGitSync/__init__.py")
+          init_text = init_path.read_text(encoding="utf-8")
+          new_init = re.sub(
+              r'^(__version__\s*=\s*")' + re.escape(old_version) + r'"',
+              rf'\g<1>{new_version}"',
+              init_text,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          init_path.write_text(new_init, encoding="utf-8")
+
+          # Update docs/preamble.tex
+          preamble_path = pathlib.Path("docs/preamble.tex")
+          preamble_text = preamble_path.read_text(encoding="utf-8")
+          new_preamble = re.sub(
+              r'^(\\newcommand\{\\cgsversion\}\{)' + re.escape(old_version) + r'\}',
+              rf'\g<1>{new_version}}}',
+              preamble_text,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          preamble_path.write_text(new_preamble, encoding="utf-8")
+
+          print(f"Bumped version: {old_version} -> {new_version}")
+          EOF
+      - name: Commit and push version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml src/ComplexGitSync/__init__.py docs/preamble.tex
+          git diff --cached --quiet || git commit -m "chore: bump version [skip ci]"
+          git push

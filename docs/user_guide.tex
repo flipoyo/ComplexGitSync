@@ -1,0 +1,244 @@
+% user_guide.tex — complete reference for every user-facing feature
+\chapter{User Guide}
+\label{chap:user-guide}
+
+This chapter is the authoritative reference for every user-facing command,
+configuration option, document format, and error condition exposed by
+\cgspkg{}.
+
+% -----------------------------------------------------------------------
+\section{CLI Overview}
+
+The single entry-point is the \cgscli{} command.
+
+\begin{lstlisting}[language=bash]
+$ cgitsync <command> [options]
+\end{lstlisting}
+
+Running \cgscli{} without a command prints a help summary and exits with
+code~0.
+
+% -----------------------------------------------------------------------
+\section{Commands}
+
+\subsection{\texttt{validate}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync validate <spec.cgs>
+\end{lstlisting}
+
+Parses the \texttt{.cgs} file, builds the dependency-tree registry, and
+prints a one-line summary for each repository node. Exits~0 on success,
+non-zero on parse or validation error.
+
+\textbf{Output fields:} \texttt{name}, \texttt{lifecycle\_state},
+\texttt{complete}, \texttt{node\_count}.
+
+\subsection{\texttt{tree}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync tree <spec.cgs>
+\end{lstlisting}
+
+Renders the dependency graph of the spec as a text tree. Useful for a quick
+visual sanity-check of parent/child relationships.
+
+\subsection{\texttt{describe}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync describe <snapshot.gts>
+\end{lstlisting}
+
+Reads a \texttt{.gts} snapshot and prints its contents as pretty-printed
+JSON. Useful for inspecting saved tree state after a \texttt{clone} or
+\texttt{freeze\_release} operation.
+
+\subsection{Planned Commands (not yet implemented)}
+
+The following commands are defined in the public API contract but are not yet
+implemented. Each returns exit code~2 with the message
+\texttt{"not implemented yet"}.
+
+\begin{itemize}
+  \item \texttt{clone} — bootstrap a full repository tree from a \texttt{.cgs} spec.
+  \item \texttt{checkout} — switch the whole tree to a named ref.
+  \item \texttt{commit} — stage and commit changes across the tree.
+  \item \texttt{push} — push all repos to their remotes.
+  \item \texttt{tag} — create a named tag across the tree.
+  \item \texttt{freeze\_release} — write a \texttt{.gts} snapshot and tag the release.
+  \item \texttt{restart} — re-synchronise a tree from an existing \texttt{.gts} snapshot.
+  \item \texttt{launch\_release} — check out a previously frozen release.
+\end{itemize}
+
+% -----------------------------------------------------------------------
+\section{Document Formats}
+
+\subsection{Local Authoring Spec (\texttt{.cgs})}
+
+A TOML file that describes the repository tree to manage. It is the only
+hand-authored input; it is never modified at runtime.
+
+\textbf{Top-level sections:}
+
+\begin{itemize}
+  \item \texttt{[document]} — mandatory; contains \texttt{format\_version}.
+  \item \texttt{[project]} — mandatory; project-level metadata (see
+        Table~\ref{tab:project-fields}).
+  \item \texttt{[[repos]]} — one entry per managed repository
+        (see Table~\ref{tab:repo-fields}).
+\end{itemize}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+\texttt{name}           & string  & Human-readable project label \\
+\texttt{repo\_name}     & string  & Git repository slug \\
+\texttt{default\_branch}& string  & Default branch (e.g.\ \texttt{main}) \\
+\texttt{gitprovider}    & string  & Provider (\texttt{github}, \texttt{gitlab}, \texttt{custom}) \\
+\texttt{gitprovider\_url}& string & Required for \texttt{custom} provider \\
+\hline
+\end{tabular}
+\caption{Project-level fields in \texttt{.cgs}}
+\label{tab:project-fields}
+\end{table}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+\texttt{gitprovider}         & string  & Provider override for this repo \\
+\texttt{project\_owner\_name}& string  & GitHub owner / GitLab group \\
+\texttt{project\_name}       & string  & Repository name on the provider \\
+\texttt{relative\_path}      & string  & Path relative to project root \\
+\texttt{gitprovider\_url}    & string  & Required for \texttt{custom} provider \\
+\hline
+\end{tabular}
+\caption{Per-repository fields in \texttt{.cgs}}
+\label{tab:repo-fields}
+\end{table}
+
+\subsection{Git Tree State Snapshot (\texttt{.gts})}
+
+A TOML file generated automatically by bootstrapping and release operations.
+It must never be hand-edited. It captures the exact commit SHAs and lifecycle
+state of the tree at a point in time.
+
+\textbf{Top-level sections:}
+\begin{itemize}
+  \item \texttt{[document]} — format version, \texttt{generated\_at},
+        \texttt{command\_origin}.
+  \item \texttt{[project]} — project name and \texttt{root\_absolute\_path}.
+  \item \texttt{[tree\_state]} — \texttt{lifecycle\_state}, \texttt{is\_ready},
+        \texttt{registry\_complete}.
+  \item \texttt{[[repo\_state]]} — one entry per repo; includes
+        \texttt{commit\_sha}, \texttt{sync\_state}, and ref information.
+\end{itemize}
+
+\subsection{Planning / GOC Documents (\texttt{.goc})}
+
+Used for project identity and planning metadata. Supported in TOML, YAML, or
+JSON. YAML support requires the optional \texttt{PyYAML} dependency.
+
+% -----------------------------------------------------------------------
+\section{Python API}
+
+\cgspkg{} can be used as a library. The public API is exported from the
+top-level package:
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import (
+    ComplexGitSyncClient,
+    CgsDocument,
+    GtsDocument,
+    GocDocument,
+    GitProvider,
+    AccessProtocol,
+    RepoAddress,
+    GitRepo,
+    GitTree,
+    Orchestre,
+    DependencyTreeRegistry,
+)
+\end{lstlisting}
+
+\subsection{\texttt{ComplexGitSyncClient}}
+
+High-level client that mirrors the CLI commands. Instantiate with a parsed
+\texttt{CgsDocument} and call the equivalent method:
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import ComplexGitSyncClient, CgsDocument
+
+doc = CgsDocument.from_toml(pathlib.Path("project.cgs").read_bytes())
+client = ComplexGitSyncClient(doc)
+summary = client.validate()
+\end{lstlisting}
+
+\subsection{Document Classes}
+
+Each document class exposes six format factories:
+
+\begin{lstlisting}[language=Python]
+doc = CgsDocument.from_toml(raw_bytes)
+doc = CgsDocument.from_json(raw_str)
+doc = CgsDocument.from_yaml(raw_str)   # requires PyYAML
+
+serialised = doc.to_toml()
+serialised = doc.to_json()
+serialised = doc.to_yaml()             # requires PyYAML
+\end{lstlisting}
+
+\subsection{\texttt{RepoAddress}}
+
+Composes and parses remote repository URLs:
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import RepoAddress, GitProvider, AccessProtocol
+
+addr = RepoAddress(
+    gitprovider=GitProvider.GITHUB,
+    owner_name="my-org",
+    project_name="my-repo",
+)
+print(addr.to_ssh())    # git@github.com:my-org/my-repo.git
+print(addr.to_https())  # https://github.com/my-org/my-repo.git
+\end{lstlisting}
+
+% -----------------------------------------------------------------------
+\section{Configuration and Environment}
+
+\cgspkg{} reads no environment variables and uses no global configuration
+file. All configuration is supplied through the \texttt{.cgs} file.
+
+% -----------------------------------------------------------------------
+\section{Error Reference}
+
+\begin{description}
+  \item[\texttt{ValueError}] Raised when a required field is missing or a
+    field value is invalid (e.g.\ unknown \texttt{gitprovider},
+    missing \texttt{gitprovider\_url} for a \texttt{custom} provider).
+  \item[\texttt{NotImplementedError}] Raised when a planned but not yet
+    implemented command is invoked via the Python API.
+  \item[Exit code 1] General CLI failure (parse error, validation error).
+  \item[Exit code 2] Command exists but is not yet implemented.
+\end{description}
+
+% -----------------------------------------------------------------------
+\section{Troubleshooting}
+
+\begin{description}
+  \item[``\texttt{gitprovider\_url} is required for custom provider'']
+    Add a \texttt{gitprovider\_url} field to the offending
+    \texttt{[[repos]]} entry in your \texttt{.cgs} file.
+  \item[\texttt{validate} exits non-zero despite a correct-looking file]
+    Check that \texttt{[document]} contains \texttt{format\_version = "1.0"}
+    and that every \texttt{[[repos]]} block includes
+    \texttt{project\_owner\_name} and \texttt{project\_name}.
+  \item[PyYAML import error when using \texttt{.goc} files]
+    Install the optional extra: \texttt{pip install "ComplexGitSync[yaml]"}.
+\end{description}

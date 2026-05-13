@@ -82,7 +82,7 @@ def test_unimplemented_command_still_returns_not_implemented(capsys):
 
 
 def test_package_version_is_defined():
-    assert __version__ == "0.1.0"
+    assert __version__ == "0000.01"
 
 
 def _write_project_cgs(tmp_path):
