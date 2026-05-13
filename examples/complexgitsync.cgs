@@ -4,13 +4,14 @@
 # - the root repository is ComplexGitSync
 # - DevSpec is tracked as a nested dependency under DevSpec
 # - DocComplexGitSync is tracked under docs and owns a nested DocSpec repo
+# - the tree prefers autoTest and falls back to main when needed
 
 [document]
 format_version = "1.0"
 
 [project]
 name                = "ComplexGitSync"
-default_branch      = "main"
+default_branch      = "autoTest"
 transport           = "ssh"
 default_remote_name = "origin"
 
@@ -25,7 +26,7 @@ log_level               = "info"
 gitprovider        = "github"
 project_owner_name = "flipoyo"
 project_name       = "ComplexGitSync"
-default_branch     = "main"
+default_branch     = "autoTest"
 fallback_branch    = "main"
 access_protocol    = "ssh"
 relative_path      = "."
@@ -34,7 +35,7 @@ relative_path      = "."
 gitprovider        = "github"
 project_owner_name = "flipoyo"
 project_name       = "DevSpec"
-default_branch     = "main"
+default_branch     = "autoTest"
 fallback_branch    = "main"
 access_protocol    = "ssh"
 relative_path      = "DevSpec"
@@ -44,7 +45,7 @@ nested_config      = "disabled"
 gitprovider        = "github"
 project_owner_name = "flipoyo"
 project_name       = "DocComplexGitSync"
-default_branch     = "main"
+default_branch     = "autoTest"
 fallback_branch    = "main"
 access_protocol    = "ssh"
 relative_path      = "docs"

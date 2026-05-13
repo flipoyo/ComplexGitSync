@@ -257,7 +257,8 @@ class TestCgsDocumentValid:
         examples = Path(__file__).parent.parent.parent / "examples"
         doc = CgsDocument.from_toml(examples / "complexgitsync.cgs")
         assert doc.project_name == "ComplexGitSync"
-        assert doc.default_branch == "main"
+        assert doc.default_branch == "autoTest"
+        assert doc.repos[0]["fallback_branch"] == "main"
         assert len(doc.repos) == 3
 
     def test_from_toml_parses_doccomplexgitsync_example(self):
@@ -518,8 +519,9 @@ class TestGocDocumentValid:
         assert doc.transport == "ssh"
         assert len(doc.actions) == 4
         assert doc.actions[0]["command"] == "validate"
-        assert doc.actions[2]["command"] == "tree"
-        assert doc.actions[3]["command"] == "checkout"
+        assert doc.actions[2]["command"] == "checkout"
+        assert doc.actions[2]["args"]["ref"] == "autoTest"
+        assert doc.actions[3]["command"] == "tree"
 
     def test_from_toml_parses_cawaqsviz_goc_example_file(self):
         examples = Path(__file__).parent.parent.parent / "examples"
@@ -533,6 +535,7 @@ class TestGocDocumentValid:
         assert len(doc.actions) == 4
         assert doc.actions[0]["command"] == "validate"
         assert doc.actions[2]["command"] == "checkout"
+        assert doc.actions[2]["args"]["ref"] == "autoTest"
 
     def test_session_setting_helper(self):
         doc = GocDocument.from_dict(MINIMAL_GOC)

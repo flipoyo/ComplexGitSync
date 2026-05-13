@@ -2,8 +2,9 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # This .goc (Git Orchestration Command) file defines the sequence of
 # ComplexGitSync operations to run for a self-standing ComplexGitSync setup
-# workflow.  Run it with a future `cgitsync run` command or load it
-# programmatically with GocDocument.from_toml().
+# workflow. The plan targets the shared autoTest branch and lets each repo
+# fall back to main according to complexgitsync.cgs. Load it programmatically
+# with GocDocument.from_toml().
 
 [document]
 format_version = "1.0"
@@ -46,12 +47,12 @@ command = "clone"
 # target_dir = "./workspace"   # uncomment to clone into a subdirectory
 
 [[actions]]
-# 3. Print the current tree state to confirm synchronisation.
-command = "tree"
-
-[[actions]]
-# 4. Ensure the whole tree is on the expected main branch.
+# 3. Ensure the whole tree prefers autoTest and can fall back to main.
 command = "checkout"
 [actions.args]
-ref      = "main"
+ref      = "autoTest"
 ref_type = "branch"
+
+[[actions]]
+# 4. Print the current tree state to confirm synchronisation.
+command = "tree"

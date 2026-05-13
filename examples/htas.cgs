@@ -4,13 +4,14 @@
 # ComplexGitSync discovers it automatically when nested_config = "auto" is set
 # in the parent .cgs (cawaqsviz.cgs).  It declares the child repos owned by
 # HydrologicalTwinAlphaSeries within its own subtree.
+# The tree prefers autoTest and falls back to main when needed.
 
 [document]
 format_version = "1.0"
 
 [project]
 name           = "HydrologicalTwinAlphaSeries"
-default_branch = "main"
+default_branch = "autoTest"
 transport      = "ssh"
 
 [runtime]
@@ -26,7 +27,7 @@ log_level               = "info"
 gitprovider        = "github"
 project_owner_name = "flipoyo"
 project_name       = "HydrologicalTwinAlphaSeries"
-default_branch     = "main"
+default_branch     = "autoTest"
 fallback_branch    = "main"
 access_protocol    = "ssh"
 # Root of this nested tree.
@@ -36,7 +37,7 @@ gitprovider        = "github"
 project_owner_name = "flipoyo"
 project_name       = "hydrological_twin"
 group_name         = "hydrological_twin"
-default_branch     = "main"
+default_branch     = "autoTest"
 fallback_branch    = "main"
 access_protocol    = "ssh"
 nested_config      = "disabled"

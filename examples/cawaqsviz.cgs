@@ -3,13 +3,14 @@
 # This .cgs file describes the static topology of the CaWaQS-Viz project.
 # It is the starting point for clone, restart, checkout, and validate commands.
 # Never embed runtime state here.
+# The tree prefers autoTest and falls back to main when needed.
 
 [document]
 format_version = "1.0"
 
 [project]
 name             = "CaWaQS-Viz"
-default_branch   = "main"
+default_branch   = "autoTest"
 transport        = "ssh"
 default_remote_name = "origin"
 # Optional: override the default log directory
@@ -31,7 +32,7 @@ gitprovider        = "github"
 project_owner_name = "flipoyo"
 project_name       = "CaWaQS-Viz"
 # group_name defaults to project_name
-default_branch     = "main"
+default_branch     = "autoTest"
 fallback_branch    = "main"
 access_protocol    = "ssh"
 # This is the root repository; no relative_path needed.
@@ -41,7 +42,7 @@ gitprovider        = "github"
 project_owner_name = "flipoyo"
 project_name       = "HydrologicalTwinAlphaSeries"
 group_name         = "HydrologicalTwinAlphaSeries"
-default_branch     = "main"
+default_branch     = "autoTest"
 fallback_branch    = "main"
 access_protocol    = "ssh"
 # When this repo is cloned locally, ComplexGitSync scans it for a nested .cgs.
@@ -58,7 +59,7 @@ gitprovider        = "github"
 project_owner_name = "flipoyo"
 project_name       = "CWV_user_guide"
 group_name         = "CWV_user_guide"
-default_branch     = "main"
+default_branch     = "autoTest"
 fallback_branch    = "main"
 access_protocol    = "ssh"
 # No nested repos under the user guide.

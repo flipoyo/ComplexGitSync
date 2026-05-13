@@ -56,18 +56,22 @@ format_version = "1.0"
 
 [project]
 name           = "ComplexGitSync"
-default_branch = "main"
+default_branch = "autoTest"
 
 [[repos]]
 gitprovider        = "github"
 project_owner_name = "flipoyo"
 project_name       = "ComplexGitSync"
+default_branch     = "autoTest"
+fallback_branch    = "main"
 relative_path      = "."
 
 [[repos]]
 gitprovider        = "github"
 project_owner_name = "flipoyo"
 project_name       = "DevSpec"
+default_branch     = "autoTest"
+fallback_branch    = "main"
 relative_path      = "DevSpec"
 nested_config      = "disabled"
 
@@ -75,6 +79,8 @@ nested_config      = "disabled"
 gitprovider        = "github"
 project_owner_name = "flipoyo"
 project_name       = "DocComplexGitSync"
+default_branch     = "autoTest"
+fallback_branch    = "main"
 relative_path      = "docs"
 nested_config      = "doccomplexgitsync.cgs"
 \end{lstlisting}
@@ -82,6 +88,11 @@ nested_config      = "doccomplexgitsync.cgs"
 In this topology, \texttt{docs/doccomplexgitsync.cgs} then declares
 \texttt{DocSpec} (resolved as \texttt{docs/DocSpec}
 from the repository root) as a nested documentation dependency.
+
+This branch policy prefers the shared \texttt{autoTest} branch across the
+whole tree. Each repo also declares \texttt{fallback\_branch = "main"}, so a
+synchronisation run can stay on \texttt{autoTest} when that branch exists and
+fall back to \texttt{main} when a repository has not created it yet.
 
 % -----------------------------------------------------------------------
 \section{Validating the Spec}
@@ -92,8 +103,8 @@ Check that \cgscli{} can parse and resolve the spec without errors:
 $ cgitsync validate complexgitsync.cgs
 \end{lstlisting}
 
-A successful run prints the registry summary with \texttt{lifecycle\_state:
-DECLARED} and exits with code~0.
+A successful run exits with code~0 and prints the current tree summary, for
+example \texttt{DECLARED ready=false complete=true}.
 
 % -----------------------------------------------------------------------
 \section{Inspecting the Dependency Tree}
@@ -105,12 +116,34 @@ $ cgitsync tree complexgitsync.cgs
 \end{lstlisting}
 
 % -----------------------------------------------------------------------
+\section{Preparing an Orchestration Plan (\texttt{.goc})}
+
+A \texttt{.goc} file records a repeatable command sequence for a project.
+For the self-standing setup, \texttt{deploy.goc} keeps the tree on
+\texttt{autoTest} when possible:
+
+\begin{lstlisting}[language=toml]
+[[actions]]
+command = "checkout"
+[actions.args]
+ref      = "autoTest"
+ref_type = "branch"
+\end{lstlisting}
+
+Combined with the per-repo \texttt{fallback\_branch = "main"} settings from
+the \texttt{.cgs} file, the same orchestration plan can be used on trees where
+some repositories already expose \texttt{autoTest} and others still only offer
+\texttt{main}. In the current bootstrap release, the \texttt{.goc} file is the
+machine-readable reference for that flow; direct CLI execution of orchestration
+plans is introduced later.
+
+% -----------------------------------------------------------------------
 \section{Next Steps}
 
 Once the spec is validated you can proceed to:
 \begin{itemize}
-  \item \textbf{clone} — check out the full tree from scratch.
-  \item \textbf{describe} — inspect a generated \texttt{.gts} snapshot.
+  \item \textbf{registry} — inspect the resolved dependency registry as JSON.
+  \item \textbf{describe} — inspect either a \texttt{.cgs} spec or a generated \texttt{.gts} snapshot.
 \end{itemize}
 
 Refer to Chapter~\ref{chap:user-guide} for complete command and API
