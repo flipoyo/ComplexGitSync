@@ -255,10 +255,16 @@ class TestCgsDocumentValid:
 
     def test_from_toml_parses_example_file(self):
         examples = Path(__file__).parent.parent.parent / "examples"
-        doc = CgsDocument.from_toml(examples / "cawaqsviz.cgs")
-        assert doc.project_name == "CaWaQS-Viz"
+        doc = CgsDocument.from_toml(examples / "complexgitsync.cgs")
+        assert doc.project_name == "ComplexGitSync"
         assert doc.default_branch == "main"
         assert len(doc.repos) == 3
+
+    def test_from_toml_parses_doccomplexgitsync_example(self):
+        examples = Path(__file__).parent.parent.parent / "examples"
+        doc = CgsDocument.from_toml(examples / "doccomplexgitsync.cgs")
+        assert doc.project_name == "DocComplexGitSync"
+        assert len(doc.repos) == 2
 
     def test_from_toml_parses_htas_example(self):
         examples = Path(__file__).parent.parent.parent / "examples"
@@ -504,6 +510,20 @@ class TestGocDocumentValid:
     def test_from_toml_parses_example_file(self):
         examples = Path(__file__).parent.parent.parent / "examples"
         doc = GocDocument.from_toml(examples / "deploy.goc")
+        assert doc.project_source == "complexgitsync.cgs"
+        assert doc.project_name == "ComplexGitSync"
+        assert doc.project_repo_name == "ComplexGitSync"
+        assert doc.project_gitprovider_address == "git@github.com:flipoyo/ComplexGitSync.git"
+        assert doc.interaction == "interactive"
+        assert doc.transport == "ssh"
+        assert len(doc.actions) == 4
+        assert doc.actions[0]["command"] == "validate"
+        assert doc.actions[2]["command"] == "tree"
+        assert doc.actions[3]["command"] == "checkout"
+
+    def test_from_toml_parses_cawaqsviz_goc_example_file(self):
+        examples = Path(__file__).parent.parent.parent / "examples"
+        doc = GocDocument.from_toml(examples / "cawaqsviz_deploy.goc")
         assert doc.project_source == "cawaqsviz.cgs"
         assert doc.project_name == "CaWaQS-ViZ"
         assert doc.project_repo_name == "cawaqsviz"
@@ -720,7 +740,7 @@ class TestRoundTrips:
 
     def test_cgs_toml_round_trip(self, tmp_path: Path):
         examples = Path(__file__).parent.parent.parent / "examples"
-        original = CgsDocument.from_toml(examples / "cawaqsviz.cgs")
+        original = CgsDocument.from_toml(examples / "complexgitsync.cgs")
         out = tmp_path / "rewritten.cgs"
         original.to_toml(out)
         reloaded = CgsDocument.from_toml(out)

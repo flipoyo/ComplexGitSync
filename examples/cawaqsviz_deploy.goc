@@ -1,7 +1,7 @@
-# ComplexGitSync self-standing orchestration script
+# CaWaQS-Viz deployment orchestration script
 # ──────────────────────────────────────────────────────────────────────────────
 # This .goc (Git Orchestration Command) file defines the sequence of
-# ComplexGitSync operations to run for a self-standing ComplexGitSync setup
+# ComplexGitSync operations to run for the standard CaWaQS-Viz deployment
 # workflow.  Run it with a future `cgitsync run` command or load it
 # programmatically with GocDocument.from_toml().
 
@@ -22,13 +22,13 @@ transport   = "ssh"           # ssh | https
 # restart, checkout) or a .gts path for replay-based commands (launch-release).
 
 [project]
-source = "complexgitsync.cgs"
-name   = "ComplexGitSync"      # project display name
-repo_name = "ComplexGitSync"   # repository slug (distinct from project display name)
-gitprovider = "github"         # github | gitlab
-project_owner_name = "flipoyo" # required for github address composition
+source = "cawaqsviz.cgs"
+name   = "CaWaQS-ViZ"          # project display name
+repo_name = "cawaqsviz"        # repository slug (distinct from project display name)
+gitprovider = "gitlab"         # github | gitlab
+group_name = "cawaqs/gviz"     # required for gitlab address composition
 # gitprovider_address (computed with transport=ssh):
-# git@github.com:flipoyo/ComplexGitSync.git
+# git@gitlab.com:cawaqs/gviz/cawaqsviz.git
 
 # ── Action sequence ─────────────────────────────────────────────────────────
 # Actions are executed in order.  Each [[actions]] entry carries a mandatory
@@ -46,12 +46,12 @@ command = "clone"
 # target_dir = "./workspace"   # uncomment to clone into a subdirectory
 
 [[actions]]
-# 3. Print the current tree state to confirm synchronisation.
-command = "tree"
-
-[[actions]]
-# 4. Ensure the whole tree is on the expected main branch.
+# 3. Switch the whole tree to the develop branch.
 command = "checkout"
 [actions.args]
-ref      = "main"
+ref      = "develop"
 ref_type = "branch"
+
+[[actions]]
+# 4. Print the current tree state to confirm synchronisation.
+command = "tree"

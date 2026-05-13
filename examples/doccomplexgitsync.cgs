@@ -1,0 +1,38 @@
+# DocComplexGitSync nested authoring spec
+# ──────────────────────────────────────────────────────────────────────────────
+# This .cgs file is stored inside the DocComplexGitSync repository (docs/).
+# It defines DocSpec as a nested dependency tracked under DocSpec/.
+
+[document]
+format_version = "1.0"
+
+[project]
+name           = "DocComplexGitSync"
+default_branch = "main"
+transport      = "ssh"
+
+[runtime]
+interaction             = "interactive"
+profile                 = "verbose"
+warn_on_fallback        = true
+nested_config_discovery = true
+log_level               = "info"
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "DocComplexGitSync"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+relative_path      = "."
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "DocSpec"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+relative_path      = "DocSpec"
+nested_config      = "disabled"

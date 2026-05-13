@@ -47,33 +47,41 @@ $ cgitsync --help
 \section{Creating a Project Spec (\texttt{.cgs})}
 
 A \emph{local authoring spec} (\texttt{.cgs}) is a TOML file that describes
-the repository tree you want to manage. Create \texttt{project.cgs} in your
-project root:
+the repository tree you want to manage. For the self-standing
+\texttt{ComplexGitSync} setup, create \texttt{complexgitsync.cgs}:
 
 \begin{lstlisting}[language=toml]
 [document]
 format_version = "1.0"
 
 [project]
-name        = "my-project"
-repo_name   = "my-project"
+name           = "ComplexGitSync"
 default_branch = "main"
 
 [[repos]]
 gitprovider        = "github"
-project_owner_name = "my-org"
-project_name       = "my-project"
+project_owner_name = "flipoyo"
+project_name       = "ComplexGitSync"
 relative_path      = "."
 
 [[repos]]
 gitprovider        = "github"
-project_owner_name = "my-org"
-project_name       = "my-lib"
-relative_path      = "deps/my-lib"
+project_owner_name = "flipoyo"
+project_name       = "DevSpec"
+relative_path      = "DevSpec"
+nested_config      = "disabled"
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "DocComplexGitSync"
+relative_path      = "docs"
+nested_config      = "doccomplexgitsync.cgs"
 \end{lstlisting}
 
-Supported values for \texttt{gitprovider}: \texttt{github}, \texttt{gitlab},
-or \texttt{custom} (which requires a \texttt{gitprovider\_url} field).
+In this topology, \texttt{docs/doccomplexgitsync.cgs} then declares
+\texttt{DocSpec} (resolved as \texttt{docs/DocSpec}
+from the repository root) as a nested documentation dependency.
 
 % -----------------------------------------------------------------------
 \section{Validating the Spec}
@@ -81,7 +89,7 @@ or \texttt{custom} (which requires a \texttt{gitprovider\_url} field).
 Check that \cgscli{} can parse and resolve the spec without errors:
 
 \begin{lstlisting}[language=bash]
-$ cgitsync validate project.cgs
+$ cgitsync validate complexgitsync.cgs
 \end{lstlisting}
 
 A successful run prints the registry summary with \texttt{lifecycle\_state:
@@ -93,7 +101,7 @@ DECLARED} and exits with code~0.
 Render the dependency graph as text:
 
 \begin{lstlisting}[language=bash]
-$ cgitsync tree project.cgs
+$ cgitsync tree complexgitsync.cgs
 \end{lstlisting}
 
 % -----------------------------------------------------------------------
