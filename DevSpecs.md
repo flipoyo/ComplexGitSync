@@ -19,6 +19,9 @@ Every project is strictly object-oriented.
 - Use `dataclass` or a plain `__init__` for simple value objects.
 - Names must be English and idiomatic for the host language (e.g. Pythonic
   snake_case for modules, PascalCase for classes).
+- Each domain class lives in its own source file. Every exported symbol must
+  appear in the module's `__all__` (or the language-equivalent public API
+  declaration).
 
 ## Monolithic Canonical API
 
@@ -103,3 +106,41 @@ Logging is mandatory and first-class.
   environment-specific state unless the test is explicitly labelled as an
   integration test.
 - The full suite must pass before any merge to the main branch.
+
+## Planning
+
+Planning documents follow a defined lifecycle so that history is preserved and
+active plans are always easy to identify.
+
+- **Initial plan**: when a project is first planned, the agent writes
+  `DevPlan.md` and `DevPlanTickets.md` at the project root (or in a
+  `Planning/` sub-folder if one exists). Before any development begins, these
+  are saved as `InitialDevPlan.md` and `InitialDevPlanTickets.md`.
+- **Active plan**: a working agent that must (re-)plan writes a fresh
+  `DevPlan.md` and `DevPlanTickets.md`, overwriting any previous active plan.
+- **Version archive**: when a development phase is completed, the active plan
+  is saved as `YYYY.XXDevPlan.md` and `YYYY.XXDevPlanTickets.md` where
+  `YYYY.XX` is the version that was delivered. Developers decide which archived
+  plans to keep on explicit request.
+- No planning document is ever hand-edited during an active implementation run;
+  it is treated as read-only once the agent starts executing tickets.
+
+## Documentation
+
+Every project must ship end-user documentation alongside the source code.
+
+- Documentation source lives in a `docs/` directory at the project root,
+  preferably as a Git submodule pointing to a standalone documentation
+  repository.
+- The documentation format is LaTeX; the LaTeX project must be self-contained
+  and buildable in isolation.
+- Every `docs/` directory must contain at least two documents:
+  - **Getting Started** — explains the main workflow step by step, from
+    installation through first successful use.
+  - **User Guide** — fully documents every user-facing feature, command, and
+    configuration option.
+- The structure, style, and conventions for the `docs/` LaTeX project are
+  defined in `docs/DocSpecs.md` (project-agnostic) together with any
+  project-specific additions in `AdditionalSpecs.md`.
+- Documentation must be updated in the same PR as the code change that
+  introduces or modifies a user-facing feature.

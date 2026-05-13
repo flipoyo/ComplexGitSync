@@ -9,7 +9,7 @@
 
 ## Planning Precision Addendum
 - Keep the orchestration baseline object-oriented around `GitRepo`, `GitTree`, and `Orchestre`.
-- Treat per-repo identity keys as mandatory contract fields: `gitprovider`, `project_owner_name`, `project_name`, optional `group_name`, optional `gitprovider_url`.
+- Treat per-repo identity keys as mandatory contract fields: `gitprovider`, `owner_name` (alias `group_name`), `project_name`, optional `gitprovider_url`.
 - Default rules: `gitprovider=github`, `group_name=project_name`, access protocol defaults to `ssh` unless `https` is selected.
 - Ensure `GitTree` exposes correction helpers to force SHA and per-repo identity keys.
 - `GitTree` orchestrates commands upward (leaf → parent → root) for `commit`, `push`, and `tag`; and downward (root → parent → leaf) for `clone`, `restart`, and `checkout`.

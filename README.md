@@ -8,8 +8,8 @@ The repository is currently in implementation-bootstrap mode.
 The authoritative planning documents are:
 - `DevSpecs.md`: reusable development philosophy
 - `AdditionalSpecs.md`: project-specific constraints
-- `Planning/DevPlan.md`: implementation contract
-- `Planning/DevPlanTicket.md`: ticket breakdown
+- `Planning/InitialDevPlan.md`: original implementation contract
+- `Planning/InitialDevPlanTickets.md`: original ticket breakdown
 - `AGENTS.md`: agent entry-point and hard invariants
 
 ## Core Concepts
@@ -41,10 +41,9 @@ Planned commands include:
 
 ## Required Per-Repo Identity Keys (Plan Contract)
 - `gitprovider` (`github`, `gitlab`, `custom`) with default `github`
-- `project_owner_name`
+- `owner_name` — the repository namespace; called _owner_ on GitHub and _group_ on GitLab (`group_name` is accepted as an alias)
 - `project_name`
-- optional `group_name` (defaults to `project_name`)
-- optional `gitprovider_url`
+- `gitprovider_url` — required only when `gitprovider` is `custom`; inferred automatically for `github` and `gitlab`
 - access protocol defaults to `ssh` (`https` when explicitly requested)
 
 `GitTree` also provides correction hooks in the framework for forcing commit SHA values and repo identity keys.
@@ -66,8 +65,8 @@ Each push or merge increments package version in `YYYY.XX` format:
 - `DevSpecs.md`: reusable, project-agnostic development philosophy
 - `AdditionalSpecs.md`: ComplexGitSync-specific constraints and refinements
 - `AGENTS.md`: agent entry-point — DevSpecs conformity declaration and hard invariants
-- `Planning/DevPlan.md`: implementation contract
-- `Planning/DevPlanTicket.md`: ticket breakdown for an implementation agent
+- `Planning/InitialDevPlan.md`: original implementation contract
+- `Planning/InitialDevPlanTickets.md`: original ticket breakdown for an implementation agent
 - `Planning/FIRSTAGENT.md`: working rules used by the first implementation agent
 - `src/ComplexGitSync/`: package source
 - `tests/`: unit and integration tests

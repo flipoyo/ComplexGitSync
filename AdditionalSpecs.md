@@ -19,9 +19,6 @@ Core domain classes and their responsibilities:
 | `GitTree` | Dependency graph of repos with its own lifecycle |
 | `Orchestre` | Coordination layer — orchestrates multi-repo operations |
 
-Each class lives in its own module file (e.g. `git_repo.py`). Every public
-symbol must appear in the module's `__all__`.
-
 ## Monolithic Package
 
 The package is `ComplexGitSync`, exposed through the `cgitsync` CLI entrypoint.
@@ -57,18 +54,38 @@ Side states: `PARTIAL`, `ERROR`, `FALLBACK_READY`
 
 ## Per-Repo Identity Keys
 
-Required keys for every repository entry:
+Every repository entry is identified by three fields: provider, namespace, and
+project name. The namespace field is called `owner_name`; note that GitLab uses
+the term _group_ for the same concept.
 
-- `gitprovider` — one of `github`, `gitlab`, `custom`; defaults to `github`
-- `project_owner_name`
-- `project_name`
+**Provider: `gitprovider`**
 
-Optional keys:
+One of `github`, `gitlab`, or `custom`; defaults to `github`.
 
-- `group_name` — defaults to `project_name`
-- `gitprovider_url` — required when `gitprovider` is `custom`
+| Provider | Host URL (auto-set) | Required namespace field | Required name field |
+|---|---|---|---|
+| `github` | `github.com` | `owner_name` | `project_name` |
+| `gitlab` | `gitlab.com` | `owner_name` (≡ GitLab _group_) | `project_name` |
+| `custom` | `gitprovider_url` (required) | `owner_name` | `project_name` |
+
+> **Terminology note:** GitHub calls the top-level namespace an _owner_;
+> GitLab calls it a _group_. This project uses `owner_name` for both;
+> `group_name` is accepted as an alias and resolves to the same field.
+
+**`RepoAddress` composition**
+
+`RepoAddress` composes the full remote URL from:
+
+```
+<gitprovider_url>/<owner_name>/<project_name>[.git]   (SSH or HTTPS)
+```
+
+- SSH format: `git@<host>:<owner_name>/<project_name>.git`
+- HTTPS format: `https://<host>/<owner_name>/<project_name>.git`
 
 Access protocol defaults to `ssh`; use `https` only when explicitly selected.
+`gitprovider_url` is required when `gitprovider` is `custom`; it is
+automatically inferred for `github` and `gitlab`.
 
 ## Logging — Additional Events
 

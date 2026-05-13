@@ -19,6 +19,8 @@ reusable, project-agnostic development philosophy covering:
 - Logging
 - Error Handling
 - Testing
+- Planning (document lifecycle and naming protocol)
+- Documentation (`docs/` LaTeX project, DocSpecs)
 
 Project-specific refinements and additional constraints are documented in
 **[AdditionalSpecs.md](AdditionalSpecs.md)**.
@@ -29,13 +31,16 @@ Before writing or reviewing any code, read these files in order:
 
 1. `DevSpecs.md` — standing development philosophy (project-agnostic).
 2. `AdditionalSpecs.md` — ComplexGitSync-specific constraints and refinements.
-3. `Planning/DevPlan.md` — full implementation contract and specification.
-4. `Planning/DevPlanTicket.md` — ticket breakdown and recommended execution
-   order for the implementation agent.
-5. `README.md` — current status and bootstrap instructions.
+3. `docs/DocSpecs.md` — documentation project structure and conventions.
+4. `Planning/InitialDevPlan.md` — original implementation contract.
+5. `Planning/InitialDevPlanTickets.md` — original ticket breakdown.
+6. `README.md` — current status and bootstrap instructions.
 
 > The original first-agent working rules (the instructions that guided the
 > initial implementation) are preserved in `Planning/FIRSTAGENT.md`.
+> Active planning files (`DevPlan.md` / `DevPlanTickets.md`), if present, take
+> precedence over the initial plan; see `DevSpecs.md § Planning` for the full
+> naming protocol.
 
 ## Repository Intent
 
