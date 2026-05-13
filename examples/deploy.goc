@@ -50,7 +50,7 @@ command = "clone"
 command = "tree"
 
 [[actions]]
-# 4. Switch the whole tree to the main branch.
+# 4. Ensure the whole tree is on the expected main branch.
 command = "checkout"
 [actions.args]
 ref      = "main"

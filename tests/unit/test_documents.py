@@ -532,6 +532,7 @@ class TestGocDocumentValid:
         assert doc.transport == "ssh"
         assert len(doc.actions) == 4
         assert doc.actions[0]["command"] == "validate"
+        assert doc.actions[2]["command"] == "checkout"
 
     def test_session_setting_helper(self):
         doc = GocDocument.from_dict(MINIMAL_GOC)
