@@ -206,9 +206,13 @@ def make_repo_id(parent_id: str | None, relative_path: PurePath | str | None, na
 def build_registry_from_cgs_document(
     document: CgsDocument,
     config_path: Path | str,
+    *,
+    project_root: Path | str | None = None,
 ) -> DependencyTreeRegistry:
     source_path = Path(config_path).resolve()
-    root_path = source_path.parent.resolve()
+    root_path = (
+        Path(project_root).resolve() if project_root is not None else source_path.parent.resolve()
+    )
     root_entry = RepoRegistryEntry(
         repo_id=ROOT_REPO_ID,
         name=document.project_name or source_path.stem,

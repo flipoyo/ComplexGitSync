@@ -49,6 +49,13 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Resolve nested .cgs files for locally available child repos.",
             )
             subparser.set_defaults(handler=_INSPECTION_HANDLERS[command_name])
+        elif command_name == "clone":
+            subparser.add_argument("source", help="Path to the local .cgs file to clone from.")
+            subparser.add_argument(
+                "--target-dir",
+                help="Target directory for the cloned project root. Defaults to ./<project-name>.",
+            )
+            subparser.set_defaults(handler=_handle_clone)
         else:
             subparser.set_defaults(handler=_not_implemented)
 
@@ -121,6 +128,19 @@ def _handle_registry(args: argparse.Namespace) -> int:
     client = ComplexGitSyncClient()
     client.load_cgs(Path(args.source), discover_nested=args.discover_nested)
     print(client.format_registry_json())
+    return 0
+
+
+def _handle_clone(args: argparse.Namespace) -> int:
+    client = ComplexGitSyncClient()
+    registry = client.clone_cgs(Path(args.source), target_dir=args.target_dir)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"complete={str(tree_state.registry_complete).lower()} "
+        f"root={registry.get('root').absolute_path}"
+    )
     return 0
 
 

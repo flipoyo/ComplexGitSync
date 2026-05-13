@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Result of building with exemples such as complexgitsync.cgs
+ComplexGitSync*

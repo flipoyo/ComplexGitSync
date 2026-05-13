@@ -1,5 +1,6 @@
 from pathlib import Path
 import tomllib
+from types import SimpleNamespace
 
 from ComplexGitSync import __version__
 from ComplexGitSync.cli import main
@@ -74,6 +75,31 @@ commit_sha = "abc123"
     assert exit_code == 0
     assert '"document_kind": "gts"' in captured.out
     assert '"is_ready": true' in captured.out
+
+
+def test_clone_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def clone_cgs(self, source, *, target_dir=None):
+            captured_call["source"] = Path(source)
+            captured_call["target_dir"] = target_dir
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "workspace" / "demo")
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    exit_code = main(["clone", "project.cgs", "--target-dir", str(tmp_path / "workspace" / "demo")])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["source"] == Path("project.cgs")
+    assert captured_call["target_dir"] == str(tmp_path / "workspace" / "demo")
+    assert "READY ready=true complete=true" in captured.out
 
 
 def test_unimplemented_command_still_returns_not_implemented(capsys):

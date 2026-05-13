@@ -4,10 +4,10 @@ ComplexGitSync is a Python package for describing and inspecting a root Git
 repository together with its nested descendants from local `.cgs` authoring
 specs and generated `.gts` state snapshots.
 
-The current bootstrap release already supports the inspection commands
-`validate`, `describe`, `tree`, and `registry`. The sample `.goc` files in
-`examples/` document the intended orchestration flow for `clone` and
-`checkout`, but direct CLI execution of `.goc` plans is not wired yet.
+The current bootstrap release already supports `validate`, `describe`,
+`tree`, `registry`, and `clone`. The sample `.goc` files in `examples/`
+document the intended orchestration flow for `checkout` and the remaining
+sync commands, but direct CLI execution of `.goc` plans is not wired yet.
 
 ## Prerequisites
 
@@ -75,6 +75,27 @@ uv run cgitsync validate examples/complexgitsync.cgs
 
 A successful run exits with code 0 and prints the current tree summary.
 
+## Cloning the Project Tree
+
+Clone the bundled self-standing example:
+
+```bash
+uv run cgitsync clone examples/complexgitsync.cgs
+```
+
+By default, `cgitsync clone` uses `./<project-name>` as the project root.
+If that directory already exists and is not empty, ComplexGitSync chooses the
+next available suffixed directory such as `./ComplexGitSync-1`.
+
+To force a specific destination, pass `--target-dir`:
+
+```bash
+uv run cgitsync clone examples/complexgitsync.cgs --target-dir ./sandbox/ComplexGitSync
+```
+
+The clone flow prefers each repo's `default_branch` and falls back to its
+`fallback_branch` when the preferred branch is missing on the remote.
+
 ## Inspecting the Dependency Tree
 
 Render the declared dependency graph:
@@ -111,8 +132,8 @@ ref_type = "branch"
 Because the paired `.cgs` files declare `fallback_branch = "main"` per
 repository, the same orchestration plan can be used on trees that are
 partially on `autoTest` and partially still on `main`. At this stage, treat
-these `.goc` files as executable-ready plans for the upcoming sync commands or
-load them programmatically with `GocDocument.from_toml()`.
+these `.goc` files as executable-ready plans for the remaining sync commands
+or load them programmatically with `GocDocument.from_toml()`.
 
 ## Next Steps
 

@@ -7,6 +7,7 @@ from .client import ComplexGitSyncClient
 from .documents import CgsDocument, ConfigDocument, GocDocument, GtsDocument
 from .git_provider import GitProvider
 from .git_repo import GitRepo
+from .git_runner import GitRunner
 from .git_tree import GitTree
 from .orchestre import Orchestre
 from .repo_address import RepoAddress
@@ -32,6 +33,7 @@ __all__ = [
     "DiscoveryState",
     "GitProvider",
     "GitRepo",
+    "GitRunner",
     "GitTree",
     "GocDocument",
     "GtsDocument",

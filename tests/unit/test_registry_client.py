@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import PureWindowsPath
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
 from ComplexGitSync.client import ComplexGitSyncClient
 from ComplexGitSync.errors import ConfigValidationError, NestedConfigDiscoveryError
-from ComplexGitSync.registry import NodeType, TreeLifecycleState, make_repo_id
+from ComplexGitSync.registry import NodeType, RepoLifecycleState, TreeLifecycleState, make_repo_id
 
 
 def test_client_load_cgs_builds_reviewable_registry(tmp_path):
@@ -130,6 +130,56 @@ def test_registry_and_tree_rendering_are_serialized_for_review(tmp_path):
     assert any(entry["repo_id"] == "root:deps/child-repo" for entry in rendered_registry)
 
 
+def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
+    config_path = _write_clone_ready_cgs(tmp_path)
+    fake_runner = _FakeGitRunner(
+        {
+            "git@github.com:owner/demo.git": {"main"},
+            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/docs.git": {"main"},
+        }
+    )
+
+    client = ComplexGitSyncClient(git_runner=fake_runner)
+    registry = client.clone_cgs(config_path, target_dir=tmp_path / "workspace" / "demo")
+    tree_state = client.get_tree_state()
+
+    root_entry = registry.get("root")
+    child_entry = registry.get("root:deps/child-repo")
+    docs_entry = registry.get("root:deps/child-repo:docs")
+
+    assert tree_state.lifecycle_state == TreeLifecycleState.READY
+    assert root_entry.absolute_path == (tmp_path / "workspace" / "demo").resolve()
+    assert root_entry.repo_lifecycle_state == RepoLifecycleState.FALLBACK_READY
+    assert root_entry.resolved_ref_name == "main"
+    assert child_entry.repo_lifecycle_state == RepoLifecycleState.READY
+    assert child_entry.resolved_ref_name == "autoTest"
+    assert docs_entry.repo_lifecycle_state == RepoLifecycleState.FALLBACK_READY
+    assert docs_entry.resolved_ref_name == "main"
+    assert [branch for _, _, branch in fake_runner.clones] == ["main", "autoTest", "main"]
+
+
+def test_clone_cgs_uses_suffixed_target_when_default_root_is_occupied(tmp_path, monkeypatch):
+    config_path = _write_clone_ready_cgs(tmp_path)
+    (tmp_path / "demo").mkdir()
+    (tmp_path / "demo" / "marker.txt").write_text("occupied\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    client = ComplexGitSyncClient(
+        git_runner=_FakeGitRunner(
+            {
+                "git@github.com:owner/demo.git": {"main"},
+                "git@github.com:owner/child-repo.git": {"autoTest"},
+                "git@github.com:owner/docs.git": {"main"},
+            }
+        )
+    )
+
+    registry = client.clone_cgs(config_path)
+
+    assert registry.get("root").absolute_path == (tmp_path / "demo-1").resolve()
+
+
 def test_make_repo_id_normalizes_windows_style_paths():
     assert make_repo_id("root", PureWindowsPath("deps", "child-repo"), "child-repo") == (
         "root:deps/child-repo"
@@ -204,3 +254,92 @@ relative_path = "."
 """.strip()
         + "\n"
     )
+
+
+def _write_clone_ready_cgs(tmp_path: Path) -> Path:
+    config_path = tmp_path / "project.cgs"
+    config_path.write_text(
+        """
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "autoTest"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "demo"
+default_branch = "autoTest"
+fallback_branch = "main"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "child-repo"
+default_branch = "autoTest"
+fallback_branch = "main"
+relative_path = "deps/child-repo"
+nested_config = "auto"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return config_path
+
+
+class _FakeGitRunner:
+    def __init__(self, remote_branches: dict[str, set[str]]):
+        self.remote_branches = remote_branches
+        self.clones: list[tuple[str, Path, str]] = []
+
+    def remote_branch_exists(self, remote_url: str, branch: str) -> bool:
+        return branch in self.remote_branches.get(remote_url, set())
+
+    def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
+        destination_path = Path(destination)
+        destination_path.mkdir(parents=True, exist_ok=True)
+        self.clones.append((remote_url, destination_path.resolve(), branch))
+        if destination_path.name == "child-repo":
+            (destination_path / "child.cgs").write_text(
+                """
+[document]
+format_version = "1.0"
+
+[project]
+name = "child-repo"
+default_branch = "autoTest"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "child-repo"
+default_branch = "autoTest"
+fallback_branch = "main"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "docs"
+default_branch = "autoTest"
+fallback_branch = "main"
+relative_path = "docs"
+nested_config = "disabled"
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+    def rev_parse_head(self, repo_path: Path | str) -> str:
+        repo_name = Path(repo_path).name
+        return f"sha-{repo_name}"
+
+    def current_branch(self, repo_path: Path | str) -> str | None:
+        resolved = Path(repo_path).resolve()
+        for _, destination, branch in self.clones:
+            if destination == resolved:
+                return branch
+        return None

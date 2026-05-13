@@ -53,6 +53,28 @@ Reads a \texttt{.gts} snapshot and prints its contents as pretty-printed
 JSON. Useful for inspecting saved tree state after a \texttt{clone} or
 \texttt{freeze\_release} operation.
 
+\subsection{\texttt{clone}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync clone <spec.cgs> [--target-dir DIR]
+\end{lstlisting}
+
+Clones the full repository tree declared by the \texttt{.cgs} file. The root
+project directory defaults to \texttt{./<project-name>}. If that path already
+exists and is not empty, \cgscli{} chooses the next available suffixed
+directory such as \texttt{./ComplexGitSync-1}. When \texttt{--target-dir} is
+provided, that path is used exactly.
+
+For each repository, \cgscli{} tries the repo target branch first
+(typically \texttt{default\_branch = "autoTest"}) and falls back to
+\texttt{fallback\_branch} (typically \texttt{"main"}) when the preferred
+branch does not exist on the remote. Nested \texttt{.cgs} files are discovered
+after parent repositories are cloned, so explicit and automatic nested trees
+are materialised during the same command.
+
+On success, \texttt{clone} exits~0 and prints a READY summary including the
+selected root path.
+
 \subsection{Planned Commands (not yet implemented)}
 
 The following commands are defined in the public API contract but are not yet
@@ -60,7 +82,6 @@ implemented. Each returns exit code~2 with the message
 \texttt{"not implemented yet"}.
 
 \begin{itemize}
-  \item \texttt{clone} — bootstrap a full repository tree from a \texttt{.cgs} spec.
   \item \texttt{checkout} — switch the whole tree to a named ref.
   \item \texttt{commit} — stage and commit changes across the tree.
   \item \texttt{push} — push all repos to their remotes.
@@ -169,14 +190,15 @@ from ComplexGitSync import (
 \subsection{\texttt{ComplexGitSyncClient}}
 
 High-level client that mirrors the CLI commands. Instantiate with a parsed
-\texttt{CgsDocument} and call the equivalent method:
+configuration path and call the equivalent method:
 
 \begin{lstlisting}[language=Python]
-from ComplexGitSync import ComplexGitSyncClient, CgsDocument
+from ComplexGitSync import ComplexGitSyncClient
 
-doc = CgsDocument.from_toml(pathlib.Path("project.cgs").read_bytes())
-client = ComplexGitSyncClient(doc)
-summary = client.validate()
+client = ComplexGitSyncClient()
+registry = client.load_cgs("project.cgs")
+tree = client.format_project_tree()
+clone_registry = client.clone_cgs("project.cgs", target_dir="./workspace/demo")
 \end{lstlisting}
 
 \subsection{Document Classes}
@@ -222,8 +244,9 @@ file. All configuration is supplied through the \texttt{.cgs} file.
   \item[\texttt{ValueError}] Raised when a required field is missing or a
     field value is invalid (e.g.\ unknown \texttt{gitprovider},
     missing \texttt{gitprovider\_url} for a \texttt{custom} provider).
-  \item[\texttt{NotImplementedError}] Raised when a planned but not yet
-    implemented command is invoked via the Python API.
+  \item[\texttt{GitSyncError}] Raised when clone-time Git operations fail,
+    for example because the remote branch cannot be resolved or the target
+    directory is already occupied.
   \item[Exit code 1] General CLI failure (parse error, validation error).
   \item[Exit code 2] Command exists but is not yet implemented.
 \end{description}
@@ -239,6 +262,12 @@ file. All configuration is supplied through the \texttt{.cgs} file.
     Check that \texttt{[document]} contains \texttt{format\_version = "1.0"}
     and that every \texttt{[[repos]]} block includes
     \texttt{project\_owner\_name} and \texttt{project\_name}.
+  \item[\texttt{Clone destination already exists and is not empty}]
+    Re-run \texttt{clone} with \texttt{--target-dir} to force a clean location,
+    or let \cgscli{} choose a suffixed default directory.
+  \item[\texttt{No cloneable branch found for <repo>}]
+    Confirm that the remote exposes either the repo's
+    \texttt{default\_branch} or its \texttt{fallback\_branch}.
   \item[PyYAML import error when using \texttt{.goc} files]
     Install the optional extra: \texttt{uv pip install "ComplexGitSync[yaml]"}.
 \end{description}

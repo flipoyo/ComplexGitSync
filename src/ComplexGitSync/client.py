@@ -6,10 +6,18 @@ import json
 
 from .discovery import discover_nested_configs
 from .documents import CgsDocument
+from .errors import GitSyncError
+from .git_runner import GitRunner
 from .orchestre import Orchestre
+from .repo_address import RepoAddress
 from .registry import (
+    DiscoveryState,
     DependencyTreeRegistry,
     ProjectTreeState,
+    RefKind,
+    RepoLifecycleState,
+    RepoRegistryEntry,
+    SyncState,
     build_registry_from_cgs_document,
     build_tree_state,
 )
@@ -20,6 +28,7 @@ class ComplexGitSyncClient:
     """Client shell exposing the current inspection-focused bootstrap surface."""
 
     orchestre: Orchestre = field(default_factory=Orchestre)
+    git_runner: GitRunner = field(default_factory=GitRunner)
     registry: DependencyTreeRegistry | None = None
     source_path: Path | None = None
 
@@ -38,6 +47,39 @@ class ComplexGitSyncClient:
         self.source_path = source_path
         if discover_nested:
             self.discover_nested_configs()
+        return self.registry
+
+    def clone_cgs(
+        self,
+        config_path: str | Path,
+        *,
+        target_dir: str | Path | None = None,
+    ) -> DependencyTreeRegistry:
+        source_path = Path(config_path).resolve()
+        document = CgsDocument.from_toml(source_path)
+        project_root = self._resolve_project_root(document, source_path, target_dir)
+
+        self.registry = build_registry_from_cgs_document(
+            document,
+            source_path,
+            project_root=project_root,
+        )
+        self.source_path = source_path
+
+        while True:
+            cloned_any = False
+            for entry in self._pending_clone_entries():
+                self._clone_registry_entry(entry)
+                cloned_any = True
+
+            discovered = self.discover_nested_configs()
+            if not cloned_any and not discovered:
+                break
+
+        self._assert_nested_discovery_complete()
+        self.registry.recompute_tree_state()
+        if not self.registry.is_ready():
+            raise GitSyncError("Clone did not produce a READY tree.")
         return self.registry
 
     def get_dependency_registry(self) -> DependencyTreeRegistry:
@@ -68,3 +110,99 @@ class ComplexGitSyncClient:
             "repo_count": len(registry.entries),
         }
         return json.dumps(summary, indent=2, sort_keys=True)
+
+    def _resolve_project_root(
+        self,
+        document: CgsDocument,
+        source_path: Path,
+        target_dir: str | Path | None,
+    ) -> Path:
+        if target_dir is not None:
+            return Path(target_dir).resolve()
+
+        default_root = (Path.cwd() / (document.project_name or source_path.stem)).resolve()
+        if self._is_available_clone_root(default_root):
+            return default_root
+
+        suffix = 1
+        while True:
+            candidate = default_root.with_name(f"{default_root.name}-{suffix}")
+            if self._is_available_clone_root(candidate):
+                return candidate
+            suffix += 1
+
+    def _is_available_clone_root(self, candidate: Path) -> bool:
+        if not candidate.exists():
+            return True
+        if not candidate.is_dir():
+            return False
+        return not any(candidate.iterdir())
+
+    def _pending_clone_entries(self) -> list[RepoRegistryEntry]:
+        registry = self.get_dependency_registry()
+        return sorted(
+            [
+                entry
+                for entry in registry.values()
+                if entry.repo_lifecycle_state == RepoLifecycleState.DECLARED
+            ],
+            key=lambda entry: (len(entry.absolute_path.parts), str(entry.absolute_path)),
+        )
+
+    def _clone_registry_entry(self, entry: RepoRegistryEntry) -> None:
+        remote_url = self._build_remote_url(entry)
+        selected_branch = self._select_clone_branch(entry, remote_url)
+
+        self.git_runner.clone(remote_url, entry.absolute_path, branch=selected_branch)
+        current_branch = self.git_runner.current_branch(entry.absolute_path) or selected_branch
+        fallback_applied = current_branch != (entry.target_ref_name or selected_branch)
+
+        entry.current_ref_kind = RefKind.BRANCH
+        entry.current_ref_name = current_branch
+        entry.resolved_ref_kind = RefKind.BRANCH
+        entry.resolved_ref_name = current_branch
+        entry.commit_sha = self.git_runner.rev_parse_head(entry.absolute_path)
+        entry.fallback_applied = fallback_applied
+        entry.fallback_reason = (
+            f"branch '{entry.target_ref_name}' not found on remote; cloned '{current_branch}' instead"
+            if fallback_applied
+            else None
+        )
+        entry.repo_lifecycle_state = (
+            RepoLifecycleState.FALLBACK_READY if fallback_applied else RepoLifecycleState.READY
+        )
+        entry.sync_state = SyncState.FALLBACK_APPLIED if fallback_applied else SyncState.ALIGNED
+        entry.worktree_state = "CLEAN"
+
+    def _select_clone_branch(self, entry: RepoRegistryEntry, remote_url: str) -> str:
+        target_branch = entry.target_ref_name or entry.default_branch
+        if target_branch and self.git_runner.remote_branch_exists(remote_url, target_branch):
+            return target_branch
+
+        fallback_branch = entry.fallback_branch
+        if fallback_branch and self.git_runner.remote_branch_exists(remote_url, fallback_branch):
+            return fallback_branch
+
+        expected = [branch for branch in (target_branch, fallback_branch) if branch]
+        raise GitSyncError(
+            f"No cloneable branch found for {entry.name}: expected one of {expected} on {remote_url}"
+        )
+
+    def _build_remote_url(self, entry: RepoRegistryEntry) -> str:
+        address = RepoAddress(
+            gitprovider=entry.gitprovider,
+            project_name=entry.project_name or entry.name,
+            project_owner_name=entry.project_owner_name,
+            group_name=entry.group_name,
+            gitprovider_url=entry.gitprovider_url,
+        )
+        return address.to_url(entry.access_protocol)
+
+    def _assert_nested_discovery_complete(self) -> None:
+        for entry in self.get_dependency_registry().values():
+            if entry.nested_config in {None, "disabled"}:
+                continue
+            if entry.discovery_state != DiscoveryState.RESOLVED:
+                raise GitSyncError(
+                    f"Nested configuration for {entry.name} is not resolved: {entry.discovery_state.value}"
+                )

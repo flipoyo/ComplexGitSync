@@ -107,6 +107,26 @@ A successful run exits with code~0 and prints the current tree summary, for
 example \texttt{DECLARED ready=false complete=true}.
 
 % -----------------------------------------------------------------------
+\section{Cloning the Dependency Tree}
+
+Once the spec is valid, materialise the full project tree:
+
+\begin{lstlisting}[language=bash]
+$ cgitsync clone complexgitsync.cgs
+\end{lstlisting}
+
+By default, \cgscli{} clones the tree into \texttt{./ComplexGitSync}. If that
+directory already exists and is not empty, the command chooses the next
+available suffixed directory such as \texttt{./ComplexGitSync-1}. To force an
+explicit destination, pass \texttt{--target-dir}.
+
+On success, the command prints a READY summary including the chosen root path,
+for example \texttt{READY ready=true complete=true root=/tmp/ComplexGitSync}.
+The clone flow first tries each repo's \texttt{default\_branch} and falls back
+to \texttt{fallback\_branch} when the preferred branch does not exist on the
+remote.
+
+% -----------------------------------------------------------------------
 \section{Inspecting the Dependency Tree}
 
 Render the dependency graph as text:
@@ -140,7 +160,7 @@ plans is introduced later.
 % -----------------------------------------------------------------------
 \section{Next Steps}
 
-Once the spec is validated you can proceed to:
+Once the tree is cloned you can proceed to:
 \begin{itemize}
   \item \textbf{registry} — inspect the resolved dependency registry as JSON.
   \item \textbf{describe} — inspect either a \texttt{.cgs} spec or a generated \texttt{.gts} snapshot.
