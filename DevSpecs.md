@@ -60,6 +60,18 @@ Package versions follow `YYYY.XX` calendar versioning.
   (e.g. `pyproject.toml`); CI increments it automatically on every push or
   merge to the main branch.
 
+## Python Environment and Package Management
+
+Python projects use `uv` or `pixi` exclusively for environment creation,
+dependency installation, and command execution.
+
+- Contributor documentation, onboarding steps, and CI workflows must not
+  prescribe raw `pip`, `python -m pip`, or `python -m venv` usage.
+- Choose `uv` or `pixi` per project and keep the repository's documented
+  workflow consistent with that choice.
+- Optional-feature installation guidance must also use `uv` / `pixi`
+  terminology so user-facing messages stay aligned with the supported workflow.
+
 ## Interface Conventions — dict / JSON / TOML / YAML
 
 All configuration and state documents are exchanged through structured data

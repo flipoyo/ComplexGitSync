@@ -24,6 +24,14 @@ Core domain classes and their responsibilities:
 The package is `ComplexGitSync`, exposed through the `cgitsync` CLI entrypoint.
 Do **not** split it into plugins or separate packages.
 
+## Python Tooling
+
+`DevSpecs.md` allows Python projects to standardise on either `uv` or `pixi`.
+`ComplexGitSync` standardises on `uv` for contributor and CI workflows.
+
+- Local bootstrap, dependency installation, and command execution use `uv`.
+- Repository instructions must not prescribe direct `pip` / `venv` workflows.
+
 ## Document Formats
 
 | Document type | Extension | Format |
@@ -108,8 +116,8 @@ transitions.
 
 - Unit tests: `tests/unit/`
 - Integration tests: `tests/integration/`
-- Install dev extras: `pip install -e .[dev]`
-- Run suite: `python -m pytest` from the repository root
+- Install dev extras: `uv sync --extra dev`
+- Run suite: `uv run python -m pytest` from the repository root
 - Tests must not depend on network access or live git remotes.
 
 ## Versioning

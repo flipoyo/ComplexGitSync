@@ -20,13 +20,13 @@ successful synchronisation of a nested Git repository tree.
 Install \cgspkg{} from PyPI:
 
 \begin{lstlisting}[language=bash]
-$ pip install ComplexGitSync
+$ uv pip install ComplexGitSync
 \end{lstlisting}
 
 To include optional YAML support:
 
 \begin{lstlisting}[language=bash]
-$ pip install "ComplexGitSync[yaml]"
+$ uv pip install "ComplexGitSync[yaml]"
 \end{lstlisting}
 
 To install from source with developer extras (needed to run the test suite):
@@ -34,7 +34,7 @@ To install from source with developer extras (needed to run the test suite):
 \begin{lstlisting}[language=bash]
 $ git clone https://github.com/flipoyo/ComplexGitSync.git
 $ cd ComplexGitSync
-$ pip install -e ".[dev]"
+$ uv sync --extra dev
 \end{lstlisting}
 
 Verify the installation:
