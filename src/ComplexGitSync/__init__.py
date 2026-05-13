@@ -1,79 +1,27 @@
 """ComplexGitSync package."""
 
+__version__ = "0.1.0"
+
+from .access_protocol import AccessProtocol
 from .client import ComplexGitSyncClient
-from .errors import (
-    ArchitectureNotLoadedError,
-    ComplexGitSyncError,
-    ConfigValidationError,
-    FallbackRejectedError,
-    GitSyncError,
-    NestedConfigDiscoveryError,
-    TreeNotReadyError,
-)
-from .models import (
-    DependencyTreeRegistry,
-    DiscoveryState,
-    FallbackDecision,
-    GitTreeStateSnapshot,
-    InteractionMode,
-    LeafRepo,
-    LoadedSession,
-    NodeType,
-    OperationResult,
-    OutputProfile,
-    ParentRepo,
-    ProjectArchitecture,
-    ProjectTreeState,
-    RefKind,
-    RepoNode,
-    RepoLifecycleState,
-    RepoOutcome,
-    RepoRefPolicy,
-    RepoRegistryEntry,
-    RepoSpec,
-    RequestedRef,
-    ResolvedRef,
-    RuntimeOptions,
-    SyncState,
-    TreeLifecycleState,
-    WorktreeState,
-)
+from .documents import CgsDocument, ConfigDocument, GocDocument, GtsDocument
+from .git_provider import GitProvider
+from .git_repo import GitRepo
+from .git_tree import GitTree
+from .orchestre import Orchestre
+from .repo_address import RepoAddress
 
 __all__ = [
-    "ArchitectureNotLoadedError",
+    "__version__",
+    "AccessProtocol",
+    "CgsDocument",
     "ComplexGitSyncClient",
-    "ComplexGitSyncError",
-    "ConfigValidationError",
-    "DependencyTreeRegistry",
-    "DiscoveryState",
-    "FallbackDecision",
-    "FallbackRejectedError",
-    "GitTreeStateSnapshot",
-    "GitSyncError",
-    "InteractionMode",
-    "LeafRepo",
-    "LoadedSession",
-    "NestedConfigDiscoveryError",
-    "NodeType",
-    "OperationResult",
-    "OutputProfile",
-    "ParentRepo",
-    "ProjectArchitecture",
-    "ProjectTreeState",
-    "RefKind",
-    "RepoNode",
-    "RepoLifecycleState",
-    "RepoOutcome",
-    "RepoRefPolicy",
-    "RepoRegistryEntry",
-    "RepoSpec",
-    "RequestedRef",
-    "ResolvedRef",
-    "RuntimeOptions",
-    "SyncState",
-    "TreeLifecycleState",
-    "TreeNotReadyError",
-    "WorktreeState",
+    "ConfigDocument",
+    "GitProvider",
+    "GitRepo",
+    "GitTree",
+    "GocDocument",
+    "GtsDocument",
+    "Orchestre",
+    "RepoAddress",
 ]
-
-__version__ = "0.1.0"

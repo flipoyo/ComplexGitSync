@@ -1,7 +1,7 @@
 # ComplexGitSync DevPlan
 
 ## Purpose
-ComplexGitSync is a standalone sibling project that manages a nested Git repository tree from local `.cgs` project specifications and generated `.gts` Git Tree State snapshots.
+ComplexGitSync is a standalone project that manages a nested Git repository tree from local `.cgs` project specifications and generated `.gts` Git Tree State snapshots.
 
 The package must:
 - synchronize a root repository plus nested descendants by branch or tag
@@ -27,7 +27,7 @@ This document is the implementation contract for an IT agent.
 - Plugin-based extensibility
 
 ## Repository To Create
-Create a sibling repository named `ComplexGitSync` next to `cawaqsviz`.
+Create a repository named `ComplexGitSync`.
 
 Recommended root files:
 - `DevPlan.md`
@@ -41,7 +41,12 @@ Recommended source layout:
 - `src/ComplexGitSync/__init__.py`
 - `src/ComplexGitSync/__main__.py`
 - `src/ComplexGitSync/client.py`
-- `src/ComplexGitSync/models.py`
+- `src/ComplexGitSync/git_provider.py`
+- `src/ComplexGitSync/access_protocol.py`
+- `src/ComplexGitSync/git_repo.py`
+- `src/ComplexGitSync/repo_address.py`
+- `src/ComplexGitSync/git_tree.py`
+- `src/ComplexGitSync/orchestre.py`
 - `src/ComplexGitSync/documents.py`
 - `src/ComplexGitSync/discovery.py`
 - `src/ComplexGitSync/registry.py`
@@ -204,6 +209,22 @@ The registry must:
 - drive tree rendering, readiness gating, and `.gts` writing
 
 ## Object Model
+### Core Orchestration Types
+- `GitRepo`
+- `GitTree`
+- `Orchestre`
+
+`GitTree` is composed of `GitRepo` instances linked together in a parent–child graph.
+`GitTree` orchestrates git commands in two directions:
+- **Upward** (leaf → parent → root): used by `commit`, `push`, and `tag` to propagate changes up the tree.
+- **Downward** (root → parent → leaf): used by `clone`, `restart`, and `checkout` to synchronize the full tree top-down.
+
+### Address Type
+- `RepoAddress`
+
+`RepoAddress` encapsulates the identity fields required to build a Git remote URL and exposes
+`to_ssh()`, `to_https()`, `to_url(protocol)`, and `from_repo(repo)` as building methods.
+
 ### Graph Types
 - `RepoNode`
 - `ParentRepo`
@@ -257,10 +278,13 @@ The registry must:
 - `log_level = "info"`
 
 ### Required Per-Repo Keys
-- `name`
-- `path`
-- `ssh_url`
-- `https_url`
+- `gitprovider` where values are `github`, `gitlab`, or `custom`
+- `project_owner_name`
+- `project_name`
+
+### Optional Per-Repo Identity Keys
+- `group_name`
+- `gitprovider_url`
 
 ### Optional Per-Repo Keys
 - `default_branch`
@@ -269,6 +293,12 @@ The registry must:
 - `transport`
 - `enabled`
 - `remote_name`
+- `access_protocol`
+
+### Per-Repo Defaults
+- `gitprovider = "github"`
+- `group_name = project_name`
+- `access_protocol = "ssh"` and may be set to `"https"` when required
 
 ### `nested_config` Values
 - `"auto"`
@@ -431,6 +461,19 @@ Optional for traceability:
 Recommended default paths:
 - `.cgitsync/state/<project_name>.gts`
 - `.cgitsync/releases/<release_name>.gts`
+
+## Correction API Requirement
+`GitTree` must expose correction helpers for:
+- forcing a repo commit SHA
+- forcing required repo identity keys (`gitprovider`, `project_owner_name`, `project_name`, optional `group_name`, optional `gitprovider_url`, and access protocol)
+
+These are framework-level correction paths for state reconciliation; they do not replace normal validation and synchronization flows.
+
+## CI Versioning Policy
+Every push or merge must increment the package version in this scheme:
+- `YYYY.XX` where `XX` is a two-digit rolling counter
+- if `XX < 99`, increment `XX`
+- if `XX == 99`, increment `YYYY` and reset `XX` to `01`
 
 ## Python API Contract
 ### Main Client

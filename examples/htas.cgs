@@ -1,0 +1,46 @@
+# HydrologicalTwinAlphaSeries nested authoring spec
+# ──────────────────────────────────────────────────────────────────────────────
+# This .cgs file lives inside the HydrologicalTwinAlphaSeries repository root.
+# ComplexGitSync discovers it automatically when nested_config = "auto" is set
+# in the parent .cgs (cawaqsviz.cgs).  It declares the child repos owned by
+# HydrologicalTwinAlphaSeries within its own subtree.
+
+[document]
+format_version = "1.0"
+
+[project]
+name           = "HydrologicalTwinAlphaSeries"
+default_branch = "main"
+transport      = "ssh"
+
+[runtime]
+interaction             = "interactive"
+profile                 = "verbose"
+warn_on_fallback        = true
+nested_config_discovery = true
+log_level               = "info"
+
+# ── Repositories owned by HTAS ─────────────────────────────────────────────
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "HydrologicalTwinAlphaSeries"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+# Root of this nested tree.
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "hydrological_twin"
+group_name         = "hydrological_twin"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+nested_config      = "disabled"
+# Leaf repo: no further nested .cgs discovery.
+
+[repos.ref_policy]
+prefer_tag = false

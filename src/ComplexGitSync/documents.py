@@ -1,230 +1,359 @@
+"""Parsing, validation, and serialization for .cgs, .gts, and .goc documents.
+
+Hierarchy
+---------
+ConfigDocument          – base class: read / get / print / from_* / to_*
+  CgsDocument           – local authoring spec (.cgs, .toml)
+  GtsDocument           – generated Git Tree State snapshot (.gts, .toml)
+  GocDocument           – Git Orchestration Command script (.goc, .toml)
+"""
+
 from __future__ import annotations
 
+import copy
 import json
-import re
 import tomllib
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
+
+import tomli_w
 
 from .errors import ConfigValidationError
-from .models import (
-    DependencyTreeRegistry,
-    DiscoveryState,
-    GitTreeStateSnapshot,
-    InteractionMode,
-    NodeType,
-    OutputProfile,
-    ProjectArchitecture,
-    RefKind,
-    RepoLifecycleState,
-    RepoRefPolicy,
-    RepoRegistryEntry,
-    RepoSpec,
-    RuntimeOptions,
-    SyncState,
-    TreeLifecycleState,
-    WorktreeState,
-    utc_now,
+
+_MISSING = object()
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_VALID_GOC_COMMANDS = frozenset(
+    {
+        "validate",
+        "describe",
+        "tree",
+        "registry",
+        "write-gts",
+        "launch-release",
+        "clone",
+        "restart",
+        "checkout",
+        "tag",
+        "freeze-release",
+        "commit",
+        "push",
+        "status",
+    }
 )
-from .registry import make_repo_id
-
-_GIT_SSH_PATTERN = re.compile(r"^[^@\s]+@[^:\s]+:.+$")
 
 
-def read_project(source_path: str | Path) -> ProjectArchitecture | GitTreeStateSnapshot:
-    path = Path(source_path).resolve()
-    if path.suffix == ".gts":
-        return read_gts(path)
-    return read_cgs(path)
+def _dot_get(data: dict[str, Any], key: str, default: Any = None) -> Any:
+    """Return the value at the dot-separated *key* path inside *data*."""
+    parts = key.split(".")
+    node: Any = data
+    for part in parts:
+        if not isinstance(node, dict):
+            return default
+        node = node.get(part, _MISSING)
+        if node is _MISSING:
+            return default
+    return node
 
 
-def read_cgs(config_path: str | Path) -> ProjectArchitecture:
-    path = Path(config_path).resolve()
-    if path.suffix != ".cgs":
-        raise ConfigValidationError(f"Expected a .cgs file, got: {path}")
-    if not path.is_file():
-        raise ConfigValidationError(f".cgs file does not exist: {path}")
-
-    data = _load_toml(path)
-    document = _require_table(data, "document", path)
-    project = _require_table(data, "project", path)
-    runtime = data.get("runtime", {})
-    repos_data = data.get("repos", [])
-
-    if not isinstance(repos_data, list):
-        raise ConfigValidationError(f"'repos' must be an array-of-tables in {path}")
-    if "format_version" not in document:
-        raise ConfigValidationError(f"Missing document.format_version in {path}")
-    if "name" not in project or "default_branch" not in project:
-        raise ConfigValidationError(f"Missing required project keys in {path}")
-
-    runtime_options = _parse_runtime(runtime)
-    repo_specs = tuple(_parse_repo_spec(path, item, runtime_options) for item in repos_data)
-    _validate_sibling_uniqueness(repo_specs, path)
-    return ProjectArchitecture(
-        name=str(project["name"]),
-        default_branch=str(project["default_branch"]),
-        config_path=path,
-        repos=repo_specs,
-        runtime=runtime_options,
-        transport=_optional_string(project.get("transport")),
-        default_remote_name=_optional_string(project.get("default_remote_name")) or "origin",
-        log_dir=_optional_path(project.get("log_dir"), path.parent),
-    )
+def _collect_errors(checks: list[tuple[bool, str]]) -> list[str]:
+    return [msg for ok, msg in checks if not ok]
 
 
-def read_gts(gts_path: str | Path) -> GitTreeStateSnapshot:
-    path = Path(gts_path).resolve()
-    if path.suffix != ".gts":
-        raise ConfigValidationError(f"Expected a .gts file, got: {path}")
-    if not path.is_file():
-        raise ConfigValidationError(f".gts file does not exist: {path}")
-
-    data = _load_toml(path)
-    project = _require_table(data, "project", path)
-    tree_state = _require_table(data, "tree_state", path)
-    runtime = data.get("runtime", {})
-    repo_states = data.get("repo_state", [])
-    if not isinstance(repo_states, list) or not repo_states:
-        raise ConfigValidationError(f"'repo_state' must contain at least one entry in {path}")
-    if "name" not in project or "root_absolute_path" not in project:
-        raise ConfigValidationError(f"Missing required project keys in {path}")
-
-    registry = DependencyTreeRegistry()
-    for item in repo_states:
-        entry = _parse_repo_state(item, path)
-        registry.add(entry)
-    registry.lifecycle_state = TreeLifecycleState(tree_state["lifecycle_state"])
-
-    snapshot = GitTreeStateSnapshot(
-        project_name=str(project["name"]),
-        root_absolute_path=Path(str(project["root_absolute_path"])).resolve(),
-        registry=registry,
-        runtime=_parse_runtime(runtime),
-        generated_at=utc_now(),
-        command_origin=str(_require_table(data, "document", path).get("command_origin", "unknown")),
-        source_cgs_path=_optional_path(project.get("source_cgs_path")),
-        release_name=_optional_string(project.get("release_name")),
-        branch_origin=_optional_string(project.get("branch_origin")),
-        tag_origin=_optional_string(project.get("tag_origin")),
-    )
-    if not isinstance(tree_state.get("is_ready"), bool) or not isinstance(
-        tree_state.get("registry_complete"), bool
-    ):
-        raise ConfigValidationError(f"tree_state booleans are required in {path}")
-    return snapshot
+# ---------------------------------------------------------------------------
+# Mother class
+# ---------------------------------------------------------------------------
 
 
-def write_gts(
-    snapshot: GitTreeStateSnapshot,
-    output_path: str | Path | None = None,
-) -> Path:
-    if output_path:
-        target = Path(output_path).resolve()
-    else:
-        target = default_gts_path(snapshot.root_absolute_path, snapshot.project_name)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(_serialize_gts(snapshot), encoding="utf-8")
-    return target
+class ConfigDocument:
+    """Base class for all ComplexGitSync configuration document types.
+
+    Every subclass wraps a raw dictionary and exposes:
+
+    Instance methods
+    ~~~~~~~~~~~~~~~~
+    * ``read(key, default=None)`` – dot-path traversal into the underlying dict
+    * ``get(key, default=None)``  – alias for ``read``
+    * ``print()``                 – write a human-readable representation to stdout
+    * ``to_dict()``               – return a deep copy of the underlying dict
+    * ``validate()``              – raise ``ConfigValidationError`` on schema violations
+
+    Class-method factories
+    ~~~~~~~~~~~~~~~~~~~~~~
+    * ``from_dict(data)``    – create and validate from a plain dict
+    * ``from_toml(path)``    – load from a ``.toml`` / ``.cgs`` / ``.gts`` / ``.goc`` file
+    * ``from_json(path)``    – load from a ``.json`` file
+    * ``from_yaml(path)``    – load from a ``.yml`` / ``.yaml`` file (requires PyYAML)
+
+    Serializers
+    ~~~~~~~~~~~
+    * ``to_toml(path)``       – write as TOML
+    * ``to_json(path)``       – write as JSON
+    * ``to_yaml(path)``       – write as YAML (requires PyYAML)
+    """
+
+    FORMAT_VERSION: str = "1.0"
+    DOCUMENT_KIND: str = "base"
+
+    def __init__(self, data: dict[str, Any]) -> None:
+        if not isinstance(data, dict):
+            raise TypeError(f"ConfigDocument data must be a dict, got {type(data).__name__!r}.")
+        self._data: dict[str, Any] = data
+
+    # ------------------------------------------------------------------
+    # Instance methods
+    # ------------------------------------------------------------------
+
+    def read(self, key: str, default: Any = None) -> Any:
+        """Return the value at the dot-separated *key* path, or *default*."""
+        return _dot_get(self._data, key, default)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Alias for :meth:`read`."""
+        return self.read(key, default)
+
+    def print(self) -> None:
+        """Print the document as TOML to *stdout*."""
+        print(tomli_w.dumps(self._data))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a deep copy of the underlying dictionary."""
+        return copy.deepcopy(self._data)
+
+    def validate(self) -> None:
+        """Validate required fields.  Raises :exc:`ConfigValidationError` on failure.
+
+        Subclasses must override this method to enforce their own schema.
+        """
+
+    # ------------------------------------------------------------------
+    # Class-method factories
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ConfigDocument":
+        """Create a document from a plain dictionary and validate it."""
+        doc = cls(data)
+        doc.validate()
+        return doc
+
+    @classmethod
+    def from_toml(cls, path: Path | str) -> "ConfigDocument":
+        """Load a document from a TOML file (includes ``.cgs``, ``.gts``, ``.goc``)."""
+        with open(path, "rb") as fh:
+            data = tomllib.load(fh)
+        return cls.from_dict(data)
+
+    @classmethod
+    def from_json(cls, path: Path | str) -> "ConfigDocument":
+        """Load a document from a JSON file."""
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return cls.from_dict(data)
+
+    @classmethod
+    def from_yaml(cls, path: Path | str) -> "ConfigDocument":
+        """Load a document from a YAML file.
+
+        Requires ``PyYAML``.  Install with ``pip install ComplexGitSync[yaml]``.
+        """
+        try:
+            import yaml  # type: ignore[import-untyped]
+        except ImportError as exc:
+            raise ImportError(
+                "PyYAML is required for YAML support.  "
+                "Install it with: pip install ComplexGitSync[yaml]"
+            ) from exc
+        with open(path, encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+        return cls.from_dict(data)
+
+    # ------------------------------------------------------------------
+    # Serializers
+    # ------------------------------------------------------------------
+
+    def to_toml(self, path: Path | str) -> None:
+        """Write the document to a TOML file."""
+        with open(path, "wb") as fh:
+            tomli_w.dump(self._data, fh)
+
+    def to_json(self, path: Path | str, *, indent: int = 2) -> None:
+        """Write the document to a JSON file."""
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(self._data, fh, indent=indent)
+
+    def to_yaml(self, path: Path | str) -> None:
+        """Write the document to a YAML file.
+
+        Requires ``PyYAML``.  Install with ``pip install ComplexGitSync[yaml]``.
+        """
+        try:
+            import yaml  # type: ignore[import-untyped]
+        except ImportError as exc:
+            raise ImportError(
+                "PyYAML is required for YAML support.  "
+                "Install it with: pip install ComplexGitSync[yaml]"
+            ) from exc
+        with open(path, "w", encoding="utf-8") as fh:
+            yaml.dump(self._data, fh, default_flow_style=False, allow_unicode=True)
+
+    # ------------------------------------------------------------------
+    # Dunder helpers
+    # ------------------------------------------------------------------
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"{self.__class__.__name__}(kind={self.DOCUMENT_KIND!r})"
 
 
-def default_gts_path(root_path: Path, project_name: str, release_name: str | None = None) -> Path:
-    if release_name:
-        return (root_path / ".cgitsync" / "releases" / f"{release_name}.gts").resolve()
-    return (root_path / ".cgitsync" / "state" / f"{project_name}.gts").resolve()
+# ---------------------------------------------------------------------------
+# CgsDocument – ComplexGitSync authoring spec
+# ---------------------------------------------------------------------------
 
 
-def snapshot_from_registry(
-    project_name: str,
-    root_absolute_path: Path,
-    registry: DependencyTreeRegistry,
-    runtime: RuntimeOptions,
-    *,
-    command_origin: str = "write-gts",
-    source_cgs_path: Path | None = None,
-    release_name: str | None = None,
-    branch_origin: str | None = None,
-    tag_origin: str | None = None,
-) -> GitTreeStateSnapshot:
-    registry.recompute_tree_state()
-    return GitTreeStateSnapshot(
-        project_name=project_name,
-        root_absolute_path=root_absolute_path.resolve(),
-        registry=registry,
-        runtime=runtime,
-        generated_at=utc_now(),
-        command_origin=command_origin,
-        source_cgs_path=source_cgs_path,
-        release_name=release_name,
-        branch_origin=branch_origin,
-        tag_origin=tag_origin,
-    )
+class CgsDocument(ConfigDocument):
+    """Parser and validator for ``.cgs`` authoring spec files.
+
+    A ``.cgs`` file is a TOML document that describes the **static** project
+    topology: which repositories belong to the tree, how they relate, and what
+    runtime defaults apply.  It is **never** a runtime snapshot.
+
+    Required top-level tables: ``[document]``, ``[project]``, ``[[repos]]``.
+    The ``[runtime]`` table is optional; built-in defaults are applied when it
+    is absent.
+
+    Example usage::
+
+        doc = CgsDocument.from_toml("cawaqsviz.cgs")
+        doc.print()
+        print(doc.project_name, doc.default_branch)
+        for repo in doc.repos:
+            print(repo["project_name"])
+    """
+
+    DOCUMENT_KIND = "cgs"
+
+    _REQUIRED_DOCUMENT_KEYS = ("format_version",)
+    _REQUIRED_PROJECT_KEYS = ("name", "default_branch")
+    _REQUIRED_REPO_KEYS = ("project_owner_name", "project_name")
+    _VALID_GITPROVIDERS = frozenset(("github", "gitlab", "custom"))
+    _VALID_ACCESS_PROTOCOLS = frozenset(("ssh", "https"))
+    _VALID_NESTED_CONFIG_SPECIAL = frozenset(("auto", "disabled"))
+
+    RUNTIME_DEFAULTS: dict[str, Any] = {
+        "interaction": "interactive",
+        "profile": "verbose",
+        "prompt_scope": "per-event",
+        "warn_on_fallback": True,
+        "allow_mixed_resolution": True,
+        "nested_config_discovery": True,
+        "log_level": "info",
+    }
+
+    def validate(self) -> None:  # noqa: C901
+        errors: list[str] = []
+
+        # [document] section
+        for key in self._REQUIRED_DOCUMENT_KEYS:
+            if self.read(f"document.{key}") is None:
+                errors.append(f"[document] missing required key: '{key}'")
+
+        # [project] section
+        for key in self._REQUIRED_PROJECT_KEYS:
+            if self.read(f"project.{key}") is None:
+                errors.append(f"[project] missing required key: '{key}'")
+
+        # [[repos]] entries
+        repos = self._data.get("repos", [])
+        if not isinstance(repos, list):
+            errors.append("'repos' must be an array of tables ([[repos]])")
+        else:
+            for idx, repo in enumerate(repos):
+                if not isinstance(repo, dict):
+                    errors.append(f"repos[{idx}] must be a table")
+                    continue
+                for key in self._REQUIRED_REPO_KEYS:
+                    if not repo.get(key):
+                        errors.append(f"repos[{idx}] missing required key: '{key}'")
+                gitprovider = repo.get("gitprovider", "github")
+                if gitprovider not in self._VALID_GITPROVIDERS:
+                    errors.append(
+                        f"repos[{idx}].gitprovider invalid: {gitprovider!r} "
+                        f"(choose from: {sorted(self._VALID_GITPROVIDERS)})"
+                    )
+                access_protocol = repo.get("access_protocol", "ssh")
+                if access_protocol not in self._VALID_ACCESS_PROTOCOLS:
+                    errors.append(
+                        f"repos[{idx}].access_protocol invalid: {access_protocol!r} "
+                        f"(choose from: {sorted(self._VALID_ACCESS_PROTOCOLS)})"
+                    )
+                nested = repo.get("nested_config")
+                if nested is not None and nested not in self._VALID_NESTED_CONFIG_SPECIAL:
+                    if not str(nested).endswith(".cgs"):
+                        errors.append(
+                            f"repos[{idx}].nested_config must be 'auto', 'disabled', "
+                            f"or a .cgs relative path; got: {nested!r}"
+                        )
+
+        if errors:
+            raise ConfigValidationError(
+                "Invalid .cgs document:\n" + "\n".join(f"  • {e}" for e in errors)
+            )
+
+    # Convenience properties
+
+    @property
+    def project_name(self) -> str | None:
+        """Return the project name declared in ``[project]``."""
+        return self.read("project.name")
+
+    @property
+    def default_branch(self) -> str | None:
+        """Return the default branch declared in ``[project]``."""
+        return self.read("project.default_branch")
+
+    @property
+    def repos(self) -> list[dict[str, Any]]:
+        """Return the list of repo tables from ``[[repos]]``."""
+        return list(self._data.get("repos", []))
+
+    def runtime_setting(self, key: str) -> Any:
+        """Return a runtime setting, falling back to :attr:`RUNTIME_DEFAULTS`."""
+        return self._data.get("runtime", {}).get(key, self.RUNTIME_DEFAULTS.get(key))
 
 
-def registry_from_snapshot(snapshot: GitTreeStateSnapshot) -> DependencyTreeRegistry:
-    return snapshot.registry
+# ---------------------------------------------------------------------------
+# GtsDocument – Git Tree State snapshot
+# ---------------------------------------------------------------------------
 
 
-def _parse_runtime(data: dict[str, Any]) -> RuntimeOptions:
-    return RuntimeOptions(
-        interaction=InteractionMode(data.get("interaction", InteractionMode.INTERACTIVE)),
-        profile=OutputProfile(data.get("profile", OutputProfile.VERBOSE)),
-        prompt_scope=str(data.get("prompt_scope", "per-event")),
-        warn_on_fallback=bool(data.get("warn_on_fallback", True)),
-        allow_mixed_resolution=bool(data.get("allow_mixed_resolution", True)),
-        nested_config_discovery=bool(data.get("nested_config_discovery", True)),
-        log_level=str(data.get("log_level", "info")),
-    )
+class GtsDocument(ConfigDocument):
+    """Parser and validator for ``.gts`` Git Tree State snapshot files.
 
+    A ``.gts`` file is a TOML document **generated** by ComplexGitSync.  It
+    captures the exact state of the full repository tree — including absolute
+    paths and commit SHAs — for replay and release reproducibility.
 
-def _parse_repo_spec(config_path: Path, item: dict[str, Any], runtime: RuntimeOptions) -> RepoSpec:
-    required = ("name", "path", "ssh_url", "https_url")
-    if any(key not in item for key in required):
-        raise ConfigValidationError(f"Each repo in {config_path} must define {required}")
-    ssh_url = str(item["ssh_url"])
-    https_url = str(item["https_url"])
-    if not _looks_like_git_url(ssh_url) or not _looks_like_git_url(https_url):
-        raise ConfigValidationError(f"Invalid repo URL in {config_path}: {item['name']}")
-    nested_config = str(item.get("nested_config", "auto"))
-    if nested_config not in {"auto", "disabled"}:
-        _validate_nested_config_path(config_path, str(item["path"]), nested_config)
+    Required top-level tables: ``[document]``, ``[project]``, ``[tree_state]``,
+    ``[[repo_state]]``.
 
-    policy_data = item.get("ref_policy", {})
-    runtime_data = item.get("runtime", {})
-    return RepoSpec(
-        name=str(item["name"]),
-        path=str(item["path"]),
-        ssh_url=ssh_url,
-        https_url=https_url,
-        default_branch=_optional_string(item.get("default_branch")),
-        fallback_branch=_optional_string(item.get("fallback_branch")),
-        nested_config=nested_config,
-        transport=_optional_string(item.get("transport")),
-        enabled=bool(item.get("enabled", True)),
-        remote_name=_optional_string(item.get("remote_name")),
-        ref_policy=RepoRefPolicy(
-            default_branch=_optional_string(policy_data.get("default_branch")),
-            fallback_branch=_optional_string(policy_data.get("fallback_branch")),
-        ),
-        runtime=RuntimeOptions(
-            interaction=InteractionMode(runtime_data.get("interaction", runtime.interaction)),
-            profile=OutputProfile(runtime_data.get("profile", runtime.profile)),
-            prompt_scope=str(runtime_data.get("prompt_scope", runtime.prompt_scope)),
-            warn_on_fallback=bool(runtime_data.get("warn_on_fallback", runtime.warn_on_fallback)),
-            allow_mixed_resolution=bool(
-                runtime_data.get("allow_mixed_resolution", runtime.allow_mixed_resolution)
-            ),
-            nested_config_discovery=bool(
-                runtime_data.get("nested_config_discovery", runtime.nested_config_discovery)
-            ),
-            log_level=str(runtime_data.get("log_level", runtime.log_level)),
-        ),
-        source_cgs_path=config_path,
-    )
+    Example usage::
 
+        snap = GtsDocument.from_toml(".cgitsync/state/project.gts")
+        print(snap.lifecycle_state, snap.is_ready)
+        for repo in snap.repo_states:
+            print(repo["name"], repo["commit_sha"])
+    """
 
-def _parse_repo_state(item: dict[str, Any], source_path: Path) -> RepoRegistryEntry:
-    required = (
+    DOCUMENT_KIND = "gts"
+
+    _REQUIRED_DOCUMENT_KEYS = ("format_version", "generated_at", "command_origin")
+    _REQUIRED_PROJECT_KEYS = ("name", "root_absolute_path")
+    _REQUIRED_TREE_STATE_KEYS = ("lifecycle_state", "is_ready", "registry_complete")
+    _REQUIRED_REPO_STATE_KEYS = (
         "name",
         "node_type",
         "absolute_path",
@@ -236,179 +365,298 @@ def _parse_repo_state(item: dict[str, Any], source_path: Path) -> RepoRegistryEn
         "resolved_ref_name",
         "commit_sha",
     )
-    if any(key not in item for key in required):
-        raise ConfigValidationError(f"Missing mandatory repo_state keys in {source_path}")
-    absolute_path = Path(str(item["absolute_path"]))
-    if not absolute_path.is_absolute():
-        raise ConfigValidationError(f"repo_state.absolute_path must be absolute in {source_path}")
-    parent_id = _optional_string(item.get("parent_id"))
-    relative_path = item.get("relative_path")
-    repo_id = str(item.get("repo_id") or make_repo_id(parent_id, relative_path, str(item["name"])))
-    return RepoRegistryEntry(
-        repo_id=repo_id,
-        name=str(item["name"]),
-        node_type=NodeType(item["node_type"]),
-        parent_id=parent_id,
-        absolute_path=absolute_path.resolve(),
-        relative_path=Path(str(relative_path)) if relative_path else None,
-        source_cgs_path=_optional_path(item.get("source_cgs_path")),
-        current_ref_kind=RefKind(item["current_ref_kind"]),
-        current_ref_name=str(item["current_ref_name"]),
-        target_ref_kind=RefKind(item["target_ref_kind"]) if item.get("target_ref_kind") else None,
-        target_ref_name=_optional_string(item.get("target_ref_name")),
-        resolved_ref_kind=RefKind(item["resolved_ref_kind"]),
-        resolved_ref_name=str(item["resolved_ref_name"]),
-        commit_sha=str(item["commit_sha"]),
-        repo_lifecycle_state=RepoLifecycleState(item["repo_lifecycle_state"]),
-        sync_state=SyncState(item["sync_state"]),
-        discovery_state=DiscoveryState(item.get("discovery_state", DiscoveryState.RESOLVED)),
-        fallback_branch=_optional_string(item.get("fallback_branch")),
-        fallback_applied=bool(item.get("fallback_applied", False)),
-        fallback_reason=_optional_string(item.get("fallback_reason")),
-        worktree_state=WorktreeState(item["worktree_state"]) if item.get("worktree_state") else None,
-        is_reachable=bool(item.get("is_reachable", True)),
-    )
+
+    def validate(self) -> None:
+        errors: list[str] = []
+
+        for key in self._REQUIRED_DOCUMENT_KEYS:
+            if self.read(f"document.{key}") is None:
+                errors.append(f"[document] missing required key: '{key}'")
+
+        for key in self._REQUIRED_PROJECT_KEYS:
+            if self.read(f"project.{key}") is None:
+                errors.append(f"[project] missing required key: '{key}'")
+
+        for key in self._REQUIRED_TREE_STATE_KEYS:
+            if self.read(f"tree_state.{key}") is None:
+                errors.append(f"[tree_state] missing required key: '{key}'")
+
+        repo_states = self._data.get("repo_state", [])
+        if not isinstance(repo_states, list):
+            errors.append("'repo_state' must be an array of tables ([[repo_state]])")
+        else:
+            for idx, repo in enumerate(repo_states):
+                if not isinstance(repo, dict):
+                    errors.append(f"repo_state[{idx}] must be a table")
+                    continue
+                for key in self._REQUIRED_REPO_STATE_KEYS:
+                    if not repo.get(key):
+                        errors.append(f"repo_state[{idx}] missing required key: '{key}'")
+
+        if errors:
+            raise ConfigValidationError(
+                "Invalid .gts document:\n" + "\n".join(f"  • {e}" for e in errors)
+            )
+
+    # Convenience properties
+
+    @property
+    def lifecycle_state(self) -> str | None:
+        """Return the tree lifecycle state (e.g. ``"READY"``)."""
+        return self.read("tree_state.lifecycle_state")
+
+    @property
+    def is_ready(self) -> bool:
+        """Return ``True`` when the snapshot records a ``READY`` tree."""
+        return bool(self.read("tree_state.is_ready", False))
+
+    @property
+    def repo_states(self) -> list[dict[str, Any]]:
+        """Return the list of per-repo state tables from ``[[repo_state]]``."""
+        return list(self._data.get("repo_state", []))
 
 
-def _validate_sibling_uniqueness(repos: tuple[RepoSpec, ...], config_path: Path) -> None:
-    seen_names: set[str] = set()
-    seen_paths: set[str] = set()
-    for repo in repos:
-        if repo.name in seen_names:
-            raise ConfigValidationError(f"Duplicate repo name in {config_path}: {repo.name}")
-        if repo.path in seen_paths:
-            raise ConfigValidationError(f"Duplicate repo path in {config_path}: {repo.path}")
-        seen_names.add(repo.name)
-        seen_paths.add(repo.path)
+# ---------------------------------------------------------------------------
+# GocDocument – Git Orchestration Command script
+# ---------------------------------------------------------------------------
 
 
-def _validate_nested_config_path(config_path: Path, repo_path: str, nested_config: str) -> None:
-    candidate = Path(nested_config)
-    if candidate.is_absolute():
-        raise ConfigValidationError(f"nested_config must be relative in {config_path}: {nested_config}")
-    repo_root = (config_path.parent / repo_path).resolve()
-    resolved = (repo_root / candidate).resolve()
-    if resolved != repo_root and repo_root not in resolved.parents:
-        raise ConfigValidationError(f"nested_config escapes repo root in {config_path}: {nested_config}")
+class GocDocument(ConfigDocument):
+    """Parser and validator for ``.goc`` Git Orchestration Command files.
 
+    A ``.goc`` file is a TOML document that defines a **sequence of
+    ``cgitsync`` commands** to execute against a project.  It is the
+    machine-readable counterpart to running several CLI commands in order,
+    carrying shared session defaults (interaction mode, output profile,
+    transport protocol) and the project entry-point (``.cgs`` or ``.gts``).
 
-def _looks_like_git_url(value: str) -> bool:
-    return value.startswith(("https://", "http://", "ssh://")) or bool(_GIT_SSH_PATTERN.match(value))
+    Required top-level tables: ``[document]``, ``[project]``, ``[[actions]]``.
+    The ``[session]`` table is optional; built-in defaults are applied when
+    it is absent.
 
+    Structure
+    ~~~~~~~~~
+    .. code-block:: toml
 
-def _load_toml(path: Path) -> dict[str, Any]:
-    with path.open("rb") as handle:
-        loaded = tomllib.load(handle)
-    if not isinstance(loaded, dict):
-        raise ConfigValidationError(f"Invalid TOML document in {path}")
-    return loaded
+        [document]
+        format_version = "1.0"
 
+        [session]
+        interaction = "interactive"   # interactive | direct
+        profile     = "verbose"       # verbose | whisper_sync
+        transport   = "ssh"           # ssh | https
 
-def _require_table(data: dict[str, Any], key: str, path: Path) -> dict[str, Any]:
-    table = data.get(key)
-    if not isinstance(table, dict):
-        raise ConfigValidationError(f"Missing or invalid [{key}] table in {path}")
-    return table
+        [project]
+        source      = "cawaqsviz.cgs" # relative path to .cgs or .gts
+        name        = "CaWaQS-ViZ"    # project display name
+        repo_name   = "cawaqsviz"     # repository slug
+        gitprovider = "gitlab"        # github | gitlab
+        group_name  = "cawaqs/gviz"   # required for gitlab
+        # project_owner_name = "my-org"  # required for github
 
+        [[actions]]
+        command = "validate"
 
-def _optional_string(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value)
-    return text or None
+        [[actions]]
+        command = "clone"
 
+        [[actions]]
+        command = "checkout"
+        [actions.args]
+        ref      = "develop"
+        ref_type = "branch"
 
-def _optional_path(value: Any, base: Path | None = None) -> Path | None:
-    if value is None:
-        return None
-    path = Path(str(value))
-    if base is not None and not path.is_absolute():
-        path = base / path
-    return path.resolve()
+    Example usage::
 
+        plan = GocDocument.from_toml("deploy.goc")
+        print(plan.project_source, plan.interaction, plan.profile)
+        for action in plan.actions:
+            print(action["command"])
+    """
 
-def _serialize_gts(snapshot: GitTreeStateSnapshot) -> str:
-    registry = snapshot.registry
-    registry.recompute_tree_state()
-    lines = [
-        "[document]",
-        f"format_version = {_toml_value('1.0')}",
-        f"generated_at = {_toml_value(snapshot.generated_at.isoformat())}",
-        f"command_origin = {_toml_value(snapshot.command_origin)}",
-        "",
-        "[project]",
-        f"name = {_toml_value(snapshot.project_name)}",
-        f"root_absolute_path = {_toml_value(str(snapshot.root_absolute_path))}",
-    ]
-    if snapshot.source_cgs_path:
-        lines.append(f"source_cgs_path = {_toml_value(str(snapshot.source_cgs_path))}")
-    if snapshot.release_name:
-        lines.append(f"release_name = {_toml_value(snapshot.release_name)}")
-    if snapshot.branch_origin:
-        lines.append(f"branch_origin = {_toml_value(snapshot.branch_origin)}")
-    if snapshot.tag_origin:
-        lines.append(f"tag_origin = {_toml_value(snapshot.tag_origin)}")
+    DOCUMENT_KIND = "goc"
 
-    lines.extend(
-        [
-            "",
-            "[runtime]",
-            f"interaction = {_toml_value(snapshot.runtime.interaction)}",
-            f"profile = {_toml_value(snapshot.runtime.profile)}",
-            f"prompt_scope = {_toml_value(snapshot.runtime.prompt_scope)}",
-            f"warn_on_fallback = {_toml_value(snapshot.runtime.warn_on_fallback)}",
-            f"allow_mixed_resolution = {_toml_value(snapshot.runtime.allow_mixed_resolution)}",
-            f"nested_config_discovery = {_toml_value(snapshot.runtime.nested_config_discovery)}",
-            f"log_level = {_toml_value(snapshot.runtime.log_level)}",
-            "",
-            "[tree_state]",
-            f"lifecycle_state = {_toml_value(registry.lifecycle_state)}",
-            f"is_ready = {_toml_value(registry.is_ready())}",
-            f"registry_complete = {_toml_value(registry.registry_complete)}",
-        ]
-    )
+    _REQUIRED_DOCUMENT_KEYS = ("format_version",)
+    _REQUIRED_PROJECT_KEYS = ("source",)
+    _VALID_INTERACTIONS = frozenset(("interactive", "direct"))
+    _VALID_PROFILES = frozenset(("verbose", "whisper_sync"))
+    _VALID_TRANSPORTS = frozenset(("ssh", "https"))
+    _VALID_PROJECT_GITPROVIDERS = frozenset(("github", "gitlab"))
+    _DEFAULT_PROJECT_GITPROVIDER = "github"
 
-    for entry in sorted(registry.values(), key=lambda value: value.repo_id):
-        lines.extend(["", "[[repo_state]]"])
-        _append_toml_pair(lines, "repo_id", entry.repo_id)
-        _append_toml_pair(lines, "name", entry.name)
-        _append_toml_pair(lines, "node_type", entry.node_type)
-        _append_toml_pair(lines, "parent_id", entry.parent_id, optional=True)
-        _append_toml_pair(lines, "absolute_path", str(entry.absolute_path))
-        _append_toml_pair(
-            lines, "relative_path", str(entry.relative_path) if entry.relative_path else None, optional=True
+    SESSION_DEFAULTS: dict[str, str] = {
+        "interaction": "interactive",
+        "profile": "verbose",
+        "transport": "ssh",
+    }
+
+    def validate(self) -> None:
+        errors: list[str] = []
+
+        for key in self._REQUIRED_DOCUMENT_KEYS:
+            if self.read(f"document.{key}") is None:
+                errors.append(f"[document] missing required key: '{key}'")
+
+        for key in self._REQUIRED_PROJECT_KEYS:
+            if self.read(f"project.{key}") is None:
+                errors.append(f"[project] missing required key: '{key}'")
+
+        project = self._data.get("project", {})
+        if not isinstance(project, dict):
+            errors.append("[project] must be a table")
+            project = {}
+
+        source = self.read("project.source", "")
+        if source and not (str(source).endswith(".cgs") or str(source).endswith(".gts")):
+            errors.append(
+                f"[project].source must be a .cgs or .gts path; got: {source!r}"
+            )
+
+        provider = str(project.get("gitprovider", self._DEFAULT_PROJECT_GITPROVIDER))
+        if project.get("gitprovider") is not None and provider not in self._VALID_PROJECT_GITPROVIDERS:
+            errors.append(
+                f"[project].gitprovider invalid: {provider!r} "
+                f"(choose from: {sorted(self._VALID_PROJECT_GITPROVIDERS)})"
+            )
+
+        identity_fields_present = any(
+            project.get(key)
+            for key in ("repo_name", "project_owner_name", "group_name", "gitprovider_url")
         )
-        _append_toml_pair(
-            lines,
-            "source_cgs_path",
-            str(entry.source_cgs_path) if entry.source_cgs_path else None,
-            optional=True,
-        )
-        _append_toml_pair(lines, "repo_lifecycle_state", entry.repo_lifecycle_state)
-        _append_toml_pair(lines, "sync_state", entry.sync_state)
-        _append_toml_pair(lines, "current_ref_kind", entry.current_ref_kind)
-        _append_toml_pair(lines, "current_ref_name", entry.current_ref_name)
-        _append_toml_pair(lines, "target_ref_kind", entry.target_ref_kind, optional=True)
-        _append_toml_pair(lines, "target_ref_name", entry.target_ref_name, optional=True)
-        _append_toml_pair(lines, "resolved_ref_kind", entry.resolved_ref_kind)
-        _append_toml_pair(lines, "resolved_ref_name", entry.resolved_ref_name)
-        _append_toml_pair(lines, "commit_sha", entry.commit_sha)
-        _append_toml_pair(lines, "fallback_branch", entry.fallback_branch, optional=True)
-        _append_toml_pair(lines, "fallback_applied", entry.fallback_applied)
-        _append_toml_pair(lines, "fallback_reason", entry.fallback_reason, optional=True)
-        _append_toml_pair(lines, "discovery_state", entry.discovery_state)
-        _append_toml_pair(lines, "worktree_state", entry.worktree_state, optional=True)
-        _append_toml_pair(lines, "is_reachable", entry.is_reachable)
-    return "\n".join(lines) + "\n"
+        if identity_fields_present:
+            if not project.get("repo_name"):
+                errors.append("[project] missing required key for address composition: 'repo_name'")
+            if provider == "github" and not project.get("project_owner_name"):
+                errors.append(
+                    "[project].project_owner_name is required when [project].gitprovider is 'github'"
+                )
+            if provider == "gitlab" and not project.get("group_name"):
+                errors.append("[project].group_name is required when [project].gitprovider is 'gitlab'")
 
+        interaction = self.read("session.interaction", self.SESSION_DEFAULTS["interaction"])
+        if interaction not in self._VALID_INTERACTIONS:
+            errors.append(
+                f"[session].interaction invalid: {interaction!r} "
+                f"(choose from: {sorted(self._VALID_INTERACTIONS)})"
+            )
 
-def _toml_value(value: Any) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return json.dumps(str(value))
+        profile = self.read("session.profile", self.SESSION_DEFAULTS["profile"])
+        if profile not in self._VALID_PROFILES:
+            errors.append(
+                f"[session].profile invalid: {profile!r} "
+                f"(choose from: {sorted(self._VALID_PROFILES)})"
+            )
 
+        transport = self.read("session.transport", self.SESSION_DEFAULTS["transport"])
+        if transport not in self._VALID_TRANSPORTS:
+            errors.append(
+                f"[session].transport invalid: {transport!r} "
+                f"(choose from: {sorted(self._VALID_TRANSPORTS)})"
+            )
 
-def _append_toml_pair(lines: list[str], key: str, value: Any, *, optional: bool = False) -> None:
-    if optional and value is None:
-        return
-    lines.append(f"{key} = {_toml_value(value)}")
+        actions = self._data.get("actions", [])
+        if not isinstance(actions, list) or len(actions) == 0:
+            errors.append("'actions' must be a non-empty array of tables ([[actions]])")
+        else:
+            for idx, action in enumerate(actions):
+                if not isinstance(action, dict):
+                    errors.append(f"actions[{idx}] must be a table")
+                    continue
+                cmd = action.get("command")
+                if not cmd:
+                    errors.append(f"actions[{idx}] missing required key: 'command'")
+                elif cmd not in _VALID_GOC_COMMANDS:
+                    errors.append(
+                        f"actions[{idx}].command unknown: {cmd!r} "
+                        f"(valid commands: {sorted(_VALID_GOC_COMMANDS)})"
+                    )
+
+        if errors:
+            raise ConfigValidationError(
+                "Invalid .goc document:\n" + "\n".join(f"  • {e}" for e in errors)
+            )
+
+    # Convenience properties
+
+    @property
+    def project_source(self) -> str | None:
+        """Return the ``.cgs`` or ``.gts`` entry-point path."""
+        return self.read("project.source")
+
+    @property
+    def project_name(self) -> str | None:
+        """Return the display project name declared in ``[project]``."""
+        return self.read("project.name")
+
+    @property
+    def project_repo_name(self) -> str | None:
+        """Return the repository slug declared in ``[project].repo_name``."""
+        return self.read("project.repo_name")
+
+    @property
+    def project_gitprovider_address(self) -> str | None:
+        """Return the computed git provider address for ``[project]``."""
+        return self._compose_project_gitprovider_address()
+
+    @property
+    def interaction(self) -> str:
+        """Return the session interaction mode (default ``"interactive"``)."""
+        return self.read("session.interaction", self.SESSION_DEFAULTS["interaction"])
+
+    @property
+    def profile(self) -> str:
+        """Return the session output profile (default ``"verbose"``)."""
+        return self.read("session.profile", self.SESSION_DEFAULTS["profile"])
+
+    @property
+    def transport(self) -> str:
+        """Return the session transport protocol (default ``"ssh"``)."""
+        return self.read("session.transport", self.SESSION_DEFAULTS["transport"])
+
+    @property
+    def actions(self) -> list[dict[str, Any]]:
+        """Return the ordered list of action tables from ``[[actions]]``."""
+        return list(self._data.get("actions", []))
+
+    def session_setting(self, key: str) -> Any:
+        """Return a session setting, falling back to :attr:`SESSION_DEFAULTS`."""
+        return self._data.get("session", {}).get(key, self.SESSION_DEFAULTS.get(key))
+
+    def _compose_project_gitprovider_address(self) -> str | None:
+        project = self._data.get("project", {})
+        if not isinstance(project, dict):
+            return None
+
+        repo_name = project.get("repo_name")
+        if not repo_name:
+            return None
+
+        provider = str(project.get("gitprovider", self._DEFAULT_PROJECT_GITPROVIDER))
+        host = self._resolve_provider_host(provider, project.get("gitprovider_url"))
+
+        if provider == "github":
+            namespace = project.get("project_owner_name")
+        elif provider == "gitlab":
+            namespace = project.get("group_name")
+        else:
+            return None
+
+        if not namespace:
+            return None
+
+        if self.transport == "ssh":
+            return f"git@{host}:{namespace}/{repo_name}.git"
+        return f"https://{host}/{namespace}/{repo_name}.git"
+
+    @staticmethod
+    def _resolve_provider_host(gitprovider: str, gitprovider_url: Any) -> str:
+        """Resolve provider host; bare host/url values default to HTTPS URL parsing."""
+        if gitprovider_url:
+            base = str(gitprovider_url).strip()
+            parsed = urlsplit(base if "://" in base else f"https://{base}")
+            host = parsed.netloc or parsed.path.strip("/").split("/", 1)[0]
+            if host:
+                return host
+        if gitprovider == "gitlab":
+            return "gitlab.com"
+        return "github.com"

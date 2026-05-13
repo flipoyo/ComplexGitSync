@@ -7,9 +7,20 @@
 - Keep the package monolithic and explicit.
 - Preserve the `.cgs` versus `.gts` separation.
 
+## Planning Precision Addendum
+- Keep the orchestration baseline object-oriented around `GitRepo`, `GitTree`, and `Orchestre`.
+- Treat per-repo identity keys as mandatory contract fields: `gitprovider`, `project_owner_name`, `project_name`, optional `group_name`, optional `gitprovider_url`.
+- Default rules: `gitprovider=github`, `group_name=project_name`, access protocol defaults to `ssh` unless `https` is selected.
+- Ensure `GitTree` exposes correction helpers to force SHA and per-repo identity keys.
+- `GitTree` orchestrates commands upward (leaf → parent → root) for `commit`, `push`, and `tag`; and downward (root → parent → leaf) for `clone`, `restart`, and `checkout`.
+- `RepoAddress` is a dedicated class with `to_ssh()`, `to_https()`, `to_url(protocol)`, and `from_repo(repo)` building methods.
+- Input formats (`.cgs`, `.gts`, `.goc`) are handled by document classes (`CgsDocument`, `GtsDocument`, `GocDocument`) that extend `ConfigDocument`.
+- Add CI automation so each push or merge increments package version in `YYYY.XX` with rollover from `.99` to next `YYYY.01`.
+- CI must run on Linux, Windows, and macOS to ensure multi-OS compatibility.
+
 ## T00 - Bootstrap Repository
 ### Goal
-Create the sibling repository structure and baseline packaging files.
+Create the repository structure and baseline packaging files.
 
 ### Deliverables
 - repository root folder `ComplexGitSync`
@@ -39,6 +50,7 @@ Implement the core type system before command logic.
 - discovery enums
 - sync-state enums
 - interaction/profile enums
+- provider/protocol enums for per-repo identity keys
 - `ConfigValidationError`
 - `ArchitectureNotLoadedError`
 - `GitSyncError`
@@ -46,6 +58,8 @@ Implement the core type system before command logic.
 - `NestedConfigDiscoveryError`
 - `TreeNotReadyError`
 - basic dataclasses for refs and fallback decisions
+- bootstrap classes `GitRepo`, `GitTree`, and `Orchestre`
+- `RepoAddress` class with `to_ssh()`, `to_https()`, `to_url(protocol)`, and `from_repo(repo)` building methods
 
 ### Dependencies
 - T00
@@ -65,6 +79,7 @@ Create the authoritative in-memory graph and registry structures.
 - `RepoRegistryEntry`
 - `DependencyTreeRegistry`
 - readiness/completeness computation helpers
+- correction paths in `GitTree` for forcing SHA and repo identity keys
 
 ### Dependencies
 - T01
@@ -420,6 +435,22 @@ Make the package implementable and usable by another agent or engineer.
 - documentation matches implemented CLI and API
 - examples are coherent with the CaWaQS-Viz scenario
 
+## T20 - CI Version Increment Automation
+### Goal
+Ensure each push or merge increments package version deterministically.
+
+### Deliverables
+- CI workflow rule that updates package version on push/merge
+- version increment logic implementing `YYYY.XX` rollover (`XX < 99` increments `XX`, otherwise increment `YYYY` and reset to `01`)
+- guardrails to avoid malformed versions
+
+### Dependencies
+- T00
+
+### Acceptance
+- each push or merge computes the next package version using the required format
+- rollover from `YYYY.99` to `(YYYY+1).01` is covered
+
 ## Recommended Execution Order
 1. T00
 2. T01
@@ -441,6 +472,7 @@ Make the package implementable and usable by another agent or engineer.
 18. T17
 19. T18
 20. T19
+21. T20
 
 ## Parallelization Notes
 - T03 can start once T01 is stable.

@@ -1,0 +1,65 @@
+# CaWaQS-Viz project authoring spec
+# ──────────────────────────────────────────────────────────────────────────────
+# This .cgs file describes the static topology of the CaWaQS-Viz project.
+# It is the starting point for clone, restart, checkout, and validate commands.
+# Never embed runtime state here.
+
+[document]
+format_version = "1.0"
+
+[project]
+name             = "CaWaQS-Viz"
+default_branch   = "main"
+transport        = "ssh"
+default_remote_name = "origin"
+# Optional: override the default log directory
+# log_dir = ".cgitsync/logs"
+
+[runtime]
+interaction               = "interactive"   # interactive | direct
+profile                   = "verbose"       # verbose | whisper_sync
+prompt_scope              = "per-event"
+warn_on_fallback          = true
+allow_mixed_resolution    = true
+nested_config_discovery   = true
+log_level                 = "info"
+
+# ── Repositories ───────────────────────────────────────────────────────────
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "CaWaQS-Viz"
+# group_name defaults to project_name
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+# This is the root repository; no relative_path needed.
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "HydrologicalTwinAlphaSeries"
+group_name         = "HydrologicalTwinAlphaSeries"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+# When this repo is cloned locally, ComplexGitSync scans it for a nested .cgs.
+nested_config      = "auto"
+
+[repos.ref_policy]
+prefer_tag = false
+
+[repos.runtime]
+warn_on_fallback = true
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "CWV_user_guide"
+group_name         = "CWV_user_guide"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+# No nested repos under the user guide.
+nested_config      = "disabled"
