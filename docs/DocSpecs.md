@@ -28,6 +28,8 @@ A concise, step-by-step guide that takes a brand-new user from installation to
 first successful use of the main workflow. It must:
 
 - Cover prerequisites and installation in full.
+- For Python projects, show only `uv` or `pixi` workflows for environment and
+  dependency management — never raw `pip` / `venv` instructions.
 - Walk through the primary workflow end-to-end with concrete examples.
 - Be short enough to read in one sitting (target: ≤ 15 pages).
 

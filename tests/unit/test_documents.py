@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import textwrap
 from pathlib import Path
@@ -119,6 +120,35 @@ class TestConfigDocumentBase:
         doc.to_toml(out)
         reloaded = ConfigDocument.from_toml(out)
         assert reloaded.to_dict() == doc.to_dict()
+
+    def test_from_yaml_missing_pyyaml_mentions_uv_or_pixi(self, tmp_path: Path, monkeypatch):
+        out = tmp_path / "doc.yaml"
+        out.write_text("hello: world\n", encoding="utf-8")
+        original_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "yaml":
+                raise ImportError("No module named 'yaml'")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        with pytest.raises(ImportError, match="uv or pixi"):
+            ConfigDocument.from_yaml(out)
+
+    def test_to_yaml_missing_pyyaml_mentions_uv_or_pixi(self, tmp_path: Path, monkeypatch):
+        out = tmp_path / "doc.yaml"
+        original_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "yaml":
+                raise ImportError("No module named 'yaml'")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        with pytest.raises(ImportError, match="uv or pixi"):
+            ConfigDocument({"hello": "world"}).to_yaml(out)
 
     def test_read_intermediate_non_dict_returns_default(self):
         doc = ConfigDocument({"a": "scalar"})

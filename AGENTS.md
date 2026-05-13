@@ -15,6 +15,7 @@ reusable, project-agnostic development philosophy covering:
 - Monolithic Canonical API
 - Lifecycle Implementation
 - `YYYY.XX` Versioning
+- Python environment and package management (`uv` / `pixi` only)
 - Interface conventions (dict / JSON / TOML / YAML)
 - Logging
 - Error Handling

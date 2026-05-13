@@ -159,14 +159,15 @@ class ConfigDocument:
     def from_yaml(cls, path: Path | str) -> "ConfigDocument":
         """Load a document from a YAML file.
 
-        Requires ``PyYAML``.  Install with ``pip install ComplexGitSync[yaml]``.
+        Requires ``PyYAML``. Install the package with the ``yaml`` extra using
+        ``uv`` or ``pixi``.
         """
         try:
             import yaml  # type: ignore[import-untyped]
         except ImportError as exc:
             raise ImportError(
                 "PyYAML is required for YAML support.  "
-                "Install it with: pip install ComplexGitSync[yaml]"
+                "Install ComplexGitSync with the yaml extra using uv or pixi."
             ) from exc
         with open(path, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
@@ -189,14 +190,15 @@ class ConfigDocument:
     def to_yaml(self, path: Path | str) -> None:
         """Write the document to a YAML file.
 
-        Requires ``PyYAML``.  Install with ``pip install ComplexGitSync[yaml]``.
+        Requires ``PyYAML``. Install the package with the ``yaml`` extra using
+        ``uv`` or ``pixi``.
         """
         try:
             import yaml  # type: ignore[import-untyped]
         except ImportError as exc:
             raise ImportError(
                 "PyYAML is required for YAML support.  "
-                "Install it with: pip install ComplexGitSync[yaml]"
+                "Install ComplexGitSync with the yaml extra using uv or pixi."
             ) from exc
         with open(path, "w", encoding="utf-8") as fh:
             yaml.dump(self._data, fh, default_flow_style=False, allow_unicode=True)

@@ -72,14 +72,13 @@ Each push or merge increments package version in `YYYY.XX` format:
 - `tests/`: unit and integration tests
 
 ## Bootstrap
-Recommended local bootstrap once the implementation starts:
+Recommended local bootstrap once the implementation starts (using the
+repository-standard `uv` workflow from `DevSpecs.md`):
 
 ```bash
-python -m venv .venv
-. .venv/bin/activate
-pip install -e .[dev]
-python -m ComplexGitSync --help
-pytest
+uv sync --extra dev
+uv run python -m ComplexGitSync --help
+uv run python -m pytest
 ```
 
 ## Current Bootstrap Scope
