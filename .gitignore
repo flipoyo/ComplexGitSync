@@ -218,4 +218,5 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Result of building with exemples such as complexgitsync.cgs
-ComplexGitSync*
+# Anchored to root and directory-only so src/ComplexGitSync/ is unaffected
+/ComplexGitSync*/

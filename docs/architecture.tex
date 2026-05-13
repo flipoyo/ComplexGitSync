@@ -1,0 +1,169 @@
+% architecture.tex — class overview and interaction diagrams for ComplexGitSync
+
+\chapter{Architecture Overview}
+\label{chap:architecture}
+
+This chapter provides a logical scheme of the main classes in \cgspkg{} and
+explains how they interact.  Each domain class lives in its own
+\texttt{.py} module, following the
+\emph{one class per source file} convention of \texttt{DevSpecs.md}.
+
+% -----------------------------------------------------------------------
+\section{Module Layout}
+
+The source tree under \texttt{src/ComplexGitSync/} maps directly to the class
+hierarchy: one \texttt{.py} file per domain class, with thin re-export shims
+(\texttt{documents.py}, \texttt{registry.py}) retained for backward
+compatibility.
+
+\begin{lstlisting}[language=bash,caption={Source tree — one class per module}]
+src/ComplexGitSync/
+  # Entry points
+  __init__.py              # public API surface
+  cli.py                   # cgitsync CLI (build_parser / main)
+  client.py                # ComplexGitSyncClient
+
+  # Core model — centred on GitTree
+  git_tree.py              # GitTree
+  git_repo.py              # GitRepo
+  orchestre.py             # Orchestre
+  git_runner.py            # GitRunner
+  repo_address.py          # RepoAddress
+
+  # Enumeration classes
+  access_protocol.py       # AccessProtocol
+  git_provider.py          # GitProvider
+  tree_lifecycle_state.py  # TreeLifecycleState
+  repo_lifecycle_state.py  # RepoLifecycleState
+  discovery_state.py       # DiscoveryState
+  sync_state.py            # SyncState
+  ref_kind.py              # RefKind
+  node_type.py             # NodeType
+
+  # Registry model
+  repo_node.py             # RepoNode
+  repo_registry_entry.py   # RepoRegistryEntry
+  dependency_tree_registry.py  # DependencyTreeRegistry
+  project_tree_state.py    # ProjectTreeState
+  registry.py              # builder functions + re-export shim
+
+  # Document classes
+  config_document.py       # ConfigDocument (base)
+  cgs_document.py          # CgsDocument  (.cgs authoring spec)
+  gts_document.py          # GtsDocument  (.gts snapshot)
+  goc_document.py          # GocDocument  (.goc command script)
+  documents.py             # re-export shim
+
+  # Infrastructure
+  run_logger.py            # CommandRunLogger + create_run_logger
+  state_store.py           # RuntimeStateStore
+  discovery.py             # discover_nested_configs()
+  render.py                # format_project_tree / format_registry_json
+  errors.py                # exception hierarchy
+\end{lstlisting}
+
+% -----------------------------------------------------------------------
+\section{Core Object Model}
+
+Everything in \cgspkg{} is centred on \textbf{GitTree}, which represents the
+dependency graph of all repositories in the project.
+Figure~\ref{fig:core-model} shows the full ownership chain from the top-level
+client down to individual repository objects.
+
+\begin{itemize}
+  \item \texttt{ComplexGitSyncClient} is the public facade.  All CLI commands
+    delegate to its methods.
+  \item \texttt{Orchestre} is the coordination layer.  It owns exactly one
+    \texttt{GitTree} and exposes repository registration to the client.
+  \item \texttt{GitTree} holds a dictionary of \texttt{GitRepo} objects, keyed
+    by \texttt{project\_name}.  It owns the lifecycle of in-memory repo
+    identity and supports correction operations (\texttt{force\_repo\_sha},
+    \texttt{force\_repo\_keys}).
+  \item \texttt{GitRepo} is a dataclass capturing the static identity of a
+    single repository: provider, namespace, project name, access protocol, and
+    commit SHA.
+  \item \texttt{RepoAddress} derives the remote URL (SSH or HTTPS) from a
+    \texttt{GitRepo} without mutating it.
+\end{itemize}
+
+\input{figures/class_diagram}
+
+% -----------------------------------------------------------------------
+\section{GitTree Lifecycle}
+
+Figure~\ref{fig:gittree-lifecycle} shows the valid lifecycle transitions for
+the \texttt{GitTree} (tracked via \texttt{DependencyTreeRegistry.lifecycle\_state}).
+
+Valid states and their transitions:
+
+\begin{itemize}
+  \item \textbf{UNLOADED} — initial state; no data loaded.
+  \item \textbf{DECLARED} — a \texttt{.cgs} file has been parsed; all entries
+    exist in the registry with \texttt{DECLARED} repo lifecycle state.
+  \item \textbf{PENDING} — at least one entry is awaiting synchronisation.
+  \item \textbf{READY} — every entry is \texttt{READY} or
+    \texttt{FALLBACK\_READY}, all commits are resolved, and the registry is
+    complete.
+  \item \textbf{PARTIAL} — at least one entry has not advanced past
+    \texttt{DECLARED} and others have.
+  \item \textbf{ERROR} — at least one entry is in the \texttt{ERROR} state.
+\end{itemize}
+
+\textbf{Hard invariants:}
+\begin{itemize}
+  \item \texttt{READY} means the registry is complete and synchronised — not
+    that worktrees are clean.
+  \item \texttt{commit}, \texttt{push}, \texttt{tag}, and
+    \texttt{freeze\_release} refuse to run on a non-\texttt{READY} tree.
+  \item \texttt{clone}, \texttt{restart}, \texttt{checkout}, and
+    \texttt{launch\_release} must produce a \texttt{READY} tree or fail
+    explicitly.
+\end{itemize}
+
+% -----------------------------------------------------------------------
+\section{Document Hierarchy}
+
+Figure~\ref{fig:document-hierarchy} shows the document class hierarchy.
+
+All persistent documents share the \texttt{ConfigDocument} base class, which
+provides format-agnostic serialisation (\texttt{to\_toml}, \texttt{to\_json},
+\texttt{to\_yaml}) and factory methods (\texttt{from\_toml}, \texttt{from\_json},
+\texttt{from\_yaml}).  Subclasses add document-specific validation and
+convenience properties.
+
+\begin{itemize}
+  \item \textbf{CgsDocument} (\texttt{.cgs}) — the authoring spec; describes
+    the static project topology.  \emph{Never} a runtime snapshot.
+  \item \textbf{GtsDocument} (\texttt{.gts}) — a generated snapshot capturing
+    the exact state of the tree including commit SHAs and absolute paths.
+    \emph{Never} hand-edited.
+  \item \textbf{GocDocument} (\texttt{.goc}) — a command script encoding a
+    sequence of \texttt{cgitsync} commands with session defaults.
+\end{itemize}
+
+% -----------------------------------------------------------------------
+\section{Registry Model}
+
+Figure~\ref{fig:registry-model} shows the registry model.
+
+\texttt{DependencyTreeRegistry} is the authoritative in-memory graph.  It maps
+\emph{repo IDs} (colon-separated path strings such as
+\texttt{root:deps/child-repo}) to \texttt{RepoRegistryEntry} instances.
+\texttt{RepoRegistryEntry} holds both the static identity declared in
+\texttt{.cgs} and the dynamic state updated during operations.
+
+Builder functions in \texttt{registry.py} translate document objects into a
+live registry:
+
+\begin{lstlisting}[language=Python]
+# Load from authoring spec
+registry = build_registry_from_cgs_document(document, config_path)
+
+# Load from snapshot
+registry = build_registry_from_gts_document(snapshot_document)
+
+# Serialise to snapshot
+gts_doc = build_gts_document_from_registry(
+    registry, command_origin="clone", source_cgs_path=path
+)
+\end{lstlisting}

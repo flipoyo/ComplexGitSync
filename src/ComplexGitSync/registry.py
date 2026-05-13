@@ -8,8 +8,11 @@ functions that translate between document objects and the live registry.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path, PurePath, PurePosixPath
-from typing import Any
+from typing import Any, TypeVar
+
+_E = TypeVar("_E", bound=Enum)
 
 from .access_protocol import AccessProtocol
 from .dependency_tree_registry import DependencyTreeRegistry
@@ -365,7 +368,7 @@ def _as_optional_str(value: Any) -> str | None:
     return str(value)
 
 
-def _parse_optional_enum(enum_type: type, value: Any) -> Any:
+def _parse_optional_enum(enum_type: type[_E], value: Any) -> _E | None:
     if value is None:
         return None
     return enum_type(str(value))
@@ -380,7 +383,7 @@ def _parse_gts_node_type(raw_value: str) -> NodeType:
     return NodeType.LEAF
 
 
-def _parse_enum(enum_type: type, value: Any, default: Any) -> Any:
+def _parse_enum(enum_type: type[_E], value: Any, default: _E) -> _E:
     if value is None:
         return default
     return enum_type(str(value))
