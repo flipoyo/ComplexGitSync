@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cgitsync",
         description=(
-            "ComplexGitSync bootstrap CLI. See DevPlan.md and DevPlanTicket.md for the "
+            "ComplexGitSync bootstrap CLI. See Planning/DevPlan.md and Planning/DevPlanTicket.md for the "
             "implementation contract."
         ),
     )
@@ -68,7 +68,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _not_implemented(args: argparse.Namespace) -> int:
     print(
         f"Command '{args.command}' is not implemented yet. "
-        "See DevPlan.md and DevPlanTicket.md."
+        "See Planning/DevPlan.md and Planning/DevPlanTicket.md."
     )
     return 2
 
