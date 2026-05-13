@@ -1,0 +1,65 @@
+% gittree_nodes.tex — TikZ figure showing GitRepo parent-leaf tree structure
+% Included by docs/architecture.tex (Figure gittree-nodes).
+
+\begin{tikzpicture}[
+  reponode/.style={
+    rectangle, rounded corners=3pt,
+    minimum width=3.4cm, minimum height=0.9cm,
+    draw, thick, align=center,
+    font=\ttfamily\footnotesize,
+    inner sep=4pt,
+  },
+  rootnode/.style={reponode, fill=blue!15, draw=blue!50},
+  parentnode/.style={reponode, fill=green!12, draw=green!50},
+  leafnode/.style={reponode, fill=orange!12, draw=orange!40},
+  treearrow/.style={-{Stealth[length=5pt]}, thick, gray!70},
+  label/.style={font=\sffamily\scriptsize\itshape, text=gray!70},
+]
+
+% Root
+\node[rootnode] (root) at (0,0) {
+  \textbf{root} (project)\\NodeType = ROOT
+};
+
+% Two direct children of root
+\node[parentnode] (parent) at (-3,-2) {
+  \textbf{child-repo}\\NodeType = PARENT
+};
+\node[leafnode] (lib) at (3,-2) {
+  \textbf{lib}\\NodeType = LEAF
+};
+
+% Children of parent
+\node[leafnode] (sub1) at (-4.5,-4) {
+  \textbf{docs}\\NodeType = LEAF
+};
+\node[leafnode] (sub2) at (-1.5,-4) {
+  \textbf{fixtures}\\NodeType = LEAF
+};
+
+% Tree edges
+\draw[treearrow] (root.south) -- (parent.north);
+\draw[treearrow] (root.south) -- (lib.north);
+\draw[treearrow] (parent.south) -- (sub1.north);
+\draw[treearrow] (parent.south) -- (sub2.north);
+
+% Annotations
+\node[label, right=0.3cm of root] {owns nested .cgs (root)};
+\node[label, right=0.2cm of parent] {owns nested .cgs (parent)};
+\node[label, right=0.2cm of lib] {terminal — no nested .cgs};
+\node[label, right=0.2cm of sub1] {nested\_config = "disabled"};
+\node[label, right=0.2cm of sub2] {nested\_config = "disabled"};
+
+% Legend
+\node[rootnode,  minimum width=2.0cm, minimum height=0.6cm]
+    (leg1) at (-4.5,-5.5) {\textbf{ROOT}};
+\node[parentnode, minimum width=2.0cm, minimum height=0.6cm]
+    (leg2) at (-1.5,-5.5) {\textbf{PARENT}};
+\node[leafnode,  minimum width=2.0cm, minimum height=0.6cm]
+    (leg3) at ( 1.5,-5.5) {\textbf{LEAF}};
+
+\node[font=\sffamily\scriptsize, above=0.1cm of leg1] {Root node};
+\node[font=\sffamily\scriptsize, above=0.1cm of leg2] {Parent node};
+\node[font=\sffamily\scriptsize, above=0.1cm of leg3] {Leaf node};
+
+\end{tikzpicture}

@@ -1,127 +1,171 @@
-% architecture.tex — class overview and interaction diagrams for ComplexGitSync
+% architecture.tex — three-tier architecture overview for ComplexGitSync
 
 \chapter{Architecture Overview}
 \label{chap:architecture}
 
-This chapter provides a logical scheme of the main classes in \cgspkg{} and
-explains how they interact.  Each domain class lives in its own
-\texttt{.py} module, following the
-\emph{one class per source file} convention of \texttt{DevSpecs.md}.
+This chapter describes how \cgspkg{} is structured around three explicit tiers
+and explains the interaction between its classes.  Every domain class lives in
+its own \texttt{.py} module (DevSpecs § Object-Oriented Design).
 
 % -----------------------------------------------------------------------
-\section{Module Layout}
+\section{Three-Tier Architecture}
+\label{sec:three-tier}
 
-The source tree under \texttt{src/ComplexGitSync/} maps directly to the class
-hierarchy: one \texttt{.py} file per domain class, with thin re-export shims
-(\texttt{documents.py}, \texttt{registry.py}) retained for backward
-compatibility.
+\cgspkg{} is organised into three tiers.  Dependencies only flow
+\textbf{downward}: the Client calls Actions; Actions read and mutate Core Data;
+Core Data has no upward dependency.
 
-\begin{lstlisting}[language=bash,caption={Source tree — one class per module}]
+Figure~\ref{fig:three-tier} shows the overall layout.
+
+\begin{figure}[ht]
+\centering
+\caption{Three-tier architecture: Client/API exposes state-gated methods;
+  Actions operate on Core Data; Core Data is centred on \texttt{GitTree} and
+  its \texttt{GitRepo} parent--leaf graph.}
+\label{fig:three-tier}
+\input{figures/three_tier}
+\end{figure}
+
+% -----------------------------------------------------------------------
+\section{Tier 1 — Core Data}
+\label{sec:tier-core}
+
+The entire system is centred on \textbf{\texttt{GitTree}}, which owns the
+parent--leaf graph of \textbf{\texttt{GitRepo}} nodes.  A project consists of
+one \emph{root} repository that may nest \emph{parent} repositories (each of
+which can own further children) and \emph{leaf} repositories (terminal nodes).
+
+Figure~\ref{fig:gittree-nodes} shows a representative project tree.
+
+\begin{figure}[ht]
+\centering
+\caption{\texttt{GitTree} is a parent--leaf graph of \texttt{GitRepo} nodes.
+  Root and parent nodes own nested \texttt{.cgs} files discovered during
+  \texttt{clone} or \texttt{discover\_nested\_configs}.}
+\label{fig:gittree-nodes}
+\input{figures/gittree_nodes}
+\end{figure}
+
+The runtime counterpart of \texttt{GitTree} is the
+\texttt{DependencyTreeRegistry}, which holds a mutable
+\texttt{RepoRegistryEntry} per node.  Registry entries are indexed by a
+colon-separated repo ID derived from their position in the tree (e.g.\
+\texttt{root:deps/child-repo:docs}).
+
+Figure~\ref{fig:core-model} shows the full object model for Tier~1.
+
+% -----------------------------------------------------------------------
+\section{Tier 2 — Actions}
+\label{sec:tier-actions}
+
+Actions are operations that read or mutate the Core tier.  \textbf{Every
+action is gated by the current \texttt{TreeLifecycleState}}: actions that
+require a \texttt{READY} tree will refuse to execute and log a gating-refusal
+event if the tree is not ready.
+
+Figure~\ref{fig:gittree-lifecycle} shows the full lifecycle state machine.
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Action} & \textbf{Minimum state} & \textbf{Produces} \\
+\hline
+\texttt{load\_cgs}               & any         & DECLARED \\
+\texttt{load\_gts}               & any         & READY    \\
+\texttt{discover\_nested\_configs} & DECLARED    & DECLARED (enriched) \\
+\texttt{clone\_cgs}              & any         & \textbf{READY} \\
+\texttt{restart}                 & DECLARED    & \textbf{READY} \\
+\texttt{checkout}                & READY       & \textbf{READY} \\
+\texttt{commit}                  & \textbf{READY only} & READY \\
+\texttt{push}                    & \textbf{READY only} & READY \\
+\texttt{tag}                     & \textbf{READY only} & READY \\
+\texttt{freeze\_release}         & \textbf{READY only} & READY \\
+\texttt{launch\_release}         & any (from \texttt{.gts}) & READY \\
+\hline
+\end{tabular}
+\end{center}
+
+% -----------------------------------------------------------------------
+\section{Tier 3 — Client / API}
+\label{sec:tier-client}
+
+\texttt{ComplexGitSyncClient} is the single public facade.  It:
+
+\begin{itemize}
+  \item holds references to \texttt{Orchestre}, \texttt{GitRunner},
+    \texttt{RuntimeStateStore}, and the live \texttt{DependencyTreeRegistry};
+  \item computes the current \texttt{TreeLifecycleState} on demand and gates
+    every action against it;
+  \item emits structured log events for every state transition, action start/end,
+    fallback decision, and \texttt{.gts} write/load.
+\end{itemize}
+
+\texttt{Orchestre} is the coordination layer between the Client and
+\texttt{GitTree}.  The CLI (\texttt{cli.py}) maps terminal sub-commands to
+Client method calls one-to-one; there is no hidden logic in the CLI layer.
+
+Figure~\ref{fig:client-gating} shows how the Client gates action access based
+on the live tree state.
+
+\begin{figure}[ht]
+\centering
+\caption{Client state-gating: the Client reads \texttt{TreeLifecycleState}
+  before delegating to an action.  Mutation actions (\texttt{commit},
+  \texttt{push}, \texttt{tag}, \texttt{freeze\_release}) are blocked unless the
+  tree is \texttt{READY}.}
+\label{fig:client-gating}
+\input{figures/client_gating}
+\end{figure}
+
+% -----------------------------------------------------------------------
+\section{Module Layout by Tier}
+\label{sec:module-layout}
+
+\begin{lstlisting}[language=bash,caption={Source modules grouped by architectural tier}]
 src/ComplexGitSync/
-  # Entry points
-  __init__.py              # public API surface
-  cli.py                   # cgitsync CLI (build_parser / main)
-  client.py                # ComplexGitSyncClient
+  # --- Tier 1: Core Data (centred on GitTree / GitRepo) ---
+  git_repo.py                  GitRepo
+  git_tree.py                  GitTree
+  repo_address.py              RepoAddress
+  repo_registry_entry.py       RepoRegistryEntry
+  dependency_tree_registry.py  DependencyTreeRegistry
+  repo_node.py                 RepoNode
+  project_tree_state.py        ProjectTreeState
+  # enums
+  node_type.py                 NodeType
+  tree_lifecycle_state.py      TreeLifecycleState
+  repo_lifecycle_state.py      RepoLifecycleState
+  sync_state.py                SyncState
+  discovery_state.py           DiscoveryState
+  ref_kind.py                  RefKind
+  git_provider.py              GitProvider
+  access_protocol.py           AccessProtocol
 
-  # Core model — centred on GitTree
-  git_tree.py              # GitTree
-  git_repo.py              # GitRepo
-  orchestre.py             # Orchestre
-  git_runner.py            # GitRunner
-  repo_address.py          # RepoAddress
+  # --- Tier 2: Actions ---
+  discovery.py                 discover_nested_configs()
+  operations.py                (planned: checkout, commit, push, tag, …)
+  registry.py                  build_registry_from_cgs_document, …
+  render.py                    format_project_tree, format_registry_json
 
-  # Enumeration classes
-  access_protocol.py       # AccessProtocol
-  git_provider.py          # GitProvider
-  tree_lifecycle_state.py  # TreeLifecycleState
-  repo_lifecycle_state.py  # RepoLifecycleState
-  discovery_state.py       # DiscoveryState
-  sync_state.py            # SyncState
-  ref_kind.py              # RefKind
-  node_type.py             # NodeType
+  # --- Tier 3: Client / API ---
+  client.py                    ComplexGitSyncClient
+  orchestre.py                 Orchestre
+  cli.py                       build_parser / main
+  git_runner.py                GitRunner
+  run_logger.py                CommandRunLogger + create_run_logger
+  state_store.py               RuntimeStateStore
 
-  # Registry model
-  repo_node.py             # RepoNode
-  repo_registry_entry.py   # RepoRegistryEntry
-  dependency_tree_registry.py  # DependencyTreeRegistry
-  project_tree_state.py    # ProjectTreeState
-  registry.py              # builder functions + re-export shim
-
-  # Document classes
-  config_document.py       # ConfigDocument (base)
-  cgs_document.py          # CgsDocument  (.cgs authoring spec)
-  gts_document.py          # GtsDocument  (.gts snapshot)
-  goc_document.py          # GocDocument  (.goc command script)
-  documents.py             # re-export shim
-
-  # Infrastructure
-  run_logger.py            # CommandRunLogger + create_run_logger
-  state_store.py           # RuntimeStateStore
-  discovery.py             # discover_nested_configs()
-  render.py                # format_project_tree / format_registry_json
-  errors.py                # exception hierarchy
+  # --- Document layer (cross-cutting) ---
+  config_document.py           ConfigDocument (base)
+  cgs_document.py              CgsDocument  (.cgs)
+  gts_document.py              GtsDocument  (.gts)
+  goc_document.py              GocDocument  (.goc)
+  documents.py                 re-export shim
+  errors.py                    exception hierarchy
 \end{lstlisting}
 
 % -----------------------------------------------------------------------
-\section{Core Object Model}
-
-Everything in \cgspkg{} is centred on \textbf{GitTree}, which represents the
-dependency graph of all repositories in the project.
-Figure~\ref{fig:core-model} shows the full ownership chain from the top-level
-client down to individual repository objects.
-
-\begin{itemize}
-  \item \texttt{ComplexGitSyncClient} is the public facade.  All CLI commands
-    delegate to its methods.
-  \item \texttt{Orchestre} is the coordination layer.  It owns exactly one
-    \texttt{GitTree} and exposes repository registration to the client.
-  \item \texttt{GitTree} holds a dictionary of \texttt{GitRepo} objects, keyed
-    by \texttt{project\_name}.  It owns the lifecycle of in-memory repo
-    identity and supports correction operations (\texttt{force\_repo\_sha},
-    \texttt{force\_repo\_keys}).
-  \item \texttt{GitRepo} is a dataclass capturing the static identity of a
-    single repository: provider, namespace, project name, access protocol, and
-    commit SHA.
-  \item \texttt{RepoAddress} derives the remote URL (SSH or HTTPS) from a
-    \texttt{GitRepo} without mutating it.
-\end{itemize}
-
-\input{figures/class_diagram}
-
-% -----------------------------------------------------------------------
-\section{GitTree Lifecycle}
-
-Figure~\ref{fig:gittree-lifecycle} shows the valid lifecycle transitions for
-the \texttt{GitTree} (tracked via \texttt{DependencyTreeRegistry.lifecycle\_state}).
-
-Valid states and their transitions:
-
-\begin{itemize}
-  \item \textbf{UNLOADED} — initial state; no data loaded.
-  \item \textbf{DECLARED} — a \texttt{.cgs} file has been parsed; all entries
-    exist in the registry with \texttt{DECLARED} repo lifecycle state.
-  \item \textbf{PENDING} — at least one entry is awaiting synchronisation.
-  \item \textbf{READY} — every entry is \texttt{READY} or
-    \texttt{FALLBACK\_READY}, all commits are resolved, and the registry is
-    complete.
-  \item \textbf{PARTIAL} — at least one entry has not advanced past
-    \texttt{DECLARED} and others have.
-  \item \textbf{ERROR} — at least one entry is in the \texttt{ERROR} state.
-\end{itemize}
-
-\textbf{Hard invariants:}
-\begin{itemize}
-  \item \texttt{READY} means the registry is complete and synchronised — not
-    that worktrees are clean.
-  \item \texttt{commit}, \texttt{push}, \texttt{tag}, and
-    \texttt{freeze\_release} refuse to run on a non-\texttt{READY} tree.
-  \item \texttt{clone}, \texttt{restart}, \texttt{checkout}, and
-    \texttt{launch\_release} must produce a \texttt{READY} tree or fail
-    explicitly.
-\end{itemize}
-
-% -----------------------------------------------------------------------
 \section{Document Hierarchy}
+\label{sec:document-hierarchy}
 
 Figure~\ref{fig:document-hierarchy} shows the document class hierarchy.
 
@@ -143,6 +187,7 @@ convenience properties.
 
 % -----------------------------------------------------------------------
 \section{Registry Model}
+\label{sec:registry-model}
 
 Figure~\ref{fig:registry-model} shows the registry model.
 
@@ -167,3 +212,9 @@ gts_doc = build_gts_document_from_registry(
     registry, command_origin="clone", source_cgs_path=path
 )
 \end{lstlisting}
+
+% -----------------------------------------------------------------------
+% Include all TikZ figures defined in figures/class_diagram.tex
+% -----------------------------------------------------------------------
+
+\input{figures/class_diagram}
