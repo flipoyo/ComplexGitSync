@@ -4,7 +4,7 @@ __version__ = "0.1.0"
 
 from .client import ComplexGitSyncClient
 from .documents import CgsDocument, ConfigDocument, GocDocument, GtsDocument
-from .models import AccessProtocol, GitProvider, GitRepo, GitTree, Orchestre
+from .models import AccessProtocol, GitProvider, GitRepo, GitTree, Orchestre, RepoAddress
 
 __all__ = [
     "__version__",
@@ -18,4 +18,5 @@ __all__ = [
     "GocDocument",
     "GtsDocument",
     "Orchestre",
+    "RepoAddress",
 ]

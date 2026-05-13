@@ -209,6 +209,17 @@ The registry must:
 - `GitTree`
 - `Orchestre`
 
+`GitTree` is composed of `GitRepo` instances linked together in a parent–child graph.
+`GitTree` orchestrates git commands in two directions:
+- **Upward** (leaf → parent → root): used by `commit`, `push`, and `tag` to propagate changes up the tree.
+- **Downward** (root → parent → leaf): used by `clone`, `restart`, and `checkout` to synchronize the full tree top-down.
+
+### Address Type
+- `RepoAddress`
+
+`RepoAddress` encapsulates the identity fields required to build a Git remote URL and exposes
+`to_ssh()`, `to_https()`, `to_url(protocol)`, and `from_repo(repo)` as building methods.
+
 ### Graph Types
 - `RepoNode`
 - `ParentRepo`

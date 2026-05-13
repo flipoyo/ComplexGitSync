@@ -1,7 +1,7 @@
 import pytest
 
 from ComplexGitSync.client import ComplexGitSyncClient
-from ComplexGitSync.models import AccessProtocol, GitProvider, GitRepo, GitTree
+from ComplexGitSync.models import AccessProtocol, GitProvider, GitRepo, GitTree, RepoAddress
 
 
 def test_gitrepo_defaults_match_plan_contract():
@@ -74,3 +74,107 @@ def test_gittree_rename_updates_repo_key_for_new_name():
     assert "repo-a" not in tree.repos
     assert "repo-c" in tree.repos
     assert tree.repos["repo-c"].project_name == "repo-c"
+
+
+# ---------------------------------------------------------------------------
+# RepoAddress tests
+# ---------------------------------------------------------------------------
+
+
+def test_repo_address_github_ssh():
+    addr = RepoAddress(
+        gitprovider=GitProvider.GITHUB,
+        project_name="ComplexGitSync",
+        project_owner_name="flipoyo",
+    )
+    assert addr.to_ssh() == "git@github.com:flipoyo/ComplexGitSync.git"
+
+
+def test_repo_address_github_https():
+    addr = RepoAddress(
+        gitprovider=GitProvider.GITHUB,
+        project_name="ComplexGitSync",
+        project_owner_name="flipoyo",
+    )
+    assert addr.to_https() == "https://github.com/flipoyo/ComplexGitSync.git"
+
+
+def test_repo_address_to_url_dispatches_on_protocol():
+    addr = RepoAddress(
+        gitprovider=GitProvider.GITHUB,
+        project_name="MyRepo",
+        project_owner_name="owner",
+    )
+    assert addr.to_url(AccessProtocol.SSH) == addr.to_ssh()
+    assert addr.to_url(AccessProtocol.HTTPS) == addr.to_https()
+
+
+def test_repo_address_gitlab_ssh_uses_group_name():
+    addr = RepoAddress(
+        gitprovider=GitProvider.GITLAB,
+        project_name="htas",
+        group_name="flipoyo/htas-group",
+    )
+    assert addr.to_ssh() == "git@gitlab.com:flipoyo/htas-group/htas.git"
+
+
+def test_repo_address_gitlab_falls_back_to_project_name_when_no_group():
+    addr = RepoAddress(
+        gitprovider=GitProvider.GITLAB,
+        project_name="htas",
+    )
+    assert addr.to_ssh() == "git@gitlab.com:htas/htas.git"
+
+
+def test_repo_address_custom_provider_with_gitprovider_url():
+    addr = RepoAddress(
+        gitprovider=GitProvider.CUSTOM,
+        project_name="my-repo",
+        group_name="my-org",
+        gitprovider_url="https://git.example.com",
+    )
+    assert addr.to_ssh() == "git@git.example.com:my-org/my-repo.git"
+    assert addr.to_https() == "https://git.example.com/my-org/my-repo.git"
+
+
+def test_repo_address_custom_provider_bare_host_url():
+    addr = RepoAddress(
+        gitprovider=GitProvider.CUSTOM,
+        project_name="my-repo",
+        project_owner_name="my-owner",
+        gitprovider_url="git.internal.io",
+    )
+    assert addr.to_ssh() == "git@git.internal.io:my-owner/my-repo.git"
+
+
+def test_repo_address_from_repo():
+    repo = GitRepo(
+        project_owner_name="flipoyo",
+        project_name="ComplexGitSync",
+        gitprovider=GitProvider.GITHUB,
+        access_protocol=AccessProtocol.SSH,
+    )
+    addr = RepoAddress.from_repo(repo)
+    assert addr.gitprovider == GitProvider.GITHUB
+    assert addr.project_name == "ComplexGitSync"
+    assert addr.project_owner_name == "flipoyo"
+    assert addr.to_ssh() == "git@github.com:flipoyo/ComplexGitSync.git"
+
+
+def test_repo_address_github_missing_owner_raises():
+    addr = RepoAddress(
+        gitprovider=GitProvider.GITHUB,
+        project_name="MyRepo",
+    )
+    with pytest.raises(ValueError, match="project_owner_name is required"):
+        addr.to_ssh()
+
+
+def test_repo_address_custom_missing_namespace_raises():
+    addr = RepoAddress(
+        gitprovider=GitProvider.CUSTOM,
+        project_name="my-repo",
+    )
+    with pytest.raises(ValueError, match="group_name or project_owner_name is required"):
+        addr.to_ssh()
+

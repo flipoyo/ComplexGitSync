@@ -12,7 +12,11 @@
 - Treat per-repo identity keys as mandatory contract fields: `gitprovider`, `project_owner_name`, `project_name`, optional `group_name`, optional `gitprovider_url`.
 - Default rules: `gitprovider=github`, `group_name=project_name`, access protocol defaults to `ssh` unless `https` is selected.
 - Ensure `GitTree` exposes correction helpers to force SHA and per-repo identity keys.
+- `GitTree` orchestrates commands upward (leaf → parent → root) for `commit`, `push`, and `tag`; and downward (root → parent → leaf) for `clone`, `restart`, and `checkout`.
+- `RepoAddress` is a dedicated class with `to_ssh()`, `to_https()`, `to_url(protocol)`, and `from_repo(repo)` building methods.
+- Input formats (`.cgs`, `.gts`, `.goc`) are handled by document classes (`CgsDocument`, `GtsDocument`, `GocDocument`) that extend `ConfigDocument`.
 - Add CI automation so each push or merge increments package version in `YYYY.XX` with rollover from `.99` to next `YYYY.01`.
+- CI must run on Linux, Windows, and macOS to ensure multi-OS compatibility.
 
 ## T00 - Bootstrap Repository
 ### Goal
@@ -55,6 +59,7 @@ Implement the core type system before command logic.
 - `TreeNotReadyError`
 - basic dataclasses for refs and fallback decisions
 - bootstrap classes `GitRepo`, `GitTree`, and `Orchestre`
+- `RepoAddress` class with `to_ssh()`, `to_https()`, `to_url(protocol)`, and `from_repo(repo)` building methods
 
 ### Dependencies
 - T00
