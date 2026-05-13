@@ -1,3 +1,6 @@
+from pathlib import Path
+import tomllib
+
 from ComplexGitSync import __version__
 from ComplexGitSync.cli import main
 
@@ -82,7 +85,9 @@ def test_unimplemented_command_still_returns_not_implemented(capsys):
 
 
 def test_package_version_is_defined():
-    assert __version__ == "0000.01"
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    package_version = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
+    assert __version__ == package_version
 
 
 def _write_project_cgs(tmp_path):
