@@ -41,7 +41,12 @@ Recommended source layout:
 - `src/ComplexGitSync/__init__.py`
 - `src/ComplexGitSync/__main__.py`
 - `src/ComplexGitSync/client.py`
-- `src/ComplexGitSync/models.py`
+- `src/ComplexGitSync/git_provider.py`
+- `src/ComplexGitSync/access_protocol.py`
+- `src/ComplexGitSync/git_repo.py`
+- `src/ComplexGitSync/repo_address.py`
+- `src/ComplexGitSync/git_tree.py`
+- `src/ComplexGitSync/orchestre.py`
 - `src/ComplexGitSync/documents.py`
 - `src/ComplexGitSync/discovery.py`
 - `src/ComplexGitSync/registry.py`

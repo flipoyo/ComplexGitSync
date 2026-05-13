@@ -1,7 +1,11 @@
 import pytest
 
+from ComplexGitSync.access_protocol import AccessProtocol
 from ComplexGitSync.client import ComplexGitSyncClient
-from ComplexGitSync.models import AccessProtocol, GitProvider, GitRepo, GitTree, RepoAddress
+from ComplexGitSync.git_provider import GitProvider
+from ComplexGitSync.git_repo import GitRepo
+from ComplexGitSync.git_tree import GitTree
+from ComplexGitSync.repo_address import RepoAddress
 
 
 def test_gitrepo_defaults_match_plan_contract():
