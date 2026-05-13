@@ -41,7 +41,12 @@ Recommended source layout:
 - `src/ComplexGitSync/__init__.py`
 - `src/ComplexGitSync/__main__.py`
 - `src/ComplexGitSync/client.py`
-- `src/ComplexGitSync/models.py`
+- `src/ComplexGitSync/git_provider.py`
+- `src/ComplexGitSync/access_protocol.py`
+- `src/ComplexGitSync/git_repo.py`
+- `src/ComplexGitSync/repo_address.py`
+- `src/ComplexGitSync/git_tree.py`
+- `src/ComplexGitSync/orchestre.py`
 - `src/ComplexGitSync/documents.py`
 - `src/ComplexGitSync/discovery.py`
 - `src/ComplexGitSync/registry.py`
@@ -208,6 +213,17 @@ The registry must:
 - `GitRepo`
 - `GitTree`
 - `Orchestre`
+
+`GitTree` is composed of `GitRepo` instances linked together in a parent–child graph.
+`GitTree` orchestrates git commands in two directions:
+- **Upward** (leaf → parent → root): used by `commit`, `push`, and `tag` to propagate changes up the tree.
+- **Downward** (root → parent → leaf): used by `clone`, `restart`, and `checkout` to synchronize the full tree top-down.
+
+### Address Type
+- `RepoAddress`
+
+`RepoAddress` encapsulates the identity fields required to build a Git remote URL and exposes
+`to_ssh()`, `to_https()`, `to_url(protocol)`, and `from_repo(repo)` as building methods.
 
 ### Graph Types
 - `RepoNode`

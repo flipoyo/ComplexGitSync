@@ -1,33 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
 
-
-class GitProvider(StrEnum):
-    GITHUB = "github"
-    GITLAB = "gitlab"
-    CUSTOM = "custom"
-
-
-class AccessProtocol(StrEnum):
-    SSH = "ssh"
-    HTTPS = "https"
-
-
-@dataclass(slots=True)
-class GitRepo:
-    project_owner_name: str
-    project_name: str
-    gitprovider: GitProvider = GitProvider.GITHUB
-    group_name: str | None = None
-    gitprovider_url: str | None = None
-    access_protocol: AccessProtocol = AccessProtocol.SSH
-    commit_sha: str | None = None
-
-    @property
-    def resolved_group_name(self) -> str:
-        return self.group_name or self.project_name
+from .access_protocol import AccessProtocol
+from .git_provider import GitProvider
+from .git_repo import GitRepo
 
 
 @dataclass(slots=True)
@@ -78,11 +55,3 @@ class GitTree:
             return self.repos[project_name]
         except KeyError as exc:
             raise KeyError(f"Unknown repository '{project_name}' in GitTree.") from exc
-
-
-@dataclass(slots=True)
-class Orchestre:
-    git_tree: GitTree = field(default_factory=GitTree)
-
-    def register_repo(self, repo: GitRepo) -> None:
-        self.git_tree.add_repo(repo)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .models import Orchestre
+from .orchestre import Orchestre
 
 @dataclass
 class ComplexGitSyncClient:
