@@ -63,6 +63,14 @@ class RepoAddress:
             host = parsed.netloc or parsed.path.strip("/").split("/", 1)[0]
             if host:
                 return host
+            if self.gitprovider == GitProvider.CUSTOM:
+                raise ValueError(
+                    f"Could not extract a host from gitprovider_url: {self.gitprovider_url!r}"
+                )
+        if self.gitprovider == GitProvider.CUSTOM:
+            raise ValueError(
+                "gitprovider_url is required for custom provider addresses."
+            )
         if self.gitprovider == GitProvider.GITLAB:
             return "gitlab.com"
         return "github.com"

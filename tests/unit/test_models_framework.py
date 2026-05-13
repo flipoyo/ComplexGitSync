@@ -174,7 +174,18 @@ def test_repo_address_custom_missing_namespace_raises():
     addr = RepoAddress(
         gitprovider=GitProvider.CUSTOM,
         project_name="my-repo",
+        gitprovider_url="https://git.example.com",
     )
     with pytest.raises(ValueError, match="group_name or project_owner_name is required"):
+        addr.to_ssh()
+
+
+def test_repo_address_custom_missing_gitprovider_url_raises():
+    addr = RepoAddress(
+        gitprovider=GitProvider.CUSTOM,
+        project_name="my-repo",
+        group_name="my-org",
+    )
+    with pytest.raises(ValueError, match="gitprovider_url is required"):
         addr.to_ssh()
 
