@@ -6,7 +6,8 @@ ComplexGitSync is a standalone Python package for synchronizing a root Git repos
 The repository is currently in implementation-bootstrap mode.
 
 The authoritative planning documents are:
-- `DevSpecs.md`: standing development principles
+- `DevSpecs.md`: reusable development philosophy
+- `AdditionalSpecs.md`: project-specific constraints
 - `Planning/DevPlan.md`: implementation contract
 - `Planning/DevPlanTicket.md`: ticket breakdown
 - `AGENTS.md`: agent entry-point and hard invariants
@@ -62,8 +63,9 @@ Each push or merge increments package version in `YYYY.XX` format:
 - if `XX == 99`, increment `YYYY` and reset `XX` to `01` (for example `2025.99 -> 2026.01`)
 
 ## Repository Layout
-- `DevSpecs.md`: standing development principles
-- `AGENTS.md`: agent entry-point and hard invariants
+- `DevSpecs.md`: reusable, project-agnostic development philosophy
+- `AdditionalSpecs.md`: ComplexGitSync-specific constraints and refinements
+- `AGENTS.md`: agent entry-point — DevSpecs conformity declaration and hard invariants
 - `Planning/DevPlan.md`: implementation contract
 - `Planning/DevPlanTicket.md`: ticket breakdown for an implementation agent
 - `Planning/FIRSTAGENT.md`: working rules used by the first implementation agent

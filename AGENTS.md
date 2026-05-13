@@ -3,19 +3,36 @@
 ## Purpose
 
 This file is the entry point for any agent or contributor working on
-`ComplexGitSync`. It explains where to find authoritative documents and states
-the non-negotiable invariants that every agent must respect.
+`ComplexGitSync`. It declares the standards this project conforms to and
+explains where to find every authoritative document.
+
+## DevSpecs Conformity
+
+This project fully conforms to **[DevSpecs](DevSpecs.md)** — the owner's
+reusable, project-agnostic development philosophy covering:
+
+- Object-Oriented Design
+- Monolithic Canonical API
+- Lifecycle Implementation
+- `YYYY.XX` Versioning
+- Interface conventions (dict / JSON / TOML / YAML)
+- Logging
+- Error Handling
+- Testing
+
+Project-specific refinements and additional constraints are documented in
+**[AdditionalSpecs.md](AdditionalSpecs.md)**.
 
 ## Mandatory Reading Order
 
 Before writing or reviewing any code, read these files in order:
 
-1. `DevSpecs.md` — standing development principles (OOP, monolithic API,
-   lifecycle, versioning, interface conventions, logging, error handling).
-2. `Planning/DevPlan.md` — full implementation contract and specification.
-3. `Planning/DevPlanTicket.md` — ticket breakdown and recommended execution
+1. `DevSpecs.md` — standing development philosophy (project-agnostic).
+2. `AdditionalSpecs.md` — ComplexGitSync-specific constraints and refinements.
+3. `Planning/DevPlan.md` — full implementation contract and specification.
+4. `Planning/DevPlanTicket.md` — ticket breakdown and recommended execution
    order for the implementation agent.
-4. `README.md` — current status and bootstrap instructions.
+5. `README.md` — current status and bootstrap instructions.
 
 > The original first-agent working rules (the instructions that guided the
 > initial implementation) are preserved in `Planning/FIRSTAGENT.md`.
