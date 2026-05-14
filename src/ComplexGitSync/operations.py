@@ -14,11 +14,11 @@ Free functions exported here (Tier 2 — Actions):
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING
 
 from .errors import TreeNotReadyError
-from .git_repo import RefKind, RepoLifecycleState, RepoRegistryEntry, SyncState
-from .git_tree import DependencyTreeRegistry, _iter_tree
+from .git_repo import RefKind, RepoLifecycleState, SyncState
+from .git_tree import DependencyTreeRegistry, iter_tree, iter_tree_leaf_first
 
 if TYPE_CHECKING:
     from .orchestre import GitRunner
@@ -62,7 +62,7 @@ def create_global_branch(
     branch before their children are processed.  Requires each entry to have
     a valid ``absolute_path`` on disk.
     """
-    for entry in _iter_tree(registry):
+    for entry in iter_tree(registry):
         if not git_runner.local_branch_exists(entry.absolute_path, branch_name):
             git_runner.create_branch(entry.absolute_path, branch_name)
 
@@ -101,7 +101,7 @@ def checkout_tree(
     create_global_branch(registry, git_runner, branch_name)
 
     # Step 3: checkout and refresh each entry (parent-first)
-    for entry in _iter_tree(registry):
+    for entry in iter_tree(registry):
         git_runner.checkout(entry.absolute_path, branch_name)
         entry.current_ref_kind = ref_kind
         entry.current_ref_name = branch_name
@@ -142,7 +142,7 @@ def commit_tree(
     """
     _assert_ready(registry)
 
-    for entry in _iter_leaf_first(registry):
+    for entry in iter_tree_leaf_first(registry):
         if stage_all:
             git_runner.stage_all(entry.absolute_path)
         if not git_runner.has_staged_changes(entry.absolute_path):
@@ -173,7 +173,7 @@ def push_tree(
     """
     _assert_ready(registry)
 
-    for entry in _iter_leaf_first(registry):
+    for entry in iter_tree_leaf_first(registry):
         remote = entry.remote_name or "origin"
         git_runner.push(
             entry.absolute_path,
@@ -195,8 +195,3 @@ def _assert_ready(registry: DependencyTreeRegistry) -> None:
         raise TreeNotReadyError(
             f"Operation requires a READY tree; current state: {registry.lifecycle_state.value}"
         )
-
-
-def _iter_leaf_first(registry: DependencyTreeRegistry) -> Iterator[RepoRegistryEntry]:
-    """Iterate registry entries leaf-first (deepest leaves → root)."""
-    return reversed(list(_iter_tree(registry)))

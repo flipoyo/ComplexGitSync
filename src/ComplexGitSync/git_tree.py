@@ -16,6 +16,8 @@ Functions defined here (Tier 2 — Actions / tree utilities):
     build_tree_state            Derive a ProjectTreeState from the registry
     format_project_tree         Render the tree as indented text
     format_registry_json        Render the registry as JSON
+    iter_tree                   Iterate the registry parent-first (root → leaves)
+    iter_tree_leaf_first        Iterate the registry leaf-first (leaves → root)
 """
 
 from __future__ import annotations
@@ -306,7 +308,7 @@ def format_project_tree(
 ) -> str:
     """Render *registry* as an indented text tree."""
     lines: list[str] = []
-    for entry in _iter_tree(registry):
+    for entry in iter_tree(registry):
         bits = [entry.name]
         if include_node_type:
             bits.append(f"[{entry.node_type.value}]")
@@ -355,6 +357,21 @@ def format_registry_json(registry: DependencyTreeRegistry) -> str:
             }
         )
     return json.dumps(data, indent=2, sort_keys=True)
+
+
+# ---------------------------------------------------------------------------
+# Tree traversal utilities (public)
+# ---------------------------------------------------------------------------
+
+
+def iter_tree(registry: DependencyTreeRegistry):
+    """Yield every entry in *registry* in parent-first (root → leaves) order."""
+    yield from _iter_tree(registry)
+
+
+def iter_tree_leaf_first(registry: DependencyTreeRegistry):
+    """Yield every entry in *registry* in leaf-first (leaves → root) order."""
+    yield from reversed(list(_iter_tree(registry)))
 
 
 # ---------------------------------------------------------------------------

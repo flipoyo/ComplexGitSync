@@ -46,7 +46,7 @@ def _make_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
     root_path.mkdir(parents=True)
     leaf_path.mkdir(parents=True)
 
-    def _ready_entry(repo_id, name, node_type, parent_id, absolute_path):
+    def _create_ready_entry(repo_id, name, node_type, parent_id, absolute_path):
         return RepoRegistryEntry(
             repo_id=repo_id,
             name=name,
@@ -75,17 +75,17 @@ def _make_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
 
     registry = DependencyTreeRegistry()
     registry.add(
-        _ready_entry("root", "project", NodeType.ROOT, None, root_path)
+        _create_ready_entry("root", "project", NodeType.ROOT, None, root_path)
     )
     registry.add(
-        _ready_entry("root:deps/leaf", "leaf", NodeType.LEAF, "root", leaf_path)
+        _create_ready_entry("root:deps/leaf", "leaf", NodeType.LEAF, "root", leaf_path)
     )
     registry.recompute_tree_state()
     assert registry.is_ready(), "Fixture must produce a READY registry"
     return registry
 
 
-class _FakeGitRunnerForOps:
+class _FakeGitRunnerForOperations:
     """Minimal fake GitRunner for operation unit tests.
 
     Tracks calls and simulates branch existence.
@@ -199,7 +199,7 @@ def test_create_global_branch_creates_only_missing_branches(tmp_path):
     root_path = registry.get("root").absolute_path
     leaf_path = registry.get("root:deps/leaf").absolute_path
 
-    runner = _FakeGitRunnerForOps(
+    runner = _FakeGitRunnerForOperations(
         existing_branches={root_path: {"feature-x"}}  # root already has it
     )
 
@@ -213,7 +213,7 @@ def test_create_global_branch_creates_only_missing_branches(tmp_path):
 def test_create_global_branch_creates_in_all_repos_when_none_exist(tmp_path):
     registry = _make_ready_registry(tmp_path)
 
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
     create_global_branch(registry, runner, "new-branch")
 
     created_paths = {path for path, _ in runner.created}
@@ -232,14 +232,14 @@ def test_checkout_tree_raises_when_not_ready(tmp_path):
         entry.commit_sha = None
     registry.recompute_tree_state()
 
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
     with pytest.raises(TreeNotReadyError):
         checkout_tree(registry, runner, "feature-x")
 
 
 def test_checkout_tree_propagates_creates_and_checks_out(tmp_path):
     registry = _make_ready_registry(tmp_path)
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
 
     checkout_tree(registry, runner, "feature-x")
 
@@ -263,7 +263,7 @@ def test_checkout_tree_propagates_creates_and_checks_out(tmp_path):
 def test_checkout_tree_parent_first_ordering(tmp_path):
     """Root must be checked out before its leaf child."""
     registry = _make_ready_registry(tmp_path)
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
 
     checkout_tree(registry, runner, "feature-x")
 
@@ -278,7 +278,7 @@ def test_checkout_tree_does_not_recreate_existing_branch(tmp_path):
     root_path = registry.get("root").absolute_path
     leaf_path = registry.get("root:deps/leaf").absolute_path
 
-    runner = _FakeGitRunnerForOps(
+    runner = _FakeGitRunnerForOperations(
         existing_branches={root_path: {"feature-x"}, leaf_path: {"feature-x"}}
     )
 
@@ -298,7 +298,7 @@ def test_commit_tree_raises_when_not_ready(tmp_path):
         entry.commit_sha = None
     registry.recompute_tree_state()
 
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
     with pytest.raises(TreeNotReadyError):
         commit_tree(registry, runner, "wip")
 
@@ -309,7 +309,7 @@ def test_commit_tree_commits_leaf_before_root(tmp_path):
     root_path = registry.get("root").absolute_path
     leaf_path = registry.get("root:deps/leaf").absolute_path
 
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
     runner.set_staged(root_path, True)
     runner.set_staged(leaf_path, True)
 
@@ -323,7 +323,7 @@ def test_commit_tree_skips_repos_with_no_staged_changes(tmp_path):
     registry = _make_ready_registry(tmp_path)
     leaf_path = registry.get("root:deps/leaf").absolute_path
 
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
     # Only leaf has staged changes
     runner.set_staged(leaf_path, True)
 
@@ -336,7 +336,7 @@ def test_commit_tree_skips_repos_with_no_staged_changes(tmp_path):
 
 def test_commit_tree_stages_all_when_stage_all_true(tmp_path):
     registry = _make_ready_registry(tmp_path)
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
 
     commit_tree(registry, runner, "stage all commit", stage_all=True)
 
@@ -349,7 +349,7 @@ def test_commit_tree_updates_commit_sha(tmp_path):
     registry = _make_ready_registry(tmp_path)
     leaf_path = registry.get("root:deps/leaf").absolute_path
 
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
     runner.set_staged(leaf_path, True)
     runner._shas[leaf_path] = "new-sha-leaf"
 
@@ -360,7 +360,7 @@ def test_commit_tree_updates_commit_sha(tmp_path):
 
 def test_commit_tree_tree_remains_ready(tmp_path):
     registry = _make_ready_registry(tmp_path)
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
 
     commit_tree(registry, runner, "empty commit")
 
@@ -378,7 +378,7 @@ def test_push_tree_raises_when_not_ready(tmp_path):
         entry.commit_sha = None
     registry.recompute_tree_state()
 
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
     with pytest.raises(TreeNotReadyError):
         push_tree(registry, runner)
 
@@ -386,7 +386,7 @@ def test_push_tree_raises_when_not_ready(tmp_path):
 def test_push_tree_pushes_leaf_before_root(tmp_path):
     """Leaves must be pushed before their parents."""
     registry = _make_ready_registry(tmp_path)
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
 
     push_tree(registry, runner)
 
@@ -398,7 +398,7 @@ def test_push_tree_pushes_leaf_before_root(tmp_path):
 
 def test_push_tree_uses_remote_name_and_resolved_ref(tmp_path):
     registry = _make_ready_registry(tmp_path)
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
 
     push_tree(registry, runner)
 
@@ -413,7 +413,7 @@ def test_push_tree_defaults_remote_to_origin_when_not_set(tmp_path):
     for entry in registry.values():
         entry.remote_name = None
 
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
     push_tree(registry, runner)
 
     for _, remote, _ in runner.pushed:
@@ -422,7 +422,7 @@ def test_push_tree_defaults_remote_to_origin_when_not_set(tmp_path):
 
 def test_push_tree_tree_remains_ready(tmp_path):
     registry = _make_ready_registry(tmp_path)
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
 
     push_tree(registry, runner)
 
@@ -437,7 +437,7 @@ def test_push_tree_tree_remains_ready(tmp_path):
 def _make_client_with_ready_registry(tmp_path):
     """Build a ComplexGitSyncClient whose registry is already READY."""
     registry = _make_ready_registry(tmp_path)
-    runner = _FakeGitRunnerForOps()
+    runner = _FakeGitRunnerForOperations()
     client = ComplexGitSyncClient(git_runner=runner)
     client.registry = registry
     return client, runner

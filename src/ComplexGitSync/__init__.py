@@ -23,6 +23,8 @@ from .git_tree import (
     GitTree,
     ProjectTreeState,
     TreeLifecycleState,
+    iter_tree,
+    iter_tree_leaf_first,
 )
 
 # --- Tier 2 — Actions (operations.py) ---
@@ -64,6 +66,8 @@ __all__ = [
     "GitTree",
     "ProjectTreeState",
     "TreeLifecycleState",
+    "iter_tree",
+    "iter_tree_leaf_first",
     # operations.py
     "checkout_tree",
     "commit_tree",
