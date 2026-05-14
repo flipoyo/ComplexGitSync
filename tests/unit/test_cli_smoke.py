@@ -74,7 +74,7 @@ resolved_ref_kind = "branch"
 resolved_ref_name = "main"
 commit_sha = "abc123"
 """.strip()
-            .format(source_path=str(config_path.resolve()))
+            .format(source_path=config_path.resolve().as_posix())
             + "\n"
         ),
         encoding="utf-8",
