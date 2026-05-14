@@ -14,10 +14,10 @@ Free functions exported here (Tier 2 — Actions):
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator
 
 from .errors import TreeNotReadyError
-from .git_repo import RefKind, RepoLifecycleState, SyncState
+from .git_repo import RefKind, RepoLifecycleState, RepoRegistryEntry, SyncState
 from .git_tree import DependencyTreeRegistry, _iter_tree
 
 if TYPE_CHECKING:
@@ -197,6 +197,6 @@ def _assert_ready(registry: DependencyTreeRegistry) -> None:
         )
 
 
-def _iter_leaf_first(registry: DependencyTreeRegistry):
+def _iter_leaf_first(registry: DependencyTreeRegistry) -> Iterator[RepoRegistryEntry]:
     """Iterate registry entries leaf-first (deepest leaves → root)."""
     return reversed(list(_iter_tree(registry)))

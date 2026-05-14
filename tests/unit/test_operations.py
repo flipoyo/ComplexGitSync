@@ -121,8 +121,8 @@ class _FakeGitRunnerForOps:
     def stage_all(self, repo_path: Path | str) -> None:
         path = Path(repo_path)
         self.staged.append(path)
-        # Simulate: staging makes staged_changes True
-        self._staged_changes[path] = self._staged_changes.get(path, False)
+        # Simulate: staging always marks the repo as having staged changes
+        self._staged_changes[path] = True
 
     def has_staged_changes(self, repo_path: Path | str) -> bool:
         return self._staged_changes.get(Path(repo_path), False)
@@ -337,17 +337,6 @@ def test_commit_tree_skips_repos_with_no_staged_changes(tmp_path):
 def test_commit_tree_stages_all_when_stage_all_true(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOps()
-
-    # Simulate: staging produces staged changes in the root repo
-    root_path = registry.get("root").absolute_path
-
-    original_stage_all = runner.stage_all
-
-    def _stage_all_with_effect(repo_path):
-        original_stage_all(repo_path)
-        runner.set_staged(repo_path, True)
-
-    runner.stage_all = _stage_all_with_effect
 
     commit_tree(registry, runner, "stage all commit", stage_all=True)
 
