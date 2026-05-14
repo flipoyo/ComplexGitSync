@@ -1,0 +1,24 @@
+% MASTER.tex — top-level document; includes all chapters and produces the PDF
+\documentclass[11pt,a4paper]{book}
+
+\input{Setup/Packages}
+\input{Setup/Shortcuts}
+
+% Title-page information
+\title{%
+  \cgspkg{} \cgsversion \\[0.5em]
+  \large Documentation
+}
+\author{Nicolas Flipo}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+
+\input{getting_started}
+\input{architecture}
+\input{user_guide}
+
+\end{document}
