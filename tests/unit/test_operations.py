@@ -47,13 +47,18 @@ def _make_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
     leaf_path.mkdir(parents=True)
 
     def _create_ready_entry(repo_id, name, node_type, parent_id, absolute_path):
+        relative_path = (
+            Path(".")
+            if parent_id is None
+            else absolute_path.relative_to(root_path)
+        )
         return RepoRegistryEntry(
             repo_id=repo_id,
             name=name,
             node_type=node_type,
             parent_id=parent_id,
             absolute_path=absolute_path,
-            relative_path=Path(".") if parent_id is None else Path("deps/leaf"),
+            relative_path=relative_path,
             current_ref_kind=RefKind.BRANCH,
             current_ref_name="main",
             target_ref_kind=RefKind.BRANCH,
@@ -91,9 +96,9 @@ class _FakeGitRunnerForOperations:
     Tracks calls and simulates branch existence.
     """
 
-    def __init__(self, *, existing_branches: dict[Path, set[str]] | None = None):
+    def __init__(self, *, existing_local_branches: dict[Path, set[str]] | None = None):
         # {path: set of branch names that exist locally}
-        self._local_branches: dict[Path, set[str]] = existing_branches or {}
+        self._local_branches: dict[Path, set[str]] = existing_local_branches or {}
         self.created: list[tuple[Path, str]] = []
         self.checked_out: list[tuple[Path, str]] = []
         self.staged: list[Path] = []
@@ -200,7 +205,7 @@ def test_create_global_branch_creates_only_missing_branches(tmp_path):
     leaf_path = registry.get("root:deps/leaf").absolute_path
 
     runner = _FakeGitRunnerForOperations(
-        existing_branches={root_path: {"feature-x"}}  # root already has it
+        existing_local_branches={root_path: {"feature-x"}}  # root already has it
     )
 
     create_global_branch(registry, runner, "feature-x")
@@ -279,7 +284,7 @@ def test_checkout_tree_does_not_recreate_existing_branch(tmp_path):
     leaf_path = registry.get("root:deps/leaf").absolute_path
 
     runner = _FakeGitRunnerForOperations(
-        existing_branches={root_path: {"feature-x"}, leaf_path: {"feature-x"}}
+        existing_local_branches={root_path: {"feature-x"}, leaf_path: {"feature-x"}}
     )
 
     checkout_tree(registry, runner, "feature-x")

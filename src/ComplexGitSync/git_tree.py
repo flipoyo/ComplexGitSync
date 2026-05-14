@@ -26,7 +26,7 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path, PurePath, PurePosixPath
-from typing import Any, TypeVar
+from typing import Any, Iterator, TypeVar
 
 from .errors import ConfigValidationError, NestedConfigDiscoveryError
 from .git_repo import (
@@ -364,12 +364,12 @@ def format_registry_json(registry: DependencyTreeRegistry) -> str:
 # ---------------------------------------------------------------------------
 
 
-def iter_tree(registry: DependencyTreeRegistry):
+def iter_tree(registry: DependencyTreeRegistry) -> Iterator[RepoRegistryEntry]:
     """Yield every entry in *registry* in parent-first (root → leaves) order."""
     yield from _iter_tree(registry)
 
 
-def iter_tree_leaf_first(registry: DependencyTreeRegistry):
+def iter_tree_leaf_first(registry: DependencyTreeRegistry) -> Iterator[RepoRegistryEntry]:
     """Yield every entry in *registry* in leaf-first (leaves → root) order."""
     yield from reversed(list(_iter_tree(registry)))
 
