@@ -220,3 +220,4 @@ __marimo__/
 # Result of building with exemples such as complexgitsync.cgs
 # Anchored to root and directory-only so src/ComplexGitSync/ is unaffected
 /ComplexGitSync*/
+apoub*
