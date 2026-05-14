@@ -1,13 +1,3 @@
-"""Dependency-tree node type enumeration."""
-
-from __future__ import annotations
-
-from enum import StrEnum
-
-
-class NodeType(StrEnum):
-    """Role of a repository node within the dependency tree."""
-
-    ROOT = "root"
-    PARENT = "parent"
-    LEAF = "leaf"
+"""Backward-compatible re-export shim — NodeType now lives in git_repo.py."""
+from .git_repo import NodeType
+__all__ = ["NodeType"]

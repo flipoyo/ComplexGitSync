@@ -1,15 +1,3 @@
-"""Git reference kind enumeration."""
-
-from __future__ import annotations
-
-from enum import StrEnum
-
-
-class RefKind(StrEnum):
-    """Kind of a Git reference (branch, tag, detached HEAD, etc.)."""
-
-    AUTO = "auto"
-    BRANCH = "branch"
-    TAG = "tag"
-    DETACHED = "detached"
-    UNKNOWN = "unknown"
+"""Backward-compatible re-export shim — RefKind now lives in git_repo.py."""
+from .git_repo import RefKind
+__all__ = ["RefKind"]

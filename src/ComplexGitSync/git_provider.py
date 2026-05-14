@@ -1,9 +1,3 @@
-from __future__ import annotations
-
-from enum import StrEnum
-
-
-class GitProvider(StrEnum):
-    GITHUB = "github"
-    GITLAB = "gitlab"
-    CUSTOM = "custom"
+"""Backward-compatible re-export shim — GitProvider now lives in git_repo.py."""
+from .git_repo import GitProvider
+__all__ = ["GitProvider"]
