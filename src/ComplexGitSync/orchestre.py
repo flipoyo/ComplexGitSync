@@ -1370,6 +1370,8 @@ class ComplexGitSyncClient:
         self._log_event("launch_release_start", snapshot_path=Path(snapshot_path).resolve())
 
         for entry in iter_tree(loaded_registry):
+            # Prefer the exact ref captured at freeze time, then fall back to
+            # target/current/default values when older snapshots lack one.
             ref_name = (
                 entry.resolved_ref_name
                 or entry.target_ref_name
@@ -1381,6 +1383,8 @@ class ComplexGitSyncClient:
 
             if not entry.absolute_path.exists():
                 remote_url = self._build_remote_url(entry)
+                if not remote_url:
+                    raise GitSyncError(f"No remote URL available for repository {entry.name}.")
                 self._log_event(
                     "launch_release_clone",
                     repo_name=entry.name,

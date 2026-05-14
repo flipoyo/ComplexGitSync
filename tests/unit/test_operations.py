@@ -5,7 +5,6 @@ façade methods checkout / commit / push.
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
@@ -731,11 +730,14 @@ def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
 
 def test_client_launch_release_loads_gts_clones_and_checks_out(tmp_path):
     source_client, _ = _make_client_with_ready_registry(tmp_path)
+    root_path = tmp_path / "released-project"
+    leaf_path = root_path / "deps" / "leaf"
+    source_client.registry.get("root").absolute_path = root_path
+    source_client.registry.get("root:deps/leaf").absolute_path = leaf_path
     snapshot_path = source_client.write_gts_snapshot(
         command_origin="test",
         output_path=tmp_path / "snapshot.gts",
     )
-    shutil.rmtree(source_client.registry.get("root").absolute_path)
 
     runner = _FakeGitRunnerForOperations()
     client = ComplexGitSyncClient(git_runner=runner)
