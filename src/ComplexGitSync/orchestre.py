@@ -717,6 +717,53 @@ class GitRunner:
         branch = self._run("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_path).stdout.strip()
         return None if branch == "HEAD" else branch
 
+    def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool:
+        """Return ``True`` if *branch* exists as a local branch in *repo_path*."""
+        try:
+            self._run("rev-parse", "--verify", f"refs/heads/{branch}", cwd=repo_path)
+            return True
+        except GitSyncError:
+            return False
+
+    def create_branch(self, repo_path: Path | str, branch: str) -> None:
+        """Create *branch* in *repo_path* without switching to it (``git branch``)."""
+        self._run("branch", branch, cwd=repo_path)
+
+    def checkout(self, repo_path: Path | str, branch: str) -> None:
+        """Switch *repo_path* to *branch* (``git checkout``)."""
+        self._run("checkout", branch, cwd=repo_path)
+
+    def has_uncommitted_changes(self, repo_path: Path | str) -> bool:
+        """Return ``True`` if *repo_path* has any tracked or staged modifications."""
+        result = self._run("status", "--porcelain", cwd=repo_path)
+        return bool(result.stdout.strip())
+
+    def has_staged_changes(self, repo_path: Path | str) -> bool:
+        """Return ``True`` if *repo_path* has changes staged for the next commit."""
+        result = self._run("diff", "--cached", "--name-only", cwd=repo_path)
+        return bool(result.stdout.strip())
+
+    def stage_all(self, repo_path: Path | str) -> None:
+        """Stage all changes in *repo_path* (``git add --all``)."""
+        self._run("add", "--all", cwd=repo_path)
+
+    def commit(self, repo_path: Path | str, message: str) -> None:
+        """Commit staged changes in *repo_path* with *message* (``git commit``)."""
+        self._run("commit", "-m", message, cwd=repo_path)
+
+    def push(
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        branch: str | None = None,
+    ) -> None:
+        """Push *remote* (and optionally *branch*) in *repo_path* (``git push``)."""
+        if branch:
+            self._run("push", remote, branch, cwd=repo_path)
+        else:
+            self._run("push", remote, cwd=repo_path)
+
     def _run(
         self,
         *args: str,
@@ -1190,6 +1237,78 @@ class ComplexGitSyncClient:
         self.state_store.record_snapshot(source_path, snapshot_path)
         self._log_tree_transition(previous_tree_state, self.registry.lifecycle_state, reason="clone_cgs")
         return self.registry
+
+    def checkout(
+        self,
+        branch_name: str,
+        *,
+        ref_kind: RefKind = RefKind.BRANCH,
+    ) -> DependencyTreeRegistry:
+        """Check out *branch_name* across the full tree.
+
+        Requires a ``READY`` registry.  After a successful execution the
+        registry remains ``READY`` and a ``.gts`` snapshot is written.
+
+        Steps delegated to :func:`~ComplexGitSync.operations.checkout_tree`:
+
+        1. :func:`~ComplexGitSync.operations.propagate_global_branch` — set
+           the target ref on every entry.
+        2. :func:`~ComplexGitSync.operations.create_global_branch` — create
+           the branch locally where missing.
+        3. ``git checkout`` on every repo, parent-first.
+        """
+        from .operations import checkout_tree
+
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        self._log_event("checkout_start", branch_name=branch_name, ref_kind=ref_kind)
+        checkout_tree(registry, self.git_runner, branch_name, ref_kind=ref_kind)
+        snapshot_path = self.write_gts_snapshot(command_origin="checkout")
+        if self.source_path is not None:
+            self.state_store.record_snapshot(self.source_path, snapshot_path)
+        self._log_tree_transition(previous_state, registry.lifecycle_state, reason="checkout")
+        self._log_event("checkout_end", branch_name=branch_name, ref_kind=ref_kind)
+        return registry
+
+    def commit(
+        self,
+        message: str,
+        *,
+        stage_all: bool = True,
+    ) -> DependencyTreeRegistry:
+        """Commit changes across the full tree, leaf-first.
+
+        Requires a ``READY`` registry; raises
+        :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.  Repos with
+        no staged changes are silently skipped.  After a successful execution
+        the registry remains ``READY``.
+        """
+        from .operations import commit_tree
+
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        self._log_event("commit_start", message=message, stage_all=stage_all)
+        commit_tree(registry, self.git_runner, message, stage_all=stage_all)
+        self._log_tree_transition(previous_state, registry.lifecycle_state, reason="commit")
+        self._log_event("commit_end", message=message)
+        return registry
+
+    def push(self) -> DependencyTreeRegistry:
+        """Push all repos to their remotes, leaf-first.
+
+        Requires a ``READY`` registry; raises
+        :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.  After a
+        successful execution the registry remains ``READY``.
+        """
+        from .operations import push_tree
+
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        self._log_event("push_start")
+        push_tree(registry, self.git_runner)
+        self._log_tree_transition(previous_state, registry.lifecycle_state, reason="push")
+        self._log_event("push_end")
+        return registry
 
     def get_dependency_registry(self) -> DependencyTreeRegistry:
         if self.registry is None:

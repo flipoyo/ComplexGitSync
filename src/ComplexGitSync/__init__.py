@@ -25,6 +25,15 @@ from .git_tree import (
     TreeLifecycleState,
 )
 
+# --- Tier 2 — Actions (operations.py) ---
+from .operations import (
+    checkout_tree,
+    commit_tree,
+    create_global_branch,
+    propagate_global_branch,
+    push_tree,
+)
+
 # --- Tier 2/3 — Actions + Client (orchestre.py) ---
 from .orchestre import (
     CgsDocument,
@@ -55,6 +64,12 @@ __all__ = [
     "GitTree",
     "ProjectTreeState",
     "TreeLifecycleState",
+    # operations.py
+    "checkout_tree",
+    "commit_tree",
+    "create_global_branch",
+    "propagate_global_branch",
+    "push_tree",
     # orchestre.py
     "CgsDocument",
     "ComplexGitSyncClient",
