@@ -7,9 +7,7 @@ from pathlib import Path
 from collections.abc import Sequence
 
 from . import __version__
-from .client import ComplexGitSyncClient
-from .documents import CgsDocument, GtsDocument
-from .run_logger import create_run_logger
+from .orchestre import CgsDocument, ComplexGitSyncClient, GtsDocument, create_run_logger
 
 
 _PLANNED_COMMANDS: dict[str, str] = {

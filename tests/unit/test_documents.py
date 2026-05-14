@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.documents import (
+from ComplexGitSync.orchestre import (
     CgsDocument,
     ConfigDocument,
     GocDocument,

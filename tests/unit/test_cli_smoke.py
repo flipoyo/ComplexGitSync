@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from ComplexGitSync import __version__
 from ComplexGitSync.cli import main
-from ComplexGitSync.state_store import RuntimeStateStore
+from ComplexGitSync.orchestre import RuntimeStateStore
 
 
 def test_main_without_command_prints_help(capsys):
