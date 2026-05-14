@@ -1,7 +1,7 @@
 # ComplexGitSync DevPlan Tickets — Active
 
-This document reflects the ticket status as of the `checkout / commit / push`
-delivery.  It supersedes `InitialDevPlanTickets.md` as the authoritative active
+This document reflects the ticket status as of the `tag / freeze_release /
+launch_release` delivery. It supersedes `InitialDevPlanTickets.md` as the authoritative active
 ticket list.
 
 ---
@@ -67,8 +67,23 @@ skips repos with no staged changes.
 `push_tree(registry, git_runner)` — leaf-first.
 Both require READY and keep the tree READY.
 
+### T13 — `tag` ✅
+`tag_tree(registry, git_runner, tag_name)` implemented in Tier 2 with READY
+gating, tag propagation, leaf-first tag creation/push, and registry refresh.
+`ComplexGitSyncClient.tag(tag_name)` implemented with action logging.
+
+### T14 — `freeze_release` ✅
+`freeze_release_tree` implemented in Tier 2 with READY gating and leaf-first
+stage/commit/tag/push flow. `ComplexGitSyncClient.freeze_release` implemented
+with named `.gts` output support.
+
+### T15 — `launch_release` ✅
+`ComplexGitSyncClient.launch_release(snapshot_path)` implemented: load `.gts`,
+rebuild registry, run due clone/checkout actions, refresh SHAs, and enforce
+READY completion.
+
 ### T17 — Unit Test Suite (incremental) ✅
-147 tests passing.  Covers parsers, registry, lifecycle, rendering, gating,
+157 tests passing.  Covers parsers, registry, lifecycle, rendering, gating,
 propagate/create/checkout/commit/push operations, and deep 3-level hierarchy
 ordering.
 
@@ -84,27 +99,6 @@ PR-based version bump on every merge.  `YYYY.XX` format with rollover.
 
 ## Remaining Tickets
 
-### T13 — `tag` ❌
-**Goal**: create the same tag across all reachable repos.
-**Deliverables**: `tag_tree(registry, git_runner, tag_name)` in `operations.py`;
-`ComplexGitSyncClient.tag(tag_name)`; CLI `tag` command.
-**Dependencies**: T08, T12.
-**Acceptance**: same tag created root + descendants from READY; refuses non-READY.
-
-### T14 — `freeze_release` ❌
-**Goal**: create a release branch across the full tree and emit a named `.gts`.
-**Deliverables**: `freeze_release_tree`; `ComplexGitSyncClient.freeze_release`;
-CLI `freeze-release`.
-**Dependencies**: T12, T13.
-**Acceptance**: release branch exists everywhere; named `.gts` written; tree READY.
-
-### T15 — `launch_release` ❌
-**Goal**: reload and replay from `.gts` without `.cgs` discovery.
-**Deliverables**: `ComplexGitSyncClient.launch_release`; CLI `launch-release`;
-SHA verification during restore.
-**Dependencies**: T06, T07, T08.
-**Acceptance**: `.gts` relaunches tree to READY; SHA verified.
-
 ### T10 (remainder) — `restart` CLI wiring 🔲
 Wire the existing `restart` CLI stub to a `restart_tree` implementation.
 **Dependencies**: T08.
@@ -115,6 +109,9 @@ Wire the existing `restart` CLI stub to a `restart_tree` implementation.
   - `cgitsync checkout <branch> [--gts <file>] [--ref-kind branch|tag]`
   - `cgitsync commit <message> [--gts <file>] [--no-stage]`
   - `cgitsync push [--gts <file>]`
+  - `cgitsync tag <name> [--gts <file>]`
+  - `cgitsync freeze-release <name> [--gts <file>]`
+  - `cgitsync launch-release <snapshot.gts>`
 **Dependencies**: T10, T12.
 **Acceptance**: CLI behaviour matches Python API invariants.
 

@@ -141,6 +141,44 @@ is pushed to \texttt{entry.remote\_name} (defaulting to \texttt{"origin"}) on
 its currently resolved branch.  Requires a \texttt{READY} tree; the tree
 remains \texttt{READY} on success.
 
+\subsection{\texttt{tag} (Python API)}
+
+Available via the Python API (CLI wiring planned):
+
+\begin{lstlisting}[language=Python]
+client.tag("v1.2.3")
+\end{lstlisting}
+
+Creates and pushes the same tag across the full tree, leaf-first. Requires a
+\texttt{READY} tree and keeps the tree \texttt{READY} on success.
+
+\subsection{\texttt{freeze\_release} (Python API)}
+
+Available via the Python API (CLI wiring planned):
+
+\begin{lstlisting}[language=Python]
+client.freeze_release(
+    "release-2026.05",
+    output_gts=".cgitsync/releases/release-2026.05.gts",
+)
+\end{lstlisting}
+
+Performs a release freeze across all repos, leaf-first: stage/commit,
+create+push the shared release tag, refresh SHA/state, and write a named
+\texttt{.gts} snapshot. Requires \texttt{READY} and leaves the tree
+\texttt{READY}.
+
+\subsection{\texttt{launch\_release} (Python API)}
+
+Available via the Python API (CLI wiring planned):
+
+\begin{lstlisting}[language=Python]
+client.launch_release(".cgitsync/releases/release-2026.05.gts")
+\end{lstlisting}
+
+Loads a release \texttt{.gts}, reconstructs the tree, performs required
+clone/checkout actions, and must end in \texttt{READY} or fail explicitly.
+
 \subsection{Planned Commands (not yet implemented)}
 
 The following commands are defined in the public API contract but are not yet
@@ -154,10 +192,13 @@ implemented. Each returns exit code~2 with the message
     (Python API available; see above).
   \item \texttt{push} (CLI) — push all repos to their remotes
     (Python API available; see above).
-  \item \texttt{tag} — create a named tag across the tree.
-  \item \texttt{freeze\_release} — write a \texttt{.gts} snapshot and tag the release.
   \item \texttt{restart} — re-synchronise a tree from an existing \texttt{.gts} snapshot.
-  \item \texttt{launch\_release} — check out a previously frozen release.
+  \item \texttt{tag} (CLI) — create a named tag across the tree
+    (Python API available; see above).
+  \item \texttt{freeze\_release} (CLI) — freeze a release and write a named
+    \texttt{.gts} snapshot (Python API available; see above).
+  \item \texttt{launch\_release} (CLI) — check out a previously frozen release
+    (Python API available; see above).
 \end{itemize}
 
 % -----------------------------------------------------------------------
@@ -289,11 +330,23 @@ client.commit("feat: my change", stage_all=False)
 
 # Push all repos to their remotes (leaf-first)
 client.push()
+
+# Create and push a shared tag (leaf-first)
+client.tag("v1.2.3")
+
+# Freeze release and emit a named snapshot
+client.freeze_release("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
+
+# Launch from a frozen snapshot
+client.launch_release(".cgitsync/releases/release-2026.05.gts")
 \end{lstlisting}
 
-All three synchronisation methods require \texttt{READY} and leave the tree
-\texttt{READY} on success.  \texttt{checkout} also writes a new
-\texttt{.gts} snapshot.
+\texttt{checkout}, \texttt{commit}, \texttt{push}, \texttt{tag}, and
+\texttt{freeze\_release} require \texttt{READY} and leave the tree
+\texttt{READY} on success. \texttt{launch\_release} loads a release
+\texttt{.gts}, performs required clone/checkout actions, and must end in
+\texttt{READY}. \texttt{checkout} and \texttt{freeze\_release} also write new
+\texttt{.gts} snapshots.
 
 \subsection{Document Classes}
 
