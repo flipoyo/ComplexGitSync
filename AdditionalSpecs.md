@@ -143,7 +143,9 @@ access_protocol.py       AccessProtocol
 
 ```
 discovery.py             discover_nested_configs()
-operations.py            (planned: checkout, commit, push, tag, freeze_release)
+operations.py            propagate_global_branch, create_global_branch
+                         checkout_tree, commit_tree, push_tree
+                         (planned: tag, freeze_release)
 registry.py              builder functions (build_registry_from_cgs_document, …)
 render.py                format_project_tree / format_registry_json
 ```

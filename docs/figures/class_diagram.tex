@@ -68,6 +68,9 @@
   load\_cgs(path)\\
   load\_gts(path)\\
   clone\_cgs(path)\\
+  checkout(branch, ref\_kind)\\
+  commit(message, stage\_all)\\
+  push()\\
   get\_tree\_state()\\
   write\_gts\_snapshot()
 };
@@ -114,7 +117,13 @@
   clone(url, dest, branch)\\
   rev\_parse\_head(path)\\
   current\_branch(path)\\
-  remote\_branch\_exists(url,b)
+  local\_branch\_exists(path, b)\\
+  create\_branch(path, b)\\
+  checkout(path, b)\\
+  has\_staged\_changes(path)\\
+  stage\_all(path)\\
+  commit(path, message)\\
+  push(path, remote, branch)
 };
 
 % --- RepoAddress ---

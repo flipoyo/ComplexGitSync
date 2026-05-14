@@ -84,6 +84,19 @@ Figure~\ref{fig:gittree-lifecycle} shows the full lifecycle state machine.
 \end{tabular}
 \end{center}
 
+Figure~\ref{fig:ops-sequence} shows the internal sequence of the three
+tree-wide synchronisation actions implemented in \texttt{operations.py}.
+
+\begin{figure}[ht]
+\centering
+\caption{Synchronisation operations: \texttt{checkout\_tree} runs
+  propagate\,→\,create\,→\,git checkout parent-first; \texttt{commit\_tree}
+  and \texttt{push\_tree} iterate leaf-first so that inner repos commit and
+  push before their parents.}
+\label{fig:ops-sequence}
+\input{figures/operations_sequence}
+\end{figure}
+
 % -----------------------------------------------------------------------
 \section{Tier 3 — Client / API}
 \label{sec:tier-client}
@@ -109,9 +122,9 @@ on the live tree state.
 \begin{figure}[ht]
 \centering
 \caption{Client state-gating: the Client reads \texttt{TreeLifecycleState}
-  before delegating to an action.  Mutation actions (\texttt{commit},
-  \texttt{push}, \texttt{tag}, \texttt{freeze\_release}) are blocked unless the
-  tree is \texttt{READY}.}
+  before delegating to an action.  READY-gated actions (\texttt{checkout},
+  \texttt{commit}, \texttt{push}, \texttt{tag}, \texttt{freeze\_release}) are
+  blocked unless the tree is \texttt{READY}.}
 \label{fig:client-gating}
 \input{figures/client_gating}
 \end{figure}
@@ -142,7 +155,8 @@ src/ComplexGitSync/
 
   # --- Tier 2: Actions ---
   discovery.py                 discover_nested_configs()
-  operations.py                (planned: checkout, commit, push, tag, …)
+  operations.py                propagate_global_branch, create_global_branch
+                               checkout_tree, commit_tree, push_tree
   registry.py                  build_registry_from_cgs_document, …
   render.py                    format_project_tree, format_registry_json
 
