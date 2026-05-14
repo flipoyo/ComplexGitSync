@@ -1,0 +1,344 @@
+% class_diagram.tex  — TikZ source for the ComplexGitSync class overview figure.
+%
+% This file is \input{} from docs/architecture.tex.  It draws three related
+% diagrams on separate pages so each fits comfortably within an A4 margin:
+%
+%   Figure 1 — Core object model centred on GitTree
+%   Figure 2 — Document hierarchy (ConfigDocument and subclasses)
+%   Figure 3 — Registry model (DependencyTreeRegistry and supporting types)
+
+% ============================================================
+%  Shared TikZ style definitions
+% ============================================================
+
+\tikzset{
+  %— UML-style class box with three compartments
+  classbox/.style={
+    rectangle split,
+    rectangle split parts=3,
+    rectangle split part fill={blue!10,white,white},
+    draw=blue!40,
+    thick,
+    font=\ttfamily\footnotesize,
+    text width=4.8cm,
+    align=left,
+    inner sep=4pt,
+  },
+  enumbox/.style={
+    rectangle split,
+    rectangle split parts=2,
+    rectangle split part fill={orange!15,white},
+    draw=orange!50,
+    thick,
+    font=\ttfamily\footnotesize,
+    text width=3.8cm,
+    align=left,
+    inner sep=4pt,
+  },
+  %— Arrows
+  hasarrow/.style={-{Stealth[length=6pt]}, thick},
+  inharrow/.style={-{Triangle[open,length=7pt]}, thick},
+  comporr/.style={-{Diamond[length=7pt]}, thick},
+}
+
+% ============================================================
+%  Figure 1 — Core object model centred on GitTree
+% ============================================================
+
+\begin{figure}[ht]
+\centering
+\caption{Core object model: \texttt{ComplexGitSyncClient} orchestrates through
+  \texttt{Orchestre}, which owns the central \texttt{GitTree} composed of
+  \texttt{GitRepo} instances.  \texttt{RepoAddress} derives the remote URL from
+  a \texttt{GitRepo}.}
+\label{fig:core-model}
+
+\begin{tikzpicture}[node distance=1.2cm and 2.2cm]
+
+% --- ComplexGitSyncClient ---
+\node[classbox] (client) {
+  \textbf{ComplexGitSyncClient}
+  \nodepart{two}
+  orchestre: Orchestre\\
+  git\_runner: GitRunner\\
+  state\_store: RuntimeStateStore\\
+  registry: DependencyTreeRegistry\\
+  run\_logger: CommandRunLogger
+  \nodepart{three}
+  load\_cgs(path)\\
+  load\_gts(path)\\
+  clone\_cgs(path)\\
+  get\_tree\_state()\\
+  write\_gts\_snapshot()
+};
+
+% --- Orchestre ---
+\node[classbox, below=1.8cm of client] (orchestre) {
+  \textbf{Orchestre}
+  \nodepart{two}
+  git\_tree: GitTree
+  \nodepart{three}
+  register\_repo(repo)
+};
+
+% --- GitTree ---
+\node[classbox, below=1.8cm of orchestre] (gittree) {
+  \textbf{GitTree}
+  \nodepart{two}
+  repos: dict[str, GitRepo]
+  \nodepart{three}
+  add\_repo(repo)\\
+  force\_repo\_sha(name, sha)\\
+  force\_repo\_keys(name, **)
+};
+
+% --- GitRepo ---
+\node[classbox, right=2.4cm of gittree] (gitrepo) {
+  \textbf{GitRepo}
+  \nodepart{two}
+  project\_name: str\\
+  project\_owner\_name: str\\
+  gitprovider: GitProvider\\
+  access\_protocol: AccessProtocol\\
+  commit\_sha: str | None
+  \nodepart{three}
+  resolved\_group\_name: str
+};
+
+% --- GitRunner ---
+\node[classbox, right=2.4cm of client] (runner) {
+  \textbf{GitRunner}
+  \nodepart{two}
+  executable: str
+  \nodepart{three}
+  clone(url, dest, branch)\\
+  rev\_parse\_head(path)\\
+  current\_branch(path)\\
+  remote\_branch\_exists(url,b)
+};
+
+% --- RepoAddress ---
+\node[classbox, below=1.8cm of gitrepo] (repoaddr) {
+  \textbf{RepoAddress}
+  \nodepart{two}
+  gitprovider: GitProvider\\
+  project\_name: str\\
+  project\_owner\_name: str\\
+  group\_name: str | None\\
+  gitprovider\_url: str | None
+  \nodepart{three}
+  to\_ssh()\\
+  to\_https()\\
+  to\_url(protocol)\\
+  from\_repo(repo)
+};
+
+% --- Arrows ---
+% Client -> Orchestre (composition)
+\draw[comporr] (client.south) -- node[right, font=\scriptsize]{1} (orchestre.north);
+
+% Client -> GitRunner (has)
+\draw[hasarrow] (client.east) -- (runner.west);
+
+% Orchestre -> GitTree (composition)
+\draw[comporr] (orchestre.south) -- node[right, font=\scriptsize]{1} (gittree.north);
+
+% GitTree -> GitRepo (composition / dict)
+\draw[comporr] (gittree.east) -- node[above, font=\scriptsize]{0..*} (gitrepo.west);
+
+% RepoAddress -> GitRepo (uses)
+\draw[hasarrow, dashed] (repoaddr.north) -- node[right, font=\scriptsize]{uses} (gitrepo.south);
+
+\end{tikzpicture}
+\end{figure}
+
+% ============================================================
+%  Figure 2 — GitTree lifecycle states
+% ============================================================
+
+\begin{figure}[ht]
+\centering
+\caption{GitTree lifecycle state machine.  Every bootstrapping operation
+  (\texttt{clone}, \texttt{restart}, \texttt{checkout}) must terminate in
+  \texttt{READY}; mutation operations (\texttt{commit}, \texttt{push},
+  \texttt{tag}, \texttt{freeze\_release}) are gated on \texttt{READY}.}
+\label{fig:gittree-lifecycle}
+
+\begin{tikzpicture}[
+  node distance=1.4cm and 2.0cm,
+  state/.style={rectangle, rounded corners=4pt, draw=blue!50, fill=blue!8,
+                font=\ttfamily\small, minimum width=2.6cm, minimum height=0.8cm,
+                inner sep=4pt},
+  sidestate/.style={rectangle, rounded corners=4pt, draw=orange!60, fill=orange!10,
+                    font=\ttfamily\small, minimum width=2.6cm, minimum height=0.8cm,
+                    inner sep=4pt},
+  trans/.style={-{Stealth[length=6pt]}, thick},
+]
+
+\node[state] (unloaded) {UNLOADED};
+\node[state, right=of unloaded] (declared)  {DECLARED};
+\node[state, right=of declared] (pending)   {PENDING};
+\node[state, right=of pending]  (ready)     {READY};
+
+\node[sidestate, below=1.2cm of declared] (partial) {PARTIAL};
+\node[sidestate, below=1.2cm of pending]  (error)   {ERROR};
+
+\draw[trans] (unloaded) -- node[above, font=\scriptsize]{load\_cgs} (declared);
+\draw[trans] (declared) -- node[above, font=\scriptsize]{clone/checkout} (pending);
+\draw[trans] (pending)  -- node[above, font=\scriptsize]{all READY} (ready);
+\draw[trans, dashed] (declared.south) -- (partial.north);
+\draw[trans, dashed] (pending.south)  -- (error.north);
+\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{reload .cgs} (declared.north);
+
+\end{tikzpicture}
+\end{figure}
+
+% ============================================================
+%  Figure 3 — Document class hierarchy
+% ============================================================
+
+\begin{figure}[ht]
+\centering
+\caption{Document class hierarchy.  \texttt{ConfigDocument} is the abstract
+  base; each concrete subclass parses and validates one file format.}
+\label{fig:document-hierarchy}
+
+\begin{tikzpicture}[node distance=1.2cm and 1.8cm]
+
+\node[classbox] (base) {
+  \textbf{ConfigDocument}
+  \nodepart{two}
+  \_data: dict
+  \nodepart{three}
+  read(key) / get(key)\\
+  validate()\\
+  from\_toml / from\_json / from\_yaml\\
+  to\_toml / to\_json / to\_yaml
+};
+
+\node[classbox, below left=1.6cm and 0.6cm of base] (cgs) {
+  \textbf{CgsDocument}
+  \nodepart{two}
+  DOCUMENT\_KIND = ``cgs''
+  \nodepart{three}
+  project\_name\\
+  default\_branch\\
+  repos\\
+  runtime\_setting(key)
+};
+
+\node[classbox, below=1.6cm of base] (gts) {
+  \textbf{GtsDocument}
+  \nodepart{two}
+  DOCUMENT\_KIND = ``gts''
+  \nodepart{three}
+  lifecycle\_state\\
+  is\_ready\\
+  repo\_states
+};
+
+\node[classbox, below right=1.6cm and 0.6cm of base] (goc) {
+  \textbf{GocDocument}
+  \nodepart{two}
+  DOCUMENT\_KIND = ``goc''
+  \nodepart{three}
+  project\_source\\
+  interaction / profile / transport\\
+  actions\\
+  session\_setting(key)
+};
+
+\draw[inharrow] (cgs.north) -- (base.south west);
+\draw[inharrow] (gts.north) -- (base.south);
+\draw[inharrow] (goc.north) -- (base.south east);
+
+\end{tikzpicture}
+\end{figure}
+
+% ============================================================
+%  Figure 4 — Registry model
+% ============================================================
+
+\begin{figure}[ht]
+\centering
+\caption{Registry model.  \texttt{DependencyTreeRegistry} is the authoritative
+  in-memory graph; \texttt{RepoRegistryEntry} records both static identity
+  (from \texttt{.cgs}) and dynamic state (from synchronisation operations).}
+\label{fig:registry-model}
+
+\begin{tikzpicture}[node distance=1.2cm and 2.0cm]
+
+% DependencyTreeRegistry
+\node[classbox] (registry) {
+  \textbf{DependencyTreeRegistry}
+  \nodepart{two}
+  entries: dict[str, RepoRegistryEntry]\\
+  lifecycle\_state: TreeLifecycleState
+  \nodepart{three}
+  add(entry) / get(id) / values()\\
+  children\_of(parent\_id)\\
+  is\_complete() / is\_ready()\\
+  recompute\_tree\_state()
+};
+
+% RepoRegistryEntry
+\node[classbox, right=2.2cm of registry] (entry) {
+  \textbf{RepoRegistryEntry}
+  \nodepart{two}
+  repo\_id / name / node\_type\\
+  parent\_id / absolute\_path\\
+  current\_ref\_kind / \_name\\
+  target\_ref\_kind / \_name\\
+  resolved\_ref\_kind / \_name\\
+  repo\_lifecycle\_state\\
+  sync\_state / discovery\_state\\
+  commit\_sha / fallback\_*
+  \nodepart{three}
+  (mutable dataclass)
+};
+
+% ProjectTreeState
+\node[classbox, below=1.6cm of registry] (treestate) {
+  \textbf{ProjectTreeState}
+  \nodepart{two}
+  lifecycle\_state: TreeLifecycleState\\
+  is\_ready: bool\\
+  registry\_complete: bool
+  \nodepart{three}
+  (frozen dataclass)
+};
+
+% Enum: NodeType
+\node[enumbox, below left=1.6cm and 0.2cm of entry] (nodetype) {
+  \textbf{NodeType} \textit{(enum)}
+  \nodepart{two}
+  ROOT / PARENT / LEAF
+};
+
+% Enum: TreeLifecycleState
+\node[enumbox, right=1.8cm of treestate] (tlc) {
+  \textbf{TreeLifecycleState}
+  \nodepart{two}
+  UNLOADED / DECLARED\\
+  PENDING / READY\\
+  PARTIAL / ERROR
+};
+
+% Enum: RepoLifecycleState
+\node[enumbox, below=1.2cm of nodetype] (rlc) {
+  \textbf{RepoLifecycleState}
+  \nodepart{two}
+  DECLARED / PENDING\\
+  READY / FALLBACK\_READY\\
+  MISSING / ERROR
+};
+
+% Arrows
+\draw[comporr] (registry.east) -- node[above, font=\scriptsize]{0..*} (entry.west);
+\draw[hasarrow] (registry.south) -- (treestate.north);
+\draw[hasarrow] (entry.south west) -- (nodetype.north east);
+\draw[hasarrow] (entry.south) -- (rlc.north);
+\draw[hasarrow] (registry.south east) -- (tlc.north west);
+
+\end{tikzpicture}
+\end{figure}

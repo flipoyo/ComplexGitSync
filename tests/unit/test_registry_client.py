@@ -5,10 +5,11 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
-from ComplexGitSync.client import ComplexGitSyncClient
+from ComplexGitSync.orchestre import ComplexGitSyncClient
 from ComplexGitSync.errors import ConfigValidationError, NestedConfigDiscoveryError
-from ComplexGitSync.registry import NodeType, RepoLifecycleState, TreeLifecycleState, make_repo_id
-from ComplexGitSync.state_store import RuntimeStateStore
+from ComplexGitSync.git_repo import NodeType, RepoLifecycleState
+from ComplexGitSync.git_tree import TreeLifecycleState, make_repo_id
+from ComplexGitSync.orchestre import RuntimeStateStore
 
 
 def test_client_load_cgs_builds_reviewable_registry(tmp_path):

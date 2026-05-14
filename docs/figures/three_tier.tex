@@ -1,0 +1,47 @@
+% three_tier.tex — TikZ figure showing the three-tier architecture
+% Included by docs/architecture.tex (Figure three-tier).
+
+\begin{tikzpicture}[
+  tier/.style={
+    rectangle, rounded corners=6pt,
+    minimum width=11cm, minimum height=1.4cm,
+    draw, thick, align=center,
+    font=\sffamily\small,
+  },
+  tierlabel/.style={
+    font=\sffamily\bfseries\small,
+    rotate=0,
+  },
+  downarrow/.style={-{Stealth[length=8pt]}, thick, gray},
+]
+
+% Tier 3 — Client / API  (top)
+\node[tier, fill=blue!12, draw=blue!40] (api) at (0,0) {
+  \textbf{Tier 3 — Client / API}\\[2pt]
+  \texttt{ComplexGitSyncClient} \ $\cdot$ \ \texttt{Orchestre} \ $\cdot$ \ \texttt{CLI}\\
+  \textit{Exposes class methods; gates every call on \texttt{TreeLifecycleState}}
+};
+
+% arrow down
+\draw[downarrow] (api.south) -- ++(0,-0.5) node[midway, right, font=\scriptsize\itshape]{calls (state-gated)};
+
+% Tier 2 — Actions (middle)
+\node[tier, fill=green!10, draw=green!40] (actions) at (0,-2.3) {
+  \textbf{Tier 2 — Actions}\\[2pt]
+  \texttt{clone} \ $\cdot$ \ \texttt{checkout} \ $\cdot$ \ \texttt{commit} \ $\cdot$
+  \ \texttt{push} \ $\cdot$ \ \texttt{tag} \ $\cdot$ \ \texttt{freeze\_release}\\
+  \textit{Each action is available only from valid \texttt{TreeLifecycleState} values}
+};
+
+% arrow down
+\draw[downarrow] (actions.south) -- ++(0,-0.5) node[midway, right, font=\scriptsize\itshape]{reads / mutates};
+
+% Tier 1 — Core Data (bottom)
+\node[tier, fill=orange!10, draw=orange!40] (core) at (0,-4.6) {
+  \textbf{Tier 1 — Core Data}\\[2pt]
+  \texttt{GitTree} \ $\cdot$ \ \texttt{GitRepo} \ $\cdot$ \ \texttt{DependencyTreeRegistry}
+  \ $\cdot$ \ \texttt{RepoRegistryEntry}\\
+  \textit{Centred on \texttt{GitTree} and its \texttt{GitRepo} parent--leaf graph}
+};
+
+\end{tikzpicture}

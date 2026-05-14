@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from ComplexGitSync import __version__
 from ComplexGitSync.cli import main
-from ComplexGitSync.state_store import RuntimeStateStore
+from ComplexGitSync.orchestre import RuntimeStateStore
 
 
 def test_main_without_command_prints_help(capsys):
@@ -74,7 +74,7 @@ resolved_ref_kind = "branch"
 resolved_ref_name = "main"
 commit_sha = "abc123"
 """.strip()
-            .format(source_path=str(config_path.resolve()))
+            .format(source_path=config_path.resolve().as_posix())
             + "\n"
         ),
         encoding="utf-8",
@@ -84,9 +84,10 @@ commit_sha = "abc123"
     exit_code = main(["tree", str(config_path)])
     captured = capsys.readouterr()
 
+    expected_path = str(Path("/tmp/runtime-demo").resolve())
     assert exit_code == 0
     assert "state=READY" in captured.out
-    assert "path=/tmp/runtime-demo" in captured.out
+    assert f"path={expected_path}" in captured.out
 
 
 def test_describe_command_supports_gts_input(tmp_path, capsys):
