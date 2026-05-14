@@ -86,6 +86,61 @@ selected root path. It also writes a runtime snapshot to
 \texttt{<project-root>/.cgitsync/state/<spec-name>.gts} and registers that
 snapshot as the latest runtime state for the source \texttt{.cgs} file.
 
+\subsection{\texttt{checkout} (Python API)}
+
+Available via the Python API (CLI wiring planned):
+
+\begin{lstlisting}[language=Python]
+client.checkout("feature/my-branch")
+# or with an explicit ref kind
+from ComplexGitSync import RefKind
+client.checkout("v1.2.0", ref_kind=RefKind.TAG)
+\end{lstlisting}
+
+Checks out a branch or tag across the whole tree, parent-first.
+Requires a \texttt{READY} tree.  On success the tree remains \texttt{READY}
+and a new \texttt{.gts} snapshot is written.
+
+The operation follows three steps in order:
+
+\begin{enumerate}
+  \item \textbf{Propagate} — set the target ref on every registry entry
+    (\texttt{propagate\_global\_branch}).
+  \item \textbf{Create} — run \texttt{git branch} in every repo that does not
+    yet have the branch locally (\texttt{create\_global\_branch}).
+  \item \textbf{Checkout} — run \texttt{git checkout} in every repo,
+    parent-first, and refresh each entry's ref and SHA.
+\end{enumerate}
+
+\subsection{\texttt{commit} (Python API)}
+
+Available via the Python API (CLI wiring planned):
+
+\begin{lstlisting}[language=Python]
+# Stage all changes, then commit (default)
+client.commit("feat: my change")
+
+# Commit only already-staged changes
+client.commit("feat: my change", stage_all=False)
+\end{lstlisting}
+
+Commits changes across the tree, leaf-first.  Repositories with no staged
+changes after the optional \texttt{git add --all} step are silently skipped.
+Requires a \texttt{READY} tree; the tree remains \texttt{READY} on success.
+
+\subsection{\texttt{push} (Python API)}
+
+Available via the Python API (CLI wiring planned):
+
+\begin{lstlisting}[language=Python]
+client.push()
+\end{lstlisting}
+
+Pushes all repositories to their configured remotes, leaf-first.  Each repo
+is pushed to \texttt{entry.remote\_name} (defaulting to \texttt{"origin"}) on
+its currently resolved branch.  Requires a \texttt{READY} tree; the tree
+remains \texttt{READY} on success.
+
 \subsection{Planned Commands (not yet implemented)}
 
 The following commands are defined in the public API contract but are not yet
@@ -93,9 +148,12 @@ implemented. Each returns exit code~2 with the message
 \texttt{"not implemented yet"}.
 
 \begin{itemize}
-  \item \texttt{checkout} — switch the whole tree to a named ref.
-  \item \texttt{commit} — stage and commit changes across the tree.
-  \item \texttt{push} — push all repos to their remotes.
+  \item \texttt{checkout} (CLI) — switch the whole tree to a named ref
+    (Python API available; see above).
+  \item \texttt{commit} (CLI) — stage and commit changes across the tree
+    (Python API available; see above).
+  \item \texttt{push} (CLI) — push all repos to their remotes
+    (Python API available; see above).
   \item \texttt{tag} — create a named tag across the tree.
   \item \texttt{freeze\_release} — write a \texttt{.gts} snapshot and tag the release.
   \item \texttt{restart} — re-synchronise a tree from an existing \texttt{.gts} snapshot.
@@ -211,6 +269,31 @@ registry = client.load_cgs("project.cgs")
 tree = client.format_project_tree()
 clone_registry = client.clone_cgs("project.cgs", target_dir="./workspace/demo")
 \end{lstlisting}
+
+Once the tree is \texttt{READY}, the synchronisation methods are available:
+
+\begin{lstlisting}[language=Python]
+# Load an existing READY snapshot
+client.load_gts(".cgitsync/state/project.gts")
+
+# Check out a branch across all repos (parent-first)
+client.checkout("feature/my-branch")
+# or with a tag ref
+from ComplexGitSync import RefKind
+client.checkout("v1.0.0", ref_kind=RefKind.TAG)
+
+# Commit across all repos (leaf-first), staging all changes by default
+client.commit("feat: my change")
+# or commit only already-staged changes
+client.commit("feat: my change", stage_all=False)
+
+# Push all repos to their remotes (leaf-first)
+client.push()
+\end{lstlisting}
+
+All three synchronisation methods require \texttt{READY} and leave the tree
+\texttt{READY} on success.  \texttt{checkout} also writes a new
+\texttt{.gts} snapshot.
 
 \subsection{Document Classes}
 

@@ -1,13 +1,23 @@
 # ComplexGitSync
 
-ComplexGitSync is a Python package for describing and inspecting a root Git
-repository together with its nested descendants from local `.cgs` authoring
-specs and generated `.gts` state snapshots.
+ComplexGitSync is a Python package for synchronising a root Git repository and
+its nested descendants. It reads local `.cgs` authoring specs, generates `.gts`
+state snapshots, and exposes a Python API and CLI for the full synchronisation
+workflow.
 
-The current bootstrap release already supports `validate`, `describe`,
-`tree`, `registry`, and `clone`. The sample `.goc` files in `examples/`
-document the intended orchestration flow for `checkout` and the remaining
-sync commands, but direct CLI execution of `.goc` plans is not wired yet.
+## Feature Status
+
+| Feature | Python API | CLI |
+|---|---|---|
+| `validate` | ✅ | ✅ |
+| `describe` / `tree` / `registry` | ✅ | ✅ |
+| `clone` | ✅ | ✅ |
+| `checkout` | ✅ | planned |
+| `commit` | ✅ | planned |
+| `push` | ✅ | planned |
+| `tag` | planned | planned |
+| `freeze_release` | planned | planned |
+| `restart` / `launch_release` | planned | planned |
 
 ## Prerequisites
 
@@ -124,6 +134,32 @@ Describe a generated snapshot:
 uv run cgitsync describe examples/cawaqsviz_snapshot.gts
 ```
 
+## Synchronising the Tree — Python API
+
+Once a tree is `READY` (after `clone` or `load_gts`), use the Python API to
+check out a branch, commit changes, and push across the whole tree:
+
+```python
+from ComplexGitSync import ComplexGitSyncClient
+
+client = ComplexGitSyncClient()
+
+# Load an existing READY snapshot
+client.load_gts(".cgitsync/state/complexgitsync.gts")
+
+# Check out a branch across all repos (propagate → create → git checkout)
+client.checkout("feature/my-branch")
+
+# Commit changes across all repos (leaf → root)
+client.commit("feat: add feature")
+
+# Push all repos to their remotes (leaf → root)
+client.push()
+```
+
+All three methods require a `READY` tree and leave it `READY` after a
+successful run.  `checkout` also writes a new `.gts` snapshot.
+
 ## Working with `.goc` Orchestration Plans
 
 The bundled `.goc` files mirror the intended multi-command workflow. For
@@ -161,3 +197,5 @@ writes.
   `examples/cawaqsviz_deploy.goc` to inspect a nested GitLab-based topology.
 - Keep `docs/getting_started.tex` and `docs/user_guide.tex` as the
   authoritative long-form user documentation.
+- Remaining planned features: `tag`, `freeze_release`, `restart`,
+  `launch_release`, and full CLI wiring for `checkout`, `commit`, `push`.

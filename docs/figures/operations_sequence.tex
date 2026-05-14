@@ -1,0 +1,107 @@
+% operations_sequence.tex — TikZ figure showing the checkout/commit/push flow
+% Included by docs/architecture.tex (Figure ops-sequence).
+
+\begin{tikzpicture}[
+  opbox/.style={
+    rectangle, rounded corners=4pt,
+    minimum width=3.6cm, minimum height=1.0cm,
+    draw, thick, align=center,
+    font=\ttfamily\footnotesize,
+    inner sep=5pt,
+  },
+  step/.style={opbox, fill=green!10, draw=green!50},
+  gatebox/.style={opbox, fill=yellow!15, draw=yellow!60!black,
+                  minimum width=2.4cm, minimum height=0.8cm,
+                  font=\sffamily\scriptsize},
+  orderbox/.style={opbox, fill=blue!8, draw=blue!40,
+                   minimum width=2.6cm, minimum height=0.8cm},
+  arr/.style={-{Stealth[length=6pt]}, thick},
+  sidarr/.style={-{Stealth[length=5pt]}, thick, gray!70},
+  seclabel/.style={font=\sffamily\bfseries\small},
+]
+
+% ---- checkout_tree column ------------------------------------------------
+
+\node[seclabel] (co-title) at (0, 0) {\texttt{checkout\_tree}};
+
+\node[gatebox] (co-gate) at (0,-1.0) {assert READY};
+
+\node[step] (co-propagate) at (0,-2.4) {
+  \textbf{propagate\_global\_branch}\\
+  set target ref on\\every entry (in-memory)
+};
+
+\node[step] (co-create) at (0,-4.1) {
+  \textbf{create\_global\_branch}\\
+  git branch if missing\\(parent-first)
+};
+
+\node[step] (co-checkout) at (0,-5.8) {
+  \textbf{git checkout}\\
+  each repo, parent-first\\refresh entry state
+};
+
+\node[orderbox] (co-order) at (0,-7.2) {root → parent → leaf};
+
+\draw[arr] (co-title.south) -- (co-gate.north);
+\draw[arr] (co-gate.south)  -- (co-propagate.north);
+\draw[arr] (co-propagate.south) -- (co-create.north);
+\draw[arr] (co-create.south)    -- (co-checkout.north);
+\draw[arr] (co-checkout.south)  -- (co-order.north);
+
+% ---- commit_tree column --------------------------------------------------
+
+\node[seclabel] (cm-title) at (5.5, 0) {\texttt{commit\_tree}};
+
+\node[gatebox] (cm-gate) at (5.5,-1.0) {assert READY};
+
+\node[step] (cm-stage) at (5.5,-2.4) {
+  \textbf{git add --all}\\(when stage\_all=True)
+};
+
+\node[step] (cm-skip) at (5.5,-4.1) {
+  skip if no staged\\changes
+};
+
+\node[step] (cm-commit) at (5.5,-5.8) {
+  \textbf{git commit}\\
+  each repo with staged\\changes; refresh SHA
+};
+
+\node[orderbox] (cm-order) at (5.5,-7.2) {leaf → parent → root};
+
+\draw[arr] (cm-title.south) -- (cm-gate.north);
+\draw[arr] (cm-gate.south)  -- (cm-stage.north);
+\draw[arr] (cm-stage.south) -- (cm-skip.north);
+\draw[arr] (cm-skip.south)  -- (cm-commit.north);
+\draw[arr] (cm-commit.south)-- (cm-order.north);
+
+% ---- push_tree column ----------------------------------------------------
+
+\node[seclabel] (pu-title) at (10.8, 0) {\texttt{push\_tree}};
+
+\node[gatebox] (pu-gate) at (10.8,-1.0) {assert READY};
+
+\node[step] (pu-push) at (10.8,-3.25) {
+  \textbf{git push}\\
+  remote = entry.remote\_name\\
+  (default: "origin")\\
+  branch = resolved\_ref\_name
+};
+
+\node[orderbox] (pu-order) at (10.8,-7.2) {leaf → parent → root};
+
+\draw[arr] (pu-title.south) -- (pu-gate.north);
+\draw[arr] (pu-gate.south)  -- (pu-push.north);
+\draw[arr] (pu-push.south)  -- (pu-order.north);
+
+% ---- shared "tree stays READY" footer -----------------------------------
+
+\node[gatebox, minimum width=11.0cm]
+    (footer) at (5.5,-8.2) {tree remains \textbf{READY} on success};
+
+\draw[sidarr] (co-order.south) -- (footer.north west);
+\draw[sidarr] (cm-order.south) -- (footer.north);
+\draw[sidarr] (pu-order.south) -- (footer.north east);
+
+\end{tikzpicture}

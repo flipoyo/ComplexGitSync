@@ -182,7 +182,14 @@ Once the tree is cloned you can proceed to:
 \begin{itemize}
   \item \textbf{registry} — inspect the resolved dependency registry as JSON.
   \item \textbf{describe} — inspect either a \texttt{.cgs} spec or a generated \texttt{.gts} snapshot.
+  \item \textbf{checkout} (Python API) — switch the whole tree to a branch or tag,
+    parent-first.  Writes a new \texttt{.gts} snapshot on success.
+  \item \textbf{commit} (Python API) — stage and commit changes across the tree,
+    leaf-first.
+  \item \textbf{push} (Python API) — push every repository to its configured
+    remote, leaf-first.
 \end{itemize}
 
-Refer to Chapter~\ref{chap:user-guide} for complete command and API
-documentation.
+All three synchronisation operations require a \texttt{READY} tree and leave it
+\texttt{READY} after a successful run.  See Chapter~\ref{chap:user-guide} for
+complete command and API documentation.
