@@ -15,9 +15,10 @@ workflow.
 | `checkout` | ✅ | planned |
 | `commit` | ✅ | planned |
 | `push` | ✅ | planned |
-| `tag` | planned | planned |
-| `freeze_release` | planned | planned |
-| `restart` / `launch_release` | planned | planned |
+| `tag` | ✅ | planned |
+| `freeze_release` | ✅ | planned |
+| `restart` | planned | planned |
+| `launch_release` | ✅ | planned |
 
 ## Prerequisites
 
@@ -155,10 +156,21 @@ client.commit("feat: add feature")
 
 # Push all repos to their remotes (leaf → root)
 client.push()
+
+# Create and push a shared tag across all repos (leaf → root)
+client.tag("v1.2.3")
+
+# Freeze a release: commit/tag/push leaf-first and write a named .gts snapshot
+client.freeze_release("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
+
+# Relaunch from a frozen .gts snapshot and restore the tree to READY
+client.launch_release(".cgitsync/releases/release-2026.05.gts")
 ```
 
-All three methods require a `READY` tree and leave it `READY` after a
-successful run.  `checkout` also writes a new `.gts` snapshot.
+`checkout`, `commit`, `push`, `tag`, and `freeze_release` require a `READY`
+tree and leave it `READY` after a successful run. `launch_release` loads a
+release `.gts`, performs required clone/checkout actions, and must end in `READY`.
+`checkout` and `freeze_release` write new `.gts` snapshots.
 
 ## Working with `.goc` Orchestration Plans
 
@@ -197,5 +209,6 @@ writes.
   `examples/cawaqsviz_deploy.goc` to inspect a nested GitLab-based topology.
 - Keep `docs/getting_started.tex` and `docs/user_guide.tex` as the
   authoritative long-form user documentation.
-- Remaining planned features: `tag`, `freeze_release`, `restart`,
-  `launch_release`, and full CLI wiring for `checkout`, `commit`, `push`.
+- Remaining planned features: `restart`, CLI `launch_release`, and full CLI
+  wiring for `checkout`, `commit`, `push`, `tag`, `freeze_release`
+  (CLI command: `freeze-release`).
