@@ -90,6 +90,61 @@ def _make_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
     return registry
 
 
+def _make_deep_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
+    """Build a 3-level READY registry: root → middle → sub-leaf."""
+    from ComplexGitSync.git_repo import (
+        AccessProtocol,
+        DiscoveryState,
+        GitProvider,
+        RepoRegistryEntry,
+    )
+
+    root_path = tmp_path / "deep"
+    middle_path = tmp_path / "deep" / "middle"
+    sub_path = tmp_path / "deep" / "middle" / "sub"
+    for p in (root_path, middle_path, sub_path):
+        p.mkdir(parents=True)
+
+    def _entry(repo_id, name, node_type, parent_id, absolute_path, parent_root):
+        return RepoRegistryEntry(
+            repo_id=repo_id,
+            name=name,
+            node_type=node_type,
+            parent_id=parent_id,
+            absolute_path=absolute_path,
+            relative_path=(
+                Path(".")
+                if parent_id is None
+                else absolute_path.relative_to(parent_root)
+            ),
+            current_ref_kind=RefKind.BRANCH,
+            current_ref_name="main",
+            target_ref_kind=RefKind.BRANCH,
+            target_ref_name="main",
+            resolved_ref_kind=RefKind.BRANCH,
+            resolved_ref_name="main",
+            commit_sha="abc123",
+            repo_lifecycle_state=RepoLifecycleState.READY,
+            sync_state=SyncState.ALIGNED,
+            discovery_state=DiscoveryState.RESOLVED,
+            is_reachable=True,
+            gitprovider=GitProvider.GITHUB,
+            project_owner_name="owner",
+            project_name=name,
+            access_protocol=AccessProtocol.SSH,
+            default_branch="main",
+            remote_name="origin",
+        )
+
+    registry = DependencyTreeRegistry()
+    registry.add(_entry("root", "deep", NodeType.ROOT, None, root_path, root_path))
+    registry.add(_entry("root:middle", "middle", NodeType.PARENT, "root", middle_path, root_path))
+    registry.add(_entry("root:middle:sub", "sub", NodeType.LEAF, "root:middle", sub_path, middle_path))
+    registry.recompute_tree_state()
+    assert registry.is_ready(), "Deep fixture must produce a READY registry"
+    return registry
+
+
 class _FakeGitRunnerForOperations:
     """Minimal fake GitRunner for operation unit tests.
 
@@ -292,6 +347,20 @@ def test_checkout_tree_does_not_recreate_existing_branch(tmp_path):
     assert runner.created == []
 
 
+def test_checkout_tree_deep_hierarchy_parent_first(tmp_path):
+    """Ordering must be root → middle → sub for a 3-level tree."""
+    registry = _make_deep_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    checkout_tree(registry, runner, "feature-x")
+
+    paths = [path for path, _ in runner.checked_out]
+    root_idx = paths.index(registry.get("root").absolute_path)
+    mid_idx = paths.index(registry.get("root:middle").absolute_path)
+    sub_idx = paths.index(registry.get("root:middle:sub").absolute_path)
+    assert root_idx < mid_idx < sub_idx
+
+
 # ---------------------------------------------------------------------------
 # commit_tree
 # ---------------------------------------------------------------------------
@@ -322,6 +391,24 @@ def test_commit_tree_commits_leaf_before_root(tmp_path):
 
     committed_paths = [path for path, _ in runner.committed]
     assert committed_paths.index(leaf_path) < committed_paths.index(root_path)
+
+
+def test_commit_tree_deep_hierarchy_leaf_first(tmp_path):
+    """Ordering must be sub → middle → root for a 3-level tree."""
+    registry = _make_deep_ready_registry(tmp_path)
+    root_path = registry.get("root").absolute_path
+    mid_path = registry.get("root:middle").absolute_path
+    sub_path = registry.get("root:middle:sub").absolute_path
+
+    runner = _FakeGitRunnerForOperations()
+    for p in (root_path, mid_path, sub_path):
+        runner.set_staged(p, True)
+
+    commit_tree(registry, runner, "deep commit", stage_all=False)
+
+    committed_paths = [path for path, _ in runner.committed]
+    assert committed_paths.index(sub_path) < committed_paths.index(mid_path)
+    assert committed_paths.index(mid_path) < committed_paths.index(root_path)
 
 
 def test_commit_tree_skips_repos_with_no_staged_changes(tmp_path):
@@ -399,6 +486,21 @@ def test_push_tree_pushes_leaf_before_root(tmp_path):
     root_path = registry.get("root").absolute_path
     leaf_path = registry.get("root:deps/leaf").absolute_path
     assert pushed_paths.index(leaf_path) < pushed_paths.index(root_path)
+
+
+def test_push_tree_deep_hierarchy_leaf_first(tmp_path):
+    """Ordering must be sub → middle → root for a 3-level tree."""
+    registry = _make_deep_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    push_tree(registry, runner)
+
+    pushed_paths = [path for path, _, _ in runner.pushed]
+    root_path = registry.get("root").absolute_path
+    mid_path = registry.get("root:middle").absolute_path
+    sub_path = registry.get("root:middle:sub").absolute_path
+    assert pushed_paths.index(sub_path) < pushed_paths.index(mid_path)
+    assert pushed_paths.index(mid_path) < pushed_paths.index(root_path)
 
 
 def test_push_tree_uses_remote_name_and_resolved_ref(tmp_path):

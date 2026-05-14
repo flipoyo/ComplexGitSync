@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .errors import TreeNotReadyError
-from .git_repo import RefKind, RepoLifecycleState, SyncState
+from .git_repo import RefKind, RepoLifecycleState, RepoRegistryEntry, SyncState
 from .git_tree import DependencyTreeRegistry, iter_tree, iter_tree_leaf_first
 
 if TYPE_CHECKING:
@@ -103,15 +103,7 @@ def checkout_tree(
     # Step 3: checkout and refresh each entry (parent-first)
     for entry in iter_tree(registry):
         git_runner.checkout(entry.absolute_path, branch_name)
-        entry.current_ref_kind = ref_kind
-        entry.current_ref_name = branch_name
-        entry.resolved_ref_kind = ref_kind
-        entry.resolved_ref_name = branch_name
-        entry.commit_sha = git_runner.rev_parse_head(entry.absolute_path)
-        entry.fallback_applied = False
-        entry.fallback_reason = None
-        entry.repo_lifecycle_state = RepoLifecycleState.READY
-        entry.sync_state = SyncState.ALIGNED
+        _refresh_entry_after_checkout(entry, branch_name, ref_kind, git_runner)
 
     registry.recompute_tree_state()
 
@@ -195,3 +187,21 @@ def _assert_ready(registry: DependencyTreeRegistry) -> None:
         raise TreeNotReadyError(
             f"Operation requires a READY tree; current state: {registry.lifecycle_state.value}"
         )
+
+
+def _refresh_entry_after_checkout(
+    entry: RepoRegistryEntry,
+    branch_name: str,
+    ref_kind: RefKind,
+    git_runner: GitRunner,
+) -> None:
+    """Update *entry* in-place to reflect a completed ``git checkout``."""
+    entry.current_ref_kind = ref_kind
+    entry.current_ref_name = branch_name
+    entry.resolved_ref_kind = ref_kind
+    entry.resolved_ref_name = branch_name
+    entry.commit_sha = git_runner.rev_parse_head(entry.absolute_path)
+    entry.fallback_applied = False
+    entry.fallback_reason = None
+    entry.repo_lifecycle_state = RepoLifecycleState.READY
+    entry.sync_state = SyncState.ALIGNED
