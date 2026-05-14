@@ -208,9 +208,9 @@ class _FakeGitRunnerForOperations:
         repo_path: Path | str,
         *,
         remote: str = "origin",
-        branch: str | None = None,
+        ref_name: str | None = None,
     ) -> None:
-        self.pushed.append((Path(repo_path), remote, branch))
+        self.pushed.append((Path(repo_path), remote, ref_name))
 
     def set_staged(self, repo_path: Path | str, value: bool) -> None:
         """Helper: manually set whether a repo has staged changes."""

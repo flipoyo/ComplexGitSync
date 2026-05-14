@@ -757,11 +757,11 @@ class GitRunner:
         repo_path: Path | str,
         *,
         remote: str = "origin",
-        branch: str | None = None,
+        ref_name: str | None = None,
     ) -> None:
-        """Push *remote* (and optionally *branch*) in *repo_path* (``git push``)."""
-        if branch:
-            self._run("push", remote, branch, cwd=repo_path)
+        """Push *remote* (and optionally *ref_name*) in *repo_path* (``git push``)."""
+        if ref_name:
+            self._run("push", remote, ref_name, cwd=repo_path)
         else:
             self._run("push", remote, cwd=repo_path)
 
@@ -1370,16 +1370,7 @@ class ComplexGitSyncClient:
         self._log_event("launch_release_start", snapshot_path=Path(snapshot_path).resolve())
 
         for entry in iter_tree(loaded_registry):
-            # Prefer the exact ref captured at freeze time, then fall back to
-            # target/current/default values when older snapshots lack one.
-            ref_name = (
-                entry.resolved_ref_name
-                or entry.target_ref_name
-                or entry.current_ref_name
-                or entry.default_branch
-            )
-            if not ref_name:
-                raise GitSyncError(f"No launch ref available for repository {entry.name}.")
+            ref_name = self._determine_launch_ref(entry)
 
             if not entry.absolute_path.exists():
                 remote_url = self._build_remote_url(entry)
@@ -1584,6 +1575,18 @@ class ComplexGitSyncClient:
             gitprovider_url=entry.gitprovider_url,
         )
         return address.to_url(entry.access_protocol)
+
+    def _determine_launch_ref(self, entry: RepoRegistryEntry) -> str:
+        """Return the most precise known ref for launch-release checkout."""
+        ref_name = (
+            entry.resolved_ref_name
+            or entry.target_ref_name
+            or entry.current_ref_name
+            or entry.default_branch
+        )
+        if not ref_name:
+            raise GitSyncError(f"No launch ref available for repository {entry.name}.")
+        return ref_name
 
     def _assert_nested_discovery_complete(self) -> None:
         for entry in self.get_dependency_registry().values():

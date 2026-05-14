@@ -172,7 +172,7 @@ def push_tree(
         git_runner.push(
             entry.absolute_path,
             remote=remote,
-            branch=entry.resolved_ref_name,
+            ref_name=entry.resolved_ref_name,
         )
 
     registry.recompute_tree_state()
@@ -190,7 +190,7 @@ def tag_tree(
     for entry in iter_tree_leaf_first(registry):
         git_runner.create_tag(entry.absolute_path, tag_name)
         remote = entry.remote_name or "origin"
-        git_runner.push(entry.absolute_path, remote=remote, branch=tag_name)
+        git_runner.push(entry.absolute_path, remote=remote, ref_name=tag_name)
         entry.current_ref_kind = RefKind.TAG
         entry.current_ref_name = tag_name
         entry.resolved_ref_kind = RefKind.TAG
@@ -224,7 +224,7 @@ def freeze_release_tree(
             git_runner.commit(entry.absolute_path, commit_message)
         git_runner.create_tag(entry.absolute_path, tag_name)
         remote = entry.remote_name or "origin"
-        git_runner.push(entry.absolute_path, remote=remote, branch=tag_name)
+        git_runner.push(entry.absolute_path, remote=remote, ref_name=tag_name)
         entry.current_ref_kind = RefKind.TAG
         entry.current_ref_name = tag_name
         entry.resolved_ref_kind = RefKind.TAG
