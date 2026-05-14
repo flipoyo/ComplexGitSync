@@ -84,9 +84,10 @@ commit_sha = "abc123"
     exit_code = main(["tree", str(config_path)])
     captured = capsys.readouterr()
 
+    expected_path = str(Path("/tmp/runtime-demo").resolve())
     assert exit_code == 0
     assert "state=READY" in captured.out
-    assert "path=/tmp/runtime-demo" in captured.out
+    assert f"path={expected_path}" in captured.out
 
 
 def test_describe_command_supports_gts_input(tmp_path, capsys):
