@@ -7,6 +7,7 @@ and a :class:`~ComplexGitSync.orchestre.GitRunner`.  Mutation operations require
 Free functions exported here (Tier 2 — Actions):
     propagate_global_branch   Set a shared branch target across every registry entry
     create_global_branch      Create the branch locally if it does not exist yet
+    restart_tree              Resync the tree using the root repo's current branch
     checkout_tree             propagate → create → git checkout, parent-first
     commit_tree               Stage and commit changes across the tree, leaf-first
     push_tree                 Push all repos to their remotes, leaf-first
@@ -67,6 +68,42 @@ def create_global_branch(
     for entry in iter_tree(registry):
         if not git_runner.local_branch_exists(entry.absolute_path, branch_name):
             git_runner.create_branch(entry.absolute_path, branch_name)
+
+
+# ---------------------------------------------------------------------------
+# restart_tree — Tier 2 action
+# ---------------------------------------------------------------------------
+
+
+def restart_tree(
+    registry: DependencyTreeRegistry,
+    git_runner: GitRunner,
+) -> None:
+    """Resynchronize the full tree using the root repository's current branch.
+
+    Reads the current branch from the root repository, propagates it across
+    all entries, then checks out that branch in every repo parent-first.
+
+    Does not require a ``READY`` registry; intended for use after loading a
+    ``.cgs`` file (``DECLARED`` state).  Produces a ``READY`` registry or
+    raises if any repository checkout fails.
+    """
+    root_entry = registry.get("root")
+    current_branch = git_runner.current_branch(root_entry.absolute_path)
+    if current_branch is None:
+        current_branch = (
+            root_entry.resolved_ref_name
+            or root_entry.target_ref_name
+            or "main"
+        )
+
+    propagate_global_branch(registry, current_branch)
+
+    for entry in iter_tree(registry):
+        git_runner.checkout(entry.absolute_path, current_branch)
+        _refresh_entry_after_checkout(entry, current_branch, RefKind.BRANCH, git_runner)
+
+    registry.recompute_tree_state()
 
 
 # ---------------------------------------------------------------------------

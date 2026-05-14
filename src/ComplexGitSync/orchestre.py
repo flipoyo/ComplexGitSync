@@ -1243,6 +1243,29 @@ class ComplexGitSyncClient:
         self._log_tree_transition(previous_tree_state, self.registry.lifecycle_state, reason="clone_cgs")
         return self.registry
 
+    def restart(self, config_path: str | Path) -> DependencyTreeRegistry:
+        """Resynchronize an already-cloned tree from a ``.cgs`` file.
+
+        Loads the ``.cgs`` configuration, discovers nested configs, then
+        checks out the root repository's current branch across the whole tree
+        parent-first.  Ends in ``READY`` or raises
+        :exc:`~ComplexGitSync.errors.GitSyncError`.
+        """
+        from .operations import restart_tree
+
+        previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
+        resolved_path = Path(config_path).resolve()
+        self._log_event("restart_start", config_path=resolved_path)
+        registry = self.load_cgs(resolved_path, discover_nested=True)
+        restart_tree(registry, self.git_runner)
+        if not registry.is_ready():
+            raise GitSyncError("restart did not produce a READY tree.")
+        snapshot_path = self.write_gts_snapshot(command_origin="restart")
+        self.state_store.record_snapshot(resolved_path, snapshot_path)
+        self._log_tree_transition(previous_tree_state, registry.lifecycle_state, reason="restart")
+        self._log_event("restart_end", config_path=resolved_path)
+        return registry
+
     def checkout(
         self,
         branch_name: str,
