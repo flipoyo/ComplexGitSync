@@ -5,6 +5,7 @@ façade methods checkout / commit / push.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -16,13 +17,15 @@ from ComplexGitSync.git_repo import (
     RepoLifecycleState,
     SyncState,
 )
-from ComplexGitSync.git_tree import DependencyTreeRegistry, TreeLifecycleState
+from ComplexGitSync.git_tree import DependencyTreeRegistry, GitTree, TreeLifecycleState
 from ComplexGitSync.operations import (
     checkout_tree,
     commit_tree,
     create_global_branch,
+    freeze_release_tree,
     propagate_global_branch,
     push_tree,
+    tag_tree,
 )
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
@@ -159,6 +162,8 @@ class _FakeGitRunnerForOperations:
         self.staged: list[Path] = []
         self.committed: list[tuple[Path, str]] = []
         self.pushed: list[tuple[Path, str, str | None]] = []
+        self.tagged: list[tuple[Path, str]] = []
+        self.cloned: list[tuple[str, Path, str]] = []
         self._staged_changes: dict[Path, bool] = {}
         self._shas: dict[Path, str] = {}
 
@@ -173,6 +178,11 @@ class _FakeGitRunnerForOperations:
 
     def checkout(self, repo_path: Path | str, branch: str) -> None:
         self.checked_out.append((Path(repo_path), branch))
+
+    def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
+        destination_path = Path(destination)
+        destination_path.mkdir(parents=True, exist_ok=True)
+        self.cloned.append((remote_url, destination_path, branch))
 
     def rev_parse_head(self, repo_path: Path | str) -> str:
         return self._shas.get(Path(repo_path), f"sha-{Path(repo_path).name}")
@@ -206,6 +216,9 @@ class _FakeGitRunnerForOperations:
     def set_staged(self, repo_path: Path | str, value: bool) -> None:
         """Helper: manually set whether a repo has staged changes."""
         self._staged_changes[Path(repo_path)] = value
+
+    def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
+        self.tagged.append((Path(repo_path), tag_name))
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +260,21 @@ def test_propagate_global_branch_does_not_require_ready_tree(tmp_path):
 
     for entry in registry.values():
         assert entry.target_ref_name == "any-branch"
+
+
+# ---------------------------------------------------------------------------
+# GitTree.propagate_tag
+# ---------------------------------------------------------------------------
+
+
+def test_git_tree_propagate_tag_updates_all_entries(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+
+    GitTree().propagate_tag(registry, "v1.2.3")
+
+    for entry in registry.values():
+        assert entry.target_ref_kind == RefKind.TAG
+        assert entry.target_ref_name == "v1.2.3"
 
 
 # ---------------------------------------------------------------------------
@@ -537,7 +565,57 @@ def test_push_tree_tree_remains_ready(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# ComplexGitSyncClient.checkout / commit / push
+# tag_tree / freeze_release_tree
+# ---------------------------------------------------------------------------
+
+
+def test_tag_tree_requires_ready_tree(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    for entry in registry.values():
+        entry.commit_sha = None
+    registry.recompute_tree_state()
+
+    runner = _FakeGitRunnerForOperations()
+    with pytest.raises(TreeNotReadyError):
+        tag_tree(registry, runner, "v1.0.0")
+
+
+def test_tag_tree_tags_and_pushes_leaf_first(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    tag_tree(registry, runner, "v1.0.0")
+
+    root_path = registry.get("root").absolute_path
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+    tagged_paths = [path for path, _ in runner.tagged]
+    pushed_paths = [path for path, _, _ in runner.pushed]
+    assert tagged_paths.index(leaf_path) < tagged_paths.index(root_path)
+    assert pushed_paths.index(leaf_path) < pushed_paths.index(root_path)
+    for entry in registry.values():
+        assert entry.current_ref_kind == RefKind.TAG
+        assert entry.current_ref_name == "v1.0.0"
+
+
+def test_freeze_release_tree_commits_tags_and_pushes_leaf_first(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    freeze_release_tree(registry, runner, "release-1")
+
+    root_path = registry.get("root").absolute_path
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+    committed_paths = [path for path, _ in runner.committed]
+    tagged_paths = [path for path, _ in runner.tagged]
+    pushed_paths = [path for path, _, _ in runner.pushed]
+    assert committed_paths.index(leaf_path) < committed_paths.index(root_path)
+    assert tagged_paths.index(leaf_path) < tagged_paths.index(root_path)
+    assert pushed_paths.index(leaf_path) < pushed_paths.index(root_path)
+    assert registry.recompute_tree_state() == TreeLifecycleState.READY
+
+
+# ---------------------------------------------------------------------------
+# ComplexGitSyncClient.checkout / commit / push / tag / freeze_release / launch_release
 # ---------------------------------------------------------------------------
 
 
@@ -620,6 +698,54 @@ def test_client_push_delegates_to_push_tree(tmp_path):
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
 
+def test_client_tag_requires_ready_tree(tmp_path):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    for entry in client.registry.values():
+        entry.commit_sha = None
+    client.registry.recompute_tree_state()
+
+    with pytest.raises(TreeNotReadyError):
+        client.tag("v1.0.0")
+
+
+def test_client_tag_delegates_to_tag_tree(tmp_path):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+
+    result = client.tag("v1.0.0")
+
+    assert runner.tagged, "Expected at least one tag call"
+    assert result.recompute_tree_state() == TreeLifecycleState.READY
+
+
+def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    output_gts = tmp_path / "release.gts"
+
+    result = client.freeze_release("release-1", output_gts=output_gts)
+
+    assert runner.committed, "Expected commit calls during freeze_release"
+    assert runner.tagged, "Expected tag calls during freeze_release"
+    assert output_gts.exists()
+    assert result.recompute_tree_state() == TreeLifecycleState.READY
+
+
+def test_client_launch_release_loads_gts_clones_and_checks_out(tmp_path):
+    source_client, _ = _make_client_with_ready_registry(tmp_path)
+    snapshot_path = source_client.write_gts_snapshot(
+        command_origin="test",
+        output_path=tmp_path / "snapshot.gts",
+    )
+    shutil.rmtree(source_client.registry.get("root").absolute_path)
+
+    runner = _FakeGitRunnerForOperations()
+    client = ComplexGitSyncClient(git_runner=runner)
+    result = client.launch_release(snapshot_path)
+
+    assert len(runner.cloned) == len(result.values())
+    assert len(runner.checked_out) == len(result.values())
+    assert result.recompute_tree_state() == TreeLifecycleState.READY
+
+
 def test_client_checkout_raises_when_no_registry_loaded():
     client = ComplexGitSyncClient()
     with pytest.raises(RuntimeError, match="No ComplexGitSync registry is loaded"):
@@ -636,3 +762,15 @@ def test_client_push_raises_when_no_registry_loaded():
     client = ComplexGitSyncClient()
     with pytest.raises(RuntimeError, match="No ComplexGitSync registry is loaded"):
         client.push()
+
+
+def test_client_tag_raises_when_no_registry_loaded():
+    client = ComplexGitSyncClient()
+    with pytest.raises(RuntimeError, match="No ComplexGitSync registry is loaded"):
+        client.tag("v1.0.0")
+
+
+def test_client_freeze_release_raises_when_no_registry_loaded():
+    client = ComplexGitSyncClient()
+    with pytest.raises(RuntimeError, match="No ComplexGitSync registry is loaded"):
+        client.freeze_release("release-1")

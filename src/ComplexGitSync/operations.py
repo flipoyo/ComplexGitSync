@@ -10,6 +10,8 @@ Free functions exported here (Tier 2 — Actions):
     checkout_tree             propagate → create → git checkout, parent-first
     commit_tree               Stage and commit changes across the tree, leaf-first
     push_tree                 Push all repos to their remotes, leaf-first
+    tag_tree                  Create and push a shared tag, leaf-first
+    freeze_release_tree       Commit, tag, and push a shared release tag, leaf-first
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from typing import TYPE_CHECKING
 
 from .errors import TreeNotReadyError
 from .git_repo import RefKind, RepoLifecycleState, RepoRegistryEntry, SyncState
-from .git_tree import DependencyTreeRegistry, iter_tree, iter_tree_leaf_first
+from .git_tree import DependencyTreeRegistry, GitTree, iter_tree, iter_tree_leaf_first
 
 if TYPE_CHECKING:
     from .orchestre import GitRunner
@@ -172,6 +174,66 @@ def push_tree(
             remote=remote,
             branch=entry.resolved_ref_name,
         )
+
+    registry.recompute_tree_state()
+
+
+def tag_tree(
+    registry: DependencyTreeRegistry,
+    git_runner: GitRunner,
+    tag_name: str,
+) -> None:
+    """Create and push *tag_name* across the tree, leaf-first."""
+    _assert_ready(registry)
+    GitTree().propagate_tag(registry, tag_name)
+
+    for entry in iter_tree_leaf_first(registry):
+        git_runner.create_tag(entry.absolute_path, tag_name)
+        remote = entry.remote_name or "origin"
+        git_runner.push(entry.absolute_path, remote=remote, branch=tag_name)
+        entry.current_ref_kind = RefKind.TAG
+        entry.current_ref_name = tag_name
+        entry.resolved_ref_kind = RefKind.TAG
+        entry.resolved_ref_name = tag_name
+        entry.commit_sha = git_runner.rev_parse_head(entry.absolute_path)
+        entry.repo_lifecycle_state = RepoLifecycleState.READY
+        entry.sync_state = SyncState.ALIGNED
+        entry.fallback_applied = False
+        entry.fallback_reason = None
+
+    registry.recompute_tree_state()
+
+
+def freeze_release_tree(
+    registry: DependencyTreeRegistry,
+    git_runner: GitRunner,
+    tag_name: str,
+    *,
+    message: str | None = None,
+    stage_all: bool = True,
+) -> None:
+    """Freeze a release by committing, tagging, and pushing leaf-first."""
+    _assert_ready(registry)
+    GitTree().propagate_tag(registry, tag_name)
+    commit_message = message or f"freeze release {tag_name}"
+
+    for entry in iter_tree_leaf_first(registry):
+        if stage_all:
+            git_runner.stage_all(entry.absolute_path)
+        if git_runner.has_staged_changes(entry.absolute_path):
+            git_runner.commit(entry.absolute_path, commit_message)
+        git_runner.create_tag(entry.absolute_path, tag_name)
+        remote = entry.remote_name or "origin"
+        git_runner.push(entry.absolute_path, remote=remote, branch=tag_name)
+        entry.current_ref_kind = RefKind.TAG
+        entry.current_ref_name = tag_name
+        entry.resolved_ref_kind = RefKind.TAG
+        entry.resolved_ref_name = tag_name
+        entry.commit_sha = git_runner.rev_parse_head(entry.absolute_path)
+        entry.repo_lifecycle_state = RepoLifecycleState.READY
+        entry.sync_state = SyncState.ALIGNED
+        entry.fallback_applied = False
+        entry.fallback_reason = None
 
     registry.recompute_tree_state()
 

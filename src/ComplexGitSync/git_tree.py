@@ -125,6 +125,12 @@ class GitTree:
         except KeyError as exc:
             raise KeyError(f"Unknown repository '{project_name}' in GitTree.") from exc
 
+    def propagate_tag(self, registry: DependencyTreeRegistry, tag_name: str) -> None:
+        """Propagate *tag_name* across *registry* from parent to leaves."""
+        for entry in iter_tree(registry):
+            entry.target_ref_kind = RefKind.TAG
+            entry.target_ref_name = tag_name
+
 
 # ---------------------------------------------------------------------------
 # DependencyTreeRegistry

@@ -78,6 +78,7 @@ from .git_tree import (
     build_tree_state,
     format_project_tree,
     format_registry_json,
+    iter_tree,
     make_repo_id,
     promote_to_parent,
     register_relative_path,
@@ -764,6 +765,10 @@ class GitRunner:
         else:
             self._run("push", remote, cwd=repo_path)
 
+    def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
+        """Create *tag_name* in *repo_path*."""
+        self._run("tag", "-f", tag_name, cwd=repo_path)
+
     def _run(
         self,
         *args: str,
@@ -1309,6 +1314,109 @@ class ComplexGitSyncClient:
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="push")
         self._log_event("push_end")
         return registry
+
+    def tag(self, tag_name: str) -> DependencyTreeRegistry:
+        """Create and push *tag_name* across the full tree, leaf-first."""
+        from .operations import tag_tree
+
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        self._log_event("tag_start", tag_name=tag_name)
+        tag_tree(registry, self.git_runner, tag_name)
+        self._log_tree_transition(previous_state, registry.lifecycle_state, reason="tag")
+        self._log_event("tag_end", tag_name=tag_name)
+        return registry
+
+    def freeze_release(
+        self,
+        tag_name: str,
+        *,
+        output_gts: str | Path | None = None,
+        message: str | None = None,
+        stage_all: bool = True,
+    ) -> DependencyTreeRegistry:
+        """Freeze a release by committing, tagging, and pushing leaf-first."""
+        from .operations import freeze_release_tree
+
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        self._log_event(
+            "freeze_release_start",
+            tag_name=tag_name,
+            output_gts=output_gts,
+            stage_all=stage_all,
+        )
+        freeze_release_tree(
+            registry,
+            self.git_runner,
+            tag_name,
+            message=message,
+            stage_all=stage_all,
+        )
+        snapshot_path = self.write_gts_snapshot(
+            command_origin="freeze_release",
+            output_path=output_gts,
+        )
+        if self.source_path is not None:
+            self.state_store.record_snapshot(self.source_path, snapshot_path)
+        self._log_tree_transition(previous_state, registry.lifecycle_state, reason="freeze_release")
+        self._log_event("freeze_release_end", tag_name=tag_name, output_gts=snapshot_path)
+        return registry
+
+    def launch_release(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
+        """Launch a release from a ``.gts`` snapshot and end in ``READY``."""
+        loaded_registry = self.load_gts(snapshot_path)
+        previous_state = loaded_registry.lifecycle_state
+        self._log_event("launch_release_start", snapshot_path=Path(snapshot_path).resolve())
+
+        for entry in iter_tree(loaded_registry):
+            ref_name = (
+                entry.resolved_ref_name
+                or entry.target_ref_name
+                or entry.current_ref_name
+                or entry.default_branch
+            )
+            if not ref_name:
+                raise GitSyncError(f"No launch ref available for repository {entry.name}.")
+
+            if not entry.absolute_path.exists():
+                remote_url = self._build_remote_url(entry)
+                self._log_event(
+                    "launch_release_clone",
+                    repo_name=entry.name,
+                    absolute_path=entry.absolute_path,
+                    ref_name=ref_name,
+                )
+                self.git_runner.clone(remote_url, entry.absolute_path, branch=ref_name)
+
+            self._log_event(
+                "launch_release_checkout",
+                repo_name=entry.name,
+                absolute_path=entry.absolute_path,
+                ref_name=ref_name,
+            )
+            self.git_runner.checkout(entry.absolute_path, ref_name)
+            resolved_kind = entry.resolved_ref_kind or entry.target_ref_kind or RefKind.BRANCH
+            entry.current_ref_kind = resolved_kind
+            entry.current_ref_name = ref_name
+            entry.target_ref_kind = resolved_kind
+            entry.target_ref_name = ref_name
+            entry.resolved_ref_kind = resolved_kind
+            entry.resolved_ref_name = ref_name
+            entry.commit_sha = self.git_runner.rev_parse_head(entry.absolute_path)
+            entry.repo_lifecycle_state = RepoLifecycleState.READY
+            entry.sync_state = SyncState.ALIGNED
+            entry.fallback_applied = False
+            entry.fallback_reason = None
+            entry.worktree_state = "CLEAN"
+
+        loaded_registry.recompute_tree_state()
+        if not loaded_registry.is_ready():
+            raise GitSyncError("launch_release did not produce a READY tree.")
+
+        self._log_tree_transition(previous_state, loaded_registry.lifecycle_state, reason="launch_release")
+        self._log_event("launch_release_end", snapshot_path=Path(snapshot_path).resolve())
+        return loaded_registry
 
     def get_dependency_registry(self) -> DependencyTreeRegistry:
         if self.registry is None:
