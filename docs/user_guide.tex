@@ -86,9 +86,18 @@ selected root path. It also writes a runtime snapshot to
 \texttt{<project-root>/.cgitsync/state/<spec-name>.gts} and registers that
 snapshot as the latest runtime state for the source \texttt{.cgs} file.
 
-\subsection{\texttt{checkout} (Python API)}
+\subsection{\texttt{checkout}}
 
-Available via the Python API (CLI wiring planned):
+\begin{lstlisting}[language=bash]
+$ cgitsync checkout <branch> --gts <snapshot.gts> [--ref-kind branch|tag]
+\end{lstlisting}
+
+Checks out a branch or tag across the whole tree, parent-first.
+Loads the READY registry from \texttt{--gts}, then propagates the ref,
+creates missing local branches, and runs \texttt{git checkout} in every repo.
+On success the tree remains \texttt{READY} and a new \texttt{.gts} snapshot is written.
+
+Also available via the Python API directly:
 
 \begin{lstlisting}[language=Python]
 client.checkout("feature/my-branch")
@@ -96,10 +105,6 @@ client.checkout("feature/my-branch")
 from ComplexGitSync import RefKind
 client.checkout("v1.2.0", ref_kind=RefKind.TAG)
 \end{lstlisting}
-
-Checks out a branch or tag across the whole tree, parent-first.
-Requires a \texttt{READY} tree.  On success the tree remains \texttt{READY}
-and a new \texttt{.gts} snapshot is written.
 
 The operation follows three steps in order:
 
@@ -112,9 +117,30 @@ The operation follows three steps in order:
     parent-first, and refresh each entry's ref and SHA.
 \end{enumerate}
 
-\subsection{\texttt{commit} (Python API)}
+\subsection{\texttt{restart}}
 
-Available via the Python API (CLI wiring planned):
+\begin{lstlisting}[language=bash]
+$ cgitsync restart <spec.cgs>
+\end{lstlisting}
+
+Resynchronizes an already-cloned project tree. Loads the \texttt{.cgs}
+configuration, discovers nested configs, reads the root repository's current
+branch, and checks out that branch across the full tree parent-first.
+Ends in \texttt{READY} or fails explicitly. Also writes a \texttt{.gts}
+snapshot on success.
+
+\subsection{\texttt{commit}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync commit <message> --gts <snapshot.gts> [--no-stage]
+\end{lstlisting}
+
+Commits changes across the tree, leaf-first.  Loads the READY registry from
+\texttt{--gts}.  Repositories with no staged changes after the optional
+\texttt{git add --all} step (suppressed by \texttt{--no-stage}) are silently
+skipped. Requires a \texttt{READY} tree; the tree remains \texttt{READY} on success.
+
+Also available via the Python API:
 
 \begin{lstlisting}[language=Python]
 # Stage all changes, then commit (default)
@@ -124,37 +150,52 @@ client.commit("feat: my change")
 client.commit("feat: my change", stage_all=False)
 \end{lstlisting}
 
-Commits changes across the tree, leaf-first.  Repositories with no staged
-changes after the optional \texttt{git add --all} step are silently skipped.
-Requires a \texttt{READY} tree; the tree remains \texttt{READY} on success.
+\subsection{\texttt{push}}
 
-\subsection{\texttt{push} (Python API)}
+\begin{lstlisting}[language=bash]
+$ cgitsync push --gts <snapshot.gts>
+\end{lstlisting}
 
-Available via the Python API (CLI wiring planned):
+Pushes all repositories to their configured remotes, leaf-first.  Loads the
+READY registry from \texttt{--gts}.  Each repo is pushed to
+\texttt{entry.remote\_name} (defaulting to \texttt{"origin"}) on its currently
+resolved branch.  Requires a \texttt{READY} tree; the tree remains
+\texttt{READY} on success.
+
+Also available via the Python API:
 
 \begin{lstlisting}[language=Python]
 client.push()
 \end{lstlisting}
 
-Pushes all repositories to their configured remotes, leaf-first.  Each repo
-is pushed to \texttt{entry.remote\_name} (defaulting to \texttt{"origin"}) on
-its currently resolved branch.  Requires a \texttt{READY} tree; the tree
-remains \texttt{READY} on success.
+\subsection{\texttt{tag}}
 
-\subsection{\texttt{tag} (Python API)}
+\begin{lstlisting}[language=bash]
+$ cgitsync tag <name> --gts <snapshot.gts>
+\end{lstlisting}
 
-Available via the Python API (CLI wiring planned):
+Creates and pushes the same tag across the full tree, leaf-first.  Loads the
+READY registry from \texttt{--gts}.  Requires a \texttt{READY} tree and keeps
+the tree \texttt{READY} on success.
+
+Also available via the Python API:
 
 \begin{lstlisting}[language=Python]
 client.tag("v1.2.3")
 \end{lstlisting}
 
-Creates and pushes the same tag across the full tree, leaf-first. Requires a
-\texttt{READY} tree and keeps the tree \texttt{READY} on success.
+\subsection{\texttt{freeze-release}}
 
-\subsection{\texttt{freeze\_release} (Python API)}
+\begin{lstlisting}[language=bash]
+$ cgitsync freeze-release <name> --gts <snapshot.gts>
+\end{lstlisting}
 
-Available via the Python API (CLI wiring planned):
+Performs a release freeze across all repos, leaf-first: stage/commit,
+create+push the shared release tag, refresh SHA/state, and write a
+\texttt{.gts} snapshot. Loads the READY registry from \texttt{--gts}.
+Requires \texttt{READY} and leaves the tree \texttt{READY}.
+
+Also available via the Python API:
 
 \begin{lstlisting}[language=Python]
 client.freeze_release(
@@ -163,21 +204,20 @@ client.freeze_release(
 )
 \end{lstlisting}
 
-Performs a release freeze across all repos, leaf-first: stage/commit,
-create+push the shared release tag, refresh SHA/state, and write a named
-\texttt{.gts} snapshot. Requires \texttt{READY} and leaves the tree
-\texttt{READY}.
+\subsection{\texttt{launch-release}}
 
-\subsection{\texttt{launch\_release} (Python API)}
-
-Available via the Python API (CLI wiring planned):
-
-\begin{lstlisting}[language=Python]
-client.launch_release(".cgitsync/releases/release-2026.05.gts")
+\begin{lstlisting}[language=bash]
+$ cgitsync launch-release <snapshot.gts>
 \end{lstlisting}
 
 Loads a release \texttt{.gts}, reconstructs the tree, performs required
 clone/checkout actions, and must end in \texttt{READY} or fail explicitly.
+
+Also available via the Python API:
+
+\begin{lstlisting}[language=Python]
+client.launch_release(".cgitsync/releases/release-2026.05.gts")
+\end{lstlisting}
 
 \subsection{Planned Commands (not yet implemented)}
 
@@ -186,19 +226,9 @@ implemented. Each returns exit code~2 with the message
 \texttt{"not implemented yet"}.
 
 \begin{itemize}
-  \item \texttt{checkout} (CLI) — switch the whole tree to a named ref
-    (Python API available; see above).
-  \item \texttt{commit} (CLI) — stage and commit changes across the tree
-    (Python API available; see above).
-  \item \texttt{push} (CLI) — push all repos to their remotes
-    (Python API available; see above).
-  \item \texttt{restart} — re-synchronise a tree from an existing \texttt{.gts} snapshot.
-  \item \texttt{tag} (CLI) — create a named tag across the tree
-    (Python API available; see above).
-  \item \texttt{freeze\_release} (CLI) — freeze a release and write a named
-    \texttt{.gts} snapshot (Python API available; see above).
-  \item \texttt{launch\_release} (CLI) — check out a previously frozen release
-    (Python API available; see above).
+  \item \texttt{write-gts} — write a \texttt{.gts} snapshot explicitly
+    from a loaded \texttt{.cgs} or runtime state.
+  \item \texttt{status} — summarise tree readiness and per-repo sync state.
 \end{itemize}
 
 % -----------------------------------------------------------------------

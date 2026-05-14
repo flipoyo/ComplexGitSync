@@ -99,21 +99,21 @@ PR-based version bump on every merge.  `YYYY.XX` format with rollover.
 
 ## Remaining Tickets
 
-### T10 (remainder) — `restart` CLI wiring 🔲
-Wire the existing `restart` CLI stub to a `restart_tree` implementation.
-**Dependencies**: T08.
+### T10 (remainder) — `restart` CLI wiring ✅
+`restart_tree` implemented in Tier 2 (operations.py) with parent-first checkout
+using the root repository's current branch.  `ComplexGitSyncClient.restart`
+implemented with `.cgs` load, nested discovery, READY enforcement, and `.gts`
+snapshot write.  `cgitsync restart <source.cgs>` CLI command wired.
 
-### T16 — CLI wiring for `checkout`, `commit`, `push` 🔲
-**Goal**: expose already-implemented Python API methods through the CLI.
-**Deliverables**:
-  - `cgitsync checkout <branch> [--gts <file>] [--ref-kind branch|tag]`
-  - `cgitsync commit <message> [--gts <file>] [--no-stage]`
-  - `cgitsync push [--gts <file>]`
-  - `cgitsync tag <name> [--gts <file>]`
-  - `cgitsync freeze-release <name> [--gts <file>]`
+### T16 — CLI wiring for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` ✅
+All six commands implemented in `cli.py`:
+  - `cgitsync checkout <branch> --gts <file> [--ref-kind branch|tag]`
+  - `cgitsync commit <message> --gts <file> [--no-stage]`
+  - `cgitsync push --gts <file>`
+  - `cgitsync tag <name> --gts <file>`
+  - `cgitsync freeze-release <name> --gts <file>`
   - `cgitsync launch-release <snapshot.gts>`
-**Dependencies**: T10, T12.
-**Acceptance**: CLI behaviour matches Python API invariants.
+CLI behaviour matches Python API invariants; 13 new smoke tests added.
 
 ### T18 — Integration Test Suite ❌
 **Goal**: end-to-end validation on temporary nested git repositories.

@@ -36,20 +36,22 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 
 | Ticket | Goal | Status |
 |--------|------|--------|
-| T10 (CLI) | Wire `restart` CLI command | ❌ Not started |
-| T16 | CLI Bootstrap for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` | 🔲 Partial (stubs exist; wiring pending) |
+| T10 (CLI) | Wire `restart` CLI command | ✅ Done |
+| T16 | CLI Bootstrap for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` | ✅ Done |
 | T18 | Integration Test Suite | ❌ Not started |
 
 ## Architecture Notes
 
 - `checkout_tree`, `commit_tree`, `push_tree` live in `operations.py` (Tier 2).
-- `tag_tree` and `freeze_release_tree` live in `operations.py` (Tier 2).
+- `tag_tree`, `freeze_release_tree`, and `restart_tree` live in `operations.py` (Tier 2).
 - `checkout_tree`, `commit_tree`, `push_tree`, `tag_tree`, and
   `freeze_release_tree` require `READY` and leave the tree `READY` on success.
-- `checkout_tree` follows parent-first ordering; `commit_tree` and `push_tree`
+- `restart_tree` accepts any state and produces `READY` using the root repo's current branch.
+- `checkout_tree` and `restart_tree` follow parent-first ordering; `commit_tree` and `push_tree`
   follow leaf-first ordering.
 - `tag_tree`, `freeze_release_tree`, `commit_tree`, and `push_tree` follow leaf-first ordering.
-- `ComplexGitSyncClient.checkout` and `ComplexGitSyncClient.freeze_release` write `.gts` snapshots after success.
+- `ComplexGitSyncClient.checkout`, `ComplexGitSyncClient.restart`, and `ComplexGitSyncClient.freeze_release` write `.gts` snapshots after success.
+- CLI mutation commands (`checkout`, `commit`, `push`, `tag`, `freeze-release`) require `--gts <file>` to load the READY registry.
 
 ## Definition of Done (Global)
 

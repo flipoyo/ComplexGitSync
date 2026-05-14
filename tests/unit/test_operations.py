@@ -1,6 +1,6 @@
 """Unit tests for Tier 2 operations: checkout_tree, commit_tree, push_tree,
-propagate_global_branch, create_global_branch, and the ComplexGitSyncClient
-façade methods checkout / commit / push.
+propagate_global_branch, create_global_branch, restart_tree, and the
+ComplexGitSyncClient façade methods checkout / commit / push.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from ComplexGitSync.operations import (
     freeze_release_tree,
     propagate_global_branch,
     push_tree,
+    restart_tree,
     tag_tree,
 )
 from ComplexGitSync.orchestre import ComplexGitSyncClient
@@ -165,8 +166,11 @@ class _FakeGitRunnerForOperations:
         self.cloned: list[tuple[str, Path, str]] = []
         self._staged_changes: dict[Path, bool] = {}
         self._shas: dict[Path, str] = {}
+        self._current_branches: dict[Path, str | None] = {}
 
     # --- branch / checkout ---
+    def current_branch(self, repo_path: Path | str) -> str | None:
+        return self._current_branches.get(Path(repo_path), "main")
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool:
         return branch in self._local_branches.get(Path(repo_path), set())
 
@@ -218,6 +222,66 @@ class _FakeGitRunnerForOperations:
 
     def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
         self.tagged.append((Path(repo_path), tag_name))
+
+
+# ---------------------------------------------------------------------------
+# restart_tree
+# ---------------------------------------------------------------------------
+
+
+def test_restart_tree_checks_out_root_branch_across_all_repos(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    root_path = tmp_path / "project"
+    runner._current_branches[root_path] = "feature-restart"
+
+    restart_tree(registry, runner)
+
+    checked_out_branches = {path: branch for path, branch in runner.checked_out}
+    assert all(b == "feature-restart" for b in checked_out_branches.values())
+    assert registry.is_ready()
+
+
+def test_restart_tree_propagates_branch_to_all_entries(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    root_path = tmp_path / "project"
+    runner._current_branches[root_path] = "sync-branch"
+
+    restart_tree(registry, runner)
+
+    for entry in registry.values():
+        assert entry.target_ref_name == "sync-branch"
+        assert entry.current_ref_name == "sync-branch"
+
+
+def test_restart_tree_checkouts_parent_first(tmp_path):
+    registry = _make_deep_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    root_path = tmp_path / "deep"
+    runner._current_branches[root_path] = "main"
+
+    restart_tree(registry, runner)
+
+    checked_paths = [p for p, _ in runner.checked_out]
+    root_idx = checked_paths.index(tmp_path / "deep")
+    middle_idx = checked_paths.index(tmp_path / "deep" / "middle")
+    sub_idx = checked_paths.index(tmp_path / "deep" / "middle" / "sub")
+    assert root_idx < middle_idx < sub_idx
+
+
+def test_restart_tree_falls_back_to_resolved_ref_when_no_current_branch(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    root_path = tmp_path / "project"
+    runner._current_branches[root_path] = None
+    # Set a resolved ref name on the root entry as fallback
+    registry.get("root").resolved_ref_name = "fallback-branch"
+
+    restart_tree(registry, runner)
+
+    checked_branches = {branch for _, branch in runner.checked_out}
+    assert "fallback-branch" in checked_branches
 
 
 # ---------------------------------------------------------------------------

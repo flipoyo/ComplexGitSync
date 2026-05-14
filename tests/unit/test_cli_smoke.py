@@ -179,7 +179,7 @@ def test_validate_command_creates_log_file(monkeypatch, tmp_path, capsys):
 
 
 def test_unimplemented_command_still_returns_not_implemented(capsys):
-    exit_code = main(["checkout"])
+    exit_code = main(["status"])
     captured = capsys.readouterr()
 
     assert exit_code == 2
@@ -190,6 +190,249 @@ def test_package_version_is_defined():
     pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
     package_version = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
     assert __version__ == package_version
+
+
+def test_restart_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def restart(self, config_path):
+            captured_call["config_path"] = Path(config_path)
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "project")
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    config_path = tmp_path / "project.cgs"
+    config_path.touch()
+    exit_code = main(["restart", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["config_path"] == config_path.resolve()
+    assert "READY ready=true" in captured.out
+
+
+def test_checkout_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def checkout(self, branch, *, ref_kind):
+            captured_call["branch"] = branch
+            captured_call["ref_kind"] = ref_kind
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["checkout", "feature-x", "--gts", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["branch"] == "feature-x"
+    assert "READY ready=true" in captured.out
+    assert "branch=feature-x" in captured.out
+
+
+def test_checkout_command_with_tag_ref_kind(monkeypatch, capsys, tmp_path):
+    from ComplexGitSync.git_repo import RefKind
+
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            pass
+
+        def checkout(self, branch, *, ref_kind):
+            captured_call["ref_kind"] = ref_kind
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["checkout", "v1.0.0", "--gts", str(gts_path), "--ref-kind", "tag"])
+    assert exit_code == 0
+    assert captured_call["ref_kind"] == RefKind.TAG
+
+
+def test_commit_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def commit(self, message, *, stage_all):
+            captured_call["message"] = message
+            captured_call["stage_all"] = stage_all
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["commit", "my commit", "--gts", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["message"] == "my commit"
+    assert captured_call["stage_all"] is True
+    assert "READY ready=true" in captured.out
+
+
+def test_commit_command_no_stage_flag(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            pass
+
+        def commit(self, message, *, stage_all):
+            captured_call["stage_all"] = stage_all
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["commit", "msg", "--gts", str(gts_path), "--no-stage"])
+    assert exit_code == 0
+    assert captured_call["stage_all"] is False
+
+
+def test_push_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def push(self):
+            captured_call["pushed"] = True
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["push", "--gts", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call.get("pushed") is True
+    assert "READY ready=true" in captured.out
+
+
+def test_tag_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def tag(self, tag_name):
+            captured_call["tag_name"] = tag_name
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["tag", "v2.0", "--gts", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["tag_name"] == "v2.0"
+    assert "tag=v2.0" in captured.out
+
+
+def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def freeze_release(self, tag_name, **kwargs):
+            captured_call["tag_name"] = tag_name
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["freeze-release", "v3.0", "--gts", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["tag_name"] == "v3.0"
+    assert "tag=v3.0" in captured.out
+
+
+def test_launch_release_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def launch_release(self, snapshot_path):
+            captured_call["snapshot_path"] = Path(snapshot_path)
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "project")
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["launch-release", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["snapshot_path"] == gts_path.resolve()
+    assert "READY ready=true" in captured.out
 
 
 def _write_project_cgs(tmp_path):

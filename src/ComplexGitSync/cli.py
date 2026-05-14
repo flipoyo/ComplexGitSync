@@ -7,6 +7,7 @@ from pathlib import Path
 from collections.abc import Sequence
 
 from . import __version__
+from .git_repo import RefKind
 from .orchestre import CgsDocument, ComplexGitSyncClient, GtsDocument, create_run_logger
 
 
@@ -56,6 +57,42 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Target directory for the cloned project root. Defaults to ./<project-name>.",
             )
             subparser.set_defaults(handler=_handle_clone)
+        elif command_name == "restart":
+            subparser.add_argument("source", help="Path to the local .cgs file to restart from.")
+            subparser.set_defaults(handler=_handle_restart)
+        elif command_name == "checkout":
+            subparser.add_argument("branch", help="Branch or tag name to check out across the tree.")
+            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.add_argument(
+                "--ref-kind",
+                choices=["branch", "tag"],
+                default="branch",
+                help="Kind of ref to check out (default: branch).",
+            )
+            subparser.set_defaults(handler=_handle_checkout)
+        elif command_name == "commit":
+            subparser.add_argument("message", help="Commit message applied to all repos with staged changes.")
+            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.add_argument(
+                "--no-stage",
+                action="store_true",
+                help="Skip automatic 'git add --all' before committing.",
+            )
+            subparser.set_defaults(handler=_handle_commit)
+        elif command_name == "push":
+            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.set_defaults(handler=_handle_push)
+        elif command_name == "tag":
+            subparser.add_argument("name", help="Tag name to create and push across the tree.")
+            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.set_defaults(handler=_handle_tag)
+        elif command_name == "freeze-release":
+            subparser.add_argument("name", help="Release tag name used for commit, tag, and push.")
+            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.set_defaults(handler=_handle_freeze_release)
+        elif command_name == "launch-release":
+            subparser.add_argument("snapshot", help="Path to the .gts snapshot to launch the release from.")
+            subparser.set_defaults(handler=_handle_launch_release)
         else:
             subparser.set_defaults(handler=_not_implemented)
 
@@ -121,6 +158,63 @@ def _handle_clone(args: argparse.Namespace) -> int:
         client=client,
         project_root=project_root,
         runner=lambda active_client, source: _execute_clone(active_client, source, target_dir=args.target_dir),
+    )
+
+
+def _handle_restart(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="restart",
+        source=Path(args.source),
+        runner=lambda client, source: _execute_restart(client, source),
+    )
+
+
+def _handle_checkout(args: argparse.Namespace) -> int:
+    ref_kind = RefKind.TAG if args.ref_kind == "tag" else RefKind.BRANCH
+    return _run_with_logging(
+        command_name="checkout",
+        source=Path(args.gts),
+        runner=lambda client, source: _execute_checkout(client, source, branch=args.branch, ref_kind=ref_kind),
+    )
+
+
+def _handle_commit(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="commit",
+        source=Path(args.gts),
+        runner=lambda client, source: _execute_commit(client, source, message=args.message, stage_all=not args.no_stage),
+    )
+
+
+def _handle_push(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="push",
+        source=Path(args.gts),
+        runner=lambda client, source: _execute_push(client, source),
+    )
+
+
+def _handle_tag(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="tag",
+        source=Path(args.gts),
+        runner=lambda client, source: _execute_tag(client, source, tag_name=args.name),
+    )
+
+
+def _handle_freeze_release(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="freeze-release",
+        source=Path(args.gts),
+        runner=lambda client, source: _execute_freeze_release(client, source, tag_name=args.name),
+    )
+
+
+def _handle_launch_release(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="launch-release",
+        source=Path(args.snapshot),
+        runner=lambda client, source: _execute_launch_release(client, source),
     )
 
 
@@ -209,6 +303,119 @@ def _execute_clone(
         f"{tree_state.lifecycle_state.value} "
         f"ready={str(tree_state.is_ready).lower()} "
         f"complete={str(tree_state.registry_complete).lower()} "
+        f"root={registry.get('root').absolute_path}"
+    )
+    return 0
+
+
+def _execute_restart(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+) -> int:
+    registry = client.restart(source_path)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"complete={str(tree_state.registry_complete).lower()} "
+        f"root={registry.get('root').absolute_path}"
+    )
+    return 0
+
+
+def _execute_checkout(
+    client: ComplexGitSyncClient,
+    gts_path: Path,
+    *,
+    branch: str,
+    ref_kind: RefKind,
+) -> int:
+    client.load_gts(gts_path)
+    client.checkout(branch, ref_kind=ref_kind)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"branch={branch}"
+    )
+    return 0
+
+
+def _execute_commit(
+    client: ComplexGitSyncClient,
+    gts_path: Path,
+    *,
+    message: str,
+    stage_all: bool,
+) -> int:
+    client.load_gts(gts_path)
+    client.commit(message, stage_all=stage_all)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"message={message!r}"
+    )
+    return 0
+
+
+def _execute_push(
+    client: ComplexGitSyncClient,
+    gts_path: Path,
+) -> int:
+    client.load_gts(gts_path)
+    client.push()
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()}"
+    )
+    return 0
+
+
+def _execute_tag(
+    client: ComplexGitSyncClient,
+    gts_path: Path,
+    *,
+    tag_name: str,
+) -> int:
+    client.load_gts(gts_path)
+    client.tag(tag_name)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"tag={tag_name}"
+    )
+    return 0
+
+
+def _execute_freeze_release(
+    client: ComplexGitSyncClient,
+    gts_path: Path,
+    *,
+    tag_name: str,
+) -> int:
+    client.load_gts(gts_path)
+    client.freeze_release(tag_name)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"tag={tag_name}"
+    )
+    return 0
+
+
+def _execute_launch_release(
+    client: ComplexGitSyncClient,
+    snapshot_path: Path,
+) -> int:
+    registry = client.launch_release(snapshot_path)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
         f"root={registry.get('root').absolute_path}"
     )
     return 0
