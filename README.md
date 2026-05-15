@@ -201,14 +201,7 @@ The log includes command start and end events, tree and repo state
 transitions, fallback decisions, nested `.cgs` discovery, and `.gts` loads and
 writes.
 
-## Next Steps
-
-- Use `examples/complexgitsync.cgs` and `examples/deploy.goc` as the
-  baseline for a self-standing ComplexGitSync tree.
-- Use `examples/cawaqsviz.cgs`, `examples/htas.cgs`, and
-  `examples/cawaqsviz_deploy.goc` to inspect a nested GitLab-based topology.
-- Keep `docs/getting_started.tex` and `docs/user_guide.tex` as the
-  authoritative long-form user documentation.
-- Remaining planned features: `restart`, CLI `launch_release`, and full CLI
-  wiring for `checkout`, `commit`, `push`, `tag`, `freeze_release`
-  (CLI command: `freeze-release`).
+## Authorship
+Contact: nicolas.flipo@minesparis.psl.eu
+Project Manager: Nicolas Flipo
+AI assistance: Github copilot - chatGPT5.4 Xhigh, Claude Sonnet4.6
