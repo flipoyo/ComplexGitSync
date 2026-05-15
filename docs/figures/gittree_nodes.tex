@@ -44,9 +44,9 @@
 \draw[treearrow] (parent.south) -- (sub2.north);
 
 % Annotations
-\node[label, right=0.3cm of root] {entry point from the root .cgs};
-\node[label, right=0.2cm of parent] {expanded from nested .cgs discovery};
-\node[label, right=0.2cm of lib] {terminal repo in the GitTree};
+\node[label, right=0.3cm of root] {read(.cgs) seeds the root GitTree entry};
+\node[label, right=0.2cm of parent] {expand(.gts) discovers nested repos};
+\node[label, right=0.2cm of lib] {READY tree leaf tracked in the saved .gts};
 \node[label, right=0.2cm of sub1] {nested\_config = "disabled"};
 \node[label, right=0.2cm of sub2] {nested\_config = "disabled"};
 

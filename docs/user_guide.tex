@@ -19,6 +19,33 @@ Running \cgscli{} without a command prints a help summary and exits with
 code~0.
 
 % -----------------------------------------------------------------------
+\section{Lifecycle Contract}
+
+This guide follows the project lifecycle strictly:
+
+\begin{enumerate}
+  \item \texttt{read(.cgs)} $\rightarrow$ \texttt{.gts LOADED}
+  \item \texttt{expand(.gts, LOADED)} $\rightarrow$ \texttt{.gts PENDING}
+  \item \texttt{verify(.gts, PENDING)} $\rightarrow$ \texttt{.gts READY}
+  \item \texttt{clone(.gts)}
+  \item \texttt{checkout(.gts)}
+  \item \texttt{add}
+  \item \texttt{commit}
+  \item \texttt{push} $\rightarrow$ update hash in \texttt{GitTree}
+  \item \texttt{tag} $\rightarrow$ update tag in \texttt{GitTree}
+  \item \texttt{freeze} $\rightarrow$ emit the next \texttt{.gts} id
+\end{enumerate}
+
+Current command names still expose some historical compatibility labels:
+\texttt{tree} for the \texttt{expand} stage, \texttt{validate} for the
+\texttt{verify} stage, and \texttt{describe} as the nearest current
+\texttt{print(.gts)} command.
+
+The remaining planned work is \texttt{print(.gts)}, \texttt{pull(.gts)},
+\texttt{orchestrate(.goc)}, and project-local \texttt{.lgr} register
+management.
+
+% -----------------------------------------------------------------------
 \section{Commands}
 
 \subsection{\texttt{validate}}
@@ -30,6 +57,9 @@ $ cgitsync validate <spec.cgs>
 Parses the \texttt{.cgs} file, builds the dependency-tree registry, and
 prints a one-line summary for each repository node. Exits~0 on success,
 non-zero on parse or validation error.
+
+In lifecycle terms this is the current compatibility command for the
+\texttt{verify} stage.
 
 \textbf{Output fields:} \texttt{name}, \texttt{lifecycle\_state},
 \texttt{complete}, \texttt{node\_count}.
@@ -52,6 +82,9 @@ The command also accepts a direct \texttt{.gts} input:
 $ cgitsync tree <snapshot.gts>
 \end{lstlisting}
 
+In lifecycle terms this is the current compatibility command for the
+\texttt{expand} stage.
+
 \subsection{\texttt{describe}}
 
 \begin{lstlisting}[language=bash]
@@ -61,6 +94,9 @@ $ cgitsync describe <snapshot.gts>
 Reads a \texttt{.gts} snapshot and prints its contents as pretty-printed
 JSON. Useful for inspecting saved tree state after a \texttt{clone} or
 \texttt{freeze\_release} operation.
+
+This is the nearest current compatibility command for the planned
+\texttt{print(.gts)} step.
 
 \subsection{\texttt{clone}}
 
@@ -128,6 +164,9 @@ configuration, discovers nested configs, reads the root repository's current
 branch, and checks out that branch across the full tree parent-first.
 Ends in \texttt{READY} or fails explicitly. Also writes a \texttt{.gts}
 snapshot on success.
+
+This remains a compatibility helper; the planned lifecycle name is
+\texttt{pull(.gts)}.
 
 \subsection{\texttt{commit}}
 
@@ -213,6 +252,9 @@ $ cgitsync launch-release <snapshot.gts>
 Loads a release \texttt{.gts}, reconstructs the tree, performs required
 clone/checkout actions, and must end in \texttt{READY} or fail explicitly.
 
+This helper is not treated as a primary lifecycle step; conceptually it is a
+checkout from recorded \texttt{.gts} state.
+
 Also available via the Python API:
 
 \begin{lstlisting}[language=Python]
@@ -229,14 +271,21 @@ implemented. Each returns exit code~2 with the message
   \item \texttt{write-gts} — write a \texttt{.gts} snapshot explicitly
     from a loaded \texttt{.cgs} or runtime state.
   \item \texttt{status} — summarise tree readiness and per-repo sync state.
+  \item \texttt{print(.gts)} — planned user-facing name for saved-state
+    inspection.
+  \item \texttt{pull(.gts)} — planned user-facing name for resynchronisation
+    from recorded state.
+  \item \texttt{orchestrate(.goc)} — planned execution surface for
+    orchestration plans.
 \end{itemize}
 
 % -----------------------------------------------------------------------
 \section{Document Formats}
 
 \texttt{.cgs} means \textbf{ComplexGitSync} specification, \texttt{.gts} means
-\textbf{GitTreeState} snapshot, and \texttt{.goc} means
-\textbf{GitOrchestrationCommand} plan.
+\textbf{GitTreeState} snapshot, \texttt{.goc} means
+\textbf{GitOrchestrationCommand} plan, and \texttt{.lgr} means
+\textbf{Local Git Register}.
 
 \subsection{Local Authoring Spec (\texttt{.cgs})}
 
@@ -372,15 +421,11 @@ client.tag("v1.2.3")
 # Freeze and emit a named snapshot
 client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
 
-# Launch from a frozen snapshot
-client.launch(".cgitsync/releases/release-2026.05.gts")
 \end{lstlisting}
 
 \texttt{checkout}, \texttt{commit}, \texttt{push}, \texttt{tag}, and
 \texttt{freeze} require \texttt{READY} and leave the tree
-\texttt{READY} on success. \texttt{launch} loads a release
-\texttt{.gts}, performs required clone/checkout actions, and must end in
-\texttt{READY}. \texttt{checkout} and \texttt{freeze} also write new
+\texttt{READY} on success. \texttt{checkout} and \texttt{freeze} also write new
 \texttt{.gts} snapshots.
 
 \subsection{Document Classes}

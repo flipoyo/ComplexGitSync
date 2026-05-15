@@ -1,7 +1,7 @@
 # ComplexGitSync DevPlan — Active
 
 This document reflects the current implementation state as of the
-README / figures / terminology cleanup. It supersedes
+lifecycle alignment follow-up. It supersedes
 `InitialDevPlan.md` as the authoritative active plan.
 
 Refer to `InitialDevPlan.md` for the original requirements contract.
@@ -41,7 +41,8 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T16 | CLI Bootstrap for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` | ✅ Done |
 | T18 | Integration Test Suite | ❌ Not started |
 | T22 | Parser-driven automation of public client methods via `.goc` files | ❌ Pending |
-| T23 | Terminology cleanup for `tree`/`expand` and `restart`→`pull` | ❌ Pending |
+| T23 | Lifecycle terminology cleanup for `expand` / `verify` / `pull` / `print` | ❌ Pending |
+| T24 | Local Git Register (`.lgr`) management for `.gts` ids | ❌ Pending |
 
 ## Architecture Notes
 
@@ -57,10 +58,12 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - `ComplexGitSyncClient.checkout`, `ComplexGitSyncClient.restart`, and `ComplexGitSyncClient.freeze_release` write `.gts` snapshots after success.
 - CLI mutation commands (`checkout`, `commit`, `push`, `tag`, `freeze-release`) require `--gts <file>` to load the READY registry.
 - CLI mutation commands now also include `add` and `freeze-state`; snapshot launch commands include `launch-release` and `launch-state`.
-- Public API lifecycle contract is `read(.cgs)`, `validate(.cgs)`, `clone(.cgs)`, `checkout`, `add`, `commit`, `push`, `tag`, `freeze`, `launch(.gts)`.
-- The current CLI uses `tree` for the expansion / inspection step of the workflow.
-- The current resynchronization command name remains `restart`; a follow-up rename to `pull` is still planned for user-facing terminology.
+- User-facing lifecycle contract is `read(.cgs) → .gts LOADED`, `expand(.gts, LOADED) → .gts PENDING`, `verify(.gts, PENDING) → .gts READY`, `clone(.gts)`, `checkout(.gts)`, `add`, `commit`, `push`, `tag`, `freeze`.
+- `push` is expected to refresh the stored hash in `GitTree`; `tag` is expected to refresh the stored tag in `GitTree`.
+- `freeze` is expected to emit the next `.gts` id and register it locally.
+- Remaining lifecycle work is `print(.gts)`, `pull(.gts)`, `orchestrate(.goc)`, and project-local `.lgr` register management.
 - `.goc` automation remains pending: the parser will map `.goc` actions to public `ComplexGitSyncClient` methods.
+- The planned project-local register file is `<Project_name>.lgr`, which must assign one local id to each generated `.gts`.
 - Direct object-level usage is now documented in `docs/python_api.tex` and README with a `.gts` → `GitTree`/`GitRepo` flow and `GitTree.propagate_tag`.
 
 ## Definition of Done (Global)

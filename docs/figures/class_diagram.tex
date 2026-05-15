@@ -65,14 +65,13 @@
   registry: DependencyTreeRegistry\\
   run\_logger: CommandRunLogger
   \nodepart{three}
-  read(path) / load\_source(path)\\
-  validate(path)\\
-  format\_project\_tree()\\
-  clone(path) / restart(path)\\
-  checkout(ref, ref\_kind)\\
+  read(cgs) / load\_gts(gts)\\
+  expand(gts) / verify(gts)\\
+  clone(gts)\\
+  checkout(gts, ref)\\
   add() / commit(message)\\
   push() / tag(name)\\
-  freeze(name) / launch(path)
+  freeze(name)
 };
 
 % --- Orchestre ---
@@ -167,9 +166,11 @@
 
 \begin{figure}[ht]
 \centering
-\caption{GitTree lifecycle state machine.  Every bootstrapping operation
-  (\texttt{read}, \texttt{clone}, \texttt{restart}, \texttt{launch}) must
-  lead to a usable tree; synchronized Git operations (\texttt{checkout},
+\caption{GitTree lifecycle state machine.  The user-facing lifecycle is
+  \texttt{read(.cgs)} $\rightarrow$ \texttt{.gts LOADED}
+  $\rightarrow$ \texttt{expand(.gts)} $\rightarrow$ \texttt{.gts PENDING}
+  $\rightarrow$ \texttt{verify(.gts)} $\rightarrow$ \texttt{.gts READY};
+  synchronized Git operations (\texttt{checkout},
   \texttt{add}, \texttt{commit}, \texttt{push}, \texttt{tag},
   \texttt{freeze}) are gated on \texttt{READY}.}
 \label{fig:gittree-lifecycle}
@@ -186,7 +187,7 @@
 ]
 
 \node[state] (unloaded) {UNLOADED};
-\node[state, right=of unloaded] (declared)  {DECLARED};
+\node[state, right=of unloaded] (declared)  {LOADED};
 \node[state, right=of declared] (pending)   {PENDING};
 \node[state, right=of pending]  (ready)     {READY};
 
@@ -194,11 +195,11 @@
 \node[sidestate, below=1.2cm of pending]  (error)   {ERROR};
 
 \draw[trans] (unloaded) -- node[above, font=\scriptsize]{read(.cgs)} (declared);
-\draw[trans] (declared) -- node[above, font=\scriptsize]{clone / restart / launch} (pending);
-\draw[trans] (pending)  -- node[above, font=\scriptsize]{all READY} (ready);
+\draw[trans] (declared) -- node[above, font=\scriptsize]{expand(.gts)} (pending);
+\draw[trans] (pending)  -- node[above, font=\scriptsize]{verify(.gts)} (ready);
 \draw[trans, dashed] (declared.south) -- (partial.north);
 \draw[trans, dashed] (pending.south)  -- (error.north);
-\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{read(.cgs)} (declared.north);
+\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{freeze / next .gts id} (declared.north);
 
 \end{tikzpicture}
 \end{figure}

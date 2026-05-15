@@ -3,11 +3,13 @@
 ## 1. Purpose
 
 ComplexGitSync keeps one root Git repository and its nested Git repositories in
-sync from a single local specification.
+sync from a single local specification and a tracked local tree state.
 
 - `.cgs` describes the project topology.
-- `.gts` stores a generated runtime snapshot of the synchronized tree.
-- `cgitsync` and `ComplexGitSyncClient` expose the same workflow.
+- `.gts` stores the local GitTree state used during the lifecycle.
+- `.goc` stores higher-level orchestration intent.
+- `.lgr` is the planned Local Git Register that assigns one local id to each
+  `.gts` snapshot for a project.
 
 ## 2. Auth / Authentication
 
@@ -16,36 +18,35 @@ you already use for the target remotes:
 
 - SSH keys for SSH remotes
 - Git credential helpers or personal access tokens for HTTPS remotes
-- the same local Git identity for `commit`, `push`, `tag`, and `freeze`
+- the same local Git identity for `clone`, `checkout`, `push`, `tag`, and
+  `freeze`
 
-Make sure your Git authentication works before running `clone`, `restart`,
-`push`, `tag`, or `freeze`.
+Make sure your Git authentication works before running any lifecycle step that
+contacts a remote.
 
 ## 3. Key concepts
 
 ### 3.1 Documents
 
 - `.cgs` — authoring specification for a ComplexGitSync project
-- `.gts` — generated GitTree snapshot used to reload a READY tree
-- `.goc` — orchestration plan document for higher-level command sequences
+- `.gts` — local GitTree state tracked through `LOADED`, `PENDING`, and `READY`
+- `.goc` — orchestration plan document
+- `.lgr` — planned Local Git Register that records the single id associated with
+  each `.gts`
 
 ### 3.2 Runtime model
 
 - `GitRepo` represents one repository in the project
 - `GitTree` represents the full parent/child repository graph
-- `Orchestre` and `ComplexGitSyncClient` coordinate loading, cloning,
-  validation, checkout, and synchronized Git actions across the tree
+- `Orchestre` and `ComplexGitSyncClient` coordinate lifecycle transitions and
+  synchronized Git actions across the tree
 
 ### 3.3 Single API exposure
 
-The same workflow is exposed in two ways:
+The lifecycle is exposed through:
 
 - Python: `ComplexGitSyncClient`
 - CLI: `cgitsync`
-
-Current terminology in the repository:
-
-- `tree` is the CLI command for the expansion / inspection step
 
 ## 4. How to use
 
@@ -57,28 +58,27 @@ cd ComplexGitSync
 pixi install
 ```
 
-### Workflow
+### Lifecycle
 
-Process a ComplexGitSync project in this order:
+ComplexGitSync documentation now follows this lifecycle strictly:
 
-1. `read(.cgs)` — load the specification
-2. expand / inspect — currently exposed as `tree`
-3. `validate(.cgs)` — confirm the tree definition is consistent
-4. `clone(.cgs)` *(optional)* — materialize the working tree and emit a `.gts`
-5. `checkout(branch|tag)` — align every reachable repo on the same target ref
-
-Steps 1 to 5 can be bypassed when a `.gts` snapshot already exists:
-
-- `launch(.gts)`
-
-From step 5 onward, project implementation uses normal Git commands propagated
-through the `GitTree` across every `GitRepo`:
-
+1. `read(.cgs)` → `.gts LOADED`
+2. `expand(.gts, LOADED)` → `.gts PENDING`
+3. `verify(.gts, PENDING)` → `.gts READY`
+4. `clone(.gts)`
+5. `checkout(.gts)`
 6. `add`
 7. `commit`
-8. `push`
-9. `tag`
-10. `freeze` — emit an updated `.gts` snapshot while keeping the tree `READY`
+8. `push` → update hash in `GitTree`
+9. `tag` → update tag in `GitTree`
+10. `freeze` → emit the next `.gts` id
+
+Planned follow-up work tracked in the repository:
+
+- `print(.gts)`
+- `pull(.gts)`
+- `orchestrate(.goc)`
+- project-local `.lgr` management
 
 ### 4.1 Python API
 
@@ -87,57 +87,69 @@ from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
-# 1. read
+# 1. read(.cgs) -> .gts LOADED
 client.read("examples/complexgitsync.cgs")
 
-# 2. expand / inspect
+# 2. expand(.gts, LOADED) -> .gts PENDING
+# Current implementation exposes this stage through tree expansion / rendering.
 print(client.format_project_tree())
 
-# 3. validate
+# 3. verify(.gts, PENDING) -> .gts READY
+# Current implementation exposes this stage through validation.
 client.validate("examples/complexgitsync.cgs")
 
-# 4. clone (optional)
+# 4. clone(.gts)
 client.clone("examples/complexgitsync.cgs")
 
-# 5. checkout
+# 5. checkout(.gts)
 client.checkout("feature/my-branch")
 
-# 6-10. synchronized git workflow
+# 6. add
 client.add()
-client.commit("feat: update project")
-client.push()
-client.tag("v1.2.3")
-client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
 
-# Shortcut: bypass steps 1-5 when a snapshot already exists
-client.launch(".cgitsync/releases/release-2026.05.gts")
+# 7. commit
+client.commit("feat: update project")
+
+# 8. push -> update hash in GitTree
+client.push()
+
+# 9. tag -> update tag in GitTree
+client.tag("v1.2.3")
+
+# 10. freeze -> .gts ++id
+client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
 ```
 
 ### 4.2 CLI
 
 ```bash
-# inspect the declared tree (current "expand" equivalent)
+# 2. expand(.gts, LOADED) -> .gts PENDING
+# Current command surface uses `tree` for the expand stage.
 pixi run cgitsync tree examples/complexgitsync.cgs
 
-# validate the spec
+# 3. verify(.gts, PENDING) -> .gts READY
+# Current command surface uses `validate` for the verify stage.
 pixi run cgitsync validate examples/complexgitsync.cgs
 
-# optionally clone and create a runtime snapshot
+# 4. clone(.gts)
 pixi run cgitsync clone examples/complexgitsync.cgs
 
-# resynchronize the tree (current command: restart)
-pixi run cgitsync restart examples/complexgitsync.cgs
-
-# continue from a READY .gts snapshot
+# 5. checkout(.gts)
 pixi run cgitsync checkout feature/my-branch --gts .cgitsync/state/complexgitsync.gts
+
+# 6. add
 pixi run cgitsync add --gts .cgitsync/state/complexgitsync.gts
+
+# 7. commit
 pixi run cgitsync commit "feat: update project" --gts .cgitsync/state/complexgitsync.gts
+
+# 8. push -> update hash in GitTree
 pixi run cgitsync push --gts .cgitsync/state/complexgitsync.gts
+
+# 9. tag -> update tag in GitTree
 pixi run cgitsync tag v1.2.3 --gts .cgitsync/state/complexgitsync.gts
+
+# 10. freeze -> .gts ++id
+# Current command surface exposes freeze through `freeze-release`.
 pixi run cgitsync freeze-release release-2026.05 --gts .cgitsync/state/complexgitsync.gts
-
-# bypass the initial bootstrap steps with an existing snapshot
-pixi run cgitsync launch-release .cgitsync/releases/release-2026.05.gts
 ```
-
-Note: `restart` may be renamed to `pull` in a future release.

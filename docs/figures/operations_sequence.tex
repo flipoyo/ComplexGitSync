@@ -104,7 +104,8 @@
   \textbf{git push}\\
   remote = entry.remote\_name\\
   (default: "origin")\\
-  branch = resolved\_ref\_name
+  branch = resolved\_ref\_name\\
+  refresh hash in state
 };
 
 \node[orderbox] (pu-order) at (12.9,-7.2) {leaf → parent → root};
@@ -119,7 +120,7 @@
     (footer) at (6.45,-8.2) {tree remains \textbf{READY} on success};
 
 \node[orderbox, minimum width=5.0cm]
-    (freeze-note) at (12.3,-8.2) {\texttt{freeze} adds tag + snapshot};
+    (freeze-note) at (12.3,-8.2) {\texttt{tag} refreshes tag; \texttt{freeze} emits next \texttt{.gts} id};
 
 \draw[sidarr] (co-order.south) -- (footer.north west);
 \draw[sidarr] (ad-order.south) -- (footer.north);

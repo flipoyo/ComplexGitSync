@@ -1,7 +1,7 @@
 # ComplexGitSync DevPlan Tickets — Active
 
-This document reflects the ticket status as of the README / figures /
-terminology cleanup. It supersedes `InitialDevPlanTickets.md` as the authoritative active
+This document reflects the ticket status as of the lifecycle alignment
+follow-up. It supersedes `InitialDevPlanTickets.md` as the authoritative active
 ticket list.
 
 ---
@@ -101,8 +101,10 @@ ordering.
 `docs/architecture.tex`, all figures updated.  New figure
 `operations_sequence.tex` added. Direct object-level API usage now documented in
 `docs/python_api.tex` and `README.md` (including `.gts` loading, EMPTY→READY
-state progression, and `GitTree.propagate_tag`). The README is now simplified
-around purpose, auth, key concepts, workflow, Python API, and CLI usage.
+state progression, and `GitTree.propagate_tag`). The README and TeX docs now
+track the strict lifecycle vocabulary `read → expand → verify → clone →
+checkout → add → commit → push → tag → freeze`, while also recording the
+remaining `print(.gts)`, `pull(.gts)`, `orchestrate(.goc)`, and `.lgr` work.
 `Planning/DevPlan.md` and this file created.
 
 ### T20 — CI Version Increment Automation ✅
@@ -145,11 +147,18 @@ execution engine, and validation/reporting for unsupported actions.
 **Acceptance**: `.goc` files execute through the same public API contract used
 by Python and CLI entry points, with deterministic command ordering and errors.
 
-### T23 — Terminology cleanup for `tree` / `expand` and `restart` → `pull` ❌
-**Goal**: align the user-facing workflow vocabulary with the simplified README.
-**Deliverables**: confirm whether `tree` remains the expansion command or gains
-an `expand` alias, and rename the current `restart` resynchronization command to
-`pull` in the user-facing contract.
+### T23 — Lifecycle terminology cleanup for `expand` / `verify` / `print` / `pull` ❌
+**Goal**: align the user-facing workflow vocabulary with the strict lifecycle.
+**Deliverables**: align the current command surface with the lifecycle names
+`expand(.gts)`, `verify(.gts)`, `print(.gts)`, and `pull(.gts)`.
 **Dependencies**: T10, T19.
 **Acceptance**: README, planning docs, figures, and CLI terminology all use the
-same workflow names without ambiguity.
+same lifecycle names without ambiguity.
+
+### T24 — Local Git Register (`.lgr`) management ❌
+**Goal**: maintain a project-local register named `<Project_name>.lgr`.
+**Deliverables**: assign a unique local id to each generated `.gts`, keep the
+current project snapshot in sync, and record the id emitted by `freeze`.
+**Dependencies**: T06, T09, T14, T23.
+**Acceptance**: every `.gts` produced by the workflow is represented exactly
+once in the `.lgr` register with one stable local id.
