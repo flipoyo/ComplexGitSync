@@ -1411,7 +1411,18 @@ class ComplexGitSyncClient:
         message: str | None = None,
         stage_all: bool = True,
     ) -> DependencyTreeRegistry:
-        """Freeze an internal development state from a ``READY`` tree."""
+        """Freeze an internal development state from a ``READY`` tree.
+
+        Parameters mirror :meth:`freeze_release`:
+
+        - ``state_name``: shared tag name applied across all repositories.
+        - ``output_gts``: optional snapshot path for the emitted ``.gts`` file.
+        - ``message``: optional commit message override.
+        - ``stage_all``: stage all changes before committing when ``True``.
+
+        Behavior is identical to release freezing (commit/tag/push leaf-first),
+        but intended for internal development states.
+        """
         return self.freeze_release(
             state_name,
             output_gts=output_gts,
@@ -1470,7 +1481,11 @@ class ComplexGitSyncClient:
         return loaded_registry
 
     def launch_state(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
-        """Launch an internal development state from a ``.gts`` snapshot."""
+        """Launch an internal development state from a ``.gts`` snapshot.
+
+        Loads ``snapshot_path``, performs due clone and checkout actions, and
+        enforces a ``READY`` tree on successful completion.
+        """
         return self.launch_release(snapshot_path)
 
     def get_dependency_registry(self) -> DependencyTreeRegistry:
