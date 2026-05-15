@@ -92,6 +92,18 @@ jobs:
           )
           init_path.write_text(new_init, encoding="utf-8")
 
+          # Update pixi.toml
+          pixi_path = pathlib.Path("pixi.toml")
+          pixi_text = pixi_path.read_text(encoding="utf-8")
+          new_pixi = re.sub(
+              r'^(version\s*=\s*")' + re.escape(old_version) + r'"',
+              rf'\g<1>{new_version}"',
+              pixi_text,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          pixi_path.write_text(new_pixi, encoding="utf-8")
+
           # Update docs/preamble.tex
           preamble_path = pathlib.Path("docs/preamble.tex")
           preamble_text = preamble_path.read_text(encoding="utf-8")
@@ -114,7 +126,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pyproject.toml src/ComplexGitSync/__init__.py docs/preamble.tex
+          git add pyproject.toml src/ComplexGitSync/__init__.py pixi.toml docs/preamble.tex
           if git diff --cached --quiet; then
             echo "Nothing to commit, skipping."
           else
