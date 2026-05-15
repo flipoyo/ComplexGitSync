@@ -45,15 +45,15 @@
 % READY-gated actions
 \node[actionbox] (mutation) at (6.5,-2.0) {
   \textbf{READY-gated actions}\\
-  checkout · commit · push\\
-  tag · freeze\_release
+  checkout · add · commit\\
+  push · tag · freeze
 };
 
 % Any-state actions
 \node[actionbox] (bootstrap) at (0,-4.0) {
-  \textbf{Bootstrap actions}\\
-  clone · restart\\
-  launch\_release\\
+  \textbf{Bootstrap / load actions}\\
+  read · tree · validate\\
+  clone · restart / pull · launch\\
   \textit{→ must reach READY}
 };
 

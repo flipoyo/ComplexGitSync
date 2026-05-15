@@ -1,7 +1,7 @@
 # ComplexGitSync DevPlan — Active
 
 This document reflects the current implementation state as of the
-`add / freeze_state / launch_state` delivery (T21 API/CLI). It supersedes
+README / figures / terminology cleanup. It supersedes
 `InitialDevPlan.md` as the authoritative active plan.
 
 Refer to `InitialDevPlan.md` for the original requirements contract.
@@ -41,6 +41,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T16 | CLI Bootstrap for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` | ✅ Done |
 | T18 | Integration Test Suite | ❌ Not started |
 | T22 | Parser-driven automation of public client methods via `.goc` files | ❌ Pending |
+| T23 | Terminology cleanup for `tree`/`expand` and `restart`→`pull` | ❌ Pending |
 
 ## Architecture Notes
 
@@ -57,6 +58,8 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - CLI mutation commands (`checkout`, `commit`, `push`, `tag`, `freeze-release`) require `--gts <file>` to load the READY registry.
 - CLI mutation commands now also include `add` and `freeze-state`; snapshot launch commands include `launch-release` and `launch-state`.
 - Public API lifecycle contract is `read(.cgs)`, `validate(.cgs)`, `clone(.cgs)`, `checkout`, `add`, `commit`, `push`, `tag`, `freeze`, `launch(.gts)`.
+- The current CLI uses `tree` for the expansion / inspection step of the workflow.
+- The current resynchronization command name remains `restart`; a follow-up rename to `pull` is still planned for user-facing terminology.
 - `.goc` automation remains pending: the parser will map `.goc` actions to public `ComplexGitSyncClient` methods.
 - Direct object-level usage is now documented in `docs/python_api.tex` and README with a `.gts` → `GitTree`/`GitRepo` flow and `GitTree.propagate_tag`.
 

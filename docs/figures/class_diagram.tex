@@ -65,14 +65,14 @@
   registry: DependencyTreeRegistry\\
   run\_logger: CommandRunLogger
   \nodepart{three}
-  load\_cgs(path)\\
-  load\_gts(path)\\
-  clone\_cgs(path)\\
-  checkout(branch, ref\_kind)\\
-  commit(message, stage\_all)\\
-  push()\\
-  get\_tree\_state()\\
-  write\_gts\_snapshot()
+  read(path) / load\_source(path)\\
+  validate(path)\\
+  format\_project\_tree()\\
+  clone(path) / restart(path)\\
+  checkout(ref, ref\_kind)\\
+  add() / commit(message)\\
+  push() / tag(name)\\
+  freeze(name) / launch(path)
 };
 
 % --- Orchestre ---
@@ -168,9 +168,10 @@
 \begin{figure}[ht]
 \centering
 \caption{GitTree lifecycle state machine.  Every bootstrapping operation
-  (\texttt{clone}, \texttt{restart}, \texttt{checkout}) must terminate in
-  \texttt{READY}; mutation operations (\texttt{commit}, \texttt{push},
-  \texttt{tag}, \texttt{freeze\_release}) are gated on \texttt{READY}.}
+  (\texttt{read}, \texttt{clone}, \texttt{restart/pull}, \texttt{launch}) must
+  lead to a usable tree; synchronized Git operations (\texttt{checkout},
+  \texttt{add}, \texttt{commit}, \texttt{push}, \texttt{tag},
+  \texttt{freeze}) are gated on \texttt{READY}.}
 \label{fig:gittree-lifecycle}
 
 \begin{tikzpicture}[
@@ -192,12 +193,12 @@
 \node[sidestate, below=1.2cm of declared] (partial) {PARTIAL};
 \node[sidestate, below=1.2cm of pending]  (error)   {ERROR};
 
-\draw[trans] (unloaded) -- node[above, font=\scriptsize]{load\_cgs} (declared);
-\draw[trans] (declared) -- node[above, font=\scriptsize]{clone/checkout} (pending);
+\draw[trans] (unloaded) -- node[above, font=\scriptsize]{read(.cgs)} (declared);
+\draw[trans] (declared) -- node[above, font=\scriptsize]{clone / restart / launch} (pending);
 \draw[trans] (pending)  -- node[above, font=\scriptsize]{all READY} (ready);
 \draw[trans, dashed] (declared.south) -- (partial.north);
 \draw[trans, dashed] (pending.south)  -- (error.north);
-\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{reload .cgs} (declared.north);
+\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{read(.cgs)} (declared.north);
 
 \end{tikzpicture}
 \end{figure}

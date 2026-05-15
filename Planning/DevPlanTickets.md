@@ -1,7 +1,7 @@
 # ComplexGitSync DevPlan Tickets — Active
 
-This document reflects the ticket status as of the `add / freeze_state /
-launch_state` delivery. It supersedes `InitialDevPlanTickets.md` as the authoritative active
+This document reflects the ticket status as of the README / figures /
+terminology cleanup. It supersedes `InitialDevPlanTickets.md` as the authoritative active
 ticket list.
 
 ---
@@ -92,7 +92,7 @@ dev-state counterparts to release methods. CLI now wires:
   - `cgitsync launch-state <snapshot.gts>`
 
 ### T17 — Unit Test Suite (incremental) ✅
-157 tests passing.  Covers parsers, registry, lifecycle, rendering, gating,
+188 tests passing.  Covers parsers, registry, lifecycle, rendering, gating,
 propagate/create/checkout/commit/push operations, and deep 3-level hierarchy
 ordering.
 
@@ -101,8 +101,9 @@ ordering.
 `docs/architecture.tex`, all figures updated.  New figure
 `operations_sequence.tex` added. Direct object-level API usage now documented in
 `docs/python_api.tex` and `README.md` (including `.gts` loading, EMPTY→READY
-state progression, and `GitTree.propagate_tag`). `Planning/DevPlan.md` and this
-file created.
+state progression, and `GitTree.propagate_tag`). The README is now simplified
+around purpose, auth, key concepts, workflow, Python API, and CLI usage.
+`Planning/DevPlan.md` and this file created.
 
 ### T20 — CI Version Increment Automation ✅
 PR-based version bump on every merge.  `YYYY.XX` format with rollover.
@@ -115,7 +116,8 @@ PR-based version bump on every merge.  `YYYY.XX` format with rollover.
 `restart_tree` implemented in Tier 2 (operations.py) with parent-first checkout
 using the root repository's current branch.  `ComplexGitSyncClient.restart`
 implemented with `.cgs` load, nested discovery, READY enforcement, and `.gts`
-snapshot write.  `cgitsync restart <source.cgs>` CLI command wired.
+snapshot write.  `cgitsync restart <source.cgs>` CLI command wired.  A separate
+terminology follow-up now tracks the user-facing rename to `pull`.
 
 ### T16 — CLI wiring for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` ✅
 All six commands implemented in `cli.py`:
@@ -142,3 +144,12 @@ execution engine, and validation/reporting for unsupported actions.
 **Dependencies**: T16, T18.
 **Acceptance**: `.goc` files execute through the same public API contract used
 by Python and CLI entry points, with deterministic command ordering and errors.
+
+### T23 — Terminology cleanup for `tree` / `expand` and `restart` → `pull` ❌
+**Goal**: align the user-facing workflow vocabulary with the simplified README.
+**Deliverables**: confirm whether `tree` remains the expansion command or gains
+an `expand` alias, and rename the current `restart` resynchronization command to
+`pull` in the user-facing contract.
+**Dependencies**: T10, T19.
+**Acceptance**: README, planning docs, figures, and CLI terminology all use the
+same workflow names without ambiguity.
