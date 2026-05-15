@@ -18,8 +18,8 @@ you already use for the target remotes:
 - Git credential helpers or personal access tokens for HTTPS remotes
 - the same local Git identity for `commit`, `push`, `tag`, and `freeze`
 
-Make sure your Git authentication works before running `clone`, `push`, `tag`,
-or `freeze`.
+Make sure your Git authentication works before running `clone`, `restart`,
+`push`, `tag`, or `freeze`.
 
 ## 3. Key concepts
 
