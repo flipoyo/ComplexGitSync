@@ -9,6 +9,7 @@ Free functions exported here (Tier 2 — Actions):
     create_global_branch      Create the branch locally if it does not exist yet
     restart_tree              Resync the tree using the root repo's current branch
     checkout_tree             propagate → create → git checkout, parent-first
+    add_tree                  Stage changes across the tree, leaf-first
     commit_tree               Stage and commit changes across the tree, leaf-first
     push_tree                 Push all repos to their remotes, leaf-first
     tag_tree                  Create and push a shared tag, leaf-first
@@ -143,6 +144,28 @@ def checkout_tree(
     for entry in iter_tree(registry):
         git_runner.checkout(entry.absolute_path, branch_name)
         _refresh_entry_after_checkout(entry, branch_name, ref_kind, git_runner)
+
+    registry.recompute_tree_state()
+
+
+# ---------------------------------------------------------------------------
+# add_tree — Tier 2 action
+# ---------------------------------------------------------------------------
+
+
+def add_tree(
+    registry: DependencyTreeRegistry,
+    git_runner: GitRunner,
+) -> None:
+    """Stage all changes across the tree, leaf-first.
+
+    Requires a ``READY`` registry; raises :exc:`~.errors.TreeNotReadyError`
+    otherwise.  After a successful execution the registry remains ``READY``.
+    """
+    _assert_ready(registry)
+
+    for entry in iter_tree_leaf_first(registry):
+        git_runner.stage_all(entry.absolute_path)
 
     registry.recompute_tree_state()
 

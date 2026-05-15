@@ -7,9 +7,9 @@ import pytest
 
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 from ComplexGitSync.errors import ConfigValidationError, NestedConfigDiscoveryError
-from ComplexGitSync.git_repo import NodeType, RepoLifecycleState
-from ComplexGitSync.git_tree import TreeLifecycleState, make_repo_id
-from ComplexGitSync.orchestre import RuntimeStateStore
+from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState
+from ComplexGitSync.git_tree import DependencyTreeRegistry, GitTree, TreeLifecycleState, make_repo_id
+from ComplexGitSync.orchestre import GtsDocument, RuntimeStateStore, build_registry_from_gts_document
 
 
 def test_client_load_cgs_builds_reviewable_registry(tmp_path):
@@ -203,6 +203,95 @@ def test_make_repo_id_normalizes_windows_style_paths():
 
 def test_make_repo_id_falls_back_to_name_when_relative_path_is_missing():
     assert make_repo_id("root", None, "child-repo") == "root:child-repo"
+
+
+def test_direct_python_api_loads_gts_discovers_gitrepos_and_propagates_tag(tmp_path):
+    root_path = (tmp_path / "workspace" / "demo").resolve()
+    leaf_path = (root_path / "deps" / "leaf").resolve()
+    root_path.mkdir(parents=True)
+    leaf_path.mkdir(parents=True)
+
+    snapshot_path = tmp_path / "snapshot.gts"
+    snapshot_path.write_text(
+        f"""
+[document]
+format_version = "1.0"
+generated_at = "2026-01-01T00:00:00Z"
+command_origin = "clone"
+
+[project]
+name = "demo"
+root_absolute_path = "{root_path.as_posix()}"
+
+[tree_state]
+lifecycle_state = "READY"
+is_ready = true
+registry_complete = true
+
+[[repo_state]]
+name = "demo"
+node_type = "root"
+absolute_path = "{root_path.as_posix()}"
+relative_path = "."
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "main"
+target_ref_kind = "branch"
+target_ref_name = "main"
+resolved_ref_kind = "branch"
+resolved_ref_name = "main"
+commit_sha = "sha-demo"
+project_owner_name = "owner"
+project_name = "demo"
+
+[[repo_state]]
+name = "leaf"
+node_type = "leaf"
+absolute_path = "{leaf_path.as_posix()}"
+parent_absolute_path = "{root_path.as_posix()}"
+relative_path = "deps/leaf"
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "main"
+target_ref_kind = "branch"
+target_ref_name = "main"
+resolved_ref_kind = "branch"
+resolved_ref_name = "main"
+commit_sha = "sha-leaf"
+project_owner_name = "owner"
+project_name = "leaf"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    empty_registry = DependencyTreeRegistry()
+    assert empty_registry.recompute_tree_state() == TreeLifecycleState.UNLOADED
+    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
+    assert registry.lifecycle_state == TreeLifecycleState.READY
+
+    tree = GitTree()
+    for entry in registry.values():
+        tree.add_repo(
+            GitRepo(
+                project_owner_name=entry.project_owner_name or "owner",
+                project_name=entry.project_name or entry.name,
+                gitprovider=entry.gitprovider,
+                access_protocol=entry.access_protocol,
+                commit_sha=entry.commit_sha,
+            )
+        )
+
+    assert sorted(tree.repos) == ["demo", "leaf"]
+    assert tree.repos["demo"].commit_sha == "sha-demo"
+    assert tree.repos["leaf"].commit_sha == "sha-leaf"
+
+    tree.propagate_tag(registry, "v1.2.3")
+    for entry in registry.values():
+        assert entry.target_ref_kind == RefKind.TAG
+        assert entry.target_ref_name == "v1.2.3"
 
 
 def test_make_repo_id_falls_back_to_name_when_relative_path_is_empty():

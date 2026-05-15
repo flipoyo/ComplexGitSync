@@ -1,7 +1,7 @@
 # ComplexGitSync DevPlan — Active
 
 This document reflects the current implementation state as of the
-`tag / freeze_release / launch_release` delivery (T13 + T14 + T15 API). It supersedes
+`add / freeze_state / launch_state` delivery (T21 API/CLI). It supersedes
 `InitialDevPlan.md` as the authoritative active plan.
 
 Refer to `InitialDevPlan.md` for the original requirements contract.
@@ -28,6 +28,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T13 | `tag` (Python API) | ✅ Done |
 | T14 | `freeze_release` (Python API) | ✅ Done |
 | T15 | `launch_release` (Python API) | ✅ Done |
+| T21 | `add`, `freeze_state`, `launch_state` (Python API + CLI) | ✅ Done |
 | T17 | Unit Test Suite (incremental) | ✅ Ongoing |
 | T19 | Documentation and Examples (incremental) | ✅ Updated |
 | T20 | CI Version Increment Automation | ✅ Done |
@@ -44,6 +45,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 
 - `checkout_tree`, `commit_tree`, `push_tree` live in `operations.py` (Tier 2).
 - `tag_tree`, `freeze_release_tree`, and `restart_tree` live in `operations.py` (Tier 2).
+- `add_tree` lives in `operations.py` (Tier 2) and stages all repos leaf-first.
 - `checkout_tree`, `commit_tree`, `push_tree`, `tag_tree`, and
   `freeze_release_tree` require `READY` and leave the tree `READY` on success.
 - `restart_tree` accepts any state and produces `READY` using the root repo's current branch.
@@ -52,6 +54,8 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - `tag_tree`, `freeze_release_tree`, `commit_tree`, and `push_tree` follow leaf-first ordering.
 - `ComplexGitSyncClient.checkout`, `ComplexGitSyncClient.restart`, and `ComplexGitSyncClient.freeze_release` write `.gts` snapshots after success.
 - CLI mutation commands (`checkout`, `commit`, `push`, `tag`, `freeze-release`) require `--gts <file>` to load the READY registry.
+- CLI mutation commands now also include `add` and `freeze-state`; snapshot launch commands include `launch-release` and `launch-state`.
+- Direct object-level usage is now documented in `docs/python_api.tex` and README with a `.gts` → `GitTree`/`GitRepo` flow and `GitTree.propagate_tag`.
 
 ## Definition of Done (Global)
 

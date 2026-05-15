@@ -29,6 +29,7 @@ from .git_tree import (
 
 # --- Tier 2 — Actions (operations.py) ---
 from .operations import (
+    add_tree,
     checkout_tree,
     commit_tree,
     create_global_branch,
@@ -72,6 +73,7 @@ __all__ = [
     "iter_tree_leaf_first",
     # operations.py
     "checkout_tree",
+    "add_tree",
     "commit_tree",
     "create_global_branch",
     "freeze_release_tree",

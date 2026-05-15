@@ -1,7 +1,7 @@
 # ComplexGitSync DevPlan Tickets — Active
 
-This document reflects the ticket status as of the `tag / freeze_release /
-launch_release` delivery. It supersedes `InitialDevPlanTickets.md` as the authoritative active
+This document reflects the ticket status as of the `add / freeze_state /
+launch_state` delivery. It supersedes `InitialDevPlanTickets.md` as the authoritative active
 ticket list.
 
 ---
@@ -82,6 +82,15 @@ with named `.gts` output support.
 rebuild registry, run due clone/checkout actions, refresh SHAs, and enforce
 READY completion.
 
+### T21 — `add`, `freeze_state`, `launch_state` (API + CLI) ✅
+Added `add_tree` in Tier 2 and `ComplexGitSyncClient.add()` for explicit
+`git add --all` workflow staging on READY trees. Added
+`ComplexGitSyncClient.freeze_state(...)` and `launch_state(...)` as internal
+dev-state counterparts to release methods. CLI now wires:
+  - `cgitsync add --gts <file>`
+  - `cgitsync freeze-state <name> --gts <file>`
+  - `cgitsync launch-state <snapshot.gts>`
+
 ### T17 — Unit Test Suite (incremental) ✅
 157 tests passing.  Covers parsers, registry, lifecycle, rendering, gating,
 propagate/create/checkout/commit/push operations, and deep 3-level hierarchy
@@ -90,7 +99,10 @@ ordering.
 ### T19 — Documentation and Examples (incremental) ✅
 `README.md`, `docs/user_guide.tex`, `docs/getting_started.tex`,
 `docs/architecture.tex`, all figures updated.  New figure
-`operations_sequence.tex` added.  `Planning/DevPlan.md` and this file created.
+`operations_sequence.tex` added. Direct object-level API usage now documented in
+`docs/python_api.tex` and `README.md` (including `.gts` loading, EMPTY→READY
+state progression, and `GitTree.propagate_tag`). `Planning/DevPlan.md` and this
+file created.
 
 ### T20 — CI Version Increment Automation ✅
 PR-based version bump on every merge.  `YYYY.XX` format with rollover.
