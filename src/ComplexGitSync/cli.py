@@ -296,10 +296,11 @@ def _execute_validate(
     *,
     discover_nested: bool,
 ) -> int:
-    if source_path.suffix == ".gts":
-        client.load_gts(source_path)
-    else:
-        client.load_cgs(source_path, discover_nested=discover_nested)
+    client.load_source(
+        source_path,
+        discover_nested=discover_nested,
+        prefer_runtime_for_cgs=False,
+    )
     tree_state = client.get_tree_state()
     print(
         f"{tree_state.lifecycle_state.value} "
@@ -616,6 +617,9 @@ def _load_ready_registry_source(
     client: ComplexGitSyncClient,
     source_path: Path,
 ) -> None:
+    if hasattr(client, "load_source"):
+        client.load_source(source_path)
+        return
     if source_path.suffix == ".gts":
         client.load_gts(source_path)
     else:

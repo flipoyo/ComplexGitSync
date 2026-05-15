@@ -1200,12 +1200,15 @@ class ComplexGitSyncClient:
         source_path: str | Path,
         *,
         discover_nested: bool = False,
+        prefer_runtime_for_cgs: bool = True,
     ) -> DependencyTreeRegistry:
         resolved_source = Path(source_path).resolve()
         if resolved_source.suffix == ".gts":
             return self.load_gts(resolved_source)
         if resolved_source.suffix == ".cgs":
-            return self.load_runtime_or_cgs(resolved_source, discover_nested=discover_nested)
+            if prefer_runtime_for_cgs:
+                return self.load_runtime_or_cgs(resolved_source, discover_nested=discover_nested)
+            return self.load_cgs(resolved_source, discover_nested=discover_nested)
         raise ValueError(
             f"Unsupported source format for {resolved_source!s}; expected .cgs or .gts."
         )
