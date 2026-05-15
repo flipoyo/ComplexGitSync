@@ -426,7 +426,9 @@ client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.
 \texttt{checkout}, \texttt{commit}, \texttt{push}, \texttt{tag}, and
 \texttt{freeze} require \texttt{READY} and leave the tree
 \texttt{READY} on success. \texttt{checkout} and \texttt{freeze} also write new
-\texttt{.gts} snapshots.
+\texttt{.gts} snapshots. If you need to restore a saved \texttt{.gts} directly,
+see the compatibility helper documented in the \texttt{launch-release}
+subsection above.
 
 \subsection{Document Classes}
 
