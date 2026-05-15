@@ -26,6 +26,26 @@ def test_client_load_cgs_builds_reviewable_registry(tmp_path):
     assert registry.get("root:deps/child-repo").absolute_path == (tmp_path / "deps/child-repo").resolve()
 
 
+def test_client_load_source_supports_cgs(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    client = ComplexGitSyncClient()
+
+    registry = client.load_source(config_path)
+
+    assert registry.get("root").project_name == "demo"
+    assert client.get_tree_state().lifecycle_state == TreeLifecycleState.DECLARED
+
+
+def test_client_load_source_supports_gts(tmp_path):
+    snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=(tmp_path / "workspace" / "demo").resolve())
+    client = ComplexGitSyncClient()
+
+    registry = client.load_source(snapshot_path)
+
+    assert registry.lifecycle_state == TreeLifecycleState.READY
+    assert client.get_tree_state().lifecycle_state == TreeLifecycleState.READY
+
+
 def test_build_registry_rejects_duplicate_relative_paths(tmp_path):
     config_path = tmp_path / "project.cgs"
     config_path.write_text(
@@ -389,6 +409,47 @@ nested_config = "auto"
         encoding="utf-8",
     )
     return config_path
+
+
+def _write_ready_gts(snapshot_path: Path, *, root_path: Path) -> Path:
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path.write_text(
+        f"""
+[document]
+format_version = "1.0"
+generated_at = "2026-01-01T00:00:00Z"
+command_origin = "clone"
+
+[project]
+name = "demo"
+root_absolute_path = "{root_path.as_posix()}"
+
+[tree_state]
+lifecycle_state = "READY"
+is_ready = true
+registry_complete = true
+
+[[repo_state]]
+name = "demo"
+node_type = "root"
+absolute_path = "{root_path.as_posix()}"
+relative_path = "."
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "main"
+target_ref_kind = "branch"
+target_ref_name = "main"
+resolved_ref_kind = "branch"
+resolved_ref_name = "main"
+commit_sha = "sha-demo"
+project_owner_name = "owner"
+project_name = "demo"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return snapshot_path
 
 
 class _FakeGitRunner:

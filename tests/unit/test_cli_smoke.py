@@ -132,6 +132,48 @@ commit_sha = "abc123"
     assert '"is_ready": true' in captured.out
 
 
+def test_validate_command_supports_gts_input(tmp_path, capsys):
+    gts_path = tmp_path / "project.gts"
+    gts_path.write_text(
+        """
+[document]
+format_version = "1.0"
+generated_at = "2026-05-13T00:00:00Z"
+command_origin = "test"
+
+[project]
+name = "demo"
+root_absolute_path = "/tmp/demo"
+
+[tree_state]
+lifecycle_state = "READY"
+is_ready = true
+registry_complete = true
+
+[[repo_state]]
+name = "demo"
+node_type = "root"
+absolute_path = "/tmp/demo"
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "main"
+resolved_ref_kind = "branch"
+resolved_ref_name = "main"
+commit_sha = "abc123"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(["validate", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "READY" in captured.out
+    assert "complete=true" in captured.out
+
+
 def test_clone_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
@@ -377,6 +419,34 @@ def test_add_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     captured = capsys.readouterr()
 
     assert exit_code == 0
+    assert captured_call.get("added") is True
+    assert "READY ready=true" in captured.out
+
+
+def test_add_command_accepts_cgs_source_via_gts_flag(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_runtime_or_cgs(self, path, **kwargs):
+            captured_call["source_path"] = Path(path)
+
+        def add(self):
+            captured_call["added"] = True
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    cgs_path = tmp_path / "project.cgs"
+    cgs_path.touch()
+    exit_code = main(["add", "--gts", str(cgs_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["source_path"] == cgs_path.resolve()
     assert captured_call.get("added") is True
     assert "READY ready=true" in captured.out
 

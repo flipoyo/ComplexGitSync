@@ -134,3 +134,11 @@ tag / freeze_release / launch_release / commit-push gating scenarios.
 **Dependencies**: T09–T16.
 **Acceptance**: CaWaQS-style topology reproducible; all sync commands
 produce expected READY states and `.gts` outputs.
+
+### T22 — `.goc` parser-driven command automation ❌
+**Goal**: automate `ComplexGitSyncClient` method execution from `.goc` plans.
+**Deliverables**: parser that maps `.goc` actions to public client API methods,
+execution engine, and validation/reporting for unsupported actions.
+**Dependencies**: T16, T18.
+**Acceptance**: `.goc` files execute through the same public API contract used
+by Python and CLI entry points, with deterministic command ordering and errors.

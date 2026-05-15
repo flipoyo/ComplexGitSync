@@ -5,6 +5,11 @@ its nested descendants. It reads local `.cgs` authoring specs, generates `.gts`
 state snapshots, and exposes a Python API and CLI for the full synchronisation
 workflow.
 
+Document acronyms used across the project:
+- `.cgs` = **ComplexGitSync** specification
+- `.gts` = **GitTreeState** snapshot
+- `.goc` = **GitOrchestrationCommand** plan (pending parser-driven automation)
+
 ## Authorship
 Contact: nicolas.flipo@minesparis.psl.eu
 Project Manager: Nicolas Flipo
@@ -133,7 +138,8 @@ pixi run cgitsync describe examples/cawaqsviz_snapshot.gts
 
 ## Synchronising the Tree — Python API
 
-Once a tree is `READY` (after `clone` or `load_gts`), use the Python API to
+Once a tree is `READY` (after loading either a `.gts` snapshot directly or a
+`.cgs` file with a newer runtime snapshot), use the Python API to
 run the standard git workflow (`clone -> checkout -> add -> commit -> push`)
 across the whole dependency tree:
 
@@ -176,6 +182,10 @@ client.launch_release(".cgitsync/releases/release-2026.05.gts")
 successful run. `launch_state` and `launch_release` load a `.gts`, perform
 required clone/checkout actions, and must end in `READY`. `checkout`,
 `freeze_state`, and `freeze_release` write new `.gts` snapshots.
+
+On the CLI side, workflow commands that take `--gts` accept either a `.gts`
+snapshot path directly or a `.cgs` source path (resolved through the latest
+runtime snapshot when available).
 
 ## Direct Python Object Usage (`GitTree` / `GitRepo`)
 
@@ -246,4 +256,3 @@ live under `~/.local/state/ComplexGitSync/logs/` on Linux, or under
 The log includes command start and end events, tree and repo state
 transitions, fallback decisions, nested `.cgs` discovery, and `.gts` loads and
 writes.
-

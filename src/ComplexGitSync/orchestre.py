@@ -1195,6 +1195,19 @@ class ComplexGitSyncClient:
             return self.load_gts(snapshot_path)
         return self.load_cgs(source_path, discover_nested=discover_nested)
 
+    def load_source(
+        self,
+        source_path: str | Path,
+        *,
+        discover_nested: bool = False,
+    ) -> DependencyTreeRegistry:
+        resolved_source = Path(source_path).resolve()
+        if resolved_source.suffix == ".gts":
+            return self.load_gts(resolved_source)
+        if resolved_source.suffix == ".cgs":
+            return self.load_runtime_or_cgs(resolved_source, discover_nested=discover_nested)
+        raise ValueError("Unsupported source format; expected .cgs or .gts.")
+
     def resolve_clone_root(
         self,
         config_path: str | Path,

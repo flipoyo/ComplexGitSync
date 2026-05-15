@@ -65,7 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.set_defaults(handler=_handle_restart)
         elif command_name == "checkout":
             subparser.add_argument("branch", help="Branch or tag name to check out across the tree.")
-            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                required=True,
+                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+            )
             subparser.add_argument(
                 "--ref-kind",
                 choices=["branch", "tag"],
@@ -75,7 +80,12 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.set_defaults(handler=_handle_checkout)
         elif command_name == "commit":
             subparser.add_argument("message", help="Commit message applied to all repos with staged changes.")
-            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                required=True,
+                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+            )
             subparser.add_argument(
                 "--no-stage",
                 action="store_true",
@@ -83,22 +93,47 @@ def build_parser() -> argparse.ArgumentParser:
             )
             subparser.set_defaults(handler=_handle_commit)
         elif command_name == "add":
-            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                required=True,
+                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+            )
             subparser.set_defaults(handler=_handle_add)
         elif command_name == "push":
-            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                required=True,
+                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+            )
             subparser.set_defaults(handler=_handle_push)
         elif command_name == "tag":
             subparser.add_argument("name", help="Tag name to create and push across the tree.")
-            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                required=True,
+                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+            )
             subparser.set_defaults(handler=_handle_tag)
         elif command_name == "freeze-release":
             subparser.add_argument("name", help="Release tag name used for commit, tag, and push.")
-            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                required=True,
+                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+            )
             subparser.set_defaults(handler=_handle_freeze_release)
         elif command_name == "freeze-state":
             subparser.add_argument("name", help="Internal state tag name used for commit, tag, and push.")
-            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                required=True,
+                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+            )
             subparser.set_defaults(handler=_handle_freeze_state)
         elif command_name == "launch-release":
             subparser.add_argument("snapshot", help="Path to the .gts snapshot to launch the release from.")
@@ -261,7 +296,10 @@ def _execute_validate(
     *,
     discover_nested: bool,
 ) -> int:
-    client.load_cgs(source_path, discover_nested=discover_nested)
+    if source_path.suffix == ".gts":
+        client.load_gts(source_path)
+    else:
+        client.load_cgs(source_path, discover_nested=discover_nested)
     tree_state = client.get_tree_state()
     print(
         f"{tree_state.lifecycle_state.value} "
@@ -362,12 +400,12 @@ def _execute_restart(
 
 def _execute_checkout(
     client: ComplexGitSyncClient,
-    gts_path: Path,
+    source_path: Path,
     *,
     branch: str,
     ref_kind: RefKind,
 ) -> int:
-    client.load_gts(gts_path)
+    _load_ready_registry_source(client, source_path)
     client.checkout(branch, ref_kind=ref_kind)
     tree_state = client.get_tree_state()
     print(
@@ -380,12 +418,12 @@ def _execute_checkout(
 
 def _execute_commit(
     client: ComplexGitSyncClient,
-    gts_path: Path,
+    source_path: Path,
     *,
     message: str,
     stage_all: bool,
 ) -> int:
-    client.load_gts(gts_path)
+    _load_ready_registry_source(client, source_path)
     client.commit(message, stage_all=stage_all)
     tree_state = client.get_tree_state()
     print(
@@ -398,9 +436,9 @@ def _execute_commit(
 
 def _execute_add(
     client: ComplexGitSyncClient,
-    gts_path: Path,
+    source_path: Path,
 ) -> int:
-    client.load_gts(gts_path)
+    _load_ready_registry_source(client, source_path)
     client.add()
     tree_state = client.get_tree_state()
     print(
@@ -412,9 +450,9 @@ def _execute_add(
 
 def _execute_push(
     client: ComplexGitSyncClient,
-    gts_path: Path,
+    source_path: Path,
 ) -> int:
-    client.load_gts(gts_path)
+    _load_ready_registry_source(client, source_path)
     client.push()
     tree_state = client.get_tree_state()
     print(
@@ -426,11 +464,11 @@ def _execute_push(
 
 def _execute_tag(
     client: ComplexGitSyncClient,
-    gts_path: Path,
+    source_path: Path,
     *,
     tag_name: str,
 ) -> int:
-    client.load_gts(gts_path)
+    _load_ready_registry_source(client, source_path)
     client.tag(tag_name)
     tree_state = client.get_tree_state()
     print(
@@ -443,11 +481,11 @@ def _execute_tag(
 
 def _execute_freeze_release(
     client: ComplexGitSyncClient,
-    gts_path: Path,
+    source_path: Path,
     *,
     tag_name: str,
 ) -> int:
-    client.load_gts(gts_path)
+    _load_ready_registry_source(client, source_path)
     client.freeze_release(tag_name)
     tree_state = client.get_tree_state()
     print(
@@ -460,11 +498,11 @@ def _execute_freeze_release(
 
 def _execute_freeze_state(
     client: ComplexGitSyncClient,
-    gts_path: Path,
+    source_path: Path,
     *,
     state_name: str,
 ) -> int:
-    client.load_gts(gts_path)
+    _load_ready_registry_source(client, source_path)
     client.freeze_state(state_name)
     tree_state = client.get_tree_state()
     print(
@@ -572,6 +610,16 @@ def _create_command_logger(
         project_root=project_root,
         project_log_dir=project_log_dir,
     )
+
+
+def _load_ready_registry_source(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+) -> None:
+    if source_path.suffix == ".gts":
+        client.load_gts(source_path)
+    else:
+        client.load_runtime_or_cgs(source_path)
 
 
 _INSPECTION_HANDLERS = {

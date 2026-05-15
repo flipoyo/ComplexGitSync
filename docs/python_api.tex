@@ -74,6 +74,10 @@ from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
+# Unified loading API: accepts either .cgs or .gts
+client.load_source("examples/complexgitsync.cgs")
+client.load_source(".cgitsync/state/complexgitsync.gts")
+
 # Bootstrap from .cgs -> READY
 client.clone_cgs("examples/complexgitsync.cgs")
 
