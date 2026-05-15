@@ -125,7 +125,7 @@ pixi run cgitsync validate examples/complexgitsync.cgs
 # optionally clone and create a runtime snapshot
 pixi run cgitsync clone examples/complexgitsync.cgs
 
-# current pull-like resync command name
+# resynchronize the tree (current command: restart)
 pixi run cgitsync restart examples/complexgitsync.cgs
 
 # continue from a READY .gts snapshot
@@ -140,6 +140,4 @@ pixi run cgitsync freeze-release release-2026.05 --gts .cgitsync/state/complexgi
 pixi run cgitsync launch-release .cgitsync/releases/release-2026.05.gts
 ```
 
-Planning note: `restart` is the current pull-like resynchronization command.
-`Planning/DevPlan.md` and `Planning/DevPlanTickets.md` track the clearer
-user-facing `pull` rename separately.
+Note: `restart` may be renamed to `pull` in a future release.
