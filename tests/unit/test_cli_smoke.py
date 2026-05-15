@@ -2,6 +2,8 @@ from pathlib import Path
 import tomllib
 from types import SimpleNamespace
 
+import pytest
+
 from ComplexGitSync import __version__
 from ComplexGitSync.cli import main
 from ComplexGitSync.orchestre import RuntimeStateStore
@@ -514,6 +516,15 @@ def test_launch_state_command_uses_client_handler(monkeypatch, capsys, tmp_path)
     assert exit_code == 0
     assert captured_call["snapshot_path"] == gts_path.resolve()
     assert "READY ready=true" in captured.out
+
+
+def test_registry_command_is_removed(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["registry", "project.cgs"])
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "invalid choice" in captured.err
 
 
 def _write_project_cgs(tmp_path):

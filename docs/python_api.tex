@@ -74,8 +74,12 @@ from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
+# Public lifecycle contract
+client.read("examples/complexgitsync.cgs")
+client.validate("examples/complexgitsync.cgs")
+
 # Bootstrap from .cgs -> READY
-client.clone_cgs("examples/complexgitsync.cgs")
+client.clone("examples/complexgitsync.cgs")
 
 # READY methods
 client.checkout("feature/my-branch")
@@ -89,8 +93,8 @@ client.freeze_state("dev-state-2026.05")
 client.launch_state(".cgitsync/state/dev-state-2026.05.gts")
 
 # Public release
-client.freeze_release("release-2026.05")
+client.freeze("release-2026.05")
 
 # Relaunch from a frozen release snapshot -> READY
-client.launch_release(".cgitsync/releases/release-2026.05.gts")
+client.launch(".cgitsync/releases/release-2026.05.gts")
 \end{lstlisting}

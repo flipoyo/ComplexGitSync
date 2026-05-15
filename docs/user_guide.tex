@@ -234,6 +234,10 @@ implemented. Each returns exit code~2 with the message
 % -----------------------------------------------------------------------
 \section{Document Formats}
 
+\texttt{.cgs} means \textbf{ComplexGitSync} specification, \texttt{.gts} means
+\textbf{GitTreeState} snapshot, and \texttt{.goc} means
+\textbf{GitOrchestrationCommand} plan.
+
 \subsection{Local Authoring Spec (\texttt{.cgs})}
 
 A TOML file that describes the repository tree to manage. It is the only
@@ -336,9 +340,10 @@ configuration path and call the equivalent method:
 from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
-registry = client.load_cgs("project.cgs")
+registry = client.read("project.cgs")
+tree_state = client.validate("project.cgs")
 tree = client.format_project_tree()
-clone_registry = client.clone_cgs("project.cgs", target_dir="./workspace/demo")
+clone_registry = client.clone("project.cgs", target_dir="./workspace/demo")
 \end{lstlisting}
 
 Once the tree is \texttt{READY}, the synchronisation methods are available:
@@ -364,18 +369,18 @@ client.push()
 # Create and push a shared tag (leaf-first)
 client.tag("v1.2.3")
 
-# Freeze release and emit a named snapshot
-client.freeze_release("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
+# Freeze and emit a named snapshot
+client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
 
 # Launch from a frozen snapshot
-client.launch_release(".cgitsync/releases/release-2026.05.gts")
+client.launch(".cgitsync/releases/release-2026.05.gts")
 \end{lstlisting}
 
 \texttt{checkout}, \texttt{commit}, \texttt{push}, \texttt{tag}, and
-\texttt{freeze\_release} require \texttt{READY} and leave the tree
-\texttt{READY} on success. \texttt{launch\_release} loads a release
+\texttt{freeze} require \texttt{READY} and leave the tree
+\texttt{READY} on success. \texttt{launch} loads a release
 \texttt{.gts}, performs required clone/checkout actions, and must end in
-\texttt{READY}. \texttt{checkout} and \texttt{freeze\_release} also write new
+\texttt{READY}. \texttt{checkout} and \texttt{freeze} also write new
 \texttt{.gts} snapshots.
 
 \subsection{Document Classes}

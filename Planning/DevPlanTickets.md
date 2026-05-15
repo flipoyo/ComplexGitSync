@@ -58,8 +58,8 @@ Requires READY; tree stays READY.  Client also writes a `.gts` snapshot.
 
 ### T11 — Tree and Registry Inspection ✅
 `get_dependency_registry`, `get_tree_state`, `format_project_tree`,
-`format_registry_json`, `print_project_tree`.  CLI `tree` and `registry`
-commands fully wired.  `iter_tree` / `iter_tree_leaf_first` public API.
+`print_project_tree`. CLI `tree` is fully wired; the `registry` command was
+removed for simplicity. `iter_tree` / `iter_tree_leaf_first` public API.
 
 ### T12 — `commit` and `push` with READY Gating ✅
 `commit_tree(registry, git_runner, message, *, stage_all)` — leaf-first;
@@ -134,3 +134,11 @@ tag / freeze_release / launch_release / commit-push gating scenarios.
 **Dependencies**: T09–T16.
 **Acceptance**: CaWaQS-style topology reproducible; all sync commands
 produce expected READY states and `.gts` outputs.
+
+### T22 — `.goc` parser-driven command automation ❌
+**Goal**: automate `ComplexGitSyncClient` method execution from `.goc` plans.
+**Deliverables**: parser that maps `.goc` actions to public client API methods,
+execution engine, and validation/reporting for unsupported actions.
+**Dependencies**: T16, T18.
+**Acceptance**: `.goc` files execute through the same public API contract used
+by Python and CLI entry points, with deterministic command ordering and errors.

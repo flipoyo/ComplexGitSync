@@ -5,6 +5,11 @@ its nested descendants. It reads local `.cgs` authoring specs, generates `.gts`
 state snapshots, and exposes a Python API and CLI for the full synchronisation
 workflow.
 
+Document acronyms used across the project:
+- `.cgs` = **ComplexGitSync** specification
+- `.gts` = **GitTreeState** snapshot
+- `.goc` = **GitOrchestrationCommand** plan (pending parser-driven automation)
+
 ## Authorship
 Contact: nicolas.flipo@minesparis.psl.eu
 Project Manager: Nicolas Flipo
@@ -15,7 +20,7 @@ AI assistance: Github copilot - chatGPT5.4 Xhigh, Claude Sonnet4.6
 | Feature | Python API | CLI |
 |---|---|---|
 | `validate` | ✅ | ✅ |
-| `describe` / `tree` / `registry` | ✅ | ✅ |
+| `describe` / `tree` | ✅ | ✅ |
 | `clone` | ✅ | ✅ |
 | `checkout` | ✅ | ✅ |
 | `add` | ✅ | ✅ |
@@ -119,12 +124,6 @@ latest cloned state instead of the purely declared topology. That means the
 same command shows `READY` after a successful `clone`, rather than falling
 back to the initial `DECLARED`/`PENDING` registry.
 
-Inspect the resolved registry as JSON:
-
-```bash
-pixi run cgitsync registry examples/complexgitsync.cgs
-```
-
 Describe a generated snapshot:
 
 ```bash
@@ -133,8 +132,10 @@ pixi run cgitsync describe examples/cawaqsviz_snapshot.gts
 
 ## Synchronising the Tree — Python API
 
-Once a tree is `READY` (after `clone` or `load_gts`), use the Python API to
-run the standard git workflow (`clone -> checkout -> add -> commit -> push`)
+The public client contract is:
+`read(.cgs) -> validate(.cgs) -> clone(.cgs) -> checkout -> add -> commit -> push -> tag -> freeze -> launch(.gts)`.
+
+Once a tree is `READY`, use the Python API to run the standard git workflow
 across the whole dependency tree:
 
 ```python
@@ -142,8 +143,10 @@ from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
-# Load an existing READY snapshot
-client.load_gts(".cgitsync/state/complexgitsync.gts")
+# Lifecycle from .cgs
+client.read("examples/complexgitsync.cgs")
+client.validate("examples/complexgitsync.cgs")
+client.clone("examples/complexgitsync.cgs")
 
 # Check out a branch across all repos (propagate → create → git checkout)
 client.checkout("feature/my-branch")
@@ -160,22 +163,16 @@ client.push()
 # Create and push a shared tag across all repos (leaf → root)
 client.tag("v1.2.3")
 
-# Freeze an internal development state (not publicly exposed as a release)
-client.freeze_state("dev-state-2026.05", output_gts=".cgitsync/state/dev-state-2026.05.gts")
-client.launch_state(".cgitsync/state/dev-state-2026.05.gts")
-
-# Freeze a public release: commit/tag/push leaf-first and write a named .gts snapshot
-client.freeze_release("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
-
-# Relaunch from a frozen .gts snapshot and restore the tree to READY
-client.launch_release(".cgitsync/releases/release-2026.05.gts")
+# Freeze and launch via .gts
+client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
+client.launch(".cgitsync/releases/release-2026.05.gts")
 ```
 
-`checkout`, `add`, `commit`, `push`, `tag`, `freeze_state`, and
-`freeze_release` require a `READY` tree and leave it `READY` after a
-successful run. `launch_state` and `launch_release` load a `.gts`, perform
-required clone/checkout actions, and must end in `READY`. `checkout`,
-`freeze_state`, and `freeze_release` write new `.gts` snapshots.
+`checkout`, `add`, `commit`, `push`, `tag`, and `freeze` require a `READY`
+tree and leave it `READY` after a successful run. `launch` loads a `.gts`,
+performs required clone/checkout actions, and must end in `READY`.
+
+On the CLI side, workflow commands that take `--gts` require a `.gts` snapshot.
 
 ## Direct Python Object Usage (`GitTree` / `GitRepo`)
 
@@ -246,4 +243,3 @@ live under `~/.local/state/ComplexGitSync/logs/` on Linux, or under
 The log includes command start and end events, tree and repo state
 transitions, fallback decisions, nested `.cgs` discovery, and `.gts` loads and
 writes.
-
