@@ -268,9 +268,8 @@ project_name = "leaf"
     )
 
     empty_registry = DependencyTreeRegistry()
-    empty_registry.recompute_tree_state()
+    assert empty_registry.recompute_tree_state() == TreeLifecycleState.UNLOADED
     registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
-    assert empty_registry.lifecycle_state == TreeLifecycleState.UNLOADED
     assert registry.lifecycle_state == TreeLifecycleState.READY
 
     tree = GitTree()
