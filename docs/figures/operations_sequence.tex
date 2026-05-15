@@ -115,12 +115,15 @@
 
 % ---- shared "tree stays READY" footer -----------------------------------
 
-\node[gatebox, minimum width=13.5cm]
-    (footer) at (6.45,-8.2) {tree remains \textbf{READY} on success; \texttt{freeze} builds on add/commit/push/tag and emits a \texttt{.gts}};
+\node[gatebox, minimum width=8.0cm]
+    (footer) at (6.45,-8.2) {tree remains \textbf{READY} on success};
+
+\node[orderbox, minimum width=5.0cm]
+    (freeze-note) at (12.3,-8.2) {\texttt{freeze} adds tag + snapshot};
 
 \draw[sidarr] (co-order.south) -- (footer.north west);
 \draw[sidarr] (ad-order.south) -- (footer.north);
 \draw[sidarr] (cm-order.south) -- (footer.north east);
-\draw[sidarr] (pu-order.south) -- (footer.east);
+\draw[sidarr] (pu-order.south) -- (freeze-note.north);
 
 \end{tikzpicture}

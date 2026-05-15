@@ -46,8 +46,6 @@ The same workflow is exposed in two ways:
 Current terminology in the repository:
 
 - `tree` is the CLI command for the expansion / inspection step
-- `restart` is the current pull-like resynchronization command; planning tracks
-  a clearer `pull` rename separately
 
 ## 4. How to use
 
@@ -141,3 +139,7 @@ pixi run cgitsync freeze-release release-2026.05 --gts .cgitsync/state/complexgi
 # bypass the initial bootstrap steps with an existing snapshot
 pixi run cgitsync launch-release .cgitsync/releases/release-2026.05.gts
 ```
+
+Planning note: `restart` is the current pull-like resynchronization command.
+`Planning/DevPlan.md` and `Planning/DevPlanTickets.md` track the clearer
+user-facing `pull` rename separately.
