@@ -89,12 +89,11 @@ snapshot as the latest runtime state for the source \texttt{.cgs} file.
 \subsection{\texttt{checkout}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync checkout <branch> --gts <source.gts|source.cgs> [--ref-kind branch|tag]
+$ cgitsync checkout <branch> --gts <snapshot.gts> [--ref-kind branch|tag]
 \end{lstlisting}
 
 Checks out a branch or tag across the whole tree, parent-first.
-Loads the READY registry from \texttt{--gts} (directly from \texttt{.gts} or by
-resolving the latest runtime snapshot for \texttt{.cgs}), then propagates the ref,
+Loads the READY registry from \texttt{--gts}, then propagates the ref,
 creates missing local branches, and runs \texttt{git checkout} in every repo.
 On success the tree remains \texttt{READY} and a new \texttt{.gts} snapshot is written.
 
@@ -133,7 +132,7 @@ snapshot on success.
 \subsection{\texttt{commit}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync commit <message> --gts <source.gts|source.cgs> [--no-stage]
+$ cgitsync commit <message> --gts <snapshot.gts> [--no-stage]
 \end{lstlisting}
 
 Commits changes across the tree, leaf-first.  Loads the READY registry from
@@ -154,7 +153,7 @@ client.commit("feat: my change", stage_all=False)
 \subsection{\texttt{push}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync push --gts <source.gts|source.cgs>
+$ cgitsync push --gts <snapshot.gts>
 \end{lstlisting}
 
 Pushes all repositories to their configured remotes, leaf-first.  Loads the
@@ -172,7 +171,7 @@ client.push()
 \subsection{\texttt{tag}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync tag <name> --gts <source.gts|source.cgs>
+$ cgitsync tag <name> --gts <snapshot.gts>
 \end{lstlisting}
 
 Creates and pushes the same tag across the full tree, leaf-first.  Loads the
@@ -188,7 +187,7 @@ client.tag("v1.2.3")
 \subsection{\texttt{freeze-release}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync freeze-release <name> --gts <source.gts|source.cgs>
+$ cgitsync freeze-release <name> --gts <snapshot.gts>
 \end{lstlisting}
 
 Performs a release freeze across all repos, leaf-first: stage/commit,
@@ -341,11 +340,10 @@ configuration path and call the equivalent method:
 from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
-client.load_source("project.cgs")          # or
-client.load_source(".cgitsync/state/project.gts")
-registry = client.load_cgs("project.cgs")
+registry = client.read("project.cgs")
+tree_state = client.validate("project.cgs")
 tree = client.format_project_tree()
-clone_registry = client.clone_cgs("project.cgs", target_dir="./workspace/demo")
+clone_registry = client.clone("project.cgs", target_dir="./workspace/demo")
 \end{lstlisting}
 
 Once the tree is \texttt{READY}, the synchronisation methods are available:
@@ -371,18 +369,18 @@ client.push()
 # Create and push a shared tag (leaf-first)
 client.tag("v1.2.3")
 
-# Freeze release and emit a named snapshot
-client.freeze_release("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
+# Freeze and emit a named snapshot
+client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
 
 # Launch from a frozen snapshot
-client.launch_release(".cgitsync/releases/release-2026.05.gts")
+client.launch(".cgitsync/releases/release-2026.05.gts")
 \end{lstlisting}
 
 \texttt{checkout}, \texttt{commit}, \texttt{push}, \texttt{tag}, and
-\texttt{freeze\_release} require \texttt{READY} and leave the tree
-\texttt{READY} on success. \texttt{launch\_release} loads a release
+\texttt{freeze} require \texttt{READY} and leave the tree
+\texttt{READY} on success. \texttt{launch} loads a release
 \texttt{.gts}, performs required clone/checkout actions, and must end in
-\texttt{READY}. \texttt{checkout} and \texttt{freeze\_release} also write new
+\texttt{READY}. \texttt{checkout} and \texttt{freeze} also write new
 \texttt{.gts} snapshots.
 
 \subsection{Document Classes}

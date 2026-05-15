@@ -77,7 +77,6 @@ from .git_tree import (
     _validate_repo_shape,
     build_tree_state,
     format_project_tree,
-    format_registry_json,
     iter_tree,
     make_repo_id,
     promote_to_parent,
@@ -395,7 +394,6 @@ _VALID_GOC_COMMANDS = frozenset(
         "validate",
         "describe",
         "tree",
-        "registry",
         "write-gts",
         "launch-release",
         "clone",
@@ -1164,6 +1162,25 @@ class ComplexGitSyncClient:
         self._log_tree_transition(previous_tree_state, self.registry.lifecycle_state, reason="load_cgs")
         return self.registry
 
+    def read(
+        self,
+        config_path: str | Path,
+        *,
+        discover_nested: bool = False,
+    ) -> DependencyTreeRegistry:
+        """Read and load a ``.cgs`` specification into the runtime registry."""
+        return self.load_cgs(config_path, discover_nested=discover_nested)
+
+    def validate(
+        self,
+        config_path: str | Path,
+        *,
+        discover_nested: bool = False,
+    ) -> ProjectTreeState:
+        """Validate a ``.cgs`` specification by building and checking its registry."""
+        self.read(config_path, discover_nested=discover_nested)
+        return self.get_tree_state()
+
     def load_gts(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         resolved_snapshot_path = Path(snapshot_path).resolve()
@@ -1260,6 +1277,15 @@ class ComplexGitSyncClient:
         self.state_store.record_snapshot(source_path, snapshot_path)
         self._log_tree_transition(previous_tree_state, self.registry.lifecycle_state, reason="clone_cgs")
         return self.registry
+
+    def clone(
+        self,
+        config_path: str | Path,
+        *,
+        target_dir: str | Path | None = None,
+    ) -> DependencyTreeRegistry:
+        """Clone a tree from a ``.cgs`` specification."""
+        return self.clone_cgs(config_path, target_dir=target_dir)
 
     def restart(self, config_path: str | Path) -> DependencyTreeRegistry:
         """Resynchronize an already-cloned tree from a ``.cgs`` file.
@@ -1506,6 +1532,26 @@ class ComplexGitSyncClient:
         """
         return self.launch_release(snapshot_path)
 
+    def freeze(
+        self,
+        name: str,
+        *,
+        output_gts: str | Path | None = None,
+        message: str | None = None,
+        stage_all: bool = True,
+    ) -> DependencyTreeRegistry:
+        """Freeze a tree state and emit a ``.gts`` snapshot."""
+        return self.freeze_release(
+            name,
+            output_gts=output_gts,
+            message=message,
+            stage_all=stage_all,
+        )
+
+    def launch(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
+        """Launch a tree from a ``.gts`` snapshot."""
+        return self.launch_release(snapshot_path)
+
     def get_dependency_registry(self) -> DependencyTreeRegistry:
         if self.registry is None:
             raise RuntimeError("No ComplexGitSync registry is loaded.")
@@ -1519,9 +1565,6 @@ class ComplexGitSyncClient:
 
     def format_project_tree(self, *, verbose: bool = True) -> str:
         return format_project_tree(self.get_dependency_registry(), verbose=verbose)
-
-    def format_registry_json(self) -> str:
-        return format_registry_json(self.get_dependency_registry())
 
     def describe_cgs(self) -> str:
         registry = self.get_dependency_registry()

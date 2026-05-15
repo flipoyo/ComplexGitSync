@@ -58,8 +58,8 @@ Requires READY; tree stays READY.  Client also writes a `.gts` snapshot.
 
 ### T11 — Tree and Registry Inspection ✅
 `get_dependency_registry`, `get_tree_state`, `format_project_tree`,
-`format_registry_json`, `print_project_tree`.  CLI `tree` and `registry`
-commands fully wired.  `iter_tree` / `iter_tree_leaf_first` public API.
+`print_project_tree`. CLI `tree` is fully wired; the `registry` command was
+removed for simplicity. `iter_tree` / `iter_tree_leaf_first` public API.
 
 ### T12 — `commit` and `push` with READY Gating ✅
 `commit_tree(registry, git_runner, message, *, stage_all)` — leaf-first;

@@ -56,7 +56,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - `ComplexGitSyncClient.checkout`, `ComplexGitSyncClient.restart`, and `ComplexGitSyncClient.freeze_release` write `.gts` snapshots after success.
 - CLI mutation commands (`checkout`, `commit`, `push`, `tag`, `freeze-release`) require `--gts <file>` to load the READY registry.
 - CLI mutation commands now also include `add` and `freeze-state`; snapshot launch commands include `launch-release` and `launch-state`.
-- Public API and CLI now both accept `.cgs` and `.gts` as source inputs for tree/state loading.
+- Public API lifecycle contract is `read(.cgs)`, `validate(.cgs)`, `clone(.cgs)`, `checkout`, `add`, `commit`, `push`, `tag`, `freeze`, `launch(.gts)`.
 - `.goc` automation remains pending: the parser will map `.goc` actions to public `ComplexGitSyncClient` methods.
 - Direct object-level usage is now documented in `docs/python_api.tex` and README with a `.gts` → `GitTree`/`GitRepo` flow and `GitTree.propagate_tag`.
 

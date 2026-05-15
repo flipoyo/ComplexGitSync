@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path, PureWindowsPath
 
 import pytest
@@ -26,6 +25,26 @@ def test_client_load_cgs_builds_reviewable_registry(tmp_path):
     assert registry.get("root:deps/child-repo").absolute_path == (tmp_path / "deps/child-repo").resolve()
 
 
+def test_client_read_alias_loads_cgs(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    client = ComplexGitSyncClient()
+
+    registry = client.read(config_path)
+
+    assert registry.get("root").project_name == "demo"
+    assert client.get_tree_state().lifecycle_state == TreeLifecycleState.DECLARED
+
+
+def test_client_validate_alias_returns_tree_state(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    client = ComplexGitSyncClient()
+
+    tree_state = client.validate(config_path)
+
+    assert tree_state.lifecycle_state == TreeLifecycleState.DECLARED
+    assert tree_state.registry_complete is True
+
+
 def test_client_load_source_supports_cgs(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()
@@ -44,6 +63,64 @@ def test_client_load_source_supports_gts(tmp_path):
 
     assert registry.lifecycle_state == TreeLifecycleState.READY
     assert client.get_tree_state().lifecycle_state == TreeLifecycleState.READY
+
+
+def test_client_clone_alias_calls_clone_cgs(monkeypatch):
+    client = ComplexGitSyncClient()
+    captured: dict[str, object] = {}
+
+    def _fake_clone_cgs(path, *, target_dir=None):
+        captured["path"] = path
+        captured["target_dir"] = target_dir
+        return "ok"
+
+    monkeypatch.setattr(client, "clone_cgs", _fake_clone_cgs)
+
+    result = client.clone("project.cgs", target_dir="workspace/demo")
+
+    assert result == "ok"
+    assert captured["path"] == "project.cgs"
+    assert captured["target_dir"] == "workspace/demo"
+
+
+def test_client_freeze_alias_calls_freeze_release(monkeypatch):
+    client = ComplexGitSyncClient()
+    captured: dict[str, object] = {}
+
+    def _fake_freeze_release(name, *, output_gts=None, message=None, stage_all=True):
+        captured["name"] = name
+        captured["output_gts"] = output_gts
+        captured["message"] = message
+        captured["stage_all"] = stage_all
+        return "ok"
+
+    monkeypatch.setattr(client, "freeze_release", _fake_freeze_release)
+
+    result = client.freeze("r1", output_gts="release.gts", message="msg", stage_all=False)
+
+    assert result == "ok"
+    assert captured == {
+        "name": "r1",
+        "output_gts": "release.gts",
+        "message": "msg",
+        "stage_all": False,
+    }
+
+
+def test_client_launch_alias_calls_launch_release(monkeypatch):
+    client = ComplexGitSyncClient()
+    captured: dict[str, object] = {}
+
+    def _fake_launch_release(snapshot_path):
+        captured["snapshot_path"] = snapshot_path
+        return "ok"
+
+    monkeypatch.setattr(client, "launch_release", _fake_launch_release)
+
+    result = client.launch("state.gts")
+
+    assert result == "ok"
+    assert captured["snapshot_path"] == "state.gts"
 
 
 def test_build_registry_rejects_duplicate_relative_paths(tmp_path):
@@ -140,16 +217,15 @@ def test_discover_nested_configs_rejects_ambiguous_auto_discovery(tmp_path):
         client.discover_nested_configs()
 
 
-def test_registry_and_tree_rendering_are_serialized_for_review(tmp_path):
+def test_tree_rendering_is_serialized_for_review(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()
     client.load_cgs(config_path)
 
     rendered_tree = client.format_project_tree()
-    rendered_registry = json.loads(client.format_registry_json())
 
     assert "- demo [root]" in rendered_tree
-    assert any(entry["repo_id"] == "root:deps/child-repo" for entry in rendered_registry)
+    assert "child-repo" in rendered_tree
 
 
 def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):

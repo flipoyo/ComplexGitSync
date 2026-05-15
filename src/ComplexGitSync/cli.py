@@ -15,7 +15,6 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "validate": "Validate a local .cgs specification.",
     "describe": "Describe a .cgs or .gts input.",
     "tree": "Render the dependency tree.",
-    "registry": "Inspect the dependency registry.",
     "write-gts": "Write a .gts state snapshot.",
     "launch-release": "Launch a release from a .gts snapshot.",
     "clone": "Clone a nested project tree from .cgs.",
@@ -45,8 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     for command_name, help_text in _PLANNED_COMMANDS.items():
         subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
-        if command_name in {"validate", "describe", "tree", "registry"}:
-            subparser.add_argument("source", help="Path to the local .cgs or .gts file to inspect.")
+        if command_name in {"validate", "describe", "tree"}:
+            source_help = "Path to the local .cgs file to inspect."
+            if command_name in {"describe", "tree"}:
+                source_help = "Path to the local .cgs or .gts file to inspect."
+            subparser.add_argument("source", help=source_help)
             subparser.add_argument(
                 "--discover-nested",
                 action="store_true",
@@ -69,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
                 "--gts",
                 metavar="FILE",
                 required=True,
-                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+                help="Path to the .gts snapshot that holds the READY registry.",
             )
             subparser.add_argument(
                 "--ref-kind",
@@ -84,7 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
                 "--gts",
                 metavar="FILE",
                 required=True,
-                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+                help="Path to the .gts snapshot that holds the READY registry.",
             )
             subparser.add_argument(
                 "--no-stage",
@@ -97,7 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
                 "--gts",
                 metavar="FILE",
                 required=True,
-                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+                help="Path to the .gts snapshot that holds the READY registry.",
             )
             subparser.set_defaults(handler=_handle_add)
         elif command_name == "push":
@@ -105,7 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
                 "--gts",
                 metavar="FILE",
                 required=True,
-                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+                help="Path to the .gts snapshot that holds the READY registry.",
             )
             subparser.set_defaults(handler=_handle_push)
         elif command_name == "tag":
@@ -114,7 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
                 "--gts",
                 metavar="FILE",
                 required=True,
-                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+                help="Path to the .gts snapshot that holds the READY registry.",
             )
             subparser.set_defaults(handler=_handle_tag)
         elif command_name == "freeze-release":
@@ -123,7 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
                 "--gts",
                 metavar="FILE",
                 required=True,
-                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+                help="Path to the .gts snapshot that holds the READY registry.",
             )
             subparser.set_defaults(handler=_handle_freeze_release)
         elif command_name == "freeze-state":
@@ -186,14 +188,6 @@ def _handle_tree(args: argparse.Namespace) -> int:
         command_name="tree",
         source=Path(args.source),
         runner=lambda client, source: _execute_tree(client, source, discover_nested=args.discover_nested),
-    )
-
-
-def _handle_registry(args: argparse.Namespace) -> int:
-    return _run_with_logging(
-        command_name="registry",
-        source=Path(args.source),
-        runner=lambda client, source: _execute_registry(client, source, discover_nested=args.discover_nested),
     )
 
 
@@ -296,12 +290,7 @@ def _execute_validate(
     *,
     discover_nested: bool,
 ) -> int:
-    client.load_source(
-        source_path,
-        discover_nested=discover_nested,
-        prefer_runtime_for_cgs=False,
-    )
-    tree_state = client.get_tree_state()
+    tree_state = client.validate(source_path, discover_nested=discover_nested)
     print(
         f"{tree_state.lifecycle_state.value} "
         f"ready={str(tree_state.is_ready).lower()} "
@@ -350,20 +339,6 @@ def _execute_tree(
     else:
         client.load_runtime_or_cgs(source_path, discover_nested=discover_nested)
     print(client.format_project_tree())
-    return 0
-
-
-def _execute_registry(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    discover_nested: bool,
-) -> int:
-    if source_path.suffix == ".gts":
-        client.load_gts(source_path)
-    else:
-        client.load_runtime_or_cgs(source_path, discover_nested=discover_nested)
-    print(client.format_registry_json())
     return 0
 
 
@@ -617,18 +592,11 @@ def _load_ready_registry_source(
     client: ComplexGitSyncClient,
     source_path: Path,
 ) -> None:
-    if hasattr(client, "load_source"):
-        client.load_source(source_path)
-        return
-    if source_path.suffix == ".gts":
-        client.load_gts(source_path)
-    else:
-        client.load_runtime_or_cgs(source_path)
+    client.load_gts(source_path)
 
 
 _INSPECTION_HANDLERS = {
     "validate": _handle_validate,
     "describe": _handle_describe,
     "tree": _handle_tree,
-    "registry": _handle_registry,
 }
