@@ -1,0 +1,24 @@
+[project]
+name = "ComplexGitSync"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-64", "osx-arm64", "win-64"]
+
+[dependencies]
+python = ">=3.11,<3.13"
+
+[pypi-dependencies]
+complexgitsync = { path = ".", editable = true }
+
+[feature.dev.pypi-dependencies]
+pytest = ">=8,<9"
+pyyaml = ">=6,<7"
+ruff = ">=0.11,<1"
+
+[environments]
+default = { features = ["dev"] }
+
+[tasks]
+test = "python -m pytest"
+lint = "python -m ruff check ."
+format = "python -m ruff format ."
+validate-example = "cgitsync validate examples/complexgitsync.cgs"

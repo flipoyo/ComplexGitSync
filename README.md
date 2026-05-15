@@ -28,25 +28,13 @@ workflow.
 
 ## Installation
 
-Install from PyPI:
-
-```bash
-uv pip install ComplexGitSync
-```
-
-Install with optional YAML support:
-
-```bash
-uv pip install "ComplexGitSync[yaml]"
-```
-
-Install from source with the development dependencies used in this repository:
+Install from source with the Pixi-managed environment used in this repository:
 
 ```bash
 git clone https://github.com/flipoyo/ComplexGitSync.git
 cd ComplexGitSync
-uv sync --extra dev
-uv run cgitsync --help
+pixi install
+pixi run cgitsync --help
 ```
 
 ## Creating or Reusing a `.cgs` Project Spec
@@ -81,7 +69,7 @@ resolve to `main` when a repository has not created `autoTest` yet.
 Validate the bundled self-standing example:
 
 ```bash
-uv run cgitsync validate examples/complexgitsync.cgs
+pixi run cgitsync validate examples/complexgitsync.cgs
 ```
 
 A successful run exits with code 0 and prints the current tree summary.
@@ -91,7 +79,7 @@ A successful run exits with code 0 and prints the current tree summary.
 Clone the bundled self-standing example:
 
 ```bash
-uv run cgitsync clone examples/complexgitsync.cgs
+pixi run cgitsync clone examples/complexgitsync.cgs
 ```
 
 By default, `cgitsync clone` uses `./<project-name>` as the project root.
@@ -101,7 +89,7 @@ next available suffixed directory such as `./ComplexGitSync-1`.
 To force a specific destination, pass `--target-dir`:
 
 ```bash
-uv run cgitsync clone examples/complexgitsync.cgs --target-dir ./sandbox/ComplexGitSync
+pixi run cgitsync clone examples/complexgitsync.cgs --target-dir ./sandbox/ComplexGitSync
 ```
 
 The clone flow prefers each repo's `default_branch` and falls back to its
@@ -115,7 +103,7 @@ runtime state for that `.cgs` file.
 Render the declared dependency graph:
 
 ```bash
-uv run cgitsync tree examples/complexgitsync.cgs
+pixi run cgitsync tree examples/complexgitsync.cgs
 ```
 
 If a newer runtime snapshot exists for that `.cgs` file, `tree` renders the
@@ -126,13 +114,13 @@ back to the initial `DECLARED`/`PENDING` registry.
 Inspect the resolved registry as JSON:
 
 ```bash
-uv run cgitsync registry examples/complexgitsync.cgs
+pixi run cgitsync registry examples/complexgitsync.cgs
 ```
 
 Describe a generated snapshot:
 
 ```bash
-uv run cgitsync describe examples/cawaqsviz_snapshot.gts
+pixi run cgitsync describe examples/cawaqsviz_snapshot.gts
 ```
 
 ## Synchronising the Tree — Python API
