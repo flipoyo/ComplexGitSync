@@ -184,9 +184,9 @@ Do **not** split it into plugins or separate packages.
 ## Python Tooling
 
 `DevSpecs.md` allows Python projects to standardise on either `uv` or `pixi`.
-`ComplexGitSync` standardises on `uv` for contributor and CI workflows.
+`ComplexGitSync` standardises on `pixi` for contributor and CI workflows.
 
-- Local bootstrap, dependency installation, and command execution use `uv`.
+- Local bootstrap, dependency installation, and command execution use `pixi`.
 - Repository instructions must not prescribe direct `pip` / `venv` workflows.
 
 ---
@@ -283,8 +283,8 @@ transitions.
 
 - Unit tests: `tests/unit/`
 - Integration tests: `tests/integration/`
-- Install dev extras: `uv sync --extra dev`
-- Run suite: `uv run python -m pytest` from the repository root
+- Install dev extras: `pixi install`
+- Run suite: `pixi run test` from the repository root
 - Tests must not depend on network access or live git remotes.
 
 ---
