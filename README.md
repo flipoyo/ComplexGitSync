@@ -9,7 +9,7 @@ sync from a single local specification.
 - `.gts` stores a generated runtime snapshot of the synchronized tree.
 - `cgitsync` and `ComplexGitSyncClient` expose the same workflow.
 
-## 2. Auth
+## 2. Auth / Authentication
 
 ComplexGitSync does not manage credentials for you. It relies on the Git access
 you already use for the target remotes:

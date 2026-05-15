@@ -92,7 +92,7 @@ dev-state counterparts to release methods. CLI now wires:
   - `cgitsync launch-state <snapshot.gts>`
 
 ### T17 — Unit Test Suite (incremental) ✅
-188 tests passing.  Covers parsers, registry, lifecycle, rendering, gating,
+188 tests passing. Covers parsers, registry, lifecycle, rendering, gating,
 propagate/create/checkout/commit/push operations, and deep 3-level hierarchy
 ordering.
 
