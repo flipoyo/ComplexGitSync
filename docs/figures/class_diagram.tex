@@ -187,19 +187,19 @@
 ]
 
 \node[state] (unloaded) {UNLOADED};
-\node[state, right=of unloaded] (declared)  {LOADED};
-\node[state, right=of declared] (pending)   {PENDING};
+\node[state, right=of unloaded] (loaded)  {LOADED};
+\node[state, right=of loaded] (pending)   {PENDING};
 \node[state, right=of pending]  (ready)     {READY};
 
-\node[sidestate, below=1.2cm of declared] (partial) {PARTIAL};
+\node[sidestate, below=1.2cm of loaded] (partial) {PARTIAL};
 \node[sidestate, below=1.2cm of pending]  (error)   {ERROR};
 
-\draw[trans] (unloaded) -- node[above, font=\scriptsize]{read(.cgs)} (declared);
-\draw[trans] (declared) -- node[above, font=\scriptsize]{expand(.gts)} (pending);
+\draw[trans] (unloaded) -- node[above, font=\scriptsize]{read(.cgs)} (loaded);
+\draw[trans] (loaded) -- node[above, font=\scriptsize]{expand(.gts)} (pending);
 \draw[trans] (pending)  -- node[above, font=\scriptsize]{verify(.gts)} (ready);
-\draw[trans, dashed] (declared.south) -- (partial.north);
+\draw[trans, dashed] (loaded.south) -- (partial.north);
 \draw[trans, dashed] (pending.south)  -- (error.north);
-\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{freeze / next .gts id} (declared.north);
+\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{freeze / next .gts id} (loaded.north);
 
 \end{tikzpicture}
 \end{figure}
