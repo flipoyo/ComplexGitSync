@@ -160,6 +160,47 @@ tree and leave it `READY` after a successful run. `launch_release` loads a
 release `.gts`, performs required clone/checkout actions, and must end in `READY`.
 `checkout` and `freeze_release` write new `.gts` snapshots.
 
+## Direct Python Object Usage (`GitTree` / `GitRepo`)
+
+For advanced workflows (bypassing the CLI façade), you can rebuild runtime
+state from a `.gts` snapshot and then manipulate core objects directly:
+
+```python
+from ComplexGitSync import GitRepo, GitTree, RefKind, TreeLifecycleState
+from ComplexGitSync.orchestre import GtsDocument, build_registry_from_gts_document
+from ComplexGitSync.git_tree import DependencyTreeRegistry
+
+# EMPTY (unloaded) -> READY
+empty_registry = DependencyTreeRegistry()
+assert empty_registry.recompute_tree_state() == TreeLifecycleState.UNLOADED
+
+registry = build_registry_from_gts_document(
+    GtsDocument.from_toml("examples/cawaqsviz_snapshot.gts")
+)
+assert registry.lifecycle_state == TreeLifecycleState.READY
+
+# Discover GitRepo identity from the rebuilt registry and mirror into GitTree
+tree = GitTree()
+for entry in registry.values():
+    tree.add_repo(
+        GitRepo(
+            project_owner_name=entry.project_owner_name or "owner",
+            project_name=entry.project_name or entry.name,
+            gitprovider=entry.gitprovider,
+            access_protocol=entry.access_protocol,
+            commit_sha=entry.commit_sha,
+        )
+    )
+
+# Propagate a shared tag target through the dependency tree
+tree.propagate_tag(registry, "v1.2.3")
+for entry in registry.values():
+    assert entry.target_ref_kind == RefKind.TAG
+    assert entry.target_ref_name == "v1.2.3"
+```
+
+See `docs/python_api.tex` for the dedicated object-level API chapter.
+
 ## Working with `.goc` Orchestration Plans
 
 The bundled `.goc` files mirror the intended multi-command workflow. For

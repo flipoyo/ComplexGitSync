@@ -52,6 +52,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - `tag_tree`, `freeze_release_tree`, `commit_tree`, and `push_tree` follow leaf-first ordering.
 - `ComplexGitSyncClient.checkout`, `ComplexGitSyncClient.restart`, and `ComplexGitSyncClient.freeze_release` write `.gts` snapshots after success.
 - CLI mutation commands (`checkout`, `commit`, `push`, `tag`, `freeze-release`) require `--gts <file>` to load the READY registry.
+- Direct object-level usage is now documented in `docs/python_api.tex` and README with a `.gts` → `GitTree`/`GitRepo` flow and `GitTree.propagate_tag`.
 
 ## Definition of Done (Global)
 

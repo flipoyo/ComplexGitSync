@@ -90,7 +90,10 @@ ordering.
 ### T19 — Documentation and Examples (incremental) ✅
 `README.md`, `docs/user_guide.tex`, `docs/getting_started.tex`,
 `docs/architecture.tex`, all figures updated.  New figure
-`operations_sequence.tex` added.  `Planning/DevPlan.md` and this file created.
+`operations_sequence.tex` added. Direct object-level API usage now documented in
+`docs/python_api.tex` and `README.md` (including `.gts` loading, EMPTY→READY
+state progression, and `GitTree.propagate_tag`). `Planning/DevPlan.md` and this
+file created.
 
 ### T20 — CI Version Increment Automation ✅
 PR-based version bump on every merge.  `YYYY.XX` format with rollover.
