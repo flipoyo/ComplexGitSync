@@ -126,7 +126,8 @@ pixi run cgitsync describe examples/cawaqsviz_snapshot.gts
 ## Synchronising the Tree — Python API
 
 Once a tree is `READY` (after `clone` or `load_gts`), use the Python API to
-check out a branch, commit changes, and push across the whole tree:
+run the standard git workflow (`clone -> checkout -> add -> commit -> push`)
+across the whole dependency tree:
 
 ```python
 from ComplexGitSync import ComplexGitSyncClient
@@ -139,7 +140,10 @@ client.load_gts(".cgitsync/state/complexgitsync.gts")
 # Check out a branch across all repos (propagate → create → git checkout)
 client.checkout("feature/my-branch")
 
-# Commit changes across all repos (leaf → root)
+# Stage all changes across all repos (leaf → root)
+client.add()
+
+# Commit staged changes across all repos (leaf → root)
 client.commit("feat: add feature")
 
 # Push all repos to their remotes (leaf → root)
@@ -148,17 +152,22 @@ client.push()
 # Create and push a shared tag across all repos (leaf → root)
 client.tag("v1.2.3")
 
-# Freeze a release: commit/tag/push leaf-first and write a named .gts snapshot
+# Freeze an internal development state (not publicly exposed as a release)
+client.freeze_state("dev-state-2026.05", output_gts=".cgitsync/state/dev-state-2026.05.gts")
+client.launch_state(".cgitsync/state/dev-state-2026.05.gts")
+
+# Freeze a public release: commit/tag/push leaf-first and write a named .gts snapshot
 client.freeze_release("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
 
 # Relaunch from a frozen .gts snapshot and restore the tree to READY
 client.launch_release(".cgitsync/releases/release-2026.05.gts")
 ```
 
-`checkout`, `commit`, `push`, `tag`, and `freeze_release` require a `READY`
-tree and leave it `READY` after a successful run. `launch_release` loads a
-release `.gts`, performs required clone/checkout actions, and must end in `READY`.
-`checkout` and `freeze_release` write new `.gts` snapshots.
+`checkout`, `add`, `commit`, `push`, `tag`, `freeze_state`, and
+`freeze_release` require a `READY` tree and leave it `READY` after a
+successful run. `launch_state` and `launch_release` load a `.gts`, perform
+required clone/checkout actions, and must end in `READY`. `checkout`,
+`freeze_state`, and `freeze_release` write new `.gts` snapshots.
 
 ## Direct Python Object Usage (`GitTree` / `GitRepo`)
 

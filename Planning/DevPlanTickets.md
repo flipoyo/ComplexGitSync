@@ -1,7 +1,7 @@
 # ComplexGitSync DevPlan Tickets — Active
 
-This document reflects the ticket status as of the `tag / freeze_release /
-launch_release` delivery. It supersedes `InitialDevPlanTickets.md` as the authoritative active
+This document reflects the ticket status as of the `add / freeze_state /
+launch_state` delivery. It supersedes `InitialDevPlanTickets.md` as the authoritative active
 ticket list.
 
 ---
@@ -81,6 +81,15 @@ with named `.gts` output support.
 `ComplexGitSyncClient.launch_release(snapshot_path)` implemented: load `.gts`,
 rebuild registry, run due clone/checkout actions, refresh SHAs, and enforce
 READY completion.
+
+### T21 — `add`, `freeze_state`, `launch_state` (API + CLI) ✅
+Added `add_tree` in Tier 2 and `ComplexGitSyncClient.add()` for explicit
+`git add --all` workflow staging on READY trees. Added
+`ComplexGitSyncClient.freeze_state(...)` and `launch_state(...)` as internal
+dev-state counterparts to release methods. CLI now wires:
+  - `cgitsync add --gts <file>`
+  - `cgitsync freeze-state <name> --gts <file>`
+  - `cgitsync launch-state <snapshot.gts>`
 
 ### T17 — Unit Test Suite (incremental) ✅
 157 tests passing.  Covers parsers, registry, lifecycle, rendering, gating,

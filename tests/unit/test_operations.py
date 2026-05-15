@@ -18,6 +18,7 @@ from ComplexGitSync.git_repo import (
 )
 from ComplexGitSync.git_tree import DependencyTreeRegistry, GitTree, TreeLifecycleState
 from ComplexGitSync.operations import (
+    add_tree,
     checkout_tree,
     commit_tree,
     create_global_branch,
@@ -222,6 +223,37 @@ class _FakeGitRunnerForOperations:
 
     def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
         self.tagged.append((Path(repo_path), tag_name))
+
+
+# ---------------------------------------------------------------------------
+# add_tree
+# ---------------------------------------------------------------------------
+
+
+def test_add_tree_requires_ready_registry(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    for entry in registry.values():
+        entry.commit_sha = None
+    registry.recompute_tree_state()
+    runner = _FakeGitRunnerForOperations()
+
+    with pytest.raises(TreeNotReadyError):
+        add_tree(registry, runner)
+
+
+def test_add_tree_stages_all_repos_leaf_first(tmp_path):
+    registry = _make_deep_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    add_tree(registry, runner)
+
+    expected_order = [
+        tmp_path / "deep" / "middle" / "sub",
+        tmp_path / "deep" / "middle",
+        tmp_path / "deep",
+    ]
+    assert runner.staged == expected_order
+    assert registry.recompute_tree_state() == TreeLifecycleState.READY
 
 
 # ---------------------------------------------------------------------------
@@ -840,3 +872,50 @@ def test_client_freeze_release_raises_when_no_registry_loaded():
     client = ComplexGitSyncClient()
     with pytest.raises(RuntimeError, match="No ComplexGitSync registry is loaded"):
         client.freeze_release("release-1")
+
+
+def test_client_add_delegates_to_stage_tree(tmp_path):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+
+    result = client.add()
+
+    assert runner.staged, "Expected stage calls during add"
+    assert result.recompute_tree_state() == TreeLifecycleState.READY
+
+
+def test_client_add_raises_when_no_registry_loaded():
+    client = ComplexGitSyncClient()
+    with pytest.raises(RuntimeError, match="No ComplexGitSync registry is loaded"):
+        client.add()
+
+
+def test_client_freeze_state_delegates_and_writes_named_gts(tmp_path):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    output_gts = tmp_path / "internal-state.gts"
+
+    result = client.freeze_state("state-1", output_gts=output_gts)
+
+    assert runner.committed, "Expected commit calls during freeze_state"
+    assert runner.tagged, "Expected tag calls during freeze_state"
+    assert output_gts.exists()
+    assert result.recompute_tree_state() == TreeLifecycleState.READY
+
+
+def test_client_launch_state_loads_gts_clones_and_checks_out(tmp_path):
+    source_client, _ = _make_client_with_ready_registry(tmp_path)
+    root_path = tmp_path / "state-project"
+    leaf_path = root_path / "deps" / "leaf"
+    source_client.registry.get("root").absolute_path = root_path
+    source_client.registry.get("root:deps/leaf").absolute_path = leaf_path
+    snapshot_path = source_client.write_gts_snapshot(
+        command_origin="test",
+        output_path=tmp_path / "state-snapshot.gts",
+    )
+
+    runner = _FakeGitRunnerForOperations()
+    client = ComplexGitSyncClient(git_runner=runner)
+    result = client.launch_state(snapshot_path)
+
+    assert len(runner.cloned) == len(result.values())
+    assert len(runner.checked_out) == len(result.values())
+    assert result.recompute_tree_state() == TreeLifecycleState.READY

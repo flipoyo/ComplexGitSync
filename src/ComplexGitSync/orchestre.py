@@ -1321,6 +1321,23 @@ class ComplexGitSyncClient:
         self._log_event("commit_end", message=message)
         return registry
 
+    def add(self) -> DependencyTreeRegistry:
+        """Stage all changes across the full tree, leaf-first.
+
+        Requires a ``READY`` registry; raises
+        :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.  After a
+        successful execution the registry remains ``READY``.
+        """
+        from .operations import add_tree
+
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        self._log_event("add_start")
+        add_tree(registry, self.git_runner)
+        self._log_tree_transition(previous_state, registry.lifecycle_state, reason="add")
+        self._log_event("add_end")
+        return registry
+
     def push(self) -> DependencyTreeRegistry:
         """Push all repos to their remotes, leaf-first.
 
@@ -1386,6 +1403,22 @@ class ComplexGitSyncClient:
         self._log_event("freeze_release_end", tag_name=tag_name, output_gts=snapshot_path)
         return registry
 
+    def freeze_state(
+        self,
+        state_name: str,
+        *,
+        output_gts: str | Path | None = None,
+        message: str | None = None,
+        stage_all: bool = True,
+    ) -> DependencyTreeRegistry:
+        """Freeze an internal development state from a ``READY`` tree."""
+        return self.freeze_release(
+            state_name,
+            output_gts=output_gts,
+            message=message,
+            stage_all=stage_all,
+        )
+
     def launch_release(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
         """Launch a release from a ``.gts`` snapshot and end in ``READY``."""
         loaded_registry = self.load_gts(snapshot_path)
@@ -1435,6 +1468,10 @@ class ComplexGitSyncClient:
         self._log_tree_transition(previous_state, loaded_registry.lifecycle_state, reason="launch_release")
         self._log_event("launch_release_end", snapshot_path=Path(snapshot_path).resolve())
         return loaded_registry
+
+    def launch_state(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
+        """Launch an internal development state from a ``.gts`` snapshot."""
+        return self.launch_release(snapshot_path)
 
     def get_dependency_registry(self) -> DependencyTreeRegistry:
         if self.registry is None:

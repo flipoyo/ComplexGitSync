@@ -21,10 +21,13 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "clone": "Clone a nested project tree from .cgs.",
     "restart": "Resynchronize a loaded project tree.",
     "checkout": "Synchronize the tree to a branch or tag.",
+    "add": "Stage all changes across a READY tree.",
     "tag": "Create a tag across the full reachable tree.",
     "freeze-release": "Create a release branch and emit a .gts snapshot.",
+    "freeze-state": "Freeze an internal development state and emit a .gts snapshot.",
     "commit": "Commit dirty repositories from a READY tree.",
     "push": "Push repositories from a READY tree.",
+    "launch-state": "Launch an internal state from a .gts snapshot.",
     "status": "Summarize tree readiness and sync state.",
 }
 
@@ -79,6 +82,9 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Skip automatic 'git add --all' before committing.",
             )
             subparser.set_defaults(handler=_handle_commit)
+        elif command_name == "add":
+            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.set_defaults(handler=_handle_add)
         elif command_name == "push":
             subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
             subparser.set_defaults(handler=_handle_push)
@@ -90,9 +96,16 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.add_argument("name", help="Release tag name used for commit, tag, and push.")
             subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
             subparser.set_defaults(handler=_handle_freeze_release)
+        elif command_name == "freeze-state":
+            subparser.add_argument("name", help="Internal state tag name used for commit, tag, and push.")
+            subparser.add_argument("--gts", metavar="FILE", required=True, help="Path to the .gts snapshot that holds the READY registry.")
+            subparser.set_defaults(handler=_handle_freeze_state)
         elif command_name == "launch-release":
             subparser.add_argument("snapshot", help="Path to the .gts snapshot to launch the release from.")
             subparser.set_defaults(handler=_handle_launch_release)
+        elif command_name == "launch-state":
+            subparser.add_argument("snapshot", help="Path to the .gts snapshot to launch the internal state from.")
+            subparser.set_defaults(handler=_handle_launch_state)
         else:
             subparser.set_defaults(handler=_not_implemented)
 
@@ -186,6 +199,14 @@ def _handle_commit(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_add(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="add",
+        source=Path(args.gts),
+        runner=lambda client, source: _execute_add(client, source),
+    )
+
+
 def _handle_push(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="push",
@@ -210,11 +231,27 @@ def _handle_freeze_release(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_freeze_state(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="freeze-state",
+        source=Path(args.gts),
+        runner=lambda client, source: _execute_freeze_state(client, source, state_name=args.name),
+    )
+
+
 def _handle_launch_release(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="launch-release",
         source=Path(args.snapshot),
         runner=lambda client, source: _execute_launch_release(client, source),
+    )
+
+
+def _handle_launch_state(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="launch-state",
+        source=Path(args.snapshot),
+        runner=lambda client, source: _execute_launch_state(client, source),
     )
 
 
@@ -359,6 +396,20 @@ def _execute_commit(
     return 0
 
 
+def _execute_add(
+    client: ComplexGitSyncClient,
+    gts_path: Path,
+) -> int:
+    client.load_gts(gts_path)
+    client.add()
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()}"
+    )
+    return 0
+
+
 def _execute_push(
     client: ComplexGitSyncClient,
     gts_path: Path,
@@ -407,11 +458,42 @@ def _execute_freeze_release(
     return 0
 
 
+def _execute_freeze_state(
+    client: ComplexGitSyncClient,
+    gts_path: Path,
+    *,
+    state_name: str,
+) -> int:
+    client.load_gts(gts_path)
+    client.freeze_state(state_name)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"state={state_name}"
+    )
+    return 0
+
+
 def _execute_launch_release(
     client: ComplexGitSyncClient,
     snapshot_path: Path,
 ) -> int:
     registry = client.launch_release(snapshot_path)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"root={registry.get('root').absolute_path}"
+    )
+    return 0
+
+
+def _execute_launch_state(
+    client: ComplexGitSyncClient,
+    snapshot_path: Path,
+) -> int:
+    registry = client.launch_state(snapshot_path)
     tree_state = client.get_tree_state()
     print(
         f"{tree_state.lifecycle_state.value} "

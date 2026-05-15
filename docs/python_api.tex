@@ -60,12 +60,13 @@ practice, the workflow is:
 \begin{itemize}
   \item \texttt{clone\_cgs(...)} bootstraps a tree and must finish in
     \texttt{READY}.
-  \item \texttt{checkout(...)} requires \texttt{READY} and keeps
-    \texttt{READY}.
-  \item \texttt{commit(...)}, \texttt{push(...)}, \texttt{tag(...)}, and
-    \texttt{freeze\_release(...)} are \texttt{READY}-gated mutation methods.
-  \item \texttt{launch\_release(...)} loads a release snapshot and must restore
-    the tree to \texttt{READY}.
+  \item \texttt{checkout(...)}, \texttt{add(...)}, \texttt{commit(...)},
+    \texttt{push(...)}, and \texttt{tag(...)} are \texttt{READY}-gated methods
+    for the standard git workflow.
+  \item \texttt{freeze\_state(...)} and \texttt{launch\_state(...)} are the
+    internal dev-state equivalents of release operations.
+  \item \texttt{freeze\_release(...)} and \texttt{launch\_release(...)} are the
+    public release operations using the same lifecycle model.
 \end{itemize}
 
 \begin{lstlisting}[language=Python]
@@ -78,9 +79,16 @@ client.clone_cgs("examples/complexgitsync.cgs")
 
 # READY methods
 client.checkout("feature/my-branch")
+client.add()
 client.commit("feat: update tree")
 client.push()
 client.tag("v1.2.3")
+
+# Internal dev state (not publicly exposed as a release)
+client.freeze_state("dev-state-2026.05")
+client.launch_state(".cgitsync/state/dev-state-2026.05.gts")
+
+# Public release
 client.freeze_release("release-2026.05")
 
 # Relaunch from a frozen release snapshot -> READY
