@@ -5,6 +5,11 @@ its nested descendants. It reads local `.cgs` authoring specs, generates `.gts`
 state snapshots, and exposes a Python API and CLI for the full synchronisation
 workflow.
 
+## Authorship
+Contact: nicolas.flipo@minesparis.psl.eu
+Project Manager: Nicolas Flipo
+AI assistance: Github copilot - chatGPT5.4 Xhigh, Claude Sonnet4.6
+
 ## Feature Status
 
 | Feature | Python API | CLI |
@@ -12,13 +17,16 @@ workflow.
 | `validate` | ✅ | ✅ |
 | `describe` / `tree` / `registry` | ✅ | ✅ |
 | `clone` | ✅ | ✅ |
-| `checkout` | ✅ | planned |
-| `commit` | ✅ | planned |
-| `push` | ✅ | planned |
-| `tag` | ✅ | planned |
-| `freeze_release` | ✅ | planned |
+| `checkout` | ✅ | ✅ |
+| `add` | ✅ | ✅ |
+| `commit` | ✅ | ✅  |
+| `push` | ✅ | ✅  |
+| `tag` | ✅ | ✅ |
+| `freeze_release` | ✅ | ✅ |
 | `restart` | planned | planned |
-| `launch_release` | ✅ | planned |
+| `launch_release` | ✅ | ✅ |
+| `freeze_state` | ✅ | ✅ |
+| `launch_state` | ✅ | ✅ |
 
 ## Prerequisites
 
@@ -84,7 +92,7 @@ pixi run cgitsync clone examples/complexgitsync.cgs
 
 By default, `cgitsync clone` uses `./<project-name>` as the project root.
 If that directory already exists and is not empty, ComplexGitSync chooses the
-next available suffixed directory such as `./ComplexGitSync-1`.
+next available suffixed directory such as `./<project-name>-1`.
 
 To force a specific destination, pass `--target-dir`:
 
@@ -239,7 +247,3 @@ The log includes command start and end events, tree and repo state
 transitions, fallback decisions, nested `.cgs` discovery, and `.gts` loads and
 writes.
 
-## Authorship
-Contact: nicolas.flipo@minesparis.psl.eu
-Project Manager: Nicolas Flipo
-AI assistance: Github copilot - chatGPT5.4 Xhigh, Claude Sonnet4.6
