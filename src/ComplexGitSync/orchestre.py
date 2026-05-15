@@ -1206,7 +1206,9 @@ class ComplexGitSyncClient:
             return self.load_gts(resolved_source)
         if resolved_source.suffix == ".cgs":
             return self.load_runtime_or_cgs(resolved_source, discover_nested=discover_nested)
-        raise ValueError("Unsupported source format; expected .cgs or .gts.")
+        raise ValueError(
+            f"Unsupported source format for {resolved_source!s}; expected .cgs or .gts."
+        )
 
     def resolve_clone_root(
         self,
