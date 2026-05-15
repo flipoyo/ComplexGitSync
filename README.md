@@ -45,7 +45,7 @@ The same workflow is exposed in two ways:
 
 Current terminology in the repository:
 
-- `tree` is the current CLI command for the expansion / inspection step
+- `tree` is the CLI command for the expansion / inspection step
 - `restart` is the current pull-like resynchronization command; planning tracks
   a clearer `pull` rename separately
 
@@ -111,7 +111,7 @@ client.push()
 client.tag("v1.2.3")
 client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
 
-# Shortcut when a snapshot already exists
+# Shortcut: bypass steps 1-5 when a snapshot already exists
 client.launch(".cgitsync/releases/release-2026.05.gts")
 ```
 
