@@ -51,3 +51,38 @@ for entry in registry.values():
 This object-level flow is the same state model used by the CLI and
 \texttt{ComplexGitSyncClient}, but exposed directly for advanced automation and
 tests.
+
+\section{READY Methods in the Client API}
+
+The same lifecycle model is exposed by \texttt{ComplexGitSyncClient}.  In
+practice, the workflow is:
+
+\begin{itemize}
+  \item \texttt{clone\_cgs(...)} bootstraps a tree and must finish in
+    \texttt{READY}.
+  \item \texttt{checkout(...)} requires \texttt{READY} and keeps
+    \texttt{READY}.
+  \item \texttt{commit(...)}, \texttt{push(...)}, \texttt{tag(...)}, and
+    \texttt{freeze\_release(...)} are \texttt{READY}-gated mutation methods.
+  \item \texttt{launch\_release(...)} loads a release snapshot and must restore
+    the tree to \texttt{READY}.
+\end{itemize}
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import ComplexGitSyncClient
+
+client = ComplexGitSyncClient()
+
+# Bootstrap from .cgs -> READY
+client.clone_cgs("examples/complexgitsync.cgs")
+
+# READY methods
+client.checkout("feature/my-branch")
+client.commit("feat: update tree")
+client.push()
+client.tag("v1.2.3")
+client.freeze_release("release-2026.05")
+
+# Relaunch from a frozen release snapshot -> READY
+client.launch_release(".cgitsync/releases/release-2026.05.gts")
+\end{lstlisting}
