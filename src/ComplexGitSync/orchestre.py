@@ -1195,15 +1195,15 @@ class ComplexGitSyncClient:
         """Verify that all repositories are loaded and report the resulting tree state."""
         self.read(config_path, discover_nested=discover_nested)
         registry = self.get_dependency_registry()
-        non_loaded_repo_ids = [
+        non_declared_repo_ids = [
             entry.repo_id
             for entry in registry.values()
             if entry.repo_lifecycle_state != RepoLifecycleState.DECLARED
         ]
-        if non_loaded_repo_ids:
+        if non_declared_repo_ids:
             raise GitSyncError(
                 "verify requires every repository to be in DECLARED (loaded) state before readiness checks; "
-                f"found non-loaded entries: {', '.join(non_loaded_repo_ids)}"
+                f"found non-declared entries: {', '.join(non_declared_repo_ids)}"
             )
         tree_state = self.get_tree_state()
         self._log_event(
