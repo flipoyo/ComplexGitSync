@@ -614,6 +614,66 @@ def test_registry_command_is_removed(capsys):
     assert "invalid choice" in captured.err
 
 
+def test_load_command_writes_gts_snapshot(tmp_path, capsys):
+    config_path = _write_project_cgs(tmp_path)
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    exit_code = main(["load", str(config_path)])
+
+    assert exit_code == 0
+    assert expected_snapshot.is_file()
+
+
+def test_expand_command_writes_gts_snapshot(tmp_path, capsys):
+    config_path = _write_project_cgs(tmp_path)
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    exit_code = main(["expand", str(config_path)])
+
+    assert exit_code == 0
+    assert expected_snapshot.is_file()
+
+
+def test_validate_command_writes_gts_snapshot(tmp_path, capsys):
+    config_path = _write_project_cgs(tmp_path)
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    exit_code = main(["validate", str(config_path)])
+
+    assert exit_code == 0
+    assert expected_snapshot.is_file()
+
+
+def test_load_gts_snapshot_has_correct_command_origin(tmp_path, capsys):
+    config_path = _write_project_cgs(tmp_path)
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    main(["load", str(config_path)])
+
+    data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
+    assert data["document"]["command_origin"] == "load"
+
+
+def test_expand_gts_snapshot_has_correct_command_origin(tmp_path, capsys):
+    config_path = _write_project_cgs(tmp_path)
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    main(["expand", str(config_path)])
+
+    data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
+    assert data["document"]["command_origin"] == "expand"
+
+
+def test_validate_gts_snapshot_has_correct_command_origin(tmp_path, capsys):
+    config_path = _write_project_cgs(tmp_path)
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    main(["validate", str(config_path)])
+
+    data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
+    assert data["document"]["command_origin"] == "validate"
+
+
 def _write_project_cgs(tmp_path, *, profile: str | None = None):
     config_path = tmp_path / "project.cgs"
     runtime = ""

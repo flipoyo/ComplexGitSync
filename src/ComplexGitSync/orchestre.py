@@ -337,11 +337,6 @@ class GtsDocument(ConfigDocument):
         "absolute_path",
         "repo_lifecycle_state",
         "sync_state",
-        "current_ref_kind",
-        "current_ref_name",
-        "resolved_ref_kind",
-        "resolved_ref_name",
-        "commit_sha",
     )
 
     def validate(self) -> None:
@@ -1196,7 +1191,11 @@ class ComplexGitSyncClient:
             When ``True``, immediately run nested ``.cgs`` discovery for any
             child repositories that have already been cloned locally.
         """
-        return self.load_cgs(config_path, discover_nested=discover_nested)
+        resolved_path = Path(config_path).resolve()
+        registry = self.load_cgs(resolved_path, discover_nested=discover_nested)
+        snapshot_path = self.write_gts_snapshot(command_origin="load")
+        self.state_store.record_snapshot(resolved_path, snapshot_path)
+        return registry
 
     def read(
         self,
@@ -1236,7 +1235,9 @@ class ComplexGitSyncClient:
         if resolved.suffix == ".gts":
             self.load_gts(resolved)
         else:
-            self.load(resolved, discover_nested=discover_nested)
+            self.load_cgs(resolved, discover_nested=discover_nested)
+            snapshot_path = self.write_gts_snapshot(command_origin="expand")
+            self.state_store.record_snapshot(resolved, snapshot_path)
         return self.format_project_tree()
 
     def validate(
@@ -1266,7 +1267,9 @@ class ComplexGitSyncClient:
         if resolved.suffix == ".gts":
             self.load_gts(resolved)
         else:
-            self.load(resolved, discover_nested=discover_nested)
+            self.load_cgs(resolved, discover_nested=discover_nested)
+            snapshot_path = self.write_gts_snapshot(command_origin="validate")
+            self.state_store.record_snapshot(resolved, snapshot_path)
         return self.get_tree_state()
 
     def verify(
