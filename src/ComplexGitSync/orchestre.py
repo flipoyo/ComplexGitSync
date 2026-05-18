@@ -1134,17 +1134,19 @@ class ComplexGitSyncClient:
 
     The canonical user-facing lifecycle is::
 
-        load(.cgs)     → .gts LOADED/DECLARED  (step 1)
-        expand(.gts)   → .gts PENDING           (step 2)
-        validate(.gts) → .gts READY             (step 3)
-        clone(.gts)    → READY                  (step 4)
-        git(tree, "commit", msg)                (step 5)
+        initialise(.cgs)  → clone all repos → READY  (new project)
+        initialise(.gts)  → restore snapshot → READY  (existing project)
+        pull(.cgs/.gts)   → resync existing tree
+        checkout(branch)
+        add()
+        git(tree, "commit", msg)
         git(tree, "push")
         git(tree, "tag", name)
-        freeze(name)
+        freeze(name)      → emit the next .gts id
 
-    Compatibility aliases retained for backward compatibility:
-    ``read`` → ``load``, ``verify`` → ``validate``.
+    ``load()`` accepts both ``.cgs`` and ``.gts`` sources for direct Python
+    API access.  Compatibility aliases: ``read`` → ``load``,
+    ``verify`` → ``validate``.
     """
 
     orchestre: Orchestre = field(default_factory=Orchestre)
@@ -1176,27 +1178,69 @@ class ComplexGitSyncClient:
         self._log_tree_transition(previous_tree_state, self.registry.lifecycle_state, reason="load_cgs")
         return self.registry
 
-    def load(
+    def initialise(
         self,
-        config_path: str | Path,
+        source: str | Path,
         *,
-        discover_nested: bool = False,
+        target_dir: str | Path | None = None,
     ) -> DependencyTreeRegistry:
-        """Load a ``.cgs`` specification (lifecycle step 1: → LOADED/DECLARED).
+        """Unified initialisation entry point (lifecycle step 1).
 
-        Parses *config_path* and builds the in-memory
-        :class:`~.git_tree.DependencyTreeRegistry`.  After this call the tree
-        is in the ``DECLARED`` state (user-facing: ``LOADED``).
+        Dispatches based on source file extension:
+
+        - ``.cgs`` source: clones the full repository tree (calls
+          :meth:`clone_cgs`).  Use this for new projects where the repositories
+          have not yet been cloned locally.
+        - ``.gts`` source: restores from a saved snapshot (calls
+          :meth:`load_gts`).  Use this for existing projects that already have
+          a ``.gts`` state file.
+
+        Both paths end in a ``READY`` tree or raise explicitly.
 
         Parameters
         ----------
-        config_path:
-            Path to the local ``.cgs`` authoring file.
-        discover_nested:
-            When ``True``, immediately run nested ``.cgs`` discovery for any
-            child repositories that have already been cloned locally.
+        source:
+            Path to a ``.cgs`` authoring spec (clone mode) or a ``.gts``
+            snapshot (restore mode).
+        target_dir:
+            Target directory for the cloned project root.  Only used in
+            ``.cgs`` (clone) mode; ignored for ``.gts`` sources.
         """
-        return self.load_cgs(config_path, discover_nested=discover_nested)
+        resolved = Path(source).resolve()
+        if resolved.suffix == ".cgs":
+            return self.clone_cgs(resolved, target_dir=target_dir)
+        if resolved.suffix == ".gts":
+            return self.load_gts(resolved)
+        raise ValueError(
+            f"Unsupported source format '{resolved.suffix}' for {resolved!s}; expected .cgs or .gts."
+        )
+
+    def load(
+        self,
+        source_path: str | Path,
+        *,
+        discover_nested: bool = False,
+    ) -> DependencyTreeRegistry:
+        """Load a ``.cgs`` or ``.gts`` source into the registry.
+
+        Accepts both file types:
+
+        - ``.gts`` snapshot: loaded directly via :meth:`load_gts`.
+        - ``.cgs`` specification: parsed via :meth:`load_cgs`, internally
+          running the expand and validate pipeline to produce the registry
+          (and write a ``.gts`` snapshot).
+
+        Parameters
+        ----------
+        source_path:
+            Path to a ``.cgs`` authoring file or a ``.gts`` snapshot.
+        discover_nested:
+            When ``True``, run nested ``.cgs`` discovery for ``.cgs`` sources.
+        """
+        resolved = Path(source_path).resolve()
+        if resolved.suffix == ".gts":
+            return self.load_gts(resolved)
+        return self.load_cgs(resolved, discover_nested=discover_nested)
 
     def read(
         self,
@@ -1206,8 +1250,8 @@ class ComplexGitSyncClient:
     ) -> DependencyTreeRegistry:
         """Compatibility alias for :meth:`load`.
 
-        ``load`` is the canonical lifecycle step-1 name; ``read`` is retained
-        for backward compatibility.
+        ``load`` is the canonical name; ``read`` is retained for
+        backward compatibility.
         """
         return self.load(config_path, discover_nested=discover_nested)
 

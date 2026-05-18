@@ -98,23 +98,37 @@ profiles. Structured file logs preserve mandatory events (`command_start`,
 profile-gated.
 
 ### T17 — Unit Test Suite (incremental) ✅
-188 tests passing. Covers parsers, registry, lifecycle, rendering, gating,
-propagate/create/checkout/commit/push operations, and deep 3-level hierarchy
-ordering.
+199 tests passing. Covers parsers, registry, lifecycle, rendering, gating,
+propagate/create/checkout/commit/push operations, deep 3-level hierarchy
+ordering, and the simplified `initialise`/`freeze` CLI surface.
 
 ### T19 — Documentation and Examples (incremental) ✅
 `README.md`, `docs/user_guide.tex`, `docs/getting_started.tex`,
-`docs/architecture.tex`, all figures updated.  New figure
-`operations_sequence.tex` added. Direct object-level API usage now documented in
-`docs/python_api.tex` and `README.md` (including `.gts` loading, EMPTY→READY
-state progression, and `GitTree.propagate_tag`). The README and TeX docs now
-track the strict lifecycle vocabulary `read → expand → verify → clone →
-checkout → add → commit → push → tag → freeze`, while also recording the
-remaining `print(.gts)`, `pull(.gts)`, `orchestrate(.goc)`, and `.lgr` work.
-`Planning/DevPlan.md` and this file created.
+`docs/architecture.tex`, `AdditionalSpecs.md`, all figures updated.
+Lifecycle vocabulary simplified: `initialise` replaces the 3-step
+`load→expand→validate` pipeline in all user-facing docs.
+`Planning/DevPlan.md` and this file updated.
 
 ### T20 — CI Version Increment Automation ✅
 PR-based version bump on every merge.  `YYYY.XX` format with rollover.
+
+### T26 — CLI Simplification: `initialise`, `freeze`, smart `load()` ✅
+Simplified the user-facing CLI and Python API lifecycle surface:
+
+- `initialise(.cgs)` — primary entry point for new projects: clones all repos
+  (calls `clone_cgs`), ends in `READY`.
+- `initialise(.gts)` — primary entry point for existing projects: restores from
+  a snapshot (calls `load_gts`), ends in `READY`.
+- `freeze` — added as a primary CLI command (alias for `freeze_release`).
+- `load()` — updated to accept both `.gts` (direct) and `.cgs` (smart load via
+  `load_cgs` pipeline) sources.
+- `load`, `expand`, `validate`, `tree` removed from the CLI primary command
+  surface; they remain available as Python API methods for power users.
+- CLI primary commands: `initialise`, `pull`, `checkout`, `add`, `commit`,
+  `push`, `tag`, `freeze`.
+- `README.md`, `AdditionalSpecs.md`, `docs/user_guide.tex`, `DevPlan.md`,
+  and this file updated to use the simplified lifecycle vocabulary.
+- 5 unit tests updated; 4 new tests added (199 passing).
 
 ---
 

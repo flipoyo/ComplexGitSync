@@ -21,26 +21,26 @@ code~0.
 % -----------------------------------------------------------------------
 \section{Lifecycle Contract}
 
-This guide follows the canonical lifecycle:
+This guide follows the simplified canonical lifecycle:
 
 \begin{enumerate}
-  \item \texttt{load(.cgs)} $\rightarrow$ \texttt{.gts LOADED}
-  \item \texttt{expand(.cgs|.gts)} $\rightarrow$ \texttt{.gts PENDING}
-  \item \texttt{validate(.cgs|.gts)} $\rightarrow$ \texttt{.gts READY}
-  \item \texttt{clone(.cgs|.gts)}
-  \item \texttt{checkout(.gts)}
-  \item \texttt{add}
-  \item \texttt{git(tree, "commit", msg)} $\rightarrow$ commits all repos leaf-first
-  \item \texttt{git(tree, "push")} $\rightarrow$ update hash in \texttt{GitTree}
-  \item \texttt{git(tree, "tag", name)} $\rightarrow$ update tag in \texttt{GitTree}
+  \item \texttt{initialise(.cgs)} $\rightarrow$ clone all repos $\rightarrow$
+        \texttt{READY}  \textit{(new project)}\\
+        \texttt{initialise(.gts)} $\rightarrow$ restore from snapshot $\rightarrow$
+        \texttt{READY}  \textit{(existing project)}
+  \item \texttt{pull(.cgs|.gts)} $\rightarrow$ resync an existing tree
+  \item \texttt{checkout(.gts)} / \texttt{add} / \texttt{commit} / \texttt{push} / \texttt{tag}
+        $\rightarrow$ git operations on the tree
   \item \texttt{freeze} $\rightarrow$ emit the next \texttt{.gts} id
 \end{enumerate}
 
-Backward-compatible aliases: \texttt{read} $\rightarrow$ \texttt{load},
-\texttt{verify} $\rightarrow$ \texttt{validate},
-\texttt{tree} $\rightarrow$ \texttt{expand} (CLI, with runtime-snapshot preference).
-The commands \texttt{describe} and \texttt{restart} remain compatibility aliases of
-\texttt{print} and \texttt{pull} respectively.
+Python API power users may also call \texttt{load(.cgs|.gts)} directly:
+\texttt{.gts} sources are loaded directly; \texttt{.cgs} sources run the
+internal expand/validate pipeline.
+
+Compatibility aliases: \texttt{read} $\rightarrow$ \texttt{load},
+\texttt{describe} $\rightarrow$ \texttt{print}, \texttt{restart} $\rightarrow$
+\texttt{pull}, \texttt{freeze-release} $\rightarrow$ \texttt{freeze}.
 
 The remaining planned work is \texttt{orchestrate(.goc)} and project-local
 \texttt{.lgr} register management.
@@ -48,78 +48,35 @@ The remaining planned work is \texttt{orchestrate(.goc)} and project-local
 % -----------------------------------------------------------------------
 \section{Commands}
 
-\subsection{\texttt{load}}
+\subsection{\texttt{initialise}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync load <spec.cgs>
+$ cgitsync initialise <spec.cgs> [--target-dir DIR]
+$ cgitsync initialise <snapshot.gts>
 \end{lstlisting}
 
-Parses the \texttt{.cgs} file and builds the dependency-tree registry
-(lifecycle step~1, \texttt{LOADED} state).  Prints a one-line state summary.
+Unified initialisation entry point.  Dispatches on file extension:
 
-\subsection{\texttt{expand}}
+\begin{itemize}
+  \item \texttt{.cgs} source (clone mode): clones the full repository tree
+    (see \texttt{clone} below). The optional \texttt{--target-dir} controls
+    where the project root is created.  On success, ends in \texttt{READY}.
+  \item \texttt{.gts} source (restore mode): loads a saved snapshot directly.
+    On success, ends in the lifecycle state recorded in the snapshot.
+\end{itemize}
+
+Both paths end in a \texttt{READY} tree or fail explicitly.
+
+\subsection{\texttt{pull}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync expand <spec.cgs|snapshot.gts>
+$ cgitsync pull <spec.cgs|snapshot.gts>
 \end{lstlisting}
 
-Loads the source, runs nested \texttt{.cgs} discovery from parents to leaves
-(recursive), and renders the dependency graph as a text tree (lifecycle
-step~2, \texttt{PENDING} state).  The canonical step-2 command.
-
-\subsection{\texttt{validate}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync validate <spec.cgs|snapshot.gts>
-\end{lstlisting}
-
-Parses the source, recomputes the tree lifecycle state, and prints a one-line
-summary.  Exits~0 on success, non-zero on parse or validation error (lifecycle
-step~3, checks \texttt{READY} state).
-
-\textbf{Output fields:} \texttt{lifecycle\_state}, \texttt{ready},
-\texttt{complete}.
-
-\subsection{\texttt{tree}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync tree <spec.cgs>
-\end{lstlisting}
-
-Backward-compatible alias for \texttt{expand}.  When a newer runtime snapshot
-is registered for the given \texttt{.cgs} file, \cgscli{} loads that
-\texttt{.gts} first so the tree reflects the current synchronised state.
-Without a newer snapshot, it falls back to the declared \texttt{.cgs}
-topology.
-
-The command also accepts a direct \texttt{.gts} input:
-
-\begin{lstlisting}[language=bash]
-$ cgitsync tree <snapshot.gts>
-\end{lstlisting}
-
-\subsection{\texttt{describe}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync describe <snapshot.gts>
-\end{lstlisting}
-
-Reads a \texttt{.gts} snapshot and prints its contents as pretty-printed
-JSON. Useful for inspecting saved tree state after a \texttt{clone} or
-\texttt{freeze\_release} operation.
-
-This is a compatibility alias of \texttt{print}; both commands share the same
-implementation.
-
-\subsection{\texttt{print}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync print <spec.cgs|snapshot.gts>
-\end{lstlisting}
-
-Prints a lifecycle summary as pretty JSON. For \texttt{.gts} input, it reports
-the recorded snapshot state. For \texttt{.cgs} input, it reports the current
-declared/runtime summary.
+Resynchronises the project tree.  \texttt{.cgs} sources follow the
+\texttt{restart} flow (load, discover, checkout current branch, READY), while
+\texttt{.gts} sources follow saved-state restore semantics equivalent to
+\texttt{launch-release}.  On success, the tree ends in \texttt{READY}.
 
 \subsection{\texttt{clone}}
 
@@ -165,42 +122,14 @@ from ComplexGitSync import RefKind
 client.checkout("v1.2.0", ref_kind=RefKind.TAG)
 \end{lstlisting}
 
-The operation follows three steps in order:
-
-\begin{enumerate}
-  \item \textbf{Propagate} — set the target ref on every registry entry
-    (\texttt{propagate\_global\_branch}).
-  \item \textbf{Create} — run \texttt{git branch} in every repo that does not
-    yet have the branch locally (\texttt{create\_global\_branch}).
-  \item \textbf{Checkout} — run \texttt{git checkout} in every repo,
-    parent-first, and refresh each entry's ref and SHA.
-\end{enumerate}
-
-\subsection{\texttt{restart}}
+\subsection{\texttt{add}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync restart <spec.cgs>
+$ cgitsync add --gts <snapshot.gts>
 \end{lstlisting}
 
-Resynchronizes an already-cloned project tree. Loads the \texttt{.cgs}
-configuration, discovers nested configs, reads the root repository's current
-branch, and checks out that branch across the full tree parent-first.
-Ends in \texttt{READY} or fails explicitly. Also writes a \texttt{.gts}
-snapshot on success.
-
-This remains a compatibility helper; the planned lifecycle name is
-\texttt{pull}.
-
-\subsection{\texttt{pull}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync pull <spec.cgs|snapshot.gts>
-\end{lstlisting}
-
-Resynchronises the project tree using lifecycle-compatible semantics:
-\texttt{.cgs} sources follow the historical \texttt{restart} flow, while
-\texttt{.gts} sources follow saved-state restore semantics equivalent to
-\texttt{launch-release}. On success, the tree ends in \texttt{READY}.
+Stages all changes across the tree (\texttt{git add --all}), leaf-first.
+Requires \texttt{READY}; tree stays \texttt{READY}.
 
 \subsection{\texttt{commit}}
 
@@ -263,10 +192,10 @@ registry = client.get_dependency_registry()
 client.git(registry, "tag", "v1.2.3")
 \end{lstlisting}
 
-\subsection{\texttt{freeze-release}}
+\subsection{\texttt{freeze}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync freeze-release <name> --gts <snapshot.gts>
+$ cgitsync freeze <name> --gts <snapshot.gts>
 \end{lstlisting}
 
 Performs a release freeze across all repos, leaf-first: stage/commit,
@@ -277,11 +206,44 @@ Requires \texttt{READY} and leaves the tree \texttt{READY}.
 Also available via the Python API:
 
 \begin{lstlisting}[language=Python]
-client.freeze_release(
+client.freeze(
     "release-2026.05",
     output_gts=".cgitsync/releases/release-2026.05.gts",
 )
 \end{lstlisting}
+
+\texttt{freeze-release} and \texttt{freeze-state} remain available as
+compatibility aliases for release and internal-state freeze operations
+respectively.
+
+\subsection{\texttt{print}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync print <spec.cgs|snapshot.gts>
+\end{lstlisting}
+
+Prints a lifecycle summary as pretty JSON. For \texttt{.gts} input, it reports
+the recorded snapshot state. For \texttt{.cgs} input, it reports the current
+declared/runtime summary.
+
+\subsection{\texttt{describe}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync describe <snapshot.gts>
+\end{lstlisting}
+
+Reads a \texttt{.gts} snapshot and prints its contents as pretty-printed
+JSON. This is a compatibility alias of \texttt{print}; both commands share the
+same implementation.
+
+\subsection{\texttt{restart}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync restart <spec.cgs>
+\end{lstlisting}
+
+Resynchronizes an already-cloned project tree. Compatibility alias for
+\texttt{pull} with a \texttt{.cgs} source.
 
 \subsection{\texttt{launch-release}}
 
@@ -291,9 +253,6 @@ $ cgitsync launch-release <snapshot.gts>
 
 Loads a release \texttt{.gts}, reconstructs the tree, performs required
 clone/checkout actions, and must end in \texttt{READY} or fail explicitly.
-
-This helper is not treated as a primary lifecycle step; conceptually it is a
-checkout from recorded \texttt{.gts} state.
 
 Also available via the Python API:
 

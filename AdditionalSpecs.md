@@ -20,8 +20,8 @@ one tier; dependencies only flow **downward** (API → Actions → Core).
                          │ calls (state-gated)
 ┌────────────────────────▼────────────────────────────┐
 │  Tier 2 — Actions                                   │
-│  load · expand · validate · clone · checkout        │
-│  add · commit · push · tag · freeze · git           │
+│  initialise · load · pull · clone                   │
+│  checkout · add · commit · push · tag · freeze      │
 │  Each action is only accessible from VALID states   │
 └────────────────────────┬────────────────────────────┘
                          │ reads / mutates
@@ -79,10 +79,12 @@ the client.  **Every action is gated by the current `TreeLifecycleState`**:
 
 | Action | Minimum required state | Produces state |
 |---|---|---|
-| `load(.cgs)` | none | `.gts LOADED` (DECLARED) |
-| `expand(.gts/.cgs)` | `LOADED` | `.gts PENDING` |
-| `validate(.gts/.cgs)` | `PENDING` | `.gts READY` |
-| `clone(.gts/.cgs)` | `READY` | `READY` |
+| `initialise(.cgs)` | none | `.gts READY` (clone) |
+| `initialise(.gts)` | none | `.gts READY` (restore) |
+| `load(.cgs)` | none | `.gts DECLARED` |
+| `load(.gts)` | none | `.gts READY` (direct) |
+| `pull(.cgs)` | none | `.gts READY` |
+| `pull(.gts)` | none | `.gts READY` |
 | `checkout(.gts)` | `READY` | `READY` |
 | `add` | `READY` | `READY` |
 | `git(tree, "commit", msg)` | `READY` | `READY` |
@@ -94,7 +96,7 @@ Actions that **must reject** a non-READY tree:
 `add`, `git("commit")`, `git("push")`, `git("tag")`, `freeze`.
 
 Actions that **must produce READY** or fail explicitly:
-`validate(.gts/.cgs)`, `clone(.gts/.cgs)`, `checkout(.gts)`.
+`initialise(.cgs)`, `initialise(.gts)`, `pull(.cgs)`, `pull(.gts)`, `checkout(.gts)`.
 
 ### Tier 3 — Client / API
 
@@ -209,33 +211,40 @@ Do **not** split it into plugins or separate packages.
 
 The canonical user-facing lifecycle contract is:
 
-1. `load(.cgs)` → `.gts LOADED` (DECLARED)
-   - `client.load("examples/complexgitsync.cgs")`
-2. `expand(.gts/.cgs)` → `.gts PENDING`
-   - `client.expand("examples/complexgitsync.cgs")`
-   - Moves through the GitTree from parents to leaves (recursive nested discovery)
-3. `validate(.gts/.cgs)` → `.gts READY`
-   - `client.validate(".cgitsync/state/complexgitsync.gts")`
-   - Ends with a state summary; checks that every GitRepo is in a READY state
-4. `clone(.gts/.cgs)` — either source; when given `.cgs` performs steps 1–3 first
-   - `client.clone("examples/complexgitsync.cgs")`
-5. Global git operations driven by a GitTree instance; same command for all
+1. `initialise(.cgs)` → clone all repos → `.gts READY`  *(new project)*
+   - `client.initialise("examples/complexgitsync.cgs")`
+   
+   OR `initialise(.gts)` → restore from snapshot → `.gts READY`  *(existing project)*
+   - `client.initialise(".cgitsync/state/complexgitsync.gts")`
+
+2. `pull(.cgs/.gts)` → resync an existing tree → `READY`
+   - `client.pull("examples/complexgitsync.cgs")`
+
+3. Global git operations driven by a GitTree instance; same command for all
    GitRepos from leaves to parents to Project_repo:
+   - `client.checkout("feature/my-branch")`
+   - `client.add()`
    - `client.git(registry, "commit", "message CGS#VERSION")`
    - `client.git(registry, "push")`  — updates hash in GitTree
    - `client.git(registry, "tag", "v1.2.3")`  — updates tag in GitTree
-6. `freeze` → emit the next `.gts` id
+
+4. `freeze` → emit the next `.gts` id
+   - `client.freeze("release-2026.05")`
+
+Python API power users:
+
+- `load(.cgs)` — smart load: parses spec, runs expand+validate pipeline, writes `.gts`
+- `load(.gts)` — direct load of a saved snapshot
 
 Additional guidance:
 
 - **`READY`** means the dependency-tree registry is complete and synchronised —
   not that worktrees are clean.
-- `load` and `validate` are the canonical lifecycle names; `read` and `verify`
-  are retained as compatibility aliases.
-- `git(tree, command, ...)` is the unified interface for step 5; individual
+- `initialise` is the canonical entry point; `clone` remains available for direct use.
+- `git(tree, command, ...)` is the unified interface for git operations; individual
   `commit`, `push`, and `tag` methods remain available.
-- `launch` is not treated as a primary lifecycle step; restoring from a saved
-  `.gts` is documented as checkout from recorded state.
+- `load`, `expand`, `validate` are internal implementation steps; users do not need
+  to call them directly.
 
 ## Local Git Register (`.lgr`)
 
