@@ -43,11 +43,11 @@ contacts a remote.
 
 ## 2. Authorship
 
-Contact: nicolas.flipo@minesparis.psl.eu
-Project Manager: Nicolas Flipo
-Main Developper: Nicolas Flipo
-Contributors (ongoing): Simone Mazzarelli, Tristan Bourgeois, Nicolas Gallois, Fulvia Baratelli, Pierre Guillou, Fabien Ors, Mariam Taki
-AI assistance: Copilot@github - chatGPT 5.4, Claude Sonnet4.6
+* Contact: nicolas.flipo@minesparis.psl.eu
+* Project Manager: Nicolas Flipo
+* Main Developper: Nicolas Flipo
+* Contributors (ongoing): Simone Mazzarelli, Tristan Bourgeois, Nicolas Gallois, Fulvia Baratelli, Pierre Guillou, Fabien Ors, Mariam Taki
+* AI assistance: Copilot@github - chatGPT 5.4, Claude Sonnet4.6
 
 
 ## 3. How to use
