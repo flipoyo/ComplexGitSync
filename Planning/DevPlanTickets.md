@@ -91,6 +91,12 @@ dev-state counterparts to release methods. CLI now wires:
   - `cgitsync freeze-state <name> --gts <file>`
   - `cgitsync launch-state <snapshot.gts>`
 
+### T25 — Logger verbosity profile verification ✅
+Validated command-run logging behavior for both `verbose` and `whisper_sync`
+profiles. Structured file logs preserve mandatory events (`command_start`,
+`command_end`, lifecycle events) across both modes, while console verbosity is
+profile-gated.
+
 ### T17 — Unit Test Suite (incremental) ✅
 188 tests passing. Covers parsers, registry, lifecycle, rendering, gating,
 propagate/create/checkout/commit/push operations, and deep 3-level hierarchy
@@ -147,10 +153,10 @@ execution engine, and validation/reporting for unsupported actions.
 **Acceptance**: `.goc` files execute through the same public API contract used
 by Python and CLI entry points, with deterministic command ordering and errors.
 
-### T23 — Lifecycle terminology cleanup for `expand` / `verify` / `print` / `pull` ❌
+### T23 — Lifecycle terminology cleanup for `expand` / `verify` labels ❌
 **Goal**: align the user-facing workflow vocabulary with the strict lifecycle.
 **Deliverables**: align the current command surface with the lifecycle names
-`expand(.gts)`, `verify(.gts)`, `print(.gts)`, and `pull(.gts)`.
+`expand(.gts)` and `verify(.gts)`.
 **Dependencies**: T10, T19.
 **Acceptance**: README, planning docs, figures, and CLI terminology all use the
 same lifecycle names without ambiguity.

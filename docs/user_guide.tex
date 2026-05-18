@@ -38,12 +38,12 @@ This guide follows the project lifecycle strictly:
 
 Current command names still expose some historical compatibility labels:
 \texttt{tree} for the \texttt{expand} stage, \texttt{validate} for the
-\texttt{verify} stage, and \texttt{describe} as the nearest current
-\texttt{print(.gts)} command.
+\texttt{verify} stage, \texttt{describe} as a compatibility alias of
+\texttt{print}, and \texttt{restart} as a compatibility alias of
+\texttt{pull}.
 
-The remaining planned work is \texttt{print(.gts)}, \texttt{pull(.gts)},
-\texttt{orchestrate(.goc)}, and project-local \texttt{.lgr} register
-management.
+The remaining planned work is \texttt{orchestrate(.goc)} and project-local
+\texttt{.lgr} register management.
 
 % -----------------------------------------------------------------------
 \section{Commands}
@@ -95,8 +95,18 @@ Reads a \texttt{.gts} snapshot and prints its contents as pretty-printed
 JSON. Useful for inspecting saved tree state after a \texttt{clone} or
 \texttt{freeze\_release} operation.
 
-This is the nearest current compatibility command for the planned
-\texttt{print(.gts)} step.
+This is a compatibility alias of \texttt{print}; both commands share the same
+implementation.
+
+\subsection{\texttt{print}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync print <spec.cgs|snapshot.gts>
+\end{lstlisting}
+
+Prints a lifecycle summary as pretty JSON. For \texttt{.gts} input, it reports
+the recorded snapshot state. For \texttt{.cgs} input, it reports the current
+declared/runtime summary.
 
 \subsection{\texttt{clone}}
 
@@ -166,7 +176,18 @@ Ends in \texttt{READY} or fails explicitly. Also writes a \texttt{.gts}
 snapshot on success.
 
 This remains a compatibility helper; the planned lifecycle name is
-\texttt{pull(.gts)}.
+\texttt{pull}.
+
+\subsection{\texttt{pull}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync pull <spec.cgs|snapshot.gts>
+\end{lstlisting}
+
+Resynchronises the project tree using lifecycle-compatible semantics:
+\texttt{.cgs} sources follow the historical \texttt{restart} flow, while
+\texttt{.gts} sources follow saved-state restore semantics equivalent to
+\texttt{launch-release}. On success, the tree ends in \texttt{READY}.
 
 \subsection{\texttt{commit}}
 
@@ -271,10 +292,6 @@ implemented. Each returns exit code~2 with the message
   \item \texttt{write-gts} — write a \texttt{.gts} snapshot explicitly
     from a loaded \texttt{.cgs} or runtime state.
   \item \texttt{status} — summarise tree readiness and per-repo sync state.
-  \item \texttt{print(.gts)} — planned user-facing name for saved-state
-    inspection.
-  \item \texttt{pull(.gts)} — planned user-facing name for resynchronisation
-    from recorded state.
   \item \texttt{orchestrate(.goc)} — planned execution surface for
     orchestration plans.
 \end{itemize}

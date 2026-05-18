@@ -123,6 +123,48 @@ def test_client_launch_alias_calls_launch_release(monkeypatch):
     assert captured["snapshot_path"] == "state.gts"
 
 
+def test_client_pull_dispatches_to_restart_for_cgs(monkeypatch):
+    client = ComplexGitSyncClient()
+    captured: dict[str, object] = {}
+
+    def _fake_restart(config_path):
+        captured["config_path"] = config_path
+        return "ok"
+
+    monkeypatch.setattr(client, "restart", _fake_restart)
+
+    result = client.pull("project.cgs")
+
+    assert result == "ok"
+    assert captured["config_path"] == Path("project.cgs").resolve()
+
+
+def test_client_pull_dispatches_to_launch_release_for_gts(monkeypatch):
+    client = ComplexGitSyncClient()
+    captured: dict[str, object] = {}
+
+    def _fake_launch_release(snapshot_path):
+        captured["snapshot_path"] = snapshot_path
+        return "ok"
+
+    monkeypatch.setattr(client, "launch_release", _fake_launch_release)
+
+    result = client.pull("state.gts")
+
+    assert result == "ok"
+    assert captured["snapshot_path"] == Path("state.gts").resolve()
+
+
+def test_client_print_alias_supports_gts(tmp_path):
+    snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=(tmp_path / "workspace" / "demo").resolve())
+    client = ComplexGitSyncClient()
+
+    output = client.print(snapshot_path)
+
+    assert '"document_kind": "gts"' in output
+    assert '"is_ready": true' in output
+
+
 def test_build_registry_rejects_duplicate_relative_paths(tmp_path):
     config_path = tmp_path / "project.cgs"
     config_path.write_text(

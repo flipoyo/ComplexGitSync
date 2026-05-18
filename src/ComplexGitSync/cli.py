@@ -1,24 +1,25 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 from pathlib import Path
 from collections.abc import Sequence
 
 from . import __version__
 from .git_repo import RefKind
-from .orchestre import CgsDocument, ComplexGitSyncClient, GtsDocument, create_run_logger
+from .orchestre import CgsDocument, ComplexGitSyncClient, create_run_logger
 
 
 _PLANNED_COMMANDS: dict[str, str] = {
     "validate": "Validate a local .cgs specification.",
     "describe": "Describe a .cgs or .gts input.",
+    "print": "Print a .cgs or .gts lifecycle summary.",
     "tree": "Render the dependency tree.",
     "write-gts": "Write a .gts state snapshot.",
     "launch-release": "Launch a release from a .gts snapshot.",
     "clone": "Clone a nested project tree from .cgs.",
     "restart": "Resynchronize a loaded project tree.",
+    "pull": "Resynchronize a project tree from .cgs or .gts.",
     "checkout": "Synchronize the tree to a branch or tag.",
     "add": "Stage all changes across a READY tree.",
     "tag": "Create a tag across the full reachable tree.",
@@ -44,9 +45,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     for command_name, help_text in _PLANNED_COMMANDS.items():
         subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
-        if command_name in {"validate", "describe", "tree"}:
+        if command_name in {"validate", "describe", "print", "tree"}:
             source_help = "Path to the local .cgs file to inspect."
-            if command_name in {"describe", "tree"}:
+            if command_name in {"describe", "print", "tree"}:
                 source_help = "Path to the local .cgs or .gts file to inspect."
             subparser.add_argument("source", help=source_help)
             subparser.add_argument(
@@ -65,6 +66,9 @@ def build_parser() -> argparse.ArgumentParser:
         elif command_name == "restart":
             subparser.add_argument("source", help="Path to the local .cgs file to restart from.")
             subparser.set_defaults(handler=_handle_restart)
+        elif command_name == "pull":
+            subparser.add_argument("source", help="Path to the local .cgs or .gts file to pull from.")
+            subparser.set_defaults(handler=_handle_pull)
         elif command_name == "checkout":
             subparser.add_argument("branch", help="Branch or tag name to check out across the tree.")
             subparser.add_argument(
@@ -183,6 +187,14 @@ def _handle_describe(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_print(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="print",
+        source=Path(args.source),
+        runner=lambda client, source: _execute_print(client, source, discover_nested=args.discover_nested),
+    )
+
+
 def _handle_tree(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="tree",
@@ -208,6 +220,14 @@ def _handle_restart(args: argparse.Namespace) -> int:
         command_name="restart",
         source=Path(args.source),
         runner=lambda client, source: _execute_restart(client, source),
+    )
+
+
+def _handle_pull(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="pull",
+        source=Path(args.source),
+        runner=lambda client, source: _execute_pull(client, source),
     )
 
 
@@ -305,26 +325,30 @@ def _execute_describe(
     *,
     discover_nested: bool,
 ) -> int:
-    if source_path.suffix == ".gts":
-        document = GtsDocument.from_toml(source_path)
-        client.load_gts(source_path)
-        print(
-            json.dumps(
-                {
-                    "document_kind": "gts",
-                    "project_name": document.read("project.name"),
-                    "lifecycle_state": document.lifecycle_state,
-                    "is_ready": document.is_ready,
-                    "repo_count": len(document.repo_states),
-                },
-                indent=2,
-                sort_keys=True,
-            )
+    # Backward-compatible behavior: `describe` historically inspected the explicit
+    # source file rather than preferring a newer runtime snapshot for `.cgs`.
+    print(
+        client.print(
+            source_path,
+            discover_nested=discover_nested,
+            prefer_runtime_for_cgs=False,
         )
-        return 0
+    )
+    return 0
 
-    client.load_cgs(source_path, discover_nested=discover_nested)
-    print(client.describe_cgs())
+
+def _execute_print(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    discover_nested: bool,
+) -> int:
+    print(
+        client.print(
+            source_path,
+            discover_nested=discover_nested,
+        )
+    )
     return 0
 
 
@@ -364,6 +388,21 @@ def _execute_restart(
     source_path: Path,
 ) -> int:
     registry = client.restart(source_path)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"complete={str(tree_state.registry_complete).lower()} "
+        f"root={registry.get('root').absolute_path}"
+    )
+    return 0
+
+
+def _execute_pull(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+) -> int:
+    registry = client.pull(source_path)
     tree_state = client.get_tree_state()
     print(
         f"{tree_state.lifecycle_state.value} "
@@ -598,5 +637,6 @@ def _load_ready_registry_source(
 _INSPECTION_HANDLERS = {
     "validate": _handle_validate,
     "describe": _handle_describe,
+    "print": _handle_print,
     "tree": _handle_tree,
 }

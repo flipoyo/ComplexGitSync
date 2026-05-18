@@ -77,8 +77,6 @@ ComplexGitSync documentation now follows this lifecycle strictly:
 
 Planned follow-up work tracked in the repository:
 
-- `print(.gts)`
-- `pull(.gts)`
 - `orchestrate(.goc)`
 - project-local `.lgr` management
 
@@ -100,8 +98,14 @@ print(client.format_project_tree())
 # Current implementation exposes this stage through validation.
 client.validate("examples/complexgitsync.cgs")
 
+# print(.gts/.cgs) lifecycle summary
+print(client.print("examples/complexgitsync.cgs"))
+
 # 4. clone(.gts)
 client.clone("examples/complexgitsync.cgs")
+
+# pull(.gts/.cgs) resynchronization
+client.pull("examples/complexgitsync.cgs")
 
 # 5. checkout(.gts)
 client.checkout("feature/my-branch")
@@ -133,8 +137,14 @@ pixi run cgitsync tree examples/complexgitsync.cgs
 # Current command surface uses `validate` for the verify stage.
 pixi run cgitsync validate examples/complexgitsync.cgs
 
+# print(.gts)
+pixi run cgitsync print .cgitsync/state/complexgitsync.gts
+
 # 4. clone(.gts)
 pixi run cgitsync clone examples/complexgitsync.cgs
+
+# pull(.gts/.cgs)
+pixi run cgitsync pull examples/complexgitsync.cgs
 
 # 5. checkout(.gts)
 pixi run cgitsync checkout feature/my-branch --gts .cgitsync/state/complexgitsync.gts
