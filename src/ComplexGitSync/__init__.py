@@ -1,6 +1,6 @@
 """ComplexGitSync package."""
 
-__version__ = "0001.09"
+__version__ = "0001.10"
 
 # --- Tier 1 — Core State (git_repo.py) ---
 from .git_repo import (
