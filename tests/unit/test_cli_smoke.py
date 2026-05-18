@@ -249,6 +249,10 @@ def test_verify_command_creates_log_file(monkeypatch, tmp_path, capsys):
     log_content = log_files[0].read_text(encoding="utf-8")
     assert '"event": "command_start"' in log_content
     assert '"event": "verify_state"' in log_content
+    assert '"tree_lifecycle_state": "DECLARED"' in log_content
+    assert '"is_ready": false' in log_content
+    assert '"registry_complete": true' in log_content
+    assert '"loaded_repo_count": 2' in log_content
     assert '"event": "command_end"' in log_content
 
 

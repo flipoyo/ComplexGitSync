@@ -1211,7 +1211,7 @@ class ComplexGitSyncClient:
             tree_lifecycle_state=tree_state.lifecycle_state,
             is_ready=tree_state.is_ready,
             registry_complete=tree_state.registry_complete,
-            loaded_repo_count=len(registry.entries),
+            loaded_repo_count=len(registry.values()),
         )
         return tree_state
 
