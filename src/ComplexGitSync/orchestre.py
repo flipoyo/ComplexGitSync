@@ -1202,7 +1202,7 @@ class ComplexGitSyncClient:
         ]
         if non_loaded_repo_ids:
             raise GitSyncError(
-                "verify requires every repository to be LOADED (DECLARED) before readiness checks; "
+                "verify requires every repository to be in DECLARED (loaded) state before readiness checks; "
                 f"found non-loaded entries: {', '.join(non_loaded_repo_ids)}"
             )
         tree_state = self.get_tree_state()
