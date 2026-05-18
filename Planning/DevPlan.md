@@ -42,7 +42,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T16 | CLI Bootstrap for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` | ✅ Done |
 | T18 | Integration Test Suite | ❌ Not started |
 | T22 | Parser-driven automation of public client methods via `.goc` files | ❌ Pending |
-| T23 | Lifecycle terminology cleanup for `expand` / `verify` labels | ❌ Pending |
+| T23 | Lifecycle terminology cleanup for `expand` / `verify` labels | ✅ Done |
 | T24 | Local Git Register (`.lgr`) management for `.gts` ids | ❌ Pending |
 
 ## Architecture Notes
@@ -59,7 +59,8 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - `ComplexGitSyncClient.checkout`, `ComplexGitSyncClient.restart`, and `ComplexGitSyncClient.freeze_release` write `.gts` snapshots after success.
 - CLI mutation commands (`checkout`, `commit`, `push`, `tag`, `freeze-release`) require `--gts <file>` to load the READY registry.
 - CLI mutation commands now also include `add` and `freeze-state`; snapshot launch commands include `launch-release` and `launch-state`.
-- User-facing lifecycle contract is `read(.cgs) → .gts LOADED`, `expand(.gts, LOADED) → .gts PENDING`, `verify(.gts, PENDING) → .gts READY`, `clone(.gts)`, `checkout(.gts)`, `add`, `commit`, `push`, `tag`, `freeze`.
+- User-facing lifecycle contract is `read(.cgs) → .gts DECLARED`, `expand(.cgs/.gts, DECLARED) → .gts PENDING`, `verify(.cgs/.gts, PENDING) → .gts READY`, `clone(.gts)`, `checkout(.gts)`, `add`, `commit`, `push`, `tag`, `freeze`.
+- `expand` and `verify` are now first-class methods on `ComplexGitSyncClient` and first-class CLI commands; `tree` and `validate` remain as compatibility aliases.
 - `push` is expected to refresh the stored hash in `GitTree`; `tag` is expected to refresh the stored tag in `GitTree`.
 - `freeze` is expected to emit the next `.gts` id and register it locally.
 - Remaining lifecycle work is `orchestrate(.goc)` and project-local `.lgr` register management.

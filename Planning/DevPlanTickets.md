@@ -153,12 +153,15 @@ execution engine, and validation/reporting for unsupported actions.
 **Acceptance**: `.goc` files execute through the same public API contract used
 by Python and CLI entry points, with deterministic command ordering and errors.
 
-### T23 — Lifecycle terminology cleanup for `expand` / `verify` labels ❌
+### T23 — Lifecycle terminology cleanup for `expand` / `verify` labels ✅
 **Goal**: align the user-facing workflow vocabulary with the strict lifecycle.
-**Deliverables**: align the current command surface with the lifecycle names
-`expand(.gts)` and `verify(.gts)`.
+**Deliverables**: `ComplexGitSyncClient.expand(source_path)` transitions
+``DECLARED → PENDING``; `ComplexGitSyncClient.verify(source_path)` is the
+primary validation name; `validate` is a compatibility alias for `verify`;
+CLI commands `expand` and `verify` are wired; `tree` and `validate` remain as
+compatibility aliases; README and planning docs updated.
 **Dependencies**: T10, T19.
-**Acceptance**: README, planning docs, figures, and CLI terminology all use the
+**Acceptance**: README, planning docs, and CLI terminology all use the
 same lifecycle names without ambiguity.
 
 ### T24 — Local Git Register (`.lgr`) management ❌

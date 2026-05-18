@@ -16,6 +16,29 @@ def test_main_without_command_prints_help(capsys):
     assert "cgitsync" in captured.out
 
 
+def test_expand_command_renders_pending_tree(tmp_path, capsys):
+    config_path = _write_project_cgs(tmp_path)
+
+    exit_code = main(["expand", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "demo" in captured.out
+    assert "child-repo" in captured.out
+    assert "PENDING" in captured.out
+
+
+def test_verify_command_summarizes_pending_registry(tmp_path, capsys):
+    config_path = _write_project_cgs(tmp_path)
+
+    exit_code = main(["verify", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "PENDING" in captured.out
+    assert "complete=true" in captured.out
+
+
 def test_validate_command_summarizes_loaded_registry(tmp_path, capsys):
     config_path = _write_project_cgs(tmp_path)
 
@@ -23,7 +46,7 @@ def test_validate_command_summarizes_loaded_registry(tmp_path, capsys):
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "DECLARED" in captured.out
+    assert "PENDING" in captured.out
     assert "complete=true" in captured.out
 
 
@@ -215,7 +238,7 @@ def test_validate_command_creates_log_file(monkeypatch, tmp_path, capsys):
     log_files = sorted(log_dir.glob("*-validate.log"))
 
     assert exit_code == 0
-    assert "DECLARED" in captured.out
+    assert "PENDING" in captured.out
     assert len(log_files) == 1
     log_content = log_files[0].read_text(encoding="utf-8")
     assert '"event": "command_start"' in log_content
@@ -233,7 +256,7 @@ def test_validate_command_creates_log_file_with_whisper_sync_profile(monkeypatch
     log_files = sorted(log_dir.glob("*-validate.log"))
 
     assert exit_code == 0
-    assert "DECLARED" in captured.out
+    assert "PENDING" in captured.out
     assert len(log_files) == 1
     log_content = log_files[0].read_text(encoding="utf-8")
     assert '"event": "command_start"' in log_content

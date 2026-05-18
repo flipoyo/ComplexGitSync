@@ -35,13 +35,44 @@ def test_client_read_alias_loads_cgs(tmp_path):
     assert client.get_tree_state().lifecycle_state == TreeLifecycleState.DECLARED
 
 
+def test_client_expand_transitions_declared_to_pending(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    client = ComplexGitSyncClient()
+
+    registry = client.expand(config_path)
+
+    assert client.get_tree_state().lifecycle_state == TreeLifecycleState.PENDING
+    assert registry.get("root").repo_lifecycle_state == RepoLifecycleState.PENDING
+    assert registry.get("root:deps/child-repo").repo_lifecycle_state == RepoLifecycleState.PENDING
+
+
+def test_client_expand_leaves_ready_entries_unchanged(tmp_path):
+    snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=(tmp_path / "workspace" / "demo").resolve())
+    client = ComplexGitSyncClient()
+
+    registry = client.expand(snapshot_path)
+
+    assert registry.get("root").repo_lifecycle_state == RepoLifecycleState.READY
+    assert client.get_tree_state().lifecycle_state == TreeLifecycleState.READY
+
+
+def test_client_verify_returns_pending_state_for_fresh_cgs(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    client = ComplexGitSyncClient()
+
+    tree_state = client.verify(config_path)
+
+    assert tree_state.lifecycle_state == TreeLifecycleState.PENDING
+    assert tree_state.registry_complete is True
+
+
 def test_client_validate_alias_returns_tree_state(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()
 
     tree_state = client.validate(config_path)
 
-    assert tree_state.lifecycle_state == TreeLifecycleState.DECLARED
+    assert tree_state.lifecycle_state == TreeLifecycleState.PENDING
     assert tree_state.registry_complete is True
 
 

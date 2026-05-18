@@ -1132,11 +1132,9 @@ class ComplexGitSyncClient:
     executing.  Mutation actions (commit, push, tag, freeze_release) require a
     READY tree and will raise :exc:`~.errors.TreeNotReadyError` otherwise.
 
-    The user-facing lifecycle documented in the repository is:
+    The user-facing lifecycle is:
     ``read(.cgs) -> expand(.gts) -> verify(.gts) -> clone(.gts) ->
     checkout(.gts) -> add -> commit -> push -> tag -> freeze``.
-    Current helper names such as ``validate``, ``restart``, and ``launch`` are
-    maintained as compatibility surfaces around that lifecycle.
     """
 
     orchestre: Orchestre = field(default_factory=Orchestre)
@@ -1174,8 +1172,58 @@ class ComplexGitSyncClient:
         *,
         discover_nested: bool = False,
     ) -> DependencyTreeRegistry:
-        """Read a ``.cgs`` specification into the lifecycle's loaded runtime state."""
+        """Read a ``.cgs`` specification into the lifecycle's loaded runtime state.
+
+        Lifecycle step 1: ``read(.cgs) → .gts DECLARED``.
+        """
         return self.load_cgs(config_path, discover_nested=discover_nested)
+
+    def expand(
+        self,
+        source_path: str | Path,
+        *,
+        discover_nested: bool = False,
+    ) -> DependencyTreeRegistry:
+        """Expand the dependency tree from DECLARED to PENDING state.
+
+        Lifecycle step 2: ``expand(.gts, DECLARED) → .gts PENDING``.
+
+        Loads the source (a ``.cgs`` or ``.gts`` file), traverses the registry
+        from parents to leaves, and transitions every ``DECLARED`` entry to
+        ``PENDING``.  Optionally discovers nested ``.cgs`` configurations.
+        """
+        resolved_source = Path(source_path).resolve()
+        previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
+
+        if resolved_source.suffix == ".gts":
+            self.load_gts(resolved_source)
+        else:
+            self.load_cgs(resolved_source, discover_nested=discover_nested)
+
+        registry = self.get_dependency_registry()
+        for entry in iter_tree(registry):
+            if entry.repo_lifecycle_state == RepoLifecycleState.DECLARED:
+                entry.repo_lifecycle_state = RepoLifecycleState.PENDING
+
+        registry.recompute_tree_state()
+        self._log_tree_transition(previous_tree_state, registry.lifecycle_state, reason="expand")
+        return registry
+
+    def verify(
+        self,
+        source_path: str | Path,
+        *,
+        discover_nested: bool = False,
+    ) -> ProjectTreeState:
+        """Verify the expanded tree and report its lifecycle state.
+
+        Lifecycle step 3: ``verify(.gts, PENDING) → .gts READY`` (when repos exist).
+
+        Expands the tree from ``source_path`` and returns the resulting
+        :class:`~ComplexGitSync.git_tree.ProjectTreeState`.
+        """
+        self.expand(source_path, discover_nested=discover_nested)
+        return self.get_tree_state()
 
     def validate(
         self,
@@ -1183,14 +1231,8 @@ class ComplexGitSyncClient:
         *,
         discover_nested: bool = False,
     ) -> ProjectTreeState:
-        """Verify that a loaded tree can reach a READY runtime state.
-
-        The public documentation uses ``verify`` for this lifecycle step; the
-        current implementation exposes it through the historical
-        :meth:`validate` name.
-        """
-        self.read(config_path, discover_nested=discover_nested)
-        return self.get_tree_state()
+        """Compatibility alias for :meth:`verify`."""
+        return self.verify(config_path, discover_nested=discover_nested)
 
     def load_gts(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED

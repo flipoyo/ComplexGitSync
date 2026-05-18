@@ -11,10 +11,12 @@ from .orchestre import CgsDocument, ComplexGitSyncClient, create_run_logger
 
 
 _PLANNED_COMMANDS: dict[str, str] = {
-    "validate": "Validate a local .cgs specification.",
+    "expand": "Expand a .cgs or .gts source tree from DECLARED to PENDING state.",
+    "verify": "Verify a .cgs or .gts tree and report its lifecycle state.",
+    "validate": "Compatibility alias for verify.",
     "describe": "Describe a .cgs or .gts input.",
     "print": "Print a .cgs or .gts lifecycle summary.",
-    "tree": "Render the dependency tree.",
+    "tree": "Render the dependency tree (compatibility alias for expand).",
     "write-gts": "Write a .gts state snapshot.",
     "launch-release": "Launch a release from a .gts snapshot.",
     "clone": "Clone a nested project tree from .cgs.",
@@ -45,10 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     for command_name, help_text in _PLANNED_COMMANDS.items():
         subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
-        if command_name in {"validate", "describe", "print", "tree"}:
-            source_help = "Path to the local .cgs file to inspect."
-            if command_name in {"describe", "print", "tree"}:
-                source_help = "Path to the local .cgs or .gts file to inspect."
+        if command_name in {"expand", "verify", "validate", "describe", "print", "tree"}:
+            source_help = "Path to the local .cgs or .gts file to inspect."
+            if command_name in {"expand", "verify", "validate"}:
+                source_help = "Path to the local .cgs or .gts file."
             subparser.add_argument("source", help=source_help)
             subparser.add_argument(
                 "--discover-nested",
@@ -171,11 +173,27 @@ def _not_implemented(args: argparse.Namespace) -> int:
     return 2
 
 
+def _handle_expand(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="expand",
+        source=Path(args.source),
+        runner=lambda client, source: _execute_expand(client, source, discover_nested=args.discover_nested),
+    )
+
+
+def _handle_verify(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="verify",
+        source=Path(args.source),
+        runner=lambda client, source: _execute_verify(client, source, discover_nested=args.discover_nested),
+    )
+
+
 def _handle_validate(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="validate",
         source=Path(args.source),
-        runner=lambda client, source: _execute_validate(client, source, discover_nested=args.discover_nested),
+        runner=lambda client, source: _execute_verify(client, source, discover_nested=args.discover_nested),
     )
 
 
@@ -304,19 +322,39 @@ def _handle_launch_state(args: argparse.Namespace) -> int:
     )
 
 
-def _execute_validate(
+def _execute_expand(
     client: ComplexGitSyncClient,
     source_path: Path,
     *,
     discover_nested: bool,
 ) -> int:
-    tree_state = client.validate(source_path, discover_nested=discover_nested)
+    client.expand(source_path, discover_nested=discover_nested)
+    print(client.format_project_tree())
+    return 0
+
+
+def _execute_verify(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    discover_nested: bool,
+) -> int:
+    tree_state = client.verify(source_path, discover_nested=discover_nested)
     print(
         f"{tree_state.lifecycle_state.value} "
         f"ready={str(tree_state.is_ready).lower()} "
         f"complete={str(tree_state.registry_complete).lower()}"
     )
     return 0
+
+
+def _execute_validate(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    discover_nested: bool,
+) -> int:
+    return _execute_verify(client, source_path, discover_nested=discover_nested)
 
 
 def _execute_describe(
@@ -358,8 +396,10 @@ def _execute_tree(
     *,
     discover_nested: bool,
 ) -> int:
+    # Prefer runtime snapshots for .cgs so that the tree reflects the current
+    # cached state; for .gts, load directly.
     if source_path.suffix == ".gts":
-        client.load_gts(source_path)
+        client.expand(source_path, discover_nested=discover_nested)
     else:
         client.load_runtime_or_cgs(source_path, discover_nested=discover_nested)
     print(client.format_project_tree())
@@ -635,6 +675,8 @@ def _load_ready_registry_source(
 
 
 _INSPECTION_HANDLERS = {
+    "expand": _handle_expand,
+    "verify": _handle_verify,
     "validate": _handle_validate,
     "describe": _handle_describe,
     "print": _handle_print,

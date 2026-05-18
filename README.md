@@ -87,16 +87,14 @@ from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
-# 1. read(.cgs) -> .gts LOADED
+# 1. read(.cgs) -> .gts DECLARED
 client.read("examples/complexgitsync.cgs")
 
-# 2. expand(.gts, LOADED) -> .gts PENDING
-# Current implementation exposes this stage through tree expansion / rendering.
-print(client.format_project_tree())
+# 2. expand(.cgs/.gts, DECLARED) -> .gts PENDING
+client.expand("examples/complexgitsync.cgs")
 
-# 3. verify(.gts, PENDING) -> .gts READY
-# Current implementation exposes this stage through validation.
-client.validate("examples/complexgitsync.cgs")
+# 3. verify(.cgs/.gts, PENDING) -> .gts READY (when repos exist locally)
+client.verify("examples/complexgitsync.cgs")
 
 # print(.gts/.cgs) lifecycle summary
 print(client.print("examples/complexgitsync.cgs"))
@@ -129,13 +127,11 @@ client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.
 ### 3.2 CLI
 
 ```bash
-# 2. expand(.gts, LOADED) -> .gts PENDING
-# Current command surface uses `tree` for the expand stage.
-pixi run cgitsync tree examples/complexgitsync.cgs
+# 2. expand(.cgs/.gts, DECLARED) -> .gts PENDING
+pixi run cgitsync expand examples/complexgitsync.cgs
 
-# 3. verify(.gts, PENDING) -> .gts READY
-# Current command surface uses `validate` for the verify stage.
-pixi run cgitsync validate examples/complexgitsync.cgs
+# 3. verify(.cgs/.gts, PENDING) -> .gts READY
+pixi run cgitsync verify examples/complexgitsync.cgs
 
 # print(.gts)
 pixi run cgitsync print .cgitsync/state/complexgitsync.gts
