@@ -21,26 +21,26 @@ code~0.
 % -----------------------------------------------------------------------
 \section{Lifecycle Contract}
 
-This guide follows the project lifecycle strictly:
+This guide follows the canonical lifecycle:
 
 \begin{enumerate}
-  \item \texttt{read(.cgs)} $\rightarrow$ \texttt{.gts LOADED}
-  \item \texttt{expand(.gts, LOADED)} $\rightarrow$ \texttt{.gts PENDING}
-  \item \texttt{verify(.gts, PENDING)} $\rightarrow$ \texttt{.gts READY}
-  \item \texttt{clone(.gts)}
+  \item \texttt{load(.cgs)} $\rightarrow$ \texttt{.gts LOADED}
+  \item \texttt{expand(.cgs|.gts)} $\rightarrow$ \texttt{.gts PENDING}
+  \item \texttt{validate(.cgs|.gts)} $\rightarrow$ \texttt{.gts READY}
+  \item \texttt{clone(.cgs|.gts)}
   \item \texttt{checkout(.gts)}
   \item \texttt{add}
-  \item \texttt{commit}
-  \item \texttt{push} $\rightarrow$ update hash in \texttt{GitTree}
-  \item \texttt{tag} $\rightarrow$ update tag in \texttt{GitTree}
+  \item \texttt{git(tree, "commit", msg)} $\rightarrow$ commits all repos leaf-first
+  \item \texttt{git(tree, "push")} $\rightarrow$ update hash in \texttt{GitTree}
+  \item \texttt{git(tree, "tag", name)} $\rightarrow$ update tag in \texttt{GitTree}
   \item \texttt{freeze} $\rightarrow$ emit the next \texttt{.gts} id
 \end{enumerate}
 
-Current command names still expose some historical compatibility labels:
-\texttt{tree} for the \texttt{expand} stage, \texttt{validate} for the
-\texttt{verify} stage, \texttt{describe} as a compatibility alias of
-\texttt{print}, and \texttt{restart} as a compatibility alias of
-\texttt{pull}.
+Backward-compatible aliases: \texttt{read} $\rightarrow$ \texttt{load},
+\texttt{verify} $\rightarrow$ \texttt{validate},
+\texttt{tree} $\rightarrow$ \texttt{expand} (CLI, with runtime-snapshot preference).
+The commands \texttt{describe} and \texttt{restart} remain compatibility aliases of
+\texttt{print} and \texttt{pull} respectively.
 
 The remaining planned work is \texttt{orchestrate(.goc)} and project-local
 \texttt{.lgr} register management.
@@ -48,21 +48,37 @@ The remaining planned work is \texttt{orchestrate(.goc)} and project-local
 % -----------------------------------------------------------------------
 \section{Commands}
 
+\subsection{\texttt{load}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync load <spec.cgs>
+\end{lstlisting}
+
+Parses the \texttt{.cgs} file and builds the dependency-tree registry
+(lifecycle step~1, \texttt{LOADED} state).  Prints a one-line state summary.
+
+\subsection{\texttt{expand}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync expand <spec.cgs|snapshot.gts>
+\end{lstlisting}
+
+Loads the source, runs nested \texttt{.cgs} discovery from parents to leaves
+(recursive), and renders the dependency graph as a text tree (lifecycle
+step~2, \texttt{PENDING} state).  The canonical step-2 command.
+
 \subsection{\texttt{validate}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync validate <spec.cgs>
+$ cgitsync validate <spec.cgs|snapshot.gts>
 \end{lstlisting}
 
-Parses the \texttt{.cgs} file, builds the dependency-tree registry, and
-prints a one-line summary for each repository node. Exits~0 on success,
-non-zero on parse or validation error.
+Parses the source, recomputes the tree lifecycle state, and prints a one-line
+summary.  Exits~0 on success, non-zero on parse or validation error (lifecycle
+step~3, checks \texttt{READY} state).
 
-In lifecycle terms this is the current compatibility command for the
-\texttt{verify} stage.
-
-\textbf{Output fields:} \texttt{name}, \texttt{lifecycle\_state},
-\texttt{complete}, \texttt{node\_count}.
+\textbf{Output fields:} \texttt{lifecycle\_state}, \texttt{ready},
+\texttt{complete}.
 
 \subsection{\texttt{tree}}
 
@@ -70,8 +86,8 @@ In lifecycle terms this is the current compatibility command for the
 $ cgitsync tree <spec.cgs>
 \end{lstlisting}
 
-Renders the dependency graph as a text tree. When a newer runtime snapshot is
-registered for the given \texttt{.cgs} file, \cgscli{} loads that
+Backward-compatible alias for \texttt{expand}.  When a newer runtime snapshot
+is registered for the given \texttt{.cgs} file, \cgscli{} loads that
 \texttt{.gts} first so the tree reflects the current synchronised state.
 Without a newer snapshot, it falls back to the declared \texttt{.cgs}
 topology.
@@ -81,9 +97,6 @@ The command also accepts a direct \texttt{.gts} input:
 \begin{lstlisting}[language=bash]
 $ cgitsync tree <snapshot.gts>
 \end{lstlisting}
-
-In lifecycle terms this is the current compatibility command for the
-\texttt{expand} stage.
 
 \subsection{\texttt{describe}}
 
@@ -200,13 +213,16 @@ Commits changes across the tree, leaf-first.  Loads the READY registry from
 \texttt{git add --all} step (suppressed by \texttt{--no-stage}) are silently
 skipped. Requires a \texttt{READY} tree; the tree remains \texttt{READY} on success.
 
-Also available via the Python API:
+The commit message conventionally ends with \texttt{CGS\#VERSION}.
+
+Also available via the unified \texttt{git()} Python API:
 
 \begin{lstlisting}[language=Python]
+registry = client.get_dependency_registry()
 # Stage all changes, then commit (default)
-client.commit("feat: my change")
+client.git(registry, "commit", "feat: my change CGS#1")
 
-# Commit only already-staged changes
+# Direct method: commit only already-staged changes
 client.commit("feat: my change", stage_all=False)
 \end{lstlisting}
 
@@ -219,13 +235,14 @@ $ cgitsync push --gts <snapshot.gts>
 Pushes all repositories to their configured remotes, leaf-first.  Loads the
 READY registry from \texttt{--gts}.  Each repo is pushed to
 \texttt{entry.remote\_name} (defaulting to \texttt{"origin"}) on its currently
-resolved branch.  Requires a \texttt{READY} tree; the tree remains
-\texttt{READY} on success.
+resolved branch.  Refreshes the stored hash in \texttt{GitTree}.  Requires a
+\texttt{READY} tree; the tree remains \texttt{READY} on success.
 
-Also available via the Python API:
+Also available via the unified \texttt{git()} Python API:
 
 \begin{lstlisting}[language=Python]
-client.push()
+registry = client.get_dependency_registry()
+client.git(registry, "push")
 \end{lstlisting}
 
 \subsection{\texttt{tag}}
@@ -235,13 +252,15 @@ $ cgitsync tag <name> --gts <snapshot.gts>
 \end{lstlisting}
 
 Creates and pushes the same tag across the full tree, leaf-first.  Loads the
-READY registry from \texttt{--gts}.  Requires a \texttt{READY} tree and keeps
-the tree \texttt{READY} on success.
+READY registry from \texttt{--gts}.  Refreshes the stored tag in
+\texttt{GitTree}.  Requires a \texttt{READY} tree and keeps the tree
+\texttt{READY} on success.
 
-Also available via the Python API:
+Also available via the unified \texttt{git()} Python API:
 
 \begin{lstlisting}[language=Python]
-client.tag("v1.2.3")
+registry = client.get_dependency_registry()
+client.git(registry, "tag", "v1.2.3")
 \end{lstlisting}
 
 \subsection{\texttt{freeze-release}}

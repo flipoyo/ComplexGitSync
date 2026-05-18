@@ -69,16 +69,16 @@ Figure~\ref{fig:gittree-lifecycle} shows the full lifecycle state machine.
 \begin{tabular}{lll}
 \textbf{Action} & \textbf{Minimum state} & \textbf{Produces} \\
 \hline
-\texttt{read(.cgs)}              & none        & \texttt{.gts LOADED} \\
-\texttt{expand(.gts)}            & LOADED      & \texttt{.gts PENDING} \\
-\texttt{verify(.gts)}            & PENDING     & \texttt{.gts READY} \\
-\texttt{clone(.gts)}             & READY       & \textbf{READY} \\
-\texttt{checkout(.gts)}          & READY       & \textbf{READY} \\
-\texttt{add}                     & \textbf{READY only} & READY \\
-\texttt{commit}                  & \textbf{READY only} & READY \\
-\texttt{push}                    & \textbf{READY only} & READY + updated hash \\
-\texttt{tag}                     & \textbf{READY only} & READY + updated tag \\
-\texttt{freeze}                  & \textbf{READY only} & next \texttt{.gts} id \\
+\texttt{load(.cgs)}                    & none        & \texttt{.gts LOADED} \\
+\texttt{expand(.cgs|.gts)}             & LOADED      & \texttt{.gts PENDING} \\
+\texttt{validate(.cgs|.gts)}           & PENDING     & \texttt{.gts READY} \\
+\texttt{clone(.cgs|.gts)}              & READY       & \textbf{READY} \\
+\texttt{checkout(.gts)}                & READY       & \textbf{READY} \\
+\texttt{add}                           & \textbf{READY only} & READY \\
+\texttt{git(tree, "commit", msg)}      & \textbf{READY only} & READY \\
+\texttt{git(tree, "push")}             & \textbf{READY only} & READY + updated hash \\
+\texttt{git(tree, "tag", name)}        & \textbf{READY only} & READY + updated tag \\
+\texttt{freeze}                        & \textbf{READY only} & next \texttt{.gts} id \\
 \hline
 \end{tabular}
 \end{center}

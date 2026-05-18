@@ -11,10 +11,12 @@ from .orchestre import CgsDocument, ComplexGitSyncClient, create_run_logger
 
 
 _PLANNED_COMMANDS: dict[str, str] = {
-    "validate": "Validate a local .cgs specification.",
+    "load": "Load a .cgs specification (lifecycle step 1).",
+    "expand": "Expand the dependency tree (lifecycle step 2).",
+    "validate": "Validate a local .cgs or .gts specification (lifecycle step 3).",
     "describe": "Describe a .cgs or .gts input.",
     "print": "Print a .cgs or .gts lifecycle summary.",
-    "tree": "Render the dependency tree.",
+    "tree": "Render the dependency tree (alias for expand).",
     "write-gts": "Write a .gts state snapshot.",
     "launch-release": "Launch a release from a .gts snapshot.",
     "clone": "Clone a nested project tree from .cgs.",
@@ -45,10 +47,36 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     for command_name, help_text in _PLANNED_COMMANDS.items():
         subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
-        if command_name in {"validate", "describe", "print", "tree"}:
+        if command_name in {"load"}:
+            subparser.add_argument("source", help="Path to the local .cgs file to load.")
+            subparser.add_argument(
+                "--discover-nested",
+                action="store_true",
+                help="Resolve nested .cgs files for locally available child repos.",
+            )
+            subparser.set_defaults(handler=_handle_load)
+        elif command_name == "expand":
+            subparser.add_argument("source", help="Path to the local .cgs or .gts file to expand.")
+            subparser.add_argument(
+                "--discover-nested",
+                action="store_true",
+                help="Resolve nested .cgs files for locally available child repos.",
+            )
+            subparser.set_defaults(handler=_handle_expand)
+        elif command_name == "tree":
+            subparser.add_argument("source", help="Path to the local .cgs or .gts file to inspect.")
+            subparser.add_argument(
+                "--discover-nested",
+                action="store_true",
+                help="Resolve nested .cgs files for locally available child repos.",
+            )
+            subparser.set_defaults(handler=_handle_tree)
+        elif command_name in {"validate", "describe", "print"}:
             source_help = "Path to the local .cgs file to inspect."
-            if command_name in {"describe", "print", "tree"}:
+            if command_name in {"describe", "print"}:
                 source_help = "Path to the local .cgs or .gts file to inspect."
+            elif command_name == "validate":
+                source_help = "Path to the local .cgs or .gts file to validate."
             subparser.add_argument("source", help=source_help)
             subparser.add_argument(
                 "--discover-nested",
@@ -171,6 +199,14 @@ def _not_implemented(args: argparse.Namespace) -> int:
     return 2
 
 
+def _handle_load(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="load",
+        source=Path(args.source),
+        runner=lambda client, source: _execute_load(client, source, discover_nested=args.discover_nested),
+    )
+
+
 def _handle_validate(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="validate",
@@ -192,6 +228,14 @@ def _handle_print(args: argparse.Namespace) -> int:
         command_name="print",
         source=Path(args.source),
         runner=lambda client, source: _execute_print(client, source, discover_nested=args.discover_nested),
+    )
+
+
+def _handle_expand(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="expand",
+        source=Path(args.source),
+        runner=lambda client, source: _execute_expand(client, source, discover_nested=args.discover_nested),
     )
 
 
@@ -304,6 +348,22 @@ def _handle_launch_state(args: argparse.Namespace) -> int:
     )
 
 
+def _execute_load(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    discover_nested: bool,
+) -> int:
+    registry = client.load(source_path, discover_nested=discover_nested)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"complete={str(tree_state.registry_complete).lower()}"
+    )
+    return 0
+
+
 def _execute_validate(
     client: ComplexGitSyncClient,
     source_path: Path,
@@ -349,6 +409,16 @@ def _execute_print(
             discover_nested=discover_nested,
         )
     )
+    return 0
+
+
+def _execute_expand(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    discover_nested: bool,
+) -> int:
+    print(client.expand(source_path, discover_nested=discover_nested))
     return 0
 
 
@@ -635,6 +705,8 @@ def _load_ready_registry_source(
 
 
 _INSPECTION_HANDLERS = {
+    "load": _handle_load,
+    "expand": _handle_expand,
     "validate": _handle_validate,
     "describe": _handle_describe,
     "print": _handle_print,

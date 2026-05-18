@@ -8,15 +8,15 @@ successful synchronisation of a nested Git repository tree.
 The documented lifecycle is:
 
 \begin{enumerate}
-  \item \texttt{read(.cgs)} $\rightarrow$ \texttt{.gts LOADED}
-  \item \texttt{expand(.gts, LOADED)} $\rightarrow$ \texttt{.gts PENDING}
-  \item \texttt{verify(.gts, PENDING)} $\rightarrow$ \texttt{.gts READY}
-  \item \texttt{clone(.gts)}
+  \item \texttt{load(.cgs)} $\rightarrow$ \texttt{.gts LOADED}
+  \item \texttt{expand(.cgs|.gts)} $\rightarrow$ \texttt{.gts PENDING}
+  \item \texttt{validate(.cgs|.gts)} $\rightarrow$ \texttt{.gts READY}
+  \item \texttt{clone(.cgs|.gts)}
   \item \texttt{checkout(.gts)}
   \item \texttt{add}
-  \item \texttt{commit}
-  \item \texttt{push}
-  \item \texttt{tag}
+  \item \texttt{git(tree, "commit", msg)}
+  \item \texttt{git(tree, "push")}
+  \item \texttt{git(tree, "tag", name)}
   \item \texttt{freeze}
 \end{enumerate}
 
@@ -109,8 +109,8 @@ $ cgitsync validate complexgitsync.cgs
 A successful run exits with code~0 and prints the current tree summary, for
 example \texttt{DECLARED ready=false complete=true}.
 
-The current command surface still uses \texttt{tree} for the \texttt{expand}
-stage and \texttt{validate} for the \texttt{verify} stage.
+The canonical step-2 command is \texttt{expand}; \texttt{tree} is kept as a
+backward-compatible alias.  The canonical step-3 command is \texttt{validate}.
 
 % -----------------------------------------------------------------------
 \section{Clone / Checkout}
