@@ -634,17 +634,11 @@ def create_run_logger(
     fh.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(fh)
 
-    console_level: int | None = None
-    if profile == "verbose":
-        console_level = logging.INFO
-    elif profile == "whisper_sync":
-        console_level = logging.WARNING
-
-    if console_level is not None:
-        ch = logging.StreamHandler()
-        ch.setLevel(console_level)
-        ch.setFormatter(logging.Formatter("%(message)s"))
-        logger.addHandler(ch)
+    console_level = logging.INFO if profile == "verbose" else logging.WARNING
+    ch = logging.StreamHandler()
+    ch.setLevel(console_level)
+    ch.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(ch)
 
     return CommandRunLogger(logger, log_path=log_path)
 
@@ -1335,7 +1329,7 @@ class ComplexGitSyncClient:
         if resolved_source.suffix == ".gts":
             return self.launch_release(resolved_source)
         raise ValueError(
-            f"Unsupported source format for {resolved_source!s}; expected .cgs or .gts."
+            f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
         )
 
     def checkout(
@@ -1650,7 +1644,7 @@ class ComplexGitSyncClient:
             )
             return self.describe_cgs()
         raise ValueError(
-            f"Unsupported source format for {resolved_source!s}; expected .cgs or .gts."
+            f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
         )
 
     def write_gts_snapshot(

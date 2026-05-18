@@ -325,6 +325,8 @@ def _execute_describe(
     *,
     discover_nested: bool,
 ) -> int:
+    # Backward-compatible behavior: `describe` historically inspected the explicit
+    # source file rather than preferring a newer runtime snapshot for `.cgs`.
     print(
         client.print(
             source_path,
