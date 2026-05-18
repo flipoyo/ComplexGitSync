@@ -1,17 +1,34 @@
 # ComplexGitSync
 
-## 1. Purpose
+## 1. Purpose - Key Concepts
 
 ComplexGitSync keeps one root Git repository and its nested Git repositories in
 sync from a single local specification and a tracked local tree state.
 
-- `.cgs` describes the project topology.
-- `.gts` stores the local GitTree state used during the lifecycle.
-- `.goc` stores higher-level orchestration intent.
-- `.lgr` is the planned Local Git Register that assigns one local id to each
-  `.gts` snapshot for a project.
+### 1.1 Runtime model
 
-## 2. Auth / Authentication
+- `GitRepo` represents one repository in the project
+- `GitTree` represents the full parent/child repository graph
+- `Orchestre` and `ComplexGitSyncClient` coordinate lifecycle transitions and
+  synchronized Git actions across the tree
+
+### 1.2 Documents
+
+- `.cgs` — describes the project topology, authoring specification for a ComplexGitSync project, 
+- `.gts` — local GitTree state tracked through lifecycle `LOADED`, `PENDING`, and `READY`
+- `.goc` — stores higher-level orchestration plan document
+- `.lgr` — planned Local Git Register that records the single id associated with
+  each `.gts` snapshot for a project.
+
+### 1.3 Single API exposure
+
+The lifecycle is exposed through:
+
+- Python: `ComplexGitSyncClient`
+- CLI: `cgitsync`
+
+
+### 1.4. Authentication
 
 ComplexGitSync does not manage credentials for you. It relies on the Git access
 you already use for the target remotes:
@@ -24,31 +41,16 @@ you already use for the target remotes:
 Make sure your Git authentication works before running any lifecycle step that
 contacts a remote.
 
-## 3. Key concepts
+## 2. Authorship
 
-### 3.1 Documents
+Contact: nicolas.flipo@minesparis.psl.eu
+Project Manager: Nicolas Flipo
+Main Developper: Nicolas Flipo
+Contributors (ongoing): Simone Mazzarelli, Tristan Bourgeois, Nicolas Gallois, Fulvia Baratelli, Pierre Guillou, Fabien Ors, Mariam Taki
+AI assistance: Copilot@github - chatGPT 5.4, Claude Sonnet4.6
 
-- `.cgs` — authoring specification for a ComplexGitSync project
-- `.gts` — local GitTree state tracked through `LOADED`, `PENDING`, and `READY`
-- `.goc` — orchestration plan document
-- `.lgr` — planned Local Git Register that records the single id associated with
-  each `.gts`
 
-### 3.2 Runtime model
-
-- `GitRepo` represents one repository in the project
-- `GitTree` represents the full parent/child repository graph
-- `Orchestre` and `ComplexGitSyncClient` coordinate lifecycle transitions and
-  synchronized Git actions across the tree
-
-### 3.3 Single API exposure
-
-The lifecycle is exposed through:
-
-- Python: `ComplexGitSyncClient`
-- CLI: `cgitsync`
-
-## 4. How to use
+## 3. How to use
 
 Install the repository environment with Pixi:
 
@@ -80,7 +82,7 @@ Planned follow-up work tracked in the repository:
 - `orchestrate(.goc)`
 - project-local `.lgr` management
 
-### 4.1 Python API
+### 3.1 Python API
 
 ```python
 from ComplexGitSync import ComplexGitSyncClient
@@ -120,7 +122,7 @@ client.tag("v1.2.3")
 client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
 ```
 
-### 4.2 CLI
+### 3.2 CLI
 
 ```bash
 # 2. expand(.gts, LOADED) -> .gts PENDING
