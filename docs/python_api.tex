@@ -8,6 +8,11 @@ CLI wrapper), including loading a \texttt{.gts} snapshot, reconstructing the
 runtime registry, mirroring identity into \texttt{GitTree}/\texttt{GitRepo},
 and propagating a tag target.
 
+The documented lifecycle is:
+\texttt{read(.cgs) -> .gts LOADED -> expand(.gts) -> .gts PENDING ->
+verify(.gts) -> .gts READY -> clone(.gts) -> checkout(.gts) -> add ->
+commit -> push -> tag -> freeze}.
+
 \section{From Empty Registry to READY via \texttt{.gts}}
 
 \begin{lstlisting}[language=Python]
@@ -58,15 +63,21 @@ The same lifecycle model is exposed by \texttt{ComplexGitSyncClient}.  In
 practice, the workflow is:
 
 \begin{itemize}
-  \item \texttt{clone\_cgs(...)} bootstraps a tree and must finish in
+  \item \texttt{read(...)} corresponds to the documented
+    \texttt{read(.cgs)} step.
+  \item tree expansion / rendering corresponds to the documented
+    \texttt{expand(.gts)} step.
+  \item \texttt{validate(...)} is the current compatibility name for the
+    documented \texttt{verify(.gts)} step.
+  \item \texttt{clone(...)} bootstraps a tree and must finish in
     \texttt{READY}.
   \item \texttt{checkout(...)}, \texttt{add(...)}, \texttt{commit(...)},
-    \texttt{push(...)}, and \texttt{tag(...)} are \texttt{READY}-gated methods
-    for the standard git workflow.
-  \item \texttt{freeze\_state(...)} and \texttt{launch\_state(...)} are the
-    internal dev-state equivalents of release operations.
-  \item \texttt{freeze\_release(...)} and \texttt{launch\_release(...)} are the
-    public release operations using the same lifecycle model.
+     \texttt{push(...)}, and \texttt{tag(...)} are \texttt{READY}-gated methods
+     for the standard git workflow.
+  \item \texttt{freeze(...)} emits the next persisted \texttt{.gts} state.
+  \item \texttt{launch\_state(...)} and \texttt{launch\_release(...)} remain
+    compatibility helpers for restoring recorded state, but are not treated as
+    primary lifecycle steps in the documentation.
 \end{itemize}
 
 \begin{lstlisting}[language=Python]
@@ -74,27 +85,25 @@ from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
-# Public lifecycle contract
+# 1. read(.cgs) -> .gts LOADED
 client.read("examples/complexgitsync.cgs")
+
+# 2. expand(.gts, LOADED) -> .gts PENDING
+print(client.format_project_tree())
+
+# 3. verify(.gts, PENDING) -> .gts READY
 client.validate("examples/complexgitsync.cgs")
 
-# Bootstrap from .cgs -> READY
+# 4. clone(.gts)
 client.clone("examples/complexgitsync.cgs")
 
-# READY methods
+# 5-9. READY methods
 client.checkout("feature/my-branch")
 client.add()
 client.commit("feat: update tree")
 client.push()
 client.tag("v1.2.3")
 
-# Internal dev state (not publicly exposed as a release)
-client.freeze_state("dev-state-2026.05")
-client.launch_state(".cgitsync/state/dev-state-2026.05.gts")
-
-# Public release
+# 10. freeze -> next .gts id
 client.freeze("release-2026.05")
-
-# Relaunch from a frozen release snapshot -> READY
-client.launch(".cgitsync/releases/release-2026.05.gts")
 \end{lstlisting}

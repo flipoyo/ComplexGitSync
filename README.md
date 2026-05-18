@@ -1,245 +1,155 @@
 # ComplexGitSync
 
-ComplexGitSync is a Python package for synchronising a root Git repository and
-its nested descendants. It reads local `.cgs` authoring specs, generates `.gts`
-state snapshots, and exposes a Python API and CLI for the full synchronisation
-workflow.
+## 1. Purpose
 
-Document acronyms used across the project:
-- `.cgs` = **ComplexGitSync** specification
-- `.gts` = **GitTreeState** snapshot
-- `.goc` = **GitOrchestrationCommand** plan (pending parser-driven automation)
+ComplexGitSync keeps one root Git repository and its nested Git repositories in
+sync from a single local specification and a tracked local tree state.
 
-## Authorship
-Contact: nicolas.flipo@minesparis.psl.eu
-Project Manager: Nicolas Flipo
-AI assistance: Github copilot - chatGPT5.4 Xhigh, Claude Sonnet4.6
+- `.cgs` describes the project topology.
+- `.gts` stores the local GitTree state used during the lifecycle.
+- `.goc` stores higher-level orchestration intent.
+- `.lgr` is the planned Local Git Register that assigns one local id to each
+  `.gts` snapshot for a project.
 
-## Feature Status
+## 2. Auth / Authentication
 
-| Feature | Python API | CLI |
-|---|---|---|
-| `validate` | ✅ | ✅ |
-| `describe` / `tree` | ✅ | ✅ |
-| `clone` | ✅ | ✅ |
-| `checkout` | ✅ | ✅ |
-| `add` | ✅ | ✅ |
-| `commit` | ✅ | ✅  |
-| `push` | ✅ | ✅  |
-| `tag` | ✅ | ✅ |
-| `freeze_release` | ✅ | ✅ |
-| `restart` | planned | planned |
-| `launch_release` | ✅ | ✅ |
-| `freeze_state` | ✅ | ✅ |
-| `launch_state` | ✅ | ✅ |
+ComplexGitSync does not manage credentials for you. It relies on the Git access
+you already use for the target remotes:
 
-## Prerequisites
+- SSH keys for SSH remotes
+- Git credential helpers or personal access tokens for HTTPS remotes
+- the same local Git identity for `clone`, `checkout`, `push`, `tag`, and
+  `freeze`
 
-- Python 3.11 or later.
-- Git 2.30 or later on `PATH`.
-- Optional `PyYAML` 6.x support for `.yml` and `.yaml` documents.
+Make sure your Git authentication works before running any lifecycle step that
+contacts a remote.
 
-## Installation
+## 3. Key concepts
 
-Install from source with the Pixi-managed environment used in this repository:
+### 3.1 Documents
+
+- `.cgs` — authoring specification for a ComplexGitSync project
+- `.gts` — local GitTree state tracked through `LOADED`, `PENDING`, and `READY`
+- `.goc` — orchestration plan document
+- `.lgr` — planned Local Git Register that records the single id associated with
+  each `.gts`
+
+### 3.2 Runtime model
+
+- `GitRepo` represents one repository in the project
+- `GitTree` represents the full parent/child repository graph
+- `Orchestre` and `ComplexGitSyncClient` coordinate lifecycle transitions and
+  synchronized Git actions across the tree
+
+### 3.3 Single API exposure
+
+The lifecycle is exposed through:
+
+- Python: `ComplexGitSyncClient`
+- CLI: `cgitsync`
+
+## 4. How to use
+
+Install the repository environment with Pixi:
 
 ```bash
 git clone https://github.com/flipoyo/ComplexGitSync.git
 cd ComplexGitSync
 pixi install
-pixi run cgitsync --help
 ```
 
-## Creating or Reusing a `.cgs` Project Spec
+### Lifecycle
 
-A `.cgs` file is the local authoring spec for a repository tree. The
-repository ships ready-to-read examples under `examples/`, including
-`examples/complexgitsync.cgs` for the self-standing ComplexGitSync tree.
+ComplexGitSync documentation now follows this lifecycle strictly:
 
-That example now targets the shared `autoTest` branch first and keeps `main`
-as the repo-level fallback:
+1. `read(.cgs)` → `.gts LOADED`
+2. `expand(.gts, LOADED)` → `.gts PENDING`
+3. `verify(.gts, PENDING)` → `.gts READY`
+4. `clone(.gts)`
+5. `checkout(.gts)`
+6. `add`
+7. `commit`
+8. `push` → update hash in `GitTree`
+9. `tag` → update tag in `GitTree`
+10. `freeze` → emit the next `.gts` id
 
-```toml
-[project]
-name           = "ComplexGitSync"
-default_branch = "autoTest"
+Planned follow-up work tracked in the repository:
 
-[[repos]]
-gitprovider        = "github"
-project_owner_name = "flipoyo"
-project_name       = "ComplexGitSync"
-default_branch     = "autoTest"
-fallback_branch    = "main"
-relative_path      = "."
-```
+- `print(.gts)`
+- `pull(.gts)`
+- `orchestrate(.goc)`
+- project-local `.lgr` management
 
-The same pattern is used in the other bundled `.cgs` examples. In practice
-this means the tree prefers `autoTest` when that branch exists and can still
-resolve to `main` when a repository has not created `autoTest` yet.
-
-## Validating the Spec
-
-Validate the bundled self-standing example:
-
-```bash
-pixi run cgitsync validate examples/complexgitsync.cgs
-```
-
-A successful run exits with code 0 and prints the current tree summary.
-
-## Cloning the Project Tree
-
-Clone the bundled self-standing example:
-
-```bash
-pixi run cgitsync clone examples/complexgitsync.cgs
-```
-
-By default, `cgitsync clone` uses `./<project-name>` as the project root.
-If that directory already exists and is not empty, ComplexGitSync chooses the
-next available suffixed directory such as `./<project-name>-1`.
-
-To force a specific destination, pass `--target-dir`:
-
-```bash
-pixi run cgitsync clone examples/complexgitsync.cgs --target-dir ./sandbox/ComplexGitSync
-```
-
-The clone flow prefers each repo's `default_branch` and falls back to its
-`fallback_branch` when the preferred branch is missing on the remote.
-After a successful clone, ComplexGitSync writes a runtime snapshot to
-`<project-root>/.cgitsync/state/<spec-name>.gts` and records it as the latest
-runtime state for that `.cgs` file.
-
-## Inspecting the Dependency Tree
-
-Render the declared dependency graph:
-
-```bash
-pixi run cgitsync tree examples/complexgitsync.cgs
-```
-
-If a newer runtime snapshot exists for that `.cgs` file, `tree` renders the
-latest cloned state instead of the purely declared topology. That means the
-same command shows `READY` after a successful `clone`, rather than falling
-back to the initial `DECLARED`/`PENDING` registry.
-
-Describe a generated snapshot:
-
-```bash
-pixi run cgitsync describe examples/cawaqsviz_snapshot.gts
-```
-
-## Synchronising the Tree — Python API
-
-The public client contract is:
-`read(.cgs) -> validate(.cgs) -> clone(.cgs) -> checkout -> add -> commit -> push -> tag -> freeze -> launch(.gts)`.
-
-Once a tree is `READY`, use the Python API to run the standard git workflow
-across the whole dependency tree:
+### 4.1 Python API
 
 ```python
 from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
-# Lifecycle from .cgs
+# 1. read(.cgs) -> .gts LOADED
 client.read("examples/complexgitsync.cgs")
+
+# 2. expand(.gts, LOADED) -> .gts PENDING
+# Current implementation exposes this stage through tree expansion / rendering.
+print(client.format_project_tree())
+
+# 3. verify(.gts, PENDING) -> .gts READY
+# Current implementation exposes this stage through validation.
 client.validate("examples/complexgitsync.cgs")
+
+# 4. clone(.gts)
 client.clone("examples/complexgitsync.cgs")
 
-# Check out a branch across all repos (propagate → create → git checkout)
+# 5. checkout(.gts)
 client.checkout("feature/my-branch")
 
-# Stage all changes across all repos (leaf → root)
+# 6. add
 client.add()
 
-# Commit staged changes across all repos (leaf → root)
-client.commit("feat: add feature")
+# 7. commit
+client.commit("feat: update project")
 
-# Push all repos to their remotes (leaf → root)
+# 8. push -> update hash in GitTree
 client.push()
 
-# Create and push a shared tag across all repos (leaf → root)
+# 9. tag -> update tag in GitTree
 client.tag("v1.2.3")
 
-# Freeze and launch via .gts
+# 10. freeze -> .gts ++id
 client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
-client.launch(".cgitsync/releases/release-2026.05.gts")
 ```
 
-`checkout`, `add`, `commit`, `push`, `tag`, and `freeze` require a `READY`
-tree and leave it `READY` after a successful run. `launch` loads a `.gts`,
-performs required clone/checkout actions, and must end in `READY`.
+### 4.2 CLI
 
-On the CLI side, workflow commands that take `--gts` require a `.gts` snapshot.
+```bash
+# 2. expand(.gts, LOADED) -> .gts PENDING
+# Current command surface uses `tree` for the expand stage.
+pixi run cgitsync tree examples/complexgitsync.cgs
 
-## Direct Python Object Usage (`GitTree` / `GitRepo`)
+# 3. verify(.gts, PENDING) -> .gts READY
+# Current command surface uses `validate` for the verify stage.
+pixi run cgitsync validate examples/complexgitsync.cgs
 
-For advanced workflows (bypassing the CLI façade), you can rebuild runtime
-state from a `.gts` snapshot and then manipulate core objects directly:
+# 4. clone(.gts)
+pixi run cgitsync clone examples/complexgitsync.cgs
 
-```python
-from ComplexGitSync import GitRepo, GitTree, RefKind, TreeLifecycleState
-from ComplexGitSync.orchestre import GtsDocument, build_registry_from_gts_document
-from ComplexGitSync.git_tree import DependencyTreeRegistry
+# 5. checkout(.gts)
+pixi run cgitsync checkout feature/my-branch --gts .cgitsync/state/complexgitsync.gts
 
-# EMPTY (unloaded) -> READY
-empty_registry = DependencyTreeRegistry()
-assert empty_registry.recompute_tree_state() == TreeLifecycleState.UNLOADED
+# 6. add
+pixi run cgitsync add --gts .cgitsync/state/complexgitsync.gts
 
-registry = build_registry_from_gts_document(
-    GtsDocument.from_toml("examples/cawaqsviz_snapshot.gts")
-)
-assert registry.lifecycle_state == TreeLifecycleState.READY
+# 7. commit
+pixi run cgitsync commit "feat: update project" --gts .cgitsync/state/complexgitsync.gts
 
-# Discover GitRepo identity from the rebuilt registry and mirror into GitTree
-tree = GitTree()
-for entry in registry.values():
-    tree.add_repo(
-        GitRepo(
-            project_owner_name=entry.project_owner_name or "owner",
-            project_name=entry.project_name or entry.name,
-            gitprovider=entry.gitprovider,
-            access_protocol=entry.access_protocol,
-            commit_sha=entry.commit_sha,
-        )
-    )
+# 8. push -> update hash in GitTree
+pixi run cgitsync push --gts .cgitsync/state/complexgitsync.gts
 
-# Propagate a shared tag target through the dependency tree
-tree.propagate_tag(registry, "v1.2.3")
-for entry in registry.values():
-    assert entry.target_ref_kind == RefKind.TAG
-    assert entry.target_ref_name == "v1.2.3"
+# 9. tag -> update tag in GitTree
+pixi run cgitsync tag v1.2.3 --gts .cgitsync/state/complexgitsync.gts
+
+# 10. freeze -> .gts ++id
+# Current command surface exposes freeze through `freeze-release`.
+pixi run cgitsync freeze-release release-2026.05 --gts .cgitsync/state/complexgitsync.gts
 ```
-
-See `docs/python_api.tex` for the dedicated object-level API chapter.
-
-## Working with `.goc` Orchestration Plans
-
-The bundled `.goc` files mirror the intended multi-command workflow. For
-example, `examples/deploy.goc` now requests a checkout to `autoTest`:
-
-```toml
-[[actions]]
-command = "checkout"
-[actions.args]
-ref      = "autoTest"
-ref_type = "branch"
-```
-
-Because the paired `.cgs` files declare `fallback_branch = "main"` per
-repository, the same orchestration plan can be used on trees that are
-partially on `autoTest` and partially still on `main`. At this stage, treat
-these `.goc` files as executable-ready plans for the remaining sync commands
-or load them programmatically with `GocDocument.from_toml()`.
-
-## Logs
-
-Every CLI command now writes a timestamped log file. By default the log files
-live under `~/.local/state/ComplexGitSync/logs/` on Linux, or under
-`$XDG_STATE_HOME/ComplexGitSync/logs/` when `XDG_STATE_HOME` is set.
-
-The log includes command start and end events, tree and repo state
-transitions, fallback decisions, nested `.cgs` discovery, and `.gts` loads and
-writes.

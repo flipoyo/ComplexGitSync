@@ -18,15 +18,15 @@
 
 % Root
 \node[rootnode] (root) at (0,0) {
-  \textbf{root} (project)\\NodeType = ROOT
+  \textbf{root GitRepo}\\NodeType = ROOT
 };
 
 % Two direct children of root
 \node[parentnode] (parent) at (-3,-2) {
-  \textbf{child-repo}\\NodeType = PARENT
+  \textbf{nested GitRepo}\\NodeType = PARENT
 };
 \node[leafnode] (lib) at (3,-2) {
-  \textbf{lib}\\NodeType = LEAF
+  \textbf{leaf GitRepo}\\NodeType = LEAF
 };
 
 % Children of parent
@@ -44,9 +44,9 @@
 \draw[treearrow] (parent.south) -- (sub2.north);
 
 % Annotations
-\node[label, right=0.3cm of root] {owns nested .cgs (root)};
-\node[label, right=0.2cm of parent] {owns nested .cgs (parent)};
-\node[label, right=0.2cm of lib] {terminal — no nested .cgs};
+\node[label, right=0.3cm of root] {read(.cgs) seeds the root GitTree entry};
+\node[label, right=0.2cm of parent] {expand(.gts) discovers nested repos};
+\node[label, right=0.2cm of lib] {READY tree leaf tracked in the saved .gts};
 \node[label, right=0.2cm of sub1] {nested\_config = "disabled"};
 \node[label, right=0.2cm of sub2] {nested\_config = "disabled"};
 

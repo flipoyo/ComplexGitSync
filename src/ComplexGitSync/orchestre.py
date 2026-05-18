@@ -1126,11 +1126,17 @@ class Orchestre:
 
 @dataclass
 class ComplexGitSyncClient:
-    """Client facade exposing the current inspection-focused bootstrap surface.
+    """Client facade exposing the documented lifecycle surface.
 
     Every action method checks the current :class:`TreeLifecycleState` before
     executing.  Mutation actions (commit, push, tag, freeze_release) require a
     READY tree and will raise :exc:`~.errors.TreeNotReadyError` otherwise.
+
+    The user-facing lifecycle documented in the repository is:
+    ``read(.cgs) -> expand(.gts) -> verify(.gts) -> clone(.gts) ->
+    checkout(.gts) -> add -> commit -> push -> tag -> freeze``.
+    Current helper names such as ``validate``, ``restart``, and ``launch`` are
+    maintained as compatibility surfaces around that lifecycle.
     """
 
     orchestre: Orchestre = field(default_factory=Orchestre)
@@ -1168,7 +1174,7 @@ class ComplexGitSyncClient:
         *,
         discover_nested: bool = False,
     ) -> DependencyTreeRegistry:
-        """Read and load a ``.cgs`` specification into the runtime registry."""
+        """Read a ``.cgs`` specification into the lifecycle's loaded runtime state."""
         return self.load_cgs(config_path, discover_nested=discover_nested)
 
     def validate(
@@ -1177,7 +1183,12 @@ class ComplexGitSyncClient:
         *,
         discover_nested: bool = False,
     ) -> ProjectTreeState:
-        """Validate a ``.cgs`` specification by building and checking its registry."""
+        """Verify that a loaded tree can reach a READY runtime state.
+
+        The public documentation uses ``verify`` for this lifecycle step; the
+        current implementation exposes it through the historical
+        :meth:`validate` name.
+        """
         self.read(config_path, discover_nested=discover_nested)
         return self.get_tree_state()
 
@@ -1284,11 +1295,11 @@ class ComplexGitSyncClient:
         *,
         target_dir: str | Path | None = None,
     ) -> DependencyTreeRegistry:
-        """Clone a tree from a ``.cgs`` specification."""
+        """Clone the repositories required by the current loaded tree state."""
         return self.clone_cgs(config_path, target_dir=target_dir)
 
     def restart(self, config_path: str | Path) -> DependencyTreeRegistry:
-        """Resynchronize an already-cloned tree from a ``.cgs`` file.
+        """Legacy pull-like helper for resynchronizing an already-cloned tree.
 
         Loads the ``.cgs`` configuration, discovers nested configs, then
         checks out the root repository's current branch across the whole tree
@@ -1316,7 +1327,7 @@ class ComplexGitSyncClient:
         *,
         ref_kind: RefKind = RefKind.BRANCH,
     ) -> DependencyTreeRegistry:
-        """Check out *branch_name* across the full tree.
+        """Check out *branch_name* across the full tree from a READY ``.gts`` state.
 
         Requires a ``READY`` registry.  After a successful execution the
         registry remains ``READY`` and a ``.gts`` snapshot is written.
@@ -1387,7 +1398,8 @@ class ComplexGitSyncClient:
 
         Requires a ``READY`` registry; raises
         :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.  After a
-        successful execution the registry remains ``READY``.
+        successful execution the registry remains ``READY`` and refreshes the
+        stored commit hashes in the runtime tree state.
         """
         from .operations import push_tree
 
@@ -1400,7 +1412,11 @@ class ComplexGitSyncClient:
         return registry
 
     def tag(self, tag_name: str) -> DependencyTreeRegistry:
-        """Create and push *tag_name* across the full tree, leaf-first."""
+        """Create and push *tag_name* across the full tree, leaf-first.
+
+        The runtime tree state is refreshed so the recorded tag target remains
+        aligned with the synchronized repositories.
+        """
         from .operations import tag_tree
 
         registry = self.get_dependency_registry()
@@ -1419,7 +1435,11 @@ class ComplexGitSyncClient:
         message: str | None = None,
         stage_all: bool = True,
     ) -> DependencyTreeRegistry:
-        """Freeze a release by committing, tagging, and pushing leaf-first."""
+        """Freeze a release by committing, tagging, and pushing leaf-first.
+
+        In lifecycle terms this emits the next persisted ``.gts`` state for the
+        synchronized tree.
+        """
         from .operations import freeze_release_tree
 
         registry = self.get_dependency_registry()
@@ -1475,7 +1495,11 @@ class ComplexGitSyncClient:
         )
 
     def launch_release(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
-        """Launch a release from a ``.gts`` snapshot and end in ``READY``."""
+        """Compatibility helper that restores a recorded ``.gts`` state.
+
+        The primary lifecycle documentation treats this as checkout from saved
+        state rather than as an additional top-level lifecycle step.
+        """
         loaded_registry = self.load_gts(snapshot_path)
         previous_state = loaded_registry.lifecycle_state
         self._log_event("launch_release_start", snapshot_path=Path(snapshot_path).resolve())
@@ -1525,7 +1549,7 @@ class ComplexGitSyncClient:
         return loaded_registry
 
     def launch_state(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
-        """Launch an internal development state from a ``.gts`` snapshot.
+        """Compatibility helper that restores an internal ``.gts`` state.
 
         Loads ``snapshot_path``, performs due clone and checkout actions, and
         enforces a ``READY`` tree on successful completion.
@@ -1540,7 +1564,7 @@ class ComplexGitSyncClient:
         message: str | None = None,
         stage_all: bool = True,
     ) -> DependencyTreeRegistry:
-        """Freeze a tree state and emit a ``.gts`` snapshot."""
+        """Freeze a tree state and emit the next ``.gts`` snapshot id."""
         return self.freeze_release(
             name,
             output_gts=output_gts,
@@ -1549,7 +1573,7 @@ class ComplexGitSyncClient:
         )
 
     def launch(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
-        """Launch a tree from a ``.gts`` snapshot."""
+        """Compatibility wrapper for restoring a recorded ``.gts`` state."""
         return self.launch_release(snapshot_path)
 
     def get_dependency_registry(self) -> DependencyTreeRegistry:

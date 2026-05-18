@@ -69,20 +69,24 @@ Figure~\ref{fig:gittree-lifecycle} shows the full lifecycle state machine.
 \begin{tabular}{lll}
 \textbf{Action} & \textbf{Minimum state} & \textbf{Produces} \\
 \hline
-\texttt{load\_cgs}               & any         & DECLARED \\
-\texttt{load\_gts}               & any         & READY    \\
-\texttt{discover\_nested\_configs} & DECLARED    & DECLARED (enriched) \\
-\texttt{clone\_cgs}              & any         & \textbf{READY} \\
-\texttt{restart}                 & DECLARED    & \textbf{READY} \\
-\texttt{checkout}                & READY       & \textbf{READY} \\
+\texttt{read(.cgs)}              & none        & \texttt{.gts LOADED} \\
+\texttt{expand(.gts)}            & LOADED      & \texttt{.gts PENDING} \\
+\texttt{verify(.gts)}            & PENDING     & \texttt{.gts READY} \\
+\texttt{clone(.gts)}             & READY       & \textbf{READY} \\
+\texttt{checkout(.gts)}          & READY       & \textbf{READY} \\
+\texttt{add}                     & \textbf{READY only} & READY \\
 \texttt{commit}                  & \textbf{READY only} & READY \\
-\texttt{push}                    & \textbf{READY only} & READY \\
-\texttt{tag}                     & \textbf{READY only} & READY \\
-\texttt{freeze\_release}         & \textbf{READY only} & READY \\
-\texttt{launch\_release}         & any (from \texttt{.gts}) & READY \\
+\texttt{push}                    & \textbf{READY only} & READY + updated hash \\
+\texttt{tag}                     & \textbf{READY only} & READY + updated tag \\
+\texttt{freeze}                  & \textbf{READY only} & next \texttt{.gts} id \\
 \hline
 \end{tabular}
 \end{center}
+
+Current implementation names such as \texttt{tree}, \texttt{validate},
+\texttt{describe}, \texttt{restart}, and \texttt{launch\_release} remain
+compatibility surfaces around this lifecycle while the repository converges on
+the stricter vocabulary.
 
 Figure~\ref{fig:ops-sequence} shows the internal sequence of the three
 tree-wide synchronisation actions implemented in \texttt{operations.py}.
@@ -90,9 +94,9 @@ tree-wide synchronisation actions implemented in \texttt{operations.py}.
 \begin{figure}[ht]
 \centering
 \caption{Synchronisation operations: \texttt{checkout\_tree} runs
-  propagate\,→\,create\,→\,git checkout parent-first; \texttt{commit\_tree}
-  and \texttt{push\_tree} iterate leaf-first so that inner repos commit and
-  push before their parents.}
+  propagate\,→\,create\,→\,git checkout parent-first; \texttt{add\_tree},
+  \texttt{commit\_tree}, and \texttt{push\_tree} iterate leaf-first so that
+  inner repos are synchronized before their parents.}
 \label{fig:ops-sequence}
 \input{figures/operations_sequence}
 \end{figure}
@@ -123,8 +127,8 @@ on the live tree state.
 \centering
 \caption{Client state-gating: the Client reads \texttt{TreeLifecycleState}
   before delegating to an action.  READY-gated actions (\texttt{checkout},
-  \texttt{commit}, \texttt{push}, \texttt{tag}, \texttt{freeze\_release}) are
-  blocked unless the tree is \texttt{READY}.}
+  \texttt{add}, \texttt{commit}, \texttt{push}, \texttt{tag},
+  \texttt{freeze}) are blocked unless the tree is \texttt{READY}.}
 \label{fig:client-gating}
 \input{figures/client_gating}
 \end{figure}
@@ -196,7 +200,9 @@ convenience properties.
     the exact state of the tree including commit SHAs and absolute paths.
     \emph{Never} hand-edited.
   \item \textbf{GocDocument} (\texttt{.goc}) — a command script encoding a
-    sequence of \texttt{cgitsync} commands with session defaults.
+     sequence of \texttt{cgitsync} commands with session defaults.
+  \item \textbf{Local Git Register} (\texttt{.lgr}) — the planned project-local
+    register that assigns one local id to each generated \texttt{.gts}.
 \end{itemize}
 
 % -----------------------------------------------------------------------

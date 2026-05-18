@@ -65,14 +65,13 @@
   registry: DependencyTreeRegistry\\
   run\_logger: CommandRunLogger
   \nodepart{three}
-  load\_cgs(path)\\
-  load\_gts(path)\\
-  clone\_cgs(path)\\
-  checkout(branch, ref\_kind)\\
-  commit(message, stage\_all)\\
-  push()\\
-  get\_tree\_state()\\
-  write\_gts\_snapshot()
+  read(cgs) / load\_gts(gts)\\
+  expand(gts) / verify(gts)\\
+  clone(gts)\\
+  checkout(gts, ref)\\
+  add() / commit(message)\\
+  push() / tag(name)\\
+  freeze(name)
 };
 
 % --- Orchestre ---
@@ -167,10 +166,13 @@
 
 \begin{figure}[ht]
 \centering
-\caption{GitTree lifecycle state machine.  Every bootstrapping operation
-  (\texttt{clone}, \texttt{restart}, \texttt{checkout}) must terminate in
-  \texttt{READY}; mutation operations (\texttt{commit}, \texttt{push},
-  \texttt{tag}, \texttt{freeze\_release}) are gated on \texttt{READY}.}
+\caption{GitTree lifecycle state machine.  The user-facing lifecycle is
+  \texttt{read(.cgs)} $\rightarrow$ \texttt{.gts LOADED}
+  $\rightarrow$ \texttt{expand(.gts)} $\rightarrow$ \texttt{.gts PENDING}
+  $\rightarrow$ \texttt{verify(.gts)} $\rightarrow$ \texttt{.gts READY};
+  synchronized Git operations (\texttt{checkout},
+  \texttt{add}, \texttt{commit}, \texttt{push}, \texttt{tag},
+  \texttt{freeze}) are gated on \texttt{READY}.}
 \label{fig:gittree-lifecycle}
 
 \begin{tikzpicture}[
@@ -185,19 +187,19 @@
 ]
 
 \node[state] (unloaded) {UNLOADED};
-\node[state, right=of unloaded] (declared)  {DECLARED};
-\node[state, right=of declared] (pending)   {PENDING};
+\node[state, right=of unloaded] (loaded)  {LOADED};
+\node[state, right=of loaded] (pending)   {PENDING};
 \node[state, right=of pending]  (ready)     {READY};
 
-\node[sidestate, below=1.2cm of declared] (partial) {PARTIAL};
+\node[sidestate, below=1.2cm of loaded] (partial) {PARTIAL};
 \node[sidestate, below=1.2cm of pending]  (error)   {ERROR};
 
-\draw[trans] (unloaded) -- node[above, font=\scriptsize]{load\_cgs} (declared);
-\draw[trans] (declared) -- node[above, font=\scriptsize]{clone/checkout} (pending);
-\draw[trans] (pending)  -- node[above, font=\scriptsize]{all READY} (ready);
-\draw[trans, dashed] (declared.south) -- (partial.north);
+\draw[trans] (unloaded) -- node[above, font=\scriptsize]{read(.cgs)} (loaded);
+\draw[trans] (loaded) -- node[above, font=\scriptsize]{expand(.gts)} (pending);
+\draw[trans] (pending)  -- node[above, font=\scriptsize]{verify(.gts)} (ready);
+\draw[trans, dashed] (loaded.south) -- (partial.north);
 \draw[trans, dashed] (pending.south)  -- (error.north);
-\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{reload .cgs} (declared.north);
+\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{freeze / next .gts id} (loaded.north);
 
 \end{tikzpicture}
 \end{figure}

@@ -20,8 +20,8 @@ one tier; dependencies only flow **downward** (API → Actions → Core).
                          │ calls (state-gated)
 ┌────────────────────────▼────────────────────────────┐
 │  Tier 2 — Actions                                   │
-│  clone · checkout · commit · push · tag             │
-│  freeze_release · discover_nested_configs           │
+│  read · expand · verify · clone · checkout          │
+│  add · commit · push · tag · freeze                 │
 │  Each action is only accessible from VALID states   │
 └────────────────────────┬────────────────────────────┘
                          │ reads / mutates
@@ -63,7 +63,7 @@ Supporting enumerations (one per file):
 | Enum | Values |
 |---|---|
 | `NodeType` | ROOT / PARENT / LEAF |
-| `TreeLifecycleState` | UNLOADED → DECLARED → PENDING → READY; side: PARTIAL, ERROR |
+| `TreeLifecycleState` | user-facing: LOADED → PENDING → READY; implementation retains internal readiness states |
 | `RepoLifecycleState` | DECLARED → PENDING → READY / FALLBACK_READY; side: MISSING, ERROR |
 | `SyncState` | ALIGNED / FALLBACK_APPLIED / DIRTY / AHEAD / BEHIND / DIVERGED / ERROR / PENDING |
 | `DiscoveryState` | PENDING / RESOLVED / DISABLED / MISSING / AMBIGUOUS |
@@ -79,24 +79,22 @@ the client.  **Every action is gated by the current `TreeLifecycleState`**:
 
 | Action | Minimum required state | Produces state |
 |---|---|---|
-| `load_cgs` | any | DECLARED |
-| `load_gts` | any | READY |
-| `discover_nested_configs` | DECLARED | DECLARED (enriched) |
-| `clone_cgs` | any | READY |
-| `restart` | DECLARED | READY |
-| `checkout` | READY | READY |
-| `commit` | READY | READY |
-| `push` | READY | READY |
-| `tag` | READY | READY |
-| `freeze_release` | READY | READY |
-| `launch_release` | any (from `.gts`) | READY |
-| `write_gts_snapshot` | any loaded | any |
+| `read(.cgs)` | none | `.gts LOADED` |
+| `expand(.gts)` | `LOADED` | `.gts PENDING` |
+| `verify(.gts)` | `PENDING` | `.gts READY` |
+| `clone(.gts)` | `READY` | `READY` |
+| `checkout(.gts)` | `READY` | `READY` |
+| `add` | `READY` | `READY` |
+| `commit` | `READY` | `READY` |
+| `push` | `READY` | `READY` + updated hash |
+| `tag` | `READY` | `READY` + updated tag |
+| `freeze` | `READY` | next `.gts` id |
 
 Actions that **must reject** a non-READY tree:
-`commit`, `push`, `tag`, `freeze_release`.
+`add`, `commit`, `push`, `tag`, `freeze`.
 
 Actions that **must produce READY** or fail explicitly:
-`clone_cgs`, `restart`, `checkout`, `launch_release`.
+`verify(.gts)`, `clone(.gts)`, `checkout(.gts)`.
 
 ### Tier 3 — Client / API
 
@@ -198,6 +196,7 @@ Do **not** split it into plugins or separate packages.
 | Local authoring spec | `.cgs` | TOML |
 | Generated Git Tree State snapshot | `.gts` | TOML |
 | Planning / GOC documents | `.goc` | TOML, YAML, or JSON |
+| Local Git Register | `.lgr` | TOML |
 
 - TOML read uses stdlib `tomllib`; TOML write uses `tomli-w`.
 - YAML support is optional and guarded by a soft import of `PyYAML`.
@@ -206,20 +205,43 @@ Do **not** split it into plugins or separate packages.
 
 ---
 
-## GitTree Lifecycle States
+## Lifecycle Contract
 
-Valid `GitTree` lifecycle states (defined fully in `Planning/DevPlan.md`):
+The user-facing lifecycle contract is:
 
-`UNLOADED` → `DECLARED` → `DISCOVERING` → `PENDING` → `READY`
+1. `read(.cgs)` → `.gts LOADED`
+2. `expand(.gts, LOADED)` → `.gts PENDING`
+3. `verify(.gts, PENDING)` → `.gts READY`
+4. `clone(.gts)`
+5. `checkout(.gts)`
+6. `add`
+7. `commit`
+8. `push` → update the stored hash in `GitTree`
+9. `tag` → update the stored tag in `GitTree`
+10. `freeze` → emit the next `.gts` id
 
-Side states: `PARTIAL`, `ERROR`, `FALLBACK_READY`
+Additional guidance:
 
 - **`READY`** means the dependency-tree registry is complete and synchronised —
   not that worktrees are clean.
-- **Bootstrapping operations** (`clone`, `restart`, `checkout`,
-  `launch_release`) must end in `READY` or fail explicitly.
-- **Mutation operations** (`commit`, `push`, `tag`, `freeze_release`) must
-  reject any tree that is not `READY`.
+- `expand` and `verify` are the lifecycle names used in the documentation even
+  when current compatibility commands still use older labels.
+- `launch` is not treated as a primary lifecycle step; restoring from a saved
+  `.gts` is documented as checkout from recorded state.
+
+## Local Git Register (`.lgr`)
+
+Each project is expected to maintain a project-local register file named
+`<Project_name>.lgr`.
+
+The `.lgr` register is responsible for:
+
+- assigning one local id to each generated `.gts`
+- tracking the current snapshot associated with the project
+- staying in sync with the project-local lifecycle state
+
+`print(.gts)`, `pull(.gts)`, `orchestrate(.goc)`, and `.lgr` management remain
+tracked work items in `Planning/DevPlan.md` and `Planning/DevPlanTickets.md`.
 
 ---
 
