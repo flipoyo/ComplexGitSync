@@ -160,6 +160,9 @@ by Python and CLI entry points, with deterministic command ordering and errors.
 **Dependencies**: T10, T19.
 **Acceptance**: README, planning docs, figures, and CLI terminology all use the
 same lifecycle names without ambiguity.
+**Progress update**: `verify` is now wired as a first-class API/CLI command, with
+`validate` kept as a compatibility alias. Remaining terminology cleanup is the
+`expand` command naming alignment.
 
 ### T24 — Local Git Register (`.lgr`) management ❌
 **Goal**: maintain a project-local register named `<Project_name>.lgr`.

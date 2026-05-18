@@ -67,8 +67,8 @@ practice, the workflow is:
     \texttt{read(.cgs)} step.
   \item tree expansion / rendering corresponds to the documented
     \texttt{expand(.gts)} step.
-  \item \texttt{validate(...)} is the current compatibility name for the
-    documented \texttt{verify(.gts)} step.
+  \item \texttt{verify(...)} is the lifecycle method for the documented
+    \texttt{verify(.gts)} step; \texttt{validate(...)} remains a compatibility alias.
   \item \texttt{clone(...)} bootstraps a tree and must finish in
     \texttt{READY}.
   \item \texttt{checkout(...)}, \texttt{add(...)}, \texttt{commit(...)},
@@ -92,7 +92,7 @@ client.read("examples/complexgitsync.cgs")
 print(client.format_project_tree())
 
 # 3. verify(.gts, PENDING) -> .gts READY
-client.validate("examples/complexgitsync.cgs")
+client.verify("examples/complexgitsync.cgs")
 
 # 4. clone(.gts)
 client.clone("examples/complexgitsync.cgs")

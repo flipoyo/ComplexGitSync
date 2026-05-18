@@ -60,6 +60,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - CLI mutation commands (`checkout`, `commit`, `push`, `tag`, `freeze-release`) require `--gts <file>` to load the READY registry.
 - CLI mutation commands now also include `add` and `freeze-state`; snapshot launch commands include `launch-release` and `launch-state`.
 - User-facing lifecycle contract is `read(.cgs) → .gts LOADED`, `expand(.gts, LOADED) → .gts PENDING`, `verify(.gts, PENDING) → .gts READY`, `clone(.gts)`, `checkout(.gts)`, `add`, `commit`, `push`, `tag`, `freeze`.
+- `verify` is now implemented on both Python API and CLI; `validate` remains as a compatibility alias.
 - `push` is expected to refresh the stored hash in `GitTree`; `tag` is expected to refresh the stored tag in `GitTree`.
 - `freeze` is expected to emit the next `.gts` id and register it locally.
 - Remaining lifecycle work is `orchestrate(.goc)` and project-local `.lgr` register management.

@@ -95,7 +95,8 @@ client.read("examples/complexgitsync.cgs")
 print(client.format_project_tree())
 
 # 3. verify(.gts, PENDING) -> .gts READY
-# Current implementation exposes this stage through validation.
+client.verify("examples/complexgitsync.cgs")
+# Compatibility alias:
 client.validate("examples/complexgitsync.cgs")
 
 # print(.gts/.cgs) lifecycle summary
@@ -134,7 +135,8 @@ client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.
 pixi run cgitsync tree examples/complexgitsync.cgs
 
 # 3. verify(.gts, PENDING) -> .gts READY
-# Current command surface uses `validate` for the verify stage.
+pixi run cgitsync verify examples/complexgitsync.cgs
+# Compatibility alias:
 pixi run cgitsync validate examples/complexgitsync.cgs
 
 # print(.gts)

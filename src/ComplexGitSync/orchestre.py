@@ -1183,14 +1183,37 @@ class ComplexGitSyncClient:
         *,
         discover_nested: bool = False,
     ) -> ProjectTreeState:
-        """Verify that a loaded tree can reach a READY runtime state.
+        """Compatibility alias for :meth:`verify`."""
+        return self.verify(config_path, discover_nested=discover_nested)
 
-        The public documentation uses ``verify`` for this lifecycle step; the
-        current implementation exposes it through the historical
-        :meth:`validate` name.
-        """
+    def verify(
+        self,
+        config_path: str | Path,
+        *,
+        discover_nested: bool = False,
+    ) -> ProjectTreeState:
+        """Verify that all repositories are loaded and report the resulting tree state."""
         self.read(config_path, discover_nested=discover_nested)
-        return self.get_tree_state()
+        registry = self.get_dependency_registry()
+        non_loaded_repo_ids = [
+            entry.repo_id
+            for entry in registry.values()
+            if entry.repo_lifecycle_state != RepoLifecycleState.DECLARED
+        ]
+        if non_loaded_repo_ids:
+            raise GitSyncError(
+                "verify requires every repository to be LOADED (DECLARED) before readiness checks; "
+                f"found non-loaded entries: {', '.join(non_loaded_repo_ids)}"
+            )
+        tree_state = self.get_tree_state()
+        self._log_event(
+            "verify_state",
+            tree_lifecycle_state=tree_state.lifecycle_state,
+            is_ready=tree_state.is_ready,
+            registry_complete=tree_state.registry_complete,
+            loaded_repo_count=len(registry.entries),
+        )
+        return tree_state
 
     def load_gts(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED

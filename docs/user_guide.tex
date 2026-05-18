@@ -37,8 +37,8 @@ This guide follows the project lifecycle strictly:
 \end{enumerate}
 
 Current command names still expose some historical compatibility labels:
-\texttt{tree} for the \texttt{expand} stage, \texttt{validate} for the
-\texttt{verify} stage, \texttt{describe} as a compatibility alias of
+\texttt{tree} for the \texttt{expand} stage, \texttt{validate} as a
+compatibility alias of \texttt{verify}, \texttt{describe} as a compatibility alias of
 \texttt{print}, and \texttt{restart} as a compatibility alias of
 \texttt{pull}.
 
@@ -48,21 +48,24 @@ The remaining planned work is \texttt{orchestrate(.goc)} and project-local
 % -----------------------------------------------------------------------
 \section{Commands}
 
-\subsection{\texttt{validate}}
+\subsection{\texttt{verify}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync verify <spec.cgs>
+\end{lstlisting}
+
+Parses the \texttt{.cgs} file, builds the dependency-tree registry, and
+verifies every repository is loaded before readiness checks. Exits~0 on success,
+non-zero on parse or validation error.
+
+Compatibility alias:
 
 \begin{lstlisting}[language=bash]
 $ cgitsync validate <spec.cgs>
 \end{lstlisting}
 
-Parses the \texttt{.cgs} file, builds the dependency-tree registry, and
-prints a one-line summary for each repository node. Exits~0 on success,
-non-zero on parse or validation error.
-
-In lifecycle terms this is the current compatibility command for the
-\texttt{verify} stage.
-
-\textbf{Output fields:} \texttt{name}, \texttt{lifecycle\_state},
-\texttt{complete}, \texttt{node\_count}.
+\textbf{Output fields:} \texttt{lifecycle\_state}, \texttt{ready},
+\texttt{complete}.
 
 \subsection{\texttt{tree}}
 

@@ -27,6 +27,17 @@ def test_validate_command_summarizes_loaded_registry(tmp_path, capsys):
     assert "complete=true" in captured.out
 
 
+def test_verify_command_summarizes_loaded_registry(tmp_path, capsys):
+    config_path = _write_project_cgs(tmp_path)
+
+    exit_code = main(["verify", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "DECLARED" in captured.out
+    assert "complete=true" in captured.out
+
+
 def test_tree_command_renders_declared_dependency_tree(tmp_path, capsys):
     config_path = _write_project_cgs(tmp_path)
 
@@ -219,6 +230,25 @@ def test_validate_command_creates_log_file(monkeypatch, tmp_path, capsys):
     assert len(log_files) == 1
     log_content = log_files[0].read_text(encoding="utf-8")
     assert '"event": "command_start"' in log_content
+    assert '"event": "command_end"' in log_content
+
+
+def test_verify_command_creates_log_file(monkeypatch, tmp_path, capsys):
+    config_path = _write_project_cgs(tmp_path)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+
+    exit_code = main(["verify", str(config_path)])
+    captured = capsys.readouterr()
+
+    log_dir = tmp_path / "state-home" / "ComplexGitSync" / "logs"
+    log_files = sorted(log_dir.glob("*-verify.log"))
+
+    assert exit_code == 0
+    assert "DECLARED" in captured.out
+    assert len(log_files) == 1
+    log_content = log_files[0].read_text(encoding="utf-8")
+    assert '"event": "command_start"' in log_content
+    assert '"event": "verify_state"' in log_content
     assert '"event": "command_end"' in log_content
 
 

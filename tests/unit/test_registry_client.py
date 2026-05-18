@@ -35,6 +35,16 @@ def test_client_read_alias_loads_cgs(tmp_path):
     assert client.get_tree_state().lifecycle_state == TreeLifecycleState.DECLARED
 
 
+def test_client_verify_returns_tree_state(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    client = ComplexGitSyncClient()
+
+    tree_state = client.verify(config_path)
+
+    assert tree_state.lifecycle_state == TreeLifecycleState.DECLARED
+    assert tree_state.registry_complete is True
+
+
 def test_client_validate_alias_returns_tree_state(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()

@@ -11,6 +11,7 @@ from .orchestre import CgsDocument, ComplexGitSyncClient, create_run_logger
 
 
 _PLANNED_COMMANDS: dict[str, str] = {
+    "verify": "Verify that all repositories are loaded from a local .cgs specification.",
     "validate": "Validate a local .cgs specification.",
     "describe": "Describe a .cgs or .gts input.",
     "print": "Print a .cgs or .gts lifecycle summary.",
@@ -45,7 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     for command_name, help_text in _PLANNED_COMMANDS.items():
         subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
-        if command_name in {"validate", "describe", "print", "tree"}:
+        if command_name in {"verify", "validate", "describe", "print", "tree"}:
             source_help = "Path to the local .cgs file to inspect."
             if command_name in {"describe", "print", "tree"}:
                 source_help = "Path to the local .cgs or .gts file to inspect."
@@ -175,7 +176,15 @@ def _handle_validate(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="validate",
         source=Path(args.source),
-        runner=lambda client, source: _execute_validate(client, source, discover_nested=args.discover_nested),
+        runner=lambda client, source: _execute_verify(client, source, discover_nested=args.discover_nested),
+    )
+
+
+def _handle_verify(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="verify",
+        source=Path(args.source),
+        runner=lambda client, source: _execute_verify(client, source, discover_nested=args.discover_nested),
     )
 
 
@@ -304,13 +313,13 @@ def _handle_launch_state(args: argparse.Namespace) -> int:
     )
 
 
-def _execute_validate(
+def _execute_verify(
     client: ComplexGitSyncClient,
     source_path: Path,
     *,
     discover_nested: bool,
 ) -> int:
-    tree_state = client.validate(source_path, discover_nested=discover_nested)
+    tree_state = client.verify(source_path, discover_nested=discover_nested)
     print(
         f"{tree_state.lifecycle_state.value} "
         f"ready={str(tree_state.is_ready).lower()} "
@@ -635,6 +644,7 @@ def _load_ready_registry_source(
 
 
 _INSPECTION_HANDLERS = {
+    "verify": _handle_verify,
     "validate": _handle_validate,
     "describe": _handle_describe,
     "print": _handle_print,

@@ -103,14 +103,15 @@ fall back to \texttt{main} when a repository has not created it yet.
 Check that \cgscli{} can parse and resolve the spec without errors:
 
 \begin{lstlisting}[language=bash]
-$ cgitsync validate complexgitsync.cgs
+$ cgitsync verify complexgitsync.cgs
 \end{lstlisting}
 
 A successful run exits with code~0 and prints the current tree summary, for
 example \texttt{DECLARED ready=false complete=true}.
 
 The current command surface still uses \texttt{tree} for the \texttt{expand}
-stage and \texttt{validate} for the \texttt{verify} stage.
+stage. The \texttt{validate} command remains available as a compatibility alias
+for \texttt{verify}.
 
 % -----------------------------------------------------------------------
 \section{Clone / Checkout}
