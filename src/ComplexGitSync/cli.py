@@ -348,15 +348,6 @@ def _execute_verify(
     return 0
 
 
-def _execute_validate(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    discover_nested: bool,
-) -> int:
-    return _execute_verify(client, source_path, discover_nested=discover_nested)
-
-
 def _execute_describe(
     client: ComplexGitSyncClient,
     source_path: Path,

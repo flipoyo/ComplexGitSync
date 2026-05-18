@@ -1201,6 +1201,8 @@ class ComplexGitSyncClient:
             self.load_cgs(resolved_source, discover_nested=discover_nested)
 
         registry = self.get_dependency_registry()
+        # Only DECLARED entries are transitioned; PENDING and READY entries
+        # (e.g., loaded from a .gts snapshot) are left in their current state.
         for entry in iter_tree(registry):
             if entry.repo_lifecycle_state == RepoLifecycleState.DECLARED:
                 entry.repo_lifecycle_state = RepoLifecycleState.PENDING
