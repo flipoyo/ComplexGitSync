@@ -688,8 +688,9 @@ relative_path = "deps/child-repo"
 
 def _write_ready_gts(tmp_path):
     gts_path = tmp_path / "project.gts"
+    root_path = (tmp_path / "workspace" / "demo").as_posix()
     gts_path.write_text(
-        """
+        f"""
 [document]
 format_version = "1.0"
 generated_at = "2026-05-13T00:00:00Z"
@@ -697,7 +698,7 @@ command_origin = "clone"
 
 [project]
 name = "demo"
-root_absolute_path = "/tmp/demo"
+root_absolute_path = "{root_path}"
 
 [tree_state]
 lifecycle_state = "READY"
@@ -707,7 +708,7 @@ registry_complete = true
 [[repo_state]]
 name = "demo"
 node_type = "root"
-absolute_path = "/tmp/demo"
+absolute_path = "{root_path}"
 relative_path = "."
 repo_lifecycle_state = "READY"
 sync_state = "ALIGNED"

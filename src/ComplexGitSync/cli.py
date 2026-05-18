@@ -60,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Target directory for the cloned project root (.cgs mode only).",
             )
             subparser.set_defaults(handler=_handle_initialise)
-        elif command_name in {"load"}:
+        elif command_name == "load":
             subparser.add_argument("source", help="Path to the local .cgs or .gts file to load.")
             subparser.add_argument(
                 "--discover-nested",
