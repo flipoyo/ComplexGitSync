@@ -30,6 +30,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T15 | `launch_release` (Python API) | ✅ Done |
 | T21 | `add`, `freeze_state`, `launch_state` (Python API + CLI) | ✅ Done |
 | T25 | Logger verbosity profile verification (`verbose` / `whisper_sync`) | ✅ Done |
+| T23 | Lifecycle terminology: `load`, `expand`, `validate`, `git()` | ✅ Done |
 | T17 | Unit Test Suite (incremental) | ✅ Ongoing |
 | T19 | Documentation and Examples (incremental) | ✅ Updated |
 | T20 | CI Version Increment Automation | ✅ Done |
@@ -42,7 +43,6 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T16 | CLI Bootstrap for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` | ✅ Done |
 | T18 | Integration Test Suite | ❌ Not started |
 | T22 | Parser-driven automation of public client methods via `.goc` files | ❌ Pending |
-| T23 | Lifecycle terminology cleanup for `expand` / `verify` labels | ❌ Pending |
 | T24 | Local Git Register (`.lgr`) management for `.gts` ids | ❌ Pending |
 
 ## Architecture Notes
@@ -59,8 +59,9 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - `ComplexGitSyncClient.checkout`, `ComplexGitSyncClient.restart`, and `ComplexGitSyncClient.freeze_release` write `.gts` snapshots after success.
 - CLI mutation commands (`checkout`, `commit`, `push`, `tag`, `freeze-release`) require `--gts <file>` to load the READY registry.
 - CLI mutation commands now also include `add` and `freeze-state`; snapshot launch commands include `launch-release` and `launch-state`.
-- User-facing lifecycle contract is `read(.cgs) → .gts LOADED`, `expand(.gts, LOADED) → .gts PENDING`, `verify(.gts, PENDING) → .gts READY`, `clone(.gts)`, `checkout(.gts)`, `add`, `commit`, `push`, `tag`, `freeze`.
-- `push` is expected to refresh the stored hash in `GitTree`; `tag` is expected to refresh the stored tag in `GitTree`.
+- User-facing lifecycle contract is `load(.cgs) → .gts LOADED`, `expand(.gts/.cgs) → .gts PENDING`, `validate(.gts/.cgs) → .gts READY`, `clone(.gts/.cgs)`, `git(tree,"commit",msg)`, `git(tree,"push")`, `git(tree,"tag",name)`, `freeze`.
+- `git(tree, command, *args)` is the canonical unified step-5 interface; `commit`, `push`, and `tag` remain available as direct methods.
+- Compatibility aliases: `read` → `load`, `verify` → `validate`.
 - `freeze` is expected to emit the next `.gts` id and register it locally.
 - Remaining lifecycle work is `orchestrate(.goc)` and project-local `.lgr` register management.
 - `print` and `pull` lifecycle methods are now wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.

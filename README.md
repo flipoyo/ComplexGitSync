@@ -62,18 +62,14 @@ pixi install
 
 ### Lifecycle
 
-ComplexGitSync documentation now follows this lifecycle strictly:
+ComplexGitSync follows this canonical lifecycle:
 
-1. `read(.cgs)` → `.gts LOADED`
-2. `expand(.gts, LOADED)` → `.gts PENDING`
-3. `verify(.gts, PENDING)` → `.gts READY`
-4. `clone(.gts)`
-5. `checkout(.gts)`
-6. `add`
-7. `commit`
-8. `push` → update hash in `GitTree`
-9. `tag` → update tag in `GitTree`
-10. `freeze` → emit the next `.gts` id
+1. `load(.cgs)` → `.gts LOADED`
+2. `expand(.gts/.cgs)` → `.gts PENDING`
+3. `validate(.gts/.cgs)` → `.gts READY`
+4. `clone(.gts/.cgs)`
+5. `git(tree, "commit", msg)` / `git(tree, "push")` / `git(tree, "tag", name)`
+6. `freeze` → emit the next `.gts` id
 
 Planned follow-up work tracked in the repository:
 
@@ -87,21 +83,21 @@ from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
-# 1. read(.cgs) -> .gts LOADED
-client.read("examples/complexgitsync.cgs")
+# 1. load(.cgs) -> .gts LOADED
+client.load("examples/complexgitsync.cgs")
 
-# 2. expand(.gts, LOADED) -> .gts PENDING
-# Current implementation exposes this stage through tree expansion / rendering.
-print(client.format_project_tree())
+# 2. expand(.cgs/.gts) -> .gts PENDING
+# Moves through the GitTree from parents to leaves (recursive nested discovery).
+print(client.expand("examples/complexgitsync.cgs"))
 
-# 3. verify(.gts, PENDING) -> .gts READY
-# Current implementation exposes this stage through validation.
+# 3. validate(.gts/.cgs) -> .gts READY
+# Checks that every GitRepo is in a READY state and prints a state summary.
 client.validate("examples/complexgitsync.cgs")
 
 # print(.gts/.cgs) lifecycle summary
 print(client.print("examples/complexgitsync.cgs"))
 
-# 4. clone(.gts)
+# 4. clone(.gts/.cgs)
 client.clone("examples/complexgitsync.cgs")
 
 # pull(.gts/.cgs) resynchronization
@@ -110,58 +106,60 @@ client.pull("examples/complexgitsync.cgs")
 # 5. checkout(.gts)
 client.checkout("feature/my-branch")
 
-# 6. add
+# add
 client.add()
 
-# 7. commit
-client.commit("feat: update project")
+# git(tree, "commit") -> updates all repos leaf-first
+registry = client.get_dependency_registry()
+client.git(registry, "commit", "feat: update project CGS#1")
 
-# 8. push -> update hash in GitTree
-client.push()
+# git(tree, "push") -> update hash in GitTree
+client.git(registry, "push")
 
-# 9. tag -> update tag in GitTree
-client.tag("v1.2.3")
+# git(tree, "tag") -> update tag in GitTree
+client.git(registry, "tag", "v1.2.3")
 
-# 10. freeze -> .gts ++id
+# 6. freeze -> .gts ++id
 client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
 ```
 
 ### 3.2 CLI
 
 ```bash
-# 2. expand(.gts, LOADED) -> .gts PENDING
-# Current command surface uses `tree` for the expand stage.
-pixi run cgitsync tree examples/complexgitsync.cgs
+# 1. load(.cgs) -> .gts LOADED
+pixi run cgitsync load examples/complexgitsync.cgs
 
-# 3. verify(.gts, PENDING) -> .gts READY
-# Current command surface uses `validate` for the verify stage.
+# 2. expand(.cgs/.gts) -> .gts PENDING
+pixi run cgitsync expand examples/complexgitsync.cgs
+
+# 3. validate(.cgs/.gts) -> .gts READY
 pixi run cgitsync validate examples/complexgitsync.cgs
 
 # print(.gts)
 pixi run cgitsync print .cgitsync/state/complexgitsync.gts
 
-# 4. clone(.gts)
+# 4. clone(.gts/.cgs)
 pixi run cgitsync clone examples/complexgitsync.cgs
 
 # pull(.gts/.cgs)
 pixi run cgitsync pull examples/complexgitsync.cgs
 
-# 5. checkout(.gts)
+# checkout(.gts)
 pixi run cgitsync checkout feature/my-branch --gts .cgitsync/state/complexgitsync.gts
 
-# 6. add
+# add
 pixi run cgitsync add --gts .cgitsync/state/complexgitsync.gts
 
-# 7. commit
-pixi run cgitsync commit "feat: update project" --gts .cgitsync/state/complexgitsync.gts
+# 5. commit -> git(tree, "commit", msg)
+pixi run cgitsync commit "feat: update project CGS#1" --gts .cgitsync/state/complexgitsync.gts
 
-# 8. push -> update hash in GitTree
+# push -> git(tree, "push"), updates hash in GitTree
 pixi run cgitsync push --gts .cgitsync/state/complexgitsync.gts
 
-# 9. tag -> update tag in GitTree
+# tag -> git(tree, "tag", name), updates tag in GitTree
 pixi run cgitsync tag v1.2.3 --gts .cgitsync/state/complexgitsync.gts
 
-# 10. freeze -> .gts ++id
+# 6. freeze -> .gts ++id
 # Current command surface exposes freeze through `freeze-release`.
 pixi run cgitsync freeze-release release-2026.05 --gts .cgitsync/state/complexgitsync.gts
 ```

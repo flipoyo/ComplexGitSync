@@ -137,6 +137,26 @@ All six commands implemented in `cli.py`:
   - `cgitsync launch-release <snapshot.gts>`
 CLI behaviour matches Python API invariants; 13 new smoke tests added.
 
+### T23 — Lifecycle terminology: `load`, `expand`, `validate`, `git()` ✅
+Aligned the user-facing lifecycle surface with the reference lifecycle:
+
+- `load(.cgs)` is now the canonical step-1 name; `read()` is retained as a
+  compatibility alias.
+- `expand(.cgs/.gts)` is the canonical step-2 name; it loads the source, runs
+  nested `.cgs` discovery (parent-to-leaf recursive), and returns the formatted
+  tree.  CLI: `cgitsync expand <source>`.
+- `validate(.cgs/.gts)` is the canonical step-3 name; it accepts both `.cgs`
+  and `.gts` sources; `verify()` is retained as a compatibility alias.  CLI:
+  `cgitsync validate <source>`.
+- `git(gittree, command, *args)` is the unified step-5 interface.  Dispatches
+  `"commit"`, `"push"`, and `"tag"` to the appropriate tree-wide operations;
+  each follows leaf-first ordering.  Individual `commit`, `push`, and `tag`
+  methods remain available as direct entry points.
+- CLI gains `load` and `expand` as first-class subcommands; `tree` remains as
+  a backward-compatible alias for expand (with runtime-snapshot preference).
+- All documentation (AdditionalSpecs.md, DevPlan.md, DevPlanTickets.md,
+  README.md) updated to use the canonical vocabulary.
+
 ### T18 — Integration Test Suite ❌
 **Goal**: end-to-end validation on temporary nested git repositories.
 **Deliverables**: nested repo fixture generator; clone / restart / checkout /
@@ -152,14 +172,6 @@ execution engine, and validation/reporting for unsupported actions.
 **Dependencies**: T16, T18.
 **Acceptance**: `.goc` files execute through the same public API contract used
 by Python and CLI entry points, with deterministic command ordering and errors.
-
-### T23 — Lifecycle terminology cleanup for `expand` / `verify` labels ❌
-**Goal**: align the user-facing workflow vocabulary with the strict lifecycle.
-**Deliverables**: align the current command surface with the lifecycle names
-`expand(.gts)` and `verify(.gts)`.
-**Dependencies**: T10, T19.
-**Acceptance**: README, planning docs, figures, and CLI terminology all use the
-same lifecycle names without ambiguity.
 
 ### T24 — Local Git Register (`.lgr`) management ❌
 **Goal**: maintain a project-local register named `<Project_name>.lgr`.

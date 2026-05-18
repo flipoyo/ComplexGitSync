@@ -20,8 +20,8 @@ one tier; dependencies only flow **downward** (API → Actions → Core).
                          │ calls (state-gated)
 ┌────────────────────────▼────────────────────────────┐
 │  Tier 2 — Actions                                   │
-│  read · expand · verify · clone · checkout          │
-│  add · commit · push · tag · freeze                 │
+│  load · expand · validate · clone · checkout        │
+│  add · commit · push · tag · freeze · git           │
 │  Each action is only accessible from VALID states   │
 └────────────────────────┬────────────────────────────┘
                          │ reads / mutates
@@ -79,22 +79,22 @@ the client.  **Every action is gated by the current `TreeLifecycleState`**:
 
 | Action | Minimum required state | Produces state |
 |---|---|---|
-| `read(.cgs)` | none | `.gts LOADED` |
-| `expand(.gts)` | `LOADED` | `.gts PENDING` |
-| `verify(.gts)` | `PENDING` | `.gts READY` |
-| `clone(.gts)` | `READY` | `READY` |
+| `load(.cgs)` | none | `.gts LOADED` (DECLARED) |
+| `expand(.gts/.cgs)` | `LOADED` | `.gts PENDING` |
+| `validate(.gts/.cgs)` | `PENDING` | `.gts READY` |
+| `clone(.gts/.cgs)` | `READY` | `READY` |
 | `checkout(.gts)` | `READY` | `READY` |
 | `add` | `READY` | `READY` |
-| `commit` | `READY` | `READY` |
-| `push` | `READY` | `READY` + updated hash |
-| `tag` | `READY` | `READY` + updated tag |
+| `git(tree, "commit", msg)` | `READY` | `READY` |
+| `git(tree, "push")` | `READY` | `READY` + updated hash |
+| `git(tree, "tag", name)` | `READY` | `READY` + updated tag |
 | `freeze` | `READY` | next `.gts` id |
 
 Actions that **must reject** a non-READY tree:
-`add`, `commit`, `push`, `tag`, `freeze`.
+`add`, `git("commit")`, `git("push")`, `git("tag")`, `freeze`.
 
 Actions that **must produce READY** or fail explicitly:
-`verify(.gts)`, `clone(.gts)`, `checkout(.gts)`.
+`validate(.gts/.cgs)`, `clone(.gts/.cgs)`, `checkout(.gts)`.
 
 ### Tier 3 — Client / API
 
@@ -207,25 +207,33 @@ Do **not** split it into plugins or separate packages.
 
 ## Lifecycle Contract
 
-The user-facing lifecycle contract is:
+The canonical user-facing lifecycle contract is:
 
-1. `read(.cgs)` → `.gts LOADED`
-2. `expand(.gts, LOADED)` → `.gts PENDING`
-3. `verify(.gts, PENDING)` → `.gts READY`
-4. `clone(.gts)`
-5. `checkout(.gts)`
-6. `add`
-7. `commit`
-8. `push` → update the stored hash in `GitTree`
-9. `tag` → update the stored tag in `GitTree`
-10. `freeze` → emit the next `.gts` id
+1. `load(.cgs)` → `.gts LOADED` (DECLARED)
+   - `client.load("examples/complexgitsync.cgs")`
+2. `expand(.gts/.cgs)` → `.gts PENDING`
+   - `client.expand("examples/complexgitsync.cgs")`
+   - Moves through the GitTree from parents to leaves (recursive nested discovery)
+3. `validate(.gts/.cgs)` → `.gts READY`
+   - `client.validate(".cgitsync/state/complexgitsync.gts")`
+   - Ends with a state summary; checks that every GitRepo is in a READY state
+4. `clone(.gts/.cgs)` — either source; when given `.cgs` performs steps 1–3 first
+   - `client.clone("examples/complexgitsync.cgs")`
+5. Global git operations driven by a GitTree instance; same command for all
+   GitRepos from leaves to parents to Project_repo:
+   - `client.git(registry, "commit", "message CGS#VERSION")`
+   - `client.git(registry, "push")`  — updates hash in GitTree
+   - `client.git(registry, "tag", "v1.2.3")`  — updates tag in GitTree
+6. `freeze` → emit the next `.gts` id
 
 Additional guidance:
 
 - **`READY`** means the dependency-tree registry is complete and synchronised —
   not that worktrees are clean.
-- `expand` and `verify` are the lifecycle names used in the documentation even
-  when current compatibility commands still use older labels.
+- `load` and `validate` are the canonical lifecycle names; `read` and `verify`
+  are retained as compatibility aliases.
+- `git(tree, command, ...)` is the unified interface for step 5; individual
+  `commit`, `push`, and `tag` methods remain available.
 - `launch` is not treated as a primary lifecycle step; restoring from a saved
   `.gts` is documented as checkout from recorded state.
 

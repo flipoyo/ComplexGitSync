@@ -8,10 +8,13 @@ CLI wrapper), including loading a \texttt{.gts} snapshot, reconstructing the
 runtime registry, mirroring identity into \texttt{GitTree}/\texttt{GitRepo},
 and propagating a tag target.
 
-The documented lifecycle is:
-\texttt{read(.cgs) -> .gts LOADED -> expand(.gts) -> .gts PENDING ->
-verify(.gts) -> .gts READY -> clone(.gts) -> checkout(.gts) -> add ->
-commit -> push -> tag -> freeze}.
+The canonical lifecycle is:
+\texttt{load(.cgs) -> .gts LOADED -> expand(.cgs|.gts) -> .gts PENDING ->
+validate(.cgs|.gts) -> .gts READY -> clone(.cgs|.gts) -> checkout(.gts) ->
+add -> git(tree,"commit",msg) -> git(tree,"push") -> git(tree,"tag",name) ->
+freeze}.
+Compatibility aliases: \texttt{read} $\rightarrow$ \texttt{load},
+\texttt{verify} $\rightarrow$ \texttt{validate}.
 
 \section{From Empty Registry to READY via \texttt{.gts}}
 
@@ -63,17 +66,18 @@ The same lifecycle model is exposed by \texttt{ComplexGitSyncClient}.  In
 practice, the workflow is:
 
 \begin{itemize}
-  \item \texttt{read(...)} corresponds to the documented
-    \texttt{read(.cgs)} step.
-  \item tree expansion / rendering corresponds to the documented
-    \texttt{expand(.gts)} step.
-  \item \texttt{validate(...)} is the current compatibility name for the
-    documented \texttt{verify(.gts)} step.
+  \item \texttt{load(...)} is the canonical step-1 name; \texttt{read(...)} is
+    a backward-compatible alias.
+  \item \texttt{expand(...)} is the canonical step-2 name; it runs nested
+    \texttt{.cgs} discovery from parents to leaves (recursive).
+  \item \texttt{validate(...)} is the canonical step-3 name; it accepts both
+    \texttt{.cgs} and \texttt{.gts} sources; \texttt{verify(...)} is a
+    backward-compatible alias.
   \item \texttt{clone(...)} bootstraps a tree and must finish in
     \texttt{READY}.
-  \item \texttt{checkout(...)}, \texttt{add(...)}, \texttt{commit(...)},
-     \texttt{push(...)}, and \texttt{tag(...)} are \texttt{READY}-gated methods
-     for the standard git workflow.
+  \item \texttt{git(tree, command, *args)} is the unified step-5 interface for
+    \texttt{"commit"}, \texttt{"push"}, and \texttt{"tag"} operations.  Each
+    follows leaf-first ordering.
   \item \texttt{freeze(...)} emits the next persisted \texttt{.gts} state.
   \item \texttt{launch\_state(...)} and \texttt{launch\_release(...)} remain
     compatibility helpers for restoring recorded state, but are not treated as
@@ -85,25 +89,26 @@ from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
-# 1. read(.cgs) -> .gts LOADED
-client.read("examples/complexgitsync.cgs")
+# 1. load(.cgs) -> .gts LOADED
+client.load("examples/complexgitsync.cgs")
 
-# 2. expand(.gts, LOADED) -> .gts PENDING
-print(client.format_project_tree())
+# 2. expand(.cgs/.gts) -> .gts PENDING
+print(client.expand("examples/complexgitsync.cgs"))
 
-# 3. verify(.gts, PENDING) -> .gts READY
+# 3. validate(.cgs/.gts) -> .gts READY
 client.validate("examples/complexgitsync.cgs")
 
-# 4. clone(.gts)
+# 4. clone(.cgs/.gts)
 client.clone("examples/complexgitsync.cgs")
 
-# 5-9. READY methods
+# 5. READY methods — unified git interface
+registry = client.get_dependency_registry()
 client.checkout("feature/my-branch")
 client.add()
-client.commit("feat: update tree")
-client.push()
-client.tag("v1.2.3")
+client.git(registry, "commit", "feat: update tree CGS#1")
+client.git(registry, "push")
+client.git(registry, "tag", "v1.2.3")
 
-# 10. freeze -> next .gts id
+# 6. freeze -> next .gts id
 client.freeze("release-2026.05")
 \end{lstlisting}

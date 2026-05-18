@@ -1132,11 +1132,19 @@ class ComplexGitSyncClient:
     executing.  Mutation actions (commit, push, tag, freeze_release) require a
     READY tree and will raise :exc:`~.errors.TreeNotReadyError` otherwise.
 
-    The user-facing lifecycle documented in the repository is:
-    ``read(.cgs) -> expand(.gts) -> verify(.gts) -> clone(.gts) ->
-    checkout(.gts) -> add -> commit -> push -> tag -> freeze``.
-    Current helper names such as ``validate``, ``restart``, and ``launch`` are
-    maintained as compatibility surfaces around that lifecycle.
+    The canonical user-facing lifecycle is::
+
+        load(.cgs)     → .gts LOADED/DECLARED  (step 1)
+        expand(.gts)   → .gts PENDING           (step 2)
+        validate(.gts) → .gts READY             (step 3)
+        clone(.gts)    → READY                  (step 4)
+        git(tree, "commit", msg)                (step 5)
+        git(tree, "push")
+        git(tree, "tag", name)
+        freeze(name)
+
+    Compatibility aliases retained for backward compatibility:
+    ``read`` → ``load``, ``verify`` → ``validate``.
     """
 
     orchestre: Orchestre = field(default_factory=Orchestre)
@@ -1168,29 +1176,111 @@ class ComplexGitSyncClient:
         self._log_tree_transition(previous_tree_state, self.registry.lifecycle_state, reason="load_cgs")
         return self.registry
 
+    def load(
+        self,
+        config_path: str | Path,
+        *,
+        discover_nested: bool = False,
+    ) -> DependencyTreeRegistry:
+        """Load a ``.cgs`` specification (lifecycle step 1: → LOADED/DECLARED).
+
+        Parses *config_path* and builds the in-memory
+        :class:`~.git_tree.DependencyTreeRegistry`.  After this call the tree
+        is in the ``DECLARED`` state (user-facing: ``LOADED``).
+
+        Parameters
+        ----------
+        config_path:
+            Path to the local ``.cgs`` authoring file.
+        discover_nested:
+            When ``True``, immediately run nested ``.cgs`` discovery for any
+            child repositories that have already been cloned locally.
+        """
+        return self.load_cgs(config_path, discover_nested=discover_nested)
+
     def read(
         self,
         config_path: str | Path,
         *,
         discover_nested: bool = False,
     ) -> DependencyTreeRegistry:
-        """Read a ``.cgs`` specification into the lifecycle's loaded runtime state."""
-        return self.load_cgs(config_path, discover_nested=discover_nested)
+        """Compatibility alias for :meth:`load`.
+
+        ``load`` is the canonical lifecycle step-1 name; ``read`` is retained
+        for backward compatibility.
+        """
+        return self.load(config_path, discover_nested=discover_nested)
+
+    def expand(
+        self,
+        source_path: str | Path,
+        *,
+        discover_nested: bool = True,
+    ) -> str:
+        """Expand the dependency tree (lifecycle step 2: LOADED → PENDING).
+
+        Loads the source (``.cgs`` or ``.gts``), runs nested ``.cgs``
+        discovery from parents to leaves (recursive), and returns a formatted
+        text rendering of the dependency tree.
+
+        Parameters
+        ----------
+        source_path:
+            Path to the ``.cgs`` specification or a previously-written
+            ``.gts`` snapshot.
+        discover_nested:
+            When ``True`` (default) run nested ``.cgs`` discovery for child
+            repositories that have not yet been resolved.
+        """
+        resolved = Path(source_path).resolve()
+        if resolved.suffix == ".gts":
+            self.load_gts(resolved)
+        else:
+            self.load(resolved, discover_nested=discover_nested)
+        return self.format_project_tree()
 
     def validate(
         self,
-        config_path: str | Path,
+        source_path: str | Path,
         *,
         discover_nested: bool = False,
     ) -> ProjectTreeState:
-        """Verify that a loaded tree can reach a READY runtime state.
+        """Validate the dependency tree state (lifecycle step 3: PENDING → READY).
 
-        The public documentation uses ``verify`` for this lifecycle step; the
-        current implementation exposes it through the historical
-        :meth:`validate` name.
+        Loads the source (``.cgs`` or ``.gts``), recomputes the tree lifecycle
+        state, and returns a :class:`~.git_tree.ProjectTreeState` describing
+        readiness.  Every :class:`~.git_repo.GitRepo` must be in ``READY``
+        state for the tree to be considered ``READY``.
+
+        ``validate`` is the canonical lifecycle step-3 name; :meth:`verify` is
+        a compatibility alias.
+
+        Parameters
+        ----------
+        source_path:
+            Path to the ``.cgs`` specification or a ``.gts`` snapshot.
+        discover_nested:
+            When ``True``, run nested ``.cgs`` discovery for ``.cgs`` sources.
         """
-        self.read(config_path, discover_nested=discover_nested)
+        resolved = Path(source_path).resolve()
+        if resolved.suffix == ".gts":
+            self.load_gts(resolved)
+        else:
+            self.load(resolved, discover_nested=discover_nested)
         return self.get_tree_state()
+
+    def verify(
+        self,
+        source_path: str | Path,
+        *,
+        discover_nested: bool = False,
+    ) -> ProjectTreeState:
+        """Compatibility alias for :meth:`validate`.
+
+        ``validate`` is the canonical lifecycle step-3 name; ``verify`` is
+        retained for backward compatibility.
+        """
+        return self.validate(source_path, discover_nested=discover_nested)
 
     def load_gts(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
@@ -1437,6 +1527,59 @@ class ComplexGitSyncClient:
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="tag")
         self._log_event("tag_end", tag_name=tag_name)
         return registry
+
+    def git(
+        self,
+        gittree: "DependencyTreeRegistry | None",
+        command: str,
+        *args: str,
+    ) -> DependencyTreeRegistry:
+        """Dispatch a git command across the full tree (lifecycle step 5).
+
+        This is the unified git interface.  It dispatches *command* to the
+        appropriate tree-wide operation and returns the updated registry.  All
+        operations follow leaf-first ordering (leaves → root).
+
+        Parameters
+        ----------
+        gittree:
+            The :class:`~.git_tree.DependencyTreeRegistry` to operate on.
+            Pass ``None`` to use the currently loaded registry.  Passing a
+            registry replaces the active registry for the duration of the call.
+        command:
+            One of ``"commit"``, ``"push"``, or ``"tag"``.
+        *args:
+            Command-specific positional arguments:
+
+            - ``"commit"``: one argument — the commit message.  The message
+              conventionally ends with ``CGS#VERSION``.
+            - ``"push"``: no arguments.  Updates the stored hash in the
+              ``GitTree`` for each repository.
+            - ``"tag"``: one argument — the tag name.  Updates the stored tag
+              in the ``GitTree`` for each repository.
+
+        Examples
+        --------
+        ::
+
+            client.git(registry, "commit", "release: v1.0 CGS#1")
+            client.git(registry, "push")
+            client.git(registry, "tag", "v1.0")
+        """
+        if isinstance(gittree, DependencyTreeRegistry):
+            self.registry = gittree
+        if command == "commit":
+            message = args[0] if args else ""
+            return self.commit(message)
+        if command == "push":
+            return self.push()
+        if command == "tag":
+            tag_name = args[0] if args else ""
+            return self.tag(tag_name)
+        raise ValueError(
+            f"Unknown git command '{command}'. Supported commands: 'commit', 'push', 'tag'."
+        )
+
 
     def freeze_release(
         self,

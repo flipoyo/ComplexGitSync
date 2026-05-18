@@ -66,11 +66,10 @@
   run\_logger: CommandRunLogger
   \nodepart{three}
   read(cgs) / load\_gts(gts)\\
-  expand(gts) / verify(gts)\\
-  clone(gts)\\
+  load(cgs) / expand(cgs|gts)\\
+  validate(cgs|gts) / clone(cgs|gts)\\
   checkout(gts, ref)\\
-  add() / commit(message)\\
-  push() / tag(name)\\
+  add() / git(tree, cmd, args)\\
   freeze(name)
 };
 
@@ -166,12 +165,13 @@
 
 \begin{figure}[ht]
 \centering
-\caption{GitTree lifecycle state machine.  The user-facing lifecycle is
-  \texttt{read(.cgs)} $\rightarrow$ \texttt{.gts LOADED}
-  $\rightarrow$ \texttt{expand(.gts)} $\rightarrow$ \texttt{.gts PENDING}
-  $\rightarrow$ \texttt{verify(.gts)} $\rightarrow$ \texttt{.gts READY};
+\caption{GitTree lifecycle state machine.  The canonical lifecycle is
+  \texttt{load(.cgs)} $\rightarrow$ \texttt{.gts LOADED}
+  $\rightarrow$ \texttt{expand(.cgs|.gts)} $\rightarrow$ \texttt{.gts PENDING}
+  $\rightarrow$ \texttt{validate(.cgs|.gts)} $\rightarrow$ \texttt{.gts READY};
   synchronized Git operations (\texttt{checkout},
-  \texttt{add}, \texttt{commit}, \texttt{push}, \texttt{tag},
+  \texttt{add}, \texttt{git("commit")}, \texttt{git("push")},
+  \texttt{git("tag")},
   \texttt{freeze}) are gated on \texttt{READY}.}
 \label{fig:gittree-lifecycle}
 
@@ -194,9 +194,9 @@
 \node[sidestate, below=1.2cm of loaded] (partial) {PARTIAL};
 \node[sidestate, below=1.2cm of pending]  (error)   {ERROR};
 
-\draw[trans] (unloaded) -- node[above, font=\scriptsize]{read(.cgs)} (loaded);
-\draw[trans] (loaded) -- node[above, font=\scriptsize]{expand(.gts)} (pending);
-\draw[trans] (pending)  -- node[above, font=\scriptsize]{verify(.gts)} (ready);
+\draw[trans] (unloaded) -- node[above, font=\scriptsize]{load(.cgs)} (loaded);
+\draw[trans] (loaded) -- node[above, font=\scriptsize]{expand(.cgs|.gts)} (pending);
+\draw[trans] (pending)  -- node[above, font=\scriptsize]{validate(.cgs|.gts)} (ready);
 \draw[trans, dashed] (loaded.south) -- (partial.north);
 \draw[trans, dashed] (pending.south)  -- (error.north);
 \draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{freeze / next .gts id} (loaded.north);
