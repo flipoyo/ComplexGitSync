@@ -634,9 +634,15 @@ def create_run_logger(
     fh.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(fh)
 
+    console_level: int | None = None
     if profile == "verbose":
+        console_level = logging.INFO
+    elif profile == "whisper_sync":
+        console_level = logging.WARNING
+
+    if console_level is not None:
         ch = logging.StreamHandler()
-        ch.setLevel(logging.WARNING)
+        ch.setLevel(console_level)
         ch.setFormatter(logging.Formatter("%(message)s"))
         logger.addHandler(ch)
 
@@ -1321,6 +1327,17 @@ class ComplexGitSyncClient:
         self._log_event("restart_end", config_path=resolved_path)
         return registry
 
+    def pull(self, source_path: str | Path) -> DependencyTreeRegistry:
+        """Compatibility lifecycle method for resynchronizing from ``.cgs`` or ``.gts``."""
+        resolved_source = Path(source_path).resolve()
+        if resolved_source.suffix == ".cgs":
+            return self.restart(resolved_source)
+        if resolved_source.suffix == ".gts":
+            return self.launch_release(resolved_source)
+        raise ValueError(
+            f"Unsupported source format for {resolved_source!s}; expected .cgs or .gts."
+        )
+
     def checkout(
         self,
         branch_name: str,
@@ -1601,6 +1618,40 @@ class ComplexGitSyncClient:
             "repo_count": len(registry.entries),
         }
         return json.dumps(summary, indent=2, sort_keys=True)
+
+    def print(
+        self,
+        source_path: str | Path,
+        *,
+        discover_nested: bool = False,
+        prefer_runtime_for_cgs: bool = True,
+    ) -> str:
+        """Return a printable JSON summary for ``.cgs`` or ``.gts`` sources."""
+        resolved_source = Path(source_path).resolve()
+        if resolved_source.suffix == ".gts":
+            document = GtsDocument.from_toml(resolved_source)
+            self.load_gts(resolved_source)
+            return json.dumps(
+                {
+                    "document_kind": "gts",
+                    "project_name": document.read("project.name"),
+                    "lifecycle_state": document.lifecycle_state,
+                    "is_ready": document.is_ready,
+                    "repo_count": len(document.repo_states),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        if resolved_source.suffix == ".cgs":
+            self.load_source(
+                resolved_source,
+                discover_nested=discover_nested,
+                prefer_runtime_for_cgs=prefer_runtime_for_cgs,
+            )
+            return self.describe_cgs()
+        raise ValueError(
+            f"Unsupported source format for {resolved_source!s}; expected .cgs or .gts."
+        )
 
     def write_gts_snapshot(
         self,

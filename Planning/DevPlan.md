@@ -29,6 +29,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T14 | `freeze_release` (Python API) | ✅ Done |
 | T15 | `launch_release` (Python API) | ✅ Done |
 | T21 | `add`, `freeze_state`, `launch_state` (Python API + CLI) | ✅ Done |
+| T25 | Logger verbosity profile verification (`verbose` / `whisper_sync`) | ✅ Done |
 | T17 | Unit Test Suite (incremental) | ✅ Ongoing |
 | T19 | Documentation and Examples (incremental) | ✅ Updated |
 | T20 | CI Version Increment Automation | ✅ Done |
@@ -41,7 +42,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T16 | CLI Bootstrap for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` | ✅ Done |
 | T18 | Integration Test Suite | ❌ Not started |
 | T22 | Parser-driven automation of public client methods via `.goc` files | ❌ Pending |
-| T23 | Lifecycle terminology cleanup for `expand` / `verify` / `pull` / `print` | ❌ Pending |
+| T23 | Lifecycle terminology cleanup for `expand` / `verify` labels | ❌ Pending |
 | T24 | Local Git Register (`.lgr`) management for `.gts` ids | ❌ Pending |
 
 ## Architecture Notes
@@ -61,7 +62,9 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - User-facing lifecycle contract is `read(.cgs) → .gts LOADED`, `expand(.gts, LOADED) → .gts PENDING`, `verify(.gts, PENDING) → .gts READY`, `clone(.gts)`, `checkout(.gts)`, `add`, `commit`, `push`, `tag`, `freeze`.
 - `push` is expected to refresh the stored hash in `GitTree`; `tag` is expected to refresh the stored tag in `GitTree`.
 - `freeze` is expected to emit the next `.gts` id and register it locally.
-- Remaining lifecycle work is `print(.gts)`, `pull(.gts)`, `orchestrate(.goc)`, and project-local `.lgr` register management.
+- Remaining lifecycle work is `orchestrate(.goc)` and project-local `.lgr` register management.
+- `print` and `pull` lifecycle methods are now wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
+- Logger profile behavior is now explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
 - `.goc` automation remains pending: the parser will map `.goc` actions to public `ComplexGitSyncClient` methods.
 - The planned project-local register file is `<Project_name>.lgr`, which must assign one local id to each generated `.gts`.
 - Direct object-level usage is now documented in `docs/python_api.tex` and README with a `.gts` → `GitTree`/`GitRepo` flow and `GitTree.propagate_tag`.
