@@ -901,7 +901,7 @@ class _StrictCloneGitRunner(_FakeGitRunner):
 
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
         destination_path = Path(destination)
-        if destination_path.exists() and any(destination_path.iterdir()):
+        if destination_path.exists() and next(destination_path.iterdir(), None) is not None:
             raise RuntimeError(f"Destination not empty: {destination_path}")
         super().clone(remote_url, destination, branch=branch)
         if destination_path.name == self.populated_repo_name:

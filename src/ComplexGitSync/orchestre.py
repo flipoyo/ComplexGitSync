@@ -2014,7 +2014,7 @@ class ComplexGitSyncClient:
         return (
             entry.parent_id is not None
             and entry.absolute_path.is_dir()
-            and any(entry.absolute_path.iterdir())
+            and next(entry.absolute_path.iterdir(), None) is not None
         )
 
     def _select_clone_branch(self, entry: RepoRegistryEntry, remote_url: str) -> str:
