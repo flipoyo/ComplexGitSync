@@ -174,10 +174,19 @@ def test_client_git_dispatches_extended_commands(monkeypatch):
 def test_client_git_binds_provided_registry(monkeypatch):
     client = ComplexGitSyncClient()
     registry = DependencyTreeRegistry()
-    monkeypatch.setattr(client, "add", lambda: registry)
+    captured: dict[str, object] = {}
+
+    def _spy_add(self, git_runner, *, registry=None):
+        captured["bound_registry"] = self.registry
+        captured["registry_arg"] = registry
+
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "add", _spy_add)
+
     client.git(registry, "add")
     assert client.registry is registry
     assert client.orchestre.git_tree.git.registry is registry
+    assert captured["bound_registry"] is registry
+    assert captured["registry_arg"] is None
 
 
 def test_client_freeze_alias_calls_freeze_release(monkeypatch):
