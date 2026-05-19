@@ -137,83 +137,214 @@ Simplified the user-facing CLI and Python API lifecycle surface:
 
 ## Remaining Tickets
 
-### T10 (remainder) — `restart` CLI wiring ✅
-`restart_tree` implemented in Tier 2 (operations.py) with parent-first checkout
-using the root repository's current branch.  `ComplexGitSyncClient.restart`
-implemented with `.cgs` load, nested discovery, READY enforcement, and `.gts`
-snapshot write.  `cgitsync restart <source.cgs>` CLI command wired.  A separate
-terminology follow-up now tracks the user-facing rename to `pull`.
+### CGS-001 — Safe Tag Propagation Semantics (Critical)
+**Type**: Reliability / Release Integrity  
+**Problem**: `GitRunner.create_tag()` currently uses `git tag -f` unconditionally,
+allowing silent overwrite of existing tags during propagated releases.  
+**Objectives**:
+- Preserve release immutability by default.
+- Allow explicit force-tag workflows only when requested.
+**Tasks**:
+- Add `force: bool = False` parameter to `create_tag()`.
+- Remove unconditional `-f`.
+- Add explicit CLI option `--force-tag`.
+- Fail clearly if tag already exists and force is disabled.
+- Add unit tests for:
+  - new tag creation,
+  - existing tag rejection,
+  - forced overwrite.
+**Acceptance Criteria**:
+- Standard release propagation never rewrites tags.
+- Force behavior is explicit and tested.
+- Existing workflows remain backward compatible when requested.
 
-### T16 — CLI wiring for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` ✅
-All six commands implemented in `cli.py`:
-  - `cgitsync checkout <branch> --gts <file> [--ref-kind branch|tag]`
-  - `cgitsync commit <message> --gts <file> [--no-stage]`
-  - `cgitsync push --gts <file>`
-  - `cgitsync tag <name> --gts <file>`
-  - `cgitsync freeze-release <name> --gts <file>`
-  - `cgitsync launch-release <snapshot.gts>`
-CLI behaviour matches Python API invariants; 13 new smoke tests added.
+### CGS-002 — End-to-End Local Integration Test Infrastructure (Critical)
+**Type**: Testing / Reliability  
+**Problem**: Current tests validate isolated behaviors but not full synchronization workflows.  
+**Objectives**:
+- Validate real multi-repository orchestration.
+- Ensure deterministic macro-sync behavior.
+**Tasks**:
+- Create temporary local bare remotes for integration tests.
+- Generate:
+  - leaf repositories,
+  - parent GitTree repository,
+  - orchestration workspace.
+- Implement test scenarios:
+  - initialise,
+  - clone,
+  - checkout,
+  - add_tree,
+  - commit_tree,
+  - push_tree,
+  - pull_tree,
+  - tag_tree,
+  - freeze,
+  - restart from `.gts`.
+- Validate commit SHA propagation consistency.
+- Validate submodule SHA updates.
+**Acceptance Criteria**:
+- Complete workspace lifecycle reproducible locally.
+- Tests run without GitHub/GitLab network dependency.
+- Failures expose inconsistent DAG state immediately.
 
-### T23 — Lifecycle terminology: `load`, `expand`, `validate`, `git()` ✅
-Aligned the user-facing lifecycle surface with the reference lifecycle:
+### CGS-003 — Transactional Tag Propagation (High)
+**Type**: Reliability / Distributed Consistency  
+**Problem**: Partial failure during propagated tagging may leave repositories desynchronized.  
+**Objectives**:
+- Make release propagation atomic from the user perspective.
+**Tasks**:
+- Implement preflight validation phase:
+  - READY registry,
+  - branch alignment,
+  - remote availability,
+  - clean working trees,
+  - absence of conflicting tags.
+- Add propagation report object.
+- Abort propagation before mutation if validation fails.
+- Add rollback strategy documentation.
+**Optional**:
+- Local rollback of newly created tags if push fails mid-propagation.
+**Acceptance Criteria**:
+- No partial silent releases.
+- Validation errors reported before mutation.
+- Propagation state observable and serializable.
 
-- `load(.cgs)` is now the canonical step-1 name; `read()` is retained as a
-  compatibility alias.
-- `expand(.cgs/.gts)` is the canonical step-2 name; it loads the source, runs
-  nested `.cgs` discovery (parent-to-leaf recursive), and returns the formatted
-  tree.  CLI: `cgitsync expand <source>`.
-- `validate(.cgs/.gts)` is the canonical step-3 name; it accepts both `.cgs`
-  and `.gts` sources; `verify()` is retained as a compatibility alias.  CLI:
-  `cgitsync validate <source>`.
-- `git(gittree, command, *args)` is the unified step-5 interface.  Dispatches
-  `"commit"`, `"push"`, and `"tag"` to the appropriate tree-wide operations;
-  each follows leaf-first ordering.  Individual `commit`, `push`, and `tag`
-  methods remain available as direct entry points.
-- CLI gains `load` and `expand` as first-class subcommands; `tree` remains as
-  a backward-compatible alias for expand (with runtime-snapshot preference).
-- All documentation (AdditionalSpecs.md, DevPlan.md, DevPlanTickets.md,
-  README.md) updated to use the canonical vocabulary.
+### CGS-004 — Formal `.gts` Snapshot Specification (High)
+**Type**: Core Architecture  
+**Problem**: `.gts` currently behaves operationally but lacks formal deterministic specification.  
+**Objectives**:
+- Define `.gts` as canonical workspace state representation.
+**Tasks**:
+- Define canonical serialization order.
+- Specify required fields:
+  - repository identity,
+  - branch,
+  - commit SHA,
+  - parent relationships,
+  - sync metadata.
+- Add deterministic hashing:
+  - SHA-256 of canonical `.gts`.
+- Add schema versioning.
+- Add validation utilities.
+**Acceptance Criteria**:
+- Identical workspace states produce identical `.gts` hashes.
+- `.gts` can act as deterministic workspace checkpoint.
 
-### T27 — Circular dependency resolution: `fix_circularities` ✅
-Resolved circularities that arise when a parent's nested `.cgs` declares
-another parent (registered at the project root level) as one of its leaves,
-creating duplicate registry entries for the same physical path.
+### CGS-005 — `.lgr` Local Sync Ledger (High)
+**Type**: Architecture / Traceability  
+**Problem**: The ledger layer is planned conceptually but not implemented.  
+**Objectives**:
+- Record synchronization operations as immutable DAG events.
+**Tasks**:
+- Define `.lgr` schema:
+  - sync_id,
+  - parent_sync_ids,
+  - operation type,
+  - timestamp,
+  - actor,
+  - workspace hash,
+  - affected repositories.
+- Implement append-only ledger.
+- Link `.gts` hashes into ledger events.
+- Add replay utilities.
+**Optional**:
+- Add cryptographic signatures.
+**Acceptance Criteria**:
+- Every synchronization operation becomes reproducible and traceable.
+- Ledger reconstructs workspace evolution history.
 
-- `fix_circularities(registry)` standalone function added to `git_tree.py`:
-  groups entries by resolved absolute path, retains the canonical entry
-  (fewest `:` separators in `repo_id` = closest to root), removes all
-  lower-priority duplicates, recomputes tree state, and returns a tuple of
-  `"fixed_circularity:<removed_id>→<canonical_id>"` change descriptors.
-- `discover_nested_configs` guards against adding new circular entries at
-  discovery time using a pre-built O(1) `set[Path]` of registered paths.
-- `ComplexGitSyncClient.fix_circularities()` exposed as a step-2.5 public
-  method for custom pipelines (between `expand` and `validate`).
-- Called automatically inside `expand(.cgs)` and `clone_cgs()`.
-- Exported from the top-level package in `__init__.py`.
-- 7 unit tests added; 234 total passing.
-- Documentation updated: README.md, getting_started.tex, user_guide.tex,
-  python_api.tex, AdditionalSpecs.md.
+### CGS-006 — Workspace Preflight Validation Engine (High)
+**Type**: Safety  
+**Problem**: Mutating operations currently rely heavily on implicit repository correctness.  
+**Objectives**:
+- Detect invalid synchronization states before mutation.
+**Tasks**:
+- Implement validation engine checking:
+  - dirty trees,
+  - detached HEADs,
+  - missing remotes,
+  - branch divergence,
+  - unresolved merges,
+  - missing submodules,
+  - inconsistent commit propagation.
+- Add validation severity levels:
+  - warning,
+  - blocking error.
+- Integrate before:
+  - commit,
+  - push,
+  - tag,
+  - freeze.
+**Acceptance Criteria**:
+- Invalid workspace states blocked before destructive operations.
+- Diagnostics actionable and explicit.
 
-### T18 — Integration Test Suite ❌
-**Goal**: end-to-end validation on temporary nested git repositories.
-**Deliverables**: nested repo fixture generator; clone / restart / checkout /
-tag / freeze_release / launch_release / commit-push gating scenarios.
-**Dependencies**: T09–T16.
-**Acceptance**: CaWaQS-style topology reproducible; all sync commands
-produce expected READY states and `.gts` outputs.
+### CGS-007 — Deterministic Freeze Semantics (Medium)
+**Type**: Reproducibility  
+**Problem**: Freeze semantics are conceptually central but not yet formally defined.  
+**Objectives**:
+- Make freeze a deterministic reproducible workspace checkpoint.
+**Tasks**:
+- Define freeze invariants:
+  - immutable `.gts`,
+  - synchronized tags,
+  - validated workspace,
+  - ledger checkpoint.
+- Generate freeze manifest.
+- Add freeze restore operation.
+**Acceptance Criteria**:
+- A freeze fully reconstructs a compatible workspace state.
 
-### T22 — `.goc` parser-driven command automation ❌
-**Goal**: automate `ComplexGitSyncClient` method execution from `.goc` plans.
-**Deliverables**: parser that maps `.goc` actions to public client API methods,
-execution engine, and validation/reporting for unsupported actions.
-**Dependencies**: T16, T18.
-**Acceptance**: `.goc` files execute through the same public API contract used
-by Python and CLI entry points, with deterministic command ordering and errors.
+### CGS-008 — Branch Topology Propagation Rules (Medium)
+**Type**: Workflow / DAG Semantics  
+**Problem**: Branch synchronization semantics across GitTree are not yet formally constrained.  
+**Objectives**:
+- Define coherent multi-repository branch propagation.
+**Tasks**:
+- Specify:
+  - leaf-to-root branch inheritance,
+  - allowed divergence,
+  - synchronization compatibility rules.
+- Add validation logic.
+- Add conflict diagnostics.
+**Acceptance Criteria**:
+- Workspace branch topology becomes deterministic and inspectable.
 
-### T24 — Local Git Register (`.lgr`) management ❌
-**Goal**: maintain a project-local register named `<Project_name>.lgr`.
-**Deliverables**: assign a unique local id to each generated `.gts`, keep the
-current project snapshot in sync, and record the id emitted by `freeze`.
-**Dependencies**: T06, T09, T14, T23.
-**Acceptance**: every `.gts` produced by the workflow is represented exactly
-once in the `.lgr` register with one stable local id.
+### CGS-009 — CLI Dry-Run Mode (Medium)
+**Type**: Safety / UX  
+**Problem**: Current orchestration operations are highly mutating.  
+**Objectives**:
+- Allow preview of synchronization operations.
+**Tasks**:
+- Add `--dry-run` to:
+  - add,
+  - commit,
+  - push,
+  - tag,
+  - freeze.
+- Produce operation execution plan without mutation.
+**Acceptance Criteria**:
+- Users can inspect workspace mutation graph before execution.
+
+### CGS-010 — Architectural Positioning Documentation (Medium)
+**Type**: Documentation / Identity  
+**Problem**: The project is more than Git automation, but this is not fully formalized.  
+**Objectives**:
+- Clarify conceptual positioning.
+**Tasks**:
+- Add architecture document:
+  - Git DAG,
+  - GitTree DAG,
+  - workspace state propagation,
+  - deterministic synchronization,
+  - `.gts`,
+  - `.lgr`,
+  - local tangle analogy.
+- Explicitly distinguish:
+  - Git,
+  - monorepo,
+  - submodule management,
+  - distributed workspace synchronization.
+**Acceptance Criteria**:
+- The project’s architectural identity becomes explicit and defensible.
