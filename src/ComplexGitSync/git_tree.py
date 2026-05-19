@@ -448,7 +448,9 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
     The *canonical* entry for a given absolute path is the one that sits highest
     in the dependency tree (fewest ``:``-separated segments in ``repo_id``).  All
     lower-priority duplicate entries sharing the same resolved absolute path are
-    removed from the registry.
+    removed from the registry only when their synchronization state is compatible
+    with the canonical entry (same lifecycle/sync state, no conflicting commit
+    SHA information, and no conflicting explicit worktree-state markers).
 
     Returns a tuple of strings, one per removed entry, each in the form::
 
@@ -470,9 +472,6 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
     for _abs_path, entries in path_to_entries.items():
         if len(entries) <= 1:
             continue
-        state_hashes = {_resolve_entry_hash(entry) for entry in entries}
-        if len(state_hashes) > 1:
-            raise ConfigValidationError("incompatibilities between branch (hash) and tag(val) in .cgs")
         # Determine the canonical entry: the one closest to the root.
         # repo_id uses ":" as a path separator, so fewer colons mean a higher
         # position in the tree (root="root" has 0, a direct child of root has 1,
@@ -481,6 +480,8 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
         entries.sort(key=lambda e: e.repo_id.count(":"))
         canonical = entries[0]
         for duplicate in entries[1:]:
+            if not _is_compatible_duplicate(canonical, duplicate):
+                continue
             ids_to_remove.add(duplicate.repo_id)
             changes.append(f"fixed_circularity:{duplicate.repo_id}→{canonical.repo_id}")
 
@@ -492,22 +493,16 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
     return tuple(changes)
 
 
-def _resolve_entry_hash(entry: RepoRegistryEntry) -> str:
-    branch = entry.default_branch or "main"
-    tag: str | None = None
-    if entry.target_ref_kind == RefKind.TAG:
-        tag = entry.target_ref_name
-    elif entry.target_ref_name:
-        branch = entry.target_ref_name
-    repo = GitRepo(
-        project_owner_name=entry.project_owner_name or "",
-        project_name=entry.project_name or entry.name,
-        gitprovider=entry.gitprovider,
-        group_name=entry.group_name,
-        gitprovider_url=entry.gitprovider_url,
-        access_protocol=entry.access_protocol,
-    )
-    return repo._get_hash(branch=branch, tag=tag)
+def _is_compatible_duplicate(canonical: RepoRegistryEntry, duplicate: RepoRegistryEntry) -> bool:
+    if canonical.repo_lifecycle_state != duplicate.repo_lifecycle_state:
+        return False
+    if canonical.sync_state != duplicate.sync_state:
+        return False
+    if canonical.commit_sha and duplicate.commit_sha and canonical.commit_sha != duplicate.commit_sha:
+        return False
+    if canonical.worktree_state and duplicate.worktree_state and canonical.worktree_state != duplicate.worktree_state:
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------

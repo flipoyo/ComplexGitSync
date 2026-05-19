@@ -786,9 +786,89 @@ class GitRunner:
         else:
             self._run("push", remote, cwd=repo_path)
 
+    def pull(
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+    ) -> None:
+        """Pull *remote* (and optionally *ref_name*) in *repo_path* (``git pull --ff-only``)."""
+        args = ["pull", "--ff-only", remote]
+        if ref_name:
+            args.append(ref_name)
+        self._run(*args, cwd=repo_path)
+
     def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
         """Create *tag_name* in *repo_path*."""
-        self._run("tag", "-f", tag_name, cwd=repo_path)
+        self._run("tag", tag_name, cwd=repo_path)
+
+    def add_submodule(
+        self,
+        repo_path: Path | str,
+        remote_url: str,
+        relative_path: Path | str,
+        *,
+        branch: str,
+    ) -> None:
+        """Add a submodule in *repo_path* at *relative_path* pinned to *branch*."""
+        self._run(
+            "submodule",
+            "add",
+            "-b",
+            branch,
+            remote_url,
+            str(relative_path),
+            cwd=repo_path,
+        )
+
+    def update_submodule(self, repo_path: Path | str, relative_path: Path | str) -> None:
+        """Sync and update a tracked submodule path from its parent repository."""
+        submodule_path = str(relative_path)
+        self._run("submodule", "sync", "--", submodule_path, cwd=repo_path)
+        self._run(
+            "submodule",
+            "update",
+            "--init",
+            "--remote",
+            "--",
+            submodule_path,
+            cwd=repo_path,
+        )
+
+    def remote_exists(self, repo_path: Path | str, remote: str = "origin") -> bool:
+        """Return ``True`` when *remote* exists in *repo_path*."""
+        try:
+            self._run("remote", "get-url", remote, cwd=repo_path)
+            return True
+        except GitSyncError:
+            return False
+
+    def tag_exists(self, repo_path: Path | str, tag_name: str) -> bool:
+        """Return ``True`` when *tag_name* already exists in *repo_path*."""
+        completed = subprocess.run(
+            [self.executable, "show-ref", "--verify", "--quiet", f"refs/tags/{tag_name}"],
+            cwd=str(repo_path),
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        if completed.returncode == 0:
+            return True
+        if completed.returncode == 1:
+            return False
+        command = f"{self.executable} show-ref --verify refs/tags/{tag_name}"
+        details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"
+        raise GitSyncError(f"Git command failed ({command}): {details}")
+
+    def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
+        """Return ``True`` when *relative_path* is tracked as a git submodule."""
+        result = self._run("ls-files", "--stage", "--", str(relative_path), cwd=repo_path)
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        if not lines:
+            return False
+        mode = lines[0].split(maxsplit=1)[0]
+        return mode == "160000"
 
     def _run(
         self,
@@ -1690,8 +1770,9 @@ class ComplexGitSyncClient:
         """Dispatch a git command across the full tree (lifecycle step 5).
 
         This is the unified git interface.  It dispatches *command* to the
-        appropriate tree-wide operation and returns the updated registry.  All
-        operations follow leaf-first ordering (leaves → root).
+        appropriate tree-wide operation and returns the updated registry.
+        Ordering is command-specific (for example, ``pull``/``branch``/``checkout``
+        run parent-first while ``push`` runs leaf-first).
 
         Parameters
         ----------
@@ -2065,17 +2146,36 @@ class ComplexGitSyncClient:
                     f"Unable to clear nested clone destination for {entry.name} at {entry.absolute_path}: {exc}"
                 ) from exc
 
-        self.orchestre.git_tree.git.clone(
-            self.git_runner,
-            remote_url,
-            entry.absolute_path,
-            branch=selected_ref,
-        )
+        registry = self.get_dependency_registry()
+        if entry.parent_id is None:
+            self.orchestre.git_tree.git.clone(
+                self.git_runner,
+                remote_url,
+                entry.absolute_path,
+                branch=selected_ref,
+            )
+        else:
+            parent = registry.get(entry.parent_id)
+            try:
+                relative_path = entry.absolute_path.relative_to(parent.absolute_path)
+            except ValueError as exc:
+                raise GitSyncError(
+                    f"Repository {entry.name} at {entry.absolute_path} is not under its parent path "
+                    f"{parent.absolute_path}."
+                ) from exc
+            self.git_runner.add_submodule(
+                parent.absolute_path,
+                remote_url,
+                relative_path,
+                branch=selected_ref,
+            )
+            if not self.git_runner.is_submodule(parent.absolute_path, relative_path):
+                raise GitSyncError(
+                    f"Submodule constraint violated: {parent.name}/{relative_path.as_posix()} "
+                    f"is not tracked as a git submodule."
+                )
         current_ref = self.git_runner.current_branch(entry.absolute_path) or selected_ref
-        fallback_applied = (
-            selected_ref_kind == RefKind.BRANCH
-            and current_ref != (entry.target_ref_name or selected_ref)
-        )
+        fallback_applied = current_ref != (entry.target_ref_name or selected_ref)
 
         entry.current_ref_kind = selected_ref_kind
         entry.current_ref_name = current_ref if selected_ref_kind == RefKind.BRANCH else selected_ref

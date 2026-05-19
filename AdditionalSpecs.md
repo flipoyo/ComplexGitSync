@@ -100,6 +100,12 @@ the client.  **Every action is gated by the current `TreeLifecycleState`**:
 Actions that **must reject** a non-READY tree:
 `add`, `git("commit")`, `git("push")`, `git("tag")`, `freeze`.
 
+Tag/freeze preflight invariants:
+- `tag` must reject dirty worktrees.
+- `tag` and `freeze` must reject missing remotes, pre-existing tags, branch misalignment,
+  or parent/child layouts where children are not tracked as git submodules.
+- Tag creation is always non-forcing (`git tag <name>`); replacing an existing tag is not allowed.
+
 Actions that **must produce READY** or fail explicitly:
 `initialise(.cgs)`, `initialise(.gts)`, `pull(.cgs)`, `pull(.gts)`, `checkout(.gts)`.
 

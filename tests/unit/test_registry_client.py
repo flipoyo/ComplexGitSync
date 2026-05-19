@@ -5,7 +5,7 @@ from pathlib import Path, PureWindowsPath
 import pytest
 
 from ComplexGitSync.orchestre import ComplexGitSyncClient
-from ComplexGitSync.errors import ConfigValidationError, NestedConfigDiscoveryError
+from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState
 from ComplexGitSync.git_tree import DependencyTreeRegistry, GitTree, TreeLifecycleState, make_repo_id
 from ComplexGitSync.orchestre import GtsDocument, RuntimeStateStore, build_registry_from_gts_document
@@ -471,6 +471,13 @@ def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
     assert docs_entry.repo_lifecycle_state == RepoLifecycleState.FALLBACK_READY
     assert docs_entry.resolved_ref_name == "main"
     assert [branch for _, _, branch in fake_runner.clones] == ["main", "autoTest", "main"]
+    assert [
+        (remote, relative.as_posix(), branch)
+        for _, remote, relative, branch in fake_runner.submodule_adds
+    ] == [
+        ("git@github.com:owner/child-repo.git", "deps/child-repo", "autoTest"),
+        ("git@github.com:owner/docs.git", "docs", "main"),
+    ]
 
     snapshot_path = state_store.latest_snapshot_for(config_path)
     assert snapshot_path is not None
@@ -527,6 +534,28 @@ def test_clone_cgs_replaces_nested_destination_populated_by_parent_clone(tmp_pat
         "git@github.com:owner/docs.git",
     ]
     assert [branch for _, _, branch in fake_runner.clones] == ["main", "main"]
+    assert [
+        (remote, relative.as_posix(), branch)
+        for _, remote, relative, branch in fake_runner.submodule_adds
+    ] == [("git@github.com:owner/docs.git", "docs", "main")]
+
+
+def test_clone_cgs_fails_when_nested_repo_not_tracked_as_submodule(tmp_path):
+    class _FakeGitRunnerNoSubmodules(_FakeGitRunner):
+        def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
+            return False
+
+    config_path = _write_root_plus_docs_clone_cgs(tmp_path)
+    runner = _FakeGitRunnerNoSubmodules(
+        {
+            "git@github.com:owner/ComplexGitSync.git": {"main"},
+            "git@github.com:owner/docs.git": {"main"},
+        }
+    )
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    with pytest.raises(GitSyncError, match="Submodule constraint violated"):
+        client.clone_cgs(config_path, target_dir=tmp_path / "workspace" / "ComplexGitSync")
 
 
 def test_make_repo_id_normalizes_windows_style_paths():
@@ -873,6 +902,8 @@ class _FakeGitRunner:
     def __init__(self, remote_branches: dict[str, set[str]]):
         self.remote_branches = remote_branches
         self.clones: list[tuple[str, Path, str]] = []
+        self.submodule_adds: list[tuple[Path, str, Path, str]] = []
+        self._submodule_paths: set[tuple[Path, Path]] = set()
 
     def remote_branch_exists(self, remote_url: str, branch: str) -> bool:
         return branch in self.remote_branches.get(remote_url, set())
@@ -911,6 +942,23 @@ nested_config = "disabled"
                 + "\n",
                 encoding="utf-8",
             )
+
+    def add_submodule(
+        self,
+        repo_path: Path | str,
+        remote_url: str,
+        relative_path: Path | str,
+        *,
+        branch: str,
+    ) -> None:
+        parent_path = Path(repo_path).resolve()
+        rel_path = Path(relative_path)
+        self.submodule_adds.append((parent_path, remote_url, rel_path, branch))
+        self._submodule_paths.add((parent_path, rel_path))
+        self.clone(remote_url, parent_path / rel_path, branch=branch)
+
+    def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
+        return (Path(repo_path).resolve(), Path(relative_path)) in self._submodule_paths
 
     def rev_parse_head(self, repo_path: Path | str) -> str:
         repo_name = Path(repo_path).name
@@ -1060,30 +1108,31 @@ def test_fix_circularities_multiple_parents_sharing_leaf(tmp_path):
     assert "root:parent2:shared" not in registry.entries
 
 
-def test_fix_circularities_raises_on_duplicate_with_incompatible_hashes(tmp_path, monkeypatch):
+def test_fix_circularities_keeps_duplicates_when_commit_or_status_conflict(tmp_path):
+    from ComplexGitSync.git_repo import RepoLifecycleState, SyncState
     from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
 
     shared_path = tmp_path / "shared"
     registry = DependencyTreeRegistry()
-    root = _make_entry("root", tmp_path)
     canonical = _make_entry("root:shared", shared_path, parent_id="root")
     duplicate = _make_entry("root:parent1:shared", shared_path, parent_id="root:parent1")
-    canonical.target_ref_kind = RefKind.BRANCH
-    canonical.target_ref_name = "main"
-    duplicate.target_ref_kind = RefKind.TAG
-    duplicate.target_ref_name = "v1.0.0"
-    registry.add(root)
+    canonical.repo_lifecycle_state = RepoLifecycleState.READY
+    canonical.sync_state = SyncState.ALIGNED
+    canonical.commit_sha = "sha-1"
+    duplicate.repo_lifecycle_state = RepoLifecycleState.PENDING
+    duplicate.sync_state = SyncState.PENDING
+    duplicate.commit_sha = "sha-2"
+
+    registry.add(_make_entry("root", tmp_path))
     registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
     registry.add(canonical)
     registry.add(duplicate)
-    monkeypatch.setattr(
-        GitRepo,
-        "_get_hash",
-        lambda self, branch="main", tag=None: "branch-hash" if tag is None else "tag-hash",
-    )
 
-    with pytest.raises(ConfigValidationError, match="incompatibilities between branch \\(hash\\) and tag\\(val\\) in \\.cgs"):
-        fix_circularities(registry)
+    fixed = fix_circularities(registry)
+
+    assert fixed == ()
+    assert "root:shared" in registry.entries
+    assert "root:parent1:shared" in registry.entries
 
 
 def test_client_fix_circularities_is_callable_on_loaded_registry(tmp_path):

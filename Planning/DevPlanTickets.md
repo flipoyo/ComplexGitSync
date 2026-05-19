@@ -71,6 +71,9 @@ Both require READY and keep the tree READY.
 `tag_tree(registry, git_runner, tag_name)` implemented in Tier 2 with READY
 gating, tag propagation, leaf-first tag creation/push, and registry refresh.
 `ComplexGitSyncClient.tag(tag_name)` implemented with action logging.
+Preflight now rejects dirty trees, missing remotes, branch misalignment,
+pre-existing tags, and parent/child layouts not linked as git submodules.
+`GitRunner.create_tag` now enforces non-forcing mode (`-f` is not supported).
 
 ### T14 — `freeze_release` ✅
 `freeze_release_tree` implemented in Tier 2 with READY gating and leaf-first
@@ -137,6 +140,63 @@ Simplified the user-facing CLI and Python API lifecycle surface:
 
 ## Remaining Tickets
 
+### T10 (remainder) — `restart` CLI wiring ✅
+`restart_tree` implemented in Tier 2 (operations.py) with parent-first submodule-aware
+sync (root `pull --ff-only`, then parent-side submodule updates) using the root
+repository's current branch.  `ComplexGitSyncClient.restart`
+implemented with `.cgs` load, nested discovery, READY enforcement, and `.gts`
+snapshot write.  `cgitsync restart <source.cgs>` CLI command wired.  A separate
+terminology follow-up now tracks the user-facing rename to `pull`.
+
+### T16 — CLI wiring for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` ✅
+All six commands implemented in `cli.py`:
+  - `cgitsync checkout <branch> --gts <file> [--ref-kind branch|tag]`
+  - `cgitsync commit <message> --gts <file> [--no-stage]`
+  - `cgitsync push --gts <file>`
+  - `cgitsync tag <name> --gts <file>`
+  - `cgitsync freeze-release <name> --gts <file>`
+  - `cgitsync launch-release <snapshot.gts>`
+CLI behaviour matches Python API invariants; 13 new smoke tests added.
+
+### T23 — Lifecycle terminology: `load`, `expand`, `validate`, `git()` ✅
+Aligned the user-facing lifecycle surface with the reference lifecycle:
+
+- `load(.cgs)` is now the canonical step-1 name; `read()` is retained as a
+  compatibility alias.
+- `expand(.cgs/.gts)` is the canonical step-2 name; it loads the source, runs
+  nested `.cgs` discovery (parent-to-leaf recursive), and returns the formatted
+  tree.  CLI: `cgitsync expand <source>`.
+- `validate(.cgs/.gts)` is the canonical step-3 name; it accepts both `.cgs`
+  and `.gts` sources; `verify()` is retained as a compatibility alias.  CLI:
+  `cgitsync validate <source>`.
+- `git(gittree, command, *args)` is the unified step-5 interface.  Dispatches
+  `"commit"`, `"push"`, and `"tag"` to the appropriate tree-wide operations;
+  each follows leaf-first ordering.  Individual `commit`, `push`, and `tag`
+  methods remain available as direct entry points.
+- CLI gains `load` and `expand` as first-class subcommands; `tree` remains as
+  a backward-compatible alias for expand (with runtime-snapshot preference).
+- All documentation (AdditionalSpecs.md, DevPlan.md, DevPlanTickets.md,
+  README.md) updated to use the canonical vocabulary.
+
+### T27 — Circular dependency resolution: `fix_circularities` ✅
+Resolved circularities that arise when a parent's nested `.cgs` declares
+another parent (registered at the project root level) as one of its leaves,
+creating duplicate registry entries for the same physical path.
+
+- `fix_circularities(registry)` standalone function added to `git_tree.py`:
+  groups entries by resolved absolute path, retains the canonical entry
+  (fewest `:` separators in `repo_id` = closest to root), removes all
+  lower-priority duplicates, recomputes tree state, and returns a tuple of
+  `"fixed_circularity:<removed_id>→<canonical_id>"` change descriptors.
+- `discover_nested_configs` guards against adding new circular entries at
+  discovery time using a pre-built O(1) `set[Path]` of registered paths.
+- `ComplexGitSyncClient.fix_circularities()` exposed as a step-2.5 public
+  method for custom pipelines (between `expand` and `validate`).
+- Called automatically inside `expand(.cgs)` and `clone_cgs()`.
+- Exported from the top-level package in `__init__.py`.
+- 7 unit tests added; 234 total passing.
+- Documentation updated: README.md, getting_started.tex, user_guide.tex,
+  python_api.tex, AdditionalSpecs.md.
 ### Ticketing split (single merged plan)
 - **Legacy T-track** keeps point-0 continuity and completion tracking.
 - **CGS-track** defines the current remaining core work program.

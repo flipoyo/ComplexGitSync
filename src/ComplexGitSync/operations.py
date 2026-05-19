@@ -21,7 +21,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .errors import TreeNotReadyError
+from pathlib import Path
+
+from .errors import GitSyncError, TreeNotReadyError
 from .git_repo import RefKind, RepoLifecycleState, RepoRegistryEntry, SyncState
 from .git_tree import DependencyTreeRegistry, GitTree, iter_tree, iter_tree_leaf_first
 
@@ -84,7 +86,10 @@ def restart_tree(
     """Resynchronize the full tree using the root repository's current branch.
 
     Reads the current branch from the root repository, propagates it across
-    all entries, then checks out that branch in every repo parent-first.
+    all entries, then synchronizes parent-first:
+
+    * root repository: ``git pull --ff-only``
+    * child repositories: submodule sync/update from their parent repository
 
     Does not require a ``READY`` registry; intended for use after loading a
     ``.cgs`` file (``DECLARED`` state).  Produces a ``READY`` registry or
@@ -102,8 +107,38 @@ def restart_tree(
     propagate_global_branch(registry, current_branch)
 
     for entry in iter_tree(registry):
-        git_runner.checkout(entry.absolute_path, current_branch)
-        _refresh_entry_after_checkout(entry, current_branch, RefKind.BRANCH, git_runner)
+        if entry.parent_id is None:
+            git_runner.pull(entry.absolute_path, ref_name=current_branch)
+        else:
+            parent = registry.get(entry.parent_id)
+            try:
+                relative_path = entry.absolute_path.relative_to(parent.absolute_path)
+            except ValueError as exc:
+                raise GitSyncError(
+                    f"pull preflight failed: {entry.name} is outside parent path {parent.absolute_path}."
+                ) from exc
+            if relative_path == Path("."):
+                raise GitSyncError(
+                    "pull preflight failed: child repository cannot share the exact parent path "
+                    f"({parent.name}->{entry.name})."
+                )
+            if not git_runner.is_submodule(parent.absolute_path, relative_path):
+                raise GitSyncError(
+                    "pull preflight failed: child repositories must be linked as submodules "
+                    f"({parent.name}->{entry.name}:{relative_path.as_posix()})."
+                )
+            git_runner.update_submodule(parent.absolute_path, relative_path)
+
+        # Branch refresh uses entry-specific behavior:
+        # - children keep the propagated root branch contract because submodule
+        #   updates may leave them detached.
+        # - root reads its actual current branch (with fallback).
+        resolved_branch = (
+            current_branch
+            if entry.parent_id is not None
+            else (git_runner.current_branch(entry.absolute_path) or current_branch)
+        )
+        _refresh_entry_after_checkout(entry, resolved_branch, RefKind.BRANCH, git_runner)
 
     registry.recompute_tree_state()
 
@@ -267,6 +302,13 @@ def tag_tree(
 ) -> None:
     """Create and push *tag_name* across the tree, leaf-first."""
     _assert_ready(registry)
+    _run_preflight_checks(
+        registry,
+        git_runner,
+        tag_name=tag_name,
+        require_clean=True,
+        operation_name="tag",
+    )
     GitTree().propagate_tag(registry, tag_name)
 
     for entry in iter_tree_leaf_first(registry):
@@ -296,6 +338,13 @@ def freeze_release_tree(
 ) -> None:
     """Freeze a release by committing, tagging, and pushing leaf-first."""
     _assert_ready(registry)
+    _run_preflight_checks(
+        registry,
+        git_runner,
+        tag_name=tag_name,
+        require_clean=False,
+        operation_name="freeze_release",
+    )
     GitTree().propagate_tag(registry, tag_name)
     commit_message = message or f"freeze release {tag_name}"
 
@@ -330,6 +379,133 @@ def _assert_ready(registry: DependencyTreeRegistry) -> None:
     if not registry.is_ready():
         raise TreeNotReadyError(
             f"Operation requires a READY tree; current state: {registry.lifecycle_state.value}"
+        )
+
+
+def _run_preflight_checks(
+    registry: DependencyTreeRegistry,
+    git_runner: GitRunner,
+    *,
+    tag_name: str,
+    require_clean: bool,
+    operation_name: str,
+) -> None:
+    _assert_remotes_exist(registry, git_runner, operation_name=operation_name)
+    _assert_tag_absent(registry, git_runner, tag_name=tag_name, operation_name=operation_name)
+    _assert_branch_alignment(registry, git_runner, operation_name=operation_name)
+    _assert_submodule_links(registry, git_runner, operation_name=operation_name)
+    if require_clean:
+        _assert_clean_worktrees(registry, git_runner, operation_name=operation_name)
+
+
+def _assert_remotes_exist(
+    registry: DependencyTreeRegistry,
+    git_runner: GitRunner,
+    *,
+    operation_name: str,
+) -> None:
+    missing: list[str] = []
+    for entry in iter_tree_leaf_first(registry):
+        remote = entry.remote_name or "origin"
+        if not git_runner.remote_exists(entry.absolute_path, remote):
+            missing.append(f"{entry.name}:{remote}")
+    if missing:
+        details = ", ".join(sorted(missing))
+        raise GitSyncError(
+            f"{operation_name} preflight failed: missing remote(s) {details}."
+        )
+
+
+def _assert_tag_absent(
+    registry: DependencyTreeRegistry,
+    git_runner: GitRunner,
+    *,
+    tag_name: str,
+    operation_name: str,
+) -> None:
+    duplicates: list[str] = []
+    for entry in iter_tree_leaf_first(registry):
+        if git_runner.tag_exists(entry.absolute_path, tag_name):
+            duplicates.append(entry.name)
+    if duplicates:
+        details = ", ".join(sorted(duplicates))
+        raise GitSyncError(
+            f"{operation_name} preflight failed: tag '{tag_name}' already exists in {details}."
+        )
+
+
+def _assert_branch_alignment(
+    registry: DependencyTreeRegistry,
+    git_runner: GitRunner,
+    *,
+    operation_name: str,
+) -> None:
+    if "root" not in registry.entries:
+        raise GitSyncError(
+            f"{operation_name} preflight failed: registry has no root repository entry."
+        )
+    root = registry.get("root")
+    expected_branch = git_runner.current_branch(root.absolute_path)
+    if expected_branch is None:
+        raise GitSyncError(
+            f"{operation_name} preflight failed: root repository is detached (no branch checked out)."
+        )
+    mismatched: list[str] = []
+    for entry in iter_tree_leaf_first(registry):
+        current = git_runner.current_branch(entry.absolute_path)
+        if current != expected_branch:
+            mismatched.append(f"{entry.name}:{current!r}")
+    if mismatched:
+        details = ", ".join(sorted(mismatched))
+        raise GitSyncError(
+            f"{operation_name} preflight failed: branch misalignment (expected {expected_branch!r}); {details}."
+        )
+
+
+def _assert_submodule_links(
+    registry: DependencyTreeRegistry,
+    git_runner: GitRunner,
+    *,
+    operation_name: str,
+) -> None:
+    missing: list[str] = []
+    for entry in iter_tree_leaf_first(registry):
+        if entry.parent_id is None:
+            continue
+        if entry.parent_id not in registry.entries:
+            missing.append(f"{entry.parent_id}->{entry.name}:unknown-parent")
+            continue
+        parent = registry.get(entry.parent_id)
+        try:
+            relative_path = entry.absolute_path.relative_to(parent.absolute_path)
+        except ValueError:
+            missing.append(f"{parent.name}->{entry.name}:outside-parent")
+            continue
+        if relative_path == Path("."):
+            continue
+        if not git_runner.is_submodule(parent.absolute_path, relative_path):
+            missing.append(f"{parent.name}->{entry.name}:{relative_path.as_posix()}")
+    if missing:
+        details = ", ".join(sorted(missing))
+        raise GitSyncError(
+            f"{operation_name} preflight failed: child repositories must be linked as submodules ({details})."
+        )
+
+
+def _assert_clean_worktrees(
+    registry: DependencyTreeRegistry,
+    git_runner: GitRunner,
+    *,
+    operation_name: str,
+) -> None:
+    dirty: list[str] = []
+    for entry in iter_tree_leaf_first(registry):
+        if git_runner.has_uncommitted_changes(entry.absolute_path):
+            dirty.append(entry.name)
+    if dirty:
+        details = ", ".join(sorted(dirty))
+        raise GitSyncError(
+            f"{operation_name} preflight failed: repositories are not clean ({details})."
         )
 
 

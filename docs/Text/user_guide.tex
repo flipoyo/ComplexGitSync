@@ -183,7 +183,10 @@ $ cgitsync tag <name> --gts <snapshot.gts>
 Creates and pushes the same tag across the full tree, leaf-first.  Loads the
 READY registry from \texttt{--gts}.  Refreshes the stored tag in
 \texttt{GitTree}.  Requires a \texttt{READY} tree and keeps the tree
-\texttt{READY} on success.
+\texttt{READY} on success. Tag preflight requires clean worktrees, aligned
+branches, existing remotes, no pre-existing tag of the same name, and
+parent/child repositories linked as Git submodules. Tag creation is non-forcing
+by default (no implicit \texttt{-f}).
 
 Also available via the unified \texttt{git()} Python API:
 
@@ -201,7 +204,9 @@ $ cgitsync freeze <name> --gts <snapshot.gts>
 Performs a release freeze across all repos, leaf-first: stage/commit,
 create+push the shared release tag, refresh SHA/state, and write a
 \texttt{.gts} snapshot. Loads the READY registry from \texttt{--gts}.
-Requires \texttt{READY} and leaves the tree \texttt{READY}.
+Requires \texttt{READY} and leaves the tree \texttt{READY}. Freeze preflight
+checks remote availability, branch alignment, tag absence, and submodule links
+for all parent/child repository boundaries.
 
 Also available via the Python API:
 

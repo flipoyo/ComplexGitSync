@@ -68,7 +68,13 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - `add_tree` lives in `operations.py` (Tier 2) and stages all repos leaf-first.
 - `checkout_tree`, `commit_tree`, `push_tree`, `tag_tree`, and
   `freeze_release_tree` require `READY` and leave the tree `READY` on success.
+- `tag_tree` / `freeze_release_tree` now run preflight checks before mutation:
+  clean-state (for `tag`), branch alignment, remote existence, tag absence, and
+  parent→child submodule-link validation.
+- `GitRunner.create_tag()` always uses non-forcing tag creation; `-f` is not supported.
 - `restart_tree` accepts any state and produces `READY` using the root repo's current branch.
+- `restart_tree` now syncs parent→leaf in submodule-aware mode (`pull --ff-only` at root, then
+  parent-side submodule sync/update for child repos).
 - `checkout_tree` and `restart_tree` follow parent-first ordering; `commit_tree` and `push_tree`
   follow leaf-first ordering.
 - `tag_tree`, `freeze_release_tree`, `commit_tree`, and `push_tree` follow leaf-first ordering.
