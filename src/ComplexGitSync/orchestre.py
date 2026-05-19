@@ -32,6 +32,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import subprocess
 import tomllib
 from dataclasses import dataclass, field
@@ -1962,6 +1963,12 @@ class ComplexGitSyncClient:
         previous_sync_state = entry.sync_state
         remote_url = self._build_remote_url(entry)
         selected_branch = self._select_clone_branch(entry, remote_url)
+        if (
+            entry.parent_id is not None
+            and entry.absolute_path.is_dir()
+            and any(entry.absolute_path.iterdir())
+        ):
+            shutil.rmtree(entry.absolute_path)
 
         self.orchestre.git_tree.git.clone(
             self.git_runner,
