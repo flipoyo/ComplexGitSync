@@ -1968,7 +1968,7 @@ class ComplexGitSyncClient:
                 shutil.rmtree(entry.absolute_path)
             except OSError as exc:
                 raise GitSyncError(
-                    f"Unable to clear nested clone destination for {entry.name}: {entry.absolute_path}"
+                    f"Unable to clear nested clone destination for {entry.name} at {entry.absolute_path}: {exc}"
                 ) from exc
 
         self.orchestre.git_tree.git.clone(
