@@ -1,0 +1,211 @@
+% getting_started.tex — step-by-step guide from installation to first use
+
+\chapter{Getting Started}
+
+This chapter guides a brand-new user from installation through the first
+successful synchronisation of a nested Git repository tree.
+
+The documented lifecycle is:
+
+\begin{enumerate}
+  \item \texttt{load(.cgs)} $\rightarrow$ \texttt{.gts LOADED}
+  \item \texttt{expand(.cgs|.gts)} $\rightarrow$ \texttt{.gts PENDING}
+  \item \texttt{validate(.cgs|.gts)} $\rightarrow$ \texttt{.gts READY}
+  \item \texttt{clone(.cgs|.gts)}
+  \item \texttt{checkout(.gts)}
+  \item \texttt{add}
+  \item \texttt{git(tree, "commit", msg)}
+  \item \texttt{git(tree, "push")}
+  \item \texttt{git(tree, "tag", name)}
+  \item \texttt{freeze}
+\end{enumerate}
+
+% -----------------------------------------------------------------------
+\section{Prerequisites}
+
+\begin{itemize}
+  \item Python~3.11 or later.
+  \item Git~2.30 or later available on \texttt{PATH}.
+  \item (Optional) PyYAML~6.x for \texttt{.yml} document support.
+\end{itemize}
+
+% -----------------------------------------------------------------------
+\section{Installation}
+
+Install \cgspkg{} from source with the Pixi-managed developer environment:
+
+\begin{lstlisting}[language=bash]
+$ git clone https://github.com/flipoyo/ComplexGitSync.git
+$ cd ComplexGitSync
+$ pixi install
+\end{lstlisting}
+
+Verify the installation:
+
+\begin{lstlisting}[language=bash]
+$ pixi run cgitsync --help
+\end{lstlisting}
+
+% -----------------------------------------------------------------------
+\section{Creating a Project Spec (\texttt{.cgs})}
+
+A \emph{local authoring spec} (\texttt{.cgs}) is a TOML file that describes
+the repository tree you want to manage. For the self-standing
+\texttt{ComplexGitSync} setup, create \texttt{complexgitsync.cgs}:
+
+\begin{lstlisting}[language=toml]
+[document]
+format_version = "1.0"
+
+[project]
+name           = "ComplexGitSync"
+default_branch = "autoTest"
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "ComplexGitSync"
+default_branch     = "autoTest"
+fallback_branch    = "main"
+relative_path      = "."
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "DevSpec"
+default_branch     = "autoTest"
+fallback_branch    = "main"
+relative_path      = "DevSpec"
+nested_config      = "disabled"
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "DocComplexGitSync"
+default_branch     = "autoTest"
+fallback_branch    = "main"
+relative_path      = "docs"
+nested_config      = "doccomplexgitsync.cgs"
+\end{lstlisting}
+
+In this topology, \texttt{docs/doccomplexgitsync.cgs} then declares
+\texttt{DocSpec} (resolved as \texttt{docs/DocSpec}
+from the repository root) as a nested documentation dependency.
+
+This branch policy prefers the shared \texttt{autoTest} branch across the
+whole tree. Each repo also declares \texttt{fallback\_branch = "main"}, so a
+synchronisation run can stay on \texttt{autoTest} when that branch exists and
+fall back to \texttt{main} when a repository has not created it yet.
+
+% -----------------------------------------------------------------------
+\section{Read / Expand / Verify}
+
+Check that \cgscli{} can parse and resolve the spec without errors:
+
+\begin{lstlisting}[language=bash]
+$ cgitsync validate complexgitsync.cgs
+\end{lstlisting}
+
+A successful run exits with code~0 and prints the current tree summary, for
+example \texttt{DECLARED ready=false complete=true}.
+
+The canonical step-2 command is \texttt{expand}; \texttt{tree} is kept as a
+backward-compatible alias.  The canonical step-3 command is \texttt{validate}.
+
+% -----------------------------------------------------------------------
+\section{Clone / Checkout}
+
+Once the spec is valid, materialise the full project tree:
+
+\begin{lstlisting}[language=bash]
+$ cgitsync clone complexgitsync.cgs
+\end{lstlisting}
+
+By default, \cgscli{} clones the tree into \texttt{./ComplexGitSync}. If that
+directory already exists and is not empty, the command chooses the next
+available suffixed directory such as \texttt{./ComplexGitSync-1}. To force an
+explicit destination, pass \texttt{--target-dir}.
+
+On success, the command prints the explicit lifecycle workflow
+(\texttt{load -> expand -> validate -> clone}), the command log file path
+(\texttt{log\_file=...}), a minimal repo-only tree view, and a READY summary
+including the chosen root path, for example
+\texttt{READY ready=true complete=true root=/tmp/ComplexGitSync}.
+The clone flow first tries each repo's \texttt{default\_branch} and falls back
+to \texttt{fallback\_branch} when the preferred branch does not exist on the
+remote. It also writes a runtime snapshot to
+\texttt{<project-root>/.cgitsync/state/<spec-name>.gts} so later inspection
+commands can reuse the synchronised state.
+
+Once the tree is materialised, the lifecycle continues with checkout from the
+recorded \texttt{.gts} state.
+
+% -----------------------------------------------------------------------
+\section{Inspecting and Printing Saved State}
+
+Render the dependency graph as text:
+
+\begin{lstlisting}[language=bash]
+$ cgitsync tree complexgitsync.cgs
+\end{lstlisting}
+
+When a newer runtime snapshot exists for the same \texttt{.cgs} file,
+\cgscli{} loads that \texttt{.gts} state automatically before rendering the
+tree. This is why the same command reports a \texttt{READY} tree after a
+successful \texttt{clone} instead of returning to the purely declared
+\texttt{DECLARED}/\texttt{PENDING} view.
+
+The remaining planned user-facing work is to expose a dedicated
+\texttt{print(.gts)} command for saved-state inspection.
+
+% -----------------------------------------------------------------------
+\section{Preparing an Orchestration Plan (\texttt{.goc})}
+
+A \texttt{.goc} file records a repeatable command sequence for a project.
+For the self-standing setup, \texttt{deploy.goc} keeps the tree on
+\texttt{autoTest} when possible:
+
+\begin{lstlisting}[language=toml]
+[[actions]]
+command = "checkout"
+[actions.args]
+ref      = "autoTest"
+ref_type = "branch"
+\end{lstlisting}
+
+Combined with the per-repo \texttt{fallback\_branch = "main"} settings from
+the \texttt{.cgs} file, the same orchestration plan can be used on trees where
+some repositories already expose \texttt{autoTest} and others still only offer
+\texttt{main}. In the current bootstrap release, the \texttt{.goc} file is the
+machine-readable reference for that flow; direct CLI execution of orchestration
+plans is introduced later as \texttt{orchestrate(.goc)}.
+
+% -----------------------------------------------------------------------
+\section{Log Files}
+
+Every CLI command writes a timestamped log file. On Linux the default location
+is \texttt{~/.local/state/ComplexGitSync/logs/}; if
+\texttt{XDG\_STATE\_HOME} is set, the logs are written under that state
+directory instead. The logs record command start and end, tree and repo state
+transitions, fallback decisions, nested \texttt{.cgs} discovery, and
+\texttt{.gts} loads and writes. The CLI prints the resolved file path in
+command output as \texttt{log\_file=<path>}.
+
+% -----------------------------------------------------------------------
+\section{Next Steps}
+
+Once the tree is cloned you can proceed to:
+\begin{itemize}
+  \item \textbf{checkout} (Python API) — switch the whole tree to a branch or tag,
+    parent-first.
+  \item \textbf{add} / \textbf{commit} (Python API) — stage and commit changes
+    across the tree, leaf-first.
+  \item \textbf{push} (Python API) — push every repository to its configured
+    remote, leaf-first, and refresh stored hashes.
+  \item \textbf{tag} / \textbf{freeze} (Python API) — update recorded tag state
+    and emit the next saved \texttt{.gts}.
+\end{itemize}
+
+All of these synchronisation operations require a \texttt{READY} tree and leave it
+\texttt{READY} after a successful run.  See Chapter~\ref{chap:user-guide} for
+complete command and API documentation.
