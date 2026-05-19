@@ -1637,7 +1637,10 @@ class ComplexGitSyncClient:
         if command == "pull":
             source = args[0] if args else ""
             return self.pull(source)
-        if command in {"checkout", "branch"}:
+        if command == "checkout":
+            branch_name = args[0] if args else ""
+            return self.checkout(branch_name)
+        if command == "branch":
             branch_name = args[0] if args else ""
             return self.branch(branch_name)
         if command == "add":
@@ -1654,9 +1657,8 @@ class ComplexGitSyncClient:
             name = args[0] if args else ""
             return self.freeze(name)
         raise ValueError(
-            "Unknown git command "
-            f"'{command}'. Supported commands: 'clone', 'pull', 'checkout', 'branch', "
-            "'add', 'commit', 'push', 'tag', 'freeze'."
+            f"Unknown git command '{command}'. Supported commands: 'clone', 'pull', "
+            "'checkout', 'branch', 'add', 'commit', 'push', 'tag', 'freeze'."
         )
 
 

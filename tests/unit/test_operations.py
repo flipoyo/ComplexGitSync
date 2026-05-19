@@ -769,7 +769,7 @@ def test_client_checkout_delegates_to_gittree_git_checkout(tmp_path, monkeypatch
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_checkout(self, git_runner, branch_name, *, ref_kind, registry=None):
+    def _spy_checkout(self, git_runner, branch_name, *, ref_kind=RefKind.BRANCH, registry=None):
         captured_call["registry"] = registry
         captured_call["git_runner"] = git_runner
         captured_call["branch_name"] = branch_name

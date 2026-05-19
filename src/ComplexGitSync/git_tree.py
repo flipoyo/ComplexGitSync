@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 class GitTreeGitCommands:
     """Git command facade bound to :class:`GitTree` operations."""
 
-    registry: "DependencyTreeRegistry | None" = None
+    registry: "DependencyTreeRegistry | None" = field(default=None)
 
     def bind_registry(self, registry: "DependencyTreeRegistry") -> "DependencyTreeRegistry":
         self.registry = registry
