@@ -56,7 +56,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - `tag_tree` / `freeze_release_tree` now run preflight checks before mutation:
   clean-state (for `tag`), branch alignment, remote existence, tag absence, and
   parent→child submodule-link validation.
-- `GitRunner.create_tag()` defaults to non-forcing tag creation; `-f` is opt-in.
+- `GitRunner.create_tag()` always uses non-forcing tag creation; `-f` is not supported.
 - `restart_tree` accepts any state and produces `READY` using the root repo's current branch.
 - `checkout_tree` and `restart_tree` follow parent-first ordering; `commit_tree` and `push_tree`
   follow leaf-first ordering.

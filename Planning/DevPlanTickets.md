@@ -73,7 +73,7 @@ gating, tag propagation, leaf-first tag creation/push, and registry refresh.
 `ComplexGitSyncClient.tag(tag_name)` implemented with action logging.
 Preflight now rejects dirty trees, missing remotes, branch misalignment,
 pre-existing tags, and parent/child layouts not linked as git submodules.
-`GitRunner.create_tag` now defaults to non-forcing mode (`-f` is opt-in).
+`GitRunner.create_tag` now enforces non-forcing mode (`-f` is not supported).
 
 ### T14 — `freeze_release` ✅
 `freeze_release_tree` implemented in Tier 2 with READY gating and leaf-first

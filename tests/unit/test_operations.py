@@ -888,22 +888,6 @@ def test_git_runner_create_tag_default_does_not_force(monkeypatch):
     assert captured["args"] == ("tag", "v1.2.3")
 
 
-def test_git_runner_create_tag_force_adds_f_flag(monkeypatch):
-    runner = GitRunner()
-    captured: dict[str, object] = {}
-
-    def _spy_run(_self, *args: str, cwd=None):
-        captured["args"] = args
-        captured["cwd"] = cwd
-        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(GitRunner, "_run", _spy_run)
-
-    runner.create_tag("/tmp/repo", "v1.2.3", force=True)
-
-    assert captured["args"] == ("tag", "-f", "v1.2.3")
-
-
 # ---------------------------------------------------------------------------
 # ComplexGitSyncClient.checkout / commit / push / tag / freeze_release / launch_release
 # ---------------------------------------------------------------------------
