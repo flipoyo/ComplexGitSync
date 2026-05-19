@@ -456,12 +456,13 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
 
     The registry tree state is recomputed only when at least one entry is removed.
     """
+    # Absolute paths stored in registry entries are already resolved (set via
+    # .resolve() during construction), so no additional filesystem calls are needed.
     path_to_entries: dict[Path, list[RepoRegistryEntry]] = {}
     for entry in registry.values():
         if entry.absolute_path is None:
             continue
-        resolved = Path(entry.absolute_path).resolve()
-        path_to_entries.setdefault(resolved, []).append(entry)
+        path_to_entries.setdefault(entry.absolute_path, []).append(entry)
 
     changes: list[str] = []
     ids_to_remove: set[str] = set()

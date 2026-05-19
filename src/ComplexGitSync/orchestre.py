@@ -1005,6 +1005,10 @@ def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]
         if entry.repo_id != ROOT_REPO_ID and entry.nested_config not in {None, "disabled"}
     ]
 
+    # Pre-build a set of all known absolute paths for O(1) circularity detection.
+    # Updated in-place as new entries are added during this call.
+    registered_paths: set[Path] = {e.absolute_path for e in registry.values() if e.absolute_path is not None}
+
     for entry in pending_entries:
         if not entry.absolute_path.exists():
             entry.discovery_state = DiscoveryState.MISSING
@@ -1043,16 +1047,16 @@ def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]
                 continue
 
             child_absolute_path = (entry.absolute_path / relative_path).resolve()
-            if any(e.absolute_path == child_absolute_path for e in registry.values()):
+            if child_absolute_path in registered_paths:
                 continue
 
-            registry.add(
+            new_entry = registry.add(
                 RepoRegistryEntry(
                     repo_id=child_id,
                     name=str(repo["project_name"]),
                     node_type=NodeType.LEAF,
                     parent_id=entry.repo_id,
-                    absolute_path=(entry.absolute_path / relative_path).resolve(),
+                    absolute_path=child_absolute_path,
                     relative_path=relative_path,
                     source_cgs_path=nested_path,
                     target_ref_kind=entry.target_ref_kind,
@@ -1078,6 +1082,7 @@ def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]
                     remote_name=str(repo.get("remote_name") or entry.remote_name or "origin"),
                 )
             )
+            registered_paths.add(new_entry.absolute_path)
             changes.append(f"discovered:{child_id}")
 
     registry.recompute_tree_state()
