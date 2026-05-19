@@ -469,6 +469,32 @@ def test_clone_cgs_uses_suffixed_target_when_default_root_is_occupied(tmp_path, 
     assert registry.get("root").absolute_path == (tmp_path / "demo-1").resolve()
 
 
+def test_clone_cgs_replaces_nested_destination_populated_by_parent_clone(tmp_path):
+    config_path = _write_root_plus_docs_clone_cgs(tmp_path)
+    fake_runner = _StrictCloneGitRunner(
+        {
+            "git@github.com:owner/ComplexGitSync.git": {"main"},
+            "git@github.com:owner/docs.git": {"main"},
+        },
+        parent_repo_name="ComplexGitSync",
+    )
+    client = ComplexGitSyncClient(git_runner=fake_runner)
+
+    registry = client.clone_cgs(config_path, target_dir=tmp_path / "workspace" / "ComplexGitSync")
+
+    docs_path = (tmp_path / "workspace" / "ComplexGitSync" / "docs").resolve()
+    assert registry.get("root:docs").absolute_path == docs_path
+    assert docs_path.is_dir()
+    assert fake_runner.parent_docs_seeded is True
+    assert not (docs_path / "README.md").exists()
+    assert (docs_path / "from-docs-clone.txt").is_file()
+    assert [remote for remote, _, _ in fake_runner.clones] == [
+        "git@github.com:owner/ComplexGitSync.git",
+        "git@github.com:owner/docs.git",
+    ]
+    assert [branch for _, _, branch in fake_runner.clones] == ["main", "main"]
+
+
 def test_make_repo_id_normalizes_windows_style_paths():
     assert make_repo_id("root", PureWindowsPath("deps", "child-repo"), "child-repo") == (
         "root:deps/child-repo"
@@ -734,6 +760,40 @@ nested_config = "auto"
     return config_path
 
 
+def _write_root_plus_docs_clone_cgs(tmp_path: Path) -> Path:
+    config_path = tmp_path / "project.cgs"
+    config_path.write_text(
+        """
+[document]
+format_version = "1.0"
+
+[project]
+name = "ComplexGitSync"
+default_branch = "autoTest"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "ComplexGitSync"
+default_branch = "autoTest"
+fallback_branch = "main"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "docs"
+default_branch = "autoTest"
+fallback_branch = "main"
+relative_path = "docs"
+nested_config = "disabled"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return config_path
+
+
 def _write_ready_gts(snapshot_path: Path, *, root_path: Path) -> Path:
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
     snapshot_path.write_text(
@@ -828,3 +888,32 @@ nested_config = "disabled"
             if destination == resolved:
                 return branch
         return None
+
+
+class _StrictCloneGitRunner(_FakeGitRunner):
+    def __init__(
+        self,
+        remote_branches: dict[str, set[str]],
+        *,
+        parent_repo_name: str,
+    ) -> None:
+        super().__init__(remote_branches)
+        self.parent_repo_name = parent_repo_name
+        self.parent_docs_seeded = False
+
+    @staticmethod
+    def _is_non_empty_dir(path: Path) -> bool:
+        return path.exists() and next(path.iterdir(), None) is not None
+
+    def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
+        destination_path = Path(destination)
+        if self._is_non_empty_dir(destination_path):
+            raise RuntimeError(f"Destination not empty: {destination_path}")
+        super().clone(remote_url, destination, branch=branch)
+        if destination_path.name == self.parent_repo_name:
+            docs_dir = destination_path / "docs"
+            docs_dir.mkdir(parents=True, exist_ok=True)
+            (docs_dir / "README.md").write_text("root docs\n", encoding="utf-8")
+            self.parent_docs_seeded = True
+        if destination_path.name == "docs":
+            (destination_path / "from-docs-clone.txt").write_text("docs clone\n", encoding="utf-8")
