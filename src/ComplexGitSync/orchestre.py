@@ -314,7 +314,9 @@ class CgsDocument(ConfigDocument):
                             AccessProtocol.SSH,
                         ),
                     )
-                    if probe._get_hash(branch=branch) != probe._get_hash(branch=branch, tag=tag):
+                    branch_hash = probe._get_hash(branch=branch)
+                    tag_hash = probe._get_hash(branch=branch, tag=tag)
+                    if branch_hash != tag_hash:
                         errors.append("incompatibilities between branch (hash) and tag(val) in .cgs")
 
         if errors:
@@ -710,11 +712,13 @@ class GitRunner:
     executable: str = "git"
 
     def remote_branch_exists(self, remote_url: str, branch: str) -> bool:
-        completed = self._run("ls-remote", "--heads", remote_url, branch)
-        return bool(completed.stdout.strip())
+        return self._remote_ref_exists(remote_url, "--heads", branch)
 
     def remote_tag_exists(self, remote_url: str, tag: str) -> bool:
-        completed = self._run("ls-remote", "--tags", remote_url, tag)
+        return self._remote_ref_exists(remote_url, "--tags", tag)
+
+    def _remote_ref_exists(self, remote_url: str, ref_selector: str, ref_name: str) -> bool:
+        completed = self._run("ls-remote", ref_selector, remote_url, ref_name)
         return bool(completed.stdout.strip())
 
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
@@ -1152,7 +1156,7 @@ def _resolve_repo_target_ref(
         return (RefKind.TAG, tag)
     branch = _as_optional_str(repo.get("branch")) or _as_optional_str(repo.get("default_branch"))
     if branch is None:
-        branch = document_default_branch
+        branch = document_default_branch or "main"
     return (RefKind.BRANCH, branch)
 
 
@@ -2067,20 +2071,20 @@ class ComplexGitSyncClient:
             entry.absolute_path,
             branch=selected_ref,
         )
-        current_branch = self.git_runner.current_branch(entry.absolute_path) or selected_ref
+        current_ref = self.git_runner.current_branch(entry.absolute_path) or selected_ref
         fallback_applied = (
             selected_ref_kind == RefKind.BRANCH
-            and current_branch != (entry.target_ref_name or selected_ref)
+            and current_ref != (entry.target_ref_name or selected_ref)
         )
 
         entry.current_ref_kind = selected_ref_kind
-        entry.current_ref_name = current_branch if selected_ref_kind == RefKind.BRANCH else selected_ref
+        entry.current_ref_name = current_ref if selected_ref_kind == RefKind.BRANCH else selected_ref
         entry.resolved_ref_kind = selected_ref_kind
-        entry.resolved_ref_name = current_branch if selected_ref_kind == RefKind.BRANCH else selected_ref
+        entry.resolved_ref_name = current_ref if selected_ref_kind == RefKind.BRANCH else selected_ref
         entry.commit_sha = self.git_runner.rev_parse_head(entry.absolute_path)
         entry.fallback_applied = fallback_applied
         entry.fallback_reason = (
-            f"branch '{entry.target_ref_name}' not found on remote; cloned '{current_branch}' instead"
+            f"branch '{entry.target_ref_name}' not found on remote; cloned '{current_ref}' instead"
             if fallback_applied
             else None
         )

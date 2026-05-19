@@ -136,6 +136,8 @@ class GitRepo:
         ref = f"refs/tags/{tag}" if tag else f"refs/heads/{selected_branch}"
         try:
             remote_url = RepoAddress.from_repo(self).to_url(self.access_protocol)
+            if any(ch.isspace() for ch in remote_url):
+                raise ValueError("remote URL contains whitespace")
             completed = subprocess.run(  # noqa: S603
                 ["git", "ls-remote", remote_url, ref],
                 check=False,
@@ -147,7 +149,7 @@ class GitRepo:
                 peeled = [line for line in lines if line.endswith("^{}")]
                 chosen = peeled[0] if peeled else lines[0]
                 return chosen.split()[0]
-        except Exception:
+        except (ValueError, OSError, subprocess.SubprocessError):
             pass
         return hashlib.sha256(f"{self.project_name}:{selected_branch}:{tag or ''}".encode()).hexdigest()
 

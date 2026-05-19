@@ -470,7 +470,7 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
     for _abs_path, entries in path_to_entries.items():
         if len(entries) <= 1:
             continue
-        state_hashes = {_entry_declared_hash(entry) for entry in entries}
+        state_hashes = {_resolve_entry_hash(entry) for entry in entries}
         if len(state_hashes) > 1:
             raise ConfigValidationError("incompatibilities between branch (hash) and tag(val) in .cgs")
         # Determine the canonical entry: the one closest to the root.
@@ -492,7 +492,7 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
     return tuple(changes)
 
 
-def _entry_declared_hash(entry: RepoRegistryEntry) -> str:
+def _resolve_entry_hash(entry: RepoRegistryEntry) -> str:
     branch = entry.default_branch or "main"
     tag: str | None = None
     if entry.target_ref_kind == RefKind.TAG:
