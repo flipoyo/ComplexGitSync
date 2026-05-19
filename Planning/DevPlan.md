@@ -69,6 +69,8 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - `git(tree, command, *args)` is the canonical unified git interface; `commit`, `push`, and `tag` remain available as direct methods.
 - Compatibility aliases: `read` → `load`, `verify` → `validate`, `clone` → `initialise(.cgs)` equivalent.
 - `freeze` is the primary versioning command; `freeze-release` and `freeze-state` remain available.
+- `expand`+`fix_circularities` enforce a DAG-compatible tangle behavior: shared repos are canonicalized only when declared refs are hash-compatible.
+- `.cgs` supports repo-level `branch`/`tag` declarations; when both are present, `validate` enforces hash equivalence and raises `incompatibilities between branch (hash) and tag(val) in .cgs` on mismatch.
 - `freeze` is expected to emit the next `.gts` id and register it locally.
 - Remaining lifecycle work is `orchestrate(.goc)` and project-local `.lgr` register management.
 - `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.

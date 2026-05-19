@@ -470,6 +470,9 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
     for _abs_path, entries in path_to_entries.items():
         if len(entries) <= 1:
             continue
+        state_hashes = {_entry_declared_hash(entry) for entry in entries}
+        if len(state_hashes) > 1:
+            raise ConfigValidationError("incompatibilities between branch (hash) and tag(val) in .cgs")
         # Determine the canonical entry: the one closest to the root.
         # repo_id uses ":" as a path separator, so fewer colons mean a higher
         # position in the tree (root="root" has 0, a direct child of root has 1,
@@ -487,6 +490,24 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
         registry.recompute_tree_state()
 
     return tuple(changes)
+
+
+def _entry_declared_hash(entry: RepoRegistryEntry) -> str:
+    branch = entry.default_branch or "main"
+    tag: str | None = None
+    if entry.target_ref_kind == RefKind.TAG:
+        tag = entry.target_ref_name
+    elif entry.target_ref_name:
+        branch = entry.target_ref_name
+    repo = GitRepo(
+        project_owner_name=entry.project_owner_name or "",
+        project_name=entry.project_name or entry.name,
+        gitprovider=entry.gitprovider,
+        group_name=entry.group_name,
+        gitprovider_url=entry.gitprovider_url,
+        access_protocol=entry.access_protocol,
+    )
+    return repo._get_hash(branch=branch, tag=tag)
 
 
 # ---------------------------------------------------------------------------

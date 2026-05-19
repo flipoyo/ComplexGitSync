@@ -299,6 +299,23 @@ class CgsDocument(ConfigDocument):
                             f"repos[{idx}].nested_config must be 'auto', 'disabled', "
                             f"or a .cgs relative path; got: {nested!r}"
                         )
+                branch = _as_optional_str(repo.get("branch")) or _as_optional_str(repo.get("default_branch"))
+                tag = _as_optional_str(repo.get("tag"))
+                if branch and tag:
+                    probe = GitRepo(
+                        project_owner_name=str(repo.get("project_owner_name")),
+                        project_name=str(repo.get("project_name")),
+                        gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
+                        group_name=_as_optional_str(repo.get("group_name")),
+                        gitprovider_url=_as_optional_str(repo.get("gitprovider_url")),
+                        access_protocol=_parse_enum(
+                            AccessProtocol,
+                            repo.get("access_protocol"),
+                            AccessProtocol.SSH,
+                        ),
+                    )
+                    if probe._get_hash(branch=branch) != probe._get_hash(branch=branch, tag=tag):
+                        errors.append("incompatibilities between branch (hash) and tag(val) in .cgs")
 
         if errors:
             raise ConfigValidationError(
@@ -696,6 +713,10 @@ class GitRunner:
         completed = self._run("ls-remote", "--heads", remote_url, branch)
         return bool(completed.stdout.strip())
 
+    def remote_tag_exists(self, remote_url: str, tag: str) -> bool:
+        completed = self._run("ls-remote", "--tags", remote_url, tag)
+        return bool(completed.stdout.strip())
+
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
         destination_path = Path(destination)
         if destination_path.exists():
@@ -835,6 +856,10 @@ def build_registry_from_cgs_document(
             context="root",
         )
 
+        target_kind, target_name = _resolve_repo_target_ref(
+            repo,
+            document_default_branch=document.default_branch,
+        )
         entry = RepoRegistryEntry(
             repo_id=make_repo_id(ROOT_REPO_ID, relative_path, str(repo["project_name"])),
             name=str(repo["project_name"]),
@@ -843,8 +868,8 @@ def build_registry_from_cgs_document(
             absolute_path=(root_path / relative_path).resolve(),
             relative_path=relative_path,
             source_cgs_path=source_path,
-            target_ref_kind=RefKind.BRANCH,
-            target_ref_name=str(repo.get("default_branch") or document.default_branch),
+            target_ref_kind=target_kind,
+            target_ref_name=target_name,
             fallback_branch=_as_optional_str(repo.get("fallback_branch")),
             discovery_state=_initial_discovery_state(repo.get("nested_config")),
             gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
@@ -1057,6 +1082,10 @@ def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]
             if child_absolute_path in registered_paths:
                 continue
 
+            target_kind, target_name = _resolve_repo_target_ref(
+                repo,
+                document_default_branch=nested_document.default_branch,
+            )
             new_entry = registry.add(
                 RepoRegistryEntry(
                     repo_id=child_id,
@@ -1066,8 +1095,8 @@ def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]
                     absolute_path=child_absolute_path,
                     relative_path=relative_path,
                     source_cgs_path=nested_path,
-                    target_ref_kind=entry.target_ref_kind,
-                    target_ref_name=str(repo.get("default_branch") or nested_document.default_branch),
+                    target_ref_kind=target_kind,
+                    target_ref_name=target_name,
                     fallback_branch=str(repo.get("fallback_branch")) if repo.get("fallback_branch") else None,
                     discovery_state=_initial_discovery_state(repo.get("nested_config")),
                     gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
@@ -1111,6 +1140,20 @@ def _resolve_nested_config_path(repo_root: Path, nested_config: str) -> Path | N
     if len(matches) > 1:
         raise NestedConfigDiscoveryError(f"Ambiguous nested .cgs discovery in {repo_root}")
     return matches[0].resolve()
+
+
+def _resolve_repo_target_ref(
+    repo: dict[str, Any],
+    *,
+    document_default_branch: str | None,
+) -> tuple[RefKind, str | None]:
+    tag = _as_optional_str(repo.get("tag"))
+    if tag:
+        return (RefKind.TAG, tag)
+    branch = _as_optional_str(repo.get("branch")) or _as_optional_str(repo.get("default_branch"))
+    if branch is None:
+        branch = document_default_branch
+    return (RefKind.BRANCH, branch)
 
 
 # ============================================================
@@ -2009,7 +2052,7 @@ class ComplexGitSyncClient:
         previous_state = entry.repo_lifecycle_state
         previous_sync_state = entry.sync_state
         remote_url = self._build_remote_url(entry)
-        selected_branch = self._select_clone_branch(entry, remote_url)
+        selected_ref, selected_ref_kind = self._select_clone_ref(entry, remote_url)
         if self._is_populated_nested_destination(entry):
             try:
                 shutil.rmtree(entry.absolute_path)
@@ -2022,15 +2065,18 @@ class ComplexGitSyncClient:
             self.git_runner,
             remote_url,
             entry.absolute_path,
-            branch=selected_branch,
+            branch=selected_ref,
         )
-        current_branch = self.git_runner.current_branch(entry.absolute_path) or selected_branch
-        fallback_applied = current_branch != (entry.target_ref_name or selected_branch)
+        current_branch = self.git_runner.current_branch(entry.absolute_path) or selected_ref
+        fallback_applied = (
+            selected_ref_kind == RefKind.BRANCH
+            and current_branch != (entry.target_ref_name or selected_ref)
+        )
 
-        entry.current_ref_kind = RefKind.BRANCH
-        entry.current_ref_name = current_branch
-        entry.resolved_ref_kind = RefKind.BRANCH
-        entry.resolved_ref_name = current_branch
+        entry.current_ref_kind = selected_ref_kind
+        entry.current_ref_name = current_branch if selected_ref_kind == RefKind.BRANCH else selected_ref
+        entry.resolved_ref_kind = selected_ref_kind
+        entry.resolved_ref_name = current_branch if selected_ref_kind == RefKind.BRANCH else selected_ref
         entry.commit_sha = self.git_runner.rev_parse_head(entry.absolute_path)
         entry.fallback_applied = fallback_applied
         entry.fallback_reason = (
@@ -2064,14 +2110,21 @@ class ComplexGitSyncClient:
             and next(entry.absolute_path.iterdir(), None) is not None
         )
 
-    def _select_clone_branch(self, entry: RepoRegistryEntry, remote_url: str) -> str:
+    def _select_clone_ref(self, entry: RepoRegistryEntry, remote_url: str) -> tuple[str, RefKind]:
+        if entry.target_ref_kind == RefKind.TAG and entry.target_ref_name:
+            if self.git_runner.remote_tag_exists(remote_url, entry.target_ref_name):
+                return (entry.target_ref_name, RefKind.TAG)
+            raise GitSyncError(
+                f"No cloneable tag found for {entry.name}: expected '{entry.target_ref_name}' on {remote_url}"
+            )
+
         target_branch = entry.target_ref_name or entry.default_branch
         if target_branch and self.git_runner.remote_branch_exists(remote_url, target_branch):
-            return target_branch
+            return (target_branch, RefKind.BRANCH)
 
         fallback_branch = entry.fallback_branch
         if fallback_branch and self.git_runner.remote_branch_exists(remote_url, fallback_branch):
-            return fallback_branch
+            return (fallback_branch, RefKind.BRANCH)
 
         expected = [branch for branch in (target_branch, fallback_branch) if branch]
         raise GitSyncError(

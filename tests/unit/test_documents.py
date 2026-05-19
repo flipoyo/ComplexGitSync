@@ -16,6 +16,7 @@ from ComplexGitSync.orchestre import (
     GtsDocument,
 )
 from ComplexGitSync.errors import ConfigValidationError
+from ComplexGitSync.git_repo import GitRepo
 
 # ---------------------------------------------------------------------------
 # Fixtures – minimal valid raw dicts
@@ -253,6 +254,26 @@ class TestCgsDocumentValid:
         }
         CgsDocument.from_dict(data)
 
+    def test_branch_tag_pair_accepted_when_hashes_match(self, monkeypatch):
+        data = {
+            "document": {"format_version": "1.0"},
+            "project": {"name": "P", "default_branch": "main"},
+            "repos": [
+                {
+                    "project_owner_name": "o",
+                    "project_name": "r",
+                    "branch": "main",
+                    "tag": "v1.0.0",
+                }
+            ],
+        }
+        monkeypatch.setattr(
+            GitRepo,
+            "_get_hash",
+            lambda self, branch="main", tag=None: "same-hash",
+        )
+        CgsDocument.from_dict(data)
+
     def test_from_toml_parses_example_file(self):
         examples = Path(__file__).parent.parent.parent / "examples"
         doc = CgsDocument.from_toml(examples / "complexgitsync.cgs")
@@ -356,6 +377,26 @@ class TestCgsDocumentInvalid:
             "repos": "not-a-list",
         }
         self._assert_validation_error(data, "repos")
+
+    def test_branch_tag_pair_rejected_when_hashes_differ(self, monkeypatch):
+        data = {
+            "document": {"format_version": "1.0"},
+            "project": {"name": "P", "default_branch": "main"},
+            "repos": [
+                {
+                    "project_owner_name": "o",
+                    "project_name": "r",
+                    "branch": "main",
+                    "tag": "v1.0.0",
+                }
+            ],
+        }
+        monkeypatch.setattr(
+            GitRepo,
+            "_get_hash",
+            lambda self, branch="main", tag=None: "branch-hash" if tag is None else "tag-hash",
+        )
+        self._assert_validation_error(data, "incompatibilities between branch \\(hash\\) and tag\\(val\\) in \\.cgs")
 
 
 # ===========================================================================
