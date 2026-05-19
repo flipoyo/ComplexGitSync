@@ -1,0 +1,507 @@
+% user_guide.tex — complete reference for every user-facing feature
+\chapter{User Guide}
+\label{chap:user-guide}
+
+This chapter is the authoritative reference for every user-facing command,
+configuration option, document format, and error condition exposed by
+\cgspkg{}.
+
+% -----------------------------------------------------------------------
+\section{CLI Overview}
+
+The single entry-point is the \cgscli{} command.
+
+\begin{lstlisting}[language=bash]
+$ cgitsync <command> [options]
+\end{lstlisting}
+
+Running \cgscli{} without a command prints a help summary and exits with
+code~0.
+
+% -----------------------------------------------------------------------
+\section{Lifecycle Contract}
+
+This guide follows the simplified canonical lifecycle:
+
+\begin{enumerate}
+  \item \texttt{initialise(.cgs)} $\rightarrow$ clone all repos $\rightarrow$
+        \texttt{READY}  \textit{(new project)}\\
+        \texttt{initialise(.gts)} $\rightarrow$ restore from snapshot $\rightarrow$
+        \texttt{READY}  \textit{(existing project)}
+  \item \texttt{pull(.cgs|.gts)} $\rightarrow$ resync an existing tree
+  \item \texttt{checkout(.gts)} / \texttt{add} / \texttt{commit} / \texttt{push} / \texttt{tag}
+        $\rightarrow$ git operations on the tree
+  \item \texttt{freeze} $\rightarrow$ emit the next \texttt{.gts} id
+\end{enumerate}
+
+Python API power users may also call \texttt{load(.cgs|.gts)} directly:
+\texttt{.gts} sources are loaded directly; \texttt{.cgs} sources run the
+internal expand/validate pipeline.
+
+Compatibility aliases: \texttt{read} $\rightarrow$ \texttt{load},
+\texttt{describe} $\rightarrow$ \texttt{print}, \texttt{restart} $\rightarrow$
+\texttt{pull}, \texttt{freeze-release} $\rightarrow$ \texttt{freeze}.
+
+The remaining planned work is \texttt{orchestrate(.goc)} and project-local
+\texttt{.lgr} register management.
+
+% -----------------------------------------------------------------------
+\section{Commands}
+
+\subsection{\texttt{initialise}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync initialise <spec.cgs> [--target-dir DIR]
+$ cgitsync initialise <snapshot.gts>
+\end{lstlisting}
+
+Unified initialisation entry point.  Dispatches on file extension:
+
+\begin{itemize}
+  \item \texttt{.cgs} source (clone mode): clones the full repository tree
+    (see \texttt{clone} below). The optional \texttt{--target-dir} controls
+    where the project root is created.  On success, ends in \texttt{READY}.
+  \item \texttt{.gts} source (restore mode): loads a saved snapshot directly.
+    On success, ends in the lifecycle state recorded in the snapshot.
+\end{itemize}
+
+Both paths end in a \texttt{READY} tree or fail explicitly.
+
+\subsection{\texttt{pull}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync pull <spec.cgs|snapshot.gts>
+\end{lstlisting}
+
+Resynchronises the project tree.  \texttt{.cgs} sources follow the
+\texttt{restart} flow (load, discover, checkout current branch, READY), while
+\texttt{.gts} sources follow saved-state restore semantics equivalent to
+\texttt{launch-release}.  On success, the tree ends in \texttt{READY}.
+
+\subsection{\texttt{clone}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync clone <spec.cgs> [--target-dir DIR]
+\end{lstlisting}
+
+Clones the full repository tree declared by the \texttt{.cgs} file. The root
+project directory defaults to \texttt{./<project-name>}. If that path already
+exists and is not empty, \cgscli{} chooses the next available suffixed
+directory such as \texttt{./ComplexGitSync-1}. When \texttt{--target-dir} is
+provided, that path is used exactly.
+
+For each repository, \cgscli{} tries the repo target branch first
+(typically \texttt{default\_branch = "autoTest"}) and falls back to
+\texttt{fallback\_branch} (typically \texttt{"main"}) when the preferred
+branch does not exist on the remote. Nested \texttt{.cgs} files are discovered
+after parent repositories are cloned, so explicit and automatic nested trees
+are materialised during the same command.
+
+On success, \texttt{clone} exits~0 and prints a READY summary including the
+selected root path. It also writes a runtime snapshot to
+\texttt{<project-root>/.cgitsync/state/<spec-name>.gts} and registers that
+snapshot as the latest runtime state for the source \texttt{.cgs} file.
+
+\subsection{\texttt{checkout}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync checkout <branch> --gts <snapshot.gts> [--ref-kind branch|tag]
+\end{lstlisting}
+
+Checks out a branch or tag across the whole tree, parent-first.
+Loads the READY registry from \texttt{--gts}, then propagates the ref,
+creates missing local branches, and runs \texttt{git checkout} in every repo.
+On success the tree remains \texttt{READY} and a new \texttt{.gts} snapshot is written.
+
+Also available via the Python API directly:
+
+\begin{lstlisting}[language=Python]
+client.checkout("feature/my-branch")
+# or with an explicit ref kind
+from ComplexGitSync import RefKind
+client.checkout("v1.2.0", ref_kind=RefKind.TAG)
+\end{lstlisting}
+
+\subsection{\texttt{add}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync add --gts <snapshot.gts>
+\end{lstlisting}
+
+Stages all changes across the tree (\texttt{git add --all}), leaf-first.
+Requires \texttt{READY}; tree stays \texttt{READY}.
+
+\subsection{\texttt{commit}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync commit <message> --gts <snapshot.gts> [--no-stage]
+\end{lstlisting}
+
+Commits changes across the tree, leaf-first.  Loads the READY registry from
+\texttt{--gts}.  Repositories with no staged changes after the optional
+\texttt{git add --all} step (suppressed by \texttt{--no-stage}) are silently
+skipped. Requires a \texttt{READY} tree; the tree remains \texttt{READY} on success.
+
+The commit message conventionally ends with \texttt{CGS\#VERSION}.
+
+Also available via the unified \texttt{git()} Python API:
+
+\begin{lstlisting}[language=Python]
+registry = client.get_dependency_registry()
+# Stage all changes, then commit (default)
+client.git(registry, "commit", "feat: my change CGS#1")
+
+# Direct method: commit only already-staged changes
+client.commit("feat: my change", stage_all=False)
+\end{lstlisting}
+
+\subsection{\texttt{push}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync push --gts <snapshot.gts>
+\end{lstlisting}
+
+Pushes all repositories to their configured remotes, leaf-first.  Loads the
+READY registry from \texttt{--gts}.  Each repo is pushed to
+\texttt{entry.remote\_name} (defaulting to \texttt{"origin"}) on its currently
+resolved branch.  Refreshes the stored hash in \texttt{GitTree}.  Requires a
+\texttt{READY} tree; the tree remains \texttt{READY} on success.
+
+Also available via the unified \texttt{git()} Python API:
+
+\begin{lstlisting}[language=Python]
+registry = client.get_dependency_registry()
+client.git(registry, "push")
+\end{lstlisting}
+
+\subsection{\texttt{tag}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync tag <name> --gts <snapshot.gts>
+\end{lstlisting}
+
+Creates and pushes the same tag across the full tree, leaf-first.  Loads the
+READY registry from \texttt{--gts}.  Refreshes the stored tag in
+\texttt{GitTree}.  Requires a \texttt{READY} tree and keeps the tree
+\texttt{READY} on success.
+
+Also available via the unified \texttt{git()} Python API:
+
+\begin{lstlisting}[language=Python]
+registry = client.get_dependency_registry()
+client.git(registry, "tag", "v1.2.3")
+\end{lstlisting}
+
+\subsection{\texttt{freeze}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync freeze <name> --gts <snapshot.gts>
+\end{lstlisting}
+
+Performs a release freeze across all repos, leaf-first: stage/commit,
+create+push the shared release tag, refresh SHA/state, and write a
+\texttt{.gts} snapshot. Loads the READY registry from \texttt{--gts}.
+Requires \texttt{READY} and leaves the tree \texttt{READY}.
+
+Also available via the Python API:
+
+\begin{lstlisting}[language=Python]
+client.freeze(
+    "release-2026.05",
+    output_gts=".cgitsync/releases/release-2026.05.gts",
+)
+\end{lstlisting}
+
+\texttt{freeze-release} and \texttt{freeze-state} remain available as
+compatibility aliases for release and internal-state freeze operations
+respectively.
+
+\subsection{\texttt{print}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync print <spec.cgs|snapshot.gts>
+\end{lstlisting}
+
+Prints a lifecycle summary as pretty JSON. For \texttt{.gts} input, it reports
+the recorded snapshot state. For \texttt{.cgs} input, it reports the current
+declared/runtime summary.
+
+\subsection{\texttt{describe}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync describe <snapshot.gts>
+\end{lstlisting}
+
+Reads a \texttt{.gts} snapshot and prints its contents as pretty-printed
+JSON. This is a compatibility alias of \texttt{print}; both commands share the
+same implementation.
+
+\subsection{\texttt{restart}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync restart <spec.cgs>
+\end{lstlisting}
+
+Resynchronizes an already-cloned project tree. Compatibility alias for
+\texttt{pull} with a \texttt{.cgs} source.
+
+\subsection{\texttt{launch-release}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync launch-release <snapshot.gts>
+\end{lstlisting}
+
+Loads a release \texttt{.gts}, reconstructs the tree, performs required
+clone/checkout actions, and must end in \texttt{READY} or fail explicitly.
+
+Also available via the Python API:
+
+\begin{lstlisting}[language=Python]
+client.launch_release(".cgitsync/releases/release-2026.05.gts")
+\end{lstlisting}
+
+\subsection{Planned Commands (not yet implemented)}
+
+The following commands are defined in the public API contract but are not yet
+implemented. Each returns exit code~2 with the message
+\texttt{"not implemented yet"}.
+
+\begin{itemize}
+  \item \texttt{write-gts} — write a \texttt{.gts} snapshot explicitly
+    from a loaded \texttt{.cgs} or runtime state.
+  \item \texttt{status} — summarise tree readiness and per-repo sync state.
+  \item \texttt{orchestrate(.goc)} — planned execution surface for
+    orchestration plans.
+\end{itemize}
+
+% -----------------------------------------------------------------------
+\section{Document Formats}
+
+\texttt{.cgs} means \textbf{ComplexGitSync} specification, \texttt{.gts} means
+\textbf{GitTreeState} snapshot, \texttt{.goc} means
+\textbf{GitOrchestrationCommand} plan, and \texttt{.lgr} means
+\textbf{Local Git Register}.
+
+\subsection{Local Authoring Spec (\texttt{.cgs})}
+
+A TOML file that describes the repository tree to manage. It is the only
+hand-authored input; it is never modified at runtime.
+
+\textbf{Top-level sections:}
+
+\begin{itemize}
+  \item \texttt{[document]} — mandatory; contains \texttt{format\_version}.
+  \item \texttt{[project]} — mandatory; project-level metadata (see
+        Table~\ref{tab:project-fields}).
+  \item \texttt{[[repos]]} — one entry per managed repository
+        (see Table~\ref{tab:repo-fields}).
+\end{itemize}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+\texttt{name}           & string  & Human-readable project label \\
+\texttt{repo\_name}     & string  & Git repository slug \\
+\texttt{default\_branch}& string  & Default branch (e.g.\ \texttt{main}) \\
+\texttt{gitprovider}    & string  & Provider (\texttt{github}, \texttt{gitlab}, \texttt{custom}) \\
+\texttt{gitprovider\_url}& string & Required for \texttt{custom} provider \\
+\hline
+\end{tabular}
+\caption{Project-level fields in \texttt{.cgs}}
+\label{tab:project-fields}
+\end{table}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+\texttt{gitprovider}         & string  & Provider override for this repo \\
+\texttt{project\_owner\_name}& string  & GitHub owner / GitLab group \\
+\texttt{project\_name}       & string  & Repository name on the provider \\
+\texttt{relative\_path}      & string  & Path relative to project root \\
+\texttt{gitprovider\_url}    & string  & Required for \texttt{custom} provider \\
+\hline
+\end{tabular}
+\caption{Per-repository fields in \texttt{.cgs}}
+\label{tab:repo-fields}
+\end{table}
+
+\subsection{Git Tree State Snapshot (\texttt{.gts})}
+
+A TOML file generated automatically by bootstrapping and release operations.
+It must never be hand-edited. It captures the exact commit SHAs and lifecycle
+state of the tree at a point in time.
+
+\textbf{Top-level sections:}
+\begin{itemize}
+  \item \texttt{[document]} — format version, \texttt{generated\_at},
+        \texttt{command\_origin}.
+  \item \texttt{[project]} — project name and \texttt{root\_absolute\_path}.
+  \item \texttt{[tree\_state]} — \texttt{lifecycle\_state}, \texttt{is\_ready},
+        \texttt{registry\_complete}.
+  \item \texttt{[[repo\_state]]} — one entry per repo; includes
+        \texttt{commit\_sha}, \texttt{sync\_state}, and ref information.
+\end{itemize}
+
+\subsection{Planning / GOC Documents (\texttt{.goc})}
+
+Used for project identity and planning metadata. Supported in TOML, YAML, or
+JSON. YAML support requires the optional \texttt{PyYAML} dependency.
+
+% -----------------------------------------------------------------------
+\section{Python API}
+
+\cgspkg{} can be used as a library. The public API is exported from the
+top-level package:
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import (
+    ComplexGitSyncClient,
+    CgsDocument,
+    GtsDocument,
+    GocDocument,
+    GitProvider,
+    AccessProtocol,
+    RepoAddress,
+    GitRepo,
+    GitTree,
+    Orchestre,
+    DependencyTreeRegistry,
+)
+\end{lstlisting}
+
+\subsection{\texttt{ComplexGitSyncClient}}
+
+High-level client that mirrors the CLI commands. Instantiate with a parsed
+configuration path and call the equivalent method:
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import ComplexGitSyncClient
+
+client = ComplexGitSyncClient()
+registry = client.read("project.cgs")
+tree_state = client.validate("project.cgs")
+tree = client.format_project_tree()
+clone_registry = client.clone("project.cgs", target_dir="./workspace/demo")
+\end{lstlisting}
+
+Once the tree is \texttt{READY}, the synchronisation methods are available:
+
+\begin{lstlisting}[language=Python]
+# Load an existing READY snapshot
+client.load_gts(".cgitsync/state/project.gts")
+
+# Check out a branch across all repos (parent-first)
+client.checkout("feature/my-branch")
+# or with a tag ref
+from ComplexGitSync import RefKind
+client.checkout("v1.0.0", ref_kind=RefKind.TAG)
+
+# Commit across all repos (leaf-first), staging all changes by default
+client.commit("feat: my change")
+# or commit only already-staged changes
+client.commit("feat: my change", stage_all=False)
+
+# Push all repos to their remotes (leaf-first)
+client.push()
+
+# Create and push a shared tag (leaf-first)
+client.tag("v1.2.3")
+
+# Freeze and emit a named snapshot
+client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
+
+\end{lstlisting}
+
+\texttt{checkout}, \texttt{commit}, \texttt{push}, \texttt{tag}, and
+\texttt{freeze} require \texttt{READY} and leave the tree
+\texttt{READY} on success. \texttt{checkout} and \texttt{freeze} also write new
+\texttt{.gts} snapshots. If you need to restore a saved \texttt{.gts} directly,
+see the compatibility helper documented in the \texttt{launch-release}
+subsection above.
+
+\subsection{Document Classes}
+
+Each document class exposes six format factories:
+
+\begin{lstlisting}[language=Python]
+doc = CgsDocument.from_toml(raw_bytes)
+doc = CgsDocument.from_json(raw_str)
+doc = CgsDocument.from_yaml(raw_str)   # requires PyYAML
+
+serialised = doc.to_toml()
+serialised = doc.to_json()
+serialised = doc.to_yaml()             # requires PyYAML
+\end{lstlisting}
+
+\subsection{\texttt{RepoAddress}}
+
+Composes and parses remote repository URLs:
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import RepoAddress, GitProvider, AccessProtocol
+
+addr = RepoAddress(
+    gitprovider=GitProvider.GITHUB,
+    owner_name="my-org",
+    project_name="my-repo",
+)
+print(addr.to_ssh())    # git@github.com:my-org/my-repo.git
+print(addr.to_https())  # https://github.com/my-org/my-repo.git
+\end{lstlisting}
+
+% -----------------------------------------------------------------------
+\section{Configuration and Environment}
+
+\cgspkg{} reads no environment variables and uses no global configuration
+file for project topology. The logging and runtime-state subsystems use the
+user state directory by default:
+
+\begin{itemize}
+  \item logs: \texttt{~/.local/state/ComplexGitSync/logs/}
+  \item latest runtime-state mapping:
+        \texttt{~/.local/state/ComplexGitSync/runtime/}
+\end{itemize}
+
+If \texttt{XDG\_STATE\_HOME} is set, these directories are rooted there
+instead.
+
+% -----------------------------------------------------------------------
+\section{Error Reference}
+
+\begin{description}
+  \item[\texttt{ValueError}] Raised when a required field is missing or a
+    field value is invalid (e.g.\ unknown \texttt{gitprovider},
+    missing \texttt{gitprovider\_url} for a \texttt{custom} provider).
+  \item[\texttt{GitSyncError}] Raised when clone-time Git operations fail,
+    for example because the remote branch cannot be resolved or the target
+    directory is already occupied.
+  \item[Exit code 1] General CLI failure (parse error, validation error).
+  \item[Exit code 2] Command exists but is not yet implemented.
+\end{description}
+
+% -----------------------------------------------------------------------
+\section{Troubleshooting}
+
+\begin{description}
+  \item[``\texttt{gitprovider\_url} is required for custom provider'']
+    Add a \texttt{gitprovider\_url} field to the offending
+    \texttt{[[repos]]} entry in your \texttt{.cgs} file.
+  \item[\texttt{validate} exits non-zero despite a correct-looking file]
+    Check that \texttt{[document]} contains \texttt{format\_version = "1.0"}
+    and that every \texttt{[[repos]]} block includes
+    \texttt{project\_owner\_name} and \texttt{project\_name}.
+  \item[\texttt{Clone destination already exists and is not empty}]
+    Re-run \texttt{clone} with \texttt{--target-dir} to force a clean location,
+    or let \cgscli{} choose a suffixed default directory.
+  \item[\texttt{No cloneable branch found for <repo>}]
+    Confirm that the remote exposes either the repo's
+    \texttt{default\_branch} or its \texttt{fallback\_branch}.
+  \item[PyYAML import error when using \texttt{.goc} files]
+    Add PyYAML in the Pixi environment: \texttt{pixi add pyyaml}.
+\end{description}

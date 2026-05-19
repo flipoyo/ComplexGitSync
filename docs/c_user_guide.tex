@@ -1,0 +1,16 @@
+% c_user_guide.tex — standalone article build for User Guide
+\documentclass[11pt,a4paper]{article}
+
+\input{Setup/Packages}
+\input{Setup/Shortcuts}
+\let\chapter\section
+
+\title{\cgspkg{} \cgsversion -- User Guide}
+\author{Nicolas Flipo}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\input{Text/user_guide}
+\end{document}
