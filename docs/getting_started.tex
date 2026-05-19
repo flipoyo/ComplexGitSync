@@ -112,6 +112,29 @@ example \texttt{DECLARED ready=false complete=true}.
 The canonical step-2 command is \texttt{expand}; \texttt{tree} is kept as a
 backward-compatible alias.  The canonical step-3 command is \texttt{validate}.
 
+\subsection*{Circular dependency resolution}
+
+In complex topologies it is common for one parent repository's nested
+\texttt{.cgs} to declare another parent as one of its leaves, pointing to
+the same filesystem path.  The \texttt{expand} step (and the
+\texttt{clone} flow) automatically invoke \texttt{fix\_circularities} to
+deduplicate the registry: for every set of entries that resolve to the same
+absolute path the canonical entry (the one closest to the project root) is
+retained and all redundant lower-level entries are removed.
+
+If you are building a custom pipeline that calls \texttt{load\_cgs} and
+\texttt{discover\_nested\_configs} directly, you can resolve circularities
+manually at any point between those steps and \texttt{validate}:
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import ComplexGitSyncClient
+
+client = ComplexGitSyncClient()
+client.load_cgs("complexgitsync.cgs", discover_nested=True)
+fixed = client.fix_circularities()  # returns tuple of removed IDs
+tree_state = client.validate("complexgitsync.cgs")
+\end{lstlisting}
+
 % -----------------------------------------------------------------------
 \section{Clone / Checkout}
 

@@ -83,6 +83,8 @@ the client.  **Every action is gated by the current `TreeLifecycleState`**:
 | `initialise(.gts)` | none | `.gts READY` (restore) |
 | `load(.cgs)` | none | `.gts DECLARED` |
 | `load(.gts)` | none | `.gts READY` (direct) |
+| `expand(.cgs)` | none | `.gts PENDING`; runs nested discovery + `fix_circularities` |
+| `fix_circularities()` | any (after load/expand) | removes duplicate entries; state unchanged |
 | `pull(.cgs)` | none | `.gts READY` |
 | `pull(.gts)` | none | `.gts READY` |
 | `checkout(.gts)` | `READY` | `READY` |

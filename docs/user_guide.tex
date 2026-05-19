@@ -425,6 +425,39 @@ client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.
 see the compatibility helper documented in the \texttt{launch-release}
 subsection above.
 
+\subsection{\texttt{fix\_circularities}}
+
+In complex topologies a parent repository's nested \texttt{.cgs} may declare
+another parent as one of its leaves, pointing to the same filesystem path.
+After nested \texttt{.cgs} discovery the registry can therefore contain
+duplicate entries for the same physical repository.
+
+\texttt{expand()} and \texttt{clone\_cgs()} call \texttt{fix\_circularities}
+automatically.  The method retains the \emph{canonical} entry for each
+absolute path (the entry with the fewest \texttt{:}-separated segments in its
+\texttt{repo\_id}, i.e.\ the one closest to the root) and removes all
+redundant lower-level duplicates.  It returns a tuple of strings, one per
+removed entry, in the form
+\texttt{"fixed\_circularity:<removed\_id>→<canonical\_id>"}.
+
+For custom lifecycle pipelines the method is available directly:
+
+\begin{lstlisting}[language=Python]
+client = ComplexGitSyncClient()
+client.load_cgs("project.cgs", discover_nested=True)
+fixed = client.fix_circularities()
+# e.g. ("fixed_circularity:root:parent1:parent2→root:parent2",)
+tree_state = client.validate("project.cgs")
+\end{lstlisting}
+
+The standalone function \texttt{fix\_circularities(registry)} is also
+exported from the top-level package for use without a client:
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import fix_circularities
+changes = fix_circularities(registry)
+\end{lstlisting}
+
 \subsection{Document Classes}
 
 Each document class exposes six format factories:
