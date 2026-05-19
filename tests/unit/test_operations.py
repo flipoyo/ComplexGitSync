@@ -484,6 +484,18 @@ def test_checkout_tree_deep_hierarchy_parent_first(tmp_path):
     assert root_idx < mid_idx < sub_idx
 
 
+def test_gittree_git_checkout_allows_direct_tree_manipulation(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    git_tree = GitTree()
+
+    git_tree.git.checkout(registry, runner, "feature-direct")
+
+    for entry in registry.values():
+        assert entry.current_ref_name == "feature-direct"
+    assert registry.recompute_tree_state() == TreeLifecycleState.READY
+
+
 # ---------------------------------------------------------------------------
 # commit_tree
 # ---------------------------------------------------------------------------
@@ -750,6 +762,27 @@ def test_client_checkout_updates_registry_and_writes_gts(tmp_path):
     assert snapshot_dir.exists()
     gts_files = list(snapshot_dir.glob("*.gts"))
     assert gts_files, "Expected at least one .gts snapshot"
+
+
+def test_client_checkout_delegates_to_gittree_git_checkout(tmp_path, monkeypatch):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    captured_call: dict[str, object] = {}
+
+    def _spy_checkout(self, registry, git_runner, branch_name, *, ref_kind):
+        captured_call["registry"] = registry
+        captured_call["git_runner"] = git_runner
+        captured_call["branch_name"] = branch_name
+        captured_call["ref_kind"] = ref_kind
+
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "checkout", _spy_checkout)
+
+    result = client.checkout("feature-x")
+
+    assert result is client.registry
+    assert captured_call["registry"] is client.registry
+    assert captured_call["git_runner"] is runner
+    assert captured_call["branch_name"] == "feature-x"
+    assert captured_call["ref_kind"] == RefKind.BRANCH
 
 
 def test_client_commit_requires_ready_tree(tmp_path):

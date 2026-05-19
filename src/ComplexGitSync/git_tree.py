@@ -26,7 +26,7 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path, PurePath, PurePosixPath
-from typing import Any, Iterator, TypeVar
+from typing import TYPE_CHECKING, Any, Iterator, TypeVar
 
 from .errors import ConfigValidationError, NestedConfigDiscoveryError
 from .git_repo import (
@@ -44,6 +44,26 @@ from .git_repo import (
 _E = TypeVar("_E", bound=Enum)
 
 ROOT_REPO_ID = "root"
+
+if TYPE_CHECKING:
+    from .orchestre import GitRunner
+
+
+@dataclass(slots=True)
+class GitTreeGitCommands:
+    """Git command facade bound to :class:`GitTree` operations."""
+
+    def checkout(
+        self,
+        registry: "DependencyTreeRegistry",
+        git_runner: "GitRunner",
+        branch_name: str,
+        *,
+        ref_kind: RefKind = RefKind.BRANCH,
+    ) -> None:
+        from .operations import checkout_tree
+
+        checkout_tree(registry, git_runner, branch_name, ref_kind=ref_kind)
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +99,7 @@ class GitTree:
     """
 
     repos: dict[str, GitRepo] = field(default_factory=dict)
+    git: GitTreeGitCommands = field(default_factory=GitTreeGitCommands)
 
     def add_repo(self, repo: GitRepo) -> None:
         self.repos[repo.project_name] = repo

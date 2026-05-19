@@ -1479,7 +1479,7 @@ class ComplexGitSyncClient:
         Requires a ``READY`` registry.  After a successful execution the
         registry remains ``READY`` and a ``.gts`` snapshot is written.
 
-        Steps delegated to :func:`~ComplexGitSync.operations.checkout_tree`:
+        Steps delegated to :meth:`~ComplexGitSync.git_tree.GitTreeGitCommands.checkout`:
 
         1. :func:`~ComplexGitSync.operations.propagate_global_branch` — set
            the target ref on every entry.
@@ -1487,12 +1487,15 @@ class ComplexGitSyncClient:
            the branch locally where missing.
         3. ``git checkout`` on every repo, parent-first.
         """
-        from .operations import checkout_tree
-
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("checkout_start", branch_name=branch_name, ref_kind=ref_kind)
-        checkout_tree(registry, self.git_runner, branch_name, ref_kind=ref_kind)
+        self.orchestre.git_tree.git.checkout(
+            registry,
+            self.git_runner,
+            branch_name,
+            ref_kind=ref_kind,
+        )
         snapshot_path = self.write_gts_snapshot(command_origin="checkout")
         if self.source_path is not None:
             self.state_store.record_snapshot(self.source_path, snapshot_path)
