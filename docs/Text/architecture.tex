@@ -51,6 +51,9 @@ The runtime counterpart of \texttt{GitTree} is the
 \texttt{RepoRegistryEntry} per node.  Registry entries are indexed by a
 colon-separated repo ID derived from their position in the tree (e.g.\
 \texttt{root:deps/child-repo:docs}).
+Cross-referenced parents therefore create a tangle-like declaration layer, but
+the expanded runtime graph remains a DAG after canonicalization and
+hash-compatibility checks.
 
 Figure~\ref{fig:core-model} shows the full object model for Tier~1.
 
@@ -87,6 +90,11 @@ Current implementation names such as \texttt{tree}, \texttt{validate},
 \texttt{describe}, \texttt{restart}, and \texttt{launch\_release} remain
 compatibility surfaces around this lifecycle while the repository converges on
 the stricter vocabulary.
+For \texttt{.cgs} refs, repositories can be declared by branch or by tag.  If
+both are declared for the same repo, \texttt{validate} enforces hash
+equivalence and raises
+\texttt{incompatibilities between branch (hash) and tag(val) in .cgs} when they
+differ.
 
 Figure~\ref{fig:ops-sequence} shows the internal sequence of the three
 tree-wide synchronisation actions implemented in \texttt{operations.py}.

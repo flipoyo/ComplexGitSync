@@ -19,6 +19,8 @@ Classes / enums defined here (Tier 1 — Core State):
 
 from __future__ import annotations
 
+import hashlib
+import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -123,6 +125,33 @@ class GitRepo:
     @property
     def resolved_group_name(self) -> str:
         return self.group_name or self.project_name
+
+    def _get_hash(
+        self,
+        branch: str = "main",
+        tag: str | None = None,
+    ) -> str:
+        """Return a stable hash for the selected remote branch or tag reference."""
+        selected_branch = branch or "main"
+        ref = f"refs/tags/{tag}" if tag else f"refs/heads/{selected_branch}"
+        try:
+            remote_url = RepoAddress.from_repo(self).to_url(self.access_protocol)
+            if any(ch.isspace() for ch in remote_url):
+                raise ValueError("remote URL contains whitespace")
+            completed = subprocess.run(  # noqa: S603
+                ["git", "ls-remote", remote_url, ref],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            lines = [line for line in completed.stdout.splitlines() if line.strip()]
+            if lines:
+                peeled = [line for line in lines if line.endswith("^{}")]
+                chosen = peeled[0] if peeled else lines[0]
+                return chosen.split()[0]
+        except (ValueError, OSError, subprocess.SubprocessError):
+            pass
+        return hashlib.sha256(f"{self.project_name}:{selected_branch}:{tag or ''}".encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------

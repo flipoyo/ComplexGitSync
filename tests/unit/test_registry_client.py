@@ -25,6 +25,40 @@ def test_client_load_cgs_builds_reviewable_registry(tmp_path):
     assert registry.get("root:deps/child-repo").absolute_path == (tmp_path / "deps/child-repo").resolve()
 
 
+def test_client_load_cgs_supports_tag_target_ref(tmp_path):
+    config_path = tmp_path / "tagged.cgs"
+    config_path.write_text(
+        """
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+project_owner_name = "owner"
+project_name = "demo"
+relative_path = "."
+
+[[repos]]
+project_owner_name = "owner"
+project_name = "tagged-repo"
+relative_path = "deps/tagged-repo"
+tag = "v1.0.0"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    client = ComplexGitSyncClient()
+    registry = client.load_cgs(config_path)
+
+    tagged_entry = registry.get("root:deps/tagged-repo")
+    assert tagged_entry.target_ref_kind == RefKind.TAG
+    assert tagged_entry.target_ref_name == "v1.0.0"
+
+
 def test_client_read_alias_loads_cgs(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()
@@ -1024,6 +1058,32 @@ def test_fix_circularities_multiple_parents_sharing_leaf(tmp_path):
     assert "root:shared" in registry.entries
     assert "root:parent1:shared" not in registry.entries
     assert "root:parent2:shared" not in registry.entries
+
+
+def test_fix_circularities_raises_on_duplicate_with_incompatible_hashes(tmp_path, monkeypatch):
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+
+    shared_path = tmp_path / "shared"
+    registry = DependencyTreeRegistry()
+    root = _make_entry("root", tmp_path)
+    canonical = _make_entry("root:shared", shared_path, parent_id="root")
+    duplicate = _make_entry("root:parent1:shared", shared_path, parent_id="root:parent1")
+    canonical.target_ref_kind = RefKind.BRANCH
+    canonical.target_ref_name = "main"
+    duplicate.target_ref_kind = RefKind.TAG
+    duplicate.target_ref_name = "v1.0.0"
+    registry.add(root)
+    registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
+    registry.add(canonical)
+    registry.add(duplicate)
+    monkeypatch.setattr(
+        GitRepo,
+        "_get_hash",
+        lambda self, branch="main", tag=None: "branch-hash" if tag is None else "tag-hash",
+    )
+
+    with pytest.raises(ConfigValidationError, match="incompatibilities between branch \\(hash\\) and tag\\(val\\) in \\.cgs"):
+        fix_circularities(registry)
 
 
 def test_client_fix_circularities_is_callable_on_loaded_registry(tmp_path):

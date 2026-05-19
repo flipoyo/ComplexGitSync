@@ -58,6 +58,9 @@ Key classes and their role in information processing:
 | `RepoNode` | Immutable snapshot of a node's tree position for read-only traversal |
 | `ProjectTreeState` | Frozen snapshot of overall tree readiness (returned by the Client to callers) |
 
+`GitRepo` exposes `_get_hash(branch="main", tag=None)` to resolve a reference
+hash used by validation/circularity reconciliation logic.
+
 Supporting enumerations (one per file):
 
 | Enum | Values |
@@ -83,7 +86,7 @@ the client.  **Every action is gated by the current `TreeLifecycleState`**:
 | `initialise(.gts)` | none | `.gts READY` (restore) |
 | `load(.cgs)` | none | `.gts DECLARED` |
 | `load(.gts)` | none | `.gts READY` (direct) |
-| `expand(.cgs)` | none | `.gts PENDING`; runs nested discovery + `fix_circularities` |
+| `expand(.cgs)` | none | `.gts PENDING`; runs nested discovery + `fix_circularities` with hash compatibility checks |
 | `fix_circularities()` | any (after load/expand) | removes duplicate entries; state unchanged |
 | `pull(.cgs)` | none | `.gts READY` |
 | `pull(.gts)` | none | `.gts READY` |
@@ -99,6 +102,10 @@ Actions that **must reject** a non-READY tree:
 
 Actions that **must produce READY** or fail explicitly:
 `initialise(.cgs)`, `initialise(.gts)`, `pull(.cgs)`, `pull(.gts)`, `checkout(.gts)`.
+
+When `.cgs` entries declare both `branch` and `tag`, validation must confirm
+that both extraction modes resolve to the same hash; otherwise it raises:
+`incompatibilities between branch (hash) and tag(val) in .cgs`.
 
 ### Tier 3 — Client / API
 

@@ -73,6 +73,15 @@ ComplexGitSync follows this simplified lifecycle:
 When a project has parents that cross-reference each other (e.g. parent A's
 nested `.cgs` lists parent B as a leaf), `expand` and `clone` automatically
 call `fix_circularities` to deduplicate the registry before proceeding.
+This keeps the expanded dependency graph as a DAG with a controlled
+tangle-like topology (shared repos can be referenced from multiple parents,
+but only one canonical node is kept after hash-compatibility checks).
+
+For `.cgs` repository refs, you can declare either `branch` (or
+`default_branch`) or `tag`. If both `branch` and `tag` are declared on the same
+repo, validation now checks hash compatibility and raises:
+`incompatibilities between branch (hash) and tag(val) in .cgs`
+when they do not resolve to the same commit.
 
 Planned follow-up work tracked in the repository:
 
