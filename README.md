@@ -62,14 +62,13 @@ pixi install
 
 ### Lifecycle
 
-ComplexGitSync follows this canonical lifecycle:
+ComplexGitSync follows this simplified lifecycle:
 
-1. `load(.cgs)` → `.gts LOADED`
-2. `expand(.gts/.cgs)` → `.gts PENDING`
-3. `validate(.gts/.cgs)` → `.gts READY`
-4. `clone(.gts/.cgs)`
-5. `git(tree, "commit", msg)` / `git(tree, "push")` / `git(tree, "tag", name)`
-6. `freeze` → emit the next `.gts` id
+1. `initialise(.cgs)` → clone all repos → `READY`  *(new project)*  
+   `initialise(.gts)` → restore from snapshot → `READY`  *(existing project)*
+2. `pull(.cgs/.gts)` → resync an existing tree
+3. `checkout` / `add` / `commit` / `push` / `tag` — git operations on the tree
+4. `freeze` → emit the next `.gts` snapshot id
 
 Planned follow-up work tracked in the repository:
 
@@ -83,27 +82,22 @@ from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
-# 1. load(.cgs) -> .gts LOADED
+# 1a. initialise(.cgs) -> clone all repos -> READY  (new project)
+client.initialise("examples/complexgitsync.cgs")
+
+# 1b. initialise(.gts) -> restore from snapshot -> READY  (existing project)
+client.initialise(".cgitsync/state/complexgitsync.gts")
+
+# 1c. load(.cgs/.gts) -> Python API smart load (cgs: expand+validate; gts: direct)
 client.load("examples/complexgitsync.cgs")
 
-# 2. expand(.cgs/.gts) -> .gts PENDING
-# Moves through the GitTree from parents to leaves (recursive nested discovery).
-print(client.expand("examples/complexgitsync.cgs"))
-
-# 3. validate(.gts/.cgs) -> .gts READY
-# Checks that every GitRepo is in a READY state and prints a state summary.
-client.validate("examples/complexgitsync.cgs")
+# pull(.cgs/.gts) -> resync existing tree
+client.pull("examples/complexgitsync.cgs")
 
 # print(.gts/.cgs) lifecycle summary
 print(client.print("examples/complexgitsync.cgs"))
 
-# 4. clone(.gts/.cgs)
-client.clone("examples/complexgitsync.cgs")
-
-# pull(.gts/.cgs) resynchronization
-client.pull("examples/complexgitsync.cgs")
-
-# 5. checkout(.gts)
+# checkout
 client.checkout("feature/my-branch")
 
 # add
@@ -119,38 +113,32 @@ client.git(registry, "push")
 # git(tree, "tag") -> update tag in GitTree
 client.git(registry, "tag", "v1.2.3")
 
-# 6. freeze -> .gts ++id
+# freeze -> .gts ++id
 client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
 ```
 
 ### 3.2 CLI
 
 ```bash
-# 1. load(.cgs) -> .gts LOADED
-pixi run cgitsync load examples/complexgitsync.cgs
+# 1a. initialise(.cgs) -> clone all repos -> READY  (new project)
+pixi run cgitsync initialise examples/complexgitsync.cgs
 
-# 2. expand(.cgs/.gts) -> .gts PENDING
-pixi run cgitsync expand examples/complexgitsync.cgs
+# 1b. initialise(.gts) -> restore from snapshot -> READY  (existing project)
+pixi run cgitsync initialise .cgitsync/state/complexgitsync.gts
 
-# 3. validate(.cgs/.gts) -> .gts READY
-pixi run cgitsync validate examples/complexgitsync.cgs
+# pull(.cgs/.gts) -> resync existing tree
+pixi run cgitsync pull examples/complexgitsync.cgs
 
 # print(.gts)
 pixi run cgitsync print .cgitsync/state/complexgitsync.gts
 
-# 4. clone(.gts/.cgs)
-pixi run cgitsync clone examples/complexgitsync.cgs
-
-# pull(.gts/.cgs)
-pixi run cgitsync pull examples/complexgitsync.cgs
-
-# checkout(.gts)
+# checkout
 pixi run cgitsync checkout feature/my-branch --gts .cgitsync/state/complexgitsync.gts
 
 # add
 pixi run cgitsync add --gts .cgitsync/state/complexgitsync.gts
 
-# 5. commit -> git(tree, "commit", msg)
+# commit -> git(tree, "commit", msg)
 pixi run cgitsync commit "feat: update project CGS#1" --gts .cgitsync/state/complexgitsync.gts
 
 # push -> git(tree, "push"), updates hash in GitTree
@@ -159,7 +147,6 @@ pixi run cgitsync push --gts .cgitsync/state/complexgitsync.gts
 # tag -> git(tree, "tag", name), updates tag in GitTree
 pixi run cgitsync tag v1.2.3 --gts .cgitsync/state/complexgitsync.gts
 
-# 6. freeze -> .gts ++id
-# Current command surface exposes freeze through `freeze-release`.
-pixi run cgitsync freeze-release release-2026.05 --gts .cgitsync/state/complexgitsync.gts
+# freeze -> .gts ++id
+pixi run cgitsync freeze release-2026.05 --gts .cgitsync/state/complexgitsync.gts
 ```

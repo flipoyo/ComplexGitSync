@@ -35,6 +35,52 @@ def test_client_read_alias_loads_cgs(tmp_path):
     assert client.get_tree_state().lifecycle_state == TreeLifecycleState.DECLARED
 
 
+def test_client_load_accepts_gts_source(tmp_path):
+    snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=(tmp_path / "workspace" / "demo").resolve())
+    client = ComplexGitSyncClient()
+
+    registry = client.load(snapshot_path)
+
+    assert registry.lifecycle_state == TreeLifecycleState.READY
+    assert client.get_tree_state().lifecycle_state == TreeLifecycleState.READY
+
+
+def test_client_initialise_dispatches_to_load_gts_for_gts_source(monkeypatch, tmp_path):
+    snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=(tmp_path / "workspace" / "demo").resolve())
+    client = ComplexGitSyncClient()
+    captured: dict[str, object] = {}
+    original_load_gts = client.load_gts
+
+    def _fake_load_gts(path):
+        captured["path"] = path
+        return original_load_gts(path)
+
+    monkeypatch.setattr(client, "load_gts", _fake_load_gts)
+
+    registry = client.initialise(snapshot_path)
+
+    assert captured["path"] == snapshot_path.resolve()
+    assert registry.lifecycle_state == TreeLifecycleState.READY
+
+
+def test_client_initialise_dispatches_to_clone_cgs_for_cgs_source(monkeypatch):
+    client = ComplexGitSyncClient()
+    captured: dict[str, object] = {}
+
+    def _fake_clone_cgs(path, *, target_dir=None):
+        captured["path"] = path
+        captured["target_dir"] = target_dir
+        return "ok"
+
+    monkeypatch.setattr(client, "clone_cgs", _fake_clone_cgs)
+
+    result = client.initialise("project.cgs", target_dir="workspace/demo")
+
+    assert result == "ok"
+    assert captured["path"] == Path("project.cgs").resolve()
+    assert captured["target_dir"] == "workspace/demo"
+
+
 def test_client_validate_alias_returns_tree_state(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()
