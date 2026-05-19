@@ -107,6 +107,9 @@ ordering, and the simplified `initialise`/`freeze` CLI surface.
 `docs/architecture.tex`, `AdditionalSpecs.md`, all figures updated.
 Lifecycle vocabulary simplified: `initialise` replaces the 3-step
 `load→expand→validate` pipeline in all user-facing docs.
+CLI display contract now documented: workflow step line for `initialise`,
+explicit `git_command=...` output for git actions, explicit `log_file=...`,
+and minimal repo-only tree display.
 `Planning/DevPlan.md` and this file updated.
 
 ### T20 — CI Version Increment Automation ✅

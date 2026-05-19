@@ -331,6 +331,44 @@ def format_project_tree(
     return "\n".join(lines)
 
 
+def format_repo_tree_outline(registry: DependencyTreeRegistry) -> str:
+    """Render *registry* as a minimal repo-only tree outline."""
+    children_by_parent: dict[str | None, list[RepoRegistryEntry]] = {}
+    for entry in registry.values():
+        children_by_parent.setdefault(entry.parent_id, []).append(entry)
+    for children in children_by_parent.values():
+        children.sort(key=lambda child: child.name)
+
+    labels = {
+        NodeType.ROOT: "project",
+        NodeType.PARENT: "parent",
+        NodeType.LEAF: "leaf",
+    }
+    lines: list[str] = []
+
+    def walk(entry: RepoRegistryEntry, *, prefix: str, is_last: bool, is_root: bool = False) -> None:
+        label = labels.get(entry.node_type, entry.node_type.value)
+        if is_root:
+            lines.append(f"{entry.name} ({label})")
+        else:
+            branch = "└── " if is_last else "├── "
+            lines.append(f"{prefix}{branch}{entry.name} ({label})")
+
+        children = children_by_parent.get(entry.repo_id, [])
+        if is_root:
+            child_prefix = ""
+        else:
+            child_prefix = prefix + ("    " if is_last else "│   ")
+        for index, child in enumerate(children):
+            walk(child, prefix=child_prefix, is_last=index == len(children) - 1)
+
+    root_entry = registry.entries.get(ROOT_REPO_ID)
+    if root_entry is None:
+        return ""
+    walk(root_entry, prefix="", is_last=True, is_root=True)
+    return "\n".join(lines)
+
+
 def format_registry_json(registry: DependencyTreeRegistry) -> str:
     """Render *registry* as a JSON array."""
     data: list[dict[str, object]] = []

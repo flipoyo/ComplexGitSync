@@ -316,6 +316,18 @@ def test_tree_rendering_is_serialized_for_review(tmp_path):
     assert "child-repo" in rendered_tree
 
 
+def test_minimal_repo_tree_rendering_is_project_parent_leaf(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    client = ComplexGitSyncClient()
+    client.load_cgs(config_path)
+
+    rendered_tree = client.format_repo_tree()
+
+    assert "demo (project)" in rendered_tree
+    assert "child-repo (leaf)" in rendered_tree
+    assert "└──" in rendered_tree
+
+
 def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
     config_path = _write_clone_ready_cgs(tmp_path)
     fake_runner = _FakeGitRunner(

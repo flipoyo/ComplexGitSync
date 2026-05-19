@@ -108,6 +108,8 @@ Actions that **must produce READY** or fail explicitly:
   against it.
 - Emits structured log events for every state transition, action start/end,
   fallback decision, and `.gts` write/load.
+- Exposes both rich tree rendering (`format_project_tree`) and minimalist
+  repo-outline rendering (`format_repo_tree`).
 
 `Orchestre` is the coordination layer between the Client and the `GitTree`.
 The CLI (`cli.py`) maps terminal sub-commands to Client method calls
@@ -315,6 +317,16 @@ always be preserved in file logs regardless of console verbosity:
 `whisper_sync` mode may reduce informational console noise but must **never**
 suppress `WARNING`, `ERROR`, fallback decisions, `.gts` events, or state
 transitions.
+
+CLI display requirements:
+
+- `initialise(.cgs)` must explicitly show the lifecycle pipeline
+  (`load -> expand -> validate -> clone`).
+- command output must explicitly show the selected per-run log file path
+  (`log_file=...`).
+- git actions must print the concrete git command being applied.
+- tree display should have a minimalist repo-only outline (project / parent /
+  leaf with indentation or line connectors).
 
 ---
 

@@ -22,9 +22,19 @@ def test_initialise_command_restores_gts_snapshot(tmp_path, capsys):
     captured = capsys.readouterr()
 
     assert exit_code == 0
+    assert "log_file=" in captured.out
+    log_file_line = next((line for line in captured.out.splitlines() if line.startswith("log_file=")), None)
+    assert log_file_line is not None
+    log_file_path = Path(log_file_line.split("=", 1)[1])
+    assert log_file_path.is_file()
+    assert "workflow=load->validate" in captured.out
     assert "READY" in captured.out
     assert "ready=true" in captured.out
     assert "complete=true" in captured.out
+    assert "gittree_created=true" in captured.out
+    assert "gittree_active=true" in captured.out
+    assert "tree:" in captured.out
+    assert "demo (project)" in captured.out
 
 
 def test_print_command_renders_cgs_summary(tmp_path, capsys):
@@ -56,6 +66,9 @@ def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
+        def format_repo_tree(self):
+            return "demo (project)\n└── child-repo (leaf)"
+
     monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
 
     config_path = tmp_path / "project.cgs"
@@ -65,6 +78,10 @@ def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):
 
     assert exit_code == 0
     assert captured_call["source"] == config_path.resolve()
+    assert "workflow=load->expand->validate->clone" in captured.out
+    assert "git_command=git clone" in captured.out
+    assert "tree:" in captured.out
+    assert "demo (project)" in captured.out
     assert "READY ready=true" in captured.out
 
 
@@ -370,6 +387,7 @@ def test_checkout_command_uses_client_handler(monkeypatch, capsys, tmp_path):
 
     assert exit_code == 0
     assert captured_call["branch"] == "feature-x"
+    assert "git_command=git checkout feature-x" in captured.out
     assert "READY ready=true" in captured.out
     assert "branch=feature-x" in captured.out
 

@@ -97,6 +97,9 @@ client.pull("examples/complexgitsync.cgs")
 # print(.gts/.cgs) lifecycle summary
 print(client.print("examples/complexgitsync.cgs"))
 
+# minimalist project/parent/leaf tree outline
+print(client.format_repo_tree())
+
 # checkout
 client.checkout("feature/my-branch")
 
@@ -150,3 +153,13 @@ pixi run cgitsync tag v1.2.3 --gts .cgitsync/state/complexgitsync.gts
 # freeze -> .gts ++id
 pixi run cgitsync freeze release-2026.05 --gts .cgitsync/state/complexgitsync.gts
 ```
+
+CLI output is intentionally concise and explicit:
+
+- prints the per-command `log_file=<...>` path
+- prints the workflow line for lifecycle commands (for example
+  `workflow=load->expand->validate->clone` during `initialise <spec>.cgs`)
+- prints explicit git commands for git actions (`git add`, `git commit`,
+  `git push`, `git tag`, `git checkout`)
+- prints a minimal repo-only tree view (`project / parent / leaf`) for
+  `initialise` flows
