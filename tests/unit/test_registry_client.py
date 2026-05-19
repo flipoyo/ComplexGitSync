@@ -476,7 +476,7 @@ def test_clone_cgs_replaces_nested_destination_populated_by_parent_clone(tmp_pat
             "git@github.com:owner/ComplexGitSync.git": {"main"},
             "git@github.com:owner/docs.git": {"main"},
         },
-        populated_repo_name="ComplexGitSync",
+        parent_repo_name="ComplexGitSync",
     )
     client = ComplexGitSyncClient(git_runner=fake_runner)
 
@@ -894,17 +894,17 @@ class _StrictCloneGitRunner(_FakeGitRunner):
         self,
         remote_branches: dict[str, set[str]],
         *,
-        populated_repo_name: str,
+        parent_repo_name: str,
     ) -> None:
         super().__init__(remote_branches)
-        self.populated_repo_name = populated_repo_name
+        self.parent_repo_name = parent_repo_name
 
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
         destination_path = Path(destination)
         if destination_path.exists() and next(destination_path.iterdir(), None) is not None:
             raise RuntimeError(f"Destination not empty: {destination_path}")
         super().clone(remote_url, destination, branch=branch)
-        if destination_path.name == self.populated_repo_name:
+        if destination_path.name == self.parent_repo_name:
             docs_dir = destination_path / "docs"
             docs_dir.mkdir(parents=True, exist_ok=True)
             (docs_dir / "README.md").write_text("root docs\n", encoding="utf-8")
