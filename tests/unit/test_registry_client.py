@@ -845,8 +845,8 @@ def _make_entry(repo_id: str, abs_path: Path, *, parent_id: str | None = None):
         DiscoveryState,
     )
 
-    depth = repo_id.count(":")
-    node_type = NodeType.ROOT if repo_id == "root" else (NodeType.PARENT if depth == 1 else NodeType.LEAF)
+    separator_count = repo_id.count(":")
+    node_type = NodeType.ROOT if repo_id == "root" else (NodeType.PARENT if separator_count == 1 else NodeType.LEAF)
     return RepoRegistryEntry(
         repo_id=repo_id,
         name=repo_id.split(":")[-1],

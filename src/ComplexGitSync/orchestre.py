@@ -1047,6 +1047,12 @@ def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]
                 continue
 
             child_absolute_path = (entry.absolute_path / relative_path).resolve()
+            # Skip children whose absolute path already exists in the registry.
+            # This prevents circularities at discovery time: if a parent's nested
+            # .cgs references another parent (already registered under a different
+            # repo_id), we do not create a duplicate entry here.  The standalone
+            # fix_circularities() function handles any pre-existing duplicates that
+            # were not prevented by this guard (e.g., loaded from an older .gts).
             if child_absolute_path in registered_paths:
                 continue
 

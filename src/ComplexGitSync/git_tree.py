@@ -470,7 +470,11 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
     for _abs_path, entries in path_to_entries.items():
         if len(entries) <= 1:
             continue
-        # Canonical = highest in tree = fewest colons in repo_id (root < parent < leaf)
+        # Determine the canonical entry: the one closest to the root.
+        # repo_id uses ":" as a path separator, so fewer colons mean a higher
+        # position in the tree (root="root" has 0, a direct child of root has 1,
+        # a grandchild has 2, etc.).  Sorting by colon count ascending puts the
+        # canonical entry first.
         entries.sort(key=lambda e: e.repo_id.count(":"))
         canonical = entries[0]
         for duplicate in entries[1:]:
