@@ -529,7 +529,7 @@ def test_gittree_git_checkout_allows_direct_tree_manipulation(tmp_path):
     assert registry.recompute_tree_state() == TreeLifecycleState.READY
 
 
-def test_gittree_git_branch_creates_branch_without_checkout(tmp_path):
+def test_branch_tree_via_gittree_git_facade_creates_branch_without_checkout(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
     git_tree = GitTree()

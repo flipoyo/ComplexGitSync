@@ -1506,13 +1506,8 @@ class ComplexGitSyncClient:
     def branch(
         self,
         branch_name: str,
-        *,
-        ref_kind: RefKind = RefKind.BRANCH,
     ) -> DependencyTreeRegistry:
         """Create *branch_name* across the full tree without checkout."""
-        if ref_kind is not RefKind.BRANCH:
-            raise ValueError("branch only supports ref_kind=RefKind.BRANCH.")
-
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("branch_start", branch_name=branch_name)
