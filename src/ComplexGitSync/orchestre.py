@@ -1964,7 +1964,12 @@ class ComplexGitSyncClient:
         remote_url = self._build_remote_url(entry)
         selected_branch = self._select_clone_branch(entry, remote_url)
         if self._is_populated_nested_destination(entry):
-            shutil.rmtree(entry.absolute_path)
+            try:
+                shutil.rmtree(entry.absolute_path)
+            except OSError as exc:
+                raise GitSyncError(
+                    f"Unable to clear nested clone destination for {entry.name}: {entry.absolute_path}"
+                ) from exc
 
         self.orchestre.git_tree.git.clone(
             self.git_runner,

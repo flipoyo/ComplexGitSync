@@ -486,6 +486,7 @@ def test_clone_cgs_replaces_nested_destination_populated_by_parent_clone(tmp_pat
     assert registry.get("root:docs").absolute_path == docs_path
     assert docs_path.is_dir()
     assert not (docs_path / "README.md").exists()
+    assert (docs_path / "from-docs-clone.txt").is_file()
     assert [remote for remote, _, _ in fake_runner.clones] == [
         "git@github.com:owner/ComplexGitSync.git",
         "git@github.com:owner/docs.git",
@@ -907,3 +908,5 @@ class _StrictCloneGitRunner(_FakeGitRunner):
             docs_dir = destination_path / "docs"
             docs_dir.mkdir(parents=True, exist_ok=True)
             (docs_dir / "README.md").write_text("root docs\n", encoding="utf-8")
+        if destination_path.name == "docs":
+            (destination_path / "from-docs-clone.txt").write_text("docs clone\n", encoding="utf-8")
