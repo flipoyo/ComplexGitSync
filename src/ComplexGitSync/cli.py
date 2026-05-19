@@ -405,13 +405,9 @@ def _execute_load(
     *,
     discover_nested: bool,
 ) -> int:
-    registry = client.load(source_path, discover_nested=discover_nested)
+    client.load(source_path, discover_nested=discover_nested)
     tree_state = client.get_tree_state()
-    print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
-        f"complete={str(tree_state.registry_complete).lower()}"
-    )
+    print(_format_tree_state_line(tree_state))
     return 0
 
 
@@ -421,14 +417,18 @@ def _execute_initialise_cgs(
     *,
     target_dir: str | None,
 ) -> int:
+    print("workflow=load->expand->validate->clone")
+    print("git_command=git clone <remote> <target-path>  # repeated for each repo")
     registry = client.clone_cgs(source_path, target_dir=target_dir)
     tree_state = client.get_tree_state()
     print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
-        f"complete={str(tree_state.registry_complete).lower()} "
+        f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
+    outline = _format_repo_tree_outline(client)
+    if outline:
+        print("tree:")
+        print(outline)
     return 0
 
 
@@ -436,13 +436,14 @@ def _execute_initialise_gts(
     client: ComplexGitSyncClient,
     snapshot_path: Path,
 ) -> int:
+    print("workflow=load->validate")
     client.load_gts(snapshot_path)
     tree_state = client.get_tree_state()
-    print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
-        f"complete={str(tree_state.registry_complete).lower()}"
-    )
+    print(_format_tree_state_line(tree_state))
+    outline = _format_repo_tree_outline(client)
+    if outline:
+        print("tree:")
+        print(outline)
     return 0
 
 
@@ -453,11 +454,7 @@ def _execute_validate(
     discover_nested: bool,
 ) -> int:
     tree_state = client.validate(source_path, discover_nested=discover_nested)
-    print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
-        f"complete={str(tree_state.registry_complete).lower()}"
-    )
+    print(_format_tree_state_line(tree_state))
     return 0
 
 
@@ -524,12 +521,11 @@ def _execute_clone(
     *,
     target_dir: str | None,
 ) -> int:
+    print("git_command=git clone <remote> <target-path>  # repeated for each repo")
     registry = client.clone_cgs(source_path, target_dir=target_dir)
     tree_state = client.get_tree_state()
     print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
-        f"complete={str(tree_state.registry_complete).lower()} "
+        f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
     return 0
@@ -539,12 +535,11 @@ def _execute_restart(
     client: ComplexGitSyncClient,
     source_path: Path,
 ) -> int:
+    print("workflow=load->expand->validate->checkout")
     registry = client.restart(source_path)
     tree_state = client.get_tree_state()
     print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
-        f"complete={str(tree_state.registry_complete).lower()} "
+        f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
     return 0
@@ -554,12 +549,11 @@ def _execute_pull(
     client: ComplexGitSyncClient,
     source_path: Path,
 ) -> int:
+    print("workflow=pull(source)->validate->ready")
     registry = client.pull(source_path)
     tree_state = client.get_tree_state()
     print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
-        f"complete={str(tree_state.registry_complete).lower()} "
+        f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
     return 0
@@ -573,11 +567,11 @@ def _execute_checkout(
     ref_kind: RefKind,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    print(f"git_command=git checkout {branch}")
     client.checkout(branch, ref_kind=ref_kind)
     tree_state = client.get_tree_state()
     print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
+        f"{_format_tree_state_line(tree_state)} "
         f"branch={branch}"
     )
     return 0
@@ -591,11 +585,11 @@ def _execute_commit(
     stage_all: bool,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    print(f"git_command=git commit -m {message!r}")
     client.commit(message, stage_all=stage_all)
     tree_state = client.get_tree_state()
     print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
+        f"{_format_tree_state_line(tree_state)} "
         f"message={message!r}"
     )
     return 0
@@ -606,12 +600,10 @@ def _execute_add(
     source_path: Path,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    print("git_command=git add --all")
     client.add()
     tree_state = client.get_tree_state()
-    print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()}"
-    )
+    print(_format_tree_state_line(tree_state))
     return 0
 
 
@@ -620,12 +612,10 @@ def _execute_push(
     source_path: Path,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    print("git_command=git push")
     client.push()
     tree_state = client.get_tree_state()
-    print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()}"
-    )
+    print(_format_tree_state_line(tree_state))
     return 0
 
 
@@ -636,11 +626,11 @@ def _execute_tag(
     tag_name: str,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    print(f"git_command=git tag {tag_name} && git push origin {tag_name}")
     client.tag(tag_name)
     tree_state = client.get_tree_state()
     print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
+        f"{_format_tree_state_line(tree_state)} "
         f"tag={tag_name}"
     )
     return 0
@@ -653,11 +643,11 @@ def _execute_freeze_release(
     tag_name: str,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    print(f"git_command=git add --all && git commit -m {tag_name!r} && git tag {tag_name} && git push")
     client.freeze_release(tag_name)
     tree_state = client.get_tree_state()
     print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
+        f"{_format_tree_state_line(tree_state)} "
         f"tag={tag_name}"
     )
     return 0
@@ -670,11 +660,11 @@ def _execute_freeze(
     name: str,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    print(f"git_command=git add --all && git commit -m {name!r} && git tag {name} && git push")
     client.freeze(name)
     tree_state = client.get_tree_state()
     print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
+        f"{_format_tree_state_line(tree_state)} "
         f"name={name}"
     )
     return 0
@@ -687,11 +677,13 @@ def _execute_freeze_state(
     state_name: str,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    print(
+        f"git_command=git add --all && git commit -m {state_name!r} && git tag {state_name} && git push"
+    )
     client.freeze_state(state_name)
     tree_state = client.get_tree_state()
     print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
+        f"{_format_tree_state_line(tree_state)} "
         f"state={state_name}"
     )
     return 0
@@ -701,11 +693,11 @@ def _execute_launch_release(
     client: ComplexGitSyncClient,
     snapshot_path: Path,
 ) -> int:
+    print("workflow=load(.gts)->expand->validate->ready")
     registry = client.launch_release(snapshot_path)
     tree_state = client.get_tree_state()
     print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
+        f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
     return 0
@@ -715,11 +707,11 @@ def _execute_launch_state(
     client: ComplexGitSyncClient,
     snapshot_path: Path,
 ) -> int:
+    print("workflow=load(.gts)->expand->validate->ready")
     registry = client.launch_state(snapshot_path)
     tree_state = client.get_tree_state()
     print(
-        f"{tree_state.lifecycle_state.value} "
-        f"ready={str(tree_state.is_ready).lower()} "
+        f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
     return 0
@@ -740,6 +732,8 @@ def _run_with_logging(
         resolved_source,
         project_root=project_root,
     )
+    if active_client.run_logger is not None and active_client.run_logger.log_path is not None:
+        print(f"log_file={active_client.run_logger.log_path}")
     active_client.run_logger.log_event(
         "command_start",
         command=command_name,
@@ -801,6 +795,26 @@ def _load_ready_registry_source(
     source_path: Path,
 ) -> None:
     client.load_gts(source_path)
+
+
+def _format_tree_state_line(tree_state) -> str:
+    lifecycle = tree_state.lifecycle_state.value
+    git_tree_created = lifecycle != "UNLOADED"
+    git_tree_active = bool(tree_state.is_ready)
+    return (
+        f"{lifecycle} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"complete={str(tree_state.registry_complete).lower()} "
+        f"gittree_created={str(git_tree_created).lower()} "
+        f"gittree_active={str(git_tree_active).lower()}"
+    )
+
+
+def _format_repo_tree_outline(client: ComplexGitSyncClient) -> str:
+    formatter = getattr(client, "format_repo_tree", None)
+    if callable(formatter):
+        return str(formatter())
+    return ""
 
 
 _INSPECTION_HANDLERS = {

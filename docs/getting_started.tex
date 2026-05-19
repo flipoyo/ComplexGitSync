@@ -126,8 +126,11 @@ directory already exists and is not empty, the command chooses the next
 available suffixed directory such as \texttt{./ComplexGitSync-1}. To force an
 explicit destination, pass \texttt{--target-dir}.
 
-On success, the command prints a READY summary including the chosen root path,
-for example \texttt{READY ready=true complete=true root=/tmp/ComplexGitSync}.
+On success, the command prints the explicit lifecycle workflow
+(\texttt{load -> expand -> validate -> clone}), the command log file path
+(\texttt{log\_file=...}), a minimal repo-only tree view, and a READY summary
+including the chosen root path, for example
+\texttt{READY ready=true complete=true root=/tmp/ComplexGitSync}.
 The clone flow first tries each repo's \texttt{default\_branch} and falls back
 to \texttt{fallback\_branch} when the preferred branch does not exist on the
 remote. It also writes a runtime snapshot to
@@ -185,7 +188,8 @@ is \texttt{~/.local/state/ComplexGitSync/logs/}; if
 \texttt{XDG\_STATE\_HOME} is set, the logs are written under that state
 directory instead. The logs record command start and end, tree and repo state
 transitions, fallback decisions, nested \texttt{.cgs} discovery, and
-\texttt{.gts} loads and writes.
+\texttt{.gts} loads and writes. The CLI prints the resolved file path in
+command output as \texttt{log\_file=<path>}.
 
 % -----------------------------------------------------------------------
 \section{Next Steps}

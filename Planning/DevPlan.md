@@ -61,6 +61,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - CLI mutation commands (`checkout`, `commit`, `push`, `tag`, `freeze-release`) require `--gts <file>` to load the READY registry.
 - CLI mutation commands now also include `add` and `freeze-state`; snapshot launch commands include `launch-release` and `launch-state`.
 - User-facing lifecycle contract is `initialise(.cgs)` → clone → READY, `initialise(.gts)` → restore → READY, `pull(.cgs/.gts)` → resync → READY, `checkout`, `add`, `commit`, `push`, `tag`, `freeze`.
+- CLI display now prints explicit workflow steps for lifecycle commands, explicit `git_command=...` lines for git actions, per-command `log_file=...`, and a minimalist repo-only tree outline (`project/parent/leaf`) for initialise flows.
 - `load(.cgs/.gts)` is the unified Python API smart loader: `.gts` → direct load; `.cgs` → load_cgs pipeline.
 - `initialise()` is the new primary entry point: `.cgs` → clone_cgs; `.gts` → load_gts.
 - CLI primary commands: `initialise`, `pull`, `checkout`, `add`, `commit`, `push`, `tag`, `freeze`.

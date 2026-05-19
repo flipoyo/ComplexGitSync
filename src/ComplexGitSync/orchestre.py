@@ -77,6 +77,7 @@ from .git_tree import (
     _validate_repo_shape,
     build_tree_state,
     format_project_tree,
+    format_repo_tree_outline,
     iter_tree,
     make_repo_id,
     promote_to_parent,
@@ -1788,6 +1789,9 @@ class ComplexGitSyncClient:
 
     def format_project_tree(self, *, verbose: bool = True) -> str:
         return format_project_tree(self.get_dependency_registry(), verbose=verbose)
+
+    def format_repo_tree(self) -> str:
+        return format_repo_tree_outline(self.get_dependency_registry())
 
     def describe_cgs(self) -> str:
         registry = self.get_dependency_registry()
