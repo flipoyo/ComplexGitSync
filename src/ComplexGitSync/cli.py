@@ -11,25 +11,26 @@ from .orchestre import CgsDocument, ComplexGitSyncClient, create_run_logger
 
 
 _PLANNED_COMMANDS: dict[str, str] = {
-    "load": "Load a .cgs specification (lifecycle step 1).",
-    "expand": "Expand the dependency tree (lifecycle step 2).",
-    "validate": "Validate a local .cgs or .gts specification (lifecycle step 3).",
-    "describe": "Describe a .cgs or .gts input.",
-    "print": "Print a .cgs or .gts lifecycle summary.",
-    "tree": "Render the dependency tree (alias for expand).",
-    "write-gts": "Write a .gts state snapshot.",
-    "launch-release": "Launch a release from a .gts snapshot.",
-    "clone": "Clone a nested project tree from .cgs.",
-    "restart": "Resynchronize a loaded project tree.",
-    "pull": "Resynchronize a project tree from .cgs or .gts.",
+    # Primary user-facing commands
+    "initialise": "Initialise a project tree: clone(.cgs) or restore state(.gts).",
+    "pull": "Resynchronise an existing project tree from .cgs or .gts.",
     "checkout": "Synchronize the tree to a branch or tag.",
     "add": "Stage all changes across a READY tree.",
-    "tag": "Create a tag across the full reachable tree.",
-    "freeze-release": "Create a release branch and emit a .gts snapshot.",
-    "freeze-state": "Freeze an internal development state and emit a .gts snapshot.",
     "commit": "Commit dirty repositories from a READY tree.",
     "push": "Push repositories from a READY tree.",
+    "tag": "Create a tag across the full reachable tree.",
+    "freeze": "Freeze a versioned state and emit a .gts snapshot.",
+    # Secondary / inspection commands
+    "print": "Print a .cgs or .gts lifecycle summary.",
+    "describe": "Describe a .cgs or .gts input (alias for print).",
+    # Compatibility / advanced commands
+    "clone": "Clone a nested project tree from .cgs (use initialise instead).",
+    "restart": "Resynchronize a loaded project tree (alias for pull).",
+    "freeze-release": "Freeze a release state and emit a .gts snapshot.",
+    "freeze-state": "Freeze an internal development state and emit a .gts snapshot.",
+    "launch-release": "Launch a release from a .gts snapshot.",
     "launch-state": "Launch an internal state from a .gts snapshot.",
+    "write-gts": "Write a .gts state snapshot.",
     "status": "Summarize tree readiness and sync state.",
 }
 
@@ -38,8 +39,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cgitsync",
         description=(
-            "ComplexGitSync bootstrap CLI. See Planning/InitialDevPlan.md and Planning/InitialDevPlanTickets.md for the "
-            "implementation contract."
+            "ComplexGitSync CLI — manage a nested Git repository tree. "
+            "Start with 'initialise' to clone or restore a project tree, "
+            "then use 'pull', 'checkout', 'add', 'commit', 'push', 'tag', and 'freeze' "
+            "to keep repositories in sync."
         ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -47,8 +50,18 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     for command_name, help_text in _PLANNED_COMMANDS.items():
         subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
-        if command_name in {"load"}:
-            subparser.add_argument("source", help="Path to the local .cgs file to load.")
+        if command_name == "initialise":
+            subparser.add_argument(
+                "source",
+                help="Path to a .cgs spec (clone mode) or .gts snapshot (restore mode).",
+            )
+            subparser.add_argument(
+                "--target-dir",
+                help="Target directory for the cloned project root (.cgs mode only).",
+            )
+            subparser.set_defaults(handler=_handle_initialise)
+        elif command_name == "load":
+            subparser.add_argument("source", help="Path to the local .cgs or .gts file to load.")
             subparser.add_argument(
                 "--discover-nested",
                 action="store_true",
@@ -151,6 +164,15 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Path to the .gts snapshot that holds the READY registry.",
             )
             subparser.set_defaults(handler=_handle_tag)
+        elif command_name == "freeze":
+            subparser.add_argument("name", help="Version tag name used for commit, tag, and push.")
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                required=True,
+                help="Path to the .gts snapshot that holds the READY registry.",
+            )
+            subparser.set_defaults(handler=_handle_freeze)
         elif command_name == "freeze-release":
             subparser.add_argument("name", help="Release tag name used for commit, tag, and push.")
             subparser.add_argument(
@@ -204,6 +226,27 @@ def _handle_load(args: argparse.Namespace) -> int:
         command_name="load",
         source=Path(args.source),
         runner=lambda client, source: _execute_load(client, source, discover_nested=args.discover_nested),
+    )
+
+
+def _handle_initialise(args: argparse.Namespace) -> int:
+    source_path = Path(args.source)
+    if source_path.suffix == ".cgs":
+        client = ComplexGitSyncClient()
+        project_root = client.resolve_clone_root(source_path, target_dir=getattr(args, "target_dir", None))
+        return _run_with_logging(
+            command_name="initialise",
+            source=source_path,
+            client=client,
+            project_root=project_root,
+            runner=lambda active_client, source: _execute_initialise_cgs(
+                active_client, source, target_dir=getattr(args, "target_dir", None)
+            ),
+        )
+    return _run_with_logging(
+        command_name="initialise",
+        source=source_path,
+        runner=lambda client, source: _execute_initialise_gts(client, source),
     )
 
 
@@ -324,6 +367,14 @@ def _handle_freeze_release(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_freeze(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="freeze",
+        source=Path(args.gts),
+        runner=lambda client, source: _execute_freeze(client, source, name=args.name),
+    )
+
+
 def _handle_freeze_state(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="freeze-state",
@@ -355,6 +406,37 @@ def _execute_load(
     discover_nested: bool,
 ) -> int:
     registry = client.load(source_path, discover_nested=discover_nested)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"complete={str(tree_state.registry_complete).lower()}"
+    )
+    return 0
+
+
+def _execute_initialise_cgs(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    target_dir: str | None,
+) -> int:
+    registry = client.clone_cgs(source_path, target_dir=target_dir)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"complete={str(tree_state.registry_complete).lower()} "
+        f"root={registry.get('root').absolute_path}"
+    )
+    return 0
+
+
+def _execute_initialise_gts(
+    client: ComplexGitSyncClient,
+    snapshot_path: Path,
+) -> int:
+    client.load_gts(snapshot_path)
     tree_state = client.get_tree_state()
     print(
         f"{tree_state.lifecycle_state.value} "
@@ -581,6 +663,23 @@ def _execute_freeze_release(
     return 0
 
 
+def _execute_freeze(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    name: str,
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    client.freeze(name)
+    tree_state = client.get_tree_state()
+    print(
+        f"{tree_state.lifecycle_state.value} "
+        f"ready={str(tree_state.is_ready).lower()} "
+        f"name={name}"
+    )
+    return 0
+
+
 def _execute_freeze_state(
     client: ComplexGitSyncClient,
     source_path: Path,
@@ -705,10 +804,6 @@ def _load_ready_registry_source(
 
 
 _INSPECTION_HANDLERS = {
-    "load": _handle_load,
-    "expand": _handle_expand,
-    "validate": _handle_validate,
     "describe": _handle_describe,
     "print": _handle_print,
-    "tree": _handle_tree,
 }

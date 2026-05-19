@@ -31,6 +31,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T21 | `add`, `freeze_state`, `launch_state` (Python API + CLI) | ✅ Done |
 | T25 | Logger verbosity profile verification (`verbose` / `whisper_sync`) | ✅ Done |
 | T23 | Lifecycle terminology: `load`, `expand`, `validate`, `git()` | ✅ Done |
+| T26 | CLI Simplification: `initialise`, `freeze`, smart `load()` | ✅ Done |
 | T17 | Unit Test Suite (incremental) | ✅ Ongoing |
 | T19 | Documentation and Examples (incremental) | ✅ Updated |
 | T20 | CI Version Increment Automation | ✅ Done |
@@ -59,16 +60,20 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - `ComplexGitSyncClient.checkout`, `ComplexGitSyncClient.restart`, and `ComplexGitSyncClient.freeze_release` write `.gts` snapshots after success.
 - CLI mutation commands (`checkout`, `commit`, `push`, `tag`, `freeze-release`) require `--gts <file>` to load the READY registry.
 - CLI mutation commands now also include `add` and `freeze-state`; snapshot launch commands include `launch-release` and `launch-state`.
-- User-facing lifecycle contract is `load(.cgs) → .gts LOADED`, `expand(.gts/.cgs) → .gts PENDING`, `validate(.gts/.cgs) → .gts READY`, `clone(.gts/.cgs)`, `git(tree,"commit",msg)`, `git(tree,"push")`, `git(tree,"tag",name)`, `freeze`.
-- `git(tree, command, *args)` is the canonical unified step-5 interface; `commit`, `push`, and `tag` remain available as direct methods.
-- Compatibility aliases: `read` → `load`, `verify` → `validate`.
+- User-facing lifecycle contract is `initialise(.cgs)` → clone → READY, `initialise(.gts)` → restore → READY, `pull(.cgs/.gts)` → resync → READY, `checkout`, `add`, `commit`, `push`, `tag`, `freeze`.
+- `load(.cgs/.gts)` is the unified Python API smart loader: `.gts` → direct load; `.cgs` → load_cgs pipeline.
+- `initialise()` is the new primary entry point: `.cgs` → clone_cgs; `.gts` → load_gts.
+- CLI primary commands: `initialise`, `pull`, `checkout`, `add`, `commit`, `push`, `tag`, `freeze`.
+- `load`, `expand`, `validate`, `tree` are removed from the CLI primary surface (no longer user-facing steps).
+- `git(tree, command, *args)` is the canonical unified git interface; `commit`, `push`, and `tag` remain available as direct methods.
+- Compatibility aliases: `read` → `load`, `verify` → `validate`, `clone` → `initialise(.cgs)` equivalent.
+- `freeze` is the primary versioning command; `freeze-release` and `freeze-state` remain available.
 - `freeze` is expected to emit the next `.gts` id and register it locally.
 - Remaining lifecycle work is `orchestrate(.goc)` and project-local `.lgr` register management.
-- `print` and `pull` lifecycle methods are now wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
-- Logger profile behavior is now explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
+- `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
+- Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
 - `.goc` automation remains pending: the parser will map `.goc` actions to public `ComplexGitSyncClient` methods.
 - The planned project-local register file is `<Project_name>.lgr`, which must assign one local id to each generated `.gts`.
-- Direct object-level usage is now documented in `docs/python_api.tex` and README with a `.gts` → `GitTree`/`GitRepo` flow and `GitTree.propagate_tag`.
 
 ## Definition of Done (Global)
 
@@ -76,11 +81,12 @@ From `InitialDevPlan.md` — completed when:
 
 - [x] a local `.cgs` can describe the project topology
 - [x] nested `.cgs` discovery expands the tree correctly
-- [x] `clone` ends in `READY` and auto-writes `.gts`
+- [x] `initialise(.cgs)` / `clone` ends in `READY` and auto-writes `.gts`
 - [x] `checkout` ends in `READY`
 - [x] `commit` and `push` are gated on `READY`
-- [x] `tag` and `freeze_release` work across parent and leaf repos
+- [x] `tag` and `freeze` work across parent and leaf repos
 - [x] `launch_release` replays a `.gts` without `.cgs` discovery
 - [x] the registry is directly accessible and complete
 - [x] logs satisfy the mandatory logging contract
+- [x] `initialise` and `freeze` are primary CLI commands; `load/expand/validate` are internal
 - [ ] tests cover the CaWaQS-Viz-like topology (integration suite)

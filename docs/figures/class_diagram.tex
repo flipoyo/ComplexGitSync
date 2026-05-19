@@ -66,10 +66,10 @@
   run\_logger: CommandRunLogger
   \nodepart{three}
   read(cgs) / load\_gts(gts)\\
-  load(cgs) / expand(cgs|gts)\\
-  validate(cgs|gts) / clone(cgs|gts)\\
-  checkout(gts, ref)\\
-  add() / git(tree, cmd, args)\\
+  initialise(cgs|gts) / load(cgs|gts)\\
+  pull(cgs|gts) / clone(cgs)\\
+  checkout(ref) / add()\\
+  git(tree, cmd, args)\\
   freeze(name)
 };
 
@@ -165,11 +165,11 @@
 
 \begin{figure}[ht]
 \centering
-\caption{GitTree lifecycle state machine.  The canonical lifecycle is
-  \texttt{load(.cgs)} $\rightarrow$ \texttt{.gts LOADED}
-  $\rightarrow$ \texttt{expand(.cgs|.gts)} $\rightarrow$ \texttt{.gts PENDING}
-  $\rightarrow$ \texttt{validate(.cgs|.gts)} $\rightarrow$ \texttt{.gts READY};
-  synchronized Git operations (\texttt{checkout},
+\caption{GitTree lifecycle state machine.  The simplified user-facing lifecycle
+  is \texttt{initialise(.cgs)} $\rightarrow$ clone $\rightarrow$ \texttt{READY};
+  \texttt{initialise(.gts)} $\rightarrow$ restore $\rightarrow$ \texttt{READY};
+  \texttt{pull(.cgs|.gts)} $\rightarrow$ resync $\rightarrow$ \texttt{READY}.
+  Synchronized Git operations (\texttt{checkout},
   \texttt{add}, \texttt{git("commit")}, \texttt{git("push")},
   \texttt{git("tag")},
   \texttt{freeze}) are gated on \texttt{READY}.}
@@ -187,19 +187,19 @@
 ]
 
 \node[state] (unloaded) {UNLOADED};
-\node[state, right=of unloaded] (loaded)  {LOADED};
-\node[state, right=of loaded] (pending)   {PENDING};
+\node[state, right=of unloaded] (declared)  {DECLARED};
+\node[state, right=of declared] (pending)   {PENDING};
 \node[state, right=of pending]  (ready)     {READY};
 
-\node[sidestate, below=1.2cm of loaded] (partial) {PARTIAL};
+\node[sidestate, below=1.2cm of declared] (partial) {PARTIAL};
 \node[sidestate, below=1.2cm of pending]  (error)   {ERROR};
 
-\draw[trans] (unloaded) -- node[above, font=\scriptsize]{load(.cgs)} (loaded);
-\draw[trans] (loaded) -- node[above, font=\scriptsize]{expand(.cgs|.gts)} (pending);
-\draw[trans] (pending)  -- node[above, font=\scriptsize]{validate(.cgs|.gts)} (ready);
-\draw[trans, dashed] (loaded.south) -- (partial.north);
+\draw[trans] (unloaded) -- node[above, font=\scriptsize]{load(.cgs)} (declared);
+\draw[trans] (declared) -- node[above, font=\scriptsize]{discover nested} (pending);
+\draw[trans] (pending)  -- node[above, font=\scriptsize]{clone/validate} (ready);
+\draw[trans, dashed] (declared.south) -- (partial.north);
 \draw[trans, dashed] (pending.south)  -- (error.north);
-\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{freeze / next .gts id} (loaded.north);
+\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{freeze / next .gts id} (declared.north);
 
 \end{tikzpicture}
 \end{figure}

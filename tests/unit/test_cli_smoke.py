@@ -6,7 +6,6 @@ import pytest
 
 from ComplexGitSync import __version__
 from ComplexGitSync.cli import main
-from ComplexGitSync.orchestre import RuntimeStateStore
 
 
 def test_main_without_command_prints_help(capsys):
@@ -16,80 +15,104 @@ def test_main_without_command_prints_help(capsys):
     assert "cgitsync" in captured.out
 
 
-def test_validate_command_summarizes_loaded_registry(tmp_path, capsys):
-    config_path = _write_project_cgs(tmp_path)
+def test_initialise_command_restores_gts_snapshot(tmp_path, capsys):
+    gts_path = _write_ready_gts(tmp_path)
 
-    exit_code = main(["validate", str(config_path)])
+    exit_code = main(["initialise", str(gts_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "DECLARED" in captured.out
+    assert "READY" in captured.out
+    assert "ready=true" in captured.out
     assert "complete=true" in captured.out
 
 
-def test_tree_command_renders_declared_dependency_tree(tmp_path, capsys):
+def test_print_command_renders_cgs_summary(tmp_path, capsys):
     config_path = _write_project_cgs(tmp_path)
 
-    exit_code = main(["tree", str(config_path)])
+    exit_code = main(["print", str(config_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
     assert "demo" in captured.out
-    assert "child-repo" in captured.out
 
 
-def test_tree_command_prefers_latest_runtime_snapshot_for_cgs(monkeypatch, tmp_path, capsys):
-    config_path = _write_project_cgs(tmp_path)
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
-    snapshot_path = tmp_path / "workspace" / "demo" / ".cgitsync" / "state" / "project.gts"
-    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
-    snapshot_path.write_text(
-        (
-            """
-[document]
-format_version = "1.0"
-generated_at = "2026-05-13T00:00:00Z"
-command_origin = "clone"
+def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
 
-[project]
-name = "demo"
-root_absolute_path = "/tmp/runtime-demo"
-source_cgs_path = "{source_path}"
+    class StubClient:
+        def resolve_clone_root(self, source, *, target_dir=None):
+            return tmp_path / "workspace" / "demo"
 
-[tree_state]
-lifecycle_state = "READY"
-is_ready = true
-registry_complete = true
+        def clone_cgs(self, source, *, target_dir=None):
+            captured_call["source"] = Path(source)
+            captured_call["target_dir"] = target_dir
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "workspace" / "demo")
+            )
 
-[[repo_state]]
-name = "demo"
-node_type = "root"
-absolute_path = "/tmp/runtime-demo"
-relative_path = "."
-repo_lifecycle_state = "READY"
-sync_state = "ALIGNED"
-current_ref_kind = "branch"
-current_ref_name = "main"
-target_ref_kind = "branch"
-target_ref_name = "autoTest"
-resolved_ref_kind = "branch"
-resolved_ref_name = "main"
-commit_sha = "abc123"
-""".strip()
-            .format(source_path=config_path.resolve().as_posix())
-            + "\n"
-        ),
-        encoding="utf-8",
-    )
-    RuntimeStateStore().record_snapshot(config_path, snapshot_path)
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
 
-    exit_code = main(["tree", str(config_path)])
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    config_path = tmp_path / "project.cgs"
+    config_path.touch()
+    exit_code = main(["initialise", str(config_path)])
     captured = capsys.readouterr()
 
-    expected_path = str(Path("/tmp/runtime-demo").resolve())
     assert exit_code == 0
-    assert "state=READY" in captured.out
-    assert f"path={expected_path}" in captured.out
+    assert captured_call["source"] == config_path.resolve()
+    assert "READY ready=true" in captured.out
+
+
+def test_initialise_command_creates_log_file(monkeypatch, tmp_path, capsys):
+    gts_path = _write_ready_gts(tmp_path)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+
+    exit_code = main(["initialise", str(gts_path)])
+    captured = capsys.readouterr()
+
+    log_dir = tmp_path / "state-home" / "ComplexGitSync" / "logs"
+    log_files = sorted(log_dir.glob("*-initialise.log"))
+
+    assert exit_code == 0
+    assert "READY" in captured.out
+    assert len(log_files) == 1
+    log_content = log_files[0].read_text(encoding="utf-8")
+    assert '"event": "command_start"' in log_content
+    assert '"event": "command_end"' in log_content
+
+
+def test_freeze_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def freeze(self, name, **kwargs):
+            captured_call["name"] = name
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["freeze", "v1.0", "--gts", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["name"] == "v1.0"
+    assert "name=v1.0" in captured.out
 
 
 def test_describe_command_supports_gts_input(tmp_path, capsys):
@@ -204,36 +227,50 @@ def test_clone_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     assert "READY ready=true complete=true" in captured.out
 
 
-def test_validate_command_creates_log_file(monkeypatch, tmp_path, capsys):
-    config_path = _write_project_cgs(tmp_path)
+def test_initialise_command_gts_creates_log_file_verbose(monkeypatch, tmp_path, capsys):
+    gts_path = _write_ready_gts(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
 
-    exit_code = main(["validate", str(config_path)])
+    exit_code = main(["initialise", str(gts_path)])
     captured = capsys.readouterr()
 
     log_dir = tmp_path / "state-home" / "ComplexGitSync" / "logs"
-    log_files = sorted(log_dir.glob("*-validate.log"))
+    log_files = sorted(log_dir.glob("*-initialise.log"))
 
     assert exit_code == 0
-    assert "DECLARED" in captured.out
+    assert "READY" in captured.out
     assert len(log_files) == 1
     log_content = log_files[0].read_text(encoding="utf-8")
     assert '"event": "command_start"' in log_content
     assert '"event": "command_end"' in log_content
 
 
-def test_validate_command_creates_log_file_with_whisper_sync_profile(monkeypatch, tmp_path, capsys):
-    config_path = _write_project_cgs(tmp_path, profile="whisper_sync")
+def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def pull(self, source):
+            captured_call["source"] = Path(source)
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "project")
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
 
-    exit_code = main(["validate", str(config_path)])
-    captured = capsys.readouterr()
+    source_path = tmp_path / "project.cgs"
+    source_path.touch()
+    exit_code = main(["pull", str(source_path)])
 
     log_dir = tmp_path / "state-home" / "ComplexGitSync" / "logs"
-    log_files = sorted(log_dir.glob("*-validate.log"))
+    log_files = sorted(log_dir.glob("*-pull.log"))
 
     assert exit_code == 0
-    assert "DECLARED" in captured.out
     assert len(log_files) == 1
     log_content = log_files[0].read_text(encoding="utf-8")
     assert '"event": "command_start"' in log_content
@@ -614,66 +651,6 @@ def test_registry_command_is_removed(capsys):
     assert "invalid choice" in captured.err
 
 
-def test_load_command_writes_gts_snapshot(tmp_path, capsys):
-    config_path = _write_project_cgs(tmp_path)
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
-
-    exit_code = main(["load", str(config_path)])
-
-    assert exit_code == 0
-    assert expected_snapshot.is_file()
-
-
-def test_expand_command_writes_gts_snapshot(tmp_path, capsys):
-    config_path = _write_project_cgs(tmp_path)
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
-
-    exit_code = main(["expand", str(config_path)])
-
-    assert exit_code == 0
-    assert expected_snapshot.is_file()
-
-
-def test_validate_command_writes_gts_snapshot(tmp_path, capsys):
-    config_path = _write_project_cgs(tmp_path)
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
-
-    exit_code = main(["validate", str(config_path)])
-
-    assert exit_code == 0
-    assert expected_snapshot.is_file()
-
-
-def test_load_gts_snapshot_has_correct_command_origin(tmp_path, capsys):
-    config_path = _write_project_cgs(tmp_path)
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
-
-    main(["load", str(config_path)])
-
-    data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
-    assert data["document"]["command_origin"] == "load"
-
-
-def test_expand_gts_snapshot_has_correct_command_origin(tmp_path, capsys):
-    config_path = _write_project_cgs(tmp_path)
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
-
-    main(["expand", str(config_path)])
-
-    data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
-    assert data["document"]["command_origin"] == "expand"
-
-
-def test_validate_gts_snapshot_has_correct_command_origin(tmp_path, capsys):
-    config_path = _write_project_cgs(tmp_path)
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
-
-    main(["validate", str(config_path)])
-
-    data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
-    assert data["document"]["command_origin"] == "validate"
-
-
 def _write_project_cgs(tmp_path, *, profile: str | None = None):
     config_path = tmp_path / "project.cgs"
     runtime = ""
@@ -707,3 +684,41 @@ relative_path = "deps/child-repo"
         encoding="utf-8",
     )
     return config_path
+
+
+def _write_ready_gts(tmp_path):
+    gts_path = tmp_path / "project.gts"
+    root_path = (tmp_path / "workspace" / "demo").as_posix()
+    gts_path.write_text(
+        f"""
+[document]
+format_version = "1.0"
+generated_at = "2026-05-13T00:00:00Z"
+command_origin = "clone"
+
+[project]
+name = "demo"
+root_absolute_path = "{root_path}"
+
+[tree_state]
+lifecycle_state = "READY"
+is_ready = true
+registry_complete = true
+
+[[repo_state]]
+name = "demo"
+node_type = "root"
+absolute_path = "{root_path}"
+relative_path = "."
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "main"
+resolved_ref_kind = "branch"
+resolved_ref_name = "main"
+commit_sha = "abc123"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return gts_path
