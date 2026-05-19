@@ -26,7 +26,7 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path, PurePath, PurePosixPath
-from typing import Any, Iterator, TypeVar
+from typing import TYPE_CHECKING, Any, Iterator, TypeVar
 
 from .errors import ConfigValidationError, NestedConfigDiscoveryError
 from .git_repo import (
@@ -44,6 +44,141 @@ from .git_repo import (
 _E = TypeVar("_E", bound=Enum)
 
 ROOT_REPO_ID = "root"
+
+if TYPE_CHECKING:
+    from .orchestre import GitRunner
+
+
+@dataclass(slots=True)
+class GitTreeGitCommands:
+    """Git command facade bound to :class:`GitTree` operations.
+
+    ``registry`` stores the currently bound
+    :class:`DependencyTreeRegistry` used when callers omit an explicit
+    registry argument.
+    """
+
+    registry: "DependencyTreeRegistry | None" = field(default=None)
+
+    def bind_registry(self, registry: "DependencyTreeRegistry") -> "DependencyTreeRegistry":
+        self.registry = registry
+        return registry
+
+    def _resolve_registry(
+        self,
+        registry: "DependencyTreeRegistry | None" = None,
+    ) -> "DependencyTreeRegistry":
+        if isinstance(registry, DependencyTreeRegistry):
+            self.registry = registry
+            return registry
+        if isinstance(self.registry, DependencyTreeRegistry):
+            return self.registry
+        raise RuntimeError("No ComplexGitSync registry is bound to GitTree.git.")
+
+    def checkout(
+        self,
+        git_runner: "GitRunner",
+        branch_name: str,
+        *,
+        ref_kind: RefKind = RefKind.BRANCH,
+        registry: "DependencyTreeRegistry | None" = None,
+    ) -> None:
+        from .operations import checkout_tree
+
+        checkout_tree(self._resolve_registry(registry), git_runner, branch_name, ref_kind=ref_kind)
+
+    def branch(
+        self,
+        git_runner: "GitRunner",
+        branch_name: str,
+        *,
+        registry: "DependencyTreeRegistry | None" = None,
+    ) -> None:
+        from .operations import branch_tree
+
+        branch_tree(self._resolve_registry(registry), git_runner, branch_name)
+
+    def pull(
+        self,
+        git_runner: "GitRunner",
+        *,
+        registry: "DependencyTreeRegistry | None" = None,
+    ) -> None:
+        from .operations import restart_tree
+
+        restart_tree(self._resolve_registry(registry), git_runner)
+
+    def add(
+        self,
+        git_runner: "GitRunner",
+        *,
+        registry: "DependencyTreeRegistry | None" = None,
+    ) -> None:
+        from .operations import add_tree
+
+        add_tree(self._resolve_registry(registry), git_runner)
+
+    def commit(
+        self,
+        git_runner: "GitRunner",
+        message: str,
+        *,
+        stage_all: bool = True,
+        registry: "DependencyTreeRegistry | None" = None,
+    ) -> None:
+        from .operations import commit_tree
+
+        commit_tree(self._resolve_registry(registry), git_runner, message, stage_all=stage_all)
+
+    def push(
+        self,
+        git_runner: "GitRunner",
+        *,
+        registry: "DependencyTreeRegistry | None" = None,
+    ) -> None:
+        from .operations import push_tree
+
+        push_tree(self._resolve_registry(registry), git_runner)
+
+    def tag(
+        self,
+        git_runner: "GitRunner",
+        tag_name: str,
+        *,
+        registry: "DependencyTreeRegistry | None" = None,
+    ) -> None:
+        from .operations import tag_tree
+
+        tag_tree(self._resolve_registry(registry), git_runner, tag_name)
+
+    def freeze(
+        self,
+        git_runner: "GitRunner",
+        tag_name: str,
+        *,
+        message: str | None = None,
+        stage_all: bool = True,
+        registry: "DependencyTreeRegistry | None" = None,
+    ) -> None:
+        from .operations import freeze_release_tree
+
+        freeze_release_tree(
+            self._resolve_registry(registry),
+            git_runner,
+            tag_name,
+            message=message,
+            stage_all=stage_all,
+        )
+
+    def clone(
+        self,
+        git_runner: "GitRunner",
+        remote_url: str,
+        destination: Path | str,
+        *,
+        branch: str,
+    ) -> None:
+        git_runner.clone(remote_url, destination, branch=branch)
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +214,7 @@ class GitTree:
     """
 
     repos: dict[str, GitRepo] = field(default_factory=dict)
+    git: GitTreeGitCommands = field(default_factory=GitTreeGitCommands)
 
     def add_repo(self, repo: GitRepo) -> None:
         self.repos[repo.project_name] = repo

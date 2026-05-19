@@ -129,6 +129,87 @@ def test_client_clone_alias_calls_clone_cgs(monkeypatch):
     assert captured["target_dir"] == "workspace/demo"
 
 
+def test_client_branch_delegates_to_gittree_git_branch(monkeypatch):
+    client = ComplexGitSyncClient()
+    client.registry = DependencyTreeRegistry()
+    captured: dict[str, object] = {}
+
+    def _spy_branch(self, git_runner, branch_name, *, registry=None):
+        captured["git_runner"] = git_runner
+        captured["branch_name"] = branch_name
+        captured["registry"] = registry
+
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "branch", _spy_branch)
+
+    result = client.branch("feature/test")
+
+    assert result is client.registry
+    assert captured["git_runner"] is client.git_runner
+    assert captured["branch_name"] == "feature/test"
+    assert captured["registry"] is None
+
+
+def test_client_git_dispatches_extended_commands(monkeypatch):
+    client = ComplexGitSyncClient()
+    calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+
+    monkeypatch.setattr(client, "clone", lambda *a, **k: calls.append(("clone", a, k)) or "clone")
+    monkeypatch.setattr(client, "pull", lambda *a, **k: calls.append(("pull", a, k)) or "pull")
+    monkeypatch.setattr(client, "branch", lambda *a, **k: calls.append(("branch", a, k)) or "branch")
+    monkeypatch.setattr(client, "add", lambda *a, **k: calls.append(("add", a, k)) or "add")
+    monkeypatch.setattr(client, "freeze", lambda *a, **k: calls.append(("freeze", a, k)) or "freeze")
+
+    assert client.git(None, "clone", "project.cgs", "workspace/demo") == "clone"
+    assert client.git(None, "pull", "state.gts") == "pull"
+    assert client.git(None, "branch", "feature/x") == "branch"
+    assert client.git(None, "add") == "add"
+    assert client.git(None, "freeze", "v1.2.3") == "freeze"
+    assert calls == [
+        ("clone", ("project.cgs",), {"target_dir": "workspace/demo"}),
+        ("pull", ("state.gts",), {}),
+        ("branch", ("feature/x",), {}),
+        ("add", (), {}),
+        ("freeze", ("v1.2.3",), {}),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("command", "expected_message"),
+    [
+        ("clone", "clone requires source path argument."),
+        ("pull", "pull requires source path argument."),
+        ("checkout", "checkout requires branch name argument."),
+        ("branch", "branch requires branch name argument."),
+        ("commit", "commit requires message argument."),
+        ("tag", "tag requires tag name argument."),
+        ("freeze", "freeze requires tag name argument."),
+    ],
+)
+def test_client_git_requires_expected_arguments(command, expected_message):
+    client = ComplexGitSyncClient()
+
+    with pytest.raises(ValueError, match=expected_message):
+        client.git(None, command)
+
+
+def test_client_git_binds_provided_registry(monkeypatch):
+    client = ComplexGitSyncClient()
+    registry = DependencyTreeRegistry()
+    captured: dict[str, object] = {}
+
+    def _spy_add(self, git_runner, *, registry=None):
+        captured["bound_registry"] = self.registry
+        captured["registry_arg"] = registry
+
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "add", _spy_add)
+
+    client.git(registry, "add")
+    assert client.registry is registry
+    assert client.orchestre.git_tree.git.registry is registry
+    assert captured["bound_registry"] is registry
+    assert captured["registry_arg"] is None
+
+
 def test_client_freeze_alias_calls_freeze_release(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
