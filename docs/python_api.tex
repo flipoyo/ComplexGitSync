@@ -69,7 +69,14 @@ practice, the workflow is:
   \item \texttt{load(...)} is the canonical step-1 name; \texttt{read(...)} is
     a backward-compatible alias.
   \item \texttt{expand(...)} is the canonical step-2 name; it runs nested
-    \texttt{.cgs} discovery from parents to leaves (recursive).
+    \texttt{.cgs} discovery from parents to leaves (recursive) and
+    automatically resolves any circular cross-references via
+    \texttt{fix\_circularities}.
+  \item \texttt{fix\_circularities()} is a step-2.5 utility: it deduplicates
+    registry entries whose absolute paths collide (keeping the entry closest
+    to the project root) and returns a tuple of change descriptors.  Called
+    automatically by \texttt{expand} and \texttt{clone}; also available for
+    custom pipelines.
   \item \texttt{validate(...)} is the canonical step-3 name; it accepts both
     \texttt{.cgs} and \texttt{.gts} sources; \texttt{verify(...)} is a
     backward-compatible alias.
