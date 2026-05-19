@@ -86,7 +86,10 @@ def restart_tree(
     """Resynchronize the full tree using the root repository's current branch.
 
     Reads the current branch from the root repository, propagates it across
-    all entries, then checks out that branch in every repo parent-first.
+    all entries, then synchronizes parent-first:
+
+    * root repository: ``git pull --ff-only``
+    * child repositories: submodule sync/update from their parent repository
 
     Does not require a ``READY`` registry; intended for use after loading a
     ``.cgs`` file (``DECLARED`` state).  Produces a ``READY`` registry or
@@ -104,8 +107,31 @@ def restart_tree(
     propagate_global_branch(registry, current_branch)
 
     for entry in iter_tree(registry):
-        git_runner.checkout(entry.absolute_path, current_branch)
-        _refresh_entry_after_checkout(entry, current_branch, RefKind.BRANCH, git_runner)
+        if entry.parent_id is None:
+            git_runner.pull(entry.absolute_path, ref_name=current_branch)
+        else:
+            parent = registry.get(entry.parent_id)
+            try:
+                relative_path = entry.absolute_path.relative_to(parent.absolute_path)
+            except ValueError as exc:
+                raise GitSyncError(
+                    f"pull preflight failed: {entry.name} is outside parent path {parent.absolute_path}."
+                ) from exc
+            if relative_path == Path("."):
+                continue
+            if not git_runner.is_submodule(parent.absolute_path, relative_path):
+                raise GitSyncError(
+                    "pull preflight failed: child repositories must be linked as submodules "
+                    f"({parent.name}->{entry.name}:{relative_path.as_posix()})."
+                )
+            git_runner.update_submodule(parent.absolute_path, relative_path)
+
+        resolved_branch = (
+            current_branch
+            if entry.parent_id is not None
+            else (git_runner.current_branch(entry.absolute_path) or current_branch)
+        )
+        _refresh_entry_after_checkout(entry, resolved_branch, RefKind.BRANCH, git_runner)
 
     registry.recompute_tree_state()
 

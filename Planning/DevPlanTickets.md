@@ -141,8 +141,9 @@ Simplified the user-facing CLI and Python API lifecycle surface:
 ## Remaining Tickets
 
 ### T10 (remainder) — `restart` CLI wiring ✅
-`restart_tree` implemented in Tier 2 (operations.py) with parent-first checkout
-using the root repository's current branch.  `ComplexGitSyncClient.restart`
+`restart_tree` implemented in Tier 2 (operations.py) with parent-first submodule-aware
+sync (root `pull --ff-only`, then parent-side submodule updates) using the root
+repository's current branch.  `ComplexGitSyncClient.restart`
 implemented with `.cgs` load, nested discovery, READY enforcement, and `.gts`
 snapshot write.  `cgitsync restart <source.cgs>` CLI command wired.  A separate
 terminology follow-up now tracks the user-facing rename to `pull`.

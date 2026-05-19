@@ -761,6 +761,19 @@ class GitRunner:
         else:
             self._run("push", remote, cwd=repo_path)
 
+    def pull(
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+    ) -> None:
+        """Pull *remote* (and optionally *ref_name*) in *repo_path* (``git pull --ff-only``)."""
+        args = ["pull", "--ff-only", remote]
+        if ref_name:
+            args.append(ref_name)
+        self._run(*args, cwd=repo_path)
+
     def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
         """Create *tag_name* in *repo_path*."""
         self._run("tag", tag_name, cwd=repo_path)
@@ -781,6 +794,20 @@ class GitRunner:
             branch,
             remote_url,
             str(relative_path),
+            cwd=repo_path,
+        )
+
+    def update_submodule(self, repo_path: Path | str, relative_path: Path | str) -> None:
+        """Sync and update a tracked submodule path from its parent repository."""
+        submodule_path = str(relative_path)
+        self._run("submodule", "sync", "--", submodule_path, cwd=repo_path)
+        self._run(
+            "submodule",
+            "update",
+            "--init",
+            "--remote",
+            "--",
+            submodule_path,
             cwd=repo_path,
         )
 
@@ -1696,8 +1723,9 @@ class ComplexGitSyncClient:
         """Dispatch a git command across the full tree (lifecycle step 5).
 
         This is the unified git interface.  It dispatches *command* to the
-        appropriate tree-wide operation and returns the updated registry.  All
-        operations follow leaf-first ordering (leaves → root).
+        appropriate tree-wide operation and returns the updated registry.
+        Ordering is command-specific (for example, ``pull``/``branch``/``checkout``
+        run parent-first while ``push`` runs leaf-first).
 
         Parameters
         ----------

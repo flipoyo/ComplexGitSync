@@ -178,8 +178,11 @@ class _FakeGitRunnerForOperations:
         self.staged: list[Path] = []
         self.committed: list[tuple[Path, str]] = []
         self.pushed: list[tuple[Path, str, str | None]] = []
+        self.pulled: list[tuple[Path, str, str | None]] = []
         self.tagged: list[tuple[Path, str]] = []
         self.cloned: list[tuple[str, Path, str]] = []
+        self.updated_submodules: list[tuple[Path, Path]] = []
+        self.command_order: list[tuple[str, Path]] = []
         self._staged_changes: dict[Path, bool] = {}
         self._unstaged_changes: dict[Path, bool] = {}
         self._shas: dict[Path, str] = {}
@@ -239,6 +242,23 @@ class _FakeGitRunnerForOperations:
         ref_name: str | None = None,
     ) -> None:
         self.pushed.append((Path(repo_path), remote, ref_name))
+
+    def pull(
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+    ) -> None:
+        path = Path(repo_path)
+        self.pulled.append((path, remote, ref_name))
+        self.command_order.append(("pull", path))
+
+    def update_submodule(self, repo_path: Path | str, relative_path: Path | str) -> None:
+        parent_path = Path(repo_path)
+        rel_path = Path(relative_path)
+        self.updated_submodules.append((parent_path, rel_path))
+        self.command_order.append(("submodule_update", parent_path / rel_path))
 
     def set_staged(self, repo_path: Path | str, value: bool) -> None:
         """Helper: manually set whether a repo has staged changes."""
@@ -320,22 +340,24 @@ def test_add_tree_stages_all_repos_leaf_first(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_restart_tree_checks_out_root_branch_across_all_repos(tmp_path):
+def test_restart_tree_pulls_root_and_updates_children_as_submodules(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
     root_path = tmp_path / "project"
     runner._current_branches[root_path] = "feature-restart"
 
     restart_tree(registry, runner)
 
-    checked_out_branches = {path: branch for path, branch in runner.checked_out}
-    assert all(b == "feature-restart" for b in checked_out_branches.values())
+    assert runner.pulled == [(root_path, "origin", "feature-restart")]
+    assert runner.updated_submodules == [(root_path, Path("deps/leaf"))]
     assert registry.is_ready()
 
 
 def test_restart_tree_propagates_branch_to_all_entries(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
     root_path = tmp_path / "project"
     runner._current_branches[root_path] = "sync-branch"
 
@@ -346,24 +368,26 @@ def test_restart_tree_propagates_branch_to_all_entries(tmp_path):
         assert entry.current_ref_name == "sync-branch"
 
 
-def test_restart_tree_checkouts_parent_first(tmp_path):
+def test_restart_tree_runs_pull_and_submodule_updates_parent_first(tmp_path):
     registry = _make_deep_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
     root_path = tmp_path / "deep"
     runner._current_branches[root_path] = "main"
 
     restart_tree(registry, runner)
 
-    checked_paths = [p for p, _ in runner.checked_out]
-    root_idx = checked_paths.index(tmp_path / "deep")
-    middle_idx = checked_paths.index(tmp_path / "deep" / "middle")
-    sub_idx = checked_paths.index(tmp_path / "deep" / "middle" / "sub")
+    executed_paths = [path for _, path in runner.command_order]
+    root_idx = executed_paths.index(tmp_path / "deep")
+    middle_idx = executed_paths.index(tmp_path / "deep" / "middle")
+    sub_idx = executed_paths.index(tmp_path / "deep" / "middle" / "sub")
     assert root_idx < middle_idx < sub_idx
 
 
 def test_restart_tree_falls_back_to_resolved_ref_when_no_current_branch(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
     root_path = tmp_path / "project"
     runner._current_branches[root_path] = None
     # Set a resolved ref name on the root entry as fallback
@@ -371,8 +395,15 @@ def test_restart_tree_falls_back_to_resolved_ref_when_no_current_branch(tmp_path
 
     restart_tree(registry, runner)
 
-    checked_branches = {branch for _, branch in runner.checked_out}
-    assert "fallback-branch" in checked_branches
+    assert runner.pulled == [(root_path, "origin", "fallback-branch")]
+
+
+def test_restart_tree_fails_when_child_is_not_tracked_as_submodule(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    with pytest.raises(GitSyncError, match="linked as submodules"):
+        restart_tree(registry, runner)
 
 
 # ---------------------------------------------------------------------------

@@ -58,6 +58,8 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
   parent→child submodule-link validation.
 - `GitRunner.create_tag()` always uses non-forcing tag creation; `-f` is not supported.
 - `restart_tree` accepts any state and produces `READY` using the root repo's current branch.
+- `restart_tree` now syncs parent→leaf in submodule-aware mode (`pull --ff-only` at root, then
+  parent-side submodule sync/update for child repos).
 - `checkout_tree` and `restart_tree` follow parent-first ordering; `commit_tree` and `push_tree`
   follow leaf-first ordering.
 - `tag_tree`, `freeze_release_tree`, `commit_tree`, and `push_tree` follow leaf-first ordering.

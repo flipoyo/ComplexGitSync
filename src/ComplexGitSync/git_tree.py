@@ -448,7 +448,9 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
     The *canonical* entry for a given absolute path is the one that sits highest
     in the dependency tree (fewest ``:``-separated segments in ``repo_id``).  All
     lower-priority duplicate entries sharing the same resolved absolute path are
-    removed from the registry.
+    removed from the registry only when their synchronization state is compatible
+    with the canonical entry (same lifecycle/sync state and no conflicting commit
+    SHA information).
 
     Returns a tuple of strings, one per removed entry, each in the form::
 
@@ -478,6 +480,8 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
         entries.sort(key=lambda e: e.repo_id.count(":"))
         canonical = entries[0]
         for duplicate in entries[1:]:
+            if not _is_compatible_duplicate(canonical, duplicate):
+                continue
             ids_to_remove.add(duplicate.repo_id)
             changes.append(f"fixed_circularity:{duplicate.repo_id}→{canonical.repo_id}")
 
@@ -487,6 +491,18 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
         registry.recompute_tree_state()
 
     return tuple(changes)
+
+
+def _is_compatible_duplicate(canonical: RepoRegistryEntry, duplicate: RepoRegistryEntry) -> bool:
+    if canonical.repo_lifecycle_state != duplicate.repo_lifecycle_state:
+        return False
+    if canonical.sync_state != duplicate.sync_state:
+        return False
+    if canonical.commit_sha and duplicate.commit_sha and canonical.commit_sha != duplicate.commit_sha:
+        return False
+    if canonical.worktree_state and duplicate.worktree_state and canonical.worktree_state != duplicate.worktree_state:
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
