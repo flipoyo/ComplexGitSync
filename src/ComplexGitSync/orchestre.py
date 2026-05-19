@@ -76,6 +76,7 @@ from .git_tree import (
     _parse_optional_enum,
     _validate_repo_shape,
     build_tree_state,
+    fix_circularities as _fix_circularities,
     format_project_tree,
     format_repo_tree_outline,
     iter_tree,
@@ -1041,6 +1042,10 @@ def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]
             if child_id in registry.entries:
                 continue
 
+            child_absolute_path = (entry.absolute_path / relative_path).resolve()
+            if any(e.absolute_path == child_absolute_path for e in registry.values()):
+                continue
+
             registry.add(
                 RepoRegistryEntry(
                     repo_id=child_id,
@@ -1263,8 +1268,9 @@ class ComplexGitSyncClient:
         """Expand the dependency tree (lifecycle step 2: LOADED → PENDING).
 
         Loads the source (``.cgs`` or ``.gts``), runs nested ``.cgs``
-        discovery from parents to leaves (recursive), and returns a formatted
-        text rendering of the dependency tree.
+        discovery from parents to leaves (recursive), resolves any circularities
+        that arise when leaves reference repos already registered as parents, and
+        returns a formatted text rendering of the dependency tree.
 
         Parameters
         ----------
@@ -1280,9 +1286,36 @@ class ComplexGitSyncClient:
             self.load_gts(resolved)
         else:
             self.load_cgs(resolved, discover_nested=discover_nested)
+            fixed = self.fix_circularities()
+            if fixed:
+                self._log_circularity_fixes(fixed)
             snapshot_path = self.write_gts_snapshot(command_origin="expand")
             self.state_store.record_snapshot(resolved, snapshot_path)
         return self.format_project_tree()
+
+    def fix_circularities(self) -> tuple[str, ...]:
+        """Resolve circularities in the loaded dependency tree (step 2.5).
+
+        Detects and removes duplicate registry entries that arise when a leaf
+        declared inside one parent's nested ``.cgs`` refers to the same physical
+        repository as another parent already registered in the tree.  The
+        canonical entry (the one sitting highest in the tree hierarchy, i.e. with
+        the fewest ``:``-separated segments in its ``repo_id``) is kept; all
+        lower-priority duplicates are removed.
+
+        This method is called automatically inside :meth:`expand` (for ``.cgs``
+        sources) and at the end of :meth:`clone_cgs`.  It can also be invoked
+        manually between :meth:`expand` and :meth:`validate` when building a
+        custom lifecycle pipeline.
+
+        Returns
+        -------
+        tuple[str, ...]
+            One entry per removed duplicate, each in the form
+            ``"fixed_circularity:<removed_id>→<canonical_id>"``.
+        """
+        registry = self.get_dependency_registry()
+        return _fix_circularities(registry)
 
     def validate(
         self,
@@ -1419,6 +1452,9 @@ class ComplexGitSyncClient:
             if not cloned_any and not discovered:
                 break
 
+        fixed = self.fix_circularities()
+        if fixed:
+            self._log_circularity_fixes(fixed)
         self._assert_nested_discovery_complete()
         self.registry.recompute_tree_state()
         if not self.registry.is_ready():
@@ -2111,4 +2147,15 @@ class ComplexGitSyncClient:
                 absolute_path=entry.absolute_path,
                 source_cgs_path=entry.source_cgs_path,
                 discovery_state=entry.discovery_state,
+            )
+
+    def _log_circularity_fixes(self, fixed: tuple[str, ...]) -> None:
+        for change in fixed:
+            # format: "fixed_circularity:<removed_id>→<canonical_id>"
+            _, _, rest = change.partition("fixed_circularity:")
+            removed_id, _, canonical_id = rest.partition("→")
+            self._log_event(
+                "circularity_fixed",
+                removed_repo_id=removed_id,
+                canonical_repo_id=canonical_id,
             )

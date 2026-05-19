@@ -828,3 +828,271 @@ nested_config = "disabled"
             if destination == resolved:
                 return branch
         return None
+
+
+# ---------------------------------------------------------------------------
+# fix_circularities tests
+# ---------------------------------------------------------------------------
+
+
+def _make_entry(repo_id: str, abs_path: Path, *, parent_id: str | None = None):
+    """Create a minimal RepoRegistryEntry for circularity testing."""
+    from ComplexGitSync.git_repo import (
+        NodeType,
+        RepoLifecycleState,
+        RepoRegistryEntry,
+        SyncState,
+        DiscoveryState,
+    )
+
+    depth = repo_id.count(":")
+    node_type = NodeType.ROOT if repo_id == "root" else (NodeType.PARENT if depth == 1 else NodeType.LEAF)
+    return RepoRegistryEntry(
+        repo_id=repo_id,
+        name=repo_id.split(":")[-1],
+        node_type=node_type,
+        parent_id=parent_id,
+        absolute_path=abs_path,
+        relative_path=Path(".") if repo_id == "root" else Path(abs_path.name),
+    )
+
+
+def test_fix_circularities_removes_duplicate_leaf_when_parent_exists(tmp_path):
+    """A leaf entry whose absolute_path matches an existing parent is removed."""
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+
+    parent2_path = tmp_path / "parent2"
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
+    registry.add(_make_entry("root:parent2", parent2_path, parent_id="root"))
+    # Duplicate: parent2 also appears as a leaf of parent1
+    registry.add(_make_entry("root:parent1:parent2", parent2_path, parent_id="root:parent1"))
+
+    fixed = fix_circularities(registry)
+
+    assert len(fixed) == 1
+    assert "fixed_circularity:root:parent1:parent2→root:parent2" in fixed
+    assert "root:parent1:parent2" not in registry.entries
+    assert "root:parent2" in registry.entries
+
+
+def test_fix_circularities_no_changes_when_no_duplicates(tmp_path):
+    """Returns empty tuple when there are no duplicate absolute paths."""
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
+    registry.add(_make_entry("root:parent2", tmp_path / "parent2", parent_id="root"))
+
+    fixed = fix_circularities(registry)
+
+    assert fixed == ()
+    assert len(registry.entries) == 3
+
+
+def test_fix_circularities_handles_cascading_duplicates(tmp_path):
+    """Both a leaf and its child duplicate are removed when all share the same paths."""
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+
+    parent2_path = tmp_path / "parent2"
+    leaf_path = parent2_path / "leaf"
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
+    registry.add(_make_entry("root:parent2", parent2_path, parent_id="root"))
+    registry.add(_make_entry("root:parent2:leaf", leaf_path, parent_id="root:parent2"))
+    # Duplicates from parent1's nested discovery
+    registry.add(_make_entry("root:parent1:parent2", parent2_path, parent_id="root:parent1"))
+    registry.add(_make_entry("root:parent1:parent2:leaf", leaf_path, parent_id="root:parent1:parent2"))
+
+    fixed = fix_circularities(registry)
+
+    assert len(fixed) == 2
+    assert "root:parent1:parent2" not in registry.entries
+    assert "root:parent1:parent2:leaf" not in registry.entries
+    assert "root:parent2" in registry.entries
+    assert "root:parent2:leaf" in registry.entries
+
+
+def test_fix_circularities_multiple_parents_sharing_leaf(tmp_path):
+    """Multiple parents referencing the same leaf: only one canonical entry survives."""
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+
+    shared_path = tmp_path / "shared"
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    registry.add(_make_entry("root:shared", shared_path, parent_id="root"))
+    registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
+    registry.add(_make_entry("root:parent2", tmp_path / "parent2", parent_id="root"))
+    registry.add(_make_entry("root:parent1:shared", shared_path, parent_id="root:parent1"))
+    registry.add(_make_entry("root:parent2:shared", shared_path, parent_id="root:parent2"))
+
+    fixed = fix_circularities(registry)
+
+    assert len(fixed) == 2
+    assert "root:shared" in registry.entries
+    assert "root:parent1:shared" not in registry.entries
+    assert "root:parent2:shared" not in registry.entries
+
+
+def test_client_fix_circularities_is_callable_on_loaded_registry(tmp_path):
+    """ComplexGitSyncClient.fix_circularities() works on a loaded registry."""
+    config_path = _write_root_cgs(tmp_path)
+    client = ComplexGitSyncClient()
+    client.load_cgs(config_path)
+
+    # No circularities in a simple 2-entry registry
+    fixed = client.fix_circularities()
+
+    assert fixed == ()
+
+
+def test_discover_nested_configs_skips_child_with_existing_absolute_path(tmp_path):
+    """discover_nested_configs does not add a child whose absolute_path already exists."""
+    from ComplexGitSync.orchestre import ComplexGitSyncClient
+
+    # Set up root .cgs with parent1 and parent2 as siblings
+    root_cgs = tmp_path / "project.cgs"
+    root_cgs.write_text(
+        """
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "demo"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "parent1"
+relative_path = "parent1"
+nested_config = "auto"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "parent2"
+relative_path = "parent2"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Create parent1 directory with a nested .cgs that references parent2
+    parent1_dir = tmp_path / "parent1"
+    parent1_dir.mkdir()
+    (parent1_dir / "parent1.cgs").write_text(
+        """
+[document]
+format_version = "1.0"
+
+[project]
+name = "parent1"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "parent1"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "parent2"
+relative_path = "../parent2"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    client = ComplexGitSyncClient()
+    client.load_cgs(root_cgs, discover_nested=True)
+    registry = client.registry
+
+    # parent2 should appear exactly once in the registry
+    parent2_entries = [e for e in registry.values() if e.name == "parent2"]
+    assert len(parent2_entries) == 1
+    assert parent2_entries[0].repo_id == "root:parent2"
+
+
+def test_expand_calls_fix_circularities_for_cgs_source(tmp_path):
+    """expand() removes circularities when a .cgs source has cross-referencing parents."""
+    from ComplexGitSync.orchestre import ComplexGitSyncClient
+
+    root_cgs = tmp_path / "project.cgs"
+    root_cgs.write_text(
+        """
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "demo"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "parent1"
+relative_path = "parent1"
+nested_config = "auto"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "parent2"
+relative_path = "parent2"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    parent1_dir = tmp_path / "parent1"
+    parent1_dir.mkdir()
+    (parent1_dir / "parent1.cgs").write_text(
+        """
+[document]
+format_version = "1.0"
+
+[project]
+name = "parent1"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "parent1"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "parent2"
+relative_path = "../parent2"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    client = ComplexGitSyncClient()
+    client.expand(root_cgs)
+    registry = client.registry
+
+    parent2_entries = [e for e in registry.values() if e.name == "parent2"]
+    assert len(parent2_entries) == 1
+    assert parent2_entries[0].repo_id == "root:parent2"

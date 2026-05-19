@@ -23,6 +23,7 @@ from .git_tree import (
     GitTree,
     ProjectTreeState,
     TreeLifecycleState,
+    fix_circularities,
     iter_tree,
     iter_tree_leaf_first,
 )
@@ -69,6 +70,7 @@ __all__ = [
     "GitTree",
     "ProjectTreeState",
     "TreeLifecycleState",
+    "fix_circularities",
     "iter_tree",
     "iter_tree_leaf_first",
     # operations.py
