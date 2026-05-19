@@ -19,6 +19,7 @@ from ComplexGitSync.git_repo import (
 from ComplexGitSync.git_tree import DependencyTreeRegistry, GitTree, TreeLifecycleState
 from ComplexGitSync.operations import (
     add_tree,
+    branch_tree,
     checkout_tree,
     commit_tree,
     create_global_branch,
@@ -405,6 +406,37 @@ def test_create_global_branch_creates_in_all_repos_when_none_exist(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# branch_tree
+# ---------------------------------------------------------------------------
+
+
+def test_branch_tree_raises_when_not_ready(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    for entry in registry.values():
+        entry.commit_sha = None
+    registry.recompute_tree_state()
+
+    runner = _FakeGitRunnerForOperations()
+    with pytest.raises(TreeNotReadyError):
+        branch_tree(registry, runner, "feature-x")
+
+
+def test_branch_tree_creates_branch_without_checkout(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    branch_tree(registry, runner, "feature-x")
+
+    created_paths = {path for path, _ in runner.created}
+    for entry in registry.values():
+        assert entry.absolute_path in created_paths
+        assert entry.target_ref_name == "feature-x"
+        assert entry.target_ref_kind == RefKind.BRANCH
+    assert runner.checked_out == []
+    assert registry.recompute_tree_state() == TreeLifecycleState.READY
+
+
+# ---------------------------------------------------------------------------
 # checkout_tree
 # ---------------------------------------------------------------------------
 
@@ -495,6 +527,21 @@ def test_gittree_git_checkout_allows_direct_tree_manipulation(tmp_path):
     for entry in registry.values():
         assert entry.current_ref_name == "feature-direct"
     assert registry.recompute_tree_state() == TreeLifecycleState.READY
+
+
+def test_gittree_git_branch_creates_branch_without_checkout(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    git_tree = GitTree()
+    git_tree.git.bind_registry(registry)
+
+    git_tree.git.branch(runner, "feature-branch")
+
+    assert runner.checked_out == []
+    assert len(runner.created) == len(registry.values())
+    for entry in registry.values():
+        assert entry.target_ref_name == "feature-branch"
+        assert entry.target_ref_kind == RefKind.BRANCH
 
 
 # ---------------------------------------------------------------------------
@@ -784,6 +831,25 @@ def test_client_checkout_delegates_to_gittree_git_checkout(tmp_path, monkeypatch
     assert captured_call["git_runner"] is runner
     assert captured_call["branch_name"] == "feature-x"
     assert captured_call["ref_kind"] == RefKind.BRANCH
+
+
+def test_client_branch_delegates_to_gittree_git_branch(tmp_path, monkeypatch):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    captured_call: dict[str, object] = {}
+
+    def _spy_branch(self, git_runner, branch_name, *, registry=None):
+        captured_call["registry"] = registry
+        captured_call["git_runner"] = git_runner
+        captured_call["branch_name"] = branch_name
+
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "branch", _spy_branch)
+
+    result = client.branch("feature-x")
+
+    assert result is client.registry
+    assert captured_call["registry"] is None
+    assert captured_call["git_runner"] is runner
+    assert captured_call["branch_name"] == "feature-x"
 
 
 def test_client_commit_delegates_to_gittree_git_commit(tmp_path, monkeypatch):

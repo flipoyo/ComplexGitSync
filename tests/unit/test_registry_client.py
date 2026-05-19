@@ -129,22 +129,24 @@ def test_client_clone_alias_calls_clone_cgs(monkeypatch):
     assert captured["target_dir"] == "workspace/demo"
 
 
-def test_client_branch_alias_calls_checkout(monkeypatch):
+def test_client_branch_delegates_to_gittree_git_branch(monkeypatch):
     client = ComplexGitSyncClient()
+    client.registry = DependencyTreeRegistry()
     captured: dict[str, object] = {}
 
-    def _fake_checkout(branch_name, *, ref_kind=RefKind.BRANCH):
+    def _spy_branch(self, git_runner, branch_name, *, registry=None):
+        captured["git_runner"] = git_runner
         captured["branch_name"] = branch_name
-        captured["ref_kind"] = ref_kind
-        return "ok"
+        captured["registry"] = registry
 
-    monkeypatch.setattr(client, "checkout", _fake_checkout)
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "branch", _spy_branch)
 
     result = client.branch("feature/test")
 
-    assert result == "ok"
+    assert result is client.registry
+    assert captured["git_runner"] is client.git_runner
     assert captured["branch_name"] == "feature/test"
-    assert captured["ref_kind"] == RefKind.BRANCH
+    assert captured["registry"] is None
 
 
 def test_client_git_dispatches_extended_commands(monkeypatch):

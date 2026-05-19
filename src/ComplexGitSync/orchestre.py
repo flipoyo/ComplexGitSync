@@ -1509,8 +1509,17 @@ class ComplexGitSyncClient:
         *,
         ref_kind: RefKind = RefKind.BRANCH,
     ) -> DependencyTreeRegistry:
-        """Compatibility alias for :meth:`checkout`."""
-        return self.checkout(branch_name, ref_kind=ref_kind)
+        """Create *branch_name* across the full tree without checkout."""
+        if ref_kind is not RefKind.BRANCH:
+            raise ValueError("branch only supports ref_kind=RefKind.BRANCH.")
+
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        self._log_event("branch_start", branch_name=branch_name)
+        self.orchestre.git_tree.git.branch(self.git_runner, branch_name)
+        self._log_tree_transition(previous_state, registry.lifecycle_state, reason="branch")
+        self._log_event("branch_end", branch_name=branch_name)
+        return registry
 
     def commit(
         self,
@@ -1609,7 +1618,8 @@ class ComplexGitSyncClient:
             - ``"clone"``: one argument — path to ``.cgs``; optional second
               argument sets ``target_dir``.
             - ``"pull"``: one argument — path to ``.cgs`` or ``.gts`` source.
-            - ``"checkout"`` / ``"branch"``: one argument — branch/tag name.
+            - ``"checkout"``: one argument — branch/tag name to switch to.
+            - ``"branch"``: one argument — branch name to create (no checkout).
             - ``"add"``: no arguments.  Stages all changes tree-wide.
             - ``"commit"``: one argument — the commit message.  The message
               conventionally ends with ``CGS#VERSION``.

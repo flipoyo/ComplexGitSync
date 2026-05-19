@@ -92,10 +92,11 @@ class GitTreeGitCommands:
         git_runner: "GitRunner",
         branch_name: str,
         *,
-        ref_kind: RefKind = RefKind.BRANCH,
         registry: "DependencyTreeRegistry | None" = None,
     ) -> None:
-        self.checkout(git_runner, branch_name, ref_kind=ref_kind, registry=registry)
+        from .operations import branch_tree
+
+        branch_tree(self._resolve_registry(registry), git_runner, branch_name)
 
     def pull(
         self,
