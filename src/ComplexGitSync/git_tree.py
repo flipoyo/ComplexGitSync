@@ -472,9 +472,6 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
     for _abs_path, entries in path_to_entries.items():
         if len(entries) <= 1:
             continue
-        state_hashes = {_resolve_entry_hash(entry) for entry in entries}
-        if len(state_hashes) > 1:
-            raise ConfigValidationError("incompatibilities between branch (hash) and tag(val) in .cgs")
         # Determine the canonical entry: the one closest to the root.
         # repo_id uses ":" as a path separator, so fewer colons mean a higher
         # position in the tree (root="root" has 0, a direct child of root has 1,

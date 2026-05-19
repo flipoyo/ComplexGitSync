@@ -2152,7 +2152,7 @@ class ComplexGitSyncClient:
                 self.git_runner,
                 remote_url,
                 entry.absolute_path,
-                branch=selected_branch,
+                branch=selected_ref,
             )
         else:
             parent = registry.get(entry.parent_id)
@@ -2167,15 +2167,15 @@ class ComplexGitSyncClient:
                 parent.absolute_path,
                 remote_url,
                 relative_path,
-                branch=selected_branch,
+                branch=selected_ref,
             )
             if not self.git_runner.is_submodule(parent.absolute_path, relative_path):
                 raise GitSyncError(
                     f"Submodule constraint violated: {parent.name}/{relative_path.as_posix()} "
                     f"is not tracked as a git submodule."
                 )
-        current_branch = self.git_runner.current_branch(entry.absolute_path) or selected_branch
-        fallback_applied = current_branch != (entry.target_ref_name or selected_branch)
+        current_ref = self.git_runner.current_branch(entry.absolute_path) or selected_ref
+        fallback_applied = current_ref != (entry.target_ref_name or selected_ref)
 
         entry.current_ref_kind = selected_ref_kind
         entry.current_ref_name = current_ref if selected_ref_kind == RefKind.BRANCH else selected_ref
