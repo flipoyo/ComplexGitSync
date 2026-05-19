@@ -486,6 +486,10 @@ def test_clone_cgs_replaces_nested_destination_populated_by_parent_clone(tmp_pat
     assert registry.get("root:docs").absolute_path == docs_path
     assert docs_path.is_dir()
     assert not (docs_path / "README.md").exists()
+    assert [remote for remote, _, _ in fake_runner.clones] == [
+        "git@github.com:owner/ComplexGitSync.git",
+        "git@github.com:owner/docs.git",
+    ]
     assert [branch for _, _, branch in fake_runner.clones] == ["main", "main"]
 
 

@@ -1963,11 +1963,7 @@ class ComplexGitSyncClient:
         previous_sync_state = entry.sync_state
         remote_url = self._build_remote_url(entry)
         selected_branch = self._select_clone_branch(entry, remote_url)
-        if (
-            entry.parent_id is not None
-            and entry.absolute_path.is_dir()
-            and any(entry.absolute_path.iterdir())
-        ):
+        if self._is_populated_nested_destination(entry):
             shutil.rmtree(entry.absolute_path)
 
         self.orchestre.git_tree.git.clone(
@@ -2008,6 +2004,13 @@ class ComplexGitSyncClient:
                 fallback_reason=entry.fallback_reason,
             )
         self._log_repo_transition(entry, previous_state, previous_sync_state)
+
+    def _is_populated_nested_destination(self, entry: RepoRegistryEntry) -> bool:
+        return (
+            entry.parent_id is not None
+            and entry.absolute_path.is_dir()
+            and any(entry.absolute_path.iterdir())
+        )
 
     def _select_clone_branch(self, entry: RepoRegistryEntry, remote_url: str) -> str:
         target_branch = entry.target_ref_name or entry.default_branch
