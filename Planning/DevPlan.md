@@ -38,13 +38,28 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 
 ## Remaining Work
 
+### Legacy T-track (point-0 continuity)
+
 | Ticket | Goal | Status |
 |--------|------|--------|
-| T10 (CLI) | Wire `restart` CLI command | ✅ Done |
-| T16 | CLI Bootstrap for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` | ✅ Done |
 | T18 | Integration Test Suite | ❌ Not started |
 | T22 | Parser-driven automation of public client methods via `.goc` files | ❌ Pending |
 | T24 | Local Git Register (`.lgr`) management for `.gts` ids | ❌ Pending |
+
+### CGS roadmap extension (current core program)
+
+| Ticket | Goal | Status |
+|--------|------|--------|
+| CGS-001 | Safe Tag Propagation Semantics | ❌ Pending |
+| CGS-002 | End-to-End Local Integration Test Infrastructure | ❌ Pending |
+| CGS-003 | Transactional Tag Propagation | ❌ Pending |
+| CGS-004 | Formal `.gts` Snapshot Specification | ❌ Pending |
+| CGS-005 | `.lgr` Local Sync Ledger | ❌ Pending |
+| CGS-006 | Workspace Preflight Validation Engine | ❌ Pending |
+| CGS-007 | Deterministic Freeze Semantics | ❌ Pending |
+| CGS-008 | Branch Topology Propagation Rules | ❌ Pending |
+| CGS-009 | CLI Dry-Run Mode | ❌ Pending |
+| CGS-010 | Architectural Positioning Documentation | ❌ Pending |
 
 ## Architecture Notes
 
@@ -75,12 +90,14 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - `git(tree, command, *args)` is the canonical unified git interface; `commit`, `push`, and `tag` remain available as direct methods.
 - Compatibility aliases: `read` → `load`, `verify` → `validate`, `clone` → `initialise(.cgs)` equivalent.
 - `freeze` is the primary versioning command; `freeze-release` and `freeze-state` remain available.
+- `expand`+`fix_circularities` enforce a DAG-compatible tangle behavior: shared repos are canonicalized only when declared refs are hash-compatible.
+- `.cgs` supports repo-level `branch`/`tag` declarations; when both are present, `validate` enforces hash equivalence and raises `incompatibilities between branch (hash) and tag(val) in .cgs` on mismatch.
 - `freeze` is expected to emit the next `.gts` id and register it locally.
-- Remaining lifecycle work is `orchestrate(.goc)` and project-local `.lgr` register management.
+- Remaining work is tracked in two linked streams in `DevPlanTickets.md`: legacy
+  T-ticket continuity (T18/T22/T24) and the CGS-001..CGS-010 core roadmap.
 - `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
 - Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
-- `.goc` automation remains pending: the parser will map `.goc` actions to public `ComplexGitSyncClient` methods.
-- The planned project-local register file is `<Project_name>.lgr`, which must assign one local id to each generated `.gts`.
+- `.goc` automation and local register/ledger requirements are tracked in CGS-005 and related tickets.
 
 ## Definition of Done (Global)
 

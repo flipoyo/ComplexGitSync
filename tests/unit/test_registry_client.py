@@ -25,6 +25,40 @@ def test_client_load_cgs_builds_reviewable_registry(tmp_path):
     assert registry.get("root:deps/child-repo").absolute_path == (tmp_path / "deps/child-repo").resolve()
 
 
+def test_client_load_cgs_supports_tag_target_ref(tmp_path):
+    config_path = tmp_path / "tagged.cgs"
+    config_path.write_text(
+        """
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+project_owner_name = "owner"
+project_name = "demo"
+relative_path = "."
+
+[[repos]]
+project_owner_name = "owner"
+project_name = "tagged-repo"
+relative_path = "deps/tagged-repo"
+tag = "v1.0.0"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    client = ComplexGitSyncClient()
+    registry = client.load_cgs(config_path)
+
+    tagged_entry = registry.get("root:deps/tagged-repo")
+    assert tagged_entry.target_ref_kind == RefKind.TAG
+    assert tagged_entry.target_ref_name == "v1.0.0"
+
+
 def test_client_read_alias_loads_cgs(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()
