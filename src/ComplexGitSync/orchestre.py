@@ -1166,6 +1166,7 @@ class ComplexGitSyncClient:
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
         self.registry = build_registry_from_cgs_document(document, source_path)
+        self.orchestre.git_tree.git.bind_registry(self.registry)
         self.source_path = source_path
         self.loaded_snapshot_path = None
         if discover_nested:
@@ -1333,6 +1334,7 @@ class ComplexGitSyncClient:
         resolved_snapshot_path = Path(snapshot_path).resolve()
         document = GtsDocument.from_toml(resolved_snapshot_path)
         self.registry = build_registry_from_gts_document(document)
+        self.orchestre.git_tree.git.bind_registry(self.registry)
         self.source_path = (
             Path(str(document.read("project.source_cgs_path"))).resolve()
             if document.read("project.source_cgs_path")
@@ -1403,6 +1405,7 @@ class ComplexGitSyncClient:
             source_path,
             project_root=project_root,
         )
+        self.orchestre.git_tree.git.bind_registry(self.registry)
         self.source_path = source_path
 
         while True:
@@ -1442,13 +1445,11 @@ class ComplexGitSyncClient:
         parent-first.  Ends in ``READY`` or raises
         :exc:`~ComplexGitSync.errors.GitSyncError`.
         """
-        from .operations import restart_tree
-
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         resolved_path = Path(config_path).resolve()
         self._log_event("restart_start", config_path=resolved_path)
         registry = self.load_cgs(resolved_path, discover_nested=True)
-        restart_tree(registry, self.git_runner)
+        self.orchestre.git_tree.git.pull(self.git_runner)
         if not registry.is_ready():
             raise GitSyncError("restart did not produce a READY tree.")
         snapshot_path = self.write_gts_snapshot(command_origin="restart")
@@ -1491,7 +1492,6 @@ class ComplexGitSyncClient:
         previous_state = registry.lifecycle_state
         self._log_event("checkout_start", branch_name=branch_name, ref_kind=ref_kind)
         self.orchestre.git_tree.git.checkout(
-            registry,
             self.git_runner,
             branch_name,
             ref_kind=ref_kind,
@@ -1502,6 +1502,15 @@ class ComplexGitSyncClient:
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="checkout")
         self._log_event("checkout_end", branch_name=branch_name, ref_kind=ref_kind)
         return registry
+
+    def branch(
+        self,
+        branch_name: str,
+        *,
+        ref_kind: RefKind = RefKind.BRANCH,
+    ) -> DependencyTreeRegistry:
+        """Compatibility alias for :meth:`checkout`."""
+        return self.checkout(branch_name, ref_kind=ref_kind)
 
     def commit(
         self,
@@ -1516,12 +1525,14 @@ class ComplexGitSyncClient:
         no staged changes are silently skipped.  After a successful execution
         the registry remains ``READY``.
         """
-        from .operations import commit_tree
-
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("commit_start", message=message, stage_all=stage_all)
-        commit_tree(registry, self.git_runner, message, stage_all=stage_all)
+        self.orchestre.git_tree.git.commit(
+            self.git_runner,
+            message,
+            stage_all=stage_all,
+        )
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="commit")
         self._log_event("commit_end", message=message)
         return registry
@@ -1533,12 +1544,10 @@ class ComplexGitSyncClient:
         :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.  After a
         successful execution the registry remains ``READY``.
         """
-        from .operations import add_tree
-
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("add_start")
-        add_tree(registry, self.git_runner)
+        self.orchestre.git_tree.git.add(self.git_runner)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="add")
         self._log_event("add_end")
         return registry
@@ -1551,12 +1560,10 @@ class ComplexGitSyncClient:
         successful execution the registry remains ``READY`` and refreshes the
         stored commit hashes in the runtime tree state.
         """
-        from .operations import push_tree
-
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("push_start")
-        push_tree(registry, self.git_runner)
+        self.orchestre.git_tree.git.push(self.git_runner)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="push")
         self._log_event("push_end")
         return registry
@@ -1567,12 +1574,10 @@ class ComplexGitSyncClient:
         The runtime tree state is refreshed so the recorded tag target remains
         aligned with the synchronized repositories.
         """
-        from .operations import tag_tree
-
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("tag_start", tag_name=tag_name)
-        tag_tree(registry, self.git_runner, tag_name)
+        self.orchestre.git_tree.git.tag(self.git_runner, tag_name)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="tag")
         self._log_event("tag_end", tag_name=tag_name)
         return registry
@@ -1596,16 +1601,23 @@ class ComplexGitSyncClient:
             Pass ``None`` to use the currently loaded registry.  Passing a
             registry replaces the active registry for the duration of the call.
         command:
-            One of ``"commit"``, ``"push"``, or ``"tag"``.
+            One of ``"clone"``, ``"pull"``, ``"checkout"``, ``"branch"``,
+            ``"add"``, ``"commit"``, ``"push"``, ``"tag"``, or ``"freeze"``.
         *args:
             Command-specific positional arguments:
 
+            - ``"clone"``: one argument — path to ``.cgs``; optional second
+              argument sets ``target_dir``.
+            - ``"pull"``: one argument — path to ``.cgs`` or ``.gts`` source.
+            - ``"checkout"`` / ``"branch"``: one argument — branch/tag name.
+            - ``"add"``: no arguments.  Stages all changes tree-wide.
             - ``"commit"``: one argument — the commit message.  The message
               conventionally ends with ``CGS#VERSION``.
             - ``"push"``: no arguments.  Updates the stored hash in the
               ``GitTree`` for each repository.
             - ``"tag"``: one argument — the tag name.  Updates the stored tag
               in the ``GitTree`` for each repository.
+            - ``"freeze"``: one argument — state/release tag name.
 
         Examples
         --------
@@ -1617,6 +1629,19 @@ class ComplexGitSyncClient:
         """
         if isinstance(gittree, DependencyTreeRegistry):
             self.registry = gittree
+            self.orchestre.git_tree.git.bind_registry(gittree)
+        if command == "clone":
+            source = args[0] if args else ""
+            target_dir = args[1] if len(args) > 1 else None
+            return self.clone(source, target_dir=target_dir)
+        if command == "pull":
+            source = args[0] if args else ""
+            return self.pull(source)
+        if command in {"checkout", "branch"}:
+            branch_name = args[0] if args else ""
+            return self.branch(branch_name)
+        if command == "add":
+            return self.add()
         if command == "commit":
             message = args[0] if args else ""
             return self.commit(message)
@@ -1625,8 +1650,13 @@ class ComplexGitSyncClient:
         if command == "tag":
             tag_name = args[0] if args else ""
             return self.tag(tag_name)
+        if command == "freeze":
+            name = args[0] if args else ""
+            return self.freeze(name)
         raise ValueError(
-            f"Unknown git command '{command}'. Supported commands: 'commit', 'push', 'tag'."
+            "Unknown git command "
+            f"'{command}'. Supported commands: 'clone', 'pull', 'checkout', 'branch', "
+            "'add', 'commit', 'push', 'tag', 'freeze'."
         )
 
 
@@ -1643,8 +1673,6 @@ class ComplexGitSyncClient:
         In lifecycle terms this emits the next persisted ``.gts`` state for the
         synchronized tree.
         """
-        from .operations import freeze_release_tree
-
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event(
@@ -1653,8 +1681,7 @@ class ComplexGitSyncClient:
             output_gts=output_gts,
             stage_all=stage_all,
         )
-        freeze_release_tree(
-            registry,
+        self.orchestre.git_tree.git.freeze(
             self.git_runner,
             tag_name,
             message=message,
@@ -1720,7 +1747,12 @@ class ComplexGitSyncClient:
                     absolute_path=entry.absolute_path,
                     ref_name=ref_name,
                 )
-                self.git_runner.clone(remote_url, entry.absolute_path, branch=ref_name)
+                self.orchestre.git_tree.git.clone(
+                    self.git_runner,
+                    remote_url,
+                    entry.absolute_path,
+                    branch=ref_name,
+                )
 
             self._log_event(
                 "launch_release_checkout",
@@ -1782,6 +1814,7 @@ class ComplexGitSyncClient:
     def get_dependency_registry(self) -> DependencyTreeRegistry:
         if self.registry is None:
             raise RuntimeError("No ComplexGitSync registry is loaded.")
+        self.orchestre.git_tree.git.bind_registry(self.registry)
         return self.registry
 
     def get_tree_state(self) -> ProjectTreeState:
@@ -1911,13 +1944,17 @@ class ComplexGitSyncClient:
         )
 
     def _clone_registry_entry(self, entry: RepoRegistryEntry) -> None:
-        from .git_repo import RepoAddress  # avoid any future circular risk
         previous_state = entry.repo_lifecycle_state
         previous_sync_state = entry.sync_state
         remote_url = self._build_remote_url(entry)
         selected_branch = self._select_clone_branch(entry, remote_url)
 
-        self.git_runner.clone(remote_url, entry.absolute_path, branch=selected_branch)
+        self.orchestre.git_tree.git.clone(
+            self.git_runner,
+            remote_url,
+            entry.absolute_path,
+            branch=selected_branch,
+        )
         current_branch = self.git_runner.current_branch(entry.absolute_path) or selected_branch
         fallback_applied = current_branch != (entry.target_ref_name or selected_branch)
 

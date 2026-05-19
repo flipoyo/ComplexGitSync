@@ -129,6 +129,57 @@ def test_client_clone_alias_calls_clone_cgs(monkeypatch):
     assert captured["target_dir"] == "workspace/demo"
 
 
+def test_client_branch_alias_calls_checkout(monkeypatch):
+    client = ComplexGitSyncClient()
+    captured: dict[str, object] = {}
+
+    def _fake_checkout(branch_name, *, ref_kind=RefKind.BRANCH):
+        captured["branch_name"] = branch_name
+        captured["ref_kind"] = ref_kind
+        return "ok"
+
+    monkeypatch.setattr(client, "checkout", _fake_checkout)
+
+    result = client.branch("feature/test")
+
+    assert result == "ok"
+    assert captured["branch_name"] == "feature/test"
+    assert captured["ref_kind"] == RefKind.BRANCH
+
+
+def test_client_git_dispatches_extended_commands(monkeypatch):
+    client = ComplexGitSyncClient()
+    calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+
+    monkeypatch.setattr(client, "clone", lambda *a, **k: calls.append(("clone", a, k)) or "clone")
+    monkeypatch.setattr(client, "pull", lambda *a, **k: calls.append(("pull", a, k)) or "pull")
+    monkeypatch.setattr(client, "branch", lambda *a, **k: calls.append(("branch", a, k)) or "branch")
+    monkeypatch.setattr(client, "add", lambda *a, **k: calls.append(("add", a, k)) or "add")
+    monkeypatch.setattr(client, "freeze", lambda *a, **k: calls.append(("freeze", a, k)) or "freeze")
+
+    assert client.git(None, "clone", "project.cgs", "workspace/demo") == "clone"
+    assert client.git(None, "pull", "state.gts") == "pull"
+    assert client.git(None, "branch", "feature/x") == "branch"
+    assert client.git(None, "add") == "add"
+    assert client.git(None, "freeze", "v1.2.3") == "freeze"
+    assert calls == [
+        ("clone", ("project.cgs",), {"target_dir": "workspace/demo"}),
+        ("pull", ("state.gts",), {}),
+        ("branch", ("feature/x",), {}),
+        ("add", (), {}),
+        ("freeze", ("v1.2.3",), {}),
+    ]
+
+
+def test_client_git_binds_provided_registry(monkeypatch):
+    client = ComplexGitSyncClient()
+    registry = DependencyTreeRegistry()
+    monkeypatch.setattr(client, "add", lambda: registry)
+    client.git(registry, "add")
+    assert client.registry is registry
+    assert client.orchestre.git_tree.git.registry is registry
+
+
 def test_client_freeze_alias_calls_freeze_release(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
