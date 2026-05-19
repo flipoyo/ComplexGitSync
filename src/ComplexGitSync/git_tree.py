@@ -51,7 +51,12 @@ if TYPE_CHECKING:
 
 @dataclass(slots=True)
 class GitTreeGitCommands:
-    """Git command facade bound to :class:`GitTree` operations."""
+    """Git command facade bound to :class:`GitTree` operations.
+
+    ``registry`` stores the currently bound
+    :class:`DependencyTreeRegistry` used when callers omit an explicit
+    registry argument.
+    """
 
     registry: "DependencyTreeRegistry | None" = field(default=None)
 
