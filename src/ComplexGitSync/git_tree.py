@@ -449,8 +449,8 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
     in the dependency tree (fewest ``:``-separated segments in ``repo_id``).  All
     lower-priority duplicate entries sharing the same resolved absolute path are
     removed from the registry only when their synchronization state is compatible
-    with the canonical entry (same lifecycle/sync state and no conflicting commit
-    SHA information).
+    with the canonical entry (same lifecycle/sync state, no conflicting commit
+    SHA information, and no conflicting explicit worktree-state markers).
 
     Returns a tuple of strings, one per removed entry, each in the form::
 

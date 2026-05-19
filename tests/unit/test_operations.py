@@ -340,7 +340,7 @@ def test_add_tree_stages_all_repos_leaf_first(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_restart_tree_pulls_root_and_updates_children_as_submodules(tmp_path):
+def test_restart_tree_pulls_from_root_and_updates_children_as_submodules(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
     _mark_all_children_as_submodules(registry, runner)
@@ -403,6 +403,27 @@ def test_restart_tree_fails_when_child_is_not_tracked_as_submodule(tmp_path):
     runner = _FakeGitRunnerForOperations()
 
     with pytest.raises(GitSyncError, match="linked as submodules"):
+        restart_tree(registry, runner)
+
+
+def test_restart_tree_fails_when_child_path_is_outside_parent(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    rogue_path = tmp_path / "rogue-leaf"
+    rogue_path.mkdir(parents=True)
+    registry.get("root:deps/leaf").absolute_path = rogue_path
+
+    with pytest.raises(GitSyncError, match="outside parent path"):
+        restart_tree(registry, runner)
+
+
+def test_restart_tree_fails_when_child_path_matches_parent(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    root_path = registry.get("root").absolute_path
+    registry.get("root:deps/leaf").absolute_path = root_path
+
+    with pytest.raises(GitSyncError, match="cannot share the exact parent path"):
         restart_tree(registry, runner)
 
 

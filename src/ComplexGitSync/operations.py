@@ -118,7 +118,10 @@ def restart_tree(
                     f"pull preflight failed: {entry.name} is outside parent path {parent.absolute_path}."
                 ) from exc
             if relative_path == Path("."):
-                continue
+                raise GitSyncError(
+                    "pull preflight failed: child repository cannot share the exact parent path "
+                    f"({parent.name}->{entry.name})."
+                )
             if not git_runner.is_submodule(parent.absolute_path, relative_path):
                 raise GitSyncError(
                     "pull preflight failed: child repositories must be linked as submodules "
@@ -126,6 +129,10 @@ def restart_tree(
                 )
             git_runner.update_submodule(parent.absolute_path, relative_path)
 
+        # Branch refresh uses entry-specific behavior:
+        # - children keep the propagated root branch contract because submodule
+        #   updates may leave them detached.
+        # - root reads its actual current branch (with fallback).
         resolved_branch = (
             current_branch
             if entry.parent_id is not None
