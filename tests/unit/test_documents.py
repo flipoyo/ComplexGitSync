@@ -431,10 +431,12 @@ class TestGtsDocumentInvalid:
         }
         self._assert_validation_error(data, "lifecycle_state")
 
-    def test_missing_repo_commit_sha(self):
+    def test_missing_repo_commit_sha_is_valid(self):
+        # commit_sha is optional — repos in DECLARED/PENDING state have not been cloned
         broken_repo = {k: v for k, v in MINIMAL_GTS["repo_state"][0].items() if k != "commit_sha"}
         data = {**MINIMAL_GTS, "repo_state": [broken_repo]}
-        self._assert_validation_error(data, "commit_sha")
+        doc = GtsDocument.from_dict(data)
+        assert doc is not None
 
     def test_missing_repo_absolute_path(self):
         broken_repo = {

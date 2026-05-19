@@ -488,6 +488,72 @@ def test_make_repo_id_only_collapses_explicit_dot_relative_path():
     assert make_repo_id("root", "", "") == "root:"
 
 
+def test_client_load_cgs_writes_gts_snapshot(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    client = ComplexGitSyncClient()
+    client.load(config_path)
+
+    assert expected_snapshot.is_file()
+
+
+def test_client_expand_cgs_writes_gts_snapshot(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    client = ComplexGitSyncClient()
+    client.expand(config_path)
+
+    assert expected_snapshot.is_file()
+
+
+def test_client_validate_cgs_writes_gts_snapshot(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    client = ComplexGitSyncClient()
+    client.validate(config_path)
+
+    assert expected_snapshot.is_file()
+
+
+def test_client_load_gts_snapshot_has_correct_command_origin(tmp_path):
+    import tomllib
+
+    config_path = _write_root_cgs(tmp_path)
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    ComplexGitSyncClient().load(config_path)
+
+    data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
+    assert data["document"]["command_origin"] == "load"
+
+
+def test_client_expand_gts_snapshot_has_correct_command_origin(tmp_path):
+    import tomllib
+
+    config_path = _write_root_cgs(tmp_path)
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    ComplexGitSyncClient().expand(config_path)
+
+    data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
+    assert data["document"]["command_origin"] == "expand"
+
+
+def test_client_validate_gts_snapshot_has_correct_command_origin(tmp_path):
+    import tomllib
+
+    config_path = _write_root_cgs(tmp_path)
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    ComplexGitSyncClient().validate(config_path)
+
+    data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
+    assert data["document"]["command_origin"] == "validate"
+
+
 def _write_root_cgs(tmp_path, *, nested_child: bool = False):
     nested_config = 'nested_config = "auto"\n' if nested_child else ""
     config_path = tmp_path / "project.cgs"
