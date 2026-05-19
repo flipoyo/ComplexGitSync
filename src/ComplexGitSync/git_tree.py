@@ -14,6 +14,7 @@ Functions defined here (Tier 2 — Actions / tree utilities):
     promote_to_parent           Upgrade a LEAF entry to PARENT
     register_relative_path      Guard against duplicate relative paths
     build_tree_state            Derive a ProjectTreeState from the registry
+    fix_circularities           Remove duplicate entries caused by cross-referenced parents/leaves
     format_project_tree         Render the tree as indented text
     format_registry_json        Render the registry as JSON
     iter_tree                   Iterate the registry parent-first (root → leaves)
@@ -433,6 +434,59 @@ def build_tree_state(registry: DependencyTreeRegistry) -> ProjectTreeState:
         is_ready=registry.is_ready(),
         registry_complete=registry.registry_complete,
     )
+
+
+def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
+    """Remove duplicate entries caused by cross-referenced parents and leaves.
+
+    After nested ``.cgs`` discovery the same physical repository may appear more
+    than once in the registry — once as a PARENT (a direct child of the project
+    root) and once or more as a LEAF discovered inside another parent's nested
+    ``.cgs`` that references the same repository via a path that resolves to the
+    same absolute location.
+
+    The *canonical* entry for a given absolute path is the one that sits highest
+    in the dependency tree (fewest ``:``-separated segments in ``repo_id``).  All
+    lower-priority duplicate entries sharing the same resolved absolute path are
+    removed from the registry.
+
+    Returns a tuple of strings, one per removed entry, each in the form::
+
+        "fixed_circularity:<removed_id>→<canonical_id>"
+
+    The registry tree state is recomputed only when at least one entry is removed.
+    """
+    # Absolute paths stored in registry entries are already resolved (set via
+    # .resolve() during construction), so no additional filesystem calls are needed.
+    path_to_entries: dict[Path, list[RepoRegistryEntry]] = {}
+    for entry in registry.values():
+        if entry.absolute_path is None:
+            continue
+        path_to_entries.setdefault(entry.absolute_path, []).append(entry)
+
+    changes: list[str] = []
+    ids_to_remove: set[str] = set()
+
+    for _abs_path, entries in path_to_entries.items():
+        if len(entries) <= 1:
+            continue
+        # Determine the canonical entry: the one closest to the root.
+        # repo_id uses ":" as a path separator, so fewer colons mean a higher
+        # position in the tree (root="root" has 0, a direct child of root has 1,
+        # a grandchild has 2, etc.).  Sorting by colon count ascending puts the
+        # canonical entry first.
+        entries.sort(key=lambda e: e.repo_id.count(":"))
+        canonical = entries[0]
+        for duplicate in entries[1:]:
+            ids_to_remove.add(duplicate.repo_id)
+            changes.append(f"fixed_circularity:{duplicate.repo_id}→{canonical.repo_id}")
+
+    if ids_to_remove:
+        for repo_id in ids_to_remove:
+            del registry.entries[repo_id]
+        registry.recompute_tree_state()
+
+    return tuple(changes)
 
 
 # ---------------------------------------------------------------------------

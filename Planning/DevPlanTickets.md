@@ -174,6 +174,26 @@ Aligned the user-facing lifecycle surface with the reference lifecycle:
 - All documentation (AdditionalSpecs.md, DevPlan.md, DevPlanTickets.md,
   README.md) updated to use the canonical vocabulary.
 
+### T27 — Circular dependency resolution: `fix_circularities` ✅
+Resolved circularities that arise when a parent's nested `.cgs` declares
+another parent (registered at the project root level) as one of its leaves,
+creating duplicate registry entries for the same physical path.
+
+- `fix_circularities(registry)` standalone function added to `git_tree.py`:
+  groups entries by resolved absolute path, retains the canonical entry
+  (fewest `:` separators in `repo_id` = closest to root), removes all
+  lower-priority duplicates, recomputes tree state, and returns a tuple of
+  `"fixed_circularity:<removed_id>→<canonical_id>"` change descriptors.
+- `discover_nested_configs` guards against adding new circular entries at
+  discovery time using a pre-built O(1) `set[Path]` of registered paths.
+- `ComplexGitSyncClient.fix_circularities()` exposed as a step-2.5 public
+  method for custom pipelines (between `expand` and `validate`).
+- Called automatically inside `expand(.cgs)` and `clone_cgs()`.
+- Exported from the top-level package in `__init__.py`.
+- 7 unit tests added; 234 total passing.
+- Documentation updated: README.md, getting_started.tex, user_guide.tex,
+  python_api.tex, AdditionalSpecs.md.
+
 ### T18 — Integration Test Suite ❌
 **Goal**: end-to-end validation on temporary nested git repositories.
 **Deliverables**: nested repo fixture generator; clone / restart / checkout /

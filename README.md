@@ -70,6 +70,10 @@ ComplexGitSync follows this simplified lifecycle:
 3. `checkout` / `add` / `commit` / `push` / `tag` — git operations on the tree
 4. `freeze` → emit the next `.gts` snapshot id
 
+When a project has parents that cross-reference each other (e.g. parent A's
+nested `.cgs` lists parent B as a leaf), `expand` and `clone` automatically
+call `fix_circularities` to deduplicate the registry before proceeding.
+
 Planned follow-up work tracked in the repository:
 
 - `orchestrate(.goc)`
