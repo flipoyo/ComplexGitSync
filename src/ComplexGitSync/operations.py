@@ -407,6 +407,10 @@ def _assert_branch_alignment(
     *,
     operation_name: str,
 ) -> None:
+    if "root" not in registry.entries:
+        raise GitSyncError(
+            f"{operation_name} preflight failed: registry has no root repository entry."
+        )
     root = registry.get("root")
     expected_branch = git_runner.current_branch(root.absolute_path)
     if expected_branch is None:
@@ -434,6 +438,9 @@ def _assert_submodule_links(
     missing: list[str] = []
     for entry in iter_tree_leaf_first(registry):
         if entry.parent_id is None:
+            continue
+        if entry.parent_id not in registry.entries:
+            missing.append(f"{entry.parent_id}->{entry.name}:unknown-parent")
             continue
         parent = registry.get(entry.parent_id)
         try:

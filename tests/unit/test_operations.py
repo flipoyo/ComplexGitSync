@@ -181,6 +181,7 @@ class _FakeGitRunnerForOperations:
         self.tagged: list[tuple[Path, str]] = []
         self.cloned: list[tuple[str, Path, str]] = []
         self._staged_changes: dict[Path, bool] = {}
+        self._unstaged_changes: dict[Path, bool] = {}
         self._shas: dict[Path, str] = {}
         self._current_branches: dict[Path, str | None] = {}
         self._existing_remotes: dict[Path, set[str]] = {}
@@ -220,7 +221,8 @@ class _FakeGitRunnerForOperations:
         return self._staged_changes.get(Path(repo_path), False)
 
     def has_uncommitted_changes(self, repo_path: Path | str) -> bool:
-        return self._staged_changes.get(Path(repo_path), False)
+        path = Path(repo_path)
+        return self._staged_changes.get(path, False) or self._unstaged_changes.get(path, False)
 
     def commit(self, repo_path: Path | str, message: str) -> None:
         path = Path(repo_path)
@@ -240,7 +242,14 @@ class _FakeGitRunnerForOperations:
 
     def set_staged(self, repo_path: Path | str, value: bool) -> None:
         """Helper: manually set whether a repo has staged changes."""
-        self._staged_changes[Path(repo_path)] = value
+        path = Path(repo_path)
+        self._staged_changes[path] = value
+        if value:
+            self._unstaged_changes[path] = False
+
+    def set_unstaged(self, repo_path: Path | str, value: bool) -> None:
+        """Helper: manually set whether a repo has unstaged changes."""
+        self._unstaged_changes[Path(repo_path)] = value
 
     def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
         path = Path(repo_path)
@@ -867,7 +876,7 @@ def test_git_runner_create_tag_default_does_not_force(monkeypatch):
     runner = GitRunner()
     captured: dict[str, object] = {}
 
-    def _spy_run(self, *args: str, cwd=None):
+    def _spy_run(_self, *args: str, cwd=None):
         captured["args"] = args
         captured["cwd"] = cwd
         return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
@@ -883,7 +892,7 @@ def test_git_runner_create_tag_force_adds_f_flag(monkeypatch):
     runner = GitRunner()
     captured: dict[str, object] = {}
 
-    def _spy_run(self, *args: str, cwd=None):
+    def _spy_run(_self, *args: str, cwd=None):
         captured["args"] = args
         captured["cwd"] = cwd
         return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")

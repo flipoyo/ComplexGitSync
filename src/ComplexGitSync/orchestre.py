@@ -790,7 +790,7 @@ class GitRunner:
             return True
         if completed.returncode == 1:
             return False
-        command = f"{self.executable} show-ref --verify --quiet refs/tags/{tag_name}"
+        command = f"{self.executable} show-ref --verify refs/tags/{tag_name}"
         details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"
         raise GitSyncError(f"Git command failed ({command}): {details}")
 
