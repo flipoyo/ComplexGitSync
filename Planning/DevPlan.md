@@ -38,6 +38,16 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 
 ## Remaining Work
 
+### Legacy T-track (point-0 continuity)
+
+| Ticket | Goal | Status |
+|--------|------|--------|
+| T18 | Integration Test Suite | ❌ Not started |
+| T22 | Parser-driven automation of public client methods via `.goc` files | ❌ Pending |
+| T24 | Local Git Register (`.lgr`) management for `.gts` ids | ❌ Pending |
+
+### CGS roadmap extension (current core program)
+
 | Ticket | Goal | Status |
 |--------|------|--------|
 | CGS-001 | Safe Tag Propagation Semantics | ❌ Pending |
@@ -77,7 +87,8 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 - `expand`+`fix_circularities` enforce a DAG-compatible tangle behavior: shared repos are canonicalized only when declared refs are hash-compatible.
 - `.cgs` supports repo-level `branch`/`tag` declarations; when both are present, `validate` enforces hash equivalence and raises `incompatibilities between branch (hash) and tag(val) in .cgs` on mismatch.
 - `freeze` is expected to emit the next `.gts` id and register it locally.
-- Remaining core lifecycle work is tracked by CGS-001 through CGS-010 in `DevPlanTickets.md`.
+- Remaining work is tracked in two linked streams in `DevPlanTickets.md`: legacy
+  T-ticket continuity (T18/T22/T24) and the CGS-001..CGS-010 core roadmap.
 - `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
 - Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
 - `.goc` automation and local register/ledger requirements are tracked in CGS-005 and related tickets.

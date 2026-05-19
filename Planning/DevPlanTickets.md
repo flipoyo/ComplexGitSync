@@ -137,10 +137,40 @@ Simplified the user-facing CLI and Python API lifecycle surface:
 
 ## Remaining Tickets
 
+### Ticketing split (single merged plan)
+- **Legacy T-track** keeps point-0 continuity and completion tracking.
+- **CGS-track** defines the current remaining core work program.
+- Both tracks are active and must remain synchronized.
+
+### T18 — Integration Test Suite ❌
+**Goal**: end-to-end validation on temporary nested git repositories.  
+**Deliverables**: nested repo fixture generator; clone / restart / checkout /
+tag / freeze_release / launch_release / commit-push gating scenarios.  
+**Dependencies**: T09–T16.  
+**Acceptance**: CaWaQS-style topology reproducible; all sync commands produce
+expected READY states and `.gts` outputs.
+
+### T22 — `.goc` parser-driven command automation ❌
+**Goal**: automate `ComplexGitSyncClient` method execution from `.goc` plans.  
+**Deliverables**: parser that maps `.goc` actions to public client API methods,
+execution engine, and validation/reporting for unsupported actions.  
+**Dependencies**: T16, T18.  
+**Acceptance**: `.goc` files execute through the same public API contract used
+by Python and CLI entry points, with deterministic command ordering and errors.
+
+### T24 — Local Git Register (`.lgr`) management ❌
+**Goal**: maintain a project-local register named `<Project_name>.lgr`.  
+**Deliverables**: assign a unique local id to each generated `.gts`, keep the
+current project snapshot in sync, and record the id emitted by `freeze`.  
+**Dependencies**: T06, T09, T14, T23.  
+**Acceptance**: every `.gts` produced by the workflow is represented exactly
+once in the `.lgr` register with one stable local id.
+
 ### CGS-001 — Safe Tag Propagation Semantics (Critical)
 **Type**: Reliability / Release Integrity  
 **Problem**: `GitRunner.create_tag()` currently uses `git tag -f` unconditionally,
 allowing silent overwrite of existing tags during propagated releases.  
+**Legacy linkage**: Extends T13 (`tag`) safety semantics.
 **Objectives**:
 - Preserve release immutability by default.
 - Allow explicit force-tag workflows only when requested.
@@ -161,6 +191,7 @@ allowing silent overwrite of existing tags during propagated releases.
 ### CGS-002 — End-to-End Local Integration Test Infrastructure (Critical)
 **Type**: Testing / Reliability  
 **Problem**: Current tests validate isolated behaviors but not full synchronization workflows.  
+**Legacy linkage**: Implements the remaining scope of T18.
 **Objectives**:
 - Validate real multi-repository orchestration.
 - Ensure deterministic macro-sync behavior.
@@ -191,6 +222,7 @@ allowing silent overwrite of existing tags during propagated releases.
 ### CGS-003 — Transactional Tag Propagation (High)
 **Type**: Reliability / Distributed Consistency  
 **Problem**: Partial failure during propagated tagging may leave repositories desynchronized.  
+**Legacy linkage**: Hardens T13/T14 propagation guarantees.
 **Objectives**:
 - Make release propagation atomic from the user perspective.
 **Tasks**:
@@ -213,6 +245,7 @@ allowing silent overwrite of existing tags during propagated releases.
 ### CGS-004 — Formal `.gts` Snapshot Specification (High)
 **Type**: Core Architecture  
 **Problem**: `.gts` currently behaves operationally but lacks formal deterministic specification.  
+**Legacy linkage**: Deepens T06 contract and determinism guarantees.
 **Objectives**:
 - Define `.gts` as canonical workspace state representation.
 **Tasks**:
@@ -234,6 +267,7 @@ allowing silent overwrite of existing tags during propagated releases.
 ### CGS-005 — `.lgr` Local Sync Ledger (High)
 **Type**: Architecture / Traceability  
 **Problem**: The ledger layer is planned conceptually but not implemented.  
+**Legacy linkage**: Expands the pending T24 local register into a full ledger model.
 **Objectives**:
 - Record synchronization operations as immutable DAG events.
 **Tasks**:
@@ -257,6 +291,7 @@ allowing silent overwrite of existing tags during propagated releases.
 ### CGS-006 — Workspace Preflight Validation Engine (High)
 **Type**: Safety  
 **Problem**: Mutating operations currently rely heavily on implicit repository correctness.  
+**Legacy linkage**: Hardens T12/T13/T14 safety gating before mutation.
 **Objectives**:
 - Detect invalid synchronization states before mutation.
 **Tasks**:
@@ -283,6 +318,7 @@ allowing silent overwrite of existing tags during propagated releases.
 ### CGS-007 — Deterministic Freeze Semantics (Medium)
 **Type**: Reproducibility  
 **Problem**: Freeze semantics are conceptually central but not yet formally defined.  
+**Legacy linkage**: Formalizes T14 freeze invariants.
 **Objectives**:
 - Make freeze a deterministic reproducible workspace checkpoint.
 **Tasks**:
@@ -299,6 +335,7 @@ allowing silent overwrite of existing tags during propagated releases.
 ### CGS-008 — Branch Topology Propagation Rules (Medium)
 **Type**: Workflow / DAG Semantics  
 **Problem**: Branch synchronization semantics across GitTree are not yet formally constrained.  
+**Legacy linkage**: Clarifies propagation rules used by T10/T12/T13 flows.
 **Objectives**:
 - Define coherent multi-repository branch propagation.
 **Tasks**:
@@ -314,6 +351,7 @@ allowing silent overwrite of existing tags during propagated releases.
 ### CGS-009 — CLI Dry-Run Mode (Medium)
 **Type**: Safety / UX  
 **Problem**: Current orchestration operations are highly mutating.  
+**Legacy linkage**: Adds non-mutating previews to T21/T12/T13/T14 command paths.
 **Objectives**:
 - Allow preview of synchronization operations.
 **Tasks**:
@@ -330,6 +368,7 @@ allowing silent overwrite of existing tags during propagated releases.
 ### CGS-010 — Architectural Positioning Documentation (Medium)
 **Type**: Documentation / Identity  
 **Problem**: The project is more than Git automation, but this is not fully formalized.  
+**Legacy linkage**: Complements T19 documentation scope.
 **Objectives**:
 - Clarify conceptual positioning.
 **Tasks**:
