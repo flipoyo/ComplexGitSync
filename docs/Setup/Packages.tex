@@ -1,5 +1,4 @@
-% preamble.tex — shared macros, style, and title-page settings
-\documentclass[11pt,a4paper]{report}
+% Setup/Packages.tex — package imports and rendering configuration
 
 % Encoding and fonts
 \usepackage[T1]{fontenc}
@@ -27,17 +26,3 @@
 
 % Todo notes (for marking stale sections)
 \usepackage{todonotes}
-\newcommand{\deprecated}[1]{\todo[color=orange!40]{DEPRECATED: #1}}
-
-% Product macros — update these when the package name or version changes
-\newcommand{\cgspkg}{\texttt{ComplexGitSync}}
-\newcommand{\cgscli}{\texttt{cgitsync}}
-\newcommand{\cgsversion}{0001.19}
-
-% Title-page information
-\title{%
-  \cgspkg{} \cgsversion \\[0.5em]
-  \large Documentation
-}
-\author{Nicolas Flipo}
-\date{\today}
