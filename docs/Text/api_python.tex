@@ -1,0 +1,114 @@
+% python_api.tex — direct object-level Python API usage (GitTree / GitRepo)
+
+\chapter{Direct Python Object API}
+\label{chap:python-api}
+
+This chapter shows how to manipulate \cgspkg{} objects directly (without the
+CLI wrapper), including loading a \texttt{.gts} snapshot, reconstructing the
+runtime registry, mirroring identity into \texttt{GitTree}/\texttt{GitRepo},
+and propagating a tag target.
+
+The canonical lifecycle is:
+\texttt{load(.cgs) -> .gts LOADED -> expand(.cgs|.gts) -> .gts PENDING ->
+validate(.cgs|.gts) -> .gts READY -> clone(.cgs|.gts) -> checkout(.gts) ->
+add -> git(tree,"commit",msg) -> git(tree,"push") -> git(tree,"tag",name) ->
+freeze}.
+Compatibility aliases: \texttt{read} $\rightarrow$ \texttt{load},
+\texttt{verify} $\rightarrow$ \texttt{validate}.
+
+\section{From Empty Registry to READY via \texttt{.gts}}
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import GitRepo, GitTree, RefKind, TreeLifecycleState
+from ComplexGitSync.orchestre import GtsDocument, build_registry_from_gts_document
+from ComplexGitSync.git_tree import DependencyTreeRegistry
+
+# 1) Empty registry lifecycle
+empty_registry = DependencyTreeRegistry()
+assert empty_registry.recompute_tree_state() == TreeLifecycleState.UNLOADED
+
+# 2) Load a runtime snapshot (.gts) and rebuild the dependency registry
+gts_doc = GtsDocument.from_toml("examples/cawaqsviz_snapshot.gts")
+registry = build_registry_from_gts_document(gts_doc)
+assert registry.lifecycle_state == TreeLifecycleState.READY
+
+# 3) Rebuild GitTree/GitRepo identity objects from discovered registry entries
+tree = GitTree()
+for entry in registry.values():
+    tree.add_repo(
+        GitRepo(
+            project_owner_name=entry.project_owner_name or "owner",
+            project_name=entry.project_name or entry.name,
+            gitprovider=entry.gitprovider,
+            access_protocol=entry.access_protocol,
+            commit_sha=entry.commit_sha,
+        )
+    )
+\end{lstlisting}
+
+\section{Object-Level Tag Propagation}
+
+\begin{lstlisting}[language=Python]
+# Set the same tag target across all registry entries (parent -> leaves)
+tree.propagate_tag(registry, "v1.2.3")
+for entry in registry.values():
+    assert entry.target_ref_kind == RefKind.TAG
+    assert entry.target_ref_name == "v1.2.3"
+\end{lstlisting}
+
+This object-level flow is the same state model used by the CLI and
+\texttt{ComplexGitSyncClient}, but exposed directly for advanced automation and
+tests.
+
+\section{READY Methods in the Client API}
+
+The same lifecycle model is exposed by \texttt{ComplexGitSyncClient}.  In
+practice, the workflow is:
+
+\begin{itemize}
+  \item \texttt{load(...)} is the canonical step-1 name; \texttt{read(...)} is
+    a backward-compatible alias.
+  \item \texttt{expand(...)} is the canonical step-2 name; it runs nested
+    \texttt{.cgs} discovery from parents to leaves (recursive).
+  \item \texttt{validate(...)} is the canonical step-3 name; it accepts both
+    \texttt{.cgs} and \texttt{.gts} sources; \texttt{verify(...)} is a
+    backward-compatible alias.
+  \item \texttt{clone(...)} bootstraps a tree and must finish in
+    \texttt{READY}.
+  \item \texttt{git(tree, command, *args)} is the unified step-5 interface for
+    \texttt{"commit"}, \texttt{"push"}, and \texttt{"tag"} operations.  Each
+    follows leaf-first ordering.
+  \item \texttt{freeze(...)} emits the next persisted \texttt{.gts} state.
+  \item \texttt{launch\_state(...)} and \texttt{launch\_release(...)} remain
+    compatibility helpers for restoring recorded state, but are not treated as
+    primary lifecycle steps in the documentation.
+\end{itemize}
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import ComplexGitSyncClient
+
+client = ComplexGitSyncClient()
+
+# 1. load(.cgs) -> .gts LOADED
+client.load("examples/complexgitsync.cgs")
+
+# 2. expand(.cgs/.gts) -> .gts PENDING
+print(client.expand("examples/complexgitsync.cgs"))
+
+# 3. validate(.cgs/.gts) -> .gts READY
+client.validate("examples/complexgitsync.cgs")
+
+# 4. clone(.cgs/.gts)
+client.clone("examples/complexgitsync.cgs")
+
+# 5. READY methods — unified git interface
+registry = client.get_dependency_registry()
+client.checkout("feature/my-branch")
+client.add()
+client.git(registry, "commit", "feat: update tree CGS#1")
+client.git(registry, "push")
+client.git(registry, "tag", "v1.2.3")
+
+# 6. freeze -> next .gts id
+client.freeze("release-2026.05")
+\end{lstlisting}

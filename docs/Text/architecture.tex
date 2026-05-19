@@ -1,0 +1,240 @@
+% architecture.tex — three-tier architecture overview for ComplexGitSync
+
+\chapter{Architecture Overview}
+\label{chap:architecture}
+
+This chapter describes how \cgspkg{} is structured around three explicit tiers
+and explains the interaction between its classes.  Every domain class lives in
+its own \texttt{.py} module (DevSpecs § Object-Oriented Design).
+
+% -----------------------------------------------------------------------
+\section{Three-Tier Architecture}
+\label{sec:three-tier}
+
+\cgspkg{} is organised into three tiers.  Dependencies only flow
+\textbf{downward}: the Client calls Actions; Actions read and mutate Core Data;
+Core Data has no upward dependency.
+
+Figure~\ref{fig:three-tier} shows the overall layout.
+
+\begin{figure}[ht]
+\centering
+\caption{Three-tier architecture: Client/API exposes state-gated methods;
+  Actions operate on Core Data; Core Data is centred on \texttt{GitTree} and
+  its \texttt{GitRepo} parent--leaf graph.}
+\label{fig:three-tier}
+\input{figures/three_tier}
+\end{figure}
+
+% -----------------------------------------------------------------------
+\section{Tier 1 — Core Data}
+\label{sec:tier-core}
+
+The entire system is centred on \textbf{\texttt{GitTree}}, which owns the
+parent--leaf graph of \textbf{\texttt{GitRepo}} nodes.  A project consists of
+one \emph{root} repository that may nest \emph{parent} repositories (each of
+which can own further children) and \emph{leaf} repositories (terminal nodes).
+
+Figure~\ref{fig:gittree-nodes} shows a representative project tree.
+
+\begin{figure}[ht]
+\centering
+\caption{\texttt{GitTree} is a parent--leaf graph of \texttt{GitRepo} nodes.
+  Root and parent nodes own nested \texttt{.cgs} files discovered during
+  \texttt{clone} or \texttt{discover\_nested\_configs}.}
+\label{fig:gittree-nodes}
+\input{figures/gittree_nodes}
+\end{figure}
+
+The runtime counterpart of \texttt{GitTree} is the
+\texttt{DependencyTreeRegistry}, which holds a mutable
+\texttt{RepoRegistryEntry} per node.  Registry entries are indexed by a
+colon-separated repo ID derived from their position in the tree (e.g.\
+\texttt{root:deps/child-repo:docs}).
+
+Figure~\ref{fig:core-model} shows the full object model for Tier~1.
+
+% -----------------------------------------------------------------------
+\section{Tier 2 — Actions}
+\label{sec:tier-actions}
+
+Actions are operations that read or mutate the Core tier.  \textbf{Every
+action is gated by the current \texttt{TreeLifecycleState}}: actions that
+require a \texttt{READY} tree will refuse to execute and log a gating-refusal
+event if the tree is not ready.
+
+Figure~\ref{fig:gittree-lifecycle} shows the full lifecycle state machine.
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Action} & \textbf{Minimum state} & \textbf{Produces} \\
+\hline
+\texttt{load(.cgs)}                    & none        & \texttt{.gts LOADED} \\
+\texttt{expand(.cgs|.gts)}             & LOADED      & \texttt{.gts PENDING} \\
+\texttt{validate(.cgs|.gts)}           & PENDING     & \texttt{.gts READY} \\
+\texttt{clone(.cgs|.gts)}              & READY       & \textbf{READY} \\
+\texttt{checkout(.gts)}                & READY       & \textbf{READY} \\
+\texttt{add}                           & \textbf{READY only} & READY \\
+\texttt{git(tree, "commit", msg)}      & \textbf{READY only} & READY \\
+\texttt{git(tree, "push")}             & \textbf{READY only} & READY + updated hash \\
+\texttt{git(tree, "tag", name)}        & \textbf{READY only} & READY + updated tag \\
+\texttt{freeze}                        & \textbf{READY only} & next \texttt{.gts} id \\
+\hline
+\end{tabular}
+\end{center}
+
+Current implementation names such as \texttt{tree}, \texttt{validate},
+\texttt{describe}, \texttt{restart}, and \texttt{launch\_release} remain
+compatibility surfaces around this lifecycle while the repository converges on
+the stricter vocabulary.
+
+Figure~\ref{fig:ops-sequence} shows the internal sequence of the three
+tree-wide synchronisation actions implemented in \texttt{operations.py}.
+
+\begin{figure}[ht]
+\centering
+\caption{Synchronisation operations: \texttt{checkout\_tree} runs
+  propagate\,→\,create\,→\,git checkout parent-first; \texttt{add\_tree},
+  \texttt{commit\_tree}, and \texttt{push\_tree} iterate leaf-first so that
+  inner repos are synchronized before their parents.}
+\label{fig:ops-sequence}
+\input{figures/operations_sequence}
+\end{figure}
+
+% -----------------------------------------------------------------------
+\section{Tier 3 — Client / API}
+\label{sec:tier-client}
+
+\texttt{ComplexGitSyncClient} is the single public facade.  It:
+
+\begin{itemize}
+  \item holds references to \texttt{Orchestre}, \texttt{GitRunner},
+    \texttt{RuntimeStateStore}, and the live \texttt{DependencyTreeRegistry};
+  \item computes the current \texttt{TreeLifecycleState} on demand and gates
+    every action against it;
+  \item emits structured log events for every state transition, action start/end,
+    fallback decision, and \texttt{.gts} write/load.
+\end{itemize}
+
+\texttt{Orchestre} is the coordination layer between the Client and
+\texttt{GitTree}.  The CLI (\texttt{cli.py}) maps terminal sub-commands to
+Client method calls one-to-one; there is no hidden logic in the CLI layer.
+
+Figure~\ref{fig:client-gating} shows how the Client gates action access based
+on the live tree state.
+
+\begin{figure}[ht]
+\centering
+\caption{Client state-gating: the Client reads \texttt{TreeLifecycleState}
+  before delegating to an action.  READY-gated actions (\texttt{checkout},
+  \texttt{add}, \texttt{commit}, \texttt{push}, \texttt{tag},
+  \texttt{freeze}) are blocked unless the tree is \texttt{READY}.}
+\label{fig:client-gating}
+\input{figures/client_gating}
+\end{figure}
+
+% -----------------------------------------------------------------------
+\section{Module Layout by Tier}
+\label{sec:module-layout}
+
+\begin{lstlisting}[language=bash,caption={Source modules grouped by architectural tier}]
+src/ComplexGitSync/
+  # --- Tier 1: Core Data (centred on GitTree / GitRepo) ---
+  git_repo.py                  GitRepo
+  git_tree.py                  GitTree
+  repo_address.py              RepoAddress
+  repo_registry_entry.py       RepoRegistryEntry
+  dependency_tree_registry.py  DependencyTreeRegistry
+  repo_node.py                 RepoNode
+  project_tree_state.py        ProjectTreeState
+  # enums
+  node_type.py                 NodeType
+  tree_lifecycle_state.py      TreeLifecycleState
+  repo_lifecycle_state.py      RepoLifecycleState
+  sync_state.py                SyncState
+  discovery_state.py           DiscoveryState
+  ref_kind.py                  RefKind
+  git_provider.py              GitProvider
+  access_protocol.py           AccessProtocol
+
+  # --- Tier 2: Actions ---
+  discovery.py                 discover_nested_configs()
+  operations.py                propagate_global_branch, create_global_branch
+                               checkout_tree, commit_tree, push_tree
+  registry.py                  build_registry_from_cgs_document, …
+  render.py                    format_project_tree, format_registry_json
+
+  # --- Tier 3: Client / API ---
+  client.py                    ComplexGitSyncClient
+  orchestre.py                 Orchestre
+  cli.py                       build_parser / main
+  git_runner.py                GitRunner
+  run_logger.py                CommandRunLogger + create_run_logger
+  state_store.py               RuntimeStateStore
+
+  # --- Document layer (cross-cutting) ---
+  config_document.py           ConfigDocument (base)
+  cgs_document.py              CgsDocument  (.cgs)
+  gts_document.py              GtsDocument  (.gts)
+  goc_document.py              GocDocument  (.goc)
+  documents.py                 re-export shim
+  errors.py                    exception hierarchy
+\end{lstlisting}
+
+% -----------------------------------------------------------------------
+\section{Document Hierarchy}
+\label{sec:document-hierarchy}
+
+Figure~\ref{fig:document-hierarchy} shows the document class hierarchy.
+
+All persistent documents share the \texttt{ConfigDocument} base class, which
+provides format-agnostic serialisation (\texttt{to\_toml}, \texttt{to\_json},
+\texttt{to\_yaml}) and factory methods (\texttt{from\_toml}, \texttt{from\_json},
+\texttt{from\_yaml}).  Subclasses add document-specific validation and
+convenience properties.
+
+\begin{itemize}
+  \item \textbf{CgsDocument} (\texttt{.cgs}) — the authoring spec; describes
+    the static project topology.  \emph{Never} a runtime snapshot.
+  \item \textbf{GtsDocument} (\texttt{.gts}) — a generated snapshot capturing
+    the exact state of the tree including commit SHAs and absolute paths.
+    \emph{Never} hand-edited.
+  \item \textbf{GocDocument} (\texttt{.goc}) — a command script encoding a
+     sequence of \texttt{cgitsync} commands with session defaults.
+  \item \textbf{Local Git Register} (\texttt{.lgr}) — the planned project-local
+    register that assigns one local id to each generated \texttt{.gts}.
+\end{itemize}
+
+% -----------------------------------------------------------------------
+\section{Registry Model}
+\label{sec:registry-model}
+
+Figure~\ref{fig:registry-model} shows the registry model.
+
+\texttt{DependencyTreeRegistry} is the authoritative in-memory graph.  It maps
+\emph{repo IDs} (colon-separated path strings such as
+\texttt{root:deps/child-repo}) to \texttt{RepoRegistryEntry} instances.
+\texttt{RepoRegistryEntry} holds both the static identity declared in
+\texttt{.cgs} and the dynamic state updated during operations.
+
+Builder functions in \texttt{registry.py} translate document objects into a
+live registry:
+
+\begin{lstlisting}[language=Python]
+# Load from authoring spec
+registry = build_registry_from_cgs_document(document, config_path)
+
+# Load from snapshot
+registry = build_registry_from_gts_document(snapshot_document)
+
+# Serialise to snapshot
+gts_doc = build_gts_document_from_registry(
+    registry, command_origin="clone", source_cgs_path=path
+)
+\end{lstlisting}
+
+% -----------------------------------------------------------------------
+% Include all TikZ figures defined in figures/class_diagram.tex
+% -----------------------------------------------------------------------
+
+\input{figures/class_diagram}
