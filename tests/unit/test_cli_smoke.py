@@ -23,6 +23,10 @@ def test_initialise_command_restores_gts_snapshot(tmp_path, capsys):
 
     assert exit_code == 0
     assert "log_file=" in captured.out
+    log_file_line = next((line for line in captured.out.splitlines() if line.startswith("log_file=")), None)
+    assert log_file_line is not None
+    log_file_path = Path(log_file_line.split("=", 1)[1])
+    assert log_file_path.is_file()
     assert "workflow=load->validate" in captured.out
     assert "READY" in captured.out
     assert "ready=true" in captured.out

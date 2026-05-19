@@ -362,7 +362,9 @@ def format_repo_tree_outline(registry: DependencyTreeRegistry) -> str:
         for index, child in enumerate(children):
             walk(child, prefix=child_prefix, is_last=index == len(children) - 1)
 
-    root_entry = registry.get(ROOT_REPO_ID)
+    root_entry = registry.entries.get(ROOT_REPO_ID)
+    if root_entry is None:
+        return ""
     walk(root_entry, prefix="", is_last=True, is_root=True)
     return "\n".join(lines)
 

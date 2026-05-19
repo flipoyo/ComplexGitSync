@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from . import __version__
 from .git_repo import RefKind
+from .git_tree import ProjectTreeState
 from .orchestre import CgsDocument, ComplexGitSyncClient, create_run_logger
 
 
@@ -418,7 +419,7 @@ def _execute_initialise_cgs(
     target_dir: str | None,
 ) -> int:
     print("workflow=load->expand->validate->clone")
-    print("git_command=git clone <remote> <target-path>  # repeated for each repo")
+    print("git_command=git clone (executed per repo)")
     registry = client.clone_cgs(source_path, target_dir=target_dir)
     tree_state = client.get_tree_state()
     print(
@@ -521,7 +522,7 @@ def _execute_clone(
     *,
     target_dir: str | None,
 ) -> int:
-    print("git_command=git clone <remote> <target-path>  # repeated for each repo")
+    print("git_command=git clone (executed per repo)")
     registry = client.clone_cgs(source_path, target_dir=target_dir)
     tree_state = client.get_tree_state()
     print(
@@ -797,7 +798,7 @@ def _load_ready_registry_source(
     client.load_gts(source_path)
 
 
-def _format_tree_state_line(tree_state) -> str:
+def _format_tree_state_line(tree_state: ProjectTreeState) -> str:
     lifecycle = tree_state.lifecycle_state.value
     git_tree_created = lifecycle != "UNLOADED"
     git_tree_active = bool(tree_state.is_ready)
@@ -811,10 +812,10 @@ def _format_tree_state_line(tree_state) -> str:
 
 
 def _format_repo_tree_outline(client: ComplexGitSyncClient) -> str:
-    formatter = getattr(client, "format_repo_tree", None)
-    if callable(formatter):
-        return str(formatter())
-    return ""
+    try:
+        return str(client.format_repo_tree())
+    except AttributeError:
+        return ""
 
 
 _INSPECTION_HANDLERS = {
