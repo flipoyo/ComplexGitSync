@@ -18,7 +18,7 @@ Analyse basée sur les références dans `src/ComplexGitSync`:
 2. `FallbackRejectedError` (`src/ComplexGitSync/errors.py`)
    - défini mais non référencé hors de sa déclaration.
 3. `RepoNode` (`src/ComplexGitSync/git_repo.py`)
-   - classe exposée/importée mais pas d’instanciation détectée dans le code applicatif (`src/ComplexGitSync`, motif `RepoNode(...)` absent).
+   - classe exposée/importée mais pas d’instantiation détectée dans le code applicatif (`src/ComplexGitSync`, motif `RepoNode(...)` absent).
 
 > Note: ces éléments peuvent rester utiles pour compatibilité API/doc. Le plan ci-dessous vise un package plus minimal sans rupture brutale.
 
