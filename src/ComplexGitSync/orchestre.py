@@ -2088,10 +2088,6 @@ class ComplexGitSyncClient:
                     f"Repository {entry.name} at {entry.absolute_path} is not under its parent path "
                     f"{parent.absolute_path}."
                 ) from exc
-            if relative_path == Path("."):
-                raise GitSyncError(
-                    f"Repository {entry.name} has invalid submodule path '.' under parent {parent.name}."
-                )
             self.git_runner.add_submodule(
                 parent.absolute_path,
                 remote_url,

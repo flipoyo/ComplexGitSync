@@ -506,13 +506,13 @@ def test_clone_cgs_replaces_nested_destination_populated_by_parent_clone(tmp_pat
     ] == [("git@github.com:owner/docs.git", "docs", "main")]
 
 
-def test_clone_cgs_fails_when_nested_repo_is_not_tracked_as_submodule(tmp_path):
-    class _RunnerWithoutSubmoduleTracking(_FakeGitRunner):
+def test_clone_cgs_fails_when_nested_repo_not_tracked_as_submodule(tmp_path):
+    class _FakeGitRunnerNoSubmodules(_FakeGitRunner):
         def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
             return False
 
     config_path = _write_root_plus_docs_clone_cgs(tmp_path)
-    runner = _RunnerWithoutSubmoduleTracking(
+    runner = _FakeGitRunnerNoSubmodules(
         {
             "git@github.com:owner/ComplexGitSync.git": {"main"},
             "git@github.com:owner/docs.git": {"main"},
