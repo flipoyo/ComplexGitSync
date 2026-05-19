@@ -761,9 +761,47 @@ class GitRunner:
         else:
             self._run("push", remote, cwd=repo_path)
 
-    def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
+    def create_tag(self, repo_path: Path | str, tag_name: str, *, force: bool = False) -> None:
         """Create *tag_name* in *repo_path*."""
-        self._run("tag", "-f", tag_name, cwd=repo_path)
+        args = ["tag"]
+        if force:
+            args.append("-f")
+        args.append(tag_name)
+        self._run(*args, cwd=repo_path)
+
+    def remote_exists(self, repo_path: Path | str, remote: str = "origin") -> bool:
+        """Return ``True`` when *remote* exists in *repo_path*."""
+        try:
+            self._run("remote", "get-url", remote, cwd=repo_path)
+            return True
+        except GitSyncError:
+            return False
+
+    def tag_exists(self, repo_path: Path | str, tag_name: str) -> bool:
+        """Return ``True`` when *tag_name* already exists in *repo_path*."""
+        completed = subprocess.run(
+            [self.executable, "show-ref", "--verify", "--quiet", f"refs/tags/{tag_name}"],
+            cwd=str(repo_path),
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        if completed.returncode == 0:
+            return True
+        if completed.returncode == 1:
+            return False
+        command = f"{self.executable} show-ref --verify --quiet refs/tags/{tag_name}"
+        details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"
+        raise GitSyncError(f"Git command failed ({command}): {details}")
+
+    def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
+        """Return ``True`` when *relative_path* is tracked as a git submodule."""
+        result = self._run("ls-files", "--stage", "--", str(relative_path), cwd=repo_path)
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        if not lines:
+            return False
+        mode = lines[0].split(maxsplit=1)[0]
+        return mode == "160000"
 
     def _run(
         self,

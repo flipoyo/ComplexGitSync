@@ -5,11 +5,12 @@ ComplexGitSyncClient façade methods checkout / commit / push.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.errors import TreeNotReadyError
+from ComplexGitSync.errors import GitSyncError, TreeNotReadyError
 from ComplexGitSync.git_repo import (
     NodeType,
     RefKind,
@@ -29,7 +30,7 @@ from ComplexGitSync.operations import (
     restart_tree,
     tag_tree,
 )
-from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.orchestre import ComplexGitSyncClient, GitRunner
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +151,19 @@ def _make_deep_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
     return registry
 
 
+def _mark_all_children_as_submodules(
+    registry: DependencyTreeRegistry,
+    runner: "_FakeGitRunnerForOperations",
+) -> None:
+    for entry in registry.values():
+        if entry.parent_id is None:
+            continue
+        parent = registry.get(entry.parent_id)
+        relative_path = entry.absolute_path.relative_to(parent.absolute_path)
+        if relative_path != Path("."):
+            runner.add_submodule_link(parent.absolute_path, relative_path)
+
+
 class _FakeGitRunnerForOperations:
     """Minimal fake GitRunner for operation unit tests.
 
@@ -169,6 +183,9 @@ class _FakeGitRunnerForOperations:
         self._staged_changes: dict[Path, bool] = {}
         self._shas: dict[Path, str] = {}
         self._current_branches: dict[Path, str | None] = {}
+        self._existing_remotes: dict[Path, set[str]] = {}
+        self._existing_tags: dict[Path, set[str]] = {}
+        self._submodule_links: set[tuple[Path, Path]] = set()
 
     # --- branch / checkout ---
     def current_branch(self, repo_path: Path | str) -> str | None:
@@ -202,6 +219,9 @@ class _FakeGitRunnerForOperations:
     def has_staged_changes(self, repo_path: Path | str) -> bool:
         return self._staged_changes.get(Path(repo_path), False)
 
+    def has_uncommitted_changes(self, repo_path: Path | str) -> bool:
+        return self._staged_changes.get(Path(repo_path), False)
+
     def commit(self, repo_path: Path | str, message: str) -> None:
         path = Path(repo_path)
         self.committed.append((path, message))
@@ -223,7 +243,36 @@ class _FakeGitRunnerForOperations:
         self._staged_changes[Path(repo_path)] = value
 
     def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
-        self.tagged.append((Path(repo_path), tag_name))
+        path = Path(repo_path)
+        self.tagged.append((path, tag_name))
+        self._existing_tags.setdefault(path, set()).add(tag_name)
+
+    def remote_exists(self, repo_path: Path | str, remote: str = "origin") -> bool:
+        path = Path(repo_path)
+        remotes = self._existing_remotes.get(path)
+        if remotes is None:
+            return remote == "origin"
+        return remote in remotes
+
+    def tag_exists(self, repo_path: Path | str, tag_name: str) -> bool:
+        return tag_name in self._existing_tags.get(Path(repo_path), set())
+
+    def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
+        return (Path(repo_path), Path(relative_path)) in self._submodule_links
+
+    def set_remote_exists(self, repo_path: Path | str, remote: str, exists: bool) -> None:
+        path = Path(repo_path)
+        remotes = self._existing_remotes.setdefault(path, set())
+        if exists:
+            remotes.add(remote)
+        else:
+            remotes.discard(remote)
+
+    def add_existing_tag(self, repo_path: Path | str, tag_name: str) -> None:
+        self._existing_tags.setdefault(Path(repo_path), set()).add(tag_name)
+
+    def add_submodule_link(self, repo_path: Path | str, relative_path: Path | str) -> None:
+        self._submodule_links.add((Path(repo_path), Path(relative_path)))
 
 
 # ---------------------------------------------------------------------------
@@ -738,6 +787,7 @@ def test_tag_tree_requires_ready_tree(tmp_path):
 def test_tag_tree_tags_and_pushes_leaf_first(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
 
     tag_tree(registry, runner, "v1.0.0")
 
@@ -755,6 +805,7 @@ def test_tag_tree_tags_and_pushes_leaf_first(tmp_path):
 def test_freeze_release_tree_commits_tags_and_pushes_leaf_first(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
 
     freeze_release_tree(registry, runner, "release-1")
 
@@ -767,6 +818,81 @@ def test_freeze_release_tree_commits_tags_and_pushes_leaf_first(tmp_path):
     assert tagged_paths.index(leaf_path) < tagged_paths.index(root_path)
     assert pushed_paths.index(leaf_path) < pushed_paths.index(root_path)
     assert registry.recompute_tree_state() == TreeLifecycleState.READY
+
+
+def test_tag_tree_preflight_fails_when_tag_exists(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+    root_path = registry.get("root").absolute_path
+    runner.add_existing_tag(root_path, "v1.0.0")
+
+    with pytest.raises(GitSyncError, match="tag 'v1.0.0' already exists"):
+        tag_tree(registry, runner, "v1.0.0")
+
+
+def test_tag_tree_preflight_fails_when_tree_is_dirty(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+    runner.set_staged(leaf_path, True)
+
+    with pytest.raises(GitSyncError, match="repositories are not clean"):
+        tag_tree(registry, runner, "v1.0.0")
+
+
+def test_tag_tree_preflight_fails_when_child_is_not_submodule(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    with pytest.raises(GitSyncError, match="linked as submodules"):
+        tag_tree(registry, runner, "v1.0.0")
+
+
+def test_freeze_release_preflight_fails_when_branches_misalign(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+    root_path = registry.get("root").absolute_path
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+    runner._current_branches[root_path] = "main"
+    runner._current_branches[leaf_path] = "feature-x"
+
+    with pytest.raises(GitSyncError, match="branch misalignment"):
+        freeze_release_tree(registry, runner, "release-1")
+
+
+def test_git_runner_create_tag_default_does_not_force(monkeypatch):
+    runner = GitRunner()
+    captured: dict[str, object] = {}
+
+    def _spy_run(self, *args: str, cwd=None):
+        captured["args"] = args
+        captured["cwd"] = cwd
+        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(GitRunner, "_run", _spy_run)
+
+    runner.create_tag("/tmp/repo", "v1.2.3")
+
+    assert captured["args"] == ("tag", "v1.2.3")
+
+
+def test_git_runner_create_tag_force_adds_f_flag(monkeypatch):
+    runner = GitRunner()
+    captured: dict[str, object] = {}
+
+    def _spy_run(self, *args: str, cwd=None):
+        captured["args"] = args
+        captured["cwd"] = cwd
+        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(GitRunner, "_run", _spy_run)
+
+    runner.create_tag("/tmp/repo", "v1.2.3", force=True)
+
+    assert captured["args"] == ("tag", "-f", "v1.2.3")
 
 
 # ---------------------------------------------------------------------------
@@ -1006,6 +1132,7 @@ def test_client_tag_requires_ready_tree(tmp_path):
 
 def test_client_tag_delegates_to_tag_tree(tmp_path):
     client, runner = _make_client_with_ready_registry(tmp_path)
+    _mark_all_children_as_submodules(client.registry, runner)
 
     result = client.tag("v1.0.0")
 
@@ -1015,6 +1142,7 @@ def test_client_tag_delegates_to_tag_tree(tmp_path):
 
 def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
     client, runner = _make_client_with_ready_registry(tmp_path)
+    _mark_all_children_as_submodules(client.registry, runner)
     output_gts = tmp_path / "release.gts"
 
     result = client.freeze_release("release-1", output_gts=output_gts)
@@ -1092,6 +1220,7 @@ def test_client_add_raises_when_no_registry_loaded():
 
 def test_client_freeze_state_delegates_and_writes_named_gts(tmp_path):
     client, runner = _make_client_with_ready_registry(tmp_path)
+    _mark_all_children_as_submodules(client.registry, runner)
     output_gts = tmp_path / "internal-state.gts"
 
     result = client.freeze_state("state-1", output_gts=output_gts)
