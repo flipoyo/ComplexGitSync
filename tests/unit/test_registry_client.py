@@ -171,6 +171,25 @@ def test_client_git_dispatches_extended_commands(monkeypatch):
     ]
 
 
+@pytest.mark.parametrize(
+    ("command", "expected_message"),
+    [
+        ("clone", "clone requires source path argument."),
+        ("pull", "pull requires source path argument."),
+        ("checkout", "checkout requires branch name argument."),
+        ("branch", "branch requires branch name argument."),
+        ("commit", "commit requires message argument."),
+        ("tag", "tag requires tag name argument."),
+        ("freeze", "freeze requires tag name argument."),
+    ],
+)
+def test_client_git_requires_expected_arguments(command, expected_message):
+    client = ComplexGitSyncClient()
+
+    with pytest.raises(ValueError, match=expected_message):
+        client.git(None, command)
+
+
 def test_client_git_binds_provided_registry(monkeypatch):
     client = ComplexGitSyncClient()
     registry = DependencyTreeRegistry()

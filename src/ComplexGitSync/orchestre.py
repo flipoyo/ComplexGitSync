@@ -1630,31 +1630,38 @@ class ComplexGitSyncClient:
         if isinstance(gittree, DependencyTreeRegistry):
             self.registry = gittree
             self.orchestre.git_tree.git.bind_registry(gittree)
+        command = command.lower()
+
+        def _required_arg(index: int, label: str) -> str:
+            if len(args) <= index or not args[index]:
+                raise ValueError(f"{command} requires {label} argument.")
+            return args[index]
+
         if command == "clone":
-            source = args[0] if args else ""
+            source = _required_arg(0, "source path")
             target_dir = args[1] if len(args) > 1 else None
             return self.clone(source, target_dir=target_dir)
         if command == "pull":
-            source = args[0] if args else ""
+            source = _required_arg(0, "source path")
             return self.pull(source)
         if command == "checkout":
-            branch_name = args[0] if args else ""
+            branch_name = _required_arg(0, "branch name")
             return self.checkout(branch_name)
         if command == "branch":
-            branch_name = args[0] if args else ""
+            branch_name = _required_arg(0, "branch name")
             return self.branch(branch_name)
         if command == "add":
             return self.add()
         if command == "commit":
-            message = args[0] if args else ""
+            message = _required_arg(0, "message")
             return self.commit(message)
         if command == "push":
             return self.push()
         if command == "tag":
-            tag_name = args[0] if args else ""
+            tag_name = _required_arg(0, "tag name")
             return self.tag(tag_name)
         if command == "freeze":
-            name = args[0] if args else ""
+            name = _required_arg(0, "tag name")
             return self.freeze(name)
         raise ValueError(
             f"Unknown git command '{command}'. Supported commands: 'clone', 'pull', "
