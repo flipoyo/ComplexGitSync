@@ -160,8 +160,8 @@ tree. This is why the same command reports a \texttt{READY} tree after a
 successful \texttt{clone} instead of returning to the purely declared
 \texttt{DECLARED}/\texttt{PENDING} view.
 
-The remaining planned user-facing work is to expose a dedicated
-\texttt{print(.gts)} command for saved-state inspection.
+The remaining planned user-facing work focuses on project-local
+\texttt{.lgr} register management and deeper lifecycle integration tests.
 
 % -----------------------------------------------------------------------
 \section{Preparing an Orchestration Plan (\texttt{.goc})}
@@ -181,9 +181,8 @@ ref_type = "branch"
 Combined with the per-repo \texttt{fallback\_branch = "main"} settings from
 the \texttt{.cgs} file, the same orchestration plan can be used on trees where
 some repositories already expose \texttt{autoTest} and others still only offer
-\texttt{main}. In the current bootstrap release, the \texttt{.goc} file is the
-machine-readable reference for that flow; direct CLI execution of orchestration
-plans is introduced later as \texttt{orchestrate(.goc)}.
+\texttt{main}. The \texttt{.goc} file can now be executed through
+\texttt{ComplexGitSyncClient.orchestrate(<plan.goc>)} in the Python API.
 
 % -----------------------------------------------------------------------
 \section{Log Files}

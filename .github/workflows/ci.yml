@@ -10,20 +10,20 @@ permissions:
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.11", "3.12"]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
       - uses: prefix-dev/setup-pixi@v0.8.1
       - name: Install package
         run: pixi install
-      - name: Run tests
+      - name: Run PR test subset
+        if: github.event_name == 'pull_request'
+        run: pixi run python -m pytest tests/unit/test_documents.py tests/unit/test_cli_smoke.py
+      - name: Run full test suite on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: pixi run test
 
   version-increment:

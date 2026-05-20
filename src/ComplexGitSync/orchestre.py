@@ -1679,6 +1679,160 @@ class ComplexGitSyncClient:
             f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
         )
 
+    def orchestrate(
+        self,
+        plan_path: str | Path,
+        *,
+        stop_on_error: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Execute a ``.goc`` orchestration plan through public client methods."""
+        resolved_plan = Path(plan_path).resolve()
+        document = GocDocument.from_toml(resolved_plan)
+        source = self._resolve_goc_project_source(document, resolved_plan)
+        report: list[dict[str, Any]] = []
+
+        for index, action in enumerate(document.actions):
+            command = str(action.get("command", "")).strip().lower()
+            raw_args = action.get("args")
+            args = raw_args if isinstance(raw_args, dict) else {}
+            try:
+                result = self._execute_goc_action(command, source, args)
+                report.append(
+                    {
+                        "index": index,
+                        "command": command,
+                        "status": "ok",
+                        "result": self._summarize_goc_result(result),
+                    }
+                )
+            except Exception as exc:
+                report.append(
+                    {
+                        "index": index,
+                        "command": command,
+                        "status": "error",
+                        "error": str(exc),
+                    }
+                )
+                if stop_on_error:
+                    raise GitSyncError(
+                        f".goc action failed at index {index} ({command!r}): {exc}"
+                    ) from exc
+        return report
+
+    def _resolve_goc_project_source(self, document: GocDocument, plan_path: Path) -> Path:
+        source = document.project_source
+        if not source:
+            raise ValueError("Invalid .goc document: [project].source is required.")
+        source_path = Path(source)
+        if not source_path.is_absolute():
+            source_path = (plan_path.parent / source_path).resolve()
+        return source_path
+
+    def _execute_goc_action(
+        self,
+        command: str,
+        source: Path,
+        args: dict[str, Any],
+    ) -> Any:
+        if command == "validate":
+            return self.validate(source, discover_nested=bool(args.get("discover_nested", False)))
+        if command == "describe":
+            return self.print(source, discover_nested=bool(args.get("discover_nested", False)))
+        if command == "tree":
+            if source.suffix == ".gts":
+                self.load_gts(source)
+            else:
+                self.load_runtime_or_cgs(source, discover_nested=bool(args.get("discover_nested", True)))
+            return self.format_project_tree()
+        if command == "write-gts":
+            if self.registry is None:
+                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
+            command_origin = str(args.get("command_origin", "write-gts"))
+            return self.write_gts_snapshot(command_origin=command_origin, output_path=args.get("output_path"))
+        if command == "launch-release":
+            snapshot = args.get("snapshot")
+            if snapshot is None:
+                snapshot_path = source
+            else:
+                snapshot_path = Path(snapshot).resolve()
+            if snapshot_path.suffix != ".gts":
+                raise ValueError("launch-release requires a .gts snapshot source.")
+            return self.launch_release(snapshot_path)
+        if command == "clone":
+            if source.suffix != ".cgs":
+                raise ValueError("clone requires a .cgs source.")
+            return self.clone_cgs(source, target_dir=args.get("target_dir"))
+        if command == "restart":
+            if source.suffix != ".cgs":
+                raise ValueError("restart requires a .cgs source.")
+            return self.restart(source)
+        if command == "checkout":
+            if self.registry is None:
+                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
+            ref_name = str(args.get("ref") or args.get("branch") or "")
+            if not ref_name:
+                raise ValueError("checkout action requires args.ref (or args.branch).")
+            ref_type = str(args.get("ref_type", "branch")).lower()
+            if ref_type not in {"branch", "tag"}:
+                raise ValueError("checkout args.ref_type must be 'branch' or 'tag'.")
+            ref_kind = RefKind.TAG if ref_type == "tag" else RefKind.BRANCH
+            return self.checkout(ref_name, ref_kind=ref_kind)
+        if command == "tag":
+            if self.registry is None:
+                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
+            tag_name = str(args.get("name") or args.get("tag") or "")
+            if not tag_name:
+                raise ValueError("tag action requires args.name (or args.tag).")
+            return self.tag(tag_name)
+        if command == "freeze-release":
+            if self.registry is None:
+                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
+            tag_name = str(args.get("name") or args.get("tag") or "")
+            if not tag_name:
+                raise ValueError("freeze-release action requires args.name (or args.tag).")
+            return self.freeze_release(
+                tag_name,
+                output_gts=args.get("output_gts"),
+                message=args.get("message"),
+                stage_all=bool(args.get("stage_all", True)),
+            )
+        if command == "commit":
+            if self.registry is None:
+                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
+            message = str(args.get("message") or "")
+            if not message:
+                raise ValueError("commit action requires args.message.")
+            return self.commit(message, stage_all=bool(args.get("stage_all", True)))
+        if command == "push":
+            if self.registry is None:
+                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
+            return self.push()
+        if command == "status":
+            if self.registry is None:
+                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
+            return self.get_tree_state()
+        raise ValueError(f"Unsupported .goc action command: {command!r}")
+
+    @staticmethod
+    def _summarize_goc_result(result: Any) -> Any:
+        if isinstance(result, DependencyTreeRegistry):
+            return {
+                "lifecycle_state": result.lifecycle_state.value,
+                "repo_count": len(result.entries),
+            }
+        if isinstance(result, ProjectTreeState):
+            return {
+                "lifecycle_state": result.lifecycle_state.value,
+                "is_ready": result.is_ready,
+                "registry_complete": result.registry_complete,
+            }
+        if isinstance(result, Path):
+            return str(result)
+        if isinstance(result, (str, int, float, bool)) or result is None:
+            return result
+        return str(result)
+
     def checkout(
         self,
         branch_name: str,

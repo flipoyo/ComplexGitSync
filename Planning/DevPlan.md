@@ -45,7 +45,6 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | Ticket | Goal | Status |
 |--------|------|--------|
 | T18 | Integration Test Suite | 🔄 In progress (CGSi topology: 27 tests, expand/duplication/cycle + git command cycle scope) |
-| T22 | Parser-driven automation of public client methods via `.goc` files | ❌ Pending |
 | T24 | Local Git Register (`.lgr`) management for `.gts` ids | ❌ Pending |
 
 ### CGS roadmap extension (current core program)
@@ -67,12 +66,13 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 
 **AlphaSeries**
 
-All T-track tickets (T00–T27) are complete and the core Python API and CLI are
-fully operational. 264 unit tests pass across parsers, registry, lifecycle,
-operations, and CLI smoke paths. 27 integration tests now cover the CGSi
-topology and the READY `.gts` git command cycle (`add → commit → push → tag →
-freeze`) through Python API and CLI-first flows. Total: 291 tests passing.
-The project is functional for controlled use.
+All delivered T-track tickets are operational and the core Python API and CLI
+remain stable. `.goc` parser-driven orchestration is now executable through
+`ComplexGitSyncClient.orchestrate(...)`. 264 unit tests pass across parsers,
+registry, lifecycle, operations, and CLI smoke paths. 27 integration tests now
+cover the CGSi topology and the READY `.gts` git command cycle
+(`add → commit → push → tag → freeze`) through Python API and CLI-first flows.
+Total: 291 tests passing. The project is functional for controlled use.
 
 The project is **not yet BetaSeries** because:
 
@@ -123,10 +123,10 @@ the unit level, and documented.
 - `.cgs` supports repo-level `branch`/`tag` declarations; when both are present, `validate` enforces hash equivalence and raises `incompatibilities between branch (hash) and tag(val) in .cgs` on mismatch.
 - `freeze` is expected to emit the next `.gts` id and register it locally.
 - Remaining work is tracked in two linked streams in `DevPlanTickets.md`: legacy
-  T-ticket continuity (T18/T22/T24) and the CGS-001..CGS-010 core roadmap.
+  T-ticket continuity (T18/T24) and the CGS-001..CGS-010 core roadmap.
 - `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
 - Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
-- `.goc` automation and local register/ledger requirements are tracked in CGS-005 and related tickets.
+- `.goc` automation is available through `ComplexGitSyncClient.orchestrate`; local register/ledger requirements remain tracked in T24 / CGS-005.
 
 ## Definition of Done (Global)
 

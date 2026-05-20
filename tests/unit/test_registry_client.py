@@ -316,6 +316,79 @@ def test_client_pull_dispatches_to_launch_release_for_gts(monkeypatch):
     assert captured["snapshot_path"] == Path("state.gts").resolve()
 
 
+def test_client_orchestrate_executes_goc_actions_in_order(monkeypatch, tmp_path):
+    plan_path = _write_goc_plan(
+        tmp_path,
+        source="project.cgs",
+        actions="""
+[[actions]]
+command = "validate"
+
+[[actions]]
+command = "clone"
+[actions.args]
+target_dir = "workspace/demo"
+
+[[actions]]
+command = "checkout"
+[actions.args]
+ref = "autoTest"
+ref_type = "branch"
+
+[[actions]]
+command = "status"
+""",
+    )
+    client = ComplexGitSyncClient()
+    calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        client,
+        "validate",
+        lambda source, discover_nested=False: calls.append(("validate", Path(source).name)) or "validated",
+    )
+
+    def _fake_clone(source, *, target_dir=None):
+        calls.append(("clone", target_dir))
+        client.registry = DependencyTreeRegistry()
+        return client.registry
+
+    monkeypatch.setattr(client, "clone_cgs", _fake_clone)
+    monkeypatch.setattr(
+        client,
+        "checkout",
+        lambda ref, *, ref_kind=RefKind.BRANCH: calls.append(("checkout", ref)) or client.registry,
+    )
+    monkeypatch.setattr(
+        client,
+        "get_tree_state",
+        lambda: calls.append(("status", "queried")) or "status",
+    )
+
+    report = client.orchestrate(plan_path)
+
+    assert [entry["status"] for entry in report] == ["ok", "ok", "ok", "ok"]
+    assert calls == [
+        ("validate", "project.cgs"),
+        ("clone", "workspace/demo"),
+        ("checkout", "autoTest"),
+        ("status", "queried"),
+    ]
+
+
+def test_client_orchestrate_reports_unsupported_actions(monkeypatch, tmp_path):
+    class _FakeGocDocument:
+        project_source = "project.cgs"
+        actions = [{"command": "unsupported-cmd"}]
+
+    monkeypatch.setattr("ComplexGitSync.orchestre.GocDocument.from_toml", lambda _path: _FakeGocDocument())
+
+    report = ComplexGitSyncClient().orchestrate(tmp_path / "plan.goc", stop_on_error=False)
+
+    assert report[0]["status"] == "error"
+    assert "Unsupported .goc action command" in report[0]["error"]
+
+
 def test_client_print_alias_supports_gts(tmp_path):
     snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=(tmp_path / "workspace" / "demo").resolve())
     client = ComplexGitSyncClient()
@@ -767,6 +840,26 @@ relative_path = "deps/child-repo"
         encoding="utf-8",
     )
     return config_path
+
+
+def _write_goc_plan(tmp_path: Path, *, source: str, actions: str) -> Path:
+    plan_path = tmp_path / "plan.goc"
+    plan_path.write_text(
+        (
+            f"""
+[document]
+format_version = "1.0"
+
+[project]
+source = "{source}"
+""".strip()
+            + "\n\n"
+            + actions.strip()
+            + "\n"
+        ),
+        encoding="utf-8",
+    )
+    return plan_path
 
 
 def _nested_minimal(project_name: str) -> str:
