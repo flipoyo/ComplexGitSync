@@ -94,6 +94,130 @@ project_name = "demo"
     return snapshot_path
 
 
+def _seed_remote_repo(tmp_path: Path, name: str) -> tuple[Path, Path]:
+    remote = tmp_path / f"{name}-remote.git"
+    _run_git(tmp_path, "init", "--bare", remote.as_posix())
+
+    seed = tmp_path / f"{name}-seed"
+    seed.mkdir()
+    _run_git(seed, "init", "-b", "main")
+    _run_git(seed, "config", "user.email", "integration@complexgitsync.test")
+    _run_git(seed, "config", "user.name", "ComplexGitSync Integration")
+    (seed / "README.md").write_text(f"{name}\n", encoding="utf-8")
+    _run_git(seed, "add", "README.md")
+    _run_git(seed, "commit", "-m", "initial")
+    _run_git(seed, "remote", "add", "origin", remote.as_posix())
+    _run_git(seed, "push", "-u", "origin", "main")
+    return remote, seed
+
+
+@pytest.fixture()
+def local_two_repo_remotes(tmp_path: Path) -> dict[str, Path]:
+    root_remote, root_seed = _seed_remote_repo(tmp_path, "root")
+    leaf_remote, leaf_seed = _seed_remote_repo(tmp_path, "leaf")
+
+    clone_spec = tmp_path / "clone.cgs"
+    clone_spec.write_text(
+        """
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+project_owner_name = "owner"
+project_name = "RootRepo"
+default_branch = "main"
+fallback_branch = "main"
+relative_path = "."
+
+[[repos]]
+project_owner_name = "owner"
+project_name = "LeafRepo"
+default_branch = "main"
+fallback_branch = "main"
+relative_path = "deps/leaf"
+nested_config = "disabled"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "root_remote": root_remote,
+        "leaf_remote": leaf_remote,
+        "root_seed": root_seed,
+        "leaf_seed": leaf_seed,
+        "clone_spec": clone_spec,
+    }
+
+
+def _write_two_repo_ready_gts(
+    snapshot_path: Path,
+    *,
+    root_path: Path,
+    leaf_path: Path,
+    root_commit: str,
+    leaf_commit: str,
+) -> Path:
+    snapshot_path.write_text(
+        f"""
+[document]
+format_version = "1.0"
+generated_at = "2026-01-01T00:00:00Z"
+command_origin = "freeze_release"
+
+[project]
+name = "demo"
+root_absolute_path = "{root_path.as_posix()}"
+
+[tree_state]
+lifecycle_state = "READY"
+is_ready = true
+registry_complete = true
+
+[[repo_state]]
+name = "RootRepo"
+node_type = "root"
+absolute_path = "{root_path.as_posix()}"
+relative_path = "."
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "main"
+target_ref_kind = "branch"
+target_ref_name = "main"
+resolved_ref_kind = "branch"
+resolved_ref_name = "main"
+commit_sha = "{root_commit}"
+project_owner_name = "owner"
+project_name = "RootRepo"
+
+[[repo_state]]
+name = "LeafRepo"
+node_type = "leaf"
+absolute_path = "{leaf_path.as_posix()}"
+parent_absolute_path = "{root_path.as_posix()}"
+relative_path = "deps/leaf"
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "main"
+target_ref_kind = "branch"
+target_ref_name = "main"
+resolved_ref_kind = "branch"
+resolved_ref_name = "main"
+commit_sha = "{leaf_commit}"
+project_owner_name = "owner"
+project_name = "LeafRepo"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return snapshot_path
+
+
 @pytest.fixture()
 def ready_single_repo_snapshot(tmp_path: Path) -> dict[str, Path]:
     remote = tmp_path / "demo-remote.git"
@@ -408,3 +532,64 @@ class TestGitCommandCycleIntegration:
         remote_tags = _run_git(repo, "ls-remote", "--tags", "origin")
         assert "refs/tags/v0.1.0" in remote_tags
         assert "refs/tags/v0.2.0" in remote_tags
+
+
+class TestCloneAndLaunchReleaseLifecycle:
+    """Complete local clone and launch_release scenarios for T18 / CGS-002."""
+
+    def test_clone_cgs_supports_local_file_remotes(self, local_two_repo_remotes, monkeypatch, tmp_path):
+        clone_spec = local_two_repo_remotes["clone_spec"]
+        clone_target = tmp_path / "workspace"
+        client = ComplexGitSyncClient()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            client,
+            "_build_remote_url",
+            lambda entry: (
+                str(local_two_repo_remotes["root_remote"])
+                if entry.name == "RootRepo"
+                else str(local_two_repo_remotes["leaf_remote"])
+            ),
+        )
+
+        registry = client.clone_cgs(clone_spec, target_dir=clone_target)
+
+        assert registry.is_ready() is True
+        root_clone = clone_target
+        leaf_clone = clone_target / "deps" / "leaf"
+        assert root_clone.exists()
+        assert leaf_clone.exists()
+        submodule_modes = _run_git(root_clone, "ls-files", "--stage", "--", "deps/leaf")
+        assert submodule_modes.startswith("160000 ")
+
+    def test_launch_release_clones_missing_local_repos(self, local_two_repo_remotes, monkeypatch, tmp_path):
+        restore_root = tmp_path / "launch-workspace"
+        restore_leaf = restore_root / "deps" / "leaf"
+        root_commit = _run_git(local_two_repo_remotes["root_seed"], "rev-parse", "HEAD")
+        leaf_commit = _run_git(local_two_repo_remotes["leaf_seed"], "rev-parse", "HEAD")
+        snapshot = _write_two_repo_ready_gts(
+            tmp_path / "launch-ready.gts",
+            root_path=restore_root,
+            leaf_path=restore_leaf,
+            root_commit=root_commit,
+            leaf_commit=leaf_commit,
+        )
+
+        client = ComplexGitSyncClient()
+        monkeypatch.setattr(
+            client,
+            "_build_remote_url",
+            lambda entry: (
+                str(local_two_repo_remotes["root_remote"])
+                if entry.name == "RootRepo"
+                else str(local_two_repo_remotes["leaf_remote"])
+            ),
+        )
+
+        registry = client.launch_release(snapshot)
+
+        assert registry.is_ready() is True
+        assert restore_root.exists()
+        assert restore_leaf.exists()
+        assert _run_git(restore_root, "rev-parse", "--abbrev-ref", "HEAD") == "main"
+        assert _run_git(restore_leaf, "rev-parse", "--abbrev-ref", "HEAD") == "main"

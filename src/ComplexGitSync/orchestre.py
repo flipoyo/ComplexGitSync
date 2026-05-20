@@ -733,7 +733,12 @@ class GitRunner:
                     f"Clone destination already exists and is not empty: {destination_path}"
                 )
         destination_path.parent.mkdir(parents=True, exist_ok=True)
-        args = ["clone", "--branch", branch, "--single-branch", remote_url, str(destination_path)]
+        args: list[str] = []
+        if self._uses_file_transport(remote_url):
+            args.extend(["-c", "protocol.file.allow=always"])
+        args.extend(
+            ["clone", "--branch", branch, "--single-branch", remote_url, str(destination_path)]
+        )
         self._run(*args)
 
     def rev_parse_head(self, repo_path: Path | str) -> str:
@@ -816,15 +821,20 @@ class GitRunner:
         branch: str,
     ) -> None:
         """Add a submodule in *repo_path* at *relative_path* pinned to *branch*."""
-        self._run(
-            "submodule",
-            "add",
-            "-b",
-            branch,
-            remote_url,
-            str(relative_path),
-            cwd=repo_path,
+        args: list[str] = []
+        if self._uses_file_transport(remote_url):
+            args.extend(["-c", "protocol.file.allow=always"])
+        args.extend(
+            [
+                "submodule",
+                "add",
+                "-b",
+                branch,
+                remote_url,
+                str(relative_path),
+            ]
         )
+        self._run(*args, cwd=repo_path)
 
     def update_submodule(self, repo_path: Path | str, relative_path: Path | str) -> None:
         """Sync and update a tracked submodule path from its parent repository."""
@@ -891,6 +901,15 @@ class GitRunner:
             details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"
             raise GitSyncError(f"Git command failed ({command}): {details}")
         return completed
+
+    @staticmethod
+    def _uses_file_transport(remote_url: str) -> bool:
+        parsed = urlsplit(remote_url)
+        if parsed.scheme == "file":
+            return True
+        if parsed.scheme:
+            return False
+        return bool(remote_url) and not remote_url.startswith("git@")
 
 
 # ============================================================
