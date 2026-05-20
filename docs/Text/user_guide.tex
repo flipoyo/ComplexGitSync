@@ -42,8 +42,9 @@ Compatibility aliases: \texttt{read} $\rightarrow$ \texttt{load},
 \texttt{describe} $\rightarrow$ \texttt{print}, \texttt{restart} $\rightarrow$
 \texttt{pull}, \texttt{freeze-release} $\rightarrow$ \texttt{freeze}.
 
-The project-local \texttt{.lgr} register is now active; remaining roadmap work
-tracks ledger evolution (\texttt{T32}).
+The project-local \texttt{.lgr} register and sync ledger are both active (T24,
+T32).  Every synchronisation operation is automatically recorded as an immutable
+DAG event in the \texttt{[[ledger]]} section of the \texttt{.lgr} file.
 
 % -----------------------------------------------------------------------
 \section{Commands}
@@ -389,6 +390,54 @@ state of the tree at a point in time.
 Used for project identity and planning metadata. Supported in TOML, YAML, or
 JSON. YAML support requires the optional \texttt{PyYAML} dependency.
 
+\subsection{Local Git Register and Sync Ledger (\texttt{.lgr})}
+
+A TOML file maintained per project at \texttt{<project-root>/<Project\_name>.lgr}.
+It is updated automatically whenever a \texttt{.gts} snapshot is written.
+
+\textbf{Sections:}
+\begin{itemize}
+  \item \texttt{[register]} — current snapshot pointer (\texttt{current\_snapshot\_id},
+        \texttt{current\_snapshot\_hash}, \texttt{current\_snapshot\_path}).
+  \item \texttt{[[snapshots]]} — list of stable \texttt{gts-XXXXXX} identifiers,
+        one per unique workspace state, deduplicated by SHA-256 hash.
+  \item \texttt{[[ledger]]} — append-only list of synchronisation events forming
+        a DAG via \texttt{parent\_sync\_ids}.
+\end{itemize}
+
+\textbf{Ledger event schema:}
+
+\begin{lstlisting}[language=bash]
+[[ledger]]
+sync_id         = "lgr-000001"
+parent_sync_ids = []
+operation       = "clone"
+timestamp       = "2026-05-20T19:48:50.159Z"
+actor           = "username"
+workspace_hash  = "<sha256>"
+gts_snapshot_id = "gts-000001"
+affected_repos  = ["demo", "dep-a"]
+\end{lstlisting}
+
+The \texttt{workspace\_hash} field equals the canonical SHA-256 digest
+(\texttt{document.snapshot\_hash}) of the associated \texttt{.gts} file,
+creating a direct link between each ledger event and the immutable workspace
+state it records.  Events are parents-before-children in DAG order.
+
+\textbf{Accessing the ledger from Python:}
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import SyncLedger
+
+ledger  = SyncLedger("project/demo.lgr")
+history = ledger.history()   # topological order, parents first
+replay  = ledger.replay()    # alias for history()
+
+# Via ComplexGitSyncClient
+client.get_ledger_history("project/demo.lgr")
+client.replay_ledger("project/demo.lgr")
+\end{lstlisting}
+
 % -----------------------------------------------------------------------
 \section{Python API}
 
@@ -401,6 +450,8 @@ from ComplexGitSync import (
     CgsDocument,
     GtsDocument,
     GocDocument,
+    LocalGitRegister,
+    SyncLedger,
     GitProvider,
     AccessProtocol,
     RepoAddress,

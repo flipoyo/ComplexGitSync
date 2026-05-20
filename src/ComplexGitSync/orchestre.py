@@ -936,6 +936,180 @@ class LocalGitRegister:
         return document.compute_snapshot_hash()
 
 
+def _get_actor() -> str:
+    """Return the current system user name, or ``'unknown'`` on failure."""
+    try:
+        import getpass
+
+        return getpass.getuser()
+    except Exception:  # pragma: no cover
+        return "unknown"
+
+
+def _topological_sort_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return *events* in topological order (parents before children).
+
+    Uses Kahn's BFS algorithm on the ``parent_sync_ids`` graph.
+    Events without a valid ``sync_id`` are appended last, preserving their
+    original relative order.
+    """
+    by_id: dict[str, dict[str, Any]] = {}
+    for event in events:
+        if isinstance(event, dict):
+            sid = str(event.get("sync_id", ""))
+            if sid:
+                by_id[sid] = event
+
+    in_degree: dict[str, int] = {sid: 0 for sid in by_id}
+    children: dict[str, list[str]] = {sid: [] for sid in by_id}
+
+    for sid, event in by_id.items():
+        for parent_id in event.get("parent_sync_ids", []):
+            parent_str = str(parent_id)
+            if parent_str in by_id:
+                in_degree[sid] += 1
+                children[parent_str].append(sid)
+
+    queue: list[str] = sorted(sid for sid, deg in in_degree.items() if deg == 0)
+    result: list[dict[str, Any]] = []
+    while queue:
+        current = queue.pop(0)
+        result.append(by_id[current])
+        for child in sorted(children.get(current, [])):
+            in_degree[child] -= 1
+            if in_degree[child] == 0:
+                queue.append(child)
+
+    # Append any events not reachable via the DAG (malformed entries)
+    seen: set[str] = {str(e.get("sync_id", "")) for e in result}
+    for event in events:
+        if not isinstance(event, dict) or str(event.get("sync_id", "")) not in seen:
+            result.append(event)
+
+    return result
+
+
+class SyncLedger:
+    """Append-only DAG ledger for synchronisation operations in the ``.lgr`` file.
+
+    Extends the :class:`LocalGitRegister` format with a ``[[ledger]]``
+    section that records each synchronisation operation as an immutable
+    DAG event.  Events are linked via ``parent_sync_ids`` to form a
+    directed acyclic graph that reconstructs workspace evolution history.
+
+    Schema for each ledger event:
+
+    .. code-block:: toml
+
+        [[ledger]]
+        sync_id         = "lgr-000001"
+        parent_sync_ids = []              # empty list for the first event
+        operation       = "clone"
+        timestamp       = "2026-05-20T19:48:50.159Z"
+        actor           = "user"
+        workspace_hash  = "<sha256>"      # document.snapshot_hash from .gts
+        gts_snapshot_id = "gts-000001"    # links to [[snapshots]] entry
+        affected_repos  = ["demo", "dep"]
+
+    ``workspace_hash`` is the canonical SHA-256 digest of the ``.gts``
+    snapshot (``GtsDocument.snapshot_hash``), linking each event directly
+    to the immutable workspace state it records.
+    """
+
+    def __init__(self, register_path: Path | str) -> None:
+        self.register_path = Path(register_path)
+
+    def record_event(
+        self,
+        *,
+        operation: str,
+        workspace_hash: str,
+        gts_snapshot_id: str,
+        affected_repos: list[str],
+        actor: str | None = None,
+    ) -> str:
+        """Append an immutable event to the ledger and return the new ``sync_id``.
+
+        Parameters
+        ----------
+        operation:
+            The synchronisation operation that produced this event (e.g.
+            ``"clone"``, ``"freeze_release"``, ``"checkout"``).
+        workspace_hash:
+            The canonical SHA-256 snapshot hash (``GtsDocument.snapshot_hash``)
+            that identifies the workspace state after the operation.
+        gts_snapshot_id:
+            The local snapshot id (``gts-XXXXXX``) assigned by the
+            :class:`LocalGitRegister` for the same ``.gts`` file.
+        affected_repos:
+            Ordered list of repository names involved in the operation.
+        actor:
+            The system user or process that triggered the operation.  When
+            ``None``, the current OS user name is detected automatically.
+        """
+        data = self._load()
+        events: list[dict[str, Any]] = data.setdefault("ledger", [])
+
+        sync_id = self._next_event_id(events)
+        parent_ids: list[str] = (
+            [str(events[-1]["sync_id"])] if events and isinstance(events[-1], dict) and events[-1].get("sync_id") else []
+        )
+
+        timestamp = (
+            datetime.now(timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
+        resolved_actor = actor if actor is not None else _get_actor()
+
+        events.append(
+            {
+                "sync_id": sync_id,
+                "parent_sync_ids": parent_ids,
+                "operation": operation,
+                "timestamp": timestamp,
+                "actor": resolved_actor,
+                "workspace_hash": workspace_hash,
+                "gts_snapshot_id": gts_snapshot_id,
+                "affected_repos": affected_repos,
+            }
+        )
+
+        self.register_path.parent.mkdir(parents=True, exist_ok=True)
+        self.register_path.write_text(tomli_w.dumps(data), encoding="utf-8")
+        return sync_id
+
+    def history(self) -> list[dict[str, Any]]:
+        """Return all ledger events in topological DAG order (parents first)."""
+        data = self._load()
+        return _topological_sort_events(list(data.get("ledger", [])))
+
+    def replay(self) -> list[dict[str, Any]]:
+        """Return events in topological order for deterministic replay.
+
+        Alias for :meth:`history`.  Iterating the result in sequence
+        reconstructs the workspace evolution from first operation to last.
+        """
+        return self.history()
+
+    def _load(self) -> dict[str, Any]:
+        if not self.register_path.is_file():
+            return {"register": {}, "snapshots": [], "ledger": []}
+        return tomllib.loads(self.register_path.read_text(encoding="utf-8"))
+
+    def _next_event_id(self, events: list[dict[str, Any]]) -> str:
+        """Return the next sequential event id in ``lgr-XXXXXX`` format."""
+        max_id = 0
+        for entry in events:
+            raw_id = str(entry.get("sync_id", ""))
+            if raw_id.startswith("lgr-"):
+                try:
+                    max_id = max(max_id, int(raw_id.removeprefix("lgr-")))
+                except ValueError:
+                    continue
+        return f"lgr-{max_id + 1:06d}"
+
+
 @dataclass(slots=True)
 class GitRunner:
     """Git subprocess wrapper — executes git commands for clone/checkout/push actions."""
@@ -2544,7 +2718,55 @@ class ComplexGitSyncClient:
                 snapshot_path=resolved_output_path,
                 snapshot_id=register_id,
             )
+            workspace_hash = document.snapshot_hash or document.compute_snapshot_hash()
+            affected_repos = sorted(entry.name for entry in registry.values())
+            ledger_id = SyncLedger(register_path).record_event(
+                operation=command_origin,
+                workspace_hash=workspace_hash,
+                gts_snapshot_id=register_id,
+                affected_repos=affected_repos,
+            )
+            self._log_event(
+                "ledger_event",
+                register_path=register_path,
+                sync_id=ledger_id,
+                operation=command_origin,
+                workspace_hash=workspace_hash,
+                gts_snapshot_id=register_id,
+            )
         return resolved_output_path
+
+    def get_ledger_history(self, register_path: str | Path) -> list[dict[str, Any]]:
+        """Return all ledger events for *register_path* in topological DAG order.
+
+        Parameters
+        ----------
+        register_path:
+            Path to the project-local ``.lgr`` register file (e.g.
+            ``<project-root>/demo.lgr``).
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            Ledger events ordered parents-first.  Each event contains the
+            fields defined by the ``.lgr`` ledger schema: ``sync_id``,
+            ``parent_sync_ids``, ``operation``, ``timestamp``, ``actor``,
+            ``workspace_hash``, ``gts_snapshot_id``, and ``affected_repos``.
+        """
+        return SyncLedger(register_path).history()
+
+    def replay_ledger(self, register_path: str | Path) -> list[dict[str, Any]]:
+        """Return ledger events in topological order for deterministic replay.
+
+        Reconstructs the workspace evolution history from the first recorded
+        sync operation to the last.  Alias for :meth:`get_ledger_history`.
+
+        Parameters
+        ----------
+        register_path:
+            Path to the project-local ``.lgr`` register file.
+        """
+        return SyncLedger(register_path).replay()
 
     def _resolve_project_root(
         self,

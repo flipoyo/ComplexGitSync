@@ -346,10 +346,18 @@ for clone/pull operations.  It is also exported from the public package API.
 
 ---
 
-## Local Git Register (`.lgr`)
+## Local Git Register and Sync Ledger (`.lgr`)
 
-Each project is expected to maintain a project-local register file named
-`<Project_name>.lgr`.
+Each project maintains a project-local register file named `<Project_name>.lgr`.
+The file is a TOML document with three sections:
+
+| Section | Purpose |
+|---|---|
+| `[register]` | Current snapshot pointer (id, hash, path) |
+| `[[snapshots]]` | Stable `gts-XXXXXX` identifiers, deduplicated by SHA-256 hash |
+| `[[ledger]]` | Append-only DAG of sync operation events |
+
+### Register and Snapshots
 
 The `.lgr` register is responsible for:
 
@@ -360,6 +368,52 @@ The `.lgr` register is responsible for:
 `print(.gts)` and `pull(.gts)` are available, and `.goc` plans can be executed
 through `ComplexGitSyncClient.orchestrate(<plan.goc>)`. Snapshot writes update
 the project-local `.lgr` register and keep the current snapshot pointer aligned.
+
+### Sync Ledger (`[[ledger]]`)
+
+Every synchronisation operation that produces a `.gts` snapshot is recorded as
+an immutable event appended to the `[[ledger]]` array.  Events form a directed
+acyclic graph (DAG) via `parent_sync_ids`, enabling full reconstruction of
+workspace evolution history.
+
+**Event schema:**
+
+```toml
+[[ledger]]
+sync_id         = "lgr-000001"      # sequential, lgr-XXXXXX format
+parent_sync_ids = []                 # list of parent sync_ids (DAG links)
+operation       = "clone"            # command_origin that produced the snapshot
+timestamp       = "2026-05-20T19:48:50.159Z"
+actor           = "username"         # OS user detected at event time
+workspace_hash  = "<sha256>"         # document.snapshot_hash of the .gts file
+gts_snapshot_id = "gts-000001"       # links to [[snapshots]] entry
+affected_repos  = ["demo", "dep-a"]  # sorted list of repo names in registry
+```
+
+**Guarantees:**
+
+- Events are **append-only** — past events are never modified.
+- `workspace_hash` is the canonical SHA-256 digest (`GtsDocument.snapshot_hash`)
+  linking each ledger event directly to the immutable workspace state.
+- `parent_sync_ids` chains events into a DAG; the first event always has an
+  empty list.
+- `SyncLedger.history()` and `SyncLedger.replay()` return events in topological
+  order (parents before children), enabling deterministic replay.
+
+**Python API:**
+
+```python
+from ComplexGitSync import SyncLedger
+
+# Direct ledger access
+ledger = SyncLedger("project/demo.lgr")
+history = ledger.history()   # topological order
+replay  = ledger.replay()    # alias for history()
+
+# Via ComplexGitSyncClient
+client.get_ledger_history("project/demo.lgr")
+client.replay_ledger("project/demo.lgr")
+```
 
 ---
 

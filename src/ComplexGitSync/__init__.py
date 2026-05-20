@@ -50,7 +50,9 @@ from .orchestre import (
     GitRunner,
     GocDocument,
     GtsDocument,
+    LocalGitRegister,
     Orchestre,
+    SyncLedger,
 )
 
 __all__ = [
@@ -93,5 +95,7 @@ __all__ = [
     "GocDocument",
     "GtsDocument",
     "GitRunner",
+    "LocalGitRegister",
     "Orchestre",
+    "SyncLedger",
 ]

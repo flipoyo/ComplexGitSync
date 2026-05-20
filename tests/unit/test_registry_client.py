@@ -861,6 +861,227 @@ def test_client_validate_gts_snapshot_has_correct_command_origin(tmp_path):
     assert len(data["document"]["snapshot_hash"]) == 64
 
 
+# ---------------------------------------------------------------------------
+# SyncLedger — unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_sync_ledger_record_event_creates_first_entry(tmp_path):
+    import tomllib
+
+    from ComplexGitSync.orchestre import SyncLedger
+
+    lgr_path = tmp_path / "demo.lgr"
+    ledger = SyncLedger(lgr_path)
+
+    sync_id = ledger.record_event(
+        operation="clone",
+        workspace_hash="a" * 64,
+        gts_snapshot_id="gts-000001",
+        affected_repos=["demo", "child"],
+        actor="test-user",
+    )
+
+    assert sync_id == "lgr-000001"
+    data = tomllib.loads(lgr_path.read_text(encoding="utf-8"))
+    events = data["ledger"]
+    assert len(events) == 1
+    event = events[0]
+    assert event["sync_id"] == "lgr-000001"
+    assert event["parent_sync_ids"] == []
+    assert event["operation"] == "clone"
+    assert event["actor"] == "test-user"
+    assert event["workspace_hash"] == "a" * 64
+    assert event["gts_snapshot_id"] == "gts-000001"
+    assert event["affected_repos"] == ["demo", "child"]
+    assert "timestamp" in event
+
+
+def test_sync_ledger_second_event_links_to_first(tmp_path):
+    from ComplexGitSync.orchestre import SyncLedger
+
+    lgr_path = tmp_path / "demo.lgr"
+    ledger = SyncLedger(lgr_path)
+
+    id1 = ledger.record_event(
+        operation="clone",
+        workspace_hash="a" * 64,
+        gts_snapshot_id="gts-000001",
+        affected_repos=["demo"],
+        actor="user",
+    )
+    id2 = ledger.record_event(
+        operation="freeze_release",
+        workspace_hash="b" * 64,
+        gts_snapshot_id="gts-000002",
+        affected_repos=["demo"],
+        actor="user",
+    )
+
+    assert id1 == "lgr-000001"
+    assert id2 == "lgr-000002"
+
+    events = SyncLedger(lgr_path).history()
+    assert [e["sync_id"] for e in events] == ["lgr-000001", "lgr-000002"]
+    assert events[1]["parent_sync_ids"] == ["lgr-000001"]
+
+
+def test_sync_ledger_history_returns_topological_order(tmp_path):
+    from ComplexGitSync.orchestre import SyncLedger
+
+    lgr_path = tmp_path / "demo.lgr"
+    ledger = SyncLedger(lgr_path)
+
+    for i, op in enumerate(["clone", "checkout", "commit", "push", "freeze_release"]):
+        ledger.record_event(
+            operation=op,
+            workspace_hash=str(i) * 64,
+            gts_snapshot_id=f"gts-{i + 1:06d}",
+            affected_repos=["demo"],
+            actor="user",
+        )
+
+    history = ledger.history()
+    assert len(history) == 5
+    operations = [e["operation"] for e in history]
+    assert operations == ["clone", "checkout", "commit", "push", "freeze_release"]
+
+    # parents-before-children invariant
+    seen_ids: set[str] = set()
+    for event in history:
+        for parent_id in event["parent_sync_ids"]:
+            assert parent_id in seen_ids, f"parent {parent_id} not seen before {event['sync_id']}"
+        seen_ids.add(event["sync_id"])
+
+
+def test_sync_ledger_replay_is_alias_for_history(tmp_path):
+    from ComplexGitSync.orchestre import SyncLedger
+
+    lgr_path = tmp_path / "demo.lgr"
+    ledger = SyncLedger(lgr_path)
+    ledger.record_event(
+        operation="load",
+        workspace_hash="c" * 64,
+        gts_snapshot_id="gts-000001",
+        affected_repos=["demo"],
+        actor="user",
+    )
+
+    assert ledger.replay() == ledger.history()
+
+
+def test_sync_ledger_empty_register_returns_empty_history(tmp_path):
+    from ComplexGitSync.orchestre import SyncLedger
+
+    lgr_path = tmp_path / "nonexistent.lgr"
+    assert SyncLedger(lgr_path).history() == []
+
+
+def test_sync_ledger_actor_auto_detected_when_none(tmp_path):
+    from ComplexGitSync.orchestre import SyncLedger
+
+    lgr_path = tmp_path / "demo.lgr"
+    ledger = SyncLedger(lgr_path)
+    ledger.record_event(
+        operation="load",
+        workspace_hash="d" * 64,
+        gts_snapshot_id="gts-000001",
+        affected_repos=["demo"],
+    )
+
+    events = ledger.history()
+    assert isinstance(events[0]["actor"], str)
+    assert events[0]["actor"] != ""
+
+
+def test_client_write_gts_snapshot_records_ledger_event(tmp_path):
+    import tomllib
+
+    config_path = _write_root_cgs(tmp_path)
+    expected_lgr = tmp_path / "demo.lgr"
+
+    client = ComplexGitSyncClient()
+    client.load(config_path)
+
+    data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
+    assert "ledger" in data
+    assert len(data["ledger"]) == 1
+    event = data["ledger"][0]
+    assert event["sync_id"] == "lgr-000001"
+    assert event["operation"] == "load"
+    assert event["gts_snapshot_id"] == "gts-000001"
+    assert len(event["workspace_hash"]) == 64
+    assert "demo" in event["affected_repos"]
+    assert event["parent_sync_ids"] == []
+
+
+def test_client_multiple_operations_create_linked_ledger_events(tmp_path):
+    import tomllib
+
+    config_path = _write_root_cgs(tmp_path)
+    expected_lgr = tmp_path / "demo.lgr"
+
+    client = ComplexGitSyncClient()
+    client.load(config_path)
+    client.expand(config_path)
+    client.validate(config_path)
+
+    data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
+    events = data["ledger"]
+    assert len(events) == 3
+    sync_ids = [e["sync_id"] for e in events]
+    assert sync_ids == ["lgr-000001", "lgr-000002", "lgr-000003"]
+    # Each event (except the first) must link to its predecessor
+    assert events[0]["parent_sync_ids"] == []
+    assert events[1]["parent_sync_ids"] == ["lgr-000001"]
+    assert events[2]["parent_sync_ids"] == ["lgr-000002"]
+
+
+def test_client_get_ledger_history_via_public_api(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    expected_lgr = tmp_path / "demo.lgr"
+
+    client = ComplexGitSyncClient()
+    client.load(config_path)
+    client.expand(config_path)
+
+    history = client.get_ledger_history(expected_lgr)
+    assert len(history) == 2
+    assert history[0]["operation"] == "load"
+    assert history[1]["operation"] == "expand"
+
+
+def test_client_replay_ledger_reconstructs_history(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    expected_lgr = tmp_path / "demo.lgr"
+
+    client = ComplexGitSyncClient()
+    client.load(config_path)
+    client.expand(config_path)
+
+    replay = client.replay_ledger(expected_lgr)
+    history = client.get_ledger_history(expected_lgr)
+    assert replay == history
+
+
+def test_sync_ledger_workspace_hash_matches_gts_snapshot_hash(tmp_path):
+    import tomllib
+
+    config_path = _write_root_cgs(tmp_path)
+    expected_lgr = tmp_path / "demo.lgr"
+    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
+
+    client = ComplexGitSyncClient()
+    client.load(config_path)
+
+    lgr_data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
+    gts_data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
+
+    ledger_hash = lgr_data["ledger"][0]["workspace_hash"]
+    snapshot_hash = gts_data["document"]["snapshot_hash"]
+    assert ledger_hash == snapshot_hash
+
+
 def _write_root_cgs(tmp_path, *, nested_child: bool = False):
     nested_config = 'nested_config = "auto"\n' if nested_child else ""
     config_path = tmp_path / "project.cgs"
