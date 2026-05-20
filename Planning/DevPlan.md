@@ -34,7 +34,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T26 | CLI Simplification: `initialise`, `freeze`, smart `load()` | ✅ Done |
 | T16 | CLI wiring: `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` | ✅ Done |
 | T27 | Circular dependency resolution: `fix_circularities` | ✅ Done |
-| T17 | Unit Test Suite (incremental) | ✅ Ongoing (294 passing) |
+| T17 | Unit Test Suite (incremental) | ✅ Ongoing (296 passing) |
 | T19 | Documentation and Examples (incremental) | ✅ Updated |
 | T20 | CI Version Increment Automation | ✅ Done |
 
@@ -44,7 +44,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 
 | Ticket | Goal | Status |
 |--------|------|--------|
-| T18 | Integration Test Suite | 🔄 In progress (CGSi topology: 27 tests, expand/duplication/cycle + git command cycle scope) |
+| T18 | Integration Test Suite | ✅ Done (CGSi topology + local clone/launch-release lifecycle: 29 tests) |
 | T24 | Local Git Register (`.lgr`) management for `.gts` ids | ❌ Pending |
 
 ### CGS roadmap extension (current core program)
@@ -52,7 +52,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | Ticket | Goal | Status |
 |--------|------|--------|
 | CGS-001 | Safe Tag Propagation Semantics | ✅ Done |
-| CGS-002 | End-to-End Local Integration Test Infrastructure | 🔄 In progress (expand/duplication/cycle + git command cycle scenarios delivered; full clone/launch-release lifecycle pending) |
+| CGS-002 | End-to-End Local Integration Test Infrastructure | ✅ Done (local remotes, clone/launch-release lifecycle, CLI+API git cycle coverage) |
 | CGS-003 | Transactional Tag Propagation | ✅ Done |
 | CGS-004 | Formal `.gts` Snapshot Specification | ❌ Pending |
 | CGS-005 | `.lgr` Local Sync Ledger | ❌ Pending |
@@ -68,19 +68,15 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 
 All delivered T-track tickets are operational and the core Python API and CLI
 remain stable. `.goc` parser-driven orchestration is now executable through
-`ComplexGitSyncClient.orchestrate(...)`. 294 tests pass across parsers,
+`ComplexGitSyncClient.orchestrate(...)`. 296 tests pass across parsers,
 registry, lifecycle, operations, CLI smoke paths, and integration scenarios.
 The project is functional for controlled use.
 
 The project is **not yet BetaSeries** because:
 
-- Integration tests (T18 / CGS-002) are only partially delivered — expand/
-  duplication/cycle and git command cycle coverage are now in place, but
-  full multi-repo clone/launch-release lifecycle scenarios remain pending.
-- The CGS roadmap extension still has open scope (CGS-002 and CGS-004–CGS-010),
-  covering full lifecycle integration completion, formal `.gts`
-  specification, the `.lgr` local sync ledger, workspace preflight validation,
-  deterministic freeze semantics, and architectural positioning.
+- The CGS roadmap extension still has open scope (CGS-004–CGS-010), covering
+  formal `.gts` specification, the `.lgr` local sync ledger, workspace preflight
+  validation, deterministic freeze semantics, and architectural positioning.
 
 The project is **past POC** because the entire core workflow (initialise, clone,
 checkout, add, commit, push, tag, freeze, restart) is implemented, tested at
@@ -121,7 +117,7 @@ the unit level, and documented.
 - `.cgs` supports repo-level `branch`/`tag` declarations; when both are present, `validate` enforces hash equivalence and raises `incompatibilities between branch (hash) and tag(val) in .cgs` on mismatch.
 - `freeze` is expected to emit the next `.gts` id and register it locally.
 - Remaining work is tracked in two linked streams in `DevPlanTickets.md`: legacy
-  T-ticket continuity (T18/T24) and the CGS-001..CGS-010 core roadmap.
+  T-ticket continuity (T24) and the CGS-004..CGS-010 core roadmap.
 - `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
 - Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
 - `.goc` automation is available through `ComplexGitSyncClient.orchestrate`; local register/ledger requirements remain tracked in T24 / CGS-005.
@@ -140,4 +136,4 @@ From `InitialDevPlan.md` — completed when:
 - [x] the registry is directly accessible and complete
 - [x] logs satisfy the mandatory logging contract
 - [x] `initialise` and `freeze` are primary CLI commands; `load/expand/validate` are internal
-- [~] tests cover the CaWaQS-Viz-like topology (integration suite — expand/dup/cycle + git command cycle delivered; clone→launch_release pending)
+- [x] tests cover the CaWaQS-Viz-like topology (integration suite includes expand/dup/cycle, git command cycle, clone, and launch_release scenarios)

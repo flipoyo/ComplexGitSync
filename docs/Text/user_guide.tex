@@ -221,11 +221,11 @@ client.freeze(
 compatibility aliases for release and internal-state freeze operations
 respectively.
 
-The integration suite validates the command cycle in this order with local
-repositories and no network dependency:
+The integration suite validates local no-network lifecycle coverage:
+\texttt{clone\_cgs -> launch\_release} and the READY git command cycle
 \texttt{add -> commit -> push -> tag -> freeze}. The CLI path is exercised
-first (terminal-oriented usage), and the equivalent Python API git dispatch is
-covered in the same suite.
+first (terminal-oriented usage), and the equivalent Python API git dispatch and
+launch/restore flows are covered in the same suite.
 
 \subsection{\texttt{print}}
 

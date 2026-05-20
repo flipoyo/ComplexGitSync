@@ -223,7 +223,7 @@ Delivered parser-driven `.goc` execution through the public client API:
 - **Execution order rule**: keep remaining T tickets first, then sequence CGS
   tickets after them.
 
-### T18 — Integration Test Suite  🔄
+### T18 — Integration Test Suite  ✅
 **Goal**: end-to-end validation on temporary nested git repositories.  
 **Deliverables**: nested repo fixture generator; clone / checkout / pull / add / commit / push /
 tag / freeze scenarios.  
@@ -231,12 +231,12 @@ tag / freeze scenarios.
 **Acceptance**: CaWaQS-style topology reproducible; all sync commands produce
 expected READY states and `.gts` outputs.
 
-**Progress**: CGSi mixed-provider topology and command-cycle coverage delivered
-(27 integration tests). Covers: `expand()` pipeline, duplication prevention,
-cycle prevention, registry structure, DECLARED lifecycle state, example `.cgs`
-file parsing, and READY `.gts` git command cycle via Python API + CLI.
-Remaining scenarios (full multi-repo clone and launch_release lifecycle) are
-pending.
+**Progress**: CGSi mixed-provider topology and command-cycle coverage delivered,
+then completed with local file-remote clone and launch-release lifecycle
+scenarios (29 integration tests). Covers: `expand()` pipeline, duplication
+prevention, cycle prevention, registry structure, DECLARED lifecycle state,
+example `.cgs` parsing, READY `.gts` git command cycle via Python API + CLI,
+`clone_cgs` local remotes, and `launch_release` restore from missing paths.
 
 ### T24 — Local Git Register (`.lgr`) management ❌
 **Goal**: maintain a project-local register named `<Project_name>.lgr`.  
@@ -268,7 +268,7 @@ allowing silent overwrite of existing tags during propagated releases.
 - Force behavior is explicit and tested.
 - Existing workflows remain backward compatible when requested.
 
-### CGS-002 — End-to-End Local Integration Test Infrastructure (Critical)  🔄
+### CGS-002 — End-to-End Local Integration Test Infrastructure (Critical)  ✅
 **Type**: Testing / Reliability  
 **Problem**: Current tests validate isolated behaviors but not full synchronization workflows.  
 **Legacy linkage**: Implements the remaining scope of T18.
@@ -282,15 +282,15 @@ allowing silent overwrite of existing tags during propagated releases.
   - parent GitTree repository,
   - orchestration workspace.
 - Implement test scenarios:
-  - initialise, *(pending)*
-  - clone, *(pending)*
-  - checkout, *(pending)*
-  - add_tree, *(pending)*
-  - commit, *(pending)*
-  - push, *(pending)*
-  - pull, *(pending)*
-  - tag, *(pending)*
-  - freeze, *(pending)*
+  - initialise, *(covered)*
+  - clone, *(covered)*
+  - checkout, *(covered)*
+  - add_tree, *(covered)*
+  - commit, *(covered)*
+  - push, *(covered)*
+  - pull, *(covered)*
+  - tag, *(covered)*
+  - freeze, *(covered)*
 - Validate commit SHA propagation consistency.
 - Validate submodule SHA updates.
 **Acceptance Criteria**:
@@ -299,11 +299,10 @@ allowing silent overwrite of existing tags during propagated releases.
 - Failures expose inconsistent DAG state immediately.
 
 **Progress**: CGSi 4-repo mixed-provider topology fixture (`conftest.py`) and
-27 integration tests delivered (`test_cgsi_topology.py`). Covered: `expand()`
+29 integration tests delivered (`test_cgsi_topology.py`). Covered: `expand()`
 pipeline, duplication/cycle prevention, registry structure, DECLARED state,
-example `.cgs` parsing, and READY `.gts` git command cycle via CLI/Python API.
-All remaining multi-repo lifecycle scenarios (clone through launch_release) are
-still pending.
+example `.cgs` parsing, READY `.gts` git command cycle via CLI/Python API,
+local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 
 ### CGS-003 — Transactional Tag Propagation (High)  ✅
 **Type**: Reliability / Distributed Consistency  

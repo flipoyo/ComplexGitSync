@@ -203,6 +203,7 @@ CLI output is intentionally concise and explicit:
 - prints a minimal repo-only tree view (`project / parent / leaf`) for
   `initialise` flows
 
-The integration suite exercises this git action cycle with local repositories:
+The integration suite exercises full local lifecycle coverage:
+`expand → clone → launch_release` plus the git action cycle
 `add → commit → push → tag → freeze`, with CLI usage as the primary path and
 matching Python API coverage via `client.git(...)`.
