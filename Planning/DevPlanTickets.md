@@ -325,7 +325,7 @@ still pending.
 - Validation errors reported before mutation.
 - Propagation state observable and serializable.
 
-### CGS-004 — Formal `.gts` Snapshot Specification (High)
+### CGS-004 — Formal `.gts` Snapshot Specification (High) ~Verify completion
 **Type**: Core Architecture  
 **Problem**: `.gts` currently behaves operationally but lacks formal deterministic specification.  
 **Legacy linkage**: Deepens T06 contract and determinism guarantees.
