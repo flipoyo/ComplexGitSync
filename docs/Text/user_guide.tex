@@ -351,13 +351,38 @@ state of the tree at a point in time.
 
 \textbf{Top-level sections:}
 \begin{itemize}
-  \item \texttt{[document]} — format version, \texttt{generated\_at},
-        \texttt{command\_origin}.
+  \item \texttt{[document]} — \texttt{format\_version},
+        \texttt{schema\_version}, \texttt{generated\_at},
+        \texttt{command\_origin}, \texttt{hash\_algorithm},
+        \texttt{snapshot\_hash}.
   \item \texttt{[project]} — project name and \texttt{root\_absolute\_path}.
   \item \texttt{[tree\_state]} — \texttt{lifecycle\_state}, \texttt{is\_ready},
         \texttt{registry\_complete}.
   \item \texttt{[[repo\_state]]} — one entry per repo; includes
         \texttt{commit\_sha}, \texttt{sync\_state}, and ref information.
+\end{itemize}
+
+\textbf{Why both version fields and hash metadata exist:}
+\begin{itemize}
+  \item \texttt{format\_version} identifies the broad document family and keeps
+        long-range compatibility intent explicit.
+  \item \texttt{schema\_version} identifies the exact field-level contract used
+        by validation and canonical snapshot serialization.
+  \item \texttt{snapshot\_hash} (with \texttt{hash\_algorithm = "sha256"})
+        provides deterministic workspace identity: identical tree state produces
+        identical digest even if volatile metadata (\texttt{generated\_at},
+        \texttt{command\_origin}) differs.
+\end{itemize}
+
+\textbf{How this is used at runtime:}
+\begin{itemize}
+  \item During snapshot generation, ComplexGitSync writes
+        \texttt{schema\_version}, \texttt{hash\_algorithm}, and canonical
+        \texttt{snapshot\_hash}.
+  \item During load/validation, \texttt{snapshot\_hash} is recomputed from the
+        canonical payload and must match.
+  \item The project-local \texttt{.lgr} register uses this canonical hash to
+        deduplicate equivalent snapshots.
 \end{itemize}
 
 \subsection{Planning / GOC Documents (\texttt{.goc})}

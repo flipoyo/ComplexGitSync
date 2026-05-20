@@ -20,6 +20,12 @@ sync from a single local specification and a tracked local tree state.
 - `.lgr` — Local Git Register (`<Project_name>.lgr`) that records one stable
   local id per generated `.gts` snapshot and tracks the current snapshot pointer.
 
+For `.gts` metadata:
+
+- `document.format_version` is the broad document generation line (stable compatibility family).
+- `document.schema_version` is the concrete `.gts` field contract version used by validators and canonical hashing.
+- `document.hash_algorithm` and `document.snapshot_hash` provide deterministic state identity so identical workspace states map to the same digest, enabling integrity checks and `.lgr` deduplication.
+
 ### 1.3 Single API exposure
 
 The lifecycle is exposed through:
