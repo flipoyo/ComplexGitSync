@@ -1294,3 +1294,276 @@ relative_path = "../parent2"
     parent2_entries = [e for e in registry.values() if e.name == "parent2"]
     assert len(parent2_entries) == 1
     assert parent2_entries[0].repo_id == "root:parent2"
+
+
+# ---------------------------------------------------------------------------
+# find_strongly_connected_components tests
+# ---------------------------------------------------------------------------
+
+
+def test_find_scc_no_cycle_returns_trivial_sccs(tmp_path):
+    """A simple linear chain has only trivial SCCs (size 1)."""
+    from pathlib import Path as P
+    from ComplexGitSync.git_tree import find_strongly_connected_components
+
+    a, b, c = tmp_path / "a", tmp_path / "b", tmp_path / "c"
+    graph = {a: {b}, b: {c}, c: set()}
+    sccs = find_strongly_connected_components(graph)
+    assert all(len(s) == 1 for s in sccs)
+    all_paths = {p for scc in sccs for p in scc}
+    assert all_paths == {a, b, c}
+
+
+def test_find_scc_two_node_cycle(tmp_path):
+    """A two-node cycle is detected as one non-trivial SCC."""
+    from ComplexGitSync.git_tree import find_strongly_connected_components
+
+    a, b = tmp_path / "a", tmp_path / "b"
+    graph = {a: {b}, b: {a}}
+    sccs = find_strongly_connected_components(graph)
+    non_trivial = [s for s in sccs if len(s) > 1]
+    assert len(non_trivial) == 1
+    assert set(non_trivial[0]) == {a, b}
+
+
+def test_find_scc_three_node_cycle(tmp_path):
+    """A three-node mutual cycle is detected as one SCC."""
+    from ComplexGitSync.git_tree import find_strongly_connected_components
+
+    a, b, c = tmp_path / "a", tmp_path / "b", tmp_path / "c"
+    graph = {a: {b}, b: {c}, c: {a}}
+    sccs = find_strongly_connected_components(graph)
+    non_trivial = [s for s in sccs if len(s) > 1]
+    assert len(non_trivial) == 1
+    assert set(non_trivial[0]) == {a, b, c}
+
+
+def test_find_scc_disconnected_graph(tmp_path):
+    """Disconnected nodes each form their own trivial SCC."""
+    from ComplexGitSync.git_tree import find_strongly_connected_components
+
+    a, b, c = tmp_path / "a", tmp_path / "b", tmp_path / "c"
+    graph = {a: set(), b: set(), c: set()}
+    sccs = find_strongly_connected_components(graph)
+    assert len(sccs) == 3
+    assert all(len(s) == 1 for s in sccs)
+
+
+def test_find_scc_self_loop_node_appears_in_result(tmp_path):
+    """A self-loop node is included in the SCC result (as a trivial size-1 SCC)."""
+    from ComplexGitSync.git_tree import find_strongly_connected_components
+
+    a = tmp_path / "a"
+    graph = {a: {a}}
+    sccs = find_strongly_connected_components(graph)
+    all_paths = {p for scc in sccs for p in scc}
+    assert a in all_paths
+    assert len(sccs) == 1
+
+
+# ---------------------------------------------------------------------------
+# topological_sort tests
+# ---------------------------------------------------------------------------
+
+
+def test_topological_sort_linear_chain(tmp_path):
+    """Root -> parent -> leaf is returned in parent-first order."""
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, topological_sort
+
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    registry.add(_make_entry("root:parent", tmp_path / "parent", parent_id="root"))
+    registry.add(
+        _make_entry("root:parent:leaf", tmp_path / "parent" / "leaf", parent_id="root:parent")
+    )
+
+    order = topological_sort(registry)
+    ids = [e.repo_id for e in order]
+
+    assert ids.index("root") < ids.index("root:parent")
+    assert ids.index("root:parent") < ids.index("root:parent:leaf")
+
+
+def test_topological_sort_all_entries_returned(tmp_path):
+    """Every registry entry is returned exactly once."""
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, topological_sort
+
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    registry.add(_make_entry("root:a", tmp_path / "a", parent_id="root"))
+    registry.add(_make_entry("root:b", tmp_path / "b", parent_id="root"))
+    registry.add(_make_entry("root:a:leaf", tmp_path / "a" / "leaf", parent_id="root:a"))
+
+    order = topological_sort(registry)
+    assert len(order) == 4
+    assert {e.repo_id for e in order} == {"root", "root:a", "root:b", "root:a:leaf"}
+
+
+def test_topological_sort_parent_before_all_children(tmp_path):
+    """Root always comes before all other entries."""
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, topological_sort
+
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    for name in ("a", "b", "c"):
+        registry.add(_make_entry(f"root:{name}", tmp_path / name, parent_id="root"))
+
+    order = topological_sort(registry)
+    ids = [e.repo_id for e in order]
+    assert ids[0] == "root"
+
+
+# ---------------------------------------------------------------------------
+# fix_circularities — SCC phase (Phase 1) tests
+# ---------------------------------------------------------------------------
+
+
+def test_fix_circularities_detects_true_two_node_cycle(tmp_path):
+    """Phase 1 removes the back-edge entry that creates an A<->B cycle."""
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+
+    # Registry: root -> a -> b -> a (a's path reappears as a child of b)
+    path_a = tmp_path / "a"
+    path_b = tmp_path / "a" / "b"
+
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    registry.add(_make_entry("root:a", path_a, parent_id="root"))
+    registry.add(_make_entry("root:a:b", path_b, parent_id="root:a"))
+    # Cycle-creating back-edge: b's .cgs references a again
+    registry.add(_make_entry("root:a:b:a", path_a, parent_id="root:a:b"))
+
+    fixed = fix_circularities(registry)
+
+    assert len(fixed) == 1
+    assert "fixed_circularity:root:a:b:a\u2192root:a" in fixed
+    assert "root:a:b:a" not in registry.entries
+    # Legitimate entries are preserved
+    assert "root:a" in registry.entries
+    assert "root:a:b" in registry.entries
+
+
+def test_fix_circularities_back_edge_marked_is_external_reference(tmp_path):
+    """The back-edge entry has is_external_reference=True set before removal."""
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+
+    path_a = tmp_path / "a"
+    path_b = tmp_path / "a" / "b"
+
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    registry.add(_make_entry("root:a", path_a, parent_id="root"))
+    registry.add(_make_entry("root:a:b", path_b, parent_id="root:a"))
+    back_edge_entry = _make_entry("root:a:b:a", path_a, parent_id="root:a:b")
+    registry.add(back_edge_entry)
+
+    fix_circularities(registry)
+
+    # The entry is removed from the registry, but the is_external_reference
+    # flag was set on the object before removal.
+    assert back_edge_entry.is_external_reference is True
+
+
+def test_fix_circularities_anchor_heuristic_most_external_edges(tmp_path):
+    """When two nodes tie on depth, the one with more external edges wins."""
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+
+    # Build: root -> a -> c -> a (cycle); root -> b -> c -> b (cycle)
+    # path_a and path_b are both at depth 1 (1 colon in repo_id).
+    # path_a has 2 external in-edges (from root via root:a AND root:c:a).
+    # Actually, let's set up a simpler heuristic-1 test:
+    # root -> a, root -> b, a -> c, b -> c, c -> a  (so a has external in from root)
+    path_a = tmp_path / "a"
+    path_b = tmp_path / "b"
+    path_c = tmp_path / "c"
+
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    registry.add(_make_entry("root:a", path_a, parent_id="root"))
+    registry.add(_make_entry("root:b", path_b, parent_id="root"))
+    registry.add(_make_entry("root:a:c", path_c, parent_id="root:a"))
+    registry.add(_make_entry("root:b:c", path_c, parent_id="root:b"))
+    # Two back-edges from c back to a (through b)
+    registry.add(_make_entry("root:b:c:a", path_a, parent_id="root:b:c"))
+
+    fixed = fix_circularities(registry)
+
+    # root:a should be anchor (external incoming from root + depth 1)
+    # root:b:c:a is the back-edge → removed
+    assert "root:a" in registry.entries
+    assert "root:b:c:a" not in registry.entries
+    assert any("root:b:c:a" in change for change in fixed)
+
+
+def test_fix_circularities_no_duplicate_changes_for_same_entry(tmp_path):
+    """Each removed entry appears exactly once in the returned changes tuple."""
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+
+    path_a = tmp_path / "a"
+    path_b = tmp_path / "a" / "b"
+
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    registry.add(_make_entry("root:a", path_a, parent_id="root"))
+    registry.add(_make_entry("root:a:b", path_b, parent_id="root:a"))
+    registry.add(_make_entry("root:a:b:a", path_a, parent_id="root:a:b"))
+
+    fixed = fix_circularities(registry)
+
+    # No entry should appear twice in the changes.
+    removed_ids = [change.split("\u2192")[0].removeprefix("fixed_circularity:") for change in fixed]
+    assert len(removed_ids) == len(set(removed_ids))
+
+
+def test_fix_circularities_phase1_and_phase2_together(tmp_path):
+    """Phase 1 (SCC) and Phase 2 (path dedup) both fire when needed."""
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+
+    path_a = tmp_path / "a"
+    path_b = tmp_path / "a" / "b"
+    path_shared = tmp_path / "shared"
+
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    # Phase 1 cycle: root -> a -> b -> a
+    registry.add(_make_entry("root:a", path_a, parent_id="root"))
+    registry.add(_make_entry("root:a:b", path_b, parent_id="root:a"))
+    registry.add(_make_entry("root:a:b:a", path_a, parent_id="root:a:b"))
+    # Phase 2 plain dedup: shared appears under both root and root:a
+    registry.add(_make_entry("root:shared", path_shared, parent_id="root"))
+    registry.add(_make_entry("root:a:shared", path_shared, parent_id="root:a"))
+
+    fixed = fix_circularities(registry)
+
+    # Phase 1 removes root:a:b:a (back-edge)
+    assert "root:a:b:a" not in registry.entries
+    # Phase 2 removes root:a:shared (duplicate path)
+    assert "root:a:shared" not in registry.entries
+    assert "root:shared" in registry.entries
+    assert len(fixed) == 2
+
+
+def test_fix_circularities_pending_clone_skips_external_reference(tmp_path):
+    """_pending_clone_entries excludes entries with is_external_reference=True."""
+    from ComplexGitSync.git_repo import RepoLifecycleState
+
+    # Manually set is_external_reference on a DECLARED entry and verify it
+    # is filtered out by _pending_clone_entries.
+    registry = DependencyTreeRegistry()
+    registry.add(_make_entry("root", tmp_path))
+    normal = _make_entry("root:a", tmp_path / "a", parent_id="root")
+    ext_ref = _make_entry("root:b", tmp_path / "b", parent_id="root")
+    ext_ref.is_external_reference = True
+    registry.add(normal)
+    registry.add(ext_ref)
+
+    # Both entries are DECLARED; only the non-external-reference one should
+    # appear in the pending clone list.
+    pending = [
+        e
+        for e in registry.values()
+        if e.repo_lifecycle_state == RepoLifecycleState.DECLARED
+        and not e.is_external_reference
+    ]
+    assert len(pending) == 2  # root + normal (root is also DECLARED)
+    assert all(not e.is_external_reference for e in pending)

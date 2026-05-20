@@ -86,8 +86,8 @@ the client.  **Every action is gated by the current `TreeLifecycleState`**:
 | `initialise(.gts)` | none | `.gts READY` (restore) |
 | `load(.cgs)` | none | `.gts DECLARED` |
 | `load(.gts)` | none | `.gts READY` (direct) |
-| `expand(.cgs)` | none | `.gts PENDING`; runs nested discovery + `fix_circularities` with hash compatibility checks |
-| `fix_circularities()` | any (after load/expand) | removes duplicate entries; state unchanged |
+| `expand(.cgs)` | none | `.gts PENDING`; runs nested discovery + `fix_circularities` (SCC + hash-compatibility) |
+| `fix_circularities()` | any (after load/expand) | two-phase cycle-breaking engine; removes back-edge duplicates; state unchanged |
 | `pull(.cgs)` | none | `.gts READY` |
 | `pull(.gts)` | none | `.gts READY` |
 | `checkout(.gts)` | `READY` | `READY` |
@@ -262,6 +262,67 @@ Additional guidance:
   `commit`, `push`, and `tag` methods remain available.
 - `load`, `expand`, `validate` are internal implementation steps; users do not need
   to call them directly.
+
+---
+
+## Cycle Breaking Engine
+
+`fix_circularities` is the authoritative algorithm for resolving cyclic
+cross-references in the dependency registry.  It operates in two phases.
+
+### Phase 1 — SCC detection (Tarjan's algorithm)
+
+A directed dependency graph is built from the registry (function
+`_build_path_graph`): each node is an absolute path; each edge goes from the
+parent's absolute path to the child's absolute path.
+
+`find_strongly_connected_components(graph)` runs Tarjan's algorithm on this
+graph and returns all SCCs.  Any SCC with more than one node represents a
+genuine cycle (e.g., A→B→A where A and B are physical repository paths).
+
+For each non-trivial SCC, `_select_scc_anchor` selects an *Anchor* path using
+three heuristics applied in order:
+
+1. **Most external incoming edges** — the node with the most edges from
+   outside the SCC is the most externally referenced and is preferred.
+2. **Closest to project root** — fewest `:`-separated segments in `repo_id`.
+3. **Smallest SHA-256 hash** — deterministic tie-breaker on the path string.
+
+All registry entries that resolve to the anchor's path *and* whose parent
+belongs to a non-anchor SCC node are *back-edge* entries.  These are flagged
+`is_external_reference = True` then removed from the registry.
+
+The `is_external_reference` flag on `RepoRegistryEntry` marks a repository
+reference that must **not** be cloned recursively.  It represents a
+SYNC_DEPENDENCY edge that has been downgraded to an EXTERNAL_REFERENCE to
+break the cycle.
+
+### Phase 2 — Hash-compatibility deduplication
+
+After cycle breaking, entries are grouped by resolved absolute path.  Residual
+duplicates (entries not caught by Phase 1) are removed when compatible with
+the canonical entry (same lifecycle/sync state, no conflicting commit SHA or
+worktree marker).
+
+### Sync stack
+
+`clone_cgs` maintains a `sync_stack: set[Path]` — the set of absolute paths
+already entered into the clone pipeline during the current run.
+`_pending_clone_entries` excludes:
+- entries whose `repo_lifecycle_state` is not `DECLARED`,
+- entries whose `is_external_reference` is `True`,
+- entries whose `absolute_path` is already in the sync stack.
+
+This provides defence-in-depth against infinite-recursion scenarios where a
+residual back-reference escapes the registry cleanup phase.
+
+### Topological sort
+
+`topological_sort(registry)` uses Kahn's algorithm (BFS-based) to return
+registry entries in **parent-first** order, which is the safe sequential order
+for clone/pull operations.  It is also exported from the public package API.
+
+---
 
 ## Local Git Register (`.lgr`)
 

@@ -23,9 +23,11 @@ from .git_tree import (
     GitTree,
     ProjectTreeState,
     TreeLifecycleState,
+    find_strongly_connected_components,
     fix_circularities,
     iter_tree,
     iter_tree_leaf_first,
+    topological_sort,
 )
 
 # --- Tier 2 — Actions (operations.py) ---
@@ -70,9 +72,11 @@ __all__ = [
     "GitTree",
     "ProjectTreeState",
     "TreeLifecycleState",
+    "find_strongly_connected_components",
     "fix_circularities",
     "iter_tree",
     "iter_tree_leaf_first",
+    "topological_sort",
     # operations.py
     "checkout_tree",
     "add_tree",

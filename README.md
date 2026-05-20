@@ -72,10 +72,34 @@ ComplexGitSync follows this simplified lifecycle:
 
 When a project has parents that cross-reference each other (e.g. parent A's
 nested `.cgs` lists parent B as a leaf), `expand` and `clone` automatically
-call `fix_circularities` to deduplicate the registry before proceeding.
-This keeps the expanded dependency graph as a DAG with a controlled
-tangle-like topology (shared repos can be referenced from multiple parents,
-but only one canonical node is kept after hash-compatibility checks).
+call `fix_circularities` to resolve the dependency graph into a valid DAG
+before proceeding.
+
+`fix_circularities` is a two-phase **Cycle Breaking Engine**:
+
+- **Phase 1 — SCC detection (Tarjan's algorithm)**:  A directed dependency
+  graph is built from the registry (edges: parent → child, keyed by absolute
+  path).  Strongly Connected Components (SCCs) are identified using Tarjan's
+  algorithm.  For each non-trivial SCC (a genuine cycle such as A→B→A), an
+  *Anchor* node is selected using three heuristics applied in order:
+  (1) most incoming edges from outside the SCC, (2) closest to the project
+  root (fewest `:` segments in `repo_id`), (3) smallest SHA-256 hash for
+  deterministic tie-breaking.  Back-edge entries — registry entries that
+  resolve to the anchor's path but are parented inside the SCC — are flagged
+  `is_external_reference = True` and removed.
+- **Phase 2 — hash-compatibility deduplication**: residual duplicate entries
+  sharing the same physical path (e.g., loaded from an older `.gts`) are
+  removed when their synchronisation state is compatible with the canonical
+  entry.
+
+The clone engine tracks a **sync stack** (the set of absolute paths already
+entered into the clone pipeline during the current run) so that any residual
+reference to a path that is already being cloned is treated as a mount point
+rather than a recursive clone target.
+
+A `topological_sort(registry)` utility is also provided; it uses Kahn's
+algorithm (BFS-based) to return registry entries in parent-first order, which
+is the safe sequential order for clone/pull operations.
 
 For `.cgs` repository refs, you can declare either `branch` (or
 `default_branch`) or `tag`. If both `branch` and `tag` are declared on the same
