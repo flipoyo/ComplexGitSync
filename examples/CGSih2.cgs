@@ -1,0 +1,49 @@
+# CGSih2 — Integration Suite nested config (GitHub leaf)
+# ──────────────────────────────────────────────────────────────────────────────
+# This file lives inside the CGSih2 repository (GitHub).
+# ComplexGitSync discovers it when expanding the CGSil1 project
+# (because CGSih2 is declared with nested_config = "auto" in CGSih1.cgs).
+#
+# CYCLE scenario:
+#   CGSih2 references CGSih1 at relative path ".." (its parent directory).
+#   CGSih1 is already registered in the tree (as root:CGSih1).
+#   The discovery guard detects the same absolute path and prevents adding
+#   a back-edge entry (root:CGSih1:CGSih2:CGSih1).
+#   fix_circularities() removes any residual back-edge entries that bypass
+#   the guard (e.g. when loaded from an older .gts snapshot).
+#
+# nested_config = "disabled" on the CGSih1 back-reference avoids infinite
+# recursion: CGSih1.cgs would otherwise be re-scanned, producing CGSih2
+# again, and so on.
+
+[document]
+format_version = "1.0"
+
+[project]
+name           = "CGSih2"
+default_branch = "main"
+
+# ── Repositories ─────────────────────────────────────────────────────────────
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "CGSih2"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+relative_path      = "."
+# Self-reference — identifies CGSih2 as the root of this nested tree.
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "CGSih1"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+relative_path      = ".."
+# Back-reference to CGSih1 (the parent of CGSih2).
+# This creates the CYCLE: CGSih1 ↔ CGSih2.
+# The discovery guard or fix_circularities() breaks this cycle.
+nested_config      = "disabled"
