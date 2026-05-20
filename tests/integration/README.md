@@ -69,6 +69,7 @@ populated with the appropriate `.cgs` content (no network or git required):
 | `TestCgsiCyclePrevention`        | No back-edge entry; fix_circularities() nop |
 | `TestCgsiLifecycleState`         | DECLARED state after expand (repos uncloned) |
 | `TestCgsiExampleFiles`           | examples/*.cgs parse and have correct shape |
+| `TestGitCommandCycleIntegration` | READY `.gts` git cycle via Python API + CLI (`add→commit→push→tag→freeze`) |
 
 ---
 

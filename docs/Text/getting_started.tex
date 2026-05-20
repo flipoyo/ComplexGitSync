@@ -140,6 +140,11 @@ commands can reuse the synchronised state.
 Once the tree is materialised, the lifecycle continues with checkout from the
 recorded \texttt{.gts} state.
 
+For day-to-day terminal usage, the integration suite prioritises the CLI git
+cycle on READY snapshots in this order:
+\texttt{add -> commit -> push -> tag -> freeze}. The same cycle is mirrored in
+the Python API through \texttt{client.git(...)}.
+
 % -----------------------------------------------------------------------
 \section{Inspecting and Printing Saved State}
 
