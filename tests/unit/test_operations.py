@@ -940,6 +940,14 @@ def test_git_runner_create_tag_default_does_not_force(monkeypatch):
     assert captured["args"] == ("tag", "v1.2.3")
 
 
+def test_git_runner_file_transport_detection_handles_windows_paths():
+    assert GitRunner._uses_file_transport("file:///tmp/remote.git") is True
+    assert GitRunner._uses_file_transport("/tmp/remote.git") is True
+    assert GitRunner._uses_file_transport(r"C:\tmp\remote.git") is True
+    assert GitRunner._uses_file_transport("https://example.com/repo.git") is False
+    assert GitRunner._uses_file_transport("git@github.com:owner/repo.git") is False
+
+
 # ---------------------------------------------------------------------------
 # ComplexGitSyncClient.checkout / commit / push / tag / freeze_release / launch_release
 # ---------------------------------------------------------------------------
