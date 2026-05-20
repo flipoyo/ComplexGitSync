@@ -19,10 +19,12 @@ These tests exercise:
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.git_repo import GitProvider, NodeType
 from ComplexGitSync.git_tree import TreeLifecycleState
 from ComplexGitSync.orchestre import ComplexGitSyncClient
@@ -38,6 +40,82 @@ def _expand(root_cgs: Path) -> ComplexGitSyncClient:
     client = ComplexGitSyncClient()
     client.expand(root_cgs)
     return client
+
+
+def _run_git(repo_path: Path, *args: str) -> str:
+    """Run a git command in *repo_path* and return stdout."""
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repo_path,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return result.stdout.strip()
+
+
+def _write_ready_gts(snapshot_path: Path, *, root_path: Path, commit_sha: str) -> Path:
+    snapshot_path.write_text(
+        f"""
+[document]
+format_version = "1.0"
+generated_at = "2026-01-01T00:00:00Z"
+command_origin = "clone"
+
+[project]
+name = "demo"
+root_absolute_path = "{root_path.as_posix()}"
+
+[tree_state]
+lifecycle_state = "READY"
+is_ready = true
+registry_complete = true
+
+[[repo_state]]
+name = "demo"
+node_type = "root"
+absolute_path = "{root_path.as_posix()}"
+relative_path = "."
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "main"
+target_ref_kind = "branch"
+target_ref_name = "main"
+resolved_ref_kind = "branch"
+resolved_ref_name = "main"
+commit_sha = "{commit_sha}"
+project_owner_name = "owner"
+project_name = "demo"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return snapshot_path
+
+
+@pytest.fixture()
+def ready_single_repo_snapshot(tmp_path: Path) -> dict[str, Path]:
+    remote = tmp_path / "demo-remote.git"
+    _run_git(tmp_path, "init", "--bare", remote.as_posix())
+
+    repo = tmp_path / "demo"
+    repo.mkdir()
+    _run_git(repo, "init", "-b", "main")
+    _run_git(repo, "config", "user.email", "integration@complexgitsync.test")
+    _run_git(repo, "config", "user.name", "ComplexGitSync Integration")
+    (repo / "README.md").write_text("initial\n", encoding="utf-8")
+    _run_git(repo, "add", "README.md")
+    _run_git(repo, "commit", "-m", "initial")
+    _run_git(repo, "remote", "add", "origin", remote.as_posix())
+    _run_git(repo, "push", "-u", "origin", "main")
+
+    snapshot = _write_ready_gts(
+        tmp_path / "demo.gts",
+        root_path=repo.resolve(),
+        commit_sha=_run_git(repo, "rev-parse", "HEAD"),
+    )
+    return {"repo": repo, "remote": remote, "snapshot": snapshot}
 
 
 # ---------------------------------------------------------------------------
@@ -291,3 +369,42 @@ class TestCgsiExampleFiles:
         assert len(cgsih1_refs) == 1
         assert cgsih1_refs[0].get("relative_path") == ".."
         assert cgsih1_refs[0].get("nested_config") == "disabled"
+
+
+class TestGitCommandCycleIntegration:
+    """READY .gts snapshots support the full git command cycle."""
+
+    def test_python_api_git_cycle(self, ready_single_repo_snapshot):
+        repo = ready_single_repo_snapshot["repo"]
+        snapshot = ready_single_repo_snapshot["snapshot"]
+        client = ComplexGitSyncClient()
+        client.load_gts(snapshot)
+
+        cycle_file = repo / "api-cycle.txt"
+        cycle_file.write_text("api cycle\n", encoding="utf-8")
+        client.git(None, "add")
+        client.git(None, "commit", "api cycle commit")
+        client.git(None, "push")
+        client.git(None, "tag", "v0.3.0")
+
+        remote_tags = _run_git(repo, "ls-remote", "--tags", "origin")
+        assert "refs/tags/v0.3.0" in remote_tags
+
+    def test_cli_git_cycle(self, ready_single_repo_snapshot):
+        repo = ready_single_repo_snapshot["repo"]
+        snapshot = ready_single_repo_snapshot["snapshot"]
+
+        cycle_file = repo / "cli-cycle.txt"
+        cycle_file.write_text("cli cycle 1\n", encoding="utf-8")
+
+        assert cli_main(["add", "--gts", str(snapshot)]) == 0
+        assert cli_main(["commit", "cli cycle commit", "--gts", str(snapshot)]) == 0
+        assert cli_main(["push", "--gts", str(snapshot)]) == 0
+        assert cli_main(["tag", "v0.1.0", "--gts", str(snapshot)]) == 0
+
+        cycle_file.write_text("cli cycle 2\n", encoding="utf-8")
+        assert cli_main(["freeze", "v0.2.0", "--gts", str(snapshot)]) == 0
+
+        remote_tags = _run_git(repo, "ls-remote", "--tags", "origin")
+        assert "refs/tags/v0.1.0" in remote_tags
+        assert "refs/tags/v0.2.0" in remote_tags

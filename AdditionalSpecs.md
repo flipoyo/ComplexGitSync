@@ -410,6 +410,7 @@ CLI display requirements:
 
 - Unit tests: `tests/unit/`
 - Integration tests: `tests/integration/`
+- Integration suite includes a CLI-first READY `.gts` git command cycle (`add → commit → push → tag → freeze`) mirrored in Python API.
 - Install dev extras: `pixi install`
 - Run suite: `pixi run test` from the repository root
 - Tests must not depend on network access or live git remotes.

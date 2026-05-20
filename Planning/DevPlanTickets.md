@@ -101,13 +101,14 @@ profiles. Structured file logs preserve mandatory events (`command_start`,
 profile-gated.
 
 ### T17 — Unit Test Suite (incremental) ✅
-264 unit tests + 25 integration tests = 289 total passing. Unit tests cover
+264 unit tests + 27 integration tests = 291 total passing. Unit tests cover
 parsers, registry, lifecycle, rendering, gating, propagate/create/checkout/
 commit/push operations, deep 3-level hierarchy ordering, the simplified
 `initialise`/`freeze` CLI surface, and `fix_circularities` behaviour.
 Integration tests cover the CGSi 4-repo mixed-provider topology (expand,
 duplication prevention, cycle prevention, lifecycle state, and example file
-parsing).
+parsing) plus a READY `.gts` git command cycle through Python API and CLI-first
+execution (`add → commit → push → tag → freeze`).
 
 ### T19 — Documentation and Examples (incremental) ✅
 `README.md`, `docs/user_guide.tex`, `docs/getting_started.tex`,
@@ -215,11 +216,12 @@ tag / freeze_release / launch_release / commit-push gating scenarios.
 **Acceptance**: CaWaQS-style topology reproducible; all sync commands produce
 expected READY states and `.gts` outputs.
 
-**Progress**: CGSi 4-repo mixed-provider topology delivered (25 integration
-tests).  Covers: `expand()` pipeline, duplication prevention, cycle prevention,
-registry structure, DECLARED lifecycle state, and example `.cgs` file parsing.
-Remaining scenarios (clone, checkout, commit, push, tag, freeze, launch_release)
-require live bare-repo fixtures and are pending.
+**Progress**: CGSi mixed-provider topology and command-cycle coverage delivered
+(27 integration tests). Covers: `expand()` pipeline, duplication prevention,
+cycle prevention, registry structure, DECLARED lifecycle state, example `.cgs`
+file parsing, and READY `.gts` git command cycle via Python API + CLI.
+Remaining scenarios (full multi-repo clone and launch_release lifecycle) are
+pending.
 
 ### T22 — `.goc` parser-driven command automation ❌
 **Goal**: automate `ComplexGitSyncClient` method execution from `.goc` plans.  
@@ -291,10 +293,11 @@ allowing silent overwrite of existing tags during propagated releases.
 - Failures expose inconsistent DAG state immediately.
 
 **Progress**: CGSi 4-repo mixed-provider topology fixture (`conftest.py`) and
-25 integration tests delivered (`test_cgsi_topology.py`).  Covered: `expand()`
-pipeline, duplication/cycle prevention, registry structure, DECLARED state, and
-example `.cgs` file parsing.  All remaining lifecycle scenarios (clone through
-launch_release) are still pending.
+27 integration tests delivered (`test_cgsi_topology.py`). Covered: `expand()`
+pipeline, duplication/cycle prevention, registry structure, DECLARED state,
+example `.cgs` parsing, and READY `.gts` git command cycle via CLI/Python API.
+All remaining multi-repo lifecycle scenarios (clone through launch_release) are
+still pending.
 
 ### CGS-003 — Transactional Tag Propagation (High)
 **Type**: Reliability / Distributed Consistency  

@@ -200,3 +200,7 @@ CLI output is intentionally concise and explicit:
   `git push`, `git tag`, `git checkout`)
 - prints a minimal repo-only tree view (`project / parent / leaf`) for
   `initialise` flows
+
+The integration suite exercises this git action cycle with local repositories:
+`add → commit → push → tag → freeze`, with CLI usage as the primary path and
+matching Python API coverage via `client.git(...)`.
