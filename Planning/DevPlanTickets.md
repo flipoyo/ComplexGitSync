@@ -395,32 +395,21 @@ ledger via the public API.  `SyncLedger` exported from the package.
 11 focused unit tests added in `test_registry_client.py`.  `AdditionalSpecs.md`
 and `DevPlan.md` updated; `user_guide.tex` updated with ledger section.
 
-### T33 — Workspace Preflight Validation Engine (High)
+### T33 — Workspace Preflight Validation Engine (High) ✅
 **Type**: Safety  
 **Problem**: Mutating operations currently rely heavily on implicit repository correctness.  
 **Legacy linkage**: Hardens T12/T13/T14 safety gating before mutation.
-**Objectives**:
-- Detect invalid synchronization states before mutation.
-**Tasks**:
-- Implement validation engine checking:
-  - dirty trees,
-  - detached HEADs,
-  - missing remotes,
-  - branch divergence,
-  - unresolved merges,
-  - missing submodules,
-  - inconsistent commit propagation.
-- Add validation severity levels:
-  - warning,
-  - blocking error.
-- Integrate before:
-  - commit,
-  - push,
-  - tag,
-  - freeze.
-**Acceptance Criteria**:
-- Invalid workspace states blocked before destructive operations.
-- Diagnostics actionable and explicit.
+`operations.py` now runs a shared workspace preflight validator before
+`commit_tree`, `push_tree`, `tag_tree`, and `freeze_release_tree`.  The engine
+checks dirty worktrees, detached HEADs, missing remotes, branch divergence,
+unresolved merges, missing submodule links, and stale recorded `commit_sha`
+values.  Diagnostics are severity-based: warnings are emitted for allowed but
+actionable states (for example ahead branches or stale snapshot SHAs), while
+blocking errors stop unsafe mutations.  `GitRunner` now exposes unresolved-merge
+and upstream-divergence probes.  Focused unit tests added in
+`test_operations.py`, plus an integration test covering detached-HEAD tag
+blocking in `test_cgsi_topology.py`.  `README.md`, `AdditionalSpecs.md`,
+`DevPlan.md`, and the user/architecture docs updated.
 
 ### T34 — Deterministic Freeze Semantics (Medium)
 **Type**: Reproducibility  

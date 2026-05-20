@@ -190,6 +190,8 @@ class _FakeGitRunnerForOperations:
         self._existing_remotes: dict[Path, set[str]] = {}
         self._existing_tags: dict[Path, set[str]] = {}
         self._submodule_links: set[tuple[Path, Path]] = set()
+        self._tracking_states: dict[Path, SyncState | None] = {}
+        self._merge_in_progress: dict[Path, bool] = {}
 
     # --- branch / checkout ---
     def current_branch(self, repo_path: Path | str) -> str | None:
@@ -211,7 +213,7 @@ class _FakeGitRunnerForOperations:
         self.cloned.append((remote_url, destination_path, branch))
 
     def rev_parse_head(self, repo_path: Path | str) -> str:
-        return self._shas.get(Path(repo_path), f"sha-{Path(repo_path).name}")
+        return self._shas.get(Path(repo_path), "abc123")
 
     # --- commit ---
     def stage_all(self, repo_path: Path | str) -> None:
@@ -286,6 +288,12 @@ class _FakeGitRunnerForOperations:
     def tag_exists(self, repo_path: Path | str, tag_name: str) -> bool:
         return tag_name in self._existing_tags.get(Path(repo_path), set())
 
+    def has_unresolved_merge(self, repo_path: Path | str) -> bool:
+        return self._merge_in_progress.get(Path(repo_path), False)
+
+    def branch_tracking_state(self, repo_path: Path | str) -> SyncState | None:
+        return self._tracking_states.get(Path(repo_path), SyncState.ALIGNED)
+
     def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
         return (Path(repo_path), Path(relative_path)) in self._submodule_links
 
@@ -302,6 +310,12 @@ class _FakeGitRunnerForOperations:
 
     def add_submodule_link(self, repo_path: Path | str, relative_path: Path | str) -> None:
         self._submodule_links.add((Path(repo_path), Path(relative_path)))
+
+    def set_tracking_state(self, repo_path: Path | str, state: SyncState | None) -> None:
+        self._tracking_states[Path(repo_path)] = state
+
+    def set_unresolved_merge(self, repo_path: Path | str, value: bool) -> None:
+        self._merge_in_progress[Path(repo_path)] = value
 
 
 # ---------------------------------------------------------------------------
@@ -772,6 +786,7 @@ def test_push_tree_pushes_leaf_before_root(tmp_path):
     """Leaves must be pushed before their parents."""
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
 
     push_tree(registry, runner)
 
@@ -785,6 +800,7 @@ def test_push_tree_deep_hierarchy_leaf_first(tmp_path):
     """Ordering must be sub → middle → root for a 3-level tree."""
     registry = _make_deep_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
 
     push_tree(registry, runner)
 
@@ -799,6 +815,7 @@ def test_push_tree_deep_hierarchy_leaf_first(tmp_path):
 def test_push_tree_uses_remote_name_and_resolved_ref(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
 
     push_tree(registry, runner)
 
@@ -814,6 +831,7 @@ def test_push_tree_defaults_remote_to_origin_when_not_set(tmp_path):
         entry.remote_name = None
 
     runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
     push_tree(registry, runner)
 
     for _, remote, _ in runner.pushed:
@@ -823,6 +841,7 @@ def test_push_tree_defaults_remote_to_origin_when_not_set(tmp_path):
 def test_push_tree_tree_remains_ready(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
 
     push_tree(registry, runner)
 
@@ -899,15 +918,62 @@ def test_tag_tree_preflight_fails_when_tree_is_dirty(tmp_path):
     leaf_path = registry.get("root:deps/leaf").absolute_path
     runner.set_staged(leaf_path, True)
 
-    with pytest.raises(GitSyncError, match="repositories are not clean"):
+    with pytest.raises(GitSyncError, match="worktree has uncommitted changes"):
         tag_tree(registry, runner, "v1.0.0")
+
+
+def test_commit_tree_preflight_warns_when_tree_is_dirty(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+    runner.set_unstaged(leaf_path, True)
+
+    with pytest.warns(UserWarning, match="commit preflight warning: leaf: worktree has uncommitted changes"):
+        commit_tree(registry, runner, "commit dirty tree")
+
+    assert registry.get("root:deps/leaf").worktree_state == "DIRTY"
+
+
+def test_push_tree_preflight_warns_when_branch_is_ahead(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+    root_path = registry.get("root").absolute_path
+    runner.set_tracking_state(root_path, SyncState.AHEAD)
+
+    with pytest.warns(UserWarning, match="push preflight warning: project: local branch is ahead of its upstream"):
+        push_tree(registry, runner)
 
 
 def test_tag_tree_preflight_fails_when_child_is_not_submodule(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
 
-    with pytest.raises(GitSyncError, match="linked as submodules"):
+    with pytest.raises(GitSyncError, match="not linked as submodule"):
+        tag_tree(registry, runner, "v1.0.0")
+
+
+def test_push_tree_preflight_fails_when_merge_is_unresolved(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+    root_path = registry.get("root").absolute_path
+    runner.set_unresolved_merge(root_path, True)
+
+    with pytest.raises(GitSyncError, match="unresolved merge in progress"):
+        push_tree(registry, runner)
+
+
+def test_tag_tree_preflight_warns_when_commit_sha_does_not_match_head(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+    root_path = registry.get("root").absolute_path
+    runner._shas[root_path] = "actual-sha"
+    registry.get("root").commit_sha = "recorded-sha"
+
+    with pytest.warns(UserWarning, match="recorded commit_sha 'recorded-sha' does not match HEAD 'actual-sha'"):
         tag_tree(registry, runner, "v1.0.0")
 
 
@@ -922,6 +988,17 @@ def test_freeze_release_preflight_fails_when_branches_misalign(tmp_path):
 
     with pytest.raises(GitSyncError, match="branch misalignment"):
         freeze_release_tree(registry, runner, "release-1")
+
+
+def test_tag_tree_preflight_fails_when_repo_is_detached(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+    runner._current_branches[leaf_path] = None
+
+    with pytest.raises(GitSyncError, match="detached HEAD state"):
+        tag_tree(registry, runner, "v1.0.0")
 
 
 def test_git_runner_create_tag_default_does_not_force(monkeypatch):
@@ -1166,6 +1243,7 @@ def test_client_push_requires_ready_tree(tmp_path):
 
 def test_client_push_delegates_to_push_tree(tmp_path):
     client, runner = _make_client_with_ready_registry(tmp_path)
+    _mark_all_children_as_submodules(client.registry, runner)
 
     result = client.push()
 

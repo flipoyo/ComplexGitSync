@@ -120,7 +120,7 @@
     (footer) at (6.45,-8.2) {tree remains \textbf{READY} on success};
 
 \node[orderbox, minimum width=5.0cm]
-    (freeze-note) at (12.3,-8.2) {\texttt{tag}/\texttt{freeze} preflight: remotes, branch align, tag absence, submodules; \texttt{tag} is clean + non-forcing; integration cycle validates CLI-first \texttt{add->commit->push->tag->freeze}};
+    (freeze-note) at (12.3,-8.2) {\texttt{commit}/\texttt{push}/\texttt{tag}/\texttt{freeze} preflight: detached HEAD, remotes, divergence, merges, submodules, snapshot SHA drift; \texttt{tag} also requires clean + absent tag; integration cycle validates CLI-first \texttt{add->commit->push->tag->freeze}};
 
 \draw[sidarr] (co-order.south) -- (footer.north west);
 \draw[sidarr] (ad-order.south) -- (footer.north);

@@ -56,7 +56,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T30 | Transactional Tag Propagation | ✅ Done |
 | T31 | Formal `.gts` Snapshot Specification | ✅ Done |
 | T32 | `.lgr` Local Sync Ledger | ✅ Done |
-| T33 | Workspace Preflight Validation Engine | ❌ Pending |
+| T33 | Workspace Preflight Validation Engine | ✅ Done |
 | T34 | Deterministic Freeze Semantics | ❌ Pending |
 | T35 | Branch Topology Propagation Rules | ❌ Pending |
 | T36 | CLI Dry-Run Mode | ❌ Pending |
@@ -75,8 +75,9 @@ The project is functional for controlled use.
 
 The project is **not yet BetaSeries** because:
 
-- The roadmap continuation still has open scope (T33–T37), covering workspace
-  preflight validation, deterministic freeze semantics, and architectural positioning.
+- The roadmap continuation still has open scope (T34–T37), covering
+  deterministic freeze semantics, branch-topology validation, and
+  architectural positioning.
 
 The project is **past POC** because the entire core workflow (initialise, clone,
 checkout, add, commit, push, tag, freeze, restart) is implemented, tested at
@@ -91,9 +92,11 @@ the unit level, and documented.
 - `add_tree` lives in `operations.py` (Tier 2) and stages all repos leaf-first.
 - `checkout_tree`, `commit_tree`, `push_tree`, `tag_tree`, and
   `freeze_release_tree` require `READY` and leave the tree `READY` on success.
-- `tag_tree` / `freeze_release_tree` now run preflight checks before mutation:
-  clean-state (for `tag`), branch alignment, remote existence, tag absence, and
-  parent→child submodule-link validation.
+- `commit_tree`, `push_tree`, `tag_tree`, and `freeze_release_tree` now run a
+  shared workspace preflight validator before mutation.
+- The preflight validator checks dirty worktrees, detached HEADs, remotes,
+  branch divergence, unresolved merges, submodule linkage, and stale recorded
+  `commit_sha` values, emitting warnings or blocking errors by severity.
 - `GitRunner.create_tag()` always uses non-forcing tag creation; `-f` is not supported.
 - `restart_tree` accepts any state and produces `READY` using the root repo's current branch.
 - `restart_tree` now syncs parent→leaf in submodule-aware mode (`pull --ff-only` at root, then

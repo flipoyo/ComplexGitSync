@@ -100,10 +100,16 @@ the client.  **Every action is gated by the current `TreeLifecycleState`**:
 Actions that **must reject** a non-READY tree:
 `add`, `git("commit")`, `git("push")`, `git("tag")`, `freeze`.
 
-Tag/freeze preflight invariants:
-- `tag` must reject dirty worktrees.
-- `tag` and `freeze` must reject missing remotes, pre-existing tags, branch misalignment,
-  or parent/child layouts where children are not tracked as git submodules.
+Workspace preflight invariants:
+- `commit`, `push`, `tag`, and `freeze` all run a workspace preflight engine before mutation.
+- The engine checks dirty worktrees, detached HEADs, missing remotes, branch divergence,
+  unresolved merges, missing submodule links, and stale recorded `commit_sha` values.
+- Diagnostics are severity-based: warnings are emitted for actionable-but-allowed states
+  (for example ahead branches, dirty trees on `commit`/`freeze`, or stale snapshot SHAs),
+  while blocking errors stop the operation.
+- `tag` must still reject dirty worktrees and pre-existing tags.
+- `push`, `tag`, and `freeze` must reject parent/child layouts where children are not
+  tracked as git submodules.
 - Tag creation is always non-forcing (`git tag <name>`); replacing an existing tag is not allowed.
 
 Actions that **must produce READY** or fail explicitly:
@@ -162,7 +168,7 @@ access_protocol.py       AccessProtocol
 discovery.py             discover_nested_configs()
 operations.py            propagate_global_branch, create_global_branch
                          checkout_tree, commit_tree, push_tree
-                         (planned: tag, freeze_release)
+                         tag_tree, freeze_release_tree
 registry.py              builder functions (build_registry_from_cgs_document, …)
 render.py                format_project_tree / format_registry_json
 ```
