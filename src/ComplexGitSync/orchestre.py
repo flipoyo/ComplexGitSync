@@ -709,6 +709,88 @@ def _resolve_state_base_dir() -> Path:
     return Path.home() / ".local" / "state" / "ComplexGitSync" / "snapshots"
 
 
+class LocalGitRegister:
+    """Project-local ``.lgr`` register for generated ``.gts`` snapshots.
+
+    The TOML structure keeps:
+    - a ``[register]`` section for the current snapshot pointer, and
+    - a ``[[snapshots]]`` list for stable ``gts-XXXXXX`` identifiers.
+
+    Snapshot entries are deduplicated by snapshot file hash.
+    """
+
+    _HASH_CHUNK_SIZE = 65536
+
+    def __init__(self, register_path: Path | str) -> None:
+        self.register_path = Path(register_path)
+
+    def record_snapshot(self, snapshot_path: Path | str) -> str:
+        resolved_snapshot_path = Path(snapshot_path).resolve()
+        snapshot_hash = self._hash_snapshot_file(resolved_snapshot_path)
+
+        data = self._load()
+        snapshots = data.setdefault("snapshots", [])
+        snapshot_index = {
+            str(entry.get("snapshot_hash")): entry
+            for entry in snapshots
+            if isinstance(entry, dict) and entry.get("snapshot_hash")
+        }
+        existing = snapshot_index.get(snapshot_hash)
+
+        if existing is None:
+            snapshot_id = self._next_snapshot_id(snapshots)
+            recorded_at = (
+                datetime.now(timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z")
+            )
+            snapshots.append(
+                {
+                    "id": snapshot_id,
+                    "snapshot_hash": snapshot_hash,
+                    "snapshot_path": str(resolved_snapshot_path),
+                    "recorded_at": recorded_at,
+                }
+            )
+        else:
+            snapshot_id = str(existing["id"])
+            existing["snapshot_path"] = str(resolved_snapshot_path)
+
+        register = data.setdefault("register", {})
+        register["current_snapshot_id"] = snapshot_id
+        register["current_snapshot_hash"] = snapshot_hash
+        register["current_snapshot_path"] = str(resolved_snapshot_path)
+
+        self.register_path.parent.mkdir(parents=True, exist_ok=True)
+        self.register_path.write_text(tomli_w.dumps(data), encoding="utf-8")
+        return snapshot_id
+
+    def _load(self) -> dict[str, Any]:
+        if not self.register_path.is_file():
+            return {"register": {}, "snapshots": []}
+        return tomllib.loads(self.register_path.read_text(encoding="utf-8"))
+
+    def _next_snapshot_id(self, snapshots: list[dict[str, Any]]) -> str:
+        """Return the next sequential local id in ``gts-XXXXXX`` format."""
+        max_id = 0
+        for entry in snapshots:
+            raw_id = str(entry.get("id", ""))
+            if raw_id.startswith("gts-"):
+                try:
+                    max_id = max(max_id, int(raw_id.removeprefix("gts-")))
+                except ValueError:
+                    continue
+        return f"gts-{max_id + 1:06d}"
+
+    def _hash_snapshot_file(self, snapshot_path: Path) -> str:
+        """Compute a SHA-256 hash of ``snapshot_path`` for snapshot deduplication."""
+        digest = hashlib.sha256()
+        with snapshot_path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(self._HASH_CHUNK_SIZE), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+
 @dataclass(slots=True)
 class GitRunner:
     """Git subprocess wrapper — executes git commands for clone/checkout/push actions."""
@@ -2303,6 +2385,15 @@ class ComplexGitSyncClient:
             source_cgs_path=self.source_path,
             tree_lifecycle_state=registry.lifecycle_state,
         )
+        register_path = root_entry.absolute_path / f"{root_entry.name}.lgr"
+        if root_entry.absolute_path.exists():
+            register_id = LocalGitRegister(register_path).record_snapshot(resolved_output_path)
+            self._log_event(
+                "lgr_update",
+                register_path=register_path,
+                snapshot_path=resolved_output_path,
+                snapshot_id=register_id,
+            )
         return resolved_output_path
 
     def _resolve_project_root(

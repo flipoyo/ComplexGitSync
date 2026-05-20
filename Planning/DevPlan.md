@@ -45,7 +45,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | Ticket | Goal | Status |
 |--------|------|--------|
 | T18 | Integration Test Suite | ✅ Done (CGSi topology + local clone/launch-release lifecycle: 29 tests) |
-| T24 | Local Git Register (`.lgr`) management for `.gts` ids | ❌ Pending |
+| T24 | Local Git Register (`.lgr`) management for `.gts` ids | ✅ Done |
 
 ### CGS roadmap extension (current core program)
 
@@ -115,12 +115,11 @@ the unit level, and documented.
 - `freeze` is the primary versioning command; `freeze-release` and `freeze-state` remain available.
 - `expand`+`fix_circularities` enforce a DAG-compatible tangle behavior: shared repos are canonicalized only when declared refs are hash-compatible.
 - `.cgs` supports repo-level `branch`/`tag` declarations; when both are present, `validate` enforces hash equivalence and raises `incompatibilities between branch (hash) and tag(val) in .cgs` on mismatch.
-- `freeze` is expected to emit the next `.gts` id and register it locally.
-- Remaining work is tracked in two linked streams in `DevPlanTickets.md`: legacy
-  T-ticket continuity (T24) and the CGS-004..CGS-010 core roadmap.
+- `freeze` emits the next `.gts` id and records it in the project-local `<project>.lgr` register.
+- Remaining work is tracked in the CGS-004..CGS-010 core roadmap in `DevPlanTickets.md`.
 - `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
 - Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
-- `.goc` automation is available through `ComplexGitSyncClient.orchestrate`; local register/ledger requirements remain tracked in T24 / CGS-005.
+- `.goc` automation is available through `ComplexGitSyncClient.orchestrate`; the local register is delivered (T24) and ledger evolution remains tracked in CGS-005.
 
 ## Definition of Done (Global)
 

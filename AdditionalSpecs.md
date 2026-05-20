@@ -336,8 +336,8 @@ The `.lgr` register is responsible for:
 - staying in sync with the project-local lifecycle state
 
 `print(.gts)` and `pull(.gts)` are available, and `.goc` plans can be executed
-through `ComplexGitSyncClient.orchestrate(<plan.goc>)`. `.lgr` management
-remains tracked in `Planning/DevPlan.md` and `Planning/DevPlanTickets.md`.
+through `ComplexGitSyncClient.orchestrate(<plan.goc>)`. Snapshot writes update
+the project-local `.lgr` register and keep the current snapshot pointer aligned.
 
 ---
 

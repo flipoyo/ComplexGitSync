@@ -200,7 +200,7 @@
 \draw[trans] (pending)  -- node[above, font=\scriptsize]{clone/validate} (ready);
 \draw[trans, dashed] (declared.south) -- (partial.north);
 \draw[trans, dashed] (pending.south)  -- (error.north);
-\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{freeze / next .gts id} (declared.north);
+\draw[trans, bend right=20] (ready.north) to node[above, font=\scriptsize]{freeze / next .gts id + .lgr update} (declared.north);
 
 \end{tikzpicture}
 \end{figure}
