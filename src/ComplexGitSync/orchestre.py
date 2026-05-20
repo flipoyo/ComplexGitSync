@@ -306,7 +306,11 @@ class CgsDocument(ConfigDocument):
                     probe = GitRepo(
                         project_owner_name=str(repo.get("project_owner_name")),
                         project_name=str(repo.get("project_name")),
-                        repo_name=_as_optional_str(repo.get("repo_name")) or str(repo.get("project_name")),
+                        repo_name=(
+                            _as_optional_str(repo.get("repo_name"))
+                            if repo.get("repo_name") is not None
+                            else str(repo.get("project_name"))
+                        ),
                         gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
                         group_name=_as_optional_str(repo.get("group_name")),
                         gitprovider_url=_as_optional_str(repo.get("gitprovider_url")),
@@ -964,7 +968,11 @@ def build_registry_from_cgs_document(
             gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
             project_owner_name=_as_optional_str(repo.get("project_owner_name")),
             project_name=_as_optional_str(repo.get("project_name")),
-            repo_name=_as_optional_str(repo.get("repo_name")) or _as_optional_str(repo.get("project_name")),
+            repo_name=(
+                _as_optional_str(repo.get("repo_name"))
+                if repo.get("repo_name") is not None
+                else _as_optional_str(repo.get("project_name"))
+            ),
             group_name=_as_optional_str(repo.get("group_name")),
             gitprovider_url=_as_optional_str(repo.get("gitprovider_url")),
             access_protocol=_parse_enum(
@@ -1037,7 +1045,11 @@ def build_registry_from_gts_document(document: GtsDocument) -> DependencyTreeReg
             is_reachable=bool(repo_state.get("is_reachable", True)),
             project_owner_name=_as_optional_str(repo_state.get("project_owner_name")),
             project_name=_as_optional_str(repo_state.get("project_name")),
-            repo_name=_as_optional_str(repo_state.get("repo_name")) or _as_optional_str(repo_state.get("project_name")),
+            repo_name=(
+                _as_optional_str(repo_state.get("repo_name"))
+                if repo_state.get("repo_name") is not None
+                else _as_optional_str(repo_state.get("project_name"))
+            ),
             default_branch=_as_optional_str(repo_state.get("target_ref_name")),
         )
         registry.add(entry)
@@ -1196,9 +1208,11 @@ def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]
                     if repo.get("project_owner_name")
                     else None,
                     project_name=str(repo.get("project_name")) if repo.get("project_name") else None,
-                    repo_name=str(repo.get("repo_name") or repo.get("project_name"))
-                    if (repo.get("repo_name") or repo.get("project_name"))
-                    else None,
+                    repo_name=(
+                        str(repo.get("repo_name"))
+                        if repo.get("repo_name") is not None
+                        else (str(repo.get("project_name")) if repo.get("project_name") is not None else None)
+                    ),
                     group_name=str(repo.get("group_name")) if repo.get("group_name") else None,
                     gitprovider_url=str(repo.get("gitprovider_url"))
                     if repo.get("gitprovider_url")
