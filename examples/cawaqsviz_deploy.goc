@@ -27,9 +27,9 @@ source = "cawaqsviz.cgs"
 name   = "CaWaQS-ViZ"          # project display name
 repo_name = "cawaqsviz"        # repository slug (distinct from project display name)
 gitprovider = "gitlab"         # github | gitlab
-group_name = "cawaqs/gviz"     # required for gitlab address composition
+project_owner_name = "gviz/cawaqsviz"  # GitLab namespace fallback when group_name is omitted
 # gitprovider_address (computed with transport=ssh):
-# git@gitlab.com:cawaqs/gviz/cawaqsviz.git
+# git@gitlab.com:gviz/cawaqsviz/cawaqsviz.git
 
 # ── Action sequence ─────────────────────────────────────────────────────────
 # Actions are executed in order.  Each [[actions]] entry carries a mandatory

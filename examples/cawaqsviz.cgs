@@ -28,10 +28,11 @@ log_level                 = "info"
 # ── Repositories ───────────────────────────────────────────────────────────
 
 [[repos]]
-gitprovider        = "github"
-project_owner_name = "flipoyo"
+gitprovider        = "gitlab"
+project_owner_name = "gviz/cawaqsviz"
 project_name       = "CaWaQS-Viz"
-# group_name defaults to project_name
+# repo_name defaults to project_name for remote URLs when omitted
+# group_name defaults to project_owner_name for GitLab when omitted
 default_branch     = "autoTest"
 fallback_branch    = "main"
 access_protocol    = "ssh"

@@ -306,6 +306,7 @@ class CgsDocument(ConfigDocument):
                     probe = GitRepo(
                         project_owner_name=str(repo.get("project_owner_name")),
                         project_name=str(repo.get("project_name")),
+                        repo_name=_as_optional_str(repo.get("repo_name")) or str(repo.get("project_name")),
                         gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
                         group_name=_as_optional_str(repo.get("group_name")),
                         gitprovider_url=_as_optional_str(repo.get("gitprovider_url")),
@@ -489,8 +490,11 @@ class GocDocument(ConfigDocument):
                 errors.append(
                     "[project].project_owner_name is required when [project].gitprovider is 'github'"
                 )
-            if provider == "gitlab" and not project.get("group_name"):
-                errors.append("[project].group_name is required when [project].gitprovider is 'gitlab'")
+            if provider == "gitlab" and not (project.get("group_name") or project.get("project_owner_name")):
+                errors.append(
+                    "[project].group_name or [project].project_owner_name is required when "
+                    "[project].gitprovider is 'gitlab'"
+                )
 
         interaction = self.read("session.interaction", self.SESSION_DEFAULTS["interaction"])
         if interaction not in self._VALID_INTERACTIONS:
@@ -582,7 +586,7 @@ class GocDocument(ConfigDocument):
         if provider == "github":
             namespace = project.get("project_owner_name")
         elif provider == "gitlab":
-            namespace = project.get("group_name")
+            namespace = project.get("group_name") or project.get("project_owner_name")
         else:
             return None
         if not namespace:
@@ -960,6 +964,7 @@ def build_registry_from_cgs_document(
             gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
             project_owner_name=_as_optional_str(repo.get("project_owner_name")),
             project_name=_as_optional_str(repo.get("project_name")),
+            repo_name=_as_optional_str(repo.get("repo_name")) or _as_optional_str(repo.get("project_name")),
             group_name=_as_optional_str(repo.get("group_name")),
             gitprovider_url=_as_optional_str(repo.get("gitprovider_url")),
             access_protocol=_parse_enum(
@@ -1032,6 +1037,7 @@ def build_registry_from_gts_document(document: GtsDocument) -> DependencyTreeReg
             is_reachable=bool(repo_state.get("is_reachable", True)),
             project_owner_name=_as_optional_str(repo_state.get("project_owner_name")),
             project_name=_as_optional_str(repo_state.get("project_name")),
+            repo_name=_as_optional_str(repo_state.get("repo_name")) or _as_optional_str(repo_state.get("project_name")),
             default_branch=_as_optional_str(repo_state.get("target_ref_name")),
         )
         registry.add(entry)
@@ -1094,6 +1100,7 @@ def build_gts_document_from_registry(
             "source_cgs_path": str(entry.source_cgs_path) if entry.source_cgs_path else None,
             "project_owner_name": entry.project_owner_name,
             "project_name": entry.project_name,
+            "repo_name": entry.repo_name,
         }
         if entry.parent_id is not None:
             repo_data["parent_absolute_path"] = str(registry.get(entry.parent_id).absolute_path)
@@ -1189,6 +1196,9 @@ def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]
                     if repo.get("project_owner_name")
                     else None,
                     project_name=str(repo.get("project_name")) if repo.get("project_name") else None,
+                    repo_name=str(repo.get("repo_name") or repo.get("project_name"))
+                    if (repo.get("repo_name") or repo.get("project_name"))
+                    else None,
                     group_name=str(repo.get("group_name")) if repo.get("group_name") else None,
                     gitprovider_url=str(repo.get("gitprovider_url"))
                     if repo.get("gitprovider_url")
@@ -2268,6 +2278,7 @@ class ComplexGitSyncClient:
         address = RepoAddress(
             gitprovider=entry.gitprovider,
             project_name=entry.project_name or entry.name,
+            repo_name=entry.repo_name or entry.project_name or entry.name,
             project_owner_name=entry.project_owner_name,
             group_name=entry.group_name,
             gitprovider_url=entry.gitprovider_url,

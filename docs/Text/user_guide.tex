@@ -453,8 +453,9 @@ from ComplexGitSync import RepoAddress, GitProvider, AccessProtocol
 
 addr = RepoAddress(
     gitprovider=GitProvider.GITHUB,
-    owner_name="my-org",
-    project_name="my-repo",
+    project_owner_name="my-org",
+    project_name="My Project",
+    repo_name="my-repo",
 )
 print(addr.to_ssh())    # git@github.com:my-org/my-repo.git
 print(addr.to_https())  # https://github.com/my-org/my-repo.git

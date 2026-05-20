@@ -572,7 +572,7 @@ class TestGocDocumentValid:
         assert doc.project_source == "cawaqsviz.cgs"
         assert doc.project_name == "CaWaQS-ViZ"
         assert doc.project_repo_name == "cawaqsviz"
-        assert doc.project_gitprovider_address == "git@gitlab.com:cawaqs/gviz/cawaqsviz.git"
+        assert doc.project_gitprovider_address == "git@gitlab.com:gviz/cawaqsviz/cawaqsviz.git"
         assert doc.interaction == "interactive"
         assert doc.transport == "ssh"
         assert len(doc.actions) == 4
@@ -611,6 +611,19 @@ class TestGocDocumentValid:
         }
         doc = GocDocument.from_dict(data)
         assert doc.project_gitprovider_address == "https://gitlab.com/cawaqs/gviz/cawaqsviz.git"
+
+    def test_project_gitprovider_address_for_gitlab_falls_back_to_project_owner(self):
+        data = {
+            **MINIMAL_GOC,
+            "project": {
+                "source": "project.cgs",
+                "repo_name": "cawaqsviz",
+                "gitprovider": "gitlab",
+                "project_owner_name": "gviz/cawaqsviz",
+            },
+        }
+        doc = GocDocument.from_dict(data)
+        assert doc.project_gitprovider_address == "git@gitlab.com:gviz/cawaqsviz/cawaqsviz.git"
 
     def test_project_provider_only_is_allowed_without_identity_fields(self):
         data = {
@@ -707,13 +720,13 @@ class TestGocDocumentInvalid:
         }
         self._assert_validation_error(data, "project_owner_name")
 
-    def test_project_identity_missing_gitlab_group(self):
+    def test_project_identity_missing_gitlab_namespace(self):
         data = {
             "document": {"format_version": "1.0"},
             "project": {"source": "p.cgs", "repo_name": "repo", "gitprovider": "gitlab"},
             "actions": [{"command": "validate"}],
         }
-        self._assert_validation_error(data, "group_name")
+        self._assert_validation_error(data, "group_name or \\[project\\]\\.project_owner_name")
 
     def test_project_identity_invalid_provider(self):
         data = {
