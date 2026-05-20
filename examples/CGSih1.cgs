@@ -1,0 +1,46 @@
+# CGSih1 — Integration Suite nested config (GitHub parent)
+# ──────────────────────────────────────────────────────────────────────────────
+# This file lives inside the CGSih1 repository (GitHub).
+# ComplexGitSync discovers it when expanding the CGSil1 project
+# (because CGSih1 is declared with nested_config = "auto" in CGSil1.cgs).
+#
+# CGSih1 is involved in two structural challenges:
+#
+#   DUPLICATION — CGSil2.cgs also references CGSih1.
+#     The discovery guard keeps only the root-level entry (this one).
+#
+#   CYCLE — CGSih2.cgs references CGSih1 back (creating a back-edge).
+#     The discovery guard and fix_circularities() together ensure
+#     CGSih1 appears only once in the final registry.
+
+[document]
+format_version = "1.0"
+
+[project]
+name           = "CGSih1"
+default_branch = "main"
+
+# ── Repositories ─────────────────────────────────────────────────────────────
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "CGSih1"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+relative_path      = "."
+# Self-reference — identifies CGSih1 as the root of this nested tree.
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "CGSih2"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+relative_path      = "CGSih2"
+# CGSih2 contains a nested .cgs (CGSih2.cgs) that references CGSih1 back.
+# This creates a potential cycle; the discovery guard prevents it at
+# discovery time.  fix_circularities() removes any residual back-edge.
+nested_config      = "auto"
