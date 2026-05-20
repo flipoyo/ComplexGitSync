@@ -498,7 +498,7 @@ def find_strongly_connected_components(
     on_stack: dict[Path, bool] = {}
     sccs: list[list[Path]] = []
 
-    def _strongconnect(node: Path) -> None:
+    def _strong_connect(node: Path) -> None:
         index[node] = index_counter[0]
         lowlink[node] = index_counter[0]
         index_counter[0] += 1
@@ -508,7 +508,7 @@ def find_strongly_connected_components(
         # Iterate successors in sorted order for deterministic output.
         for successor in sorted(graph.get(node, set()), key=str):
             if successor not in index:
-                _strongconnect(successor)
+                _strong_connect(successor)
                 lowlink[node] = min(lowlink[node], lowlink[successor])
             elif on_stack.get(successor, False):
                 lowlink[node] = min(lowlink[node], index[successor])
@@ -525,7 +525,7 @@ def find_strongly_connected_components(
 
     for node in sorted(graph, key=str):  # deterministic traversal order
         if node not in index:
-            _strongconnect(node)
+            _strong_connect(node)
 
     return sccs
 

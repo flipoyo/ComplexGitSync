@@ -1297,6 +1297,21 @@ relative_path = "../parent2"
 
 
 # ---------------------------------------------------------------------------
+# Helper for parsing fix_circularities change descriptors
+# ---------------------------------------------------------------------------
+
+_CHANGE_PREFIX = "fixed_circularity:"
+_CHANGE_SEP = "\u2192"  # →
+
+
+def _parse_change(change: str) -> tuple[str, str]:
+    """Parse a fix_circularities change string into (removed_id, canonical_id)."""
+    body = change.removeprefix(_CHANGE_PREFIX)
+    removed, canonical = body.split(_CHANGE_SEP, 1)
+    return removed, canonical
+
+
+# ---------------------------------------------------------------------------
 # find_strongly_connected_components tests
 # ---------------------------------------------------------------------------
 
@@ -1511,7 +1526,7 @@ def test_fix_circularities_no_duplicate_changes_for_same_entry(tmp_path):
     fixed = fix_circularities(registry)
 
     # No entry should appear twice in the changes.
-    removed_ids = [change.split("\u2192")[0].removeprefix("fixed_circularity:") for change in fixed]
+    removed_ids = [_parse_change(change)[0] for change in fixed]
     assert len(removed_ids) == len(set(removed_ids))
 
 
