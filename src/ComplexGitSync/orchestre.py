@@ -710,29 +710,46 @@ def _resolve_state_base_dir() -> Path:
 
 
 class LocalGitRegister:
-    """Project-local register that assigns stable ids to generated ``.gts`` snapshots."""
+    """Project-local ``.lgr`` register for generated ``.gts`` snapshots.
+
+    The TOML structure keeps:
+    - a ``[register]`` section for the current snapshot pointer, and
+    - a ``[[snapshots]]`` list for stable ``gts-XXXXXX`` identifiers.
+
+    Snapshot entries are deduplicated by snapshot file hash.
+    """
+
+    _HASH_CHUNK_SIZE = 65536
 
     def __init__(self, register_path: Path | str) -> None:
         self.register_path = Path(register_path)
 
     def record_snapshot(self, snapshot_path: Path | str) -> str:
         resolved_snapshot_path = Path(snapshot_path).resolve()
-        snapshot_hash = hashlib.sha256(
-            resolved_snapshot_path.read_bytes()
-        ).hexdigest()
+        snapshot_hash = self._hash_snapshot_file(resolved_snapshot_path)
 
         data = self._load()
         snapshots = data.setdefault("snapshots", [])
-        existing = next((entry for entry in snapshots if entry.get("snapshot_hash") == snapshot_hash), None)
+        snapshot_index = {
+            str(entry.get("snapshot_hash")): entry
+            for entry in snapshots
+            if isinstance(entry, dict) and entry.get("snapshot_hash")
+        }
+        existing = snapshot_index.get(snapshot_hash)
 
         if existing is None:
             snapshot_id = self._next_snapshot_id(snapshots)
+            recorded_at = (
+                datetime.now(timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z")
+            )
             snapshots.append(
                 {
                     "id": snapshot_id,
                     "snapshot_hash": snapshot_hash,
                     "snapshot_path": str(resolved_snapshot_path),
-                    "recorded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "recorded_at": recorded_at,
                 }
             )
         else:
@@ -754,6 +771,7 @@ class LocalGitRegister:
         return tomllib.loads(self.register_path.read_text(encoding="utf-8"))
 
     def _next_snapshot_id(self, snapshots: list[dict[str, Any]]) -> str:
+        """Return the next sequential local id in ``gts-XXXXXX`` format."""
         max_id = 0
         for entry in snapshots:
             raw_id = str(entry.get("id", ""))
@@ -763,6 +781,14 @@ class LocalGitRegister:
                 except ValueError:
                     continue
         return f"gts-{max_id + 1:06d}"
+
+    def _hash_snapshot_file(self, snapshot_path: Path) -> str:
+        """Compute a SHA-256 hash of ``snapshot_path`` for snapshot deduplication."""
+        digest = hashlib.sha256()
+        with snapshot_path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(self._HASH_CHUNK_SIZE), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
 
 @dataclass(slots=True)
