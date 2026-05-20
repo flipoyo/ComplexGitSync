@@ -907,6 +907,13 @@ class GitRunner:
         parsed = urlsplit(remote_url)
         if parsed.scheme == "file":
             return True
+        if (
+            len(parsed.scheme) == 1
+            and len(remote_url) >= 2
+            and remote_url[1] == ":"
+            and parsed.scheme.isalpha()
+        ):
+            return True
         if parsed.scheme:
             return False
         return bool(remote_url) and not remote_url.startswith("git@")
