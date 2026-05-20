@@ -101,9 +101,10 @@ profiles. Structured file logs preserve mandatory events (`command_start`,
 profile-gated.
 
 ### T17 — Unit Test Suite (incremental) ✅
-199 tests passing. Covers parsers, registry, lifecycle, rendering, gating,
+264 tests passing. Covers parsers, registry, lifecycle, rendering, gating,
 propagate/create/checkout/commit/push operations, deep 3-level hierarchy
-ordering, and the simplified `initialise`/`freeze` CLI surface.
+ordering, the simplified `initialise`/`freeze` CLI surface, and
+`fix_circularities` behaviour.
 
 ### T19 — Documentation and Examples (incremental) ✅
 `README.md`, `docs/user_guide.tex`, `docs/getting_started.tex`,
@@ -135,10 +136,6 @@ Simplified the user-facing CLI and Python API lifecycle surface:
 - `README.md`, `AdditionalSpecs.md`, `docs/user_guide.tex`, `DevPlan.md`,
   and this file updated to use the simplified lifecycle vocabulary.
 - 5 unit tests updated; 4 new tests added (199 passing).
-
----
-
-## Remaining Tickets
 
 ### T10 (remainder) — `restart` CLI wiring ✅
 `restart_tree` implemented in Tier 2 (operations.py) with parent-first submodule-aware
@@ -194,9 +191,14 @@ creating duplicate registry entries for the same physical path.
   method for custom pipelines (between `expand` and `validate`).
 - Called automatically inside `expand(.cgs)` and `clone_cgs()`.
 - Exported from the top-level package in `__init__.py`.
-- 7 unit tests added; 234 total passing.
+- 7 unit tests added; 264 total passing.
 - Documentation updated: README.md, getting_started.tex, user_guide.tex,
   python_api.tex, AdditionalSpecs.md.
+
+---
+
+## Remaining Tickets
+
 ### Ticketing split (single merged plan)
 - **Legacy T-track** keeps point-0 continuity and completion tracking.
 - **CGS-track** defines the current remaining core work program.

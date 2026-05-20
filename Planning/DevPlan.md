@@ -32,7 +32,9 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T25 | Logger verbosity profile verification (`verbose` / `whisper_sync`) | ✅ Done |
 | T23 | Lifecycle terminology: `load`, `expand`, `validate`, `git()` | ✅ Done |
 | T26 | CLI Simplification: `initialise`, `freeze`, smart `load()` | ✅ Done |
-| T17 | Unit Test Suite (incremental) | ✅ Ongoing |
+| T16 | CLI wiring: `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` | ✅ Done |
+| T27 | Circular dependency resolution: `fix_circularities` | ✅ Done |
+| T17 | Unit Test Suite (incremental) | ✅ Ongoing (264 passing) |
 | T19 | Documentation and Examples (incremental) | ✅ Updated |
 | T20 | CI Version Increment Automation | ✅ Done |
 
@@ -60,6 +62,29 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | CGS-008 | Branch Topology Propagation Rules | ❌ Pending |
 | CGS-009 | CLI Dry-Run Mode | ❌ Pending |
 | CGS-010 | Architectural Positioning Documentation | ❌ Pending |
+
+## Project State
+
+**AlphaSeries**
+
+All T-track tickets (T00–T27) are complete and the core Python API and CLI are
+fully operational. 264 unit tests pass across parsers, registry, lifecycle,
+operations, and CLI smoke paths. The project is functional for controlled use.
+
+The project is **not yet BetaSeries** because:
+
+- Integration tests (T18 / CGS-002) are not started — there is no end-to-end
+  validation against real or simulated multi-repository topologies.
+- The CGS roadmap extension (CGS-001–CGS-010) remains fully pending, covering
+  transactional tag propagation, formal `.gts` specification, the `.lgr` local
+  sync ledger, workspace preflight validation, deterministic freeze semantics,
+  and architectural positioning.
+
+The project is **past POC** because the entire core workflow (initialise, clone,
+checkout, add, commit, push, tag, freeze, restart) is implemented, tested at
+the unit level, and documented.
+
+---
 
 ## Architecture Notes
 
