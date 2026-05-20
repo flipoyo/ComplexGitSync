@@ -31,7 +31,7 @@ This guide follows the simplified canonical lifecycle:
   \item \texttt{pull(.cgs|.gts)} $\rightarrow$ resync an existing tree
   \item \texttt{checkout(.gts)} / \texttt{add} / \texttt{commit} / \texttt{push} / \texttt{tag}
         $\rightarrow$ git operations on the tree
-  \item \texttt{freeze} $\rightarrow$ emit the next \texttt{.gts} id
+  \item \texttt{freeze} $\rightarrow$ emit the next \texttt{.gts} id and update \texttt{<Project\_name>.lgr}
 \end{enumerate}
 
 Python API power users may also call \texttt{load(.cgs|.gts)} directly:
@@ -42,8 +42,8 @@ Compatibility aliases: \texttt{read} $\rightarrow$ \texttt{load},
 \texttt{describe} $\rightarrow$ \texttt{print}, \texttt{restart} $\rightarrow$
 \texttt{pull}, \texttt{freeze-release} $\rightarrow$ \texttt{freeze}.
 
-The remaining planned work is project-local \texttt{.lgr} register
-management.
+The project-local \texttt{.lgr} register is now active; remaining roadmap work
+tracks ledger evolution (\texttt{CGS-005}).
 
 % -----------------------------------------------------------------------
 \section{Commands}

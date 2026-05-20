@@ -20,6 +20,7 @@ These tests exercise:
 from __future__ import annotations
 
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -532,6 +533,12 @@ class TestGitCommandCycleIntegration:
         remote_tags = _run_git(repo, "ls-remote", "--tags", "origin")
         assert "refs/tags/v0.1.0" in remote_tags
         assert "refs/tags/v0.2.0" in remote_tags
+        lgr_path = repo / "demo.lgr"
+        assert lgr_path.is_file()
+        lgr_data = tomllib.loads(lgr_path.read_text(encoding="utf-8"))
+        assert lgr_data["register"]["current_snapshot_id"] == "gts-000001"
+        assert lgr_data["register"]["current_snapshot_path"].endswith("/.cgitsync/state/demo.gts")
+        assert len(lgr_data["snapshots"]) == 1
 
 
 class TestCloneAndLaunchReleaseLifecycle:
