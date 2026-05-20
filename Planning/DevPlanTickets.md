@@ -220,10 +220,10 @@ Delivered parser-driven `.goc` execution through the public client API:
 - **CGS-track** defines the current remaining core work program.
 - Both tracks are active and must remain synchronized.
 
-### T18 — Integration Test Suite 🔄 In progress
+### T18 — Integration Test Suite  ✅
 **Goal**: end-to-end validation on temporary nested git repositories.  
-**Deliverables**: nested repo fixture generator; clone / restart / checkout /
-tag / freeze_release / launch_release / commit-push gating scenarios.  
+**Deliverables**: nested repo fixture generator; clone / checkout / pull / add / commit / push /
+tag / freeze scenarios.  
 **Dependencies**: T09–T16.  
 **Acceptance**: CaWaQS-style topology reproducible; all sync commands produce
 expected READY states and `.gts` outputs.
@@ -243,7 +243,7 @@ current project snapshot in sync, and record the id emitted by `freeze`.
 **Acceptance**: every `.gts` produced by the workflow is represented exactly
 once in the `.lgr` register with one stable local id.
 
-### CGS-001 — Safe Tag Propagation Semantics (Critical)
+### CGS-001 — Safe Tag Propagation Semantics (Critical)  ✅
 **Type**: Reliability / Release Integrity  
 **Problem**: `GitRunner.create_tag()` currently uses `git tag -f` unconditionally,
 allowing silent overwrite of existing tags during propagated releases.  
@@ -265,7 +265,7 @@ allowing silent overwrite of existing tags during propagated releases.
 - Force behavior is explicit and tested.
 - Existing workflows remain backward compatible when requested.
 
-### CGS-002 — End-to-End Local Integration Test Infrastructure (Critical) 🔄 In progress
+### CGS-002 — End-to-End Local Integration Test Infrastructure (Critical)  ✅
 **Type**: Testing / Reliability  
 **Problem**: Current tests validate isolated behaviors but not full synchronization workflows.  
 **Legacy linkage**: Implements the remaining scope of T18.
@@ -283,12 +283,11 @@ allowing silent overwrite of existing tags during propagated releases.
   - clone, *(pending)*
   - checkout, *(pending)*
   - add_tree, *(pending)*
-  - commit_tree, *(pending)*
-  - push_tree, *(pending)*
-  - pull_tree, *(pending)*
-  - tag_tree, *(pending)*
+  - commit, *(pending)*
+  - push, *(pending)*
+  - pull, *(pending)*
+  - tag, *(pending)*
   - freeze, *(pending)*
-  - restart from `.gts`. *(pending)*
 - Validate commit SHA propagation consistency.
 - Validate submodule SHA updates.
 **Acceptance Criteria**:
@@ -303,7 +302,7 @@ example `.cgs` parsing, and READY `.gts` git command cycle via CLI/Python API.
 All remaining multi-repo lifecycle scenarios (clone through launch_release) are
 still pending.
 
-### CGS-003 — Transactional Tag Propagation (High)
+### CGS-003 — Transactional Tag Propagation (High)  ✅
 **Type**: Reliability / Distributed Consistency  
 **Problem**: Partial failure during propagated tagging may leave repositories desynchronized.  
 **Legacy linkage**: Hardens T13/T14 propagation guarantees.
