@@ -9,7 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  test-pr:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,15 +21,31 @@ jobs:
       - name: Install package
         run: pixi install
       - name: Run PR test subset
-        if: github.event_name == 'pull_request'
         run: pixi run python -m pytest tests/unit/test_documents.py tests/unit/test_cli_smoke.py
-      - name: Run full test suite on main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Run orchestration-focused PR tests
+        run: pixi run python -m pytest tests/unit/test_registry_client.py -k orchestrate
+
+  test-main:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: prefix-dev/setup-pixi@v0.8.1
+      - name: Install package
+        run: pixi install
+      - name: Run full test suite
         run: pixi run test
 
   version-increment:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: test
+    needs: test-main
     runs-on: ubuntu-latest
     permissions:
       contents: write

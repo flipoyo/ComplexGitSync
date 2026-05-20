@@ -1692,7 +1692,23 @@ class ComplexGitSyncClient:
         report: list[dict[str, Any]] = []
 
         for index, action in enumerate(document.actions):
-            command = str(action.get("command", "")).strip().lower()
+            raw_command = action.get("command")
+            if not isinstance(raw_command, str) or not raw_command.strip():
+                command_error = ValueError("action.command must be a non-empty string.")
+                report.append(
+                    {
+                        "index": index,
+                        "command": raw_command,
+                        "status": "error",
+                        "error": str(command_error),
+                    }
+                )
+                if stop_on_error:
+                    raise GitSyncError(
+                        f".goc action failed at index {index} ({raw_command!r}): {command_error}"
+                    ) from command_error
+                continue
+            command = raw_command.strip().lower()
             raw_args = action.get("args")
             args = raw_args if isinstance(raw_args, dict) else {}
             try:
@@ -1770,9 +1786,10 @@ class ComplexGitSyncClient:
         if command == "checkout":
             if self.registry is None:
                 self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
-            ref_name = str(args.get("ref") or args.get("branch") or "")
-            if not ref_name:
+            ref_value = self._read_goc_arg(args, "ref", alias="branch")
+            if ref_value is None or (isinstance(ref_value, str) and ref_value == ""):
                 raise ValueError("checkout action requires args.ref (or args.branch).")
+            ref_name = str(ref_value)
             ref_type = str(args.get("ref_type", "branch")).lower()
             if ref_type not in {"branch", "tag"}:
                 raise ValueError("checkout args.ref_type must be 'branch' or 'tag'.")
@@ -1781,16 +1798,18 @@ class ComplexGitSyncClient:
         if command == "tag":
             if self.registry is None:
                 self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
-            tag_name = str(args.get("name") or args.get("tag") or "")
-            if not tag_name:
+            tag_value = self._read_goc_arg(args, "name", alias="tag")
+            if tag_value is None or (isinstance(tag_value, str) and tag_value == ""):
                 raise ValueError("tag action requires args.name (or args.tag).")
+            tag_name = str(tag_value)
             return self.tag(tag_name)
         if command == "freeze-release":
             if self.registry is None:
                 self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
-            tag_name = str(args.get("name") or args.get("tag") or "")
-            if not tag_name:
+            tag_value = self._read_goc_arg(args, "name", alias="tag")
+            if tag_value is None or (isinstance(tag_value, str) and tag_value == ""):
                 raise ValueError("freeze-release action requires args.name (or args.tag).")
+            tag_name = str(tag_value)
             return self.freeze_release(
                 tag_name,
                 output_gts=args.get("output_gts"),
@@ -1800,9 +1819,10 @@ class ComplexGitSyncClient:
         if command == "commit":
             if self.registry is None:
                 self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
-            message = str(args.get("message") or "")
-            if not message:
+            message_value = args.get("message")
+            if message_value is None or (isinstance(message_value, str) and message_value == ""):
                 raise ValueError("commit action requires args.message.")
+            message = str(message_value)
             return self.commit(message, stage_all=bool(args.get("stage_all", True)))
         if command == "push":
             if self.registry is None:
@@ -1813,6 +1833,27 @@ class ComplexGitSyncClient:
                 self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
             return self.get_tree_state()
         raise ValueError(f"Unsupported .goc action command: {command!r}")
+
+    @staticmethod
+    def _read_goc_arg(args: dict[str, Any], key: str, *, alias: str | None = None) -> Any:
+        def _present(value: Any) -> bool:
+            return value is not None and (not isinstance(value, str) or value != "")
+
+        if alias is None:
+            return args.get(key)
+        key_value = args.get(key)
+        alias_value = args.get(alias)
+        key_present = key in args and _present(key_value)
+        alias_present = alias in args and _present(alias_value)
+        if key_present and alias_present:
+            raise ValueError(
+                f".goc action args must not define both '{key}' and '{alias}' simultaneously."
+            )
+        if key_present:
+            return key_value
+        if alias_present:
+            return alias_value
+        return None
 
     @staticmethod
     def _summarize_goc_result(result: Any) -> Any:

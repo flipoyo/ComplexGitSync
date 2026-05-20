@@ -4,7 +4,7 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
-from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.orchestre import ComplexGitSyncClient, GocDocument
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState
 from ComplexGitSync.git_tree import DependencyTreeRegistry, GitTree, TreeLifecycleState, make_repo_id
@@ -381,12 +381,39 @@ def test_client_orchestrate_reports_unsupported_actions(monkeypatch, tmp_path):
         project_source = "project.cgs"
         actions = [{"command": "unsupported-cmd"}]
 
-    monkeypatch.setattr("ComplexGitSync.orchestre.GocDocument.from_toml", lambda _path: _FakeGocDocument())
+    monkeypatch.setattr(
+        GocDocument,
+        "from_toml",
+        classmethod(lambda cls, _path: _FakeGocDocument()),
+    )
 
     report = ComplexGitSyncClient().orchestrate(tmp_path / "plan.goc", stop_on_error=False)
 
     assert report[0]["status"] == "error"
     assert "Unsupported .goc action command" in report[0]["error"]
+
+
+def test_client_orchestrate_rejects_ambiguous_alias_args(monkeypatch, tmp_path):
+    plan_path = _write_goc_plan(
+        tmp_path,
+        source="state.gts",
+        actions="""
+[[actions]]
+command = "checkout"
+[actions.args]
+ref = "main"
+branch = "dev"
+ref_type = "branch"
+""",
+    )
+    client = ComplexGitSyncClient()
+    monkeypatch.setattr(client, "load_gts", lambda _path: None)
+    client.registry = DependencyTreeRegistry()
+
+    report = client.orchestrate(plan_path, stop_on_error=False)
+
+    assert report[0]["status"] == "error"
+    assert "must not define both 'ref' and 'branch'" in report[0]["error"]
 
 
 def test_client_print_alias_supports_gts(tmp_path):
