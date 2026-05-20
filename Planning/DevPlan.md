@@ -34,7 +34,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T26 | CLI Simplification: `initialise`, `freeze`, smart `load()` | ✅ Done |
 | T16 | CLI wiring: `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` | ✅ Done |
 | T27 | Circular dependency resolution: `fix_circularities` | ✅ Done |
-| T17 | Unit Test Suite (incremental) | ✅ Ongoing (264 passing) |
+| T17 | Unit Test Suite (incremental) | ✅ Ongoing (264 unit + 25 integration = 289 passing) |
 | T19 | Documentation and Examples (incremental) | ✅ Updated |
 | T20 | CI Version Increment Automation | ✅ Done |
 
@@ -44,7 +44,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 
 | Ticket | Goal | Status |
 |--------|------|--------|
-| T18 | Integration Test Suite | ❌ Not started |
+| T18 | Integration Test Suite | 🔄 In progress (CGSi 4-repo topology: 25 tests, expand/duplication/cycle scope) |
 | T22 | Parser-driven automation of public client methods via `.goc` files | ❌ Pending |
 | T24 | Local Git Register (`.lgr`) management for `.gts` ids | ❌ Pending |
 
@@ -53,7 +53,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | Ticket | Goal | Status |
 |--------|------|--------|
 | CGS-001 | Safe Tag Propagation Semantics | ❌ Pending |
-| CGS-002 | End-to-End Local Integration Test Infrastructure | ❌ Pending |
+| CGS-002 | End-to-End Local Integration Test Infrastructure | 🔄 In progress (initial expand/duplication/cycle scenarios delivered) |
 | CGS-003 | Transactional Tag Propagation | ❌ Pending |
 | CGS-004 | Formal `.gts` Snapshot Specification | ❌ Pending |
 | CGS-005 | `.lgr` Local Sync Ledger | ❌ Pending |
@@ -69,13 +69,16 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 
 All T-track tickets (T00–T27) are complete and the core Python API and CLI are
 fully operational. 264 unit tests pass across parsers, registry, lifecycle,
-operations, and CLI smoke paths. The project is functional for controlled use.
+operations, and CLI smoke paths. 25 integration tests have been added (CGSi
+4-repo mixed-provider topology) covering the expand/duplication/cycle scenarios.
+Total: 289 tests passing. The project is functional for controlled use.
 
 The project is **not yet BetaSeries** because:
 
-- Integration tests (T18 / CGS-002) are not started — there is no end-to-end
-  validation against real or simulated multi-repository topologies.
-- The CGS roadmap extension (CGS-001–CGS-010) remains fully pending, covering
+- Integration tests (T18 / CGS-002) are only partially delivered — the initial
+  expand/duplication/cycle scope is covered, but clone, checkout, commit, push,
+  tag, freeze, and launch_release end-to-end scenarios remain pending.
+- The CGS roadmap extension (CGS-001–CGS-010) remains largely pending, covering
   transactional tag propagation, formal `.gts` specification, the `.lgr` local
   sync ledger, workspace preflight validation, deterministic freeze semantics,
   and architectural positioning.
@@ -138,4 +141,4 @@ From `InitialDevPlan.md` — completed when:
 - [x] the registry is directly accessible and complete
 - [x] logs satisfy the mandatory logging contract
 - [x] `initialise` and `freeze` are primary CLI commands; `load/expand/validate` are internal
-- [ ] tests cover the CaWaQS-Viz-like topology (integration suite)
+- [~] tests cover the CaWaQS-Viz-like topology (integration suite — expand/dup/cycle delivered; clone→launch_release pending)
