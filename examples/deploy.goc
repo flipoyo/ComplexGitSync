@@ -19,8 +19,8 @@ profile     = "verbose"       # verbose | whisper_sync
 transport   = "ssh"           # ssh | https
 
 # ── Project entry-point ─────────────────────────────────────────────────────
-# Set source to a .cgs path for discovery-based commands (validate, clone,
-# restart, checkout) or a .gts path for replay-based commands (launch-release).
+# Set source to a .cgs path for tree git commands (clone, checkout, pull,
+# add, commit, push, tag, freeze) or a .gts path for replay via pull.
 
 [project]
 source = "complexgitsync.cgs"
@@ -37,22 +37,18 @@ project_owner_name = "flipoyo" # required for github address composition
 # parameters.
 
 [[actions]]
-# 1. Validate the .cgs spec before materialising anything.
-command = "validate"
-
-[[actions]]
-# 2. Clone the full project tree into the current directory.
+# 1. Clone the full project tree into the current directory.
 command = "clone"
 [actions.args]
 # target_dir = "./workspace"   # uncomment to clone into a subdirectory
 
 [[actions]]
-# 3. Ensure the whole tree prefers autoTest and can fall back to main.
+# 2. Ensure the whole tree prefers autoTest and can fall back to main.
 command = "checkout"
 [actions.args]
 ref      = "autoTest"
 ref_type = "branch"
 
 [[actions]]
-# 4. Print the current tree state to confirm synchronisation.
-command = "tree"
+# 3. Pull the full tree from the configured source contract.
+command = "pull"

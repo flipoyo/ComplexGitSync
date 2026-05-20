@@ -205,8 +205,7 @@ Delivered parser-driven `.goc` execution through the public client API:
 - Added `ComplexGitSyncClient.orchestrate(<plan.goc>)` to execute action plans
   in deterministic order.
 - Added command-to-API mapping for `.goc` actions:
-  `validate`, `describe`, `tree`, `write-gts`, `launch-release`, `clone`,
-  `restart`, `checkout`, `tag`, `freeze-release`, `commit`, `push`, `status`.
+  `clone`, `checkout`, `pull`, `add`, `commit`, `push`, `tag`, `freeze`.
 - Added per-action validation and reporting, including explicit unsupported
   action reporting with indexed error context.
 - Added focused unit coverage for action ordering and unsupported-action

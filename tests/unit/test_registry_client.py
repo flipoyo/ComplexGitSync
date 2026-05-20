@@ -322,9 +322,6 @@ def test_client_orchestrate_executes_goc_actions_in_order(monkeypatch, tmp_path)
         source="project.cgs",
         actions="""
 [[actions]]
-command = "validate"
-
-[[actions]]
 command = "clone"
 [actions.args]
 target_dir = "workspace/demo"
@@ -336,43 +333,29 @@ ref = "autoTest"
 ref_type = "branch"
 
 [[actions]]
-command = "status"
+command = "add"
 """,
     )
     client = ComplexGitSyncClient()
-    calls: list[tuple[str, object]] = []
+    calls: list[tuple[str, tuple[str, ...]]] = []
+    registry = DependencyTreeRegistry()
 
-    monkeypatch.setattr(
-        client,
-        "validate",
-        lambda source, discover_nested=False: calls.append(("validate", Path(source).name)) or "validated",
-    )
+    def _fake_git(bound_registry, command, *args):
+        assert bound_registry is client.registry or bound_registry is None
+        calls.append((command, tuple(str(a) for a in args)))
+        if command == "clone":
+            client.registry = registry
+        return client.registry if client.registry is not None else registry
 
-    def _fake_clone(source, *, target_dir=None):
-        calls.append(("clone", target_dir))
-        client.registry = DependencyTreeRegistry()
-        return client.registry
-
-    monkeypatch.setattr(client, "clone_cgs", _fake_clone)
-    monkeypatch.setattr(
-        client,
-        "checkout",
-        lambda ref, *, ref_kind=RefKind.BRANCH: calls.append(("checkout", ref)) or client.registry,
-    )
-    monkeypatch.setattr(
-        client,
-        "get_tree_state",
-        lambda: calls.append(("status", "queried")) or "status",
-    )
+    monkeypatch.setattr(client, "git", _fake_git)
 
     report = client.orchestrate(plan_path)
 
-    assert [entry["status"] for entry in report] == ["ok", "ok", "ok", "ok"]
+    assert [entry["status"] for entry in report] == ["ok", "ok", "ok"]
     assert calls == [
-        ("validate", "project.cgs"),
-        ("clone", "workspace/demo"),
-        ("checkout", "autoTest"),
-        ("status", "queried"),
+        ("clone", (str((tmp_path / "project.cgs").resolve()), "workspace/demo")),
+        ("checkout", ("autoTest",)),
+        ("add", ()),
     ]
 
 

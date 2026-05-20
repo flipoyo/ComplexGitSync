@@ -414,19 +414,14 @@ class GtsDocument(ConfigDocument):
 
 _VALID_GOC_COMMANDS = frozenset(
     {
-        "validate",
-        "describe",
-        "tree",
-        "write-gts",
-        "launch-release",
         "clone",
-        "restart",
         "checkout",
-        "tag",
-        "freeze-release",
+        "pull",
+        "add",
         "commit",
         "push",
-        "status",
+        "tag",
+        "freeze",
     }
 )
 
@@ -1751,88 +1746,47 @@ class ComplexGitSyncClient:
         source: Path,
         args: dict[str, Any],
     ) -> Any:
-        if command == "validate":
-            return self.validate(source, discover_nested=bool(args.get("discover_nested", False)))
-        if command == "describe":
-            return self.print(source, discover_nested=bool(args.get("discover_nested", False)))
-        if command == "tree":
-            if source.suffix == ".gts":
-                self.load_gts(source)
-            else:
-                self.load_runtime_or_cgs(source, discover_nested=bool(args.get("discover_nested", True)))
-            return self.format_project_tree()
-        if command == "write-gts":
-            if self.registry is None:
-                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
-            command_origin = str(args.get("command_origin", "write-gts"))
-            return self.write_gts_snapshot(command_origin=command_origin, output_path=args.get("output_path"))
-        if command == "launch-release":
-            snapshot = args.get("snapshot")
-            if snapshot is None:
-                snapshot_path = source
-            else:
-                snapshot_path = Path(snapshot).resolve()
-            if snapshot_path.suffix != ".gts":
-                raise ValueError("launch-release requires a .gts snapshot source.")
-            return self.launch_release(snapshot_path)
+        if command not in _VALID_GOC_COMMANDS:
+            raise ValueError(f"Unsupported .goc action command: {command!r}")
+
         if command == "clone":
             if source.suffix != ".cgs":
                 raise ValueError("clone requires a .cgs source.")
-            return self.clone_cgs(source, target_dir=args.get("target_dir"))
-        if command == "restart":
-            if source.suffix != ".cgs":
-                raise ValueError("restart requires a .cgs source.")
-            return self.restart(source)
+            target_dir = args.get("target_dir")
+            if target_dir is not None:
+                return self.git(self.registry, "clone", str(source), str(target_dir))
+            return self.git(self.registry, "clone", str(source))
+        if command == "pull":
+            return self.git(self.registry, "pull", str(source))
+
+        if self.registry is None:
+            self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
+
+        active_registry = self.get_dependency_registry()
         if command == "checkout":
-            if self.registry is None:
-                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
             ref_value = self._read_goc_arg(args, "ref", alias="branch")
             if ref_value is None or (isinstance(ref_value, str) and ref_value == ""):
                 raise ValueError("checkout action requires args.ref (or args.branch).")
-            ref_name = str(ref_value)
-            ref_type = str(args.get("ref_type", "branch")).lower()
-            if ref_type not in {"branch", "tag"}:
-                raise ValueError("checkout args.ref_type must be 'branch' or 'tag'.")
-            ref_kind = RefKind.TAG if ref_type == "tag" else RefKind.BRANCH
-            return self.checkout(ref_name, ref_kind=ref_kind)
-        if command == "tag":
-            if self.registry is None:
-                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
-            tag_value = self._read_goc_arg(args, "name", alias="tag")
-            if tag_value is None or (isinstance(tag_value, str) and tag_value == ""):
-                raise ValueError("tag action requires args.name (or args.tag).")
-            tag_name = str(tag_value)
-            return self.tag(tag_name)
-        if command == "freeze-release":
-            if self.registry is None:
-                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
-            tag_value = self._read_goc_arg(args, "name", alias="tag")
-            if tag_value is None or (isinstance(tag_value, str) and tag_value == ""):
-                raise ValueError("freeze-release action requires args.name (or args.tag).")
-            tag_name = str(tag_value)
-            return self.freeze_release(
-                tag_name,
-                output_gts=args.get("output_gts"),
-                message=args.get("message"),
-                stage_all=bool(args.get("stage_all", True)),
-            )
+            return self.git(active_registry, "checkout", str(ref_value))
+        if command == "add":
+            return self.git(active_registry, "add")
         if command == "commit":
-            if self.registry is None:
-                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
             message_value = args.get("message")
             if message_value is None or (isinstance(message_value, str) and message_value == ""):
                 raise ValueError("commit action requires args.message.")
-            message = str(message_value)
-            return self.commit(message, stage_all=bool(args.get("stage_all", True)))
+            return self.git(active_registry, "commit", str(message_value))
         if command == "push":
-            if self.registry is None:
-                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
-            return self.push()
-        if command == "status":
-            if self.registry is None:
-                self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
-            return self.get_tree_state()
-        raise ValueError(f"Unsupported .goc action command: {command!r}")
+            return self.git(active_registry, "push")
+        if command == "tag":
+            tag_value = self._read_goc_arg(args, "name", alias="tag")
+            if tag_value is None or (isinstance(tag_value, str) and tag_value == ""):
+                raise ValueError("tag action requires args.name (or args.tag).")
+            return self.git(active_registry, "tag", str(tag_value))
+        if command == "freeze":
+            freeze_value = self._read_goc_arg(args, "name", alias="tag")
+            if freeze_value is None or (isinstance(freeze_value, str) and freeze_value == ""):
+                raise ValueError("freeze action requires args.name (or args.tag).")
+            return self.git(active_registry, "freeze", str(freeze_value))
 
     @staticmethod
     def _read_goc_arg(args: dict[str, Any], key: str, *, alias: str | None = None) -> Any:
