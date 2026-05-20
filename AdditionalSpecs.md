@@ -343,7 +343,7 @@ tracked work items in `Planning/DevPlan.md` and `Planning/DevPlanTickets.md`.
 ## Per-Repo Identity Keys
 
 Every repository entry is identified by three fields: provider, namespace, and
-project name. The namespace field is called `owner_name`; note that GitLab uses
+repository name. The namespace field is called `owner_name`; note that GitLab uses
 the term _group_ for the same concept.
 
 **Provider: `gitprovider`**
@@ -352,9 +352,9 @@ One of `github`, `gitlab`, or `custom`; defaults to `github`.
 
 | Provider | Host URL (auto-set) | Required namespace field | Required name field |
 |---|---|---|---|
-| `github` | `github.com` | `owner_name` | `project_name` |
-| `gitlab` | `gitlab.com` | `owner_name` (≡ GitLab _group_) | `project_name` |
-| `custom` | `gitprovider_url` (required) | `owner_name` | `project_name` |
+| `github` | `github.com` | `owner_name` | `repo_name` (defaults to `project_name`) |
+| `gitlab` | `gitlab.com` | `group_name` (fallback: `owner_name`) | `repo_name` (defaults to `project_name`) |
+| `custom` | `gitprovider_url` (required) | `owner_name` | `repo_name` (defaults to `project_name`) |
 
 > **Terminology note:** GitHub calls the top-level namespace an _owner_;
 > GitLab calls it a _group_. This project uses `owner_name` for both;
@@ -365,11 +365,11 @@ One of `github`, `gitlab`, or `custom`; defaults to `github`.
 `RepoAddress` composes the full remote URL from:
 
 ```
-<gitprovider_url>/<owner_name>/<project_name>[.git]   (SSH or HTTPS)
+<gitprovider_url>/<owner_name>/<repo_name>[.git]   (SSH or HTTPS)
 ```
 
-- SSH format: `git@<host>:<owner_name>/<project_name>.git`
-- HTTPS format: `https://<host>/<owner_name>/<project_name>.git`
+- SSH format: `git@<host>:<owner_name>/<repo_name>.git`
+- HTTPS format: `https://<host>/<owner_name>/<repo_name>.git`
 
 Access protocol defaults to `ssh`; use `https` only when explicitly selected.
 `gitprovider_url` is required when `gitprovider` is `custom`; it is

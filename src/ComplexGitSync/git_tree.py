@@ -952,6 +952,7 @@ def _apply_repo_identity(
     entry.gitprovider = _parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB)
     entry.project_owner_name = _as_optional_str(repo.get("project_owner_name"))
     entry.project_name = _as_optional_str(repo.get("project_name"))
+    entry.repo_name = _as_optional_str(repo.get("repo_name")) or entry.project_name
     entry.group_name = _as_optional_str(repo.get("group_name"))
     entry.gitprovider_url = _as_optional_str(repo.get("gitprovider_url"))
     entry.access_protocol = _parse_enum(AccessProtocol, repo.get("access_protocol"), AccessProtocol.SSH)

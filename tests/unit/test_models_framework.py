@@ -117,17 +117,30 @@ def test_repo_address_gitlab_ssh_uses_group_name():
     addr = RepoAddress(
         gitprovider=GitProvider.GITLAB,
         project_name="htas",
+        repo_name="htas-repo",
         group_name="flipoyo/htas-group",
     )
-    assert addr.to_ssh() == "git@gitlab.com:flipoyo/htas-group/htas.git"
+    assert addr.to_ssh() == "git@gitlab.com:flipoyo/htas-group/htas-repo.git"
 
 
-def test_repo_address_gitlab_falls_back_to_project_name_when_no_group():
+def test_repo_address_gitlab_falls_back_to_project_owner_name_when_no_group():
     addr = RepoAddress(
         gitprovider=GitProvider.GITLAB,
         project_name="htas",
+        project_owner_name="gviz/cawaqsviz",
     )
-    assert addr.to_ssh() == "git@gitlab.com:htas/htas.git"
+    assert addr.to_ssh() == "git@gitlab.com:gviz/cawaqsviz/htas.git"
+
+
+def test_repo_address_github_uses_repo_name_not_project_name():
+    addr = RepoAddress(
+        gitprovider=GitProvider.GITHUB,
+        project_name="Pretty Name",
+        repo_name="repo-slug",
+        project_owner_name="owner",
+    )
+    assert addr.to_ssh() == "git@github.com:owner/repo-slug.git"
+    assert addr.to_https() == "https://github.com/owner/repo-slug.git"
 
 
 def test_repo_address_custom_provider_with_gitprovider_url():
@@ -192,4 +205,3 @@ def test_repo_address_custom_missing_gitprovider_url_raises():
     )
     with pytest.raises(ValueError, match="gitprovider_url is required"):
         addr.to_ssh()
-

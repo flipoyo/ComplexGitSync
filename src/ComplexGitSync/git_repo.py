@@ -116,6 +116,7 @@ class GitRepo:
 
     project_owner_name: str
     project_name: str
+    repo_name: str | None = None
     gitprovider: GitProvider = GitProvider.GITHUB
     group_name: str | None = None
     gitprovider_url: str | None = None
@@ -168,14 +169,15 @@ class RepoAddress:
 
     Building methods
     ~~~~~~~~~~~~~~~~
-    * :meth:`to_ssh`  – return ``git@host:namespace/project_name.git``
-    * :meth:`to_https` – return ``https://host/namespace/project_name.git``
+    * :meth:`to_ssh`  – return ``git@host:namespace/repo_name.git``
+    * :meth:`to_https` – return ``https://host/namespace/repo_name.git``
     * :meth:`to_url`  – return the URL for an explicit :class:`AccessProtocol`
     * :meth:`from_repo` – class-method factory from a :class:`GitRepo`
     """
 
     gitprovider: GitProvider
     project_name: str
+    repo_name: str | None = None
     project_owner_name: str | None = None
     group_name: str | None = None
     gitprovider_url: str | None = None
@@ -186,6 +188,7 @@ class RepoAddress:
         return cls(
             gitprovider=repo.gitprovider,
             project_name=repo.project_name,
+            repo_name=repo.repo_name,
             project_owner_name=repo.project_owner_name,
             group_name=repo.group_name,
             gitprovider_url=repo.gitprovider_url,
@@ -212,7 +215,12 @@ class RepoAddress:
 
     def _resolve_namespace(self) -> str:
         if self.gitprovider == GitProvider.GITLAB:
-            return self.group_name or self.project_name
+            namespace = self.group_name or self.project_owner_name
+            if not namespace:
+                raise ValueError(
+                    "group_name or project_owner_name is required for GitLab addresses."
+                )
+            return namespace
         if self.gitprovider == GitProvider.GITHUB:
             if not self.project_owner_name:
                 raise ValueError(
@@ -226,17 +234,25 @@ class RepoAddress:
             )
         return ns
 
+    def _resolve_repo_name(self) -> str:
+        name = self.repo_name or self.project_name
+        if not name:
+            raise ValueError("repo_name or project_name is required for repository addresses.")
+        return name
+
     def to_ssh(self) -> str:
-        """Return the SSH remote URL (``git@host:namespace/project_name.git``)."""
+        """Return the SSH remote URL (``git@host:namespace/repo_name.git``)."""
         host = self._resolve_host()
         namespace = self._resolve_namespace()
-        return f"git@{host}:{namespace}/{self.project_name}.git"
+        repo_name = self._resolve_repo_name()
+        return f"git@{host}:{namespace}/{repo_name}.git"
 
     def to_https(self) -> str:
-        """Return the HTTPS remote URL (``https://host/namespace/project_name.git``)."""
+        """Return the HTTPS remote URL (``https://host/namespace/repo_name.git``)."""
         host = self._resolve_host()
         namespace = self._resolve_namespace()
-        return f"https://{host}/{namespace}/{self.project_name}.git"
+        repo_name = self._resolve_repo_name()
+        return f"https://{host}/{namespace}/{repo_name}.git"
 
     def to_url(self, protocol: AccessProtocol = AccessProtocol.SSH) -> str:
         """Return the remote URL for the given *protocol*.
@@ -310,6 +326,7 @@ class RepoRegistryEntry:
     gitprovider: GitProvider = GitProvider.GITHUB
     project_owner_name: str | None = None
     project_name: str | None = None
+    repo_name: str | None = None
     group_name: str | None = None
     gitprovider_url: str | None = None
     access_protocol: AccessProtocol = AccessProtocol.SSH
