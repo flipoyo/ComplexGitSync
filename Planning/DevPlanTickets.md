@@ -324,7 +324,7 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 
 ### T31 — Formal `.gts` Snapshot Specification (High)  ✅
 **Type**: Core Architecture  
-**Problem**: `.gts` behaved operationally but lacked formal deterministic specification.  
+**Problem**: `.gts` behaves operationally but lacks formal deterministic specification.  
 **Legacy linkage**: Deepens T06 contract and determinism guarantees.
 **Objectives**:
 - Define `.gts` as canonical workspace state representation.

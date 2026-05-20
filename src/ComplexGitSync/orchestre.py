@@ -32,6 +32,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tomllib
@@ -92,6 +93,7 @@ from .git_tree import (
 # ============================================================
 
 _MISSING = object()
+_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _dot_get(data: dict[str, Any], key: str, default: Any = None) -> Any:
@@ -399,16 +401,23 @@ class GtsDocument(ConfigDocument):
                 node_type: NodeType | None = None
                 try:
                     node_type = _parse_gts_node_type(repo.get("node_type"))
-                except ConfigValidationError:
+                except ConfigValidationError as exc:
                     node_type = None
+                    errors.append(f"repo_state[{idx}] invalid node_type: {exc}")
                 project_root_path = self.read("project.root_absolute_path")
                 is_project_root_repo = (
                     isinstance(project_root_path, str)
                     and str(repo.get("absolute_path", "")) == project_root_path
                 )
-                if not is_project_root_repo and node_type != NodeType.ROOT and not repo.get("parent_absolute_path"):
+                requires_parent_path = node_type != NodeType.ROOT and not is_project_root_repo
+                if requires_parent_path and not repo.get("parent_absolute_path"):
                     errors.append(f"repo_state[{idx}] missing required key: 'parent_absolute_path'")
-                if not (repo.get("current_ref_name") or repo.get("target_ref_name") or repo.get("resolved_ref_name")):
+                has_ref_name = bool(
+                    repo.get("current_ref_name")
+                    or repo.get("target_ref_name")
+                    or repo.get("resolved_ref_name")
+                )
+                if not has_ref_name:
                     errors.append(
                         f"repo_state[{idx}] must include at least one ref name ('current_ref_name', 'target_ref_name', or 'resolved_ref_name')"
                     )
@@ -421,7 +430,7 @@ class GtsDocument(ConfigDocument):
                         f"repo_state[{idx}] missing required key for READY repository: 'commit_sha'"
                     )
 
-        hash_algorithm = self.read(f"document.hash_algorithm", self.HASH_ALGORITHM)
+        hash_algorithm = self.read("document.hash_algorithm", self.HASH_ALGORITHM)
         if not isinstance(hash_algorithm, str) or hash_algorithm not in self._SUPPORTED_HASH_ALGORITHMS:
             errors.append(
                 f"[document] unsupported hash_algorithm '{hash_algorithm}' (supported: {', '.join(sorted(self._SUPPORTED_HASH_ALGORITHMS))})"
@@ -429,9 +438,7 @@ class GtsDocument(ConfigDocument):
 
         snapshot_hash = self.read("document.snapshot_hash")
         if snapshot_hash is not None:
-            if not isinstance(snapshot_hash, str) or len(snapshot_hash) != 64:
-                errors.append("[document] snapshot_hash must be a 64-character lowercase hex SHA-256 digest")
-            elif any(ch not in "0123456789abcdef" for ch in snapshot_hash):
+            if not isinstance(snapshot_hash, str) or _SHA256_HEX_RE.fullmatch(snapshot_hash) is None:
                 errors.append("[document] snapshot_hash must be a lowercase hexadecimal SHA-256 digest")
             elif snapshot_hash != self.compute_snapshot_hash():
                 errors.append("[document] snapshot_hash does not match canonical .gts content hash")
@@ -518,12 +525,11 @@ class GtsDocument(ConfigDocument):
                     "source_cgs_path": repo.get("source_cgs_path"),
                 }
             )
+        # Canonical ordering: lexicographic sort on (absolute_path, name).
         canonical_repo_states.sort(
             key=lambda repo: (
                 str(repo.get("absolute_path", "")),
                 str(repo.get("name", "")),
-                str(repo.get("parent_absolute_path", "")),
-                str(repo.get("relative_path", "")),
             )
         )
         return {

@@ -31,6 +31,8 @@ from ComplexGitSync.git_repo import GitProvider, NodeType
 from ComplexGitSync.git_tree import TreeLifecycleState
 from ComplexGitSync.orchestre import ComplexGitSyncClient, GtsDocument
 
+TEST_PLACEHOLDER_COMMIT_SHA = "f" * 40
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -562,7 +564,7 @@ class TestGtsSnapshotDeterminismIntegration:
         baseline_hash = GtsDocument.from_toml(snapshot).compute_snapshot_hash()
 
         data = tomllib.loads(snapshot.read_text(encoding="utf-8"))
-        data["repo_state"][0]["commit_sha"] = "f" * 40
+        data["repo_state"][0]["commit_sha"] = TEST_PLACEHOLDER_COMMIT_SHA
         modified = tmp_path / "changed-state.gts"
         modified.write_text(tomli_w.dumps(data), encoding="utf-8")
 

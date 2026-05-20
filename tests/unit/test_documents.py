@@ -51,8 +51,9 @@ MINIMAL_GTS: dict = {
     "repo_state": [
         {
             "name": "repo-a",
-            "node_type": "root",
+            "node_type": "LeafRepo",
             "absolute_path": "/workspace/TestProject/repo-a",
+            "parent_absolute_path": "/workspace/TestProject",
             "repo_lifecycle_state": "READY",
             "sync_state": "ALIGNED",
             "current_ref_kind": "branch",
@@ -482,12 +483,11 @@ class TestGtsDocumentInvalid:
         self._assert_validation_error(data, "lifecycle_state")
 
     def test_missing_repo_commit_sha_is_valid(self):
-        # commit_sha is optional — repos in DECLARED/PENDING state have not been cloned
-        broken_repo = {
-            **{k: v for k, v in MINIMAL_GTS["repo_state"][0].items() if k != "commit_sha"},
-            "repo_lifecycle_state": "DECLARED",
-            "sync_state": "PENDING",
-        }
+        # commit_sha is optional — repos in DECLARED/PENDING state have not been cloned yet.
+        broken_repo = MINIMAL_GTS["repo_state"][0].copy()
+        broken_repo.pop("commit_sha", None)
+        broken_repo["repo_lifecycle_state"] = "DECLARED"
+        broken_repo["sync_state"] = "PENDING"
         data = {**MINIMAL_GTS, "repo_state": [broken_repo]}
         doc = GtsDocument.from_dict(data)
         assert doc is not None
@@ -507,10 +507,8 @@ class TestGtsDocumentInvalid:
         self._assert_validation_error(data, "commit_sha")
 
     def test_non_root_repo_requires_parent_absolute_path(self):
-        broken_repo = {
-            **MINIMAL_GTS["repo_state"][0],
-            "node_type": "leaf",
-        }
+        broken_repo = {**MINIMAL_GTS["repo_state"][0], "node_type": "leaf"}
+        broken_repo.pop("parent_absolute_path", None)
         data = {**MINIMAL_GTS, "repo_state": [broken_repo]}
         self._assert_validation_error(data, "parent_absolute_path")
 
