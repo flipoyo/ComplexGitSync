@@ -14,7 +14,9 @@ Functions defined here (Tier 2 — Actions / tree utilities):
     promote_to_parent           Upgrade a LEAF entry to PARENT
     register_relative_path      Guard against duplicate relative paths
     build_tree_state            Derive a ProjectTreeState from the registry
-    fix_circularities           Remove duplicate entries caused by cross-referenced parents/leaves
+    find_strongly_connected_components  Tarjan's SCC algorithm on a path-based graph
+    fix_circularities           Cycle-breaking engine: SCC detection + hash deduplication
+    topological_sort            Return registry entries in safe clone/sync order
     format_project_tree         Render the tree as indented text
     format_registry_json        Render the registry as JSON
     iter_tree                   Iterate the registry parent-first (root → leaves)
@@ -23,7 +25,9 @@ Functions defined here (Tier 2 — Actions / tree utilities):
 
 from __future__ import annotations
 
+import hashlib
 import json
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path, PurePath, PurePosixPath
@@ -436,58 +440,275 @@ def build_tree_state(registry: DependencyTreeRegistry) -> ProjectTreeState:
     )
 
 
+# ---------------------------------------------------------------------------
+# Cycle-breaking engine — helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_path_graph(registry: DependencyTreeRegistry) -> dict[Path, set[Path]]:
+    """Build a directed dependency graph keyed by absolute path.
+
+    Each edge ``parent_abs_path -> child_abs_path`` represents a declared
+    dependency: the parent repository declares the child as a direct dependency
+    in its ``.cgs`` file.
+
+    Every node that has an ``absolute_path`` set is present in the returned
+    dict (with at least an empty set as its value) so that
+    :func:`find_strongly_connected_components` can iterate all nodes.
+    """
+    graph: dict[Path, set[Path]] = {}
+    for entry in registry.values():
+        if entry.absolute_path is None:
+            continue
+        path = entry.absolute_path
+        graph.setdefault(path, set())
+        if entry.parent_id and entry.parent_id in registry.entries:
+            parent_entry = registry.entries[entry.parent_id]
+            if parent_entry.absolute_path is not None:
+                parent_path = parent_entry.absolute_path
+                graph.setdefault(parent_path, set())
+                graph[parent_path].add(path)
+    return graph
+
+
+def find_strongly_connected_components(
+    graph: dict[Path, set[Path]],
+) -> list[list[Path]]:
+    """Find strongly connected components (SCCs) using Tarjan's algorithm.
+
+    Parameters
+    ----------
+    graph:
+        Directed dependency graph as returned by :func:`_build_path_graph`:
+        ``{node: set_of_successors}``.  Nodes without outgoing edges must
+        still be present (with an empty successor set) so that every node
+        participates in the traversal.
+
+    Returns
+    -------
+    list[list[Path]]
+        One inner list per SCC.  Trivial SCCs (a single node with no
+        self-loop) have length 1.  Non-trivial SCCs (length > 1) represent
+        genuine cycles in the dependency graph.
+    """
+    index_counter = [0]
+    stack: list[Path] = []
+    lowlink: dict[Path, int] = {}
+    index: dict[Path, int] = {}
+    on_stack: dict[Path, bool] = {}
+    sccs: list[list[Path]] = []
+
+    def _strong_connect(node: Path) -> None:
+        index[node] = index_counter[0]
+        lowlink[node] = index_counter[0]
+        index_counter[0] += 1
+        stack.append(node)
+        on_stack[node] = True
+
+        # Iterate successors in sorted order for deterministic output.
+        for successor in sorted(graph.get(node, set()), key=str):
+            if successor not in index:
+                _strong_connect(successor)
+                lowlink[node] = min(lowlink[node], lowlink[successor])
+            elif on_stack.get(successor, False):
+                lowlink[node] = min(lowlink[node], index[successor])
+
+        if lowlink[node] == index[node]:
+            scc: list[Path] = []
+            while True:
+                w = stack.pop()
+                on_stack[w] = False
+                scc.append(w)
+                if w == node:
+                    break
+            sccs.append(scc)
+
+    for node in sorted(graph, key=str):  # deterministic traversal order
+        if node not in index:
+            _strong_connect(node)
+
+    return sccs
+
+
+def _select_scc_anchor(
+    scc: list[Path],
+    graph: dict[Path, set[Path]],
+    path_to_entries: dict[Path, list[RepoRegistryEntry]],
+) -> Path:
+    """Select the anchor (canonical) path for an SCC using three heuristics.
+
+    The anchor is the node that will be *kept* in the registry when the cycle
+    is broken; all other nodes in the SCC that provide back-edges to the
+    anchor will be marked ``is_external_reference = True`` and removed.
+
+    Heuristics applied in order (first heuristic that produces a unique winner
+    decides):
+
+    1. **Most external incoming edges** — the node with the most edges
+       arriving from outside the SCC is the most externally referenced.
+    2. **Closest to project root** — fewest ``:`` segments in ``repo_id``.
+    3. **Smallest SHA-256 hash** — deterministic tie-breaker on path string.
+    """
+    scc_set = set(scc)
+
+    # Heuristic 1: count incoming edges from nodes OUTSIDE the SCC.
+    external_in: dict[Path, int] = {p: 0 for p in scc}
+    for source, targets in graph.items():
+        if source not in scc_set:
+            for target in targets:
+                if target in scc_set:
+                    external_in[target] = external_in.get(target, 0) + 1
+
+    max_ext = max(external_in.values(), default=0)
+    candidates = [p for p in scc if external_in[p] == max_ext]
+
+    if len(candidates) > 1:
+        # Heuristic 2: fewest colon-separated segments in repo_id.
+        def _min_depth(path: Path) -> int:
+            entries = path_to_entries.get(path, [])
+            return min((e.repo_id.count(":") for e in entries), default=9999)
+
+        min_d = min(_min_depth(p) for p in candidates)
+        candidates = [p for p in candidates if _min_depth(p) == min_d]
+
+    if len(candidates) > 1:
+        # Heuristic 3: deterministic SHA-256 hash of the path string.
+        candidates = [
+            min(candidates, key=lambda p: hashlib.sha256(str(p).encode()).hexdigest())
+        ]
+
+    return candidates[0]
+
+
+# ---------------------------------------------------------------------------
+# Cycle-breaking engine — main entry point
+# ---------------------------------------------------------------------------
+
+
 def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
-    """Remove duplicate entries caused by cross-referenced parents and leaves.
+    """Cycle-breaking engine: resolve circularities and produce a valid DAG.
 
-    After nested ``.cgs`` discovery the same physical repository may appear more
-    than once in the registry — once as a PARENT (a direct child of the project
-    root) and once or more as a LEAF discovered inside another parent's nested
-    ``.cgs`` that references the same repository via a path that resolves to the
-    same absolute location.
+    This function operates in two phases:
 
-    The *canonical* entry for a given absolute path is the one that sits highest
-    in the dependency tree (fewest ``:``-separated segments in ``repo_id``).  All
-    lower-priority duplicate entries sharing the same resolved absolute path are
-    removed from the registry only when their synchronization state is compatible
-    with the canonical entry (same lifecycle/sync state, no conflicting commit
-    SHA information, and no conflicting explicit worktree-state markers).
+    **Phase 1 — SCC-based cycle detection and breaking**
+
+    A directed dependency graph is built from the registry (edges go from
+    parent to child, keyed by resolved absolute path).
+    :func:`find_strongly_connected_components` (Tarjan's algorithm) identifies
+    groups of paths that form a dependency cycle — for example when repository
+    *A* declares *B* as a dependency and *B* declares *A* as a dependency.
+
+    For each non-trivial SCC (two or more nodes), an *Anchor* path is selected
+    using three heuristics applied in order:
+
+    1. **Most external incoming edges** — most externally referenced node.
+    2. **Closest to project root** — fewest ``:`` segments in ``repo_id``.
+    3. **Smallest SHA-256 hash** — deterministic tie-breaker.
+
+    For every registry entry whose ``absolute_path`` matches the anchor *and*
+    whose parent's ``absolute_path`` belongs to a non-anchor SCC member, the
+    entry is a *back-edge*: it is flagged ``is_external_reference = True`` and
+    scheduled for removal.  The Anchor's canonical entry (the one sitting
+    highest in the tree) is preserved; the back-edge duplicate is discarded so
+    the graph becomes a DAG.
+
+    **Phase 2 — Hash-compatibility deduplication (original behaviour)**
+
+    After cycle breaking, the remaining entries are grouped by resolved
+    absolute path.  Residual duplicates (e.g., entries loaded from an older
+    ``.gts`` snapshot that were not covered by the SCC phase) are removed when
+    their synchronisation state is *compatible* with the canonical entry: same
+    lifecycle/sync state, no conflicting commit SHA, no conflicting worktree
+    marker.
 
     Returns a tuple of strings, one per removed entry, each in the form::
 
-        "fixed_circularity:<removed_id>→<canonical_id>"
+        "fixed_circularity:<removed_id>\u2192<canonical_id>"
 
-    The registry tree state is recomputed only when at least one entry is removed.
+    The registry tree state is recomputed only when at least one entry is
+    removed.
+
+    See Also
+    --------
+    find_strongly_connected_components : Tarjan's SCC algorithm used in Phase 1.
+    topological_sort : Returns entries in safe clone/sync order after this call.
     """
-    # Absolute paths stored in registry entries are already resolved (set via
-    # .resolve() during construction), so no additional filesystem calls are needed.
+    # -----------------------------------------------------------------------
+    # Build auxiliary mappings (shared by both phases).
+    # -----------------------------------------------------------------------
     path_to_entries: dict[Path, list[RepoRegistryEntry]] = {}
     for entry in registry.values():
         if entry.absolute_path is None:
             continue
         path_to_entries.setdefault(entry.absolute_path, []).append(entry)
 
+    # -----------------------------------------------------------------------
+    # Phase 1 — SCC-based cycle breaking
+    # -----------------------------------------------------------------------
+    graph = _build_path_graph(registry)
+    sccs = find_strongly_connected_components(graph)
+
     changes: list[str] = []
     ids_to_remove: set[str] = set()
 
+    for scc in sccs:
+        if len(scc) <= 1:
+            continue
+
+        anchor_path = _select_scc_anchor(scc, graph, path_to_entries)
+
+        # Canonical entry for the anchor: the one closest to the project root.
+        anchor_entries = sorted(
+            path_to_entries.get(anchor_path, []),
+            key=lambda e: e.repo_id.count(":"),
+        )
+        if not anchor_entries:
+            continue
+        canonical = anchor_entries[0]
+
+        scc_non_anchor: set[Path] = set(scc) - {anchor_path}
+
+        # Find back-edge entries: entries whose absolute_path equals the
+        # anchor_path but whose parent's absolute_path is a non-anchor SCC
+        # member.  These entries represent the cycle-creating back-reference.
+        for entry in list(registry.values()):
+            if entry.absolute_path != anchor_path:
+                continue
+            if entry.repo_id == canonical.repo_id:
+                continue
+            if entry.parent_id is None or entry.parent_id not in registry.entries:
+                continue
+            parent_entry = registry.entries[entry.parent_id]
+            if parent_entry.absolute_path not in scc_non_anchor:
+                continue
+            # Back-edge: mark as external reference and schedule for removal.
+            entry.is_external_reference = True
+            ids_to_remove.add(entry.repo_id)
+            changes.append(f"fixed_circularity:{entry.repo_id}\u2192{canonical.repo_id}")
+
+    # -----------------------------------------------------------------------
+    # Phase 2 — Hash-compatibility deduplication (original behaviour)
+    # -----------------------------------------------------------------------
     for _abs_path, entries in path_to_entries.items():
         if len(entries) <= 1:
             continue
-        # Determine the canonical entry: the one closest to the root.
-        # repo_id uses ":" as a path separator, so fewer colons mean a higher
-        # position in the tree (root="root" has 0, a direct child of root has 1,
-        # a grandchild has 2, etc.).  Sorting by colon count ascending puts the
-        # canonical entry first.
-        entries.sort(key=lambda e: e.repo_id.count(":"))
-        canonical = entries[0]
-        for duplicate in entries[1:]:
+        # Only consider entries not already scheduled for removal.
+        remaining = [e for e in entries if e.repo_id not in ids_to_remove]
+        if len(remaining) <= 1:
+            continue
+        # Canonical entry: fewest colon-separated segments in repo_id.
+        remaining.sort(key=lambda e: e.repo_id.count(":"))
+        canonical = remaining[0]
+        for duplicate in remaining[1:]:
             if not _is_compatible_duplicate(canonical, duplicate):
                 continue
             ids_to_remove.add(duplicate.repo_id)
-            changes.append(f"fixed_circularity:{duplicate.repo_id}→{canonical.repo_id}")
+            changes.append(f"fixed_circularity:{duplicate.repo_id}\u2192{canonical.repo_id}")
 
     if ids_to_remove:
         for repo_id in ids_to_remove:
-            del registry.entries[repo_id]
+            if repo_id in registry.entries:
+                del registry.entries[repo_id]
         registry.recompute_tree_state()
 
     return tuple(changes)
@@ -503,6 +724,54 @@ def _is_compatible_duplicate(canonical: RepoRegistryEntry, duplicate: RepoRegist
     if canonical.worktree_state and duplicate.worktree_state and canonical.worktree_state != duplicate.worktree_state:
         return False
     return True
+
+
+def topological_sort(registry: DependencyTreeRegistry) -> list[RepoRegistryEntry]:
+    """Return registry entries in topological order (parents before children).
+
+    Uses Kahn's algorithm (iterative BFS) to produce a valid ordering of the
+    dependency tree.  Entries with no parent (i.e., the project root) come
+    first; their children follow in sorted ``repo_id`` order.
+
+    This ordering is safe for sequential clone/pull operations: a parent
+    repository is always processed before any of its children.
+
+    Entries flagged as ``is_external_reference = True`` are included in the
+    output so that callers have a complete picture of the graph, but they
+    should be skipped by any cloning or synchronisation logic.
+
+    Parameters
+    ----------
+    registry:
+        The registry to sort.
+
+    Returns
+    -------
+    list[RepoRegistryEntry]
+        Entries in parent-first topological order.
+    """
+    in_degree: dict[str, int] = {rid: 0 for rid in registry.entries}
+    children_map: dict[str, list[str]] = {rid: [] for rid in registry.entries}
+
+    for entry in registry.values():
+        if entry.parent_id is not None and entry.parent_id in registry.entries:
+            in_degree[entry.repo_id] += 1
+            children_map[entry.parent_id].append(entry.repo_id)
+
+    queue: deque[str] = deque(
+        sorted(rid for rid, deg in in_degree.items() if deg == 0)
+    )
+    result: list[RepoRegistryEntry] = []
+
+    while queue:
+        node = queue.popleft()
+        result.append(registry.entries[node])
+        for child in sorted(children_map.get(node, [])):
+            in_degree[child] -= 1
+            if in_degree[child] == 0:
+                queue.append(child)
+
+    return result
 
 
 # ---------------------------------------------------------------------------

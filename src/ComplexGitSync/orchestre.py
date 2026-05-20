@@ -84,6 +84,7 @@ from .git_tree import (
     make_repo_id,
     promote_to_parent,
     register_relative_path,
+    topological_sort as _topological_sort,
 )
 
 # ============================================================
@@ -1580,9 +1581,19 @@ class ComplexGitSyncClient:
         self.orchestre.git_tree.git.bind_registry(self.registry)
         self.source_path = source_path
 
+        # Sync stack: tracks absolute paths that have already entered the clone
+        # pipeline.  If a repository's path appears in the stack, any subsequent
+        # reference to it (created by nested-config discovery during the same
+        # run) is treated as a mount point and skipped rather than cloned again.
+        # This provides defence-in-depth against infinite-recursion edge cases
+        # that may arise before fix_circularities() has had a chance to clean up
+        # the registry.
+        sync_stack: set[Path] = set()
+
         while True:
             cloned_any = False
-            for entry in self._pending_clone_entries():
+            for entry in self._pending_clone_entries(sync_stack):
+                sync_stack.add(entry.absolute_path)
                 self._clone_registry_entry(entry)
                 cloned_any = True
 
@@ -2122,13 +2133,30 @@ class ComplexGitSyncClient:
             return False
         return not any(candidate.iterdir())
 
-    def _pending_clone_entries(self) -> list[RepoRegistryEntry]:
+    def _pending_clone_entries(
+        self,
+        sync_stack: set[Path] | None = None,
+    ) -> list[RepoRegistryEntry]:
+        """Return registry entries that are due for cloning.
+
+        Entries are excluded from the result when:
+
+        * Their ``repo_lifecycle_state`` is not ``DECLARED`` (already cloned
+          or in error).
+        * Their ``is_external_reference`` flag is ``True`` — these represent
+          cycle-breaking back-edges and must not be cloned recursively.
+        * Their ``absolute_path`` is already present in *sync_stack* — the
+          path is already being processed in the current clone run, so any
+          additional reference to it is treated as a mount point only.
+        """
         registry = self.get_dependency_registry()
         return sorted(
             [
                 entry
                 for entry in registry.values()
                 if entry.repo_lifecycle_state == RepoLifecycleState.DECLARED
+                and not entry.is_external_reference
+                and (sync_stack is None or entry.absolute_path not in sync_stack)
             ],
             key=lambda entry: (len(entry.absolute_path.parts), str(entry.absolute_path)),
         )

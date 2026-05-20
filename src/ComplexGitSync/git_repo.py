@@ -316,3 +316,4 @@ class RepoRegistryEntry:
     default_branch: str | None = None
     nested_config: str | None = None
     remote_name: str | None = None
+    is_external_reference: bool = False

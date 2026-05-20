@@ -52,8 +52,36 @@ The runtime counterpart of \texttt{GitTree} is the
 colon-separated repo ID derived from their position in the tree (e.g.\
 \texttt{root:deps/child-repo:docs}).
 Cross-referenced parents therefore create a tangle-like declaration layer, but
-the expanded runtime graph remains a DAG after canonicalization and
-hash-compatibility checks.
+the expanded runtime graph remains a DAG after the cycle-breaking engine has
+run.
+
+\subsection*{Cycle Breaking Engine}
+
+\texttt{fix\_circularities} is a two-phase engine that converts a potentially
+cyclic dependency graph into a valid DAG:
+
+\begin{enumerate}
+  \item \textbf{SCC detection (Tarjan's algorithm).}  A directed dependency
+    graph is built from the registry (edges: parent absolute path $\to$ child
+    absolute path).  \texttt{find\_strongly\_connected\_components} identifies
+    groups of paths that form a cycle.  For each non-trivial SCC, an
+    \emph{Anchor} path is selected using three heuristics: (1)~most external
+    incoming edges, (2)~closest to project root, (3)~smallest SHA-256 hash.
+    Back-edge entries — registry entries resolving to the anchor's path but
+    parented inside a non-anchor SCC node — are flagged
+    \texttt{is\_external\_reference\,=\,True} and removed.
+  \item \textbf{Hash-compatibility deduplication.}  Residual path-duplicate
+    entries are removed when their synchronisation state is compatible with
+    the canonical entry.
+\end{enumerate}
+
+The clone engine uses a \textbf{sync stack} (set of absolute paths already
+entered into the clone pipeline) to exclude entries whose path is already
+being processed, providing defence-in-depth against any residual back-references
+that escape the registry cleanup phase.
+
+\texttt{topological\_sort(registry)} returns entries in parent-first order
+(Kahn's BFS algorithm) for safe sequential clone/pull operations.
 
 Figure~\ref{fig:core-model} shows the full object model for Tier~1.
 
