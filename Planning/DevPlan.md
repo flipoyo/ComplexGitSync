@@ -47,20 +47,20 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T18 | Integration Test Suite | ✅ Done (CGSi topology + local clone/launch-release lifecycle: 29 tests) |
 | T24 | Local Git Register (`.lgr`) management for `.gts` ids | ✅ Done |
 
-### CGS roadmap extension (current core program)
+### Ticket roadmap continuation (formerly CGS roadmap extension)
 
 | Ticket | Goal | Status |
 |--------|------|--------|
-| CGS-001 | Safe Tag Propagation Semantics | ✅ Done |
-| CGS-002 | End-to-End Local Integration Test Infrastructure | ✅ Done (local remotes, clone/launch-release lifecycle, CLI+API git cycle coverage) |
-| CGS-003 | Transactional Tag Propagation | ✅ Done |
-| CGS-004 | Formal `.gts` Snapshot Specification | ❌ Pending |
-| CGS-005 | `.lgr` Local Sync Ledger | ❌ Pending |
-| CGS-006 | Workspace Preflight Validation Engine | ❌ Pending |
-| CGS-007 | Deterministic Freeze Semantics | ❌ Pending |
-| CGS-008 | Branch Topology Propagation Rules | ❌ Pending |
-| CGS-009 | CLI Dry-Run Mode | ❌ Pending |
-| CGS-010 | Architectural Positioning Documentation | ❌ Pending |
+| T28 (formerly CGS-001) | Safe Tag Propagation Semantics | ✅ Done |
+| T29 (formerly CGS-002) | End-to-End Local Integration Test Infrastructure | ✅ Done (local remotes, clone/launch-release lifecycle, CLI+API git cycle coverage) |
+| T30 (formerly CGS-003) | Transactional Tag Propagation | ✅ Done |
+| T31 (formerly CGS-004) | Formal `.gts` Snapshot Specification | ❌ Pending |
+| T32 (formerly CGS-005) | `.lgr` Local Sync Ledger | ❌ Pending |
+| T33 (formerly CGS-006) | Workspace Preflight Validation Engine | ❌ Pending |
+| T34 (formerly CGS-007) | Deterministic Freeze Semantics | ❌ Pending |
+| T35 (formerly CGS-008) | Branch Topology Propagation Rules | ❌ Pending |
+| T36 (formerly CGS-009) | CLI Dry-Run Mode | ❌ Pending |
+| T37 (formerly CGS-010) | Architectural Positioning Documentation | ❌ Pending |
 
 ## Project State
 
@@ -74,7 +74,7 @@ The project is functional for controlled use.
 
 The project is **not yet BetaSeries** because:
 
-- The CGS roadmap extension still has open scope (CGS-004–CGS-010), covering
+- The roadmap continuation still has open scope (T31–T37; formerly CGS-004–CGS-010), covering
   formal `.gts` specification, the `.lgr` local sync ledger, workspace preflight
   validation, deterministic freeze semantics, and architectural positioning.
 
@@ -116,10 +116,10 @@ the unit level, and documented.
 - `expand`+`fix_circularities` enforce a DAG-compatible tangle behavior: shared repos are canonicalized only when declared refs are hash-compatible.
 - `.cgs` supports repo-level `branch`/`tag` declarations; when both are present, `validate` enforces hash equivalence and raises `incompatibilities between branch (hash) and tag(val) in .cgs` on mismatch.
 - `freeze` emits the next `.gts` id and records it in the project-local `<project>.lgr` register.
-- Remaining work is tracked in the CGS-004..CGS-010 core roadmap in `DevPlanTickets.md`.
+- Remaining work is tracked in the T31..T37 continuation roadmap in `DevPlanTickets.md`.
 - `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
 - Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
-- `.goc` automation is available through `ComplexGitSyncClient.orchestrate`; the local register is delivered (T24) and ledger evolution remains tracked in CGS-005.
+- `.goc` automation is available through `ComplexGitSyncClient.orchestrate`; the local register is delivered (T24) and ledger evolution remains tracked in T32 (formerly CGS-005).
 
 ## Definition of Done (Global)
 
