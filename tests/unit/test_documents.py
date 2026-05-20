@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+import copy
 import json
 import textwrap
 from pathlib import Path
@@ -33,8 +34,10 @@ MINIMAL_CGS: dict = {
 MINIMAL_GTS: dict = {
     "document": {
         "format_version": "1.0",
+        "schema_version": "1.1",
         "generated_at": "2026-01-01T00:00:00Z",
         "command_origin": "clone",
+        "hash_algorithm": "sha256",
     },
     "project": {
         "name": "TestProject",
@@ -48,7 +51,7 @@ MINIMAL_GTS: dict = {
     "repo_state": [
         {
             "name": "repo-a",
-            "node_type": "LeafRepo",
+            "node_type": "root",
             "absolute_path": "/workspace/TestProject/repo-a",
             "repo_lifecycle_state": "READY",
             "sync_state": "ALIGNED",
@@ -430,6 +433,12 @@ class TestGtsDocumentValid:
         assert doc.is_ready is True
         assert len(doc.repo_states) == 4
 
+    def test_ensure_snapshot_hash_sets_stable_hash(self):
+        doc = GtsDocument.from_dict(copy.deepcopy(MINIMAL_GTS))
+        digest = doc.ensure_snapshot_hash()
+        assert doc.snapshot_hash == digest
+        assert digest == doc.compute_snapshot_hash()
+
 
 class TestGtsDocumentInvalid:
     def _assert_validation_error(self, data: dict, fragment: str) -> None:
@@ -474,7 +483,11 @@ class TestGtsDocumentInvalid:
 
     def test_missing_repo_commit_sha_is_valid(self):
         # commit_sha is optional — repos in DECLARED/PENDING state have not been cloned
-        broken_repo = {k: v for k, v in MINIMAL_GTS["repo_state"][0].items() if k != "commit_sha"}
+        broken_repo = {
+            **{k: v for k, v in MINIMAL_GTS["repo_state"][0].items() if k != "commit_sha"},
+            "repo_lifecycle_state": "DECLARED",
+            "sync_state": "PENDING",
+        }
         data = {**MINIMAL_GTS, "repo_state": [broken_repo]}
         doc = GtsDocument.from_dict(data)
         assert doc is not None
@@ -485,6 +498,29 @@ class TestGtsDocumentInvalid:
         }
         data = {**MINIMAL_GTS, "repo_state": [broken_repo]}
         self._assert_validation_error(data, "absolute_path")
+
+    def test_ready_repo_requires_commit_sha(self):
+        broken_repo = {
+            k: v for k, v in MINIMAL_GTS["repo_state"][0].items() if k != "commit_sha"
+        }
+        data = {**MINIMAL_GTS, "repo_state": [broken_repo]}
+        self._assert_validation_error(data, "commit_sha")
+
+    def test_non_root_repo_requires_parent_absolute_path(self):
+        broken_repo = {
+            **MINIMAL_GTS["repo_state"][0],
+            "node_type": "leaf",
+        }
+        data = {**MINIMAL_GTS, "repo_state": [broken_repo]}
+        self._assert_validation_error(data, "parent_absolute_path")
+
+    def test_snapshot_hash_must_match_canonical_payload(self):
+        doc = GtsDocument.from_dict(copy.deepcopy(MINIMAL_GTS))
+        digest = doc.ensure_snapshot_hash()
+        doc_data = doc.to_dict()
+        bad = {**doc_data, "document": {**doc_data["document"], "snapshot_hash": "f" * 64}}
+        assert digest != "f" * 64
+        self._assert_validation_error(bad, "snapshot_hash does not match")
 
 
 # ===========================================================================

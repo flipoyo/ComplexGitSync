@@ -15,7 +15,7 @@ sync from a single local specification and a tracked local tree state.
 ### 1.2 Documents
 
 - `.cgs` — describes the project topology, authoring specification for a ComplexGitSync project, 
-- `.gts` — local GitTree state tracked through lifecycle `LOADED`, `PENDING`, and `READY`
+- `.gts` — canonical GitTree workspace snapshot with schema versioning and deterministic SHA-256 hash (`document.snapshot_hash`) tracked through lifecycle `LOADED`, `PENDING`, and `READY`
 - `.goc` — stores higher-level orchestration plan document
 - `.lgr` — Local Git Register (`<Project_name>.lgr`) that records one stable
   local id per generated `.gts` snapshot and tracks the current snapshot pointer.

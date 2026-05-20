@@ -355,6 +355,9 @@ class GtsDocument(ConfigDocument):
     """
 
     DOCUMENT_KIND = "gts"
+    CURRENT_SCHEMA_VERSION = "1.1"
+    HASH_ALGORITHM = "sha256"
+    _SUPPORTED_HASH_ALGORITHMS = frozenset((HASH_ALGORITHM,))
 
     _REQUIRED_DOCUMENT_KEYS = ("format_version", "generated_at", "command_origin")
     _REQUIRED_PROJECT_KEYS = ("name", "root_absolute_path")
@@ -393,6 +396,45 @@ class GtsDocument(ConfigDocument):
                 for key in self._REQUIRED_REPO_STATE_KEYS:
                     if not repo.get(key):
                         errors.append(f"repo_state[{idx}] missing required key: '{key}'")
+                node_type: NodeType | None = None
+                try:
+                    node_type = _parse_gts_node_type(repo.get("node_type"))
+                except ConfigValidationError:
+                    node_type = None
+                project_root_path = self.read("project.root_absolute_path")
+                is_project_root_repo = (
+                    isinstance(project_root_path, str)
+                    and str(repo.get("absolute_path", "")) == project_root_path
+                )
+                if not is_project_root_repo and node_type != NodeType.ROOT and not repo.get("parent_absolute_path"):
+                    errors.append(f"repo_state[{idx}] missing required key: 'parent_absolute_path'")
+                if not (repo.get("current_ref_name") or repo.get("target_ref_name") or repo.get("resolved_ref_name")):
+                    errors.append(
+                        f"repo_state[{idx}] must include at least one ref name ('current_ref_name', 'target_ref_name', or 'resolved_ref_name')"
+                    )
+                lifecycle = str(repo.get("repo_lifecycle_state", ""))
+                if lifecycle in {
+                    RepoLifecycleState.READY.value,
+                    RepoLifecycleState.FALLBACK_READY.value,
+                } and not repo.get("commit_sha"):
+                    errors.append(
+                        f"repo_state[{idx}] missing required key for READY repository: 'commit_sha'"
+                    )
+
+        hash_algorithm = self.read(f"document.hash_algorithm", self.HASH_ALGORITHM)
+        if not isinstance(hash_algorithm, str) or hash_algorithm not in self._SUPPORTED_HASH_ALGORITHMS:
+            errors.append(
+                f"[document] unsupported hash_algorithm '{hash_algorithm}' (supported: {', '.join(sorted(self._SUPPORTED_HASH_ALGORITHMS))})"
+            )
+
+        snapshot_hash = self.read("document.snapshot_hash")
+        if snapshot_hash is not None:
+            if not isinstance(snapshot_hash, str) or len(snapshot_hash) != 64:
+                errors.append("[document] snapshot_hash must be a 64-character lowercase hex SHA-256 digest")
+            elif any(ch not in "0123456789abcdef" for ch in snapshot_hash):
+                errors.append("[document] snapshot_hash must be a lowercase hexadecimal SHA-256 digest")
+            elif snapshot_hash != self.compute_snapshot_hash():
+                errors.append("[document] snapshot_hash does not match canonical .gts content hash")
 
         if errors:
             raise ConfigValidationError(
@@ -410,6 +452,97 @@ class GtsDocument(ConfigDocument):
     @property
     def repo_states(self) -> list[dict[str, Any]]:
         return list(self._data.get("repo_state", []))
+
+    @property
+    def schema_version(self) -> str:
+        value = self.read("document.schema_version")
+        if isinstance(value, str) and value:
+            return value
+        return self.CURRENT_SCHEMA_VERSION
+
+    @property
+    def snapshot_hash(self) -> str | None:
+        value = self.read("document.snapshot_hash")
+        return value if isinstance(value, str) and value else None
+
+    def compute_snapshot_hash(self) -> str:
+        canonical_json = json.dumps(
+            self._build_canonical_payload(),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+    def ensure_snapshot_hash(self) -> str:
+        document = self._data.setdefault("document", {})
+        document["schema_version"] = self.CURRENT_SCHEMA_VERSION
+        document["hash_algorithm"] = self.HASH_ALGORITHM
+        digest = self.compute_snapshot_hash()
+        document["snapshot_hash"] = digest
+        return digest
+
+    def _build_canonical_payload(self) -> dict[str, Any]:
+        project = self._data.get("project", {})
+        tree_state = self._data.get("tree_state", {})
+        repo_states = self._data.get("repo_state", [])
+        canonical_repo_states = []
+        for repo in repo_states if isinstance(repo_states, list) else []:
+            if not isinstance(repo, dict):
+                continue
+            canonical_repo_states.append(
+                {
+                    "name": repo.get("name"),
+                    "node_type": repo.get("node_type"),
+                    "absolute_path": repo.get("absolute_path"),
+                    "relative_path": repo.get("relative_path"),
+                    "parent_absolute_path": repo.get("parent_absolute_path"),
+                    "repo_lifecycle_state": repo.get("repo_lifecycle_state"),
+                    "sync_state": repo.get("sync_state"),
+                    "current_ref_kind": repo.get("current_ref_kind"),
+                    "current_ref_name": repo.get("current_ref_name"),
+                    "target_ref_kind": repo.get("target_ref_kind"),
+                    "target_ref_name": repo.get("target_ref_name"),
+                    "resolved_ref_kind": repo.get("resolved_ref_kind"),
+                    "resolved_ref_name": repo.get("resolved_ref_name"),
+                    "commit_sha": repo.get("commit_sha"),
+                    "project_owner_name": repo.get("project_owner_name"),
+                    "project_name": repo.get("project_name"),
+                    "repo_name": repo.get("repo_name"),
+                    "fallback_branch": repo.get("fallback_branch"),
+                    "fallback_applied": repo.get("fallback_applied"),
+                    "fallback_reason": repo.get("fallback_reason"),
+                    "discovery_state": repo.get("discovery_state"),
+                    "worktree_state": repo.get("worktree_state"),
+                    "is_reachable": repo.get("is_reachable"),
+                    "source_cgs_path": repo.get("source_cgs_path"),
+                }
+            )
+        canonical_repo_states.sort(
+            key=lambda repo: (
+                str(repo.get("absolute_path", "")),
+                str(repo.get("name", "")),
+                str(repo.get("parent_absolute_path", "")),
+                str(repo.get("relative_path", "")),
+            )
+        )
+        return {
+            "document": {
+                "schema_version": self.schema_version,
+                "hash_algorithm": self.read("document.hash_algorithm", self.HASH_ALGORITHM),
+            },
+            "project": {
+                "name": project.get("name"),
+                "root_absolute_path": project.get("root_absolute_path"),
+                "source_cgs_path": project.get("source_cgs_path"),
+            },
+            "tree_state": {
+                "lifecycle_state": tree_state.get("lifecycle_state"),
+                "is_ready": tree_state.get("is_ready"),
+                "registry_complete": tree_state.get("registry_complete"),
+            },
+            "repo_state": canonical_repo_states,
+        }
 
 
 _VALID_GOC_COMMANDS = frozenset(
@@ -783,12 +916,18 @@ class LocalGitRegister:
         return f"gts-{max_id + 1:06d}"
 
     def _hash_snapshot_file(self, snapshot_path: Path) -> str:
-        """Compute a SHA-256 hash of ``snapshot_path`` for snapshot deduplication."""
-        digest = hashlib.sha256()
-        with snapshot_path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(self._HASH_CHUNK_SIZE), b""):
-                digest.update(chunk)
-        return digest.hexdigest()
+        """Compute a canonical snapshot hash for ``snapshot_path``."""
+        try:
+            document = GtsDocument.from_toml(snapshot_path)
+        except (OSError, tomllib.TOMLDecodeError, ConfigValidationError):
+            digest = hashlib.sha256()
+            with snapshot_path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(self._HASH_CHUNK_SIZE), b""):
+                    digest.update(chunk)
+            return digest.hexdigest()
+        if document.snapshot_hash:
+            return document.snapshot_hash
+        return document.compute_snapshot_hash()
 
 
 @dataclass(slots=True)
@@ -1174,8 +1313,10 @@ def build_gts_document_from_registry(
     data: dict[str, Any] = {
         "document": {
             "format_version": "1.0",
+            "schema_version": GtsDocument.CURRENT_SCHEMA_VERSION,
             "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "command_origin": command_origin,
+            "hash_algorithm": GtsDocument.HASH_ALGORITHM,
         },
         "project": {
             "name": root_entry.name,
@@ -1221,7 +1362,10 @@ def build_gts_document_from_registry(
             repo_data["parent_absolute_path"] = str(registry.get(entry.parent_id).absolute_path)
         data["repo_state"].append({key: value for key, value in repo_data.items() if value is not None})
 
-    return GtsDocument.from_dict(data)
+    document = GtsDocument.from_dict(data)
+    document.ensure_snapshot_hash()
+    document.validate()
+    return document
 
 
 # ============================================================

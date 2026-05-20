@@ -781,7 +781,7 @@ def test_client_load_cgs_updates_project_local_lgr(tmp_path):
     assert data["snapshots"][0]["snapshot_path"] == str(expected_snapshot)
 
 
-def test_client_snapshot_generation_appends_lgr_entries(tmp_path):
+def test_client_snapshot_generation_deduplicates_identical_workspace_entries(tmp_path):
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
@@ -792,8 +792,8 @@ def test_client_snapshot_generation_appends_lgr_entries(tmp_path):
     client.expand(config_path)
 
     data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
-    assert [entry["id"] for entry in data["snapshots"]] == ["gts-000001", "gts-000002"]
-    assert data["register"]["current_snapshot_id"] == "gts-000002"
+    assert [entry["id"] for entry in data["snapshots"]] == ["gts-000001"]
+    assert data["register"]["current_snapshot_id"] == "gts-000001"
 
 
 def test_client_expand_cgs_writes_gts_snapshot(tmp_path):
@@ -826,6 +826,9 @@ def test_client_load_gts_snapshot_has_correct_command_origin(tmp_path):
 
     data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
     assert data["document"]["command_origin"] == "load"
+    assert data["document"]["schema_version"] == "1.1"
+    assert data["document"]["hash_algorithm"] == "sha256"
+    assert len(data["document"]["snapshot_hash"]) == 64
 
 
 def test_client_expand_gts_snapshot_has_correct_command_origin(tmp_path):
@@ -838,6 +841,9 @@ def test_client_expand_gts_snapshot_has_correct_command_origin(tmp_path):
 
     data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
     assert data["document"]["command_origin"] == "expand"
+    assert data["document"]["schema_version"] == "1.1"
+    assert data["document"]["hash_algorithm"] == "sha256"
+    assert len(data["document"]["snapshot_hash"]) == 64
 
 
 def test_client_validate_gts_snapshot_has_correct_command_origin(tmp_path):
@@ -850,6 +856,9 @@ def test_client_validate_gts_snapshot_has_correct_command_origin(tmp_path):
 
     data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
     assert data["document"]["command_origin"] == "validate"
+    assert data["document"]["schema_version"] == "1.1"
+    assert data["document"]["hash_algorithm"] == "sha256"
+    assert len(data["document"]["snapshot_hash"]) == 64
 
 
 def _write_root_cgs(tmp_path, *, nested_child: bool = False):

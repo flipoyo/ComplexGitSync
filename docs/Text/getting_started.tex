@@ -135,7 +135,9 @@ The clone flow first tries each repo's \texttt{default\_branch} and falls back
 to \texttt{fallback\_branch} when the preferred branch does not exist on the
 remote. It also writes a runtime snapshot to
 \texttt{<project-root>/.cgitsync/state/<spec-name>.gts} so later inspection
-commands can reuse the synchronised state.
+commands can reuse the synchronised state. Generated \texttt{.gts} snapshots
+embed \texttt{schema\_version}, \texttt{hash\_algorithm = "sha256"}, and a
+deterministic \texttt{snapshot\_hash} over canonical workspace state fields.
 
 Once the tree is materialised, the lifecycle continues with checkout from the
 recorded \texttt{.gts} state.

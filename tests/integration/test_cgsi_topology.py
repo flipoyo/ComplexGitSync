@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import subprocess
 import tomllib
+import tomli_w
 from pathlib import Path
 
 import pytest
@@ -28,7 +29,7 @@ import pytest
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.git_repo import GitProvider, NodeType
 from ComplexGitSync.git_tree import TreeLifecycleState
-from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.orchestre import ComplexGitSyncClient, GtsDocument
 
 
 # ---------------------------------------------------------------------------
@@ -540,6 +541,33 @@ class TestGitCommandCycleIntegration:
         snapshot_path_parts = Path(lgr_data["register"]["current_snapshot_path"]).parts
         assert snapshot_path_parts[-3:] == (".cgitsync", "state", "demo.gts")
         assert len(lgr_data["snapshots"]) == 1
+
+
+class TestGtsSnapshotDeterminismIntegration:
+    def test_canonical_hash_is_stable_across_metadata_changes(self, ready_single_repo_snapshot, tmp_path):
+        snapshot = ready_single_repo_snapshot["snapshot"]
+        baseline_hash = GtsDocument.from_toml(snapshot).compute_snapshot_hash()
+
+        data = tomllib.loads(snapshot.read_text(encoding="utf-8"))
+        data["document"]["generated_at"] = "2026-02-02T00:00:00Z"
+        data["document"]["command_origin"] = "validate"
+        modified = tmp_path / "same-state-new-metadata.gts"
+        modified.write_text(tomli_w.dumps(data), encoding="utf-8")
+
+        modified_hash = GtsDocument.from_toml(modified).compute_snapshot_hash()
+        assert modified_hash == baseline_hash
+
+    def test_canonical_hash_changes_when_workspace_state_changes(self, ready_single_repo_snapshot, tmp_path):
+        snapshot = ready_single_repo_snapshot["snapshot"]
+        baseline_hash = GtsDocument.from_toml(snapshot).compute_snapshot_hash()
+
+        data = tomllib.loads(snapshot.read_text(encoding="utf-8"))
+        data["repo_state"][0]["commit_sha"] = "f" * 40
+        modified = tmp_path / "changed-state.gts"
+        modified.write_text(tomli_w.dumps(data), encoding="utf-8")
+
+        modified_hash = GtsDocument.from_toml(modified).compute_snapshot_hash()
+        assert modified_hash != baseline_hash
 
 
 class TestCloneAndLaunchReleaseLifecycle:
