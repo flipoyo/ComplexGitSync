@@ -241,7 +241,7 @@ creating duplicate registry entries for the same physical path.
 - Documentation updated: README.md, getting_started.tex, user_guide.tex,
   python_api.tex, AdditionalSpecs.md.
 
-### T28 (formerly CGS-001) — Safe Tag Propagation Semantics (Critical)  ✅
+### T28 — Safe Tag Propagation Semantics (Critical)  ✅
 **Type**: Reliability / Release Integrity  
 **Problem**: `GitRunner.create_tag()` currently uses `git tag -f` unconditionally,
 allowing silent overwrite of existing tags during propagated releases.  
@@ -263,7 +263,7 @@ allowing silent overwrite of existing tags during propagated releases.
 - Force behavior is explicit and tested.
 - Existing workflows remain backward compatible when requested.
 
-### T29 (formerly CGS-002) — End-to-End Local Integration Test Infrastructure (Critical)  ✅
+### T29 — End-to-End Local Integration Test Infrastructure (Critical)  ✅
 **Type**: Testing / Reliability  
 **Problem**: Current tests validate isolated behaviors but not full synchronization workflows.  
 **Legacy linkage**: Implements the remaining scope of T18.
@@ -299,7 +299,7 @@ pipeline, duplication/cycle prevention, registry structure, DECLARED state,
 example `.cgs` parsing, READY `.gts` git command cycle via CLI/Python API,
 local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 
-### T30 (formerly CGS-003) — Transactional Tag Propagation (High)  ✅
+### T30 — Transactional Tag Propagation (High)  ✅
 **Type**: Reliability / Distributed Consistency  
 **Problem**: Partial failure during propagated tagging may leave repositories desynchronized.  
 **Legacy linkage**: Hardens T13/T14 propagation guarantees.
@@ -328,10 +328,10 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 
 ### Ticket numbering rule (single merged plan)
 - Closed tickets now run sequentially from **T00** through **T30**.
-- Former **CGS-001** through **CGS-003** are now tracked as **T28** through **T30**.
-- Former **CGS-004** through **CGS-010** remain open after the current implementation review and continue as **T31** through **T37**.
+- Completed roadmap continuation tickets now continue as **T28** through **T30**.
+- Remaining open roadmap tickets continue as **T31** through **T37**.
 
-### T31 (formerly CGS-004) — Formal `.gts` Snapshot Specification (High)
+### T31 — Formal `.gts` Snapshot Specification (High)
 **Type**: Core Architecture  
 **Problem**: `.gts` currently behaves operationally but lacks formal deterministic specification.  
 **Legacy linkage**: Deepens T06 contract and determinism guarantees.
@@ -353,7 +353,7 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 - Identical workspace states produce identical `.gts` hashes.
 - `.gts` can act as deterministic workspace checkpoint.
 
-### T32 (formerly CGS-005) — `.lgr` Local Sync Ledger (High)
+### T32 — `.lgr` Local Sync Ledger (High)
 **Type**: Architecture / Traceability  
 **Problem**: The ledger layer is planned conceptually but not implemented.  
 **Legacy linkage**: Expands the delivered T24 local register into a full ledger model.
@@ -377,7 +377,7 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 - Every synchronization operation becomes reproducible and traceable.
 - Ledger reconstructs workspace evolution history.
 
-### T33 (formerly CGS-006) — Workspace Preflight Validation Engine (High)
+### T33 — Workspace Preflight Validation Engine (High)
 **Type**: Safety  
 **Problem**: Mutating operations currently rely heavily on implicit repository correctness.  
 **Legacy linkage**: Hardens T12/T13/T14 safety gating before mutation.
@@ -404,7 +404,7 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 - Invalid workspace states blocked before destructive operations.
 - Diagnostics actionable and explicit.
 
-### T34 (formerly CGS-007) — Deterministic Freeze Semantics (Medium)
+### T34 — Deterministic Freeze Semantics (Medium)
 **Type**: Reproducibility  
 **Problem**: Freeze semantics are conceptually central but not yet formally defined.  
 **Legacy linkage**: Formalizes T14 freeze invariants.
@@ -421,7 +421,7 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 **Acceptance Criteria**:
 - A freeze fully reconstructs a compatible workspace state.
 
-### T35 (formerly CGS-008) — Branch Topology Propagation Rules (Medium)
+### T35 — Branch Topology Propagation Rules (Medium)
 **Type**: Workflow / DAG Semantics  
 **Problem**: Branch synchronization semantics across GitTree are not yet formally constrained.  
 **Legacy linkage**: Clarifies propagation rules used by T10/T12/T13 flows.
@@ -437,7 +437,7 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 **Acceptance Criteria**:
 - Workspace branch topology becomes deterministic and inspectable.
 
-### T36 (formerly CGS-009) — CLI Dry-Run Mode (Medium)
+### T36 — CLI Dry-Run Mode (Medium)
 **Type**: Safety / UX  
 **Problem**: Current orchestration operations are highly mutating.  
 **Legacy linkage**: Adds non-mutating previews to T21/T12/T13/T14 command paths.
@@ -454,7 +454,7 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 **Acceptance Criteria**:
 - Users can inspect workspace mutation graph before execution.
 
-### T37 (formerly CGS-010) — Architectural Positioning Documentation (Medium)
+### T37 — Architectural Positioning Documentation (Medium)
 **Type**: Documentation / Identity  
 **Problem**: The project is more than Git automation, but this is not fully formalized.  
 **Legacy linkage**: Complements T19 documentation scope.

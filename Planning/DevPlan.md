@@ -47,20 +47,20 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T18 | Integration Test Suite | ✅ Done (CGSi topology + local clone/launch-release lifecycle: 29 tests) |
 | T24 | Local Git Register (`.lgr`) management for `.gts` ids | ✅ Done |
 
-### Ticket roadmap continuation (formerly CGS roadmap extension)
+### Ticket roadmap continuation
 
 | Ticket | Goal | Status |
 |--------|------|--------|
-| T28 (formerly CGS-001) | Safe Tag Propagation Semantics | ✅ Done |
-| T29 (formerly CGS-002) | End-to-End Local Integration Test Infrastructure | ✅ Done (local remotes, clone/launch-release lifecycle, CLI+API git cycle coverage) |
-| T30 (formerly CGS-003) | Transactional Tag Propagation | ✅ Done |
-| T31 (formerly CGS-004) | Formal `.gts` Snapshot Specification | ❌ Pending |
-| T32 (formerly CGS-005) | `.lgr` Local Sync Ledger | ❌ Pending |
-| T33 (formerly CGS-006) | Workspace Preflight Validation Engine | ❌ Pending |
-| T34 (formerly CGS-007) | Deterministic Freeze Semantics | ❌ Pending |
-| T35 (formerly CGS-008) | Branch Topology Propagation Rules | ❌ Pending |
-| T36 (formerly CGS-009) | CLI Dry-Run Mode | ❌ Pending |
-| T37 (formerly CGS-010) | Architectural Positioning Documentation | ❌ Pending |
+| T28 | Safe Tag Propagation Semantics | ✅ Done |
+| T29 | End-to-End Local Integration Test Infrastructure | ✅ Done (local remotes, clone/launch-release lifecycle, CLI+API git cycle coverage) |
+| T30 | Transactional Tag Propagation | ✅ Done |
+| T31 | Formal `.gts` Snapshot Specification | ❌ Pending |
+| T32 | `.lgr` Local Sync Ledger | ❌ Pending |
+| T33 | Workspace Preflight Validation Engine | ❌ Pending |
+| T34 | Deterministic Freeze Semantics | ❌ Pending |
+| T35 | Branch Topology Propagation Rules | ❌ Pending |
+| T36 | CLI Dry-Run Mode | ❌ Pending |
+| T37 | Architectural Positioning Documentation | ❌ Pending |
 
 ## Project State
 
@@ -74,7 +74,7 @@ The project is functional for controlled use.
 
 The project is **not yet BetaSeries** because:
 
-- The roadmap continuation still has open scope (T31–T37; formerly CGS-004–CGS-010), covering
+- The roadmap continuation still has open scope (T31–T37), covering
   formal `.gts` specification, the `.lgr` local sync ledger, workspace preflight
   validation, deterministic freeze semantics, and architectural positioning.
 
@@ -119,7 +119,7 @@ the unit level, and documented.
 - Remaining work is tracked in the T31..T37 continuation roadmap in `DevPlanTickets.md`.
 - `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
 - Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
-- `.goc` automation is available through `ComplexGitSyncClient.orchestrate`; the local register is delivered (T24) and ledger evolution remains tracked in T32 (formerly CGS-005).
+- `.goc` automation is available through `ComplexGitSyncClient.orchestrate`; the local register is delivered (T24) and ledger evolution remains tracked in T32.
 
 ## Definition of Done (Global)
 
