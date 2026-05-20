@@ -217,7 +217,8 @@ class RepoAddress:
         if self.gitprovider == GitProvider.GITLAB:
             if not self.group_name:
                 namespace = self.project_owner_name
-            else namespace = self.group_name
+            else:
+                namespace = self.group_name
             if not namespace:
                 raise ValueError(
                     "group_name or project_owner_name is required for GitLab addresses."
