@@ -34,7 +34,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T26 | CLI Simplification: `initialise`, `freeze`, smart `load()` | ✅ Done |
 | T16 | CLI wiring: `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` | ✅ Done |
 | T27 | Circular dependency resolution: `fix_circularities` | ✅ Done |
-| T17 | Unit Test Suite (incremental) | ✅ Ongoing (316 passing: 285 unit + 31 integration) |
+| T17 | Unit Test Suite (incremental) | ✅ Ongoing (322 passing: 290 unit + 32 integration) |
 | T19 | Documentation and Examples (incremental) | ✅ Updated |
 | T20 | CI Version Increment Automation | ✅ Done |
 
@@ -68,7 +68,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 
 All delivered T-track tickets are operational and the core Python API and CLI
 remain stable. `.goc` parser-driven orchestration is now executable through
-`ComplexGitSyncClient.orchestrate(...)`. 316 tests pass (285 unit + 31
+`ComplexGitSyncClient.orchestrate(...)`. 322 tests pass (290 unit + 32
 integration) across parsers, registry, lifecycle, operations, CLI smoke paths,
 and integration scenarios.
 The project is functional for controlled use.
