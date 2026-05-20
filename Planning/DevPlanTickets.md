@@ -55,7 +55,16 @@ write on success.
   3. `git checkout` parent-first; refresh all entry state.
 Requires READY; tree stays READY.  Client also writes a `.gts` snapshot.
 
-`restart` (CLI) stub exists; full implementation pending (T10 remainder).
+`restart` (CLI) stub existed; the remaining wiring was completed in the
+follow-up entry below.
+
+### T10 (remainder) — `restart` CLI wiring ✅
+`restart_tree` implemented in Tier 2 (operations.py) with parent-first submodule-aware
+sync (root `pull --ff-only`, then parent-side submodule updates) using the root
+repository's current branch.  `ComplexGitSyncClient.restart`
+implemented with `.cgs` load, nested discovery, READY enforcement, and `.gts`
+snapshot write.  `cgitsync restart <source.cgs>` CLI command wired.  A separate
+terminology follow-up now tracks the user-facing rename to `pull`.
 
 ### T11 — Tree and Registry Inspection ✅
 `get_dependency_registry`, `get_tree_state`, `format_project_tree`,
@@ -86,20 +95,15 @@ with named `.gts` output support.
 rebuild registry, run due clone/checkout actions, refresh SHAs, and enforce
 READY completion.
 
-### T21 — `add`, `freeze_state`, `launch_state` (API + CLI) ✅
-Added `add_tree` in Tier 2 and `ComplexGitSyncClient.add()` for explicit
-`git add --all` workflow staging on READY trees. Added
-`ComplexGitSyncClient.freeze_state(...)` and `launch_state(...)` as internal
-dev-state counterparts to release methods. CLI now wires:
-  - `cgitsync add --gts <file>`
-  - `cgitsync freeze-state <name> --gts <file>`
-  - `cgitsync launch-state <snapshot.gts>`
-
-### T25 — Logger verbosity profile verification ✅
-Validated command-run logging behavior for both `verbose` and `whisper_sync`
-profiles. Structured file logs preserve mandatory events (`command_start`,
-`command_end`, lifecycle events) across both modes, while console verbosity is
-profile-gated.
+### T16 — CLI wiring for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` ✅
+All six commands implemented in `cli.py`:
+  - `cgitsync checkout <branch> --gts <file> [--ref-kind branch|tag]`
+  - `cgitsync commit <message> --gts <file> [--no-stage]`
+  - `cgitsync push --gts <file>`
+  - `cgitsync tag <name> --gts <file>`
+  - `cgitsync freeze-release <name> --gts <file>`
+  - `cgitsync launch-release <snapshot.gts>`
+CLI behaviour matches Python API invariants; 13 new smoke tests added.
 
 ### T17 — Unit Test Suite (incremental) ✅
 294 total passing tests. Unit tests cover
@@ -110,6 +114,21 @@ Integration tests cover the CGSi 4-repo mixed-provider topology (expand,
 duplication prevention, cycle prevention, lifecycle state, and example file
 parsing) plus a READY `.gts` git command cycle through Python API and CLI-first
 execution (`add → commit → push → tag → freeze`).
+
+### T18 — Integration Test Suite  ✅
+**Goal**: end-to-end validation on temporary nested git repositories.  
+**Deliverables**: nested repo fixture generator; clone / checkout / pull / add / commit / push /
+tag / freeze scenarios.  
+**Dependencies**: T09–T16.  
+**Acceptance**: CaWaQS-style topology reproducible; all sync commands produce
+expected READY states and `.gts` outputs.
+
+**Progress**: CGSi mixed-provider topology and command-cycle coverage delivered,
+then completed with local file-remote clone and launch-release lifecycle
+scenarios (29 integration tests). Covers: `expand()` pipeline, duplication
+prevention, cycle prevention, registry structure, DECLARED lifecycle state,
+example `.cgs` parsing, READY `.gts` git command cycle via Python API + CLI,
+`clone_cgs` local remotes, and `launch_release` restore from missing paths.
 
 ### T19 — Documentation and Examples (incremental) ✅
 `README.md`, `docs/user_guide.tex`, `docs/getting_started.tex`,
@@ -124,41 +143,26 @@ and minimal repo-only tree display.
 ### T20 — CI Version Increment Automation ✅
 PR-based version bump on every merge.  `YYYY.XX` format with rollover.
 
-### T26 — CLI Simplification: `initialise`, `freeze`, smart `load()` ✅
-Simplified the user-facing CLI and Python API lifecycle surface:
+### T21 — `add`, `freeze_state`, `launch_state` (API + CLI) ✅
+Added `add_tree` in Tier 2 and `ComplexGitSyncClient.add()` for explicit
+`git add --all` workflow staging on READY trees. Added
+`ComplexGitSyncClient.freeze_state(...)` and `launch_state(...)` as internal
+dev-state counterparts to release methods. CLI now wires:
+  - `cgitsync add --gts <file>`
+  - `cgitsync freeze-state <name> --gts <file>`
+  - `cgitsync launch-state <snapshot.gts>`
 
-- `initialise(.cgs)` — primary entry point for new projects: clones all repos
-  (calls `clone_cgs`), ends in `READY`.
-- `initialise(.gts)` — primary entry point for existing projects: restores from
-  a snapshot (calls `load_gts`), ends in `READY`.
-- `freeze` — added as a primary CLI command (alias for `freeze_release`).
-- `load()` — updated to accept both `.gts` (direct) and `.cgs` (smart load via
-  `load_cgs` pipeline) sources.
-- `load`, `expand`, `validate`, `tree` removed from the CLI primary command
-  surface; they remain available as Python API methods for power users.
-- CLI primary commands: `initialise`, `pull`, `checkout`, `add`, `commit`,
-  `push`, `tag`, `freeze`.
-- `README.md`, `AdditionalSpecs.md`, `docs/user_guide.tex`, `DevPlan.md`,
-  and this file updated to use the simplified lifecycle vocabulary.
-- 5 unit tests updated; 4 new tests added (199 passing).
+### T22 — `.goc` parser-driven command automation ✅
+Delivered parser-driven `.goc` execution through the public client API:
 
-### T10 (remainder) — `restart` CLI wiring ✅
-`restart_tree` implemented in Tier 2 (operations.py) with parent-first submodule-aware
-sync (root `pull --ff-only`, then parent-side submodule updates) using the root
-repository's current branch.  `ComplexGitSyncClient.restart`
-implemented with `.cgs` load, nested discovery, READY enforcement, and `.gts`
-snapshot write.  `cgitsync restart <source.cgs>` CLI command wired.  A separate
-terminology follow-up now tracks the user-facing rename to `pull`.
-
-### T16 — CLI wiring for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` ✅
-All six commands implemented in `cli.py`:
-  - `cgitsync checkout <branch> --gts <file> [--ref-kind branch|tag]`
-  - `cgitsync commit <message> --gts <file> [--no-stage]`
-  - `cgitsync push --gts <file>`
-  - `cgitsync tag <name> --gts <file>`
-  - `cgitsync freeze-release <name> --gts <file>`
-  - `cgitsync launch-release <snapshot.gts>`
-CLI behaviour matches Python API invariants; 13 new smoke tests added.
+- Added `ComplexGitSyncClient.orchestrate(<plan.goc>)` to execute action plans
+  in deterministic order.
+- Added command-to-API mapping for `.goc` actions:
+  `clone`, `checkout`, `pull`, `add`, `commit`, `push`, `tag`, `freeze`.
+- Added per-action validation and reporting, including explicit unsupported
+  action reporting with indexed error context.
+- Added focused unit coverage for action ordering and unsupported-action
+  reporting.
 
 ### T23 — Lifecycle terminology: `load`, `expand`, `validate`, `git()` ✅
 Aligned the user-facing lifecycle surface with the reference lifecycle:
@@ -180,6 +184,43 @@ Aligned the user-facing lifecycle surface with the reference lifecycle:
 - All documentation (AdditionalSpecs.md, DevPlan.md, DevPlanTickets.md,
   README.md) updated to use the canonical vocabulary.
 
+### T24 — Local Git Register (`.lgr`) management ✅
+**Goal**: maintain a project-local register named `<Project_name>.lgr`.  
+**Deliverables**: assign a unique local id to each generated `.gts`, keep the
+current project snapshot in sync, and record the id emitted by `freeze`.  
+**Dependencies**: T06, T09, T14, T23.  
+**Acceptance**: every `.gts` produced by the workflow is represented exactly
+once in the `.lgr` register with one stable local id.
+
+**Progress**: `write_gts_snapshot` now updates `<project>/<Project_name>.lgr`
+with a stable local id (`gts-XXXXXX`) per generated snapshot hash, tracks the
+current snapshot pointer (`id`/`hash`/`path`), and emits a dedicated `lgr_update`
+structured log event. Focused unit coverage added in `test_registry_client.py`.
+
+### T25 — Logger verbosity profile verification ✅
+Validated command-run logging behavior for both `verbose` and `whisper_sync`
+profiles. Structured file logs preserve mandatory events (`command_start`,
+`command_end`, lifecycle events) across both modes, while console verbosity is
+profile-gated.
+
+### T26 — CLI Simplification: `initialise`, `freeze`, smart `load()` ✅
+Simplified the user-facing CLI and Python API lifecycle surface:
+
+- `initialise(.cgs)` — primary entry point for new projects: clones all repos
+  (calls `clone_cgs`), ends in `READY`.
+- `initialise(.gts)` — primary entry point for existing projects: restores from
+  a snapshot (calls `load_gts`), ends in `READY`.
+- `freeze` — added as a primary CLI command (alias for `freeze_release`).
+- `load()` — updated to accept both `.gts` (direct) and `.cgs` (smart load via
+  `load_cgs` pipeline) sources.
+- `load`, `expand`, `validate`, `tree` removed from the CLI primary command
+  surface; they remain available as Python API methods for power users.
+- CLI primary commands: `initialise`, `pull`, `checkout`, `add`, `commit`,
+  `push`, `tag`, `freeze`.
+- `README.md`, `AdditionalSpecs.md`, `docs/user_guide.tex`, `DevPlan.md`,
+  and this file updated to use the simplified lifecycle vocabulary.
+- 5 unit tests updated; 4 new tests added (199 passing).
+
 ### T27 — Circular dependency resolution: `fix_circularities` ✅
 Resolved circularities that arise when a parent's nested `.cgs` declares
 another parent (registered at the project root level) as one of its leaves,
@@ -200,58 +241,7 @@ creating duplicate registry entries for the same physical path.
 - Documentation updated: README.md, getting_started.tex, user_guide.tex,
   python_api.tex, AdditionalSpecs.md.
 
-### T22 — `.goc` parser-driven command automation ✅
-Delivered parser-driven `.goc` execution through the public client API:
-
-- Added `ComplexGitSyncClient.orchestrate(<plan.goc>)` to execute action plans
-  in deterministic order.
-- Added command-to-API mapping for `.goc` actions:
-  `clone`, `checkout`, `pull`, `add`, `commit`, `push`, `tag`, `freeze`.
-- Added per-action validation and reporting, including explicit unsupported
-  action reporting with indexed error context.
-- Added focused unit coverage for action ordering and unsupported-action
-  reporting.
-
----
-
-## Remaining Tickets
-
-### Ticketing split (single merged plan)
-- **Legacy T-track** keeps point-0 continuity and completion tracking.
-- **CGS-track** defines the current remaining core work program.
-- Both tracks are active and must remain synchronized.
-- **Execution order rule**: keep remaining T tickets first, then sequence CGS
-  tickets after them.
-
-### T18 — Integration Test Suite  ✅
-**Goal**: end-to-end validation on temporary nested git repositories.  
-**Deliverables**: nested repo fixture generator; clone / checkout / pull / add / commit / push /
-tag / freeze scenarios.  
-**Dependencies**: T09–T16.  
-**Acceptance**: CaWaQS-style topology reproducible; all sync commands produce
-expected READY states and `.gts` outputs.
-
-**Progress**: CGSi mixed-provider topology and command-cycle coverage delivered,
-then completed with local file-remote clone and launch-release lifecycle
-scenarios (29 integration tests). Covers: `expand()` pipeline, duplication
-prevention, cycle prevention, registry structure, DECLARED lifecycle state,
-example `.cgs` parsing, READY `.gts` git command cycle via Python API + CLI,
-`clone_cgs` local remotes, and `launch_release` restore from missing paths.
-
-### T24 — Local Git Register (`.lgr`) management ✅
-**Goal**: maintain a project-local register named `<Project_name>.lgr`.  
-**Deliverables**: assign a unique local id to each generated `.gts`, keep the
-current project snapshot in sync, and record the id emitted by `freeze`.  
-**Dependencies**: T06, T09, T14, T23.  
-**Acceptance**: every `.gts` produced by the workflow is represented exactly
-once in the `.lgr` register with one stable local id.
-
-**Progress**: `write_gts_snapshot` now updates `<project>/<Project_name>.lgr`
-with a stable local id (`gts-XXXXXX`) per generated snapshot hash, tracks the
-current snapshot pointer (`id`/`hash`/`path`), and emits a dedicated `lgr_update`
-structured log event. Focused unit coverage added in `test_registry_client.py`.
-
-### CGS-001 — Safe Tag Propagation Semantics (Critical)  ✅
+### T28 — Safe Tag Propagation Semantics (Critical)  ✅
 **Type**: Reliability / Release Integrity  
 **Problem**: `GitRunner.create_tag()` currently uses `git tag -f` unconditionally,
 allowing silent overwrite of existing tags during propagated releases.  
@@ -273,7 +263,7 @@ allowing silent overwrite of existing tags during propagated releases.
 - Force behavior is explicit and tested.
 - Existing workflows remain backward compatible when requested.
 
-### CGS-002 — End-to-End Local Integration Test Infrastructure (Critical)  ✅
+### T29 — End-to-End Local Integration Test Infrastructure (Critical)  ✅
 **Type**: Testing / Reliability  
 **Problem**: Current tests validate isolated behaviors but not full synchronization workflows.  
 **Legacy linkage**: Implements the remaining scope of T18.
@@ -309,7 +299,7 @@ pipeline, duplication/cycle prevention, registry structure, DECLARED state,
 example `.cgs` parsing, READY `.gts` git command cycle via CLI/Python API,
 local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 
-### CGS-003 — Transactional Tag Propagation (High)  ✅
+### T30 — Transactional Tag Propagation (High)  ✅
 **Type**: Reliability / Distributed Consistency  
 **Problem**: Partial failure during propagated tagging may leave repositories desynchronized.  
 **Legacy linkage**: Hardens T13/T14 propagation guarantees.
@@ -332,7 +322,16 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 - Validation errors reported before mutation.
 - Propagation state observable and serializable.
 
-### CGS-004 — Formal `.gts` Snapshot Specification (High) ~Verify completion
+---
+
+## Remaining Tickets
+
+### Ticket numbering rule (single merged plan)
+- Closed tickets now run sequentially from **T00** through **T30**.
+- Completed roadmap continuation tickets now continue as **T28** through **T30**.
+- Remaining open roadmap tickets continue as **T31** through **T37**.
+
+### T31 — Formal `.gts` Snapshot Specification (High)
 **Type**: Core Architecture  
 **Problem**: `.gts` currently behaves operationally but lacks formal deterministic specification.  
 **Legacy linkage**: Deepens T06 contract and determinism guarantees.
@@ -354,10 +353,10 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 - Identical workspace states produce identical `.gts` hashes.
 - `.gts` can act as deterministic workspace checkpoint.
 
-### CGS-005 — `.lgr` Local Sync Ledger (High)
+### T32 — `.lgr` Local Sync Ledger (High)
 **Type**: Architecture / Traceability  
 **Problem**: The ledger layer is planned conceptually but not implemented.  
-**Legacy linkage**: Expands the pending T24 local register into a full ledger model.
+**Legacy linkage**: Expands the delivered T24 local register into a full ledger model.
 **Objectives**:
 - Record synchronization operations as immutable DAG events.
 **Tasks**:
@@ -378,7 +377,7 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 - Every synchronization operation becomes reproducible and traceable.
 - Ledger reconstructs workspace evolution history.
 
-### CGS-006 — Workspace Preflight Validation Engine (High)
+### T33 — Workspace Preflight Validation Engine (High)
 **Type**: Safety  
 **Problem**: Mutating operations currently rely heavily on implicit repository correctness.  
 **Legacy linkage**: Hardens T12/T13/T14 safety gating before mutation.
@@ -405,7 +404,7 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 - Invalid workspace states blocked before destructive operations.
 - Diagnostics actionable and explicit.
 
-### CGS-007 — Deterministic Freeze Semantics (Medium)
+### T34 — Deterministic Freeze Semantics (Medium)
 **Type**: Reproducibility  
 **Problem**: Freeze semantics are conceptually central but not yet formally defined.  
 **Legacy linkage**: Formalizes T14 freeze invariants.
@@ -422,7 +421,7 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 **Acceptance Criteria**:
 - A freeze fully reconstructs a compatible workspace state.
 
-### CGS-008 — Branch Topology Propagation Rules (Medium)
+### T35 — Branch Topology Propagation Rules (Medium)
 **Type**: Workflow / DAG Semantics  
 **Problem**: Branch synchronization semantics across GitTree are not yet formally constrained.  
 **Legacy linkage**: Clarifies propagation rules used by T10/T12/T13 flows.
@@ -438,7 +437,7 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 **Acceptance Criteria**:
 - Workspace branch topology becomes deterministic and inspectable.
 
-### CGS-009 — CLI Dry-Run Mode (Medium)
+### T36 — CLI Dry-Run Mode (Medium)
 **Type**: Safety / UX  
 **Problem**: Current orchestration operations are highly mutating.  
 **Legacy linkage**: Adds non-mutating previews to T21/T12/T13/T14 command paths.
@@ -455,7 +454,7 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 **Acceptance Criteria**:
 - Users can inspect workspace mutation graph before execution.
 
-### CGS-010 — Architectural Positioning Documentation (Medium)
+### T37 — Architectural Positioning Documentation (Medium)
 **Type**: Documentation / Identity  
 **Problem**: The project is more than Git automation, but this is not fully formalized.  
 **Legacy linkage**: Complements T19 documentation scope.

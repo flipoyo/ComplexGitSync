@@ -543,7 +543,7 @@ class TestGitCommandCycleIntegration:
 
 
 class TestCloneAndLaunchReleaseLifecycle:
-    """Complete local clone and launch_release scenarios for T18 / CGS-002."""
+    """Complete local clone and launch_release scenarios for T18 / T29."""
 
     def test_clone_cgs_supports_local_file_remotes(self, local_two_repo_remotes, monkeypatch, tmp_path):
         clone_spec = local_two_repo_remotes["clone_spec"]

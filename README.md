@@ -108,7 +108,7 @@ repo, validation now checks hash compatibility and raises:
 when they do not resolve to the same commit.
 
 Roadmap follow-up work tracked in the repository includes the `.lgr` ledger
-evolution (`CGS-005`) and related workflow hardening tickets.
+evolution (`T32`) and related workflow hardening tickets.
 
 ### 3.1 Python API
 
