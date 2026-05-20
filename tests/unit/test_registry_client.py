@@ -4,7 +4,7 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
-from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.orchestre import ComplexGitSyncClient, GocDocument
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState
 from ComplexGitSync.git_tree import DependencyTreeRegistry, GitTree, TreeLifecycleState, make_repo_id
@@ -314,6 +314,89 @@ def test_client_pull_dispatches_to_launch_release_for_gts(monkeypatch):
 
     assert result == "ok"
     assert captured["snapshot_path"] == Path("state.gts").resolve()
+
+
+def test_client_orchestrate_executes_goc_actions_in_order(monkeypatch, tmp_path):
+    plan_path = _write_goc_plan(
+        tmp_path,
+        source="project.cgs",
+        actions="""
+[[actions]]
+command = "clone"
+[actions.args]
+target_dir = "workspace/demo"
+
+[[actions]]
+command = "checkout"
+[actions.args]
+ref = "autoTest"
+ref_type = "branch"
+
+[[actions]]
+command = "add"
+""",
+    )
+    client = ComplexGitSyncClient()
+    calls: list[tuple[str, tuple[str, ...]]] = []
+    registry = DependencyTreeRegistry()
+
+    def _fake_git(bound_registry, command, *args):
+        assert bound_registry is client.registry or bound_registry is None
+        calls.append((command, tuple(str(a) for a in args)))
+        if command == "clone":
+            client.registry = registry
+        return client.registry if client.registry is not None else registry
+
+    monkeypatch.setattr(client, "git", _fake_git)
+
+    report = client.orchestrate(plan_path)
+
+    assert [entry["status"] for entry in report] == ["ok", "ok", "ok"]
+    assert calls == [
+        ("clone", (str((tmp_path / "project.cgs").resolve()), "workspace/demo")),
+        ("checkout", ("autoTest",)),
+        ("add", ()),
+    ]
+
+
+def test_client_orchestrate_reports_unsupported_actions(monkeypatch, tmp_path):
+    class _FakeGocDocument:
+        project_source = "project.cgs"
+        actions = [{"command": "unsupported-cmd"}]
+
+    monkeypatch.setattr(
+        GocDocument,
+        "from_toml",
+        classmethod(lambda cls, _path: _FakeGocDocument()),
+    )
+
+    report = ComplexGitSyncClient().orchestrate(tmp_path / "plan.goc", stop_on_error=False)
+
+    assert report[0]["status"] == "error"
+    assert "Unsupported .goc action command" in report[0]["error"]
+
+
+def test_client_orchestrate_rejects_ambiguous_alias_args(monkeypatch, tmp_path):
+    plan_path = _write_goc_plan(
+        tmp_path,
+        source="state.gts",
+        actions="""
+[[actions]]
+command = "checkout"
+[actions.args]
+ref = "main"
+branch = "dev"
+ref_type = "branch"
+""",
+    )
+    client = ComplexGitSyncClient()
+    monkeypatch.setattr(client, "load_gts", lambda _path: None)
+    client.registry = DependencyTreeRegistry()
+
+    report = client.orchestrate(plan_path, stop_on_error=False)
+
+    assert report[0]["status"] == "error"
+    assert "must not define both 'ref' and 'branch'" in report[0]["error"]
 
 
 def test_client_print_alias_supports_gts(tmp_path):
@@ -767,6 +850,26 @@ relative_path = "deps/child-repo"
         encoding="utf-8",
     )
     return config_path
+
+
+def _write_goc_plan(tmp_path: Path, *, source: str, actions: str) -> Path:
+    plan_path = tmp_path / "plan.goc"
+    plan_path.write_text(
+        (
+            f"""
+[document]
+format_version = "1.0"
+
+[project]
+source = "{source}"
+""".strip()
+            + "\n\n"
+            + actions.strip()
+            + "\n"
+        ),
+        encoding="utf-8",
+    )
+    return plan_path
 
 
 def _nested_minimal(project_name: str) -> str:

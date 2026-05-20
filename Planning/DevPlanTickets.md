@@ -199,6 +199,18 @@ creating duplicate registry entries for the same physical path.
 - Documentation updated: README.md, getting_started.tex, user_guide.tex,
   python_api.tex, AdditionalSpecs.md.
 
+### T22 — `.goc` parser-driven command automation ✅
+Delivered parser-driven `.goc` execution through the public client API:
+
+- Added `ComplexGitSyncClient.orchestrate(<plan.goc>)` to execute action plans
+  in deterministic order.
+- Added command-to-API mapping for `.goc` actions:
+  `clone`, `checkout`, `pull`, `add`, `commit`, `push`, `tag`, `freeze`.
+- Added per-action validation and reporting, including explicit unsupported
+  action reporting with indexed error context.
+- Added focused unit coverage for action ordering and unsupported-action
+  reporting.
+
 ---
 
 ## Remaining Tickets
@@ -222,14 +234,6 @@ cycle prevention, registry structure, DECLARED lifecycle state, example `.cgs`
 file parsing, and READY `.gts` git command cycle via Python API + CLI.
 Remaining scenarios (full multi-repo clone and launch_release lifecycle) are
 pending.
-
-### T22 — `.goc` parser-driven command automation ❌
-**Goal**: automate `ComplexGitSyncClient` method execution from `.goc` plans.  
-**Deliverables**: parser that maps `.goc` actions to public client API methods,
-execution engine, and validation/reporting for unsupported actions.  
-**Dependencies**: T16, T18.  
-**Acceptance**: `.goc` files execute through the same public API contract used
-by Python and CLI entry points, with deterministic command ordering and errors.
 
 ### T24 — Local Git Register (`.lgr`) management ❌
 **Goal**: maintain a project-local register named `<Project_name>.lgr`.  

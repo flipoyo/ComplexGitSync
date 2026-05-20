@@ -107,9 +107,8 @@ repo, validation now checks hash compatibility and raises:
 `incompatibilities between branch (hash) and tag(val) in .cgs`
 when they do not resolve to the same commit.
 
-Planned follow-up work tracked in the repository:
+Roadmap follow-up work tracked in the repository:
 
-- `orchestrate(.goc)`
 - project-local `.lgr` management
 
 ### 3.1 Python API
@@ -155,6 +154,9 @@ client.git(registry, "tag", "v1.2.3")
 
 # freeze -> .gts ++id
 client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
+
+# execute a .goc orchestration plan
+client.orchestrate("examples/deploy.goc")
 ```
 
 ### 3.2 CLI

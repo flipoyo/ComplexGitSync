@@ -64,7 +64,7 @@ MINIMAL_GTS: dict = {
 MINIMAL_GOC: dict = {
     "document": {"format_version": "1.0"},
     "project": {"source": "project.cgs"},
-    "actions": [{"command": "validate"}],
+    "actions": [{"command": "clone"}],
 }
 
 
@@ -537,17 +537,17 @@ class TestGocDocumentValid:
         data = {
             "document": {"format_version": "1.0"},
             "project": {"source": "p.cgs"},
-            "actions": [{"command": "validate"}, {"command": "clone"}, {"command": "tree"}],
+            "actions": [{"command": "clone"}, {"command": "checkout"}, {"command": "pull"}],
         }
         doc = GocDocument.from_dict(data)
         assert len(doc.actions) == 3
-        assert doc.actions[1]["command"] == "clone"
+        assert doc.actions[1]["command"] == "checkout"
 
     def test_gts_source_accepted(self):
         data = {
             "document": {"format_version": "1.0"},
             "project": {"source": "release.gts"},
-            "actions": [{"command": "launch-release"}],
+            "actions": [{"command": "pull"}],
         }
         GocDocument.from_dict(data)
 
@@ -560,11 +560,12 @@ class TestGocDocumentValid:
         assert doc.project_gitprovider_address == "git@github.com:flipoyo/ComplexGitSync.git"
         assert doc.interaction == "interactive"
         assert doc.transport == "ssh"
-        assert len(doc.actions) == 4
-        assert doc.actions[0]["command"] == "validate"
-        assert doc.actions[2]["command"] == "checkout"
-        assert doc.actions[2]["args"]["ref"] == "autoTest"
-        assert doc.actions[3]["command"] == "tree"
+        assert len(doc.actions) == 3
+        assert doc.actions[0]["command"] == "clone"
+        assert doc.actions[1]["command"] == "checkout"
+        assert doc.actions[1]["args"]["ref"] == "autoTest"
+        assert doc.actions[1]["args"]["ref_type"] == "branch"
+        assert doc.actions[-1]["command"] == "pull"
 
     def test_from_toml_parses_cawaqsviz_goc_example_file(self):
         examples = Path(__file__).parent.parent.parent / "examples"
@@ -575,10 +576,11 @@ class TestGocDocumentValid:
         assert doc.project_gitprovider_address == "git@gitlab.com:gviz/cawaqsviz/cawaqsviz.git"
         assert doc.interaction == "interactive"
         assert doc.transport == "ssh"
-        assert len(doc.actions) == 4
-        assert doc.actions[0]["command"] == "validate"
-        assert doc.actions[2]["command"] == "checkout"
-        assert doc.actions[2]["args"]["ref"] == "autoTest"
+        assert len(doc.actions) == 3
+        assert doc.actions[0]["command"] == "clone"
+        assert doc.actions[1]["command"] == "checkout"
+        assert doc.actions[1]["args"]["ref"] == "autoTest"
+        assert doc.actions[-1]["command"] == "pull"
 
     def test_session_setting_helper(self):
         doc = GocDocument.from_dict(MINIMAL_GOC)

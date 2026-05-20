@@ -414,19 +414,14 @@ class GtsDocument(ConfigDocument):
 
 _VALID_GOC_COMMANDS = frozenset(
     {
-        "validate",
-        "describe",
-        "tree",
-        "write-gts",
-        "launch-release",
         "clone",
-        "restart",
         "checkout",
-        "tag",
-        "freeze-release",
+        "pull",
+        "add",
         "commit",
         "push",
-        "status",
+        "tag",
+        "freeze",
     }
 )
 
@@ -1678,6 +1673,160 @@ class ComplexGitSyncClient:
         raise ValueError(
             f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
         )
+
+    def orchestrate(
+        self,
+        plan_path: str | Path,
+        *,
+        stop_on_error: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Execute a ``.goc`` orchestration plan through public client methods."""
+        resolved_plan = Path(plan_path).resolve()
+        document = GocDocument.from_toml(resolved_plan)
+        source = self._resolve_goc_project_source(document, resolved_plan)
+        report: list[dict[str, Any]] = []
+
+        for index, action in enumerate(document.actions):
+            raw_command = action.get("command")
+            if not isinstance(raw_command, str) or not raw_command.strip():
+                command_error = ValueError("action.command must be a non-empty string.")
+                report.append(
+                    {
+                        "index": index,
+                        "command": raw_command,
+                        "status": "error",
+                        "error": str(command_error),
+                    }
+                )
+                if stop_on_error:
+                    raise GitSyncError(
+                        f".goc action failed at index {index} ({raw_command!r}): {command_error}"
+                    ) from command_error
+                continue
+            command = raw_command.strip().lower()
+            raw_args = action.get("args")
+            args = raw_args if isinstance(raw_args, dict) else {}
+            try:
+                result = self._execute_goc_action(command, source, args)
+                report.append(
+                    {
+                        "index": index,
+                        "command": command,
+                        "status": "ok",
+                        "result": self._summarize_goc_result(result),
+                    }
+                )
+            except Exception as exc:
+                report.append(
+                    {
+                        "index": index,
+                        "command": command,
+                        "status": "error",
+                        "error": str(exc),
+                    }
+                )
+                if stop_on_error:
+                    raise GitSyncError(
+                        f".goc action failed at index {index} ({command!r}): {exc}"
+                    ) from exc
+        return report
+
+    def _resolve_goc_project_source(self, document: GocDocument, plan_path: Path) -> Path:
+        source = document.project_source
+        if not source:
+            raise ValueError("Invalid .goc document: [project].source is required.")
+        source_path = Path(source)
+        if not source_path.is_absolute():
+            source_path = (plan_path.parent / source_path).resolve()
+        return source_path
+
+    def _execute_goc_action(
+        self,
+        command: str,
+        source: Path,
+        args: dict[str, Any],
+    ) -> Any:
+        if command not in _VALID_GOC_COMMANDS:
+            raise ValueError(f"Unsupported .goc action command: {command!r}")
+
+        if command == "clone":
+            if source.suffix != ".cgs":
+                raise ValueError("clone requires a .cgs source.")
+            target_dir = args.get("target_dir")
+            if target_dir is not None:
+                return self.git(self.registry, "clone", str(source), str(target_dir))
+            return self.git(self.registry, "clone", str(source))
+        if command == "pull":
+            return self.git(self.registry, "pull", str(source))
+
+        if self.registry is None:
+            self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
+
+        active_registry = self.get_dependency_registry()
+        if command == "checkout":
+            ref_value = self._read_goc_arg(args, "ref", alias="branch")
+            if ref_value is None or (isinstance(ref_value, str) and ref_value == ""):
+                raise ValueError("checkout action requires args.ref (or args.branch).")
+            return self.git(active_registry, "checkout", str(ref_value))
+        if command == "add":
+            return self.git(active_registry, "add")
+        if command == "commit":
+            message_value = args.get("message")
+            if message_value is None or (isinstance(message_value, str) and message_value == ""):
+                raise ValueError("commit action requires args.message.")
+            return self.git(active_registry, "commit", str(message_value))
+        if command == "push":
+            return self.git(active_registry, "push")
+        if command == "tag":
+            tag_value = self._read_goc_arg(args, "name", alias="tag")
+            if tag_value is None or (isinstance(tag_value, str) and tag_value == ""):
+                raise ValueError("tag action requires args.name (or args.tag).")
+            return self.git(active_registry, "tag", str(tag_value))
+        if command == "freeze":
+            freeze_value = self._read_goc_arg(args, "name", alias="tag")
+            if freeze_value is None or (isinstance(freeze_value, str) and freeze_value == ""):
+                raise ValueError("freeze action requires args.name (or args.tag).")
+            return self.git(active_registry, "freeze", str(freeze_value))
+
+    @staticmethod
+    def _read_goc_arg(args: dict[str, Any], key: str, *, alias: str | None = None) -> Any:
+        def _present(value: Any) -> bool:
+            return value is not None and (not isinstance(value, str) or value != "")
+
+        if alias is None:
+            return args.get(key)
+        key_value = args.get(key)
+        alias_value = args.get(alias)
+        key_present = key in args and _present(key_value)
+        alias_present = alias in args and _present(alias_value)
+        if key_present and alias_present:
+            raise ValueError(
+                f".goc action args must not define both '{key}' and '{alias}' simultaneously."
+            )
+        if key_present:
+            return key_value
+        if alias_present:
+            return alias_value
+        return None
+
+    @staticmethod
+    def _summarize_goc_result(result: Any) -> Any:
+        if isinstance(result, DependencyTreeRegistry):
+            return {
+                "lifecycle_state": result.lifecycle_state.value,
+                "repo_count": len(result.entries),
+            }
+        if isinstance(result, ProjectTreeState):
+            return {
+                "lifecycle_state": result.lifecycle_state.value,
+                "is_ready": result.is_ready,
+                "registry_complete": result.registry_complete,
+            }
+        if isinstance(result, Path):
+            return str(result)
+        if isinstance(result, (str, int, float, bool)) or result is None:
+            return result
+        return str(result)
 
     def checkout(
         self,

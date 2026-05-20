@@ -42,8 +42,8 @@ Compatibility aliases: \texttt{read} $\rightarrow$ \texttt{load},
 \texttt{describe} $\rightarrow$ \texttt{print}, \texttt{restart} $\rightarrow$
 \texttt{pull}, \texttt{freeze-release} $\rightarrow$ \texttt{freeze}.
 
-The remaining planned work is \texttt{orchestrate(.goc)} and project-local
-\texttt{.lgr} register management.
+The remaining planned work is project-local \texttt{.lgr} register
+management.
 
 % -----------------------------------------------------------------------
 \section{Commands}
@@ -281,9 +281,10 @@ implemented. Each returns exit code~2 with the message
   \item \texttt{write-gts} — write a \texttt{.gts} snapshot explicitly
     from a loaded \texttt{.cgs} or runtime state.
   \item \texttt{status} — summarise tree readiness and per-repo sync state.
-  \item \texttt{orchestrate(.goc)} — planned execution surface for
-    orchestration plans.
 \end{itemize}
+
+Orchestration plans are available through the Python API:
+\texttt{ComplexGitSyncClient.orchestrate(<plan.goc>)}.
 
 % -----------------------------------------------------------------------
 \section{Document Formats}
