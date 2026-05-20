@@ -222,6 +222,28 @@ Do **not** split it into plugins or separate packages.
 - Every document class must expose `to_toml`, `to_json`, `to_yaml`,
   `from_toml`, `from_json`, and `from_yaml`.
 
+### `.gts` formal snapshot contract
+
+`.gts` snapshots are canonical workspace checkpoints with deterministic hashing.
+
+- `document.format_version` tracks the broad `.gts` compatibility family (`1.0` today).
+- `document.schema_version` identifies the concrete `.gts` field-level contract (current: `1.1`) used by validation and canonical hashing logic.
+- `document.hash_algorithm` is `sha256`.
+- `document.snapshot_hash` is the SHA-256 digest of the canonical payload
+  (`project`, `tree_state`, and sorted `repo_state`), excluding volatile
+  metadata (`generated_at`, `command_origin`).
+- Canonical ordering is deterministic: repositories are serialized in stable
+  absolute-path/name order, and non-root entries must include
+  `parent_absolute_path`.
+- READY/FALLBACK_READY repositories must include `commit_sha`; every repo state
+  must include at least one resolved/current/target ref name.
+
+Why these fields are required:
+
+- `format_version` allows compatibility grouping across long-lived document families.
+- `schema_version` allows strict parser/validator behavior to evolve while preserving explicit backward intent.
+- `snapshot_hash` gives deterministic identity for workspace state, enabling integrity checks on load and stable `.lgr` snapshot deduplication.
+
 ---
 
 ## Lifecycle Contract

@@ -54,7 +54,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T28 | Safe Tag Propagation Semantics | ✅ Done |
 | T29 | End-to-End Local Integration Test Infrastructure | ✅ Done (local remotes, clone/launch-release lifecycle, CLI+API git cycle coverage) |
 | T30 | Transactional Tag Propagation | ✅ Done |
-| T31 | Formal `.gts` Snapshot Specification | ❌ Pending |
+| T31 | Formal `.gts` Snapshot Specification | ✅ Done |
 | T32 | `.lgr` Local Sync Ledger | ❌ Pending |
 | T33 | Workspace Preflight Validation Engine | ❌ Pending |
 | T34 | Deterministic Freeze Semantics | ❌ Pending |
@@ -68,15 +68,15 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 
 All delivered T-track tickets are operational and the core Python API and CLI
 remain stable. `.goc` parser-driven orchestration is now executable through
-`ComplexGitSyncClient.orchestrate(...)`. 296 tests pass across parsers,
+`ComplexGitSyncClient.orchestrate(...)`. 305 tests pass across parsers,
 registry, lifecycle, operations, CLI smoke paths, and integration scenarios.
 The project is functional for controlled use.
 
 The project is **not yet BetaSeries** because:
 
-- The roadmap continuation still has open scope (T31–T37), covering
-  formal `.gts` specification, the `.lgr` local sync ledger, workspace preflight
-  validation, deterministic freeze semantics, and architectural positioning.
+- The roadmap continuation still has open scope (T32–T37), covering the `.lgr`
+  local sync ledger, workspace preflight validation, deterministic freeze
+  semantics, and architectural positioning.
 
 The project is **past POC** because the entire core workflow (initialise, clone,
 checkout, add, commit, push, tag, freeze, restart) is implemented, tested at
@@ -116,6 +116,7 @@ the unit level, and documented.
 - `expand`+`fix_circularities` enforce a DAG-compatible tangle behavior: shared repos are canonicalized only when declared refs are hash-compatible.
 - `.cgs` supports repo-level `branch`/`tag` declarations; when both are present, `validate` enforces hash equivalence and raises `incompatibilities between branch (hash) and tag(val) in .cgs` on mismatch.
 - `freeze` emits the next `.gts` id and records it in the project-local `<project>.lgr` register.
+- `.gts` snapshots now include schema versioning and deterministic hashing: `document.schema_version`, `document.hash_algorithm`, and canonical `document.snapshot_hash` (SHA-256) validated on load.
 - Remaining work is tracked in the T31..T37 continuation roadmap in `DevPlanTickets.md`.
 - `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
 - Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.

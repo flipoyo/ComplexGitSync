@@ -70,6 +70,7 @@ populated with the appropriate `.cgs` content (no network or git required):
 | `TestCgsiLifecycleState`         | DECLARED state after expand (repos uncloned) |
 | `TestCgsiExampleFiles`           | examples/*.cgs parse and have correct shape |
 | `TestGitCommandCycleIntegration` | READY `.gts` git cycle via Python API + CLI (`add→commit→push→tag→freeze`) |
+| `TestGtsSnapshotDeterminismIntegration` | Canonical `.gts` SHA-256 hash is stable across metadata changes and changes on workspace mutation |
 
 ---
 

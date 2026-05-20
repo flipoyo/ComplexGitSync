@@ -322,18 +322,9 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 - Validation errors reported before mutation.
 - Propagation state observable and serializable.
 
----
-
-## Remaining Tickets
-
-### Ticket numbering rule (single merged plan)
-- Closed tickets now run sequentially from **T00** through **T30**.
-- Completed roadmap continuation tickets now continue as **T28** through **T30**.
-- Remaining open roadmap tickets continue as **T31** through **T37**.
-
-### T31 — Formal `.gts` Snapshot Specification (High)
+### T31 — Formal `.gts` Snapshot Specification (High)  ✅
 **Type**: Core Architecture  
-**Problem**: `.gts` currently behaves operationally but lacks formal deterministic specification.  
+**Problem**: `.gts` behaves operationally but lacks formal deterministic specification.  
 **Legacy linkage**: Deepens T06 contract and determinism guarantees.
 **Objectives**:
 - Define `.gts` as canonical workspace state representation.
@@ -341,17 +332,33 @@ local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
 - Define canonical serialization order.
 - Specify required fields:
   - repository identity,
-  - branch,
-  - commit SHA,
+  - branch/ref information,
+  - commit SHA for READY repositories,
   - parent relationships,
   - sync metadata.
 - Add deterministic hashing:
-  - SHA-256 of canonical `.gts`.
+  - SHA-256 of canonical `.gts` payload.
 - Add schema versioning.
 - Add validation utilities.
 **Acceptance Criteria**:
 - Identical workspace states produce identical `.gts` hashes.
 - `.gts` can act as deterministic workspace checkpoint.
+
+**Progress**: `GtsDocument` now formalizes canonical snapshot hashing and
+validation (`schema_version = "1.1"`, `hash_algorithm = "sha256"`,
+`snapshot_hash`), enforces parent/ref/READY commit invariants, and
+`build_gts_document_from_registry` emits deterministic hashes for generated
+snapshots. Unit and integration coverage verifies stable hashes under metadata
+changes and hash drift on workspace mutations.
+
+---
+
+## Remaining Tickets
+
+### Ticket numbering rule (single merged plan)
+- Closed tickets now run sequentially from **T00** through **T31**.
+- Completed roadmap continuation tickets now continue as **T28** through **T31**.
+- Remaining open roadmap tickets continue as **T32** through **T37**.
 
 ### T32 — `.lgr` Local Sync Ledger (High)
 **Type**: Architecture / Traceability  

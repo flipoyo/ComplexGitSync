@@ -124,6 +124,22 @@ equivalence and raises
 \texttt{incompatibilities between branch (hash) and tag(val) in .cgs} when they
 differ.
 
+\subsection*{Formal \texttt{.gts} snapshot specification (T31)}
+
+\texttt{.gts} now carries explicit schema and deterministic hash metadata in the
+\texttt{[document]} table:
+\texttt{schema\_version = "1.1"},
+\texttt{hash\_algorithm = "sha256"}, and
+\texttt{snapshot\_hash = "<64-hex>"}.
+
+The canonical digest is computed from a deterministic payload made of
+\texttt{project}, \texttt{tree\_state}, and sorted \texttt{repo\_state} records,
+excluding volatile generation metadata (\texttt{generated\_at} and
+\texttt{command\_origin}). Non-root entries require
+\texttt{parent\_absolute\_path}; READY repositories require \texttt{commit\_sha}.
+This makes \texttt{.gts} a stable checkpoint primitive for repeatable workspace
+state comparison.
+
 Figure~\ref{fig:ops-sequence} shows the internal sequence of the three
 tree-wide synchronisation actions implemented in \texttt{operations.py}.
 
