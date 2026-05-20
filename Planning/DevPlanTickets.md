@@ -44,8 +44,9 @@ reconstruction from snapshot.
 Lifecycle transitions: DECLARED → PENDING → READY / PARTIAL / ERROR.
 
 ### T09 — `clone` ✅
-Root + child clone flow with nested discovery.  PENDING → READY transitions.
-Automatic `.gts` write on success.
+Root + child clone flow with nested discovery and parent-side git submodule
+mounting for nested repositories. PENDING → READY transitions. Automatic `.gts`
+write on success.
 
 ### T10 — `checkout` (Python API) ✅
 `checkout_tree(registry, git_runner, branch_name, *, ref_kind)`:
@@ -101,7 +102,7 @@ profiles. Structured file logs preserve mandatory events (`command_start`,
 profile-gated.
 
 ### T17 — Unit Test Suite (incremental) ✅
-264 unit tests + 27 integration tests = 291 total passing. Unit tests cover
+294 total passing tests. Unit tests cover
 parsers, registry, lifecycle, rendering, gating, propagate/create/checkout/
 commit/push operations, deep 3-level hierarchy ordering, the simplified
 `initialise`/`freeze` CLI surface, and `fix_circularities` behaviour.
@@ -219,8 +220,10 @@ Delivered parser-driven `.goc` execution through the public client API:
 - **Legacy T-track** keeps point-0 continuity and completion tracking.
 - **CGS-track** defines the current remaining core work program.
 - Both tracks are active and must remain synchronized.
+- **Execution order rule**: keep remaining T tickets first, then sequence CGS
+  tickets after them.
 
-### T18 — Integration Test Suite  ✅
+### T18 — Integration Test Suite  🔄
 **Goal**: end-to-end validation on temporary nested git repositories.  
 **Deliverables**: nested repo fixture generator; clone / checkout / pull / add / commit / push /
 tag / freeze scenarios.  
@@ -265,7 +268,7 @@ allowing silent overwrite of existing tags during propagated releases.
 - Force behavior is explicit and tested.
 - Existing workflows remain backward compatible when requested.
 
-### CGS-002 — End-to-End Local Integration Test Infrastructure (Critical)  ✅
+### CGS-002 — End-to-End Local Integration Test Infrastructure (Critical)  🔄
 **Type**: Testing / Reliability  
 **Problem**: Current tests validate isolated behaviors but not full synchronization workflows.  
 **Legacy linkage**: Implements the remaining scope of T18.
