@@ -1,0 +1,64 @@
+# CGSil1 — Integration Suite root project spec (GitLab parent)
+# ──────────────────────────────────────────────────────────────────────────────
+# This file is the root .cgs for the CGSi integration topology.
+#
+# Topology overview (minimum 4 repos: 2 GitLab + 2 GitHub):
+#
+#   CGSil1 (GitLab, root) ──► CGSil2 (GitLab, child)
+#                         └──► CGSih1 (GitHub, parent)  ──► CGSih2 (GitHub, leaf)
+#
+# Two structural challenges exercised by this topology:
+#
+#   DUPLICATION — CGSil2's nested .cgs (CGSil2.cgs) also references CGSih1.
+#     CGSih1 therefore appears under two parents (CGSil1 and CGSil2).
+#     ComplexGitSync's discovery guard keeps only the root-level entry.
+#
+#   CYCLE — CGSih2's nested .cgs (CGSih2.cgs) references CGSih1 back.
+#     CGSih1 ↔ CGSih2 would form a cycle without cycle-breaking.
+#     The discovery guard prevents it; fix_circularities() handles any
+#     residual back-edge entries that reach the registry.
+#
+# Place this file at the root of the CGSil1 repository on GitLab.
+# CGSil2.cgs lives inside the CGSil2 repo; CGSih1.cgs inside CGSih1; etc.
+
+[document]
+format_version = "1.0"
+
+[project]
+name           = "CGSil1"
+default_branch = "main"
+
+# ── Repositories ─────────────────────────────────────────────────────────────
+
+[[repos]]
+gitprovider        = "gitlab"
+project_owner_name = "flipoyo"
+project_name       = "CGSil1"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+relative_path      = "."
+# Root of the project tree — no further nested discovery here.
+
+[[repos]]
+gitprovider        = "gitlab"
+project_owner_name = "flipoyo"
+project_name       = "CGSil2"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+relative_path      = "CGSil2"
+# CGSil2 owns a nested .cgs (CGSil2.cgs) that also references CGSih1.
+# ComplexGitSync will discover CGSil2.cgs and handle the resulting duplication.
+nested_config      = "auto"
+
+[[repos]]
+gitprovider        = "github"
+project_owner_name = "flipoyo"
+project_name       = "CGSih1"
+default_branch     = "main"
+fallback_branch    = "main"
+access_protocol    = "ssh"
+relative_path      = "CGSih1"
+# CGSih1 owns a nested .cgs (CGSih1.cgs) that declares CGSih2 as a child.
+nested_config      = "auto"
