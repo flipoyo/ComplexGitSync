@@ -226,7 +226,7 @@ Do **not** split it into plugins or separate packages.
 
 `.gts` snapshots are canonical workspace checkpoints with deterministic hashing.
 
-- `document.format_version` tracks the broad `.gts` document generation family (`1.0` today).
+- `document.format_version` tracks the broad `.gts` compatibility family (`1.0` today).
 - `document.schema_version` identifies the concrete `.gts` field-level contract (current: `1.1`) used by validation and canonical hashing logic.
 - `document.hash_algorithm` is `sha256`.
 - `document.snapshot_hash` is the SHA-256 digest of the canonical payload
