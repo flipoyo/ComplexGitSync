@@ -17,7 +17,7 @@ sync from a single local specification and a tracked local tree state.
 - `.cgs` — describes the project topology, authoring specification for a ComplexGitSync project, 
 - `.gts` — local GitTree state tracked through lifecycle `LOADED`, `PENDING`, and `READY`
 - `.goc` — stores higher-level orchestration plan document
-- `.lgr` — planned Local Git Register that records the single id associated with
+- `.lgr` — Local Git Register that records the single id associated with
   each `.gts` snapshot for a project.
 
 ### 1.3 Single API exposure
@@ -107,9 +107,8 @@ repo, validation now checks hash compatibility and raises:
 `incompatibilities between branch (hash) and tag(val) in .cgs`
 when they do not resolve to the same commit.
 
-Roadmap follow-up work tracked in the repository:
-
-- project-local `.lgr` management
+Roadmap follow-up work tracked in the repository includes the `.lgr` ledger
+evolution (`CGS-005`) and related workflow hardening tickets.
 
 ### 3.1 Python API
 

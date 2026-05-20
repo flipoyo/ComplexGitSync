@@ -238,13 +238,18 @@ prevention, cycle prevention, registry structure, DECLARED lifecycle state,
 example `.cgs` parsing, READY `.gts` git command cycle via Python API + CLI,
 `clone_cgs` local remotes, and `launch_release` restore from missing paths.
 
-### T24 — Local Git Register (`.lgr`) management ❌
+### T24 — Local Git Register (`.lgr`) management ✅
 **Goal**: maintain a project-local register named `<Project_name>.lgr`.  
 **Deliverables**: assign a unique local id to each generated `.gts`, keep the
 current project snapshot in sync, and record the id emitted by `freeze`.  
 **Dependencies**: T06, T09, T14, T23.  
 **Acceptance**: every `.gts` produced by the workflow is represented exactly
 once in the `.lgr` register with one stable local id.
+
+**Progress**: `write_gts_snapshot` now updates `<project>/<Project_name>.lgr`
+with a stable local id (`gts-XXXXXX`) per generated snapshot hash, tracks the
+current snapshot pointer (`id`/`hash`/`path`), and emits a dedicated `lgr_update`
+structured log event. Focused unit coverage added in `test_registry_client.py`.
 
 ### CGS-001 — Safe Tag Propagation Semantics (Critical)  ✅
 **Type**: Reliability / Release Integrity  

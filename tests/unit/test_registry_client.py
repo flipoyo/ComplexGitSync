@@ -763,6 +763,39 @@ def test_client_load_cgs_writes_gts_snapshot(tmp_path):
     assert expected_snapshot.is_file()
 
 
+def test_client_load_cgs_updates_project_local_lgr(tmp_path):
+    import tomllib
+
+    config_path = _write_root_cgs(tmp_path)
+    expected_snapshot = (tmp_path / ".cgitsync" / "state" / "project.gts").resolve()
+    expected_lgr = tmp_path / "demo.lgr"
+
+    client = ComplexGitSyncClient()
+    client.load(config_path)
+
+    data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
+    assert data["register"]["current_snapshot_id"] == "gts-000001"
+    assert data["register"]["current_snapshot_path"] == str(expected_snapshot)
+    assert len(data["snapshots"]) == 1
+    assert data["snapshots"][0]["id"] == "gts-000001"
+    assert data["snapshots"][0]["snapshot_path"] == str(expected_snapshot)
+
+
+def test_client_snapshot_generation_appends_lgr_entries(tmp_path):
+    import tomllib
+
+    config_path = _write_root_cgs(tmp_path)
+    expected_lgr = tmp_path / "demo.lgr"
+
+    client = ComplexGitSyncClient()
+    client.load(config_path)
+    client.expand(config_path)
+
+    data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
+    assert [entry["id"] for entry in data["snapshots"]] == ["gts-000001", "gts-000002"]
+    assert data["register"]["current_snapshot_id"] == "gts-000002"
+
+
 def test_client_expand_cgs_writes_gts_snapshot(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
