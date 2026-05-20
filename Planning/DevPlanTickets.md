@@ -356,11 +356,11 @@ changes and hash drift on workspace mutations.
 ## Remaining Tickets
 
 ### Ticket numbering rule (single merged plan)
-- Closed tickets now run sequentially from **T00** through **T31**.
-- Completed roadmap continuation tickets now continue as **T28** through **T31**.
-- Remaining open roadmap tickets continue as **T32** through **T37**.
+- Closed tickets now run sequentially from **T00** through **T32**.
+- Completed roadmap continuation tickets now continue as **T28** through **T32**.
+- Remaining open roadmap tickets continue as **T33** through **T37**.
 
-### T32 — `.lgr` Local Sync Ledger (High)
+### T32 — `.lgr` Local Sync Ledger (High) ✅
 **Type**: Architecture / Traceability  
 **Problem**: The ledger layer is planned conceptually but not implemented.  
 **Legacy linkage**: Expands the delivered T24 local register into a full ledger model.
@@ -383,6 +383,17 @@ changes and hash drift on workspace mutations.
 **Acceptance Criteria**:
 - Every synchronization operation becomes reproducible and traceable.
 - Ledger reconstructs workspace evolution history.
+
+**Progress**: `SyncLedger` class added to `orchestre.py`.  `write_gts_snapshot`
+now appends an immutable `[[ledger]]` event (schema: `sync_id`, `parent_sync_ids`,
+`operation`, `timestamp`, `actor`, `workspace_hash`, `gts_snapshot_id`,
+`affected_repos`) to the project-local `.lgr` file on every sync operation.
+Events form a DAG via `parent_sync_ids`.  `SyncLedger.history()` and
+`SyncLedger.replay()` return events in topological order.
+`ComplexGitSyncClient.get_ledger_history()` and `replay_ledger()` expose the
+ledger via the public API.  `SyncLedger` exported from the package.
+11 focused unit tests added in `test_registry_client.py`.  `AdditionalSpecs.md`
+and `DevPlan.md` updated; `user_guide.tex` updated with ledger section.
 
 ### T33 — Workspace Preflight Validation Engine (High)
 **Type**: Safety  
