@@ -112,6 +112,68 @@ Workspace preflight invariants:
   tracked as git submodules.
 - Tag creation is always non-forcing (`git tag <name>`); replacing an existing tag is not allowed.
 
+### Branch Topology Propagation Rules (T35)
+
+`validate_branch_topology(registry, git_runner) → BranchTopologyReport` is the
+authoritative inspection function for workspace branch coherence.  It formalises
+the propagation rules used by `checkout_tree`, `commit_tree`, `push_tree`,
+`tag_tree`, and `freeze_release_tree`.
+
+**Propagation rules (deterministic and inspectable):**
+
+1. **Reference branch**: The root repository's current branch is the canonical
+   reference.  All other repositories must match it.
+
+2. **Leaf-to-root inheritance direction**: Branch targeting flows root-first
+   (parent to children) via `propagate_global_branch` and
+   `create_global_branch`.  `validate_branch_topology` verifies that the
+   on-disk state is coherent with this rule without issuing any git writes.
+
+3. **Allowed divergence**: Repositories whose `resolved_ref_kind` is `TAG` are
+   flagged as `tag_divergence` but do **not** make the topology incoherent —
+   they represent frozen (released) state.
+
+4. **Incoherent (blocking) states**:
+   - `misaligned_branch`: repo is on a different branch than root.
+   - `detached_head`: repo is in detached HEAD state without a tag reference.
+
+**`BranchTopologyReport` fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `reference_branch` | `str \| None` | Root's active branch (reference for all repos) |
+| `is_coherent` | `bool` | `True` when no blocking conflicts are present |
+| `conflicts` | `list[BranchTopologyConflict]` | One entry per problematic repo |
+| `repo_branches` | `dict[str, str \| None]` | `{repo_name: current_branch}` |
+
+**`BranchTopologyConflict.conflict_kind` values:**
+
+| Kind | Blocking | Description |
+|---|---|---|
+| `misaligned_branch` | ✓ | Repo is on a different branch than root |
+| `detached_head` | ✓ | Repo is in detached HEAD without a tag |
+| `tag_divergence` | — | Repo is on a tag (allowed divergence) |
+| `missing_root` | ✓ | Registry has no root entry |
+
+**Python API:**
+
+```python
+from ComplexGitSync import ComplexGitSyncClient
+
+client = ComplexGitSyncClient()
+client.load_gts("project.gts")
+report = client.validate_branch_topology()
+print(report.format())           # human-readable summary
+assert report.is_coherent        # True if all repos are aligned
+```
+
+**CLI:**
+
+```bash
+cgitsync validate-topology --gts project.gts
+# exits 0 if coherent, 1 if not
+```
+
 Actions that **must produce READY** or fail explicitly:
 `initialise(.cgs)`, `initialise(.gts)`, `pull(.cgs)`, `pull(.gts)`, `checkout(.gts)`.
 

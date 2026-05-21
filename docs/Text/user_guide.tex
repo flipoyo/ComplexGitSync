@@ -285,6 +285,50 @@ Also available via the Python API:
 client.launch_release(".cgitsync/releases/release-2026.05.gts")
 \end{lstlisting}
 
+\subsection{\texttt{launch-state}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync launch-state <snapshot.gts>
+\end{lstlisting}
+
+Loads an internal-state \texttt{.gts}, reconstructs the tree, performs required
+clone/checkout actions, and must end in \texttt{READY} or fail explicitly.
+
+\subsection{\texttt{validate-topology}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync validate-topology --gts <snapshot.gts>
+\end{lstlisting}
+
+Inspects the workspace branch topology and prints a human-readable report:
+each repository's active branch, the reference branch (root's branch), and any
+detected conflicts.  Returns exit code~0 when the topology is coherent and~1
+when blocking conflicts are present.
+
+\textbf{Branch Topology Propagation Rules (T35):}
+
+\begin{enumerate}
+  \item \textbf{Reference branch}: The root repository's current branch is
+        the canonical reference for all repos.
+  \item \textbf{Leaf-to-root inheritance}: Branch targeting flows
+        root-first via \texttt{propagate\_global\_branch}.
+        \texttt{validate-topology} verifies the on-disk state without
+        issuing any git writes.
+  \item \textbf{Allowed divergence}: Repositories in a frozen
+        (\texttt{TAG}) state produce a \texttt{tag\_divergence} diagnostic
+        that does \emph{not} make the topology incoherent.
+  \item \textbf{Incoherent states} (blocking): \texttt{misaligned\_branch}
+        (different branch from root) and \texttt{detached\_head} (detached
+        HEAD without a tag reference).
+\end{enumerate}
+
+\begin{lstlisting}[language=Python]
+# Python API equivalent
+report = client.validate_branch_topology()
+print(report.format())         # human-readable summary
+assert report.is_coherent      # True when all repos are aligned
+\end{lstlisting}
+
 \subsection{Planned Commands (not yet implemented)}
 
 The following commands are defined in the public API contract but are not yet

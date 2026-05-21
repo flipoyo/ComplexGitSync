@@ -58,7 +58,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T32 | `.lgr` Local Sync Ledger | ✅ Done |
 | T33 | Workspace Preflight Validation Engine | ✅ Done |
 | T34 | Deterministic Freeze Semantics | ✅ Done |
-| T35 | Branch Topology Propagation Rules | ❌ Pending |
+| T35 | Branch Topology Propagation Rules | ✅ Done |
 | T36 | CLI Dry-Run Mode | ❌ Pending |
 | T37 | Architectural Positioning Documentation | ❌ Pending |
 
@@ -68,15 +68,15 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 
 All delivered T-track tickets are operational and the core Python API and CLI
 remain stable. `.goc` parser-driven orchestration is now executable through
-`ComplexGitSyncClient.orchestrate(...)`. 322 tests pass (290 unit + 32
+`ComplexGitSyncClient.orchestrate(...)`. 335 tests pass (303 unit + 32
 integration) across parsers, registry, lifecycle, operations, CLI smoke paths,
 and integration scenarios.
 The project is functional for controlled use.
 
 The project is **not yet BetaSeries** because:
 
-- The roadmap continuation still has open scope (T35–T37), covering
-  branch-topology validation and architectural positioning.
+- The roadmap continuation still has open scope (T36–T37), covering
+  CLI dry-run mode and architectural positioning documentation.
 
 The project is **past POC** because the entire core workflow (initialise, clone,
 checkout, add, commit, push, tag, freeze, restart) is implemented, tested at
@@ -119,7 +119,8 @@ the unit level, and documented.
 - `.cgs` supports repo-level `branch`/`tag` declarations; when both are present, `validate` enforces hash equivalence and raises `incompatibilities between branch (hash) and tag(val) in .cgs` on mismatch.
 - `freeze` emits the next `.gts` id and records it in the project-local `<project>.lgr` register.
 - `.gts` snapshots now include schema versioning and deterministic hashing: `document.schema_version`, `document.hash_algorithm`, and canonical `document.snapshot_hash` (SHA-256) validated on load.
-- Remaining work is tracked in the T35..T37 continuation roadmap in `DevPlanTickets.md`.
+- Remaining work is tracked in the T36..T37 continuation roadmap in `DevPlanTickets.md`.
+- T35: `validate_branch_topology(registry, git_runner)` formalises branch topology propagation rules: root's current branch is the reference; all repos must match it or carry a tag reference. Returns a `BranchTopologyReport` with `is_coherent`, `repo_branches`, and `conflicts` categorised as `misaligned_branch`, `detached_head`, or `tag_divergence`. Exposed via `ComplexGitSyncClient.validate_branch_topology()` and the `validate-topology --gts <file>` CLI command (exits 0 if coherent, 1 if not).
 - `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
 - Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
 - `.goc` automation is available through `ComplexGitSyncClient.orchestrate`; the local register (T24) and sync ledger (T32) are both delivered.

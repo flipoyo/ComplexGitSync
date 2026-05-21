@@ -451,6 +451,25 @@ manifest content in emitted `.gts` files.
 - Add conflict diagnostics.
 **Acceptance Criteria**:
 - Workspace branch topology becomes deterministic and inspectable.
+**Status**: ✅ Done
+
+**Implementation notes**:
+- `validate_branch_topology(registry, git_runner) → BranchTopologyReport` added to
+  `operations.py`; formalises four canonical rules:
+  1. Root's current branch is the reference.
+  2. All repos inherit the root branch (parent-first via `propagate_global_branch`).
+  3. `TAG`-resolved repos produce allowed `tag_divergence` (non-blocking).
+  4. `misaligned_branch` and `detached_head` make the topology incoherent (blocking).
+- `BranchTopologyConflict` dataclass captures `repo_name`, `expected_branch`,
+  `actual_branch`, and `conflict_kind`.
+- `BranchTopologyReport` dataclass captures `reference_branch`, `is_coherent`,
+  `conflicts`, `repo_branches`, and exposes `format()` for human-readable output.
+- `ComplexGitSyncClient.validate_branch_topology()` exposes the function in the
+  public API with structured logging.
+- `cgitsync validate-topology --gts <file>` is the new CLI command; exits 0 if
+  coherent, 1 if not.
+- 12 new unit tests added to `tests/unit/test_operations.py`; total test count
+  moves from 323 to 335 (303 unit + 32 integration).
 
 ### T36 — CLI Dry-Run Mode (Medium)
 **Type**: Safety / UX  
