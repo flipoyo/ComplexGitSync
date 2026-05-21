@@ -61,9 +61,10 @@ Figure~\ref{fig:positioning-matrix} summarizes this positioning.
 \input{figures/positioning_matrix}
 \end{figure}
 
-`freeze` materializes deterministic checkpoints as `.gts` snapshots (schema +
-SHA-256 hash), while `.lgr` assigns stable local ids and stores append-only
-ledger events for replayable local evolution.
+\texttt{freeze} materializes deterministic checkpoints as
+\texttt{.gts} snapshots (schema + SHA-256 hash), while \texttt{.lgr}
+assigns stable local ids and stores append-only ledger events for replayable
+local evolution.
 
 Cross-declared nested repositories may initially resemble a local tangle at
 declaration time; runtime expansion normalizes this into a DAG via
