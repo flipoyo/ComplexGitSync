@@ -641,7 +641,7 @@ def _execute_commit(
             client,
             command_name="commit",
             actions=(
-                ("git add --all", "skip git add --all (--no-stage)")[not stage_all],
+                "git add --all" if stage_all else "skip git add --all (--no-stage)",
                 f"git commit -m {message!r}",
             ),
         )
@@ -907,7 +907,7 @@ def _print_dry_run_plan(
 def _format_leaf_first_repo_order(client: ComplexGitSyncClient) -> str:
     try:
         registry = client.get_dependency_registry()
-    except Exception:
+    except (AttributeError, RuntimeError):
         return "leaf -> parent -> root"
     repo_names = [entry.name for entry in iter_tree_leaf_first(registry)]
     return " -> ".join(repo_names) if repo_names else "leaf -> parent -> root"
