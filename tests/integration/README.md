@@ -69,7 +69,7 @@ populated with the appropriate `.cgs` content (no network or git required):
 | `TestCgsiCyclePrevention`        | No back-edge entry; fix_circularities() nop |
 | `TestCgsiLifecycleState`         | DECLARED state after expand (repos uncloned) |
 | `TestCgsiExampleFiles`           | examples/*.cgs parse and have correct shape |
-| `TestGitCommandCycleIntegration` | READY `.gts` git cycle via Python API + CLI (`add→commit→push→tag→freeze`) with deterministic freeze snapshots |
+| `TestGitCommandCycleIntegration` | READY `.gts` git cycle via Python API + CLI (`add->commit->push->tag->freeze`) with deterministic freeze snapshots |
 | `TestGtsSnapshotDeterminismIntegration` | Canonical `.gts` SHA-256 hash is stable across metadata changes and changes on workspace mutation |
 
 ---
@@ -81,4 +81,6 @@ populated with the appropriate `.cgs` content (no network or git required):
 - checkout to a shared branch or tag target
 - `.gts` generation after successful synchronization
 - `tag` across parent and leaf repositories
+- `freeze_release` plus named `.gts` output
+- `launch_release` from `.gts`
 - `READY` gating for `commit` and `push`
