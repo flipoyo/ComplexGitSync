@@ -20,6 +20,27 @@ sync from a single local specification and a tracked local tree state.
 - `.lgr` — Local Git Register (`<Project_name>.lgr`) that records one stable
   local id per generated `.gts` snapshot and tracks the current snapshot pointer.
 
+### 1.2.b Architectural positioning
+
+ComplexGitSync is positioned as a deterministic synchronization layer on top of
+Git, with two explicit DAGs:
+
+- **Git DAG**: native per-repository commit history.
+- **GitTree DAG**: workspace dependency graph linking root/parent/leaf repos.
+
+The action layer propagates state on the GitTree DAG (parent-first for branch
+targeting, leaf-first for mutations), and emits deterministic `.gts`
+checkpoints hashed by SHA-256. `.lgr` records stable local snapshot ids and an
+append-only sync ledger, so local evolution remains replayable.
+
+This differs from:
+
+- plain Git (single-repo history only),
+- monorepos (single repository storage boundary),
+- submodule-only workflows (linking primitive without lifecycle orchestration),
+- generic distributed synchronization tools (not Git-native nor `.gts`/`.lgr`
+  deterministic by contract).
+
 For `.gts` metadata:
 
 - `document.format_version` is the broad document generation line (stable compatibility family).

@@ -27,6 +27,49 @@ Figure~\ref{fig:three-tier} shows the overall layout.
 \end{figure}
 
 % -----------------------------------------------------------------------
+\section{Architectural Positioning}
+\label{sec:architectural-positioning}
+
+\cgspkg{} is positioned as a deterministic synchronisation layer \emph{on top of
+Git}, not as a replacement for Git itself. It combines two distinct graph
+scopes:
+
+\begin{itemize}
+  \item \textbf{Git DAG}: per-repository commit history and native remote
+    semantics.
+  \item \textbf{GitTree DAG}: workspace-level dependency graph coordinating
+    parent/root/leaf propagation and ordering.
+\end{itemize}
+
+The system therefore differs from:
+\begin{itemize}
+  \item plain Git usage (single repository scope),
+  \item monorepo layouts (single storage boundary),
+  \item submodule-only management (linking primitive without lifecycle
+    orchestration),
+  \item generic distributed sync engines (not constrained by Git-native
+    `.gts`/`.lgr` deterministic contracts).
+\end{itemize}
+
+Figure~\ref{fig:positioning-matrix} summarizes this positioning.
+
+\begin{figure}[ht]
+\centering
+\caption{Architectural positioning matrix across Git scope and workspace
+  coordination guarantees.}
+\label{fig:positioning-matrix}
+\input{figures/positioning_matrix}
+\end{figure}
+
+`freeze` materializes deterministic checkpoints as `.gts` snapshots (schema +
+SHA-256 hash), while `.lgr` assigns stable local ids and stores append-only
+ledger events for replayable local evolution.
+
+Cross-declared nested repositories may initially resemble a local tangle at
+declaration time; runtime expansion normalizes this into a DAG via
+\texttt{fix\_circularities}.
+
+% -----------------------------------------------------------------------
 \section{Tier 1 — Core Data}
 \label{sec:tier-core}
 

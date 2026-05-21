@@ -358,7 +358,7 @@ changes and hash drift on workspace mutations.
 ### Ticket numbering rule (single merged plan)
 - Closed tickets now run sequentially from **T00** through **T34**.
 - Completed roadmap continuation tickets now continue as **T28** through **T34**.
-- Remaining open roadmap tickets continue as **T35** through **T37**.
+- Remaining open roadmap tickets have been closed through **T37**.
 
 ### T32 — `.lgr` Local Sync Ledger (High) ✅
 **Type**: Architecture / Traceability  
@@ -518,3 +518,15 @@ manifest content in emitted `.gts` files.
   - distributed workspace synchronization.
 **Acceptance Criteria**:
 - The project’s architectural identity becomes explicit and defensible.
+**Status**: ✅ Done
+
+**Implementation notes**:
+- Added explicit architectural-positioning statements to `AdditionalSpecs.md`,
+  `README.md`, and `docs/Text/architecture.tex`.
+- Documented Git DAG vs GitTree DAG separation, workspace propagation ordering,
+  deterministic `.gts` checkpoints, `.lgr` replay ledger role, and local tangle
+  normalization into a DAG via `fix_circularities`.
+- Added new figure source `docs/figures/positioning_matrix.tex` and linked it
+  from the architecture chapter.
+- Completed an external compatibility check against `DevSpecs.md` and added
+  security follow-up ticket proposals to `audit.md`.

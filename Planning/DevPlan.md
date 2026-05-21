@@ -60,7 +60,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T34 | Deterministic Freeze Semantics | ✅ Done |
 | T35 | Branch Topology Propagation Rules | ✅ Done |
 | T36 | CLI Dry-Run Mode | ✅ Done |
-| T37 | Architectural Positioning Documentation | ❌ Pending |
+| T37 | Architectural Positioning Documentation | ✅ Done |
 
 ## Project State
 
@@ -75,8 +75,8 @@ The project is functional for controlled use.
 
 The project is **not yet BetaSeries** because:
 
-- The roadmap continuation still has open scope (T36–T37), covering
-  CLI dry-run mode and architectural positioning documentation.
+- The roadmap continuation tickets are delivered, but formal security hardening
+  follow-up tickets remain open in `audit.md` after the T37 review.
 
 The project is **past POC** because the entire core workflow (initialise, clone,
 checkout, add, commit, push, tag, freeze, restart) is implemented, tested at
@@ -120,7 +120,11 @@ the unit level, and documented.
 - `.cgs` supports repo-level `branch`/`tag` declarations; when both are present, `validate` enforces hash equivalence and raises `incompatibilities between branch (hash) and tag(val) in .cgs` on mismatch.
 - `freeze` emits the next `.gts` id and records it in the project-local `<project>.lgr` register.
 - `.gts` snapshots now include schema versioning and deterministic hashing: `document.schema_version`, `document.hash_algorithm`, and canonical `document.snapshot_hash` (SHA-256) validated on load.
-- Remaining work is tracked in the T36..T37 continuation roadmap in `DevPlanTickets.md`.
+- The T36..T37 continuation roadmap is now delivered in `DevPlanTickets.md`.
+- T37: architectural positioning is now explicit across `AdditionalSpecs.md`,
+  `README.md`, and `docs/Text/architecture.tex` (Git DAG vs GitTree DAG,
+  deterministic `.gts` checkpoints, `.lgr` replay ledger, local tangle
+  normalized to DAG).
 - T35: `validate_branch_topology(registry, git_runner)` formalises branch topology propagation rules: root's current branch is the reference; all repos must match it or carry a tag reference. Returns a `BranchTopologyReport` with `is_coherent`, `repo_branches`, and `conflicts` categorised as `misaligned_branch`, `detached_head`, or `tag_divergence`. Exposed via `ComplexGitSyncClient.validate_branch_topology()` and the `validate-topology --gts <file>` CLI command (exits 0 if coherent, 1 if not).
 - `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
 - Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
