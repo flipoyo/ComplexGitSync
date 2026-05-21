@@ -25,6 +25,7 @@ For `.gts` metadata:
 - `document.format_version` is the broad document generation line (stable compatibility family).
 - `document.schema_version` is the concrete `.gts` field contract version used by validators and canonical hashing.
 - `document.hash_algorithm` and `document.snapshot_hash` provide deterministic state identity so identical workspace states map to the same digest, enabling integrity checks and `.lgr` deduplication.
+- freeze snapshots (`command_origin` = `freeze*`) also include a `freeze_manifest` section that records deterministic freeze invariants and the canonical restore operation (`launch_state`).
 
 ### 1.3 Single API exposure
 
@@ -121,8 +122,9 @@ repo, validation now checks hash compatibility and raises:
 when they do not resolve to the same commit.
 
 Roadmap follow-up work tracked in the repository now moves past the delivered
-`.lgr` ledger (`T32`) and workspace preflight validation engine (`T33`) toward
-deterministic freeze semantics and the remaining workflow-hardening tickets.
+`.lgr` ledger (`T32`), workspace preflight validation engine (`T33`), and
+deterministic freeze semantics (`T34`) toward the remaining workflow-hardening
+tickets.
 
 ### 3.1 Python API
 

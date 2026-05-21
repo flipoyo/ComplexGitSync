@@ -356,9 +356,9 @@ changes and hash drift on workspace mutations.
 ## Remaining Tickets
 
 ### Ticket numbering rule (single merged plan)
-- Closed tickets now run sequentially from **T00** through **T32**.
-- Completed roadmap continuation tickets now continue as **T28** through **T32**.
-- Remaining open roadmap tickets continue as **T33** through **T37**.
+- Closed tickets now run sequentially from **T00** through **T34**.
+- Completed roadmap continuation tickets now continue as **T28** through **T34**.
+- Remaining open roadmap tickets continue as **T35** through **T37**.
 
 ### T32 — `.lgr` Local Sync Ledger (High) ✅
 **Type**: Architecture / Traceability  
@@ -411,7 +411,7 @@ and upstream-divergence probes.  Focused unit tests added in
 blocking in `test_cgsi_topology.py`.  `README.md`, `AdditionalSpecs.md`,
 `DevPlan.md`, and the user/architecture docs updated.
 
-### T34 — Deterministic Freeze Semantics (Medium)
+### T34 — Deterministic Freeze Semantics (Medium) ✅
 **Type**: Reproducibility  
 **Problem**: Freeze semantics are conceptually central but not yet formally defined.  
 **Legacy linkage**: Formalizes T14 freeze invariants.
@@ -427,6 +427,14 @@ blocking in `test_cgsi_topology.py`.  `README.md`, `AdditionalSpecs.md`,
 - Add freeze restore operation.
 **Acceptance Criteria**:
 - A freeze fully reconstructs a compatible workspace state.
+
+**Progress**: freeze snapshots now carry an explicit `[freeze_manifest]` table
+for freeze command origins (`freeze`, `freeze_release`, `freeze_state`). The
+manifest formalizes deterministic invariants (`immutable_snapshot`,
+`workspace_validated`, `ledger_checkpoint`) and the synchronized tag reference,
+and declares `launch_state` as the canonical restore operation. Snapshot
+validation now enforces this contract, and freeze operation tests assert the
+manifest content in emitted `.gts` files.
 
 ### T35 — Branch Topology Propagation Rules (Medium)
 **Type**: Workflow / DAG Semantics  

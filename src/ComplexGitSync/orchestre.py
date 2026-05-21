@@ -94,6 +94,7 @@ from .git_tree import (
 
 _MISSING = object()
 _SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
+_FREEZE_COMMAND_ORIGINS = frozenset({"freeze", "freeze_release", "freeze_state"})
 
 
 def _dot_get(data: dict[str, Any], key: str, default: Any = None) -> Any:
@@ -443,6 +444,29 @@ class GtsDocument(ConfigDocument):
             elif snapshot_hash != self.compute_snapshot_hash():
                 errors.append("[document] snapshot_hash does not match canonical .gts content hash")
 
+        command_origin = self.read("document.command_origin")
+        if command_origin in _FREEZE_COMMAND_ORIGINS:
+            freeze_manifest = self._data.get("freeze_manifest")
+            if not isinstance(freeze_manifest, dict):
+                errors.append("[freeze_manifest] missing required table for freeze snapshots")
+            else:
+                if freeze_manifest.get("schema_version") != "1.0":
+                    errors.append("[freeze_manifest] schema_version must be '1.0'")
+                if freeze_manifest.get("restore_operation") != "launch_state":
+                    errors.append("[freeze_manifest] restore_operation must be 'launch_state'")
+                if freeze_manifest.get("synchronized_ref_kind") != RefKind.TAG.value:
+                    errors.append("[freeze_manifest] synchronized_ref_kind must be 'tag'")
+                synchronized_ref_name = freeze_manifest.get("synchronized_ref_name")
+                if not isinstance(synchronized_ref_name, str) or not synchronized_ref_name.strip():
+                    errors.append("[freeze_manifest] synchronized_ref_name must be a non-empty string")
+                for invariant_key in (
+                    "immutable_snapshot",
+                    "workspace_validated",
+                    "ledger_checkpoint",
+                ):
+                    if freeze_manifest.get(invariant_key) is not True:
+                        errors.append(f"[freeze_manifest] {invariant_key} must be true")
+
         if errors:
             raise ConfigValidationError(
                 "Invalid .gts document:\n" + "\n".join(f"  • {e}" for e in errors)
@@ -493,6 +517,7 @@ class GtsDocument(ConfigDocument):
         project = self._data.get("project", {})
         tree_state = self._data.get("tree_state", {})
         repo_states = self._data.get("repo_state", [])
+        freeze_manifest = self._data.get("freeze_manifest", {})
         canonical_repo_states = []
         for repo in repo_states if isinstance(repo_states, list) else []:
             if not isinstance(repo, dict):
@@ -532,7 +557,7 @@ class GtsDocument(ConfigDocument):
                 str(repo.get("name", "")),
             )
         )
-        return {
+        payload = {
             "document": {
                 "schema_version": self.schema_version,
                 "hash_algorithm": self.read("document.hash_algorithm", self.HASH_ALGORITHM),
@@ -549,6 +574,17 @@ class GtsDocument(ConfigDocument):
             },
             "repo_state": canonical_repo_states,
         }
+        if isinstance(freeze_manifest, dict):
+            payload["freeze_manifest"] = {
+                "schema_version": freeze_manifest.get("schema_version"),
+                "immutable_snapshot": freeze_manifest.get("immutable_snapshot"),
+                "workspace_validated": freeze_manifest.get("workspace_validated"),
+                "ledger_checkpoint": freeze_manifest.get("ledger_checkpoint"),
+                "synchronized_ref_kind": freeze_manifest.get("synchronized_ref_kind"),
+                "synchronized_ref_name": freeze_manifest.get("synchronized_ref_name"),
+                "restore_operation": freeze_manifest.get("restore_operation"),
+            }
+        return payload
 
 
 _VALID_GOC_COMMANDS = frozenset(
@@ -1551,6 +1587,8 @@ def build_gts_document_from_registry(
     }
     if source_cgs_path is not None:
         data["project"]["source_cgs_path"] = str(source_cgs_path)
+    if command_origin in _FREEZE_COMMAND_ORIGINS:
+        data["freeze_manifest"] = _build_freeze_manifest(registry)
 
     for entry in sorted(registry.values(), key=lambda item: item.repo_id):
         repo_data: dict[str, Any] = {
@@ -1586,6 +1624,25 @@ def build_gts_document_from_registry(
     document.ensure_snapshot_hash()
     document.validate()
     return document
+
+
+def _build_freeze_manifest(registry: DependencyTreeRegistry) -> dict[str, Any]:
+    root_entry = registry.get(ROOT_REPO_ID)
+    tag_name = (
+        root_entry.resolved_ref_name
+        or root_entry.target_ref_name
+        or root_entry.current_ref_name
+        or ""
+    )
+    return {
+        "schema_version": "1.0",
+        "immutable_snapshot": True,
+        "workspace_validated": True,
+        "ledger_checkpoint": True,
+        "synchronized_ref_kind": RefKind.TAG.value,
+        "synchronized_ref_name": tag_name,
+        "restore_operation": "launch_state",
+    }
 
 
 # ============================================================

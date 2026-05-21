@@ -173,6 +173,15 @@ format_version = "1.0"
 generated_at = "2026-01-01T00:00:00Z"
 command_origin = "freeze_release"
 
+[freeze_manifest]
+schema_version = "1.0"
+immutable_snapshot = true
+workspace_validated = true
+ledger_checkpoint = true
+synchronized_ref_kind = "tag"
+synchronized_ref_name = "release-1"
+restore_operation = "launch_state"
+
 [project]
 name = "demo"
 root_absolute_path = "{root_path.as_posix()}"

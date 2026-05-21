@@ -1272,6 +1272,8 @@ def test_client_tag_delegates_to_tag_tree(tmp_path):
 
 
 def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
+    import tomllib
+
     client, runner = _make_client_with_ready_registry(tmp_path)
     _mark_all_children_as_submodules(client.registry, runner)
     output_gts = tmp_path / "release.gts"
@@ -1281,6 +1283,14 @@ def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
     assert runner.committed, "Expected commit calls during freeze_release"
     assert runner.tagged, "Expected tag calls during freeze_release"
     assert output_gts.exists()
+    snapshot_data = tomllib.loads(output_gts.read_text(encoding="utf-8"))
+    assert snapshot_data["freeze_manifest"]["schema_version"] == "1.0"
+    assert snapshot_data["freeze_manifest"]["synchronized_ref_kind"] == "tag"
+    assert snapshot_data["freeze_manifest"]["synchronized_ref_name"] == "release-1"
+    assert snapshot_data["freeze_manifest"]["restore_operation"] == "launch_state"
+    assert snapshot_data["freeze_manifest"]["immutable_snapshot"] is True
+    assert snapshot_data["freeze_manifest"]["workspace_validated"] is True
+    assert snapshot_data["freeze_manifest"]["ledger_checkpoint"] is True
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
 
