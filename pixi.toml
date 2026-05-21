@@ -1,6 +1,6 @@
 [project]
 name = "ComplexGitSync"
-version = "0001.40"
+version = "0001.41"
 channels = ["conda-forge"]
 platforms = ["linux-64", "osx-64", "osx-arm64", "win-64"]
 
