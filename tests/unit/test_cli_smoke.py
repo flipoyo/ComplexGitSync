@@ -132,6 +132,33 @@ def test_freeze_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     assert "name=v1.0" in captured.out
 
 
+def test_freeze_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            pass
+
+        def freeze(self, name, **kwargs):
+            raise AssertionError("freeze should not be called during --dry-run")
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["freeze", "v1.0", "--gts", str(gts_path), "--dry-run"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "dry_run=true command=freeze" in captured.out
+    assert "plan_actions=git add --all -> git commit -m 'v1.0' -> git tag v1.0 -> git push" in captured.out
+
+
 def test_describe_command_supports_gts_input(tmp_path, capsys):
     gts_path = tmp_path / "project.gts"
     gts_path.write_text(
@@ -471,6 +498,31 @@ def test_commit_command_no_stage_flag(monkeypatch, capsys, tmp_path):
     assert captured_call["stage_all"] is False
 
 
+def test_commit_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            pass
+
+        def commit(self, message, *, stage_all):
+            raise AssertionError("commit should not be called during --dry-run")
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["commit", "preview", "--gts", str(gts_path), "--dry-run"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "dry_run=true command=commit" in captured.out
+    assert "plan_actions=git add --all -> git commit -m 'preview'" in captured.out
+
+
 def test_push_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
@@ -496,6 +548,31 @@ def test_push_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     assert exit_code == 0
     assert captured_call.get("pushed") is True
     assert "READY ready=true" in captured.out
+
+
+def test_push_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            pass
+
+        def push(self):
+            raise AssertionError("push should not be called during --dry-run")
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["push", "--gts", str(gts_path), "--dry-run"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "dry_run=true command=push" in captured.out
+    assert "plan_actions=git push" in captured.out
 
 
 def test_add_command_uses_client_handler(monkeypatch, capsys, tmp_path):
@@ -525,6 +602,31 @@ def test_add_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     assert "READY ready=true" in captured.out
 
 
+def test_add_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            pass
+
+        def add(self):
+            raise AssertionError("add should not be called during --dry-run")
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["add", "--gts", str(gts_path), "--dry-run"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "dry_run=true command=add" in captured.out
+    assert "plan_actions=git add --all" in captured.out
+
+
 def test_tag_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
@@ -550,6 +652,31 @@ def test_tag_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     assert exit_code == 0
     assert captured_call["tag_name"] == "v2.0"
     assert "tag=v2.0" in captured.out
+
+
+def test_tag_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            pass
+
+        def tag(self, tag_name):
+            raise AssertionError("tag should not be called during --dry-run")
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["tag", "v2.0", "--gts", str(gts_path), "--dry-run"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "dry_run=true command=tag" in captured.out
+    assert "plan_actions=git tag v2.0 -> git push origin v2.0" in captured.out
 
 
 def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_path):

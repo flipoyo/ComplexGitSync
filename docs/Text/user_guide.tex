@@ -126,16 +126,18 @@ client.checkout("v1.2.0", ref_kind=RefKind.TAG)
 \subsection{\texttt{add}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync add --gts <snapshot.gts>
+$ cgitsync add --gts <snapshot.gts> [--dry-run]
 \end{lstlisting}
 
 Stages all changes across the tree (\texttt{git add --all}), leaf-first.
-Requires \texttt{READY}; tree stays \texttt{READY}.
+Requires \texttt{READY}; tree stays \texttt{READY}. With
+\texttt{--dry-run}, \cgscli{} prints the leaf-first execution plan and does not
+mutate repositories.
 
 \subsection{\texttt{commit}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync commit <message> --gts <snapshot.gts> [--no-stage]
+$ cgitsync commit <message> --gts <snapshot.gts> [--no-stage] [--dry-run]
 \end{lstlisting}
 
 Commits changes across the tree, leaf-first.  Loads the READY registry from
@@ -145,6 +147,8 @@ skipped. Requires a \texttt{READY} tree; the tree remains \texttt{READY} on succ
 Commit preflight now emits warnings for actionable workspace issues such as
 dirty worktrees, ahead branches, stale recorded \texttt{commit\_sha} values,
 or child repositories that are not linked as submodules.
+With \texttt{--dry-run}, \cgscli{} prints the planned stage/commit sequence
+without performing git writes.
 
 The commit message conventionally ends with \texttt{CGS\#VERSION}.
 
@@ -162,7 +166,7 @@ client.commit("feat: my change", stage_all=False)
 \subsection{\texttt{push}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync push --gts <snapshot.gts>
+$ cgitsync push --gts <snapshot.gts> [--dry-run]
 \end{lstlisting}
 
 Pushes all repositories to their configured remotes, leaf-first.  Loads the
@@ -173,6 +177,8 @@ resolved branch.  Refreshes the stored hash in \texttt{GitTree}.  Requires a
 blocks detached HEADs, missing remotes, unresolved merges, behind/diverged
 branches, and missing submodule links; it warns when the local branch is ahead
 or when the loaded snapshot records an older \texttt{commit\_sha}.
+With \texttt{--dry-run}, \cgscli{} prints the push plan without mutating any
+repository.
 
 Also available via the unified \texttt{git()} Python API:
 
@@ -184,7 +190,7 @@ client.git(registry, "push")
 \subsection{\texttt{tag}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync tag <name> --gts <snapshot.gts>
+$ cgitsync tag <name> --gts <snapshot.gts> [--dry-run]
 \end{lstlisting}
 
 Creates and pushes the same tag across the full tree, leaf-first.  Loads the
@@ -195,6 +201,8 @@ branches, existing remotes, no pre-existing tag of the same name, no detached
 HEADs or unresolved merges, and parent/child repositories linked as Git
 submodules. Stale recorded \texttt{commit\_sha} values are reported as
 warnings. Tag creation is non-forcing by default (no implicit \texttt{-f}).
+With \texttt{--dry-run}, \cgscli{} prints the tag/push plan and exits without
+creating tags.
 
 Also available via the unified \texttt{git()} Python API:
 
@@ -206,7 +214,7 @@ client.git(registry, "tag", "v1.2.3")
 \subsection{\texttt{freeze}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync freeze <name> --gts <snapshot.gts>
+$ cgitsync freeze <name> --gts <snapshot.gts> [--dry-run]
 \end{lstlisting}
 
 Performs a release freeze across all repos, leaf-first: stage/commit,
@@ -221,6 +229,8 @@ Freeze snapshots also include a deterministic \texttt{freeze\_manifest} section
 that records freeze invariants (immutable snapshot, validated workspace,
 synchronized tag, ledger checkpoint) and declares \texttt{launch\_state} as the
 canonical restore operation.
+With \texttt{--dry-run}, \cgscli{} prints the planned add/commit/tag/push graph
+for the loaded workspace without mutating it.
 
 Also available via the Python API:
 
