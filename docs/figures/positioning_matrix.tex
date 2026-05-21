@@ -1,0 +1,12 @@
+% positioning_matrix.tex — table-style matrix for architectural positioning.
+% Included by docs/Text/architecture.tex.
+
+\begin{tabular}{p{3.2cm}p{4.4cm}p{6.6cm}}
+\textbf{Approach} & \textbf{Primary scope} & \textbf{What it does not guarantee} \\
+\hline
+Git (single repo) & Commit DAG per repository & Multi-repository propagation and coordinated lifecycle gating \\
+Monorepo & One repository, one commit DAG & Independent repository identities and per-repo remote ownership \\
+Submodule management & Parent repo references child revisions & Deterministic tree-wide mutation workflow and snapshot contracts \\
+ComplexGitSync & Git DAG + GitTree DAG & Not a credential broker or remote policy authority \\
+\hline
+\end{tabular}

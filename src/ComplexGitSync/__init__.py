@@ -1,4 +1,4 @@
-"""ComplexGitSync package."""
+"""ComplexGitSync package: deterministic distributed workspace synchronization over Git trees."""
 
 __version__ = "0001.44"
 

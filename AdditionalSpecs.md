@@ -33,6 +33,27 @@ one tier; dependencies only flow **downward** (API → Actions → Core).
 └─────────────────────────────────────────────────────┘
 ```
 
+### Architectural positioning (T37)
+
+ComplexGitSync is not a replacement for Git, monorepos, or submodule metadata.
+It is a deterministic synchronization layer that coordinates multiple Git
+repositories as one workspace contract.
+
+The model explicitly combines:
+
+- **Git DAG**: each repository keeps its own commit graph and remote semantics.
+- **GitTree DAG**: the workspace-level parent/leaf dependency graph used for
+  propagation and execution ordering.
+
+Operational consequences:
+
+- workspace state propagation uses ordered graph traversal (parent-first for
+  branch targeting and restore preparation; leaf-first for mutation actions),
+- `.gts` is the canonical deterministic workspace checkpoint (schema + hash),
+- `.lgr` is the local identity and replay layer (stable snapshot ids + ledger),
+- cross-declared nested references may form a local declaration tangle, but
+  runtime expansion is normalized to a DAG by `fix_circularities`.
+
 ### Tier 1 — Core Data
 
 The entire system is centred on **`GitTree`**, which owns the parent-leaf graph

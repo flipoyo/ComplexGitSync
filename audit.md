@@ -88,3 +88,48 @@ The user noted that `state_store` (snapshot tracking) could be _split_ across th
 - The `_resolve_default_base_dir()` helper uses `$XDG_STATE_HOME` — infrastructure, Orchestre tier.
 
 **Decision:** absorb entirely into `orchestre.py` (Orchestre tier, action layer).  No split is needed since no part of the store logic belongs to GitRepo or GitTree.
+
+---
+
+## External Compatibility Check — `DevSpecs.md` (T37)
+
+Review scope: architectural positioning updates in `AdditionalSpecs.md`,
+`README.md`, `docs/Text/architecture.tex`, and package metadata wording.
+
+| DevSpecs area | Check result | Notes |
+|---|---|---|
+| Object-oriented design | ✅ Compatible | Positioning text keeps class-centric architecture and tier ownership. |
+| Monolithic canonical API | ✅ Compatible | Documentation still maps Python API and CLI one-to-one (`ComplexGitSyncClient` / `cgitsync`). |
+| Lifecycle implementation | ✅ Compatible | Positioning content reinforces state-gated transitions and deterministic checkpoints. |
+| Documentation requirements | ✅ Compatible | Architecture chapter and root docs updated in-repo with consistent terminology. |
+| Testing policy (integration infra) | ✅ Compatible | Existing integration infrastructure remains valid; no behavior changes required for T37 documentation-only scope. |
+
+## Security Evaluation — Potential Incoming Tickets
+
+T37 added no new mutating logic. Security review focused on documentation
+completeness and package-level posture gaps visible from current implementation.
+
+### T38 — `.gts` / `.lgr` Integrity Signing and Verification (High, proposed)
+- **Risk:** current SHA-256 integrity detects accidental drift but does not
+  authenticate producer identity; a local attacker with write access can rewrite
+  snapshot + ledger consistently.
+- **Proposal:** sign `.gts` snapshots and `[[ledger]]` events (e.g., Sigstore or
+  project keypair), and verify signatures on load/replay.
+- **Expected outcome:** tamper-evident and origin-authenticated local state
+  history.
+
+### T39 — Hard Sandbox for `.goc` Command Execution (High, proposed)
+- **Risk:** `.goc` scripts are constrained lexically but still orchestrate
+  mutating workflows; policy boundaries are coarse at runtime.
+- **Proposal:** add allowlist policy profiles (per command, per target path, and
+  optional `--read-only` mode) with explicit deny logs.
+- **Expected outcome:** reduced blast radius for accidental or malicious
+  orchestration plans.
+
+### T40 — Remote Trust Policy for Repository Origins (Medium, proposed)
+- **Risk:** provider/URL flexibility allows accidental onboarding of unexpected
+  remotes when specs are authored manually.
+- **Proposal:** enforce optional trust policy file (allowed providers/domains and
+  namespace patterns) at `.cgs` load/expand time.
+- **Expected outcome:** stronger supply-chain boundary for multi-repo discovery
+  and synchronization.
