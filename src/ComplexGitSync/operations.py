@@ -27,7 +27,7 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pathlib import Path
 
@@ -427,7 +427,9 @@ class BranchTopologyConflict:
     actual_branch: str | None
     """The repository's current branch, or ``None`` when detached HEAD."""
 
-    conflict_kind: str
+    conflict_kind: Literal[
+        "misaligned_branch", "detached_head", "tag_divergence", "missing_root"
+    ]
     """Conflict classification.
 
     One of:

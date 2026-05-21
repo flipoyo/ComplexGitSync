@@ -1511,7 +1511,8 @@ def test_validate_branch_topology_format_coherent(tmp_path):
     assert "reference='main'" in output
     assert "project" in output
     assert "leaf" in output
-    assert "conflicts" not in output
+    assert "conflicts:" not in output
+    assert len(report.conflicts) == 0
 
 
 def test_validate_branch_topology_format_incoherent(tmp_path):
