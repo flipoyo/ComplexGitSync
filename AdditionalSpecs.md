@@ -100,6 +100,10 @@ the client.  **Every action is gated by the current `TreeLifecycleState`**:
 Actions that **must reject** a non-READY tree:
 `add`, `git("commit")`, `git("push")`, `git("tag")`, `freeze`.
 
+CLI dry-run mode (T36): `add`, `commit`, `push`, `tag`, and `freeze` accept
+`--dry-run` to print a non-mutating execution plan (`plan_actions`,
+`plan_order`) without dispatching write operations.
+
 Workspace preflight invariants:
 - `commit`, `push`, `tag`, and `freeze` all run a workspace preflight engine before mutation.
 - The engine checks dirty worktrees, detached HEADs, missing remotes, branch divergence,

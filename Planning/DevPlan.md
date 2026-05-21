@@ -59,7 +59,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T33 | Workspace Preflight Validation Engine | ✅ Done |
 | T34 | Deterministic Freeze Semantics | ✅ Done |
 | T35 | Branch Topology Propagation Rules | ✅ Done |
-| T36 | CLI Dry-Run Mode | ❌ Pending |
+| T36 | CLI Dry-Run Mode | ✅ Done |
 | T37 | Architectural Positioning Documentation | ❌ Pending |
 
 ## Project State
@@ -106,6 +106,7 @@ the unit level, and documented.
 - `ComplexGitSyncClient.checkout`, `ComplexGitSyncClient.restart`, and `ComplexGitSyncClient.freeze_release` write `.gts` snapshots after success.
 - CLI mutation commands (`checkout`, `commit`, `push`, `tag`, `freeze-release`) require `--gts <file>` to load the READY registry.
 - CLI mutation commands now also include `add` and `freeze-state`; snapshot launch commands include `launch-release` and `launch-state`.
+- T36: `add`, `commit`, `push`, `tag`, and `freeze` now support `--dry-run`, printing `plan_actions` + `plan_order` while skipping mutation calls.
 - User-facing lifecycle contract is `initialise(.cgs)` → clone → READY, `initialise(.gts)` → restore → READY, `pull(.cgs/.gts)` → resync → READY, `checkout`, `add`, `commit`, `push`, `tag`, `freeze`.
 - CLI display now prints explicit workflow steps for lifecycle commands, explicit `git_command=...` lines for git actions, per-command `log_file=...`, and a minimalist repo-only tree outline (`project/parent/leaf`) for initialise flows.
 - `load(.cgs/.gts)` is the unified Python API smart loader: `.gts` → direct load; `.cgs` → load_cgs pipeline.

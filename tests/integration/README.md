@@ -72,6 +72,9 @@ populated with the appropriate `.cgs` content (no network or git required):
 | `TestGitCommandCycleIntegration` | READY `.gts` git cycle via Python API + CLI (`add->commit->push->tag->freeze`) with deterministic freeze snapshots |
 | `TestGtsSnapshotDeterminismIntegration` | Canonical `.gts` SHA-256 hash is stable across metadata changes and changes on workspace mutation |
 
+CLI dry-run previews for `add|commit|push|tag|freeze --dry-run` are covered by
+the unit smoke suite and intentionally kept non-mutating.
+
 ---
 
 ## Additional planned scenarios

@@ -7,7 +7,7 @@ from collections.abc import Sequence
 
 from . import __version__
 from .git_repo import RefKind
-from .git_tree import ProjectTreeState
+from .git_tree import ProjectTreeState, iter_tree_leaf_first
 from .orchestre import CgsDocument, ComplexGitSyncClient, create_run_logger
 
 
@@ -140,6 +140,11 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Skip automatic 'git add --all' before committing.",
             )
+            subparser.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="Preview the commit execution plan without mutating repositories.",
+            )
             subparser.set_defaults(handler=_handle_commit)
         elif command_name == "add":
             subparser.add_argument(
@@ -148,6 +153,11 @@ def build_parser() -> argparse.ArgumentParser:
                 required=True,
                 help="Path to the .gts snapshot that holds the READY registry.",
             )
+            subparser.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="Preview the add execution plan without mutating repositories.",
+            )
             subparser.set_defaults(handler=_handle_add)
         elif command_name == "push":
             subparser.add_argument(
@@ -155,6 +165,11 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="FILE",
                 required=True,
                 help="Path to the .gts snapshot that holds the READY registry.",
+            )
+            subparser.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="Preview the push execution plan without mutating repositories.",
             )
             subparser.set_defaults(handler=_handle_push)
         elif command_name == "tag":
@@ -165,6 +180,11 @@ def build_parser() -> argparse.ArgumentParser:
                 required=True,
                 help="Path to the .gts snapshot that holds the READY registry.",
             )
+            subparser.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="Preview the tag execution plan without mutating repositories.",
+            )
             subparser.set_defaults(handler=_handle_tag)
         elif command_name == "freeze":
             subparser.add_argument("name", help="Version tag name used for commit, tag, and push.")
@@ -173,6 +193,11 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="FILE",
                 required=True,
                 help="Path to the .gts snapshot that holds the READY registry.",
+            )
+            subparser.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="Preview the freeze execution plan without mutating repositories.",
             )
             subparser.set_defaults(handler=_handle_freeze)
         elif command_name == "freeze-release":
@@ -341,7 +366,13 @@ def _handle_commit(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="commit",
         source=Path(args.gts),
-        runner=lambda client, source: _execute_commit(client, source, message=args.message, stage_all=not args.no_stage),
+        runner=lambda client, source: _execute_commit(
+            client,
+            source,
+            message=args.message,
+            stage_all=not args.no_stage,
+            dry_run=args.dry_run,
+        ),
     )
 
 
@@ -349,7 +380,7 @@ def _handle_add(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="add",
         source=Path(args.gts),
-        runner=lambda client, source: _execute_add(client, source),
+        runner=lambda client, source: _execute_add(client, source, dry_run=args.dry_run),
     )
 
 
@@ -357,7 +388,7 @@ def _handle_push(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="push",
         source=Path(args.gts),
-        runner=lambda client, source: _execute_push(client, source),
+        runner=lambda client, source: _execute_push(client, source, dry_run=args.dry_run),
     )
 
 
@@ -365,7 +396,7 @@ def _handle_tag(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="tag",
         source=Path(args.gts),
-        runner=lambda client, source: _execute_tag(client, source, tag_name=args.name),
+        runner=lambda client, source: _execute_tag(client, source, tag_name=args.name, dry_run=args.dry_run),
     )
 
 
@@ -381,7 +412,7 @@ def _handle_freeze(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="freeze",
         source=Path(args.gts),
-        runner=lambda client, source: _execute_freeze(client, source, name=args.name),
+        runner=lambda client, source: _execute_freeze(client, source, name=args.name, dry_run=args.dry_run),
     )
 
 
@@ -601,10 +632,21 @@ def _execute_commit(
     *,
     message: str,
     stage_all: bool,
+    dry_run: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git commit -m {message!r}")
-    client.commit(message, stage_all=stage_all)
+    if dry_run:
+        _print_dry_run_plan(
+            client,
+            command_name="commit",
+            actions=(
+                "git add --all" if stage_all else "skip git add --all (--no-stage)",
+                f"git commit -m {message!r}",
+            ),
+        )
+    else:
+        client.commit(message, stage_all=stage_all)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -616,10 +658,15 @@ def _execute_commit(
 def _execute_add(
     client: ComplexGitSyncClient,
     source_path: Path,
+    *,
+    dry_run: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     print("git_command=git add --all")
-    client.add()
+    if dry_run:
+        _print_dry_run_plan(client, command_name="add", actions=("git add --all",))
+    else:
+        client.add()
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
     return 0
@@ -628,10 +675,15 @@ def _execute_add(
 def _execute_push(
     client: ComplexGitSyncClient,
     source_path: Path,
+    *,
+    dry_run: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     print("git_command=git push")
-    client.push()
+    if dry_run:
+        _print_dry_run_plan(client, command_name="push", actions=("git push",))
+    else:
+        client.push()
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
     return 0
@@ -642,10 +694,18 @@ def _execute_tag(
     source_path: Path,
     *,
     tag_name: str,
+    dry_run: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git tag {tag_name} && git push origin {tag_name}")
-    client.tag(tag_name)
+    if dry_run:
+        _print_dry_run_plan(
+            client,
+            command_name="tag",
+            actions=(f"git tag {tag_name}", f"git push origin {tag_name}"),
+        )
+    else:
+        client.tag(tag_name)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -676,10 +736,18 @@ def _execute_freeze(
     source_path: Path,
     *,
     name: str,
+    dry_run: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git add --all && git commit -m {name!r} && git tag {name} && git push")
-    client.freeze(name)
+    if dry_run:
+        _print_dry_run_plan(
+            client,
+            command_name="freeze",
+            actions=("git add --all", f"git commit -m {name!r}", f"git tag {name}", "git push"),
+        )
+    else:
+        client.freeze(name)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -823,6 +891,26 @@ def _load_ready_registry_source(
     source_path: Path,
 ) -> None:
     client.load_gts(source_path)
+
+
+def _print_dry_run_plan(
+    client: ComplexGitSyncClient,
+    *,
+    command_name: str,
+    actions: tuple[str, ...],
+) -> None:
+    print(f"dry_run=true command={command_name}")
+    print(f"plan_actions={' -> '.join(actions)}")
+    print(f"plan_order={_format_leaf_first_repo_order(client)}")
+
+
+def _format_leaf_first_repo_order(client: ComplexGitSyncClient) -> str:
+    try:
+        registry = client.get_dependency_registry()
+    except (AttributeError, RuntimeError):
+        return "leaf -> parent -> root"
+    repo_names = [entry.name for entry in iter_tree_leaf_first(registry)]
+    return " -> ".join(repo_names) if repo_names else "leaf -> parent -> root"
 
 
 def _format_tree_state_line(tree_state: ProjectTreeState) -> str:

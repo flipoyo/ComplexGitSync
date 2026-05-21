@@ -487,6 +487,14 @@ manifest content in emitted `.gts` files.
 - Produce operation execution plan without mutation.
 **Acceptance Criteria**:
 - Users can inspect workspace mutation graph before execution.
+**Status**: ✅ Done
+
+**Implementation notes**:
+- Added `--dry-run` CLI option to `add`, `commit`, `push`, `tag`, and `freeze`.
+- Dry-run mode now prints an execution preview (`dry_run=true`, `plan_actions`,
+  `plan_order`) and skips mutating client calls.
+- Added unit smoke coverage ensuring dry-run paths remain non-mutating for each
+  command.
 
 ### T37 — Architectural Positioning Documentation (Medium)
 **Type**: Documentation / Identity  

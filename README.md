@@ -206,18 +206,23 @@ pixi run cgitsync checkout feature/my-branch --gts .cgitsync/state/complexgitsyn
 
 # add
 pixi run cgitsync add --gts .cgitsync/state/complexgitsync.gts
+pixi run cgitsync add --gts .cgitsync/state/complexgitsync.gts --dry-run
 
 # commit -> git(tree, "commit", msg)
 pixi run cgitsync commit "feat: update project CGS#1" --gts .cgitsync/state/complexgitsync.gts
+pixi run cgitsync commit "feat: update project CGS#1" --gts .cgitsync/state/complexgitsync.gts --dry-run
 
 # push -> git(tree, "push"), updates hash in GitTree
 pixi run cgitsync push --gts .cgitsync/state/complexgitsync.gts
+pixi run cgitsync push --gts .cgitsync/state/complexgitsync.gts --dry-run
 
 # tag -> git(tree, "tag", name), updates tag in GitTree
 pixi run cgitsync tag v1.2.3 --gts .cgitsync/state/complexgitsync.gts
+pixi run cgitsync tag v1.2.3 --gts .cgitsync/state/complexgitsync.gts --dry-run
 
 # freeze -> .gts ++id
 pixi run cgitsync freeze release-2026.05 --gts .cgitsync/state/complexgitsync.gts
+pixi run cgitsync freeze release-2026.05 --gts .cgitsync/state/complexgitsync.gts --dry-run
 
 # validate-topology -> inspect branch alignment (exits 0 if coherent, 1 if not)
 pixi run cgitsync validate-topology --gts .cgitsync/state/complexgitsync.gts
@@ -230,6 +235,8 @@ CLI output is intentionally concise and explicit:
   `workflow=load->expand->validate->clone` during `initialise <spec>.cgs`)
 - prints explicit git commands for git actions (`git add`, `git commit`,
   `git push`, `git tag`, `git checkout`)
+- prints dry-run execution plans (`dry_run=true`, `plan_actions=...`,
+  `plan_order=...`) for `add|commit|push|tag|freeze --dry-run`
 - prints a minimal repo-only tree view (`project / parent / leaf`) for
   `initialise` flows
 
