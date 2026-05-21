@@ -1276,6 +1276,46 @@ class GitRunner:
         details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"
         raise GitSyncError(f"Git command failed ({command}): {details}")
 
+    def has_unresolved_merge(self, repo_path: Path | str) -> bool:
+        """Return ``True`` when *repo_path* has an in-progress merge conflict."""
+        completed = subprocess.run(
+            [self.executable, "rev-parse", "--verify", "--quiet", "MERGE_HEAD"],
+            cwd=str(repo_path),
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        if completed.returncode == 0:
+            return True
+        if completed.returncode == 1:
+            return False
+        command = f"{self.executable} rev-parse --verify --quiet MERGE_HEAD"
+        details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"
+        raise GitSyncError(f"Git command failed ({command}): {details}")
+
+    def branch_tracking_state(self, repo_path: Path | str) -> SyncState | None:
+        """Return upstream tracking state for the current branch in *repo_path*."""
+        upstream = subprocess.run(
+            [self.executable, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+            cwd=str(repo_path),
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        if upstream.returncode != 0:
+            return None
+        counts = self._run("rev-list", "--left-right", "--count", "HEAD...@{upstream}", cwd=repo_path)
+        ahead_raw, behind_raw = counts.stdout.strip().split()
+        ahead = int(ahead_raw)
+        behind = int(behind_raw)
+        if ahead and behind:
+            return SyncState.DIVERGED
+        if ahead:
+            return SyncState.AHEAD
+        if behind:
+            return SyncState.BEHIND
+        return SyncState.ALIGNED
+
     def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
         """Return ``True`` when *relative_path* is tracked as a git submodule."""
         result = self._run("ls-files", "--stage", "--", str(relative_path), cwd=repo_path)

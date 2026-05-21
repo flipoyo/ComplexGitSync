@@ -124,6 +124,14 @@ equivalence and raises
 \texttt{incompatibilities between branch (hash) and tag(val) in .cgs} when they
 differ.
 
+Before any mutating workflow step (\texttt{commit}, \texttt{push},
+\texttt{tag}, or \texttt{freeze}), the action layer now runs a workspace
+preflight validator. It checks dirty worktrees, detached HEADs, missing
+remotes, branch divergence, unresolved merges, missing submodule links, and
+stale recorded \texttt{commit\_sha} values. Diagnostics are severity-based:
+warnings report actionable-but-allowed states, while blocking errors stop the
+operation. \texttt{tag} still requires a clean worktree and a non-existing tag.
+
 \subsection*{Formal \texttt{.gts} snapshot specification (T31)}
 
 \texttt{.gts} now carries explicit schema and deterministic hash metadata in the

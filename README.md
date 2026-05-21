@@ -76,6 +76,13 @@ ComplexGitSync follows this simplified lifecycle:
 3. `checkout` / `add` / `commit` / `push` / `tag` — git operations on the tree
 4. `freeze` → emit the next `.gts` snapshot id and update the project-local `.lgr`
 
+Before `commit`, `push`, `tag`, and `freeze`, ComplexGitSync now runs a
+workspace preflight validation pass. It reports warnings for actionable states
+such as ahead branches or stale recorded snapshot SHAs, and blocks unsafe
+states such as detached HEADs, unresolved merges, missing remotes, branch
+divergence, or missing submodule links. `tag` additionally requires a clean
+workspace and a non-existing tag name.
+
 When a project has parents that cross-reference each other (e.g. parent A's
 nested `.cgs` lists parent B as a leaf), `expand` and `clone` automatically
 call `fix_circularities` to resolve the dependency graph into a valid DAG
@@ -113,8 +120,9 @@ repo, validation now checks hash compatibility and raises:
 `incompatibilities between branch (hash) and tag(val) in .cgs`
 when they do not resolve to the same commit.
 
-Roadmap follow-up work tracked in the repository includes the `.lgr` ledger
-evolution (`T32`) and related workflow hardening tickets.
+Roadmap follow-up work tracked in the repository now moves past the delivered
+`.lgr` ledger (`T32`) and workspace preflight validation engine (`T33`) toward
+deterministic freeze semantics and the remaining workflow-hardening tickets.
 
 ### 3.1 Python API
 

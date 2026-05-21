@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.cli import main as cli_main
+from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.git_repo import GitProvider, NodeType
 from ComplexGitSync.git_tree import TreeLifecycleState
 from ComplexGitSync.orchestre import ComplexGitSyncClient, GtsDocument
@@ -543,6 +544,18 @@ class TestGitCommandCycleIntegration:
         snapshot_path_parts = Path(lgr_data["register"]["current_snapshot_path"]).parts
         assert snapshot_path_parts[-3:] == (".cgitsync", "state", "demo.gts")
         assert len(lgr_data["snapshots"]) == 1
+
+    def test_tag_preflight_blocks_detached_head(self, ready_single_repo_snapshot):
+        repo = ready_single_repo_snapshot["repo"]
+        snapshot = ready_single_repo_snapshot["snapshot"]
+        head_sha = _run_git(repo, "rev-parse", "HEAD")
+        _run_git(repo, "checkout", "--detach", head_sha)
+
+        client = ComplexGitSyncClient()
+        client.load_gts(snapshot)
+
+        with pytest.raises(GitSyncError, match="detached HEAD state"):
+            client.tag("v0.4.0")
 
 
 class TestGtsSnapshotDeterminismIntegration:

@@ -142,6 +142,9 @@ Commits changes across the tree, leaf-first.  Loads the READY registry from
 \texttt{--gts}.  Repositories with no staged changes after the optional
 \texttt{git add --all} step (suppressed by \texttt{--no-stage}) are silently
 skipped. Requires a \texttt{READY} tree; the tree remains \texttt{READY} on success.
+Commit preflight now emits warnings for actionable workspace issues such as
+dirty worktrees, ahead branches, stale recorded \texttt{commit\_sha} values,
+or child repositories that are not linked as submodules.
 
 The commit message conventionally ends with \texttt{CGS\#VERSION}.
 
@@ -166,7 +169,10 @@ Pushes all repositories to their configured remotes, leaf-first.  Loads the
 READY registry from \texttt{--gts}.  Each repo is pushed to
 \texttt{entry.remote\_name} (defaulting to \texttt{"origin"}) on its currently
 resolved branch.  Refreshes the stored hash in \texttt{GitTree}.  Requires a
-\texttt{READY} tree; the tree remains \texttt{READY} on success.
+\texttt{READY} tree; the tree remains \texttt{READY} on success. Push preflight
+blocks detached HEADs, missing remotes, unresolved merges, behind/diverged
+branches, and missing submodule links; it warns when the local branch is ahead
+or when the loaded snapshot records an older \texttt{commit\_sha}.
 
 Also available via the unified \texttt{git()} Python API:
 
@@ -185,9 +191,10 @@ Creates and pushes the same tag across the full tree, leaf-first.  Loads the
 READY registry from \texttt{--gts}.  Refreshes the stored tag in
 \texttt{GitTree}.  Requires a \texttt{READY} tree and keeps the tree
 \texttt{READY} on success. Tag preflight requires clean worktrees, aligned
-branches, existing remotes, no pre-existing tag of the same name, and
-parent/child repositories linked as Git submodules. Tag creation is non-forcing
-by default (no implicit \texttt{-f}).
+branches, existing remotes, no pre-existing tag of the same name, no detached
+HEADs or unresolved merges, and parent/child repositories linked as Git
+submodules. Stale recorded \texttt{commit\_sha} values are reported as
+warnings. Tag creation is non-forcing by default (no implicit \texttt{-f}).
 
 Also available via the unified \texttt{git()} Python API:
 
@@ -206,8 +213,10 @@ Performs a release freeze across all repos, leaf-first: stage/commit,
 create+push the shared release tag, refresh SHA/state, and write a
 \texttt{.gts} snapshot. Loads the READY registry from \texttt{--gts}.
 Requires \texttt{READY} and leaves the tree \texttt{READY}. Freeze preflight
-checks remote availability, branch alignment, tag absence, and submodule links
-for all parent/child repository boundaries.
+checks remote availability, branch alignment, detached HEADs, unresolved
+merges, tag absence, and submodule links for all parent/child repository
+boundaries. Dirty worktrees and stale recorded \texttt{commit\_sha} values are
+reported as warnings because freeze will stage, commit, and snapshot them.
 
 Also available via the Python API:
 
