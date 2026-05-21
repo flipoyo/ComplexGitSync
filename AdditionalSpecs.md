@@ -238,6 +238,10 @@ Do **not** split it into plugins or separate packages.
 - `document.snapshot_hash` is the SHA-256 digest of the canonical payload
   (`project`, `tree_state`, and sorted `repo_state`), excluding volatile
   metadata (`generated_at`, `command_origin`).
+- freeze snapshots (`document.command_origin` in `freeze`, `freeze_release`,
+  `freeze_state`) must include `[freeze_manifest]` with invariant markers:
+  immutable snapshot, validated workspace, synchronized tag reference,
+  ledger checkpoint, and restore operation `launch_state`.
 - Canonical ordering is deterministic: repositories are serialized in stable
   absolute-path/name order, and non-root entries must include
   `parent_absolute_path`.
@@ -275,6 +279,8 @@ The canonical user-facing lifecycle contract is:
 
 4. `freeze` → emit the next `.gts` id
    - `client.freeze("release-2026.05")`
+   - freeze snapshots include deterministic `freeze_manifest` invariants and are
+     restored through `launch_state(<snapshot.gts>)`
 
 Python API power users:
 

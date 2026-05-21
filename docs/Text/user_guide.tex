@@ -217,6 +217,10 @@ checks remote availability, branch alignment, detached HEADs, unresolved
 merges, tag absence, and submodule links for all parent/child repository
 boundaries. Dirty worktrees and stale recorded \texttt{commit\_sha} values are
 reported as warnings because freeze will stage, commit, and snapshot them.
+Freeze snapshots also include a deterministic \texttt{freeze\_manifest} section
+that records freeze invariants (immutable snapshot, validated workspace,
+synchronized tag, ledger checkpoint) and declares \texttt{launch\_state} as the
+canonical restore operation.
 
 Also available via the Python API:
 

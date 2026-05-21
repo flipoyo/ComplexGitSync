@@ -520,6 +520,11 @@ class TestGtsDocumentInvalid:
         assert digest != "f" * 64
         self._assert_validation_error(bad, "snapshot_hash does not match")
 
+    def test_freeze_origin_requires_freeze_manifest(self):
+        data = copy.deepcopy(MINIMAL_GTS)
+        data["document"]["command_origin"] = "freeze_release"
+        self._assert_validation_error(data, "freeze_manifest")
+
 
 # ===========================================================================
 # GocDocument
