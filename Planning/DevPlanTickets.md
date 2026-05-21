@@ -356,8 +356,8 @@ changes and hash drift on workspace mutations.
 ## Remaining Tickets
 
 ### Ticket numbering rule (single merged plan)
-- Closed tickets now run sequentially from **T00** through **T32**.
-- Completed roadmap continuation tickets now continue as **T28** through **T32**.
+- Closed tickets now run sequentially from **T00** through **T34**.
+- Completed roadmap continuation tickets now continue as **T28** through **T34**.
 - Remaining open roadmap tickets continue as **T35** through **T37**.
 
 ### T32 — `.lgr` Local Sync Ledger (High) ✅
