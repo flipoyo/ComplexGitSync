@@ -24,6 +24,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     # Secondary / inspection commands
     "print": "Print a .cgs or .gts lifecycle summary.",
     "describe": "Describe a .cgs or .gts input (alias for print).",
+    "validate-topology": "Inspect and report the workspace branch topology alignment.",
     # Compatibility / advanced commands
     "clone": "Clone a nested project tree from .cgs (use initialise instead).",
     "restart": "Resynchronize a loaded project tree (alias for pull).",
@@ -198,6 +199,14 @@ def build_parser() -> argparse.ArgumentParser:
         elif command_name == "launch-state":
             subparser.add_argument("snapshot", help="Path to the .gts snapshot to launch the internal state from.")
             subparser.set_defaults(handler=_handle_launch_state)
+        elif command_name == "validate-topology":
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                required=True,
+                help="Path to the .gts snapshot that holds the registry.",
+            )
+            subparser.set_defaults(handler=_handle_validate_topology)
         else:
             subparser.set_defaults(handler=_not_implemented)
 
@@ -397,6 +406,14 @@ def _handle_launch_state(args: argparse.Namespace) -> int:
         command_name="launch-state",
         source=Path(args.snapshot),
         runner=lambda client, source: _execute_launch_state(client, source),
+    )
+
+
+def _handle_validate_topology(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="validate-topology",
+        source=Path(args.gts),
+        runner=lambda client, source: _execute_validate_topology(client, source),
     )
 
 
@@ -716,6 +733,16 @@ def _execute_launch_state(
         f"root={registry.get('root').absolute_path}"
     )
     return 0
+
+
+def _execute_validate_topology(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    report = client.validate_branch_topology()
+    print(report.format())
+    return 0 if report.is_coherent else 1
 
 
 def _run_with_logging(

@@ -15,6 +15,11 @@ Free functions exported here (Tier 2 — Actions):
     push_tree                 Push all repos to their remotes, leaf-first
     tag_tree                  Create and push a shared tag, leaf-first
     freeze_release_tree       Commit, tag, and push a shared release tag, leaf-first
+    validate_branch_topology  Inspect branch topology and return a topology report
+
+Data classes exported here (Tier 2 — Actions):
+    BranchTopologyConflict    A single branch alignment conflict in the workspace
+    BranchTopologyReport      Full workspace branch topology inspection report
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pathlib import Path
 
@@ -398,6 +403,218 @@ def freeze_release_tree(
         entry.fallback_reason = None
 
     registry.recompute_tree_state()
+
+
+# ---------------------------------------------------------------------------
+# validate_branch_topology — Tier 2 inspection function
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class BranchTopologyConflict:
+    """A single branch alignment conflict in the workspace topology.
+
+    Produced by :func:`validate_branch_topology` for each repository that
+    deviates from the expected branch topology.
+    """
+
+    repo_name: str
+    """Name of the repository with the conflict."""
+
+    expected_branch: str | None
+    """The reference branch (root's active branch), or ``None`` if unknown."""
+
+    actual_branch: str | None
+    """The repository's current branch, or ``None`` when detached HEAD."""
+
+    conflict_kind: Literal[
+        "misaligned_branch", "detached_head", "tag_divergence", "missing_root"
+    ]
+    """Conflict classification.
+
+    One of:
+
+    ``"misaligned_branch"``
+        The repository is on a different branch than the root.
+    ``"detached_head"``
+        The repository is in detached HEAD state without a tag reference.
+    ``"tag_divergence"``
+        The repository is on a tag (allowed divergence — frozen state).
+    ``"missing_root"``
+        The registry has no root entry; topology cannot be determined.
+    """
+
+
+@dataclass
+class BranchTopologyReport:
+    """Workspace branch topology inspection report.
+
+    Produced by :func:`validate_branch_topology`.  The report is deterministic
+    for a given workspace state: the same tree in the same branch configuration
+    always produces an identical report.
+
+    Branch Topology Propagation Rules (T35)
+    ----------------------------------------
+    1. **Reference branch**: The root repository's current branch is the
+       canonical reference.  All other repositories must match it.
+    2. **Leaf-to-root inheritance**: Branch targeting flows root-first via
+       :func:`propagate_global_branch` and :func:`create_global_branch`.
+       This function verifies that the resulting on-disk state is coherent.
+    3. **Allowed divergence**: Repositories whose ``resolved_ref_kind`` is
+       ``TAG`` are flagged as ``tag_divergence`` but do not make the topology
+       incoherent — they represent frozen (released) state.
+    4. **Incoherent states**:
+       - ``misaligned_branch``: repo is on a different branch than root.
+       - ``detached_head``: repo is in detached HEAD state without a known
+         tag reference.
+    """
+
+    reference_branch: str | None
+    """The root repository's active branch; the expected branch for all repos."""
+
+    is_coherent: bool
+    """``True`` when all repositories are on the reference branch or in an allowed tag state.
+
+    Tag-divergent entries are considered allowed divergence and do not make the
+    topology incoherent.  A topology is incoherent when at least one repository
+    is on a different branch from the root, or is in an unexpected detached HEAD
+    state.
+    """
+
+    conflicts: list[BranchTopologyConflict]
+    """All detected branch alignment conflicts, one entry per repository."""
+
+    repo_branches: dict[str, str | None]
+    """Per-repository current branch snapshot: ``{repo_name: current_branch}``.
+
+    ``None`` values indicate a detached HEAD state.  The dict is ordered in
+    parent-first traversal order (root first, then direct children, then their
+    descendants) for deterministic output.
+    """
+
+    def format(self) -> str:
+        """Return a deterministic human-readable summary of the topology report."""
+        lines: list[str] = []
+        ref = self.reference_branch if self.reference_branch is not None else "(none)"
+        status = "coherent" if self.is_coherent else "incoherent"
+        lines.append(f"branch topology: {status} (reference={ref!r})")
+        for repo_name, branch in self.repo_branches.items():
+            branch_str = branch if branch is not None else "(detached)"
+            lines.append(f"  {repo_name}: {branch_str!r}")
+        if self.conflicts:
+            lines.append("conflicts:")
+            for c in self.conflicts:
+                actual = c.actual_branch if c.actual_branch is not None else "(detached)"
+                expected = c.expected_branch if c.expected_branch is not None else "(none)"
+                lines.append(
+                    f"  [{c.conflict_kind}] {c.repo_name}: "
+                    f"expected={expected!r} actual={actual!r}"
+                )
+        return "\n".join(lines)
+
+
+def validate_branch_topology(
+    registry: DependencyTreeRegistry,
+    git_runner: "GitRunner",
+) -> BranchTopologyReport:
+    """Inspect and validate the workspace branch topology.
+
+    Walks the dependency tree and reports whether every repository is on the
+    same branch as the root (or in an expected tag/frozen state).  The result
+    is deterministic for the same workspace state: this function does not
+    mutate the registry or issue any git write commands.
+
+    Branch Topology Propagation Rules (T35)
+    ----------------------------------------
+    1. **Reference branch**: The root repository's current branch is the
+       canonical reference.  All other repositories must match it.
+    2. **Leaf-to-root inheritance**: Branch targeting flows root-first via
+       :func:`propagate_global_branch` and :func:`create_global_branch`.
+       This function verifies that the resulting on-disk state is coherent.
+    3. **Allowed divergence**: Repositories whose ``resolved_ref_kind`` is
+       ``TAG`` are flagged as ``tag_divergence`` but do not make the topology
+       incoherent — they represent frozen (released) state.
+    4. **Incoherent states** (blocking conflicts):
+       - ``misaligned_branch``: repo is on a different branch than root.
+       - ``detached_head``: repo is in detached HEAD state without a known
+         tag reference.
+
+    Parameters
+    ----------
+    registry:
+        The runtime dependency tree registry.
+    git_runner:
+        The git subprocess wrapper used to read live branch state.
+
+    Returns
+    -------
+    BranchTopologyReport
+        A deterministic, inspectable snapshot of the workspace branch topology.
+    """
+    if "root" not in registry.entries:
+        return BranchTopologyReport(
+            reference_branch=None,
+            is_coherent=False,
+            conflicts=[
+                BranchTopologyConflict(
+                    repo_name="registry",
+                    expected_branch=None,
+                    actual_branch=None,
+                    conflict_kind="missing_root",
+                )
+            ],
+            repo_branches={},
+        )
+
+    root = registry.get("root")
+    reference_branch = git_runner.current_branch(root.absolute_path)
+
+    conflicts: list[BranchTopologyConflict] = []
+    repo_branches: dict[str, str | None] = {}
+
+    for entry in iter_tree(registry):
+        current = git_runner.current_branch(entry.absolute_path)
+        repo_branches[entry.name] = current
+
+        if current is None:
+            # Detached HEAD: allowed only when the entry carries a tag reference
+            kind = (
+                "tag_divergence"
+                if entry.resolved_ref_kind == RefKind.TAG
+                else "detached_head"
+            )
+            conflicts.append(
+                BranchTopologyConflict(
+                    repo_name=entry.name,
+                    expected_branch=reference_branch,
+                    actual_branch=None,
+                    conflict_kind=kind,
+                )
+            )
+        elif reference_branch is not None and current != reference_branch:
+            kind = (
+                "tag_divergence"
+                if entry.resolved_ref_kind == RefKind.TAG
+                else "misaligned_branch"
+            )
+            conflicts.append(
+                BranchTopologyConflict(
+                    repo_name=entry.name,
+                    expected_branch=reference_branch,
+                    actual_branch=current,
+                    conflict_kind=kind,
+                )
+            )
+
+    _blocking_kinds = {"misaligned_branch", "detached_head", "missing_root"}
+    is_coherent = not any(c.conflict_kind in _blocking_kinds for c in conflicts)
+
+    return BranchTopologyReport(
+        reference_branch=reference_branch,
+        is_coherent=is_coherent,
+        conflicts=conflicts,
+        repo_branches=repo_branches,
+    )
 
 
 # ---------------------------------------------------------------------------

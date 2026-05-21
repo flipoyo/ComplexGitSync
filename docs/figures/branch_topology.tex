@@ -1,0 +1,74 @@
+% branch_topology.tex — TikZ figure illustrating T35 branch topology propagation rules.
+% Shows root-first branch inheritance and allowed tag divergence.
+
+\begin{tikzpicture}[
+  reponode/.style={
+    rectangle, rounded corners=3pt,
+    minimum width=3.6cm, minimum height=0.9cm,
+    draw, thick, align=center,
+    font=\ttfamily\footnotesize,
+    inner sep=4pt,
+  },
+  alignednode/.style={reponode, fill=blue!12, draw=blue!50},
+  tagnode/.style={reponode, fill=orange!12, draw=orange!40},
+  misalignednode/.style={reponode, fill=red!12, draw=red!50},
+  treearrow/.style={-{Stealth[length=5pt]}, thick, gray!60},
+  rularrow/.style={-{Stealth[length=5pt]}, dashed, thick, teal!60},
+  label/.style={font=\sffamily\scriptsize\itshape, text=gray!65},
+  conflictlabel/.style={font=\sffamily\scriptsize\bfseries, text=red!70},
+]
+
+% Root node
+\node[alignednode] (root) at (0,0) {
+  \textbf{root}\\branch = \texttt{main}
+};
+
+% Aligned child
+\node[alignednode] (child1) at (-3.5,-2.5) {
+  \textbf{parent-A}\\branch = \texttt{main}
+};
+
+% Tag-divergent child (allowed)
+\node[tagnode] (child2) at (0,-2.5) {
+  \textbf{lib-B}\\ref = \texttt{v1.2.3} (tag)
+};
+
+% Misaligned child (conflict)
+\node[misalignednode] (child3) at (3.5,-2.5) {
+  \textbf{leaf-C}\\branch = \texttt{hotfix}
+};
+
+% Aligned leaf under parent-A
+\node[alignednode] (leaf1) at (-3.5,-5) {
+  \textbf{docs}\\branch = \texttt{main}
+};
+
+% Tree edges
+\draw[treearrow] (root.south) -- (child1.north);
+\draw[treearrow] (root.south) -- (child2.north);
+\draw[treearrow] (root.south) -- (child3.north);
+\draw[treearrow] (child1.south) -- (leaf1.north);
+
+% Branch-propagation arrows (rule 1 & 2)
+\draw[rularrow] (root.west) -- ++(-0.6,0) |- (child1.west)
+  node[pos=0.5, left, label] {inherits \texttt{main}};
+\draw[rularrow] (root.east) -- ++(0.6,0) |- (child3.east)
+  node[pos=0.5, right, conflictlabel] {expects \texttt{main}};
+
+% Conflict indicator
+\node[conflictlabel, below=0.15cm of child3] {[misaligned\_branch]};
+\node[label, below=0.15cm of child2] {[tag\_divergence] — allowed};
+
+% Legend
+\node[alignednode, minimum width=2.4cm, minimum height=0.6cm]
+    (leg1) at (-4,-6.5) {\textbf{coherent}};
+\node[tagnode, minimum width=2.4cm, minimum height=0.6cm]
+    (leg2) at (-1,-6.5) {\textbf{tag}};
+\node[misalignednode, minimum width=2.4cm, minimum height=0.6cm]
+    (leg3) at (2,-6.5) {\textbf{conflict}};
+
+\node[font=\sffamily\scriptsize, above=0.08cm of leg1] {Aligned (coherent)};
+\node[font=\sffamily\scriptsize, above=0.08cm of leg2] {Tag-divergent (allowed)};
+\node[font=\sffamily\scriptsize, above=0.08cm of leg3] {Misaligned (blocking)};
+
+\end{tikzpicture}

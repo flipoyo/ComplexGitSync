@@ -122,9 +122,16 @@ repo, validation now checks hash compatibility and raises:
 when they do not resolve to the same commit.
 
 Roadmap follow-up work tracked in the repository now moves past the delivered
-`.lgr` ledger (`T32`), workspace preflight validation engine (`T33`), and
-deterministic freeze semantics (`T34`) toward the remaining workflow-hardening
-tickets.
+`.lgr` ledger (`T32`), workspace preflight validation engine (`T33`),
+deterministic freeze semantics (`T34`), and branch topology propagation
+rules (`T35`) toward the remaining workflow-hardening tickets.
+
+`validate_branch_topology(registry, git_runner)` (T35) formalises coherent
+multi-repository branch propagation: the root's active branch is the reference;
+all repos must match it, unless they carry a tag reference (frozen state).
+The result is a `BranchTopologyReport` — a deterministic, inspectable snapshot
+exposing `is_coherent`, per-repo `repo_branches`, and any `conflicts`
+categorised as `misaligned_branch`, `detached_head`, or `tag_divergence`.
 
 ### 3.1 Python API
 
@@ -170,6 +177,11 @@ client.git(registry, "tag", "v1.2.3")
 # freeze -> .gts ++id
 client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
 
+# validate branch topology -> BranchTopologyReport
+report = client.validate_branch_topology()
+print(report.format())    # human-readable: coherent/incoherent, per-repo branches, conflicts
+assert report.is_coherent # True when all repos are on the same branch
+
 # execute a .goc orchestration plan
 client.orchestrate("examples/deploy.goc")
 ```
@@ -206,6 +218,9 @@ pixi run cgitsync tag v1.2.3 --gts .cgitsync/state/complexgitsync.gts
 
 # freeze -> .gts ++id
 pixi run cgitsync freeze release-2026.05 --gts .cgitsync/state/complexgitsync.gts
+
+# validate-topology -> inspect branch alignment (exits 0 if coherent, 1 if not)
+pixi run cgitsync validate-topology --gts .cgitsync/state/complexgitsync.gts
 ```
 
 CLI output is intentionally concise and explicit:

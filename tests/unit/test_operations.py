@@ -19,6 +19,8 @@ from ComplexGitSync.git_repo import (
 )
 from ComplexGitSync.git_tree import DependencyTreeRegistry, GitTree, TreeLifecycleState
 from ComplexGitSync.operations import (
+    BranchTopologyConflict,
+    BranchTopologyReport,
     add_tree,
     branch_tree,
     checkout_tree,
@@ -29,6 +31,7 @@ from ComplexGitSync.operations import (
     push_tree,
     restart_tree,
     tag_tree,
+    validate_branch_topology,
 )
 from ComplexGitSync.orchestre import ComplexGitSyncClient, GitRunner
 
@@ -1390,3 +1393,189 @@ def test_client_launch_state_loads_gts_clones_and_checks_out(tmp_path):
     assert len(runner.cloned) == len(result.values())
     assert len(runner.checked_out) == len(result.values())
     assert result.recompute_tree_state() == TreeLifecycleState.READY
+
+
+# ---------------------------------------------------------------------------
+# validate_branch_topology
+# ---------------------------------------------------------------------------
+
+
+def test_validate_branch_topology_coherent_tree(tmp_path):
+    """All repos on the same branch → coherent, no conflicts."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    # Default: current_branch returns "main" for all repos
+
+    report = validate_branch_topology(registry, runner)
+
+    assert report.is_coherent is True
+    assert report.reference_branch == "main"
+    assert report.conflicts == []
+    assert set(report.repo_branches.keys()) == {"project", "leaf"}
+    assert all(b == "main" for b in report.repo_branches.values())
+
+
+def test_validate_branch_topology_misaligned_branch(tmp_path):
+    """A repo on a different branch than root → misaligned_branch conflict."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+    runner._current_branches[leaf_path] = "feature-x"
+
+    report = validate_branch_topology(registry, runner)
+
+    assert report.is_coherent is False
+    assert report.reference_branch == "main"
+    assert len(report.conflicts) == 1
+    conflict = report.conflicts[0]
+    assert conflict.repo_name == "leaf"
+    assert conflict.expected_branch == "main"
+    assert conflict.actual_branch == "feature-x"
+    assert conflict.conflict_kind == "misaligned_branch"
+
+
+def test_validate_branch_topology_detached_head_is_blocking(tmp_path):
+    """A repo in detached HEAD state without a tag reference → detached_head conflict."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+    runner._current_branches[leaf_path] = None  # detached
+
+    report = validate_branch_topology(registry, runner)
+
+    assert report.is_coherent is False
+    assert len(report.conflicts) == 1
+    conflict = report.conflicts[0]
+    assert conflict.repo_name == "leaf"
+    assert conflict.actual_branch is None
+    assert conflict.conflict_kind == "detached_head"
+
+
+def test_validate_branch_topology_tag_divergence_is_allowed(tmp_path):
+    """A repo on a tag (resolved_ref_kind=TAG) → tag_divergence, topology still coherent."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    leaf_entry = registry.get("root:deps/leaf")
+    leaf_entry.resolved_ref_kind = RefKind.TAG
+    leaf_path = leaf_entry.absolute_path
+    runner._current_branches[leaf_path] = None  # detached (on tag)
+
+    report = validate_branch_topology(registry, runner)
+
+    assert report.is_coherent is True  # tag divergence is allowed
+    assert len(report.conflicts) == 1
+    conflict = report.conflicts[0]
+    assert conflict.conflict_kind == "tag_divergence"
+    assert conflict.repo_name == "leaf"
+
+
+def test_validate_branch_topology_tag_divergence_on_different_branch(tmp_path):
+    """A tag-state repo on a named branch still produces tag_divergence (non-blocking)."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    leaf_entry = registry.get("root:deps/leaf")
+    leaf_entry.resolved_ref_kind = RefKind.TAG
+    leaf_path = leaf_entry.absolute_path
+    runner._current_branches[leaf_path] = "v1.0.0"
+
+    report = validate_branch_topology(registry, runner)
+
+    assert report.is_coherent is True
+    assert report.conflicts[0].conflict_kind == "tag_divergence"
+
+
+def test_validate_branch_topology_repo_branches_map(tmp_path):
+    """repo_branches maps repo names to their current branches."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    root_path = registry.get("root").absolute_path
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+    runner._current_branches[root_path] = "develop"
+    runner._current_branches[leaf_path] = "develop"
+
+    report = validate_branch_topology(registry, runner)
+
+    assert report.repo_branches == {"project": "develop", "leaf": "develop"}
+    assert report.is_coherent is True
+
+
+def test_validate_branch_topology_format_coherent(tmp_path):
+    """format() on a coherent tree produces expected text."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    report = validate_branch_topology(registry, runner)
+    output = report.format()
+
+    assert "branch topology: coherent" in output
+    assert "reference='main'" in output
+    assert "project" in output
+    assert "leaf" in output
+    assert "conflicts:" not in output
+    assert len(report.conflicts) == 0
+
+
+def test_validate_branch_topology_format_incoherent(tmp_path):
+    """format() on an incoherent tree shows conflicts section."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+    runner._current_branches[leaf_path] = "hotfix"
+
+    report = validate_branch_topology(registry, runner)
+    output = report.format()
+
+    assert "branch topology: incoherent" in output
+    assert "conflicts:" in output
+    assert "[misaligned_branch]" in output
+    assert "leaf" in output
+
+
+def test_validate_branch_topology_missing_root(tmp_path):
+    """Registry with no root → missing_root conflict, incoherent."""
+    registry = DependencyTreeRegistry()
+    runner = _FakeGitRunnerForOperations()
+
+    report = validate_branch_topology(registry, runner)
+
+    assert report.is_coherent is False
+    assert report.reference_branch is None
+    assert len(report.conflicts) == 1
+    assert report.conflicts[0].conflict_kind == "missing_root"
+    assert report.repo_branches == {}
+
+
+def test_validate_branch_topology_deep_hierarchy(tmp_path):
+    """All three repos aligned → coherent on a 3-level tree."""
+    registry = _make_deep_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    # Default current_branch returns "main" for all
+
+    report = validate_branch_topology(registry, runner)
+
+    assert report.is_coherent is True
+    assert len(report.conflicts) == 0
+    assert set(report.repo_branches.keys()) == {"deep", "middle", "sub"}
+
+
+def test_client_validate_branch_topology_returns_report(tmp_path):
+    """ComplexGitSyncClient.validate_branch_topology() delegates to the operation."""
+    client, runner = _make_client_with_ready_registry(tmp_path)
+
+    report = client.validate_branch_topology()
+
+    assert isinstance(report, BranchTopologyReport)
+    assert report.is_coherent is True
+    assert report.reference_branch == "main"
+
+
+def test_client_validate_branch_topology_detects_misalignment(tmp_path):
+    """Client method surfaces conflicts when a repo is misaligned."""
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    leaf_path = client.registry.get("root:deps/leaf").absolute_path
+    runner._current_branches[leaf_path] = "different-branch"
+
+    report = client.validate_branch_topology()
+
+    assert report.is_coherent is False
+    assert any(c.conflict_kind == "misaligned_branch" for c in report.conflicts)

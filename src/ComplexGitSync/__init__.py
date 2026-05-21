@@ -32,6 +32,8 @@ from .git_tree import (
 
 # --- Tier 2 — Actions (operations.py) ---
 from .operations import (
+    BranchTopologyConflict,
+    BranchTopologyReport,
     add_tree,
     checkout_tree,
     commit_tree,
@@ -40,6 +42,7 @@ from .operations import (
     propagate_global_branch,
     push_tree,
     tag_tree,
+    validate_branch_topology,
 )
 
 # --- Tier 2/3 — Actions + Client (orchestre.py) ---
@@ -82,12 +85,15 @@ __all__ = [
     # operations.py
     "checkout_tree",
     "add_tree",
+    "BranchTopologyConflict",
+    "BranchTopologyReport",
     "commit_tree",
     "create_global_branch",
     "freeze_release_tree",
     "propagate_global_branch",
     "push_tree",
     "tag_tree",
+    "validate_branch_topology",
     # orchestre.py
     "CgsDocument",
     "ComplexGitSyncClient",

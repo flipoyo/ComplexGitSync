@@ -87,6 +87,10 @@ from .git_tree import (
     register_relative_path,
     topological_sort as _topological_sort,
 )
+from .operations import (
+    validate_branch_topology as _validate_branch_topology,
+    BranchTopologyReport,
+)
 
 # ============================================================
 #  Document layer — ConfigDocument base + subclasses
@@ -2864,6 +2868,50 @@ class ComplexGitSyncClient:
             Path to the project-local ``.lgr`` register file.
         """
         return SyncLedger(register_path).replay()
+
+    def validate_branch_topology(self) -> BranchTopologyReport:
+        """Inspect and validate the workspace branch topology.
+
+        Reports whether all repositories are on the same branch as the root,
+        categorises any divergence (allowed tag-divergence vs blocking
+        misalignment), and returns a deterministic inspectable report.
+
+        The registry must be loaded (any lifecycle state), but does not need
+        to be ``READY``.  This method does not mutate the registry and issues
+        no git write commands.
+
+        Branch Topology Propagation Rules (T35)
+        ----------------------------------------
+        1. **Reference branch**: The root repository's current branch is the
+           canonical reference for all repos in the tree.
+        2. **Leaf-to-root inheritance**: Branch targeting flows root-first via
+           :func:`~ComplexGitSync.operations.propagate_global_branch` and
+           :func:`~ComplexGitSync.operations.create_global_branch`.  This
+           method verifies that the on-disk state is coherent with that rule.
+        3. **Allowed divergence**: Repos whose ``resolved_ref_kind`` is
+           ``TAG`` are flagged as ``tag_divergence`` but are considered
+           non-blocking — they represent a frozen (released) state.
+        4. **Incoherent states**: A repo on a different branch from the root
+           (``misaligned_branch``) or in an unexpected detached HEAD state
+           (``detached_head``) makes the topology incoherent.
+
+        Returns
+        -------
+        BranchTopologyReport
+            A deterministic, inspectable snapshot of the workspace branch
+            topology.  Call :meth:`~BranchTopologyReport.format` to render
+            a human-readable summary.
+        """
+        registry = self.get_dependency_registry()
+        self._log_event("validate_branch_topology_start")
+        report = _validate_branch_topology(registry, self.git_runner)
+        self._log_event(
+            "validate_branch_topology_end",
+            reference_branch=report.reference_branch,
+            is_coherent=report.is_coherent,
+            conflict_count=len(report.conflicts),
+        )
+        return report
 
     def _resolve_project_root(
         self,
