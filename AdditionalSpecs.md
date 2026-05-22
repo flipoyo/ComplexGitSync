@@ -218,6 +218,8 @@ that both extraction modes resolve to the same hash; otherwise it raises:
   fallback decision, and `.gts` write/load.
 - Exposes both rich tree rendering (`format_project_tree`) and minimalist
   repo-outline rendering (`format_repo_tree`).
+- Exposes terminal observability views: `view_tree` (topology + branch/local/sync)
+  and `view_operation` (tabular runtime state).
 
 `Orchestre` is the coordination layer between the Client and the `GitTree`.
 The CLI (`cli.py`) maps terminal sub-commands to Client method calls

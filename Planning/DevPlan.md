@@ -61,6 +61,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T35 | Branch Topology Propagation Rules | ✅ Done |
 | T36 | CLI Dry-Run Mode | ✅ Done |
 | T37 | Architectural Positioning Documentation | ✅ Done |
+| T38 | Terminal Visualisation Views (`view_tree`, `view_operation`) | ✅ Done |
 
 ## Project State
 
@@ -125,6 +126,9 @@ the unit level, and documented.
   `README.md`, and `docs/Text/architecture.tex` (Git DAG vs GitTree DAG,
   deterministic `.gts` checkpoints, `.lgr` replay ledger, local tangle
   normalized to DAG).
+- T38: CLI now exposes `view-tree` / `view_tree` and
+  `view-operation` / `view_operation` terminal views for topology and runtime
+  observability; `view-tree` supports `--depth` and repeatable `--collapse`.
 - T35: `validate_branch_topology(registry, git_runner)` formalises branch topology propagation rules: root's current branch is the reference; all repos must match it or carry a tag reference. Returns a `BranchTopologyReport` with `is_coherent`, `repo_branches`, and `conflicts` categorised as `misaligned_branch`, `detached_head`, or `tag_divergence`. Exposed via `ComplexGitSyncClient.validate_branch_topology()` and the `validate-topology --gts <file>` CLI command (exits 0 if coherent, 1 if not).
 - `print` and `pull` lifecycle methods are wired in both Python API and CLI; `describe` and `restart` remain compatibility aliases.
 - Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.

@@ -243,6 +243,67 @@ commit_sha = "abc123"
     assert '"is_ready": true' in captured.out
 
 
+def test_view_tree_command_supports_gts_and_render_options(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def view_tree(self, *, depth=None, collapse=()):
+            captured_call["depth"] = depth
+            captured_call["collapse"] = collapse
+            return "ROOT demo [main] clean synced"
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(
+        ["view_tree", str(gts_path), "--depth", "1", "--collapse", "deps", "--collapse", "plugins"]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["gts_path"] == gts_path.resolve()
+    assert captured_call["depth"] == 1
+    assert captured_call["collapse"] == ("deps", "plugins")
+    assert "ROOT demo [main] clean synced" in captured.out
+
+
+def test_view_operation_command_supports_cgs_runtime_loading(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_runtime_or_cgs(self, path, *, discover_nested=False):
+            captured_call["source"] = Path(path)
+            captured_call["discover_nested"] = discover_nested
+
+        def view_operation(self):
+            return (
+                "REPOSITORY  BRANCH  LOCAL_STATE  SYNC_STATE\n"
+                "--------------------------------------------\n"
+                "demo        main    clean        synced"
+            )
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    cgs_path = tmp_path / "project.cgs"
+    cgs_path.touch()
+    exit_code = main(["view_operation", str(cgs_path), "--discover-nested"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["source"] == cgs_path.resolve()
+    assert captured_call["discover_nested"] is True
+    assert "REPOSITORY" in captured.out
+    assert "SYNC_STATE" in captured.out
+
+
 def test_clone_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 

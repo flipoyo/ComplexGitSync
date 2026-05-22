@@ -526,6 +526,33 @@ def test_minimal_repo_tree_rendering_is_project_parent_leaf(tmp_path):
     assert "└──" in rendered_tree
 
 
+def test_view_tree_rendering_supports_depth_and_collapse(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    client = ComplexGitSyncClient()
+    client.load_cgs(config_path)
+
+    rendered_tree = client.view_tree(depth=1, collapse=("child-repo",))
+
+    assert rendered_tree.startswith("ROOT demo [")
+    assert "dirty blocked" in rendered_tree
+    assert "child-repo [" in rendered_tree
+    assert "└── child-repo" in rendered_tree
+
+
+def test_view_operation_rendering_contains_required_columns(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    client = ComplexGitSyncClient()
+    client.load_cgs(config_path)
+
+    rendered_operation = client.view_operation()
+
+    assert "REPOSITORY" in rendered_operation
+    assert "BRANCH" in rendered_operation
+    assert "LOCAL_STATE" in rendered_operation
+    assert "SYNC_STATE" in rendered_operation
+    assert "demo" in rendered_operation
+
+
 def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
     config_path = _write_clone_ready_cgs(tmp_path)
     fake_runner = _FakeGitRunner(

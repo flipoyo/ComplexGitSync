@@ -358,6 +358,13 @@ pixi run cgitsync pull examples/complexgitsync.cgs
 # print(.gts)
 pixi run cgitsync print .cgitsync/state/complexgitsync.gts
 
+# view_tree(.cgs/.gts) -> topology + branch/local/sync state
+pixi run cgitsync view_tree examples/complexgitsync.cgs
+pixi run cgitsync view_tree .cgitsync/state/complexgitsync.gts --depth 2 --collapse parent_2
+
+# view_operation(.cgs/.gts) -> runtime operation table
+pixi run cgitsync view_operation .cgitsync/state/complexgitsync.gts
+
 # checkout
 pixi run cgitsync checkout feature/my-branch --gts .cgitsync/state/complexgitsync.gts
 
