@@ -1,6 +1,6 @@
 """ComplexGitSync package: deterministic distributed workspace synchronization over Git trees."""
 
-__version__ = "0001.45"
+__version__ = "0001.46"
 
 # --- Tier 1 — Core State (git_repo.py) ---
 from .git_repo import (
