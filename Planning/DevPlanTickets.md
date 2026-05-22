@@ -358,7 +358,7 @@ changes and hash drift on workspace mutations.
 ### Ticket numbering rule (single merged plan)
 - Closed tickets now run sequentially from **T00** through **T34**.
 - Completed roadmap continuation tickets now continue as **T28** through **T34**.
-- Remaining open roadmap tickets have been closed through **T37**.
+- Remaining open roadmap tickets have been closed through **T38**.
 
 ### T32 — `.lgr` Local Sync Ledger (High) ✅
 **Type**: Architecture / Traceability  
@@ -530,3 +530,32 @@ manifest content in emitted `.gts` files.
   from the architecture chapter.
 - Completed an external compatibility check against `DevSpecs.md` and added
   security follow-up ticket proposals to `audit.md`.
+
+### T38 — Terminal Visualisation Views (`view_tree`, `view_operation`) (Medium)
+**Type**: UX / Observability  
+**Problem**: Users need deterministic terminal-native observability over both tree topology and runtime sync state.  
+**Legacy linkage**: Extends T11 tree inspection with branch/local/sync operational views.
+**Objectives**:
+- Add canonical terminal commands for topology and operation views.
+**Tasks**:
+- Add CLI commands:
+  - `view-tree` / `view_tree`,
+  - `view-operation` / `view_operation`.
+- Ensure `view-tree` supports deterministic rendering, depth limiting, and subtree collapse.
+- Ensure `view-operation` renders required columns:
+  - repository,
+  - branch,
+  - local state,
+  - synchronization state.
+**Acceptance Criteria**:
+- Both views render from either `.cgs` or `.gts` source paths in terminal.
+- Output remains deterministic and readable for large trees.
+**Status**: ✅ Done
+
+**Implementation notes**:
+- Added `ComplexGitSyncClient.view_tree(...)` and `ComplexGitSyncClient.view_operation()`
+  backed by new renderers in `git_tree.py`.
+- Added CLI wiring for `view-tree` / `view_tree` and `view-operation` / `view_operation`.
+- `view-tree` now supports `--depth` and repeatable `--collapse` options.
+- Added focused unit tests in `tests/unit/test_cli_smoke.py` and
+  `tests/unit/test_registry_client.py`.

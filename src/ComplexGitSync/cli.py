@@ -24,6 +24,8 @@ _PLANNED_COMMANDS: dict[str, str] = {
     # Secondary / inspection commands
     "print": "Print a .cgs or .gts lifecycle summary.",
     "describe": "Describe a .cgs or .gts input (alias for print).",
+    "view-tree": "Render a topology-focused tree view in terminal.",
+    "view-operation": "Render a runtime operation table in terminal.",
     "validate-topology": "Inspect and report the workspace branch topology alignment.",
     # Compatibility / advanced commands
     "clone": "Clone a nested project tree from .cgs (use initialise instead).",
@@ -51,7 +53,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command")
     for command_name, help_text in _PLANNED_COMMANDS.items():
-        subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
+        if command_name == "view-tree":
+            subparser = subparsers.add_parser(
+                command_name,
+                aliases=["view_tree"],
+                help=help_text,
+                description=help_text,
+            )
+        elif command_name == "view-operation":
+            subparser = subparsers.add_parser(
+                command_name,
+                aliases=["view_operation"],
+                help=help_text,
+                description=help_text,
+            )
+        else:
+            subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
         if command_name == "initialise":
             subparser.add_argument(
                 "source",
@@ -99,6 +116,34 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Resolve nested .cgs files for locally available child repos.",
             )
             subparser.set_defaults(handler=_INSPECTION_HANDLERS[command_name])
+        elif command_name == "view-tree":
+            subparser.add_argument("source", help="Path to the local .cgs or .gts file to inspect.")
+            subparser.add_argument(
+                "--discover-nested",
+                action="store_true",
+                help="Resolve nested .cgs files for locally available child repos.",
+            )
+            subparser.add_argument(
+                "--depth",
+                type=_non_negative_int,
+                help="Maximum depth from root to render (0=root only).",
+            )
+            subparser.add_argument(
+                "--collapse",
+                action="append",
+                default=[],
+                metavar="REPOSITORY",
+                help="Collapse subtree under repository name (repeatable).",
+            )
+            subparser.set_defaults(handler=_handle_view_tree)
+        elif command_name == "view-operation":
+            subparser.add_argument("source", help="Path to the local .cgs or .gts file to inspect.")
+            subparser.add_argument(
+                "--discover-nested",
+                action="store_true",
+                help="Resolve nested .cgs files for locally available child repos.",
+            )
+            subparser.set_defaults(handler=_handle_view_operation)
         elif command_name == "clone":
             subparser.add_argument("source", help="Path to the local .cgs file to clone from.")
             subparser.add_argument(
@@ -322,6 +367,32 @@ def _handle_tree(args: argparse.Namespace) -> int:
         command_name="tree",
         source=Path(args.source),
         runner=lambda client, source: _execute_tree(client, source, discover_nested=args.discover_nested),
+    )
+
+
+def _handle_view_tree(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="view-tree",
+        source=Path(args.source),
+        runner=lambda client, source: _execute_view_tree(
+            client,
+            source,
+            discover_nested=args.discover_nested,
+            depth=args.depth,
+            collapse=tuple(args.collapse),
+        ),
+    )
+
+
+def _handle_view_operation(args: argparse.Namespace) -> int:
+    return _run_with_logging(
+        command_name="view-operation",
+        source=Path(args.source),
+        runner=lambda client, source: _execute_view_operation(
+            client,
+            source,
+            discover_nested=args.discover_nested,
+        ),
     )
 
 
@@ -561,6 +632,30 @@ def _execute_tree(
     else:
         client.load_runtime_or_cgs(source_path, discover_nested=discover_nested)
     print(client.format_project_tree())
+    return 0
+
+
+def _execute_view_tree(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    discover_nested: bool,
+    depth: int | None,
+    collapse: tuple[str, ...],
+) -> int:
+    _load_visualization_source(client, source_path, discover_nested=discover_nested)
+    print(client.view_tree(depth=depth, collapse=collapse))
+    return 0
+
+
+def _execute_view_operation(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    discover_nested: bool,
+) -> int:
+    _load_visualization_source(client, source_path, discover_nested=discover_nested)
+    print(client.view_operation())
     return 0
 
 
@@ -891,6 +986,25 @@ def _load_ready_registry_source(
     source_path: Path,
 ) -> None:
     client.load_gts(source_path)
+
+
+def _load_visualization_source(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    discover_nested: bool,
+) -> None:
+    if source_path.suffix == ".gts":
+        client.load_gts(source_path)
+    else:
+        client.load_runtime_or_cgs(source_path, discover_nested=discover_nested)
+
+
+def _non_negative_int(raw: str) -> int:
+    value = int(raw)
+    if value < 0:
+        raise argparse.ArgumentTypeError("depth must be >= 0")
+    return value
 
 
 def _print_dry_run_plan(

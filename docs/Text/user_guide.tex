@@ -261,6 +261,30 @@ Prints a lifecycle summary as pretty JSON. For \texttt{.gts} input, it reports
 the recorded snapshot state. For \texttt{.cgs} input, it reports the current
 declared/runtime summary.
 
+\subsection{\texttt{view-tree}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync view-tree <spec.cgs|snapshot.gts> [--depth N] [--collapse REPO]
+$ cgitsync view_tree <spec.cgs|snapshot.gts> [--depth N] [--collapse REPO]
+\end{lstlisting}
+
+Renders a deterministic terminal tree that focuses on repository topology and
+operational state:
+\texttt{name [branch] local\_state sync\_state}. Use \texttt{--depth} to
+limit visible levels and repeat \texttt{--collapse} to hide selected
+subtrees.
+
+\subsection{\texttt{view-operation}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync view-operation <spec.cgs|snapshot.gts>
+$ cgitsync view_operation <spec.cgs|snapshot.gts>
+\end{lstlisting}
+
+Renders the runtime operation table with required columns:
+\texttt{REPOSITORY}, \texttt{BRANCH}, \texttt{LOCAL\_STATE}, and
+\texttt{SYNC\_STATE}.
+
 \subsection{\texttt{describe}}
 
 \begin{lstlisting}[language=bash]

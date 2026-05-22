@@ -80,6 +80,8 @@ from .git_tree import (
     build_tree_state,
     fix_circularities as _fix_circularities,
     format_project_tree,
+    format_view_operation,
+    format_view_tree,
     format_repo_tree_outline,
     iter_tree,
     make_repo_id,
@@ -2735,6 +2737,21 @@ class ComplexGitSyncClient:
 
     def format_repo_tree(self) -> str:
         return format_repo_tree_outline(self.get_dependency_registry())
+
+    def view_tree(
+        self,
+        *,
+        depth: int | None = None,
+        collapse: tuple[str, ...] = (),
+    ) -> str:
+        return format_view_tree(
+            self.get_dependency_registry(),
+            depth=depth,
+            collapse=collapse,
+        )
+
+    def view_operation(self) -> str:
+        return format_view_operation(self.get_dependency_registry())
 
     def describe_cgs(self) -> str:
         registry = self.get_dependency_registry()

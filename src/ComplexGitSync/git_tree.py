@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import deque
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path, PurePath, PurePosixPath
@@ -844,6 +845,79 @@ def format_repo_tree_outline(registry: DependencyTreeRegistry) -> str:
     return "\n".join(lines)
 
 
+def format_view_tree(
+    registry: DependencyTreeRegistry,
+    *,
+    depth: int | None = None,
+    collapse: Sequence[str] = (),
+) -> str:
+    """Render a terminal tree view focused on branch/local/sync state."""
+    if depth is not None and depth < 0:
+        raise ValueError("depth must be >= 0")
+
+    root_entry = registry.entries.get(ROOT_REPO_ID)
+    if root_entry is None:
+        return ""
+
+    collapsed = {name for name in collapse}
+    children_by_parent: dict[str | None, list[RepoRegistryEntry]] = {}
+    for entry in registry.values():
+        children_by_parent.setdefault(entry.parent_id, []).append(entry)
+    for children in children_by_parent.values():
+        children.sort(key=lambda child: (str(child.relative_path or ""), child.name))
+
+    def render_node(entry: RepoRegistryEntry) -> str:
+        return (
+            f"{entry.name} [{_entry_branch(entry)}] "
+            f"{_entry_local_state(entry)} {_entry_sync_state(entry)}"
+        )
+
+    lines = [f"ROOT {render_node(root_entry)}"]
+
+    def walk(entry: RepoRegistryEntry, *, prefix: str, level: int) -> None:
+        if depth is not None and level >= depth:
+            return
+        children = children_by_parent.get(entry.repo_id, [])
+        if entry.name in collapsed:
+            return
+        for index, child in enumerate(children):
+            is_last = index == len(children) - 1
+            branch = "└── " if is_last else "├── "
+            lines.append(f"{prefix}{branch}{render_node(child)}")
+            child_prefix = prefix + ("    " if is_last else "│   ")
+            walk(child, prefix=child_prefix, level=level + 1)
+
+    walk(root_entry, prefix="", level=0)
+    return "\n".join(lines)
+
+
+def format_view_operation(registry: DependencyTreeRegistry) -> str:
+    """Render a tabular runtime-operation view for terminal output."""
+    rows: list[tuple[str, str, str, str]] = []
+    for entry in iter_tree(registry):
+        rows.append(
+            (
+                entry.name,
+                _entry_branch(entry),
+                _entry_local_state(entry),
+                _entry_sync_state(entry),
+            )
+        )
+
+    headers = ("REPOSITORY", "BRANCH", "LOCAL_STATE", "SYNC_STATE")
+    widths = [len(column) for column in headers]
+    for row in rows:
+        for index, value in enumerate(row):
+            widths[index] = max(widths[index], len(value))
+
+    def render_row(columns: Sequence[str]) -> str:
+        return "  ".join(value.ljust(widths[index]) for index, value in enumerate(columns))
+
+    table_lines = [render_row(headers), "-" * (sum(widths) + 6)]
+    table_lines.extend(render_row(row) for row in rows)
+    return "\n".join(table_lines)
+
+
 def format_registry_json(registry: DependencyTreeRegistry) -> str:
     """Render *registry* as a JSON array."""
     data: list[dict[str, object]] = []
@@ -909,6 +983,46 @@ def _iter_tree(registry: DependencyTreeRegistry):
 
 def _depth(repo_id: str) -> int:
     return 0 if repo_id == "root" else repo_id.count(":")
+
+
+def _entry_branch(entry: RepoRegistryEntry) -> str:
+    return entry.current_ref_name or entry.resolved_ref_name or "-"
+
+
+def _entry_local_state(entry: RepoRegistryEntry) -> str:
+    worktree_state = (entry.worktree_state or "").strip().upper()
+    if worktree_state == "CLEAN":
+        return "clean"
+    if worktree_state == "STAGED":
+        return "staged"
+    if worktree_state in {"MERGING", "CONFLICT", "CONFLICTED"}:
+        return "conflicted"
+    if worktree_state:
+        return "dirty"
+    if entry.repo_lifecycle_state in {RepoLifecycleState.READY, RepoLifecycleState.FALLBACK_READY}:
+        return "clean"
+    if entry.repo_lifecycle_state == RepoLifecycleState.ERROR:
+        return "conflicted"
+    if entry.repo_lifecycle_state == RepoLifecycleState.PENDING:
+        return "staged"
+    return "dirty"
+
+
+def _entry_sync_state(entry: RepoRegistryEntry) -> str:
+    sync_state = entry.sync_state
+    if sync_state in {SyncState.ALIGNED, SyncState.DETACHED_EXACT}:
+        return "synced"
+    if sync_state == SyncState.AHEAD:
+        return "ahead+1"
+    if sync_state == SyncState.BEHIND:
+        return "behind+1"
+    if sync_state == SyncState.DIVERGED:
+        return "diverged"
+    if sync_state == SyncState.FALLBACK_APPLIED:
+        return "frozen"
+    if sync_state in {SyncState.PENDING, SyncState.ERROR}:
+        return "blocked"
+    return "blocked"
 
 
 def _validate_repo_shape(repo: Any) -> None:
