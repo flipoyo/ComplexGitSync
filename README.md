@@ -14,19 +14,19 @@ sync from a single local specification and a tracked local tree state.
 
 ### 1.2 Documents
 
-- `.cgs` — describes the project topology, authoring specification for a ComplexGitSync project, 
-- `.gts` — canonical GitTree workspace snapshot with schema versioning and deterministic SHA-256 hash (`document.snapshot_hash`) tracked through lifecycle `LOADED`, `PENDING`, and `READY`
-- `.goc` — stores higher-level orchestration plan document
-- `.lgr` — Local Git Register (`<Project_name>.lgr`) that records one stable
+- `.cgs` — .ComplexGitSync — describes the project topology, authoring specification for a ComplexGitSync project, 
+- `.gts` — .GitTreeState — canonical GitTree workspace snapshot with schema versioning and deterministic SHA-256 hash (`document.snapshot_hash`) tracked through lifecycle `LOADED`, `PENDING`, and `READY`
+- `.goc` — .GitOrchestrationCommand — stores higher-level orchestration plan document
+- `.lgr` — .LocalGitRegister — (`<Project_name>.lgr`) that records one stable
   local id per generated `.gts` snapshot and tracks the current snapshot pointer.
 
-### 1.2.b Architectural positioning
+### 1.3 Architectural positioning
 
-ComplexGitSync is positioned as a deterministic synchronization layer on top of
-Git, with two explicit DAGs:
+ComplexGitSync is a deterministic synchronization layer built on top of Git, designed to manage complex multi-repository projects as a single, versioned workspace. 
+It introduces the GitTree concept: a dependency graph that links root, parent, and leaf repositories, treating the entire workspace as a Directed Acyclic Graph (DAG)—just like Git does for individual repositories.
+This allows synchronized operations (e.g., commit, push, tag) across the entire tree, with deterministic snapshots (.gts) for reproducibility and traceability.
+Think of it as a fluid Git submodules manager: instead of static links, ComplexGitSync provides lifecycle orchestration, cycle resolution, and deterministic state tracking for complex workflows. It can be viewed as a synchronisation package of complex processes involving unitary DAG as a topology for subprocesses.
 
-- **Git DAG**: native per-repository commit history.
-- **GitTree DAG**: workspace dependency graph linking root/parent/leaf repos.
 
 The action layer propagates state on the GitTree DAG (parent-first for branch
 targeting, leaf-first for mutations), and emits deterministic `.gts`
@@ -48,7 +48,7 @@ For `.gts` metadata:
 - `document.hash_algorithm` and `document.snapshot_hash` provide deterministic state identity so identical workspace states map to the same digest, enabling integrity checks and `.lgr` deduplication.
 - freeze snapshots (`command_origin` = `freeze*`) also include a `freeze_manifest` section that records deterministic freeze invariants and the canonical restore operation (`launch_state`).
 
-### 1.3 Single API exposure
+### 1.4 Single API exposure
 
 The lifecycle is exposed through:
 
@@ -56,7 +56,7 @@ The lifecycle is exposed through:
 - CLI: `cgitsync`
 
 
-### 1.4. Authentication
+### 1.5. Authentication
 
 ComplexGitSync does not manage credentials for you. It relies on the Git access
 you already use for the target remotes:
