@@ -5,22 +5,155 @@
 ComplexGitSync keeps one root Git repository and its nested Git repositories in
 sync from a single local specification and a tracked local tree state.
 
-### 1.1 Runtime model
 
-- `GitRepo` represents one repository in the project
-- `GitTree` represents the full parent/child repository graph
-- `Orchestre` and `ComplexGitSyncClient` coordinate lifecycle transitions and
-  synchronized Git actions across the tree
+### 1.1 Why ComplexGitSync?
 
-### 1.2 Documents
+Modern scientific and engineering projects rarely live inside a single repository.
 
-- `.cgs` — .ComplexGitSync — describes the project topology, authoring specification for a ComplexGitSync project, 
-- `.gts` — .GitTreeState — canonical GitTree workspace snapshot with schema versioning and deterministic SHA-256 hash (`document.snapshot_hash`) tracked through lifecycle `LOADED`, `PENDING`, and `READY`
-- `.goc` — .GitOrchestrationCommand — stores higher-level orchestration plan document
-- `.lgr` — .LocalGitRegister — (`<Project_name>.lgr`) that records one stable
-  local id per generated `.gts` snapshot and tracks the current snapshot pointer.
+A real project often contains:
 
-### 1.3 Architectural positioning
+- core libraries
+- APIs
+- infrastructure repositories
+- datasets
+- simulation engines
+- visualization frontends
+- shared modules
+- nested dependencies
+
+Git submodules partially solve linking problems, but they do not provide:
+
+- deterministic workspace synchronization
+- orchestration lifecycle
+- snapshot reproducibility
+- dependency-aware propagation
+- workspace-level state identity
+- multi-repository freeze/restore workflows
+
+ComplexGitSync introduces a deterministic synchronization layer on top of Git.
+
+### 1.2 Core Concept
+
+ComplexGitSync models a project as a `GitTree`:
+
+- one root repository
+- multiple parent repositories
+- multiple leaf repositories
+- deterministic dependency propagation
+
+The workspace behaves as a coherent directed repository graph rather than isolated repositories.
+
+```mermaid
+graph TD
+
+    ROOT[Root Project]
+
+    CORE[Core Backend]
+    DATA[Scientific Data]
+
+    API[API Module]
+    DB[Database Module]
+    OBS[Observations Module]
+
+    API --> CORE
+    DB --> CORE
+    OBS --> DATA
+
+    CORE --> ROOT
+    DATA --> ROOT
+
+    classDef root fill:#4B0082,color:#fff,stroke:#111,stroke-width:3px;
+    classDef parent fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
+    classDef leaf fill:#2E7D32,color:#fff,stroke:#111,stroke-width:2px;
+
+    class ROOT root;
+    class CORE,DATA parent;
+    class API,DB,OBS leaf;
+```
+
+ComplexGitSync then applies deterministic lifecycle operations across the entire tree.
+
+### 1.3 Deterministic Synchronization
+
+Synchronization is performed through deterministic propagation rules.
+
+Mutations propagate leaf-first.
+
+Reference targeting propagates parent-first.
+
+Workspace states are materialized into canonical snapshots.
+
+```mermaid
+graph TD
+
+    A[freeze workspace]
+    B[commit leaf repositories]
+    C[update parent references]
+    D[commit parent repositories]
+    E[commit root repository]
+    F[push synchronized hierarchy]
+
+    A --> B --> C --> D --> E --> F
+
+    classDef step fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
+
+    class A,B,C,D,E,F step;
+```
+
+This allows the entire workspace to behave as a reproducible and traceable system.
+
+### 1.4 Runtime model
+
+- `GitRepo` represents a single Git repository
+- `GitTree` represents the complete repository dependency graph
+- `ComplexGitSyncClient` exposes synchronization lifecycle operations through a high-level Python API 
+- `Orchestre` is the internal orchestration engine that coordinates deterministic transitions accross the tree
+
+### 1.5 Deterministic Documents
+
+ComplexGitSync introduces deterministic workspace documents. 
+
+#### `.cgs` — ComplexGitSync Specification
+
+Describes the project topology and synchronization specification.
+
+#### `.gts` — GitTreeState
+
+Canonical deterministic workspace snapshot.
+
+A `.gts` snapshot contains:
+
+- repository states
+- branch targeting
+- synchronization metadata
+- lifecycle state
+- deterministic SHA-256 identity
+
+Identical workspace states generate identical hashes.
+
+This enables:
+
+- reproducibility
+- integrity verification
+- deterministic restoration
+- synchronization replay
+
+#### `.lgr` — LocalGitRegister
+
+Append-only local synchronization ledger.
+
+Tracks:
+
+- stable local snapshot ids
+- current workspace pointer
+- synchronization history
+
+#### `.goc` — GitOrchestrationCommand
+
+Higher-level orchestration plans and lifecycle commands.
+
+
+### 1.6 Architectural positioning
 
 ComplexGitSync is a deterministic synchronization layer built on top of Git, designed to manage complex multi-repository projects as a single, versioned workspace. 
 It introduces the GitTree concept: a dependency graph that links root, parent, and leaf repositories, treating the entire workspace as a Directed Acyclic Graph (DAG)—just like Git does for individual repositories.
@@ -48,7 +181,8 @@ For `.gts` metadata:
 - `document.hash_algorithm` and `document.snapshot_hash` provide deterministic state identity so identical workspace states map to the same digest, enabling integrity checks and `.lgr` deduplication.
 - freeze snapshots (`command_origin` = `freeze*`) also include a `freeze_manifest` section that records deterministic freeze invariants and the canonical restore operation (`launch_state`).
 
-### 1.4 Single API exposure
+
+### 1.7 Single API exposure
 
 The lifecycle is exposed through:
 
@@ -56,18 +190,20 @@ The lifecycle is exposed through:
 - CLI: `cgitsync`
 
 
-### 1.5. Authentication
+### 1.8 Authentication
 
-ComplexGitSync does not manage credentials for you. It relies on the Git access
-you already use for the target remotes:
 
-- SSH keys for SSH remotes
-- Git credential helpers or personal access tokens for HTTPS remotes
-- the same local Git identity for `clone`, `checkout`, `push`, `tag`, and
-  `freeze`
+ComplexGitSync delegates authentication to native Git.
 
-Make sure your Git authentication works before running any lifecycle step that
-contacts a remote.
+Supported workflows:
+
+- SSH keys
+- HTTPS + tokens
+- Git credential helpers
+- local Git identities
+
+If Git authentication works locally, ComplexGitSync uses it directly.
+
 
 ## 2. Authorship
 
