@@ -6,6 +6,6 @@
    - `pixi run cgitsync initialise examples/complexgitsync.cgs`
    - `pixi run cgitsync view_tree .cgitsync/state/complexgitsync.gts`
 
-Important: from `CGSil1/ComplexGitSync`, do not prefix the `.cgitsync` path
+**Important:** from `CGSil1/ComplexGitSync`, do not prefix the `.cgitsync` path
 with `CGSil1/` (for example `CGSil1/.cgitsync/...`), because it points to a
 non-existent nested path.
