@@ -232,11 +232,11 @@ directory:
 
 ```bash
 # 1) clone your project workspace
-git clone git@gitlab.com:CGS_test/CGSil1.git
+git clone git@gitlab.com:your-group/CGSil1.git
 cd CGSil1
 
 # 2) clone ComplexGitSync inside that workspace
-git clone https://github.com/flipoyo/ComplexGitSync.git
+git clone https://github.com/<owner>/ComplexGitSync.git
 cd ComplexGitSync
 
 # 3) initialise from the bundled example
