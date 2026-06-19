@@ -224,7 +224,7 @@ cd ComplexGitSync
 pixi install
 ```
 
-### 3.0 Real-case setup (project `CGSil1`)
+### 3.1 Real-case setup (project `CGSil1`)
 
 When ComplexGitSync is used from another project workspace, run commands from the
 ComplexGitSync clone, but keep `.cgitsync` paths relative to your current
