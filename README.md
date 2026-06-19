@@ -236,7 +236,7 @@ git clone git@gitlab.com:your-group/CGSil1.git
 cd CGSil1
 
 # 2) clone ComplexGitSync inside that workspace
-git clone https://github.com/<owner>/ComplexGitSync.git
+git clone https://github.com/your-owner/ComplexGitSync.git
 cd ComplexGitSync
 
 # 3) initialise from the bundled example
