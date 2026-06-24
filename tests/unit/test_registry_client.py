@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path, PureWindowsPath
 
 import pytest
@@ -770,6 +771,88 @@ project_name = "leaf"
         assert entry.target_ref_name == "v1.2.3"
 
 
+def test_build_registry_from_gts_expands_home_variable_paths(monkeypatch, tmp_path):
+    fake_home = (tmp_path / "home" / "user").resolve()
+    workspace = fake_home / "workspace" / "demo"
+    leaf_path = workspace / "deps" / "leaf"
+    workspace.mkdir(parents=True)
+    leaf_path.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    snapshot_path = tmp_path / "home-snapshot.gts"
+    snapshot_path.write_text(
+        """
+[document]
+format_version = "1.0"
+generated_at = "2026-01-01T00:00:00Z"
+command_origin = "clone"
+
+[project]
+name = "demo"
+root_absolute_path = "$HOME/workspace/demo"
+source_cgs_path = "$HOME/workspace/demo/project.cgs"
+
+[tree_state]
+lifecycle_state = "READY"
+is_ready = true
+registry_complete = true
+
+[[repo_state]]
+name = "demo"
+node_type = "root"
+absolute_path = "$HOME/workspace/demo"
+relative_path = "."
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "main"
+target_ref_kind = "branch"
+target_ref_name = "main"
+resolved_ref_kind = "branch"
+resolved_ref_name = "main"
+commit_sha = "sha-demo"
+
+[[repo_state]]
+name = "leaf"
+node_type = "leaf"
+absolute_path = "$HOME/workspace/demo/deps/leaf"
+parent_absolute_path = "$HOME/workspace/demo"
+relative_path = "deps/leaf"
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "main"
+target_ref_kind = "branch"
+target_ref_name = "main"
+resolved_ref_kind = "branch"
+resolved_ref_name = "main"
+commit_sha = "sha-leaf"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
+    assert registry.get("root").absolute_path == workspace
+    assert registry.get("root").source_cgs_path == (workspace / "project.cgs")
+    assert registry.get("root:deps/leaf").absolute_path == leaf_path
+
+
+def test_resolve_goc_project_source_expands_home_variable(monkeypatch, tmp_path):
+    fake_home = (tmp_path / "home" / "user").resolve()
+    monkeypatch.setenv("HOME", str(fake_home))
+    document = GocDocument.from_dict(
+        {
+            "document": {"format_version": "1.0"},
+            "project": {"source": "$HOME/workspace/demo/project.cgs"},
+            "actions": [{"command": "clone"}],
+        }
+    )
+
+    resolved = ComplexGitSyncClient()._resolve_goc_project_source(document, tmp_path / "plan.goc")
+    assert resolved == (fake_home / "workspace" / "demo" / "project.cgs")
+
+
 def test_make_repo_id_falls_back_to_name_when_relative_path_is_empty():
     assert make_repo_id("root", "", "child-repo") == "root:child-repo"
 
@@ -806,6 +889,26 @@ def test_client_load_cgs_updates_project_local_lgr(tmp_path):
     assert len(data["snapshots"]) == 1
     assert data["snapshots"][0]["id"] == "gts-000001"
     assert data["snapshots"][0]["snapshot_path"] == str(expected_snapshot)
+
+
+def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path):
+    fake_home = (tmp_path / "home" / "user").resolve()
+    workspace = fake_home / "workspace" / "demo"
+    workspace.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+    config_path = _write_root_cgs(workspace)
+
+    client = ComplexGitSyncClient()
+    client.load(config_path)
+
+    snapshot_path = workspace / ".cgitsync" / "state" / "project.gts"
+    snapshot_data = tomllib.loads(snapshot_path.read_text(encoding="utf-8"))
+    assert snapshot_data["project"]["root_absolute_path"] == "$HOME/workspace/demo"
+    assert snapshot_data["project"]["source_cgs_path"] == "$HOME/workspace/demo/project.cgs"
+
+    lgr_data = tomllib.loads((workspace / "demo.lgr").read_text(encoding="utf-8"))
+    assert lgr_data["register"]["current_snapshot_path"] == "$HOME/workspace/demo/.cgitsync/state/project.gts"
+    assert lgr_data["snapshots"][0]["snapshot_path"] == "$HOME/workspace/demo/.cgitsync/state/project.gts"
 
 
 def test_client_snapshot_generation_deduplicates_identical_workspace_entries(tmp_path):

@@ -120,6 +120,85 @@ def _collect_errors(checks: list[tuple[bool, str]]) -> list[str]:
     return [msg for ok, msg in checks if not ok]
 
 
+def _get_path_environment_markers() -> tuple[tuple[str, Path], ...]:
+    markers: list[tuple[str, Path]] = []
+    seen_paths: set[str] = set()
+
+    def add_marker(token: str, raw_value: str | None) -> None:
+        if not raw_value:
+            return
+        resolved = Path(raw_value).expanduser().resolve()
+        key = os.path.normcase(str(resolved))
+        if key in seen_paths:
+            return
+        seen_paths.add(key)
+        markers.append((token, resolved))
+
+    add_marker("$HOME", os.environ.get("HOME"))
+    add_marker("%USERPROFILE%", os.environ.get("USERPROFILE"))
+    homedrive = os.environ.get("HOMEDRIVE")
+    homepath = os.environ.get("HOMEPATH")
+    if homedrive and homepath:
+        add_marker("%HOMEDRIVE%%HOMEPATH%", f"{homedrive}{homepath}")
+    return tuple(markers)
+
+
+def _path_to_environment_marker(path: Path | str) -> str:
+    resolved_path = Path(path).expanduser().resolve()
+    for token, base_path in _get_path_environment_markers():
+        try:
+            relative = resolved_path.relative_to(base_path)
+        except ValueError:
+            continue
+        if relative == Path("."):
+            return token
+        return f"{token}/{relative.as_posix()}"
+    return str(resolved_path)
+
+
+def _expand_environment_markers(raw_path: str) -> str:
+    def _replace_prefixed_marker(value: str, marker: str, replacement: str) -> str:
+        if value == marker:
+            return replacement
+        for separator in _preferred_path_separators():
+            prefix = f"{marker}{separator}"
+            if value.startswith(prefix):
+                suffix = value[len(prefix):]
+                return f"{replacement}{separator}{suffix}"
+        return value
+
+    expanded = raw_path
+    home = os.environ.get("HOME")
+    if home:
+        expanded = _replace_prefixed_marker(expanded, "$HOME", home)
+    userprofile = os.environ.get("USERPROFILE")
+    if userprofile:
+        expanded = _replace_prefixed_marker(expanded, "%USERPROFILE%", userprofile)
+    homedrive = os.environ.get("HOMEDRIVE")
+    homepath = os.environ.get("HOMEPATH")
+    if homedrive and homepath:
+        expanded = _replace_prefixed_marker(
+            expanded,
+            "%HOMEDRIVE%%HOMEPATH%",
+            f"{homedrive}{homepath}",
+        )
+    return expanded
+
+
+def _resolve_document_path(raw_path: str) -> Path:
+    return Path(_expand_environment_markers(raw_path)).expanduser().resolve()
+
+
+def _preferred_path_separators() -> tuple[str, ...]:
+    separators: list[str] = []
+    seen: set[str] = set()
+    for separator in (os.sep, os.altsep, "/", "\\"):
+        if separator and separator not in seen:
+            seen.add(separator)
+            separators.append(separator)
+    return tuple(separators)
+
+
 class ConfigDocument:
     """Base class for all ComplexGitSync configuration document types.
 
@@ -929,18 +1008,18 @@ class LocalGitRegister:
                 {
                     "id": snapshot_id,
                     "snapshot_hash": snapshot_hash,
-                    "snapshot_path": str(resolved_snapshot_path),
+                    "snapshot_path": _path_to_environment_marker(resolved_snapshot_path),
                     "recorded_at": recorded_at,
                 }
             )
         else:
             snapshot_id = str(existing["id"])
-            existing["snapshot_path"] = str(resolved_snapshot_path)
+            existing["snapshot_path"] = _path_to_environment_marker(resolved_snapshot_path)
 
         register = data.setdefault("register", {})
         register["current_snapshot_id"] = snapshot_id
         register["current_snapshot_hash"] = snapshot_hash
-        register["current_snapshot_path"] = str(resolved_snapshot_path)
+        register["current_snapshot_path"] = _path_to_environment_marker(resolved_snapshot_path)
 
         self.register_path.parent.mkdir(parents=True, exist_ok=True)
         self.register_path.write_text(tomli_w.dumps(data), encoding="utf-8")
@@ -1506,9 +1585,9 @@ def build_registry_from_gts_document(document: GtsDocument) -> DependencyTreeReg
     )
 
     for repo_state in repo_states:
-        absolute_path = Path(str(repo_state["absolute_path"])).resolve()
+        absolute_path = _resolve_document_path(str(repo_state["absolute_path"]))
         parent_absolute_path = (
-            Path(str(repo_state["parent_absolute_path"])).resolve()
+            _resolve_document_path(str(repo_state["parent_absolute_path"]))
             if repo_state.get("parent_absolute_path")
             else None
         )
@@ -1528,9 +1607,9 @@ def build_registry_from_gts_document(document: GtsDocument) -> DependencyTreeReg
             absolute_path=absolute_path,
             relative_path=(Path(str(repo_state["relative_path"])) if repo_state.get("relative_path") is not None else None),
             source_cgs_path=(
-                Path(str(repo_state["source_cgs_path"])).resolve()
+                _resolve_document_path(str(repo_state["source_cgs_path"]))
                 if repo_state.get("source_cgs_path")
-                else (Path(str(project_source_cgs_path)).resolve() if project_source_cgs_path else None)
+                else (_resolve_document_path(str(project_source_cgs_path)) if project_source_cgs_path else None)
             ),
             current_ref_kind=_parse_optional_enum(RefKind, repo_state.get("current_ref_kind")),
             current_ref_name=_as_optional_str(repo_state.get("current_ref_name")),
@@ -1582,7 +1661,7 @@ def build_gts_document_from_registry(
         },
         "project": {
             "name": root_entry.name,
-            "root_absolute_path": str(root_entry.absolute_path),
+            "root_absolute_path": _path_to_environment_marker(root_entry.absolute_path),
         },
         "tree_state": {
             "lifecycle_state": tree_state.lifecycle_state.value,
@@ -1592,7 +1671,7 @@ def build_gts_document_from_registry(
         "repo_state": [],
     }
     if source_cgs_path is not None:
-        data["project"]["source_cgs_path"] = str(source_cgs_path)
+        data["project"]["source_cgs_path"] = _path_to_environment_marker(source_cgs_path)
     if command_origin in _FREEZE_COMMAND_ORIGINS:
         data["freeze_manifest"] = _build_freeze_manifest(registry)
 
@@ -1600,7 +1679,7 @@ def build_gts_document_from_registry(
         repo_data: dict[str, Any] = {
             "name": entry.name,
             "node_type": entry.node_type.value,
-            "absolute_path": str(entry.absolute_path),
+            "absolute_path": _path_to_environment_marker(entry.absolute_path),
             "relative_path": str(entry.relative_path) if entry.relative_path is not None else None,
             "repo_lifecycle_state": entry.repo_lifecycle_state.value,
             "sync_state": entry.sync_state.value,
@@ -1617,13 +1696,17 @@ def build_gts_document_from_registry(
             "fallback_reason": entry.fallback_reason,
             "worktree_state": entry.worktree_state,
             "is_reachable": entry.is_reachable,
-            "source_cgs_path": str(entry.source_cgs_path) if entry.source_cgs_path else None,
+            "source_cgs_path": (
+                _path_to_environment_marker(entry.source_cgs_path) if entry.source_cgs_path else None
+            ),
             "project_owner_name": entry.project_owner_name,
             "project_name": entry.project_name,
             "repo_name": entry.repo_name,
         }
         if entry.parent_id is not None:
-            repo_data["parent_absolute_path"] = str(registry.get(entry.parent_id).absolute_path)
+            repo_data["parent_absolute_path"] = _path_to_environment_marker(
+                registry.get(entry.parent_id).absolute_path
+            )
         data["repo_state"].append({key: value for key, value in repo_data.items() if value is not None})
 
     document = GtsDocument.from_dict(data)
@@ -2063,7 +2146,7 @@ class ComplexGitSyncClient:
         self.registry = build_registry_from_gts_document(document)
         self.orchestre.git_tree.git.bind_registry(self.registry)
         self.source_path = (
-            Path(str(document.read("project.source_cgs_path"))).resolve()
+            _resolve_document_path(str(document.read("project.source_cgs_path")))
             if document.read("project.source_cgs_path")
             else resolved_snapshot_path
         )
@@ -2270,9 +2353,11 @@ class ComplexGitSyncClient:
         source = document.project_source
         if not source:
             raise ValueError("Invalid .goc document: [project].source is required.")
-        source_path = Path(source)
+        source_path = Path(_expand_environment_markers(source)).expanduser()
         if not source_path.is_absolute():
             source_path = (plan_path.parent / source_path).resolve()
+        else:
+            source_path = source_path.resolve()
         return source_path
 
     def _execute_goc_action(
