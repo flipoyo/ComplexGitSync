@@ -126,7 +126,16 @@ def build_parser() -> argparse.ArgumentParser:
             )
             subparser.set_defaults(handler=_INSPECTION_HANDLERS[command_name])
         elif command_name == "view-tree":
-            subparser.add_argument("source", help="Path to the local .cgs or .gts file to inspect.")
+            subparser.add_argument(
+                "source",
+                nargs="?",
+                default=None,
+                help=(
+                    "Path to a .cgs or .gts file to inspect. "
+                    "When omitted the nearest .gts snapshot is discovered automatically "
+                    "from ../.cgitsync/state/ (or --search-dir/.cgitsync/state/)."
+                ),
+            )
             subparser.add_argument(
                 "--discover-nested",
                 action="store_true",
@@ -144,13 +153,38 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="REPOSITORY",
                 help="Collapse subtree under repository name (repeatable).",
             )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory to search for .cgitsync/state/*.gts when no source is given. "
+                    "Defaults to the parent of the current working directory."
+                ),
+            )
             subparser.set_defaults(handler=_handle_view_tree)
         elif command_name == "view-operation":
-            subparser.add_argument("source", help="Path to the local .cgs or .gts file to inspect.")
+            subparser.add_argument(
+                "source",
+                nargs="?",
+                default=None,
+                help=(
+                    "Path to a .cgs or .gts file to inspect. "
+                    "When omitted the nearest .gts snapshot is discovered automatically "
+                    "from ../.cgitsync/state/ (or --search-dir/.cgitsync/state/)."
+                ),
+            )
             subparser.add_argument(
                 "--discover-nested",
                 action="store_true",
                 help="Resolve nested .cgs files for locally available child repos.",
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory to search for .cgitsync/state/*.gts when no source is given. "
+                    "Defaults to the parent of the current working directory."
+                ),
             )
             subparser.set_defaults(handler=_handle_view_operation)
         elif command_name == "clone":
@@ -195,8 +229,20 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.add_argument(
                 "--gts",
                 metavar="FILE",
-                required=True,
-                help="Path to the .gts snapshot that holds the READY registry.",
+                default=None,
+                help=(
+                    "Path to the .gts snapshot that holds the READY registry. "
+                    "When omitted the nearest .gts is discovered automatically "
+                    "from ../.cgitsync/state/ (or --search-dir/.cgitsync/state/)."
+                ),
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory to search for .cgitsync/state/*.gts when --gts is not given. "
+                    "Defaults to the parent of the current working directory."
+                ),
             )
             subparser.add_argument(
                 "--no-stage",
@@ -213,8 +259,20 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.add_argument(
                 "--gts",
                 metavar="FILE",
-                required=True,
-                help="Path to the .gts snapshot that holds the READY registry.",
+                default=None,
+                help=(
+                    "Path to the .gts snapshot that holds the READY registry. "
+                    "When omitted the nearest .gts is discovered automatically "
+                    "from ../.cgitsync/state/ (or --search-dir/.cgitsync/state/)."
+                ),
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory to search for .cgitsync/state/*.gts when --gts is not given. "
+                    "Defaults to the parent of the current working directory."
+                ),
             )
             subparser.add_argument(
                 "--dry-run",
@@ -226,8 +284,20 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.add_argument(
                 "--gts",
                 metavar="FILE",
-                required=True,
-                help="Path to the .gts snapshot that holds the READY registry.",
+                default=None,
+                help=(
+                    "Path to the .gts snapshot that holds the READY registry. "
+                    "When omitted the nearest .gts is discovered automatically "
+                    "from ../.cgitsync/state/ (or --search-dir/.cgitsync/state/)."
+                ),
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory to search for .cgitsync/state/*.gts when --gts is not given. "
+                    "Defaults to the parent of the current working directory."
+                ),
             )
             subparser.add_argument(
                 "--dry-run",
@@ -240,8 +310,20 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.add_argument(
                 "--gts",
                 metavar="FILE",
-                required=True,
-                help="Path to the .gts snapshot that holds the READY registry.",
+                default=None,
+                help=(
+                    "Path to the .gts snapshot that holds the READY registry. "
+                    "When omitted the nearest .gts is discovered automatically "
+                    "from ../.cgitsync/state/ (or --search-dir/.cgitsync/state/)."
+                ),
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory to search for .cgitsync/state/*.gts when --gts is not given. "
+                    "Defaults to the parent of the current working directory."
+                ),
             )
             subparser.add_argument(
                 "--dry-run",
@@ -254,8 +336,20 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.add_argument(
                 "--gts",
                 metavar="FILE",
-                required=True,
-                help="Path to the .gts snapshot that holds the READY registry.",
+                default=None,
+                help=(
+                    "Path to the .gts snapshot that holds the READY registry. "
+                    "When omitted the nearest .gts is discovered automatically "
+                    "from ../.cgitsync/state/ (or --search-dir/.cgitsync/state/)."
+                ),
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory to search for .cgitsync/state/*.gts when --gts is not given. "
+                    "Defaults to the parent of the current working directory."
+                ),
             )
             subparser.add_argument(
                 "--dry-run",
@@ -268,8 +362,20 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.add_argument(
                 "--gts",
                 metavar="FILE",
-                required=True,
-                help="Path to the .gts snapshot that holds the READY registry.",
+                default=None,
+                help=(
+                    "Path to the .gts snapshot that holds the READY registry. "
+                    "When omitted the nearest .gts is discovered automatically "
+                    "from ../.cgitsync/state/ (or --search-dir/.cgitsync/state/)."
+                ),
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory to search for .cgitsync/state/*.gts when --gts is not given. "
+                    "Defaults to the parent of the current working directory."
+                ),
             )
             subparser.set_defaults(handler=_handle_freeze_release)
         elif command_name == "freeze-state":
@@ -277,8 +383,20 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.add_argument(
                 "--gts",
                 metavar="FILE",
-                required=True,
-                help="Path to the .gts snapshot or .cgs source used to resolve a READY registry.",
+                default=None,
+                help=(
+                    "Path to the .gts snapshot or .cgs source used to resolve a READY registry. "
+                    "When omitted the nearest .gts is discovered automatically "
+                    "from ../.cgitsync/state/ (or --search-dir/.cgitsync/state/)."
+                ),
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory to search for .cgitsync/state/*.gts when --gts is not given. "
+                    "Defaults to the parent of the current working directory."
+                ),
             )
             subparser.set_defaults(handler=_handle_freeze_state)
         elif command_name == "launch-release":
@@ -396,9 +514,10 @@ def _handle_tree(args: argparse.Namespace) -> int:
 
 
 def _handle_view_tree(args: argparse.Namespace) -> int:
+    source = _resolve_visualization_source(args.source, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="view-tree",
-        source=Path(args.source),
+        source=source,
         runner=lambda client, source: _execute_view_tree(
             client,
             source,
@@ -410,9 +529,10 @@ def _handle_view_tree(args: argparse.Namespace) -> int:
 
 
 def _handle_view_operation(args: argparse.Namespace) -> int:
+    source = _resolve_visualization_source(args.source, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="view-operation",
-        source=Path(args.source),
+        source=source,
         runner=lambda client, source: _execute_view_operation(
             client,
             source,
@@ -468,9 +588,10 @@ def _handle_checkout(args: argparse.Namespace) -> int:
 
 
 def _handle_commit(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="commit",
-        source=Path(args.gts),
+        source=gts_path,
         runner=lambda client, source: _execute_commit(
             client,
             source,
@@ -482,49 +603,55 @@ def _handle_commit(args: argparse.Namespace) -> int:
 
 
 def _handle_add(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="add",
-        source=Path(args.gts),
+        source=gts_path,
         runner=lambda client, source: _execute_add(client, source, dry_run=args.dry_run),
     )
 
 
 def _handle_push(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="push",
-        source=Path(args.gts),
+        source=gts_path,
         runner=lambda client, source: _execute_push(client, source, dry_run=args.dry_run),
     )
 
 
 def _handle_tag(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="tag",
-        source=Path(args.gts),
+        source=gts_path,
         runner=lambda client, source: _execute_tag(client, source, tag_name=args.name, dry_run=args.dry_run),
     )
 
 
 def _handle_freeze_release(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="freeze-release",
-        source=Path(args.gts),
+        source=gts_path,
         runner=lambda client, source: _execute_freeze_release(client, source, tag_name=args.name),
     )
 
 
 def _handle_freeze(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="freeze",
-        source=Path(args.gts),
+        source=gts_path,
         runner=lambda client, source: _execute_freeze(client, source, name=args.name, dry_run=args.dry_run),
     )
 
 
 def _handle_freeze_state(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="freeze-state",
-        source=Path(args.gts),
+        source=gts_path,
         runner=lambda client, source: _execute_freeze_state(client, source, state_name=args.name),
     )
 
@@ -1034,6 +1161,57 @@ def _load_visualization_source(
         client.load_gts(source_path)
     else:
         client.load_runtime_or_cgs(source_path, discover_nested=discover_nested)
+
+
+def _discover_gts_path(search_dir: str | Path | None = None) -> Path:
+    """Auto-discover the most-recently-modified .gts snapshot.
+
+    Searches ``<search_dir>/.cgitsync/state/*.gts``.  When *search_dir* is
+    ``None`` the candidates are checked in order:
+
+    1. The parent of the current working directory (``../``), which covers the
+       typical case of running commands from inside a nested tool such as
+       ``CGSil1/ComplexGitSync/``.
+    2. The current working directory itself, for projects where the tool is
+       run directly from the project root.
+    """
+    if search_dir is not None:
+        search_dirs = [Path(search_dir).resolve()]
+    else:
+        search_dirs = [Path.cwd().parent, Path.cwd()]
+
+    for base in search_dirs:
+        state_dir = base / ".cgitsync" / "state"
+        if state_dir.is_dir():
+            gts_entries = [(p, p.stat().st_mtime) for p in state_dir.glob("*.gts")]
+            if gts_entries:
+                gts_entries.sort(key=lambda x: x[1], reverse=True)
+                return gts_entries[0][0]
+
+    searched = ", ".join(str(d / ".cgitsync" / "state") for d in search_dirs)
+    raise FileNotFoundError(
+        f"No .gts snapshot found in: {searched}. "
+        "Run 'cgitsync initialise' first, or pass --gts FILE (or --search-dir DIR) explicitly."
+    )
+
+
+def _resolve_gts_path(gts: str | None, search_dir: str | None) -> Path:
+    """Return the resolved .gts path, auto-discovering when *gts* is ``None``."""
+    if gts is not None:
+        return Path(gts)
+    return _discover_gts_path(search_dir)
+
+
+def _resolve_visualization_source(source: str | None, search_dir: str | None) -> Path:
+    """Return the resolved source path for visualization commands.
+
+    When *source* is provided it is returned as-is (may be .cgs or .gts).
+    When *source* is ``None`` the nearest .gts snapshot is discovered
+    automatically via :func:`_discover_gts_path`.
+    """
+    if source is not None:
+        return Path(source)
+    return _discover_gts_path(search_dir)
 
 
 def _non_negative_int(raw: str) -> int:

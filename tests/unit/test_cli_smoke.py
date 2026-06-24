@@ -915,6 +915,139 @@ def test_launch_state_command_uses_client_handler(monkeypatch, capsys, tmp_path)
     assert "READY ready=true" in captured.out
 
 
+def test_gts_auto_discovery_from_parent_cgitsync(monkeypatch, capsys, tmp_path):
+    """Commands with no --gts discover the snapshot from ../.cgitsync/state/."""
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def add(self):
+            captured_call["added"] = True
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    # Simulate running from a tool subdir: cwd is tmp_path/ComplexGitSync
+    # and the .gts lives in tmp_path/.cgitsync/state/
+    cwd = tmp_path / "ComplexGitSync"
+    cwd.mkdir()
+    state_dir = tmp_path / ".cgitsync" / "state"
+    state_dir.mkdir(parents=True)
+    gts_path = state_dir / "project.gts"
+    gts_path.touch()
+
+    monkeypatch.chdir(cwd)
+    exit_code = main(["add"])
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call.get("added") is True
+    assert captured_call["gts_path"] == gts_path.resolve()
+
+
+def test_gts_auto_discovery_search_dir_option(monkeypatch, capsys, tmp_path):
+    """--search-dir overrides the default parent-directory search for .gts."""
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def push(self):
+            captured_call["pushed"] = True
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    custom_root = tmp_path / "myproject"
+    state_dir = custom_root / ".cgitsync" / "state"
+    state_dir.mkdir(parents=True)
+    gts_path = state_dir / "myproject.gts"
+    gts_path.touch()
+
+    exit_code = main(["push", "--search-dir", str(custom_root)])
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call.get("pushed") is True
+    assert captured_call["gts_path"] == gts_path.resolve()
+
+
+def test_gts_auto_discovery_no_snapshot_raises_error(monkeypatch, tmp_path):
+    """When no .gts is found, auto-discovery raises FileNotFoundError."""
+    from ComplexGitSync.cli import _discover_gts_path
+
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+
+    with pytest.raises(FileNotFoundError, match=r"No .gts snapshot found"):
+        _discover_gts_path(search_dir=empty_dir)
+
+
+def test_gts_auto_discovery_picks_most_recent(tmp_path):
+    """_discover_gts_path returns the most recently modified .gts."""
+    import os
+    from ComplexGitSync.cli import _discover_gts_path
+
+    state_dir = tmp_path / ".cgitsync" / "state"
+    state_dir.mkdir(parents=True)
+    old_gts = state_dir / "old.gts"
+    new_gts = state_dir / "new.gts"
+    old_gts.touch()
+    new_gts.touch()
+    # Explicitly set different modification times so the test is deterministic
+    os.utime(old_gts, (1000.0, 1000.0))
+    os.utime(new_gts, (2000.0, 2000.0))
+
+    result = _discover_gts_path(search_dir=tmp_path)
+    assert result == new_gts.resolve()
+
+
+def test_view_tree_auto_discovery(monkeypatch, capsys, tmp_path):
+    """view-tree with no source argument auto-discovers the .gts snapshot."""
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def view_tree(self, *, depth=None, collapse=()):
+            return "ROOT demo [main] clean synced"
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    cwd = tmp_path / "ComplexGitSync"
+    cwd.mkdir()
+    state_dir = tmp_path / ".cgitsync" / "state"
+    state_dir.mkdir(parents=True)
+    gts_path = state_dir / "project.gts"
+    gts_path.touch()
+
+    monkeypatch.chdir(cwd)
+    exit_code = main(["view-tree"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["gts_path"] == gts_path.resolve()
+    assert "ROOT demo [main] clean synced" in captured.out
+
+
 def test_registry_command_is_removed(capsys):
     with pytest.raises(SystemExit) as exc_info:
         main(["registry", "project.cgs"])
