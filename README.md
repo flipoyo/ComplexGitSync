@@ -239,12 +239,19 @@ cd CGSil1
 git clone https://github.com/your-owner/ComplexGitSync.git
 cd ComplexGitSync
 
-# 3) initialise from the bundled example
+# 3a) initialise and clone all repos into ../CGSil1/ (recommended for multi-repo projects)
+pixi run cgitsync initialise examples/complexgitsync.cgs --output-dir ../
+
+# 3b) alternatively, initialise with the default output location (inside ComplexGitSync/)
 pixi run cgitsync initialise examples/complexgitsync.cgs
 
 # then inspect state with a path relative to the current directory
 pixi run cgitsync view_tree .cgitsync/state/complexgitsync.gts
 ```
+
+Using `--output-dir ../` ensures that all cloned repositories land in the
+parent directory (`CGSil1/`) rather than a nested subdirectory
+(`CGSil1/ComplexGitSync/CGSil1/`), which avoids the doubled-path confusion.
 
 From `CGSil1/ComplexGitSync`, do **not** call
 `pixi run cgitsync view_tree CGSil1/.cgitsync/state/complexgitsync.gts` because
@@ -327,6 +334,9 @@ client = ComplexGitSyncClient()
 # 1a. initialise(.cgs) -> clone all repos -> READY  (new project)
 client.initialise("examples/complexgitsync.cgs")
 
+# 1a (multi-repo setup). clone repos into a parent directory instead of the current one
+client.initialise("examples/complexgitsync.cgs", output_dir="../")
+
 # 1b. initialise(.gts) -> restore from snapshot -> READY  (existing project)
 client.initialise(".cgitsync/state/complexgitsync.gts")
 
@@ -375,6 +385,9 @@ client.orchestrate("examples/deploy.goc")
 ```bash
 # 1a. initialise(.cgs) -> clone all repos -> READY  (new project)
 pixi run cgitsync initialise examples/complexgitsync.cgs
+
+# 1a (multi-repo setup). clone all repos into a parent directory (e.g. for CGSil1 use-case)
+pixi run cgitsync initialise examples/complexgitsync.cgs --output-dir ../
 
 # 1b. initialise(.gts) -> restore from snapshot -> READY  (existing project)
 pixi run cgitsync initialise .cgitsync/state/complexgitsync.gts

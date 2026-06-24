@@ -51,10 +51,10 @@ def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
     class StubClient:
-        def resolve_clone_root(self, source, *, target_dir=None):
+        def resolve_clone_root(self, source, *, target_dir=None, output_dir=None):
             return tmp_path / "workspace" / "demo"
 
-        def clone_cgs(self, source, *, target_dir=None):
+        def clone_cgs(self, source, *, target_dir=None, output_dir=None):
             captured_call["source"] = Path(source)
             captured_call["target_dir"] = target_dir
             return SimpleNamespace(
@@ -308,10 +308,10 @@ def test_clone_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
     class StubClient:
-        def resolve_clone_root(self, source, *, target_dir=None):
+        def resolve_clone_root(self, source, *, target_dir=None, output_dir=None):
             return Path(target_dir)
 
-        def clone_cgs(self, source, *, target_dir=None):
+        def clone_cgs(self, source, *, target_dir=None, output_dir=None):
             captured_call["source"] = Path(source)
             captured_call["target_dir"] = target_dir
             return SimpleNamespace(
@@ -330,6 +330,73 @@ def test_clone_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     assert captured_call["source"] == Path("project.cgs").resolve()
     assert captured_call["target_dir"] == str(tmp_path / "workspace" / "demo")
     assert "READY ready=true complete=true" in captured.out
+
+
+def test_initialise_command_output_dir_is_forwarded(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def resolve_clone_root(self, source, *, target_dir=None, output_dir=None):
+            captured_call["resolve_output_dir"] = output_dir
+            return tmp_path / "parent" / "demo"
+
+        def clone_cgs(self, source, *, target_dir=None, output_dir=None):
+            captured_call["source"] = Path(source)
+            captured_call["output_dir"] = output_dir
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "parent" / "demo")
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+        def format_repo_tree(self):
+            return "demo (project)\n└── child-repo (leaf)"
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    config_path = tmp_path / "project.cgs"
+    config_path.touch()
+    output_dir = str(tmp_path / "parent")
+    exit_code = main(["initialise", str(config_path), "--output-dir", output_dir])
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["resolve_output_dir"] == output_dir
+    assert captured_call["output_dir"] == output_dir
+
+
+def test_clone_command_output_dir_is_forwarded(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def resolve_clone_root(self, source, *, target_dir=None, output_dir=None):
+            captured_call["resolve_output_dir"] = output_dir
+            return tmp_path / "parent" / "demo"
+
+        def clone_cgs(self, source, *, target_dir=None, output_dir=None):
+            captured_call["source"] = Path(source)
+            captured_call["output_dir"] = output_dir
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "parent" / "demo")
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    output_dir = str(tmp_path / "parent")
+    exit_code = main(["clone", "project.cgs", "--output-dir", output_dir])
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["resolve_output_dir"] == output_dir
+    assert captured_call["output_dir"] == output_dir
 
 
 def test_initialise_command_gts_creates_log_file_verbose(monkeypatch, tmp_path, capsys):

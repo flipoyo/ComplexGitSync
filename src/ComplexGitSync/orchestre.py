@@ -1879,6 +1879,7 @@ class ComplexGitSyncClient:
         source: str | Path,
         *,
         target_dir: str | Path | None = None,
+        output_dir: str | Path | None = None,
     ) -> DependencyTreeRegistry:
         """Unified initialisation entry point (lifecycle step 1).
 
@@ -1901,10 +1902,17 @@ class ComplexGitSyncClient:
         target_dir:
             Target directory for the cloned project root.  Only used in
             ``.cgs`` (clone) mode; ignored for ``.gts`` sources.
+        output_dir:
+            Base directory in which the project folder is created.  The
+            project name from the ``.cgs`` spec is appended automatically.
+            For example, pass ``"../"`` to create the project as a sibling of
+            the current directory rather than a subdirectory.  Only used in
+            ``.cgs`` (clone) mode; ignored for ``.gts`` sources.  Mutually
+            exclusive with *target_dir*.
         """
         resolved = Path(source).resolve()
         if resolved.suffix == ".cgs":
-            return self.clone_cgs(resolved, target_dir=target_dir)
+            return self.clone_cgs(resolved, target_dir=target_dir, output_dir=output_dir)
         if resolved.suffix == ".gts":
             return self.load_gts(resolved)
         raise ValueError(
@@ -2111,21 +2119,23 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         target_dir: str | Path | None = None,
+        output_dir: str | Path | None = None,
     ) -> Path:
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        return self._resolve_project_root(document, source_path, target_dir)
+        return self._resolve_project_root(document, source_path, target_dir, output_dir)
 
     def clone_cgs(
         self,
         config_path: str | Path,
         *,
         target_dir: str | Path | None = None,
+        output_dir: str | Path | None = None,
     ) -> DependencyTreeRegistry:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        project_root = self._resolve_project_root(document, source_path, target_dir)
+        project_root = self._resolve_project_root(document, source_path, target_dir, output_dir)
 
         self.registry = build_registry_from_cgs_document(
             document,
@@ -2173,9 +2183,10 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         target_dir: str | Path | None = None,
+        output_dir: str | Path | None = None,
     ) -> DependencyTreeRegistry:
         """Clone the repositories required by the current loaded tree state."""
-        return self.clone_cgs(config_path, target_dir=target_dir)
+        return self.clone_cgs(config_path, target_dir=target_dir, output_dir=output_dir)
 
     def restart(self, config_path: str | Path) -> DependencyTreeRegistry:
         """Legacy pull-like helper for resynchronizing an already-cloned tree.
@@ -2935,11 +2946,13 @@ class ComplexGitSyncClient:
         document: CgsDocument,
         source_path: Path,
         target_dir: str | Path | None,
+        output_dir: str | Path | None = None,
     ) -> Path:
         if target_dir is not None:
             return Path(target_dir).resolve()
 
-        default_root = (Path.cwd() / (document.project_name or source_path.stem)).resolve()
+        base_dir = Path(output_dir).resolve() if output_dir is not None else Path.cwd()
+        default_root = (base_dir / (document.project_name or source_path.stem)).resolve()
         if self._is_available_clone_root(default_root):
             return default_root
 

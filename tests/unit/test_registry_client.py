@@ -101,7 +101,7 @@ def test_client_initialise_dispatches_to_clone_cgs_for_cgs_source(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_clone_cgs(path, *, target_dir=None):
+    def _fake_clone_cgs(path, *, target_dir=None, output_dir=None):
         captured["path"] = path
         captured["target_dir"] = target_dir
         return "ok"
@@ -115,7 +115,33 @@ def test_client_initialise_dispatches_to_clone_cgs_for_cgs_source(monkeypatch):
     assert captured["target_dir"] == "workspace/demo"
 
 
-def test_client_validate_alias_returns_tree_state(tmp_path):
+def test_client_initialise_forwards_output_dir_to_clone_cgs(monkeypatch):
+    client = ComplexGitSyncClient()
+    captured: dict[str, object] = {}
+
+    def _fake_clone_cgs(path, *, target_dir=None, output_dir=None):
+        captured["output_dir"] = output_dir
+        return "ok"
+
+    monkeypatch.setattr(client, "clone_cgs", _fake_clone_cgs)
+
+    client.initialise("project.cgs", output_dir="../")
+
+    assert captured["output_dir"] == "../"
+
+
+def test_resolve_clone_root_uses_output_dir_as_base(tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    client = ComplexGitSyncClient()
+    output_dir = tmp_path / "parent"
+    output_dir.mkdir()
+
+    result = client.resolve_clone_root(config_path, output_dir=output_dir)
+
+    assert result == (output_dir / "demo").resolve()
+
+
+
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()
 
@@ -149,7 +175,7 @@ def test_client_clone_alias_calls_clone_cgs(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_clone_cgs(path, *, target_dir=None):
+    def _fake_clone_cgs(path, *, target_dir=None, output_dir=None):
         captured["path"] = path
         captured["target_dir"] = target_dir
         return "ok"
