@@ -120,7 +120,7 @@ def _collect_errors(checks: list[tuple[bool, str]]) -> list[str]:
     return [msg for ok, msg in checks if not ok]
 
 
-def _iter_path_environment_markers() -> tuple[tuple[str, Path], ...]:
+def _get_path_environment_markers() -> tuple[tuple[str, Path], ...]:
     markers: list[tuple[str, Path]] = []
     seen_paths: set[str] = set()
 
@@ -128,7 +128,7 @@ def _iter_path_environment_markers() -> tuple[tuple[str, Path], ...]:
         if not raw_value:
             return
         resolved = Path(raw_value).expanduser().resolve()
-        key = str(resolved).casefold() if os.name == "nt" else str(resolved)
+        key = os.path.normcase(str(resolved))
         if key in seen_paths:
             return
         seen_paths.add(key)
@@ -145,7 +145,7 @@ def _iter_path_environment_markers() -> tuple[tuple[str, Path], ...]:
 
 def _path_to_environment_marker(path: Path | str) -> str:
     resolved_path = Path(path).expanduser().resolve()
-    for token, base_path in _iter_path_environment_markers():
+    for token, base_path in _get_path_environment_markers():
         try:
             relative = resolved_path.relative_to(base_path)
         except ValueError:
@@ -157,22 +157,46 @@ def _path_to_environment_marker(path: Path | str) -> str:
 
 
 def _expand_environment_markers(raw_path: str) -> str:
+    def _replace_prefixed_marker(value: str, marker: str, replacement: str) -> str:
+        if value == marker:
+            return replacement
+        for separator in _preferred_path_separators():
+            prefix = f"{marker}{separator}"
+            if value.startswith(prefix):
+                suffix = value[len(prefix):]
+                return f"{replacement}{separator}{suffix}"
+        return value
+
     expanded = raw_path
     home = os.environ.get("HOME")
-    if home and expanded.startswith("$HOME"):
-        expanded = f"{home}{expanded.removeprefix('$HOME')}"
+    if home:
+        expanded = _replace_prefixed_marker(expanded, "$HOME", home)
     userprofile = os.environ.get("USERPROFILE")
-    if userprofile and expanded.startswith("%USERPROFILE%"):
-        expanded = f"{userprofile}{expanded.removeprefix('%USERPROFILE%')}"
+    if userprofile:
+        expanded = _replace_prefixed_marker(expanded, "%USERPROFILE%", userprofile)
     homedrive = os.environ.get("HOMEDRIVE")
     homepath = os.environ.get("HOMEPATH")
-    if homedrive and homepath and expanded.startswith("%HOMEDRIVE%%HOMEPATH%"):
-        expanded = f"{homedrive}{homepath}{expanded.removeprefix('%HOMEDRIVE%%HOMEPATH%')}"
-    return os.path.expandvars(expanded)
+    if homedrive and homepath:
+        expanded = _replace_prefixed_marker(
+            expanded,
+            "%HOMEDRIVE%%HOMEPATH%",
+            f"{homedrive}{homepath}",
+        )
+    return expanded
 
 
 def _resolve_document_path(raw_path: str) -> Path:
     return Path(_expand_environment_markers(raw_path)).expanduser().resolve()
+
+
+def _preferred_path_separators() -> tuple[str, ...]:
+    separators: list[str] = []
+    seen: set[str] = set()
+    for separator in (os.sep, os.altsep, "/", "\\"):
+        if separator and separator not in seen:
+            seen.add(separator)
+            separators.append(separator)
+    return tuple(separators)
 
 
 class ConfigDocument:

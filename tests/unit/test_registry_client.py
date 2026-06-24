@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path, PureWindowsPath
 
 import pytest
@@ -891,8 +892,6 @@ def test_client_load_cgs_updates_project_local_lgr(tmp_path):
 
 
 def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path):
-    import tomllib
-
     fake_home = (tmp_path / "home" / "user").resolve()
     workspace = fake_home / "workspace" / "demo"
     workspace.mkdir(parents=True)
