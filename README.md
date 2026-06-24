@@ -224,6 +224,33 @@ cd ComplexGitSync
 pixi install
 ```
 
+### 3.1 Real-case setup (project `CGSil1`)
+
+When ComplexGitSync is used from another project workspace, run commands from the
+ComplexGitSync clone, but keep `.cgitsync` paths relative to your current
+directory:
+
+```bash
+# 1) clone your project workspace
+git clone git@gitlab.com:your-group/CGSil1.git
+cd CGSil1
+
+# 2) clone ComplexGitSync inside that workspace
+git clone https://github.com/your-owner/ComplexGitSync.git
+cd ComplexGitSync
+
+# 3) initialise from the bundled example
+pixi run cgitsync initialise examples/complexgitsync.cgs
+
+# then inspect state with a path relative to the current directory
+pixi run cgitsync view_tree .cgitsync/state/complexgitsync.gts
+```
+
+From `CGSil1/ComplexGitSync`, do **not** call
+`pixi run cgitsync view_tree CGSil1/.cgitsync/state/complexgitsync.gts` because
+that resolves to `CGSil1/ComplexGitSync/CGSil1/.cgitsync/...` and fails with
+`No such file or directory`.
+
 ### Lifecycle
 
 ComplexGitSync follows this simplified lifecycle:
