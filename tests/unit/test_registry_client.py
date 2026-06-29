@@ -5,7 +5,7 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
-from ComplexGitSync.orchestre import ComplexGitSyncClient, GocDocument
+from ComplexGitSync.orchestre import ComplexGitSyncClient, GocDocument, _path_to_environment_marker
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState
 from ComplexGitSync.git_tree import DependencyTreeRegistry, GitTree, TreeLifecycleState, make_repo_id
@@ -910,11 +910,12 @@ def test_client_load_cgs_updates_project_local_lgr(tmp_path):
     client.load(config_path)
 
     data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
+    expected_path_marker = _path_to_environment_marker(expected_snapshot)
     assert data["register"]["current_snapshot_id"] == "gts-000001"
-    assert data["register"]["current_snapshot_path"] == str(expected_snapshot)
+    assert data["register"]["current_snapshot_path"] == expected_path_marker
     assert len(data["snapshots"]) == 1
     assert data["snapshots"][0]["id"] == "gts-000001"
-    assert data["snapshots"][0]["snapshot_path"] == str(expected_snapshot)
+    assert data["snapshots"][0]["snapshot_path"] == expected_path_marker
 
 
 def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path):
