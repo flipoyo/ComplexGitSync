@@ -62,6 +62,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T36 | CLI Dry-Run Mode | ✅ Done |
 | T37 | Architectural Positioning Documentation | ✅ Done |
 | T38 | Terminal Visualisation Views (`view_tree`, `view_operation`) | ✅ Done |
+| T39 | rustworkx Graph Engine Coupling Plan | 🟡 Planned (assessment complete) |
 
 ## Project State
 
@@ -78,6 +79,8 @@ The project is **not yet BetaSeries** because:
 
 - The roadmap continuation tickets are delivered, but formal security hardening
   follow-up tickets remain open in `audit.md` after the T37 review.
+- T39 (`rustworkx` graph-engine coupling) is now planned and not yet
+  implemented.
 
 The project is **past POC** because the entire core workflow (initialise, clone,
 checkout, add, commit, push, tag, freeze, restart) is implemented, tested at
@@ -134,6 +137,28 @@ the unit level, and documented.
 - Logger profile behavior is explicitly verified for both `verbose` and `whisper_sync` modes with file-log assertions.
 - `.goc` automation is available through `ComplexGitSyncClient.orchestrate`; the local register (T24) and sync ledger (T32) are both delivered.
 - T32: `write_gts_snapshot` now appends an immutable DAG event to the `[[ledger]]` section of the `.lgr` file on every sync operation. `SyncLedger.history()` and `SyncLedger.replay()` return events in topological order. `ComplexGitSyncClient.get_ledger_history()` and `replay_ledger()` expose the ledger via the public API.
+
+## rustworkx Assessment (Issue #139)
+
+- Assessment result: **`rustworkx` is a good candidate** for ComplexGitSync's
+  internal graph engine, specifically for SCC detection and topological
+  traversal now implemented in `git_tree.py`.
+- Rationale:
+  - current graph-heavy hotspots (`find_strongly_connected_components`,
+    `topological_sort`, and cycle-normalization in `fix_circularities`) map
+    directly to `rustworkx` primitives,
+  - `rustworkx` can improve runtime scalability on larger repository trees while
+    keeping deterministic graph semantics,
+  - coupling can stay internal and preserve the current public API and CLI
+    contracts.
+- Coupling constraints (must stay aligned with `DevSpecs.md` and `docs/DocSpecs.md`):
+  - no plugin-style API split; keep one canonical ComplexGitSync API surface,
+  - preserve deterministic ordering and current cycle-breaking behavior,
+  - keep lifecycle gating and `.gts`/`.lgr` contracts unchanged,
+  - document dependency/install workflow with project-standard tooling (`uv` /
+    `pixi`) and update architecture documentation in the same change set.
+- Execution tickets for this coupling are now tracked in
+  `Planning/DevPlanTickets.md` under T39.
 
 ## Definition of Done (Global)
 

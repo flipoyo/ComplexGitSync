@@ -358,7 +358,7 @@ changes and hash drift on workspace mutations.
 ### Ticket numbering rule (single merged plan)
 - Closed tickets now run sequentially from **T00** through **T34**.
 - Completed roadmap continuation tickets now continue as **T28** through **T34**.
-- Remaining open roadmap tickets have been closed through **T38**.
+- Remaining open roadmap tickets now continue at **T39**.
 
 ### T32 — `.lgr` Local Sync Ledger (High) ✅
 **Type**: Architecture / Traceability  
@@ -559,3 +559,30 @@ manifest content in emitted `.gts` files.
 - `view-tree` now supports `--depth` and repeatable `--collapse` options.
 - Added focused unit tests in `tests/unit/test_cli_smoke.py` and
   `tests/unit/test_registry_client.py`.
+
+### T39 — rustworkx Graph Engine Coupling (Medium)
+**Type**: Architecture / Performance  
+**Problem**: Graph operations are currently fully maintained in custom Python implementations, which raises long-term maintenance and scale risk for larger workspaces.  
+**Legacy linkage**: Extends T27/T35/T37 deterministic DAG semantics without changing user-facing lifecycle contracts.
+**Objectives**:
+- Introduce `rustworkx` as the internal graph-processing engine for DAG/SCC workflows.
+- Preserve deterministic ComplexGitSync behavior and DevSpecs/DocSpecs alignment.
+**Tasks**:
+- Add optional graph-engine integration layer for:
+  - SCC discovery used by `fix_circularities`,
+  - topological ordering used by traversal/operation planning.
+- Keep existing deterministic tie-break logic (anchor selection + canonical ordering)
+  as ComplexGitSync-owned policy.
+- Maintain compatibility fallback path when `rustworkx` is unavailable.
+- Add parity tests proving identical outputs between current behavior and
+  `rustworkx`-backed execution on representative DAG/cycle fixtures.
+- Update architecture and contributor documentation with:
+  - dependency policy,
+  - install instructions using `uv` / `pixi`,
+  - operational guarantees unchanged for `.gts` / `.lgr` workflows.
+**Acceptance Criteria**:
+- Existing public API and CLI contracts remain unchanged.
+- SCC and topological outputs remain deterministic and parity-validated.
+- Full repository tests pass with and without `rustworkx` enabled.
+- Documentation reflects the new internal engine decision and constraints.
+**Status**: 🟡 Planned (assessment complete; implementation pending)
