@@ -285,7 +285,7 @@ class ConfigDocument:
         except ImportError as exc:
             raise ImportError(
                 "PyYAML is required for YAML support.  "
-                "Install ComplexGitSync with the yaml extra using uv or pixi."
+                "Install ComplexGitSync with the yaml extra using pixi."
             ) from exc
         with open(path, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
@@ -311,7 +311,7 @@ class ConfigDocument:
         except ImportError as exc:
             raise ImportError(
                 "PyYAML is required for YAML support.  "
-                "Install ComplexGitSync with the yaml extra using uv or pixi."
+                "Install ComplexGitSync with the yaml extra using pixi."
             ) from exc
         with open(path, "w", encoding="utf-8") as fh:
             yaml.dump(self._data, fh, default_flow_style=False, allow_unicode=True)
