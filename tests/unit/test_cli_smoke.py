@@ -47,6 +47,16 @@ def test_print_command_renders_cgs_summary(tmp_path, capsys):
     assert "demo" in captured.out
 
 
+def test_validate_command_renders_lifecycle_state(tmp_path, capsys):
+    config_path = _write_project_cgs(tmp_path)
+
+    exit_code = main(["validate", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "DECLARED" in captured.out
+
+
 def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
