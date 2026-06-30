@@ -15,8 +15,9 @@ the existing `GitTree` domain model. The design principle is:
 > **`GitTree` owns the graph. The graph does not own the repository.**
 
 `petgraph` remains an implementation detail — no module outside the graph layer
-imports petgraph types directly. This preserves backward compatibility and
-allows future engine replacement without changing the public API.
+imports petgraph types directly. This maintains compatibility with the existing
+Python API and allows future engine replacement without changing the public
+interface.
 
 Full plan: `Planning/DevPlan.md` · Tickets: `Planning/DevPlanTickets.md`
 

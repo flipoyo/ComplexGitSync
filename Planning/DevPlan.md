@@ -99,7 +99,7 @@ The current Python implementation (AlphaSeries, T00–T38) delivers:
 | Dependency-tree registry | ✅ Complete |
 | Topological sort / SCC | ✅ Complete (pure Python in `git_tree.py`) |
 | CLI (`cgitsync`) | ✅ Complete |
-| 335 tests (303 unit + 32 integration) | ✅ Passing |
+| Test suite | ✅ Passing (unit + integration) |
 
 The Rust/petgraph layer will **replace** the pure-Python graph algorithms while
 preserving the same public behavior and test expectations.
