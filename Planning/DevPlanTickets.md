@@ -1,561 +1,471 @@
-# ComplexGitSync DevPlan Tickets — Active
+# ComplexGitSync DevPlan Tickets — petgraph Integration
 
-This document reflects the ticket status as of the lifecycle alignment
-follow-up. It supersedes `InitialDevPlanTickets.md` as the authoritative active
-ticket list.
-
----
-
-## Completed Tickets
-
-### T00 — Bootstrap Repository ✅
-All repository structure and packaging files in place.
-
-### T01 — Enums, Errors, Core Dataclasses ✅
-All enums, exceptions, and bootstrap classes implemented and importable.
-
-### T02 — Node Model and Registry Model ✅
-`RepoNode`, `RepoRegistryEntry`, `DependencyTreeRegistry`, readiness helpers,
-and leaf-to-parent promotion all implemented.
-
-### T03 — Logging Subsystem ✅
-`CommandRunLogger` with `verbose`/`whisper_sync` profiles.  Per-run log files,
-structured events for commands, state transitions, fallbacks, `.gts` writes/loads.
-
-### T04 — `.cgs` Parser and Validator ✅
-`CgsDocument` with full TOML, JSON, YAML factories.  Static validation engine.
-
-### T05 — Nested `.cgs` Discovery Engine ✅
-`discover_nested_configs` scans repo roots, resolves explicit and auto paths,
-detects ambiguity, promotes leaves to parents, inserts new descendants.
-
-### T06 — `.gts` Writer, Loader, Validator ✅
-`GtsDocument` with serialiser, parser, validation.  Full registry
-reconstruction from snapshot.
-
-### T07 — Git Runner ✅
-`GitRunner` with typed wrappers for: `clone`, `rev_parse_head`,
-`current_branch`, `remote_branch_exists`, `local_branch_exists`,
-`create_branch`, `checkout`, `has_uncommitted_changes`, `has_staged_changes`,
-`stage_all`, `commit`, `push`.
-
-### T08 — Registry Refresh and Readiness Engine ✅
-`recompute_tree_state` computes `TreeLifecycleState` from per-repo states.
-Lifecycle transitions: DECLARED → PENDING → READY / PARTIAL / ERROR.
-
-### T09 — `clone` ✅
-Root + child clone flow with nested discovery and parent-side git submodule
-mounting for nested repositories. PENDING → READY transitions. Automatic `.gts`
-write on success.
-
-### T10 — `checkout` (Python API) ✅
-`checkout_tree(registry, git_runner, branch_name, *, ref_kind)`:
-  1. `propagate_global_branch` — set target ref in-memory across all entries.
-  2. `create_global_branch` — `git branch` parent-first where missing.
-  3. `git checkout` parent-first; refresh all entry state.
-Requires READY; tree stays READY.  Client also writes a `.gts` snapshot.
-
-`restart` (CLI) stub existed; the remaining wiring was completed in the
-follow-up entry below.
-
-### T10 (remainder) — `restart` CLI wiring ✅
-`restart_tree` implemented in Tier 2 (operations.py) with parent-first submodule-aware
-sync (root `pull --ff-only`, then parent-side submodule updates) using the root
-repository's current branch.  `ComplexGitSyncClient.restart`
-implemented with `.cgs` load, nested discovery, READY enforcement, and `.gts`
-snapshot write.  `cgitsync restart <source.cgs>` CLI command wired.  A separate
-terminology follow-up now tracks the user-facing rename to `pull`.
-
-### T11 — Tree and Registry Inspection ✅
-`get_dependency_registry`, `get_tree_state`, `format_project_tree`,
-`print_project_tree`. CLI `tree` is fully wired; the `registry` command was
-removed for simplicity. `iter_tree` / `iter_tree_leaf_first` public API.
-
-### T12 — `commit` and `push` with READY Gating ✅
-`commit_tree(registry, git_runner, message, *, stage_all)` — leaf-first;
-skips repos with no staged changes.
-`push_tree(registry, git_runner)` — leaf-first.
-Both require READY and keep the tree READY.
-
-### T13 — `tag` ✅
-`tag_tree(registry, git_runner, tag_name)` implemented in Tier 2 with READY
-gating, tag propagation, leaf-first tag creation/push, and registry refresh.
-`ComplexGitSyncClient.tag(tag_name)` implemented with action logging.
-Preflight now rejects dirty trees, missing remotes, branch misalignment,
-pre-existing tags, and parent/child layouts not linked as git submodules.
-`GitRunner.create_tag` now enforces non-forcing mode (`-f` is not supported).
-
-### T14 — `freeze_release` ✅
-`freeze_release_tree` implemented in Tier 2 with READY gating and leaf-first
-stage/commit/tag/push flow. `ComplexGitSyncClient.freeze_release` implemented
-with named `.gts` output support.
-
-### T15 — `launch_release` ✅
-`ComplexGitSyncClient.launch_release(snapshot_path)` implemented: load `.gts`,
-rebuild registry, run due clone/checkout actions, refresh SHAs, and enforce
-READY completion.
-
-### T16 — CLI wiring for `checkout`, `commit`, `push`, `tag`, `freeze-release`, `launch-release` ✅
-All six commands implemented in `cli.py`:
-  - `cgitsync checkout <branch> --gts <file> [--ref-kind branch|tag]`
-  - `cgitsync commit <message> --gts <file> [--no-stage]`
-  - `cgitsync push --gts <file>`
-  - `cgitsync tag <name> --gts <file>`
-  - `cgitsync freeze-release <name> --gts <file>`
-  - `cgitsync launch-release <snapshot.gts>`
-CLI behaviour matches Python API invariants; 13 new smoke tests added.
-
-### T17 — Unit Test Suite (incremental) ✅
-294 total passing tests. Unit tests cover
-parsers, registry, lifecycle, rendering, gating, propagate/create/checkout/
-commit/push operations, deep 3-level hierarchy ordering, the simplified
-`initialise`/`freeze` CLI surface, and `fix_circularities` behaviour.
-Integration tests cover the CGSi 4-repo mixed-provider topology (expand,
-duplication prevention, cycle prevention, lifecycle state, and example file
-parsing) plus a READY `.gts` git command cycle through Python API and CLI-first
-execution (`add → commit → push → tag → freeze`).
-
-### T18 — Integration Test Suite  ✅
-**Goal**: end-to-end validation on temporary nested git repositories.  
-**Deliverables**: nested repo fixture generator; clone / checkout / pull / add / commit / push /
-tag / freeze scenarios.  
-**Dependencies**: T09–T16.  
-**Acceptance**: CaWaQS-style topology reproducible; all sync commands produce
-expected READY states and `.gts` outputs.
-
-**Progress**: CGSi mixed-provider topology and command-cycle coverage delivered,
-then completed with local file-remote clone and launch-release lifecycle
-scenarios (29 integration tests). Covers: `expand()` pipeline, duplication
-prevention, cycle prevention, registry structure, DECLARED lifecycle state,
-example `.cgs` parsing, READY `.gts` git command cycle via Python API + CLI,
-`clone_cgs` local remotes, and `launch_release` restore from missing paths.
-
-### T19 — Documentation and Examples (incremental) ✅
-`README.md`, `docs/user_guide.tex`, `docs/getting_started.tex`,
-`docs/architecture.tex`, `AdditionalSpecs.md`, all figures updated.
-Lifecycle vocabulary simplified: `initialise` replaces the 3-step
-`load→expand→validate` pipeline in all user-facing docs.
-CLI display contract now documented: workflow step line for `initialise`,
-explicit `git_command=...` output for git actions, explicit `log_file=...`,
-and minimal repo-only tree display.
-`Planning/DevPlan.md` and this file updated.
-
-### T20 — CI Version Increment Automation ✅
-PR-based version bump on every merge.  `YYYY.XX` format with rollover.
-
-### T21 — `add`, `freeze_state`, `launch_state` (API + CLI) ✅
-Added `add_tree` in Tier 2 and `ComplexGitSyncClient.add()` for explicit
-`git add --all` workflow staging on READY trees. Added
-`ComplexGitSyncClient.freeze_state(...)` and `launch_state(...)` as internal
-dev-state counterparts to release methods. CLI now wires:
-  - `cgitsync add --gts <file>`
-  - `cgitsync freeze-state <name> --gts <file>`
-  - `cgitsync launch-state <snapshot.gts>`
-
-### T22 — `.goc` parser-driven command automation ✅
-Delivered parser-driven `.goc` execution through the public client API:
-
-- Added `ComplexGitSyncClient.orchestrate(<plan.goc>)` to execute action plans
-  in deterministic order.
-- Added command-to-API mapping for `.goc` actions:
-  `clone`, `checkout`, `pull`, `add`, `commit`, `push`, `tag`, `freeze`.
-- Added per-action validation and reporting, including explicit unsupported
-  action reporting with indexed error context.
-- Added focused unit coverage for action ordering and unsupported-action
-  reporting.
-
-### T23 — Lifecycle terminology: `load`, `expand`, `validate`, `git()` ✅
-Aligned the user-facing lifecycle surface with the reference lifecycle:
-
-- `load(.cgs)` is now the canonical step-1 name; `read()` is retained as a
-  compatibility alias.
-- `expand(.cgs/.gts)` is the canonical step-2 name; it loads the source, runs
-  nested `.cgs` discovery (parent-to-leaf recursive), and returns the formatted
-  tree.  CLI: `cgitsync expand <source>`.
-- `validate(.cgs/.gts)` is the canonical step-3 name; it accepts both `.cgs`
-  and `.gts` sources; `verify()` is retained as a compatibility alias.  CLI:
-  `cgitsync validate <source>`.
-- `git(gittree, command, *args)` is the unified step-5 interface.  Dispatches
-  `"commit"`, `"push"`, and `"tag"` to the appropriate tree-wide operations;
-  each follows leaf-first ordering.  Individual `commit`, `push`, and `tag`
-  methods remain available as direct entry points.
-- CLI gains `load` and `expand` as first-class subcommands; `tree` remains as
-  a backward-compatible alias for expand (with runtime-snapshot preference).
-- All documentation (AdditionalSpecs.md, DevPlan.md, DevPlanTickets.md,
-  README.md) updated to use the canonical vocabulary.
-
-### T24 — Local Git Register (`.lgr`) management ✅
-**Goal**: maintain a project-local register named `<Project_name>.lgr`.  
-**Deliverables**: assign a unique local id to each generated `.gts`, keep the
-current project snapshot in sync, and record the id emitted by `freeze`.  
-**Dependencies**: T06, T09, T14, T23.  
-**Acceptance**: every `.gts` produced by the workflow is represented exactly
-once in the `.lgr` register with one stable local id.
-
-**Progress**: `write_gts_snapshot` now updates `<project>/<Project_name>.lgr`
-with a stable local id (`gts-XXXXXX`) per generated snapshot hash, tracks the
-current snapshot pointer (`id`/`hash`/`path`), and emits a dedicated `lgr_update`
-structured log event. Focused unit coverage added in `test_registry_client.py`.
-
-### T25 — Logger verbosity profile verification ✅
-Validated command-run logging behavior for both `verbose` and `whisper_sync`
-profiles. Structured file logs preserve mandatory events (`command_start`,
-`command_end`, lifecycle events) across both modes, while console verbosity is
-profile-gated.
-
-### T26 — CLI Simplification: `initialise`, `freeze`, smart `load()` ✅
-Simplified the user-facing CLI and Python API lifecycle surface:
-
-- `initialise(.cgs)` — primary entry point for new projects: clones all repos
-  (calls `clone_cgs`), ends in `READY`.
-- `initialise(.gts)` — primary entry point for existing projects: restores from
-  a snapshot (calls `load_gts`), ends in `READY`.
-- `freeze` — added as a primary CLI command (alias for `freeze_release`).
-- `load()` — updated to accept both `.gts` (direct) and `.cgs` (smart load via
-  `load_cgs` pipeline) sources.
-- `load`, `expand`, `validate`, `tree` removed from the CLI primary command
-  surface; they remain available as Python API methods for power users.
-- CLI primary commands: `initialise`, `pull`, `checkout`, `add`, `commit`,
-  `push`, `tag`, `freeze`.
-- `README.md`, `AdditionalSpecs.md`, `docs/user_guide.tex`, `DevPlan.md`,
-  and this file updated to use the simplified lifecycle vocabulary.
-- 5 unit tests updated; 4 new tests added (199 passing).
-
-### T27 — Circular dependency resolution: `fix_circularities` ✅
-Resolved circularities that arise when a parent's nested `.cgs` declares
-another parent (registered at the project root level) as one of its leaves,
-creating duplicate registry entries for the same physical path.
-
-- `fix_circularities(registry)` standalone function added to `git_tree.py`:
-  groups entries by resolved absolute path, retains the canonical entry
-  (fewest `:` separators in `repo_id` = closest to root), removes all
-  lower-priority duplicates, recomputes tree state, and returns a tuple of
-  `"fixed_circularity:<removed_id>→<canonical_id>"` change descriptors.
-- `discover_nested_configs` guards against adding new circular entries at
-  discovery time using a pre-built O(1) `set[Path]` of registered paths.
-- `ComplexGitSyncClient.fix_circularities()` exposed as a step-2.5 public
-  method for custom pipelines (between `expand` and `validate`).
-- Called automatically inside `expand(.cgs)` and `clone_cgs()`.
-- Exported from the top-level package in `__init__.py`.
-- 7 unit tests added; 264 total passing.
-- Documentation updated: README.md, getting_started.tex, user_guide.tex,
-  python_api.tex, AdditionalSpecs.md.
-
-### T28 — Safe Tag Propagation Semantics (Critical)  ✅
-**Type**: Reliability / Release Integrity  
-**Problem**: `GitRunner.create_tag()` currently uses `git tag -f` unconditionally,
-allowing silent overwrite of existing tags during propagated releases.  
-**Legacy linkage**: Extends T13 (`tag`) safety semantics.
-**Objectives**:
-- Preserve release immutability by default.
-- Allow explicit force-tag workflows only when requested.
-**Tasks**:
-- Add `force: bool = False` parameter to `create_tag()`.
-- Remove unconditional `-f`.
-- Add explicit CLI option `--force-tag`.
-- Fail clearly if tag already exists and force is disabled.
-- Add unit tests for:
-  - new tag creation,
-  - existing tag rejection,
-  - forced overwrite.
-**Acceptance Criteria**:
-- Standard release propagation never rewrites tags.
-- Force behavior is explicit and tested.
-- Existing workflows remain backward compatible when requested.
-
-### T29 — End-to-End Local Integration Test Infrastructure (Critical)  ✅
-**Type**: Testing / Reliability  
-**Problem**: Current tests validate isolated behaviors but not full synchronization workflows.  
-**Legacy linkage**: Implements the remaining scope of T18.
-**Objectives**:
-- Validate real multi-repository orchestration.
-- Ensure deterministic macro-sync behavior.
-**Tasks**:
-- Create temporary local bare remotes for integration tests.
-- Generate:
-  - leaf repositories,
-  - parent GitTree repository,
-  - orchestration workspace.
-- Implement test scenarios:
-  - initialise, *(covered)*
-  - clone, *(covered)*
-  - checkout, *(covered)*
-  - add_tree, *(covered)*
-  - commit, *(covered)*
-  - push, *(covered)*
-  - pull, *(covered)*
-  - tag, *(covered)*
-  - freeze, *(covered)*
-- Validate commit SHA propagation consistency.
-- Validate submodule SHA updates.
-**Acceptance Criteria**:
-- Complete workspace lifecycle reproducible locally.
-- Tests run without GitHub/GitLab network dependency.
-- Failures expose inconsistent DAG state immediately.
-
-**Progress**: CGSi 4-repo mixed-provider topology fixture (`conftest.py`) and
-29 integration tests delivered (`test_cgsi_topology.py`). Covered: `expand()`
-pipeline, duplication/cycle prevention, registry structure, DECLARED state,
-example `.cgs` parsing, READY `.gts` git command cycle via CLI/Python API,
-local file-remote `clone_cgs`, and `launch_release` clone+checkout restoration.
-
-### T30 — Transactional Tag Propagation (High)  ✅
-**Type**: Reliability / Distributed Consistency  
-**Problem**: Partial failure during propagated tagging may leave repositories desynchronized.  
-**Legacy linkage**: Hardens T13/T14 propagation guarantees.
-**Objectives**:
-- Make release propagation atomic from the user perspective.
-**Tasks**:
-- Implement preflight validation phase:
-  - READY registry,
-  - branch alignment,
-  - remote availability,
-  - clean working trees,
-  - absence of conflicting tags.
-- Add propagation report object.
-- Abort propagation before mutation if validation fails.
-- Add rollback strategy documentation.
-**Optional**:
-- Local rollback of newly created tags if push fails mid-propagation.
-**Acceptance Criteria**:
-- No partial silent releases.
-- Validation errors reported before mutation.
-- Propagation state observable and serializable.
-
-### T31 — Formal `.gts` Snapshot Specification (High)  ✅
-**Type**: Core Architecture  
-**Problem**: `.gts` behaves operationally but lacks formal deterministic specification.  
-**Legacy linkage**: Deepens T06 contract and determinism guarantees.
-**Objectives**:
-- Define `.gts` as canonical workspace state representation.
-**Tasks**:
-- Define canonical serialization order.
-- Specify required fields:
-  - repository identity,
-  - branch/ref information,
-  - commit SHA for READY repositories,
-  - parent relationships,
-  - sync metadata.
-- Add deterministic hashing:
-  - SHA-256 of canonical `.gts` payload.
-- Add schema versioning.
-- Add validation utilities.
-**Acceptance Criteria**:
-- Identical workspace states produce identical `.gts` hashes.
-- `.gts` can act as deterministic workspace checkpoint.
-
-**Progress**: `GtsDocument` now formalizes canonical snapshot hashing and
-validation (`schema_version = "1.1"`, `hash_algorithm = "sha256"`,
-`snapshot_hash`), enforces parent/ref/READY commit invariants, and
-`build_gts_document_from_registry` emits deterministic hashes for generated
-snapshots. Unit and integration coverage verifies stable hashes under metadata
-changes and hash drift on workspace mutations.
+This document contains the implementation tickets for the petgraph integration
+plan described in `DevPlan.md`. It supersedes the previous ticket list (now
+archived).
 
 ---
 
-## Remaining Tickets
+## Phase 0 — Rust Foundations
 
-### Ticket numbering rule (single merged plan)
-- Closed tickets now run sequentially from **T00** through **T34**.
-- Completed roadmap continuation tickets now continue as **T28** through **T34**.
-- Remaining open roadmap tickets have been closed through **T38**.
+### P0-T01 — Cargo Project Skeleton
 
-### T32 — `.lgr` Local Sync Ledger (High) ✅
-**Type**: Architecture / Traceability  
-**Problem**: The ledger layer is planned conceptually but not implemented.  
-**Legacy linkage**: Expands the delivered T24 local register into a full ledger model.
-**Objectives**:
-- Record synchronization operations as immutable DAG events.
-**Tasks**:
-- Define `.lgr` schema:
-  - sync_id,
-  - parent_sync_ids,
-  - operation type,
-  - timestamp,
-  - actor,
-  - workspace hash,
-  - affected repositories.
-- Implement append-only ledger.
-- Link `.gts` hashes into ledger events.
-- Add replay utilities.
-**Optional**:
-- Add cryptographic signatures.
-**Acceptance Criteria**:
-- Every synchronization operation becomes reproducible and traceable.
-- Ledger reconstructs workspace evolution history.
+**Goal:** Create a Rust library crate within the repository for the graph engine.
 
-**Progress**: `SyncLedger` class added to `orchestre.py`.  `write_gts_snapshot`
-now appends an immutable `[[ledger]]` event (schema: `sync_id`, `parent_sync_ids`,
-`operation`, `timestamp`, `actor`, `workspace_hash`, `gts_snapshot_id`,
-`affected_repos`) to the project-local `.lgr` file on every sync operation.
-Events form a DAG via `parent_sync_ids`.  `SyncLedger.history()` and
-`SyncLedger.replay()` return events in topological order.
-`ComplexGitSyncClient.get_ledger_history()` and `replay_ledger()` expose the
-ledger via the public API.  `SyncLedger` exported from the package.
-11 focused unit tests added in `test_registry_client.py`.  `AdditionalSpecs.md`
-and `DevPlan.md` updated; `user_guide.tex` updated with ledger section.
+**Tasks:**
+- [ ] Run `cargo init --lib` in a `rust/` subdirectory (or top-level if Rust-only).
+- [ ] Configure `Cargo.toml` with package metadata, edition 2021.
+- [ ] Add `petgraph = "0.6"` as dependency.
+- [ ] Add `thiserror`, `tracing`, `serde` as dependencies.
+- [ ] Create `src/lib.rs` with module declarations.
+- [ ] Verify `cargo build` and `cargo test` pass.
 
-### T33 — Workspace Preflight Validation Engine (High) ✅
-**Type**: Safety  
-**Problem**: Mutating operations currently rely heavily on implicit repository correctness.  
-**Legacy linkage**: Hardens T12/T13/T14 safety gating before mutation.
-`operations.py` now runs a shared workspace preflight validator before
-`commit_tree`, `push_tree`, `tag_tree`, and `freeze_release_tree`.  The engine
-checks dirty worktrees, detached HEADs, missing remotes, branch divergence,
-unresolved merges, missing submodule links, and stale recorded `commit_sha`
-values.  Diagnostics are severity-based: warnings are emitted for allowed but
-actionable states (for example ahead branches or stale snapshot SHAs), while
-blocking errors stop unsafe mutations.  `GitRunner` now exposes unresolved-merge
-and upstream-divergence probes.  Focused unit tests added in
-`test_operations.py`, plus an integration test covering detached-HEAD tag
-blocking in `test_cgsi_topology.py`.  `README.md`, `AdditionalSpecs.md`,
-`DevPlan.md`, and the user/architecture docs updated.
+**Acceptance:** `cargo test` exits 0 with at least one trivial test.
 
-### T34 — Deterministic Freeze Semantics (Medium) ✅
-**Type**: Reproducibility  
-**Problem**: Freeze semantics are conceptually central but not yet formally defined.  
-**Legacy linkage**: Formalizes T14 freeze invariants.
-**Objectives**:
-- Make freeze a deterministic reproducible workspace checkpoint.
-**Tasks**:
-- Define freeze invariants:
-  - immutable `.gts`,
-  - synchronized tags,
-  - validated workspace,
-  - ledger checkpoint.
-- Generate freeze manifest.
-- Add freeze restore operation.
-**Acceptance Criteria**:
-- A freeze fully reconstructs a compatible workspace state.
+---
 
-**Progress**: freeze snapshots now carry an explicit `[freeze_manifest]` table
-for freeze command origins (`freeze`, `freeze_release`, `freeze_state`). The
-manifest formalizes deterministic invariants (`immutable_snapshot`,
-`workspace_validated`, `ledger_checkpoint`) and the synchronized tag reference,
-and declares `launch_state` as the canonical restore operation. Snapshot
-validation now enforces this contract, and freeze operation tests assert the
-manifest content in emitted `.gts` files.
+### P0-T02 — CI Pipeline for Rust
 
-### T35 — Branch Topology Propagation Rules (Medium)
-**Type**: Workflow / DAG Semantics  
-**Problem**: Branch synchronization semantics across GitTree are not yet formally constrained.  
-**Legacy linkage**: Clarifies propagation rules used by T10/T12/T13 flows.
-**Objectives**:
-- Define coherent multi-repository branch propagation.
-**Tasks**:
-- Specify:
-  - leaf-to-root branch inheritance,
-  - allowed divergence,
-  - synchronization compatibility rules.
-- Add validation logic.
-- Add conflict diagnostics.
-**Acceptance Criteria**:
-- Workspace branch topology becomes deterministic and inspectable.
-**Status**: ✅ Done
+**Goal:** GitHub Actions workflow for Rust quality gates.
 
-**Implementation notes**:
-- `validate_branch_topology(registry, git_runner) → BranchTopologyReport` added to
-  `operations.py`; formalises four canonical rules:
-  1. Root's current branch is the reference.
-  2. All repos inherit the root branch (parent-first via `propagate_global_branch`).
-  3. `TAG`-resolved repos produce allowed `tag_divergence` (non-blocking).
-  4. `misaligned_branch` and `detached_head` make the topology incoherent (blocking).
-- `BranchTopologyConflict` dataclass captures `repo_name`, `expected_branch`,
-  `actual_branch`, and `conflict_kind`.
-- `BranchTopologyReport` dataclass captures `reference_branch`, `is_coherent`,
-  `conflicts`, `repo_branches`, and exposes `format()` for human-readable output.
-- `ComplexGitSyncClient.validate_branch_topology()` exposes the function in the
-  public API with structured logging.
-- `cgitsync validate-topology --gts <file>` is the new CLI command; exits 0 if
-  coherent, 1 if not.
-- 12 new unit tests added to `tests/unit/test_operations.py`; total test count
-  moves from 323 to 335 (303 unit + 32 integration).
+**Tasks:**
+- [ ] Add `.github/workflows/rust.yml`.
+- [ ] Jobs: `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt --check`.
+- [ ] Cache `~/.cargo` and `target/` for speed.
+- [ ] Run on push to main and on PRs.
 
-### T36 — CLI Dry-Run Mode (Medium)
-**Type**: Safety / UX  
-**Problem**: Current orchestration operations are highly mutating.  
-**Legacy linkage**: Adds non-mutating previews to T21/T12/T13/T14 command paths.
-**Objectives**:
-- Allow preview of synchronization operations.
-**Tasks**:
-- Add `--dry-run` to:
-  - add,
-  - commit,
-  - push,
-  - tag,
-  - freeze.
-- Produce operation execution plan without mutation.
-**Acceptance Criteria**:
-- Users can inspect workspace mutation graph before execution.
-**Status**: ✅ Done
+**Acceptance:** CI passes on a clean commit with the skeleton from P0-T01.
 
-**Implementation notes**:
-- Added `--dry-run` CLI option to `add`, `commit`, `push`, `tag`, and `freeze`.
-- Dry-run mode now prints an execution preview (`dry_run=true`, `plan_actions`,
-  `plan_order`) and skips mutating client calls.
-- Added unit smoke coverage ensuring dry-run paths remain non-mutating for each
-  command.
+---
 
-### T37 — Architectural Positioning Documentation (Medium)
-**Type**: Documentation / Identity  
-**Problem**: The project is more than Git automation, but this is not fully formalized.  
-**Legacy linkage**: Complements T19 documentation scope.
-**Objectives**:
-- Clarify conceptual positioning.
-**Tasks**:
-- Add architecture document:
-  - Git DAG,
-  - GitTree DAG,
-  - workspace state propagation,
-  - deterministic synchronization,
-  - `.gts`,
-  - `.lgr`,
-  - local tangle analogy.
-- Explicitly distinguish:
-  - Git,
-  - monorepo,
-  - submodule management,
-  - distributed workspace synchronization.
-**Acceptance Criteria**:
-- The project’s architectural identity becomes explicit and defensible.
-**Status**: ✅ Done
+### P0-T03 — Module Layout Scaffolding
 
-**Implementation notes**:
-- Added explicit architectural-positioning statements to `AdditionalSpecs.md`,
-  `README.md`, and `docs/Text/architecture.tex`.
-- Documented Git DAG vs GitTree DAG separation, workspace propagation ordering,
-  deterministic `.gts` checkpoints, `.lgr` replay ledger role, and local tangle
-  normalization into a DAG via `fix_circularities`.
-- Added new figure source `docs/figures/positioning_matrix.tex` and linked it
-  from the architecture chapter.
-- Completed an external compatibility check against `DevSpecs.md` and added
-  security follow-up ticket proposals to `audit.md`.
+**Goal:** Create all planned source files with doc-comments and `todo!()` stubs.
 
-### T38 — Terminal Visualisation Views (`view_tree`, `view_operation`) (Medium)
-**Type**: UX / Observability  
-**Problem**: Users need deterministic terminal-native observability over both tree topology and runtime sync state.  
-**Legacy linkage**: Extends T11 tree inspection with branch/local/sync operational views.
-**Objectives**:
-- Add canonical terminal commands for topology and operation views.
-**Tasks**:
-- Add CLI commands:
-  - `view-tree` / `view_tree`,
-  - `view-operation` / `view_operation`.
-- Ensure `view-tree` supports deterministic rendering, depth limiting, and subtree collapse.
-- Ensure `view-operation` renders required columns:
-  - repository,
-  - branch,
-  - local state,
-  - synchronization state.
-**Acceptance Criteria**:
-- Both views render from either `.cgs` or `.gts` source paths in terminal.
-- Output remains deterministic and readable for large trees.
-**Status**: ✅ Done
+**Tasks:**
+- [ ] `src/git_tree.rs` — `pub struct GitTree`, `pub struct RepoHandle`.
+- [ ] `src/graph.rs` — `pub(crate)` types: `RepoNode`, `DependencyEdge`, `RepoGraph`.
+- [ ] `src/graph_builder.rs` — `pub fn from_cgs(...)`, `pub fn from_gts(...)`.
+- [ ] `src/graph_algorithms.rs` — algorithm function signatures.
+- [ ] `src/invariants.rs` — validation function signatures.
+- [ ] `src/planner.rs` — `pub struct SyncPlan`.
+- [ ] `src/executor.rs` — `pub struct GitExecutor`.
+- [ ] `src/dot_export.rs` — `pub fn to_dot(...)`.
+- [ ] `src/errors.rs` — error enums.
 
-**Implementation notes**:
-- Added `ComplexGitSyncClient.view_tree(...)` and `ComplexGitSyncClient.view_operation()`
-  backed by new renderers in `git_tree.py`.
-- Added CLI wiring for `view-tree` / `view_tree` and `view-operation` / `view_operation`.
-- `view-tree` now supports `--depth` and repeatable `--collapse` options.
-- Added focused unit tests in `tests/unit/test_cli_smoke.py` and
-  `tests/unit/test_registry_client.py`.
+**Acceptance:** `cargo check` passes; `cargo doc` generates documentation.
+
+---
+
+## Phase 1 — petgraph Fundamentals
+
+### P1-T01 — Node and Edge Model
+
+**Goal:** Implement the graph data model in `graph.rs`.
+
+**Tasks:**
+- [ ] Define `NodeKind` enum: `Root`, `Parent`, `Leaf`.
+- [ ] Define `RepoNode` struct with all fields.
+- [ ] Define `EdgeRelation` enum: `Submodule`, `NestedConfig`.
+- [ ] Define `DependencyEdge` struct.
+- [ ] Define `RepoGraph` type alias for `StableDiGraph<RepoNode, DependencyEdge>`.
+- [ ] Implement `Display` for `RepoNode`.
+- [ ] Unit tests for construction and basic queries.
+
+**Acceptance:** 5+ unit tests pass exercising node/edge CRUD.
+
+---
+
+### P1-T02 — GraphHandle Wrapper
+
+**Goal:** Safe wrapper around `RepoGraph` with ergonomic insertion methods.
+
+**Tasks:**
+- [ ] `pub(crate) struct GraphHandle` owning a `RepoGraph`.
+- [ ] Methods: `add_repo(...)`, `add_dependency(...)`, `remove_repo(...)`.
+- [ ] Methods: `node_count()`, `edge_count()`, `contains(id)`.
+- [ ] Lookup by ID: `find_by_id(&str) -> Option<NodeIndex>`.
+- [ ] Validate no duplicate IDs on insertion.
+
+**Acceptance:** Unit tests for insertion, removal, lookup, duplicate rejection.
+
+---
+
+### P1-T03 — Basic Traversal
+
+**Goal:** Implement BFS/DFS traversal over `GraphHandle`.
+
+**Tasks:**
+- [ ] `children(node) -> Vec<NodeIndex>`.
+- [ ] `parent(node) -> Option<NodeIndex>`.
+- [ ] `ancestors(node) -> Vec<NodeIndex>`.
+- [ ] `descendants(node) -> Vec<NodeIndex>`.
+- [ ] Iterator-based access using petgraph's `Bfs` and `Dfs`.
+
+**Acceptance:** Traversal tests on linear, diamond, and multi-branch topologies.
+
+---
+
+## Phase 2 — GitTree Encapsulation
+
+### P2-T01 — GitTree Public API
+
+**Goal:** Implement `GitTree` as the public domain model wrapping `GraphHandle`.
+
+**Tasks:**
+- [ ] `pub struct GitTree` with private `graph: GraphHandle`, `root: NodeIndex`, `metadata: GitMetadata`.
+- [ ] `pub struct RepoHandle(NodeIndex)` — opaque, `Copy`, `Eq`, `Hash`.
+- [ ] Public methods: `repo_count`, `root`, `repo`, `children`, `parent`.
+- [ ] `topo_order` and `reverse_topo_order` (delegating to graph_algorithms).
+- [ ] `iter()` → iterator over all `RepoHandle`s.
+- [ ] Verify: no `petgraph` type appears in any `pub` signature.
+
+**Acceptance:** Compilation succeeds; doc-test examples work; API review confirms no leakage.
+
+---
+
+### P2-T02 — GitTreeBuilder
+
+**Goal:** Builder pattern for constructing `GitTree` instances.
+
+**Tasks:**
+- [ ] `pub struct GitTreeBuilder` with fluent API.
+- [ ] `new(project_name)` → builder.
+- [ ] `set_root(id, path)` → builder.
+- [ ] `add_child(parent_id, child_id, path, relation)` → builder.
+- [ ] `build()` → `Result<GitTree, BuildError>`.
+- [ ] Validate: exactly one root, all parents exist, no orphans.
+
+**Acceptance:** Builder tests for valid trees, missing root, orphan detection.
+
+---
+
+### P2-T03 — Encapsulation Verification
+
+**Goal:** Automated test that no public API exposes petgraph types.
+
+**Tasks:**
+- [ ] Write a compile-time test (or `trybuild` test) that attempts to access `GitTree.graph` from outside the crate.
+- [ ] Verify `RepoHandle` does not implement `Into<NodeIndex>` publicly.
+- [ ] Document the encapsulation contract in `git_tree.rs` module docs.
+
+**Acceptance:** The test fails to compile as expected, proving encapsulation.
+
+---
+
+## Phase 3 — Graph Algorithms
+
+### P3-T01 — Topological Sort
+
+**Goal:** Implement topological ordering using petgraph.
+
+**Tasks:**
+- [ ] `pub(crate) fn topological_order(graph) -> Result<Vec<NodeIndex>, CycleError>`.
+- [ ] Wrap `petgraph::algo::toposort`.
+- [ ] Expose via `GitTree::topo_order() -> Vec<RepoHandle>`.
+- [ ] Expose via `GitTree::reverse_topo_order() -> Vec<RepoHandle>`.
+
+**Acceptance:** Tests for linear chain, diamond, wide tree, single-node graph.
+
+---
+
+### P3-T02 — Strongly Connected Components
+
+**Goal:** Detect cycles using Kosaraju's algorithm.
+
+**Tasks:**
+- [ ] `pub(crate) fn find_cycles(graph) -> Vec<Vec<NodeIndex>>`.
+- [ ] Wrap `petgraph::algo::kosaraju_scc`, filter to multi-node SCCs.
+- [ ] Expose via `GitTree::has_cycles() -> bool`.
+- [ ] Expose via `GitTree::cycles() -> Vec<Vec<RepoHandle>>`.
+
+**Acceptance:** Tests for acyclic graph (empty result), simple cycle, complex multi-SCC.
+
+---
+
+### P3-T03 — Cycle Breaking
+
+**Goal:** Implement `fix_circularities` equivalent from Python.
+
+**Tasks:**
+- [ ] `pub(crate) fn break_cycles(graph) -> Vec<(NodeIndex, NodeIndex)>`.
+- [ ] Strategy: remove the edge entering the node with the highest in-degree in each SCC.
+- [ ] Expose via `GitTree::fix_circularities() -> Result<Vec<(RepoHandle, RepoHandle)>, GraphError>`.
+- [ ] After breaking, verify `topological_order` succeeds.
+
+**Acceptance:** Cycle-breaking test with various topologies; result is always a valid DAG.
+
+---
+
+### P3-T04 — Reachability and Connectivity
+
+**Goal:** Implement reachability queries.
+
+**Tasks:**
+- [ ] `pub(crate) fn reachable_from(graph, start) -> HashSet<NodeIndex>`.
+- [ ] `pub(crate) fn is_connected(graph, root) -> bool`.
+- [ ] Expose via `GitTree::is_reachable(from, to) -> bool`.
+
+**Acceptance:** Tests for connected/disconnected graphs, self-reachability.
+
+---
+
+### P3-T05 — DAG Invariant Validation
+
+**Goal:** Validate the graph satisfies all structural invariants.
+
+**Tasks:**
+- [ ] `pub(crate) fn validate_dag(graph, root) -> Result<(), InvariantError>`.
+- [ ] Checks: no cycles, single root, all nodes reachable from root, no self-loops.
+- [ ] Expose via `GitTree::validate() -> Result<(), GraphError>`.
+
+**Acceptance:** Tests for each violation type returning appropriate error.
+
+---
+
+## Phase 4 — Submodule Dependency Graphs
+
+### P4-T01 — CGS Parser (Rust)
+
+**Goal:** Parse `.cgs` TOML files into Rust structs.
+
+**Tasks:**
+- [ ] Define `CgsDocument` struct with serde derives.
+- [ ] Parse `[project]`, `[[repositories]]` sections.
+- [ ] Handle optional fields: `branch`, `tag`, `group_name`.
+- [ ] Validate: project name required, at least one repo.
+- [ ] Round-trip test: parse → serialize → parse.
+
+**Acceptance:** Parse all `.cgs` fixtures from the Python test suite.
+
+---
+
+### P4-T02 — GTS Parser (Rust)
+
+**Goal:** Parse `.gts` TOML snapshots into Rust structs.
+
+**Tasks:**
+- [ ] Define `GtsDocument` struct with serde derives.
+- [ ] Parse `[document]`, `[[repositories]]`, `[[ledger]]` sections.
+- [ ] Validate schema version and snapshot hash.
+- [ ] Reconstruct `GitTree` from `.gts` data.
+
+**Acceptance:** Parse all `.gts` fixtures from the Python test suite.
+
+---
+
+### P4-T03 — Graph Builder from CGS
+
+**Goal:** Build `GitTree` from parsed `.cgs` configuration.
+
+**Tasks:**
+- [ ] `pub fn from_cgs(doc: &CgsDocument) -> Result<GitTree, BuildError>`.
+- [ ] Map repositories to nodes, ownership to edges.
+- [ ] Handle nested `.cgs` discovery (read filesystem).
+- [ ] Apply `fix_circularities` post-build.
+- [ ] Validate resulting tree.
+
+**Acceptance:** Integration test with multi-level `.cgs` producing correct tree.
+
+---
+
+### P4-T04 — Graph Builder from GTS
+
+**Goal:** Reconstruct `GitTree` from a `.gts` snapshot.
+
+**Tasks:**
+- [ ] `pub fn from_gts(doc: &GtsDocument) -> Result<GitTree, BuildError>`.
+- [ ] Reconstruct exact topology including commit SHAs.
+- [ ] Validate snapshot hash matches content.
+
+**Acceptance:** Round-trip: build tree → freeze → load `.gts` → identical tree.
+
+---
+
+### P4-T05 — Git Probe
+
+**Goal:** Query real git repositories for current state.
+
+**Tasks:**
+- [ ] `pub fn probe_git_state(tree: &mut GitTree) -> Result<(), ProbeError>`.
+- [ ] Shell out to `git rev-parse HEAD`, `git branch --show-current`, etc.
+- [ ] Update node metadata with live state.
+- [ ] Handle missing repos, detached HEADs, dirty worktrees.
+
+**Acceptance:** Integration test with a temp git repo.
+
+---
+
+## Phase 5 — Execution Planning
+
+### P5-T01 — SyncPlan Data Model
+
+**Goal:** Define the execution plan data structures.
+
+**Tasks:**
+- [ ] `pub struct SyncPlan { actions, order, warnings }`.
+- [ ] `pub enum SyncAction { Clone, Checkout, Pull, Commit, Push, Tag }`.
+- [ ] `pub struct PlanWarning { repo, message, severity }`.
+- [ ] Implement `Display` for `SyncPlan` (dry-run output).
+- [ ] Implement `Serialize` for JSON/TOML export.
+
+**Acceptance:** Plan construction and display tests.
+
+---
+
+### P5-T02 — Plan Generators
+
+**Goal:** Generate plans from `GitTree` analysis.
+
+**Tasks:**
+- [ ] `SyncPlan::clone_plan(tree)` — topological order.
+- [ ] `SyncPlan::commit_plan(tree, message)` — reverse topological order.
+- [ ] `SyncPlan::push_plan(tree)` — reverse topological order.
+- [ ] `SyncPlan::freeze_plan(tree, version)` — tag all + snapshot.
+- [ ] Validate plan ordering against tree invariants.
+
+**Acceptance:** Each plan generator tested on standard topologies.
+
+---
+
+### P5-T03 — Git Executor
+
+**Goal:** Execute plans against real repositories.
+
+**Tasks:**
+- [ ] `pub struct GitExecutor { runner, dry_run }`.
+- [ ] `execute(plan) -> Result<ExecutionReport, ExecutionError>`.
+- [ ] Dry-run mode: print actions without executing.
+- [ ] Error handling: stop on first failure, report context.
+- [ ] Logging: trace-level per action, info-level per plan.
+
+**Acceptance:** Integration test with local git repos; dry-run test.
+
+---
+
+### P5-T04 — DOT Export
+
+**Goal:** Export `GitTree` as Graphviz DOT format.
+
+**Tasks:**
+- [ ] `pub fn to_dot(tree: &GitTree) -> String`.
+- [ ] Node labels show repo ID and kind.
+- [ ] Edge labels show relation type.
+- [ ] Configurable: with/without metadata, color by state.
+- [ ] Use `petgraph::dot::Dot` internally.
+
+**Acceptance:** Output parses with `dot -Tpng` without errors.
+
+---
+
+## Phase 6 — Python Bridge
+
+### P6-T01 — PyO3 Setup
+
+**Goal:** Configure maturin/PyO3 for building Python extension.
+
+**Tasks:**
+- [ ] Add `pyo3` dependency with `extension-module` feature.
+- [ ] Add `maturin` build configuration.
+- [ ] Create `src/python_bridge.rs` with `#[pymodule]`.
+- [ ] Verify `maturin develop` produces importable module.
+- [ ] Add to `pixi.toml` as build task.
+
+**Acceptance:** `python -c "import _complexgitsync_graph"` succeeds.
+
+---
+
+### P6-T02 — PyGitTree Wrapper
+
+**Goal:** Expose `GitTree` to Python.
+
+**Tasks:**
+- [ ] `#[pyclass] struct PyGitTree`.
+- [ ] `#[pymethods]`: `from_cgs`, `from_gts`, `topo_order`, `reverse_topo_order`,
+      `repo_count`, `validate`, `has_cycles`, `fix_circularities`.
+- [ ] Return Python-native types (lists of strings, dicts).
+- [ ] Error mapping: `GraphError` → `PyRuntimeError`.
+
+**Acceptance:** Python tests calling all exposed methods.
+
+---
+
+### P6-T03 — Python Integration
+
+**Goal:** Wire Rust bridge into existing Python `git_tree.py`.
+
+**Tasks:**
+- [ ] In `git_tree.py`, try `import _complexgitsync_graph`.
+- [ ] If available, delegate `topological_sort`, `find_strongly_connected_components`,
+      `fix_circularities` to Rust.
+- [ ] If unavailable, fall back to existing pure-Python implementations.
+- [ ] Existing tests must pass with both paths.
+
+**Acceptance:** Full Python test suite passes with and without Rust extension.
+
+---
+
+### P6-T04 — Performance Benchmarks
+
+**Goal:** Quantify improvement from Rust graph engine.
+
+**Tasks:**
+- [ ] Benchmark: topological sort on 10, 50, 100, 500 node graphs.
+- [ ] Benchmark: SCC detection on same graph sizes.
+- [ ] Benchmark: full `from_cgs` pipeline.
+- [ ] Report: Python-only vs Rust-accelerated timings.
+- [ ] Add benchmark script to `pixi.toml` tasks.
+
+**Acceptance:** Rust path is ≥2x faster on 100+ node graphs.
+
+---
+
+## Ticket Dependency Graph
+
+```text
+P0-T01 ──→ P0-T02
+  │            │
+  ▼            ▼
+P0-T03 ──→ P1-T01
+              │
+              ▼
+           P1-T02 ──→ P1-T03
+              │
+              ▼
+           P2-T01 ──→ P2-T02 ──→ P2-T03
+              │
+              ▼
+           P3-T01 ──→ P3-T02 ──→ P3-T03 ──→ P3-T04 ──→ P3-T05
+              │
+              ▼
+           P4-T01 ──→ P4-T03
+           P4-T02 ──→ P4-T04
+                         │
+                         ▼
+                      P4-T05
+                         │
+                         ▼
+           P5-T01 ──→ P5-T02 ──→ P5-T03
+              │
+              ▼
+           P5-T04
+              │
+              ▼
+           P6-T01 ──→ P6-T02 ──→ P6-T03 ──→ P6-T04
+```
+
+---
+
+## Summary
+
+| Phase | Tickets | Key Milestone |
+|-------|---------|---------------|
+| 0 | P0-T01 .. P0-T03 | Rust project builds and passes CI |
+| 1 | P1-T01 .. P1-T03 | Graph data model operational |
+| 2 | P2-T01 .. P2-T03 | GitTree public API finalized |
+| 3 | P3-T01 .. P3-T05 | All graph algorithms ported |
+| 4 | P4-T01 .. P4-T05 | Full build pipeline (cgs/gts → GitTree) |
+| 5 | P5-T01 .. P5-T04 | Execution planning and DOT export |
+| 6 | P6-T01 .. P6-T04 | Python bridge operational |
+
+**Total: 24 tickets across 7 phases.**

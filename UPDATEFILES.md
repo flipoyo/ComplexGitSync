@@ -7,6 +7,42 @@
      to clone all repositories into `CGSil1/` (recommended for multi-repo projects).
    - `pixi run cgitsync view_tree .cgitsync/state/complexgitsync.gts`
 
+## petgraph Integration (Next Phase)
+
+The next development phase introduces a Rust graph engine (`petgraph`) behind
+the existing `GitTree` domain model. The design principle is:
+
+> **`GitTree` owns the graph. The graph does not own the repository.**
+
+`petgraph` remains an implementation detail — no module outside the graph layer
+imports petgraph types directly. This preserves backward compatibility and
+allows future engine replacement without changing the public API.
+
+Full plan: `Planning/DevPlan.md` · Tickets: `Planning/DevPlanTickets.md`
+
+### Target Rust module layout
+
+```text
+src/
+    git_tree.rs          // Public domain model
+    graph.rs             // petgraph implementation details
+    graph_builder.rs     // Build GitTree from Git
+    graph_algorithms.rs  // Topological sort, SCC, reachability
+    invariants.rs        // DAG validation
+    planner.rs           // SyncPlan generation
+    executor.rs          // Git command execution
+    dot_export.rs        // Graphviz DOT export
+```
+
+### Rust build and test (once Phase 0 is delivered)
+
+```bash
+cargo test              # Run Rust test suite
+cargo clippy            # Lint
+cargo doc --open        # Generate and view documentation
+maturin develop         # Build Python extension (Phase 6)
+```
+
 Using `--output-dir ../` places the cloned project tree in the parent directory
 (`CGSil1/`) instead of the current working directory, avoiding the doubled-path
 confusion (`CGSil1/ComplexGitSync/CGSil1/`).
