@@ -22,6 +22,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "tag": "Create a tag across the full reachable tree.",
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
     # Secondary / inspection commands
+    "validate": "Validate a .cgs or .gts topology and print the lifecycle state.",
     "print": "Print a .cgs or .gts lifecycle summary.",
     "describe": "Describe a .cgs or .gts input (alias for print).",
     "view-tree": "Render a topology-focused tree view in terminal.",
@@ -1262,6 +1263,7 @@ def _format_repo_tree_outline(client: ComplexGitSyncClient) -> str:
 
 
 _INSPECTION_HANDLERS = {
+    "validate": _handle_validate,
     "describe": _handle_describe,
     "print": _handle_print,
 }
