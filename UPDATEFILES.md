@@ -1,3 +1,13 @@
+## Cleanup (issue #143)
+
+- `pixi.toml` now uses `[workspace]` (replacing the deprecated `[project]`).
+- Python pinned to `3.11.*`; dev-feature environment removed; only `pytest` and
+  the editable package install are required.
+- CI simplified to a single `test` job on `ubuntu-latest` (Python 3.11 via
+  pixi); OS matrix, multi-version matrix, and release-automation job removed.
+- Error messages for missing PyYAML now reference `pixi` only (dropped the `uv`
+  alternative).
+
 # Real-case usage update (CGSil1)
 
 1. Clone your project repository (for example `CGSil1`).
