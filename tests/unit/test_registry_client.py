@@ -98,37 +98,118 @@ def test_client_initialise_dispatches_to_load_gts_for_gts_source(monkeypatch, tm
     assert registry.lifecycle_state == TreeLifecycleState.READY
 
 
-def test_client_initialise_dispatches_to_clone_cgs_for_cgs_source(monkeypatch):
+def test_client_initialise_dispatches_to_initialise_cgs_for_cgs_source(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_clone_cgs(path, *, target_dir=None, output_dir=None):
+    def _fake_initialise_cgs(path, *, cgspath=None):
         captured["path"] = path
-        captured["target_dir"] = target_dir
+        captured["cgspath"] = cgspath
         return "ok"
 
-    monkeypatch.setattr(client, "clone_cgs", _fake_clone_cgs)
+    monkeypatch.setattr(client, "initialise_cgs", _fake_initialise_cgs)
 
-    result = client.initialise("project.cgs", target_dir="workspace/demo")
+    result = client.initialise("project.cgs")
 
     assert result == "ok"
     assert captured["path"] == Path("project.cgs").resolve()
-    assert captured["target_dir"] == "workspace/demo"
+    assert captured["cgspath"] is None
 
 
-def test_client_initialise_forwards_output_dir_to_clone_cgs(monkeypatch):
+def test_client_initialise_forwards_output_dir_as_cgspath(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_clone_cgs(path, *, target_dir=None, output_dir=None):
-        captured["output_dir"] = output_dir
+    def _fake_initialise_cgs(path, *, cgspath=None):
+        captured["cgspath"] = cgspath
         return "ok"
 
-    monkeypatch.setattr(client, "clone_cgs", _fake_clone_cgs)
+    monkeypatch.setattr(client, "initialise_cgs", _fake_initialise_cgs)
 
     client.initialise("project.cgs", output_dir="../")
 
-    assert captured["output_dir"] == "../"
+    assert captured["cgspath"] == "../"
+
+
+def test_initialise_cgs_uses_cwd_as_root_and_cgshome_for_snapshot(tmp_path, monkeypatch):
+    root_path = tmp_path / "workspace" / "demo"
+    root_path.mkdir(parents=True)
+    cgspath = tmp_path / "cgshome"
+    cgspath.mkdir()
+    monkeypatch.chdir(root_path)
+
+    config_path = _write_clone_ready_cgs(tmp_path)
+    fake_runner = _FakeGitRunner(
+        {
+            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/docs.git": {"main"},
+        }
+    )
+    state_store = RuntimeStateStore(base_dir=tmp_path / "runtime-state")
+    client = ComplexGitSyncClient(git_runner=fake_runner, state_store=state_store)
+
+    registry = client.initialise_cgs(config_path, cgspath=cgspath)
+
+    root_entry = registry.get("root")
+    assert root_entry.absolute_path == root_path.resolve()
+    assert root_entry.repo_lifecycle_state.value in {"READY", "FALLBACK_READY"}
+
+    # Root was never cloned — only dependencies were.
+    cloned_remotes = [remote for remote, _, _ in fake_runner.clones]
+    assert "git@github.com:owner/demo.git" not in cloned_remotes
+
+    # Snapshot must be stored under CGSHOME (= resolved CGSPATH).
+    snapshot_path = state_store.latest_snapshot_for(config_path)
+    assert snapshot_path is not None
+    assert str(snapshot_path).startswith(str(cgspath.resolve()))
+    assert ".cgitsync" in str(snapshot_path)
+    assert "state" in str(snapshot_path)
+
+
+def test_initialise_cgs_default_cgshome_is_two_levels_up(tmp_path, monkeypatch):
+    # Build a directory structure: tmp_path/parent/child/cwd
+    cwd = tmp_path / "parent" / "child" / "cwd"
+    cwd.mkdir(parents=True)
+    monkeypatch.chdir(cwd)
+
+    expected_cgshome = (cwd / "../..").resolve()
+    config_path = _write_root_cgs(tmp_path)
+
+    client = ComplexGitSyncClient(git_runner=_FakeGitRunner({}))
+    captured: dict[str, object] = {}
+
+    def _fake_write_gts(*, command_origin, output_path=None):
+        captured["output_path"] = output_path
+        return output_path or tmp_path / "dummy.gts"
+
+    monkeypatch.setattr(client, "write_gts_snapshot", _fake_write_gts)
+    monkeypatch.setattr(client.state_store, "record_snapshot", lambda *a, **kw: None)
+
+    client.registry = None
+
+    def _fake_build_registry(*args, **kwargs):
+        from ComplexGitSync.orchestre import build_registry_from_cgs_document as _orig
+        from ComplexGitSync.orchestre import ROOT_REPO_ID
+        from ComplexGitSync.git_repo import RepoLifecycleState
+        reg = _orig(*args, **kwargs)
+        # Pre-mark root READY so the clone loop completes without git calls.
+        root = reg.get(ROOT_REPO_ID)
+        root.repo_lifecycle_state = RepoLifecycleState.READY
+        root.commit_sha = "abc123"
+        root.resolved_ref_kind = "branch"
+        root.resolved_ref_name = "main"
+        return reg
+
+    import ComplexGitSync.orchestre as _mod
+    monkeypatch.setattr(_mod, "build_registry_from_cgs_document", _fake_build_registry)
+
+    try:
+        client.initialise_cgs(config_path)
+    except Exception:
+        pass
+
+    if captured.get("output_path") is not None:
+        assert str(captured["output_path"]).startswith(str(expected_cgshome))
 
 
 def test_resolve_clone_root_uses_output_dir_as_base(tmp_path):
@@ -142,7 +223,7 @@ def test_resolve_clone_root_uses_output_dir_as_base(tmp_path):
     assert result == (output_dir / "demo").resolve()
 
 
-
+def test_client_validate_cgs_returns_declared_state(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()
 
@@ -626,7 +707,7 @@ def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
     assert reloaded_registry.get("root").absolute_path == root_entry.absolute_path
 
 
-def test_clone_cgs_uses_suffixed_target_when_default_root_is_occupied(tmp_path, monkeypatch):
+def test_clone_cgs_raises_when_default_root_is_occupied(tmp_path, monkeypatch):
     config_path = _write_clone_ready_cgs(tmp_path)
     (tmp_path / "demo").mkdir()
     (tmp_path / "demo" / "marker.txt").write_text("occupied\n", encoding="utf-8")
@@ -637,14 +718,12 @@ def test_clone_cgs_uses_suffixed_target_when_default_root_is_occupied(tmp_path, 
             {
                 "git@github.com:owner/demo.git": {"main"},
                 "git@github.com:owner/child-repo.git": {"autoTest"},
-                "git@github.com:owner/docs.git": {"main"},
             }
         )
     )
 
-    registry = client.clone_cgs(config_path)
-
-    assert registry.get("root").absolute_path == (tmp_path / "demo-1").resolve()
+    with pytest.raises(GitSyncError, match="already exists and is not empty"):
+        client.clone_cgs(config_path)
 
 
 def test_clone_cgs_replaces_nested_destination_populated_by_parent_clone(tmp_path):

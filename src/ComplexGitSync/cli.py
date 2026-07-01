@@ -76,16 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Path to a .cgs spec (clone mode) or .gts snapshot (restore mode).",
             )
             subparser.add_argument(
-                "--target-dir",
-                help="Target directory for the cloned project root (.cgs mode only).",
-            )
-            subparser.add_argument(
                 "--output-dir",
                 help=(
-                    "Base directory where the project folder is created (.cgs mode only). "
-                    "The project name from the .cgs file is appended automatically. "
-                    "For example, pass '../' to clone the project as a sibling of the "
-                    "current directory instead of a subdirectory."
+                    "CGSPATH: workspace-level directory path. ComplexGitSync resolves it to "
+                    "CGSHOME and stores runtime metadata under CGSHOME/.cgitsync/state/ "
+                    "(.cgs mode only). Defaults to ../.. relative to the current working directory."
                 ),
             )
             subparser.set_defaults(handler=_handle_initialise)
@@ -449,22 +444,15 @@ def _handle_load(args: argparse.Namespace) -> int:
 def _handle_initialise(args: argparse.Namespace) -> int:
     source_path = Path(args.source)
     if source_path.suffix == ".cgs":
-        client = ComplexGitSyncClient()
-        project_root = client.resolve_clone_root(
-            source_path,
-            target_dir=getattr(args, "target_dir", None),
-            output_dir=getattr(args, "output_dir", None),
-        )
+        cgspath = getattr(args, "output_dir", None)
         return _run_with_logging(
             command_name="initialise",
             source=source_path,
-            client=client,
-            project_root=project_root,
+            project_root=Path.cwd(),
             runner=lambda active_client, source: _execute_initialise_cgs(
                 active_client,
                 source,
-                target_dir=getattr(args, "target_dir", None),
-                output_dir=getattr(args, "output_dir", None),
+                cgspath=cgspath,
             ),
         )
     return _run_with_logging(
@@ -697,12 +685,11 @@ def _execute_initialise_cgs(
     client: ComplexGitSyncClient,
     source_path: Path,
     *,
-    target_dir: str | None,
-    output_dir: str | None = None,
+    cgspath: str | None = None,
 ) -> int:
     print("workflow=load->expand->validate->clone")
     print("git_command=git clone (executed per repo)")
-    registry = client.clone_cgs(source_path, target_dir=target_dir, output_dir=output_dir)
+    registry = client.initialise_cgs(source_path, cgspath=cgspath)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
