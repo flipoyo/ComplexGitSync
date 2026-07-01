@@ -356,11 +356,13 @@ class GitTree:
         
         for i in range(num_repos):
             print(f"\nRepository {i + 1}:")
-            repo, relative_path, nested_config = git_tree._prompt_repo_config(i + 1, num_repos, repo_template)
+            repo, relative_path, nested_config, default_branch, fallback_branch = git_tree._prompt_repo_config(i + 1, num_repos, repo_template)
             # Store additional repo metadata for .cgs generation
             git_tree._repo_metadata[repo.project_name] = {
                 'relative_path': relative_path,
                 'nested_config': nested_config,
+                'default_branch': default_branch,
+                'fallback_branch': fallback_branch,
             }
             git_tree.add_repo(repo)
         
@@ -368,13 +370,13 @@ class GitTree:
 
     def _prompt_repo_config(
         self, repo_index: int, total_repos: int, repo_template: GitRepo
-    ) -> tuple[GitRepo, str, str | None]:
+    ) -> tuple[GitRepo, str, str | None, str, str]:
         """Prompt for a single repository configuration.
         
         Returns
         -------
-        tuple[GitRepo, str, str | None]
-            GitRepo instance, relative_path, nested_config
+        tuple[GitRepo, str, str | None, str, str]
+            GitRepo instance, relative_path, nested_config, default_branch, fallback_branch
         """
         # Start with template defaults
         project_owner_name = input(f"  Project owner name [{repo_template.project_owner_name}]: ").strip() or repo_template.project_owner_name
@@ -410,6 +412,16 @@ class GitTree:
             print("  Warning: Invalid access protocol, using template default")
             access_protocol = repo_template.access_protocol
         
+        # Default branch
+        default_branch = input(f"  Default branch [{repo_template.default_branch if hasattr(repo_template, 'default_branch') else 'main'}]: ").strip()
+        if not default_branch:
+            default_branch = repo_template.default_branch if hasattr(repo_template, 'default_branch') else "main"
+        
+        # Fallback branch
+        fallback_branch = input(f"  Fallback branch [{default_branch}]: ").strip()
+        if not fallback_branch:
+            fallback_branch = default_branch
+        
         # Relative path
         if repo_index == 1:
             relative_path = "."
@@ -432,7 +444,7 @@ class GitTree:
             group_name=repo_template.group_name,
             gitprovider_url=repo_template.gitprovider_url,
             repo_name=repo_template.repo_name,
-        ), relative_path, nested_config
+        ), relative_path, nested_config, default_branch, fallback_branch
 
     def to_cgs(self) -> "CgsDocument":
         """Convert this GitTree to a CgsDocument.
@@ -457,10 +469,6 @@ class GitTree:
         for repo in self.repos.values():
             repo_dict = repo.to_cgs()
             
-            # Add default and fallback branches from GitTree defaults
-            repo_dict['default_branch'] = self.default_branch
-            repo_dict['fallback_branch'] = self.default_branch
-            
             # Add metadata from prompts
             if repo.project_name in self._repo_metadata:
                 metadata = self._repo_metadata[repo.project_name]
@@ -468,6 +476,19 @@ class GitTree:
                     repo_dict['relative_path'] = metadata['relative_path']
                 if metadata.get('nested_config'):
                     repo_dict['nested_config'] = metadata['nested_config']
+                # Use per-repo branches if available, otherwise fall back to GitTree defaults
+                if metadata.get('default_branch'):
+                    repo_dict['default_branch'] = metadata['default_branch']
+                else:
+                    repo_dict['default_branch'] = self.default_branch
+                if metadata.get('fallback_branch'):
+                    repo_dict['fallback_branch'] = metadata['fallback_branch']
+                else:
+                    repo_dict['fallback_branch'] = self.default_branch
+            else:
+                # Fallback to GitTree defaults if no metadata
+                repo_dict['default_branch'] = self.default_branch
+                repo_dict['fallback_branch'] = self.default_branch
             
             repos_list.append(repo_dict)
         
