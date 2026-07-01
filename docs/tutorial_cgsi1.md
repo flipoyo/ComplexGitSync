@@ -84,10 +84,19 @@ cloned under that project root.
 
 ### Step 1 — Validate the topology
 
+Install the Project Repo
+```bash
+git clone https://gitlab.com/CGS_test/CGSil1
+cd CGSil1
+git clone https://github.com/flipoyo/ComplexGitSync
+cd ComplexGitSync
+```
+
+
 Parses the spec and checks consistency without cloning anything:
 
 ```bash
-cgitsync validate ../CGSil1.cgs
+pixi run cgitsync validate ../CGSil1.cgs
 ```
 
 Expected output (tree not yet cloned, so `DECLARED`):
@@ -103,7 +112,7 @@ DECLARED ready=false complete=true
 Renders the project tree with lifecycle state:
 
 ```bash
-cgitsync print ../CGSil1.cgs
+pixi run cgitsync print ../CGSil1.cgs
 ```
 
 ---
@@ -114,13 +123,13 @@ Uses `$CGSHOME` as the existing root project, clones all child repositories
 under that root, and writes the first runtime `.gts` snapshot:
 
 ```bash
-cgitsync initialise ../CGSil1.cgs
+pixi run cgitsync initialise ../CGSil1.cgs
 ```
 
 The explicit equivalent is:
 
 ```bash
-cgitsync initialise ../CGSil1.cgs --output-path "$CGSPATH"
+pixi run cgitsync initialise ../CGSil1.cgs --output-path "$CGSPATH"
 ```
 
 Expected output (all repos cloned, tree is `READY`):
@@ -132,7 +141,7 @@ READY ready=true complete=true root=/path/to/workspace
 ```
 
 A runtime snapshot is written to
-`<workspace>/.cgitsync/state/CGSil1.gts`. Subsequent commands load this
+`$CGSHOME/.cgitsync/state/CGSil1.gts`. Subsequent commands load this
 snapshot automatically.
 
 ---
@@ -142,14 +151,14 @@ snapshot automatically.
 Stage all uncommitted file changes across every repository in the tree:
 
 ```bash
-cgitsync add
+pixi run cgitsync add
 ```
 
 The command discovers the `.gts` snapshot automatically from
 `$CGSHOME/.cgitsync/state/`. Use `--gts` to pass the path explicitly:
 
 ```bash
-cgitsync add --gts /path/to/workspace/.cgitsync/state/CGSil1.gts
+pixi run cgitsync add --gts /path/to/workspace/.cgitsync/state/CGSil1.gts
 ```
 
 ---
@@ -159,7 +168,7 @@ cgitsync add --gts /path/to/workspace/.cgitsync/state/CGSil1.gts
 Commit staged changes with a shared message across all dirty repositories:
 
 ```bash
-cgitsync commit "my commit message"
+pixi run cgitsync commit "my commit message"
 ```
 
 ---
@@ -169,7 +178,7 @@ cgitsync commit "my commit message"
 Push every repository to its configured remote, leaf-first:
 
 ```bash
-cgitsync push
+pixi run cgitsync push
 ```
 
 ---
@@ -179,7 +188,7 @@ cgitsync push
 Create and push a version tag across the whole tree:
 
 ```bash
-cgitsync tag v1.0.0
+pixi run cgitsync tag v1.0.0
 ```
 
 ---
@@ -190,7 +199,7 @@ Bundle outstanding changes into a release commit, tag, and push, then
 emit a versioned `.gts` snapshot:
 
 ```bash
-cgitsync freeze v1.1.0
+pixi run cgitsync freeze v1.1.0
 ```
 
 The `.lgr` ledger file in the project root is updated with the new
