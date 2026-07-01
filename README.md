@@ -27,43 +27,43 @@ and your credential helper work locally, `cgitsync` uses the same setup.
 ## Install for CLI usage
 
 ```bash
+git clone https://gitlab.com/CGS_test/CGSil1.git
+cd CGSil1
 git clone https://github.com/flipoyo/ComplexGitSync.git
 cd ComplexGitSync
 pixi install
 pixi run cgitsync --help
 ```
 
+The reference topology used below is the CGSil1 test case:
+<https://gitlab.com/CGS_test/CGSil1>. In this setup, commands are launched from
+the `ComplexGitSync` tooling checkout while the managed workspace is the parent
+`CGSil1` directory.
+
 ## Primary workflow
 
 ### 1. Initialise a workspace
 
-From a `.cgs` specification, clone the full repository tree and write the first
-runtime `.gts` snapshot:
+From the CGSil1 `.cgs` specification, initialise the full repository tree and
+write the first runtime `.gts` snapshot under the parent workspace:
 
 ```bash
-pixi run cgitsync initialise examples/complexgitsync.cgs
+pixi run cgitsync initialise ../CGSil1.cgs --output-dir ../..
 ```
 
-For a project workspace that contains the ComplexGitSync checkout as a nested
-tooling repository, initialise into the parent workspace:
+From the saved CGSil1 `.gts` snapshot, restore/load that state:
 
 ```bash
-pixi run cgitsync initialise examples/complexgitsync.cgs --output-dir ../
-```
-
-From a saved `.gts` snapshot, restore/load that state:
-
-```bash
-pixi run cgitsync initialise .cgitsync/state/complexgitsync.gts
+pixi run cgitsync initialise ../.cgitsync/state/CGSil1.gts
 ```
 
 ### 2. Inspect the synchronised tree
 
 ```bash
-pixi run cgitsync print .cgitsync/state/complexgitsync.gts
-pixi run cgitsync view_tree .cgitsync/state/complexgitsync.gts
-pixi run cgitsync view_tree .cgitsync/state/complexgitsync.gts --depth 2 --collapse parent_2
-pixi run cgitsync view_operation .cgitsync/state/complexgitsync.gts
+pixi run cgitsync print ../.cgitsync/state/CGSil1.gts
+pixi run cgitsync view_tree ../.cgitsync/state/CGSil1.gts
+pixi run cgitsync view_tree ../.cgitsync/state/CGSil1.gts --depth 2 --collapse CGSih1
+pixi run cgitsync view_operation ../.cgitsync/state/CGSil1.gts
 ```
 
 If no source is passed to `view_tree`, `view_operation`, or the READY-state Git
@@ -77,7 +77,7 @@ walks upward from the current directory.
 pixi run cgitsync pull
 pixi run cgitsync checkout feature/my-branch
 pixi run cgitsync add
-pixi run cgitsync commit "feat: update project CGS#1"
+pixi run cgitsync commit "feat: update CGSil1 CGS#1"
 pixi run cgitsync push
 pixi run cgitsync tag v1.2.3
 pixi run cgitsync freeze release-2026.05
@@ -87,21 +87,52 @@ Every command also accepts an explicit snapshot path when you do not want
 automatic discovery:
 
 ```bash
-pixi run cgitsync add --gts .cgitsync/state/complexgitsync.gts
-pixi run cgitsync commit "feat: update project CGS#1" --gts .cgitsync/state/complexgitsync.gts
-pixi run cgitsync push --gts .cgitsync/state/complexgitsync.gts
-pixi run cgitsync tag v1.2.3 --gts .cgitsync/state/complexgitsync.gts
-pixi run cgitsync freeze release-2026.05 --gts .cgitsync/state/complexgitsync.gts
+pixi run cgitsync add --gts ../.cgitsync/state/CGSil1.gts
+pixi run cgitsync commit "feat: update CGSil1 CGS#1" --gts ../.cgitsync/state/CGSil1.gts
+pixi run cgitsync push --gts ../.cgitsync/state/CGSil1.gts
+pixi run cgitsync tag v1.2.3 --gts ../.cgitsync/state/CGSil1.gts
+pixi run cgitsync freeze release-2026.05 --gts ../.cgitsync/state/CGSil1.gts
 ```
 
 Use `--dry-run` on mutation commands to preview the execution plan:
 
 ```bash
 pixi run cgitsync add --dry-run
-pixi run cgitsync commit "feat: update project CGS#1" --dry-run
+pixi run cgitsync commit "feat: update CGSil1 CGS#1" --dry-run
 pixi run cgitsync push --dry-run
 pixi run cgitsync tag v1.2.3 --dry-run
 pixi run cgitsync freeze release-2026.05 --dry-run
+```
+
+## Python API parity
+
+The CLI is the recommended interface for the CGSil1 Multi-repo Sync workflow.
+For tests or automation that call the Python facade directly, use the same
+CGSil1 paths rather than the generic examples:
+
+```python
+from pathlib import Path
+
+from ComplexGitSync import ComplexGitSyncClient
+
+client = ComplexGitSyncClient()
+
+source = Path("../CGSil1.cgs")
+snapshot = Path("../.cgitsync/state/CGSil1.gts")
+
+# Initialise the CGSil1 test topology from its .cgs spec.
+client.initialise(source, output_dir="../")
+
+# Or load the saved CGSil1 runtime snapshot.
+client.initialise(snapshot)
+
+# READY-state operations mirror the CLI.
+client.checkout("feature/my-branch")
+client.add()
+client.commit("feat: update CGSil1 CGS#1")
+client.push()
+client.tag("v1.2.3")
+client.freeze("release-2026.05")
 ```
 
 ## Command reference
@@ -146,13 +177,13 @@ the ComplexGitSync clone but keep `.cgitsync` paths relative to the project
 workspace:
 
 ```bash
-git clone git@gitlab.com:your-group/CGSil1.git
+git clone https://gitlab.com/CGS_test/CGSil1.git
 cd CGSil1
 git clone https://github.com/flipoyo/ComplexGitSync.git
 cd ComplexGitSync
 
-pixi run cgitsync initialise examples/complexgitsync.cgs --output-dir ../
-pixi run cgitsync view_tree ../.cgitsync/state/complexgitsync.gts
+pixi run cgitsync initialise ../CGSil1.cgs --output-dir ../
+pixi run cgitsync view_tree ../.cgitsync/state/CGSil1.gts
 ```
 
 Using `--output-dir ../` avoids creating the synced project under
