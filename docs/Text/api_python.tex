@@ -8,7 +8,12 @@ CLI wrapper), including loading a \texttt{.gts} snapshot, reconstructing the
 runtime registry, mirroring identity into \texttt{GitTree}/\texttt{GitRepo},
 and propagating a tag target.
 
-The canonical lifecycle is:
+For normal Multi-repo Sync usage, prefer the CLI lifecycle documented in the
+README and Getting Started guide. The reference test topology is CGSil1
+(\texttt{https://gitlab.com/CGS\_test/CGSil1}):
+\texttt{initialise -> pull -> checkout/add/commit/push/tag -> freeze}.
+
+The lower-level object/API lifecycle remains:
 \texttt{load(.cgs) -> .gts LOADED -> expand(.cgs|.gts) -> .gts PENDING ->
 validate(.cgs|.gts) -> .gts READY -> clone(.cgs|.gts) -> checkout(.gts) ->
 add -> git(tree,"commit",msg) -> git(tree,"push") -> git(tree,"tag",name) ->
@@ -27,8 +32,8 @@ from ComplexGitSync.git_tree import DependencyTreeRegistry
 empty_registry = DependencyTreeRegistry()
 assert empty_registry.recompute_tree_state() == TreeLifecycleState.UNLOADED
 
-# 2) Load a runtime snapshot (.gts) and rebuild the dependency registry
-gts_doc = GtsDocument.from_toml("examples/cawaqsviz_snapshot.gts")
+# 2) Load the CGSil1 runtime snapshot (.gts) and rebuild the dependency registry
+gts_doc = GtsDocument.from_toml("../.cgitsync/state/CGSil1.gts")
 registry = build_registry_from_gts_document(gts_doc)
 assert registry.lifecycle_state == TreeLifecycleState.READY
 
@@ -89,23 +94,23 @@ from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
-# 1. load(.cgs) -> .gts LOADED
-client.load("examples/complexgitsync.cgs")
+# 1. load the CGSil1 test-case .cgs -> .gts LOADED
+client.load("../CGSil1.cgs")
 
 # 2. expand(.cgs/.gts) -> .gts PENDING
-print(client.expand("examples/complexgitsync.cgs"))
+print(client.expand("../CGSil1.cgs"))
 
 # 3. validate(.cgs/.gts) -> .gts READY
-client.validate("examples/complexgitsync.cgs")
+client.validate("../CGSil1.cgs")
 
 # 4. clone(.cgs/.gts)
-client.clone("examples/complexgitsync.cgs")
+client.initialise("../CGSil1.cgs", output_dir="../")
 
 # 5. READY methods — unified git interface
 registry = client.get_dependency_registry()
 client.checkout("feature/my-branch")
 client.add()
-client.git(registry, "commit", "feat: update tree CGS#1")
+client.git(registry, "commit", "feat: update CGSil1 CGS#1")
 client.git(registry, "push")
 client.git(registry, "tag", "v1.2.3")
 

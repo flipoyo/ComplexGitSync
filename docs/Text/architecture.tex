@@ -138,30 +138,31 @@ action is gated by the current \texttt{TreeLifecycleState}}: actions that
 require a \texttt{READY} tree will refuse to execute and log a gating-refusal
 event if the tree is not ready.
 
-Figure~\ref{fig:gittree-lifecycle} shows the full lifecycle state machine.
+Figure~\ref{fig:gittree-lifecycle} shows the full lifecycle state machine. The
+public CLI presents this lifecycle through \texttt{initialise}, \texttt{pull},
+and the READY-state sync commands; lower-level load/expand/validate stages are
+internal steps of those workflows.
 
 \begin{center}
 \begin{tabular}{lll}
 \textbf{Action} & \textbf{Minimum state} & \textbf{Produces} \\
 \hline
-\texttt{load(.cgs)}                    & none        & \texttt{.gts LOADED} \\
-\texttt{expand(.cgs|.gts)}             & LOADED      & \texttt{.gts PENDING} \\
-\texttt{validate(.cgs|.gts)}           & PENDING     & \texttt{.gts READY} \\
-\texttt{clone(.cgs|.gts)}              & READY       & \textbf{READY} \\
+\texttt{initialise(.cgs)}              & none        & clone tree + \textbf{READY} \\
+\texttt{initialise(.gts)}              & none        & loaded/restored \textbf{READY} \\
+\texttt{pull(.cgs|.gts)}               & READY       & resynchronised \textbf{READY} \\
 \texttt{checkout(.gts)}                & READY       & \textbf{READY} \\
 \texttt{add}                           & \textbf{READY only} & READY \\
-\texttt{git(tree, "commit", msg)}      & \textbf{READY only} & READY \\
-\texttt{git(tree, "push")}             & \textbf{READY only} & READY + updated hash \\
-\texttt{git(tree, "tag", name)}        & \textbf{READY only} & READY + updated tag \\
+\texttt{commit <msg>}                  & \textbf{READY only} & READY \\
+\texttt{push}                          & \textbf{READY only} & READY + updated hash \\
+\texttt{tag <name>}                    & \textbf{READY only} & READY + updated tag \\
 \texttt{freeze}                        & \textbf{READY only} & next \texttt{.gts} id \\
 \hline
 \end{tabular}
 \end{center}
 
-Current implementation names such as \texttt{tree}, \texttt{validate},
-\texttt{describe}, \texttt{restart}, and \texttt{launch\_release} remain
-compatibility surfaces around this lifecycle while the repository converges on
-the stricter vocabulary.
+Current implementation names such as \texttt{clone}, \texttt{restart},
+\texttt{freeze-release}, \texttt{freeze-state}, \texttt{launch-release}, and
+\texttt{launch-state} remain compatibility surfaces around this lifecycle.
 For \texttt{.cgs} refs, repositories can be declared by branch or by tag.  If
 both are declared for the same repo, \texttt{validate} enforces hash
 equivalence and raises

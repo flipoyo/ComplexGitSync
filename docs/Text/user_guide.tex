@@ -34,13 +34,11 @@ This guide follows the simplified canonical lifecycle:
   \item \texttt{freeze} $\rightarrow$ emit the next \texttt{.gts} id and update \texttt{<Project\_name>.lgr}
 \end{enumerate}
 
-Python API power users may also call \texttt{load(.cgs|.gts)} directly:
-\texttt{.gts} sources are loaded directly; \texttt{.cgs} sources run the
-internal expand/validate pipeline.
-
-Compatibility aliases: \texttt{read} $\rightarrow$ \texttt{load},
-\texttt{describe} $\rightarrow$ \texttt{print}, \texttt{restart} $\rightarrow$
-\texttt{pull}, \texttt{freeze-release} $\rightarrow$ \texttt{freeze}.
+Compatibility commands remain available for older scripts:
+\texttt{clone} can still initialise from a \texttt{.cgs}, \texttt{restart}
+is an alias-style resynchronisation command, and \texttt{freeze-release} /
+\texttt{freeze-state} keep their specialised names. New CLI usage should start
+with \texttt{initialise}.
 
 The project-local \texttt{.lgr} register and sync ledger are both active (T24,
 T32).  Every synchronisation operation is automatically recorded as an immutable
@@ -52,7 +50,7 @@ DAG event in the \texttt{[[ledger]]} section of the \texttt{.lgr} file.
 \subsection{\texttt{initialise}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync initialise <spec.cgs> [--target-dir DIR]
+$ cgitsync initialise <spec.cgs> [--output-dir DIR]
 $ cgitsync initialise <snapshot.gts>
 \end{lstlisting}
 
@@ -60,8 +58,8 @@ Unified initialisation entry point.  Dispatches on file extension:
 
 \begin{itemize}
   \item \texttt{.cgs} source (clone mode): clones the full repository tree
-    (see \texttt{clone} below). The optional \texttt{--target-dir} controls
-    where the project root is created.  On success, ends in \texttt{READY}.
+    (see \texttt{clone} below). The optional \texttt{--output-dir} controls
+    the workspace-level output path.  On success, ends in \texttt{READY}.
   \item \texttt{.gts} source (restore mode): loads a saved snapshot directly.
     On success, ends in the lifecycle state recorded in the snapshot.
 \end{itemize}
@@ -71,7 +69,7 @@ Both paths end in a \texttt{READY} tree or fail explicitly.
 \subsection{\texttt{pull}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync pull <spec.cgs|snapshot.gts>
+$ cgitsync pull [spec.cgs|snapshot.gts]
 \end{lstlisting}
 
 Resynchronises the project tree.  \texttt{.cgs} sources follow the
@@ -106,7 +104,7 @@ snapshot as the latest runtime state for the source \texttt{.cgs} file.
 \subsection{\texttt{checkout}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync checkout <branch> --gts <snapshot.gts> [--ref-kind branch|tag]
+$ cgitsync checkout <branch> [--gts <snapshot.gts>] [--ref-kind branch|tag]
 \end{lstlisting}
 
 Checks out a branch or tag across the whole tree, parent-first.
@@ -114,19 +112,10 @@ Loads the READY registry from \texttt{--gts}, then propagates the ref,
 creates missing local branches, and runs \texttt{git checkout} in every repo.
 On success the tree remains \texttt{READY} and a new \texttt{.gts} snapshot is written.
 
-Also available via the Python API directly:
-
-\begin{lstlisting}[language=Python]
-client.checkout("feature/my-branch")
-# or with an explicit ref kind
-from ComplexGitSync import RefKind
-client.checkout("v1.2.0", ref_kind=RefKind.TAG)
-\end{lstlisting}
-
 \subsection{\texttt{add}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync add --gts <snapshot.gts> [--dry-run]
+$ cgitsync add [--gts <snapshot.gts>] [--dry-run]
 \end{lstlisting}
 
 Stages all changes across the tree (\texttt{git add --all}), leaf-first.
@@ -137,7 +126,7 @@ mutate repositories.
 \subsection{\texttt{commit}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync commit <message> --gts <snapshot.gts> [--no-stage] [--dry-run]
+$ cgitsync commit <message> [--gts <snapshot.gts>] [--no-stage] [--dry-run]
 \end{lstlisting}
 
 Commits changes across the tree, leaf-first.  Loads the READY registry from
@@ -152,21 +141,10 @@ without performing git writes.
 
 The commit message conventionally ends with \texttt{CGS\#VERSION}.
 
-Also available via the unified \texttt{git()} Python API:
-
-\begin{lstlisting}[language=Python]
-registry = client.get_dependency_registry()
-# Stage all changes, then commit (default)
-client.git(registry, "commit", "feat: my change CGS#1")
-
-# Direct method: commit only already-staged changes
-client.commit("feat: my change", stage_all=False)
-\end{lstlisting}
-
 \subsection{\texttt{push}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync push --gts <snapshot.gts> [--dry-run]
+$ cgitsync push [--gts <snapshot.gts>] [--dry-run]
 \end{lstlisting}
 
 Pushes all repositories to their configured remotes, leaf-first.  Loads the
@@ -180,17 +158,10 @@ or when the loaded snapshot records an older \texttt{commit\_sha}.
 With \texttt{--dry-run}, \cgscli{} prints the push plan without mutating any
 repository.
 
-Also available via the unified \texttt{git()} Python API:
-
-\begin{lstlisting}[language=Python]
-registry = client.get_dependency_registry()
-client.git(registry, "push")
-\end{lstlisting}
-
 \subsection{\texttt{tag}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync tag <name> --gts <snapshot.gts> [--dry-run]
+$ cgitsync tag <name> [--gts <snapshot.gts>] [--dry-run]
 \end{lstlisting}
 
 Creates and pushes the same tag across the full tree, leaf-first.  Loads the
@@ -204,17 +175,10 @@ warnings. Tag creation is non-forcing by default (no implicit \texttt{-f}).
 With \texttt{--dry-run}, \cgscli{} prints the tag/push plan and exits without
 creating tags.
 
-Also available via the unified \texttt{git()} Python API:
-
-\begin{lstlisting}[language=Python]
-registry = client.get_dependency_registry()
-client.git(registry, "tag", "v1.2.3")
-\end{lstlisting}
-
 \subsection{\texttt{freeze}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync freeze <name> --gts <snapshot.gts> [--dry-run]
+$ cgitsync freeze <name> [--gts <snapshot.gts>] [--dry-run]
 \end{lstlisting}
 
 Performs a release freeze across all repos, leaf-first: stage/commit,
@@ -232,24 +196,13 @@ canonical restore operation.
 With \texttt{--dry-run}, \cgscli{} prints the planned add/commit/tag/push graph
 for the loaded workspace without mutating it.
 
-Also available via the Python API:
-
-\begin{lstlisting}[language=Python]
-client.freeze(
-    "release-2026.05",
-    output_gts=".cgitsync/releases/release-2026.05.gts",
-)
-\end{lstlisting}
-
 \texttt{freeze-release} and \texttt{freeze-state} remain available as
 compatibility aliases for release and internal-state freeze operations
 respectively.
 
-The integration suite validates local no-network lifecycle coverage:
-\texttt{clone\_cgs -> launch\_release} and the READY git command cycle
-\texttt{add -> commit -> push -> tag -> freeze}. The CLI path is exercised
-first (terminal-oriented usage), and the equivalent Python API git dispatch and
-launch/restore flows are covered in the same suite.
+The integration suite validates local no-network lifecycle coverage through
+the CLI path, including initialisation and the READY git command cycle
+\texttt{add -> commit -> push -> tag -> freeze}.
 
 \subsection{\texttt{print}}
 
@@ -264,8 +217,8 @@ declared/runtime summary.
 \subsection{\texttt{view-tree}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync view-tree <spec.cgs|snapshot.gts> [--depth N] [--collapse REPO]
-$ cgitsync view_tree <spec.cgs|snapshot.gts> [--depth N] [--collapse REPO]
+$ cgitsync view-tree [spec.cgs|snapshot.gts] [--depth N] [--collapse REPO]
+$ cgitsync view_tree [spec.cgs|snapshot.gts] [--depth N] [--collapse REPO]
 \end{lstlisting}
 
 Renders a deterministic terminal tree that focuses on repository topology and
@@ -277,8 +230,8 @@ subtrees.
 \subsection{\texttt{view-operation}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync view-operation <spec.cgs|snapshot.gts>
-$ cgitsync view_operation <spec.cgs|snapshot.gts>
+$ cgitsync view-operation [spec.cgs|snapshot.gts]
+$ cgitsync view_operation [spec.cgs|snapshot.gts]
 \end{lstlisting}
 
 Renders the runtime operation table with required columns:
@@ -312,12 +265,6 @@ $ cgitsync launch-release <snapshot.gts>
 
 Loads a release \texttt{.gts}, reconstructs the tree, performs required
 clone/checkout actions, and must end in \texttt{READY} or fail explicitly.
-
-Also available via the Python API:
-
-\begin{lstlisting}[language=Python]
-client.launch_release(".cgitsync/releases/release-2026.05.gts")
-\end{lstlisting}
 
 \subsection{\texttt{launch-state}}
 
@@ -356,16 +303,9 @@ when blocking conflicts are present.
         HEAD without a tag reference).
 \end{enumerate}
 
-\begin{lstlisting}[language=Python]
-# Python API equivalent
-report = client.validate_branch_topology()
-print(report.format())         # human-readable summary
-assert report.is_coherent      # True when all repos are aligned
-\end{lstlisting}
-
 \subsection{Planned Commands (not yet implemented)}
 
-The following commands are defined in the public API contract but are not yet
+The following commands are defined in the CLI command table but are not yet
 implemented. Each returns exit code~2 with the message
 \texttt{"not implemented yet"}.
 
@@ -374,9 +314,6 @@ implemented. Each returns exit code~2 with the message
     from a loaded \texttt{.cgs} or runtime state.
   \item \texttt{status} — summarise tree readiness and per-repo sync state.
 \end{itemize}
-
-Orchestration plans are available through the Python API:
-\texttt{ComplexGitSyncClient.orchestrate(<plan.goc>)}.
 
 % -----------------------------------------------------------------------
 \section{Document Formats}
@@ -515,130 +452,13 @@ The \texttt{workspace\_hash} field equals the canonical SHA-256 digest
 creating a direct link between each ledger event and the immutable workspace
 state it records.  Events are parents-before-children in DAG order.
 
-\textbf{Accessing the ledger from Python:}
-
-\begin{lstlisting}[language=Python]
-from ComplexGitSync import SyncLedger
-
-ledger  = SyncLedger("project/demo.lgr")
-history = ledger.history()   # topological order, parents first
-replay  = ledger.replay()    # alias for history()
-
-# Via ComplexGitSyncClient
-client.get_ledger_history("project/demo.lgr")
-client.replay_ledger("project/demo.lgr")
-\end{lstlisting}
-
-% -----------------------------------------------------------------------
-\section{Python API}
-
-\cgspkg{} can be used as a library. The public API is exported from the
-top-level package:
-
-\begin{lstlisting}[language=Python]
-from ComplexGitSync import (
-    ComplexGitSyncClient,
-    CgsDocument,
-    GtsDocument,
-    GocDocument,
-    LocalGitRegister,
-    SyncLedger,
-    GitProvider,
-    AccessProtocol,
-    RepoAddress,
-    GitRepo,
-    GitTree,
-    Orchestre,
-    DependencyTreeRegistry,
-)
-\end{lstlisting}
-
-\subsection{\texttt{ComplexGitSyncClient}}
-
-High-level client that mirrors the CLI commands. Instantiate with a parsed
-configuration path and call the equivalent method:
-
-\begin{lstlisting}[language=Python]
-from ComplexGitSync import ComplexGitSyncClient
-
-client = ComplexGitSyncClient()
-registry = client.read("project.cgs")
-tree_state = client.validate("project.cgs")
-tree = client.format_project_tree()
-clone_registry = client.clone("project.cgs", target_dir="./workspace/demo")
-\end{lstlisting}
-
-Once the tree is \texttt{READY}, the synchronisation methods are available:
-
-\begin{lstlisting}[language=Python]
-# Load an existing READY snapshot
-client.load_gts(".cgitsync/state/project.gts")
-
-# Check out a branch across all repos (parent-first)
-client.checkout("feature/my-branch")
-# or with a tag ref
-from ComplexGitSync import RefKind
-client.checkout("v1.0.0", ref_kind=RefKind.TAG)
-
-# Commit across all repos (leaf-first), staging all changes by default
-client.commit("feat: my change")
-# or commit only already-staged changes
-client.commit("feat: my change", stage_all=False)
-
-# Push all repos to their remotes (leaf-first)
-client.push()
-
-# Create and push a shared tag (leaf-first)
-client.tag("v1.2.3")
-
-# Freeze and emit a named snapshot
-client.freeze("release-2026.05", output_gts=".cgitsync/releases/release-2026.05.gts")
-
-\end{lstlisting}
-
-\texttt{checkout}, \texttt{commit}, \texttt{push}, \texttt{tag}, and
-\texttt{freeze} require \texttt{READY} and leave the tree
-\texttt{READY} on success. \texttt{checkout} and \texttt{freeze} also write new
-\texttt{.gts} snapshots. If you need to restore a saved \texttt{.gts} directly,
-see the compatibility helper documented in the \texttt{launch-release}
-subsection above.
-
-\subsection{Document Classes}
-
-Each document class exposes six format factories:
-
-\begin{lstlisting}[language=Python]
-doc = CgsDocument.from_toml(raw_bytes)
-doc = CgsDocument.from_json(raw_str)
-doc = CgsDocument.from_yaml(raw_str)   # requires PyYAML
-
-serialised = doc.to_toml()
-serialised = doc.to_json()
-serialised = doc.to_yaml()             # requires PyYAML
-\end{lstlisting}
-
-\subsection{\texttt{RepoAddress}}
-
-Composes and parses remote repository URLs:
-
-\begin{lstlisting}[language=Python]
-from ComplexGitSync import RepoAddress, GitProvider, AccessProtocol
-
-addr = RepoAddress(
-    gitprovider=GitProvider.GITHUB,
-    project_owner_name="my-org",
-    project_name="My Project",
-    repo_name="my-repo",
-)
-print(addr.to_ssh())    # git@github.com:my-org/my-repo.git
-print(addr.to_https())  # https://github.com/my-org/my-repo.git
-\end{lstlisting}
-
 % -----------------------------------------------------------------------
 \section{Configuration and Environment}
 
-\cgspkg{} reads no environment variables and uses no global configuration
-file for project topology. The logging and runtime-state subsystems use the
+\cgspkg{} uses project files for topology and does not require global topology
+configuration. Snapshot discovery can use \texttt{CGSHOME}; when it is not set,
+the CLI walks upward from the current directory to find
+\texttt{.cgitsync/state/}. The logging and runtime-state subsystems use the
 user state directory by default:
 
 \begin{itemize}

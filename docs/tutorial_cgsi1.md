@@ -4,7 +4,7 @@ This tutorial walks through the complete CLI workflow for the **CGSil1** test
 topology, using the reference project at
 <https://gitlab.com/CGS_test/CGSil1>.
 
-It covers every step from topology validation through cloning to the full
+It covers every step from topology validation through initialisation to the full
 git cycle (add → commit → push → tag → freeze).
 
 > **Sandbox / CI note**
@@ -74,6 +74,8 @@ nested_config      = "auto"
 
 ## 3. Step-by-step CLI walkthrough
 
+Before to start, keep in mind that CWD = $CGSHOME/ComplexGitSync
+
 ### Step 1 — Validate the topology
 
 Parses the spec and checks consistency without cloning anything:
@@ -100,24 +102,27 @@ cgitsync print CGSil1.cgs
 
 ---
 
-### Step 3 — Clone the workspace
+### Step 3 — Initialise the workspace
 
-Clones all repositories into a local workspace directory:
+Clones all repositories into a local workspace directory and writes the first
+runtime `.gts` snapshot:
 
 ```bash
-cgitsync clone CGSil1.cgs
+cgitsync initialise CGSil1.cgs
 ```
 
-By default the workspace is created as `./CGSil1/`. Use `--target-dir` to
-choose a different destination:
+When ComplexGitSync is checked out inside the CGSil1 workspace, use
+`--output-dir ../` so repositories and `.cgitsync/` state are created in the
+project workspace rather than under the tooling checkout:
 
 ```bash
-cgitsync clone CGSil1.cgs --target-dir /path/to/workspace
+cgitsync initialise CGSil1.cgs --output-dir ../
 ```
 
 Expected output (all repos cloned, tree is `READY`):
 
 ```
+workflow=load->expand->validate->clone
 git_command=git clone (executed per repo)
 READY ready=true complete=true root=/path/to/workspace
 ```
@@ -195,7 +200,7 @@ snapshot entry.
 |------|---------|-------------|
 | 1 | `cgitsync validate CGSil1.cgs` | Parse and check the topology |
 | 2 | `cgitsync print CGSil1.cgs` | Render the tree summary |
-| 3 | `cgitsync clone CGSil1.cgs` | Clone all repos into a workspace |
+| 3 | `cgitsync initialise CGSil1.cgs` | Clone all repos into a workspace |
 | 4 | `cgitsync add` | Stage all changes |
 | 5 | `cgitsync commit "message"` | Commit across the tree |
 | 6 | `cgitsync push` | Push to remotes |
