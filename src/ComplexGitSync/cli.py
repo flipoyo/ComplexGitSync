@@ -78,9 +78,9 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.add_argument(
                 "--output-dir",
                 help=(
-                    "CGSHOME: workspace-level directory where ComplexGitSync stores its "
-                    "runtime metadata under .cgitsync/state/ (.cgs mode only). "
-                    "Defaults to ../.. relative to the current working directory."
+                    "CGSPATH: workspace-level directory path. ComplexGitSync resolves it to "
+                    "CGSHOME and stores runtime metadata under CGSHOME/.cgitsync/state/ "
+                    "(.cgs mode only). Defaults to ../.. relative to the current working directory."
                 ),
             )
             subparser.set_defaults(handler=_handle_initialise)
@@ -444,7 +444,7 @@ def _handle_load(args: argparse.Namespace) -> int:
 def _handle_initialise(args: argparse.Namespace) -> int:
     source_path = Path(args.source)
     if source_path.suffix == ".cgs":
-        cgshome = getattr(args, "output_dir", None)
+        cgspath = getattr(args, "output_dir", None)
         return _run_with_logging(
             command_name="initialise",
             source=source_path,
@@ -452,7 +452,7 @@ def _handle_initialise(args: argparse.Namespace) -> int:
             runner=lambda active_client, source: _execute_initialise_cgs(
                 active_client,
                 source,
-                cgshome=cgshome,
+                cgspath=cgspath,
             ),
         )
     return _run_with_logging(
@@ -685,11 +685,11 @@ def _execute_initialise_cgs(
     client: ComplexGitSyncClient,
     source_path: Path,
     *,
-    cgshome: str | None = None,
+    cgspath: str | None = None,
 ) -> int:
     print("workflow=load->expand->validate->clone")
     print("git_command=git clone (executed per repo)")
-    registry = client.initialise_cgs(source_path, cgshome=cgshome)
+    registry = client.initialise_cgs(source_path, cgspath=cgspath)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "

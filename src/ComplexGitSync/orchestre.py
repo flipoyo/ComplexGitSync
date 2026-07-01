@@ -1983,15 +1983,15 @@ class ComplexGitSyncClient:
             Path to a ``.cgs`` authoring spec (clone mode) or a ``.gts``
             snapshot (restore mode).
         output_dir:
-            CGSHOME — the workspace-level directory under which
+            CGSPATH — the workspace-level directory path under which
             ``ComplexGitSync`` stores its runtime metadata
-            (``CGSHOME/.cgitsync/state/``).  Defaults to ``../..`` relative
-            to the current working directory.  Only used in ``.cgs`` mode;
-            ignored for ``.gts`` sources.
+            (``CGSHOME/.cgitsync/state/``, where CGSHOME = resolved CGSPATH).
+            Defaults to ``../..`` relative to the current working directory.
+            Only used in ``.cgs`` mode; ignored for ``.gts`` sources.
         """
         resolved = Path(source).resolve()
         if resolved.suffix == ".cgs":
-            return self.initialise_cgs(resolved, cgshome=output_dir)
+            return self.initialise_cgs(resolved, cgspath=output_dir)
         if resolved.suffix == ".gts":
             return self.load_gts(resolved)
         raise ValueError(
@@ -2002,7 +2002,7 @@ class ComplexGitSyncClient:
         self,
         config_path: str | Path,
         *,
-        cgshome: str | Path | None = None,
+        cgspath: str | Path | None = None,
     ) -> DependencyTreeRegistry:
         """Initialise a workspace using CGSHOME semantics (lifecycle step 1, .cgs mode).
 
@@ -2011,20 +2011,22 @@ class ComplexGitSyncClient:
         for the dependencies declared in the ``.cgs`` document.
 
         All ComplexGitSync state is stored under
-        ``CGSHOME/.cgitsync/state/``.
+        ``CGSHOME/.cgitsync/state/``, where CGSHOME is the resolved form of
+        CGSPATH.
 
         Parameters
         ----------
         config_path:
             Path to the ``.cgs`` authoring spec.
-        cgshome:
-            CGSHOME — the workspace-level directory that receives all
-            ComplexGitSync runtime metadata.  When *None*, defaults to
-            ``../..`` relative to the current working directory.
+        cgspath:
+            CGSPATH — the workspace-level directory path that receives all
+            ComplexGitSync runtime metadata once resolved (CGSHOME = resolved
+            CGSPATH).  When *None*, defaults to ``../..`` relative to the
+            current working directory.
         """
-        resolved_cgshome = (
-            Path(cgshome).resolve()
-            if cgshome is not None
+        cgshome = (
+            Path(cgspath).resolve()
+            if cgspath is not None
             else (Path.cwd() / "../..").resolve()
         )
 
@@ -2073,7 +2075,7 @@ class ComplexGitSyncClient:
 
         # Write the snapshot under CGSHOME, not under the root repo.
         snapshot_name = f"{self.source_path.stem if self.source_path else root_entry.name}.gts"
-        snapshot_output = resolved_cgshome / ".cgitsync" / "state" / snapshot_name
+        snapshot_output = cgshome / ".cgitsync" / "state" / snapshot_name
         snapshot_path = self.write_gts_snapshot(
             command_origin="clone", output_path=snapshot_output
         )

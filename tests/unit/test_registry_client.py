@@ -102,9 +102,9 @@ def test_client_initialise_dispatches_to_initialise_cgs_for_cgs_source(monkeypat
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_initialise_cgs(path, *, cgshome=None):
+    def _fake_initialise_cgs(path, *, cgspath=None):
         captured["path"] = path
-        captured["cgshome"] = cgshome
+        captured["cgspath"] = cgspath
         return "ok"
 
     monkeypatch.setattr(client, "initialise_cgs", _fake_initialise_cgs)
@@ -113,29 +113,29 @@ def test_client_initialise_dispatches_to_initialise_cgs_for_cgs_source(monkeypat
 
     assert result == "ok"
     assert captured["path"] == Path("project.cgs").resolve()
-    assert captured["cgshome"] is None
+    assert captured["cgspath"] is None
 
 
-def test_client_initialise_forwards_output_dir_as_cgshome(monkeypatch):
+def test_client_initialise_forwards_output_dir_as_cgspath(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_initialise_cgs(path, *, cgshome=None):
-        captured["cgshome"] = cgshome
+    def _fake_initialise_cgs(path, *, cgspath=None):
+        captured["cgspath"] = cgspath
         return "ok"
 
     monkeypatch.setattr(client, "initialise_cgs", _fake_initialise_cgs)
 
     client.initialise("project.cgs", output_dir="../")
 
-    assert captured["cgshome"] == "../"
+    assert captured["cgspath"] == "../"
 
 
 def test_initialise_cgs_uses_cwd_as_root_and_cgshome_for_snapshot(tmp_path, monkeypatch):
     root_path = tmp_path / "workspace" / "demo"
     root_path.mkdir(parents=True)
-    cgshome = tmp_path / "cgshome"
-    cgshome.mkdir()
+    cgspath = tmp_path / "cgshome"
+    cgspath.mkdir()
     monkeypatch.chdir(root_path)
 
     config_path = _write_clone_ready_cgs(tmp_path)
@@ -148,7 +148,7 @@ def test_initialise_cgs_uses_cwd_as_root_and_cgshome_for_snapshot(tmp_path, monk
     state_store = RuntimeStateStore(base_dir=tmp_path / "runtime-state")
     client = ComplexGitSyncClient(git_runner=fake_runner, state_store=state_store)
 
-    registry = client.initialise_cgs(config_path, cgshome=cgshome)
+    registry = client.initialise_cgs(config_path, cgspath=cgspath)
 
     root_entry = registry.get("root")
     assert root_entry.absolute_path == root_path.resolve()
@@ -158,10 +158,10 @@ def test_initialise_cgs_uses_cwd_as_root_and_cgshome_for_snapshot(tmp_path, monk
     cloned_remotes = [remote for remote, _, _ in fake_runner.clones]
     assert "git@github.com:owner/demo.git" not in cloned_remotes
 
-    # Snapshot must be stored under CGSHOME.
+    # Snapshot must be stored under CGSHOME (= resolved CGSPATH).
     snapshot_path = state_store.latest_snapshot_for(config_path)
     assert snapshot_path is not None
-    assert str(snapshot_path).startswith(str(cgshome.resolve()))
+    assert str(snapshot_path).startswith(str(cgspath.resolve()))
     assert ".cgitsync" in str(snapshot_path)
     assert "state" in str(snapshot_path)
 
