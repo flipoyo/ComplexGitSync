@@ -1195,7 +1195,19 @@ def _load_visualization_source(
 
 
 def _discover_cgshome(search_dir: str | Path | None = None) -> Path:
-    """Resolve CGSHOME from an explicit directory, $CGSHOME, or cwd discovery."""
+    """Resolve and return CGSHOME.
+
+    Resolution order:
+
+    1. Walk up from ``search_dir`` when provided.
+    2. Walk up from ``$CGSHOME`` when defined.
+    3. Walk up from the current working directory.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no ancestor contains a ``.cgitsync`` directory.
+    """
     start_dir: Path
     search_origin: str
     if search_dir is not None:
@@ -1221,7 +1233,20 @@ def _discover_cgshome(search_dir: str | Path | None = None) -> Path:
 
 
 def _discover_gts_path(search_dir: str | Path | None = None) -> Path:
-    """Auto-discover the most-recently-modified .gts snapshot under CGSHOME."""
+    """Return the most recently modified ``.gts`` snapshot under CGSHOME.
+
+    Parameters
+    ----------
+    search_dir:
+        Optional directory whose ancestors are searched first when resolving
+        CGSHOME.
+
+    Raises
+    ------
+    FileNotFoundError
+        If CGSHOME cannot be located, or if ``CGSHOME/.cgitsync/state``
+        contains no ``.gts`` snapshots.
+    """
     cgshome = _discover_cgshome(search_dir)
     state_dir = cgshome / ".cgitsync" / "state"
     if state_dir.is_dir():
@@ -1244,7 +1269,28 @@ def _resolve_gts_path(gts: str | None, search_dir: str | None) -> Path:
 
 
 def _resolve_workspace_source(source: str | None, search_dir: str | None) -> Path:
-    """Return an explicit source path or auto-discover the workspace snapshot."""
+    """Return a workspace source path for commands that accept optional input.
+
+    Parameters
+    ----------
+    source:
+        Explicit ``.cgs`` or ``.gts`` path supplied on the command line.
+    search_dir:
+        Optional directory whose ancestors are searched first when resolving
+        CGSHOME during auto-discovery.
+
+    Returns
+    -------
+    Path
+        The explicit source path, or the latest workspace snapshot under
+        ``CGSHOME/.cgitsync/state`` when *source* is omitted.
+
+    Raises
+    ------
+    FileNotFoundError
+        If auto-discovery is required and CGSHOME or a workspace snapshot
+        cannot be located.
+    """
     if source is not None:
         return Path(source)
     return _discover_gts_path(search_dir)

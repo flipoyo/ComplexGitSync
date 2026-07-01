@@ -1093,7 +1093,7 @@ def test_gts_auto_discovery_no_snapshot_under_cgshome_raises_error(monkeypatch, 
     (workspace / ".cgitsync" / "state").mkdir(parents=True)
 
     monkeypatch.setenv("CGSHOME", str(workspace))
-    with pytest.raises(FileNotFoundError, match=r"No .gts snapshot found in CGSHOME/\.cgitsync/state"):
+    with pytest.raises(FileNotFoundError, match=r"No .gts snapshot found in CGSHOME/.cgitsync/state"):
         _discover_gts_path()
 
 
