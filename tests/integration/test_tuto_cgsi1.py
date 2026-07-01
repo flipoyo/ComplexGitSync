@@ -19,7 +19,7 @@ All eight tutorial CLI steps are validated:
 
   1. ``cgitsync validate CGSil1.cgs``  – topology parses as DECLARED
   2. ``cgitsync print    CGSil1.cgs``  – tree summary renders
-  3. ``cgitsync clone    CGSil1.cgs``  – workspace cloned, tree is READY
+  3. ``cgitsync initialise CGSil1.cgs`` – workspace initialised, tree is READY
   4. ``cgitsync add``                  – changes staged
   5. ``cgitsync commit "…"``           – changes committed
   6. ``cgitsync push``                 – changes pushed
@@ -72,6 +72,7 @@ def _seed_remote_repo(base: Path, name: str) -> tuple[Path, Path]:
     _run_git(seed, "commit", "-m", "initial")
     _run_git(seed, "remote", "add", "origin", remote.as_posix())
     _run_git(seed, "push", "-u", "origin", "main")
+    _run_git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
     return remote, seed
 
 
@@ -122,7 +123,7 @@ nested_config      = "disabled"
 
 
 @pytest.fixture()
-def cgsi1_sandbox(tmp_path: Path) -> dict[str, Path]:
+def cgsi1_sandbox(tmp_path: Path, monkeypatch) -> dict[str, Path]:
     """3-repo CGSil1 topology with local bare-repo remotes.
 
     Returns a mapping with keys:
@@ -131,6 +132,8 @@ def cgsi1_sandbox(tmp_path: Path) -> dict[str, Path]:
       ``"CGSil2_remote"``  – path to the CGSil2 bare repo
       ``"CGSih1_remote"``  – path to the CGSih1 bare repo
     """
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg-state"))
+
     cgsi1_remote, _ = _seed_remote_repo(tmp_path, "CGSil1")
     cgsi2_remote, _ = _seed_remote_repo(tmp_path, "CGSil2")
     cgsih1_remote, _ = _seed_remote_repo(tmp_path, "CGSih1")
@@ -176,46 +179,50 @@ class TestTutoCGSil1CLI:
 
     # ── Tutorial step 3 ────────────────────────────────────────────────────
 
-    def test_clone_produces_ready_workspace(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
-        """cgitsync clone CGSil1.cgs — all repos cloned, tree is READY, .gts written."""
+    def test_initialise_produces_ready_workspace(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
+        """cgitsync initialise CGSil1.cgs — all repos cloned, tree is READY, .gts written."""
         sandbox = cgsi1_sandbox
         _patch_remote_urls(monkeypatch, sandbox)
 
-        workspace = tmp_path / "workspace"
+        output_path = tmp_path / "workspace"
+        project_root = output_path / "CGSil1"
+        _prepare_existing_root(output_path, sandbox)
         exit_code = cli_main(
-            ["clone", str(sandbox["cgs_path"]), "--target-dir", str(workspace)]
+            ["initialise", str(sandbox["cgs_path"]), "--output-path", str(output_path)]
         )
         captured = capsys.readouterr()
 
         assert exit_code == 0
         assert "READY" in captured.out
-        assert workspace.exists()
-        assert (workspace / "CGSil2").exists()
-        assert (workspace / "CGSih1").exists()
-        assert (workspace / ".cgitsync" / "state" / "CGSil1.gts").is_file()
+        assert project_root.exists()
+        assert (project_root / "CGSil2").exists()
+        assert (project_root / "CGSih1").exists()
+        assert (project_root / ".cgitsync" / "state" / "CGSil1.gts").is_file()
 
     # ── Tutorial steps 4-8 (end-to-end git cycle) ──────────────────────────
 
     def test_complete_git_cycle(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
-        """Steps 4-8: clone → add → commit → push → tag → freeze (root repo only)."""
+        """Steps 4-8: initialise → add → commit → push → tag → freeze (root repo only)."""
         sandbox = cgsi1_sandbox
         _patch_remote_urls(monkeypatch, sandbox)
         _patch_git_identity(monkeypatch)
 
-        workspace = tmp_path / "workspace"
+        output_path = tmp_path / "workspace"
+        project_root = output_path / "CGSil1"
+        _prepare_existing_root(output_path, sandbox)
 
-        # Step 3: clone
+        # Step 3: initialise
         assert (
-            cli_main(["clone", str(sandbox["cgs_path"]), "--target-dir", str(workspace)])
+            cli_main(["initialise", str(sandbox["cgs_path"]), "--output-path", str(output_path)])
             == 0
         )
         capsys.readouterr()
 
-        gts_path = workspace / ".cgitsync" / "state" / "CGSil1.gts"
+        gts_path = project_root / ".cgitsync" / "state" / "CGSil1.gts"
         assert gts_path.is_file()
 
         # Step 4: add (after touching a new file in the root repo)
-        (workspace / "tutorial.txt").write_text("tutorial sandbox\n", encoding="utf-8")
+        (project_root / "tutorial.txt").write_text("tutorial sandbox\n", encoding="utf-8")
         assert cli_main(["add", "--gts", str(gts_path)]) == 0
 
         # Step 5: commit
@@ -240,7 +247,7 @@ class TestTutoCGSil1CLI:
         assert "v1.0.0" in captured.out
 
         # Step 8: freeze (requires at least one uncommitted change)
-        (workspace / "release.txt").write_text("release 1.1.0\n", encoding="utf-8")
+        (project_root / "release.txt").write_text("release 1.1.0\n", encoding="utf-8")
         exit_code = cli_main(["freeze", "v1.1.0", "--gts", str(gts_path)])
         captured = capsys.readouterr()
         assert exit_code == 0
@@ -248,7 +255,7 @@ class TestTutoCGSil1CLI:
         assert "v1.1.0" in captured.out
 
         # Verify the tags reached the root remote
-        root_tags = _run_git(workspace, "ls-remote", "--tags", "origin")
+        root_tags = _run_git(project_root, "ls-remote", "--tags", "origin")
         assert "refs/tags/v1.0.0" in root_tags
         assert "refs/tags/v1.1.0" in root_tags
 
@@ -269,6 +276,18 @@ def _patch_remote_urls(monkeypatch, sandbox: dict[str, Path]) -> None:
         "ComplexGitSync.orchestre.ComplexGitSyncClient._build_remote_url",
         lambda self, entry: remote_map[entry.name],
     )
+
+
+def _prepare_existing_root(output_path: Path, sandbox: dict[str, Path]) -> Path:
+    """Mirror the tutorial setup: CGSil1 is cloned before ``cgitsync initialise``."""
+    output_path.mkdir(parents=True, exist_ok=True)
+    project_root = output_path / "CGSil1"
+    subprocess.run(
+        ["git", "clone", str(sandbox["CGSil1_remote"]), str(project_root)],
+        check=True,
+        capture_output=True,
+    )
+    return project_root
 
 
 def _patch_git_identity(monkeypatch) -> None:

@@ -74,7 +74,7 @@ nested_config      = "auto"
 
 ## 3. Step-by-step CLI walkthrough
 
-Before to start, keep in mind that `CGSHOME=$CGSPATH/CGSil1`,
+Before starting, keep in mind that `CGSHOME=$CGSPATH/CGSil1`,
 `CWD=$CGSHOME/ComplexGitSync`, and commands are run from `$CWD`.
 When `--output-path` is omitted, `cgitsync initialise` behaves as if
 `--output-path $CGSPATH` had been passed, with the default `CGSPATH=../..`
@@ -84,7 +84,7 @@ cloned under that project root.
 
 ### Step 1 — Validate the topology
 
-Install the Project Repo
+Install the project repo:
 ```bash
 git clone https://gitlab.com/CGS_test/CGSil1
 cd CGSil1
@@ -137,7 +137,7 @@ Expected output (all repos cloned, tree is `READY`):
 ```
 workflow=load->expand->validate->clone
 git_command=git clone (executed per repo)
-READY ready=true complete=true root=/path/to/workspace
+READY ready=true complete=true root=/path/to/CGSil1
 ```
 
 A runtime snapshot is written to
@@ -213,7 +213,7 @@ snapshot entry.
 |------|---------|-------------|
 | 1 | `cgitsync validate ../CGSil1.cgs` | Parse and check the topology |
 | 2 | `cgitsync print ../CGSil1.cgs` | Render the tree summary |
-| 3 | `cgitsync initialise ../CGSil1.cgs` | Clone all repos into a workspace |
+| 3 | `cgitsync initialise ../CGSil1.cgs` | Attach the root repo and clone child repos |
 | 4 | `cgitsync add` | Stage all changes |
 | 5 | `cgitsync commit "message"` | Commit across the tree |
 | 6 | `cgitsync push` | Push to remotes |
