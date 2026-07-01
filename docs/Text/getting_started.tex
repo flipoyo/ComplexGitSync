@@ -70,11 +70,12 @@ snapshot under \texttt{<workspace>/.cgitsync/state/}, and leaves the tree
 $ pixi run cgitsync initialise examples/complexgitsync.cgs
 \end{lstlisting}
 
-When \texttt{--output-dir} is omitted, \cgscli{} uses the workspace-level
-default \texttt{CGSHOME=../..}. The explicit equivalent is:
+When \texttt{--output-path} is omitted, \cgscli{} uses the workspace-level
+default \texttt{CGSPATH=../..}, then derives
+\texttt{CGSHOME=CGSPATH/<project-name>}. The explicit equivalent is:
 
 \begin{lstlisting}[language=bash]
-$ pixi run cgitsync initialise examples/complexgitsync.cgs --output-dir "$CGSHOME"
+$ pixi run cgitsync initialise examples/complexgitsync.cgs --output-path "$CGSPATH"
 \end{lstlisting}
 
 From a previously generated snapshot:
@@ -99,8 +100,8 @@ $ pixi run cgitsync view_operation .cgitsync/state/complexgitsync.gts
 If a command accepts an optional snapshot and none is provided, \cgscli{}
 discovers the latest \texttt{.gts} from \texttt{CGSHOME/.cgitsync/state/}.
 \texttt{CGSHOME} can be set explicitly; for \texttt{initialise(.cgs)} the
-default is \texttt{../..}, and later commands can also discover the workspace
-by walking upward from the current directory.
+default is \texttt{CGSPATH=../..}, and later commands can also discover the
+workspace by walking upward from the current directory.
 
 % -----------------------------------------------------------------------
 \section{Run the Git Cycle}

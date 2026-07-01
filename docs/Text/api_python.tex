@@ -98,7 +98,8 @@ from pathlib import Path
 from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
-cgshome = Path("../..")
+cgspath = Path("../..")
+cgshome = cgspath / "CGSil1"
 
 # 1. load the CGSil1 test-case .cgs -> .gts LOADED
 client.load("../CGSil1.cgs")
@@ -110,11 +111,11 @@ print(client.expand("../CGSil1.cgs"))
 client.validate("../CGSil1.cgs")
 
 # 4. clone(.cgs/.gts)
-# Same default as the CLI: output_dir defaults to CGSHOME=../..
+# Same default as the CLI: output_path defaults to CGSPATH=../..
 client.initialise("../CGSil1.cgs")
 
 # Equivalent explicit form:
-client.initialise("../CGSil1.cgs", output_dir=cgshome)
+client.initialise("../CGSil1.cgs", output_path=cgspath)
 
 # 5. READY methods — unified git interface
 registry = client.get_dependency_registry()

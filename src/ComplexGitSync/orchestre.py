@@ -1961,16 +1961,18 @@ class ComplexGitSyncClient:
         self,
         source: str | Path,
         *,
-        output_dir: str | Path | None = None,
+        output_path: str | Path | None = None,
     ) -> DependencyTreeRegistry:
         """Unified initialisation entry point (lifecycle step 1).
 
         Dispatches based on source file extension:
 
-        - ``.cgs`` source: initialises the workspace using CGSHOME semantics
-          (calls :meth:`initialise_cgs`).  The current working directory is
-          treated as the root repository — it is never recloned.  All
-          ComplexGitSync state is written under ``CGSHOME/.cgitsync/state/``.
+        - ``.cgs`` source: initialises the workspace using CGSPATH/CGSHOME
+          semantics (calls :meth:`initialise_cgs`).  The output path is
+          CGSPATH, and CGSHOME is derived as ``CGSPATH/<project_name>`` after
+          reading the ``.cgs``.  The root repository at CGSHOME is treated as
+          already existing and is never recloned.  All ComplexGitSync state is
+          written under ``CGSHOME/.cgitsync/state/``.
         - ``.gts`` source: restores from a saved snapshot (calls
           :meth:`load_gts`).  Use this for existing projects that already have
           a ``.gts`` state file.
@@ -1982,16 +1984,15 @@ class ComplexGitSyncClient:
         source:
             Path to a ``.cgs`` authoring spec (clone mode) or a ``.gts``
             snapshot (restore mode).
-        output_dir:
-            CGSPATH — the workspace-level directory path under which
-            ``ComplexGitSync`` stores its runtime metadata
-            (``CGSHOME/.cgitsync/state/``, where CGSHOME = resolved CGSPATH).
-            Defaults to ``../..`` relative to the current working directory.
-            Only used in ``.cgs`` mode; ignored for ``.gts`` sources.
+        output_path:
+            CGSPATH — parent directory used to derive CGSHOME as
+            ``CGSPATH/<project_name>`` after the ``.cgs`` is read.  Defaults to
+            ``../..`` relative to the current working directory
+            (``CWD=$CGSHOME/ComplexGitSync``).
         """
         resolved = Path(source).resolve()
         if resolved.suffix == ".cgs":
-            return self.initialise_cgs(resolved, cgspath=output_dir)
+            return self.initialise_cgs(resolved, output_path=output_path)
         if resolved.suffix == ".gts":
             return self.load_gts(resolved)
         raise ValueError(
@@ -2002,45 +2003,35 @@ class ComplexGitSyncClient:
         self,
         config_path: str | Path,
         *,
-        cgspath: str | Path | None = None,
+        output_path: str | Path | None = None,
     ) -> DependencyTreeRegistry:
-        """Initialise a workspace using CGSHOME semantics (lifecycle step 1, .cgs mode).
+        """Initialise a workspace using CGSPATH/CGSHOME semantics.
 
-        The current working directory is treated as the **root repository** —
-        it already exists and is never recloned.  The clone sequence runs only
-        for the dependencies declared in the ``.cgs`` document.
+        ``output_path`` is CGSPATH.  The ``.cgs`` file is read first, CGSHOME
+        is derived as ``CGSPATH/<project_name>``, and that root repository is
+        treated as already existing.  The clone sequence runs only for the
+        dependencies declared in the ``.cgs`` document.
 
         All ComplexGitSync state is stored under
-        ``CGSHOME/.cgitsync/state/``, where CGSHOME is the resolved form of
-        CGSPATH.
+        ``CGSHOME/.cgitsync/state/``.
 
         Parameters
         ----------
         config_path:
             Path to the ``.cgs`` authoring spec.
-        cgspath:
-            CGSPATH — the workspace-level directory path that receives all
-            ComplexGitSync runtime metadata once resolved (CGSHOME = resolved
-            CGSPATH).  When *None*, defaults to ``../..`` relative to the
-            current working directory.
+        output_path:
+            CGSPATH — parent directory used to derive CGSHOME as
+            ``CGSPATH/<project_name>``.  When *None*, defaults to ``../..``
+            relative to the current working directory
+            (``CWD=$CGSHOME/ComplexGitSync``), unless ``CGSHOME`` is set.
         """
-        default_cgspath = os.environ.get("CGSHOME")
-        cgshome = (
-            Path(cgspath).expanduser().resolve()
-            if cgspath is not None
-            else (
-                Path(default_cgspath).expanduser().resolve()
-                if default_cgspath
-                else (Path.cwd() / "../..").resolve()
-            )
-        )
-
-        project_root = Path.cwd().resolve()
         previous_tree_state = (
             self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         )
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
+        cgshome = self.resolve_cgshome(document, source_path, output_path=output_path)
+        project_root = cgshome
 
         self.registry = build_registry_from_cgs_document(
             document,
@@ -2050,12 +2041,11 @@ class ComplexGitSyncClient:
         self.orchestre.git_tree.git.bind_registry(self.registry)
         self.source_path = source_path
 
-        # Attach the root repository as already existing — never clone it.
         root_entry = self.registry.get(ROOT_REPO_ID)
         self._attach_existing_root(root_entry, project_root)
 
-        # Sync stack: pre-populate with the root path so it is never enqueued
-        # for cloning even if a nested-config discovery happens to reference it.
+        # Root is already checked out at CGSHOME; initialise clones only the
+        # dependencies declared by the .cgs.
         sync_stack: set[Path] = {project_root}
 
         while True:
@@ -2078,7 +2068,7 @@ class ComplexGitSyncClient:
         if not self.registry.is_ready():
             raise GitSyncError("Initialise did not produce a READY tree.")
 
-        # Write the snapshot under CGSHOME, not under the root repo.
+        # Write the snapshot under CGSHOME.
         snapshot_name = f"{self.source_path.stem if self.source_path else root_entry.name}.gts"
         snapshot_output = cgshome / ".cgitsync" / "state" / snapshot_name
         snapshot_path = self.write_gts_snapshot(
@@ -2089,6 +2079,34 @@ class ComplexGitSyncClient:
             previous_tree_state, self.registry.lifecycle_state, reason="initialise_cgs"
         )
         return self.registry
+
+    def resolve_cgshome(
+        self,
+        document: CgsDocument,
+        source_path: Path,
+        *,
+        output_path: str | Path | None = None,
+    ) -> Path:
+        """Resolve CGSHOME from CGSPATH, the environment, or CWD."""
+        if output_path is not None:
+            cgspath = Path(output_path).expanduser().resolve()
+            return (cgspath / (document.project_name or source_path.stem)).resolve()
+        env_cgshome = os.environ.get("CGSHOME")
+        if env_cgshome:
+            return Path(env_cgshome).expanduser().resolve()
+        cgspath = (Path.cwd() / "../..").resolve()
+        return (cgspath / (document.project_name or source_path.stem)).resolve()
+
+    def resolve_initialise_cgshome(
+        self,
+        config_path: str | Path,
+        *,
+        output_path: str | Path | None = None,
+    ) -> Path:
+        """Read a .cgs file and resolve the CGSHOME initialise will use."""
+        source_path = Path(config_path).resolve()
+        document = CgsDocument.from_toml(source_path)
+        return self.resolve_cgshome(document, source_path, output_path=output_path)
 
     def load(
         self,
@@ -2290,23 +2308,23 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         target_dir: str | Path | None = None,
-        output_dir: str | Path | None = None,
+        output_path: str | Path | None = None,
     ) -> Path:
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        return self._resolve_project_root(document, source_path, target_dir, output_dir)
+        return self._resolve_project_root(document, source_path, target_dir, output_path)
 
     def clone_cgs(
         self,
         config_path: str | Path,
         *,
         target_dir: str | Path | None = None,
-        output_dir: str | Path | None = None,
+        output_path: str | Path | None = None,
     ) -> DependencyTreeRegistry:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        project_root = self._resolve_project_root(document, source_path, target_dir, output_dir)
+        project_root = self._resolve_project_root(document, source_path, target_dir, output_path)
 
         self.registry = build_registry_from_cgs_document(
             document,
@@ -2354,10 +2372,10 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         target_dir: str | Path | None = None,
-        output_dir: str | Path | None = None,
+        output_path: str | Path | None = None,
     ) -> DependencyTreeRegistry:
         """Clone the repositories required by the current loaded tree state."""
-        return self.clone_cgs(config_path, target_dir=target_dir, output_dir=output_dir)
+        return self.clone_cgs(config_path, target_dir=target_dir, output_path=output_path)
 
     def restart(self, config_path: str | Path) -> DependencyTreeRegistry:
         """Legacy pull-like helper for resynchronizing an already-cloned tree.
@@ -3119,12 +3137,12 @@ class ComplexGitSyncClient:
         document: CgsDocument,
         source_path: Path,
         target_dir: str | Path | None,
-        output_dir: str | Path | None = None,
+        output_path: str | Path | None = None,
     ) -> Path:
         if target_dir is not None:
             return Path(target_dir).resolve()
 
-        base_dir = Path(output_dir).resolve() if output_dir is not None else Path.cwd()
+        base_dir = Path(output_path).resolve() if output_path is not None else Path.cwd()
         default_root = (base_dir / (document.project_name or source_path.stem)).resolve()
         if not default_root.exists() or (default_root.is_dir() and not any(default_root.iterdir())):
             return default_root

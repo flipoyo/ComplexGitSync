@@ -74,9 +74,13 @@ nested_config      = "auto"
 
 ## 3. Step-by-step CLI walkthrough
 
-Before to start, keep in mind that CWD = `$CGSHOME/ComplexGitSync`.
-When `--output-dir` is omitted, `cgitsync initialise` behaves as if
-`--output-dir $CGSHOME` had been passed, with the default `CGSHOME=../..`.
+Before to start, keep in mind that `CGSHOME=$CGSPATH/CGSil1`,
+`CWD=$CGSHOME/ComplexGitSync`, and commands are run from `$CWD`.
+When `--output-path` is omitted, `cgitsync initialise` behaves as if
+`--output-path $CGSPATH` had been passed, with the default `CGSPATH=../..`
+relative to `$CWD`. The `.cgs` file is read first, then `CGSHOME` is derived
+from the project name; child repositories such as `CGSil2` and `CGSih1` are
+cloned under that project root.
 
 ### Step 1 — Validate the topology
 
@@ -106,8 +110,8 @@ cgitsync print ../CGSil1.cgs
 
 ### Step 3 — Initialise the workspace
 
-Clones all repositories into a local workspace directory and writes the first
-runtime `.gts` snapshot:
+Uses `$CGSHOME` as the existing root project, clones all child repositories
+under that root, and writes the first runtime `.gts` snapshot:
 
 ```bash
 cgitsync initialise ../CGSil1.cgs
@@ -116,7 +120,7 @@ cgitsync initialise ../CGSil1.cgs
 The explicit equivalent is:
 
 ```bash
-cgitsync initialise ../CGSil1.cgs --output-dir "$CGSHOME"
+cgitsync initialise ../CGSil1.cgs --output-path "$CGSPATH"
 ```
 
 Expected output (all repos cloned, tree is `READY`):

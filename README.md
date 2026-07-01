@@ -37,27 +37,30 @@ pixi run cgitsync --help
 
 The reference topology used below is the CGSil1 test case:
 <https://gitlab.com/CGS_test/CGSil1>. In this setup, commands are launched from
-the `ComplexGitSync` tooling checkout. `CGSHOME` is the workspace-level
-directory where ComplexGitSync stores runtime metadata; when `--output-dir` is
-omitted, the CLI uses `CGSHOME=../..`.
+the `ComplexGitSync` tooling checkout (`CWD=$CGSHOME/ComplexGitSync`).
+`CGSPATH` is the parent output path and `CGSHOME=$CGSPATH/<project-name>` is
+the project root where ComplexGitSync stores runtime metadata. When
+`--output-path` is omitted, the CLI uses `CGSPATH=../..` relative to `CWD`.
 
 For commands that explicitly spell out snapshot paths, set the same default in
 your shell:
 
 ```bash
-export CGSHOME="${CGSHOME:-../..}"
+export CGSPATH="${CGSPATH:-../..}"
+export CGSHOME="${CGSHOME:-$CGSPATH/CGSil1}"
 ```
 
 ## Primary workflow
 
 ### 1. Initialise a workspace
 
-From the CGSil1 `.cgs` specification, initialise the full repository tree and
-write the first runtime `.gts` snapshot under `$CGSHOME/.cgitsync/state/`:
+From the CGSil1 `.cgs` specification, initialise the full repository tree under
+`$CGSHOME` and write the first runtime `.gts` snapshot under
+`$CGSHOME/.cgitsync/state/`:
 
 ```bash
-# Equivalent to: pixi run cgitsync initialise ../CGSil1.cgs --output-dir "$CGSHOME"
-# with the default CGSHOME value ../..
+# Equivalent to: pixi run cgitsync initialise ../CGSil1.cgs --output-path "$CGSPATH"
+# with the default CGSPATH value ../..
 pixi run cgitsync initialise ../CGSil1.cgs
 ```
 
@@ -79,7 +82,7 @@ pixi run cgitsync view_operation "$CGSHOME/.cgitsync/state/CGSil1.gts"
 If no source is passed to `view_tree`, `view_operation`, or the READY-state Git
 commands below, the CLI discovers the latest snapshot from
 `$CGSHOME/.cgitsync/state/`. `CGSHOME` can be set explicitly; when it is not,
-the initialisation default is `../..` and later commands can also discover the
+the initialisation default is `CGSPATH=../..` and later commands can also discover the
 workspace by walking upward from the current directory.
 
 ### 3. Keep the workspace in sync
@@ -129,15 +132,16 @@ from ComplexGitSync import ComplexGitSyncClient
 client = ComplexGitSyncClient()
 
 source = Path("../CGSil1.cgs")
-cgshome = Path("../..")
+cgspath = Path("../..")
+cgshome = cgspath / "CGSil1"
 snapshot = cgshome / ".cgitsync/state/CGSil1.gts"
 
 # Initialise the CGSil1 test topology from its .cgs spec.
-# Same default as the CLI: output_dir defaults to CGSHOME=../..
+# Same default as the CLI: output_path defaults to CGSPATH=../..
 client.initialise(source)
 
 # Equivalent explicit form:
-client.initialise(source, output_dir=cgshome)
+client.initialise(source, output_path=cgspath)
 
 # Or load the saved CGSil1 runtime snapshot.
 client.initialise(snapshot)
@@ -156,7 +160,7 @@ client.freeze("release-2026.05")
 Primary commands:
 
 - `initialise <file.cgs|file.gts>`: clone from a spec or load from a snapshot;
-  for `.cgs`, omitted `--output-dir` defaults to `CGSHOME=../..`
+  for `.cgs`, omitted `--output-path` defaults to `CGSPATH=../..`
 - `pull [file.cgs|file.gts]`: resynchronise an existing tree
 - `checkout <branch-or-tag> [--ref-kind branch|tag]`: switch the tree ref
 - `add`: run `git add --all` leaf-first
@@ -199,14 +203,15 @@ cd CGSil1
 git clone https://github.com/flipoyo/ComplexGitSync.git
 cd ComplexGitSync
 
-export CGSHOME="${CGSHOME:-../..}"
+export CGSPATH="${CGSPATH:-../..}"
+export CGSHOME="${CGSHOME:-$CGSPATH/CGSil1}"
 pixi run cgitsync initialise ../CGSil1.cgs
 pixi run cgitsync view_tree "$CGSHOME/.cgitsync/state/CGSil1.gts"
 ```
 
-Omitting `--output-dir` is equivalent to `--output-dir "$CGSHOME"` with the
-default `CGSHOME=../..`. Pass a different value only when the workspace-level
-state directory must live somewhere else.
+Omitting `--output-path` is equivalent to `--output-path "$CGSPATH"` with the
+default `CGSPATH=../..`. The `.cgs` file is read first, then its project name is
+used to derive `CGSHOME=$CGSPATH/<project-name>`.
 
 ## Authorship
 

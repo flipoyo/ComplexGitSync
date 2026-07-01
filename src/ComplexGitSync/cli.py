@@ -77,11 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Path to a .cgs spec (clone mode) or .gts snapshot (restore mode).",
             )
             subparser.add_argument(
-                "--output-dir",
+                "--output-path",
+                dest="output_path",
                 help=(
-                    "CGSPATH: workspace-level directory path. ComplexGitSync resolves it to "
-                    "CGSHOME and stores runtime metadata under CGSHOME/.cgitsync/state/ "
-                    "(.cgs mode only). Defaults to ../.. relative to the current working directory."
+                    "CGSPATH: parent directory used to derive CGSHOME as "
+                    "CGSPATH/<project-name> after the .cgs is read (.cgs mode only). "
+                    "Defaults to ../.. relative to CWD ($CGSHOME/ComplexGitSync)."
                 ),
             )
             subparser.set_defaults(handler=_handle_initialise)
@@ -193,7 +194,8 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Target directory for the cloned project root. Defaults to ./<project-name>.",
             )
             subparser.add_argument(
-                "--output-dir",
+                "--output-path",
+                dest="output_path",
                 help=(
                     "Base directory where the project folder is created. "
                     "The project name from the .cgs file is appended automatically. "
@@ -485,15 +487,18 @@ def _handle_load(args: argparse.Namespace) -> int:
 def _handle_initialise(args: argparse.Namespace) -> int:
     source_path = Path(args.source)
     if source_path.suffix == ".cgs":
-        cgspath = getattr(args, "output_dir", None)
+        output_path = getattr(args, "output_path", None)
+        client = ComplexGitSyncClient()
+        project_root = client.resolve_initialise_cgshome(source_path, output_path=output_path)
         return _run_with_logging(
             command_name="initialise",
             source=source_path,
-            project_root=Path.cwd(),
+            client=client,
+            project_root=project_root,
             runner=lambda active_client, source: _execute_initialise_cgs(
                 active_client,
                 source,
-                cgspath=cgspath,
+                output_path=output_path,
             ),
         )
     return _run_with_logging(
@@ -576,7 +581,7 @@ def _handle_clone(args: argparse.Namespace) -> int:
     project_root = client.resolve_clone_root(
         Path(args.source),
         target_dir=args.target_dir,
-        output_dir=getattr(args, "output_dir", None),
+        output_path=getattr(args, "output_path", None),
     )
     return _run_with_logging(
         command_name="clone",
@@ -587,7 +592,7 @@ def _handle_clone(args: argparse.Namespace) -> int:
             active_client,
             source,
             target_dir=args.target_dir,
-            output_dir=getattr(args, "output_dir", None),
+            output_path=getattr(args, "output_path", None),
         ),
     )
 
@@ -728,11 +733,11 @@ def _execute_initialise_cgs(
     client: ComplexGitSyncClient,
     source_path: Path,
     *,
-    cgspath: str | None = None,
+    output_path: str | None = None,
 ) -> int:
     print("workflow=load->expand->validate->clone")
     print("git_command=git clone (executed per repo)")
-    registry = client.initialise_cgs(source_path, cgspath=cgspath)
+    registry = client.initialise_cgs(source_path, output_path=output_path)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -857,10 +862,10 @@ def _execute_clone(
     source_path: Path,
     *,
     target_dir: str | None,
-    output_dir: str | None = None,
+    output_path: str | None = None,
 ) -> int:
     print("git_command=git clone (executed per repo)")
-    registry = client.clone_cgs(source_path, target_dir=target_dir, output_dir=output_dir)
+    registry = client.clone_cgs(source_path, target_dir=target_dir, output_path=output_path)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
