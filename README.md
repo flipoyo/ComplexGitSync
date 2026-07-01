@@ -167,7 +167,8 @@ Primary commands:
 - `checkout <branch-or-tag> [--ref-kind branch|tag]`: switch the tree ref
 - `add`: run `git add --all` leaf-first
 - `commit <message>`: commit dirty repositories leaf-first
-- `push`: push repositories leaf-first
+- `push`: push repositories leaf-first; when the current branch has no upstream,
+  publish it with `git push -u origin <branch>`
 - `tag <name>`: create and push a shared tag leaf-first
 - `freeze <name>`: commit, tag, push, snapshot, and update the local register
 

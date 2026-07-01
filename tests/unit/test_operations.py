@@ -181,6 +181,7 @@ class _FakeGitRunnerForOperations:
         self.staged: list[Path] = []
         self.committed: list[tuple[Path, str]] = []
         self.pushed: list[tuple[Path, str, str | None]] = []
+        self.pushed_with_upstream: list[tuple[Path, str, str | None]] = []
         self.pulled: list[tuple[Path, str, str | None]] = []
         self.tagged: list[tuple[Path, str]] = []
         self.cloned: list[tuple[str, Path, str]] = []
@@ -196,6 +197,7 @@ class _FakeGitRunnerForOperations:
         self._submodule_links: set[tuple[Path, Path]] = set()
         self._gitlinks: dict[Path, set[Path]] = {}
         self._tracking_states: dict[Path, SyncState | None] = {}
+        self._has_upstream: dict[Path, bool] = {}
         self._merge_in_progress: dict[Path, bool] = {}
 
     # --- branch / checkout ---
@@ -257,8 +259,15 @@ class _FakeGitRunnerForOperations:
         *,
         remote: str = "origin",
         ref_name: str | None = None,
+        set_upstream: bool = False,
     ) -> None:
-        self.pushed.append((Path(repo_path), remote, ref_name))
+        path = Path(repo_path)
+        self.pushed.append((path, remote, ref_name))
+        if set_upstream:
+            self.pushed_with_upstream.append((path, remote, ref_name))
+
+    def has_upstream(self, repo_path: Path | str) -> bool:
+        return self._has_upstream.get(Path(repo_path), True)
 
     def pull(
         self,
@@ -881,6 +890,38 @@ def test_push_tree_defaults_remote_to_origin_when_not_set(tmp_path):
         assert remote == "origin"
 
 
+def test_push_tree_sets_upstream_when_current_branch_is_unpublished(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+
+    for entry in registry.values():
+        entry.resolved_ref_name = "btest0"
+        runner._current_branches[entry.absolute_path] = "btest0"
+        runner._has_upstream[entry.absolute_path] = False
+
+    push_tree(registry, runner)
+
+    assert runner.pushed_with_upstream == runner.pushed
+    for path, remote, branch in runner.pushed_with_upstream:
+        entry = next(e for e in registry.values() if e.absolute_path == path)
+        assert remote == (entry.remote_name or "origin")
+        assert branch == "btest0"
+
+
+def test_push_tree_does_not_set_upstream_when_upstream_exists(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+
+    for entry in registry.values():
+        runner._has_upstream[entry.absolute_path] = True
+
+    push_tree(registry, runner)
+
+    assert runner.pushed_with_upstream == []
+
+
 def test_push_tree_tree_remains_ready(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
@@ -1071,6 +1112,23 @@ def test_git_runner_create_tag_default_does_not_force(monkeypatch):
     runner.create_tag("/tmp/repo", "v1.2.3")
 
     assert captured["args"] == ("tag", "v1.2.3")
+
+
+def test_git_runner_push_can_set_upstream(monkeypatch):
+    runner = GitRunner()
+    captured: dict[str, object] = {}
+
+    def _spy_run(_self, *args: str, cwd=None):
+        captured["args"] = args
+        captured["cwd"] = cwd
+        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(GitRunner, "_run", _spy_run)
+
+    runner.push("/tmp/repo", remote="origin", ref_name="btest0", set_upstream=True)
+
+    assert captured["args"] == ("push", "-u", "origin", "btest0")
+    assert captured["cwd"] == "/tmp/repo"
 
 
 def test_git_runner_file_transport_detection_handles_windows_paths():

@@ -853,7 +853,7 @@ def test_push_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
 
     assert exit_code == 0
     assert "dry_run=true command=push" in captured.out
-    assert "plan_actions=git push" in captured.out
+    assert "plan_actions=git push -> git push -u origin <branch> when upstream is missing" in captured.out
 
 
 def test_add_command_uses_client_handler(monkeypatch, capsys, tmp_path):

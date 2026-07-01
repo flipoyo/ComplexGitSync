@@ -1429,12 +1429,16 @@ class GitRunner:
         *,
         remote: str = "origin",
         ref_name: str | None = None,
+        set_upstream: bool = False,
     ) -> None:
         """Push *remote* (and optionally *ref_name*) in *repo_path* (``git push``)."""
+        args = ["push"]
+        if set_upstream:
+            args.append("-u")
+        args.append(remote)
         if ref_name:
-            self._run("push", remote, ref_name, cwd=repo_path)
-        else:
-            self._run("push", remote, cwd=repo_path)
+            args.append(ref_name)
+        self._run(*args, cwd=repo_path)
 
     def pull(
         self,
@@ -1555,6 +1559,17 @@ class GitRunner:
         if behind:
             return SyncState.BEHIND
         return SyncState.ALIGNED
+
+    def has_upstream(self, repo_path: Path | str) -> bool:
+        """Return ``True`` when the current branch has an upstream configured."""
+        upstream = subprocess.run(
+            [self.executable, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+            cwd=str(repo_path),
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        return upstream.returncode == 0
 
     def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
         """Return ``True`` when *relative_path* is tracked as a git submodule."""

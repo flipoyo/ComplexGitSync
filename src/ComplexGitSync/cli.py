@@ -1097,9 +1097,13 @@ def _execute_push(
     dry_run: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
-    print("git_command=git push")
+    print("git_command=git push (-u origin <branch> when upstream is missing)")
     if dry_run:
-        _print_dry_run_plan(client, command_name="push", actions=("git push",))
+        _print_dry_run_plan(
+            client,
+            command_name="push",
+            actions=("git push", "git push -u origin <branch> when upstream is missing"),
+        )
     else:
         client.push()
     tree_state = client.get_tree_state()

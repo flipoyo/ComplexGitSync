@@ -322,10 +322,16 @@ def push_tree(
 
     for entry in iter_tree_leaf_first(registry):
         remote = entry.remote_name or "origin"
+        current_branch = git_runner.current_branch(entry.absolute_path)
+        ref_name = entry.resolved_ref_name or current_branch
+        set_upstream = False
+        if ref_name is not None and current_branch == ref_name:
+            set_upstream = not git_runner.has_upstream(entry.absolute_path)
         git_runner.push(
             entry.absolute_path,
             remote=remote,
-            ref_name=entry.resolved_ref_name,
+            ref_name=ref_name,
+            set_upstream=set_upstream,
         )
         entry.commit_sha = git_runner.rev_parse_head(entry.absolute_path)
 
