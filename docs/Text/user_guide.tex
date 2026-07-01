@@ -59,7 +59,8 @@ Unified initialisation entry point.  Dispatches on file extension:
 \begin{itemize}
   \item \texttt{.cgs} source (clone mode): clones the full repository tree
     (see \texttt{clone} below). The optional \texttt{--output-dir} controls
-    the workspace-level output path.  On success, ends in \texttt{READY}.
+    the workspace-level output path. When omitted, it defaults to
+    \texttt{CGSHOME=../..}.  On success, ends in \texttt{READY}.
   \item \texttt{.gts} source (restore mode): loads a saved snapshot directly.
     On success, ends in the lifecycle state recorded in the snapshot.
 \end{itemize}
@@ -457,7 +458,8 @@ state it records.  Events are parents-before-children in DAG order.
 
 \cgspkg{} uses project files for topology and does not require global topology
 configuration. Snapshot discovery can use \texttt{CGSHOME}; when it is not set,
-the CLI walks upward from the current directory to find
+the \texttt{initialise(.cgs)} output-dir default is \texttt{../..}; later
+commands can also walk upward from the current directory to find
 \texttt{.cgitsync/state/}. The logging and runtime-state subsystems use the
 user state directory by default:
 

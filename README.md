@@ -37,39 +37,50 @@ pixi run cgitsync --help
 
 The reference topology used below is the CGSil1 test case:
 <https://gitlab.com/CGS_test/CGSil1>. In this setup, commands are launched from
-the `ComplexGitSync` tooling checkout while the managed workspace is the parent
-`CGSil1` directory.
+the `ComplexGitSync` tooling checkout. `CGSHOME` is the workspace-level
+directory where ComplexGitSync stores runtime metadata; when `--output-dir` is
+omitted, the CLI uses `CGSHOME=../..`.
+
+For commands that explicitly spell out snapshot paths, set the same default in
+your shell:
+
+```bash
+export CGSHOME="${CGSHOME:-../..}"
+```
 
 ## Primary workflow
 
 ### 1. Initialise a workspace
 
 From the CGSil1 `.cgs` specification, initialise the full repository tree and
-write the first runtime `.gts` snapshot under the parent workspace:
+write the first runtime `.gts` snapshot under `$CGSHOME/.cgitsync/state/`:
 
 ```bash
-pixi run cgitsync initialise ../CGSil1.cgs --output-dir ../..
+# Equivalent to: pixi run cgitsync initialise ../CGSil1.cgs --output-dir "$CGSHOME"
+# with the default CGSHOME value ../..
+pixi run cgitsync initialise ../CGSil1.cgs
 ```
 
 From the saved CGSil1 `.gts` snapshot, restore/load that state:
 
 ```bash
-pixi run cgitsync initialise ../.cgitsync/state/CGSil1.gts
+pixi run cgitsync initialise "$CGSHOME/.cgitsync/state/CGSil1.gts"
 ```
 
 ### 2. Inspect the synchronised tree
 
 ```bash
-pixi run cgitsync print ../.cgitsync/state/CGSil1.gts
-pixi run cgitsync view_tree ../.cgitsync/state/CGSil1.gts
-pixi run cgitsync view_tree ../.cgitsync/state/CGSil1.gts --depth 2 --collapse CGSih1
-pixi run cgitsync view_operation ../.cgitsync/state/CGSil1.gts
+pixi run cgitsync print "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync view_tree "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync view_tree "$CGSHOME/.cgitsync/state/CGSil1.gts" --depth 2 --collapse CGSih1
+pixi run cgitsync view_operation "$CGSHOME/.cgitsync/state/CGSil1.gts"
 ```
 
 If no source is passed to `view_tree`, `view_operation`, or the READY-state Git
 commands below, the CLI discovers the latest snapshot from
-`CGSHOME/.cgitsync/state/`. `CGSHOME` can be set explicitly, otherwise the CLI
-walks upward from the current directory.
+`$CGSHOME/.cgitsync/state/`. `CGSHOME` can be set explicitly; when it is not,
+the initialisation default is `../..` and later commands can also discover the
+workspace by walking upward from the current directory.
 
 ### 3. Keep the workspace in sync
 
@@ -87,11 +98,11 @@ Every command also accepts an explicit snapshot path when you do not want
 automatic discovery:
 
 ```bash
-pixi run cgitsync add --gts ../.cgitsync/state/CGSil1.gts
-pixi run cgitsync commit "feat: update CGSil1 CGS#1" --gts ../.cgitsync/state/CGSil1.gts
-pixi run cgitsync push --gts ../.cgitsync/state/CGSil1.gts
-pixi run cgitsync tag v1.2.3 --gts ../.cgitsync/state/CGSil1.gts
-pixi run cgitsync freeze release-2026.05 --gts ../.cgitsync/state/CGSil1.gts
+pixi run cgitsync add --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync commit "feat: update CGSil1 CGS#1" --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync push --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync tag v1.2.3 --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync freeze release-2026.05 --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
 ```
 
 Use `--dry-run` on mutation commands to preview the execution plan:
@@ -118,10 +129,15 @@ from ComplexGitSync import ComplexGitSyncClient
 client = ComplexGitSyncClient()
 
 source = Path("../CGSil1.cgs")
-snapshot = Path("../.cgitsync/state/CGSil1.gts")
+cgshome = Path("../..")
+snapshot = cgshome / ".cgitsync/state/CGSil1.gts"
 
 # Initialise the CGSil1 test topology from its .cgs spec.
-client.initialise(source, output_dir="../")
+# Same default as the CLI: output_dir defaults to CGSHOME=../..
+client.initialise(source)
+
+# Equivalent explicit form:
+client.initialise(source, output_dir=cgshome)
 
 # Or load the saved CGSil1 runtime snapshot.
 client.initialise(snapshot)
@@ -139,7 +155,8 @@ client.freeze("release-2026.05")
 
 Primary commands:
 
-- `initialise <file.cgs|file.gts>`: clone from a spec or load from a snapshot
+- `initialise <file.cgs|file.gts>`: clone from a spec or load from a snapshot;
+  for `.cgs`, omitted `--output-dir` defaults to `CGSHOME=../..`
 - `pull [file.cgs|file.gts]`: resynchronise an existing tree
 - `checkout <branch-or-tag> [--ref-kind branch|tag]`: switch the tree ref
 - `add`: run `git add --all` leaf-first
@@ -182,12 +199,14 @@ cd CGSil1
 git clone https://github.com/flipoyo/ComplexGitSync.git
 cd ComplexGitSync
 
-pixi run cgitsync initialise ../CGSil1.cgs --output-dir ../
-pixi run cgitsync view_tree ../.cgitsync/state/CGSil1.gts
+export CGSHOME="${CGSHOME:-../..}"
+pixi run cgitsync initialise ../CGSil1.cgs
+pixi run cgitsync view_tree "$CGSHOME/.cgitsync/state/CGSil1.gts"
 ```
 
-Using `--output-dir ../` avoids creating the synced project under
-`CGSil1/ComplexGitSync/CGSil1/`.
+Omitting `--output-dir` is equivalent to `--output-dir "$CGSHOME"` with the
+default `CGSHOME=../..`. Pass a different value only when the workspace-level
+state directory must live somewhere else.
 
 ## Authorship
 

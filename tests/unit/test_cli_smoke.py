@@ -92,6 +92,16 @@ def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):
     assert "READY ready=true" in captured.out
 
 
+def test_initialise_command_requires_source(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["initialise"])
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "the following arguments are required: source" in captured.err
+
+
 def test_initialise_command_creates_log_file(monkeypatch, tmp_path, capsys):
     gts_path = _write_ready_gts(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))

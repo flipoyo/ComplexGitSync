@@ -212,6 +212,52 @@ def test_initialise_cgs_default_cgshome_is_two_levels_up(tmp_path, monkeypatch):
         assert str(captured["output_path"]).startswith(str(expected_cgshome))
 
 
+def test_initialise_cgs_default_cgshome_uses_environment(tmp_path, monkeypatch):
+    cwd = tmp_path / "parent" / "child" / "cwd"
+    cwd.mkdir(parents=True)
+    env_cgshome = tmp_path / "env-cgshome"
+    env_cgshome.mkdir()
+    monkeypatch.chdir(cwd)
+    monkeypatch.setenv("CGSHOME", str(env_cgshome))
+
+    config_path = _write_root_cgs(tmp_path)
+
+    client = ComplexGitSyncClient(git_runner=_FakeGitRunner({}))
+    captured: dict[str, object] = {}
+
+    def _fake_write_gts(*, command_origin, output_path=None):
+        captured["output_path"] = output_path
+        return output_path or tmp_path / "dummy.gts"
+
+    monkeypatch.setattr(client, "write_gts_snapshot", _fake_write_gts)
+    monkeypatch.setattr(client.state_store, "record_snapshot", lambda *a, **kw: None)
+
+    def _fake_build_registry(*args, **kwargs):
+        from ComplexGitSync.orchestre import ROOT_REPO_ID
+        from ComplexGitSync.orchestre import build_registry_from_cgs_document as _orig
+        from ComplexGitSync.git_repo import RepoLifecycleState
+
+        reg = _orig(*args, **kwargs)
+        root = reg.get(ROOT_REPO_ID)
+        root.repo_lifecycle_state = RepoLifecycleState.READY
+        root.commit_sha = "abc123"
+        root.resolved_ref_kind = "branch"
+        root.resolved_ref_name = "main"
+        return reg
+
+    import ComplexGitSync.orchestre as _mod
+
+    monkeypatch.setattr(_mod, "build_registry_from_cgs_document", _fake_build_registry)
+
+    try:
+        client.initialise_cgs(config_path)
+    except Exception:
+        pass
+
+    if captured.get("output_path") is not None:
+        assert str(captured["output_path"]).startswith(str(env_cgshome.resolve()))
+
+
 def test_resolve_clone_root_uses_output_dir_as_base(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()

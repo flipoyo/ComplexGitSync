@@ -2024,10 +2024,15 @@ class ComplexGitSyncClient:
             CGSPATH).  When *None*, defaults to ``../..`` relative to the
             current working directory.
         """
+        default_cgspath = os.environ.get("CGSHOME")
         cgshome = (
-            Path(cgspath).resolve()
+            Path(cgspath).expanduser().resolve()
             if cgspath is not None
-            else (Path.cwd() / "../..").resolve()
+            else (
+                Path(default_cgspath).expanduser().resolve()
+                if default_cgspath
+                else (Path.cwd() / "../..").resolve()
+            )
         )
 
         project_root = Path.cwd().resolve()

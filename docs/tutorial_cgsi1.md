@@ -74,14 +74,16 @@ nested_config      = "auto"
 
 ## 3. Step-by-step CLI walkthrough
 
-Before to start, keep in mind that CWD = $CGSHOME/ComplexGitSync
+Before to start, keep in mind that CWD = `$CGSHOME/ComplexGitSync`.
+When `--output-dir` is omitted, `cgitsync initialise` behaves as if
+`--output-dir $CGSHOME` had been passed, with the default `CGSHOME=../..`.
 
 ### Step 1 — Validate the topology
 
 Parses the spec and checks consistency without cloning anything:
 
 ```bash
-cgitsync validate CGSil1.cgs
+cgitsync validate ../CGSil1.cgs
 ```
 
 Expected output (tree not yet cloned, so `DECLARED`):
@@ -97,7 +99,7 @@ DECLARED ready=false complete=true
 Renders the project tree with lifecycle state:
 
 ```bash
-cgitsync print CGSil1.cgs
+cgitsync print ../CGSil1.cgs
 ```
 
 ---
@@ -108,15 +110,13 @@ Clones all repositories into a local workspace directory and writes the first
 runtime `.gts` snapshot:
 
 ```bash
-cgitsync initialise CGSil1.cgs
+cgitsync initialise ../CGSil1.cgs
 ```
 
-When ComplexGitSync is checked out inside the CGSil1 workspace, use
-`--output-dir ../` so repositories and `.cgitsync/` state are created in the
-project workspace rather than under the tooling checkout:
+The explicit equivalent is:
 
 ```bash
-cgitsync initialise CGSil1.cgs --output-dir ../
+cgitsync initialise ../CGSil1.cgs --output-dir "$CGSHOME"
 ```
 
 Expected output (all repos cloned, tree is `READY`):
@@ -142,7 +142,7 @@ cgitsync add
 ```
 
 The command discovers the `.gts` snapshot automatically from
-`../.cgitsync/state/`. Use `--gts` to pass the path explicitly:
+`$CGSHOME/.cgitsync/state/`. Use `--gts` to pass the path explicitly:
 
 ```bash
 cgitsync add --gts /path/to/workspace/.cgitsync/state/CGSil1.gts
@@ -198,9 +198,9 @@ snapshot entry.
 
 | Step | Command | Description |
 |------|---------|-------------|
-| 1 | `cgitsync validate CGSil1.cgs` | Parse and check the topology |
-| 2 | `cgitsync print CGSil1.cgs` | Render the tree summary |
-| 3 | `cgitsync initialise CGSil1.cgs` | Clone all repos into a workspace |
+| 1 | `cgitsync validate ../CGSil1.cgs` | Parse and check the topology |
+| 2 | `cgitsync print ../CGSil1.cgs` | Render the tree summary |
+| 3 | `cgitsync initialise ../CGSil1.cgs` | Clone all repos into a workspace |
 | 4 | `cgitsync add` | Stage all changes |
 | 5 | `cgitsync commit "message"` | Commit across the tree |
 | 6 | `cgitsync push` | Push to remotes |

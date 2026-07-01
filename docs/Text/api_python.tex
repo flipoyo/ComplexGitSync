@@ -24,6 +24,8 @@ Compatibility aliases: \texttt{read} $\rightarrow$ \texttt{load},
 \section{From Empty Registry to READY via \texttt{.gts}}
 
 \begin{lstlisting}[language=Python]
+from pathlib import Path
+
 from ComplexGitSync import GitRepo, GitTree, RefKind, TreeLifecycleState
 from ComplexGitSync.orchestre import GtsDocument, build_registry_from_gts_document
 from ComplexGitSync.git_tree import DependencyTreeRegistry
@@ -33,7 +35,8 @@ empty_registry = DependencyTreeRegistry()
 assert empty_registry.recompute_tree_state() == TreeLifecycleState.UNLOADED
 
 # 2) Load the CGSil1 runtime snapshot (.gts) and rebuild the dependency registry
-gts_doc = GtsDocument.from_toml("../.cgitsync/state/CGSil1.gts")
+cgshome = Path("../..")
+gts_doc = GtsDocument.from_toml(cgshome / ".cgitsync/state/CGSil1.gts")
 registry = build_registry_from_gts_document(gts_doc)
 assert registry.lifecycle_state == TreeLifecycleState.READY
 
@@ -90,9 +93,12 @@ practice, the workflow is:
 \end{itemize}
 
 \begin{lstlisting}[language=Python]
+from pathlib import Path
+
 from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
+cgshome = Path("../..")
 
 # 1. load the CGSil1 test-case .cgs -> .gts LOADED
 client.load("../CGSil1.cgs")
@@ -104,7 +110,11 @@ print(client.expand("../CGSil1.cgs"))
 client.validate("../CGSil1.cgs")
 
 # 4. clone(.cgs/.gts)
-client.initialise("../CGSil1.cgs", output_dir="../")
+# Same default as the CLI: output_dir defaults to CGSHOME=../..
+client.initialise("../CGSil1.cgs")
+
+# Equivalent explicit form:
+client.initialise("../CGSil1.cgs", output_dir=cgshome)
 
 # 5. READY methods — unified git interface
 registry = client.get_dependency_registry()
