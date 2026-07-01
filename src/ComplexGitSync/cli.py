@@ -42,6 +42,8 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "launch-state": "Launch an internal state from a .gts snapshot.",
     "write-gts": "Write a .gts state snapshot.",
     "status": "Summarize tree readiness and sync state.",
+    # Configuration commands
+    "configure": "Create a .cgs project specification file interactively.",
 }
 
 
@@ -517,6 +519,14 @@ def build_parser() -> argparse.ArgumentParser:
                 ),
             )
             subparser.set_defaults(handler=_handle_status)
+        elif command_name == "configure":
+            subparser.add_argument(
+                "--output",
+                metavar="FILE",
+                default=None,
+                help="Path to write the .cgs file.",
+            )
+            subparser.set_defaults(handler=_handle_configure)
         else:
             subparser.set_defaults(handler=_not_implemented)
 
@@ -811,6 +821,13 @@ def _handle_status(args: argparse.Namespace) -> int:
         source=gts_path,
         runner=lambda client, source: _execute_status(client, source),
     )
+
+
+def _handle_configure(args: argparse.Namespace) -> int:
+    output_path = getattr(args, "output", None)
+    client = ComplexGitSyncClient()
+    client.configure(output_path=output_path)
+    return 0
 
 
 def _execute_load(

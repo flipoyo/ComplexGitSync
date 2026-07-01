@@ -3388,6 +3388,38 @@ class ComplexGitSyncClient:
         )
         return report
 
+    def configure(self, output_path: str | Path | None = None) -> CgsDocument:
+        """Create a .cgs project specification file from terminal prompts.
+        
+        Uses GitTree.from_prompt() to collect project metadata and repository
+        information interactively, then converts to a CgsDocument.
+        
+        Parameters
+        ----------
+        output_path : str | Path | None
+            Path to write the .cgs file. If None, user will be prompted.
+        
+        Returns
+        -------
+        CgsDocument
+            The configured .cgs document, ready to be written with to_toml().
+        """
+        from .git_tree import GitTree
+        
+        # Create GitTree via prompts
+        git_tree = GitTree.from_prompt()
+        
+        # Convert to CgsDocument
+        cgs_document = git_tree.to_cgs()
+        
+        # Write the file if output_path is provided
+        if output_path:
+            output_file = Path(output_path) if isinstance(output_path, str) else output_path
+            cgs_document.to_toml(output_file)
+            print(f"\n.cgs file written to: {output_file.resolve()}")
+        
+        return cgs_document
+
     def _resolve_project_root(
         self,
         document: CgsDocument,
