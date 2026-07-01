@@ -463,6 +463,27 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Path to the .gts snapshot that holds the registry.",
             )
             subparser.set_defaults(handler=_handle_validate_topology)
+        elif command_name == "status":
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                default=None,
+                help=(
+                    "Path to the .gts snapshot that holds the READY registry. "
+                    "When omitted the latest .gts snapshot is discovered automatically "
+                    "from CGSHOME/.cgitsync/state/."
+                ),
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory used to resolve CGSHOME before loading "
+                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "or walks up from the current working directory."
+                ),
+            )
+            subparser.set_defaults(handler=_handle_status)
         else:
             subparser.set_defaults(handler=_not_implemented)
 
@@ -740,6 +761,15 @@ def _handle_validate_topology(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_status(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="status",
+        source=gts_path,
+        runner=lambda client, source: _execute_status(client, source),
+    )
+
+
 def _execute_load(
     client: ComplexGitSyncClient,
     source_path: Path,
@@ -877,6 +907,17 @@ def _execute_view_operation(
 ) -> int:
     _load_visualization_source(client, source_path, discover_nested=discover_nested)
     print(client.view_operation())
+    return 0
+
+
+def _execute_status(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    print(client.status())
+    tree_state = client.get_tree_state()
+    print(_format_tree_state_line(tree_state))
     return 0
 
 

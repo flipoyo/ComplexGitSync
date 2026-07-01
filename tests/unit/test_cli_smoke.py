@@ -471,12 +471,33 @@ def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
     assert '"event": "command_end"' in log_content
 
 
-def test_unimplemented_command_still_returns_not_implemented(capsys):
-    exit_code = main(["status"])
+def test_status_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def status(self):
+            return "summary ready=true complete=true repos=1 dirty=0 staged=0 ahead=0 behind=0 errors=0"
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["status", "--gts", str(gts_path)])
     captured = capsys.readouterr()
 
-    assert exit_code == 2
-    assert "not implemented yet" in captured.out
+    assert exit_code == 0
+    assert captured_call["gts_path"] == gts_path.resolve()
+    assert "summary ready=true complete=true repos=1" in captured.out
+    assert "READY ready=true" in captured.out
 
 
 def test_package_version_is_defined():

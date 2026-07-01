@@ -187,6 +187,12 @@ Push every repository to its configured remote, leaf-first:
 pixi run cgitsync push
 ```
 
+Optional inspection after push:
+
+```bash
+pixi run cgitsync status
+```
+
 ---
 
 ### Step 7 — Tag
@@ -223,6 +229,7 @@ snapshot entry.
 | 4 | `cgitsync add` | Stage all changes |
 | 5 | `cgitsync commit "message"` | Commit across the tree |
 | 6 | `cgitsync push` | Push to remotes |
+| optional | `cgitsync status` | Inspect local cleanliness and recorded snapshot drift |
 | 7 | `cgitsync tag v1.0.0` | Tag and push the current state |
 | 8 | `cgitsync freeze v1.1.0` | Release commit + tag + snapshot |
 

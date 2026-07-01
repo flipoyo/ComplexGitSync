@@ -173,6 +173,7 @@ Inspection commands:
 
 - `validate <file.cgs|file.gts>`: validate a spec or snapshot
 - `print <file.cgs|file.gts>`: print a lifecycle summary
+- `status [--gts <file.gts>]`: summarize local cleanliness, upstream sync, and recorded SHA drift
 - `view_tree [file.cgs|file.gts]`: render the repository tree
 - `view_operation [file.cgs|file.gts]`: render the runtime operation table
 - `validate-topology --gts <file.gts>`: check branch alignment across the tree

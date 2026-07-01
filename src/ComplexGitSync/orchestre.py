@@ -39,7 +39,7 @@ import tomllib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 from urllib.parse import urlsplit
 
 import tomli_w
@@ -84,6 +84,7 @@ from .git_tree import (
     format_view_tree,
     format_repo_tree_outline,
     iter_tree,
+    iter_tree_leaf_first,
     make_repo_id,
     promote_to_parent,
     register_relative_path,
@@ -197,6 +198,61 @@ def _preferred_path_separators() -> tuple[str, ...]:
             seen.add(separator)
             separators.append(separator)
     return tuple(separators)
+
+
+def _local_status_from_porcelain(status_lines: list[str]) -> str:
+    if not status_lines:
+        return "clean"
+    staged = any(line[:2] != "??" and line[0] != " " for line in status_lines)
+    unstaged = any(line[:2] == "??" or (len(line) > 1 and line[1] != " ") for line in status_lines)
+    if staged and unstaged:
+        return "staged+dirty"
+    if staged:
+        return "staged"
+    return "dirty"
+
+
+def _status_tracking_label(sync_state: SyncState | None) -> str:
+    if sync_state is None:
+        return "unknown"
+    if sync_state == SyncState.ALIGNED:
+        return "synced"
+    if sync_state == SyncState.AHEAD:
+        return "ahead"
+    if sync_state == SyncState.BEHIND:
+        return "behind"
+    if sync_state == SyncState.DIVERGED:
+        return "diverged"
+    return sync_state.value.lower()
+
+
+def _short_sha(value: str | None) -> str:
+    return value[:8] if value else "-"
+
+
+def _status_display_path(entry: RepoRegistryEntry, root_path: Path) -> str:
+    try:
+        relative = entry.absolute_path.relative_to(root_path)
+    except ValueError:
+        return str(entry.relative_path or entry.absolute_path)
+    if relative == Path("."):
+        return "."
+    return relative.as_posix()
+
+
+def _render_status_table(rows: list[tuple[str, str, str, str, str, str, str]]) -> str:
+    headers = ("REPOSITORY", "PATH", "BRANCH", "LOCAL", "UPSTREAM", "HEAD", "RECORDED")
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for index, value in enumerate(row):
+            widths[index] = max(widths[index], len(value))
+
+    def render_row(columns: Sequence[str]) -> str:
+        return "  ".join(value.ljust(widths[index]) for index, value in enumerate(columns))
+
+    lines = [render_row(headers), "-" * (sum(widths) + 12)]
+    lines.extend(render_row(row) for row in rows)
+    return "\n".join(lines)
 
 
 class ConfigDocument:
@@ -1290,6 +1346,11 @@ class GitRunner:
         """Return ``True`` if *repo_path* has any tracked or staged modifications."""
         result = self._run("status", "--porcelain", cwd=repo_path)
         return bool(result.stdout.strip())
+
+    def status_porcelain(self, repo_path: Path | str) -> list[str]:
+        """Return ``git status --porcelain`` lines for *repo_path*."""
+        result = self._run("status", "--porcelain", cwd=repo_path)
+        return [line for line in result.stdout.splitlines() if line.strip()]
 
     def has_staged_changes(self, repo_path: Path | str) -> bool:
         """Return ``True`` if *repo_path* has changes staged for the next commit."""
@@ -2954,6 +3015,96 @@ class ComplexGitSyncClient:
 
     def view_operation(self) -> str:
         return format_view_operation(self.get_dependency_registry())
+
+    def status(self) -> str:
+        registry = self.get_dependency_registry()
+        rows: list[tuple[str, str, str, str, str, str, str]] = []
+        root_path = registry.get(ROOT_REPO_ID).absolute_path
+        dirty_count = 0
+        staged_count = 0
+        ahead_count = 0
+        behind_count = 0
+        error_count = 0
+        recorded_mismatch_count = 0
+
+        for entry in iter_tree_leaf_first(registry):
+            repo_status = self._repo_status_row(entry, root_path)
+            rows.append(repo_status)
+            local_state = repo_status[3]
+            upstream_state = repo_status[4]
+            if local_state != "clean":
+                dirty_count += 1
+            if "staged" in local_state:
+                staged_count += 1
+            if upstream_state == "ahead":
+                ahead_count += 1
+            elif upstream_state == "behind":
+                behind_count += 1
+            elif upstream_state == "diverged":
+                ahead_count += 1
+                behind_count += 1
+            if repo_status[5].endswith("*"):
+                recorded_mismatch_count += 1
+            if upstream_state == "error" or local_state == "error":
+                error_count += 1
+
+        tree_state = build_tree_state(registry)
+        lines = [
+            (
+                "summary "
+                f"ready={str(tree_state.is_ready).lower()} "
+                f"complete={str(tree_state.registry_complete).lower()} "
+                f"repos={len(rows)} "
+                f"dirty={dirty_count} "
+                f"staged={staged_count} "
+                f"ahead={ahead_count} "
+                f"behind={behind_count} "
+                f"recorded_mismatch={recorded_mismatch_count} "
+                f"errors={error_count}"
+            )
+        ]
+        lines.append(_render_status_table(rows))
+        if recorded_mismatch_count:
+            lines.append("legend: HEAD ending with * differs from the commit recorded in the loaded .gts")
+        return "\n".join(lines)
+
+    def _repo_status_row(
+        self,
+        entry: RepoRegistryEntry,
+        root_path: Path,
+    ) -> tuple[str, str, str, str, str, str, str]:
+        display_path = _status_display_path(entry, root_path)
+        try:
+            branch = self.git_runner.current_branch(entry.absolute_path) or "detached"
+            head = self.git_runner.rev_parse_head(entry.absolute_path)
+            status_lines = self.git_runner.status_porcelain(entry.absolute_path)
+            tracking_state = self.git_runner.branch_tracking_state(entry.absolute_path)
+        except GitSyncError:
+            return (
+                entry.name,
+                display_path,
+                entry.current_ref_name or "-",
+                "error",
+                "error",
+                "-",
+                _short_sha(entry.commit_sha),
+            )
+
+        local_state = _local_status_from_porcelain(status_lines)
+        upstream_state = _status_tracking_label(tracking_state)
+        recorded = _short_sha(entry.commit_sha)
+        head_short = _short_sha(head)
+        if entry.commit_sha and head and entry.commit_sha != head:
+            head_short = f"{head_short}*"
+        return (
+            entry.name,
+            display_path,
+            branch,
+            local_state,
+            upstream_state,
+            head_short,
+            recorded,
+        )
 
     def describe_cgs(self) -> str:
         registry = self.get_dependency_registry()

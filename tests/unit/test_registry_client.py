@@ -7,7 +7,7 @@ import pytest
 
 from ComplexGitSync.orchestre import ComplexGitSyncClient, GocDocument, _path_to_environment_marker
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
-from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState
+from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState, SyncState
 from ComplexGitSync.git_tree import DependencyTreeRegistry, GitTree, TreeLifecycleState, make_repo_id
 from ComplexGitSync.orchestre import GtsDocument, RuntimeStateStore, build_registry_from_gts_document
 
@@ -707,6 +707,27 @@ def test_view_operation_rendering_contains_required_columns(tmp_path):
     assert "LOCAL_STATE" in rendered_operation
     assert "SYNC_STATE" in rendered_operation
     assert "demo" in rendered_operation
+
+
+def test_status_rendering_contains_live_git_summary(tmp_path):
+    root_path = tmp_path / "workspace" / "demo"
+    snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=root_path)
+    fake_runner = _FakeGitRunner({})
+    fake_runner.branch_overrides[root_path.resolve()] = "main"
+    fake_runner.status_lines[root_path.resolve()] = ["A  new-file.txt"]
+    fake_runner.tracking_states[root_path.resolve()] = SyncState.AHEAD
+
+    client = ComplexGitSyncClient(git_runner=fake_runner)
+    client.load_gts(snapshot_path)
+
+    rendered_status = client.status()
+
+    assert "summary ready=true complete=true repos=1 dirty=1 staged=1 ahead=1" in rendered_status
+    assert "REPOSITORY" in rendered_status
+    assert "UPSTREAM" in rendered_status
+    assert "demo" in rendered_status
+    assert "staged" in rendered_status
+    assert "ahead" in rendered_status
 
 
 def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
@@ -1554,6 +1575,9 @@ class _FakeGitRunner:
         self.clones: list[tuple[str, Path, str]] = []
         self.submodule_adds: list[tuple[Path, str, Path, str]] = []
         self._submodule_paths: set[tuple[Path, Path]] = set()
+        self.branch_overrides: dict[Path, str | None] = {}
+        self.status_lines: dict[Path, list[str]] = {}
+        self.tracking_states: dict[Path, SyncState | None] = {}
 
     def remote_branch_exists(self, remote_url: str, branch: str) -> bool:
         return branch in self.remote_branches.get(remote_url, set())
@@ -1616,10 +1640,18 @@ nested_config = "disabled"
 
     def current_branch(self, repo_path: Path | str) -> str | None:
         resolved = Path(repo_path).resolve()
+        if resolved in self.branch_overrides:
+            return self.branch_overrides[resolved]
         for _, destination, branch in self.clones:
             if destination == resolved:
                 return branch
         return None
+
+    def status_porcelain(self, repo_path: Path | str) -> list[str]:
+        return self.status_lines.get(Path(repo_path).resolve(), [])
+
+    def branch_tracking_state(self, repo_path: Path | str) -> SyncState | None:
+        return self.tracking_states.get(Path(repo_path).resolve(), SyncState.ALIGNED)
 
 
 class _StrictCloneGitRunner(_FakeGitRunner):
