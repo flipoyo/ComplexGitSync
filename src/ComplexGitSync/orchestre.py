@@ -2072,7 +2072,7 @@ class ComplexGitSyncClient:
             raise GitSyncError("Initialise did not produce a READY tree.")
 
         # Write the snapshot under CGSHOME, not under the root repo.
-        snapshot_name = f"{(self.source_path.stem if self.source_path else root_entry.name)}.gts"
+        snapshot_name = f"{self.source_path.stem if self.source_path else root_entry.name}.gts"
         snapshot_output = resolved_cgshome / ".cgitsync" / "state" / snapshot_name
         snapshot_path = self.write_gts_snapshot(
             command_origin="clone", output_path=snapshot_output
@@ -3166,7 +3166,12 @@ class ComplexGitSyncClient:
         try:
             current_branch = self.git_runner.current_branch(project_root)
             commit_sha = self.git_runner.rev_parse_head(project_root)
-        except GitSyncError:
+        except GitSyncError as exc:
+            self._log_event(
+                "attach_root_git_info_failed",
+                project_root=project_root,
+                error=str(exc),
+            )
             current_branch = None
             commit_sha = ""
 
