@@ -624,6 +624,42 @@ def test_commit_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     assert "READY ready=true" in captured.out
 
 
+def test_commit_command_accepts_message_option(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            pass
+
+        def commit(self, message, *, stage_all):
+            captured_call["message"] = message
+            captured_call["stage_all"] = stage_all
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["commit", "-m", "my commit", "--gts", str(gts_path)])
+
+    assert exit_code == 0
+    assert captured_call == {"message": "my commit", "stage_all": True}
+
+
+def test_commit_command_rejects_duplicate_messages(capsys, tmp_path):
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["commit", "positional", "-m", "option", "--gts", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "provide exactly one message" in captured.err
+
+
 def test_commit_command_no_stage_flag(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 

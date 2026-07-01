@@ -171,6 +171,12 @@ Commit staged changes with a shared message across all dirty repositories:
 pixi run cgitsync commit "my commit message"
 ```
 
+Equivalent form:
+
+```bash
+pixi run cgitsync commit -m "my commit message"
+```
+
 ---
 
 ### Step 6 — Push

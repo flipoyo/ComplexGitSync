@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import sys
 from pathlib import Path
 from collections.abc import Sequence
 
@@ -257,7 +258,17 @@ def build_parser() -> argparse.ArgumentParser:
             )
             subparser.set_defaults(handler=_handle_checkout)
         elif command_name == "commit":
-            subparser.add_argument("message", help="Commit message applied to all repos with staged changes.")
+            subparser.add_argument(
+                "message",
+                nargs="?",
+                help="Commit message applied to all repos with staged changes.",
+            )
+            subparser.add_argument(
+                "-m",
+                "--message",
+                dest="message_option",
+                help="Commit message applied to all repos with staged changes.",
+            )
             subparser.add_argument(
                 "--gts",
                 metavar="FILE",
@@ -625,6 +636,10 @@ def _handle_checkout(args: argparse.Namespace) -> int:
 
 
 def _handle_commit(args: argparse.Namespace) -> int:
+    message = _resolve_commit_message(args)
+    if message is None:
+        print("cgitsync commit: error: provide exactly one message argument or -m/--message", file=sys.stderr)
+        return 2
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="commit",
@@ -632,11 +647,19 @@ def _handle_commit(args: argparse.Namespace) -> int:
         runner=lambda client, source: _execute_commit(
             client,
             source,
-            message=args.message,
+            message=message,
             stage_all=not args.no_stage,
             dry_run=args.dry_run,
         ),
     )
+
+
+def _resolve_commit_message(args: argparse.Namespace) -> str | None:
+    positional = getattr(args, "message", None)
+    option = getattr(args, "message_option", None)
+    if positional and option:
+        return None
+    return option or positional
 
 
 def _handle_add(args: argparse.Namespace) -> int:
