@@ -4,13 +4,14 @@ import argparse
 import logging
 import os
 import sys
+import tomllib
 from pathlib import Path
 from collections.abc import Sequence
 
 from . import __version__
 from .git_repo import RefKind
 from .git_tree import ProjectTreeState, iter_tree_leaf_first
-from .orchestre import CgsDocument, ComplexGitSyncClient, create_run_logger
+from .orchestre import CgsDocument, ComplexGitSyncClient, GtsDocument, create_run_logger
 
 
 _PLANNED_COMMANDS: dict[str, str] = {
@@ -24,6 +25,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "tag": "Create a tag across the full reachable tree.",
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
     # Secondary / inspection commands
+    "load": "Load a .cgs/.gts path or a project-local .lgr snapshot id.",
     "validate": "Validate a .cgs or .gts topology and print the lifecycle state.",
     "print": "Print a .cgs or .gts lifecycle summary.",
     "describe": "Describe a .cgs or .gts input (alias for print).",
@@ -88,11 +90,19 @@ def build_parser() -> argparse.ArgumentParser:
             )
             subparser.set_defaults(handler=_handle_initialise)
         elif command_name == "load":
-            subparser.add_argument("source", help="Path to the local .cgs or .gts file to load.")
+            subparser.add_argument("source", help="Path to a .cgs/.gts file, or a local .lgr id such as 1, lgr-000001, or gts-000001.")
             subparser.add_argument(
                 "--discover-nested",
                 action="store_true",
                 help="Resolve nested .cgs files for locally available child repos.",
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory used to resolve CGSHOME and the project .lgr when SOURCE is an id. "
+                    "When omitted, uses $CGSHOME or walks up from the current working directory."
+                ),
             )
             subparser.set_defaults(handler=_handle_load)
         elif command_name == "expand":
@@ -509,9 +519,10 @@ def _not_implemented(args: argparse.Namespace) -> int:
 
 
 def _handle_load(args: argparse.Namespace) -> int:
+    source = _resolve_load_source(args.source, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="load",
-        source=Path(args.source),
+        source=source,
         runner=lambda client, source: _execute_load(client, source, discover_nested=args.discover_nested),
     )
 
@@ -1263,6 +1274,114 @@ def _load_visualization_source(
         client.load_runtime_or_cgs(source_path, discover_nested=discover_nested)
 
 
+def _resolve_load_source(source: str, search_dir: str | Path | None = None) -> Path:
+    source_path = Path(source).expanduser()
+    if source_path.exists() or source_path.suffix in {".cgs", ".gts"}:
+        return source_path.resolve()
+    return _resolve_lgr_snapshot_source(source, search_dir)
+
+
+def _resolve_lgr_snapshot_source(source: str, search_dir: str | Path | None = None) -> Path:
+    cgshome = _discover_cgshome(search_dir)
+    register_path = _discover_lgr_path(cgshome)
+    data = tomllib.loads(register_path.read_text(encoding="utf-8"))
+    snapshot_id = _normalise_snapshot_selector(source, data)
+
+    for entry in data.get("snapshots", []):
+        if not isinstance(entry, dict) or entry.get("id") != snapshot_id:
+            continue
+        raw_snapshot_path = entry.get("snapshot_path")
+        if not isinstance(raw_snapshot_path, str) or not raw_snapshot_path:
+            break
+        snapshot_path = _expand_lgr_path(raw_snapshot_path).resolve()
+        expected_hash = entry.get("snapshot_hash")
+        if isinstance(expected_hash, str) and expected_hash:
+            matching_snapshot_path = _find_matching_lgr_snapshot_file(
+                snapshot_id,
+                snapshot_path,
+                expected_hash,
+                cgshome,
+            )
+            if matching_snapshot_path is not None:
+                return matching_snapshot_path
+            raise FileNotFoundError(
+                f"Snapshot {snapshot_id} is recorded in {register_path}, but no matching .gts file exists. "
+                f"Expected hash {expected_hash}."
+            )
+        if snapshot_path.is_file():
+            return snapshot_path
+        raise FileNotFoundError(
+            f"Snapshot {snapshot_id} is recorded in {register_path}, "
+            f"but the file does not exist: {snapshot_path}"
+        )
+
+    raise FileNotFoundError(f"Snapshot id {snapshot_id!r} was not found in {register_path}.")
+
+
+def _normalise_snapshot_selector(source: str, data: dict) -> str:
+    raw = source.strip()
+    if raw.isdigit():
+        raw = f"lgr-{int(raw):06d}"
+    if raw.startswith("lgr-"):
+        for event in data.get("ledger", []):
+            if isinstance(event, dict) and event.get("sync_id") == raw:
+                snapshot_id = event.get("gts_snapshot_id")
+                if isinstance(snapshot_id, str) and snapshot_id:
+                    return snapshot_id
+        raise FileNotFoundError(f"Ledger event id {raw!r} was not found.")
+    if raw.startswith("gts-"):
+        return raw
+    raise FileNotFoundError(
+        f"Cannot resolve load source {source!r}. Pass a .cgs/.gts path, a numeric ledger id, "
+        "or an id like lgr-000001/gts-000001."
+    )
+
+
+def _discover_lgr_path(cgshome: Path) -> Path:
+    lgr_entries = sorted(cgshome.glob("*.lgr"))
+    if not lgr_entries:
+        raise FileNotFoundError(f"No .lgr register found under CGSHOME: {cgshome}")
+    if len(lgr_entries) > 1:
+        names = ", ".join(path.name for path in lgr_entries)
+        raise FileNotFoundError(f"Multiple .lgr registers found under {cgshome}: {names}")
+    return lgr_entries[0]
+
+
+def _find_matching_lgr_snapshot_file(
+    snapshot_id: str,
+    recorded_path: Path,
+    expected_hash: str,
+    cgshome: Path,
+) -> Path | None:
+    candidates = [
+        recorded_path,
+        recorded_path.parent / f"{snapshot_id}.gts",
+        cgshome / ".cgitsync" / "state" / f"{snapshot_id}.gts",
+    ]
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen or not resolved.is_file():
+            continue
+        seen.add(resolved)
+        if _snapshot_file_hash(resolved) == expected_hash:
+            return resolved
+    return None
+
+
+def _snapshot_file_hash(snapshot_path: Path) -> str:
+    document = GtsDocument.from_toml(snapshot_path)
+    return document.snapshot_hash or document.compute_snapshot_hash()
+
+
+def _expand_lgr_path(raw_path: str) -> Path:
+    expanded = raw_path
+    home = os.environ.get("HOME")
+    if home:
+        expanded = expanded.replace("$HOME", home)
+    return Path(os.path.expandvars(expanded)).expanduser()
+
+
 def _discover_cgshome(search_dir: str | Path | None = None) -> Path:
     """Resolve and return CGSHOME.
 
@@ -1317,6 +1436,17 @@ def _discover_gts_path(search_dir: str | Path | None = None) -> Path:
         contains no ``.gts`` snapshots.
     """
     cgshome = _discover_cgshome(search_dir)
+    try:
+        register_path = _discover_lgr_path(cgshome)
+        data = tomllib.loads(register_path.read_text(encoding="utf-8"))
+        current_snapshot_path = data.get("register", {}).get("current_snapshot_path")
+        if isinstance(current_snapshot_path, str) and current_snapshot_path:
+            resolved_current = _expand_lgr_path(current_snapshot_path).resolve()
+            if resolved_current.is_file():
+                return resolved_current
+    except (FileNotFoundError, tomllib.TOMLDecodeError):
+        pass
+
     state_dir = cgshome / ".cgitsync" / "state"
     if state_dir.is_dir():
         gts_entries = [(p, p.stat().st_mtime) for p in state_dir.glob("*.gts")]

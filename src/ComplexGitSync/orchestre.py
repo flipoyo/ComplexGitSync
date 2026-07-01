@@ -3239,8 +3239,10 @@ class ComplexGitSyncClient:
         root_entry = registry.get("root")
         if output_path is None:
             snapshot_name = f"{(self.source_path.stem if self.source_path else root_entry.name)}.gts"
-            resolved_output_path = root_entry.absolute_path / ".cgitsync" / "state" / snapshot_name
+            latest_output_path = root_entry.absolute_path / ".cgitsync" / "state" / snapshot_name
+            resolved_output_path = latest_output_path
         else:
+            latest_output_path = None
             resolved_output_path = Path(output_path).resolve()
 
         resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3260,6 +3262,14 @@ class ComplexGitSyncClient:
         register_path = root_entry.absolute_path / f"{root_entry.name}.lgr"
         if root_entry.absolute_path.exists():
             register_id = LocalGitRegister(register_path).record_snapshot(resolved_output_path)
+            if latest_output_path is not None:
+                immutable_output_path = resolved_output_path.parent / f"{register_id}.gts"
+                if immutable_output_path != resolved_output_path:
+                    document.to_toml(immutable_output_path)
+                    resolved_output_path = immutable_output_path
+                    register_id = LocalGitRegister(register_path).record_snapshot(resolved_output_path)
+                    document.to_toml(latest_output_path)
+                self.loaded_snapshot_path = resolved_output_path
             self._log_event(
                 "lgr_update",
                 register_path=register_path,

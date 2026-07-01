@@ -17,9 +17,9 @@ ComplexGitSync treats a project as a repository tree:
 
 The CLI uses these local documents:
 
-- `.cgs`: hand-written project topology/specification
-- `.gts`: generated workspace snapshot
-- `.lgr`: generated local register and append-only sync ledger
+- `.cgs`: "ComplexGitSync" --> hand-written project topology/specification
+- `.gts`: "GitTreeState" --> generated workspace snapshot
+- `.lgr`: "LocalGitRegister" --> generated local register and append-only sync ledger
 
 Authentication is delegated to Git. If `git clone`, `git fetch`, `git push`,
 and your credential helper work locally, `cgitsync` uses the same setup.
@@ -171,6 +171,8 @@ Primary commands:
 
 Inspection commands:
 
+- `load <file.cgs|file.gts|id>`: load a path or project-local ledger id such as
+  `1`, `lgr-000001`, or `gts-000001`
 - `validate <file.cgs|file.gts>`: validate a spec or snapshot
 - `print <file.cgs|file.gts>`: print a lifecycle summary
 - `status [--gts <file.gts>]`: summarize local cleanliness, upstream sync, and recorded SHA drift
@@ -191,6 +193,9 @@ branches, or stale recorded snapshot SHAs, and blocks unsafe states such as
 detached HEADs, unresolved merges, missing remotes, branch divergence, or
 missing nested repository links. `tag` also requires clean worktrees and a tag
 name that does not already exist.
+
+Each `.lgr` snapshot entry points to an immutable `.gts` file named
+`gts-XXXXXX.gts`; the project-name `.gts` file remains a latest-state alias.
 
 ## CGSil1 nested-tooling setup
 

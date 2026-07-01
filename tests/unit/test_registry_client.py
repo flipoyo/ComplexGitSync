@@ -1051,7 +1051,8 @@ def test_client_load_cgs_updates_project_local_lgr(tmp_path):
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
-    expected_snapshot = (tmp_path / ".cgitsync" / "state" / "project.gts").resolve()
+    expected_snapshot = (tmp_path / ".cgitsync" / "state" / "gts-000001.gts").resolve()
+    expected_latest_alias = tmp_path / ".cgitsync" / "state" / "project.gts"
     expected_lgr = tmp_path / "demo.lgr"
 
     client = ComplexGitSyncClient()
@@ -1064,6 +1065,7 @@ def test_client_load_cgs_updates_project_local_lgr(tmp_path):
     assert len(data["snapshots"]) == 1
     assert data["snapshots"][0]["id"] == "gts-000001"
     assert data["snapshots"][0]["snapshot_path"] == expected_path_marker
+    assert expected_latest_alias.is_file()
 
 
 def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path):
@@ -1082,8 +1084,9 @@ def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path
     assert snapshot_data["project"]["source_cgs_path"] == "$HOME/workspace/demo/project.cgs"
 
     lgr_data = tomllib.loads((workspace / "demo.lgr").read_text(encoding="utf-8"))
-    assert lgr_data["register"]["current_snapshot_path"] == "$HOME/workspace/demo/.cgitsync/state/project.gts"
-    assert lgr_data["snapshots"][0]["snapshot_path"] == "$HOME/workspace/demo/.cgitsync/state/project.gts"
+    assert lgr_data["register"]["current_snapshot_path"] == "$HOME/workspace/demo/.cgitsync/state/gts-000001.gts"
+    assert lgr_data["snapshots"][0]["snapshot_path"] == "$HOME/workspace/demo/.cgitsync/state/gts-000001.gts"
+    assert (workspace / ".cgitsync" / "state" / "project.gts").is_file()
 
 
 def test_client_snapshot_generation_deduplicates_identical_workspace_entries(tmp_path):
@@ -1340,6 +1343,11 @@ def test_client_multiple_operations_create_linked_ledger_events(tmp_path):
     assert events[0]["parent_sync_ids"] == []
     assert events[1]["parent_sync_ids"] == ["lgr-000001"]
     assert events[2]["parent_sync_ids"] == ["lgr-000002"]
+    snapshot_paths = [Path(entry["snapshot_path"]) for entry in data["snapshots"]]
+    assert len(snapshot_paths) == len(set(snapshot_paths))
+    for snapshot in data["snapshots"]:
+        assert Path(snapshot["snapshot_path"]).is_file()
+        assert Path(snapshot["snapshot_path"]).name == f"{snapshot['id']}.gts"
 
 
 def test_client_get_ledger_history_via_public_api(tmp_path):

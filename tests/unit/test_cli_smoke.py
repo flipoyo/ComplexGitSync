@@ -37,6 +37,49 @@ def test_initialise_command_restores_gts_snapshot(tmp_path, capsys):
     assert "demo (project)" in captured.out
 
 
+def test_load_command_resolves_numeric_ledger_id(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load(self, source, *, discover_nested=False):
+            captured_call["source"] = Path(source)
+            captured_call["discover_nested"] = discover_nested
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+
+    snapshot_path = tmp_path / ".cgitsync" / "state" / "gts-000001.gts"
+    snapshot_path.parent.mkdir(parents=True)
+    snapshot_path.write_text("[document]\nformat_version = \"1.0\"\n", encoding="utf-8")
+    (tmp_path / "demo.lgr").write_text(
+        f"""
+[register]
+current_snapshot_id = "gts-000001"
+current_snapshot_path = "{snapshot_path.as_posix()}"
+
+[[snapshots]]
+id = "gts-000001"
+snapshot_path = "{snapshot_path.as_posix()}"
+
+[[ledger]]
+sync_id = "lgr-000001"
+gts_snapshot_id = "gts-000001"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(["load", "1", "--search-dir", str(tmp_path)])
+
+    assert exit_code == 0
+    assert captured_call["source"] == snapshot_path.resolve()
+
+
 def test_print_command_renders_cgs_summary(tmp_path, capsys):
     config_path = _write_project_cgs(tmp_path)
 
@@ -1174,8 +1217,8 @@ def test_gts_auto_discovery_no_snapshot_under_cgshome_raises_error(monkeypatch, 
         _discover_gts_path()
 
 
-def test_gts_auto_discovery_picks_most_recent(tmp_path):
-    """_discover_gts_path returns the most recently modified .gts."""
+def test_gts_auto_discovery_falls_back_to_most_recent(tmp_path):
+    """_discover_gts_path returns the most recently modified .gts without a .lgr."""
     import os
     from ComplexGitSync.cli import _discover_gts_path
 
@@ -1191,6 +1234,31 @@ def test_gts_auto_discovery_picks_most_recent(tmp_path):
 
     result = _discover_gts_path(search_dir=tmp_path)
     assert result == new_gts.resolve()
+
+
+def test_gts_auto_discovery_prefers_lgr_current_snapshot(tmp_path):
+    import os
+    from ComplexGitSync.cli import _discover_gts_path
+
+    state_dir = tmp_path / ".cgitsync" / "state"
+    state_dir.mkdir(parents=True)
+    old_gts = state_dir / "gts-000001.gts"
+    current_gts = state_dir / "gts-000002.gts"
+    old_gts.touch()
+    current_gts.touch()
+    os.utime(old_gts, (2000.0, 2000.0))
+    os.utime(current_gts, (1000.0, 1000.0))
+    (tmp_path / "demo.lgr").write_text(
+        f"""
+[register]
+current_snapshot_path = "{current_gts.as_posix()}"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = _discover_gts_path(search_dir=tmp_path)
+    assert result == current_gts.resolve()
 
 
 def test_checkout_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
