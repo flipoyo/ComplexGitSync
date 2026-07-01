@@ -327,6 +327,7 @@ def push_tree(
             remote=remote,
             ref_name=entry.resolved_ref_name,
         )
+        entry.commit_sha = git_runner.rev_parse_head(entry.absolute_path)
 
     registry.recompute_tree_state()
 
@@ -927,7 +928,7 @@ def _collect_worktree_diagnostics(
         PreflightSeverity.BLOCKING_ERROR if require_clean else PreflightSeverity.WARNING
     )
     for entry in iter_tree_leaf_first(registry):
-        is_dirty = git_runner.has_uncommitted_changes(entry.absolute_path)
+        is_dirty = _has_managed_uncommitted_changes(registry, git_runner, entry)
         entry.worktree_state = "DIRTY" if is_dirty else "CLEAN"
         if is_dirty:
             dirty.append(
@@ -938,6 +939,68 @@ def _collect_worktree_diagnostics(
                 )
             )
     return dirty
+
+
+def _has_managed_uncommitted_changes(
+    registry: DependencyTreeRegistry,
+    git_runner: GitRunner,
+    entry: RepoRegistryEntry,
+) -> bool:
+    try:
+        status_lines = git_runner.status_porcelain(entry.absolute_path)
+        unmanaged_gitlinks = _unmanaged_gitlink_paths(registry, git_runner, entry)
+    except (AttributeError, GitSyncError):
+        return git_runner.has_uncommitted_changes(entry.absolute_path)
+    if not unmanaged_gitlinks:
+        return bool(status_lines)
+    return any(
+        not _status_line_targets_any(line, unmanaged_gitlinks)
+        for line in status_lines
+    )
+
+
+def _unmanaged_gitlink_paths(
+    registry: DependencyTreeRegistry,
+    git_runner: GitRunner,
+    entry: RepoRegistryEntry,
+) -> set[Path]:
+    try:
+        gitlinks = git_runner.tracked_gitlink_paths(entry.absolute_path)
+    except (AttributeError, GitSyncError):
+        return set()
+
+    managed_children: set[Path] = set()
+    for child in registry.children_of(entry.repo_id):
+        try:
+            managed_children.add(child.absolute_path.relative_to(entry.absolute_path))
+        except ValueError:
+            continue
+    return {path for path in gitlinks if path not in managed_children}
+
+
+def _status_line_targets_any(status_line: str, paths: set[Path]) -> bool:
+    status_path = _status_line_path(status_line)
+    if status_path is None:
+        return False
+    return any(status_path == path or _path_is_relative_to(status_path, path) for path in paths)
+
+
+def _status_line_path(status_line: str) -> Path | None:
+    if len(status_line) < 4:
+        return None
+    raw_path = status_line[3:]
+    if " -> " in raw_path:
+        raw_path = raw_path.rsplit(" -> ", 1)[1]
+    raw_path = raw_path.strip().strip('"')
+    return Path(raw_path) if raw_path else None
+
+
+def _path_is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
 
 
 def _format_preflight_warning(

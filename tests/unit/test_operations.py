@@ -188,11 +188,13 @@ class _FakeGitRunnerForOperations:
         self.command_order: list[tuple[str, Path]] = []
         self._staged_changes: dict[Path, bool] = {}
         self._unstaged_changes: dict[Path, bool] = {}
+        self._extra_status_lines: dict[Path, list[str]] = {}
         self._shas: dict[Path, str] = {}
         self._current_branches: dict[Path, str | None] = {}
         self._existing_remotes: dict[Path, set[str]] = {}
         self._existing_tags: dict[Path, set[str]] = {}
         self._submodule_links: set[tuple[Path, Path]] = set()
+        self._gitlinks: dict[Path, set[Path]] = {}
         self._tracking_states: dict[Path, SyncState | None] = {}
         self._merge_in_progress: dict[Path, bool] = {}
 
@@ -231,6 +233,16 @@ class _FakeGitRunnerForOperations:
     def has_uncommitted_changes(self, repo_path: Path | str) -> bool:
         path = Path(repo_path)
         return self._staged_changes.get(path, False) or self._unstaged_changes.get(path, False)
+
+    def status_porcelain(self, repo_path: Path | str) -> list[str]:
+        path = Path(repo_path)
+        lines: list[str] = []
+        if self._staged_changes.get(path, False):
+            lines.append("A  staged.txt")
+        if self._unstaged_changes.get(path, False):
+            lines.append(" M dirty.txt")
+        lines.extend(self._extra_status_lines.get(path, []))
+        return lines
 
     def commit(self, repo_path: Path | str, message: str) -> None:
         path = Path(repo_path)
@@ -312,7 +324,19 @@ class _FakeGitRunnerForOperations:
         self._existing_tags.setdefault(Path(repo_path), set()).add(tag_name)
 
     def add_submodule_link(self, repo_path: Path | str, relative_path: Path | str) -> None:
-        self._submodule_links.add((Path(repo_path), Path(relative_path)))
+        parent = Path(repo_path)
+        relative = Path(relative_path)
+        self._submodule_links.add((parent, relative))
+        self._gitlinks.setdefault(parent, set()).add(relative)
+
+    def add_gitlink(self, repo_path: Path | str, relative_path: Path | str) -> None:
+        self._gitlinks.setdefault(Path(repo_path), set()).add(Path(relative_path))
+
+    def add_status_line(self, repo_path: Path | str, line: str) -> None:
+        self._extra_status_lines.setdefault(Path(repo_path), []).append(line)
+
+    def tracked_gitlink_paths(self, repo_path: Path | str) -> set[Path]:
+        return set(self._gitlinks.get(Path(repo_path), set()))
 
     def set_tracking_state(self, repo_path: Path | str, state: SyncState | None) -> None:
         self._tracking_states[Path(repo_path)] = state
@@ -815,6 +839,22 @@ def test_push_tree_deep_hierarchy_leaf_first(tmp_path):
     assert pushed_paths.index(mid_path) < pushed_paths.index(root_path)
 
 
+def test_push_tree_updates_commit_sha(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+
+    root_path = registry.get("root").absolute_path
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+    runner._shas[root_path] = "pushed-root-sha"
+    runner._shas[leaf_path] = "pushed-leaf-sha"
+
+    push_tree(registry, runner)
+
+    assert registry.get("root").commit_sha == "pushed-root-sha"
+    assert registry.get("root:deps/leaf").commit_sha == "pushed-leaf-sha"
+
+
 def test_push_tree_uses_remote_name_and_resolved_ref(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
@@ -923,6 +963,19 @@ def test_tag_tree_preflight_fails_when_tree_is_dirty(tmp_path):
 
     with pytest.raises(GitSyncError, match="worktree has uncommitted changes"):
         tag_tree(registry, runner, "v1.0.0")
+
+
+def test_tag_tree_preflight_ignores_unmanaged_gitlink_dirty_state(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+    root_path = registry.get("root").absolute_path
+    runner.add_gitlink(root_path, "ComplexGitSync")
+    runner.add_status_line(root_path, " M ComplexGitSync")
+
+    tag_tree(registry, runner, "v1.0.0")
+
+    assert registry.get("root").worktree_state == "CLEAN"
 
 
 def test_commit_tree_preflight_warns_when_tree_is_dirty(tmp_path):

@@ -240,6 +240,50 @@ def _status_display_path(entry: RepoRegistryEntry, root_path: Path) -> str:
     return relative.as_posix()
 
 
+def _status_line_path(status_line: str) -> Path | None:
+    if len(status_line) < 4:
+        return None
+    raw_path = status_line[3:]
+    if " -> " in raw_path:
+        raw_path = raw_path.rsplit(" -> ", 1)[1]
+    raw_path = raw_path.strip().strip('"')
+    return Path(raw_path) if raw_path else None
+
+
+def _status_line_targets_any(status_line: str, paths: set[Path]) -> bool:
+    status_path = _status_line_path(status_line)
+    if status_path is None:
+        return False
+    return any(status_path == path or _path_is_relative_to(status_path, path) for path in paths)
+
+
+def _path_is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def _unmanaged_gitlink_paths(
+    registry: DependencyTreeRegistry,
+    entry: RepoRegistryEntry,
+    git_runner: Any,
+) -> set[Path]:
+    try:
+        gitlinks = git_runner.tracked_gitlink_paths(entry.absolute_path)
+    except (AttributeError, GitSyncError):
+        return set()
+
+    managed_children: set[Path] = set()
+    for child in registry.children_of(entry.repo_id):
+        try:
+            managed_children.add(child.absolute_path.relative_to(entry.absolute_path))
+        except ValueError:
+            continue
+    return {path for path in gitlinks if path not in managed_children}
+
+
 def _render_status_table(rows: list[tuple[str, str, str, str, str, str, str]]) -> str:
     headers = ("REPOSITORY", "PATH", "BRANCH", "LOCAL", "UPSTREAM", "HEAD", "RECORDED")
     widths = [len(header) for header in headers]
@@ -1351,6 +1395,20 @@ class GitRunner:
         """Return ``git status --porcelain`` lines for *repo_path*."""
         result = self._run("status", "--porcelain", cwd=repo_path)
         return [line for line in result.stdout.splitlines() if line.strip()]
+
+    def tracked_gitlink_paths(self, repo_path: Path | str) -> set[Path]:
+        """Return paths tracked as gitlinks (mode ``160000``) in *repo_path*."""
+        result = self._run("ls-files", "--stage", cwd=repo_path)
+        gitlinks: set[Path] = set()
+        for line in result.stdout.splitlines():
+            if not line.startswith("160000 "):
+                continue
+            try:
+                path = line.split("\t", 1)[1]
+            except IndexError:
+                continue
+            gitlinks.add(Path(path))
+        return gitlinks
 
     def has_staged_changes(self, repo_path: Path | str) -> bool:
         """Return ``True`` if *repo_path* has changes staged for the next commit."""
@@ -2725,6 +2783,9 @@ class ComplexGitSyncClient:
         previous_state = registry.lifecycle_state
         self._log_event("push_start")
         self.orchestre.git_tree.git.push(self.git_runner)
+        snapshot_path = self.write_gts_snapshot(command_origin="push")
+        if self.source_path is not None:
+            self.state_store.record_snapshot(self.source_path, snapshot_path)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="push")
         self._log_event("push_end")
         return registry
@@ -3028,7 +3089,7 @@ class ComplexGitSyncClient:
         recorded_mismatch_count = 0
 
         for entry in iter_tree_leaf_first(registry):
-            repo_status = self._repo_status_row(entry, root_path)
+            repo_status = self._repo_status_row(registry, entry, root_path)
             rows.append(repo_status)
             local_state = repo_status[3]
             upstream_state = repo_status[4]
@@ -3070,6 +3131,7 @@ class ComplexGitSyncClient:
 
     def _repo_status_row(
         self,
+        registry: DependencyTreeRegistry,
         entry: RepoRegistryEntry,
         root_path: Path,
     ) -> tuple[str, str, str, str, str, str, str]:
@@ -3077,7 +3139,7 @@ class ComplexGitSyncClient:
         try:
             branch = self.git_runner.current_branch(entry.absolute_path) or "detached"
             head = self.git_runner.rev_parse_head(entry.absolute_path)
-            status_lines = self.git_runner.status_porcelain(entry.absolute_path)
+            status_lines = self._managed_status_lines(registry, entry)
             tracking_state = self.git_runner.branch_tracking_state(entry.absolute_path)
         except GitSyncError:
             return (
@@ -3105,6 +3167,21 @@ class ComplexGitSyncClient:
             head_short,
             recorded,
         )
+
+    def _managed_status_lines(
+        self,
+        registry: DependencyTreeRegistry,
+        entry: RepoRegistryEntry,
+    ) -> list[str]:
+        status_lines = self.git_runner.status_porcelain(entry.absolute_path)
+        unmanaged_gitlinks = _unmanaged_gitlink_paths(registry, entry, self.git_runner)
+        if not unmanaged_gitlinks:
+            return status_lines
+        return [
+            line
+            for line in status_lines
+            if not _status_line_targets_any(line, unmanaged_gitlinks)
+        ]
 
     def describe_cgs(self) -> str:
         registry = self.get_dependency_registry()
