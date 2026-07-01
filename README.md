@@ -98,6 +98,11 @@ pixi run cgitsync tag v1.2.3
 pixi run cgitsync freeze release-2026.05
 ```
 
+Mutation commands print a concise human result by default: the `log_file=...`
+path, the final tree state, and a `repos:` tree with one line per repository.
+Structured JSON events are written to the log file for audit/debugging instead
+of being streamed on the console.
+
 Every command also accepts an explicit snapshot path when you do not want
 automatic discovery:
 

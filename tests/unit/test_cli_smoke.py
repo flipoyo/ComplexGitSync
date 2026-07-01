@@ -591,6 +591,9 @@ def test_pull_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
+        def view_tree(self):
+            return "ROOT project [btest0] clean synced\n└── leaf [btest0] clean synced"
+
     monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
 
     source_path = tmp_path / "project.cgs"
@@ -600,7 +603,11 @@ def test_pull_command_uses_client_handler(monkeypatch, capsys, tmp_path):
 
     assert exit_code == 0
     assert captured_call["source"] == source_path.resolve()
+    assert '"event":' not in captured.out
     assert "READY ready=true complete=true" in captured.out
+    assert "repos:" in captured.out
+    assert "ROOT project [btest0] clean synced" in captured.out
+    assert "└── leaf [btest0] clean synced" in captured.out
 
 
 def test_checkout_command_uses_client_handler(monkeypatch, capsys, tmp_path):

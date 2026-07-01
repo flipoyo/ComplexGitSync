@@ -985,13 +985,13 @@ def _execute_restart(
     client: ComplexGitSyncClient,
     source_path: Path,
 ) -> int:
-    print("workflow=load->expand->validate->checkout")
     registry = client.restart(source_path)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
+    _print_repo_tree_result(client)
     return 0
 
 
@@ -999,13 +999,13 @@ def _execute_pull(
     client: ComplexGitSyncClient,
     source_path: Path,
 ) -> int:
-    print("workflow=pull(source)->validate->ready")
     registry = client.pull(source_path)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
+    _print_repo_tree_result(client)
     return 0
 
 
@@ -1024,6 +1024,7 @@ def _execute_checkout(
         f"{_format_tree_state_line(tree_state)} "
         f"branch={branch}"
     )
+    _print_repo_tree_result(client)
     return 0
 
 
@@ -1041,6 +1042,7 @@ def _execute_branch(
         f"{_format_tree_state_line(tree_state)} "
         f"branch={branch}"
     )
+    _print_repo_tree_result(client)
     return 0
 
 
@@ -1070,6 +1072,8 @@ def _execute_commit(
         f"{_format_tree_state_line(tree_state)} "
         f"message={message!r}"
     )
+    if not dry_run:
+        _print_repo_tree_result(client)
     return 0
 
 
@@ -1087,6 +1091,8 @@ def _execute_add(
         client.add()
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
+    if not dry_run:
+        _print_repo_tree_result(client)
     return 0
 
 
@@ -1108,6 +1114,8 @@ def _execute_push(
         client.push()
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
+    if not dry_run:
+        _print_repo_tree_result(client)
     return 0
 
 
@@ -1133,6 +1141,8 @@ def _execute_tag(
         f"{_format_tree_state_line(tree_state)} "
         f"tag={tag_name}"
     )
+    if not dry_run:
+        _print_repo_tree_result(client)
     return 0
 
 
@@ -1150,6 +1160,7 @@ def _execute_freeze_release(
         f"{_format_tree_state_line(tree_state)} "
         f"tag={tag_name}"
     )
+    _print_repo_tree_result(client)
     return 0
 
 
@@ -1175,6 +1186,8 @@ def _execute_freeze(
         f"{_format_tree_state_line(tree_state)} "
         f"name={name}"
     )
+    if not dry_run:
+        _print_repo_tree_result(client)
     return 0
 
 
@@ -1194,6 +1207,7 @@ def _execute_freeze_state(
         f"{_format_tree_state_line(tree_state)} "
         f"state={state_name}"
     )
+    _print_repo_tree_result(client)
     return 0
 
 
@@ -1201,13 +1215,13 @@ def _execute_launch_release(
     client: ComplexGitSyncClient,
     snapshot_path: Path,
 ) -> int:
-    print("workflow=load(.gts)->expand->validate->ready")
     registry = client.launch_release(snapshot_path)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
+    _print_repo_tree_result(client)
     return 0
 
 
@@ -1215,13 +1229,13 @@ def _execute_launch_state(
     client: ComplexGitSyncClient,
     snapshot_path: Path,
 ) -> int:
-    print("workflow=load(.gts)->expand->validate->ready")
     registry = client.launch_state(snapshot_path)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
+    _print_repo_tree_result(client)
     return 0
 
 
@@ -1289,7 +1303,7 @@ def _create_command_logger(
     *,
     project_root: Path | None,
 ):
-    profile = "verbose"
+    profile = "quiet"
     project_log_dir = None
     if source_path.suffix == ".cgs" and source_path.is_file():
         try:
@@ -1297,7 +1311,7 @@ def _create_command_logger(
         except Exception:
             document = None
         if document is not None:
-            profile = str(document.runtime_setting("profile") or "verbose")
+            profile = str(document.runtime_setting("profile") or "quiet")
             project_log_dir = document.read("project.log_dir")
     return create_run_logger(
         command_name,
@@ -1603,6 +1617,16 @@ def _format_repo_tree_outline(client: ComplexGitSyncClient) -> str:
         return str(client.format_repo_tree())
     except AttributeError:
         return ""
+
+
+def _print_repo_tree_result(client: ComplexGitSyncClient) -> None:
+    try:
+        tree = str(client.view_tree())
+    except AttributeError:
+        tree = ""
+    if tree:
+        print("repos:")
+        print(tree)
 
 
 _INSPECTION_HANDLERS = {

@@ -993,7 +993,7 @@ class CommandRunLogger:
 def create_run_logger(
     command_name: str,
     *,
-    profile: str = "verbose",
+    profile: str = "quiet",
     source_path: Path | None = None,
     project_root: Path | None = None,
     project_log_dir: Any = None,
