@@ -1961,16 +1961,16 @@ class ComplexGitSyncClient:
         self,
         source: str | Path,
         *,
-        target_dir: str | Path | None = None,
         output_dir: str | Path | None = None,
     ) -> DependencyTreeRegistry:
         """Unified initialisation entry point (lifecycle step 1).
 
         Dispatches based on source file extension:
 
-        - ``.cgs`` source: clones the full repository tree (calls
-          :meth:`clone_cgs`).  Use this for new projects where the repositories
-          have not yet been cloned locally.
+        - ``.cgs`` source: initialises the workspace using CGSHOME semantics
+          (calls :meth:`initialise_cgs`).  The current working directory is
+          treated as the root repository — it is never recloned.  All
+          ComplexGitSync state is written under ``CGSHOME/.cgitsync/state/``.
         - ``.gts`` source: restores from a saved snapshot (calls
           :meth:`load_gts`).  Use this for existing projects that already have
           a ``.gts`` state file.
@@ -1982,25 +1982,106 @@ class ComplexGitSyncClient:
         source:
             Path to a ``.cgs`` authoring spec (clone mode) or a ``.gts``
             snapshot (restore mode).
-        target_dir:
-            Target directory for the cloned project root.  Only used in
-            ``.cgs`` (clone) mode; ignored for ``.gts`` sources.
         output_dir:
-            Base directory in which the project folder is created.  The
-            project name from the ``.cgs`` spec is appended automatically.
-            For example, pass ``"../"`` to create the project as a sibling of
-            the current directory rather than a subdirectory.  Only used in
-            ``.cgs`` (clone) mode; ignored for ``.gts`` sources.  Mutually
-            exclusive with *target_dir*.
+            CGSHOME — the workspace-level directory under which
+            ``ComplexGitSync`` stores its runtime metadata
+            (``CGSHOME/.cgitsync/state/``).  Defaults to ``../..`` relative
+            to the current working directory.  Only used in ``.cgs`` mode;
+            ignored for ``.gts`` sources.
         """
         resolved = Path(source).resolve()
         if resolved.suffix == ".cgs":
-            return self.clone_cgs(resolved, target_dir=target_dir, output_dir=output_dir)
+            return self.initialise_cgs(resolved, cgshome=output_dir)
         if resolved.suffix == ".gts":
             return self.load_gts(resolved)
         raise ValueError(
             f"Unsupported source format '{resolved.suffix}' for {resolved!s}; expected .cgs or .gts."
         )
+
+    def initialise_cgs(
+        self,
+        config_path: str | Path,
+        *,
+        cgshome: str | Path | None = None,
+    ) -> DependencyTreeRegistry:
+        """Initialise a workspace using CGSHOME semantics (lifecycle step 1, .cgs mode).
+
+        The current working directory is treated as the **root repository** —
+        it already exists and is never recloned.  The clone sequence runs only
+        for the dependencies declared in the ``.cgs`` document.
+
+        All ComplexGitSync state is stored under
+        ``CGSHOME/.cgitsync/state/``.
+
+        Parameters
+        ----------
+        config_path:
+            Path to the ``.cgs`` authoring spec.
+        cgshome:
+            CGSHOME — the workspace-level directory that receives all
+            ComplexGitSync runtime metadata.  When *None*, defaults to
+            ``../..`` relative to the current working directory.
+        """
+        resolved_cgshome = (
+            Path(cgshome).resolve()
+            if cgshome is not None
+            else (Path.cwd() / "../..").resolve()
+        )
+
+        project_root = Path.cwd().resolve()
+        previous_tree_state = (
+            self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
+        )
+        source_path = Path(config_path).resolve()
+        document = CgsDocument.from_toml(source_path)
+
+        self.registry = build_registry_from_cgs_document(
+            document,
+            source_path,
+            project_root=project_root,
+        )
+        self.orchestre.git_tree.git.bind_registry(self.registry)
+        self.source_path = source_path
+
+        # Attach the root repository as already existing — never clone it.
+        root_entry = self.registry.get(ROOT_REPO_ID)
+        self._attach_existing_root(root_entry, project_root)
+
+        # Sync stack: pre-populate with the root path so it is never enqueued
+        # for cloning even if a nested-config discovery happens to reference it.
+        sync_stack: set[Path] = {project_root}
+
+        while True:
+            cloned_any = False
+            for entry in self._pending_clone_entries(sync_stack):
+                sync_stack.add(entry.absolute_path)
+                self._clone_registry_entry(entry)
+                cloned_any = True
+
+            discovered = self.discover_nested_configs()
+            self._log_nested_discovery(discovered)
+            if not cloned_any and not discovered:
+                break
+
+        fixed = self.fix_circularities()
+        if fixed:
+            self._log_circularity_fixes(fixed)
+        self._assert_nested_discovery_complete()
+        self.registry.recompute_tree_state()
+        if not self.registry.is_ready():
+            raise GitSyncError("Initialise did not produce a READY tree.")
+
+        # Write the snapshot under CGSHOME, not under the root repo.
+        snapshot_name = f"{(self.source_path.stem if self.source_path else root_entry.name)}.gts"
+        snapshot_output = resolved_cgshome / ".cgitsync" / "state" / snapshot_name
+        snapshot_path = self.write_gts_snapshot(
+            command_origin="clone", output_path=snapshot_output
+        )
+        self.state_store.record_snapshot(source_path, snapshot_path)
+        self._log_tree_transition(
+            previous_tree_state, self.registry.lifecycle_state, reason="initialise_cgs"
+        )
+        return self.registry
 
     def load(
         self,
@@ -3038,22 +3119,12 @@ class ComplexGitSyncClient:
 
         base_dir = Path(output_dir).resolve() if output_dir is not None else Path.cwd()
         default_root = (base_dir / (document.project_name or source_path.stem)).resolve()
-        if self._is_available_clone_root(default_root):
+        if not default_root.exists() or (default_root.is_dir() and not any(default_root.iterdir())):
             return default_root
-
-        suffix = 1
-        while True:
-            candidate = default_root.with_name(f"{default_root.name}-{suffix}")
-            if self._is_available_clone_root(candidate):
-                return candidate
-            suffix += 1
-
-    def _is_available_clone_root(self, candidate: Path) -> bool:
-        if not candidate.exists():
-            return True
-        if not candidate.is_dir():
-            return False
-        return not any(candidate.iterdir())
+        raise GitSyncError(
+            f"Clone destination already exists and is not empty: {default_root}\n"
+            f"Choose a different --target-dir or ensure the directory is empty."
+        )
 
     def _pending_clone_entries(
         self,
@@ -3082,6 +3153,32 @@ class ComplexGitSyncClient:
             ],
             key=lambda entry: (len(entry.absolute_path.parts), str(entry.absolute_path)),
         )
+
+    def _attach_existing_root(
+        self, entry: RepoRegistryEntry, project_root: Path
+    ) -> None:
+        """Mark an already-existing repository as the READY root without cloning it.
+
+        Reads the current branch and commit SHA from the local repository at
+        *project_root* and updates *entry* in-place so that
+        :meth:`is_ready` recognises it as a valid tree node.
+        """
+        try:
+            current_branch = self.git_runner.current_branch(project_root)
+            commit_sha = self.git_runner.rev_parse_head(project_root)
+        except GitSyncError:
+            current_branch = None
+            commit_sha = ""
+
+        ref_name = current_branch or entry.target_ref_name or entry.default_branch or "main"
+        entry.current_ref_kind = RefKind.BRANCH
+        entry.current_ref_name = ref_name
+        entry.resolved_ref_kind = RefKind.BRANCH
+        entry.resolved_ref_name = ref_name
+        entry.commit_sha = commit_sha
+        entry.repo_lifecycle_state = RepoLifecycleState.READY
+        entry.sync_state = SyncState.ALIGNED
+        entry.worktree_state = "CLEAN"
 
     def _clone_registry_entry(self, entry: RepoRegistryEntry) -> None:
         previous_state = entry.repo_lifecycle_state

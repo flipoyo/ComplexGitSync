@@ -61,12 +61,9 @@ def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
     class StubClient:
-        def resolve_clone_root(self, source, *, target_dir=None, output_dir=None):
-            return tmp_path / "workspace" / "demo"
-
-        def clone_cgs(self, source, *, target_dir=None, output_dir=None):
+        def initialise_cgs(self, source, *, cgshome=None):
             captured_call["source"] = Path(source)
-            captured_call["target_dir"] = target_dir
+            captured_call["cgshome"] = cgshome
             return SimpleNamespace(
                 get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "workspace" / "demo")
             )
@@ -346,13 +343,9 @@ def test_initialise_command_output_dir_is_forwarded(monkeypatch, capsys, tmp_pat
     captured_call: dict[str, object] = {}
 
     class StubClient:
-        def resolve_clone_root(self, source, *, target_dir=None, output_dir=None):
-            captured_call["resolve_output_dir"] = output_dir
-            return tmp_path / "parent" / "demo"
-
-        def clone_cgs(self, source, *, target_dir=None, output_dir=None):
+        def initialise_cgs(self, source, *, cgshome=None):
             captured_call["source"] = Path(source)
-            captured_call["output_dir"] = output_dir
+            captured_call["cgshome"] = cgshome
             return SimpleNamespace(
                 get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "parent" / "demo")
             )
@@ -374,8 +367,7 @@ def test_initialise_command_output_dir_is_forwarded(monkeypatch, capsys, tmp_pat
     capsys.readouterr()
 
     assert exit_code == 0
-    assert captured_call["resolve_output_dir"] == output_dir
-    assert captured_call["output_dir"] == output_dir
+    assert captured_call["cgshome"] == output_dir
 
 
 def test_clone_command_output_dir_is_forwarded(monkeypatch, capsys, tmp_path):
