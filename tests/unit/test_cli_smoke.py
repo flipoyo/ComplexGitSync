@@ -633,6 +633,37 @@ def test_checkout_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     assert "branch=feature-x" in captured.out
 
 
+def test_branch_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def branch(self, branch):
+            captured_call["branch"] = branch
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["branch", "feature-x", "--gts", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["gts_path"] == gts_path.resolve()
+    assert captured_call["branch"] == "feature-x"
+    assert "git_command=git branch feature-x" in captured.out
+    assert "READY ready=true" in captured.out
+    assert "branch=feature-x" in captured.out
+
+
 def test_checkout_command_with_tag_ref_kind(monkeypatch, capsys, tmp_path):
     from ComplexGitSync.git_repo import RefKind
 
@@ -1290,6 +1321,42 @@ def test_checkout_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
 
     monkeypatch.setenv("CGSHOME", str(workspace))
     exit_code = main(["checkout", "feature/demo"])
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["gts_path"] == gts_path.resolve()
+    assert captured_call["branch"] == "feature/demo"
+
+
+def test_branch_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
+    """branch resolves its READY snapshot from CGSHOME when --gts is omitted."""
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def branch(self, branch):
+            captured_call["branch"] = branch
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+
+    workspace = tmp_path / "workspace"
+    state_dir = workspace / ".cgitsync" / "state"
+    state_dir.mkdir(parents=True)
+    gts_path = state_dir / "workspace.gts"
+    gts_path.touch()
+
+    monkeypatch.setenv("CGSHOME", str(workspace))
+    exit_code = main(["branch", "feature/demo"])
     capsys.readouterr()
 
     assert exit_code == 0

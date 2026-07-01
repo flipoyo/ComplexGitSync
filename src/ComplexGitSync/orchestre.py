@@ -2727,6 +2727,9 @@ class ComplexGitSyncClient:
         previous_state = registry.lifecycle_state
         self._log_event("branch_start", branch_name=branch_name)
         self.orchestre.git_tree.git.branch(self.git_runner, branch_name)
+        snapshot_path = self.write_gts_snapshot(command_origin="branch")
+        if self.source_path is not None:
+            self.state_store.record_snapshot(self.source_path, snapshot_path)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="branch")
         self._log_event("branch_end", branch_name=branch_name)
         return registry

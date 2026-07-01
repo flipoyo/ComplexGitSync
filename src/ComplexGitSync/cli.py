@@ -19,6 +19,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "initialise": "Initialise a project tree: clone(.cgs) or restore state(.gts).",
     "pull": "Resynchronise an existing project tree from .cgs or .gts.",
     "checkout": "Synchronize the tree to a branch or tag.",
+    "branch": "Create a branch across the full READY tree without checkout.",
     "add": "Stage all changes across a READY tree.",
     "commit": "Commit dirty repositories from a READY tree.",
     "push": "Push repositories from a READY tree.",
@@ -267,6 +268,28 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Kind of ref to check out (default: branch).",
             )
             subparser.set_defaults(handler=_handle_checkout)
+        elif command_name == "branch":
+            subparser.add_argument("branch", help="Branch name to create across the READY tree.")
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                default=None,
+                help=(
+                    "Path to the .gts snapshot that holds the READY registry. "
+                    "When omitted the latest .gts snapshot is discovered automatically "
+                    "from CGSHOME/.cgitsync/state/."
+                ),
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory used to resolve CGSHOME before loading "
+                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "or walks up from the current working directory."
+                ),
+            )
+            subparser.set_defaults(handler=_handle_branch)
         elif command_name == "commit":
             subparser.add_argument(
                 "message",
@@ -667,6 +690,15 @@ def _handle_checkout(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_branch(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="branch",
+        source=gts_path,
+        runner=lambda client, source: _execute_branch(client, source, branch=args.branch),
+    )
+
+
 def _handle_commit(args: argparse.Namespace) -> int:
     message = _resolve_commit_message(args)
     if message is None:
@@ -987,6 +1019,23 @@ def _execute_checkout(
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git checkout {branch}")
     client.checkout(branch, ref_kind=ref_kind)
+    tree_state = client.get_tree_state()
+    print(
+        f"{_format_tree_state_line(tree_state)} "
+        f"branch={branch}"
+    )
+    return 0
+
+
+def _execute_branch(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    branch: str,
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    print(f"git_command=git branch {branch}")
+    client.branch(branch)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "

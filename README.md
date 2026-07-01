@@ -89,6 +89,7 @@ workspace by walking upward from the current directory.
 
 ```bash
 pixi run cgitsync pull
+pixi run cgitsync branch feature/my-branch
 pixi run cgitsync checkout feature/my-branch
 pixi run cgitsync add
 pixi run cgitsync commit "feat: update CGSil1 CGS#1"
@@ -162,6 +163,7 @@ Primary commands:
 - `initialise <file.cgs|file.gts>`: clone from a spec or load from a snapshot;
   for `.cgs`, omitted `--output-path` defaults to `CGSPATH=../..`
 - `pull [file.cgs|file.gts]`: resynchronise an existing tree
+- `branch <name>`: create a shared branch across the READY tree without checkout
 - `checkout <branch-or-tag> [--ref-kind branch|tag]`: switch the tree ref
 - `add`: run `git add --all` leaf-first
 - `commit <message>`: commit dirty repositories leaf-first
@@ -182,8 +184,8 @@ Inspection commands:
 
 Compatibility commands still exist for older scripts (`clone`, `restart`,
 `freeze-release`, `freeze-state`, `launch-release`, `launch-state`), but new
-CLI usage should start with `initialise` and continue with `pull`, `checkout`,
-`add`, `commit`, `push`, `tag`, and `freeze`.
+CLI usage should start with `initialise` and continue with `pull`, `branch`,
+`checkout`, `add`, `commit`, `push`, `tag`, and `freeze`.
 
 ## Safety checks
 
