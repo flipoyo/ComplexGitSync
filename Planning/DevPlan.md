@@ -36,7 +36,7 @@ Refer to `InitialDevPlan.md` for the original requirements contract.
 | T27 | Circular dependency resolution: `fix_circularities` | ✅ Done |
 | T17 | Unit Test Suite (incremental) | ✅ Ongoing (322 passing: 290 unit + 32 integration) |
 | T19 | Documentation and Examples (incremental) | ✅ Updated |
-| T20 | CI Version Increment Automation | ✅ Done |
+| T20 | CI Version Increment Automation | ✅ Done (main-only; DevPlan execution branches keep CI disconnected for silent iteration) |
 
 ## Remaining Work
 
@@ -82,6 +82,9 @@ The project is **not yet BetaSeries** because:
 The project is **past POC** because the entire core workflow (initialise, clone,
 checkout, add, commit, push, tag, freeze, restart) is implemented, tested at
 the unit level, and documented.
+
+During DevPlan execution, CI stays disconnected on working branches so the plan
+can evolve silently; the delivered CI automation remains attached to `main`.
 
 ---
 

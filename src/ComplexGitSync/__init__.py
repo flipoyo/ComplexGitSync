@@ -2,6 +2,17 @@
 
 __version__ = "0001.50"
 
+# --- Tier 1 — Public Errors (errors.py) ---
+from .errors import (
+    ArchitectureNotLoadedError,
+    ComplexGitSyncError,
+    ConfigValidationError,
+    FallbackRejectedError,
+    GitSyncError,
+    NestedConfigDiscoveryError,
+    TreeNotReadyError,
+)
+
 # --- Tier 1 — Core State (git_repo.py) ---
 from .git_repo import (
     AccessProtocol,
@@ -60,6 +71,14 @@ from .orchestre import (
 
 __all__ = [
     "__version__",
+    # errors.py
+    "ArchitectureNotLoadedError",
+    "ComplexGitSyncError",
+    "ConfigValidationError",
+    "FallbackRejectedError",
+    "GitSyncError",
+    "NestedConfigDiscoveryError",
+    "TreeNotReadyError",
     # git_repo.py
     "AccessProtocol",
     "DiscoveryState",
