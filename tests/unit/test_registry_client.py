@@ -1825,6 +1825,31 @@ def test_fix_circularities_keeps_duplicates_when_commit_or_status_conflict(tmp_p
     assert "root:parent1:shared" in registry.entries
 
 
+def test_fix_circularities_keeps_duplicates_when_declared_refs_conflict(tmp_path):
+    from ComplexGitSync.git_repo import RefKind
+    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+
+    shared_path = tmp_path / "shared"
+    registry = DependencyTreeRegistry()
+    canonical = _make_entry("root:shared", shared_path, parent_id="root")
+    duplicate = _make_entry("root:parent1:shared", shared_path, parent_id="root:parent1")
+    canonical.target_ref_kind = RefKind.BRANCH
+    canonical.target_ref_name = "main"
+    duplicate.target_ref_kind = RefKind.BRANCH
+    duplicate.target_ref_name = "release"
+
+    registry.add(_make_entry("root", tmp_path))
+    registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
+    registry.add(canonical)
+    registry.add(duplicate)
+
+    fixed = fix_circularities(registry)
+
+    assert fixed == ()
+    assert "root:shared" in registry.entries
+    assert "root:parent1:shared" in registry.entries
+
+
 def test_client_fix_circularities_is_callable_on_loaded_registry(tmp_path):
     """ComplexGitSyncClient.fix_circularities() works on a loaded registry."""
     config_path = _write_root_cgs(tmp_path)
