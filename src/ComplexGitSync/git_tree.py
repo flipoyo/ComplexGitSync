@@ -953,9 +953,52 @@ def _is_compatible_duplicate(canonical: RepoRegistryEntry, duplicate: RepoRegist
         return False
     if canonical.commit_sha and duplicate.commit_sha and canonical.commit_sha != duplicate.commit_sha:
         return False
+    if not _has_compatible_refs(canonical, duplicate):
+        return False
     if canonical.worktree_state and duplicate.worktree_state and canonical.worktree_state != duplicate.worktree_state:
         return False
     return True
+
+
+def _has_compatible_refs(canonical: RepoRegistryEntry, duplicate: RepoRegistryEntry) -> bool:
+    if canonical.commit_sha and duplicate.commit_sha and canonical.commit_sha == duplicate.commit_sha:
+        return True
+    return all(
+        _ref_values_compatible(canonical_kind, canonical_name, duplicate_kind, duplicate_name)
+        for canonical_kind, canonical_name, duplicate_kind, duplicate_name in (
+            (
+                canonical.current_ref_kind,
+                canonical.current_ref_name,
+                duplicate.current_ref_kind,
+                duplicate.current_ref_name,
+            ),
+            (
+                canonical.target_ref_kind,
+                canonical.target_ref_name,
+                duplicate.target_ref_kind,
+                duplicate.target_ref_name,
+            ),
+            (
+                canonical.resolved_ref_kind,
+                canonical.resolved_ref_name,
+                duplicate.resolved_ref_kind,
+                duplicate.resolved_ref_name,
+            ),
+        )
+    )
+
+
+def _ref_values_compatible(
+    canonical_kind: RefKind | None,
+    canonical_name: str | None,
+    duplicate_kind: RefKind | None,
+    duplicate_name: str | None,
+) -> bool:
+    if canonical_kind is None and canonical_name is None:
+        return True
+    if duplicate_kind is None and duplicate_name is None:
+        return True
+    return canonical_kind == duplicate_kind and canonical_name == duplicate_name
 
 
 def topological_sort(registry: DependencyTreeRegistry) -> list[RepoRegistryEntry]:
