@@ -763,10 +763,17 @@ def _ref_values_compatible(
     duplicate_kind: RefKind | None,
     duplicate_name: str | None,
 ) -> bool:
-    if canonical_kind is None and canonical_name is None:
+    canonical_unset = canonical_kind is None and canonical_name is None
+    duplicate_unset = duplicate_kind is None and duplicate_name is None
+
+    if canonical_unset:
         return True
-    if duplicate_kind is None and duplicate_name is None:
+    if duplicate_unset:
         return True
+    if canonical_kind is None or canonical_name is None:
+        return canonical_kind == duplicate_kind and canonical_name == duplicate_name
+    if duplicate_kind is None or duplicate_name is None:
+        return canonical_kind == duplicate_kind and canonical_name == duplicate_name
     return canonical_kind == duplicate_kind and canonical_name == duplicate_name
 
 
