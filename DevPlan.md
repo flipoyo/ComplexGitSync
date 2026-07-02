@@ -41,13 +41,17 @@ ComplexGitSyncClient (public API facade)
 
 #### Tasks
 
-1. **Create `WorkingRepo` class**
+0. CI : disconnect during the all DevPlan
+   - silently update CI
+
+2. **Create `WorkingRepo` class**
    - Inherit from `GitRepo`
    - Add all runtime state fields currently in `RepoRegistryEntry`
    - Remove duplicated identity fields (use inherited ones)
    - File: `git_repo.py`
+   - 
 
-2. **Create `WorkingGitTree` class**
+3. **Create `WorkingGitTree` class**
    - Inherit from `GitTree`
    - Override `repos` type to `dict[str, WorkingRepo]`
    - Add tree-level state fields (`lifecycle_state`, etc.)
@@ -55,12 +59,12 @@ ComplexGitSyncClient (public API facade)
    - Implement `to_gts()` (include full state)
    - File: `git_tree.py`
 
-3. **Create migration utilities**
+4. **Create migration utilities**
    - `from_repo_registry_entry(repo: RepoRegistryEntry) -> WorkingRepo`
    - `to_repo_registry_entry(working_repo: WorkingRepo) -> RepoRegistryEntry` (for backward compatibility)
    - File: `git_tree.py` or new `migrations.py`
 
-4. **Add type aliases for backward compatibility**
+5. **Add type aliases for backward compatibility**
    ```python
    # For gradual migration
    ReferenceTree = GitTree
@@ -81,18 +85,20 @@ ComplexGitSyncClient (public API facade)
 
 #### Tasks
 
-1. **Update `Orchestre` class**
+0. silently update CI
+   
+2. **Update `Orchestre` class**
    - Add `reference_tree: GitTree` field
    - Add `working_tree: WorkingGitTree | None` field
    - Remove direct `DependencyTreeRegistry` usage
    - File: `orchestre.py`
 
-2. **Implement tree initialization**
+3. **Implement tree initialization**
    - `Orchestre.from_cgs(cgs_doc: CgsDocument) -> Orchestre`
    - `Orchestre.from_gts(gts_doc: GtsDocument) -> Orchestre`
    - `Orchestre.to_working() -> WorkingGitTree` (creates working tree from reference)
 
-3. **Update `ComplexGitSyncClient`**
+4. **Update `ComplexGitSyncClient`**
    - Replace `registry: DependencyTreeRegistry | None` with tree-based approach
    - Add `orchestre: Orchestre` as primary coordination layer
    - Keep backward compatibility shims
@@ -109,6 +115,8 @@ ComplexGitSyncClient (public API facade)
 **Goal**: Migrate all operations from `DependencyTreeRegistry` to `WorkingGitTree`.
 
 #### Tasks
+
+0. silently update CI
 
 1. **Update `operations.py`**
    - Change function signatures from `registry: DependencyTreeRegistry` to `tree: WorkingGitTree`
@@ -138,6 +146,8 @@ ComplexGitSyncClient (public API facade)
 
 #### Tasks
 
+0. silently update CI
+
 1. **Update `configure` command**
    - Ensure `GitTree.from_prompt()` creates a proper reference tree
    - Verify `to_cgs()` works correctly
@@ -165,6 +175,8 @@ ComplexGitSyncClient (public API facade)
 > **This is the critical phase.** Step 5 is different from all others: it does not add new functionality, it **erases every inch of the former mess**. No deprecated functions survive. No `DependencyTreeRegistry`. No `RepoRegistryEntry`. Clean slate.
 
 #### Tasks
+
+0. Reconnect the CI that was silently updated all along the DevPlan
 
 1. **Delete `DependencyTreeRegistry` class**
    - Remove class definition from `git_tree.py`
