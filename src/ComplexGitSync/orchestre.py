@@ -3423,11 +3423,14 @@ class ComplexGitSyncClient:
         # Convert to CgsDocument
         cgs_document = git_tree.to_cgs()
         
-        # Write the file if output_path is provided
-        if output_path:
-            output_file = Path(output_path) if isinstance(output_path, str) else output_path
-            cgs_document.to_toml(output_file)
-            print(f"\n.cgs file written to: {output_file.resolve()}")
+        if output_path is None:
+            default_name = f"{cgs_document.project_name or 'project'}.cgs"
+            raw_output_path = input(f"\nOutput .cgs path [{default_name}]: ").strip()
+            output_path = raw_output_path or default_name
+
+        output_file = Path(output_path) if isinstance(output_path, str) else output_path
+        cgs_document.to_toml(output_file)
+        print(f"\n.cgs file written to: {output_file.resolve()}")
         
         return cgs_document
 

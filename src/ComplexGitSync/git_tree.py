@@ -318,18 +318,38 @@ class GitTree:
             raise ValueError("Default owner/group name is required")
         
         # Git provider for template
-        gitprovider_str = input("Default git provider [github/gitlab/custom]: ").strip().lower() or "github"
-        gitprovider = GitProvider.GITLAB if gitprovider_str == "gitlab" else GitProvider.GITHUB if gitprovider_str == "github" else GitProvider.CUSTOM
+        gitprovider_str = input("Default git provider [github/gitlab/custom]: ").strip().lower()
+        if gitprovider_str == "gitlab":
+            gitprovider = GitProvider.GITLAB
+        elif gitprovider_str == "custom":
+            gitprovider = GitProvider.CUSTOM
+        else:
+            if gitprovider_str not in ("", "github"):
+                print("Warning: Invalid git provider, using github")
+            gitprovider = GitProvider.GITHUB
+
+        gitprovider_url = None
+        if gitprovider == GitProvider.CUSTOM:
+            gitprovider_url = input("Default custom provider URL: ").strip()
+            if not gitprovider_url:
+                raise ValueError("Default custom provider URL is required for custom providers")
         
         # Access protocol for template
-        access_protocol_str = input("Default access protocol [ssh/https]: ").strip().lower() or "ssh"
-        access_protocol = AccessProtocol.HTTPS if access_protocol_str == "https" else AccessProtocol.SSH
+        access_protocol_str = (
+            input("Default access protocol [ssh/https]: ").strip().lower() or "ssh"
+        )
+        access_protocol = (
+            AccessProtocol.HTTPS
+            if access_protocol_str == "https"
+            else AccessProtocol.SSH
+        )
         
         # Create repo template
         repo_template = GitRepo(
             project_owner_name=owner_group,
             project_name="",  # Will be set per repo
             gitprovider=gitprovider,
+            gitprovider_url=gitprovider_url,
             access_protocol=access_protocol,
         )
         
@@ -358,7 +378,14 @@ class GitTree:
         
         for i in range(num_repos):
             print(f"\nRepository {i + 1}:")
-            repo, relative_path, nested_config, default_branch, fallback_branch = git_tree._prompt_repo_config(i + 1, num_repos, repo_template)
+            repo, relative_path, nested_config, default_branch, fallback_branch = (
+                git_tree._prompt_repo_config(
+                    i + 1,
+                    num_repos,
+                    repo_template,
+                    project_default_branch=default_branch,
+                )
+            )
             # Store additional repo metadata for .cgs generation
             git_tree._repo_metadata[repo.project_name] = {
                 'relative_path': relative_path,
@@ -371,7 +398,12 @@ class GitTree:
         return git_tree
 
     def _prompt_repo_config(
-        self, repo_index: int, total_repos: int, repo_template: GitRepo
+        self,
+        repo_index: int,
+        total_repos: int,
+        repo_template: GitRepo,
+        *,
+        project_default_branch: str,
     ) -> tuple[GitRepo, str, str | None, str, str]:
         """Prompt for a single repository configuration.
         
@@ -381,13 +413,21 @@ class GitTree:
             GitRepo instance, relative_path, nested_config, default_branch, fallback_branch
         """
         # Start with template defaults
-        project_owner_name = input(f"  Project owner name [{repo_template.project_owner_name}]: ").strip() or repo_template.project_owner_name
-        project_name = input(f"  Project name: ").strip()
+        project_owner_name = (
+            input(f"  Project owner name [{repo_template.project_owner_name}]: ").strip()
+            or repo_template.project_owner_name
+        )
+        if repo_index == 1 and self.project_name:
+            project_name_prompt = f"  Project name [{self.project_name}]: "
+            project_name = input(project_name_prompt).strip() or self.project_name
+        else:
+            project_name = input("  Project name: ").strip()
         if not project_name:
             raise ValueError(f"Project name is required for repository {repo_index}")
         
         # Git provider
-        gitprovider_str = input(f"  Git provider [{repo_template.gitprovider.value}]: ").strip().lower()
+        gitprovider_prompt = f"  Git provider [{repo_template.gitprovider.value}]: "
+        gitprovider_str = input(gitprovider_prompt).strip().lower()
         if gitprovider_str in ("", "github", "gitlab", "custom"):
             if gitprovider_str == "gitlab":
                 gitprovider = GitProvider.GITLAB
@@ -400,9 +440,23 @@ class GitTree:
         else:
             print("  Warning: Invalid git provider, using template default")
             gitprovider = repo_template.gitprovider
+
+        gitprovider_url = repo_template.gitprovider_url
+        if gitprovider == GitProvider.CUSTOM:
+            url_prompt = (
+                f"  Custom provider URL [{gitprovider_url}]: "
+                if gitprovider_url
+                else "  Custom provider URL: "
+            )
+            gitprovider_url = input(url_prompt).strip() or gitprovider_url
+            if not gitprovider_url:
+                raise ValueError(
+                    f"Custom provider URL is required for repository {repo_index}"
+                )
         
         # Access protocol
-        access_protocol_str = input(f"  Access protocol [{repo_template.access_protocol.value}]: ").strip().lower()
+        access_protocol_prompt = f"  Access protocol [{repo_template.access_protocol.value}]: "
+        access_protocol_str = input(access_protocol_prompt).strip().lower()
         if access_protocol_str in ("", "ssh", "https"):
             if access_protocol_str == "https":
                 access_protocol = AccessProtocol.HTTPS
@@ -415,9 +469,8 @@ class GitTree:
             access_protocol = repo_template.access_protocol
         
         # Default branch
-        default_branch = input(f"  Default branch [{repo_template.default_branch if hasattr(repo_template, 'default_branch') else 'main'}]: ").strip()
-        if not default_branch:
-            default_branch = repo_template.default_branch if hasattr(repo_template, 'default_branch') else "main"
+        branch_default = project_default_branch or "main"
+        default_branch = input(f"  Default branch [{branch_default}]: ").strip() or branch_default
         
         # Fallback branch
         fallback_branch = input(f"  Fallback branch [{default_branch}]: ").strip()
@@ -433,9 +486,7 @@ class GitTree:
         # Nested config (only for non-root repos)
         nested_config: str | None = None
         if repo_index > 1:
-            nested_config_input = input(f"  Nested config [auto/disabled]: ").strip()
-            if nested_config_input:
-                nested_config = nested_config_input
+            nested_config = input("  Nested config [auto/disabled]: ").strip() or "auto"
         
         return GitRepo(
             project_owner_name=project_owner_name,
@@ -444,7 +495,7 @@ class GitTree:
             access_protocol=access_protocol,
             # Optional fields use template defaults or None
             group_name=repo_template.group_name,
-            gitprovider_url=repo_template.gitprovider_url,
+            gitprovider_url=gitprovider_url,
             repo_name=repo_template.repo_name,
         ), relative_path, nested_config, default_branch, fallback_branch
 
@@ -504,7 +555,9 @@ class GitTree:
             ("repos", repos_list),
         ])
         
-        return CgsDocument(cgs_data)
+        cgs_document = CgsDocument(cgs_data)
+        cgs_document.validate()
+        return cgs_document
 
 
 # ---------------------------------------------------------------------------
