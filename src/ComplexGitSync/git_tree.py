@@ -589,6 +589,11 @@ class WorkingGitTree(GitTree):
         """Return all working repositories as a list."""
         return list(self.repos.values())
 
+    @property
+    def entries(self) -> dict[str, WorkingRepo]:
+        """Backward-compatible alias for the runtime repo mapping."""
+        return self.repos
+
     def __iter__(self):
         return iter(self.repos.values())
 
@@ -729,6 +734,10 @@ class ProjectTreeState:
     lifecycle_state: TreeLifecycleState
     is_ready: bool
     registry_complete: bool
+
+
+# Backward-compatible alias for the legacy registry name.
+DependencyTreeRegistry = WorkingGitTree
 
 
 # ---------------------------------------------------------------------------

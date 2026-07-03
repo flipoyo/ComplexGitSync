@@ -30,6 +30,7 @@ from .git_repo import (
 
 # --- Tier 1 — Core State + Tree Utilities (git_tree.py) ---
 from .git_tree import (
+    DependencyTreeRegistry,
     GitTree,
     ProjectTreeState,
     TreeLifecycleState,
@@ -92,6 +93,7 @@ __all__ = [
     "SyncState",
     "WorkingRepo",
     # git_tree.py
+    "DependencyTreeRegistry",
     "GitTree",
     "ProjectTreeState",
     "TreeLifecycleState",
