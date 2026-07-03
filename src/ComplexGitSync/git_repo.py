@@ -15,7 +15,6 @@ Classes / enums defined here (Tier 1 — Core State):
     WorkingRepo         Mutable runtime repository used by WorkingGitTree
     RepoAddress         Derives the remote URL from a GitRepo
     RepoNode            Immutable snapshot of a repo's tree position
-    RepoRegistryEntry   Backward-compatible alias class for WorkingRepo
 """
 
 from __future__ import annotations
@@ -383,19 +382,3 @@ class WorkingRepo(GitRepo):
     nested_config: str | None = None
     remote_name: str | None = None
     is_external_reference: bool = False
-
-
-# ---------------------------------------------------------------------------
-# RepoRegistryEntry — backward compatibility shim
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class RepoRegistryEntry(WorkingRepo):
-    """Backward-compatible name for :class:`WorkingRepo`.
-
-    Phase 5 removes this class; until then it lets existing callers construct
-    registry entries while the runtime tree and operations use ``WorkingRepo``.
-    """
-
-    pass

@@ -7,7 +7,6 @@ Classes defined here (Tier 1 — Core State):
     TreeLifecycleState      Tree-level lifecycle progression enum
     GitTree                 In-memory dict of GitRepo nodes (MAIN class)
     WorkingGitTree          Runtime GitTree with WorkingRepo state
-    DependencyTreeRegistry  Backward-compatible name for WorkingGitTree
     ProjectTreeState        Frozen snapshot of tree readiness (read-only)
 
 Functions defined here (Tier 2 — Actions / tree utilities):
@@ -44,7 +43,6 @@ from .git_repo import (
     NodeType,
     RefKind,
     RepoLifecycleState,
-    RepoRegistryEntry,
     SyncState,
     WorkingRepo,
 )
@@ -61,26 +59,25 @@ if TYPE_CHECKING:
 class GitTreeGitCommands:
     """Git command facade bound to :class:`GitTree` operations.
 
-    ``registry`` stores the currently bound :class:`WorkingGitTree` used when
-    callers omit an explicit registry argument.  The argument name remains
-    ``registry`` for compatibility with existing callers.
+    ``working_tree`` stores the currently bound :class:`WorkingGitTree` used
+    when callers omit an explicit tree argument.
     """
 
-    registry: "WorkingGitTree | None" = field(default=None)
+    working_tree: "WorkingGitTree | None" = field(default=None)
 
-    def bind_registry(self, registry: "WorkingGitTree") -> "WorkingGitTree":
-        self.registry = registry
-        return registry
+    def bind_tree(self, tree: "WorkingGitTree") -> "WorkingGitTree":
+        self.working_tree = tree
+        return tree
 
-    def _resolve_registry(
+    def _resolve_tree(
         self,
-        registry: "WorkingGitTree | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> "WorkingGitTree":
-        if isinstance(registry, WorkingGitTree):
-            self.registry = registry
-            return registry
-        if isinstance(self.registry, WorkingGitTree):
-            return self.registry
+        if isinstance(tree, WorkingGitTree):
+            self.working_tree = tree
+            return tree
+        if isinstance(self.working_tree, WorkingGitTree):
+            return self.working_tree
         raise RuntimeError("No ComplexGitSync working tree is bound to GitTree.git.")
 
     def checkout(
@@ -89,42 +86,42 @@ class GitTreeGitCommands:
         branch_name: str,
         *,
         ref_kind: RefKind = RefKind.BRANCH,
-        registry: "WorkingGitTree | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import checkout_tree
 
-        checkout_tree(self._resolve_registry(registry), git_runner, branch_name, ref_kind=ref_kind)
+        checkout_tree(self._resolve_tree(tree), git_runner, branch_name, ref_kind=ref_kind)
 
     def branch(
         self,
         git_runner: "GitRunner",
         branch_name: str,
         *,
-        registry: "WorkingGitTree | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import branch_tree
 
-        branch_tree(self._resolve_registry(registry), git_runner, branch_name)
+        branch_tree(self._resolve_tree(tree), git_runner, branch_name)
 
     def pull(
         self,
         git_runner: "GitRunner",
         *,
-        registry: "WorkingGitTree | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import restart_tree
 
-        restart_tree(self._resolve_registry(registry), git_runner)
+        restart_tree(self._resolve_tree(tree), git_runner)
 
     def add(
         self,
         git_runner: "GitRunner",
         *,
-        registry: "WorkingGitTree | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import add_tree
 
-        add_tree(self._resolve_registry(registry), git_runner)
+        add_tree(self._resolve_tree(tree), git_runner)
 
     def commit(
         self,
@@ -132,32 +129,32 @@ class GitTreeGitCommands:
         message: str,
         *,
         stage_all: bool = True,
-        registry: "WorkingGitTree | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import commit_tree
 
-        commit_tree(self._resolve_registry(registry), git_runner, message, stage_all=stage_all)
+        commit_tree(self._resolve_tree(tree), git_runner, message, stage_all=stage_all)
 
     def push(
         self,
         git_runner: "GitRunner",
         *,
-        registry: "WorkingGitTree | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import push_tree
 
-        push_tree(self._resolve_registry(registry), git_runner)
+        push_tree(self._resolve_tree(tree), git_runner)
 
     def tag(
         self,
         git_runner: "GitRunner",
         tag_name: str,
         *,
-        registry: "WorkingGitTree | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import tag_tree
 
-        tag_tree(self._resolve_registry(registry), git_runner, tag_name)
+        tag_tree(self._resolve_tree(tree), git_runner, tag_name)
 
     def freeze(
         self,
@@ -166,12 +163,12 @@ class GitTreeGitCommands:
         *,
         message: str | None = None,
         stage_all: bool = True,
-        registry: "WorkingGitTree | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import freeze_release_tree
 
         freeze_release_tree(
-            self._resolve_registry(registry),
+            self._resolve_tree(tree),
             git_runner,
             tag_name,
             message=message,
@@ -218,7 +215,7 @@ class GitTree:
     Owns the lifecycle of in-memory repository identity and supports
     correction operations (:meth:`force_repo_sha`, :meth:`force_repo_keys`).
     The runtime mutable state (sync flags, lifecycle states, …) lives in the
-    :class:`DependencyTreeRegistry`.
+    :class:`WorkingGitTree`.
     
     Project metadata:
     - project_name: The unique project name (only stored here)
@@ -569,21 +566,11 @@ class GitTree:
 class WorkingGitTree(GitTree):
     """Runtime dependency tree backed by mutable :class:`WorkingRepo` nodes.
 
-    ``repos`` is keyed by runtime ``repo_id``.  The ``entries`` property keeps
-    the old registry API available during the migration window.
+    ``repos`` is keyed by runtime ``repo_id``.
     """
 
     repos: dict[str, WorkingRepo] = field(default_factory=dict)
     lifecycle_state: TreeLifecycleState = TreeLifecycleState.UNLOADED
-
-    @property
-    def entries(self) -> dict[str, WorkingRepo]:
-        """Backward-compatible alias for the runtime repo mapping."""
-        return self.repos
-
-    @entries.setter
-    def entries(self, value: dict[str, WorkingRepo]) -> None:
-        self.repos = value
 
     def add(self, repo: WorkingRepo) -> WorkingRepo:
         """Register *repo* and return it."""
@@ -666,7 +653,7 @@ class WorkingGitTree(GitTree):
 
     @property
     def registry_complete(self) -> bool:
-        """Compatibility property; delegates to :meth:`is_complete`."""
+        """Return ``True`` when the runtime tree has all required repo paths."""
         return self.is_complete()
 
     def to_cgs(self) -> "CgsDocument":
@@ -724,100 +711,6 @@ class WorkingGitTree(GitTree):
         if root is None:
             return None
         return root.default_branch or root.target_ref_name or root.resolved_ref_name
-
-
-@dataclass
-class DependencyTreeRegistry(WorkingGitTree):
-    """Backward-compatible name for :class:`WorkingGitTree`.
-
-    Phase 5 removes this class; until then existing code can continue to
-    construct ``DependencyTreeRegistry`` while operations target
-    ``WorkingGitTree``.
-    """
-
-    pass
-
-
-ReferenceTree = GitTree
-RuntimeTree = WorkingGitTree
-
-
-def from_repo_registry_entry(repo: RepoRegistryEntry) -> WorkingRepo:
-    """Convert a legacy :class:`RepoRegistryEntry` into a :class:`WorkingRepo`."""
-    return WorkingRepo(
-        project_owner_name=repo.project_owner_name,
-        project_name=repo.project_name,
-        repo_name=repo.repo_name,
-        gitprovider=repo.gitprovider,
-        group_name=repo.group_name,
-        gitprovider_url=repo.gitprovider_url,
-        access_protocol=repo.access_protocol,
-        commit_sha=repo.commit_sha,
-        repo_id=repo.repo_id,
-        name=repo.name,
-        node_type=repo.node_type,
-        parent_id=repo.parent_id,
-        absolute_path=repo.absolute_path,
-        relative_path=repo.relative_path,
-        source_cgs_path=repo.source_cgs_path,
-        current_ref_kind=repo.current_ref_kind,
-        current_ref_name=repo.current_ref_name,
-        target_ref_kind=repo.target_ref_kind,
-        target_ref_name=repo.target_ref_name,
-        resolved_ref_kind=repo.resolved_ref_kind,
-        resolved_ref_name=repo.resolved_ref_name,
-        repo_lifecycle_state=repo.repo_lifecycle_state,
-        sync_state=repo.sync_state,
-        discovery_state=repo.discovery_state,
-        fallback_branch=repo.fallback_branch,
-        fallback_applied=repo.fallback_applied,
-        fallback_reason=repo.fallback_reason,
-        worktree_state=repo.worktree_state,
-        is_reachable=repo.is_reachable,
-        default_branch=repo.default_branch,
-        nested_config=repo.nested_config,
-        remote_name=repo.remote_name,
-        is_external_reference=repo.is_external_reference,
-    )
-
-
-def to_repo_registry_entry(repo: WorkingRepo) -> RepoRegistryEntry:
-    """Convert a :class:`WorkingRepo` into the legacy entry class."""
-    return RepoRegistryEntry(
-        project_owner_name=repo.project_owner_name,
-        project_name=repo.project_name,
-        repo_name=repo.repo_name,
-        gitprovider=repo.gitprovider,
-        group_name=repo.group_name,
-        gitprovider_url=repo.gitprovider_url,
-        access_protocol=repo.access_protocol,
-        commit_sha=repo.commit_sha,
-        repo_id=repo.repo_id,
-        name=repo.name,
-        node_type=repo.node_type,
-        parent_id=repo.parent_id,
-        absolute_path=repo.absolute_path,
-        relative_path=repo.relative_path,
-        source_cgs_path=repo.source_cgs_path,
-        current_ref_kind=repo.current_ref_kind,
-        current_ref_name=repo.current_ref_name,
-        target_ref_kind=repo.target_ref_kind,
-        target_ref_name=repo.target_ref_name,
-        resolved_ref_kind=repo.resolved_ref_kind,
-        resolved_ref_name=repo.resolved_ref_name,
-        repo_lifecycle_state=repo.repo_lifecycle_state,
-        sync_state=repo.sync_state,
-        discovery_state=repo.discovery_state,
-        fallback_branch=repo.fallback_branch,
-        fallback_applied=repo.fallback_applied,
-        fallback_reason=repo.fallback_reason,
-        worktree_state=repo.worktree_state,
-        is_reachable=repo.is_reachable,
-        default_branch=repo.default_branch,
-        nested_config=repo.nested_config,
-        remote_name=repo.remote_name,
-        is_external_reference=repo.is_external_reference,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -893,7 +786,7 @@ def build_tree_state(tree: WorkingGitTree) -> ProjectTreeState:
 # ---------------------------------------------------------------------------
 
 
-def _build_path_graph(registry: DependencyTreeRegistry) -> dict[Path, set[Path]]:
+def _build_path_graph(registry: WorkingGitTree) -> dict[Path, set[Path]]:
     """Build a directed dependency graph keyed by absolute path.
 
     Each edge ``parent_abs_path -> child_abs_path`` represents a declared
@@ -910,8 +803,8 @@ def _build_path_graph(registry: DependencyTreeRegistry) -> dict[Path, set[Path]]
             continue
         path = entry.absolute_path
         graph.setdefault(path, set())
-        if entry.parent_id and entry.parent_id in registry.entries:
-            parent_entry = registry.entries[entry.parent_id]
+        if entry.parent_id and entry.parent_id in registry.repos:
+            parent_entry = registry.repos[entry.parent_id]
             if parent_entry.absolute_path is not None:
                 parent_path = parent_entry.absolute_path
                 graph.setdefault(parent_path, set())
@@ -981,7 +874,7 @@ def find_strongly_connected_components(
 def _select_scc_anchor(
     scc: list[Path],
     graph: dict[Path, set[Path]],
-    path_to_entries: dict[Path, list[RepoRegistryEntry]],
+    path_to_entries: dict[Path, list[WorkingRepo]],
 ) -> Path:
     """Select the anchor (canonical) path for an SCC using three heuristics.
 
@@ -1033,7 +926,7 @@ def _select_scc_anchor(
 # ---------------------------------------------------------------------------
 
 
-def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
+def fix_circularities(registry: WorkingGitTree) -> tuple[str, ...]:
     """Cycle-breaking engine: resolve circularities and produce a valid DAG.
 
     This function operates in two phases:
@@ -1084,7 +977,7 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
     # -----------------------------------------------------------------------
     # Build auxiliary mappings (shared by both phases).
     # -----------------------------------------------------------------------
-    path_to_entries: dict[Path, list[RepoRegistryEntry]] = {}
+    path_to_entries: dict[Path, list[WorkingRepo]] = {}
     for entry in registry.values():
         if entry.absolute_path is None:
             continue
@@ -1124,9 +1017,9 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
                 continue
             if entry.repo_id == canonical.repo_id:
                 continue
-            if entry.parent_id is None or entry.parent_id not in registry.entries:
+            if entry.parent_id is None or entry.parent_id not in registry.repos:
                 continue
-            parent_entry = registry.entries[entry.parent_id]
+            parent_entry = registry.repos[entry.parent_id]
             if parent_entry.absolute_path not in scc_non_anchor:
                 continue
             # Back-edge: mark as external reference and schedule for removal.
@@ -1155,14 +1048,14 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
 
     if ids_to_remove:
         for repo_id in ids_to_remove:
-            if repo_id in registry.entries:
-                del registry.entries[repo_id]
+            if repo_id in registry.repos:
+                del registry.repos[repo_id]
         registry.recompute_tree_state()
 
     return tuple(changes)
 
 
-def _is_compatible_duplicate(canonical: RepoRegistryEntry, duplicate: RepoRegistryEntry) -> bool:
+def _is_compatible_duplicate(canonical: WorkingRepo, duplicate: WorkingRepo) -> bool:
     if canonical.repo_lifecycle_state != duplicate.repo_lifecycle_state:
         return False
     if canonical.sync_state != duplicate.sync_state:
@@ -1176,7 +1069,7 @@ def _is_compatible_duplicate(canonical: RepoRegistryEntry, duplicate: RepoRegist
     return True
 
 
-def _has_compatible_refs(canonical: RepoRegistryEntry, duplicate: RepoRegistryEntry) -> bool:
+def _has_compatible_refs(canonical: WorkingRepo, duplicate: WorkingRepo) -> bool:
     if canonical.commit_sha and duplicate.commit_sha and canonical.commit_sha == duplicate.commit_sha:
         return True
     return all(
@@ -1248,11 +1141,11 @@ def topological_sort(tree: WorkingGitTree) -> list[WorkingRepo]:
     list[WorkingRepo]
         Repos in parent-first topological order.
     """
-    in_degree: dict[str, int] = {rid: 0 for rid in tree.entries}
-    children_map: dict[str, list[str]] = {rid: [] for rid in tree.entries}
+    in_degree: dict[str, int] = {rid: 0 for rid in tree.repos}
+    children_map: dict[str, list[str]] = {rid: [] for rid in tree.repos}
 
     for entry in tree.values():
-        if entry.parent_id is not None and entry.parent_id in tree.entries:
+        if entry.parent_id is not None and entry.parent_id in tree.repos:
             in_degree[entry.repo_id] += 1
             children_map[entry.parent_id].append(entry.repo_id)
 
@@ -1263,7 +1156,7 @@ def topological_sort(tree: WorkingGitTree) -> list[WorkingRepo]:
 
     while queue:
         node = queue.popleft()
-        result.append(tree.entries[node])
+        result.append(tree.repos[node])
         for child in sorted(children_map.get(node, [])):
             in_degree[child] -= 1
             if in_degree[child] == 0:
@@ -1278,7 +1171,7 @@ def topological_sort(tree: WorkingGitTree) -> list[WorkingRepo]:
 
 
 def format_project_tree(
-    registry: DependencyTreeRegistry,
+    registry: WorkingGitTree,
     *,
     include_current_ref: bool = True,
     include_target_ref: bool = True,
@@ -1304,9 +1197,9 @@ def format_project_tree(
     return "\n".join(lines)
 
 
-def format_repo_tree_outline(registry: DependencyTreeRegistry) -> str:
+def format_repo_tree_outline(registry: WorkingGitTree) -> str:
     """Render *registry* as a minimal repo-only tree outline."""
-    children_by_parent: dict[str | None, list[RepoRegistryEntry]] = {}
+    children_by_parent: dict[str | None, list[WorkingRepo]] = {}
     for entry in registry.values():
         children_by_parent.setdefault(entry.parent_id, []).append(entry)
     for children in children_by_parent.values():
@@ -1319,7 +1212,7 @@ def format_repo_tree_outline(registry: DependencyTreeRegistry) -> str:
     }
     lines: list[str] = []
 
-    def walk(entry: RepoRegistryEntry, *, prefix: str, is_last: bool, is_root: bool = False) -> None:
+    def walk(entry: WorkingRepo, *, prefix: str, is_last: bool, is_root: bool = False) -> None:
         label = labels.get(entry.node_type, entry.node_type.value)
         if is_root:
             lines.append(f"{entry.name} ({label})")
@@ -1335,7 +1228,7 @@ def format_repo_tree_outline(registry: DependencyTreeRegistry) -> str:
         for index, child in enumerate(children):
             walk(child, prefix=child_prefix, is_last=index == len(children) - 1)
 
-    root_entry = registry.entries.get(ROOT_REPO_ID)
+    root_entry = registry.repos.get(ROOT_REPO_ID)
     if root_entry is None:
         return ""
     walk(root_entry, prefix="", is_last=True, is_root=True)
@@ -1343,7 +1236,7 @@ def format_repo_tree_outline(registry: DependencyTreeRegistry) -> str:
 
 
 def format_view_tree(
-    registry: DependencyTreeRegistry,
+    registry: WorkingGitTree,
     *,
     depth: int | None = None,
     collapse: Sequence[str] = (),
@@ -1352,18 +1245,18 @@ def format_view_tree(
     if depth is not None and depth < 0:
         raise ValueError("depth must be >= 0")
 
-    root_entry = registry.entries.get(ROOT_REPO_ID)
+    root_entry = registry.repos.get(ROOT_REPO_ID)
     if root_entry is None:
         return ""
 
     collapsed = {name for name in collapse}
-    children_by_parent: dict[str | None, list[RepoRegistryEntry]] = {}
+    children_by_parent: dict[str | None, list[WorkingRepo]] = {}
     for entry in registry.values():
         children_by_parent.setdefault(entry.parent_id, []).append(entry)
     for children in children_by_parent.values():
         children.sort(key=lambda child: (str(child.relative_path or ""), child.name))
 
-    def render_node(entry: RepoRegistryEntry) -> str:
+    def render_node(entry: WorkingRepo) -> str:
         return (
             f"{entry.name} [{_entry_branch(entry)}] "
             f"{_entry_local_state(entry)} {_entry_sync_state(entry)}"
@@ -1371,7 +1264,7 @@ def format_view_tree(
 
     lines = [f"ROOT {render_node(root_entry)}"]
 
-    def walk(entry: RepoRegistryEntry, *, prefix: str, level: int) -> None:
+    def walk(entry: WorkingRepo, *, prefix: str, level: int) -> None:
         if depth is not None and level >= depth:
             return
         children = children_by_parent.get(entry.repo_id, [])
@@ -1388,7 +1281,7 @@ def format_view_tree(
     return "\n".join(lines)
 
 
-def format_view_operation(registry: DependencyTreeRegistry) -> str:
+def format_view_operation(registry: WorkingGitTree) -> str:
     """Render a tabular runtime-operation view for terminal output."""
     rows: list[tuple[str, str, str, str]] = []
     for entry in iter_tree(registry):
@@ -1415,7 +1308,7 @@ def format_view_operation(registry: DependencyTreeRegistry) -> str:
     return "\n".join(table_lines)
 
 
-def format_registry_json(registry: DependencyTreeRegistry) -> str:
+def format_registry_json(registry: WorkingGitTree) -> str:
     """Render *registry* as a JSON array."""
     data: list[dict[str, object]] = []
     for entry in sorted(registry.values(), key=lambda item: item.repo_id):
@@ -1482,11 +1375,11 @@ def _depth(repo_id: str) -> int:
     return 0 if repo_id == "root" else repo_id.count(":")
 
 
-def _entry_branch(entry: RepoRegistryEntry) -> str:
+def _entry_branch(entry: WorkingRepo) -> str:
     return entry.current_ref_name or entry.resolved_ref_name or "-"
 
 
-def _entry_local_state(entry: RepoRegistryEntry) -> str:
+def _entry_local_state(entry: WorkingRepo) -> str:
     worktree_state = (entry.worktree_state or "").strip().upper()
     if worktree_state == "CLEAN":
         return "clean"
@@ -1505,7 +1398,7 @@ def _entry_local_state(entry: RepoRegistryEntry) -> str:
     return "dirty"
 
 
-def _entry_sync_state(entry: RepoRegistryEntry) -> str:
+def _entry_sync_state(entry: WorkingRepo) -> str:
     sync_state = entry.sync_state
     if sync_state in {SyncState.ALIGNED, SyncState.DETACHED_EXACT}:
         return "synced"
@@ -1556,7 +1449,7 @@ def _normalize_repo_id_segment(relative_path: PurePath | str | None) -> str:
 
 
 def _apply_repo_identity(
-    entry: RepoRegistryEntry,
+    entry: WorkingRepo,
     repo: dict[str, Any],
     default_branch: str | None,
 ) -> None:

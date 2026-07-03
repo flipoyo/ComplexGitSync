@@ -75,18 +75,11 @@ flowchart LR
     GTS --> WORK
 ```
 
-## Compatibility Window
+## Cleanup Boundary
 
-Phase 4 still keeps compatibility shims for older imports:
-
-| Old name | Current target |
-| --- | --- |
-| `RepoRegistryEntry` | `WorkingRepo` compatibility wrapper |
-| `DependencyTreeRegistry` | `WorkingGitTree` subclass |
-| `ReferenceTree` | `GitTree` alias |
-| `RuntimeTree` | `WorkingGitTree` alias |
-
-Phase 5 removes these names after all callers have moved to the new hierarchy.
+Phase 5 removes the old registry compatibility surface. `WorkingGitTree` and
+`WorkingRepo` are the runtime types; `GitTree` and `GitRepo` remain the
+reference types used to create and validate `.cgs` documents.
 
 ## Tree Lifecycle States
 

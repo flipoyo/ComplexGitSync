@@ -17,7 +17,7 @@ from ComplexGitSync.git_repo import (
     RepoLifecycleState,
     SyncState,
 )
-from ComplexGitSync.git_tree import DependencyTreeRegistry, GitTree, TreeLifecycleState
+from ComplexGitSync.git_tree import WorkingGitTree, GitTree, TreeLifecycleState
 from ComplexGitSync.operations import (
     BranchTopologyConflict,
     BranchTopologyReport,
@@ -41,13 +41,13 @@ from ComplexGitSync.orchestre import ComplexGitSyncClient, GitRunner
 # ---------------------------------------------------------------------------
 
 
-def _make_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
+def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:
     """Build a minimal 3-entry READY registry backed by real directories."""
     from ComplexGitSync.git_repo import (
         AccessProtocol,
         DiscoveryState,
         GitProvider,
-        RepoRegistryEntry,
+        WorkingRepo,
     )
 
     root_path = tmp_path / "project"
@@ -61,7 +61,7 @@ def _make_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
             if parent_id is None
             else absolute_path.relative_to(root_path)
         )
-        return RepoRegistryEntry(
+        return WorkingRepo(
             repo_id=repo_id,
             name=name,
             node_type=node_type,
@@ -87,7 +87,7 @@ def _make_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
             remote_name="origin",
         )
 
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(
         _create_ready_entry("root", "project", NodeType.ROOT, None, root_path)
     )
@@ -99,13 +99,13 @@ def _make_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
     return registry
 
 
-def _make_deep_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
+def _make_deep_ready_registry(tmp_path: Path) -> WorkingGitTree:
     """Build a 3-level READY registry: root → middle → sub-leaf."""
     from ComplexGitSync.git_repo import (
         AccessProtocol,
         DiscoveryState,
         GitProvider,
-        RepoRegistryEntry,
+        WorkingRepo,
     )
 
     root_path = tmp_path / "deep"
@@ -115,7 +115,7 @@ def _make_deep_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
         p.mkdir(parents=True)
 
     def _entry(repo_id, name, node_type, parent_id, absolute_path, parent_root):
-        return RepoRegistryEntry(
+        return WorkingRepo(
             repo_id=repo_id,
             name=name,
             node_type=node_type,
@@ -145,7 +145,7 @@ def _make_deep_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
             remote_name="origin",
         )
 
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_entry("root", "deep", NodeType.ROOT, None, root_path, root_path))
     registry.add(_entry("root:middle", "middle", NodeType.PARENT, "root", middle_path, root_path))
     registry.add(_entry("root:middle:sub", "sub", NodeType.LEAF, "root:middle", sub_path, middle_path))
@@ -155,7 +155,7 @@ def _make_deep_ready_registry(tmp_path: Path) -> DependencyTreeRegistry:
 
 
 def _mark_all_children_as_submodules(
-    registry: DependencyTreeRegistry,
+    registry: WorkingGitTree,
     runner: "_FakeGitRunnerForOperations",
 ) -> None:
     for entry in registry.values():
@@ -680,7 +680,7 @@ def test_gittree_git_checkout_allows_direct_tree_manipulation(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
     git_tree = GitTree()
-    git_tree.git.bind_registry(registry)
+    git_tree.git.bind_tree(registry)
 
     git_tree.git.checkout(runner, "feature-direct")
 
@@ -693,7 +693,7 @@ def test_branch_tree_via_gittree_git_facade_creates_branch_without_checkout(tmp_
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
     git_tree = GitTree()
-    git_tree.git.bind_registry(registry)
+    git_tree.git.bind_tree(registry)
 
     git_tree.git.branch(runner, "feature-branch")
 
@@ -1199,8 +1199,8 @@ def test_client_checkout_delegates_to_gittree_git_checkout(tmp_path, monkeypatch
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_checkout(self, git_runner, branch_name, *, ref_kind=RefKind.BRANCH, registry=None):
-        captured_call["registry"] = registry
+    def _spy_checkout(self, git_runner, branch_name, *, ref_kind=RefKind.BRANCH, tree=None):
+        captured_call["tree"] = tree
         captured_call["git_runner"] = git_runner
         captured_call["branch_name"] = branch_name
         captured_call["ref_kind"] = ref_kind
@@ -1210,7 +1210,7 @@ def test_client_checkout_delegates_to_gittree_git_checkout(tmp_path, monkeypatch
     result = client.checkout("feature-x")
 
     assert result is client.registry
-    assert captured_call["registry"] is None
+    assert captured_call["tree"] is None
     assert captured_call["git_runner"] is runner
     assert captured_call["branch_name"] == "feature-x"
     assert captured_call["ref_kind"] == RefKind.BRANCH
@@ -1220,8 +1220,8 @@ def test_client_branch_delegates_to_gittree_git_branch(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_branch(self, git_runner, branch_name, *, registry=None):
-        captured_call["registry"] = registry
+    def _spy_branch(self, git_runner, branch_name, *, tree=None):
+        captured_call["tree"] = tree
         captured_call["git_runner"] = git_runner
         captured_call["branch_name"] = branch_name
 
@@ -1230,7 +1230,7 @@ def test_client_branch_delegates_to_gittree_git_branch(tmp_path, monkeypatch):
     result = client.branch("feature-x")
 
     assert result is client.registry
-    assert captured_call["registry"] is None
+    assert captured_call["tree"] is None
     assert captured_call["git_runner"] is runner
     assert captured_call["branch_name"] == "feature-x"
 
@@ -1239,11 +1239,11 @@ def test_client_commit_delegates_to_gittree_git_commit(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_commit(self, git_runner, message, *, stage_all=True, registry=None):
+    def _spy_commit(self, git_runner, message, *, stage_all=True, tree=None):
         captured_call["git_runner"] = git_runner
         captured_call["message"] = message
         captured_call["stage_all"] = stage_all
-        captured_call["registry"] = registry
+        captured_call["tree"] = tree
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "commit", _spy_commit)
 
@@ -1254,7 +1254,7 @@ def test_client_commit_delegates_to_gittree_git_commit(tmp_path, monkeypatch):
         "git_runner": runner,
         "message": "my-message",
         "stage_all": False,
-        "registry": None,
+        "tree": None,
     }
 
 
@@ -1262,42 +1262,42 @@ def test_client_add_delegates_to_gittree_git_add(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_add(self, git_runner, *, registry=None):
+    def _spy_add(self, git_runner, *, tree=None):
         captured_call["git_runner"] = git_runner
-        captured_call["registry"] = registry
+        captured_call["tree"] = tree
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "add", _spy_add)
 
     result = client.add()
 
     assert result is client.registry
-    assert captured_call == {"git_runner": runner, "registry": None}
+    assert captured_call == {"git_runner": runner, "tree": None}
 
 
 def test_client_push_delegates_to_gittree_git_push(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_push(self, git_runner, *, registry=None):
+    def _spy_push(self, git_runner, *, tree=None):
         captured_call["git_runner"] = git_runner
-        captured_call["registry"] = registry
+        captured_call["tree"] = tree
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "push", _spy_push)
 
     result = client.push()
 
     assert result is client.registry
-    assert captured_call == {"git_runner": runner, "registry": None}
+    assert captured_call == {"git_runner": runner, "tree": None}
 
 
 def test_client_tag_delegates_to_gittree_git_tag(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_tag(self, git_runner, tag_name, *, registry=None):
+    def _spy_tag(self, git_runner, tag_name, *, tree=None):
         captured_call["git_runner"] = git_runner
         captured_call["tag_name"] = tag_name
-        captured_call["registry"] = registry
+        captured_call["tree"] = tree
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "tag", _spy_tag)
 
@@ -1307,7 +1307,7 @@ def test_client_tag_delegates_to_gittree_git_tag(tmp_path, monkeypatch):
     assert captured_call == {
         "git_runner": runner,
         "tag_name": "v1.2.3",
-        "registry": None,
+        "tree": None,
     }
 
 
@@ -1315,12 +1315,12 @@ def test_client_freeze_release_delegates_to_gittree_git_freeze(tmp_path, monkeyp
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_freeze(self, git_runner, tag_name, *, message=None, stage_all=True, registry=None):
+    def _spy_freeze(self, git_runner, tag_name, *, message=None, stage_all=True, tree=None):
         captured_call["git_runner"] = git_runner
         captured_call["tag_name"] = tag_name
         captured_call["message"] = message
         captured_call["stage_all"] = stage_all
-        captured_call["registry"] = registry
+        captured_call["tree"] = tree
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "freeze", _spy_freeze)
 
@@ -1332,7 +1332,7 @@ def test_client_freeze_release_delegates_to_gittree_git_freeze(tmp_path, monkeyp
         "tag_name": "release-1",
         "message": "msg",
         "stage_all": False,
-        "registry": None,
+        "tree": None,
     }
 
 
@@ -1657,7 +1657,7 @@ def test_validate_branch_topology_format_incoherent(tmp_path):
 
 def test_validate_branch_topology_missing_root(tmp_path):
     """Registry with no root → missing_root conflict, incoherent."""
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     runner = _FakeGitRunnerForOperations()
 
     report = validate_branch_topology(registry, runner)

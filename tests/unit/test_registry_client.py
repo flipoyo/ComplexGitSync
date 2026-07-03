@@ -8,7 +8,7 @@ import pytest
 from ComplexGitSync.orchestre import ComplexGitSyncClient, GocDocument, _path_to_environment_marker
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState, SyncState
-from ComplexGitSync.git_tree import DependencyTreeRegistry, GitTree, TreeLifecycleState, make_repo_id
+from ComplexGitSync.git_tree import WorkingGitTree, GitTree, TreeLifecycleState, make_repo_id
 from ComplexGitSync.orchestre import GtsDocument, RuntimeStateStore, build_registry_from_gts_document
 
 
@@ -187,7 +187,7 @@ def test_initialise_cgs_default_cgshome_is_cgspath_project_name(tmp_path, monkey
     monkeypatch.setattr(client, "write_gts_snapshot", _fake_write_gts)
     monkeypatch.setattr(client.state_store, "record_snapshot", lambda *a, **kw: None)
 
-    client.registry = None
+    client.tree = None
 
     def _fake_build_registry(*args, **kwargs):
         from ComplexGitSync.orchestre import build_registry_from_cgs_document as _orig
@@ -321,13 +321,13 @@ def test_client_clone_alias_calls_clone_cgs(monkeypatch):
 
 def test_client_branch_delegates_to_gittree_git_branch(monkeypatch):
     client = ComplexGitSyncClient()
-    client.registry = DependencyTreeRegistry()
+    client.registry = WorkingGitTree()
     captured: dict[str, object] = {}
 
-    def _spy_branch(self, git_runner, branch_name, *, registry=None):
+    def _spy_branch(self, git_runner, branch_name, *, tree=None):
         captured["git_runner"] = git_runner
         captured["branch_name"] = branch_name
-        captured["registry"] = registry
+        captured["tree"] = tree
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "branch", _spy_branch)
 
@@ -336,7 +336,7 @@ def test_client_branch_delegates_to_gittree_git_branch(monkeypatch):
     assert result is client.registry
     assert captured["git_runner"] is client.git_runner
     assert captured["branch_name"] == "feature/test"
-    assert captured["registry"] is None
+    assert captured["tree"] is None
 
 
 def test_client_git_dispatches_extended_commands(monkeypatch):
@@ -384,20 +384,20 @@ def test_client_git_requires_expected_arguments(command, expected_message):
 
 def test_client_git_binds_provided_registry(monkeypatch):
     client = ComplexGitSyncClient()
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     captured: dict[str, object] = {}
 
-    def _spy_add(self, git_runner, *, registry=None):
-        captured["bound_registry"] = self.registry
-        captured["registry_arg"] = registry
+    def _spy_add(self, git_runner, *, tree=None):
+        captured["bound_tree"] = self.working_tree
+        captured["tree_arg"] = tree
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "add", _spy_add)
 
     client.git(registry, "add")
     assert client.registry is registry
-    assert client.orchestre.git_tree.git.registry is registry
-    assert captured["bound_registry"] is registry
-    assert captured["registry_arg"] is None
+    assert client.orchestre.git_tree.git.working_tree is registry
+    assert captured["bound_tree"] is registry
+    assert captured["tree_arg"] is None
 
 
 def test_client_freeze_alias_calls_freeze_release(monkeypatch):
@@ -494,7 +494,7 @@ command = "add"
     )
     client = ComplexGitSyncClient()
     calls: list[tuple[str, tuple[str, ...]]] = []
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
 
     def _fake_git(bound_registry, command, *args):
         assert bound_registry is client.registry or bound_registry is None
@@ -547,7 +547,7 @@ ref_type = "branch"
     )
     client = ComplexGitSyncClient()
     monkeypatch.setattr(client, "load_gts", lambda _path: None)
-    client.registry = DependencyTreeRegistry()
+    client.registry = WorkingGitTree()
 
     report = client.orchestrate(plan_path, stop_on_error=False)
 
@@ -918,7 +918,7 @@ project_name = "leaf"
         encoding="utf-8",
     )
 
-    empty_registry = DependencyTreeRegistry()
+    empty_registry = WorkingGitTree()
     assert empty_registry.recompute_tree_state() == TreeLifecycleState.UNLOADED
     registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
     assert registry.lifecycle_state == TreeLifecycleState.READY
@@ -1697,18 +1697,18 @@ class _StrictCloneGitRunner(_FakeGitRunner):
 
 
 def _make_entry(repo_id: str, abs_path: Path, *, parent_id: str | None = None):
-    """Create a minimal RepoRegistryEntry for circularity testing."""
+    """Create a minimal WorkingRepo for circularity testing."""
     from ComplexGitSync.git_repo import (
         NodeType,
         RepoLifecycleState,
-        RepoRegistryEntry,
+        WorkingRepo,
         SyncState,
         DiscoveryState,
     )
 
     separator_count = repo_id.count(":")
     node_type = NodeType.ROOT if repo_id == "root" else (NodeType.PARENT if separator_count == 1 else NodeType.LEAF)
-    return RepoRegistryEntry(
+    return WorkingRepo(
         repo_id=repo_id,
         name=repo_id.split(":")[-1],
         node_type=node_type,
@@ -1720,10 +1720,10 @@ def _make_entry(repo_id: str, abs_path: Path, *, parent_id: str | None = None):
 
 def test_fix_circularities_removes_duplicate_leaf_when_parent_exists(tmp_path):
     """A leaf entry whose absolute_path matches an existing parent is removed."""
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
 
     parent2_path = tmp_path / "parent2"
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
     registry.add(_make_entry("root:parent2", parent2_path, parent_id="root"))
@@ -1734,15 +1734,15 @@ def test_fix_circularities_removes_duplicate_leaf_when_parent_exists(tmp_path):
 
     assert len(fixed) == 1
     assert "fixed_circularity:root:parent1:parent2→root:parent2" in fixed
-    assert "root:parent1:parent2" not in registry.entries
-    assert "root:parent2" in registry.entries
+    assert "root:parent1:parent2" not in registry.repos
+    assert "root:parent2" in registry.repos
 
 
 def test_fix_circularities_no_changes_when_no_duplicates(tmp_path):
     """Returns empty tuple when there are no duplicate absolute paths."""
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
 
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
     registry.add(_make_entry("root:parent2", tmp_path / "parent2", parent_id="root"))
@@ -1750,16 +1750,16 @@ def test_fix_circularities_no_changes_when_no_duplicates(tmp_path):
     fixed = fix_circularities(registry)
 
     assert fixed == ()
-    assert len(registry.entries) == 3
+    assert len(registry.repos) == 3
 
 
 def test_fix_circularities_handles_cascading_duplicates(tmp_path):
     """Both a leaf and its child duplicate are removed when all share the same paths."""
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
 
     parent2_path = tmp_path / "parent2"
     leaf_path = parent2_path / "leaf"
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
     registry.add(_make_entry("root:parent2", parent2_path, parent_id="root"))
@@ -1771,18 +1771,18 @@ def test_fix_circularities_handles_cascading_duplicates(tmp_path):
     fixed = fix_circularities(registry)
 
     assert len(fixed) == 2
-    assert "root:parent1:parent2" not in registry.entries
-    assert "root:parent1:parent2:leaf" not in registry.entries
-    assert "root:parent2" in registry.entries
-    assert "root:parent2:leaf" in registry.entries
+    assert "root:parent1:parent2" not in registry.repos
+    assert "root:parent1:parent2:leaf" not in registry.repos
+    assert "root:parent2" in registry.repos
+    assert "root:parent2:leaf" in registry.repos
 
 
 def test_fix_circularities_multiple_parents_sharing_leaf(tmp_path):
     """Multiple parents referencing the same leaf: only one canonical entry survives."""
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
 
     shared_path = tmp_path / "shared"
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     registry.add(_make_entry("root:shared", shared_path, parent_id="root"))
     registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
@@ -1793,17 +1793,17 @@ def test_fix_circularities_multiple_parents_sharing_leaf(tmp_path):
     fixed = fix_circularities(registry)
 
     assert len(fixed) == 2
-    assert "root:shared" in registry.entries
-    assert "root:parent1:shared" not in registry.entries
-    assert "root:parent2:shared" not in registry.entries
+    assert "root:shared" in registry.repos
+    assert "root:parent1:shared" not in registry.repos
+    assert "root:parent2:shared" not in registry.repos
 
 
 def test_fix_circularities_keeps_duplicates_when_commit_or_status_conflict(tmp_path):
     from ComplexGitSync.git_repo import RepoLifecycleState, SyncState
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
 
     shared_path = tmp_path / "shared"
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     canonical = _make_entry("root:shared", shared_path, parent_id="root")
     duplicate = _make_entry("root:parent1:shared", shared_path, parent_id="root:parent1")
     canonical.repo_lifecycle_state = RepoLifecycleState.READY
@@ -1821,16 +1821,16 @@ def test_fix_circularities_keeps_duplicates_when_commit_or_status_conflict(tmp_p
     fixed = fix_circularities(registry)
 
     assert fixed == ()
-    assert "root:shared" in registry.entries
-    assert "root:parent1:shared" in registry.entries
+    assert "root:shared" in registry.repos
+    assert "root:parent1:shared" in registry.repos
 
 
 def test_fix_circularities_keeps_duplicates_when_declared_refs_conflict(tmp_path):
     from ComplexGitSync.git_repo import RefKind
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
 
     shared_path = tmp_path / "shared"
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     canonical = _make_entry("root:shared", shared_path, parent_id="root")
     duplicate = _make_entry("root:parent1:shared", shared_path, parent_id="root:parent1")
     canonical.target_ref_kind = RefKind.BRANCH
@@ -1846,8 +1846,8 @@ def test_fix_circularities_keeps_duplicates_when_declared_refs_conflict(tmp_path
     fixed = fix_circularities(registry)
 
     assert fixed == ()
-    assert "root:shared" in registry.entries
-    assert "root:parent1:shared" in registry.entries
+    assert "root:shared" in registry.repos
+    assert "root:parent1:shared" in registry.repos
 
 
 def test_client_fix_circularities_is_callable_on_loaded_registry(tmp_path):
@@ -2098,9 +2098,9 @@ def test_find_scc_self_loop_node_appears_in_result(tmp_path):
 
 def test_topological_sort_linear_chain(tmp_path):
     """Root -> parent -> leaf is returned in parent-first order."""
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, topological_sort
+    from ComplexGitSync.git_tree import WorkingGitTree, topological_sort
 
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     registry.add(_make_entry("root:parent", tmp_path / "parent", parent_id="root"))
     registry.add(
@@ -2116,9 +2116,9 @@ def test_topological_sort_linear_chain(tmp_path):
 
 def test_topological_sort_all_entries_returned(tmp_path):
     """Every registry entry is returned exactly once."""
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, topological_sort
+    from ComplexGitSync.git_tree import WorkingGitTree, topological_sort
 
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     registry.add(_make_entry("root:a", tmp_path / "a", parent_id="root"))
     registry.add(_make_entry("root:b", tmp_path / "b", parent_id="root"))
@@ -2131,9 +2131,9 @@ def test_topological_sort_all_entries_returned(tmp_path):
 
 def test_topological_sort_parent_before_all_children(tmp_path):
     """Root always comes before all other entries."""
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, topological_sort
+    from ComplexGitSync.git_tree import WorkingGitTree, topological_sort
 
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     for name in ("a", "b", "c"):
         registry.add(_make_entry(f"root:{name}", tmp_path / name, parent_id="root"))
@@ -2150,13 +2150,13 @@ def test_topological_sort_parent_before_all_children(tmp_path):
 
 def test_fix_circularities_detects_true_two_node_cycle(tmp_path):
     """Phase 1 removes the back-edge entry that creates an A<->B cycle."""
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
 
     # Registry: root -> a -> b -> a (a's path reappears as a child of b)
     path_a = tmp_path / "a"
     path_b = tmp_path / "a" / "b"
 
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     registry.add(_make_entry("root:a", path_a, parent_id="root"))
     registry.add(_make_entry("root:a:b", path_b, parent_id="root:a"))
@@ -2167,20 +2167,20 @@ def test_fix_circularities_detects_true_two_node_cycle(tmp_path):
 
     assert len(fixed) == 1
     assert "fixed_circularity:root:a:b:a\u2192root:a" in fixed
-    assert "root:a:b:a" not in registry.entries
+    assert "root:a:b:a" not in registry.repos
     # Legitimate entries are preserved
-    assert "root:a" in registry.entries
-    assert "root:a:b" in registry.entries
+    assert "root:a" in registry.repos
+    assert "root:a:b" in registry.repos
 
 
 def test_fix_circularities_back_edge_marked_is_external_reference(tmp_path):
     """The back-edge entry has is_external_reference=True set before removal."""
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
 
     path_a = tmp_path / "a"
     path_b = tmp_path / "a" / "b"
 
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     registry.add(_make_entry("root:a", path_a, parent_id="root"))
     registry.add(_make_entry("root:a:b", path_b, parent_id="root:a"))
@@ -2196,7 +2196,7 @@ def test_fix_circularities_back_edge_marked_is_external_reference(tmp_path):
 
 def test_fix_circularities_anchor_heuristic_most_external_edges(tmp_path):
     """When two nodes tie on depth, the one with more external edges wins."""
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
 
     # Build: root -> a -> c -> a (cycle); root -> b -> c -> b (cycle)
     # path_a and path_b are both at depth 1 (1 colon in repo_id).
@@ -2207,7 +2207,7 @@ def test_fix_circularities_anchor_heuristic_most_external_edges(tmp_path):
     path_b = tmp_path / "b"
     path_c = tmp_path / "c"
 
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     registry.add(_make_entry("root:a", path_a, parent_id="root"))
     registry.add(_make_entry("root:b", path_b, parent_id="root"))
@@ -2220,19 +2220,19 @@ def test_fix_circularities_anchor_heuristic_most_external_edges(tmp_path):
 
     # root:a should be anchor (external incoming from root + depth 1)
     # root:b:c:a is the back-edge → removed
-    assert "root:a" in registry.entries
-    assert "root:b:c:a" not in registry.entries
+    assert "root:a" in registry.repos
+    assert "root:b:c:a" not in registry.repos
     assert any("root:b:c:a" in change for change in fixed)
 
 
 def test_fix_circularities_no_duplicate_changes_for_same_entry(tmp_path):
     """Each removed entry appears exactly once in the returned changes tuple."""
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
 
     path_a = tmp_path / "a"
     path_b = tmp_path / "a" / "b"
 
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     registry.add(_make_entry("root:a", path_a, parent_id="root"))
     registry.add(_make_entry("root:a:b", path_b, parent_id="root:a"))
@@ -2247,13 +2247,13 @@ def test_fix_circularities_no_duplicate_changes_for_same_entry(tmp_path):
 
 def test_fix_circularities_phase1_and_phase2_together(tmp_path):
     """Phase 1 (SCC) and Phase 2 (path dedup) both fire when needed."""
-    from ComplexGitSync.git_tree import DependencyTreeRegistry, fix_circularities
+    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
 
     path_a = tmp_path / "a"
     path_b = tmp_path / "a" / "b"
     path_shared = tmp_path / "shared"
 
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     # Phase 1 cycle: root -> a -> b -> a
     registry.add(_make_entry("root:a", path_a, parent_id="root"))
@@ -2266,10 +2266,10 @@ def test_fix_circularities_phase1_and_phase2_together(tmp_path):
     fixed = fix_circularities(registry)
 
     # Phase 1 removes root:a:b:a (back-edge)
-    assert "root:a:b:a" not in registry.entries
+    assert "root:a:b:a" not in registry.repos
     # Phase 2 removes root:a:shared (duplicate path)
-    assert "root:a:shared" not in registry.entries
-    assert "root:shared" in registry.entries
+    assert "root:a:shared" not in registry.repos
+    assert "root:shared" in registry.repos
     assert len(fixed) == 2
 
 
@@ -2279,7 +2279,7 @@ def test_fix_circularities_pending_clone_skips_external_reference(tmp_path):
 
     # Manually set is_external_reference on a DECLARED entry and verify it
     # is filtered out by _pending_clone_entries.
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
     normal = _make_entry("root:a", tmp_path / "a", parent_id="root")
     ext_ref = _make_entry("root:b", tmp_path / "b", parent_id="root")

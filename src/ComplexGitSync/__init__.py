@@ -24,26 +24,20 @@ from .git_repo import (
     RepoAddress,
     RepoLifecycleState,
     RepoNode,
-    RepoRegistryEntry,
     SyncState,
     WorkingRepo,
 )
 
 # --- Tier 1 — Core State + Tree Utilities (git_tree.py) ---
 from .git_tree import (
-    DependencyTreeRegistry,
     GitTree,
     ProjectTreeState,
-    ReferenceTree,
-    RuntimeTree,
     TreeLifecycleState,
     WorkingGitTree,
     find_strongly_connected_components,
     fix_circularities,
-    from_repo_registry_entry,
     iter_tree,
     iter_tree_leaf_first,
-    to_repo_registry_entry,
     topological_sort,
 )
 
@@ -95,23 +89,17 @@ __all__ = [
     "RepoAddress",
     "RepoLifecycleState",
     "RepoNode",
-    "RepoRegistryEntry",
     "SyncState",
     "WorkingRepo",
     # git_tree.py
-    "DependencyTreeRegistry",
     "GitTree",
     "ProjectTreeState",
-    "ReferenceTree",
-    "RuntimeTree",
     "TreeLifecycleState",
     "WorkingGitTree",
     "find_strongly_connected_components",
     "fix_circularities",
-    "from_repo_registry_entry",
     "iter_tree",
     "iter_tree_leaf_first",
-    "to_repo_registry_entry",
     "topological_sort",
     # operations.py
     "checkout_tree",
