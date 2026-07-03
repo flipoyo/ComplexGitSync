@@ -591,7 +591,7 @@ class WorkingGitTree(GitTree):
 
     @property
     def entries(self) -> dict[str, WorkingRepo]:
-        """Backward-compatible alias for the runtime repo mapping."""
+        """Legacy alias for :attr:`repos`; prefer ``repos`` for new code."""
         return self.repos
 
     def __iter__(self):
@@ -736,7 +736,7 @@ class ProjectTreeState:
     registry_complete: bool
 
 
-# Backward-compatible alias for the legacy registry name.
+# Legacy alias for ``WorkingGitTree``; prefer ``WorkingGitTree`` for new code.
 DependencyTreeRegistry = WorkingGitTree
 
 
