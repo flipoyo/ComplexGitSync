@@ -58,12 +58,12 @@ from .git_repo import (
     RefKind,
     RepoLifecycleState,
     RepoNode,
-    RepoRegistryEntry,
+    WorkingRepo,
     SyncState,
 )
 from .git_tree import (
     ROOT_REPO_ID,
-    DependencyTreeRegistry,
+    WorkingGitTree,
     GitTree,
     ProjectTreeState,
     TreeLifecycleState,
@@ -230,7 +230,7 @@ def _short_sha(value: str | None) -> str:
     return value[:8] if value else "-"
 
 
-def _status_display_path(entry: RepoRegistryEntry, root_path: Path) -> str:
+def _status_display_path(entry: WorkingRepo, root_path: Path) -> str:
     try:
         relative = entry.absolute_path.relative_to(root_path)
     except ValueError:
@@ -266,8 +266,8 @@ def _path_is_relative_to(path: Path, parent: Path) -> bool:
 
 
 def _unmanaged_gitlink_paths(
-    registry: DependencyTreeRegistry,
-    entry: RepoRegistryEntry,
+    registry: WorkingGitTree,
+    entry: WorkingRepo,
     git_runner: Any,
 ) -> set[Path]:
     try:
@@ -1623,7 +1623,7 @@ class GitRunner:
 
 
 # ============================================================
-#  Registry builders — translate documents ↔ DependencyTreeRegistry
+#  Registry builders — translate documents ↔ WorkingGitTree
 # ============================================================
 
 
@@ -1632,13 +1632,13 @@ def build_registry_from_cgs_document(
     config_path: Path | str,
     *,
     project_root: Path | str | None = None,
-) -> DependencyTreeRegistry:
-    """Build a :class:`DependencyTreeRegistry` from a ``.cgs`` document."""
+) -> WorkingGitTree:
+    """Build a :class:`WorkingGitTree` from a ``.cgs`` document."""
     source_path = Path(config_path).resolve()
     root_path = (
         Path(project_root).resolve() if project_root is not None else source_path.parent.resolve()
     )
-    root_entry = RepoRegistryEntry(
+    root_entry = WorkingRepo(
         repo_id=ROOT_REPO_ID,
         name=document.project_name or source_path.stem,
         node_type=NodeType.ROOT,
@@ -1653,7 +1653,7 @@ def build_registry_from_cgs_document(
         remote_name=document.read("project.default_remote_name", "origin"),
     )
 
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(root_entry)
 
     seen_relative_paths: set[Path] = set()
@@ -1677,7 +1677,7 @@ def build_registry_from_cgs_document(
             repo,
             document_default_branch=document.default_branch,
         )
-        entry = RepoRegistryEntry(
+        entry = WorkingRepo(
             repo_id=make_repo_id(ROOT_REPO_ID, relative_path, str(repo["project_name"])),
             name=str(repo["project_name"]),
             node_type=NodeType.LEAF,
@@ -1714,9 +1714,9 @@ def build_registry_from_cgs_document(
     return registry
 
 
-def build_registry_from_gts_document(document: GtsDocument) -> DependencyTreeRegistry:
-    """Build a :class:`DependencyTreeRegistry` from a ``.gts`` snapshot document."""
-    registry = DependencyTreeRegistry()
+def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
+    """Build a :class:`WorkingGitTree` from a ``.gts`` snapshot document."""
+    registry = WorkingGitTree()
     path_to_repo_id: dict[Path, str] = {}
     project_source_cgs_path = document.read("project.source_cgs_path")
 
@@ -1740,7 +1740,7 @@ def build_registry_from_gts_document(document: GtsDocument) -> DependencyTreeReg
             else make_repo_id(parent_id, repo_state.get("relative_path"), str(repo_state["name"]))
         )
 
-        entry = RepoRegistryEntry(
+        entry = WorkingRepo(
             repo_id=repo_id,
             name=str(repo_state["name"]),
             node_type=NodeType.ROOT if is_root else _parse_gts_node_type(str(repo_state.get("node_type", "leaf"))),
@@ -1784,7 +1784,7 @@ def build_registry_from_gts_document(document: GtsDocument) -> DependencyTreeReg
 
 
 def build_gts_document_from_registry(
-    registry: DependencyTreeRegistry,
+    registry: WorkingGitTree,
     *,
     command_origin: str,
     source_cgs_path: Path | None,
@@ -1856,7 +1856,7 @@ def build_gts_document_from_registry(
     return document
 
 
-def _build_freeze_manifest(registry: DependencyTreeRegistry) -> dict[str, Any]:
+def _build_freeze_manifest(registry: WorkingGitTree) -> dict[str, Any]:
     root_entry = registry.get(ROOT_REPO_ID)
     tag_name = (
         root_entry.resolved_ref_name
@@ -1880,7 +1880,7 @@ def _build_freeze_manifest(registry: DependencyTreeRegistry) -> dict[str, Any]:
 # ============================================================
 
 
-def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]:
+def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
     """Discover nested ``.cgs`` files in already-cloned repositories."""
     changes: list[str] = []
     pending_entries = [
@@ -1927,7 +1927,7 @@ def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]
             )
 
             child_id = make_repo_id(entry.repo_id, relative_path, str(repo["project_name"]))
-            if child_id in registry.entries:
+            if child_id in registry.repos:
                 continue
 
             child_absolute_path = (entry.absolute_path / relative_path).resolve()
@@ -1945,7 +1945,7 @@ def discover_nested_configs(registry: DependencyTreeRegistry) -> tuple[str, ...]
                 document_default_branch=nested_document.default_branch,
             )
             new_entry = registry.add(
-                RepoRegistryEntry(
+                WorkingRepo(
                     repo_id=child_id,
                     name=str(repo["project_name"]),
                     node_type=NodeType.LEAF,
@@ -2071,7 +2071,7 @@ class ComplexGitSyncClient:
     orchestre: Orchestre = field(default_factory=Orchestre)
     git_runner: GitRunner = field(default_factory=GitRunner)
     state_store: RuntimeStateStore = field(default_factory=RuntimeStateStore)
-    registry: DependencyTreeRegistry | None = None
+    registry: WorkingGitTree | None = None
     source_path: Path | None = None
     loaded_snapshot_path: Path | None = None
     run_logger: CommandRunLogger | None = None
@@ -2084,12 +2084,12 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         discover_nested: bool = False,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
         self.registry = build_registry_from_cgs_document(document, source_path)
-        self.orchestre.git_tree.git.bind_registry(self.registry)
+        self.orchestre.git_tree.git.bind_tree(self.registry)
         self.source_path = source_path
         self.loaded_snapshot_path = None
         if discover_nested:
@@ -2103,7 +2103,7 @@ class ComplexGitSyncClient:
         source: str | Path,
         *,
         output_path: str | Path | None = None,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         """Unified initialisation entry point (lifecycle step 1).
 
         Dispatches based on source file extension:
@@ -2145,7 +2145,7 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         output_path: str | Path | None = None,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         """Initialise a workspace using CGSPATH/CGSHOME semantics.
 
         ``output_path`` is CGSPATH.  The ``.cgs`` file is read first, CGSHOME
@@ -2179,7 +2179,7 @@ class ComplexGitSyncClient:
             source_path,
             project_root=project_root,
         )
-        self.orchestre.git_tree.git.bind_registry(self.registry)
+        self.orchestre.git_tree.git.bind_tree(self.registry)
         self.source_path = source_path
 
         root_entry = self.registry.get(ROOT_REPO_ID)
@@ -2254,7 +2254,7 @@ class ComplexGitSyncClient:
         source_path: str | Path,
         *,
         discover_nested: bool = False,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         """Load a ``.cgs`` or ``.gts`` source into the registry.
 
         Accepts both file types:
@@ -2283,7 +2283,7 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         discover_nested: bool = False,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         """Compatibility alias for :meth:`load`.
 
         ``load`` is the canonical name; ``read`` is retained for
@@ -2394,12 +2394,12 @@ class ComplexGitSyncClient:
         """
         return self.validate(source_path, discover_nested=discover_nested)
 
-    def load_gts(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
+    def load_gts(self, snapshot_path: str | Path) -> WorkingGitTree:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         resolved_snapshot_path = Path(snapshot_path).resolve()
         document = GtsDocument.from_toml(resolved_snapshot_path)
         self.registry = build_registry_from_gts_document(document)
-        self.orchestre.git_tree.git.bind_registry(self.registry)
+        self.orchestre.git_tree.git.bind_tree(self.registry)
         self.source_path = (
             _resolve_document_path(str(document.read("project.source_cgs_path")))
             if document.read("project.source_cgs_path")
@@ -2419,7 +2419,7 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         discover_nested: bool = False,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         source_path = Path(config_path).resolve()
         snapshot_path = self.state_store.latest_snapshot_for(source_path)
         if snapshot_path is not None and snapshot_path.stat().st_mtime >= source_path.stat().st_mtime:
@@ -2432,7 +2432,7 @@ class ComplexGitSyncClient:
         *,
         discover_nested: bool = False,
         prefer_runtime_for_cgs: bool = True,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         resolved_source = Path(source_path).resolve()
         if resolved_source.suffix == ".gts":
             return self.load_gts(resolved_source)
@@ -2461,7 +2461,7 @@ class ComplexGitSyncClient:
         *,
         target_dir: str | Path | None = None,
         output_path: str | Path | None = None,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
@@ -2472,7 +2472,7 @@ class ComplexGitSyncClient:
             source_path,
             project_root=project_root,
         )
-        self.orchestre.git_tree.git.bind_registry(self.registry)
+        self.orchestre.git_tree.git.bind_tree(self.registry)
         self.source_path = source_path
 
         # Sync stack: tracks absolute paths that have already entered the clone
@@ -2514,11 +2514,11 @@ class ComplexGitSyncClient:
         *,
         target_dir: str | Path | None = None,
         output_path: str | Path | None = None,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         """Clone the repositories required by the current loaded tree state."""
         return self.clone_cgs(config_path, target_dir=target_dir, output_path=output_path)
 
-    def restart(self, config_path: str | Path) -> DependencyTreeRegistry:
+    def restart(self, config_path: str | Path) -> WorkingGitTree:
         """Legacy pull-like helper for resynchronizing an already-cloned tree.
 
         Loads the ``.cgs`` configuration, discovers nested configs, then
@@ -2539,7 +2539,7 @@ class ComplexGitSyncClient:
         self._log_event("restart_end", config_path=resolved_path)
         return registry
 
-    def pull(self, source_path: str | Path) -> DependencyTreeRegistry:
+    def pull(self, source_path: str | Path) -> WorkingGitTree:
         """Compatibility lifecycle method for resynchronizing from ``.cgs`` or ``.gts``."""
         resolved_source = Path(source_path).resolve()
         if resolved_source.suffix == ".cgs":
@@ -2689,10 +2689,10 @@ class ComplexGitSyncClient:
 
     @staticmethod
     def _summarize_goc_result(result: Any) -> Any:
-        if isinstance(result, DependencyTreeRegistry):
+        if isinstance(result, WorkingGitTree):
             return {
                 "lifecycle_state": result.lifecycle_state.value,
-                "repo_count": len(result.entries),
+                "repo_count": len(result.repos),
             }
         if isinstance(result, ProjectTreeState):
             return {
@@ -2711,7 +2711,7 @@ class ComplexGitSyncClient:
         branch_name: str,
         *,
         ref_kind: RefKind = RefKind.BRANCH,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         """Check out *branch_name* across the full tree from a READY ``.gts`` state.
 
         Requires a ``READY`` registry.  After a successful execution the
@@ -2743,13 +2743,13 @@ class ComplexGitSyncClient:
     def branch(
         self,
         branch_name: str,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         """Create *branch_name* across the full tree without checkout."""
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("branch_start", branch_name=branch_name)
         self.orchestre.git_tree.git.branch(self.git_runner, branch_name)
-        if ROOT_REPO_ID in registry.entries:
+        if ROOT_REPO_ID in registry.repos:
             snapshot_path = self.write_gts_snapshot(command_origin="branch")
             if self.source_path is not None:
                 self.state_store.record_snapshot(self.source_path, snapshot_path)
@@ -2762,7 +2762,7 @@ class ComplexGitSyncClient:
         message: str,
         *,
         stage_all: bool = True,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         """Commit changes across the full tree, leaf-first.
 
         Requires a ``READY`` registry; raises
@@ -2782,7 +2782,7 @@ class ComplexGitSyncClient:
         self._log_event("commit_end", message=message)
         return registry
 
-    def add(self) -> DependencyTreeRegistry:
+    def add(self) -> WorkingGitTree:
         """Stage all changes across the full tree, leaf-first.
 
         Requires a ``READY`` registry; raises
@@ -2797,7 +2797,7 @@ class ComplexGitSyncClient:
         self._log_event("add_end")
         return registry
 
-    def push(self) -> DependencyTreeRegistry:
+    def push(self) -> WorkingGitTree:
         """Push all repos to their remotes, leaf-first.
 
         Requires a ``READY`` registry; raises
@@ -2816,7 +2816,7 @@ class ComplexGitSyncClient:
         self._log_event("push_end")
         return registry
 
-    def tag(self, tag_name: str) -> DependencyTreeRegistry:
+    def tag(self, tag_name: str) -> WorkingGitTree:
         """Create and push *tag_name* across the full tree, leaf-first.
 
         The runtime tree state is refreshed so the recorded tag target remains
@@ -2832,10 +2832,10 @@ class ComplexGitSyncClient:
 
     def git(
         self,
-        gittree: "DependencyTreeRegistry | None",
+        gittree: "WorkingGitTree | None",
         command: str,
         *args: str,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         """Dispatch a git command across the full tree (lifecycle step 5).
 
         This is the unified git interface.  It dispatches *command* to the
@@ -2846,7 +2846,7 @@ class ComplexGitSyncClient:
         Parameters
         ----------
         gittree:
-            The :class:`~.git_tree.DependencyTreeRegistry` to operate on.
+            The :class:`~.git_tree.WorkingGitTree` to operate on.
             Pass ``None`` to use the currently loaded registry.  Passing a
             registry replaces the active registry for the duration of the call.
         command:
@@ -2877,9 +2877,9 @@ class ComplexGitSyncClient:
             client.git(registry, "push")
             client.git(registry, "tag", "v1.0")
         """
-        if isinstance(gittree, DependencyTreeRegistry):
+        if isinstance(gittree, WorkingGitTree):
             self.registry = gittree
-            self.orchestre.git_tree.git.bind_registry(gittree)
+            self.orchestre.git_tree.git.bind_tree(gittree)
         command = command.lower()
 
         def _required_arg(index: int, label: str) -> str:
@@ -2926,7 +2926,7 @@ class ComplexGitSyncClient:
         output_gts: str | Path | None = None,
         message: str | None = None,
         stage_all: bool = True,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         """Freeze a release by committing, tagging, and pushing leaf-first.
 
         In lifecycle terms this emits the next persisted ``.gts`` state for the
@@ -2963,7 +2963,7 @@ class ComplexGitSyncClient:
         output_gts: str | Path | None = None,
         message: str | None = None,
         stage_all: bool = True,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         """Freeze an internal development state from a ``READY`` tree.
 
         Parameters mirror :meth:`freeze_release`:
@@ -2983,7 +2983,7 @@ class ComplexGitSyncClient:
             stage_all=stage_all,
         )
 
-    def launch_release(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
+    def launch_release(self, snapshot_path: str | Path) -> WorkingGitTree:
         """Compatibility helper that restores a recorded ``.gts`` state.
 
         The primary lifecycle documentation treats this as checkout from saved
@@ -3042,7 +3042,7 @@ class ComplexGitSyncClient:
         self._log_event("launch_release_end", snapshot_path=Path(snapshot_path).resolve())
         return loaded_registry
 
-    def launch_state(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
+    def launch_state(self, snapshot_path: str | Path) -> WorkingGitTree:
         """Compatibility helper that restores an internal ``.gts`` state.
 
         Loads ``snapshot_path``, performs due clone and checkout actions, and
@@ -3057,7 +3057,7 @@ class ComplexGitSyncClient:
         output_gts: str | Path | None = None,
         message: str | None = None,
         stage_all: bool = True,
-    ) -> DependencyTreeRegistry:
+    ) -> WorkingGitTree:
         """Freeze a tree state and emit the next ``.gts`` snapshot id."""
         return self.freeze_release(
             name,
@@ -3066,14 +3066,14 @@ class ComplexGitSyncClient:
             stage_all=stage_all,
         )
 
-    def launch(self, snapshot_path: str | Path) -> DependencyTreeRegistry:
+    def launch(self, snapshot_path: str | Path) -> WorkingGitTree:
         """Compatibility wrapper for restoring a recorded ``.gts`` state."""
         return self.launch_release(snapshot_path)
 
-    def get_dependency_registry(self) -> DependencyTreeRegistry:
+    def get_dependency_registry(self) -> WorkingGitTree:
         if self.registry is None:
             raise RuntimeError("No ComplexGitSync registry is loaded.")
-        self.orchestre.git_tree.git.bind_registry(self.registry)
+        self.orchestre.git_tree.git.bind_tree(self.registry)
         return self.registry
 
     def get_tree_state(self) -> ProjectTreeState:
@@ -3157,8 +3157,8 @@ class ComplexGitSyncClient:
 
     def _repo_status_row(
         self,
-        registry: DependencyTreeRegistry,
-        entry: RepoRegistryEntry,
+        registry: WorkingGitTree,
+        entry: WorkingRepo,
         root_path: Path,
     ) -> tuple[str, str, str, str, str, str, str]:
         display_path = _status_display_path(entry, root_path)
@@ -3196,8 +3196,8 @@ class ComplexGitSyncClient:
 
     def _managed_status_lines(
         self,
-        registry: DependencyTreeRegistry,
-        entry: RepoRegistryEntry,
+        registry: WorkingGitTree,
+        entry: WorkingRepo,
     ) -> list[str]:
         status_lines = self.git_runner.status_porcelain(entry.absolute_path)
         unmanaged_gitlinks = _unmanaged_gitlink_paths(registry, entry, self.git_runner)
@@ -3217,7 +3217,7 @@ class ComplexGitSyncClient:
             "project_name": registry.get("root").name,
             "lifecycle_state": tree_state.lifecycle_state.value,
             "registry_complete": tree_state.registry_complete,
-            "repo_count": len(registry.entries),
+            "repo_count": len(registry.repos),
         }
         return json.dumps(summary, indent=2, sort_keys=True)
 
@@ -3456,7 +3456,7 @@ class ComplexGitSyncClient:
     def _pending_clone_entries(
         self,
         sync_stack: set[Path] | None = None,
-    ) -> list[RepoRegistryEntry]:
+    ) -> list[WorkingRepo]:
         """Return registry entries that are due for cloning.
 
         Entries are excluded from the result when:
@@ -3482,7 +3482,7 @@ class ComplexGitSyncClient:
         )
 
     def _attach_existing_root(
-        self, entry: RepoRegistryEntry, project_root: Path
+        self, entry: WorkingRepo, project_root: Path
     ) -> None:
         """Mark an already-existing repository as the READY root without cloning it.
 
@@ -3512,7 +3512,7 @@ class ComplexGitSyncClient:
         entry.sync_state = SyncState.ALIGNED
         entry.worktree_state = "CLEAN"
 
-    def _clone_registry_entry(self, entry: RepoRegistryEntry) -> None:
+    def _clone_registry_entry(self, entry: WorkingRepo) -> None:
         previous_state = entry.repo_lifecycle_state
         previous_sync_state = entry.sync_state
         remote_url = self._build_remote_url(entry)
@@ -3586,14 +3586,14 @@ class ComplexGitSyncClient:
             )
         self._log_repo_transition(entry, previous_state, previous_sync_state)
 
-    def _is_populated_nested_destination(self, entry: RepoRegistryEntry) -> bool:
+    def _is_populated_nested_destination(self, entry: WorkingRepo) -> bool:
         return (
             entry.parent_id is not None
             and entry.absolute_path.is_dir()
             and next(entry.absolute_path.iterdir(), None) is not None
         )
 
-    def _select_clone_ref(self, entry: RepoRegistryEntry, remote_url: str) -> tuple[str, RefKind]:
+    def _select_clone_ref(self, entry: WorkingRepo, remote_url: str) -> tuple[str, RefKind]:
         if entry.target_ref_kind == RefKind.TAG and entry.target_ref_name:
             if self.git_runner.remote_tag_exists(remote_url, entry.target_ref_name):
                 return (entry.target_ref_name, RefKind.TAG)
@@ -3614,7 +3614,7 @@ class ComplexGitSyncClient:
             f"No cloneable branch found for {entry.name}: expected one of {expected} on {remote_url}"
         )
 
-    def _build_remote_url(self, entry: RepoRegistryEntry) -> str:
+    def _build_remote_url(self, entry: WorkingRepo) -> str:
         from .git_repo import RepoAddress
         address = RepoAddress(
             gitprovider=entry.gitprovider,
@@ -3626,7 +3626,7 @@ class ComplexGitSyncClient:
         )
         return address.to_url(entry.access_protocol)
 
-    def _determine_launch_ref(self, entry: RepoRegistryEntry) -> str:
+    def _determine_launch_ref(self, entry: WorkingRepo) -> str:
         """Return the most precise known ref for launch-release checkout."""
         ref_name = (
             entry.resolved_ref_name
@@ -3670,7 +3670,7 @@ class ComplexGitSyncClient:
 
     def _log_repo_transition(
         self,
-        entry: RepoRegistryEntry,
+        entry: WorkingRepo,
         previous_state: RepoLifecycleState,
         previous_sync_state: SyncState,
     ) -> None:
@@ -3701,7 +3701,7 @@ class ComplexGitSyncClient:
             return
         for change in discovered:
             _, _, repo_id = change.partition(":")
-            if repo_id not in registry.entries:
+            if repo_id not in registry.repos:
                 continue
             entry = registry.get(repo_id)
             self._log_event(

@@ -13,7 +13,7 @@ This file flags every `.py` file under `src/ComplexGitSync/` against:
 
 | Main file | Tier | Owns |
 |---|---|---|
-| `git_repo.py` | Tier 1 — Core State | Per-repo identity, state enums, RepoRegistryEntry |
+| `git_repo.py` | Tier 1 — Core State | Per-repo identity, state enums, legacy repo entry |
 | `git_tree.py` | Tier 1/2 — Core State + Actions | Tree structure, registry, lifecycle, render, tree utilities |
 | `orchestre.py` | Tier 2/3 — Actions + Client | Documents, infrastructure, registry builders, discovery, Client |
 
@@ -30,7 +30,7 @@ This file flags every `.py` file under `src/ComplexGitSync/` against:
 | `cli.py` | Orchestre | client | stay | CLI entry point; only thin delegation to ComplexGitSyncClient |
 | `client.py` | **Orchestre** | client | **absorb → orchestre.py** | ComplexGitSyncClient is the Client-API layer owned by Orchestre |
 | `config_document.py` | **Orchestre** | action | **absorb → orchestre.py** | Base document class; all document I/O lives in Orchestre tier |
-| `dependency_tree_registry.py` | **GitTree** | state | **absorb → git_tree.py** | DependencyTreeRegistry is GitTree's authoritative runtime graph |
+| `dependency_tree_registry.py` | **GitTree** | state | **absorb → git_tree.py** | legacy runtime registry is GitTree's authoritative runtime graph |
 | `discovery.py` | Orchestre | action | **absorb → orchestre.py** | Uses CgsDocument (Orchestre tier) to resolve nested configs |
 | `discovery_state.py` | **GitRepo** | state | **absorb → git_repo.py** | Per-repo discovery status enum |
 | `documents.py` | Orchestre | action | stay (update shim → orchestre.py) | Backward-compat re-export shim |
@@ -44,10 +44,10 @@ This file flags every `.py` file under `src/ComplexGitSync/` against:
 | `node_type.py` | **GitRepo** | state | **absorb → git_repo.py** | ROOT/PARENT/LEAF enum; describes a repo's position |
 | `operations.py` | **Orchestre** | action | **absorb → orchestre.py** | Planned operations stub |
 | `orchestre.py` | **Orchestre** | action/client | **MAIN ANCHOR** | Coordination hub; will absorb documents, infra, Client |
-| `project_tree_state.py` | **GitTree** | state | **absorb → git_tree.py** | Frozen tree-state snapshot owned by DependencyTreeRegistry |
+| `project_tree_state.py` | **GitTree** | state | **absorb → git_tree.py** | Frozen tree-state snapshot owned by legacy runtime registry |
 | `ref_kind.py` | **GitRepo** | state | **absorb → git_repo.py** | BRANCH/TAG/DETACHED enum; part of GitRepo ref resolution |
 | `registry.py` | GitTree + Orchestre | action | stay (update shim) | Builder functions bridge GitTree state ↔ documents (Orchestre) |
-| `render.py` | **GitTree** | action | **absorb → git_tree.py** | Tree rendering uses only DependencyTreeRegistry; no document deps |
+| `render.py` | **GitTree** | action | **absorb → git_tree.py** | Tree rendering uses only legacy runtime registry; no document deps |
 | `repo_address.py` | **GitRepo** | action | **absorb → git_repo.py** | URL derivation is a GitRepo method-equivalent; no tree deps |
 | `repo_lifecycle_state.py` | **GitRepo** | state | **absorb → git_repo.py** | DECLARED/PENDING/READY enum for per-repo lifecycle |
 | `repo_node.py` | **GitRepo** | state | **absorb → git_repo.py** | Immutable tree-position snapshot of a GitRepo node |

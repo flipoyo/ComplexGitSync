@@ -372,7 +372,7 @@ class TestCgsiDuplicationPrevention:
         root_cgs = cgsi_workspace["root_cgs"]
         client = _expand(root_cgs)
         registry = client.registry
-        assert "root:CGSil2:CGSih1" not in registry.entries, (
+        assert "root:CGSil2:CGSih1" not in registry.repos, (
             "Duplicate entry root:CGSil2:CGSih1 should have been prevented by the discovery guard"
         )
 
@@ -390,7 +390,7 @@ class TestCgsiCyclePrevention:
         root_cgs = cgsi_workspace["root_cgs"]
         client = _expand(root_cgs)
         registry = client.registry
-        assert "root:CGSih1:CGSih2:CGSih1" not in registry.entries, (
+        assert "root:CGSih1:CGSih2:CGSih1" not in registry.repos, (
             "Back-edge entry root:CGSih1:CGSih2:CGSih1 should have been prevented"
         )
 

@@ -27,8 +27,8 @@ one tier; dependencies only flow **downward** (API → Actions → Core).
                          │ reads / mutates
 ┌────────────────────────▼────────────────────────────┐
 │  Tier 1 — Core Data (information processing)        │
-│  GitTree  ·  GitRepo  ·  DependencyTreeRegistry     │
-│  RepoRegistryEntry  ·  RepoAddress                  │
+│  GitTree  ·  GitRepo  ·  legacy runtime registry     │
+│  legacy repo entry  ·  RepoAddress                  │
 │  Centred on GitTree and its parent-leaf node graph  │
 └─────────────────────────────────────────────────────┘
 ```
@@ -73,8 +73,8 @@ Key classes and their role in information processing:
 |---|---|
 | `GitRepo` | Immutable identity of a single repository (provider, namespace, project name, protocol, SHA) |
 | `GitTree` | Owns the in-memory dict of GitRepo objects; manages repo-level corrections |
-| `DependencyTreeRegistry` | Authoritative runtime graph; maps repo IDs to mutable `RepoRegistryEntry` records |
-| `RepoRegistryEntry` | One mutable runtime record per node — static identity + dynamic sync state |
+| `legacy runtime registry` | Authoritative runtime graph; maps repo IDs to mutable `legacy repo entry` records |
+| `legacy repo entry` | One mutable runtime record per node — static identity + dynamic sync state |
 | `RepoAddress` | Derives the remote URL from a `GitRepo`; no side-effects |
 | `RepoNode` | Immutable snapshot of a node's tree position for read-only traversal |
 | `ProjectTreeState` | Frozen snapshot of overall tree readiness (returned by the Client to callers) |
@@ -211,7 +211,7 @@ that both extraction modes resolve to the same hash; otherwise it raises:
 `ComplexGitSyncClient` is the single public facade.  It:
 
 - Holds references to `Orchestre`, `GitRunner`, `RuntimeStateStore`, and the
-  live `DependencyTreeRegistry`.
+  live `legacy runtime registry`.
 - Computes the current `TreeLifecycleState` on demand and gates every action
   against it.
 - Emits structured log events for every state transition, action start/end,
@@ -235,8 +235,8 @@ one-to-one; there is no hidden logic in the CLI layer.
 git_repo.py              GitRepo
 git_tree.py              GitTree
 repo_address.py          RepoAddress
-repo_registry_entry.py   RepoRegistryEntry
-dependency_tree_registry.py  DependencyTreeRegistry
+repo_registry_entry.py   legacy repo entry
+dependency_tree_registry.py  legacy runtime registry
 repo_node.py             RepoNode
 project_tree_state.py    ProjectTreeState
 
@@ -415,7 +415,7 @@ All registry entries that resolve to the anchor's path *and* whose parent
 belongs to a non-anchor SCC node are *back-edge* entries.  These are flagged
 `is_external_reference = True` then removed from the registry.
 
-The `is_external_reference` flag on `RepoRegistryEntry` marks a repository
+The `is_external_reference` flag on `legacy repo entry` marks a repository
 reference that must **not** be cloned recursively.  It represents a
 SYNC_DEPENDENCY edge that has been downgraded to an EXTERNAL_REFERENCE to
 break the cycle.

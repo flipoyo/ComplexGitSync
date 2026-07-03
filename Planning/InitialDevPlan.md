@@ -231,8 +231,8 @@ The registry must:
 - `LeafRepo`
 
 ### Registry Types
-- `RepoRegistryEntry`
-- `DependencyTreeRegistry`
+- `legacy repo entry`
+- `legacy runtime registry`
 
 ### Session Types
 - `ProjectArchitecture`

@@ -1,6 +1,6 @@
 # ComplexGitSync Architecture Refactoring — Development Plan
 
-> **Objective**: Simplify the ComplexGitSync architecture by eliminating the dual tree representation (`GitTree` + `DependencyTreeRegistry`) in favor of a unified class hierarchy where `WorkingGitTree` inherits from `GitTree` and adds runtime state. Remove all deprecated functions and clean up the codebase.
+> **Objective**: Simplify the ComplexGitSync architecture by eliminating the dual tree representation (`GitTree` + `legacy runtime registry`) in favor of a unified class hierarchy where `WorkingGitTree` inherits from `GitTree` and adds runtime state. Remove all deprecated functions and clean up the codebase.
 
 ---
 
@@ -9,9 +9,9 @@
 The current codebase suffers from **conceptual duplication**:
 
 - `GitTree` stores immutable `GitRepo` objects (identity only)
-- `DependencyTreeRegistry` stores mutable `RepoRegistryEntry` objects (identity + runtime state)
-- `RepoRegistryEntry` duplicates all identity fields from `GitRepo`
-- Operations work on `DependencyTreeRegistry`, while configuration works on `GitTree`
+- `legacy runtime registry` stores mutable `legacy repo entry` objects (identity + runtime state)
+- `legacy repo entry` duplicates all identity fields from `GitRepo`
+- Operations work on `legacy runtime registry`, while configuration works on `GitTree`
 
 This creates confusion about which class is the "source of truth" and makes the codebase harder to understand and maintain.
 
@@ -46,7 +46,7 @@ ComplexGitSyncClient (public API facade)
 
 2. **Create `WorkingRepo` class**
    - Inherit from `GitRepo`
-   - Add all runtime state fields currently in `RepoRegistryEntry`
+   - Add all runtime state fields currently in `legacy repo entry`
    - Remove duplicated identity fields (use inherited ones)
    - File: `git_repo.py`
    - 
@@ -60,15 +60,15 @@ ComplexGitSyncClient (public API facade)
    - File: `git_tree.py`
 
 4. **Create migration utilities**
-   - `from_repo_registry_entry(repo: RepoRegistryEntry) -> WorkingRepo`
-   - `to_repo_registry_entry(working_repo: WorkingRepo) -> RepoRegistryEntry` (for backward compatibility)
+   - `legacy_repo_to_working_repo(repo: legacy repo entry) -> WorkingRepo`
+   - `working_repo_to_legacy_repo(working_repo: WorkingRepo) -> legacy repo entry` (for backward compatibility)
    - File: `git_tree.py` or new `migrations.py`
 
 5. **Add type aliases for backward compatibility**
    ```python
    # For gradual migration
-   ReferenceTree = GitTree
-   RuntimeTree = WorkingGitTree
+   reference-tree alias = GitTree
+   runtime-tree alias = WorkingGitTree
    ```
 
 #### Deliverables
@@ -90,7 +90,7 @@ ComplexGitSyncClient (public API facade)
 2. **Update `Orchestre` class**
    - Add `reference_tree: GitTree` field
    - Add `working_tree: WorkingGitTree | None` field
-   - Remove direct `DependencyTreeRegistry` usage
+   - Remove direct `legacy runtime registry` usage
    - File: `orchestre.py`
 
 3. **Implement tree initialization**
@@ -99,7 +99,7 @@ ComplexGitSyncClient (public API facade)
    - `Orchestre.to_working() -> WorkingGitTree` (creates working tree from reference)
 
 4. **Update `ComplexGitSyncClient`**
-   - Replace `registry: DependencyTreeRegistry | None` with tree-based approach
+   - Replace `registry: legacy runtime registry | None` with tree-based approach
    - Add `orchestre: Orchestre` as primary coordination layer
    - Keep backward compatibility shims
 
@@ -112,15 +112,15 @@ ComplexGitSyncClient (public API facade)
 
 ### Phase 3: Migration of Operations
 
-**Goal**: Migrate all operations from `DependencyTreeRegistry` to `WorkingGitTree`.
+**Goal**: Migrate all operations from `legacy runtime registry` to `WorkingGitTree`.
 
 #### Tasks
 
 0. silently update CI
 
 1. **Update `operations.py`**
-   - Change function signatures from `registry: DependencyTreeRegistry` to `tree: WorkingGitTree`
-   - Update all operation logic to use `WorkingRepo` instead of `RepoRegistryEntry`
+   - Change function signatures from `registry: legacy runtime registry` to `tree: WorkingGitTree`
+   - Update all operation logic to use `WorkingRepo` instead of `legacy repo entry`
    - Files: `operations.py`, all operation functions
 
 2. **Update tree utilities**
@@ -172,24 +172,24 @@ ComplexGitSyncClient (public API facade)
 
 **Goal**: **COMPLETE REMOVAL of all deprecated classes and functions. No backward compatibility shims remain.**
 
-> **This is the critical phase.** Step 5 is different from all others: it does not add new functionality, it **erases every inch of the former mess**. No deprecated functions survive. No `DependencyTreeRegistry`. No `RepoRegistryEntry`. Clean slate.
+> **This is the critical phase.** Step 5 is different from all others: it does not add new functionality, it **erases every inch of the former mess**. No deprecated functions survive. No `legacy runtime registry`. No `legacy repo entry`. Clean slate.
 
 #### Tasks
 
 0. Reconnect the CI that was silently updated all along the DevPlan
 
-1. **Delete `DependencyTreeRegistry` class**
+1. **Delete `legacy runtime registry` class**
    - Remove class definition from `git_tree.py`
-   - Remove all imports of `DependencyTreeRegistry`
+   - Remove all imports of `legacy runtime registry`
    - Remove from `__init__.py` exports
 
-2. **Delete `RepoRegistryEntry` class**
+2. **Delete `legacy repo entry` class**
    - Remove class definition from `git_repo.py`
-   - Remove all imports of `RepoRegistryEntry`
+   - Remove all imports of `legacy repo entry`
    - Remove from `__init__.py` exports
 
 3. **Remove all backward compatibility shims**
-   - Remove type aliases (`ReferenceTree`, `RuntimeTree`)
+   - Remove type aliases (`reference-tree alias`, `runtime-tree alias`)
    - Remove migration utility functions
    - Remove any code that references old classes
 
@@ -207,12 +207,12 @@ ComplexGitSyncClient (public API facade)
 
 6. **Verify completeness**
    - Run full test suite
-   - No references to `DependencyTreeRegistry` or `RepoRegistryEntry` remain
+   - No references to `legacy runtime registry` or `legacy repo entry` remain
    - All functionality preserved with new classes
 
 #### Deliverables
-- [ ] `DependencyTreeRegistry` **completely removed**
-- [ ] `RepoRegistryEntry` **completely removed**
+- [ ] `legacy runtime registry` **completely removed**
+- [ ] `legacy repo entry` **completely removed**
 - [ ] All backward compatibility code **removed**
 - [ ] No deprecated functions remain
 - [ ] Full test suite passes
@@ -263,8 +263,8 @@ If migration fails:
 
 | File | Phase 1 | Phase 2 | Phase 3 | Phase 5 |
 |------|---------|---------|---------|--------|
-| `git_repo.py` | Add `WorkingRepo` | | | Remove `RepoRegistryEntry` |
-| `git_tree.py` | Add `WorkingGitTree` | | Update utils | Remove `DependencyTreeRegistry` |
+| `git_repo.py` | Add `WorkingRepo` | | | Remove `legacy repo entry` |
+| `git_tree.py` | Add `WorkingGitTree` | | Update utils | Remove `legacy runtime registry` |
 | `orchestre.py` | | Update `Orchestre` | | Clean up |
 | `operations.py` | | | Migrate all ops | Clean up |
 | `__init__.py` | | | | Clean exports |
@@ -279,8 +279,8 @@ The refactoring is complete when:
 
 1. ✅ Single class hierarchy for trees (`GitTree` → `WorkingGitTree`)
 2. ✅ Single class hierarchy for repos (`GitRepo` → `WorkingRepo`)
-3. ✅ No `DependencyTreeRegistry` in codebase
-4. ✅ No `RepoRegistryEntry` in codebase
+3. ✅ No `legacy runtime registry` in codebase
+4. ✅ No `legacy repo entry` in codebase
 5. ✅ All CLI commands work as before
 6. ✅ `configure` command creates valid `.cgs` files
 7. ✅ All tests pass
