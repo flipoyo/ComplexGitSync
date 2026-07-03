@@ -76,8 +76,8 @@ Create the authoritative in-memory graph and registry structures.
 - `RepoNode`
 - `ParentRepo`
 - `LeafRepo`
-- `RepoRegistryEntry`
-- `DependencyTreeRegistry`
+- `legacy repo entry`
+- `legacy runtime registry`
 - readiness/completeness computation helpers
 - correction paths in `GitTree` for forcing SHA and repo identity keys
 

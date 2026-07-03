@@ -6,7 +6,7 @@ in-memory tree structure, lifecycle, registry, and tree-level utilities.
 Classes defined here (Tier 1 — Core State):
     TreeLifecycleState      Tree-level lifecycle progression enum
     GitTree                 In-memory dict of GitRepo nodes (MAIN class)
-    DependencyTreeRegistry  Authoritative runtime graph of all repo entries
+    WorkingGitTree          Runtime GitTree with WorkingRepo state
     ProjectTreeState        Frozen snapshot of tree readiness (read-only)
 
 Functions defined here (Tier 2 — Actions / tree utilities):
@@ -43,8 +43,8 @@ from .git_repo import (
     NodeType,
     RefKind,
     RepoLifecycleState,
-    RepoRegistryEntry,
     SyncState,
+    WorkingRepo,
 )
 
 _E = TypeVar("_E", bound=Enum)
@@ -59,27 +59,26 @@ if TYPE_CHECKING:
 class GitTreeGitCommands:
     """Git command facade bound to :class:`GitTree` operations.
 
-    ``registry`` stores the currently bound
-    :class:`DependencyTreeRegistry` used when callers omit an explicit
-    registry argument.
+    ``working_tree`` stores the currently bound :class:`WorkingGitTree` used
+    when callers omit an explicit tree argument.
     """
 
-    registry: "DependencyTreeRegistry | None" = field(default=None)
+    working_tree: "WorkingGitTree | None" = field(default=None)
 
-    def bind_registry(self, registry: "DependencyTreeRegistry") -> "DependencyTreeRegistry":
-        self.registry = registry
-        return registry
+    def bind_tree(self, tree: "WorkingGitTree") -> "WorkingGitTree":
+        self.working_tree = tree
+        return tree
 
-    def _resolve_registry(
+    def _resolve_tree(
         self,
-        registry: "DependencyTreeRegistry | None" = None,
-    ) -> "DependencyTreeRegistry":
-        if isinstance(registry, DependencyTreeRegistry):
-            self.registry = registry
-            return registry
-        if isinstance(self.registry, DependencyTreeRegistry):
-            return self.registry
-        raise RuntimeError("No ComplexGitSync registry is bound to GitTree.git.")
+        tree: "WorkingGitTree | None" = None,
+    ) -> "WorkingGitTree":
+        if isinstance(tree, WorkingGitTree):
+            self.working_tree = tree
+            return tree
+        if isinstance(self.working_tree, WorkingGitTree):
+            return self.working_tree
+        raise RuntimeError("No ComplexGitSync working tree is bound to GitTree.git.")
 
     def checkout(
         self,
@@ -87,42 +86,42 @@ class GitTreeGitCommands:
         branch_name: str,
         *,
         ref_kind: RefKind = RefKind.BRANCH,
-        registry: "DependencyTreeRegistry | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import checkout_tree
 
-        checkout_tree(self._resolve_registry(registry), git_runner, branch_name, ref_kind=ref_kind)
+        checkout_tree(self._resolve_tree(tree), git_runner, branch_name, ref_kind=ref_kind)
 
     def branch(
         self,
         git_runner: "GitRunner",
         branch_name: str,
         *,
-        registry: "DependencyTreeRegistry | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import branch_tree
 
-        branch_tree(self._resolve_registry(registry), git_runner, branch_name)
+        branch_tree(self._resolve_tree(tree), git_runner, branch_name)
 
     def pull(
         self,
         git_runner: "GitRunner",
         *,
-        registry: "DependencyTreeRegistry | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import restart_tree
 
-        restart_tree(self._resolve_registry(registry), git_runner)
+        restart_tree(self._resolve_tree(tree), git_runner)
 
     def add(
         self,
         git_runner: "GitRunner",
         *,
-        registry: "DependencyTreeRegistry | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import add_tree
 
-        add_tree(self._resolve_registry(registry), git_runner)
+        add_tree(self._resolve_tree(tree), git_runner)
 
     def commit(
         self,
@@ -130,32 +129,32 @@ class GitTreeGitCommands:
         message: str,
         *,
         stage_all: bool = True,
-        registry: "DependencyTreeRegistry | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import commit_tree
 
-        commit_tree(self._resolve_registry(registry), git_runner, message, stage_all=stage_all)
+        commit_tree(self._resolve_tree(tree), git_runner, message, stage_all=stage_all)
 
     def push(
         self,
         git_runner: "GitRunner",
         *,
-        registry: "DependencyTreeRegistry | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import push_tree
 
-        push_tree(self._resolve_registry(registry), git_runner)
+        push_tree(self._resolve_tree(tree), git_runner)
 
     def tag(
         self,
         git_runner: "GitRunner",
         tag_name: str,
         *,
-        registry: "DependencyTreeRegistry | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import tag_tree
 
-        tag_tree(self._resolve_registry(registry), git_runner, tag_name)
+        tag_tree(self._resolve_tree(tree), git_runner, tag_name)
 
     def freeze(
         self,
@@ -164,12 +163,12 @@ class GitTreeGitCommands:
         *,
         message: str | None = None,
         stage_all: bool = True,
-        registry: "DependencyTreeRegistry | None" = None,
+        tree: "WorkingGitTree | None" = None,
     ) -> None:
         from .operations import freeze_release_tree
 
         freeze_release_tree(
-            self._resolve_registry(registry),
+            self._resolve_tree(tree),
             git_runner,
             tag_name,
             message=message,
@@ -216,11 +215,24 @@ class GitTree:
     Owns the lifecycle of in-memory repository identity and supports
     correction operations (:meth:`force_repo_sha`, :meth:`force_repo_keys`).
     The runtime mutable state (sync flags, lifecycle states, …) lives in the
-    :class:`DependencyTreeRegistry`.
+    :class:`WorkingGitTree`.
+    
+    Project metadata:
+    - project_name: The unique project name (only stored here)
+    - default_branch: Default branch for the project
+    - repo_template: Default GitRepo values used to initialize new repos
     """
 
     repos: dict[str, GitRepo] = field(default_factory=dict)
     git: GitTreeGitCommands = field(default_factory=GitTreeGitCommands)
+    
+    # Project metadata - unique to GitTree
+    project_name: str | None = None
+    default_branch: str | None = None
+    repo_template: GitRepo | None = None
+    
+    # Additional metadata for .cgs generation
+    _repo_metadata: dict[str, dict[str, str]] = field(default_factory=dict)
 
     def add_repo(self, repo: GitRepo) -> None:
         self.repos[repo.project_name] = repo
@@ -267,100 +279,372 @@ class GitTree:
         except KeyError as exc:
             raise KeyError(f"Unknown repository '{project_name}' in GitTree.") from exc
 
-    def propagate_tag(self, registry: DependencyTreeRegistry, tag_name: str) -> None:
+    def propagate_tag(self, registry: "WorkingGitTree", tag_name: str) -> None:
         """Propagate *tag_name* across *registry* from parent to leaves."""
         for entry in iter_tree(registry):
             entry.target_ref_kind = RefKind.TAG
             entry.target_ref_name = tag_name
 
+    @classmethod
+    def from_prompt(cls) -> "GitTree":
+        """Create a GitTree instance from terminal prompts.
+        
+        Collects project metadata and repository information interactively
+        to build a complete GitTree ready for .cgs generation.
+        
+        Returns
+        -------
+        GitTree
+            A configured GitTree instance with project_name, default_branch,
+            repo_template, and repos populated from user input.
+        """
+        print("=== ComplexGitSync Configuration ===")
+        print("Create a .cgs project specification file")
+        
+        # Project metadata
+        project_name = input("Project name: ").strip()
+        if not project_name:
+            raise ValueError("Project name is required")
+        
+        default_branch = input("Default branch [main]: ").strip() or "main"
+        
+        # Default repo template
+        print("\n--- Default Repo Template (used for all repos, can be overridden per repo) ---")
+        owner_group = input("Default owner/group name: ").strip()
+        if not owner_group:
+            raise ValueError("Default owner/group name is required")
+        
+        # Git provider for template
+        gitprovider_str = input("Default git provider [github/gitlab/custom]: ").strip().lower()
+        if gitprovider_str == "gitlab":
+            gitprovider = GitProvider.GITLAB
+        elif gitprovider_str == "custom":
+            gitprovider = GitProvider.CUSTOM
+        else:
+            if gitprovider_str not in ("", "github"):
+                print("Warning: Invalid git provider, using github")
+            gitprovider = GitProvider.GITHUB
+
+        gitprovider_url = None
+        if gitprovider == GitProvider.CUSTOM:
+            gitprovider_url = input("Default custom provider URL: ").strip()
+            if not gitprovider_url:
+                raise ValueError("Default custom provider URL is required for custom providers")
+        
+        # Access protocol for template
+        access_protocol_str = (
+            input("Default access protocol [ssh/https]: ").strip().lower() or "ssh"
+        )
+        access_protocol = (
+            AccessProtocol.HTTPS
+            if access_protocol_str == "https"
+            else AccessProtocol.SSH
+        )
+        
+        # Create repo template
+        repo_template = GitRepo(
+            project_owner_name=owner_group,
+            project_name="",  # Will be set per repo
+            gitprovider=gitprovider,
+            gitprovider_url=gitprovider_url,
+            access_protocol=access_protocol,
+        )
+        
+        # Number of repositories
+        while True:
+            num_repos_input = input("\nNumber of repositories: ").strip()
+            if not num_repos_input:
+                print("Error: Number of repositories is required")
+                continue
+            try:
+                num_repos = int(num_repos_input)
+                if num_repos < 1:
+                    print("Error: Number of repositories must be at least 1")
+                    continue
+                break
+            except ValueError:
+                print("Error: Please enter a valid number")
+        
+        print(f"\n--- Repository Configuration (total: {num_repos}) ---")
+        
+        git_tree = cls(
+            project_name=project_name,
+            default_branch=default_branch,
+            repo_template=repo_template,
+        )
+        
+        for i in range(num_repos):
+            print(f"\nRepository {i + 1}:")
+            repo, relative_path, nested_config, default_branch, fallback_branch = (
+                git_tree._prompt_repo_config(
+                    i + 1,
+                    num_repos,
+                    repo_template,
+                    project_default_branch=default_branch,
+                )
+            )
+            # Store additional repo metadata for .cgs generation
+            git_tree._repo_metadata[repo.project_name] = {
+                'relative_path': relative_path,
+                'nested_config': nested_config,
+                'default_branch': default_branch,
+                'fallback_branch': fallback_branch,
+            }
+            git_tree.add_repo(repo)
+        
+        return git_tree
+
+    def _prompt_repo_config(
+        self,
+        repo_index: int,
+        total_repos: int,
+        repo_template: GitRepo,
+        *,
+        project_default_branch: str,
+    ) -> tuple[GitRepo, str, str | None, str, str]:
+        """Prompt for a single repository configuration.
+        
+        Returns
+        -------
+        tuple[GitRepo, str, str | None, str, str]
+            GitRepo instance, relative_path, nested_config, default_branch, fallback_branch
+        """
+        # Start with template defaults
+        project_owner_name = (
+            input(f"  Project owner name [{repo_template.project_owner_name}]: ").strip()
+            or repo_template.project_owner_name
+        )
+        if repo_index == 1 and self.project_name:
+            project_name_prompt = f"  Project name [{self.project_name}]: "
+            project_name = input(project_name_prompt).strip() or self.project_name
+        else:
+            project_name = input("  Project name: ").strip()
+        if not project_name:
+            raise ValueError(f"Project name is required for repository {repo_index}")
+        
+        # Git provider
+        gitprovider_prompt = f"  Git provider [{repo_template.gitprovider.value}]: "
+        gitprovider_str = input(gitprovider_prompt).strip().lower()
+        if gitprovider_str in ("", "github", "gitlab", "custom"):
+            if gitprovider_str == "gitlab":
+                gitprovider = GitProvider.GITLAB
+            elif gitprovider_str == "github":
+                gitprovider = GitProvider.GITHUB
+            elif gitprovider_str == "custom":
+                gitprovider = GitProvider.CUSTOM
+            else:  # Empty string - use template default
+                gitprovider = repo_template.gitprovider
+        else:
+            print("  Warning: Invalid git provider, using template default")
+            gitprovider = repo_template.gitprovider
+
+        gitprovider_url = repo_template.gitprovider_url
+        if gitprovider == GitProvider.CUSTOM:
+            url_prompt = (
+                f"  Custom provider URL [{gitprovider_url}]: "
+                if gitprovider_url
+                else "  Custom provider URL: "
+            )
+            gitprovider_url = input(url_prompt).strip() or gitprovider_url
+            if not gitprovider_url:
+                raise ValueError(
+                    f"Custom provider URL is required for repository {repo_index}"
+                )
+        
+        # Access protocol
+        access_protocol_prompt = f"  Access protocol [{repo_template.access_protocol.value}]: "
+        access_protocol_str = input(access_protocol_prompt).strip().lower()
+        if access_protocol_str in ("", "ssh", "https"):
+            if access_protocol_str == "https":
+                access_protocol = AccessProtocol.HTTPS
+            elif access_protocol_str == "ssh":
+                access_protocol = AccessProtocol.SSH
+            else:  # Empty string - use template default
+                access_protocol = repo_template.access_protocol
+        else:
+            print("  Warning: Invalid access protocol, using template default")
+            access_protocol = repo_template.access_protocol
+        
+        # Default branch
+        branch_default = project_default_branch or "main"
+        default_branch = input(f"  Default branch [{branch_default}]: ").strip() or branch_default
+        
+        # Fallback branch
+        fallback_branch = input(f"  Fallback branch [{default_branch}]: ").strip()
+        if not fallback_branch:
+            fallback_branch = default_branch
+        
+        # Relative path
+        if repo_index == 1:
+            relative_path = "."
+        else:
+            relative_path = input(f"  Relative path [{project_name}]: ").strip() or project_name
+        
+        # Nested config (only for non-root repos)
+        nested_config: str | None = None
+        if repo_index > 1:
+            nested_config = input("  Nested config [auto/disabled]: ").strip() or "auto"
+        
+        return GitRepo(
+            project_owner_name=project_owner_name,
+            project_name=project_name,
+            gitprovider=gitprovider,
+            access_protocol=access_protocol,
+            # Optional fields use template defaults or None
+            group_name=repo_template.group_name,
+            gitprovider_url=gitprovider_url,
+            repo_name=repo_template.repo_name,
+        ), relative_path, nested_config, default_branch, fallback_branch
+
+    def to_cgs(self) -> "CgsDocument":
+        """Convert this GitTree to a CgsDocument.
+        
+        Returns
+        -------
+        CgsDocument
+            A .cgs document ready to be written to disk.
+        """
+        from collections import OrderedDict
+        from .orchestre import CgsDocument
+        
+        if self.project_name is None:
+            raise ValueError("GitTree.project_name is required to generate .cgs")
+        
+        if self.default_branch is None:
+            raise ValueError("GitTree.default_branch is required to generate .cgs")
+        
+        # Build repos list with additional metadata (relative_path, nested_config)
+        repos_list = []
+        
+        for repo in self.repos.values():
+            repo_dict = repo.to_cgs()
+            
+            # Add metadata from prompts
+            if repo.project_name in self._repo_metadata:
+                metadata = self._repo_metadata[repo.project_name]
+                if metadata.get('relative_path'):
+                    repo_dict['relative_path'] = metadata['relative_path']
+                if metadata.get('nested_config'):
+                    repo_dict['nested_config'] = metadata['nested_config']
+                # Use per-repo branches if available, otherwise fall back to GitTree defaults
+                if metadata.get('default_branch'):
+                    repo_dict['default_branch'] = metadata['default_branch']
+                else:
+                    repo_dict['default_branch'] = self.default_branch
+                if metadata.get('fallback_branch'):
+                    repo_dict['fallback_branch'] = metadata['fallback_branch']
+                else:
+                    repo_dict['fallback_branch'] = self.default_branch
+            else:
+                # Fallback to GitTree defaults if no metadata
+                repo_dict['default_branch'] = self.default_branch
+                repo_dict['fallback_branch'] = self.default_branch
+            
+            repos_list.append(repo_dict)
+        
+        # Use OrderedDict to ensure TOML sections are written in the correct order
+        cgs_data = OrderedDict([
+            ("document", OrderedDict([("format_version", "1.0")])),
+            ("project", OrderedDict([
+                ("name", self.project_name),
+                ("default_branch", self.default_branch),
+            ])),
+            ("repos", repos_list),
+        ])
+        
+        cgs_document = CgsDocument(cgs_data)
+        cgs_document.validate()
+        return cgs_document
+
 
 # ---------------------------------------------------------------------------
-# DependencyTreeRegistry
+# WorkingGitTree
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class DependencyTreeRegistry:
-    """Authoritative in-memory graph of all repository entries.
+class WorkingGitTree(GitTree):
+    """Runtime dependency tree backed by mutable :class:`WorkingRepo` nodes.
 
-    The registry is the single source of truth for the current state of the
-    dependency tree.  It is populated from a ``.cgs`` or ``.gts`` document and
-    updated in place as operations (clone, checkout, …) progress.
-
-    The tree lifecycle state is recomputed on demand via
-    :meth:`recompute_tree_state`; it is also updated automatically at the end
-    of discovery and builder operations.
+    ``repos`` is keyed by runtime ``repo_id``.
     """
 
-    entries: dict[str, RepoRegistryEntry] = field(default_factory=dict)
+    repos: dict[str, WorkingRepo] = field(default_factory=dict)
     lifecycle_state: TreeLifecycleState = TreeLifecycleState.UNLOADED
 
-    def add(self, entry: RepoRegistryEntry) -> RepoRegistryEntry:
-        """Register *entry* and return it."""
-        self.entries[entry.repo_id] = entry
-        return entry
+    def add(self, repo: WorkingRepo) -> WorkingRepo:
+        """Register *repo* and return it."""
+        self.repos[repo.repo_id] = repo
+        return repo
 
-    def get(self, repo_id: str) -> RepoRegistryEntry:
-        """Return the entry for *repo_id*."""
-        return self.entries[repo_id]
+    def add_repo(self, repo: WorkingRepo) -> None:
+        """Register *repo* using the runtime ``repo_id`` key."""
+        self.add(repo)
 
-    def values(self) -> list[RepoRegistryEntry]:
-        """Return all entries as a list."""
-        return list(self.entries.values())
+    def get(self, repo_id: str) -> WorkingRepo:
+        """Return the working repository for *repo_id*."""
+        return self.repos[repo_id]
+
+    def values(self) -> list[WorkingRepo]:
+        """Return all working repositories as a list."""
+        return list(self.repos.values())
 
     def __iter__(self):
-        return iter(self.entries.values())
+        return iter(self.repos.values())
 
-    def children_of(self, parent_id: str | None) -> list[RepoRegistryEntry]:
+    def children_of(self, parent_id: str | None) -> list[WorkingRepo]:
         """Return direct children of *parent_id*, sorted by path then name."""
         return sorted(
-            [entry for entry in self.entries.values() if entry.parent_id == parent_id],
-            key=lambda entry: (str(entry.relative_path or ""), entry.name),
+            [repo for repo in self.repos.values() if repo.parent_id == parent_id],
+            key=lambda repo: (str(repo.relative_path or ""), repo.name),
         )
 
     def is_complete(self) -> bool:
-        """Return ``True`` when every reachable entry has all required paths set."""
-        if not self.entries:
+        """Return ``True`` when every reachable repo has all required paths set."""
+        if not self.repos:
             return False
-        for entry in self.entries.values():
-            if not entry.is_reachable:
+        for repo in self.repos.values():
+            if not repo.is_reachable:
                 return False
-            if entry.absolute_path is None:
+            if repo.absolute_path is None:
                 return False
-            if entry.parent_id is not None and entry.relative_path is None:
+            if repo.parent_id is not None and repo.relative_path is None:
                 return False
         return True
 
     def is_ready(self) -> bool:
-        """Return ``True`` when every entry is ``READY`` or ``FALLBACK_READY``."""
+        """Return ``True`` when every repo is ``READY`` or ``FALLBACK_READY``."""
         if not self.is_complete():
             return False
-        for entry in self.entries.values():
-            if entry.repo_lifecycle_state not in {
+        for repo in self.repos.values():
+            if repo.repo_lifecycle_state not in {
                 RepoLifecycleState.READY,
                 RepoLifecycleState.FALLBACK_READY,
             }:
                 return False
-            if not entry.commit_sha:
+            if not repo.commit_sha:
                 return False
-            if entry.resolved_ref_kind is None or not entry.resolved_ref_name:
+            if repo.resolved_ref_kind is None or not repo.resolved_ref_name:
                 return False
         return True
 
     def recompute_tree_state(self) -> TreeLifecycleState:
         """Recompute and store the tree lifecycle state; return the new value."""
-        if not self.entries:
+        if not self.repos:
             self.lifecycle_state = TreeLifecycleState.UNLOADED
-        elif any(entry.repo_lifecycle_state == RepoLifecycleState.ERROR for entry in self.entries.values()):
+        elif any(
+            repo.repo_lifecycle_state == RepoLifecycleState.ERROR
+            for repo in self.repos.values()
+        ):
             self.lifecycle_state = TreeLifecycleState.ERROR
         elif self.is_ready():
             self.lifecycle_state = TreeLifecycleState.READY
         elif any(
-            entry.repo_lifecycle_state == RepoLifecycleState.PENDING for entry in self.entries.values()
+            repo.repo_lifecycle_state == RepoLifecycleState.PENDING for repo in self.repos.values()
         ):
             self.lifecycle_state = TreeLifecycleState.PENDING
         elif all(
-            entry.repo_lifecycle_state == RepoLifecycleState.DECLARED for entry in self.entries.values()
+            repo.repo_lifecycle_state == RepoLifecycleState.DECLARED for repo in self.repos.values()
         ):
             self.lifecycle_state = TreeLifecycleState.DECLARED
         else:
@@ -369,8 +653,64 @@ class DependencyTreeRegistry:
 
     @property
     def registry_complete(self) -> bool:
-        """Convenience property; delegates to :meth:`is_complete`."""
+        """Return ``True`` when the runtime tree has all required repo paths."""
         return self.is_complete()
+
+    def to_cgs(self) -> "CgsDocument":
+        """Convert the working tree to a runtime-free ``.cgs`` document."""
+        reference_tree = GitTree(
+            project_name=self.project_name or self._root_project_name(),
+            default_branch=self.default_branch or self._root_default_branch(),
+            repo_template=self.repo_template,
+        )
+        for repo in self.values():
+            project_name = repo.project_name or repo.name
+            reference_tree.add_repo(
+                GitRepo(
+                    project_owner_name=repo.project_owner_name or "",
+                    project_name=project_name,
+                    repo_name=repo.repo_name,
+                    gitprovider=repo.gitprovider,
+                    group_name=repo.group_name,
+                    gitprovider_url=repo.gitprovider_url,
+                    access_protocol=repo.access_protocol,
+                    commit_sha=repo.commit_sha,
+                )
+            )
+            reference_tree._repo_metadata[project_name] = {
+                "relative_path": str(repo.relative_path or "."),
+                "nested_config": repo.nested_config or "",
+                "default_branch": repo.default_branch or "",
+                "fallback_branch": repo.fallback_branch or "",
+            }
+        return reference_tree.to_cgs()
+
+    def to_gts(
+        self,
+        *,
+        command_origin: str = "snapshot",
+        source_cgs_path: Path | None = None,
+    ) -> "GtsDocument":
+        """Convert the working tree to a ``.gts`` snapshot document."""
+        from .orchestre import build_gts_document_from_registry
+
+        return build_gts_document_from_registry(
+            self,
+            command_origin=command_origin,
+            source_cgs_path=source_cgs_path,
+        )
+
+    def _root_project_name(self) -> str | None:
+        root = self.repos.get(ROOT_REPO_ID)
+        if root is None:
+            return None
+        return root.project_name or root.name
+
+    def _root_default_branch(self) -> str | None:
+        root = self.repos.get(ROOT_REPO_ID)
+        if root is None:
+            return None
+        return root.default_branch or root.target_ref_name or root.resolved_ref_name
 
 
 # ---------------------------------------------------------------------------
@@ -407,12 +747,12 @@ def make_repo_id(parent_id: str | None, relative_path: PurePath | str | None, na
 
 
 def promote_to_parent(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     repo_id: str,
     source_cgs_path: Path | None = None,
-) -> RepoRegistryEntry:
+) -> WorkingRepo:
     """Upgrade a LEAF registry entry to PARENT node type."""
-    entry = registry.get(repo_id)
+    entry = tree.get(repo_id)
     entry.node_type = NodeType.PARENT
     if source_cgs_path is not None:
         entry.source_cgs_path = source_cgs_path
@@ -432,12 +772,12 @@ def register_relative_path(
     seen_relative_paths.add(relative_path)
 
 
-def build_tree_state(registry: DependencyTreeRegistry) -> ProjectTreeState:
-    """Derive a :class:`ProjectTreeState` snapshot from the live *registry*."""
+def build_tree_state(tree: WorkingGitTree) -> ProjectTreeState:
+    """Derive a :class:`ProjectTreeState` snapshot from the live *tree*."""
     return ProjectTreeState(
-        lifecycle_state=registry.recompute_tree_state(),
-        is_ready=registry.is_ready(),
-        registry_complete=registry.registry_complete,
+        lifecycle_state=tree.recompute_tree_state(),
+        is_ready=tree.is_ready(),
+        registry_complete=tree.registry_complete,
     )
 
 
@@ -446,7 +786,7 @@ def build_tree_state(registry: DependencyTreeRegistry) -> ProjectTreeState:
 # ---------------------------------------------------------------------------
 
 
-def _build_path_graph(registry: DependencyTreeRegistry) -> dict[Path, set[Path]]:
+def _build_path_graph(registry: WorkingGitTree) -> dict[Path, set[Path]]:
     """Build a directed dependency graph keyed by absolute path.
 
     Each edge ``parent_abs_path -> child_abs_path`` represents a declared
@@ -463,8 +803,8 @@ def _build_path_graph(registry: DependencyTreeRegistry) -> dict[Path, set[Path]]
             continue
         path = entry.absolute_path
         graph.setdefault(path, set())
-        if entry.parent_id and entry.parent_id in registry.entries:
-            parent_entry = registry.entries[entry.parent_id]
+        if entry.parent_id and entry.parent_id in registry.repos:
+            parent_entry = registry.repos[entry.parent_id]
             if parent_entry.absolute_path is not None:
                 parent_path = parent_entry.absolute_path
                 graph.setdefault(parent_path, set())
@@ -534,7 +874,7 @@ def find_strongly_connected_components(
 def _select_scc_anchor(
     scc: list[Path],
     graph: dict[Path, set[Path]],
-    path_to_entries: dict[Path, list[RepoRegistryEntry]],
+    path_to_entries: dict[Path, list[WorkingRepo]],
 ) -> Path:
     """Select the anchor (canonical) path for an SCC using three heuristics.
 
@@ -586,7 +926,7 @@ def _select_scc_anchor(
 # ---------------------------------------------------------------------------
 
 
-def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
+def fix_circularities(registry: WorkingGitTree) -> tuple[str, ...]:
     """Cycle-breaking engine: resolve circularities and produce a valid DAG.
 
     This function operates in two phases:
@@ -637,7 +977,7 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
     # -----------------------------------------------------------------------
     # Build auxiliary mappings (shared by both phases).
     # -----------------------------------------------------------------------
-    path_to_entries: dict[Path, list[RepoRegistryEntry]] = {}
+    path_to_entries: dict[Path, list[WorkingRepo]] = {}
     for entry in registry.values():
         if entry.absolute_path is None:
             continue
@@ -677,9 +1017,9 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
                 continue
             if entry.repo_id == canonical.repo_id:
                 continue
-            if entry.parent_id is None or entry.parent_id not in registry.entries:
+            if entry.parent_id is None or entry.parent_id not in registry.repos:
                 continue
-            parent_entry = registry.entries[entry.parent_id]
+            parent_entry = registry.repos[entry.parent_id]
             if parent_entry.absolute_path not in scc_non_anchor:
                 continue
             # Back-edge: mark as external reference and schedule for removal.
@@ -708,14 +1048,14 @@ def fix_circularities(registry: DependencyTreeRegistry) -> tuple[str, ...]:
 
     if ids_to_remove:
         for repo_id in ids_to_remove:
-            if repo_id in registry.entries:
-                del registry.entries[repo_id]
+            if repo_id in registry.repos:
+                del registry.repos[repo_id]
         registry.recompute_tree_state()
 
     return tuple(changes)
 
 
-def _is_compatible_duplicate(canonical: RepoRegistryEntry, duplicate: RepoRegistryEntry) -> bool:
+def _is_compatible_duplicate(canonical: WorkingRepo, duplicate: WorkingRepo) -> bool:
     if canonical.repo_lifecycle_state != duplicate.repo_lifecycle_state:
         return False
     if canonical.sync_state != duplicate.sync_state:
@@ -729,7 +1069,7 @@ def _is_compatible_duplicate(canonical: RepoRegistryEntry, duplicate: RepoRegist
     return True
 
 
-def _has_compatible_refs(canonical: RepoRegistryEntry, duplicate: RepoRegistryEntry) -> bool:
+def _has_compatible_refs(canonical: WorkingRepo, duplicate: WorkingRepo) -> bool:
     if canonical.commit_sha and duplicate.commit_sha and canonical.commit_sha == duplicate.commit_sha:
         return True
     return all(
@@ -777,46 +1117,46 @@ def _ref_values_compatible(
     return canonical_kind == duplicate_kind and canonical_name == duplicate_name
 
 
-def topological_sort(registry: DependencyTreeRegistry) -> list[RepoRegistryEntry]:
-    """Return registry entries in topological order (parents before children).
+def topological_sort(tree: WorkingGitTree) -> list[WorkingRepo]:
+    """Return working repos in topological order (parents before children).
 
     Uses Kahn's algorithm (iterative BFS) to produce a valid ordering of the
-    dependency tree.  Entries with no parent (i.e., the project root) come
+    dependency tree.  Repos with no parent (i.e., the project root) come
     first; their children follow in sorted ``repo_id`` order.
 
     This ordering is safe for sequential clone/pull operations: a parent
     repository is always processed before any of its children.
 
-    Entries flagged as ``is_external_reference = True`` are included in the
+    Repos flagged as ``is_external_reference = True`` are included in the
     output so that callers have a complete picture of the graph, but they
     should be skipped by any cloning or synchronisation logic.
 
     Parameters
     ----------
-    registry:
-        The registry to sort.
+    tree:
+        The working tree to sort.
 
     Returns
     -------
-    list[RepoRegistryEntry]
-        Entries in parent-first topological order.
+    list[WorkingRepo]
+        Repos in parent-first topological order.
     """
-    in_degree: dict[str, int] = {rid: 0 for rid in registry.entries}
-    children_map: dict[str, list[str]] = {rid: [] for rid in registry.entries}
+    in_degree: dict[str, int] = {rid: 0 for rid in tree.repos}
+    children_map: dict[str, list[str]] = {rid: [] for rid in tree.repos}
 
-    for entry in registry.values():
-        if entry.parent_id is not None and entry.parent_id in registry.entries:
+    for entry in tree.values():
+        if entry.parent_id is not None and entry.parent_id in tree.repos:
             in_degree[entry.repo_id] += 1
             children_map[entry.parent_id].append(entry.repo_id)
 
     queue: deque[str] = deque(
         sorted(rid for rid, deg in in_degree.items() if deg == 0)
     )
-    result: list[RepoRegistryEntry] = []
+    result: list[WorkingRepo] = []
 
     while queue:
         node = queue.popleft()
-        result.append(registry.entries[node])
+        result.append(tree.repos[node])
         for child in sorted(children_map.get(node, [])):
             in_degree[child] -= 1
             if in_degree[child] == 0:
@@ -831,7 +1171,7 @@ def topological_sort(registry: DependencyTreeRegistry) -> list[RepoRegistryEntry
 
 
 def format_project_tree(
-    registry: DependencyTreeRegistry,
+    registry: WorkingGitTree,
     *,
     include_current_ref: bool = True,
     include_target_ref: bool = True,
@@ -857,9 +1197,9 @@ def format_project_tree(
     return "\n".join(lines)
 
 
-def format_repo_tree_outline(registry: DependencyTreeRegistry) -> str:
+def format_repo_tree_outline(registry: WorkingGitTree) -> str:
     """Render *registry* as a minimal repo-only tree outline."""
-    children_by_parent: dict[str | None, list[RepoRegistryEntry]] = {}
+    children_by_parent: dict[str | None, list[WorkingRepo]] = {}
     for entry in registry.values():
         children_by_parent.setdefault(entry.parent_id, []).append(entry)
     for children in children_by_parent.values():
@@ -872,7 +1212,7 @@ def format_repo_tree_outline(registry: DependencyTreeRegistry) -> str:
     }
     lines: list[str] = []
 
-    def walk(entry: RepoRegistryEntry, *, prefix: str, is_last: bool, is_root: bool = False) -> None:
+    def walk(entry: WorkingRepo, *, prefix: str, is_last: bool, is_root: bool = False) -> None:
         label = labels.get(entry.node_type, entry.node_type.value)
         if is_root:
             lines.append(f"{entry.name} ({label})")
@@ -888,7 +1228,7 @@ def format_repo_tree_outline(registry: DependencyTreeRegistry) -> str:
         for index, child in enumerate(children):
             walk(child, prefix=child_prefix, is_last=index == len(children) - 1)
 
-    root_entry = registry.entries.get(ROOT_REPO_ID)
+    root_entry = registry.repos.get(ROOT_REPO_ID)
     if root_entry is None:
         return ""
     walk(root_entry, prefix="", is_last=True, is_root=True)
@@ -896,7 +1236,7 @@ def format_repo_tree_outline(registry: DependencyTreeRegistry) -> str:
 
 
 def format_view_tree(
-    registry: DependencyTreeRegistry,
+    registry: WorkingGitTree,
     *,
     depth: int | None = None,
     collapse: Sequence[str] = (),
@@ -905,18 +1245,18 @@ def format_view_tree(
     if depth is not None and depth < 0:
         raise ValueError("depth must be >= 0")
 
-    root_entry = registry.entries.get(ROOT_REPO_ID)
+    root_entry = registry.repos.get(ROOT_REPO_ID)
     if root_entry is None:
         return ""
 
     collapsed = {name for name in collapse}
-    children_by_parent: dict[str | None, list[RepoRegistryEntry]] = {}
+    children_by_parent: dict[str | None, list[WorkingRepo]] = {}
     for entry in registry.values():
         children_by_parent.setdefault(entry.parent_id, []).append(entry)
     for children in children_by_parent.values():
         children.sort(key=lambda child: (str(child.relative_path or ""), child.name))
 
-    def render_node(entry: RepoRegistryEntry) -> str:
+    def render_node(entry: WorkingRepo) -> str:
         return (
             f"{entry.name} [{_entry_branch(entry)}] "
             f"{_entry_local_state(entry)} {_entry_sync_state(entry)}"
@@ -924,7 +1264,7 @@ def format_view_tree(
 
     lines = [f"ROOT {render_node(root_entry)}"]
 
-    def walk(entry: RepoRegistryEntry, *, prefix: str, level: int) -> None:
+    def walk(entry: WorkingRepo, *, prefix: str, level: int) -> None:
         if depth is not None and level >= depth:
             return
         children = children_by_parent.get(entry.repo_id, [])
@@ -941,7 +1281,7 @@ def format_view_tree(
     return "\n".join(lines)
 
 
-def format_view_operation(registry: DependencyTreeRegistry) -> str:
+def format_view_operation(registry: WorkingGitTree) -> str:
     """Render a tabular runtime-operation view for terminal output."""
     rows: list[tuple[str, str, str, str]] = []
     for entry in iter_tree(registry):
@@ -968,7 +1308,7 @@ def format_view_operation(registry: DependencyTreeRegistry) -> str:
     return "\n".join(table_lines)
 
 
-def format_registry_json(registry: DependencyTreeRegistry) -> str:
+def format_registry_json(registry: WorkingGitTree) -> str:
     """Render *registry* as a JSON array."""
     data: list[dict[str, object]] = []
     for entry in sorted(registry.values(), key=lambda item: item.repo_id):
@@ -1007,14 +1347,14 @@ def format_registry_json(registry: DependencyTreeRegistry) -> str:
 # ---------------------------------------------------------------------------
 
 
-def iter_tree(registry: DependencyTreeRegistry) -> Iterator[RepoRegistryEntry]:
-    """Yield every entry in *registry* in parent-first (root → leaves) order."""
-    yield from _iter_tree(registry)
+def iter_tree(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
+    """Yield every repo in *tree* in parent-first (root → leaves) order."""
+    yield from _iter_tree(tree)
 
 
-def iter_tree_leaf_first(registry: DependencyTreeRegistry) -> Iterator[RepoRegistryEntry]:
-    """Yield every entry in *registry* in leaf-first (leaves → root) order."""
-    yield from reversed(list(_iter_tree(registry)))
+def iter_tree_leaf_first(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
+    """Yield every repo in *tree* in leaf-first (leaves → root) order."""
+    yield from reversed(list(_iter_tree(tree)))
 
 
 # ---------------------------------------------------------------------------
@@ -1022,12 +1362,12 @@ def iter_tree_leaf_first(registry: DependencyTreeRegistry) -> Iterator[RepoRegis
 # ---------------------------------------------------------------------------
 
 
-def _iter_tree(registry: DependencyTreeRegistry):
-    stack = list(reversed(registry.children_of(None)))
+def _iter_tree(tree: WorkingGitTree):
+    stack = list(reversed(tree.children_of(None)))
     while stack:
         entry = stack.pop()
         yield entry
-        children = registry.children_of(entry.repo_id)
+        children = tree.children_of(entry.repo_id)
         stack.extend(reversed(children))
 
 
@@ -1035,11 +1375,11 @@ def _depth(repo_id: str) -> int:
     return 0 if repo_id == "root" else repo_id.count(":")
 
 
-def _entry_branch(entry: RepoRegistryEntry) -> str:
+def _entry_branch(entry: WorkingRepo) -> str:
     return entry.current_ref_name or entry.resolved_ref_name or "-"
 
 
-def _entry_local_state(entry: RepoRegistryEntry) -> str:
+def _entry_local_state(entry: WorkingRepo) -> str:
     worktree_state = (entry.worktree_state or "").strip().upper()
     if worktree_state == "CLEAN":
         return "clean"
@@ -1058,7 +1398,7 @@ def _entry_local_state(entry: RepoRegistryEntry) -> str:
     return "dirty"
 
 
-def _entry_sync_state(entry: RepoRegistryEntry) -> str:
+def _entry_sync_state(entry: WorkingRepo) -> str:
     sync_state = entry.sync_state
     if sync_state in {SyncState.ALIGNED, SyncState.DETACHED_EXACT}:
         return "synced"
@@ -1109,7 +1449,7 @@ def _normalize_repo_id_segment(relative_path: PurePath | str | None) -> str:
 
 
 def _apply_repo_identity(
-    entry: RepoRegistryEntry,
+    entry: WorkingRepo,
     repo: dict[str, Any],
     default_branch: str | None,
 ) -> None:

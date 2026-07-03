@@ -19,8 +19,8 @@ from ComplexGitSync import (
     TreeNotReadyError,
     add_tree,
 )
-from ComplexGitSync.git_repo import NodeType, RepoRegistryEntry
-from ComplexGitSync.git_tree import DependencyTreeRegistry
+from ComplexGitSync.git_repo import NodeType, WorkingRepo
+from ComplexGitSync.git_tree import WorkingGitTree
 from ComplexGitSync.orchestre import CgsDocument, GitRunner
 
 
@@ -64,9 +64,9 @@ def test_public_nested_config_discovery_error_covers_ambiguous_nested_configs(tm
 
 
 def test_public_tree_not_ready_error_covers_ready_gated_mutations(tmp_path: Path):
-    registry = DependencyTreeRegistry()
+    registry = WorkingGitTree()
     registry.add(
-        RepoRegistryEntry(
+        WorkingRepo(
             repo_id="root",
             name="demo",
             node_type=NodeType.ROOT,

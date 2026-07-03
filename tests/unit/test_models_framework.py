@@ -1,6 +1,7 @@
 import pytest
 
 from ComplexGitSync.git_repo import AccessProtocol
+from ComplexGitSync.orchestre import CgsDocument
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 from ComplexGitSync.git_repo import GitProvider
 from ComplexGitSync.git_repo import GitRepo
@@ -78,6 +79,110 @@ def test_gittree_rename_updates_repo_key_for_new_name():
     assert "repo-a" not in tree.repos
     assert "repo-c" in tree.repos
     assert tree.repos["repo-c"].project_name == "repo-c"
+
+
+def test_gittree_to_cgs_returns_valid_reference_document():
+    tree = GitTree(project_name="demo", default_branch="develop")
+    root = GitRepo(project_owner_name="owner", project_name="demo")
+    child = GitRepo(project_owner_name="owner", project_name="child")
+    tree.add_repo(root)
+    tree.add_repo(child)
+    tree._repo_metadata[root.project_name] = {
+        "relative_path": ".",
+        "nested_config": "",
+        "default_branch": "develop",
+        "fallback_branch": "develop",
+    }
+    tree._repo_metadata[child.project_name] = {
+        "relative_path": "deps/child",
+        "nested_config": "auto",
+        "default_branch": "develop",
+        "fallback_branch": "develop",
+    }
+
+    document = tree.to_cgs()
+
+    assert isinstance(document, CgsDocument)
+    document.validate()
+    data = document.to_dict()
+    assert data["project"]["name"] == "demo"
+    assert data["project"]["default_branch"] == "develop"
+    assert data["repos"][0]["relative_path"] == "."
+    assert data["repos"][1]["relative_path"] == "deps/child"
+    assert data["repos"][1]["nested_config"] == "auto"
+    for repo_data in data["repos"]:
+        assert "repo_lifecycle_state" not in repo_data
+        assert "sync_state" not in repo_data
+
+
+def test_gittree_from_prompt_builds_reference_tree_with_project_defaults(monkeypatch):
+    responses = iter(
+        [
+            "demo",
+            "develop",
+            "owner",
+            "",
+            "",
+            "2",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "child",
+            "",
+            "",
+            "",
+            "",
+            "deps/child",
+            "",
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
+
+    tree = GitTree.from_prompt()
+    document = tree.to_cgs()
+
+    assert type(tree) is GitTree
+    assert tree.project_name == "demo"
+    assert tree.default_branch == "develop"
+    assert list(tree.repos) == ["demo", "child"]
+    repos = document.to_dict()["repos"]
+    assert repos[0]["project_name"] == "demo"
+    assert repos[0]["default_branch"] == "develop"
+    assert repos[1]["project_name"] == "child"
+    assert repos[1]["default_branch"] == "develop"
+    assert repos[1]["nested_config"] == "auto"
+
+
+def test_client_configure_writes_valid_cgs_from_prompt(monkeypatch, tmp_path):
+    responses = iter(
+        [
+            "demo",
+            "main",
+            "owner",
+            "",
+            "",
+            "1",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
+    output_path = tmp_path / "demo.cgs"
+
+    document = ComplexGitSyncClient().configure(output_path=output_path)
+
+    assert output_path.is_file()
+    assert document.project_name == "demo"
+    reloaded = CgsDocument.from_toml(output_path)
+    assert reloaded.project_name == "demo"
 
 
 # ---------------------------------------------------------------------------

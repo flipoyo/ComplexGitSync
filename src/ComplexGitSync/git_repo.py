@@ -12,9 +12,9 @@ Classes / enums defined here (Tier 1 — Core State):
     SyncState           Synchronization status relative to the remote
     DiscoveryState      Nested .cgs discovery status
     GitRepo             Immutable static identity of a single repository
+    WorkingRepo         Mutable runtime repository used by WorkingGitTree
     RepoAddress         Derives the remote URL from a GitRepo
     RepoNode            Immutable snapshot of a repo's tree position
-    RepoRegistryEntry   Mutable runtime record for one repo in the dependency tree
 """
 
 from __future__ import annotations
@@ -111,7 +111,7 @@ class GitRepo:
 
     Captures the provider, namespace, project name, access protocol, and
     resolved commit SHA.  Runtime mutable state lives in
-    :class:`RepoRegistryEntry`.
+    :class:`WorkingRepo`.
     """
 
     project_owner_name: str
@@ -153,6 +153,53 @@ class GitRepo:
         except (ValueError, OSError, subprocess.SubprocessError):
             pass
         return hashlib.sha256(f"{self.project_name}:{selected_branch}:{tag or ''}".encode()).hexdigest()
+
+    def to_cgs(self, include_defaults: bool = True) -> dict[str, Any]:
+        """Convert this GitRepo to a .cgs repository entry dictionary.
+        
+        Parameters
+        ----------
+        include_defaults : bool
+            If True (default), includes all fields with their values.
+            If False, only includes fields that differ from defaults.
+        """
+        from typing import Any
+        
+        repo_dict: dict[str, Any] = {
+            "project_owner_name": self.project_owner_name,
+            "project_name": self.project_name,
+        }
+        
+        if include_defaults:
+            # Always include these fields for explicit .cgs files
+            repo_dict["gitprovider"] = self.gitprovider.value
+            repo_dict["access_protocol"] = self.access_protocol.value
+            
+            # Include optional fields if they are set
+            if self.repo_name is not None:
+                repo_dict["repo_name"] = self.repo_name
+            if self.group_name is not None:
+                repo_dict["group_name"] = self.group_name
+            if self.gitprovider_url is not None:
+                repo_dict["gitprovider_url"] = self.gitprovider_url
+        else:
+            # Only include fields that differ from defaults
+            if self.repo_name is not None:
+                repo_dict["repo_name"] = self.repo_name
+            
+            if self.gitprovider != GitProvider.GITHUB:
+                repo_dict["gitprovider"] = self.gitprovider.value
+            
+            if self.group_name is not None:
+                repo_dict["group_name"] = self.group_name
+            
+            if self.gitprovider_url is not None:
+                repo_dict["gitprovider_url"] = self.gitprovider_url
+            
+            if self.access_protocol != AccessProtocol.SSH:
+                repo_dict["access_protocol"] = self.access_protocol.value
+        
+        return repo_dict
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +324,7 @@ class RepoNode:
     """Immutable snapshot of a repository's position in the dependency tree.
 
     Used for read-only tree traversal; mutable state lives in
-    :class:`RepoRegistryEntry`.
+    :class:`WorkingRepo`.
     """
 
     repo_id: str
@@ -290,25 +337,25 @@ class RepoNode:
 
 
 # ---------------------------------------------------------------------------
-# RepoRegistryEntry — mutable runtime record per repo
+# WorkingRepo — mutable runtime record per repo
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class RepoRegistryEntry:
-    """Mutable runtime record for a single repository within the dependency tree.
+class WorkingRepo(GitRepo):
+    """Mutable runtime repository within a :class:`WorkingGitTree`.
 
-    Each field tracks either the static identity declared in the ``.cgs`` file
-    or the dynamic state observed during synchronisation operations.  The
-    registry is the authoritative in-memory model; ``.gts`` snapshots are
-    derived from it.
+    Identity fields are inherited from :class:`GitRepo`; the fields below track
+    tree position and live synchronisation state observed during operations.
     """
 
-    repo_id: str
-    name: str
-    node_type: NodeType
-    parent_id: str | None
-    absolute_path: Path
+    project_owner_name: str | None = None
+    project_name: str | None = None
+    repo_id: str = ""
+    name: str = ""
+    node_type: NodeType = NodeType.LEAF
+    parent_id: str | None = None
+    absolute_path: Path = Path(".")
     relative_path: Path | None = None
     source_cgs_path: Path | None = None
     current_ref_kind: RefKind | None = None
@@ -327,8 +374,6 @@ class RepoRegistryEntry:
     worktree_state: str | None = None
     is_reachable: bool = True
     gitprovider: GitProvider = GitProvider.GITHUB
-    project_owner_name: str | None = None
-    project_name: str | None = None
     repo_name: str | None = None
     group_name: str | None = None
     gitprovider_url: str | None = None

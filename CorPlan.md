@@ -4,7 +4,7 @@
 
 - Fichier PNG: `docs/figures/class_interactions_map.png`
 - Vue synthétique incluse:
-  - noyau objet (`GitRepo`, `GitTree`, `DependencyTreeRegistry`)
+  - noyau objet (`GitRepo`, `GitTree`, `legacy runtime registry`)
   - orchestration (`Orchestre`, `ComplexGitSyncClient`, `GitRunner`, `RuntimeStateStore`)
   - couche documentaire (`ConfigDocument`, `CgsDocument`, `GtsDocument`, `GocDocument`)
   - interactions principales (ownership, usage, mutation)

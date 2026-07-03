@@ -24,16 +24,16 @@ from .git_repo import (
     RepoAddress,
     RepoLifecycleState,
     RepoNode,
-    RepoRegistryEntry,
     SyncState,
+    WorkingRepo,
 )
 
 # --- Tier 1 — Core State + Tree Utilities (git_tree.py) ---
 from .git_tree import (
-    DependencyTreeRegistry,
     GitTree,
     ProjectTreeState,
     TreeLifecycleState,
+    WorkingGitTree,
     find_strongly_connected_components,
     fix_circularities,
     iter_tree,
@@ -89,13 +89,13 @@ __all__ = [
     "RepoAddress",
     "RepoLifecycleState",
     "RepoNode",
-    "RepoRegistryEntry",
     "SyncState",
+    "WorkingRepo",
     # git_tree.py
-    "DependencyTreeRegistry",
     "GitTree",
     "ProjectTreeState",
     "TreeLifecycleState",
+    "WorkingGitTree",
     "find_strongly_connected_components",
     "fix_circularities",
     "iter_tree",

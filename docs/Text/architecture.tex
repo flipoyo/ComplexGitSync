@@ -91,8 +91,8 @@ Figure~\ref{fig:gittree-nodes} shows a representative project tree.
 \end{figure}
 
 The runtime counterpart of \texttt{GitTree} is the
-\texttt{DependencyTreeRegistry}, which holds a mutable
-\texttt{RepoRegistryEntry} per node.  Registry entries are indexed by a
+\texttt{WorkingGitTree}, which holds a mutable
+\texttt{WorkingRepo} per node.  Registry entries are indexed by a
 colon-separated repo ID derived from their position in the tree (e.g.\
 \texttt{root:deps/child-repo:docs}).
 Cross-referenced parents therefore create a tangle-like declaration layer, but
@@ -214,7 +214,7 @@ tree-wide synchronisation actions implemented in \texttt{operations.py}.
 
 \begin{itemize}
   \item holds references to \texttt{Orchestre}, \texttt{GitRunner},
-    \texttt{RuntimeStateStore}, and the live \texttt{DependencyTreeRegistry};
+    \texttt{RuntimeStateStore}, and the live \texttt{WorkingGitTree};
   \item computes the current \texttt{TreeLifecycleState} on demand and gates
     every action against it;
   \item emits structured log events for every state transition, action start/end,
@@ -245,44 +245,26 @@ on the live tree state.
 \begin{lstlisting}[language=bash,caption={Source modules grouped by architectural tier}]
 src/ComplexGitSync/
   # --- Tier 1: Core Data (centred on GitTree / GitRepo) ---
-  git_repo.py                  GitRepo
-  git_tree.py                  GitTree
-  repo_address.py              RepoAddress
-  repo_registry_entry.py       RepoRegistryEntry
-  dependency_tree_registry.py  DependencyTreeRegistry
-  repo_node.py                 RepoNode
-  project_tree_state.py        ProjectTreeState
-  # enums
-  node_type.py                 NodeType
-  tree_lifecycle_state.py      TreeLifecycleState
-  repo_lifecycle_state.py      RepoLifecycleState
-  sync_state.py                SyncState
-  discovery_state.py           DiscoveryState
-  ref_kind.py                  RefKind
-  git_provider.py              GitProvider
-  access_protocol.py           AccessProtocol
+  git_repo.py                  GitRepo, WorkingRepo, RepoAddress,
+                               RepoNode, enums
+  git_tree.py                  GitTree, WorkingGitTree,
+                               ProjectTreeState, tree utilities
 
   # --- Tier 2: Actions ---
-  discovery.py                 discover_nested_configs()
   operations.py                propagate_global_branch, create_global_branch
                                checkout_tree, commit_tree, push_tree
-  registry.py                  build_registry_from_cgs_document, …
-  render.py                    format_project_tree, format_registry_json
+  orchestre.py                 discover_nested_configs(),
+                               build_registry_from_cgs_document, render helpers
 
   # --- Tier 3: Client / API ---
-  client.py                    ComplexGitSyncClient
-  orchestre.py                 Orchestre
+  orchestre.py                 Orchestre, ComplexGitSyncClient
   cli.py                       build_parser / main
-  git_runner.py                GitRunner
-  run_logger.py                CommandRunLogger + create_run_logger
-  state_store.py               RuntimeStateStore
+  orchestre.py                 GitRunner, RuntimeStateStore,
+                               CommandRunLogger + create_run_logger
 
   # --- Document layer (cross-cutting) ---
-  config_document.py           ConfigDocument (base)
-  cgs_document.py              CgsDocument  (.cgs)
-  gts_document.py              GtsDocument  (.gts)
-  goc_document.py              GocDocument  (.goc)
-  documents.py                 re-export shim
+  orchestre.py                 ConfigDocument, CgsDocument,
+                               GtsDocument, GocDocument
   errors.py                    exception hierarchy
 \end{lstlisting}
 
@@ -317,14 +299,14 @@ convenience properties.
 
 Figure~\ref{fig:registry-model} shows the registry model.
 
-\texttt{DependencyTreeRegistry} is the authoritative in-memory graph.  It maps
+\texttt{WorkingGitTree} is the authoritative in-memory graph.  It maps
 \emph{repo IDs} (colon-separated path strings such as
-\texttt{root:deps/child-repo}) to \texttt{RepoRegistryEntry} instances.
-\texttt{RepoRegistryEntry} holds both the static identity declared in
+\texttt{root:deps/child-repo}) to \texttt{WorkingRepo} instances.
+\texttt{WorkingRepo} holds both the static identity declared in
 \texttt{.cgs} and the dynamic state updated during operations.
 
-Builder functions in \texttt{registry.py} translate document objects into a
-live registry:
+Builder functions in \texttt{orchestre.py} translate document objects into a
+live working tree:
 
 \begin{lstlisting}[language=Python]
 # Load from authoring spec

@@ -5,7 +5,7 @@
 %
 %   Figure 1 — Core object model centred on GitTree
 %   Figure 2 — Document hierarchy (ConfigDocument and subclasses)
-%   Figure 3 — Registry model (DependencyTreeRegistry and supporting types)
+%   Figure 3 — Registry model (WorkingGitTree and supporting types)
 
 % ============================================================
 %  Shared TikZ style definitions
@@ -62,7 +62,7 @@
   orchestre: Orchestre\\
   git\_runner: GitRunner\\
   state\_store: RuntimeStateStore\\
-  registry: DependencyTreeRegistry\\
+  registry: WorkingGitTree\\
   run\_logger: CommandRunLogger
   \nodepart{three}
   read(cgs) / load\_gts(gts)\\
@@ -279,18 +279,18 @@
 
 \begin{figure}[ht]
 \centering
-\caption{Registry model.  \texttt{DependencyTreeRegistry} is the authoritative
-  in-memory graph; \texttt{RepoRegistryEntry} records both static identity
+\caption{Registry model.  \texttt{WorkingGitTree} is the authoritative
+  in-memory graph; \texttt{WorkingRepo} records both static identity
   (from \texttt{.cgs}) and dynamic state (from synchronisation operations).}
 \label{fig:registry-model}
 
 \begin{tikzpicture}[node distance=1.2cm and 2.0cm]
 
-% DependencyTreeRegistry
+% WorkingGitTree
 \node[classbox] (registry) {
-  \textbf{DependencyTreeRegistry}
+  \textbf{WorkingGitTree}
   \nodepart{two}
-  entries: dict[str, RepoRegistryEntry]\\
+  repos: dict[str, WorkingRepo]\\
   lifecycle\_state: TreeLifecycleState
   \nodepart{three}
   add(entry) / get(id) / values()\\
@@ -299,9 +299,9 @@
   recompute\_tree\_state()
 };
 
-% RepoRegistryEntry
+% WorkingRepo
 \node[classbox, right=2.2cm of registry] (entry) {
-  \textbf{RepoRegistryEntry}
+  \textbf{WorkingRepo}
   \nodepart{two}
   repo\_id / name / node\_type\\
   parent\_id / absolute\_path\\

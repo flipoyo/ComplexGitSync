@@ -26,6 +26,23 @@ CGSil1  (GitLab, root)
         └── CGSih2  (GitHub, leaf)  [nested_config = "auto", discovered transitively]
 ```
 
+The current architecture separates the authoring topology from the runtime
+workspace state:
+
+```mermaid
+flowchart TD
+    CGS[CGSil1.cgs authoring spec] --> REF[GitTree + GitRepo reference tree]
+    REF --> WORK[WorkingGitTree + WorkingRepo runtime tree]
+    WORK --> OPS[checkout/add/commit/push/tag/freeze operations]
+    WORK --> GTS[CGSil1.gts runtime snapshot]
+    GTS --> WORK
+```
+
+`CGSil1.cgs` remains the source of truth for the reference tree. Runtime
+commands load that reference into a `WorkingGitTree`, update repository
+lifecycle and sync state there, and persist generated `.gts` snapshots under
+`$CGSHOME/.cgitsync/state/`.
+
 ---
 
 ## 2. Project spec — CGSil1.cgs
@@ -69,6 +86,17 @@ access_protocol    = "ssh"
 relative_path      = "CGSih1"
 nested_config      = "auto"
 ```
+
+For a new project, the interactive equivalent is:
+
+```bash
+pixi run cgitsync configure --output ../CGSil1.cgs
+```
+
+The command builds a `GitTree` reference tree from prompts, validates the
+generated `CgsDocument`, and writes the `.cgs` file. The checked-in tutorial
+fixture is shown explicitly above so the CI sandbox can reproduce the same
+topology without interactive input.
 
 ---
 
