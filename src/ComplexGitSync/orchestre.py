@@ -1087,6 +1087,7 @@ class LocalGitRegister:
     def record_snapshot(self, snapshot_path: Path | str) -> str:
         resolved_snapshot_path = Path(snapshot_path).resolve()
         snapshot_hash = self._hash_snapshot_file(resolved_snapshot_path)
+        snapshot_path_marker = _path_to_environment_marker(resolved_snapshot_path)
 
         data = self._load()
         snapshots = data.setdefault("snapshots", [])
@@ -1095,7 +1096,12 @@ class LocalGitRegister:
             for entry in snapshots
             if isinstance(entry, dict) and entry.get("snapshot_hash")
         }
-        existing = snapshot_index.get(snapshot_hash)
+        path_index = {
+            str(entry.get("snapshot_path")): entry
+            for entry in snapshots
+            if isinstance(entry, dict) and entry.get("snapshot_path")
+        }
+        existing = snapshot_index.get(snapshot_hash) or path_index.get(snapshot_path_marker)
 
         if existing is None:
             snapshot_id = self._next_snapshot_id(snapshots)
@@ -1108,18 +1114,19 @@ class LocalGitRegister:
                 {
                     "id": snapshot_id,
                     "snapshot_hash": snapshot_hash,
-                    "snapshot_path": _path_to_environment_marker(resolved_snapshot_path),
+                    "snapshot_path": snapshot_path_marker,
                     "recorded_at": recorded_at,
                 }
             )
         else:
             snapshot_id = str(existing["id"])
-            existing["snapshot_path"] = _path_to_environment_marker(resolved_snapshot_path)
+            existing["snapshot_hash"] = snapshot_hash
+            existing["snapshot_path"] = snapshot_path_marker
 
         register = data.setdefault("register", {})
         register["current_snapshot_id"] = snapshot_id
         register["current_snapshot_hash"] = snapshot_hash
-        register["current_snapshot_path"] = _path_to_environment_marker(resolved_snapshot_path)
+        register["current_snapshot_path"] = snapshot_path_marker
 
         self.register_path.parent.mkdir(parents=True, exist_ok=True)
         self.register_path.write_text(tomli_w.dumps(data), encoding="utf-8")
@@ -2742,9 +2749,10 @@ class ComplexGitSyncClient:
         previous_state = registry.lifecycle_state
         self._log_event("branch_start", branch_name=branch_name)
         self.orchestre.git_tree.git.branch(self.git_runner, branch_name)
-        snapshot_path = self.write_gts_snapshot(command_origin="branch")
-        if self.source_path is not None:
-            self.state_store.record_snapshot(self.source_path, snapshot_path)
+        if ROOT_REPO_ID in registry.entries:
+            snapshot_path = self.write_gts_snapshot(command_origin="branch")
+            if self.source_path is not None:
+                self.state_store.record_snapshot(self.source_path, snapshot_path)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="branch")
         self._log_event("branch_end", branch_name=branch_name)
         return registry
@@ -3280,7 +3288,10 @@ class ComplexGitSyncClient:
         register_path = root_entry.absolute_path / f"{root_entry.name}.lgr"
         if root_entry.absolute_path.exists():
             register_id = LocalGitRegister(register_path).record_snapshot(resolved_output_path)
-            if latest_output_path is not None:
+            source_is_runtime_snapshot = (
+                self.source_path is not None and self.source_path.suffix == ".gts"
+            )
+            if latest_output_path is not None and not source_is_runtime_snapshot:
                 immutable_output_path = resolved_output_path.parent / f"{register_id}.gts"
                 if immutable_output_path != resolved_output_path:
                     document.to_toml(immutable_output_path)
@@ -3310,7 +3321,7 @@ class ComplexGitSyncClient:
                 workspace_hash=workspace_hash,
                 gts_snapshot_id=register_id,
             )
-        return resolved_output_path
+        return latest_output_path or resolved_output_path
 
     def get_ledger_history(self, register_path: str | Path) -> list[dict[str, Any]]:
         """Return all ledger events for *register_path* in topological DAG order.

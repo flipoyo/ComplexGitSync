@@ -957,10 +957,11 @@ def _has_managed_uncommitted_changes(
         unmanaged_gitlinks = _unmanaged_gitlink_paths(tree, git_runner, repo)
     except (AttributeError, GitSyncError):
         return git_runner.has_uncommitted_changes(repo.absolute_path)
-    if not unmanaged_gitlinks:
+    ignored_paths = unmanaged_gitlinks | _managed_state_paths(repo)
+    if not ignored_paths:
         return bool(status_lines)
     return any(
-        not _status_line_targets_any(line, unmanaged_gitlinks)
+        not _status_line_targets_any(line, ignored_paths)
         for line in status_lines
     )
 
@@ -982,6 +983,11 @@ def _unmanaged_gitlink_paths(
         except ValueError:
             continue
     return {path for path in gitlinks if path not in managed_children}
+
+
+def _managed_state_paths(repo: WorkingRepo) -> set[Path]:
+    """Return ComplexGitSync-managed paths ignored by worktree preflight."""
+    return {Path(".cgitsync"), Path(f"{repo.name}.lgr")}
 
 
 def _status_line_targets_any(status_line: str, paths: set[Path]) -> bool:

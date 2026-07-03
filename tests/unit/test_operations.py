@@ -1019,6 +1019,19 @@ def test_tag_tree_preflight_ignores_unmanaged_gitlink_dirty_state(tmp_path):
     assert registry.get("root").worktree_state == "CLEAN"
 
 
+def test_tag_tree_preflight_ignores_managed_state_files(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+    root_path = registry.get("root").absolute_path
+    runner.add_status_line(root_path, " M .cgitsync/state/project.gts")
+    runner.add_status_line(root_path, "?? project.lgr")
+
+    tag_tree(registry, runner, "v1.0.0")
+
+    assert registry.get("root").worktree_state == "CLEAN"
+
+
 def test_commit_tree_preflight_warns_when_tree_is_dirty(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
