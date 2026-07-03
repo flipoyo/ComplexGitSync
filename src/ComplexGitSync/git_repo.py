@@ -12,9 +12,10 @@ Classes / enums defined here (Tier 1 — Core State):
     SyncState           Synchronization status relative to the remote
     DiscoveryState      Nested .cgs discovery status
     GitRepo             Immutable static identity of a single repository
+    WorkingRepo         Mutable runtime repository used by WorkingGitTree
     RepoAddress         Derives the remote URL from a GitRepo
     RepoNode            Immutable snapshot of a repo's tree position
-    RepoRegistryEntry   Mutable runtime record for one repo in the dependency tree
+    RepoRegistryEntry   Backward-compatible alias class for WorkingRepo
 """
 
 from __future__ import annotations
@@ -111,7 +112,7 @@ class GitRepo:
 
     Captures the provider, namespace, project name, access protocol, and
     resolved commit SHA.  Runtime mutable state lives in
-    :class:`RepoRegistryEntry`.
+    :class:`WorkingRepo`.
     """
 
     project_owner_name: str
@@ -324,7 +325,7 @@ class RepoNode:
     """Immutable snapshot of a repository's position in the dependency tree.
 
     Used for read-only tree traversal; mutable state lives in
-    :class:`RepoRegistryEntry`.
+    :class:`WorkingRepo`.
     """
 
     repo_id: str
@@ -337,25 +338,25 @@ class RepoNode:
 
 
 # ---------------------------------------------------------------------------
-# RepoRegistryEntry — mutable runtime record per repo
+# WorkingRepo — mutable runtime record per repo
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class RepoRegistryEntry:
-    """Mutable runtime record for a single repository within the dependency tree.
+class WorkingRepo(GitRepo):
+    """Mutable runtime repository within a :class:`WorkingGitTree`.
 
-    Each field tracks either the static identity declared in the ``.cgs`` file
-    or the dynamic state observed during synchronisation operations.  The
-    registry is the authoritative in-memory model; ``.gts`` snapshots are
-    derived from it.
+    Identity fields are inherited from :class:`GitRepo`; the fields below track
+    tree position and live synchronisation state observed during operations.
     """
 
-    repo_id: str
-    name: str
-    node_type: NodeType
-    parent_id: str | None
-    absolute_path: Path
+    project_owner_name: str | None = None
+    project_name: str | None = None
+    repo_id: str = ""
+    name: str = ""
+    node_type: NodeType = NodeType.LEAF
+    parent_id: str | None = None
+    absolute_path: Path = Path(".")
     relative_path: Path | None = None
     source_cgs_path: Path | None = None
     current_ref_kind: RefKind | None = None
@@ -374,8 +375,6 @@ class RepoRegistryEntry:
     worktree_state: str | None = None
     is_reachable: bool = True
     gitprovider: GitProvider = GitProvider.GITHUB
-    project_owner_name: str | None = None
-    project_name: str | None = None
     repo_name: str | None = None
     group_name: str | None = None
     gitprovider_url: str | None = None
@@ -384,3 +383,19 @@ class RepoRegistryEntry:
     nested_config: str | None = None
     remote_name: str | None = None
     is_external_reference: bool = False
+
+
+# ---------------------------------------------------------------------------
+# RepoRegistryEntry — backward compatibility shim
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class RepoRegistryEntry(WorkingRepo):
+    """Backward-compatible name for :class:`WorkingRepo`.
+
+    Phase 5 removes this class; until then it lets existing callers construct
+    registry entries while the runtime tree and operations use ``WorkingRepo``.
+    """
+
+    pass

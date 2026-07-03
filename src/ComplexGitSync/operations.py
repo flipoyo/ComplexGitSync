@@ -1,11 +1,11 @@
 """Tier 2 synchronization operations for ComplexGitSync.
 
-Each function operates on a :class:`~ComplexGitSync.git_tree.DependencyTreeRegistry`
+Each function operates on a :class:`~ComplexGitSync.git_tree.WorkingGitTree`
 and a :class:`~ComplexGitSync.orchestre.GitRunner`.  Mutation operations require a
-``READY`` registry and raise :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.
+``READY`` tree and raise :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.
 
 Free functions exported here (Tier 2 — Actions):
-    propagate_global_branch   Set a shared branch target across every registry entry
+    propagate_global_branch   Set a shared branch target across every tree repo
     create_global_branch      Create the branch locally if it does not exist yet
     restart_tree              Resync the tree using the root repo's current branch
     checkout_tree             propagate → create → git checkout, parent-first
@@ -32,8 +32,8 @@ from typing import TYPE_CHECKING, Literal
 from pathlib import Path
 
 from .errors import GitSyncError, TreeNotReadyError
-from .git_repo import RefKind, RepoLifecycleState, RepoRegistryEntry, SyncState
-from .git_tree import DependencyTreeRegistry, GitTree, iter_tree, iter_tree_leaf_first
+from .git_repo import RefKind, RepoLifecycleState, WorkingRepo, SyncState
+from .git_tree import WorkingGitTree, iter_tree, iter_tree_leaf_first
 
 if TYPE_CHECKING:
     from .orchestre import GitRunner
@@ -61,20 +61,20 @@ class PreflightDiagnostic:
 
 
 def propagate_global_branch(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     branch_name: str,
     *,
     ref_kind: RefKind = RefKind.BRANCH,
 ) -> None:
-    """Set *branch_name* as the target ref on every entry in *registry*.
+    """Set *branch_name* as the target ref on every repo in *tree*.
 
     This is a pure in-memory operation: no git commands are issued.  It
-    prepares the registry so that subsequent operations (create, checkout)
+    prepares the tree so that subsequent operations (create, checkout)
     all target the same branch.
     """
-    for entry in registry.values():
-        entry.target_ref_name = branch_name
-        entry.target_ref_kind = ref_kind
+    for repo in tree.values():
+        repo.target_ref_name = branch_name
+        repo.target_ref_kind = ref_kind
 
 
 # ---------------------------------------------------------------------------
@@ -83,19 +83,19 @@ def propagate_global_branch(
 
 
 def create_global_branch(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
     branch_name: str,
 ) -> None:
     """Create *branch_name* in every repo where it does not already exist locally.
 
     Iterates the tree parent-first so that parent repositories always have the
-    branch before their children are processed.  Requires each entry to have
+    branch before their children are processed.  Requires each repo to have
     a valid ``absolute_path`` on disk.
     """
-    for entry in iter_tree(registry):
-        if not git_runner.local_branch_exists(entry.absolute_path, branch_name):
-            git_runner.create_branch(entry.absolute_path, branch_name)
+    for repo in iter_tree(tree):
+        if not git_runner.local_branch_exists(repo.absolute_path, branch_name):
+            git_runner.create_branch(repo.absolute_path, branch_name)
 
 
 # ---------------------------------------------------------------------------
@@ -104,22 +104,22 @@ def create_global_branch(
 
 
 def restart_tree(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
 ) -> None:
     """Resynchronize the full tree using the root repository's current branch.
 
     Reads the current branch from the root repository, propagates it across
-    all entries, then synchronizes parent-first:
+    all repos, then synchronizes parent-first:
 
     * root repository: ``git pull --ff-only``
     * child repositories: submodule sync/update from their parent repository
 
-    Does not require a ``READY`` registry; intended for use after loading a
-    ``.cgs`` file (``DECLARED`` state).  Produces a ``READY`` registry or
+    Does not require a ``READY`` tree; intended for use after loading a
+    ``.cgs`` file (``DECLARED`` state).  Produces a ``READY`` tree or
     raises if any repository checkout fails.
     """
-    root_entry = registry.get("root")
+    root_entry = tree.get("root")
     current_branch = git_runner.current_branch(root_entry.absolute_path)
     if current_branch is None:
         current_branch = (
@@ -128,43 +128,43 @@ def restart_tree(
             or "main"
         )
 
-    propagate_global_branch(registry, current_branch)
+    propagate_global_branch(tree, current_branch)
 
-    for entry in iter_tree(registry):
-        if entry.parent_id is None:
-            git_runner.pull(entry.absolute_path, ref_name=current_branch)
+    for repo in iter_tree(tree):
+        if repo.parent_id is None:
+            git_runner.pull(repo.absolute_path, ref_name=current_branch)
         else:
-            parent = registry.get(entry.parent_id)
+            parent = tree.get(repo.parent_id)
             try:
-                relative_path = entry.absolute_path.relative_to(parent.absolute_path)
+                relative_path = repo.absolute_path.relative_to(parent.absolute_path)
             except ValueError as exc:
                 raise GitSyncError(
-                    f"pull preflight failed: {entry.name} is outside parent path {parent.absolute_path}."
+                    f"pull preflight failed: {repo.name} is outside parent path {parent.absolute_path}."
                 ) from exc
             if relative_path == Path("."):
                 raise GitSyncError(
                     "pull preflight failed: child repository cannot share the exact parent path "
-                    f"({parent.name}->{entry.name})."
+                    f"({parent.name}->{repo.name})."
                 )
             if not git_runner.is_submodule(parent.absolute_path, relative_path):
                 raise GitSyncError(
                     "pull preflight failed: child repositories must be linked as submodules "
-                    f"({parent.name}->{entry.name}:{relative_path.as_posix()})."
+                    f"({parent.name}->{repo.name}:{relative_path.as_posix()})."
                 )
             git_runner.update_submodule(parent.absolute_path, relative_path)
 
-        # Branch refresh uses entry-specific behavior:
+        # Branch refresh uses repo-specific behavior:
         # - children keep the propagated root branch contract because submodule
         #   updates may leave them detached.
         # - root reads its actual current branch (with fallback).
         resolved_branch = (
             current_branch
-            if entry.parent_id is not None
-            else (git_runner.current_branch(entry.absolute_path) or current_branch)
+            if repo.parent_id is not None
+            else (git_runner.current_branch(repo.absolute_path) or current_branch)
         )
-        _refresh_entry_after_checkout(entry, resolved_branch, RefKind.BRANCH, git_runner)
+        _refresh_repo_after_checkout(repo, resolved_branch, RefKind.BRANCH, git_runner)
 
-    registry.recompute_tree_state()
+    tree.recompute_tree_state()
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +173,7 @@ def restart_tree(
 
 
 def checkout_tree(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
     branch_name: str,
     *,
@@ -181,31 +181,31 @@ def checkout_tree(
 ) -> None:
     """Check out *branch_name* across the whole tree.
 
-    Requires a ``READY`` registry; raises :exc:`~.errors.TreeNotReadyError`
-    otherwise.  After a successful execution the registry remains ``READY``.
+    Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
+    otherwise.  After a successful execution the tree remains ``READY``.
 
     Steps performed in order:
 
-    1. :func:`propagate_global_branch` — set the target ref on every entry.
+    1. :func:`propagate_global_branch` — set the target ref on every repo.
     2. :func:`create_global_branch`    — create the branch locally where missing.
-    3. ``git checkout`` on every repo, parent-first; registry entries are
+    3. ``git checkout`` on every repo, parent-first; tree repos are
        updated to reflect the new current ref, resolved ref, commit SHA, and
        lifecycle / sync states.
     """
-    _assert_ready(registry)
+    _assert_ready(tree)
 
     # Step 1: propagate target ref across the whole tree
-    propagate_global_branch(registry, branch_name, ref_kind=ref_kind)
+    propagate_global_branch(tree, branch_name, ref_kind=ref_kind)
 
     # Step 2: create the branch in each repo where it does not exist yet
-    create_global_branch(registry, git_runner, branch_name)
+    create_global_branch(tree, git_runner, branch_name)
 
-    # Step 3: checkout and refresh each entry (parent-first)
-    for entry in iter_tree(registry):
-        git_runner.checkout(entry.absolute_path, branch_name)
-        _refresh_entry_after_checkout(entry, branch_name, ref_kind, git_runner)
+    # Step 3: checkout and refresh each repo (parent-first)
+    for repo in iter_tree(tree):
+        git_runner.checkout(repo.absolute_path, branch_name)
+        _refresh_repo_after_checkout(repo, branch_name, ref_kind, git_runner)
 
-    registry.recompute_tree_state()
+    tree.recompute_tree_state()
 
 
 # ---------------------------------------------------------------------------
@@ -214,19 +214,19 @@ def checkout_tree(
 
 
 def branch_tree(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
     branch_name: str,
 ) -> None:
     """Create *branch_name* across the whole tree without checkout.
 
-    Requires a ``READY`` registry; raises :exc:`~.errors.TreeNotReadyError`
-    otherwise. After a successful execution the registry remains ``READY``.
+    Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
+    otherwise. After a successful execution the tree remains ``READY``.
     """
-    _assert_ready(registry)
-    propagate_global_branch(registry, branch_name, ref_kind=RefKind.BRANCH)
-    create_global_branch(registry, git_runner, branch_name)
-    registry.recompute_tree_state()
+    _assert_ready(tree)
+    propagate_global_branch(tree, branch_name, ref_kind=RefKind.BRANCH)
+    create_global_branch(tree, git_runner, branch_name)
+    tree.recompute_tree_state()
 
 
 # ---------------------------------------------------------------------------
@@ -235,20 +235,20 @@ def branch_tree(
 
 
 def add_tree(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
 ) -> None:
     """Stage all changes across the tree, leaf-first.
 
-    Requires a ``READY`` registry; raises :exc:`~.errors.TreeNotReadyError`
-    otherwise.  After a successful execution the registry remains ``READY``.
+    Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
+    otherwise.  After a successful execution the tree remains ``READY``.
     """
-    _assert_ready(registry)
+    _assert_ready(tree)
 
-    for entry in iter_tree_leaf_first(registry):
-        git_runner.stage_all(entry.absolute_path)
+    for repo in iter_tree_leaf_first(tree):
+        git_runner.stage_all(repo.absolute_path)
 
-    registry.recompute_tree_state()
+    tree.recompute_tree_state()
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +257,7 @@ def add_tree(
 
 
 def commit_tree(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
     message: str,
     *,
@@ -265,33 +265,33 @@ def commit_tree(
 ) -> None:
     """Commit changes across the tree, leaf-first.
 
-    Requires a ``READY`` registry; raises :exc:`~.errors.TreeNotReadyError`
-    otherwise.  After a successful execution the registry remains ``READY``.
+    Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
+    otherwise.  After a successful execution the tree remains ``READY``.
 
     Each repo is processed from deepest leaf to root:
 
     * When *stage_all* is ``True`` (the default), ``git add --all`` is run
       before committing.
     * Repos with no staged changes after (optional) staging are silently skipped.
-    * The ``commit_sha`` of each entry is refreshed after committing.
+    * The ``commit_sha`` of each repo is refreshed after committing.
     """
-    _assert_ready(registry)
+    _assert_ready(tree)
     _run_preflight_checks(
-        registry,
+        tree,
         git_runner,
         require_clean=False,
         operation_name="commit",
     )
 
-    for entry in iter_tree_leaf_first(registry):
+    for repo in iter_tree_leaf_first(tree):
         if stage_all:
-            git_runner.stage_all(entry.absolute_path)
-        if not git_runner.has_staged_changes(entry.absolute_path):
+            git_runner.stage_all(repo.absolute_path)
+        if not git_runner.has_staged_changes(repo.absolute_path):
             continue
-        git_runner.commit(entry.absolute_path, message)
-        entry.commit_sha = git_runner.rev_parse_head(entry.absolute_path)
+        git_runner.commit(repo.absolute_path, message)
+        repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
 
-    registry.recompute_tree_state()
+    tree.recompute_tree_state()
 
 
 # ---------------------------------------------------------------------------
@@ -300,79 +300,79 @@ def commit_tree(
 
 
 def push_tree(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
 ) -> None:
     """Push all repos to their remotes, leaf-first.
 
-    Requires a ``READY`` registry; raises :exc:`~.errors.TreeNotReadyError`
-    otherwise.  After a successful execution the registry remains ``READY``.
+    Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
+    otherwise.  After a successful execution the tree remains ``READY``.
 
     The remote and branch used for each push are taken from
-    ``entry.remote_name`` (defaulting to ``"origin"``) and
-    ``entry.resolved_ref_name``.
+    ``repo.remote_name`` (defaulting to ``"origin"``) and
+    ``repo.resolved_ref_name``.
     """
-    _assert_ready(registry)
+    _assert_ready(tree)
     _run_preflight_checks(
-        registry,
+        tree,
         git_runner,
         require_clean=False,
         operation_name="push",
     )
 
-    for entry in iter_tree_leaf_first(registry):
-        remote = entry.remote_name or "origin"
-        current_branch = git_runner.current_branch(entry.absolute_path)
-        ref_name = entry.resolved_ref_name or current_branch
+    for repo in iter_tree_leaf_first(tree):
+        remote = repo.remote_name or "origin"
+        current_branch = git_runner.current_branch(repo.absolute_path)
+        ref_name = repo.resolved_ref_name or current_branch
         set_upstream = False
         if ref_name is not None and current_branch == ref_name:
-            set_upstream = not git_runner.has_upstream(entry.absolute_path)
+            set_upstream = not git_runner.has_upstream(repo.absolute_path)
         git_runner.push(
-            entry.absolute_path,
+            repo.absolute_path,
             remote=remote,
             ref_name=ref_name,
             set_upstream=set_upstream,
         )
-        entry.commit_sha = git_runner.rev_parse_head(entry.absolute_path)
+        repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
 
-    registry.recompute_tree_state()
+    tree.recompute_tree_state()
 
 
 def tag_tree(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
     tag_name: str,
 ) -> None:
     """Create and push *tag_name* across the tree, leaf-first."""
-    _assert_ready(registry)
+    _assert_ready(tree)
     _run_preflight_checks(
-        registry,
+        tree,
         git_runner,
         tag_name=tag_name,
         require_clean=True,
         operation_name="tag",
     )
-    GitTree().propagate_tag(registry, tag_name)
+    _propagate_tag(tree, tag_name)
 
-    for entry in iter_tree_leaf_first(registry):
-        git_runner.create_tag(entry.absolute_path, tag_name)
-        remote = entry.remote_name or "origin"
-        git_runner.push(entry.absolute_path, remote=remote, ref_name=tag_name)
-        entry.current_ref_kind = RefKind.TAG
-        entry.current_ref_name = tag_name
-        entry.resolved_ref_kind = RefKind.TAG
-        entry.resolved_ref_name = tag_name
-        entry.commit_sha = git_runner.rev_parse_head(entry.absolute_path)
-        entry.repo_lifecycle_state = RepoLifecycleState.READY
-        entry.sync_state = SyncState.ALIGNED
-        entry.fallback_applied = False
-        entry.fallback_reason = None
+    for repo in iter_tree_leaf_first(tree):
+        git_runner.create_tag(repo.absolute_path, tag_name)
+        remote = repo.remote_name or "origin"
+        git_runner.push(repo.absolute_path, remote=remote, ref_name=tag_name)
+        repo.current_ref_kind = RefKind.TAG
+        repo.current_ref_name = tag_name
+        repo.resolved_ref_kind = RefKind.TAG
+        repo.resolved_ref_name = tag_name
+        repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
+        repo.repo_lifecycle_state = RepoLifecycleState.READY
+        repo.sync_state = SyncState.ALIGNED
+        repo.fallback_applied = False
+        repo.fallback_reason = None
 
-    registry.recompute_tree_state()
+    tree.recompute_tree_state()
 
 
 def freeze_release_tree(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
     tag_name: str,
     *,
@@ -380,36 +380,36 @@ def freeze_release_tree(
     stage_all: bool = True,
 ) -> None:
     """Freeze a release by committing, tagging, and pushing leaf-first."""
-    _assert_ready(registry)
+    _assert_ready(tree)
     _run_preflight_checks(
-        registry,
+        tree,
         git_runner,
         tag_name=tag_name,
         require_clean=False,
         operation_name="freeze_release",
     )
-    GitTree().propagate_tag(registry, tag_name)
+    _propagate_tag(tree, tag_name)
     commit_message = message or f"freeze release {tag_name}"
 
-    for entry in iter_tree_leaf_first(registry):
+    for repo in iter_tree_leaf_first(tree):
         if stage_all:
-            git_runner.stage_all(entry.absolute_path)
-        if git_runner.has_staged_changes(entry.absolute_path):
-            git_runner.commit(entry.absolute_path, commit_message)
-        git_runner.create_tag(entry.absolute_path, tag_name)
-        remote = entry.remote_name or "origin"
-        git_runner.push(entry.absolute_path, remote=remote, ref_name=tag_name)
-        entry.current_ref_kind = RefKind.TAG
-        entry.current_ref_name = tag_name
-        entry.resolved_ref_kind = RefKind.TAG
-        entry.resolved_ref_name = tag_name
-        entry.commit_sha = git_runner.rev_parse_head(entry.absolute_path)
-        entry.repo_lifecycle_state = RepoLifecycleState.READY
-        entry.sync_state = SyncState.ALIGNED
-        entry.fallback_applied = False
-        entry.fallback_reason = None
+            git_runner.stage_all(repo.absolute_path)
+        if git_runner.has_staged_changes(repo.absolute_path):
+            git_runner.commit(repo.absolute_path, commit_message)
+        git_runner.create_tag(repo.absolute_path, tag_name)
+        remote = repo.remote_name or "origin"
+        git_runner.push(repo.absolute_path, remote=remote, ref_name=tag_name)
+        repo.current_ref_kind = RefKind.TAG
+        repo.current_ref_name = tag_name
+        repo.resolved_ref_kind = RefKind.TAG
+        repo.resolved_ref_name = tag_name
+        repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
+        repo.repo_lifecycle_state = RepoLifecycleState.READY
+        repo.sync_state = SyncState.ALIGNED
+        repo.fallback_applied = False
+        repo.fallback_reason = None
 
-    registry.recompute_tree_state()
+    tree.recompute_tree_state()
 
 
 # ---------------------------------------------------------------------------
@@ -448,7 +448,7 @@ class BranchTopologyConflict:
     ``"tag_divergence"``
         The repository is on a tag (allowed divergence — frozen state).
     ``"missing_root"``
-        The registry has no root entry; topology cannot be determined.
+        The tree has no root repo; topology cannot be determined.
     """
 
 
@@ -482,14 +482,14 @@ class BranchTopologyReport:
     is_coherent: bool
     """``True`` when all repositories are on the reference branch or in an allowed tag state.
 
-    Tag-divergent entries are considered allowed divergence and do not make the
+    Tag-divergent repos are considered allowed divergence and do not make the
     topology incoherent.  A topology is incoherent when at least one repository
     is on a different branch from the root, or is in an unexpected detached HEAD
     state.
     """
 
     conflicts: list[BranchTopologyConflict]
-    """All detected branch alignment conflicts, one entry per repository."""
+    """All detected branch alignment conflicts, one repo per repository."""
 
     repo_branches: dict[str, str | None]
     """Per-repository current branch snapshot: ``{repo_name: current_branch}``.
@@ -521,7 +521,7 @@ class BranchTopologyReport:
 
 
 def validate_branch_topology(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: "GitRunner",
 ) -> BranchTopologyReport:
     """Inspect and validate the workspace branch topology.
@@ -529,7 +529,7 @@ def validate_branch_topology(
     Walks the dependency tree and reports whether every repository is on the
     same branch as the root (or in an expected tag/frozen state).  The result
     is deterministic for the same workspace state: this function does not
-    mutate the registry or issue any git write commands.
+    mutate the tree or issue any git write commands.
 
     Branch Topology Propagation Rules (T35)
     ----------------------------------------
@@ -548,8 +548,8 @@ def validate_branch_topology(
 
     Parameters
     ----------
-    registry:
-        The runtime dependency tree registry.
+    tree:
+        The runtime dependency tree.
     git_runner:
         The git subprocess wrapper used to read live branch state.
 
@@ -558,13 +558,13 @@ def validate_branch_topology(
     BranchTopologyReport
         A deterministic, inspectable snapshot of the workspace branch topology.
     """
-    if "root" not in registry.entries:
+    if "root" not in tree.repos:
         return BranchTopologyReport(
             reference_branch=None,
             is_coherent=False,
             conflicts=[
                 BranchTopologyConflict(
-                    repo_name="registry",
+                    repo_name="tree",
                     expected_branch=None,
                     actual_branch=None,
                     conflict_kind="missing_root",
@@ -573,26 +573,26 @@ def validate_branch_topology(
             repo_branches={},
         )
 
-    root = registry.get("root")
+    root = tree.get("root")
     reference_branch = git_runner.current_branch(root.absolute_path)
 
     conflicts: list[BranchTopologyConflict] = []
     repo_branches: dict[str, str | None] = {}
 
-    for entry in iter_tree(registry):
-        current = git_runner.current_branch(entry.absolute_path)
-        repo_branches[entry.name] = current
+    for repo in iter_tree(tree):
+        current = git_runner.current_branch(repo.absolute_path)
+        repo_branches[repo.name] = current
 
         if current is None:
-            # Detached HEAD: allowed only when the entry carries a tag reference
+            # Detached HEAD: allowed only when the repo carries a tag reference
             kind = (
                 "tag_divergence"
-                if entry.resolved_ref_kind == RefKind.TAG
+                if repo.resolved_ref_kind == RefKind.TAG
                 else "detached_head"
             )
             conflicts.append(
                 BranchTopologyConflict(
-                    repo_name=entry.name,
+                    repo_name=repo.name,
                     expected_branch=reference_branch,
                     actual_branch=None,
                     conflict_kind=kind,
@@ -601,12 +601,12 @@ def validate_branch_topology(
         elif reference_branch is not None and current != reference_branch:
             kind = (
                 "tag_divergence"
-                if entry.resolved_ref_kind == RefKind.TAG
+                if repo.resolved_ref_kind == RefKind.TAG
                 else "misaligned_branch"
             )
             conflicts.append(
                 BranchTopologyConflict(
-                    repo_name=entry.name,
+                    repo_name=repo.name,
                     expected_branch=reference_branch,
                     actual_branch=current,
                     conflict_kind=kind,
@@ -629,16 +629,16 @@ def validate_branch_topology(
 # ---------------------------------------------------------------------------
 
 
-def _assert_ready(registry: DependencyTreeRegistry) -> None:
-    """Raise :exc:`~.errors.TreeNotReadyError` when *registry* is not READY."""
-    if not registry.is_ready():
+def _assert_ready(tree: WorkingGitTree) -> None:
+    """Raise :exc:`~.errors.TreeNotReadyError` when *tree* is not READY."""
+    if not tree.is_ready():
         raise TreeNotReadyError(
-            f"Operation requires a READY tree; current state: {registry.lifecycle_state.value}"
+            f"Operation requires a READY tree; current state: {tree.lifecycle_state.value}"
         )
 
 
 def _run_preflight_checks(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
     *,
     tag_name: str | None = None,
@@ -646,7 +646,7 @@ def _run_preflight_checks(
     operation_name: str,
 ) -> None:
     diagnostics = _collect_preflight_diagnostics(
-        registry,
+        tree,
         git_runner,
         operation_name=operation_name,
         tag_name=tag_name,
@@ -663,7 +663,7 @@ def _run_preflight_checks(
 
 
 def _collect_preflight_diagnostics(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
     *,
     operation_name: str,
@@ -671,45 +671,45 @@ def _collect_preflight_diagnostics(
     require_clean: bool,
 ) -> list[PreflightDiagnostic]:
     diagnostics: list[PreflightDiagnostic] = []
-    diagnostics.extend(_collect_remote_diagnostics(registry, git_runner))
+    diagnostics.extend(_collect_remote_diagnostics(tree, git_runner))
     if tag_name is not None:
-        diagnostics.extend(_collect_tag_conflict_diagnostics(registry, git_runner, tag_name=tag_name))
-    diagnostics.extend(_collect_detached_head_diagnostics(registry, git_runner))
-    diagnostics.extend(_collect_merge_diagnostics(registry, git_runner))
-    diagnostics.extend(_collect_branch_alignment_diagnostics(registry, git_runner))
-    diagnostics.extend(_collect_tracking_diagnostics(registry, git_runner))
+        diagnostics.extend(_collect_tag_conflict_diagnostics(tree, git_runner, tag_name=tag_name))
+    diagnostics.extend(_collect_detached_head_diagnostics(tree, git_runner))
+    diagnostics.extend(_collect_merge_diagnostics(tree, git_runner))
+    diagnostics.extend(_collect_branch_alignment_diagnostics(tree, git_runner))
+    diagnostics.extend(_collect_tracking_diagnostics(tree, git_runner))
     diagnostics.extend(
         _collect_submodule_diagnostics(
-            registry,
+            tree,
             git_runner,
             blocking=operation_name != "commit",
         )
     )
     diagnostics.extend(
         _collect_commit_sha_diagnostics(
-            registry,
+            tree,
             git_runner,
             blocking=False,
         )
     )
     diagnostics.extend(
-        _collect_worktree_diagnostics(registry, git_runner, require_clean=require_clean)
+        _collect_worktree_diagnostics(tree, git_runner, require_clean=require_clean)
     )
     return diagnostics
 
 
 def _collect_remote_diagnostics(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
 ) -> list[PreflightDiagnostic]:
     missing: list[PreflightDiagnostic] = []
-    for entry in iter_tree_leaf_first(registry):
-        remote = entry.remote_name or "origin"
-        if not git_runner.remote_exists(entry.absolute_path, remote):
+    for repo in iter_tree_leaf_first(tree):
+        remote = repo.remote_name or "origin"
+        if not git_runner.remote_exists(repo.absolute_path, remote):
             missing.append(
                 PreflightDiagnostic(
                     PreflightSeverity.BLOCKING_ERROR,
-                    entry.name,
+                    repo.name,
                     f"missing remote {remote!r}.",
                 )
             )
@@ -717,18 +717,18 @@ def _collect_remote_diagnostics(
 
 
 def _collect_tag_conflict_diagnostics(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
     *,
     tag_name: str,
 ) -> list[PreflightDiagnostic]:
     duplicates: list[PreflightDiagnostic] = []
-    for entry in iter_tree_leaf_first(registry):
-        if git_runner.tag_exists(entry.absolute_path, tag_name):
+    for repo in iter_tree_leaf_first(tree):
+        if git_runner.tag_exists(repo.absolute_path, tag_name):
             duplicates.append(
                 PreflightDiagnostic(
                     PreflightSeverity.BLOCKING_ERROR,
-                    entry.name,
+                    repo.name,
                     f"tag {tag_name!r} already exists.",
                 )
             )
@@ -736,16 +736,16 @@ def _collect_tag_conflict_diagnostics(
 
 
 def _collect_detached_head_diagnostics(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
 ) -> list[PreflightDiagnostic]:
     detached: list[PreflightDiagnostic] = []
-    for entry in iter_tree_leaf_first(registry):
-        if git_runner.current_branch(entry.absolute_path) is None:
+    for repo in iter_tree_leaf_first(tree):
+        if git_runner.current_branch(repo.absolute_path) is None:
             detached.append(
                 PreflightDiagnostic(
                     PreflightSeverity.BLOCKING_ERROR,
-                    entry.name,
+                    repo.name,
                     "repository is in detached HEAD state.",
                 )
             )
@@ -753,16 +753,16 @@ def _collect_detached_head_diagnostics(
 
 
 def _collect_merge_diagnostics(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
 ) -> list[PreflightDiagnostic]:
     merges: list[PreflightDiagnostic] = []
-    for entry in iter_tree_leaf_first(registry):
-        if git_runner.has_unresolved_merge(entry.absolute_path):
+    for repo in iter_tree_leaf_first(tree):
+        if git_runner.has_unresolved_merge(repo.absolute_path):
             merges.append(
                 PreflightDiagnostic(
                     PreflightSeverity.BLOCKING_ERROR,
-                    entry.name,
+                    repo.name,
                     "repository has an unresolved merge in progress.",
                 )
             )
@@ -770,29 +770,29 @@ def _collect_merge_diagnostics(
 
 
 def _collect_branch_alignment_diagnostics(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
 ) -> list[PreflightDiagnostic]:
-    if "root" not in registry.entries:
+    if "root" not in tree.repos:
         return [
             PreflightDiagnostic(
                 PreflightSeverity.BLOCKING_ERROR,
-                "registry",
-                "registry has no root repository entry.",
+                "tree",
+                "tree has no root repository.",
             )
         ]
-    root = registry.get("root")
+    root = tree.get("root")
     expected_branch = git_runner.current_branch(root.absolute_path)
     if expected_branch is None:
         return []
     mismatched: list[PreflightDiagnostic] = []
-    for entry in iter_tree_leaf_first(registry):
-        current = git_runner.current_branch(entry.absolute_path)
+    for repo in iter_tree_leaf_first(tree):
+        current = git_runner.current_branch(repo.absolute_path)
         if current is not None and current != expected_branch:
             mismatched.append(
                 PreflightDiagnostic(
                     PreflightSeverity.BLOCKING_ERROR,
-                    entry.name,
+                    repo.name,
                     f"branch misalignment: expected {expected_branch!r}, found {current!r}.",
                 )
             )
@@ -800,19 +800,19 @@ def _collect_branch_alignment_diagnostics(
 
 
 def _collect_tracking_diagnostics(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
 ) -> list[PreflightDiagnostic]:
     diagnostics: list[PreflightDiagnostic] = []
-    for entry in iter_tree_leaf_first(registry):
-        tracking_state = git_runner.branch_tracking_state(entry.absolute_path)
+    for repo in iter_tree_leaf_first(tree):
+        tracking_state = git_runner.branch_tracking_state(repo.absolute_path)
         if tracking_state in (None, SyncState.ALIGNED):
             continue
         if tracking_state == SyncState.AHEAD:
             diagnostics.append(
                 PreflightDiagnostic(
                     PreflightSeverity.WARNING,
-                    entry.name,
+                    repo.name,
                     "local branch is ahead of its upstream.",
                 )
             )
@@ -820,7 +820,7 @@ def _collect_tracking_diagnostics(
             diagnostics.append(
                 PreflightDiagnostic(
                     PreflightSeverity.BLOCKING_ERROR,
-                    entry.name,
+                    repo.name,
                     "local branch is behind its upstream.",
                 )
             )
@@ -828,7 +828,7 @@ def _collect_tracking_diagnostics(
             diagnostics.append(
                 PreflightDiagnostic(
                     PreflightSeverity.BLOCKING_ERROR,
-                    entry.name,
+                    repo.name,
                     "local branch diverged from its upstream.",
                 )
             )
@@ -836,7 +836,7 @@ def _collect_tracking_diagnostics(
             diagnostics.append(
                 PreflightDiagnostic(
                     PreflightSeverity.WARNING,
-                    entry.name,
+                    repo.name,
                     f"repository reports tracking state {tracking_state.value!r}.",
                 )
             )
@@ -844,44 +844,44 @@ def _collect_tracking_diagnostics(
 
 
 def _collect_submodule_diagnostics(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
     *,
     blocking: bool,
 ) -> list[PreflightDiagnostic]:
     missing: list[PreflightDiagnostic] = []
     severity = PreflightSeverity.BLOCKING_ERROR if blocking else PreflightSeverity.WARNING
-    for entry in iter_tree_leaf_first(registry):
-        if entry.parent_id is None:
+    for repo in iter_tree_leaf_first(tree):
+        if repo.parent_id is None:
             continue
-        if entry.parent_id not in registry.entries:
+        if repo.parent_id not in tree.repos:
             missing.append(
                 PreflightDiagnostic(
                     severity,
-                    entry.name,
-                    f"parent repository {entry.parent_id!r} is missing from the registry.",
+                    repo.name,
+                    f"parent repository {repo.parent_id!r} is missing from the tree.",
                 )
             )
             continue
-        parent = registry.get(entry.parent_id)
+        parent = tree.get(repo.parent_id)
         try:
-            relative_path = entry.absolute_path.relative_to(parent.absolute_path)
+            relative_path = repo.absolute_path.relative_to(parent.absolute_path)
         except ValueError:
             missing.append(
                 PreflightDiagnostic(
                     severity,
-                    entry.name,
-                    f"repository path {entry.absolute_path} is outside parent path {parent.absolute_path}.",
+                    repo.name,
+                    f"repository path {repo.absolute_path} is outside parent path {parent.absolute_path}.",
                 )
             )
             continue
         if relative_path == Path("."):
             continue
-        if not entry.absolute_path.exists():
+        if not repo.absolute_path.exists():
             missing.append(
                 PreflightDiagnostic(
                     severity,
-                    entry.name,
+                    repo.name,
                     f"submodule path {relative_path.as_posix()!r} is missing on disk.",
                 )
             )
@@ -890,7 +890,7 @@ def _collect_submodule_diagnostics(
             missing.append(
                 PreflightDiagnostic(
                     severity,
-                    entry.name,
+                    repo.name,
                     (
                         f"repository is not linked as submodule {relative_path.as_posix()!r} "
                         f"from parent {parent.name!r}."
@@ -901,30 +901,30 @@ def _collect_submodule_diagnostics(
 
 
 def _collect_commit_sha_diagnostics(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
     *,
     blocking: bool,
 ) -> list[PreflightDiagnostic]:
     inconsistent: list[PreflightDiagnostic] = []
     severity = PreflightSeverity.BLOCKING_ERROR if blocking else PreflightSeverity.WARNING
-    for entry in iter_tree_leaf_first(registry):
-        if not entry.commit_sha:
+    for repo in iter_tree_leaf_first(tree):
+        if not repo.commit_sha:
             continue
-        head_sha = git_runner.rev_parse_head(entry.absolute_path)
-        if head_sha != entry.commit_sha:
+        head_sha = git_runner.rev_parse_head(repo.absolute_path)
+        if head_sha != repo.commit_sha:
             inconsistent.append(
                 PreflightDiagnostic(
                     severity,
-                    entry.name,
-                    f"recorded commit_sha {entry.commit_sha!r} does not match HEAD {head_sha!r}.",
+                    repo.name,
+                    f"recorded commit_sha {repo.commit_sha!r} does not match HEAD {head_sha!r}.",
                 )
             )
     return inconsistent
 
 
 def _collect_worktree_diagnostics(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
     *,
     require_clean: bool,
@@ -933,14 +933,14 @@ def _collect_worktree_diagnostics(
     severity = (
         PreflightSeverity.BLOCKING_ERROR if require_clean else PreflightSeverity.WARNING
     )
-    for entry in iter_tree_leaf_first(registry):
-        is_dirty = _has_managed_uncommitted_changes(registry, git_runner, entry)
-        entry.worktree_state = "DIRTY" if is_dirty else "CLEAN"
+    for repo in iter_tree_leaf_first(tree):
+        is_dirty = _has_managed_uncommitted_changes(tree, git_runner, repo)
+        repo.worktree_state = "DIRTY" if is_dirty else "CLEAN"
         if is_dirty:
             dirty.append(
                 PreflightDiagnostic(
                     severity,
-                    entry.name,
+                    repo.name,
                     "worktree has uncommitted changes.",
                 )
             )
@@ -948,15 +948,15 @@ def _collect_worktree_diagnostics(
 
 
 def _has_managed_uncommitted_changes(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
-    entry: RepoRegistryEntry,
+    repo: WorkingRepo,
 ) -> bool:
     try:
-        status_lines = git_runner.status_porcelain(entry.absolute_path)
-        unmanaged_gitlinks = _unmanaged_gitlink_paths(registry, git_runner, entry)
+        status_lines = git_runner.status_porcelain(repo.absolute_path)
+        unmanaged_gitlinks = _unmanaged_gitlink_paths(tree, git_runner, repo)
     except (AttributeError, GitSyncError):
-        return git_runner.has_uncommitted_changes(entry.absolute_path)
+        return git_runner.has_uncommitted_changes(repo.absolute_path)
     if not unmanaged_gitlinks:
         return bool(status_lines)
     return any(
@@ -966,19 +966,19 @@ def _has_managed_uncommitted_changes(
 
 
 def _unmanaged_gitlink_paths(
-    registry: DependencyTreeRegistry,
+    tree: WorkingGitTree,
     git_runner: GitRunner,
-    entry: RepoRegistryEntry,
+    repo: WorkingRepo,
 ) -> set[Path]:
     try:
-        gitlinks = git_runner.tracked_gitlink_paths(entry.absolute_path)
+        gitlinks = git_runner.tracked_gitlink_paths(repo.absolute_path)
     except (AttributeError, GitSyncError):
         return set()
 
     managed_children: set[Path] = set()
-    for child in registry.children_of(entry.repo_id):
+    for child in tree.children_of(repo.repo_id):
         try:
-            managed_children.add(child.absolute_path.relative_to(entry.absolute_path))
+            managed_children.add(child.absolute_path.relative_to(repo.absolute_path))
         except ValueError:
             continue
     return {path for path in gitlinks if path not in managed_children}
@@ -1032,19 +1032,26 @@ def _format_preflight_error(
     )
 
 
-def _refresh_entry_after_checkout(
-    entry: RepoRegistryEntry,
+def _propagate_tag(tree: WorkingGitTree, tag_name: str) -> None:
+    """Propagate *tag_name* across *tree* from parent to leaves."""
+    for repo in iter_tree(tree):
+        repo.target_ref_kind = RefKind.TAG
+        repo.target_ref_name = tag_name
+
+
+def _refresh_repo_after_checkout(
+    repo: WorkingRepo,
     branch_name: str,
     ref_kind: RefKind,
     git_runner: GitRunner,
 ) -> None:
-    """Update *entry* in-place to reflect a completed ``git checkout``."""
-    entry.current_ref_kind = ref_kind
-    entry.current_ref_name = branch_name
-    entry.resolved_ref_kind = ref_kind
-    entry.resolved_ref_name = branch_name
-    entry.commit_sha = git_runner.rev_parse_head(entry.absolute_path)
-    entry.fallback_applied = False
-    entry.fallback_reason = None
-    entry.repo_lifecycle_state = RepoLifecycleState.READY
-    entry.sync_state = SyncState.ALIGNED
+    """Update *repo* in-place to reflect a completed ``git checkout``."""
+    repo.current_ref_kind = ref_kind
+    repo.current_ref_name = branch_name
+    repo.resolved_ref_kind = ref_kind
+    repo.resolved_ref_name = branch_name
+    repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
+    repo.fallback_applied = False
+    repo.fallback_reason = None
+    repo.repo_lifecycle_state = RepoLifecycleState.READY
+    repo.sync_state = SyncState.ALIGNED
