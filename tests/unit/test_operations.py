@@ -1115,7 +1115,7 @@ def test_git_runner_create_tag_default_does_not_force(monkeypatch):
     runner = GitRunner()
     captured: dict[str, object] = {}
 
-    def _spy_run(_self, *args: str, cwd=None):
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
         captured["args"] = args
         captured["cwd"] = cwd
         return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
@@ -1131,7 +1131,7 @@ def test_git_runner_push_can_set_upstream(monkeypatch):
     runner = GitRunner()
     captured: dict[str, object] = {}
 
-    def _spy_run(_self, *args: str, cwd=None):
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
         captured["args"] = args
         captured["cwd"] = cwd
         return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
