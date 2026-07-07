@@ -44,6 +44,7 @@ from urllib.parse import urlsplit
 
 import tomli_w
 
+from . import __version__ as CGS_VERSION
 from .errors import (
     ConfigValidationError,
     GitSyncError,
@@ -557,6 +558,60 @@ class CgsDocument(ConfigDocument):
         return self._data.get("runtime", {}).get(key, self.RUNTIME_DEFAULTS.get(key))
 
 
+def _ref_token(ref_kind: RefKind | str | None, ref_name: str | None) -> str | None:
+    if ref_kind is None or not ref_name:
+        return None
+    kind = ref_kind.value if isinstance(ref_kind, RefKind) else str(ref_kind)
+    return f"{kind}:{ref_name}"
+
+
+def _split_ref_token(value: Any) -> tuple[str | None, str | None]:
+    if isinstance(value, dict):
+        return _as_optional_str(value.get("kind")), _as_optional_str(value.get("name"))
+    if isinstance(value, str) and ":" in value:
+        kind, name = value.split(":", 1)
+        return _as_optional_str(kind), _as_optional_str(name)
+    return None, None
+
+
+def _repo_ref_pair(repo: dict[str, Any], prefix: str) -> tuple[str | None, str | None]:
+    compact_value = repo.get(f"{prefix}_ref")
+    if compact_value is None and prefix in {"current", "target", "resolved"}:
+        compact_value = repo.get("ref")
+    kind, name = _split_ref_token(compact_value)
+    if kind or name:
+        return kind, name
+    return _as_optional_str(repo.get(f"{prefix}_ref_kind")), _as_optional_str(repo.get(f"{prefix}_ref_name"))
+
+
+def _repo_ref_kind(repo: dict[str, Any], prefix: str) -> str | None:
+    return _repo_ref_pair(repo, prefix)[0]
+
+
+def _repo_ref_name(repo: dict[str, Any], prefix: str) -> str | None:
+    return _repo_ref_pair(repo, prefix)[1]
+
+
+def _repo_ref_token(repo: dict[str, Any], prefix: str) -> str | None:
+    return _ref_token(*_repo_ref_pair(repo, prefix))
+
+
+def _write_compact_refs(repo_data: dict[str, Any], entry: WorkingRepo) -> None:
+    current = _ref_token(entry.current_ref_kind, entry.current_ref_name)
+    target = _ref_token(entry.target_ref_kind, entry.target_ref_name)
+    resolved = _ref_token(entry.resolved_ref_kind, entry.resolved_ref_name)
+    refs = [ref for ref in (current, target, resolved) if ref is not None]
+    if refs and len(set(refs)) == 1:
+        repo_data["ref"] = refs[0]
+        return
+    if current is not None:
+        repo_data["current_ref"] = current
+    if target is not None:
+        repo_data["target_ref"] = target
+    if resolved is not None:
+        repo_data["resolved_ref"] = resolved
+
+
 class GtsDocument(ConfigDocument):
     """Parser and validator for ``.gts`` Git Tree State snapshot files.
 
@@ -570,7 +625,7 @@ class GtsDocument(ConfigDocument):
     HASH_ALGORITHM = "sha256"
     _SUPPORTED_HASH_ALGORITHMS = frozenset((HASH_ALGORITHM,))
 
-    _REQUIRED_DOCUMENT_KEYS = ("format_version", "generated_at", "command_origin")
+    _REQUIRED_DOCUMENT_KEYS = ("generated_at", "command_origin")
     _REQUIRED_PROJECT_KEYS = ("name", "root_absolute_path")
     _REQUIRED_TREE_STATE_KEYS = ("lifecycle_state", "is_ready", "registry_complete")
     _REQUIRED_REPO_STATE_KEYS = (
@@ -587,6 +642,8 @@ class GtsDocument(ConfigDocument):
         for key in self._REQUIRED_DOCUMENT_KEYS:
             if self.read(f"document.{key}") is None:
                 errors.append(f"[document] missing required key: '{key}'")
+        if self.read("document.CGS_VERSION") is None and self.read("document.format_version") is None:
+            errors.append("[document] missing required key: 'CGS_VERSION'")
 
         for key in self._REQUIRED_PROJECT_KEYS:
             if self.read(f"project.{key}") is None:
@@ -621,14 +678,13 @@ class GtsDocument(ConfigDocument):
                 requires_parent_path = node_type != NodeType.ROOT and not is_project_root_repo
                 if requires_parent_path and not repo.get("parent_absolute_path"):
                     errors.append(f"repo_state[{idx}] missing required key: 'parent_absolute_path'")
-                has_ref_name = bool(
-                    repo.get("current_ref_name")
-                    or repo.get("target_ref_name")
-                    or repo.get("resolved_ref_name")
+                has_ref_name = any(
+                    _repo_ref_name(repo, prefix)
+                    for prefix in ("current", "target", "resolved")
                 )
                 if not has_ref_name:
                     errors.append(
-                        f"repo_state[{idx}] must include at least one ref name ('current_ref_name', 'target_ref_name', or 'resolved_ref_name')"
+                        f"repo_state[{idx}] must include at least one ref ('ref', 'current_ref', 'target_ref', or 'resolved_ref')"
                     )
                 lifecycle = str(repo.get("repo_lifecycle_state", ""))
                 if lifecycle in {
@@ -697,7 +753,10 @@ class GtsDocument(ConfigDocument):
         value = self.read("document.schema_version")
         if isinstance(value, str) and value:
             return value
-        return self.CURRENT_SCHEMA_VERSION
+        value = self.read("document.CGS_VERSION")
+        if isinstance(value, str) and value:
+            return value
+        return CGS_VERSION
 
     @property
     def snapshot_hash(self) -> str | None:
@@ -715,13 +774,88 @@ class GtsDocument(ConfigDocument):
 
     def ensure_snapshot_hash(self) -> str:
         document = self._data.setdefault("document", {})
-        document["schema_version"] = self.CURRENT_SCHEMA_VERSION
-        document["hash_algorithm"] = self.HASH_ALGORITHM
+        document["CGS_VERSION"] = str(document.get("CGS_VERSION") or CGS_VERSION)
         digest = self.compute_snapshot_hash()
         document["snapshot_hash"] = digest
         return digest
 
     def _build_canonical_payload(self) -> dict[str, Any]:
+        if self._is_legacy_version_format():
+            return self._build_legacy_canonical_payload()
+
+        project = self._data.get("project", {})
+        tree_state = self._data.get("tree_state", {})
+        repo_states = self._data.get("repo_state", [])
+        freeze_manifest = self._data.get("freeze_manifest", {})
+        canonical_repo_states = []
+        for repo in repo_states if isinstance(repo_states, list) else []:
+            if not isinstance(repo, dict):
+                continue
+            canonical_repo_states.append(
+                {
+                    "name": repo.get("name"),
+                    "node_type": repo.get("node_type"),
+                    "absolute_path": repo.get("absolute_path"),
+                    "relative_path": repo.get("relative_path"),
+                    "parent_absolute_path": repo.get("parent_absolute_path"),
+                    "repo_lifecycle_state": repo.get("repo_lifecycle_state"),
+                    "sync_state": repo.get("sync_state"),
+                    "current_ref": _repo_ref_token(repo, "current"),
+                    "target_ref": _repo_ref_token(repo, "target"),
+                    "resolved_ref": _repo_ref_token(repo, "resolved"),
+                    "commit_sha": repo.get("commit_sha"),
+                    "project_owner_name": repo.get("project_owner_name"),
+                    "project_name": repo.get("project_name"),
+                    "repo_name": repo.get("repo_name"),
+                    "fallback_branch": repo.get("fallback_branch", "main"),
+                    "fallback_applied": bool(repo.get("fallback_applied", False)),
+                    "fallback_reason": repo.get("fallback_reason"),
+                    "discovery_state": repo.get("discovery_state", DiscoveryState.RESOLVED.value),
+                    "worktree_state": repo.get("worktree_state"),
+                    "is_reachable": bool(repo.get("is_reachable", True)),
+                    "source_cgs_path": repo.get("source_cgs_path"),
+                }
+            )
+        # Canonical ordering: lexicographic sort on (absolute_path, name).
+        canonical_repo_states.sort(
+            key=lambda repo: (
+                str(repo.get("absolute_path", "")),
+                str(repo.get("name", "")),
+            )
+        )
+        payload = {
+            "document": {
+                "CGS_VERSION": self.schema_version,
+            },
+            "project": {
+                "name": project.get("name"),
+                "root_absolute_path": project.get("root_absolute_path"),
+                "source_cgs_path": project.get("source_cgs_path"),
+            },
+            "tree_state": {
+                "lifecycle_state": tree_state.get("lifecycle_state"),
+                "is_ready": tree_state.get("is_ready"),
+                "registry_complete": tree_state.get("registry_complete"),
+            },
+            "repo_state": canonical_repo_states,
+        }
+        if isinstance(freeze_manifest, dict):
+            payload["freeze_manifest"] = {
+                "schema_version": freeze_manifest.get("schema_version"),
+                "immutable_snapshot": freeze_manifest.get("immutable_snapshot"),
+                "workspace_validated": freeze_manifest.get("workspace_validated"),
+                "ledger_checkpoint": freeze_manifest.get("ledger_checkpoint"),
+                "synchronized_ref_kind": freeze_manifest.get("synchronized_ref_kind"),
+                "synchronized_ref_name": freeze_manifest.get("synchronized_ref_name"),
+                "restore_operation": freeze_manifest.get("restore_operation"),
+            }
+        return payload
+
+    def _is_legacy_version_format(self) -> bool:
+        document = self._data.get("document", {})
+        return isinstance(document, dict) and document.get("CGS_VERSION") is None
+
+    def _build_legacy_canonical_payload(self) -> dict[str, Any]:
         project = self._data.get("project", {})
         tree_state = self._data.get("tree_state", {})
         repo_states = self._data.get("repo_state", [])
@@ -758,7 +892,6 @@ class GtsDocument(ConfigDocument):
                     "source_cgs_path": repo.get("source_cgs_path"),
                 }
             )
-        # Canonical ordering: lexicographic sort on (absolute_path, name).
         canonical_repo_states.sort(
             key=lambda repo: (
                 str(repo.get("absolute_path", "")),
@@ -1973,17 +2106,17 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
                 if repo_state.get("source_cgs_path")
                 else (_resolve_document_path(str(project_source_cgs_path)) if project_source_cgs_path else None)
             ),
-            current_ref_kind=_parse_optional_enum(RefKind, repo_state.get("current_ref_kind")),
-            current_ref_name=_as_optional_str(repo_state.get("current_ref_name")),
-            target_ref_kind=_parse_optional_enum(RefKind, repo_state.get("target_ref_kind")),
-            target_ref_name=_as_optional_str(repo_state.get("target_ref_name")),
-            resolved_ref_kind=_parse_optional_enum(RefKind, repo_state.get("resolved_ref_kind")),
-            resolved_ref_name=_as_optional_str(repo_state.get("resolved_ref_name")),
+            current_ref_kind=_parse_optional_enum(RefKind, _repo_ref_kind(repo_state, "current")),
+            current_ref_name=_repo_ref_name(repo_state, "current"),
+            target_ref_kind=_parse_optional_enum(RefKind, _repo_ref_kind(repo_state, "target")),
+            target_ref_name=_repo_ref_name(repo_state, "target"),
+            resolved_ref_kind=_parse_optional_enum(RefKind, _repo_ref_kind(repo_state, "resolved")),
+            resolved_ref_name=_repo_ref_name(repo_state, "resolved"),
             commit_sha=_as_optional_str(repo_state.get("commit_sha")),
             repo_lifecycle_state=RepoLifecycleState(str(repo_state["repo_lifecycle_state"])),
             sync_state=SyncState(str(repo_state["sync_state"])),
             discovery_state=DiscoveryState(str(repo_state.get("discovery_state", DiscoveryState.RESOLVED.value))),
-            fallback_branch=_as_optional_str(repo_state.get("fallback_branch")),
+            fallback_branch=_as_optional_str(repo_state.get("fallback_branch", "main")),
             fallback_applied=bool(repo_state.get("fallback_applied", False)),
             fallback_reason=_as_optional_str(repo_state.get("fallback_reason")),
             worktree_state=_as_optional_str(repo_state.get("worktree_state")),
@@ -1995,7 +2128,7 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
                 if repo_state.get("repo_name") is not None
                 else _as_optional_str(repo_state.get("project_name"))
             ),
-            default_branch=_as_optional_str(repo_state.get("target_ref_name")),
+            default_branch=_repo_ref_name(repo_state, "target"),
         )
         registry.add(entry)
         path_to_repo_id[absolute_path] = repo_id
@@ -2016,11 +2149,9 @@ def build_gts_document_from_registry(
     tree_state = build_tree_state(registry)
     data: dict[str, Any] = {
         "document": {
-            "format_version": "1.0",
-            "schema_version": GtsDocument.CURRENT_SCHEMA_VERSION,
+            "CGS_VERSION": CGS_VERSION,
             "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "command_origin": command_origin,
-            "hash_algorithm": GtsDocument.HASH_ALGORITHM,
         },
         "project": {
             "name": root_entry.name,
@@ -2030,6 +2161,9 @@ def build_gts_document_from_registry(
             "lifecycle_state": tree_state.lifecycle_state.value,
             "is_ready": tree_state.is_ready,
             "registry_complete": tree_state.registry_complete,
+        },
+        "tree": {
+            "lines": format_view_tree(registry).splitlines(),
         },
         "repo_state": [],
     }
@@ -2046,19 +2180,9 @@ def build_gts_document_from_registry(
             "relative_path": str(entry.relative_path) if entry.relative_path is not None else None,
             "repo_lifecycle_state": entry.repo_lifecycle_state.value,
             "sync_state": entry.sync_state.value,
-            "current_ref_kind": entry.current_ref_kind.value if entry.current_ref_kind else None,
-            "current_ref_name": entry.current_ref_name,
-            "target_ref_kind": entry.target_ref_kind.value if entry.target_ref_kind else None,
-            "target_ref_name": entry.target_ref_name,
-            "resolved_ref_kind": entry.resolved_ref_kind.value if entry.resolved_ref_kind else None,
-            "resolved_ref_name": entry.resolved_ref_name,
             "commit_sha": entry.commit_sha,
-            "discovery_state": entry.discovery_state.value,
-            "fallback_branch": entry.fallback_branch,
-            "fallback_applied": entry.fallback_applied,
             "fallback_reason": entry.fallback_reason,
             "worktree_state": entry.worktree_state,
-            "is_reachable": entry.is_reachable,
             "source_cgs_path": (
                 _path_to_environment_marker(entry.source_cgs_path) if entry.source_cgs_path else None
             ),
@@ -2066,6 +2190,15 @@ def build_gts_document_from_registry(
             "project_name": entry.project_name,
             "repo_name": entry.repo_name,
         }
+        _write_compact_refs(repo_data, entry)
+        if entry.discovery_state != DiscoveryState.RESOLVED:
+            repo_data["discovery_state"] = entry.discovery_state.value
+        if entry.fallback_branch and entry.fallback_branch != "main":
+            repo_data["fallback_branch"] = entry.fallback_branch
+        if entry.fallback_applied:
+            repo_data["fallback_applied"] = entry.fallback_applied
+        if not entry.is_reachable:
+            repo_data["is_reachable"] = entry.is_reachable
         if entry.parent_id is not None:
             repo_data["parent_absolute_path"] = _path_to_environment_marker(
                 registry.get(entry.parent_id).absolute_path

@@ -1126,6 +1126,50 @@ commit_sha = "sha-leaf"
     assert registry.get("root:deps/leaf").absolute_path == leaf_path
 
 
+def test_build_registry_from_compact_gts_ref(tmp_path):
+    snapshot_path = tmp_path / "compact.gts"
+    snapshot_path.write_text(
+        """
+[document]
+CGS_VERSION = "0001.50"
+generated_at = "2026-01-01T00:00:00Z"
+command_origin = "clone"
+
+[project]
+name = "demo"
+root_absolute_path = "/tmp/demo"
+
+[tree_state]
+lifecycle_state = "READY"
+is_ready = true
+registry_complete = true
+
+[[repo_state]]
+name = "demo"
+node_type = "root"
+absolute_path = "/tmp/demo"
+relative_path = "."
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+ref = "branch:main"
+commit_sha = "abc123"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
+    root = registry.get("root")
+
+    assert root.current_ref_kind == RefKind.BRANCH
+    assert root.current_ref_name == "main"
+    assert root.target_ref_kind == RefKind.BRANCH
+    assert root.target_ref_name == "main"
+    assert root.resolved_ref_kind == RefKind.BRANCH
+    assert root.resolved_ref_name == "main"
+    assert root.fallback_branch == "main"
+
+
 def test_resolve_goc_project_source_expands_home_variable(monkeypatch, tmp_path):
     fake_home = (tmp_path / "home" / "user").resolve()
     monkeypatch.setenv("HOME", str(fake_home))
@@ -1248,9 +1292,16 @@ def test_client_load_gts_snapshot_has_correct_command_origin(tmp_path):
 
     data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
     assert data["document"]["command_origin"] == "load"
-    assert data["document"]["schema_version"] == "1.1"
-    assert data["document"]["hash_algorithm"] == "sha256"
+    assert data["document"]["CGS_VERSION"]
+    assert "format_version" not in data["document"]
+    assert "schema_version" not in data["document"]
+    assert "hash_algorithm" not in data["document"]
     assert len(data["document"]["snapshot_hash"]) == 64
+    assert "demo (root)" in "\n".join(data["tree"]["lines"])
+    assert data["repo_state"][0]["ref"] == "branch:main"
+    assert "discovery_state" not in data["repo_state"][0]
+    assert "fallback_branch" not in data["repo_state"][0]
+    assert "fallback_applied" not in data["repo_state"][0]
 
 
 def test_client_expand_gts_snapshot_has_correct_command_origin(tmp_path):
@@ -1263,8 +1314,9 @@ def test_client_expand_gts_snapshot_has_correct_command_origin(tmp_path):
 
     data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
     assert data["document"]["command_origin"] == "expand"
-    assert data["document"]["schema_version"] == "1.1"
-    assert data["document"]["hash_algorithm"] == "sha256"
+    assert data["document"]["CGS_VERSION"]
+    assert "schema_version" not in data["document"]
+    assert "hash_algorithm" not in data["document"]
     assert len(data["document"]["snapshot_hash"]) == 64
 
 
@@ -1278,8 +1330,9 @@ def test_client_validate_gts_snapshot_has_correct_command_origin(tmp_path):
 
     data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
     assert data["document"]["command_origin"] == "validate"
-    assert data["document"]["schema_version"] == "1.1"
-    assert data["document"]["hash_algorithm"] == "sha256"
+    assert data["document"]["CGS_VERSION"]
+    assert "schema_version" not in data["document"]
+    assert "hash_algorithm" not in data["document"]
     assert len(data["document"]["snapshot_hash"]) == 64
 
 
