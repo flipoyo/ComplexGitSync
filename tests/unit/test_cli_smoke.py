@@ -411,14 +411,14 @@ def test_view_tree_command_supports_gts_and_render_options(monkeypatch, capsys, 
         def view_tree(self, *, depth=None, collapse=()):
             captured_call["depth"] = depth
             captured_call["collapse"] = collapse
-            return "ROOT demo [main] clean synced"
+            return "demo (root) [ALIGNED] @abc1234"
 
     monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
     exit_code = main(
-        ["view_tree", str(gts_path), "--depth", "1", "--collapse", "deps", "--collapse", "plugins"]
+        ["view-tree", str(gts_path), "--depth", "1", "--collapse", "deps", "--collapse", "plugins"]
     )
     captured = capsys.readouterr()
 
@@ -426,7 +426,14 @@ def test_view_tree_command_supports_gts_and_render_options(monkeypatch, capsys, 
     assert captured_call["gts_path"] == gts_path.resolve()
     assert captured_call["depth"] == 1
     assert captured_call["collapse"] == ("deps", "plugins")
-    assert "ROOT demo [main] clean synced" in captured.out
+    assert "demo (root) [ALIGNED] @abc1234" in captured.out
+
+
+def test_view_tree_underscore_command_is_not_registered():
+    with pytest.raises(SystemExit) as exc_info:
+        main(["view_tree"])
+
+    assert exc_info.value.code == 2
 
 
 def test_view_operation_command_supports_cgs_runtime_loading(monkeypatch, capsys, tmp_path):
@@ -683,7 +690,7 @@ def test_pull_command_uses_client_handler(monkeypatch, capsys, tmp_path):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
         def view_tree(self):
-            return "ROOT project [btest0] clean synced\n└── leaf [btest0] clean synced"
+            return "project (root) [ALIGNED] @abc1234\n└── leaf (leaf) [ALIGNED] @def5678"
 
     monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
 
@@ -1507,7 +1514,7 @@ def test_view_tree_auto_discovery(monkeypatch, capsys, tmp_path):
             captured_call["gts_path"] = Path(path)
 
         def view_tree(self, *, depth=None, collapse=()):
-            return "ROOT demo [main] clean synced"
+            return "demo (root) [ALIGNED] @abc1234"
 
     monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
 
@@ -1524,7 +1531,7 @@ def test_view_tree_auto_discovery(monkeypatch, capsys, tmp_path):
 
     assert exit_code == 0
     assert captured_call["gts_path"] == gts_path.resolve()
-    assert "ROOT demo [main] clean synced" in captured.out
+    assert "demo (root) [ALIGNED] @abc1234" in captured.out
 
 
 def test_registry_command_is_removed(capsys):

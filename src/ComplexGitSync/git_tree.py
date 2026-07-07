@@ -12,6 +12,7 @@ Classes defined here (Tier 1 — Core State):
 Functions defined here (Tier 2 — Actions / tree utilities):
     make_repo_id                Build a colon-separated repo ID from path
     promote_to_parent           Upgrade a LEAF entry to PARENT
+    normalize_node_types        Align node types with the current tree shape
     register_relative_path      Guard against duplicate relative paths
     build_tree_state            Derive a ProjectTreeState from the registry
     find_strongly_connected_components  Tarjan's SCC algorithm on a path-based graph
@@ -759,6 +760,22 @@ def promote_to_parent(
     return entry
 
 
+def normalize_node_types(tree: WorkingGitTree) -> None:
+    """Synchronize node types with the current parent/child registry shape."""
+    child_parent_ids = {
+        entry.parent_id
+        for entry in tree.values()
+        if entry.parent_id is not None
+    }
+    for entry in tree.values():
+        if entry.repo_id == ROOT_REPO_ID:
+            entry.node_type = NodeType.ROOT
+        elif entry.repo_id in child_parent_ids:
+            entry.node_type = NodeType.PARENT
+        else:
+            entry.node_type = NodeType.LEAF
+
+
 def register_relative_path(
     seen_relative_paths: set[Path],
     relative_path: Path,
@@ -1241,7 +1258,7 @@ def format_view_tree(
     depth: int | None = None,
     collapse: Sequence[str] = (),
 ) -> str:
-    """Render a terminal tree view focused on branch/local/sync state."""
+    """Render a terminal tree view with node type, sync state, commit SHA, and fallback branch."""
     if depth is not None and depth < 0:
         raise ValueError("depth must be >= 0")
 
@@ -1257,12 +1274,15 @@ def format_view_tree(
         children.sort(key=lambda child: (str(child.relative_path or ""), child.name))
 
     def render_node(entry: WorkingRepo) -> str:
-        return (
-            f"{entry.name} [{_entry_branch(entry)}] "
-            f"{_entry_local_state(entry)} {_entry_sync_state(entry)}"
-        )
+        node_type = entry.node_type.value.lower()
+        sync_state = entry.sync_state.value
+        sha = entry.commit_sha[:7] if entry.commit_sha else "?"
+        fb = entry.fallback_branch
+        fb_str = f" fb={fb}" if fb and fb != "main" else ""
+        return f"{entry.name} ({node_type}) [{sync_state}] @{sha}{fb_str}"
 
-    lines = [f"ROOT {render_node(root_entry)}"]
+    lines: list[str] = []
+    lines.append(render_node(root_entry))
 
     def walk(entry: WorkingRepo, *, prefix: str, level: int) -> None:
         if depth is not None and level >= depth:

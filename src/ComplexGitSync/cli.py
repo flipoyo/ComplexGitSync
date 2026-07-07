@@ -66,7 +66,6 @@ def build_parser() -> argparse.ArgumentParser:
         if command_name == "view-tree":
             subparser = subparsers.add_parser(
                 command_name,
-                aliases=["view_tree"],
                 help=help_text,
                 description=help_text,
             )

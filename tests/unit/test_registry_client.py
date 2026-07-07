@@ -7,8 +7,8 @@ import pytest
 
 from ComplexGitSync.orchestre import ComplexGitSyncClient, GocDocument, _path_to_environment_marker
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
-from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState, SyncState
-from ComplexGitSync.git_tree import WorkingGitTree, GitTree, TreeLifecycleState, make_repo_id
+from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState, SyncState, WorkingRepo
+from ComplexGitSync.git_tree import WorkingGitTree, GitTree, TreeLifecycleState, make_repo_id, normalize_node_types
 from ComplexGitSync.orchestre import GtsDocument, RuntimeStateStore, build_registry_from_gts_document
 
 
@@ -743,10 +743,37 @@ def test_view_tree_rendering_supports_depth_and_collapse(tmp_path):
 
     rendered_tree = client.view_tree(depth=1, collapse=("child-repo",))
 
-    assert rendered_tree.startswith("ROOT demo [")
-    assert "dirty blocked" in rendered_tree
-    assert "child-repo [" in rendered_tree
+    assert rendered_tree.startswith("demo (root) [")
+    assert "child-repo (leaf)" in rendered_tree
     assert "└── child-repo" in rendered_tree
+
+
+def test_normalize_node_types_marks_childless_parent_entry_as_leaf(tmp_path):
+    registry = WorkingGitTree()
+    registry.add(
+        WorkingRepo(
+            repo_id="root",
+            name="demo",
+            node_type=NodeType.ROOT,
+            absolute_path=tmp_path,
+            relative_path=Path("."),
+        )
+    )
+    registry.add(
+        WorkingRepo(
+            repo_id="root:parentish-leaf",
+            name="parentish-leaf",
+            node_type=NodeType.PARENT,
+            parent_id="root",
+            absolute_path=tmp_path / "parentish-leaf",
+            relative_path=Path("parentish-leaf"),
+        )
+    )
+
+    normalize_node_types(registry)
+
+    assert registry.get("root").node_type == NodeType.ROOT
+    assert registry.get("root:parentish-leaf").node_type == NodeType.LEAF
 
 
 def test_view_operation_rendering_contains_required_columns(tmp_path):

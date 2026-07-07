@@ -86,6 +86,7 @@ from .git_tree import (
     iter_tree,
     iter_tree_leaf_first,
     make_repo_id,
+    normalize_node_types,
     promote_to_parent,
     register_relative_path,
     topological_sort as _topological_sort,
@@ -1929,6 +1930,7 @@ def build_registry_from_cgs_document(
         )
         registry.add(entry)
 
+    normalize_node_types(registry)
     registry.recompute_tree_state()
     return registry
 
@@ -1998,6 +2000,7 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
         registry.add(entry)
         path_to_repo_id[absolute_path] = repo_id
 
+    normalize_node_types(registry)
     registry.recompute_tree_state()
     return registry
 
@@ -2203,6 +2206,7 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
             registered_paths.add(new_entry.absolute_path)
             changes.append(f"discovered:{child_id}")
 
+    normalize_node_types(registry)
     registry.recompute_tree_state()
     return tuple(changes)
 
@@ -2642,7 +2646,10 @@ class ComplexGitSyncClient:
             ``"fixed_circularity:<removed_id>→<canonical_id>"``.
         """
         registry = self.get_dependency_registry()
-        return _fix_circularities(registry)
+        fixed = _fix_circularities(registry)
+        normalize_node_types(registry)
+        registry.recompute_tree_state()
+        return fixed
 
     def validate(
         self,

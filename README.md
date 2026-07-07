@@ -98,12 +98,20 @@ pixi run cgitsync initialise "$CGSHOME/.cgitsync/state/CGSil1.gts"
 
 ```bash
 pixi run cgitsync print "$CGSHOME/.cgitsync/state/CGSil1.gts"
-pixi run cgitsync view_tree "$CGSHOME/.cgitsync/state/CGSil1.gts"
-pixi run cgitsync view_tree "$CGSHOME/.cgitsync/state/CGSil1.gts" --depth 2 --collapse CGSih1
+pixi run cgitsync view-tree "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync view-tree "$CGSHOME/.cgitsync/state/CGSil1.gts" --depth 2 --collapse CGSih1
 pixi run cgitsync view_operation "$CGSHOME/.cgitsync/state/CGSil1.gts"
 ```
 
-If no source is passed to `view_tree`, `view_operation`, or the READY-state Git
+Example `view-tree` output:
+```text
+CGSil1 (root) [ALIGNED] @e6cfdb8
+├── CGSih1 (parent) [ALIGNED] @9e2a9d8
+│   └── CGSih2 (leaf) [ALIGNED] @8e14bfa
+└── CGSil2 (leaf) [ALIGNED] @0511d53
+```
+
+If no source is passed to `view-tree`, `view_operation`, or the READY-state Git
 commands below, the CLI discovers the latest snapshot from
 `$CGSHOME/.cgitsync/state/`. `CGSHOME` can be set explicitly; when it is not,
 the initialisation default is `CGSPATH=../..` and later commands can also discover the
@@ -220,7 +228,7 @@ Inspection commands:
 - `status [--gts <file.gts>]`: summarize local cleanliness, local/upstream
   branch tracking (`LOCAL_BRANCH`, `UPSTREAM_BRANCH`, `SYNC` with ahead/behind
   counts), and recorded SHA drift
-- `view_tree [file.cgs|file.gts]`: render the repository tree
+- `view-tree [file.cgs|file.gts]`: render the repository tree with node type, sync state, commit SHA, and fallback branch (if not main)
 - `view_operation [file.cgs|file.gts]`: render the runtime operation table
 - `validate-topology --gts <file.gts>`: check branch alignment across the tree
 
@@ -256,7 +264,7 @@ cd ComplexGitSync
 export CGSPATH="${CGSPATH:-../..}"
 export CGSHOME="${CGSHOME:-$CGSPATH/CGSil1}"
 pixi run cgitsync initialise ../CGSil1.cgs
-pixi run cgitsync view_tree "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync view-tree "$CGSHOME/.cgitsync/state/CGSil1.gts"
 ```
 
 Omitting `--output-path` is equivalent to `--output-path "$CGSPATH"` with the
