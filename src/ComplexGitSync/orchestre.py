@@ -1528,7 +1528,10 @@ class GitRunner:
     def _ensure_gitignore_entries(self, repo_path: Path | str, *entries: str) -> None:
         """Create or append missing ignore entries in the local ``.gitignore``."""
         gitignore_path = Path(repo_path) / ".gitignore"
-        existing_content = gitignore_path.read_text(encoding="utf-8") if gitignore_path.exists() else ""
+        try:
+            existing_content = gitignore_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            existing_content = ""
         existing_entries = existing_content.splitlines()
         missing_entries = [entry for entry in entries if entry not in existing_entries]
         if not missing_entries:

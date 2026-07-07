@@ -1251,6 +1251,7 @@ def test_git_runner_add_submodule_appends_missing_gitignore_entries(monkeypatch,
     runner = GitRunner()
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
+    # Intentionally omit the trailing newline to verify append-only behavior.
     (repo_path / ".gitignore").write_text("existing-entry\n.gitmodules", encoding="utf-8")
 
     def _spy_run(_self, *args: str, cwd: Path | str | None = None):
