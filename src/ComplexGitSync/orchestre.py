@@ -930,7 +930,6 @@ class GtsDocument(ConfigDocument):
 
 _VALID_GOC_COMMANDS = frozenset(
     {
-        "clone",
         "checkout",
         "pull",
         "add",
@@ -2420,8 +2419,7 @@ class ComplexGitSyncClient:
         freeze(name)      → emit the next .gts id
 
     ``load()`` accepts both ``.cgs`` and ``.gts`` sources for direct Python
-    API access.  Compatibility aliases: ``read`` → ``load``,
-    ``verify`` → ``validate``.
+    API access.
     """
 
     orchestre: Orchestre = field(default_factory=Orchestre)
@@ -2594,6 +2592,15 @@ class ComplexGitSyncClient:
             clean_before_clone=True,
         )
 
+    def clean_init(
+        self,
+        config_path: str | Path,
+        *,
+        output_path: str | Path | None = None,
+    ) -> WorkingGitTree:
+        """Initialise a .cgs workspace after purging generated clone state."""
+        return self.clean_initialise_cgs(config_path, output_path=output_path)
+
     def purge_cgs(
         self,
         config_path: str | Path,
@@ -2612,6 +2619,15 @@ class ComplexGitSyncClient:
         self.orchestre.git_tree.git.bind_tree(self.registry)
         self.source_path = source_path
         return self._purge_registry_workspace(self.registry)
+
+    def purge(
+        self,
+        config_path: str | Path,
+        *,
+        output_path: str | Path | None = None,
+    ) -> tuple[Path, ...]:
+        """Remove generated clone state for a .cgs workspace."""
+        return self.purge_cgs(config_path, output_path=output_path)
 
     def _purge_registry_workspace(self, registry: WorkingGitTree) -> tuple[Path, ...]:
         root_entry = registry.get(ROOT_REPO_ID)
@@ -2710,19 +2726,6 @@ class ComplexGitSyncClient:
         self.state_store.record_snapshot(resolved, snapshot_path)
         return registry
 
-    def read(
-        self,
-        config_path: str | Path,
-        *,
-        discover_nested: bool = False,
-    ) -> WorkingGitTree:
-        """Compatibility alias for :meth:`load`.
-
-        ``load`` is the canonical name; ``read`` is retained for
-        backward compatibility.
-        """
-        return self.load(config_path, discover_nested=discover_nested)
-
     def expand(
         self,
         source_path: str | Path,
@@ -2797,9 +2800,6 @@ class ComplexGitSyncClient:
         readiness.  Every :class:`~.git_repo.GitRepo` must be in ``READY``
         state for the tree to be considered ``READY``.
 
-        ``validate`` is the canonical lifecycle step-3 name; :meth:`verify` is
-        a compatibility alias.
-
         Parameters
         ----------
         source_path:
@@ -2815,19 +2815,6 @@ class ComplexGitSyncClient:
             snapshot_path = self.write_gts_snapshot(command_origin="validate")
             self.state_store.record_snapshot(resolved, snapshot_path)
         return self.get_tree_state()
-
-    def verify(
-        self,
-        source_path: str | Path,
-        *,
-        discover_nested: bool = False,
-    ) -> ProjectTreeState:
-        """Compatibility alias for :meth:`validate`.
-
-        ``validate`` is the canonical lifecycle step-3 name; ``verify`` is
-        retained for backward compatibility.
-        """
-        return self.validate(source_path, discover_nested=discover_nested)
 
     def load_gts(self, snapshot_path: str | Path) -> WorkingGitTree:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
@@ -2950,11 +2937,11 @@ class ComplexGitSyncClient:
         target_dir: str | Path | None = None,
         output_path: str | Path | None = None,
     ) -> WorkingGitTree:
-        """Clone the repositories required by the current loaded tree state."""
+        """Clone a project tree from a ``.cgs`` source."""
         return self.clone_cgs(config_path, target_dir=target_dir, output_path=output_path)
 
     def restart(self, config_path: str | Path) -> WorkingGitTree:
-        """Legacy pull-like helper for resynchronizing an already-cloned tree.
+        """Resynchronize an already-cloned tree from a ``.cgs`` file.
 
         Loads the ``.cgs`` configuration, discovers nested configs, then
         checks out the root repository's current branch across the whole tree
@@ -2975,7 +2962,7 @@ class ComplexGitSyncClient:
         return registry
 
     def pull(self, source_path: str | Path) -> WorkingGitTree:
-        """Compatibility lifecycle method for resynchronizing from ``.cgs`` or ``.gts``."""
+        """Resynchronize from a ``.cgs`` spec or restore from a ``.gts`` snapshot."""
         resolved_source = Path(source_path).resolve()
         if resolved_source.suffix == ".cgs":
             return self.restart(resolved_source)
@@ -3062,13 +3049,6 @@ class ComplexGitSyncClient:
         if command not in _VALID_GOC_COMMANDS:
             raise ValueError(f"Unsupported .goc action command: {command!r}")
 
-        if command == "clone":
-            if source.suffix != ".cgs":
-                raise ValueError("clone requires a .cgs source.")
-            target_dir = args.get("target_dir")
-            if target_dir is not None:
-                return self.git(self.registry, "clone", str(source), str(target_dir))
-            return self.git(self.registry, "clone", str(source))
         if command == "pull":
             return self.git(self.registry, "pull", str(source))
 
@@ -3077,9 +3057,9 @@ class ComplexGitSyncClient:
 
         active_registry = self.get_dependency_registry()
         if command == "checkout":
-            ref_value = self._read_goc_arg(args, "ref", alias="branch")
+            ref_value = args.get("ref")
             if ref_value is None or (isinstance(ref_value, str) and ref_value == ""):
-                raise ValueError("checkout action requires args.ref (or args.branch).")
+                raise ValueError("checkout action requires args.ref.")
             return self.git(active_registry, "checkout", str(ref_value))
         if command == "add":
             return self.git(active_registry, "add")
@@ -3091,36 +3071,15 @@ class ComplexGitSyncClient:
         if command == "push":
             return self.git(active_registry, "push")
         if command == "tag":
-            tag_value = self._read_goc_arg(args, "name", alias="tag")
+            tag_value = args.get("name")
             if tag_value is None or (isinstance(tag_value, str) and tag_value == ""):
-                raise ValueError("tag action requires args.name (or args.tag).")
+                raise ValueError("tag action requires args.name.")
             return self.git(active_registry, "tag", str(tag_value))
         if command == "freeze":
-            freeze_value = self._read_goc_arg(args, "name", alias="tag")
+            freeze_value = args.get("name")
             if freeze_value is None or (isinstance(freeze_value, str) and freeze_value == ""):
-                raise ValueError("freeze action requires args.name (or args.tag).")
+                raise ValueError("freeze action requires args.name.")
             return self.git(active_registry, "freeze", str(freeze_value))
-
-    @staticmethod
-    def _read_goc_arg(args: dict[str, Any], key: str, *, alias: str | None = None) -> Any:
-        def _present(value: Any) -> bool:
-            return value is not None and (not isinstance(value, str) or value != "")
-
-        if alias is None:
-            return args.get(key)
-        key_value = args.get(key)
-        alias_value = args.get(alias)
-        key_present = key in args and _present(key_value)
-        alias_present = alias in args and _present(alias_value)
-        if key_present and alias_present:
-            raise ValueError(
-                f".goc action args must not define both '{key}' and '{alias}' simultaneously."
-            )
-        if key_present:
-            return key_value
-        if alias_present:
-            return alias_value
-        return None
 
     @staticmethod
     def _summarize_goc_result(result: Any) -> Any:
@@ -3285,13 +3244,11 @@ class ComplexGitSyncClient:
             Pass ``None`` to use the currently loaded registry.  Passing a
             registry replaces the active registry for the duration of the call.
         command:
-            One of ``"clone"``, ``"pull"``, ``"checkout"``, ``"branch"``,
-            ``"add"``, ``"commit"``, ``"push"``, ``"tag"``, or ``"freeze"``.
+            One of ``"pull"``, ``"checkout"``, ``"branch"``, ``"add"``,
+            ``"commit"``, ``"push"``, ``"tag"``, or ``"freeze"``.
         *args:
             Command-specific positional arguments:
 
-            - ``"clone"``: one argument — path to ``.cgs``; optional second
-              argument sets ``target_dir``.
             - ``"pull"``: one argument — path to ``.cgs`` or ``.gts`` source.
             - ``"checkout"``: one argument — branch/tag name to switch to.
             - ``"branch"``: one argument — branch name to create (no checkout).
@@ -3322,10 +3279,6 @@ class ComplexGitSyncClient:
                 raise ValueError(f"{command} requires {label} argument.")
             return args[index]
 
-        if command == "clone":
-            source = _required_arg(0, "source path")
-            target_dir = args[1] if len(args) > 1 else None
-            return self.clone(source, target_dir=target_dir)
         if command == "pull":
             source = _required_arg(0, "source path")
             return self.pull(source)
@@ -3349,8 +3302,8 @@ class ComplexGitSyncClient:
             name = _required_arg(0, "tag name")
             return self.freeze(name)
         raise ValueError(
-            f"Unknown git command '{command}'. Supported commands: 'clone', 'pull', "
-            "'checkout', 'branch', 'add', 'commit', 'push', 'tag', 'freeze'."
+            f"Unknown git command '{command}'. Supported commands: 'pull', 'checkout', "
+            "'branch', 'add', 'commit', 'push', 'tag', 'freeze'."
         )
 
 
@@ -3419,11 +3372,7 @@ class ComplexGitSyncClient:
         )
 
     def launch_release(self, snapshot_path: str | Path) -> WorkingGitTree:
-        """Compatibility helper that restores a recorded ``.gts`` state.
-
-        The primary lifecycle documentation treats this as checkout from saved
-        state rather than as an additional top-level lifecycle step.
-        """
+        """Restore a recorded ``.gts`` state, cloning missing repositories as needed."""
         loaded_registry = self.load_gts(snapshot_path)
         previous_state = loaded_registry.lifecycle_state
         self._log_event("launch_release_start", snapshot_path=Path(snapshot_path).resolve())
@@ -3478,11 +3427,7 @@ class ComplexGitSyncClient:
         return loaded_registry
 
     def launch_state(self, snapshot_path: str | Path) -> WorkingGitTree:
-        """Compatibility helper that restores an internal ``.gts`` state.
-
-        Loads ``snapshot_path``, performs due clone and checkout actions, and
-        enforces a ``READY`` tree on successful completion.
-        """
+        """Restore an internal ``.gts`` state."""
         return self.launch_release(snapshot_path)
 
     def freeze(
@@ -3500,10 +3445,6 @@ class ComplexGitSyncClient:
             message=message,
             stage_all=stage_all,
         )
-
-    def launch(self, snapshot_path: str | Path) -> WorkingGitTree:
-        """Compatibility wrapper for restoring a recorded ``.gts`` state."""
-        return self.launch_release(snapshot_path)
 
     def get_dependency_registry(self) -> WorkingGitTree:
         if self.registry is None:
@@ -3856,6 +3797,10 @@ class ComplexGitSyncClient:
         )
         return report
 
+    def validate_topology(self) -> BranchTopologyReport:
+        """Inspect and validate the workspace branch topology."""
+        return self.validate_branch_topology()
+
     def configure(self, output_path: str | Path | None = None) -> CgsDocument:
         """Create a .cgs project specification file from terminal prompts.
         
@@ -4084,7 +4029,7 @@ class ComplexGitSyncClient:
         return address.to_url(entry.access_protocol)
 
     def _determine_launch_ref(self, entry: WorkingRepo) -> str:
-        """Return the most precise known ref for launch-release checkout."""
+        """Return the most precise known ref for saved-state checkout."""
         ref_name = (
             entry.resolved_ref_name
             or entry.target_ref_name

@@ -100,7 +100,7 @@ pixi run cgitsync initialise "$CGSHOME/.cgitsync/state/CGSil1.gts"
 pixi run cgitsync print "$CGSHOME/.cgitsync/state/CGSil1.gts"
 pixi run cgitsync view-tree "$CGSHOME/.cgitsync/state/CGSil1.gts"
 pixi run cgitsync view-tree "$CGSHOME/.cgitsync/state/CGSil1.gts" --depth 2 --collapse CGSih1
-pixi run cgitsync view_operation "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync view-operation "$CGSHOME/.cgitsync/state/CGSil1.gts"
 ```
 
 Example `view-tree` output:
@@ -111,7 +111,7 @@ CGSil1 (root) [ALIGNED] @e6cfdb8
 └── CGSil2 (leaf) [ALIGNED] @0511d53
 ```
 
-If no source is passed to `view-tree`, `view_operation`, or the READY-state Git
+If no source is passed to `view-tree`, `view-operation`, or the READY-state Git
 commands below, the CLI discovers the latest snapshot from
 `$CGSHOME/.cgitsync/state/`. `CGSHOME` can be set explicitly; when it is not,
 the initialisation default is `CGSPATH=../..` and later commands can also discover the
@@ -209,6 +209,8 @@ Primary commands:
 - `clean-init <file.cgs>`: run `load->expand->validate->purge->clone`
 - `purge <file.cgs>`: remove immediate root-level child repos, root `*.lgr`
   files, and root `.gitmodules`
+- `clone <file.cgs>`: clone the full project tree from a `.cgs` spec; this is
+  the direct CLI entry point for `ComplexGitSyncClient.clone`
 - `pull [file.cgs|file.gts]`: resynchronise an existing tree
 - `branch <name>`: create a shared branch across the READY tree without checkout
 - `checkout <branch-or-tag> [--ref-kind branch|tag]`: switch the tree ref
@@ -229,13 +231,8 @@ Inspection commands:
   branch tracking (`LOCAL_BRANCH`, `UPSTREAM_BRANCH`, `SYNC` with ahead/behind
   counts), and recorded SHA drift
 - `view-tree [file.cgs|file.gts]`: render the repository tree with node type, sync state, commit SHA, and fallback branch (if not main)
-- `view_operation [file.cgs|file.gts]`: render the runtime operation table
+- `view-operation [file.cgs|file.gts]`: render the runtime operation table
 - `validate-topology --gts <file.gts>`: check branch alignment across the tree
-
-Compatibility commands still exist for older scripts (`clone`, `restart`,
-`freeze-release`, `freeze-state`, `launch-release`, `launch-state`), but new
-CLI usage should start with `initialise` and continue with `pull`, `branch`,
-`checkout`, `add`, `commit`, `push`, `tag`, and `freeze`.
 
 ## Safety checks
 
@@ -247,7 +244,7 @@ missing nested repository links. `tag` also requires clean worktrees and a tag
 name that does not already exist.
 
 Each `.lgr` snapshot entry points to an immutable `.gts` file named
-`gts-XXXXXX.gts`; the project-name `.gts` file remains a latest-state alias.
+`gts-XXXXXX.gts`; the project-name `.gts` file is the latest-state pointer.
 
 ## CGSil1 nested-tooling setup
 

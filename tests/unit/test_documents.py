@@ -68,7 +68,7 @@ MINIMAL_GTS: dict = {
 MINIMAL_GOC: dict = {
     "document": {"format_version": "1.0"},
     "project": {"source": "project.cgs"},
-    "actions": [{"command": "clone"}],
+    "actions": [{"command": "pull"}],
 }
 
 
@@ -576,7 +576,7 @@ class TestGocDocumentValid:
         data = {
             "document": {"format_version": "1.0"},
             "project": {"source": "p.cgs"},
-            "actions": [{"command": "clone"}, {"command": "checkout"}, {"command": "pull"}],
+            "actions": [{"command": "pull"}, {"command": "checkout"}, {"command": "pull"}],
         }
         doc = GocDocument.from_dict(data)
         assert len(doc.actions) == 3
@@ -600,7 +600,7 @@ class TestGocDocumentValid:
         assert doc.interaction == "interactive"
         assert doc.transport == "ssh"
         assert len(doc.actions) == 3
-        assert doc.actions[0]["command"] == "clone"
+        assert doc.actions[0]["command"] == "pull"
         assert doc.actions[1]["command"] == "checkout"
         assert doc.actions[1]["args"]["ref"] == "autoTest"
         assert doc.actions[1]["args"]["ref_type"] == "branch"
@@ -616,7 +616,7 @@ class TestGocDocumentValid:
         assert doc.interaction == "interactive"
         assert doc.transport == "ssh"
         assert len(doc.actions) == 3
-        assert doc.actions[0]["command"] == "clone"
+        assert doc.actions[0]["command"] == "pull"
         assert doc.actions[1]["command"] == "checkout"
         assert doc.actions[1]["args"]["ref"] == "autoTest"
         assert doc.actions[-1]["command"] == "pull"

@@ -34,12 +34,6 @@ This guide follows the simplified canonical lifecycle:
   \item \texttt{freeze} $\rightarrow$ emit the next \texttt{.gts} id and update \texttt{<Project\_name>.lgr}
 \end{enumerate}
 
-Compatibility commands remain available for older scripts:
-\texttt{clone} can still initialise from a \texttt{.cgs}, \texttt{restart}
-is an alias-style resynchronisation command, and \texttt{freeze-release} /
-\texttt{freeze-state} keep their specialised names. New CLI usage should start
-with \texttt{initialise}.
-
 The project-local \texttt{.lgr} register and sync ledger are both active (T24,
 T32).  Every synchronisation operation is automatically recorded as an immutable
 DAG event in the \texttt{[[ledger]]} section of the \texttt{.lgr} file.
@@ -57,8 +51,8 @@ $ cgitsync initialise <snapshot.gts>
 Unified initialisation entry point.  Dispatches on file extension:
 
 \begin{itemize}
-  \item \texttt{.cgs} source (clone mode): clones the full repository tree
-    (see \texttt{clone} below). The optional \texttt{--output-path} controls
+  \item \texttt{.cgs} source (clone mode): clones the full repository tree.
+    The optional \texttt{--output-path} controls
     \texttt{CGSPATH}; \texttt{CGSHOME} is derived as
     \texttt{CGSPATH/<project-name>}. When omitted, \texttt{CGSPATH} defaults to
     \texttt{../..}.  On success, ends in \texttt{READY}.  If clone setup fails
@@ -105,34 +99,28 @@ children are left untouched by this command.
 $ cgitsync pull [spec.cgs|snapshot.gts]
 \end{lstlisting}
 
-Resynchronises the project tree.  \texttt{.cgs} sources follow the
-\texttt{restart} flow (load, discover, checkout current branch, READY), while
-\texttt{.gts} sources follow saved-state restore semantics equivalent to
-\texttt{launch-release}.  On success, the tree ends in \texttt{READY}.
+Resynchronises the project tree.  \texttt{.cgs} sources reload the source,
+discover nested configs, check out the current branch across the tree, and end
+in \texttt{READY}.  \texttt{.gts} sources restore the saved state, cloning
+missing repositories and checking out recorded refs as needed.
 
 \subsection{\texttt{clone}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync clone <spec.cgs> [--target-dir DIR]
+$ cgitsync clone <spec.cgs> [--target-dir DIR] [--output-path DIR]
 \end{lstlisting}
 
-Clones the full repository tree declared by the \texttt{.cgs} file. The root
-project directory defaults to \texttt{./<project-name>}. If that path already
-exists and is not empty, \cgscli{} chooses the next available suffixed
-directory such as \texttt{./ComplexGitSync-1}. When \texttt{--target-dir} is
-provided, that path is used exactly.
+Clones the full repository tree declared by the \texttt{.cgs} file. This CLI
+command delegates to \texttt{ComplexGitSyncClient.clone}. When
+\texttt{--target-dir} is omitted, the project root is derived from the
+specification.  \texttt{--output-path} provides the parent directory used to
+derive the project root.
 
-For each repository, \cgscli{} tries the repo target branch first
-(typically \texttt{default\_branch = "autoTest"}) and falls back to
-\texttt{fallback\_branch} (typically \texttt{"main"}) when the preferred
-branch does not exist on the remote. Nested \texttt{.cgs} files are discovered
-after parent repositories are cloned, so explicit and automatic nested trees
-are materialised during the same command.
-
-On success, \texttt{clone} exits~0 and prints a READY summary including the
-selected root path. It also writes a runtime snapshot to
-\texttt{<project-root>/.cgitsync/state/<spec-name>.gts} and registers that
-snapshot as the latest runtime state for the source \texttt{.cgs} file.
+For each repository, \cgscli{} tries the repo target branch first and falls
+back to the repo fallback branch when the preferred branch does not exist on
+the remote. Nested \texttt{.cgs} files are discovered after parent repositories
+are cloned, so explicit and automatic nested trees are materialised during the
+same command.
 
 \subsection{\texttt{checkout}}
 
@@ -229,10 +217,6 @@ canonical restore operation.
 With \texttt{--dry-run}, \cgscli{} prints the planned add/commit/tag/push graph
 for the loaded workspace without mutating it.
 
-\texttt{freeze-release} and \texttt{freeze-state} remain available as
-compatibility aliases for release and internal-state freeze operations
-respectively.
-
 The integration suite validates local no-network lifecycle coverage through
 the CLI path, including initialisation and the READY git command cycle
 \texttt{add -> commit -> push -> tag -> freeze}.
@@ -263,49 +247,11 @@ subtrees.
 
 \begin{lstlisting}[language=bash]
 $ cgitsync view-operation [spec.cgs|snapshot.gts]
-$ cgitsync view_operation [spec.cgs|snapshot.gts]
 \end{lstlisting}
 
 Renders the runtime operation table with required columns:
 \texttt{REPOSITORY}, \texttt{BRANCH}, \texttt{LOCAL\_STATE}, and
 \texttt{SYNC\_STATE}.
-
-\subsection{\texttt{describe}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync describe <snapshot.gts>
-\end{lstlisting}
-
-Reads a \texttt{.gts} snapshot and prints its contents as pretty-printed
-JSON. This is a compatibility alias of \texttt{print}; both commands share the
-same implementation.
-
-\subsection{\texttt{restart}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync restart <spec.cgs>
-\end{lstlisting}
-
-Resynchronizes an already-cloned project tree. Compatibility alias for
-\texttt{pull} with a \texttt{.cgs} source.
-
-\subsection{\texttt{launch-release}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync launch-release <snapshot.gts>
-\end{lstlisting}
-
-Loads a release \texttt{.gts}, reconstructs the tree, performs required
-clone/checkout actions, and must end in \texttt{READY} or fail explicitly.
-
-\subsection{\texttt{launch-state}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync launch-state <snapshot.gts>
-\end{lstlisting}
-
-Loads an internal-state \texttt{.gts}, reconstructs the tree, performs required
-clone/checkout actions, and must end in \texttt{READY} or fail explicitly.
 
 \subsection{\texttt{validate-topology}}
 
@@ -334,17 +280,6 @@ when blocking conflicts are present.
         (different branch from root) and \texttt{detached\_head} (detached
         HEAD without a tag reference).
 \end{enumerate}
-
-\subsection{Planned Commands (not yet implemented)}
-
-The following commands are defined in the CLI command table but are not yet
-implemented. Each returns exit code~2 with the message
-\texttt{"not implemented yet"}.
-
-\begin{itemize}
-  \item \texttt{write-gts} — write a \texttt{.gts} snapshot explicitly
-    from a loaded \texttt{.cgs} or runtime state.
-\end{itemize}
 
 \subsection{\texttt{status}}
 

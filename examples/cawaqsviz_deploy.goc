@@ -19,8 +19,8 @@ profile     = "verbose"       # verbose | whisper_sync
 transport   = "ssh"           # ssh | https
 
 # ── Project entry-point ─────────────────────────────────────────────────────
-# Set source to a .cgs path for tree git commands (clone, checkout, pull,
-# add, commit, push, tag, freeze) or a .gts path for replay via pull.
+# Set source to a .cgs path for tree git commands (pull, checkout, add,
+# commit, push, tag, freeze) or a .gts path for replay via pull.
 
 [project]
 source = "cawaqsviz.cgs"
@@ -37,10 +37,8 @@ project_owner_name = "gviz/cawaqsviz"  # GitLab namespace fallback when group_na
 # parameters.
 
 [[actions]]
-# 1. Clone the full project tree into the current directory.
-command = "clone"
-[actions.args]
-# target_dir = "./workspace"   # uncomment to clone into a subdirectory
+# 1. Resynchronise the full project tree from the configured source.
+command = "pull"
 
 [[actions]]
 # 2. Switch the whole tree to autoTest, with main as the repo-level fallback.

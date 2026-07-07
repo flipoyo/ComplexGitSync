@@ -60,11 +60,11 @@ tag = "v1.0.0"
     assert tagged_entry.target_ref_name == "v1.0.0"
 
 
-def test_client_read_alias_loads_cgs(tmp_path):
+def test_client_load_loads_cgs(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()
 
-    registry = client.read(config_path)
+    registry = client.load(config_path)
 
     assert registry.get("root").project_name == "demo"
     assert client.get_tree_state().lifecycle_state == TreeLifecycleState.DECLARED
@@ -355,22 +355,24 @@ def test_client_load_source_supports_gts(tmp_path):
     assert client.get_tree_state().lifecycle_state == TreeLifecycleState.READY
 
 
-def test_client_clone_alias_calls_clone_cgs(monkeypatch):
+def test_client_clone_method_calls_clone_cgs(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
     def _fake_clone_cgs(path, *, target_dir=None, output_path=None):
         captured["path"] = path
         captured["target_dir"] = target_dir
+        captured["output_path"] = output_path
         return "ok"
 
     monkeypatch.setattr(client, "clone_cgs", _fake_clone_cgs)
 
-    result = client.clone("project.cgs", target_dir="workspace/demo")
+    result = client.clone("project.cgs", target_dir="workspace/demo", output_path="workspace")
 
     assert result == "ok"
     assert captured["path"] == "project.cgs"
     assert captured["target_dir"] == "workspace/demo"
+    assert captured["output_path"] == "workspace"
 
 
 def test_client_branch_delegates_to_gittree_git_branch(monkeypatch):
@@ -397,19 +399,16 @@ def test_client_git_dispatches_extended_commands(monkeypatch):
     client = ComplexGitSyncClient()
     calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
 
-    monkeypatch.setattr(client, "clone", lambda *a, **k: calls.append(("clone", a, k)) or "clone")
     monkeypatch.setattr(client, "pull", lambda *a, **k: calls.append(("pull", a, k)) or "pull")
     monkeypatch.setattr(client, "branch", lambda *a, **k: calls.append(("branch", a, k)) or "branch")
     monkeypatch.setattr(client, "add", lambda *a, **k: calls.append(("add", a, k)) or "add")
     monkeypatch.setattr(client, "freeze", lambda *a, **k: calls.append(("freeze", a, k)) or "freeze")
 
-    assert client.git(None, "clone", "project.cgs", "workspace/demo") == "clone"
     assert client.git(None, "pull", "state.gts") == "pull"
     assert client.git(None, "branch", "feature/x") == "branch"
     assert client.git(None, "add") == "add"
     assert client.git(None, "freeze", "v1.2.3") == "freeze"
     assert calls == [
-        ("clone", ("project.cgs",), {"target_dir": "workspace/demo"}),
         ("pull", ("state.gts",), {}),
         ("branch", ("feature/x",), {}),
         ("add", (), {}),
@@ -420,7 +419,6 @@ def test_client_git_dispatches_extended_commands(monkeypatch):
 @pytest.mark.parametrize(
     ("command", "expected_message"),
     [
-        ("clone", "clone requires source path argument."),
         ("pull", "pull requires source path argument."),
         ("checkout", "checkout requires branch name argument."),
         ("branch", "branch requires branch name argument."),
@@ -454,7 +452,7 @@ def test_client_git_binds_provided_registry(monkeypatch):
     assert captured["tree_arg"] is None
 
 
-def test_client_freeze_alias_calls_freeze_release(monkeypatch):
+def test_client_freeze_delegates_to_freeze_release(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
@@ -476,22 +474,6 @@ def test_client_freeze_alias_calls_freeze_release(monkeypatch):
         "message": "msg",
         "stage_all": False,
     }
-
-
-def test_client_launch_alias_calls_launch_release(monkeypatch):
-    client = ComplexGitSyncClient()
-    captured: dict[str, object] = {}
-
-    def _fake_launch_release(snapshot_path):
-        captured["snapshot_path"] = snapshot_path
-        return "ok"
-
-    monkeypatch.setattr(client, "launch_release", _fake_launch_release)
-
-    result = client.launch("state.gts")
-
-    assert result == "ok"
-    assert captured["snapshot_path"] == "state.gts"
 
 
 def test_client_pull_dispatches_to_restart_for_cgs(monkeypatch):
@@ -529,12 +511,10 @@ def test_client_pull_dispatches_to_launch_release_for_gts(monkeypatch):
 def test_client_orchestrate_executes_goc_actions_in_order(monkeypatch, tmp_path):
     plan_path = _write_goc_plan(
         tmp_path,
-        source="project.cgs",
+        source="project.gts",
         actions="""
 [[actions]]
-command = "clone"
-[actions.args]
-target_dir = "workspace/demo"
+command = "pull"
 
 [[actions]]
 command = "checkout"
@@ -553,7 +533,7 @@ command = "add"
     def _fake_git(bound_registry, command, *args):
         assert bound_registry is client.registry or bound_registry is None
         calls.append((command, tuple(str(a) for a in args)))
-        if command == "clone":
+        if command == "pull":
             client.registry = registry
         return client.registry if client.registry is not None else registry
 
@@ -563,7 +543,7 @@ command = "add"
 
     assert [entry["status"] for entry in report] == ["ok", "ok", "ok"]
     assert calls == [
-        ("clone", (str((tmp_path / "project.cgs").resolve()), "workspace/demo")),
+        ("pull", (str((tmp_path / "project.gts").resolve()),)),
         ("checkout", ("autoTest",)),
         ("add", ()),
     ]
@@ -586,30 +566,7 @@ def test_client_orchestrate_reports_unsupported_actions(monkeypatch, tmp_path):
     assert "Unsupported .goc action command" in report[0]["error"]
 
 
-def test_client_orchestrate_rejects_ambiguous_alias_args(monkeypatch, tmp_path):
-    plan_path = _write_goc_plan(
-        tmp_path,
-        source="state.gts",
-        actions="""
-[[actions]]
-command = "checkout"
-[actions.args]
-ref = "main"
-branch = "dev"
-ref_type = "branch"
-""",
-    )
-    client = ComplexGitSyncClient()
-    monkeypatch.setattr(client, "load_gts", lambda _path: None)
-    client.registry = WorkingGitTree()
-
-    report = client.orchestrate(plan_path, stop_on_error=False)
-
-    assert report[0]["status"] == "error"
-    assert "must not define both 'ref' and 'branch'" in report[0]["error"]
-
-
-def test_client_print_alias_supports_gts(tmp_path):
+def test_client_print_supports_gts(tmp_path):
     snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=(tmp_path / "workspace" / "demo").resolve())
     client = ComplexGitSyncClient()
 
@@ -1177,7 +1134,7 @@ def test_resolve_goc_project_source_expands_home_variable(monkeypatch, tmp_path)
         {
             "document": {"format_version": "1.0"},
             "project": {"source": "$HOME/workspace/demo/project.cgs"},
-            "actions": [{"command": "clone"}],
+            "actions": [{"command": "pull"}],
         }
     )
 

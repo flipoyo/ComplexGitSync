@@ -970,7 +970,7 @@ def fix_circularities(registry: WorkingGitTree) -> tuple[str, ...]:
     highest in the tree) is preserved; the back-edge duplicate is discarded so
     the graph becomes a DAG.
 
-    **Phase 2 — Hash-compatibility deduplication (original behaviour)**
+    **Phase 2 — Hash-compatible deduplication**
 
     After cycle breaking, the remaining entries are grouped by resolved
     absolute path.  Residual duplicates (e.g., entries loaded from an older
@@ -1045,7 +1045,7 @@ def fix_circularities(registry: WorkingGitTree) -> tuple[str, ...]:
             changes.append(f"fixed_circularity:{entry.repo_id}\u2192{canonical.repo_id}")
 
     # -----------------------------------------------------------------------
-    # Phase 2 — Hash-compatibility deduplication (original behaviour)
+    # Phase 2 — Hash-compatible deduplication
     # -----------------------------------------------------------------------
     for _abs_path, entries in path_to_entries.items():
         if len(entries) <= 1:

@@ -77,7 +77,7 @@ flowchart LR
 
 ## Cleanup Boundary
 
-Phase 5 removes the old registry compatibility surface. `WorkingGitTree` and
+Phase 5 keeps the runtime registry surface focused. `WorkingGitTree` and
 `WorkingRepo` are the runtime types; `GitTree` and `GitRepo` remain the
 reference types used to create and validate `.cgs` documents.
 

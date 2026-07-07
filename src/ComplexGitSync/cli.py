@@ -19,6 +19,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "initialise": "Initialise a project tree: clone(.cgs) or restore state(.gts).",
     "clean-init": "Purge generated clone state, then initialise from a .cgs spec.",
     "purge": "Remove generated clone state for a .cgs workspace.",
+    "clone": "Clone a nested project tree from .cgs.",
     "pull": "Resynchronise an existing project tree from .cgs or .gts.",
     "checkout": "Synchronize the tree to a branch or tag.",
     "branch": "Create a branch across the full READY tree without checkout.",
@@ -31,18 +32,9 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "load": "Load a .cgs/.gts path or a project-local .lgr snapshot id.",
     "validate": "Validate a .cgs or .gts topology and print the lifecycle state.",
     "print": "Print a .cgs or .gts lifecycle summary.",
-    "describe": "Describe a .cgs or .gts input (alias for print).",
     "view-tree": "Render a topology-focused tree view in terminal.",
     "view-operation": "Render a runtime operation table in terminal.",
     "validate-topology": "Inspect and report the workspace branch topology alignment.",
-    # Compatibility / advanced commands
-    "clone": "Clone a nested project tree from .cgs (use initialise instead).",
-    "restart": "Resynchronize a loaded project tree (alias for pull).",
-    "freeze-release": "Freeze a release state and emit a .gts snapshot.",
-    "freeze-state": "Freeze an internal development state and emit a .gts snapshot.",
-    "launch-release": "Launch a release from a .gts snapshot.",
-    "launch-state": "Launch an internal state from a .gts snapshot.",
-    "write-gts": "Write a .gts state snapshot.",
     "status": "Summarize tree readiness and sync state.",
     # Configuration commands
     "configure": "Create a .cgs project specification file interactively.",
@@ -72,7 +64,6 @@ def build_parser() -> argparse.ArgumentParser:
         elif command_name == "view-operation":
             subparser = subparsers.add_parser(
                 command_name,
-                aliases=["view_operation"],
                 help=help_text,
                 description=help_text,
             )
@@ -134,9 +125,9 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Resolve nested .cgs files for locally available child repos.",
             )
             subparser.set_defaults(handler=_handle_tree)
-        elif command_name in {"validate", "describe", "print"}:
+        elif command_name in {"validate", "print"}:
             source_help = "Path to the local .cgs file to inspect."
-            if command_name in {"describe", "print"}:
+            if command_name == "print":
                 source_help = "Path to the local .cgs or .gts file to inspect."
             elif command_name == "validate":
                 source_help = "Path to the local .cgs or .gts file to validate."
@@ -222,15 +213,10 @@ def build_parser() -> argparse.ArgumentParser:
                 dest="output_path",
                 help=(
                     "Base directory where the project folder is created. "
-                    "The project name from the .cgs file is appended automatically. "
-                    "For example, pass '../' to clone the project as a sibling of the "
-                    "current directory instead of a subdirectory."
+                    "The project name from the .cgs file is appended automatically."
                 ),
             )
             subparser.set_defaults(handler=_handle_clone)
-        elif command_name == "restart":
-            subparser.add_argument("source", help="Path to the local .cgs file to restart from.")
-            subparser.set_defaults(handler=_handle_restart)
         elif command_name == "pull":
             subparser.add_argument(
                 "source",
@@ -450,56 +436,6 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Preview the freeze execution plan without mutating repositories.",
             )
             subparser.set_defaults(handler=_handle_freeze)
-        elif command_name == "freeze-release":
-            subparser.add_argument("name", help="Release tag name used for commit, tag, and push.")
-            subparser.add_argument(
-                "--gts",
-                metavar="FILE",
-                default=None,
-                help=(
-                    "Path to the .gts snapshot that holds the READY registry. "
-                    "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
-                ),
-            )
-            subparser.add_argument(
-                "--search-dir",
-                metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
-                    "or walks up from the current working directory."
-                ),
-            )
-            subparser.set_defaults(handler=_handle_freeze_release)
-        elif command_name == "freeze-state":
-            subparser.add_argument("name", help="Internal state tag name used for commit, tag, and push.")
-            subparser.add_argument(
-                "--gts",
-                metavar="FILE",
-                default=None,
-                help=(
-                    "Path to the .gts snapshot or .cgs source used to resolve a READY registry. "
-                    "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
-                ),
-            )
-            subparser.add_argument(
-                "--search-dir",
-                metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
-                    "or walks up from the current working directory."
-                ),
-            )
-            subparser.set_defaults(handler=_handle_freeze_state)
-        elif command_name == "launch-release":
-            subparser.add_argument("snapshot", help="Path to the .gts snapshot to launch the release from.")
-            subparser.set_defaults(handler=_handle_launch_release)
-        elif command_name == "launch-state":
-            subparser.add_argument("snapshot", help="Path to the .gts snapshot to launch the internal state from.")
-            subparser.set_defaults(handler=_handle_launch_state)
         elif command_name == "validate-topology":
             subparser.add_argument(
                 "--gts",
@@ -537,9 +473,6 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Path to write the .cgs file.",
             )
             subparser.set_defaults(handler=_handle_configure)
-        else:
-            subparser.set_defaults(handler=_not_implemented)
-
     return parser
 
 
@@ -551,14 +484,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help()
         return 0
     return handler(args)
-
-
-def _not_implemented(args: argparse.Namespace) -> int:
-    print(
-        f"Command '{args.command}' is not implemented yet. "
-        "See Planning/InitialDevPlan.md and Planning/InitialDevPlanTickets.md."
-    )
-    return 2
 
 
 def _handle_load(args: argparse.Namespace) -> int:
@@ -638,14 +563,6 @@ def _handle_validate(args: argparse.Namespace) -> int:
     )
 
 
-def _handle_describe(args: argparse.Namespace) -> int:
-    return _run_with_logging(
-        command_name="describe",
-        source=Path(args.source),
-        runner=lambda client, source: _execute_describe(client, source, discover_nested=args.discover_nested),
-    )
-
-
 def _handle_print(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="print",
@@ -716,14 +633,6 @@ def _handle_clone(args: argparse.Namespace) -> int:
             target_dir=args.target_dir,
             output_path=getattr(args, "output_path", None),
         ),
-    )
-
-
-def _handle_restart(args: argparse.Namespace) -> int:
-    return _run_with_logging(
-        command_name="restart",
-        source=Path(args.source),
-        runner=lambda client, source: _execute_restart(client, source),
     )
 
 
@@ -809,46 +718,12 @@ def _handle_tag(args: argparse.Namespace) -> int:
     )
 
 
-def _handle_freeze_release(args: argparse.Namespace) -> int:
-    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
-    return _run_with_logging(
-        command_name="freeze-release",
-        source=gts_path,
-        runner=lambda client, source: _execute_freeze_release(client, source, tag_name=args.name),
-    )
-
-
 def _handle_freeze(args: argparse.Namespace) -> int:
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="freeze",
         source=gts_path,
         runner=lambda client, source: _execute_freeze(client, source, name=args.name, dry_run=args.dry_run),
-    )
-
-
-def _handle_freeze_state(args: argparse.Namespace) -> int:
-    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
-    return _run_with_logging(
-        command_name="freeze-state",
-        source=gts_path,
-        runner=lambda client, source: _execute_freeze_state(client, source, state_name=args.name),
-    )
-
-
-def _handle_launch_release(args: argparse.Namespace) -> int:
-    return _run_with_logging(
-        command_name="launch-release",
-        source=Path(args.snapshot),
-        runner=lambda client, source: _execute_launch_release(client, source),
-    )
-
-
-def _handle_launch_state(args: argparse.Namespace) -> int:
-    return _run_with_logging(
-        command_name="launch-state",
-        source=Path(args.snapshot),
-        runner=lambda client, source: _execute_launch_state(client, source),
     )
 
 
@@ -921,7 +796,7 @@ def _execute_clean_init_cgs(
     print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE")
     print("workflow=load->expand->validate->purge->clone")
     print("git_command=git clone (executed per repo)")
-    registry = client.clean_initialise_cgs(source_path, output_path=output_path)
+    registry = client.clean_init(source_path, output_path=output_path)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -944,7 +819,7 @@ def _execute_purge_cgs(
         raise ValueError("purge expects a .cgs source.")
     print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE")
     print("workflow=load->expand->validate->purge")
-    removed = client.purge_cgs(source_path, output_path=output_path)
+    removed = client.purge(source_path, output_path=output_path)
     if removed:
         print("removed:")
         for path in removed:
@@ -978,24 +853,6 @@ def _execute_validate(
 ) -> int:
     tree_state = client.validate(source_path, discover_nested=discover_nested)
     print(_format_tree_state_line(tree_state))
-    return 0
-
-
-def _execute_describe(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    discover_nested: bool,
-) -> int:
-    # Backward-compatible behavior: `describe` historically inspected the explicit
-    # source file rather than preferring a newer runtime snapshot for `.cgs`.
-    print(
-        client.print(
-            source_path,
-            discover_nested=discover_nested,
-            prefer_runtime_for_cgs=False,
-        )
-    )
     return 0
 
 
@@ -1081,26 +938,12 @@ def _execute_clone(
     output_path: str | None = None,
 ) -> int:
     print("git_command=git clone (executed per repo)")
-    registry = client.clone_cgs(source_path, target_dir=target_dir, output_path=output_path)
+    registry = client.clone(source_path, target_dir=target_dir, output_path=output_path)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
-    return 0
-
-
-def _execute_restart(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-) -> int:
-    registry = client.restart(source_path)
-    tree_state = client.get_tree_state()
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"root={registry.get('root').absolute_path}"
-    )
-    _print_repo_tree_result(client)
     return 0
 
 
@@ -1255,24 +1098,6 @@ def _execute_tag(
     return 0
 
 
-def _execute_freeze_release(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    tag_name: str,
-) -> int:
-    _load_ready_registry_source(client, source_path)
-    print(f"git_command=git add --all && git commit -m {tag_name!r} && git tag {tag_name} && git push")
-    client.freeze_release(tag_name)
-    tree_state = client.get_tree_state()
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"tag={tag_name}"
-    )
-    _print_repo_tree_result(client)
-    return 0
-
-
 def _execute_freeze(
     client: ComplexGitSyncClient,
     source_path: Path,
@@ -1300,60 +1125,12 @@ def _execute_freeze(
     return 0
 
 
-def _execute_freeze_state(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    state_name: str,
-) -> int:
-    _load_ready_registry_source(client, source_path)
-    print(
-        f"git_command=git add --all && git commit -m {state_name!r} && git tag {state_name} && git push"
-    )
-    client.freeze_state(state_name)
-    tree_state = client.get_tree_state()
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"state={state_name}"
-    )
-    _print_repo_tree_result(client)
-    return 0
-
-
-def _execute_launch_release(
-    client: ComplexGitSyncClient,
-    snapshot_path: Path,
-) -> int:
-    registry = client.launch_release(snapshot_path)
-    tree_state = client.get_tree_state()
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"root={registry.get('root').absolute_path}"
-    )
-    _print_repo_tree_result(client)
-    return 0
-
-
-def _execute_launch_state(
-    client: ComplexGitSyncClient,
-    snapshot_path: Path,
-) -> int:
-    registry = client.launch_state(snapshot_path)
-    tree_state = client.get_tree_state()
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"root={registry.get('root').absolute_path}"
-    )
-    _print_repo_tree_result(client)
-    return 0
-
-
 def _execute_validate_topology(
     client: ComplexGitSyncClient,
     source_path: Path,
 ) -> int:
     _load_ready_registry_source(client, source_path)
-    report = client.validate_branch_topology()
+    report = client.validate_topology()
     print(report.format())
     return 0 if report.is_coherent else 1
 
@@ -1746,6 +1523,5 @@ def _print_repo_tree_result(client: ComplexGitSyncClient) -> None:
 
 _INSPECTION_HANDLERS = {
     "validate": _handle_validate,
-    "describe": _handle_describe,
     "print": _handle_print,
 }
