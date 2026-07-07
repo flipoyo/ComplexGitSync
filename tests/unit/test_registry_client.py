@@ -765,6 +765,12 @@ def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
         ("git@github.com:owner/child-repo.git", "deps/child-repo", "autoTest"),
         ("git@github.com:owner/docs.git", "docs", "main"),
     ]
+    assert (root_entry.absolute_path / ".gitignore").read_text(encoding="utf-8") == (
+        ".gitmodules\ndeps/child-repo\n"
+    )
+    assert (child_entry.absolute_path / ".gitignore").read_text(encoding="utf-8") == (
+        ".gitmodules\ndocs\n"
+    )
 
     snapshot_path = state_store.latest_snapshot_for(config_path)
     assert snapshot_path is not None
@@ -1625,6 +1631,26 @@ nested_config = "disabled"
                 encoding="utf-8",
             )
 
+    @staticmethod
+    def _ensure_gitignore_entries(repo_path: Path, *entries: str) -> None:
+        gitignore_path = repo_path / ".gitignore"
+        existing_entries = (
+            gitignore_path.read_text(encoding="utf-8").splitlines() if gitignore_path.exists() else []
+        )
+        missing_entries = [entry for entry in entries if entry not in existing_entries]
+        if not missing_entries:
+            return
+
+        if gitignore_path.exists():
+            prefix = "" if gitignore_path.read_text(encoding="utf-8").endswith("\n") else "\n"
+        else:
+            prefix = ""
+
+        with gitignore_path.open("a", encoding="utf-8") as handle:
+            handle.write(prefix)
+            handle.write("\n".join(missing_entries))
+            handle.write("\n")
+
     def add_submodule(
         self,
         repo_path: Path | str,
@@ -1637,6 +1663,7 @@ nested_config = "disabled"
         rel_path = Path(relative_path)
         self.submodule_adds.append((parent_path, remote_url, rel_path, branch))
         self._submodule_paths.add((parent_path, rel_path))
+        self._ensure_gitignore_entries(parent_path, ".gitmodules", rel_path.as_posix())
         self.clone(remote_url, parent_path / rel_path, branch=branch)
 
     def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:

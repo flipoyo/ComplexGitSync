@@ -1223,6 +1223,57 @@ def test_git_runner_add_submodule_creates_gitmodules_when_missing(monkeypatch, t
     ]
 
 
+def test_git_runner_add_submodule_creates_gitignore_when_missing(monkeypatch, tmp_path):
+    runner = GitRunner()
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
+        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
+
+    def _fake_subprocess_run(*_args, **_kwargs):
+        return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+
+    monkeypatch.setattr(GitRunner, "_run", _spy_run)
+    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
+
+    runner.add_submodule(
+        repo_path,
+        "git@github.com:owner/child.git",
+        Path("deps") / "child",
+        branch="main",
+    )
+
+    assert (repo_path / ".gitignore").read_text(encoding="utf-8") == ".gitmodules\ndeps/child\n"
+
+
+def test_git_runner_add_submodule_appends_missing_gitignore_entries(monkeypatch, tmp_path):
+    runner = GitRunner()
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    (repo_path / ".gitignore").write_text("existing-entry\n.gitmodules", encoding="utf-8")
+
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
+        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
+
+    def _fake_subprocess_run(*_args, **_kwargs):
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=".gitmodules", stderr="")
+
+    monkeypatch.setattr(GitRunner, "_run", _spy_run)
+    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
+
+    runner.add_submodule(
+        repo_path,
+        "git@github.com:owner/child.git",
+        Path("deps") / "child",
+        branch="main",
+    )
+
+    assert (repo_path / ".gitignore").read_text(encoding="utf-8") == (
+        "existing-entry\n.gitmodules\ndeps/child\n"
+    )
+
+
 # ---------------------------------------------------------------------------
 # ComplexGitSyncClient.checkout / commit / push / tag / freeze_release / launch_release
 # ---------------------------------------------------------------------------

@@ -1488,6 +1488,7 @@ class GitRunner:
             ]
         )
         self._run(*args, cwd=repo_path)
+        self._ensure_gitignore_entries(repo_path, ".gitmodules", Path(relative_path).as_posix())
 
     def _ensure_gitmodules_in_worktree(self, repo_path: Path | str) -> None:
         """Ensure ``.gitmodules`` exists in the worktree before adding a submodule."""
@@ -1523,6 +1524,26 @@ class GitRunner:
             )
 
         gitmodules_path.touch()
+
+    def _ensure_gitignore_entries(self, repo_path: Path | str, *entries: str) -> None:
+        """Create or append missing ignore entries in the local ``.gitignore``."""
+        gitignore_path = Path(repo_path) / ".gitignore"
+        existing_entries = (
+            gitignore_path.read_text(encoding="utf-8").splitlines() if gitignore_path.exists() else []
+        )
+        missing_entries = [entry for entry in entries if entry not in existing_entries]
+        if not missing_entries:
+            return
+
+        if gitignore_path.exists():
+            prefix = "" if gitignore_path.read_text(encoding="utf-8").endswith("\n") else "\n"
+        else:
+            prefix = ""
+
+        with gitignore_path.open("a", encoding="utf-8") as handle:
+            handle.write(prefix)
+            handle.write("\n".join(missing_entries))
+            handle.write("\n")
 
     def update_submodule(self, repo_path: Path | str, relative_path: Path | str) -> None:
         """Sync and update a tracked submodule path from its parent repository."""
