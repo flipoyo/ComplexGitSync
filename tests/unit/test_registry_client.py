@@ -168,6 +168,60 @@ def test_initialise_cgs_derives_cgshome_from_output_path_and_project_name(tmp_pa
     assert "state" in str(snapshot_path)
 
 
+def test_purge_cgs_removes_top_level_repos_ledgers_and_gitmodules(tmp_path):
+    cgspath = tmp_path / "workspace"
+    cgshome = cgspath / "demo"
+    top_level_child = cgshome / "child-repo"
+    nested_child = cgshome / "deps" / "nested-repo"
+    top_level_child.mkdir(parents=True)
+    nested_child.mkdir(parents=True)
+    (cgshome / "demo.lgr").write_text("ledger\n", encoding="utf-8")
+    (cgshome / ".gitmodules").write_text("modules\n", encoding="utf-8")
+
+    config_path = tmp_path / "project.cgs"
+    config_path.write_text(
+        """
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "demo"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "child-repo"
+relative_path = "child-repo"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "nested-repo"
+relative_path = "deps/nested-repo"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    client = ComplexGitSyncClient(git_runner=_FakeGitRunner({}))
+
+    removed = client.purge_cgs(config_path, output_path=cgspath)
+
+    assert top_level_child in removed
+    assert cgshome / "demo.lgr" in removed
+    assert cgshome / ".gitmodules" in removed
+    assert not top_level_child.exists()
+    assert not (cgshome / "demo.lgr").exists()
+    assert not (cgshome / ".gitmodules").exists()
+    assert nested_child.exists()
+
+
 def test_initialise_cgs_default_cgshome_is_cgspath_project_name(tmp_path, monkeypatch):
     # Build the CWD layout: tmp_path/cgspath/demo/ComplexGitSync
     wcd = tmp_path / "cgspath" / "demo" / "ComplexGitSync"

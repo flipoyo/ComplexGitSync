@@ -61,12 +61,43 @@ Unified initialisation entry point.  Dispatches on file extension:
     (see \texttt{clone} below). The optional \texttt{--output-path} controls
     \texttt{CGSPATH}; \texttt{CGSHOME} is derived as
     \texttt{CGSPATH/<project-name>}. When omitted, \texttt{CGSPATH} defaults to
-    \texttt{../..}.  On success, ends in \texttt{READY}.
+    \texttt{../..}.  On success, ends in \texttt{READY}.  If clone setup fails
+    because stale generated state is still present, the CLI prints
+    \texttt{Try clean-init method}.
   \item \texttt{.gts} source (restore mode): loads a saved snapshot directly.
     On success, ends in the lifecycle state recorded in the snapshot.
 \end{itemize}
 
 Both paths end in a \texttt{READY} tree or fail explicitly.
+
+\subsection{\texttt{clean-init}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync clean-init <spec.cgs> [--output-path DIR]
+\end{lstlisting}
+
+Recovery-oriented initialisation for a \texttt{.cgs} source. It follows the
+same high-level pipeline as \texttt{initialise(.cgs)}, but inserts a cleanup
+phase before cloning:
+
+\begin{center}
+\texttt{load->expand->validate->purge->clone}
+\end{center}
+
+Use it when an earlier initialisation attempt left partial child checkouts,
+stale submodule metadata, or an obsolete root \texttt{.gitmodules} file.
+
+\subsection{\texttt{purge}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync purge <spec.cgs> [--output-path DIR]
+\end{lstlisting}
+
+Removes generated clone state from the resolved \texttt{CGSHOME} without
+cloning. It deletes child repository directories declared directly under the
+project root, project-local \texttt{*.lgr} files, and the root
+\texttt{.gitmodules} file. Nested directories that are not immediate root
+children are left untouched by this command.
 
 \subsection{\texttt{pull}}
 

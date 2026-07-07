@@ -2294,6 +2294,7 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         output_path: str | Path | None = None,
+        clean_before_clone: bool = False,
     ) -> WorkingGitTree:
         """Initialise a workspace using CGSPATH/CGSHOME semantics.
 
@@ -2334,6 +2335,9 @@ class ComplexGitSyncClient:
         root_entry = self.registry.get(ROOT_REPO_ID)
         self._attach_existing_root(root_entry, project_root)
 
+        if clean_before_clone:
+            self._purge_registry_workspace(self.registry)
+
         # Root is already checked out at CGSHOME; initialise clones only the
         # dependencies declared by the .cgs.
         sync_stack: set[Path] = {project_root}
@@ -2369,6 +2373,73 @@ class ComplexGitSyncClient:
             previous_tree_state, self.registry.lifecycle_state, reason="initialise_cgs"
         )
         return self.registry
+
+    def clean_initialise_cgs(
+        self,
+        config_path: str | Path,
+        *,
+        output_path: str | Path | None = None,
+    ) -> WorkingGitTree:
+        """Initialise a .cgs workspace after purging generated clone state."""
+        return self.initialise_cgs(
+            config_path,
+            output_path=output_path,
+            clean_before_clone=True,
+        )
+
+    def purge_cgs(
+        self,
+        config_path: str | Path,
+        *,
+        output_path: str | Path | None = None,
+    ) -> tuple[Path, ...]:
+        """Remove immediate child repos, project ledgers, and .gitmodules from CGSHOME."""
+        source_path = Path(config_path).resolve()
+        document = CgsDocument.from_toml(source_path)
+        cgshome = self.resolve_cgshome(document, source_path, output_path=output_path)
+        self.registry = build_registry_from_cgs_document(
+            document,
+            source_path,
+            project_root=cgshome,
+        )
+        self.orchestre.git_tree.git.bind_tree(self.registry)
+        self.source_path = source_path
+        return self._purge_registry_workspace(self.registry)
+
+    def _purge_registry_workspace(self, registry: WorkingGitTree) -> tuple[Path, ...]:
+        root_entry = registry.get(ROOT_REPO_ID)
+        root_path = root_entry.absolute_path
+        removed: list[Path] = []
+
+        for entry in sorted(registry.values(), key=lambda candidate: candidate.name):
+            if entry.parent_id != ROOT_REPO_ID:
+                continue
+            if entry.absolute_path.parent != root_path:
+                continue
+            if entry.absolute_path == root_path:
+                continue
+            if self._remove_workspace_path(entry.absolute_path):
+                removed.append(entry.absolute_path)
+
+        for lgr_path in sorted(root_path.glob("*.lgr")):
+            if self._remove_workspace_path(lgr_path):
+                removed.append(lgr_path)
+
+        gitmodules_path = root_path / ".gitmodules"
+        if self._remove_workspace_path(gitmodules_path):
+            removed.append(gitmodules_path)
+
+        return tuple(removed)
+
+    @staticmethod
+    def _remove_workspace_path(path: Path) -> bool:
+        if path.is_dir():
+            shutil.rmtree(path)
+            return True
+        if path.exists():
+            path.unlink()
+            return True
+        return False
 
     def resolve_cgshome(
         self,

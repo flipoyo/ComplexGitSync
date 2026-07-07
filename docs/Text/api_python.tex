@@ -117,6 +117,12 @@ client.initialise("../CGSil1.cgs")
 # Equivalent explicit form:
 client.initialise("../CGSil1.cgs", output_path=cgspath)
 
+# Recovery path for partial/stale clone state:
+client.clean_initialise_cgs("../CGSil1.cgs", output_path=cgspath)
+
+# Cleanup only:
+client.purge_cgs("../CGSil1.cgs", output_path=cgspath)
+
 # 5. READY methods — unified git interface
 registry = client.get_dependency_registry()
 client.checkout("feature/my-branch")

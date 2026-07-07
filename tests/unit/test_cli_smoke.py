@@ -142,6 +142,91 @@ def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):
     assert "READY ready=true" in captured.out
 
 
+def test_initialise_command_failure_suggests_clean_init(monkeypatch, capsys, tmp_path):
+    class StubClient:
+        def resolve_initialise_cgshome(self, source, *, output_path=None):
+            return tmp_path / "workspace" / "project"
+
+        def initialise_cgs(self, source, *, output_path=None):
+            raise RuntimeError("clone failed")
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    config_path = tmp_path / "project.cgs"
+    config_path.touch()
+    with pytest.raises(RuntimeError, match="clone failed"):
+        main(["initialise", str(config_path)])
+
+    captured = capsys.readouterr()
+    assert "Try clean-init method" in captured.err
+
+
+def test_clean_init_command_purges_before_clone(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def resolve_initialise_cgshome(self, source, *, output_path=None):
+            return Path(output_path) / "project"
+
+        def clean_initialise_cgs(self, source, *, output_path=None):
+            captured_call["source"] = Path(source)
+            captured_call["output_path"] = output_path
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "parent" / "project")
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+        def format_repo_tree(self):
+            return "demo (project)\n└── child-repo (leaf)"
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    config_path = tmp_path / "project.cgs"
+    config_path.touch()
+    output_path = str(tmp_path / "parent")
+    exit_code = main(["clean-init", str(config_path), "--output-path", output_path])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["source"] == config_path.resolve()
+    assert captured_call["output_path"] == output_path
+    assert "workflow=load->expand->validate->purge->clone" in captured.out
+    assert "READY ready=true" in captured.out
+
+
+def test_purge_command_removes_generated_clone_state(monkeypatch, capsys, tmp_path):
+    removed = (tmp_path / "parent" / "project" / "child-repo", tmp_path / "parent" / "project" / ".gitmodules")
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def resolve_initialise_cgshome(self, source, *, output_path=None):
+            return Path(output_path) / "project"
+
+        def purge_cgs(self, source, *, output_path=None):
+            captured_call["source"] = Path(source)
+            captured_call["output_path"] = output_path
+            return removed
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    config_path = tmp_path / "project.cgs"
+    config_path.touch()
+    output_path = str(tmp_path / "parent")
+    exit_code = main(["purge", str(config_path), "--output-path", output_path])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["source"] == config_path.resolve()
+    assert captured_call["output_path"] == output_path
+    assert "workflow=load->expand->validate->purge" in captured.out
+    assert str(removed[0]) in captured.out
+    assert str(removed[1]) in captured.out
+
+
 def test_initialise_command_requires_source(capsys):
     with pytest.raises(SystemExit) as exc_info:
         main(["initialise"])

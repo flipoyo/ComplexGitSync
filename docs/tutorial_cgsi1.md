@@ -172,6 +172,29 @@ A runtime snapshot is written to
 `$CGSHOME/.cgitsync/state/CGSil1.gts`. Subsequent commands load this
 snapshot automatically.
 
+If a previous failed run left partial child checkouts or stale submodule
+metadata, `initialise` fails explicitly and prints:
+
+```
+Try clean-init method
+```
+
+In that case, rerun the same setup with a cleanup step inserted between
+validation and cloning:
+
+```bash
+pixi run cgitsync clean-init ../CGSil1.cgs
+```
+
+`clean-init` prints `workflow=load->expand->validate->purge->clone`. The
+`purge` phase removes generated clone state from `$CGSHOME`: repositories
+declared directly under the root, project `*.lgr` files, and the root
+`.gitmodules` file. The cleanup can also be run alone:
+
+```bash
+pixi run cgitsync purge ../CGSil1.cgs
+```
+
 ---
 
 ### Step 4 — Stage changes
@@ -254,6 +277,8 @@ snapshot entry.
 | 1 | `cgitsync validate ../CGSil1.cgs` | Parse and check the topology |
 | 2 | `cgitsync print ../CGSil1.cgs` | Render the tree summary |
 | 3 | `cgitsync initialise ../CGSil1.cgs` | Attach the root repo and clone child repos |
+| recovery | `cgitsync clean-init ../CGSil1.cgs` | Purge generated clone state, then initialise |
+| cleanup | `cgitsync purge ../CGSil1.cgs` | Remove root-level generated clone state |
 | 4 | `cgitsync add` | Stage all changes |
 | 5 | `cgitsync commit "message"` | Commit across the tree |
 | 6 | `cgitsync push` | Push to remotes |

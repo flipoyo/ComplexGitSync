@@ -87,6 +87,26 @@ $ pixi run cgitsync initialise .cgitsync/state/complexgitsync.gts
 Successful \texttt{.cgs} initialisation prints the explicit workflow
 \texttt{load->expand->validate->clone}, the per-repository
 \texttt{git clone} action, the resolved root path, and a compact tree outline.
+If a stale partial checkout or previous submodule link blocks the clone step,
+\texttt{initialise} fails explicitly and prints
+\texttt{Try clean-init method}.  Use \texttt{clean-init} to insert a purge
+phase between validation and cloning:
+
+\begin{lstlisting}[language=bash]
+$ pixi run cgitsync clean-init examples/complexgitsync.cgs
+\end{lstlisting}
+
+The explicit workflow is
+\texttt{load->expand->validate->purge->clone}.  The purge phase can also be
+run on its own:
+
+\begin{lstlisting}[language=bash]
+$ pixi run cgitsync purge examples/complexgitsync.cgs
+\end{lstlisting}
+
+\texttt{purge} removes generated clone state from \texttt{CGSHOME}: immediate
+child repository directories declared directly under the project root, project
+\texttt{*.lgr} files, and the root \texttt{.gitmodules} file.
 
 % -----------------------------------------------------------------------
 \section{Inspect the Runtime State}

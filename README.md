@@ -64,6 +64,25 @@ From the CGSil1 `.cgs` specification, initialise the full repository tree under
 pixi run cgitsync initialise ../CGSil1.cgs
 ```
 
+If an existing partial checkout or stale submodule metadata blocks
+initialisation, `initialise` fails explicitly and prints `Try clean-init method`.
+Use `clean-init` to run the same load/expand/validate flow with a cleanup step
+inserted before cloning:
+
+```bash
+pixi run cgitsync clean-init ../CGSil1.cgs
+```
+
+The cleanup step is also available on its own:
+
+```bash
+pixi run cgitsync purge ../CGSil1.cgs
+```
+
+`purge` removes generated clone state from `$CGSHOME`: immediate child
+repository directories declared directly under the project root, project
+`*.lgr` files, and the root `.gitmodules` file.
+
 From the saved CGSil1 `.gts` snapshot, restore/load that state:
 
 ```bash
@@ -149,6 +168,12 @@ client.initialise(source)
 # Equivalent explicit form:
 client.initialise(source, output_path=cgspath)
 
+# Recovery path for partial/stale clone state:
+client.clean_initialise_cgs(source, output_path=cgspath)
+
+# Cleanup only:
+client.purge_cgs(source, output_path=cgspath)
+
 # Or load the saved CGSil1 runtime snapshot.
 client.initialise(snapshot)
 
@@ -166,7 +191,11 @@ client.freeze("release-2026.05")
 Primary commands:
 
 - `initialise <file.cgs|file.gts>`: clone from a spec or load from a snapshot;
-  for `.cgs`, omitted `--output-path` defaults to `CGSPATH=../..`
+  for `.cgs`, omitted `--output-path` defaults to `CGSPATH=../..`; on failure,
+  the CLI suggests `clean-init`
+- `clean-init <file.cgs>`: run `load->expand->validate->purge->clone`
+- `purge <file.cgs>`: remove immediate root-level child repos, root `*.lgr`
+  files, and root `.gitmodules`
 - `pull [file.cgs|file.gts]`: resynchronise an existing tree
 - `branch <name>`: create a shared branch across the READY tree without checkout
 - `checkout <branch-or-tag> [--ref-kind branch|tag]`: switch the tree ref

@@ -17,6 +17,8 @@ from .orchestre import CgsDocument, ComplexGitSyncClient, GtsDocument, create_ru
 _PLANNED_COMMANDS: dict[str, str] = {
     # Primary user-facing commands
     "initialise": "Initialise a project tree: clone(.cgs) or restore state(.gts).",
+    "clean-init": "Purge generated clone state, then initialise from a .cgs spec.",
+    "purge": "Remove generated clone state for a .cgs workspace.",
     "pull": "Resynchronise an existing project tree from .cgs or .gts.",
     "checkout": "Synchronize the tree to a branch or tag.",
     "branch": "Create a branch across the full READY tree without checkout.",
@@ -77,10 +79,14 @@ def build_parser() -> argparse.ArgumentParser:
             )
         else:
             subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
-        if command_name == "initialise":
+        if command_name in {"initialise", "clean-init", "purge"}:
             subparser.add_argument(
                 "source",
-                help="Path to a .cgs spec (clone mode) or .gts snapshot (restore mode).",
+                help=(
+                    "Path to a .cgs spec"
+                    if command_name in {"clean-init", "purge"}
+                    else "Path to a .cgs spec (clone mode) or .gts snapshot (restore mode)."
+                ),
             )
             subparser.add_argument(
                 "--output-path",
@@ -91,7 +97,12 @@ def build_parser() -> argparse.ArgumentParser:
                     "Defaults to ../.. relative to CWD ($CGSHOME/ComplexGitSync)."
                 ),
             )
-            subparser.set_defaults(handler=_handle_initialise)
+            if command_name == "initialise":
+                subparser.set_defaults(handler=_handle_initialise)
+            elif command_name == "clean-init":
+                subparser.set_defaults(handler=_handle_clean_init)
+            else:
+                subparser.set_defaults(handler=_handle_purge)
         elif command_name == "load":
             subparser.add_argument("source", help="Path to a .cgs/.gts file, or a local .lgr id such as 1, lgr-000001, or gts-000001.")
             subparser.add_argument(
@@ -584,6 +595,42 @@ def _handle_initialise(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_clean_init(args: argparse.Namespace) -> int:
+    source_path = Path(args.source)
+    output_path = getattr(args, "output_path", None)
+    client = ComplexGitSyncClient()
+    project_root = client.resolve_initialise_cgshome(source_path, output_path=output_path)
+    return _run_with_logging(
+        command_name="clean-init",
+        source=source_path,
+        client=client,
+        project_root=project_root,
+        runner=lambda active_client, source: _execute_clean_init_cgs(
+            active_client,
+            source,
+            output_path=output_path,
+        ),
+    )
+
+
+def _handle_purge(args: argparse.Namespace) -> int:
+    source_path = Path(args.source)
+    output_path = getattr(args, "output_path", None)
+    client = ComplexGitSyncClient()
+    project_root = client.resolve_initialise_cgshome(source_path, output_path=output_path)
+    return _run_with_logging(
+        command_name="purge",
+        source=source_path,
+        client=client,
+        project_root=project_root,
+        runner=lambda active_client, source: _execute_purge_cgs(
+            active_client,
+            source,
+            output_path=output_path,
+        ),
+    )
+
+
 def _handle_validate(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="validate",
@@ -860,6 +907,48 @@ def _execute_initialise_cgs(
     if outline:
         print("tree:")
         print(outline)
+    return 0
+
+
+def _execute_clean_init_cgs(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    output_path: str | None = None,
+) -> int:
+    if source_path.suffix != ".cgs":
+        raise ValueError("clean-init expects a .cgs source.")
+    print("workflow=load->expand->validate->purge->clone")
+    print("git_command=git clone (executed per repo)")
+    registry = client.clean_initialise_cgs(source_path, output_path=output_path)
+    tree_state = client.get_tree_state()
+    print(
+        f"{_format_tree_state_line(tree_state)} "
+        f"root={registry.get('root').absolute_path}"
+    )
+    outline = _format_repo_tree_outline(client)
+    if outline:
+        print("tree:")
+        print(outline)
+    return 0
+
+
+def _execute_purge_cgs(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    output_path: str | None = None,
+) -> int:
+    if source_path.suffix != ".cgs":
+        raise ValueError("purge expects a .cgs source.")
+    print("workflow=load->expand->validate->purge")
+    removed = client.purge_cgs(source_path, output_path=output_path)
+    if removed:
+        print("removed:")
+        for path in removed:
+            print(path)
+    else:
+        print("removed: none")
     return 0
 
 
@@ -1299,8 +1388,14 @@ def _run_with_logging(
                 command=command_name,
                 status="error",
                 error=str(exc),
-                tree_lifecycle_state=(active_client.registry.lifecycle_state if active_client.registry else None),
+                tree_lifecycle_state=(
+                    active_client.registry.lifecycle_state
+                    if getattr(active_client, "registry", None) is not None
+                    else None
+                ),
             )
+        if command_name == "initialise":
+            print("Try clean-init method", file=sys.stderr)
         raise
 
     if active_client.run_logger is not None:
