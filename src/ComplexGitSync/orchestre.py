@@ -1495,8 +1495,9 @@ class GitRunner:
         if gitmodules_path.exists():
             return
 
+        tracked_command = [str(self.executable), "ls-files", "--error-unmatch", ".gitmodules"]
         tracked = subprocess.run(
-            [self.executable, "ls-files", "--error-unmatch", ".gitmodules"],
+            tracked_command,
             cwd=str(repo_path),
             capture_output=True,
             check=False,
@@ -1506,7 +1507,7 @@ class GitRunner:
             self._run("checkout", "--", ".gitmodules", cwd=repo_path)
             return
         if tracked.returncode != 1:
-            command = f"{str(self.executable)} ls-files --error-unmatch .gitmodules"
+            command = " ".join(tracked_command)
             stderr = tracked.stderr.strip()
             stdout = tracked.stdout.strip()
             if stderr:

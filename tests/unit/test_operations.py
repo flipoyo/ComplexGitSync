@@ -1158,7 +1158,7 @@ def test_git_runner_add_submodule_restores_tracked_gitmodules(monkeypatch, tmp_p
     repo_path.mkdir()
     calls: list[tuple[str, ...]] = []
 
-    def _spy_run(_self, *args: str, cwd=None):
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
         calls.append(args)
         return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
 
@@ -1192,7 +1192,7 @@ def test_git_runner_add_submodule_creates_gitmodules_when_missing(monkeypatch, t
     repo_path.mkdir()
     calls: list[tuple[str, ...]] = []
 
-    def _spy_run(_self, *args: str, cwd=None):
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
         calls.append(args)
         return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
 
