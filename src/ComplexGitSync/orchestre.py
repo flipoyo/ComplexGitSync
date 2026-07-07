@@ -1528,17 +1528,13 @@ class GitRunner:
     def _ensure_gitignore_entries(self, repo_path: Path | str, *entries: str) -> None:
         """Create or append missing ignore entries in the local ``.gitignore``."""
         gitignore_path = Path(repo_path) / ".gitignore"
-        existing_entries = (
-            gitignore_path.read_text(encoding="utf-8").splitlines() if gitignore_path.exists() else []
-        )
+        existing_content = gitignore_path.read_text(encoding="utf-8") if gitignore_path.exists() else ""
+        existing_entries = existing_content.splitlines()
         missing_entries = [entry for entry in entries if entry not in existing_entries]
         if not missing_entries:
             return
 
-        if gitignore_path.exists():
-            prefix = "" if gitignore_path.read_text(encoding="utf-8").endswith("\n") else "\n"
-        else:
-            prefix = ""
+        prefix = "" if not existing_content or existing_content.endswith("\n") else "\n"
 
         with gitignore_path.open("a", encoding="utf-8") as handle:
             handle.write(prefix)
