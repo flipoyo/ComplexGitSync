@@ -1162,8 +1162,10 @@ def test_git_runner_add_submodule_restores_tracked_gitmodules(monkeypatch, tmp_p
         calls.append(args)
         return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
 
-    def _fake_subprocess_run(*_args, **_kwargs):
-        return subprocess.CompletedProcess(args=[], returncode=0, stdout=".gitmodules", stderr="")
+    def _fake_subprocess_run(args, **_kwargs):
+        if args[-1] == ".gitmodules":
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout=".gitmodules", stderr="")
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
 
     monkeypatch.setattr(GitRunner, "_run", _spy_run)
     monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
@@ -1179,6 +1181,7 @@ def test_git_runner_add_submodule_restores_tracked_gitmodules(monkeypatch, tmp_p
     assert calls[1] == (
         "submodule",
         "add",
+        "--force",
         "-b",
         "main",
         "git@github.com:owner/child.git",
@@ -1196,8 +1199,8 @@ def test_git_runner_add_submodule_creates_gitmodules_when_missing(monkeypatch, t
         calls.append(args)
         return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
 
-    def _fake_subprocess_run(*_args, **_kwargs):
-        return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+    def _fake_subprocess_run(args, **_kwargs):
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
 
     monkeypatch.setattr(GitRunner, "_run", _spy_run)
     monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
@@ -1215,6 +1218,7 @@ def test_git_runner_add_submodule_creates_gitmodules_when_missing(monkeypatch, t
         (
             "submodule",
             "add",
+            "--force",
             "-b",
             "main",
             "git@github.com:owner/child.git",
@@ -1231,8 +1235,8 @@ def test_git_runner_add_submodule_creates_gitignore_when_missing(monkeypatch, tm
     def _spy_run(_self, *args: str, cwd: Path | str | None = None):
         return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
 
-    def _fake_subprocess_run(*_args, **_kwargs):
-        return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+    def _fake_subprocess_run(args, **_kwargs):
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
 
     monkeypatch.setattr(GitRunner, "_run", _spy_run)
     monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
@@ -1257,8 +1261,10 @@ def test_git_runner_add_submodule_appends_missing_gitignore_entries(monkeypatch,
     def _spy_run(_self, *args: str, cwd: Path | str | None = None):
         return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
 
-    def _fake_subprocess_run(*_args, **_kwargs):
-        return subprocess.CompletedProcess(args=[], returncode=0, stdout=".gitmodules", stderr="")
+    def _fake_subprocess_run(args, **_kwargs):
+        if args[-1] == ".gitmodules":
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout=".gitmodules", stderr="")
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
 
     monkeypatch.setattr(GitRunner, "_run", _spy_run)
     monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
@@ -1273,6 +1279,62 @@ def test_git_runner_add_submodule_appends_missing_gitignore_entries(monkeypatch,
     assert (repo_path / ".gitignore").read_text(encoding="utf-8") == (
         "existing-entry\n.gitmodules\ndeps/child\n"
     )
+
+
+def test_git_runner_add_submodule_removes_existing_index_link(monkeypatch, tmp_path):
+    runner = GitRunner()
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    (repo_path / ".gitmodules").write_text(
+        """
+[submodule "deps/child"]
+	path = deps/child
+	url = git@github.com:owner/old-child.git
+""".lstrip(),
+        encoding="utf-8",
+    )
+    calls: list[tuple[str, ...]] = []
+
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
+        calls.append(args)
+        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
+
+    def _fake_subprocess_run(args, **_kwargs):
+        if args[:3] == ["git", "ls-files", "--error-unmatch"]:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="deps/child", stderr="")
+        if "--get-regexp" in args:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout="submodule.deps/child.path deps/child\n",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
+
+    monkeypatch.setattr(GitRunner, "_run", _spy_run)
+    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
+
+    runner.add_submodule(
+        repo_path,
+        "git@github.com:owner/child.git",
+        Path("deps") / "child",
+        branch="main",
+    )
+
+    assert calls == [
+        ("rm", "-f", "--cached", "--", "deps/child"),
+        ("config", "-f", ".gitmodules", "--remove-section", "submodule.deps/child"),
+        ("rev-parse", "--git-path", "modules/deps/child"),
+        (
+            "submodule",
+            "add",
+            "--force",
+            "-b",
+            "main",
+            "git@github.com:owner/child.git",
+            "deps/child",
+        ),
+    ]
 
 
 # ---------------------------------------------------------------------------

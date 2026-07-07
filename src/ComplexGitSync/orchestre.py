@@ -1474,6 +1474,7 @@ class GitRunner:
     ) -> None:
         """Add a submodule in *repo_path* at *relative_path* pinned to *branch*."""
         self._ensure_gitmodules_in_worktree(repo_path)
+        self._remove_stale_submodule_link(repo_path, relative_path)
         args: list[str] = []
         if self._uses_file_transport(remote_url):
             args.extend(["-c", "protocol.file.allow=always"])
@@ -1481,6 +1482,7 @@ class GitRunner:
             [
                 "submodule",
                 "add",
+                "--force",
                 "-b",
                 branch,
                 remote_url,
@@ -1489,6 +1491,97 @@ class GitRunner:
         )
         self._run(*args, cwd=repo_path)
         self._ensure_gitignore_entries(repo_path, ".gitmodules", Path(relative_path).as_posix())
+
+    def _remove_stale_submodule_link(
+        self,
+        repo_path: Path | str,
+        relative_path: Path | str,
+    ) -> None:
+        """Remove an existing index/.gitmodules link before recreating a submodule."""
+        submodule_path = Path(relative_path).as_posix()
+        found_stale_link = False
+        listed = subprocess.run(
+            [str(self.executable), "ls-files", "--error-unmatch", "--", submodule_path],
+            cwd=str(repo_path),
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        if listed.returncode == 0:
+            self._run("rm", "-f", "--cached", "--", submodule_path, cwd=repo_path)
+            found_stale_link = True
+        elif listed.returncode != 1:
+            details = listed.stderr.strip() or listed.stdout.strip() or "unknown git error"
+            raise GitSyncError(
+                "Git command failed "
+                f"({self.executable} ls-files --error-unmatch -- {submodule_path}): {details}"
+            )
+
+        gitmodules_path = Path(repo_path) / ".gitmodules"
+        if not gitmodules_path.exists():
+            return
+        sections = self._gitmodules_sections_for_path(repo_path, submodule_path)
+        for section in sections:
+            self._run("config", "-f", ".gitmodules", "--remove-section", section, cwd=repo_path)
+        if sections:
+            found_stale_link = True
+        if found_stale_link:
+            self._remove_stale_submodule_gitdir(repo_path, submodule_path)
+
+    def _remove_stale_submodule_gitdir(
+        self,
+        repo_path: Path | str,
+        submodule_path: str,
+    ) -> None:
+        result = self._run("rev-parse", "--git-path", f"modules/{submodule_path}", cwd=repo_path)
+        raw_path = result.stdout.strip()
+        if not raw_path:
+            return
+        gitdir_path = Path(raw_path)
+        if not gitdir_path.is_absolute():
+            gitdir_path = Path(repo_path) / gitdir_path
+        if gitdir_path.is_dir():
+            shutil.rmtree(gitdir_path)
+        elif gitdir_path.exists():
+            gitdir_path.unlink()
+
+    def _gitmodules_sections_for_path(
+        self,
+        repo_path: Path | str,
+        submodule_path: str,
+    ) -> list[str]:
+        result = subprocess.run(
+            [
+                str(self.executable),
+                "config",
+                "-f",
+                ".gitmodules",
+                "--get-regexp",
+                r"^submodule\..*\.path$",
+            ],
+            cwd=str(repo_path),
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        if result.returncode == 1:
+            return []
+        if result.returncode != 0:
+            details = result.stderr.strip() or result.stdout.strip() or "unknown git error"
+            raise GitSyncError(
+                "Git command failed "
+                f"({self.executable} config -f .gitmodules --get-regexp ^submodule\\..*\\.path$): {details}"
+            )
+
+        sections: list[str] = []
+        for line in result.stdout.splitlines():
+            key, _, value = line.partition(" ")
+            if value != submodule_path:
+                continue
+            match = re.fullmatch(r"submodule\.(.+)\.path", key)
+            if match:
+                sections.append(f"submodule.{match.group(1)}")
+        return sections
 
     def _ensure_gitmodules_in_worktree(self, repo_path: Path | str) -> None:
         """Ensure ``.gitmodules`` exists in the worktree before adding a submodule."""
