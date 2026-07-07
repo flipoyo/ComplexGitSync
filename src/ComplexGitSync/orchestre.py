@@ -1527,6 +1527,7 @@ class GitRunner:
             found_stale_link = True
         if found_stale_link:
             self._remove_stale_submodule_gitdir(repo_path, submodule_path)
+            self._remove_stale_submodule_worktree(repo_path, submodule_path)
 
     def _remove_stale_submodule_gitdir(
         self,
@@ -1544,6 +1545,17 @@ class GitRunner:
             shutil.rmtree(gitdir_path)
         elif gitdir_path.exists():
             gitdir_path.unlink()
+
+    def _remove_stale_submodule_worktree(
+        self,
+        repo_path: Path | str,
+        submodule_path: str,
+    ) -> None:
+        worktree_path = Path(repo_path) / submodule_path
+        if worktree_path.is_dir():
+            shutil.rmtree(worktree_path)
+        elif worktree_path.exists():
+            worktree_path.unlink()
 
     def _gitmodules_sections_for_path(
         self,

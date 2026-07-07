@@ -1285,6 +1285,8 @@ def test_git_runner_add_submodule_removes_existing_index_link(monkeypatch, tmp_p
     runner = GitRunner()
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
+    stale_worktree = repo_path / "deps" / "child"
+    stale_worktree.mkdir(parents=True)
     (repo_path / ".gitmodules").write_text(
         """
 [submodule "deps/child"]
@@ -1335,6 +1337,7 @@ def test_git_runner_add_submodule_removes_existing_index_link(monkeypatch, tmp_p
             "deps/child",
         ),
     ]
+    assert not stale_worktree.exists()
 
 
 # ---------------------------------------------------------------------------
