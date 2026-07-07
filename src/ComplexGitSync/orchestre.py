@@ -1473,6 +1473,7 @@ class GitRunner:
         branch: str,
     ) -> None:
         """Add a submodule in *repo_path* at *relative_path* pinned to *branch*."""
+        self._ensure_gitmodules_in_worktree(repo_path)
         args: list[str] = []
         if self._uses_file_transport(remote_url):
             args.extend(["-c", "protocol.file.allow=always"])
@@ -1487,6 +1488,41 @@ class GitRunner:
             ]
         )
         self._run(*args, cwd=repo_path)
+
+    def _ensure_gitmodules_in_worktree(self, repo_path: Path | str) -> None:
+        """Ensure ``.gitmodules`` exists in the worktree before adding a submodule."""
+        gitmodules_path = Path(repo_path) / ".gitmodules"
+        if gitmodules_path.exists():
+            return
+
+        tracked_command = [str(self.executable), "ls-files", "--error-unmatch", ".gitmodules"]
+        tracked = subprocess.run(
+            tracked_command,
+            cwd=str(repo_path),
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        if tracked.returncode == 0:
+            self._run("checkout", "--", ".gitmodules", cwd=repo_path)
+            return
+        if tracked.returncode != 1:
+            command = " ".join(tracked_command)
+            stderr = tracked.stderr.strip()
+            stdout = tracked.stdout.strip()
+            if stderr:
+                details = stderr
+            elif stdout:
+                details = stdout
+            else:
+                details = "no output from git command"
+            raise GitSyncError(
+                "Expected returncode 0 (tracked) or 1 (not tracked); "
+                f"got {tracked.returncode} "
+                f"({command}): {details}"
+            )
+
+        gitmodules_path.touch()
 
     def update_submodule(self, repo_path: Path | str, relative_path: Path | str) -> None:
         """Sync and update a tracked submodule path from its parent repository."""

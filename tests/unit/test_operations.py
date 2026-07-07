@@ -1115,7 +1115,7 @@ def test_git_runner_create_tag_default_does_not_force(monkeypatch):
     runner = GitRunner()
     captured: dict[str, object] = {}
 
-    def _spy_run(_self, *args: str, cwd=None):
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
         captured["args"] = args
         captured["cwd"] = cwd
         return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
@@ -1131,7 +1131,7 @@ def test_git_runner_push_can_set_upstream(monkeypatch):
     runner = GitRunner()
     captured: dict[str, object] = {}
 
-    def _spy_run(_self, *args: str, cwd=None):
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
         captured["args"] = args
         captured["cwd"] = cwd
         return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
@@ -1150,6 +1150,77 @@ def test_git_runner_file_transport_detection_handles_windows_paths():
     assert GitRunner._uses_file_transport(r"C:\tmp\remote.git") is True
     assert GitRunner._uses_file_transport("https://example.com/repo.git") is False
     assert GitRunner._uses_file_transport("git@github.com:owner/repo.git") is False
+
+
+def test_git_runner_add_submodule_restores_tracked_gitmodules(monkeypatch, tmp_path):
+    runner = GitRunner()
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    calls: list[tuple[str, ...]] = []
+
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
+        calls.append(args)
+        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
+
+    def _fake_subprocess_run(*_args, **_kwargs):
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=".gitmodules", stderr="")
+
+    monkeypatch.setattr(GitRunner, "_run", _spy_run)
+    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
+
+    runner.add_submodule(
+        repo_path,
+        "git@github.com:owner/child.git",
+        Path("deps") / "child",
+        branch="main",
+    )
+
+    assert calls[0] == ("checkout", "--", ".gitmodules")
+    assert calls[1] == (
+        "submodule",
+        "add",
+        "-b",
+        "main",
+        "git@github.com:owner/child.git",
+        "deps/child",
+    )
+
+
+def test_git_runner_add_submodule_creates_gitmodules_when_missing(monkeypatch, tmp_path):
+    runner = GitRunner()
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    calls: list[tuple[str, ...]] = []
+
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
+        calls.append(args)
+        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
+
+    def _fake_subprocess_run(*_args, **_kwargs):
+        return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+
+    monkeypatch.setattr(GitRunner, "_run", _spy_run)
+    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
+
+    runner.add_submodule(
+        repo_path,
+        "git@github.com:owner/child.git",
+        Path("deps") / "child",
+        branch="main",
+    )
+
+    assert (repo_path / ".gitmodules").is_file()
+    assert (repo_path / ".gitmodules").read_text(encoding="utf-8") == ""
+    assert calls == [
+        (
+            "submodule",
+            "add",
+            "-b",
+            "main",
+            "git@github.com:owner/child.git",
+            "deps/child",
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------
