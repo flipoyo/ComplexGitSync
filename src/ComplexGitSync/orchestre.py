@@ -981,13 +981,37 @@ class CommandRunLogger:
 
     def log_event(self, event: str, *, level: int = logging.INFO, **fields: object) -> None:
         """Log *event* together with arbitrary keyword *fields* as a JSON record."""
-        record: dict[str, Any] = {"event": event}
+        record: dict[str, Any] = {
+            "operation": self._operation_for_event(event, fields),
+            "event": event,
+        }
         for key, value in fields.items():
             if isinstance(value, (str, int, float, bool, type(None))):
                 record[key] = value
             else:
                 record[key] = str(value)
         self._logger.log(level, json.dumps(record, default=str))
+
+    @staticmethod
+    def _operation_for_event(event: str, fields: dict[str, object]) -> str:
+        if event == "nested_cgs_discovery":
+            return "GT-DISCOVER"
+        if event in {"repo_state_transition", "tree_state_transition"}:
+            return "GT-CLONE"
+        if event in {"circularity_fixed", "validate_branch_topology_start", "validate_branch_topology_end"}:
+            return "GT-VALIDATE"
+        if event.startswith("fs_purge_"):
+            return "FS-PURGE"
+        if event == "command_start" or event == "command_end":
+            command = str(fields.get("command", "command")).replace("_", "-").upper()
+            if command in {"VALIDATE", "VALIDATE-TOPOLOGY"}:
+                return "GT-VALIDATE"
+            if command == "PURGE":
+                return "FS-PURGE"
+            if command in {"INITIALISE", "CLEAN-INIT", "CLONE", "PULL"}:
+                return "GT-CLONE"
+            return f"CGS-{command}"
+        return "CGS-RUN"
 
 
 def create_run_logger(
@@ -2422,6 +2446,7 @@ class ComplexGitSyncClient:
         root_entry = registry.get(ROOT_REPO_ID)
         root_path = root_entry.absolute_path
         removed: list[Path] = []
+        self._log_event("fs_purge_start", root_path=root_path)
 
         for entry in sorted(registry.values(), key=lambda candidate: candidate.name):
             if entry.parent_id != ROOT_REPO_ID:
@@ -2432,15 +2457,19 @@ class ComplexGitSyncClient:
                 continue
             if self._remove_workspace_path(entry.absolute_path):
                 removed.append(entry.absolute_path)
+                self._log_event("fs_purge_removed", path=entry.absolute_path)
 
         for lgr_path in sorted(root_path.glob("*.lgr")):
             if self._remove_workspace_path(lgr_path):
                 removed.append(lgr_path)
+                self._log_event("fs_purge_removed", path=lgr_path)
 
         gitmodules_path = root_path / ".gitmodules"
         if self._remove_workspace_path(gitmodules_path):
             removed.append(gitmodules_path)
+            self._log_event("fs_purge_removed", path=gitmodules_path)
 
+        self._log_event("fs_purge_end", root_path=root_path, removed_count=len(removed))
         return tuple(removed)
 
     @staticmethod

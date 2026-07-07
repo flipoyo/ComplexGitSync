@@ -895,6 +895,7 @@ def _execute_initialise_cgs(
     *,
     output_path: str | None = None,
 ) -> int:
+    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE")
     print("workflow=load->expand->validate->clone")
     print("git_command=git clone (executed per repo)")
     registry = client.initialise_cgs(source_path, output_path=output_path)
@@ -918,6 +919,7 @@ def _execute_clean_init_cgs(
 ) -> int:
     if source_path.suffix != ".cgs":
         raise ValueError("clean-init expects a .cgs source.")
+    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE")
     print("workflow=load->expand->validate->purge->clone")
     print("git_command=git clone (executed per repo)")
     registry = client.clean_initialise_cgs(source_path, output_path=output_path)
@@ -941,6 +943,7 @@ def _execute_purge_cgs(
 ) -> int:
     if source_path.suffix != ".cgs":
         raise ValueError("purge expects a .cgs source.")
+    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE")
     print("workflow=load->expand->validate->purge")
     removed = client.purge_cgs(source_path, output_path=output_path)
     if removed:
@@ -956,6 +959,7 @@ def _execute_initialise_gts(
     client: ComplexGitSyncClient,
     snapshot_path: Path,
 ) -> int:
+    print("operation_sequence=GT-LOAD->GT-VALIDATE")
     print("workflow=load->validate")
     client.load_gts(snapshot_path)
     tree_state = client.get_tree_state()

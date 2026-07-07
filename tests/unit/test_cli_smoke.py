@@ -194,6 +194,7 @@ def test_clean_init_command_purges_before_clone(monkeypatch, capsys, tmp_path):
     assert exit_code == 0
     assert captured_call["source"] == config_path.resolve()
     assert captured_call["output_path"] == output_path
+    assert "operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE" in captured.out
     assert "workflow=load->expand->validate->purge->clone" in captured.out
     assert "READY ready=true" in captured.out
 
@@ -222,6 +223,7 @@ def test_purge_command_removes_generated_clone_state(monkeypatch, capsys, tmp_pa
     assert exit_code == 0
     assert captured_call["source"] == config_path.resolve()
     assert captured_call["output_path"] == output_path
+    assert "operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE" in captured.out
     assert "workflow=load->expand->validate->purge" in captured.out
     assert str(removed[0]) in captured.out
     assert str(removed[1]) in captured.out
@@ -249,8 +251,10 @@ def test_initialise_command_creates_log_file(monkeypatch, tmp_path, capsys):
 
     assert exit_code == 0
     assert "READY" in captured.out
+    assert "operation_sequence=GT-LOAD->GT-VALIDATE" in captured.out
     assert len(log_files) == 1
     log_content = log_files[0].read_text(encoding="utf-8")
+    assert log_content.splitlines()[0].startswith('{"operation": "GT-CLONE", "event": "command_start"')
     assert '"event": "command_start"' in log_content
     assert '"event": "command_end"' in log_content
 
@@ -561,8 +565,10 @@ def test_initialise_command_gts_creates_log_file_verbose(monkeypatch, tmp_path, 
 
     assert exit_code == 0
     assert "READY" in captured.out
+    assert "operation_sequence=GT-LOAD->GT-VALIDATE" in captured.out
     assert len(log_files) == 1
     log_content = log_files[0].read_text(encoding="utf-8")
+    assert log_content.splitlines()[0].startswith('{"operation": "GT-CLONE", "event": "command_start"')
     assert '"event": "command_start"' in log_content
     assert '"event": "command_end"' in log_content
 

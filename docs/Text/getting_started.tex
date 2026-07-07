@@ -84,9 +84,12 @@ From a previously generated snapshot:
 $ pixi run cgitsync initialise .cgitsync/state/complexgitsync.gts
 \end{lstlisting}
 
-Successful \texttt{.cgs} initialisation prints the explicit workflow
-\texttt{load->expand->validate->clone}, the per-repository
-\texttt{git clone} action, the resolved root path, and a compact tree outline.
+Successful \texttt{.cgs} initialisation prints a readable operation sequence
+\texttt{GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE}, the explicit workflow
+\texttt{load->expand->validate->clone}, the per-repository \texttt{git clone}
+action, the resolved root path, and a compact tree outline. Structured log
+records also put the operation code first, for example \texttt{GT-DISCOVER},
+\texttt{GT-VALIDATE}, \texttt{FS-PURGE}, or \texttt{GT-CLONE}.
 If a stale partial checkout or previous submodule link blocks the clone step,
 \texttt{initialise} fails explicitly and prints
 \texttt{Try clean-init method}.  Use \texttt{clean-init} to insert a purge
@@ -96,9 +99,10 @@ phase between validation and cloning:
 $ pixi run cgitsync clean-init examples/complexgitsync.cgs
 \end{lstlisting}
 
-The explicit workflow is
-\texttt{load->expand->validate->purge->clone}.  The purge phase can also be
-run on its own:
+The explicit operation sequence is
+\texttt{GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE}; the matching
+workflow is \texttt{load->expand->validate->purge->clone}.  The purge phase can
+also be run on its own:
 
 \begin{lstlisting}[language=bash]
 $ pixi run cgitsync purge examples/complexgitsync.cgs

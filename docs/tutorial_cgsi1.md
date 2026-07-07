@@ -163,6 +163,7 @@ pixi run cgitsync initialise ../CGSil1.cgs --output-path "$CGSPATH"
 Expected output (all repos cloned, tree is `READY`):
 
 ```
+operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE
 workflow=load->expand->validate->clone
 git_command=git clone (executed per repo)
 READY ready=true complete=true root=/path/to/CGSil1
@@ -186,10 +187,12 @@ validation and cloning:
 pixi run cgitsync clean-init ../CGSil1.cgs
 ```
 
-`clean-init` prints `workflow=load->expand->validate->purge->clone`. The
-`purge` phase removes generated clone state from `$CGSHOME`: repositories
-declared directly under the root, project `*.lgr` files, and the root
-`.gitmodules` file. The cleanup can also be run alone:
+`clean-init` prints
+`operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE`
+and `workflow=load->expand->validate->purge->clone`. The `purge` phase removes
+generated clone state from `$CGSHOME`: repositories declared directly under the
+root, project `*.lgr` files, and the root `.gitmodules` file. The cleanup can
+also be run alone:
 
 ```bash
 pixi run cgitsync purge ../CGSil1.cgs

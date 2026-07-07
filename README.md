@@ -64,6 +64,11 @@ From the CGSil1 `.cgs` specification, initialise the full repository tree under
 pixi run cgitsync initialise ../CGSil1.cgs
 ```
 
+CLI output includes a readable `operation_sequence` such as
+`GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE`. Structured log records also put
+the operation code first (`GT-DISCOVER`, `GT-VALIDATE`, `FS-PURGE`, `GT-CLONE`)
+before the detailed event payload.
+
 If an existing partial checkout or stale submodule metadata blocks
 initialisation, `initialise` fails explicitly and prints `Try clean-init method`.
 Use `clean-init` to run the same load/expand/validate flow with a cleanup step
