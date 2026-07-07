@@ -1506,7 +1506,7 @@ class GitRunner:
             self._run("checkout", "--", ".gitmodules", cwd=repo_path)
             return
         if tracked.returncode != 1:
-            command = f"{self.executable} ls-files --error-unmatch .gitmodules"
+            command = f"{str(self.executable)} ls-files --error-unmatch .gitmodules"
             stderr = tracked.stderr.strip()
             stdout = tracked.stdout.strip()
             if stderr:
@@ -1516,7 +1516,8 @@ class GitRunner:
             else:
                 details = "no output from git command"
             raise GitSyncError(
-                f"Git command failed with unexpected returncode {tracked.returncode} "
+                "Expected returncode 0 (tracked) or 1 (not tracked); "
+                f"got {tracked.returncode} "
                 f"({command}): {details}"
             )
 
