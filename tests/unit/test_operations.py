@@ -385,6 +385,30 @@ def test_add_tree_stages_all_repos_leaf_first(tmp_path):
     assert registry.recompute_tree_state() == TreeLifecycleState.READY
 
 
+def test_git_runner_stage_all_respects_local_gitignore(tmp_path):
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    runner = GitRunner()
+
+    subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True, text=True)
+    (repo_path / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
+    (repo_path / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    (repo_path / "ignored.txt").write_text("ignored\n", encoding="utf-8")
+
+    runner.stage_all(repo_path)
+
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=repo_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert ".gitignore" in staged
+    assert "tracked.txt" in staged
+    assert "ignored.txt" not in staged
+
+
 # ---------------------------------------------------------------------------
 # restart_tree
 # ---------------------------------------------------------------------------

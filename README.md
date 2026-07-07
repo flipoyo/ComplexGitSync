@@ -217,7 +217,9 @@ Inspection commands:
   `1`, `lgr-000001`, or `gts-000001`
 - `validate <file.cgs|file.gts>`: validate a spec or snapshot
 - `print <file.cgs|file.gts>`: print a lifecycle summary
-- `status [--gts <file.gts>]`: summarize local cleanliness, upstream sync, and recorded SHA drift
+- `status [--gts <file.gts>]`: summarize local cleanliness, local/upstream
+  branch tracking (`LOCAL_BRANCH`, `UPSTREAM_BRANCH`, `SYNC` with ahead/behind
+  counts), and recorded SHA drift
 - `view_tree [file.cgs|file.gts]`: render the repository tree
 - `view_operation [file.cgs|file.gts]`: render the runtime operation table
 - `validate-topology --gts <file.gts>`: check branch alignment across the tree
@@ -267,4 +269,4 @@ used to derive `CGSHOME=$CGSPATH/<project-name>`.
 - Project Manager: Nicolas Flipo
 - Main Developer: Nicolas Flipo
 - Contributors (ongoing): Simone Mazzarelli, Tristan Bourgeois, Nicolas Gallois, Pierre Guillou, Fabien Ors
-- AI assistance: Copilot@github, ChatGPT, Claude
+- AI assistance: ChatGPT, Copilot@github, Mistral Vibe, Claude

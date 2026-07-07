@@ -212,16 +212,25 @@ def _local_status_from_porcelain(status_lines: list[str]) -> str:
     return "dirty"
 
 
-def _status_tracking_label(sync_state: SyncState | None) -> str:
+def _status_tracking_label(
+    sync_state: SyncState | None,
+    tracking_counts: tuple[int, int] | None = None,
+) -> str:
     if sync_state is None:
         return "unknown"
     if sync_state == SyncState.ALIGNED:
         return "synced"
     if sync_state == SyncState.AHEAD:
+        if tracking_counts is not None:
+            return f"ahead(+{tracking_counts[0]})"
         return "ahead"
     if sync_state == SyncState.BEHIND:
+        if tracking_counts is not None:
+            return f"behind(-{tracking_counts[1]})"
         return "behind"
     if sync_state == SyncState.DIVERGED:
+        if tracking_counts is not None:
+            return f"diverged(+{tracking_counts[0]}/-{tracking_counts[1]})"
         return "diverged"
     return sync_state.value.lower()
 
@@ -284,8 +293,17 @@ def _unmanaged_gitlink_paths(
     return {path for path in gitlinks if path not in managed_children}
 
 
-def _render_status_table(rows: list[tuple[str, str, str, str, str, str, str]]) -> str:
-    headers = ("REPOSITORY", "PATH", "BRANCH", "LOCAL", "UPSTREAM", "HEAD", "RECORDED")
+def _render_status_table(rows: list[tuple[str, str, str, str, str, str, str, str]]) -> str:
+    headers = (
+        "REPOSITORY",
+        "PATH",
+        "LOCAL_BRANCH",
+        "UPSTREAM_BRANCH",
+        "LOCAL",
+        "SYNC",
+        "HEAD",
+        "RECORDED",
+    )
     widths = [len(header) for header in headers]
     for row in rows:
         for index, value in enumerate(row):
@@ -1731,6 +1749,20 @@ class GitRunner:
 
     def branch_tracking_state(self, repo_path: Path | str) -> SyncState | None:
         """Return upstream tracking state for the current branch in *repo_path*."""
+        counts = self.branch_tracking_counts(repo_path)
+        if counts is None:
+            return None
+        ahead, behind = counts
+        if ahead and behind:
+            return SyncState.DIVERGED
+        if ahead:
+            return SyncState.AHEAD
+        if behind:
+            return SyncState.BEHIND
+        return SyncState.ALIGNED
+
+    def upstream_ref(self, repo_path: Path | str) -> str | None:
+        """Return the upstream ref for the current branch, e.g. ``origin/main``."""
         upstream = subprocess.run(
             [self.executable, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
             cwd=str(repo_path),
@@ -1740,17 +1772,15 @@ class GitRunner:
         )
         if upstream.returncode != 0:
             return None
+        return upstream.stdout.strip() or None
+
+    def branch_tracking_counts(self, repo_path: Path | str) -> tuple[int, int] | None:
+        """Return ``(ahead, behind)`` counts against upstream for the current branch."""
+        if self.upstream_ref(repo_path) is None:
+            return None
         counts = self._run("rev-list", "--left-right", "--count", "HEAD...@{upstream}", cwd=repo_path)
         ahead_raw, behind_raw = counts.stdout.strip().split()
-        ahead = int(ahead_raw)
-        behind = int(behind_raw)
-        if ahead and behind:
-            return SyncState.DIVERGED
-        if ahead:
-            return SyncState.AHEAD
-        if behind:
-            return SyncState.BEHIND
-        return SyncState.ALIGNED
+        return (int(ahead_raw), int(behind_raw))
 
     def has_upstream(self, repo_path: Path | str) -> bool:
         """Return ``True`` when the current branch has an upstream configured."""
@@ -3366,7 +3396,7 @@ class ComplexGitSyncClient:
 
     def status(self) -> str:
         registry = self.get_dependency_registry()
-        rows: list[tuple[str, str, str, str, str, str, str]] = []
+        rows: list[tuple[str, str, str, str, str, str, str, str]] = []
         root_path = registry.get(ROOT_REPO_ID).absolute_path
         dirty_count = 0
         staged_count = 0
@@ -3378,20 +3408,20 @@ class ComplexGitSyncClient:
         for entry in iter_tree_leaf_first(registry):
             repo_status = self._repo_status_row(registry, entry, root_path)
             rows.append(repo_status)
-            local_state = repo_status[3]
-            upstream_state = repo_status[4]
+            local_state = repo_status[4]
+            upstream_state = repo_status[5]
             if local_state != "clean":
                 dirty_count += 1
             if "staged" in local_state:
                 staged_count += 1
-            if upstream_state == "ahead":
+            if upstream_state.startswith("ahead"):
                 ahead_count += 1
-            elif upstream_state == "behind":
+            elif upstream_state.startswith("behind"):
                 behind_count += 1
-            elif upstream_state == "diverged":
+            elif upstream_state.startswith("diverged"):
                 ahead_count += 1
                 behind_count += 1
-            if repo_status[5].endswith("*"):
+            if repo_status[6].endswith("*"):
                 recorded_mismatch_count += 1
             if upstream_state == "error" or local_state == "error":
                 error_count += 1
@@ -3421,18 +3451,21 @@ class ComplexGitSyncClient:
         registry: WorkingGitTree,
         entry: WorkingRepo,
         root_path: Path,
-    ) -> tuple[str, str, str, str, str, str, str]:
+    ) -> tuple[str, str, str, str, str, str, str, str]:
         display_path = _status_display_path(entry, root_path)
         try:
             branch = self.git_runner.current_branch(entry.absolute_path) or "detached"
             head = self.git_runner.rev_parse_head(entry.absolute_path)
             status_lines = self._managed_status_lines(registry, entry)
+            upstream_ref = self.git_runner.upstream_ref(entry.absolute_path)
+            tracking_counts = self.git_runner.branch_tracking_counts(entry.absolute_path)
             tracking_state = self.git_runner.branch_tracking_state(entry.absolute_path)
         except GitSyncError:
             return (
                 entry.name,
                 display_path,
                 entry.current_ref_name or "-",
+                "-",
                 "error",
                 "error",
                 "-",
@@ -3440,7 +3473,7 @@ class ComplexGitSyncClient:
             )
 
         local_state = _local_status_from_porcelain(status_lines)
-        upstream_state = _status_tracking_label(tracking_state)
+        upstream_state = _status_tracking_label(tracking_state, tracking_counts)
         recorded = _short_sha(entry.commit_sha)
         head_short = _short_sha(head)
         if entry.commit_sha and head and entry.commit_sha != head:
@@ -3449,6 +3482,7 @@ class ComplexGitSyncClient:
             entry.name,
             display_path,
             branch,
+            upstream_ref or "-",
             local_state,
             upstream_state,
             head_short,

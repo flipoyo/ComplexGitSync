@@ -770,6 +770,8 @@ def test_status_rendering_contains_live_git_summary(tmp_path):
     fake_runner.branch_overrides[root_path.resolve()] = "main"
     fake_runner.status_lines[root_path.resolve()] = ["A  new-file.txt"]
     fake_runner.tracking_states[root_path.resolve()] = SyncState.AHEAD
+    fake_runner.upstream_refs[root_path.resolve()] = "origin/main"
+    fake_runner.tracking_counts[root_path.resolve()] = (2, 0)
 
     client = ComplexGitSyncClient(git_runner=fake_runner)
     client.load_gts(snapshot_path)
@@ -778,10 +780,13 @@ def test_status_rendering_contains_live_git_summary(tmp_path):
 
     assert "summary ready=true complete=true repos=1 dirty=1 staged=1 ahead=1" in rendered_status
     assert "REPOSITORY" in rendered_status
-    assert "UPSTREAM" in rendered_status
+    assert "LOCAL_BRANCH" in rendered_status
+    assert "UPSTREAM_BRANCH" in rendered_status
+    assert "SYNC" in rendered_status
     assert "demo" in rendered_status
     assert "staged" in rendered_status
-    assert "ahead" in rendered_status
+    assert "origin/main" in rendered_status
+    assert "ahead(+2)" in rendered_status
 
 
 def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
@@ -1646,6 +1651,8 @@ class _FakeGitRunner:
         self.branch_overrides: dict[Path, str | None] = {}
         self.status_lines: dict[Path, list[str]] = {}
         self.tracking_states: dict[Path, SyncState | None] = {}
+        self.upstream_refs: dict[Path, str | None] = {}
+        self.tracking_counts: dict[Path, tuple[int, int] | None] = {}
 
     def remote_branch_exists(self, remote_url: str, branch: str) -> bool:
         return branch in self.remote_branches.get(remote_url, set())
@@ -1739,6 +1746,24 @@ nested_config = "disabled"
 
     def branch_tracking_state(self, repo_path: Path | str) -> SyncState | None:
         return self.tracking_states.get(Path(repo_path).resolve(), SyncState.ALIGNED)
+
+    def upstream_ref(self, repo_path: Path | str) -> str | None:
+        return self.upstream_refs.get(Path(repo_path).resolve(), "origin/main")
+
+    def branch_tracking_counts(self, repo_path: Path | str) -> tuple[int, int] | None:
+        resolved = Path(repo_path).resolve()
+        if resolved in self.tracking_counts:
+            return self.tracking_counts[resolved]
+        state = self.branch_tracking_state(repo_path)
+        if state == SyncState.AHEAD:
+            return (1, 0)
+        if state == SyncState.BEHIND:
+            return (0, 1)
+        if state == SyncState.DIVERGED:
+            return (1, 1)
+        if state is None:
+            return None
+        return (0, 0)
 
 
 class _StrictCloneGitRunner(_FakeGitRunner):
