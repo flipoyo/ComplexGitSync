@@ -1210,6 +1210,7 @@ def test_git_runner_add_submodule_creates_gitmodules_when_missing(monkeypatch, t
     )
 
     assert (repo_path / ".gitmodules").is_file()
+    assert (repo_path / ".gitmodules").read_text(encoding="utf-8") == ""
     assert calls == [
         (
             "submodule",
