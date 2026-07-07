@@ -1509,7 +1509,12 @@ class GitRunner:
             command = f"{self.executable} ls-files --error-unmatch .gitmodules"
             stderr = tracked.stderr.strip()
             stdout = tracked.stdout.strip()
-            details = stderr if stderr else (stdout if stdout else "no output from git command")
+            if stderr:
+                details = stderr
+            elif stdout:
+                details = stdout
+            else:
+                details = "no output from git command"
             raise GitSyncError(
                 f"Git command failed with unexpected returncode {tracked.returncode} "
                 f"({command}): {details}"
