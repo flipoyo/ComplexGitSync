@@ -266,6 +266,10 @@ def _status_line_targets_any(status_line: str, paths: set[Path]) -> bool:
     return any(status_path == path or _path_is_relative_to(status_path, path) for path in paths)
 
 
+def _status_line_is_untracked(status_line: str) -> bool:
+    return status_line.startswith("?? ")
+
+
 def _path_is_relative_to(path: Path, parent: Path) -> bool:
     try:
         path.relative_to(parent)
@@ -3495,14 +3499,32 @@ class ComplexGitSyncClient:
         entry: WorkingRepo,
     ) -> list[str]:
         status_lines = self.git_runner.status_porcelain(entry.absolute_path)
-        unmanaged_gitlinks = _unmanaged_gitlink_paths(registry, entry, self.git_runner)
-        if not unmanaged_gitlinks:
-            return status_lines
+        managed_paths = self._cgitsync_managed_status_paths(registry, entry)
+        managed_paths.update(_unmanaged_gitlink_paths(registry, entry, self.git_runner))
         return [
             line
             for line in status_lines
-            if not _status_line_targets_any(line, unmanaged_gitlinks)
+            if not _status_line_targets_any(line, managed_paths)
+            and not (
+                _status_line_is_untracked(line)
+                and _status_line_path(line) == Path(".gitignore")
+            )
         ]
+
+    def _cgitsync_managed_status_paths(
+        self,
+        registry: WorkingGitTree,
+        entry: WorkingRepo,
+    ) -> set[Path]:
+        managed_paths: set[Path] = {Path(".gitmodules"), Path(".cgitsync")}
+        if entry.parent_id is None:
+            managed_paths.add(Path(f"{entry.name}.lgr"))
+        for child in registry.children_of(entry.repo_id):
+            try:
+                managed_paths.add(child.absolute_path.relative_to(entry.absolute_path))
+            except ValueError:
+                continue
+        return managed_paths
 
     def describe_cgs(self) -> str:
         registry = self.get_dependency_registry()

@@ -789,6 +789,28 @@ def test_status_rendering_contains_live_git_summary(tmp_path):
     assert "ahead(+2)" in rendered_status
 
 
+def test_status_ignores_cgitsync_managed_generated_files(tmp_path):
+    root_path = tmp_path / "workspace" / "demo"
+    snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=root_path)
+    fake_runner = _FakeGitRunner({})
+    fake_runner.branch_overrides[root_path.resolve()] = "main"
+    fake_runner.status_lines[root_path.resolve()] = [
+        " M .cgitsync/state/demo.gts",
+        " M demo.lgr",
+        "A  .gitmodules",
+        "?? .gitignore",
+    ]
+
+    client = ComplexGitSyncClient(git_runner=fake_runner)
+    client.load_gts(snapshot_path)
+
+    rendered_status = client.status()
+
+    assert "summary ready=true complete=true repos=1 dirty=0 staged=0" in rendered_status
+    assert "demo" in rendered_status
+    assert "clean" in rendered_status
+
+
 def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
     config_path = _write_clone_ready_cgs(tmp_path)
     fake_runner = _FakeGitRunner(
