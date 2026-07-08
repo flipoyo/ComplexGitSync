@@ -169,9 +169,9 @@ class TestTutoCGSil1CLI:
 
     # ── Tutorial step 2 ────────────────────────────────────────────────────
 
-    def test_print_summary(self, cgsi1_sandbox, capsys):
-        """cgitsync print CGSil1.cgs — tree summary includes project name."""
-        exit_code = cli_main(["print", str(cgsi1_sandbox["cgs_path"])])
+    def test_view_tree_summary(self, cgsi1_sandbox, capsys):
+        """cgitsync view-tree CGSil1.cgs — tree summary includes project name."""
+        exit_code = cli_main(["view-tree", str(cgsi1_sandbox["cgs_path"])])
         captured = capsys.readouterr()
 
         assert exit_code == 0
@@ -248,7 +248,7 @@ class TestTutoCGSil1CLI:
         assert "v1.1.0" in captured.out
 
         # Step 8: launch the frozen release
-        exit_code = cli_main(["launch_release", "v1.1.0", "--gts", str(gts_path)])
+        exit_code = cli_main(["launch-release", "v1.1.0", "--gts", str(gts_path)])
         captured = capsys.readouterr()
         assert exit_code == 0
         assert "READY" in captured.out

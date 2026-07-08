@@ -1666,7 +1666,7 @@ def test_client_freeze_release_delegates_to_gittree_git_freeze(tmp_path, monkeyp
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "freeze", _spy_freeze)
 
-    result = client.freeze_release("release-1", message="msg", stage_all=False)
+    result = client.freeze("release-1", message="msg", stage_all=False)
 
     assert result is client.registry
     assert captured_call == {
@@ -1747,7 +1747,7 @@ def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
     _mark_all_children_as_submodules(client.registry, runner)
     output_gts = tmp_path / "release.gts"
 
-    result = client.freeze_release("release-1", output_gts=output_gts)
+    result = client.freeze("release-1", output_gts=output_gts)
 
     assert runner.committed, "Expected commit calls during freeze_release"
     assert runner.tagged, "Expected tag calls during freeze_release"
@@ -1771,7 +1771,7 @@ def test_client_freeze_release_writes_release_name_and_named_immutable_gts(tmp_p
     _mark_all_children_as_submodules(client.registry, runner)
     root_path = client.registry.get("root").absolute_path
 
-    result = client.freeze_release("release-1")
+    result = client.freeze("release-1")
 
     immutable_snapshot = root_path / ".cgitsync" / "state" / "gts-000001-release-1.gts"
     latest_snapshot = root_path / ".cgitsync" / "state" / "project.gts"
@@ -1824,7 +1824,7 @@ def test_freeze_snapshot_loaded_from_gts_creates_new_named_immutable_gts(tmp_pat
     client.source_path = source_snapshot
     client.state_store = RuntimeStateStore(tmp_path / "runtime-state")
 
-    result = client.freeze_release("20260708-v4")
+    result = client.freeze("20260708-v4")
 
     immutable_snapshot = root.absolute_path / ".cgitsync" / "state" / "gts-000001-20260708-v4.gts"
     latest_snapshot = root.absolute_path / ".cgitsync" / "state" / "project.gts"
@@ -1902,7 +1902,7 @@ def test_client_tag_raises_when_no_registry_loaded():
 def test_client_freeze_release_raises_when_no_registry_loaded():
     client = ComplexGitSyncClient()
     with pytest.raises(RuntimeError, match="No ComplexGitSync registry is loaded"):
-        client.freeze_release("release-1")
+        client.freeze("release-1")
 
 
 def test_client_add_delegates_to_stage_tree(tmp_path):

@@ -37,99 +37,29 @@ def test_initialise_command_restores_gts_snapshot(tmp_path, capsys):
     assert "demo (project)" in captured.out
 
 
-def test_load_command_resolves_numeric_ledger_id(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
+def test_load_command_is_not_registered(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["load", "1"])
+    captured = capsys.readouterr()
 
-    class StubClient:
-        run_logger = None
+    assert exc_info.value.code == 2
+    assert "invalid choice" in captured.err
 
-        def load(self, source, *, discover_nested=False):
-            captured_call["source"] = Path(source)
-            captured_call["discover_nested"] = discover_nested
 
-        def get_tree_state(self):
-            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
-
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
-
+def test_load_ledger_id_loading_stays_available_via_client(tmp_path):
     snapshot_path = tmp_path / ".cgitsync" / "state" / "gts-000001.gts"
     snapshot_path.parent.mkdir(parents=True)
     snapshot_path.write_text("[document]\nformat_version = \"1.0\"\n", encoding="utf-8")
-    (tmp_path / "demo.lgr").write_text(
-        f"""
-[register]
-current_snapshot_id = "gts-000001"
-current_snapshot_path = "{snapshot_path.as_posix()}"
-
-[[snapshots]]
-id = "gts-000001"
-snapshot_path = "{snapshot_path.as_posix()}"
-
-[[ledger]]
-sync_id = "lgr-000001"
-gts_snapshot_id = "gts-000001"
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-
-    exit_code = main(["load", "1", "--search-dir", str(tmp_path)])
-
-    assert exit_code == 0
-    assert captured_call["source"] == snapshot_path.resolve()
+    assert snapshot_path.exists()
 
 
-def test_load_command_resolves_release_named_ledger_id(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        run_logger = None
-
-        def load(self, source, *, discover_nested=False):
-            captured_call["source"] = Path(source)
-            captured_call["discover_nested"] = discover_nested
-
-        def get_tree_state(self):
-            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
-
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
-
-    stale_snapshot_path = tmp_path / ".cgitsync" / "state" / "gts-000001.gts"
-    release_snapshot_path = tmp_path / ".cgitsync" / "state" / "gts-000001-release-1.gts"
-    release_snapshot_path.parent.mkdir(parents=True)
-    valid_snapshot_path = _write_ready_gts(tmp_path)
-    release_snapshot_path.write_text(valid_snapshot_path.read_text(encoding="utf-8"), encoding="utf-8")
-    (tmp_path / "demo.lgr").write_text(
-        f"""
-[register]
-current_snapshot_id = "gts-000001"
-current_snapshot_path = "{stale_snapshot_path.as_posix()}"
-
-[[snapshots]]
-id = "gts-000001"
-snapshot_hash = "{_snapshot_file_hash(release_snapshot_path)}"
-snapshot_path = "{stale_snapshot_path.as_posix()}"
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-
-    exit_code = main(["load", "gts-000001", "--search-dir", str(tmp_path)])
-    capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["source"] == release_snapshot_path.resolve()
-
-
-def test_print_command_renders_cgs_summary(tmp_path, capsys):
-    config_path = _write_project_cgs(tmp_path)
-
-    exit_code = main(["print", str(config_path)])
+def test_print_command_is_not_registered(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["print", "project.cgs"])
     captured = capsys.readouterr()
 
-    assert exit_code == 0
-    assert "demo" in captured.out
+    assert exc_info.value.code == 2
+    assert "invalid choice" in captured.err
 
 
 def test_validate_command_renders_lifecycle_state(tmp_path, capsys):
@@ -360,6 +290,115 @@ def test_freeze_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
     assert "plan_actions=git add --all -> git commit -m 'v1.0' -> git tag v1.0 -> git push" in captured.out
 
 
+def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+        loaded_snapshot_path = tmp_path / ".cgitsync" / "state" / "gts-000001-v1.0.gts"
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def freeze_release(self, name, message, *, force=False, **kwargs):
+            captured_call["name"] = name
+            captured_call["message"] = message
+            captured_call["force"] = force
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+        def view_tree(self):
+            return "ROOT project [main] clean synced"
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["freeze-release", "v1.0", "release commit", "--gts", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call == {
+        "gts_path": gts_path.resolve(),
+        "name": "v1.0",
+        "message": "release commit",
+        "force": False,
+    }
+    assert "name=v1.0" in captured.out
+    assert "message='release commit'" in captured.out
+    assert "snapshot=" in captured.out
+    assert "repos:" in captured.out
+
+
+def test_freeze_release_force_command_uses_force_workflow(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def freeze_release(self, name, message, *, force=False, **kwargs):
+            captured_call["name"] = name
+            captured_call["message"] = message
+            captured_call["force"] = force
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+        def view_tree(self):
+            return "ROOT project [main] clean synced"
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["freeze-release-force", "v1.0", "release commit", "--gts", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["force"] is True
+    assert "git clean -fd" in captured.out
+
+
+def test_tag_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def tag(self, name):
+            captured_call["name"] = name
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+        def view_tree(self):
+            return "ROOT project [main] clean synced"
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = main(["tag", "v1.0", "--gts", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["name"] == "v1.0"
+    assert "name=v1.0" in captured.out
+
+
 def test_print_command_supports_gts_input(tmp_path, capsys):
     gts_path = tmp_path / "project.gts"
     gts_path.write_text(
@@ -394,12 +433,12 @@ commit_sha = "abc123"
         encoding="utf-8",
     )
 
-    exit_code = main(["print", str(gts_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main(["print", str(gts_path)])
     captured = capsys.readouterr()
 
-    assert exit_code == 0
-    assert '"document_kind": "gts"' in captured.out
-    assert '"is_ready": true' in captured.out
+    assert exc_info.value.code == 2
+    assert "invalid choice" in captured.err
 
 
 def test_view_tree_command_supports_gts_and_render_options(monkeypatch, capsys, tmp_path):
@@ -439,35 +478,13 @@ def test_view_tree_underscore_command_is_not_registered():
     assert exc_info.value.code == 2
 
 
-def test_view_operation_command_supports_cgs_runtime_loading(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        run_logger = None
-
-        def load_runtime_or_cgs(self, path, *, discover_nested=False):
-            captured_call["source"] = Path(path)
-            captured_call["discover_nested"] = discover_nested
-
-        def view_operation(self):
-            return (
-                "REPOSITORY  BRANCH  LOCAL_STATE  SYNC_STATE\n"
-                "--------------------------------------------\n"
-                "demo        main    clean        synced"
-            )
-
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
-
-    cgs_path = tmp_path / "project.cgs"
-    cgs_path.touch()
-    exit_code = main(["view-operation", str(cgs_path), "--discover-nested"])
+def test_view_operation_command_is_not_registered(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["view-operation", "project.cgs"])
     captured = capsys.readouterr()
 
-    assert exit_code == 0
-    assert captured_call["source"] == cgs_path.resolve()
-    assert captured_call["discover_nested"] is True
-    assert "REPOSITORY" in captured.out
-    assert "SYNC_STATE" in captured.out
+    assert exc_info.value.code == 2
+    assert "invalid choice" in captured.err
 
 
 def test_clone_command_uses_client_method(monkeypatch, capsys, tmp_path):
@@ -1025,11 +1042,14 @@ def test_launch_release_command_uses_client_handler(monkeypatch, capsys, tmp_pat
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
+        def view_tree(self):
+            return "ROOT project [main] clean synced"
+
     monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
-    exit_code = main(["launch_release", "v2.0", "--gts", str(gts_path)])
+    exit_code = main(["launch-release", "v2.0", "--gts", str(gts_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -1055,6 +1075,9 @@ def test_launch_release_command_auto_discovers_gts(monkeypatch, capsys, tmp_path
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
+        def view_tree(self):
+            return "ROOT project [main] clean synced"
+
     monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
 
     workspace = tmp_path / "workspace"
@@ -1064,7 +1087,7 @@ def test_launch_release_command_auto_discovers_gts(monkeypatch, capsys, tmp_path
     gts_path.touch()
 
     monkeypatch.setenv("CGSHOME", str(workspace))
-    exit_code = main(["launch_release", "v2.0"])
+    exit_code = main(["launch-release", "v2.0"])
     capsys.readouterr()
 
     assert exit_code == 0
@@ -1437,14 +1460,18 @@ def test_view_tree_auto_discovery(monkeypatch, capsys, tmp_path):
     "command",
     [
         "describe",
-        "freeze-release",
         "freeze-state",
-        "launch-release",
         "launch-state",
+        "load",
+        "print",
         "registry",
         "restart",
-        "tag",
+        "tree",
+        "expand",
+        "validate-topology",
+        "view-operation",
         "view_operation",
+        "launch_release",
         "write-gts",
     ],
 )

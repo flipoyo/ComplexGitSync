@@ -33,7 +33,7 @@ workspace state:
 flowchart TD
     CGS[CGSil1.cgs authoring spec] --> REF[GitTree + GitRepo reference tree]
     REF --> WORK[WorkingGitTree + WorkingRepo runtime tree]
-    WORK --> OPS[checkout/add/commit/push/freeze/launch_release operations]
+    WORK --> OPS[checkout/add/commit/push/freeze/launch-release operations]
     WORK --> GTS[CGSil1.gts runtime snapshot]
     GTS --> WORK
 ```
@@ -135,12 +135,12 @@ DECLARED ready=false complete=true
 
 ---
 
-### Step 2 — Print a tree summary
+### Step 2 — View a tree summary
 
 Renders the project tree with lifecycle state:
 
 ```bash
-pixi run cgitsync print ../CGSil1.cgs
+pixi run cgitsync view-tree ../CGSil1.cgs
 ```
 
 ---
@@ -270,8 +270,14 @@ pixi run cgitsync status
 
 ### Step 8 — Freeze
 
-Bundle outstanding changes into a release commit, tag, and push, then
-emit a versioned `.gts` snapshot:
+Minimalist release workflow: stage, commit, pull, push, freeze, and emit a
+versioned `.gts` snapshot:
+
+```bash
+pixi run cgitsync freeze-release v1.1.0 "release v1.1.0"
+```
+
+Expert equivalent for the final freeze step:
 
 ```bash
 pixi run cgitsync freeze v1.1.0
@@ -287,7 +293,7 @@ snapshot entry.
 Check out the frozen release tag across the READY tree:
 
 ```bash
-pixi run cgitsync launch_release v1.1.0
+pixi run cgitsync launch-release v1.1.0
 ```
 
 ---
@@ -297,7 +303,7 @@ pixi run cgitsync launch_release v1.1.0
 | Step | Command | Description |
 |------|---------|-------------|
 | 1 | `cgitsync validate ../CGSil1.cgs` | Parse and check the topology |
-| 2 | `cgitsync print ../CGSil1.cgs` | Render the tree summary |
+| 2 | `cgitsync view-tree ../CGSil1.cgs` | Render the tree summary |
 | 3 | `cgitsync initialise ../CGSil1.cgs` | Attach the root repo and clone child repos |
 | recovery | `cgitsync clean-init ../CGSil1.cgs` | Purge generated clone state, then initialise |
 | cleanup | `cgitsync purge ../CGSil1.cgs` | Remove root-level generated clone state |
@@ -306,8 +312,9 @@ pixi run cgitsync launch_release v1.1.0
 | 6 | `cgitsync commit "message"` | Commit across the tree |
 | 7 | `cgitsync push` | Push to remotes |
 | optional | `cgitsync status` | Inspect local cleanliness and recorded snapshot drift |
-| 8 | `cgitsync freeze v1.1.0` | Release commit + tag + snapshot |
-| 9 | `cgitsync launch_release v1.1.0` | Check out the frozen release tag |
+| 8 | `cgitsync freeze-release v1.1.0 "release v1.1.0"` | Minimalist release workflow |
+| expert | `cgitsync freeze v1.1.0` | Expert release commit + tag + snapshot |
+| 9 | `cgitsync launch-release v1.1.0` | Check out the frozen release tag |
 
 See `tests/integration/test_tuto_cgsi1.py` for a runnable sandbox that
 exercises the full workflow against local bare-repo remotes.

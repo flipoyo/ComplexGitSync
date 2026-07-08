@@ -1,4 +1,4 @@
-# ComplexGitSync
+# ComplexGitSync v0002.01
 
 ComplexGitSync is a command-line tool for synchronising a multi-repository Git
 workspace from one local specification and one tracked workspace state.
@@ -97,10 +97,9 @@ pixi run cgitsync initialise "$CGSHOME/.cgitsync/state/CGSil1.gts"
 ### 2. Inspect the synchronised tree
 
 ```bash
-pixi run cgitsync print "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync status
 pixi run cgitsync view-tree "$CGSHOME/.cgitsync/state/CGSil1.gts"
 pixi run cgitsync view-tree "$CGSHOME/.cgitsync/state/CGSil1.gts" --depth 2 --collapse CGSih1
-pixi run cgitsync view-operation "$CGSHOME/.cgitsync/state/CGSil1.gts"
 ```
 
 Example `view-tree` output:
@@ -111,7 +110,7 @@ CGSil1 (root) [ALIGNED] @e6cfdb8
 └── CGSil2 (leaf) [ALIGNED] @0511d53
 ```
 
-If no source is passed to `view-tree`, `view-operation`, or the READY-state Git
+If no source is passed to `status`, `view-tree`, or the READY-state Git
 commands below, the CLI discovers the latest snapshot from
 `$CGSHOME/.cgitsync/state/`. `CGSHOME` can be set explicitly; when it is not,
 the initialisation default is `CGSPATH=../..` and later commands can also discover the
@@ -120,14 +119,22 @@ workspace by walking upward from the current directory.
 ### 3. Keep the workspace in sync
 
 ```bash
+pixi run cgitsync freeze-release release-2026.05 "release 2026.05"
+pixi run cgitsync launch-release release-2026.05
+```
+
+The expert workflow exposes each step separately:
+
+```bash
 pixi run cgitsync pull
 pixi run cgitsync branch feature/my-branch
 pixi run cgitsync checkout feature/my-branch
 pixi run cgitsync add
 pixi run cgitsync commit "feat: update CGSil1 CGS#1"
 pixi run cgitsync push
+pixi run cgitsync tag release-2026.05
 pixi run cgitsync freeze release-2026.05
-pixi run cgitsync launch_release release-2026.05
+pixi run cgitsync launch-release release-2026.05
 ```
 
 Mutation commands print a concise human result by default: the `log_file=...`
@@ -143,7 +150,7 @@ pixi run cgitsync add --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
 pixi run cgitsync commit "feat: update CGSil1 CGS#1" --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
 pixi run cgitsync push --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
 pixi run cgitsync freeze release-2026.05 --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
-pixi run cgitsync launch_release release-2026.05 --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync launch-release release-2026.05 --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
 ```
 
 Use `--dry-run` on mutation commands to preview the execution plan:
@@ -153,6 +160,7 @@ pixi run cgitsync add --dry-run
 pixi run cgitsync commit "feat: update CGSil1 CGS#1" --dry-run
 pixi run cgitsync push --dry-run
 pixi run cgitsync freeze release-2026.05 --dry-run
+pixi run cgitsync freeze-release release-2026.05 "release 2026.05" --dry-run
 ```
 
 ## Python API parity
@@ -197,19 +205,34 @@ client.commit("feat: update CGSil1 CGS#1")
 client.push()
 client.tag("v1.2.3")
 client.freeze("release-2026.05")
+client.freeze_release("release-2026.05", "release 2026.05")
 client.launch_release("release-2026.05")
 ```
 
 ## Command reference
 
-Primary commands:
+Minimalist commands:
 
 - `initialise <file.cgs|file.gts>`: clone from a spec or load from a snapshot;
   for `.cgs`, omitted `--output-path` defaults to `CGSPATH=../..`; on failure,
   the CLI suggests `clean-init`
 - `clean-init <file.cgs>`: run `load->expand->validate->purge->clone`
+- `freeze-release <name> <message>`: from a READY tree, run
+  `add -> commit -> pull -> push -> freeze`
+- `freeze-release-force <name> <message>`: same release workflow, but uses
+  `pull-force` instead of `pull`
+- `status [--gts <file.gts>]`: summarize local cleanliness, local/upstream
+  branch tracking (`LOCAL_BRANCH`, `UPSTREAM_BRANCH`, `SYNC` with ahead/behind
+  counts), and recorded SHA drift
+- `view-tree [file.cgs|file.gts]`: render the repository tree with node type,
+  sync state, commit SHA, and fallback branch (if not main)
+- `launch-release <name>`: check out a frozen release tag across a READY tree
+
+Expert commands:
+
 - `purge <file.cgs>`: remove immediate root-level child repos, root `*.lgr`
   files, and root `.gitmodules`
+- `validate <file.cgs|file.gts>`: validate a spec or snapshot
 - `clone <file.cgs>`: clone the full project tree from a `.cgs` spec; this is
   the direct CLI entry point for `ComplexGitSyncClient.clone`
 - `pull [file.cgs|file.gts]`: resynchronise an existing tree parent-first
@@ -227,21 +250,8 @@ Primary commands:
 - `commit <message>`: commit dirty repositories leaf-first
 - `push`: push repositories leaf-first; when the current branch has no upstream,
   publish it with `git push -u origin <branch>`
+- `tag <name>`: create and push a tag leaf-first
 - `freeze <name>`: commit, tag, push, snapshot, and update the local register
-- `launch_release <name>`: check out a frozen release tag across a READY tree
-
-Inspection commands:
-
-- `load <file.cgs|file.gts|id>`: load a path or project-local ledger id such as
-  `1`, `lgr-000001`, or `gts-000001`
-- `validate <file.cgs|file.gts>`: validate a spec or snapshot
-- `print <file.cgs|file.gts>`: print a lifecycle summary
-- `status [--gts <file.gts>]`: summarize local cleanliness, local/upstream
-  branch tracking (`LOCAL_BRANCH`, `UPSTREAM_BRANCH`, `SYNC` with ahead/behind
-  counts), and recorded SHA drift
-- `view-tree [file.cgs|file.gts]`: render the repository tree with node type, sync state, commit SHA, and fallback branch (if not main)
-- `view-operation [file.cgs|file.gts]`: render the runtime operation table
-- `validate-topology --gts <file.gts>`: check branch alignment across the tree
 
 ## Safety checks
 

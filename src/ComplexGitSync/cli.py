@@ -15,10 +15,17 @@ from .orchestre import CgsDocument, ComplexGitSyncClient, GtsDocument, create_ru
 
 
 _PLANNED_COMMANDS: dict[str, str] = {
-    # Primary user-facing commands
+    # Minimalist commands
     "initialise": "Initialise a project tree: clone(.cgs) or restore state(.gts).",
     "clean-init": "Purge generated clone state, then initialise from a .cgs spec.",
+    "freeze-release": "Run add, commit, pull, push, and freeze from a READY tree.",
+    "freeze-release-force": "Run add, commit, pull-force, push, and freeze from a READY tree.",
+    "status": "Summarize tree readiness and sync state.",
+    "view-tree": "Render a topology-focused tree view in terminal.",
+    "launch-release": "Check out a frozen release tag from a READY tree.",
+    # Expert commands
     "purge": "Remove generated clone state for a .cgs workspace.",
+    "validate": "Validate a .cgs or .gts topology and print the lifecycle state.",
     "clone": "Clone a nested project tree from .cgs.",
     "pull": "Resynchronise an existing project tree from .cgs or .gts.",
     "pull-force": "Destructively resynchronise an existing project tree from .cgs or .gts.",
@@ -27,16 +34,8 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "add": "Stage all changes across a READY tree.",
     "commit": "Commit dirty repositories from a READY tree.",
     "push": "Push repositories from a READY tree.",
+    "tag": "Create and push a tag across a READY tree.",
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
-    "launch_release": "Check out a frozen release tag from a READY tree.",
-    # Secondary / inspection commands
-    "load": "Load a .cgs/.gts path or a project-local .lgr snapshot id.",
-    "validate": "Validate a .cgs or .gts topology and print the lifecycle state.",
-    "print": "Print a .cgs or .gts lifecycle summary.",
-    "view-tree": "Render a topology-focused tree view in terminal.",
-    "view-operation": "Render a runtime operation table in terminal.",
-    "validate-topology": "Inspect and report the workspace branch topology alignment.",
-    "status": "Summarize tree readiness and sync state.",
     # Configuration commands
     "configure": "Create a .cgs project specification file interactively.",
 }
@@ -48,7 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "ComplexGitSync CLI — manage a nested Git repository tree. "
             "Start with 'initialise' to clone or restore a project tree, "
-            "then use 'pull', 'checkout', 'add', 'commit', 'push', 'freeze', and 'launch_release' "
+            "then use 'freeze-release' for the minimalist workflow or expert "
+            "'pull', 'checkout', 'add', 'commit', 'push', 'tag', and 'freeze' "
             "to keep repositories in sync."
         ),
     )
@@ -385,6 +385,62 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Preview the push execution plan without mutating repositories.",
             )
             subparser.set_defaults(handler=_handle_push)
+        elif command_name in {"freeze-release", "freeze-release-force"}:
+            subparser.add_argument("name", help="Release tag name.")
+            subparser.add_argument("message", help="Commit message used before release freezing.")
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                default=None,
+                help=(
+                    "Path to the .gts snapshot that holds the READY registry. "
+                    "When omitted the latest .gts snapshot is discovered automatically "
+                    "from CGSHOME/.cgitsync/state/."
+                ),
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory used to resolve CGSHOME before loading "
+                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "or walks up from the current working directory."
+                ),
+            )
+            subparser.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="Preview the release workflow without mutating repositories.",
+            )
+            subparser.set_defaults(
+                handler=(
+                    _handle_freeze_release_force
+                    if command_name == "freeze-release-force"
+                    else _handle_freeze_release
+                )
+            )
+        elif command_name == "tag":
+            subparser.add_argument("name", help="Tag name to create and push across the READY tree.")
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                default=None,
+                help=(
+                    "Path to the .gts snapshot that holds the READY registry. "
+                    "When omitted the latest .gts snapshot is discovered automatically "
+                    "from CGSHOME/.cgitsync/state/."
+                ),
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory used to resolve CGSHOME before loading "
+                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "or walks up from the current working directory."
+                ),
+            )
+            subparser.set_defaults(handler=_handle_tag)
         elif command_name == "freeze":
             subparser.add_argument("name", help="Version tag name used for commit, tag, and push.")
             subparser.add_argument(
@@ -412,7 +468,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Preview the freeze execution plan without mutating repositories.",
             )
             subparser.set_defaults(handler=_handle_freeze)
-        elif command_name == "launch_release":
+        elif command_name == "launch-release":
             subparser.add_argument("release", help="Frozen release tag to check out across the READY tree.")
             subparser.add_argument(
                 "--gts",
@@ -713,6 +769,47 @@ def _handle_push(args: argparse.Namespace) -> int:
         command_name="push",
         source=gts_path,
         runner=lambda client, source: _execute_push(client, source, dry_run=args.dry_run),
+    )
+
+
+def _handle_freeze_release(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="freeze-release",
+        source=gts_path,
+        runner=lambda client, source: _execute_freeze_release(
+            client,
+            source,
+            name=args.name,
+            message=args.message,
+            force=False,
+            dry_run=args.dry_run,
+        ),
+    )
+
+
+def _handle_freeze_release_force(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="freeze-release-force",
+        source=gts_path,
+        runner=lambda client, source: _execute_freeze_release(
+            client,
+            source,
+            name=args.name,
+            message=args.message,
+            force=True,
+            dry_run=args.dry_run,
+        ),
+    )
+
+
+def _handle_tag(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="tag",
+        source=gts_path,
+        runner=lambda client, source: _execute_tag(client, source, name=args.name),
     )
 
 
@@ -1090,6 +1187,68 @@ def _execute_push(
     print(_format_tree_state_line(tree_state))
     if not dry_run:
         _print_repo_tree_result(client)
+    return 0
+
+
+def _execute_freeze_release(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    name: str,
+    message: str,
+    force: bool = False,
+    dry_run: bool = False,
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    pull_action = "git fetch && git checkout -B <branch> FETCH_HEAD && git clean -fd" if force else "git pull --ff-only"
+    print(
+        "git_command="
+        f"git add --all && git commit -m {message!r} && {pull_action} && "
+        "git push && "
+        f"git add --all && git commit -m {message!r} && git tag {name} && git push"
+    )
+    if dry_run:
+        _print_dry_run_plan(
+            client,
+            command_name="freeze-release-force" if force else "freeze-release",
+            actions=(
+                "git add --all",
+                f"git commit -m {message!r}",
+                "cgitsync pull-force" if force else "cgitsync pull",
+                "git push",
+                f"cgitsync freeze {name}",
+            ),
+        )
+    else:
+        client.freeze_release(name, message, force=force)
+    tree_state = client.get_tree_state()
+    snapshot_path = getattr(client, "loaded_snapshot_path", None)
+    snapshot_suffix = f" snapshot={snapshot_path}" if snapshot_path is not None else ""
+    print(
+        f"{_format_tree_state_line(tree_state)} "
+        f"name={name} message={message!r}"
+        f"{snapshot_suffix}"
+    )
+    if not dry_run:
+        _print_repo_tree_result(client)
+    return 0
+
+
+def _execute_tag(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    name: str,
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    print(f"git_command=git tag {name} && git push origin {name}")
+    client.tag(name)
+    tree_state = client.get_tree_state()
+    print(
+        f"{_format_tree_state_line(tree_state)} "
+        f"name={name}"
+    )
+    _print_repo_tree_result(client)
     return 0
 
 

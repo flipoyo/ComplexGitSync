@@ -49,7 +49,7 @@ nested configuration discovery.
 
 \begin{lstlisting}[language=bash]
 $ pixi run cgitsync validate examples/complexgitsync.cgs
-$ pixi run cgitsync print examples/complexgitsync.cgs
+$ pixi run cgitsync view-tree examples/complexgitsync.cgs
 \end{lstlisting}
 
 A valid declared tree prints a lifecycle line such as:
@@ -118,7 +118,7 @@ child repository directories declared directly under the project root, project
 \begin{lstlisting}[language=bash]
 $ pixi run cgitsync view-tree .cgitsync/state/complexgitsync.gts
 $ pixi run cgitsync view-tree .cgitsync/state/complexgitsync.gts --depth 2 --collapse parent_2
-$ pixi run cgitsync view-operation .cgitsync/state/complexgitsync.gts
+$ pixi run cgitsync status
 \end{lstlisting}
 
 If a command accepts an optional snapshot and none is provided, \cgscli{}
@@ -139,8 +139,9 @@ $ pixi run cgitsync checkout feature/my-branch
 $ pixi run cgitsync add
 $ pixi run cgitsync commit "feat: update project CGS#1"
 $ pixi run cgitsync push
+$ pixi run cgitsync freeze-release release-2026.05 "release 2026.05"
 $ pixi run cgitsync freeze release-2026.05
-$ pixi run cgitsync launch_release release-2026.05
+$ pixi run cgitsync launch-release release-2026.05
 \end{lstlisting}
 
 \texttt{pull} walks the tree parent-first, including the project root:

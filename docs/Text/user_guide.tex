@@ -41,6 +41,17 @@ DAG event in the \texttt{[[ledger]]} section of the \texttt{.lgr} file.
 % -----------------------------------------------------------------------
 \section{Commands}
 
+The CLI exposes two levels once a \texttt{GitTree} is \texttt{READY}.
+The minimalist level is \texttt{initialise}, \texttt{clean-init},
+\texttt{freeze-release}, \texttt{freeze-release-force}, \texttt{status},
+\texttt{view-tree}, and \texttt{launch-release}.  The expert level exposes
+the individual operations: \texttt{branch}, \texttt{checkout}, \texttt{purge},
+\texttt{validate}, \texttt{clone}, \texttt{pull}, \texttt{pull-force},
+\texttt{add}, \texttt{commit}, \texttt{push}, \texttt{tag}, and
+\texttt{freeze}.  Redundant inspection aliases such as \texttt{print},
+\texttt{view-operation}, and \texttt{validate-topology} are not part of the
+public CLI surface.
+
 \subsection{\texttt{initialise}}
 
 \begin{lstlisting}[language=bash]
@@ -105,7 +116,7 @@ sources load the saved registry as the starting point and then run the same
 pull workflow.  In both cases the operation starts at the project root:
 \texttt{root -> parent -> leaf}.  The root repository receives
 \texttt{git pull --ff-only}; each child repository is then updated through its
-parent submodule link.  Use \texttt{launch\_release} when you want to check out
+parent submodule link.  Use \texttt{launch-release} when you want to check out
 a frozen recorded release state instead of pulling current remotes.
 If local changes block this safe pull, the CLI prints
 \texttt{You can try cgitsync pull-force command}.
@@ -197,6 +208,19 @@ or when the loaded snapshot records an older \texttt{commit\_sha}.
 With \texttt{--dry-run}, \cgscli{} prints the push plan without mutating any
 repository.
 
+\subsection{\texttt{freeze-release}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync freeze-release <name> <message> [--gts <snapshot.gts>] [--dry-run]
+$ cgitsync freeze-release-force <name> <message> [--gts <snapshot.gts>] [--dry-run]
+\end{lstlisting}
+
+Minimalist release workflow from a READY tree. It chains public operations in
+order: \texttt{add -> commit -> pull -> push -> freeze}. The force variant uses
+\texttt{pull-force} instead of \texttt{pull}. The release name becomes the
+shared tag and freeze snapshot label; the message is used for the release
+commit.
+
 \subsection{\texttt{freeze}}
 
 \begin{lstlisting}[language=bash]
@@ -221,10 +245,10 @@ snapshot filename includes the release, for example
 With \texttt{--dry-run}, \cgscli{} prints the planned add/commit/tag/push graph
 for the loaded workspace without mutating it.
 
-\subsection{\texttt{launch\_release}}
+\subsection{\texttt{launch-release}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync launch_release <name> [--gts <snapshot.gts>]
+$ cgitsync launch-release <name> [--gts <snapshot.gts>]
 \end{lstlisting}
 
 Checks out the frozen release tag \texttt{<name>} across the loaded READY tree,
@@ -234,17 +258,7 @@ creation remains available from the Python client API as \texttt{tag()}.
 
 The integration suite validates local no-network lifecycle coverage through
 the CLI path, including initialisation and the READY git command cycle
-\texttt{add -> commit -> push -> freeze -> launch\_release}.
-
-\subsection{\texttt{print}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync print <spec.cgs|snapshot.gts>
-\end{lstlisting}
-
-Prints a lifecycle summary as pretty JSON. For \texttt{.gts} input, it reports
-the recorded snapshot state. For \texttt{.cgs} input, it reports the current
-declared/runtime summary.
+\texttt{add -> commit -> push -> freeze -> launch-release}.
 
 \subsection{\texttt{view-tree}}
 
@@ -257,27 +271,6 @@ operational state:
 \texttt{name [branch] local\_state sync\_state}. Use \texttt{--depth} to
 limit visible levels and repeat \texttt{--collapse} to hide selected
 subtrees.
-
-\subsection{\texttt{view-operation}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync view-operation [spec.cgs|snapshot.gts]
-\end{lstlisting}
-
-Renders the runtime operation table with required columns:
-\texttt{REPOSITORY}, \texttt{BRANCH}, \texttt{LOCAL\_STATE}, and
-\texttt{SYNC\_STATE}.
-
-\subsection{\texttt{validate-topology}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync validate-topology --gts <snapshot.gts>
-\end{lstlisting}
-
-Inspects the workspace branch topology and prints a human-readable report:
-each repository's active branch, the reference branch (root's branch), and any
-detected conflicts.  Returns exit code~0 when the topology is coherent and~1
-when blocking conflicts are present.
 
 \textbf{Branch Topology Propagation Rules (T35):}
 

@@ -3398,7 +3398,7 @@ class ComplexGitSyncClient:
         )
 
 
-    def freeze_release(
+    def _freeze_tag(
         self,
         tag_name: str,
         *,
@@ -3436,6 +3436,47 @@ class ComplexGitSyncClient:
         self._log_event("freeze_release_end", tag_name=tag_name, output_gts=snapshot_path)
         return registry
 
+    def freeze_release(
+        self,
+        release_name: str,
+        commit_message: str | None = None,
+        *,
+        output_gts: str | Path | None = None,
+        message: str | None = None,
+        stage_all: bool = True,
+        force: bool = False,
+    ) -> WorkingGitTree:
+        """Run the minimalist release workflow from a READY tree.
+
+        The workflow is intentionally composed from public tree operations:
+        ``add -> commit -> pull/pull-force -> push -> freeze``.
+        """
+        resolved_message = commit_message or message or release_name
+        if self.source_path is None:
+            raise GitSyncError("freeze-release requires a loaded .cgs/.gts source path.")
+
+        self._log_event(
+            "freeze_release_workflow_start",
+            release_name=release_name,
+            force=force,
+            stage_all=stage_all,
+        )
+        self.add()
+        self.commit(resolved_message, stage_all=False)
+        if force:
+            self.pull_force(self.source_path)
+        else:
+            self.pull(self.source_path)
+        self.push()
+        registry = self.freeze(
+            release_name,
+            output_gts=output_gts,
+            message=resolved_message,
+            stage_all=stage_all,
+        )
+        self._log_event("freeze_release_workflow_end", release_name=release_name, force=force)
+        return registry
+
     def freeze_state(
         self,
         state_name: str,
@@ -3456,7 +3497,7 @@ class ComplexGitSyncClient:
         Behavior is identical to release freezing (commit/tag/push leaf-first),
         but intended for internal development states.
         """
-        return self.freeze_release(
+        return self._freeze_tag(
             state_name,
             output_gts=output_gts,
             message=message,
@@ -3548,7 +3589,7 @@ class ComplexGitSyncClient:
         stage_all: bool = True,
     ) -> WorkingGitTree:
         """Freeze a tree state and emit the next ``.gts`` snapshot id."""
-        return self.freeze_release(
+        return self._freeze_tag(
             name,
             output_gts=output_gts,
             message=message,

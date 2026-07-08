@@ -452,18 +452,18 @@ def test_client_git_binds_provided_registry(monkeypatch):
     assert captured["tree_arg"] is None
 
 
-def test_client_freeze_delegates_to_freeze_release(monkeypatch):
+def test_client_freeze_delegates_to_freeze_tag(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_freeze_release(name, *, output_gts=None, message=None, stage_all=True):
+    def _fake_freeze_tag(name, *, output_gts=None, message=None, stage_all=True):
         captured["name"] = name
         captured["output_gts"] = output_gts
         captured["message"] = message
         captured["stage_all"] = stage_all
         return "ok"
 
-    monkeypatch.setattr(client, "freeze_release", _fake_freeze_release)
+    monkeypatch.setattr(client, "_freeze_tag", _fake_freeze_tag)
 
     result = client.freeze("r1", output_gts="release.gts", message="msg", stage_all=False)
 
@@ -474,6 +474,59 @@ def test_client_freeze_delegates_to_freeze_release(monkeypatch):
         "message": "msg",
         "stage_all": False,
     }
+
+
+def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path):
+    client = ComplexGitSyncClient()
+    client.source_path = tmp_path / "project.gts"
+    calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(client, "add", lambda: calls.append(("add", None)))
+    monkeypatch.setattr(
+        client,
+        "commit",
+        lambda message, *, stage_all=True: calls.append(("commit", (message, stage_all))),
+    )
+    monkeypatch.setattr(client, "pull", lambda source: calls.append(("pull", Path(source))))
+    monkeypatch.setattr(client, "push", lambda: calls.append(("push", None)))
+    monkeypatch.setattr(
+        client,
+        "freeze",
+        lambda name, **kwargs: calls.append(("freeze", (name, kwargs))) or "ok",
+    )
+
+    result = client.freeze_release("v1.0", "release commit")
+
+    assert result == "ok"
+    assert calls == [
+        ("add", None),
+        ("commit", ("release commit", False)),
+        ("pull", client.source_path),
+        ("push", None),
+        (
+            "freeze",
+            (
+                "v1.0",
+                {"output_gts": None, "message": "release commit", "stage_all": True},
+            ),
+        ),
+    ]
+
+
+def test_client_freeze_release_force_uses_pull_force(monkeypatch, tmp_path):
+    client = ComplexGitSyncClient()
+    client.source_path = tmp_path / "project.gts"
+    calls: list[str] = []
+
+    monkeypatch.setattr(client, "add", lambda: calls.append("add"))
+    monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
+    monkeypatch.setattr(client, "pull", lambda source: calls.append("pull"))
+    monkeypatch.setattr(client, "pull_force", lambda source: calls.append("pull-force"))
+    monkeypatch.setattr(client, "push", lambda: calls.append("push"))
+    monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
+
+    assert client.freeze_release("v1.0", "release commit", force=True) == "ok"
+    assert calls == ["add", "commit", "pull-force", "push", "freeze"]
 
 
 def test_client_pull_dispatches_to_restart_for_cgs(monkeypatch):
