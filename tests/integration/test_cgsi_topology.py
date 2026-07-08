@@ -549,7 +549,7 @@ class TestGitCommandCycleIntegration:
         lgr_path = repo / "demo.lgr"
         assert lgr_path.is_file()
         lgr_data = tomllib.loads(lgr_path.read_text(encoding="utf-8"))
-        assert lgr_data["register"]["current_snapshot_id"] == "gts-000001"
+        assert lgr_data["register"]["current_snapshot_id"] == "gts-000001" # Bug here, probably if the project backed-up former state 
         snapshot_path_parts = Path(lgr_data["register"]["current_snapshot_path"]).parts
         assert snapshot_path_parts[-3:] == (".cgitsync", "state", "demo.gts")
         assert len(lgr_data["snapshots"]) == 1
