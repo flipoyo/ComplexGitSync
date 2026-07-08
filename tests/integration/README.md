@@ -69,10 +69,10 @@ populated with the appropriate `.cgs` content (no network or git required):
 | `TestCgsiCyclePrevention`        | No back-edge entry; fix_circularities() nop |
 | `TestCgsiLifecycleState`         | DECLARED state after expand (repos uncloned) |
 | `TestCgsiExampleFiles`           | examples/*.cgs parse and have correct shape |
-| `TestGitCommandCycleIntegration` | READY `.gts` git cycle via Python API + CLI (`add->commit->push->tag->freeze`) with deterministic freeze snapshots |
+| `TestGitCommandCycleIntegration` | READY `.gts` git cycle via Python API + CLI (`add->commit->push->freeze->launch_release`) with deterministic freeze snapshots |
 | `TestGtsSnapshotDeterminismIntegration` | Canonical `.gts` SHA-256 hash is stable across metadata changes and changes on workspace mutation |
 
-CLI dry-run previews for `add|commit|push|tag|freeze --dry-run` are covered by
+CLI dry-run previews for `add|commit|push|freeze --dry-run` are covered by
 the unit smoke suite and intentionally kept non-mutating.
 
 ---
@@ -83,7 +83,6 @@ the unit smoke suite and intentionally kept non-mutating.
 - restart from an existing synchronized tree
 - checkout to a shared branch or tag target
 - `.gts` generation after successful synchronization
-- `tag` across parent and leaf repositories
 - `freeze_release` plus named `.gts` output
-- `launch_release` from `.gts`
+- `launch_release` from a READY `.gts` to a frozen tag
 - `READY` gating for `commit` and `push`

@@ -492,15 +492,15 @@ def test_client_pull_dispatches_to_restart_for_cgs(monkeypatch):
     assert captured["config_path"] == Path("project.cgs").resolve()
 
 
-def test_client_pull_dispatches_to_launch_release_for_gts(monkeypatch):
+def test_client_pull_restores_gts_snapshot(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_launch_release(snapshot_path):
+    def _fake_restore_gts_snapshot(snapshot_path):
         captured["snapshot_path"] = snapshot_path
         return "ok"
 
-    monkeypatch.setattr(client, "launch_release", _fake_launch_release)
+    monkeypatch.setattr(client, "_restore_gts_snapshot", _fake_restore_gts_snapshot)
 
     result = client.pull("state.gts")
 

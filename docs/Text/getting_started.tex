@@ -139,13 +139,13 @@ $ pixi run cgitsync checkout feature/my-branch
 $ pixi run cgitsync add
 $ pixi run cgitsync commit "feat: update project CGS#1"
 $ pixi run cgitsync push
-$ pixi run cgitsync tag v1.2.3
 $ pixi run cgitsync freeze release-2026.05
+$ pixi run cgitsync launch_release release-2026.05
 \end{lstlisting}
 
 Pass \texttt{--gts <snapshot.gts>} when you want to pin a command to an
 explicit snapshot, and pass \texttt{--dry-run} to \texttt{add},
-\texttt{commit}, \texttt{push}, \texttt{tag}, or \texttt{freeze} to preview
+\texttt{commit}, \texttt{push}, or \texttt{freeze} to preview
 the plan without mutating repositories.
 
 % -----------------------------------------------------------------------

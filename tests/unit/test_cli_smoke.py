@@ -917,7 +917,7 @@ def test_add_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
     assert "plan_actions=git add --all" in captured.out
 
 
-def test_tag_command_uses_client_handler(monkeypatch, capsys, tmp_path):
+def test_launch_release_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
     class StubClient:
@@ -926,8 +926,8 @@ def test_tag_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def tag(self, tag_name):
-            captured_call["tag_name"] = tag_name
+        def launch_release(self, release_name):
+            captured_call["release_name"] = release_name
 
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
@@ -936,37 +936,47 @@ def test_tag_command_uses_client_handler(monkeypatch, capsys, tmp_path):
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
-    exit_code = main(["tag", "v2.0", "--gts", str(gts_path)])
+    exit_code = main(["launch_release", "v2.0", "--gts", str(gts_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert captured_call["tag_name"] == "v2.0"
-    assert "tag=v2.0" in captured.out
+    assert captured_call["release_name"] == "v2.0"
+    assert "release=v2.0" in captured.out
 
 
-def test_tag_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
+def test_launch_release_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
+    """launch_release resolves its READY snapshot from CGSHOME when --gts is omitted."""
+    captured_call: dict[str, object] = {}
+
     class StubClient:
         run_logger = None
 
         def load_gts(self, path):
-            pass
+            captured_call["gts_path"] = Path(path)
 
-        def tag(self, tag_name):
-            raise AssertionError("tag should not be called during --dry-run")
+        def launch_release(self, release_name):
+            captured_call["release_name"] = release_name
 
         def get_tree_state(self):
-            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
 
     monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
 
-    gts_path = tmp_path / "project.gts"
+    workspace = tmp_path / "workspace"
+    state_dir = workspace / ".cgitsync" / "state"
+    state_dir.mkdir(parents=True)
+    gts_path = state_dir / "workspace.gts"
     gts_path.touch()
-    exit_code = main(["tag", "v2.0", "--gts", str(gts_path), "--dry-run"])
-    captured = capsys.readouterr()
+
+    monkeypatch.setenv("CGSHOME", str(workspace))
+    exit_code = main(["launch_release", "v2.0"])
+    capsys.readouterr()
 
     assert exit_code == 0
-    assert "dry_run=true command=tag" in captured.out
-    assert "plan_actions=git tag v2.0 -> git push origin v2.0" in captured.out
+    assert captured_call["gts_path"] == gts_path.resolve()
+    assert captured_call["release_name"] == "v2.0"
 
 
 def test_gts_auto_discovery_from_parent_cgitsync(monkeypatch, capsys, tmp_path):
@@ -1340,6 +1350,7 @@ def test_view_tree_auto_discovery(monkeypatch, capsys, tmp_path):
         "launch-state",
         "registry",
         "restart",
+        "tag",
         "view_operation",
         "write-gts",
     ],

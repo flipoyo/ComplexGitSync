@@ -23,8 +23,8 @@ All eight tutorial CLI steps are validated:
   4. ``cgitsync add``                  – changes staged
   5. ``cgitsync commit "…"``           – changes committed
   6. ``cgitsync push``                 – changes pushed
-  7. ``cgitsync tag v1.0.0``           – tag created and pushed
-  8. ``cgitsync freeze v1.1.0``        – release commit + tag + snapshot
+  7. ``cgitsync freeze v1.1.0``        – release commit + tag + snapshot
+  8. ``cgitsync launch_release v1.1.0`` – release tag checked out
 """
 
 from __future__ import annotations
@@ -202,7 +202,7 @@ class TestTutoCGSil1CLI:
     # ── Tutorial steps 4-8 (end-to-end git cycle) ──────────────────────────
 
     def test_complete_git_cycle(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
-        """Steps 4-8: initialise → add → commit → push → tag → freeze (root repo only)."""
+        """Steps 4-8: initialise -> add -> commit -> push -> freeze -> launch_release."""
         sandbox = cgsi1_sandbox
         _patch_remote_urls(monkeypatch, sandbox)
         _patch_git_identity(monkeypatch)
@@ -239,14 +239,7 @@ class TestTutoCGSil1CLI:
         assert exit_code == 0
         assert "READY" in captured.out
 
-        # Step 7: tag
-        exit_code = cli_main(["tag", "v1.0.0", "--gts", str(gts_path)])
-        captured = capsys.readouterr()
-        assert exit_code == 0
-        assert "READY" in captured.out
-        assert "v1.0.0" in captured.out
-
-        # Step 8: freeze (requires at least one uncommitted change)
+        # Step 7: freeze (requires at least one uncommitted change)
         (project_root / "release.txt").write_text("release 1.1.0\n", encoding="utf-8")
         exit_code = cli_main(["freeze", "v1.1.0", "--gts", str(gts_path)])
         captured = capsys.readouterr()
@@ -254,9 +247,15 @@ class TestTutoCGSil1CLI:
         assert "READY" in captured.out
         assert "v1.1.0" in captured.out
 
+        # Step 8: launch the frozen release
+        exit_code = cli_main(["launch_release", "v1.1.0", "--gts", str(gts_path)])
+        captured = capsys.readouterr()
+        assert exit_code == 0
+        assert "READY" in captured.out
+        assert "v1.1.0" in captured.out
+
         # Verify the tags reached the root remote
         root_tags = _run_git(project_root, "ls-remote", "--tags", "origin")
-        assert "refs/tags/v1.0.0" in root_tags
         assert "refs/tags/v1.1.0" in root_tags
 
 

@@ -2967,7 +2967,7 @@ class ComplexGitSyncClient:
         if resolved_source.suffix == ".cgs":
             return self.restart(resolved_source)
         if resolved_source.suffix == ".gts":
-            return self.launch_release(resolved_source)
+            return self._restore_gts_snapshot(resolved_source)
         raise ValueError(
             f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
         )
@@ -3371,11 +3371,28 @@ class ComplexGitSyncClient:
             stage_all=stage_all,
         )
 
-    def launch_release(self, snapshot_path: str | Path) -> WorkingGitTree:
+    def launch_release(self, release_name: str) -> WorkingGitTree:
+        """Check out a frozen release tag across the current READY tree."""
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        self._log_event("launch_release_start", release_name=release_name)
+        self.orchestre.git_tree.git.checkout(
+            self.git_runner,
+            release_name,
+            ref_kind=RefKind.TAG,
+        )
+        snapshot_path = self.write_gts_snapshot(command_origin="launch_release")
+        if self.source_path is not None:
+            self.state_store.record_snapshot(self.source_path, snapshot_path)
+        self._log_tree_transition(previous_state, registry.lifecycle_state, reason="launch_release")
+        self._log_event("launch_release_end", release_name=release_name, output_gts=snapshot_path)
+        return registry
+
+    def _restore_gts_snapshot(self, snapshot_path: str | Path) -> WorkingGitTree:
         """Restore a recorded ``.gts`` state, cloning missing repositories as needed."""
         loaded_registry = self.load_gts(snapshot_path)
         previous_state = loaded_registry.lifecycle_state
-        self._log_event("launch_release_start", snapshot_path=Path(snapshot_path).resolve())
+        self._log_event("restore_gts_snapshot_start", snapshot_path=Path(snapshot_path).resolve())
 
         for entry in iter_tree(loaded_registry):
             ref_name = self._determine_launch_ref(entry)
@@ -3385,7 +3402,7 @@ class ComplexGitSyncClient:
                 if not remote_url:
                     raise GitSyncError(f"No remote URL available for repository {entry.name}.")
                 self._log_event(
-                    "launch_release_clone",
+                    "restore_gts_snapshot_clone",
                     repo_name=entry.name,
                     absolute_path=entry.absolute_path,
                     ref_name=ref_name,
@@ -3398,7 +3415,7 @@ class ComplexGitSyncClient:
                 )
 
             self._log_event(
-                "launch_release_checkout",
+                "restore_gts_snapshot_checkout",
                 repo_name=entry.name,
                 absolute_path=entry.absolute_path,
                 ref_name=ref_name,
@@ -3420,15 +3437,15 @@ class ComplexGitSyncClient:
 
         loaded_registry.recompute_tree_state()
         if not loaded_registry.is_ready():
-            raise GitSyncError("launch_release did not produce a READY tree.")
+            raise GitSyncError("snapshot restore did not produce a READY tree.")
 
-        self._log_tree_transition(previous_state, loaded_registry.lifecycle_state, reason="launch_release")
-        self._log_event("launch_release_end", snapshot_path=Path(snapshot_path).resolve())
+        self._log_tree_transition(previous_state, loaded_registry.lifecycle_state, reason="restore_gts_snapshot")
+        self._log_event("restore_gts_snapshot_end", snapshot_path=Path(snapshot_path).resolve())
         return loaded_registry
 
     def launch_state(self, snapshot_path: str | Path) -> WorkingGitTree:
         """Restore an internal ``.gts`` state."""
-        return self.launch_release(snapshot_path)
+        return self._restore_gts_snapshot(snapshot_path)
 
     def freeze(
         self,

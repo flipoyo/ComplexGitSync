@@ -1633,24 +1633,37 @@ def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
 
-def test_client_launch_release_loads_gts_clones_and_checks_out(tmp_path):
-    source_client, _ = _make_client_with_ready_registry(tmp_path)
-    root_path = tmp_path / "released-project"
-    leaf_path = root_path / "deps" / "leaf"
-    source_client.registry.get("root").absolute_path = root_path
-    source_client.registry.get("root:deps/leaf").absolute_path = leaf_path
-    snapshot_path = source_client.write_gts_snapshot(
-        command_origin="test",
-        output_path=tmp_path / "snapshot.gts",
-    )
+def test_client_launch_release_checkouts_release_tag_and_writes_gts(tmp_path, monkeypatch):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    captured_call: dict[str, object] = {}
 
-    runner = _FakeGitRunnerForOperations()
-    client = ComplexGitSyncClient(git_runner=runner)
-    result = client.launch_release(snapshot_path)
+    def _spy_checkout(self, git_runner, branch_name, *, ref_kind=RefKind.BRANCH, tree=None):
+        captured_call["git_runner"] = git_runner
+        captured_call["branch_name"] = branch_name
+        captured_call["ref_kind"] = ref_kind
+        captured_call["tree"] = tree
 
-    assert len(runner.cloned) == len(result.values())
-    assert len(runner.checked_out) == len(result.values())
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "checkout", _spy_checkout)
+
+    result = client.launch_release("v1.0.0")
+
+    assert result is client.registry
+    assert captured_call == {
+        "git_runner": runner,
+        "branch_name": "v1.0.0",
+        "ref_kind": RefKind.TAG,
+        "tree": None,
+    }
+    snapshot_dir = client.registry.get("root").absolute_path / ".cgitsync" / "state"
+    gts_files = list(snapshot_dir.glob("*.gts"))
+    assert gts_files, "Expected launch_release to write a .gts snapshot"
     assert result.recompute_tree_state() == TreeLifecycleState.READY
+
+
+def test_client_launch_release_raises_when_no_registry_loaded():
+    client = ComplexGitSyncClient()
+    with pytest.raises(RuntimeError, match="No ComplexGitSync registry is loaded"):
+        client.launch_release("v1.0.0")
 
 
 def test_client_checkout_raises_when_no_registry_loaded():

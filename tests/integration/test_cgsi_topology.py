@@ -538,13 +538,12 @@ class TestGitCommandCycleIntegration:
         assert cli_main(["add", "--gts", str(snapshot)]) == 0
         assert cli_main(["commit", "cli cycle commit", "--gts", str(snapshot)]) == 0
         assert cli_main(["push", "--gts", str(snapshot)]) == 0
-        assert cli_main(["tag", "v0.1.0", "--gts", str(snapshot)]) == 0
 
         cycle_file.write_text("cli cycle 2\n", encoding="utf-8")
         assert cli_main(["freeze", "v0.2.0", "--gts", str(snapshot)]) == 0
+        assert cli_main(["launch_release", "v0.2.0", "--gts", str(snapshot)]) == 0
 
         remote_tags = _run_git(repo, "ls-remote", "--tags", "origin")
-        assert "refs/tags/v0.1.0" in remote_tags
         assert "refs/tags/v0.2.0" in remote_tags
         lgr_path = repo / "demo.lgr"
         assert lgr_path.is_file()
@@ -623,7 +622,7 @@ class TestCloneAndLaunchReleaseLifecycle:
         submodule_modes = _run_git(root_clone, "ls-files", "--stage", "--", "deps/leaf")
         assert submodule_modes.startswith("160000 ")
 
-    def test_launch_release_clones_missing_local_repos(self, local_two_repo_remotes, monkeypatch, tmp_path):
+    def test_pull_gts_clones_missing_local_repos(self, local_two_repo_remotes, monkeypatch, tmp_path):
         restore_root = tmp_path / "launch-workspace"
         restore_leaf = restore_root / "deps" / "leaf"
         root_commit = _run_git(local_two_repo_remotes["root_seed"], "rev-parse", "HEAD")
@@ -647,7 +646,7 @@ class TestCloneAndLaunchReleaseLifecycle:
             ),
         )
 
-        registry = client.launch_release(snapshot)
+        registry = client.pull(snapshot)
 
         assert registry.is_ready() is True
         assert restore_root.exists()

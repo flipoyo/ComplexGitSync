@@ -59,7 +59,7 @@ document, and writes it to disk.
 
 `WorkingGitTree` is the runtime form. It inherits reference-tree metadata from
 `GitTree` and stores `WorkingRepo` nodes keyed by runtime `repo_id`. Operations
-such as checkout, branch, add, commit, push, tag, and freeze act on
+such as checkout, branch, add, commit, push, freeze, and launch_release act on
 `WorkingGitTree`.
 
 `GtsDocument` is generated runtime state. It stores resolved paths, commit

@@ -126,8 +126,8 @@ pixi run cgitsync checkout feature/my-branch
 pixi run cgitsync add
 pixi run cgitsync commit "feat: update CGSil1 CGS#1"
 pixi run cgitsync push
-pixi run cgitsync tag v1.2.3
 pixi run cgitsync freeze release-2026.05
+pixi run cgitsync launch_release release-2026.05
 ```
 
 Mutation commands print a concise human result by default: the `log_file=...`
@@ -142,8 +142,8 @@ automatic discovery:
 pixi run cgitsync add --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
 pixi run cgitsync commit "feat: update CGSil1 CGS#1" --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
 pixi run cgitsync push --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
-pixi run cgitsync tag v1.2.3 --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
 pixi run cgitsync freeze release-2026.05 --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync launch_release release-2026.05 --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
 ```
 
 Use `--dry-run` on mutation commands to preview the execution plan:
@@ -152,7 +152,6 @@ Use `--dry-run` on mutation commands to preview the execution plan:
 pixi run cgitsync add --dry-run
 pixi run cgitsync commit "feat: update CGSil1 CGS#1" --dry-run
 pixi run cgitsync push --dry-run
-pixi run cgitsync tag v1.2.3 --dry-run
 pixi run cgitsync freeze release-2026.05 --dry-run
 ```
 
@@ -197,6 +196,7 @@ client.commit("feat: update CGSil1 CGS#1")
 client.push()
 client.tag("v1.2.3")
 client.freeze("release-2026.05")
+client.launch_release("release-2026.05")
 ```
 
 ## Command reference
@@ -218,8 +218,8 @@ Primary commands:
 - `commit <message>`: commit dirty repositories leaf-first
 - `push`: push repositories leaf-first; when the current branch has no upstream,
   publish it with `git push -u origin <branch>`
-- `tag <name>`: create and push a shared tag leaf-first
 - `freeze <name>`: commit, tag, push, snapshot, and update the local register
+- `launch_release <name>`: check out a frozen release tag across a READY tree
 
 Inspection commands:
 
@@ -236,12 +236,12 @@ Inspection commands:
 
 ## Safety checks
 
-Before `commit`, `push`, `tag`, and `freeze`, the CLI runs workspace preflight
+Before `commit`, `push`, and `freeze`, the CLI runs workspace preflight
 validation. It reports actionable warnings such as dirty worktrees, ahead
 branches, or stale recorded snapshot SHAs, and blocks unsafe states such as
 detached HEADs, unresolved merges, missing remotes, branch divergence, or
-missing nested repository links. `tag` also requires clean worktrees and a tag
-name that does not already exist.
+missing nested repository links. `freeze` also requires a release tag name that
+does not already exist.
 
 Each `.lgr` snapshot entry points to an immutable `.gts` file named
 `gts-XXXXXX.gts`; the project-name `.gts` file is the latest-state pointer.

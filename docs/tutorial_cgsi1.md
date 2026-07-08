@@ -33,7 +33,7 @@ workspace state:
 flowchart TD
     CGS[CGSil1.cgs authoring spec] --> REF[GitTree + GitRepo reference tree]
     REF --> WORK[WorkingGitTree + WorkingRepo runtime tree]
-    WORK --> OPS[checkout/add/commit/push/tag/freeze operations]
+    WORK --> OPS[checkout/add/commit/push/freeze/launch_release operations]
     WORK --> GTS[CGSil1.gts runtime snapshot]
     GTS --> WORK
 ```
@@ -249,17 +249,7 @@ pixi run cgitsync status
 
 ---
 
-### Step 7 — Tag
-
-Create and push a version tag across the whole tree:
-
-```bash
-pixi run cgitsync tag v1.0.0
-```
-
----
-
-### Step 8 — Freeze
+### Step 7 — Freeze
 
 Bundle outstanding changes into a release commit, tag, and push, then
 emit a versioned `.gts` snapshot:
@@ -270,6 +260,16 @@ pixi run cgitsync freeze v1.1.0
 
 The `.lgr` ledger file in the project root is updated with the new
 snapshot entry.
+
+---
+
+### Step 8 — Launch Release
+
+Check out the frozen release tag across the READY tree:
+
+```bash
+pixi run cgitsync launch_release v1.1.0
+```
 
 ---
 
@@ -286,8 +286,8 @@ snapshot entry.
 | 5 | `cgitsync commit "message"` | Commit across the tree |
 | 6 | `cgitsync push` | Push to remotes |
 | optional | `cgitsync status` | Inspect local cleanliness and recorded snapshot drift |
-| 7 | `cgitsync tag v1.0.0` | Tag and push the current state |
-| 8 | `cgitsync freeze v1.1.0` | Release commit + tag + snapshot |
+| 7 | `cgitsync freeze v1.1.0` | Release commit + tag + snapshot |
+| 8 | `cgitsync launch_release v1.1.0` | Check out the frozen release tag |
 
 See `tests/integration/test_tuto_cgsi1.py` for a runnable sandbox that
 exercises all eight steps against local bare-repo remotes.

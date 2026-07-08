@@ -179,23 +179,6 @@ or when the loaded snapshot records an older \texttt{commit\_sha}.
 With \texttt{--dry-run}, \cgscli{} prints the push plan without mutating any
 repository.
 
-\subsection{\texttt{tag}}
-
-\begin{lstlisting}[language=bash]
-$ cgitsync tag <name> [--gts <snapshot.gts>] [--dry-run]
-\end{lstlisting}
-
-Creates and pushes the same tag across the full tree, leaf-first.  Loads the
-READY registry from \texttt{--gts}.  Refreshes the stored tag in
-\texttt{GitTree}.  Requires a \texttt{READY} tree and keeps the tree
-\texttt{READY} on success. Tag preflight requires clean worktrees, aligned
-branches, existing remotes, no pre-existing tag of the same name, no detached
-HEADs or unresolved merges, and parent/child repositories linked as Git
-submodules. Stale recorded \texttt{commit\_sha} values are reported as
-warnings. Tag creation is non-forcing by default (no implicit \texttt{-f}).
-With \texttt{--dry-run}, \cgscli{} prints the tag/push plan and exits without
-creating tags.
-
 \subsection{\texttt{freeze}}
 
 \begin{lstlisting}[language=bash]
@@ -217,9 +200,20 @@ canonical restore operation.
 With \texttt{--dry-run}, \cgscli{} prints the planned add/commit/tag/push graph
 for the loaded workspace without mutating it.
 
+\subsection{\texttt{launch\_release}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync launch_release <name> [--gts <snapshot.gts>]
+\end{lstlisting}
+
+Checks out the frozen release tag \texttt{<name>} across the loaded READY tree,
+parent-first, and writes a fresh \texttt{.gts} snapshot.  This is the release
+oriented CLI path for returning a workspace to a frozen version; direct tag
+creation remains available from the Python client API as \texttt{tag()}.
+
 The integration suite validates local no-network lifecycle coverage through
 the CLI path, including initialisation and the READY git command cycle
-\texttt{add -> commit -> push -> tag -> freeze}.
+\texttt{add -> commit -> push -> freeze -> launch\_release}.
 
 \subsection{\texttt{print}}
 

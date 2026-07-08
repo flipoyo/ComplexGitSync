@@ -26,8 +26,8 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "add": "Stage all changes across a READY tree.",
     "commit": "Commit dirty repositories from a READY tree.",
     "push": "Push repositories from a READY tree.",
-    "tag": "Create a tag across the full reachable tree.",
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
+    "launch_release": "Check out a frozen release tag from a READY tree.",
     # Secondary / inspection commands
     "load": "Load a .cgs/.gts path or a project-local .lgr snapshot id.",
     "validate": "Validate a .cgs or .gts topology and print the lifecycle state.",
@@ -47,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "ComplexGitSync CLI — manage a nested Git repository tree. "
             "Start with 'initialise' to clone or restore a project tree, "
-            "then use 'pull', 'checkout', 'add', 'commit', 'push', 'tag', and 'freeze' "
+            "then use 'pull', 'checkout', 'add', 'commit', 'push', 'freeze', and 'launch_release' "
             "to keep repositories in sync."
         ),
     )
@@ -382,33 +382,6 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Preview the push execution plan without mutating repositories.",
             )
             subparser.set_defaults(handler=_handle_push)
-        elif command_name == "tag":
-            subparser.add_argument("name", help="Tag name to create and push across the tree.")
-            subparser.add_argument(
-                "--gts",
-                metavar="FILE",
-                default=None,
-                help=(
-                    "Path to the .gts snapshot that holds the READY registry. "
-                    "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
-                ),
-            )
-            subparser.add_argument(
-                "--search-dir",
-                metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
-                    "or walks up from the current working directory."
-                ),
-            )
-            subparser.add_argument(
-                "--dry-run",
-                action="store_true",
-                help="Preview the tag execution plan without mutating repositories.",
-            )
-            subparser.set_defaults(handler=_handle_tag)
         elif command_name == "freeze":
             subparser.add_argument("name", help="Version tag name used for commit, tag, and push.")
             subparser.add_argument(
@@ -436,6 +409,28 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Preview the freeze execution plan without mutating repositories.",
             )
             subparser.set_defaults(handler=_handle_freeze)
+        elif command_name == "launch_release":
+            subparser.add_argument("release", help="Frozen release tag to check out across the READY tree.")
+            subparser.add_argument(
+                "--gts",
+                metavar="FILE",
+                default=None,
+                help=(
+                    "Path to the .gts snapshot that holds the READY registry. "
+                    "When omitted the latest .gts snapshot is discovered automatically "
+                    "from CGSHOME/.cgitsync/state/."
+                ),
+            )
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory used to resolve CGSHOME before loading "
+                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "or walks up from the current working directory."
+                ),
+            )
+            subparser.set_defaults(handler=_handle_launch_release)
         elif command_name == "validate-topology":
             subparser.add_argument(
                 "--gts",
@@ -709,21 +704,21 @@ def _handle_push(args: argparse.Namespace) -> int:
     )
 
 
-def _handle_tag(args: argparse.Namespace) -> int:
-    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
-    return _run_with_logging(
-        command_name="tag",
-        source=gts_path,
-        runner=lambda client, source: _execute_tag(client, source, tag_name=args.name, dry_run=args.dry_run),
-    )
-
-
 def _handle_freeze(args: argparse.Namespace) -> int:
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="freeze",
         source=gts_path,
         runner=lambda client, source: _execute_freeze(client, source, name=args.name, dry_run=args.dry_run),
+    )
+
+
+def _handle_launch_release(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="launch_release",
+        source=gts_path,
+        runner=lambda client, source: _execute_launch_release(client, source, release_name=args.release),
     )
 
 
@@ -1071,33 +1066,6 @@ def _execute_push(
     return 0
 
 
-def _execute_tag(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    tag_name: str,
-    dry_run: bool = False,
-) -> int:
-    _load_ready_registry_source(client, source_path)
-    print(f"git_command=git tag {tag_name} && git push origin {tag_name}")
-    if dry_run:
-        _print_dry_run_plan(
-            client,
-            command_name="tag",
-            actions=(f"git tag {tag_name}", f"git push origin {tag_name}"),
-        )
-    else:
-        client.tag(tag_name)
-    tree_state = client.get_tree_state()
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"tag={tag_name}"
-    )
-    if not dry_run:
-        _print_repo_tree_result(client)
-    return 0
-
-
 def _execute_freeze(
     client: ComplexGitSyncClient,
     source_path: Path,
@@ -1122,6 +1090,24 @@ def _execute_freeze(
     )
     if not dry_run:
         _print_repo_tree_result(client)
+    return 0
+
+
+def _execute_launch_release(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    release_name: str,
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    print(f"git_command=git checkout {release_name}")
+    client.launch_release(release_name)
+    tree_state = client.get_tree_state()
+    print(
+        f"{_format_tree_state_line(tree_state)} "
+        f"release={release_name}"
+    )
+    _print_repo_tree_result(client)
     return 0
 
 
