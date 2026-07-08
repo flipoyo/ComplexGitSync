@@ -492,20 +492,45 @@ def test_client_pull_dispatches_to_restart_for_cgs(monkeypatch):
     assert captured["config_path"] == Path("project.cgs").resolve()
 
 
-def test_client_pull_restores_gts_snapshot(monkeypatch):
+def test_client_pull_gts_resynchronizes_loaded_snapshot(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_restore_gts_snapshot(snapshot_path):
-        captured["snapshot_path"] = snapshot_path
-        return "ok"
+    class _ReadyRegistry:
+        lifecycle_state = TreeLifecycleState.READY
 
-    monkeypatch.setattr(client, "_restore_gts_snapshot", _fake_restore_gts_snapshot)
+        def is_ready(self):
+            return True
+
+    def _fake_load_gts(snapshot_path):
+        captured["snapshot_path"] = snapshot_path
+        return _ReadyRegistry()
+
+    class _FakeGitCommands:
+        def pull(self, git_runner):
+            captured["git_pull_runner"] = git_runner
+
+    def _fake_write_gts_snapshot(*, command_origin):
+        captured["command_origin"] = command_origin
+        return Path("pulled.gts").resolve()
+
+    def _fake_record_snapshot(source_path, snapshot_path):
+        captured["recorded_source_path"] = source_path
+        captured["recorded_snapshot_path"] = snapshot_path
+
+    monkeypatch.setattr(client, "load_gts", _fake_load_gts)
+    client.orchestre.git_tree.git = _FakeGitCommands()
+    monkeypatch.setattr(client, "write_gts_snapshot", _fake_write_gts_snapshot)
+    monkeypatch.setattr(client.state_store, "record_snapshot", _fake_record_snapshot)
 
     result = client.pull("state.gts")
 
-    assert result == "ok"
+    assert isinstance(result, _ReadyRegistry)
     assert captured["snapshot_path"] == Path("state.gts").resolve()
+    assert captured["git_pull_runner"] is client.git_runner
+    assert captured["command_origin"] == "pull"
+    assert captured["recorded_source_path"] == Path("state.gts").resolve()
+    assert captured["recorded_snapshot_path"] == Path("pulled.gts").resolve()
 
 
 def test_client_orchestrate_executes_goc_actions_in_order(monkeypatch, tmp_path):

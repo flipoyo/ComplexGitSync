@@ -32,6 +32,7 @@ from .git_repo import (
 from .git_tree import (
     GitTree,
     ProjectTreeState,
+    ROOT_REPO_ID,
     TreeLifecycleState,
     WorkingGitTree,
     find_strongly_connected_components,
@@ -94,6 +95,7 @@ __all__ = [
     # git_tree.py
     "GitTree",
     "ProjectTreeState",
+    "ROOT_REPO_ID",
     "TreeLifecycleState",
     "WorkingGitTree",
     "find_strongly_connected_components",

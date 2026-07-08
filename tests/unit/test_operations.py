@@ -17,7 +17,13 @@ from ComplexGitSync.git_repo import (
     RepoLifecycleState,
     SyncState,
 )
-from ComplexGitSync.git_tree import WorkingGitTree, GitTree, TreeLifecycleState
+from ComplexGitSync.git_tree import (
+    WorkingGitTree,
+    GitTree,
+    TreeLifecycleState,
+    iter_tree,
+    iter_tree_leaf_first,
+)
 from ComplexGitSync.operations import (
     BranchTopologyConflict,
     BranchTopologyReport,
@@ -33,7 +39,7 @@ from ComplexGitSync.operations import (
     tag_tree,
     validate_branch_topology,
 )
-from ComplexGitSync.orchestre import ComplexGitSyncClient, GitRunner
+from ComplexGitSync.orchestre import ComplexGitSyncClient, GitRunner, RuntimeStateStore
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +391,21 @@ def test_add_tree_stages_all_repos_leaf_first(tmp_path):
     assert registry.recompute_tree_state() == TreeLifecycleState.READY
 
 
+def test_tree_iterators_include_root_parent_and_leaf_in_expected_directions(tmp_path):
+    registry = _make_deep_ready_registry(tmp_path)
+
+    assert [entry.node_type for entry in iter_tree(registry)] == [
+        NodeType.ROOT,
+        NodeType.PARENT,
+        NodeType.LEAF,
+    ]
+    assert [entry.node_type for entry in iter_tree_leaf_first(registry)] == [
+        NodeType.LEAF,
+        NodeType.PARENT,
+        NodeType.ROOT,
+    ]
+
+
 def test_git_runner_stage_all_respects_local_gitignore(tmp_path):
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
@@ -426,6 +447,30 @@ def test_restart_tree_pulls_from_root_and_updates_children_as_submodules(tmp_pat
     assert runner.pulled == [(root_path, "origin", "feature-restart")]
     assert runner.updated_submodules == [(root_path, Path("deps/leaf"))]
     assert registry.is_ready()
+
+
+def test_client_pull_gts_pulls_root_then_updates_parents_and_leaves(tmp_path):
+    registry = _make_deep_ready_registry(tmp_path)
+    snapshot_path = tmp_path / "deep.gts"
+    registry.to_gts(command_origin="snapshot").to_toml(snapshot_path)
+
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+    runner._current_branches[tmp_path / "deep"] = "main"
+    client = ComplexGitSyncClient(
+        git_runner=runner,
+        state_store=RuntimeStateStore(tmp_path / "state-store"),
+    )
+
+    result = client.pull(snapshot_path)
+
+    assert result.is_ready()
+    assert runner.pulled == [(tmp_path / "deep", "origin", "main")]
+    assert runner.command_order == [
+        ("pull", tmp_path / "deep"),
+        ("submodule_update", tmp_path / "deep" / "middle"),
+        ("submodule_update", tmp_path / "deep" / "middle" / "sub"),
+    ]
 
 
 def test_restart_tree_propagates_branch_to_all_entries(tmp_path):

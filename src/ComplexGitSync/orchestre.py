@@ -2982,7 +2982,19 @@ class ComplexGitSyncClient:
         if resolved_source.suffix == ".cgs":
             return self.restart(resolved_source)
         if resolved_source.suffix == ".gts":
-            return self._restore_gts_snapshot(resolved_source)
+            previous_tree_state = (
+                self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
+            )
+            self._log_event("pull_start", snapshot_path=resolved_source)
+            registry = self.load_gts(resolved_source)
+            self.orchestre.git_tree.git.pull(self.git_runner)
+            if not registry.is_ready():
+                raise GitSyncError("pull did not produce a READY tree.")
+            snapshot_path = self.write_gts_snapshot(command_origin="pull")
+            self.state_store.record_snapshot(resolved_source, snapshot_path)
+            self._log_tree_transition(previous_tree_state, registry.lifecycle_state, reason="pull")
+            self._log_event("pull_end", snapshot_path=resolved_source, output_gts=snapshot_path)
+            return registry
         raise ValueError(
             f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
         )
