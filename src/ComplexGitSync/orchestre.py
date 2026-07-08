@@ -1647,6 +1647,27 @@ class GitRunner:
             args.append(ref_name)
         self._run(*args, cwd=repo_path)
 
+    def force_pull(
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+    ) -> None:
+        """Force the local branch to match *remote/ref_name* and clean untracked files."""
+        selected_ref = ref_name or self.current_branch(repo_path) or "main"
+        self._run("fetch", remote, selected_ref, cwd=repo_path)
+        self._run("reset", "--hard", "FETCH_HEAD", cwd=repo_path)
+        self.clean_untracked(repo_path)
+
+    def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None:
+        """Discard local tracked changes in *repo_path*."""
+        self._run("reset", "--hard", ref_name, cwd=repo_path)
+
+    def clean_untracked(self, repo_path: Path | str) -> None:
+        """Remove untracked files and directories in *repo_path*."""
+        self._run("clean", "-fd", cwd=repo_path)
+
     def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
         """Create *tag_name* in *repo_path*."""
         self._run("tag", tag_name, cwd=repo_path)
@@ -1845,6 +1866,21 @@ class GitRunner:
             "update",
             "--init",
             "--remote",
+            "--",
+            submodule_path,
+            cwd=repo_path,
+        )
+
+    def update_submodule_force(self, repo_path: Path | str, relative_path: Path | str) -> None:
+        """Force update a tracked submodule path from its parent repository."""
+        submodule_path = str(relative_path)
+        self._run("submodule", "sync", "--", submodule_path, cwd=repo_path)
+        self._run(
+            "submodule",
+            "update",
+            "--init",
+            "--remote",
+            "--force",
             "--",
             submodule_path,
             cwd=repo_path,
@@ -2998,6 +3034,28 @@ class ComplexGitSyncClient:
         raise ValueError(
             f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
         )
+
+    def pull_force(self, source_path: str | Path) -> WorkingGitTree:
+        """Destructively resynchronize from a ``.cgs`` spec or ``.gts`` snapshot."""
+        resolved_source = Path(source_path).resolve()
+        previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
+        self._log_event("pull_force_start", source_path=resolved_source)
+        if resolved_source.suffix == ".cgs":
+            registry = self.load_cgs(resolved_source, discover_nested=True)
+        elif resolved_source.suffix == ".gts":
+            registry = self.load_gts(resolved_source)
+        else:
+            raise ValueError(
+                f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
+            )
+        self.orchestre.git_tree.git.pull_force(self.git_runner)
+        if not registry.is_ready():
+            raise GitSyncError("pull-force did not produce a READY tree.")
+        snapshot_path = self.write_gts_snapshot(command_origin="pull-force")
+        self.state_store.record_snapshot(resolved_source, snapshot_path)
+        self._log_tree_transition(previous_tree_state, registry.lifecycle_state, reason="pull-force")
+        self._log_event("pull_force_end", source_path=resolved_source, output_gts=snapshot_path)
+        return registry
 
     def orchestrate(
         self,

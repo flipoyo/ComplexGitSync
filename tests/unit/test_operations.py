@@ -36,6 +36,7 @@ from ComplexGitSync.operations import (
     propagate_global_branch,
     push_tree,
     restart_tree,
+    restart_tree_force,
     tag_tree,
     validate_branch_topology,
 )
@@ -189,9 +190,13 @@ class _FakeGitRunnerForOperations:
         self.pushed: list[tuple[Path, str, str | None]] = []
         self.pushed_with_upstream: list[tuple[Path, str, str | None]] = []
         self.pulled: list[tuple[Path, str, str | None]] = []
+        self.force_pulled: list[tuple[Path, str, str | None]] = []
         self.tagged: list[tuple[Path, str]] = []
         self.cloned: list[tuple[str, Path, str]] = []
         self.updated_submodules: list[tuple[Path, Path]] = []
+        self.force_updated_submodules: list[tuple[Path, Path]] = []
+        self.reset_hard_paths: list[Path] = []
+        self.cleaned_paths: list[Path] = []
         self.command_order: list[tuple[str, Path]] = []
         self._staged_changes: dict[Path, bool] = {}
         self._unstaged_changes: dict[Path, bool] = {}
@@ -291,6 +296,33 @@ class _FakeGitRunnerForOperations:
         rel_path = Path(relative_path)
         self.updated_submodules.append((parent_path, rel_path))
         self.command_order.append(("submodule_update", parent_path / rel_path))
+
+    def force_pull(
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+    ) -> None:
+        path = Path(repo_path)
+        self.force_pulled.append((path, remote, ref_name))
+        self.command_order.append(("force_pull", path))
+
+    def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None:
+        path = Path(repo_path)
+        self.reset_hard_paths.append(path)
+        self.command_order.append(("reset_hard", path))
+
+    def clean_untracked(self, repo_path: Path | str) -> None:
+        path = Path(repo_path)
+        self.cleaned_paths.append(path)
+        self.command_order.append(("clean_untracked", path))
+
+    def update_submodule_force(self, repo_path: Path | str, relative_path: Path | str) -> None:
+        parent_path = Path(repo_path)
+        rel_path = Path(relative_path)
+        self.force_updated_submodules.append((parent_path, rel_path))
+        self.command_order.append(("submodule_update_force", parent_path / rel_path))
 
     def set_staged(self, repo_path: Path | str, value: bool) -> None:
         """Helper: manually set whether a repo has staged changes."""
@@ -430,6 +462,26 @@ def test_git_runner_stage_all_respects_local_gitignore(tmp_path):
     assert "ignored.txt" not in staged
 
 
+def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch, tmp_path):
+    runner = GitRunner()
+    calls: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def _fake_run(self, *args, cwd=None):
+        calls.append((tuple(args), Path(cwd) if cwd is not None else None))
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(GitRunner, "_run", _fake_run)
+    repo_path = tmp_path / "repo"
+
+    runner.force_pull(repo_path, remote="origin", ref_name="main")
+
+    assert calls == [
+        (("fetch", "origin", "main"), repo_path),
+        (("reset", "--hard", "FETCH_HEAD"), repo_path),
+        (("clean", "-fd"), repo_path),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # restart_tree
 # ---------------------------------------------------------------------------
@@ -501,6 +553,33 @@ def test_restart_tree_runs_pull_and_submodule_updates_parent_first(tmp_path):
     middle_idx = executed_paths.index(tmp_path / "deep" / "middle")
     sub_idx = executed_paths.index(tmp_path / "deep" / "middle" / "sub")
     assert root_idx < middle_idx < sub_idx
+
+
+def test_restart_tree_force_resets_root_then_forces_submodules_parent_first(tmp_path):
+    registry = _make_deep_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    _mark_all_children_as_submodules(registry, runner)
+    root_path = tmp_path / "deep"
+    runner._current_branches[root_path] = "main"
+
+    restart_tree_force(registry, runner)
+
+    assert runner.force_pulled == [(root_path, "origin", "main")]
+    assert runner.force_updated_submodules == [
+        (root_path, Path("middle")),
+        (root_path / "middle", Path("sub")),
+    ]
+    executed_force_paths = [
+        path for action, path in runner.command_order
+        if action in {"force_pull", "submodule_update_force"}
+    ]
+    assert executed_force_paths == [
+        root_path,
+        root_path / "middle",
+        root_path / "middle" / "sub",
+    ]
+    assert root_path / "middle" in runner.reset_hard_paths
+    assert root_path / "middle" / "sub" in runner.cleaned_paths
 
 
 def test_restart_tree_falls_back_to_resolved_ref_when_no_current_branch(tmp_path):

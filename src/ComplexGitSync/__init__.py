@@ -53,6 +53,7 @@ from .operations import (
     freeze_release_tree,
     propagate_global_branch,
     push_tree,
+    restart_tree_force,
     tag_tree,
     validate_branch_topology,
 )
@@ -113,6 +114,7 @@ __all__ = [
     "freeze_release_tree",
     "propagate_global_branch",
     "push_tree",
+    "restart_tree_force",
     "tag_tree",
     "validate_branch_topology",
     # orchestre.py

@@ -147,6 +147,9 @@ $ pixi run cgitsync launch_release release-2026.05
 \texttt{root -> parent -> leaf}.  Mutation commands such as \texttt{add},
 \texttt{commit}, \texttt{push}, and \texttt{freeze} walk the opposite direction:
 \texttt{leaf -> parent -> root}.
+When local files block the safe pull, the CLI suggests
+\texttt{cgitsync pull-force}; that recovery command is destructive and discards
+local uncommitted/untracked work before force-updating the same tree.
 
 Pass \texttt{--gts <snapshot.gts>} when you want to pin a command to an
 explicit snapshot, and pass \texttt{--dry-run} to \texttt{add},

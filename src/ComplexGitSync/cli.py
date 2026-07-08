@@ -21,6 +21,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "purge": "Remove generated clone state for a .cgs workspace.",
     "clone": "Clone a nested project tree from .cgs.",
     "pull": "Resynchronise an existing project tree from .cgs or .gts.",
+    "pull-force": "Destructively resynchronise an existing project tree from .cgs or .gts.",
     "checkout": "Synchronize the tree to a branch or tag.",
     "branch": "Create a branch across the full READY tree without checkout.",
     "add": "Stage all changes across a READY tree.",
@@ -217,7 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
                 ),
             )
             subparser.set_defaults(handler=_handle_clone)
-        elif command_name == "pull":
+        elif command_name in {"pull", "pull-force"}:
             subparser.add_argument(
                 "source",
                 nargs="?",
@@ -237,7 +238,9 @@ def build_parser() -> argparse.ArgumentParser:
                     "or walks up from the current working directory."
                 ),
             )
-            subparser.set_defaults(handler=_handle_pull)
+            subparser.set_defaults(
+                handler=_handle_pull_force if command_name == "pull-force" else _handle_pull
+            )
         elif command_name == "checkout":
             subparser.add_argument("branch", help="Branch or tag name to check out across the tree.")
             subparser.add_argument(
@@ -640,6 +643,15 @@ def _handle_pull(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_pull_force(args: argparse.Namespace) -> int:
+    source = _resolve_workspace_source(args.source, getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="pull-force",
+        source=source,
+        runner=lambda client, source: _execute_pull_force(client, source),
+    )
+
+
 def _handle_checkout(args: argparse.Namespace) -> int:
     ref_kind = RefKind.TAG if args.ref_kind == "tag" else RefKind.BRANCH
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
@@ -956,6 +968,21 @@ def _execute_pull(
     return 0
 
 
+def _execute_pull_force(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+) -> int:
+    print("git_command=git fetch && git reset --hard && git clean -fd (root), then forced submodule update")
+    registry = client.pull_force(source_path)
+    tree_state = client.get_tree_state()
+    print(
+        f"{_format_tree_state_line(tree_state)} "
+        f"root={registry.get('root').absolute_path}"
+    )
+    _print_repo_tree_result(client)
+    return 0
+
+
 def _execute_checkout(
     client: ComplexGitSyncClient,
     source_path: Path,
@@ -1162,6 +1189,8 @@ def _run_with_logging(
             )
         if command_name == "initialise":
             print("Try clean-init method", file=sys.stderr)
+        if command_name == "pull":
+            print("You can try cgitsync pull-force command", file=sys.stderr)
         raise
 
     if active_client.run_logger is not None:

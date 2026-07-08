@@ -215,6 +215,11 @@ Primary commands:
 - `pull [file.cgs|file.gts]`: resynchronise an existing tree parent-first
   (`root -> parent -> leaf`). The project root repository is pulled first;
   child repositories are then updated through their parent submodule links.
+  If local work blocks the pull, the CLI prints
+  `You can try cgitsync pull-force command`.
+- `pull-force [file.cgs|file.gts]`: destructive recovery pull. The root repo is
+  forced to the remote branch with `git fetch`, `git reset --hard`, and
+  `git clean -fd`; child submodules are then force-updated parent-first.
 - `branch <name>`: create a shared branch across the READY tree without checkout
 - `checkout <branch-or-tag> [--ref-kind branch|tag]`: switch the tree ref
 - `add`: run `git add --all` leaf-first

@@ -107,6 +107,20 @@ pull workflow.  In both cases the operation starts at the project root:
 \texttt{git pull --ff-only}; each child repository is then updated through its
 parent submodule link.  Use \texttt{launch\_release} when you want to check out
 a frozen recorded release state instead of pulling current remotes.
+If local changes block this safe pull, the CLI prints
+\texttt{You can try cgitsync pull-force command}.
+
+\subsection{\texttt{pull-force}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync pull-force [spec.cgs|snapshot.gts]
+\end{lstlisting}
+
+Destructively resynchronises the same tree.  The root repository is forced to
+the selected remote branch with \texttt{git fetch}, \texttt{git reset --hard},
+and \texttt{git clean -fd}; child submodules are then force-updated
+parent-first.  This command can discard local uncommitted changes and
+untracked files.
 
 \subsection{\texttt{clone}}
 

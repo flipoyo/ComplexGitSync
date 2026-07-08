@@ -211,6 +211,9 @@ pixi run cgitsync pull
 `pull` includes the project root repository. It runs parent-first:
 `ROOT -> PARENT -> LEAF`, pulling the root repo before updating parent and
 leaf submodules through their parent repositories.
+If local files block this safe pull, the CLI suggests `cgitsync pull-force`.
+Use that recovery command only when discarding local uncommitted and untracked
+work is acceptable.
 
 ---
 

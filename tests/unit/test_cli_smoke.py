@@ -619,6 +619,54 @@ def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
     assert '"event": "command_end"' in log_content
 
 
+def test_pull_command_failure_suggests_pull_force(monkeypatch, tmp_path, capsys):
+    class StubClient:
+        run_logger = None
+
+        def pull(self, source):
+            raise RuntimeError("local changes would be overwritten")
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+
+    source_path = tmp_path / "project.gts"
+    source_path.touch()
+    with pytest.raises(RuntimeError, match="local changes"):
+        main(["pull", str(source_path)])
+
+    captured = capsys.readouterr()
+    assert "You can try cgitsync pull-force command" in captured.err
+
+
+def test_pull_force_command_uses_client_handler(monkeypatch, tmp_path, capsys):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def pull_force(self, source):
+            captured_call["source"] = Path(source)
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "project")
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+
+    source_path = tmp_path / "project.gts"
+    source_path.touch()
+    exit_code = main(["pull-force", str(source_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["source"] == source_path.resolve()
+    assert "git_command=git fetch" in captured.out
+    assert "READY ready=true" in captured.out
+
+
 def test_status_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 

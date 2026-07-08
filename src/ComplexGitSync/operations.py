@@ -8,6 +8,7 @@ Free functions exported here (Tier 2 — Actions):
     propagate_global_branch   Set a shared branch target across every tree repo
     create_global_branch      Create the branch locally if it does not exist yet
     restart_tree              Resync the tree using the root repo's current branch
+    restart_tree_force        Destructively resync the tree, discarding local changes
     checkout_tree             propagate → create → git checkout, parent-first
     branch_tree               propagate → create branch refs, no checkout
     add_tree                  Stage changes across the tree, leaf-first
@@ -157,6 +158,67 @@ def restart_tree(
         # - children keep the propagated root branch contract because submodule
         #   updates may leave them detached.
         # - root reads its actual current branch (with fallback).
+        resolved_branch = (
+            current_branch
+            if repo.parent_id is not None
+            else (git_runner.current_branch(repo.absolute_path) or current_branch)
+        )
+        _refresh_repo_after_checkout(repo, resolved_branch, RefKind.BRANCH, git_runner)
+
+    tree.recompute_tree_state()
+
+
+def restart_tree_force(
+    tree: WorkingGitTree,
+    git_runner: GitRunner,
+) -> None:
+    """Force-resynchronize the full tree using the root repository's branch.
+
+    This is the destructive counterpart of :func:`restart_tree`: local
+    uncommitted changes and untracked files can be discarded by the underlying
+    git commands. It exists as an explicit recovery command for worktrees that
+    block a fast-forward pull.
+    """
+    root_entry = tree.get("root")
+    current_branch = git_runner.current_branch(root_entry.absolute_path)
+    if current_branch is None:
+        current_branch = (
+            root_entry.resolved_ref_name
+            or root_entry.target_ref_name
+            or "main"
+        )
+
+    propagate_global_branch(tree, current_branch)
+
+    for repo in iter_tree(tree):
+        if repo.parent_id is None:
+            git_runner.force_pull(repo.absolute_path, ref_name=current_branch)
+        else:
+            parent = tree.get(repo.parent_id)
+            try:
+                relative_path = repo.absolute_path.relative_to(parent.absolute_path)
+            except ValueError as exc:
+                raise GitSyncError(
+                    f"pull-force preflight failed: {repo.name} is outside parent path {parent.absolute_path}."
+                ) from exc
+            if relative_path == Path("."):
+                raise GitSyncError(
+                    "pull-force preflight failed: child repository cannot share the exact parent path "
+                    f"({parent.name}->{repo.name})."
+                )
+            if not git_runner.is_submodule(parent.absolute_path, relative_path):
+                raise GitSyncError(
+                    "pull-force preflight failed: child repositories must be linked as submodules "
+                    f"({parent.name}->{repo.name}:{relative_path.as_posix()})."
+                )
+            if repo.absolute_path.exists():
+                git_runner.reset_hard(repo.absolute_path)
+                git_runner.clean_untracked(repo.absolute_path)
+            git_runner.update_submodule_force(parent.absolute_path, relative_path)
+            if repo.absolute_path.exists():
+                git_runner.reset_hard(repo.absolute_path)
+                git_runner.clean_untracked(repo.absolute_path)
+
         resolved_branch = (
             current_branch
             if repo.parent_id is not None

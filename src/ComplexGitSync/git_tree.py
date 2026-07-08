@@ -114,6 +114,16 @@ class GitTreeGitCommands:
 
         restart_tree(self._resolve_tree(tree), git_runner)
 
+    def pull_force(
+        self,
+        git_runner: "GitRunner",
+        *,
+        tree: "WorkingGitTree | None" = None,
+    ) -> None:
+        from .operations import restart_tree_force
+
+        restart_tree_force(self._resolve_tree(tree), git_runner)
+
     def add(
         self,
         git_runner: "GitRunner",

@@ -72,6 +72,10 @@ repository is pulled first, then child repositories are updated from their
 parent submodule links. Mutation commands (`add`, `commit`, `push`, `freeze`)
 use the opposite order: `LEAF -> PARENT -> ROOT`.
 
+`pull-force(.cgs|.gts)` keeps the same traversal but is explicitly
+destructive: the root is reset to the selected remote branch and cleaned before
+child submodules are force-updated.
+
 ```mermaid
 flowchart LR
     CGS[.cgs authoring spec] --> REF[GitTree reference tree]

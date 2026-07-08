@@ -361,6 +361,12 @@ The canonical user-facing lifecycle contract is:
      in parent-first order: `ROOT -> PARENT -> LEAF`. The project root is a
      real `NodeType.ROOT` repository and receives the root `git pull` before
      parent and leaf submodules are updated.
+   - If the safe fast-forward pull fails because local files would be
+     overwritten, the CLI prints `You can try cgitsync pull-force command`.
+   - `pull-force(.cgs/.gts)` is the destructive recovery variant: root runs
+     `git fetch`, `git reset --hard`, and `git clean -fd`; children are
+     force-updated through parent submodule links in `ROOT -> PARENT -> LEAF`
+     order.
 
 3. Global git operations driven by a GitTree instance; same command for all
    GitRepos from leaves to parents to the root project repository:
