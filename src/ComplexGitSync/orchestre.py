@@ -2186,6 +2186,7 @@ def build_gts_document_from_registry(
     *,
     command_origin: str,
     source_cgs_path: Path | None,
+    freeze_name: str | None = None,
 ) -> GtsDocument:
     """Build a :class:`GtsDocument` from the live *registry*."""
     root_entry = registry.get(ROOT_REPO_ID)
@@ -2213,7 +2214,7 @@ def build_gts_document_from_registry(
     if source_cgs_path is not None:
         data["project"]["source_cgs_path"] = _path_to_environment_marker(source_cgs_path)
     if command_origin in _FREEZE_COMMAND_ORIGINS:
-        data["freeze_manifest"] = _build_freeze_manifest(registry)
+        data["freeze_manifest"] = _build_freeze_manifest(registry, freeze_name=freeze_name)
 
     for entry in sorted(registry.values(), key=lambda item: item.repo_id):
         repo_data: dict[str, Any] = {
@@ -2254,10 +2255,15 @@ def build_gts_document_from_registry(
     return document
 
 
-def _build_freeze_manifest(registry: WorkingGitTree) -> dict[str, Any]:
+def _build_freeze_manifest(
+    registry: WorkingGitTree,
+    *,
+    freeze_name: str | None = None,
+) -> dict[str, Any]:
     root_entry = registry.get(ROOT_REPO_ID)
     tag_name = (
-        root_entry.resolved_ref_name
+        freeze_name
+        or root_entry.resolved_ref_name
         or root_entry.target_ref_name
         or root_entry.current_ref_name
         or ""
@@ -3422,6 +3428,7 @@ class ComplexGitSyncClient:
         snapshot_path = self.write_gts_snapshot(
             command_origin="freeze_release",
             output_path=output_gts,
+            freeze_name=tag_name,
         )
         if self.source_path is not None:
             self.state_store.record_snapshot(self.source_path, snapshot_path)
@@ -3760,11 +3767,16 @@ class ComplexGitSyncClient:
         *,
         command_origin: str,
         output_path: str | Path | None = None,
+        freeze_name: str | None = None,
     ) -> Path:
         registry = self.get_dependency_registry()
         root_entry = registry.get("root")
         if output_path is None:
-            snapshot_name = f"{(self.source_path.stem if self.source_path else root_entry.name)}.gts"
+            if self.source_path is not None and self.source_path.suffix == ".cgs":
+                snapshot_stem = self.source_path.stem
+            else:
+                snapshot_stem = root_entry.name
+            snapshot_name = f"{snapshot_stem}.gts"
             latest_output_path = root_entry.absolute_path / ".cgitsync" / "state" / snapshot_name
             resolved_output_path = latest_output_path
         else:
@@ -3776,6 +3788,7 @@ class ComplexGitSyncClient:
             registry,
             command_origin=command_origin,
             source_cgs_path=self.source_path,
+            freeze_name=freeze_name,
         )
         document.to_toml(resolved_output_path)
         self.loaded_snapshot_path = resolved_output_path
@@ -3788,10 +3801,7 @@ class ComplexGitSyncClient:
         register_path = root_entry.absolute_path / f"{root_entry.name}.lgr"
         if root_entry.absolute_path.exists():
             register_id = LocalGitRegister(register_path).record_snapshot(resolved_output_path)
-            source_is_runtime_snapshot = (
-                self.source_path is not None and self.source_path.suffix == ".gts"
-            )
-            if latest_output_path is not None and not source_is_runtime_snapshot:
+            if latest_output_path is not None:
                 immutable_name = f"{register_id}.gts"
                 if command_origin in _FREEZE_COMMAND_ORIGINS:
                     freeze_manifest = document.to_dict().get("freeze_manifest", {})

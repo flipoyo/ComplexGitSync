@@ -306,6 +306,7 @@ def test_freeze_command_uses_client_handler(monkeypatch, capsys, tmp_path):
 
     class StubClient:
         run_logger = None
+        loaded_snapshot_path = tmp_path / ".cgitsync" / "state" / "gts-000001-v1.0.gts"
 
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
@@ -328,6 +329,8 @@ def test_freeze_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     assert exit_code == 0
     assert captured_call["name"] == "v1.0"
     assert "name=v1.0" in captured.out
+    assert "snapshot=" in captured.out
+    assert "gts-000001-v1.0.gts" in captured.out
 
 
 def test_freeze_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):

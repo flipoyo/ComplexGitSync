@@ -790,7 +790,7 @@ def _collect_tag_conflict_diagnostics(
                 PreflightDiagnostic(
                     PreflightSeverity.BLOCKING_ERROR,
                     repo.name,
-                    f"tag {tag_name!r} already exists.",
+                    f"ERROR tag already taken: {tag_name!r}.",
                 )
             )
     return duplicates

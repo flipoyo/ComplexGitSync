@@ -1111,9 +1111,12 @@ def _execute_freeze(
     else:
         client.freeze(name)
     tree_state = client.get_tree_state()
+    snapshot_path = getattr(client, "loaded_snapshot_path", None)
+    snapshot_suffix = f" snapshot={snapshot_path}" if snapshot_path is not None else ""
     print(
         f"{_format_tree_state_line(tree_state)} "
         f"name={name}"
+        f"{snapshot_suffix}"
     )
     if not dry_run:
         _print_repo_tree_result(client)
