@@ -1,6 +1,6 @@
 """ComplexGitSync package: deterministic distributed workspace synchronization over Git trees."""
 
-__version__ = "0001.50"
+__version__ = "0002.01"
 
 # --- Tier 1 — Public Errors (errors.py) ---
 from .errors import (

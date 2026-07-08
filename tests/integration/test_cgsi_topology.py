@@ -542,7 +542,7 @@ class TestGitCommandCycleIntegration:
 
         cycle_file.write_text("cli cycle 2\n", encoding="utf-8")
         assert cli_main(["freeze", "v0.2.0", "--gts", str(snapshot)]) == 0
-        assert cli_main(["launch_release", "v0.2.0", "--gts", str(snapshot)]) == 0
+        assert cli_main(["launch-release", "v0.2.0", "--gts", str(snapshot)]) == 0
 
         remote_tags = _run_git(repo, "ls-remote", "--tags", "origin")
         assert "refs/tags/v0.2.0" in remote_tags

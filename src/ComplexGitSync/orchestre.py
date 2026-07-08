@@ -3029,6 +3029,14 @@ class ComplexGitSyncClient:
             )
             self._log_event("pull_start", snapshot_path=resolved_source)
             registry = self.load_gts(resolved_source)
+            # Clone any repositories that are missing from disk before syncing.
+            for entry in registry.values():
+                if not entry.absolute_path.exists() and not entry.is_external_reference:
+                    entry.repo_lifecycle_state = RepoLifecycleState.DECLARED
+            sync_stack: set[Path] = set()
+            for entry in self._pending_clone_entries(sync_stack):
+                sync_stack.add(entry.absolute_path)
+                self._clone_registry_entry(entry)
             self.orchestre.git_tree.git.pull(self.git_runner)
             if not registry.is_ready():
                 raise GitSyncError("pull did not produce a READY tree.")
