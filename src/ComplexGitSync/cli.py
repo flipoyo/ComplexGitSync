@@ -972,7 +972,7 @@ def _execute_pull_force(
     client: ComplexGitSyncClient,
     source_path: Path,
 ) -> int:
-    print("git_command=git fetch && git reset --hard && git clean -fd (root), then forced submodule update")
+    print("git_command=git fetch && git checkout -B <branch> FETCH_HEAD && git clean -fd, then forced submodule update")
     registry = client.pull_force(source_path)
     tree_state = client.get_tree_state()
     print(
@@ -1188,9 +1188,9 @@ def _run_with_logging(
                 ),
             )
         if command_name == "initialise":
-            print("Try clean-init method", file=sys.stderr)
+            print("Try clean-init method", file=sys.stderr, flush=True)
         if command_name == "pull":
-            print("You can try cgitsync pull-force command", file=sys.stderr)
+            print("You can try cgitsync pull-force command", file=sys.stderr, flush=True)
         raise
 
     if active_client.run_logger is not None:

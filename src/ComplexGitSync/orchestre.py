@@ -1657,7 +1657,7 @@ class GitRunner:
         """Force the local branch to match *remote/ref_name* and clean untracked files."""
         selected_ref = ref_name or self.current_branch(repo_path) or "main"
         self._run("fetch", remote, selected_ref, cwd=repo_path)
-        self._run("reset", "--hard", "FETCH_HEAD", cwd=repo_path)
+        self._run("checkout", "-B", selected_ref, "FETCH_HEAD", cwd=repo_path)
         self.clean_untracked(repo_path)
 
     def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None:

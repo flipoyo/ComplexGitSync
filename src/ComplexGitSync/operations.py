@@ -216,8 +216,7 @@ def restart_tree_force(
                 git_runner.clean_untracked(repo.absolute_path)
             git_runner.update_submodule_force(parent.absolute_path, relative_path)
             if repo.absolute_path.exists():
-                git_runner.reset_hard(repo.absolute_path)
-                git_runner.clean_untracked(repo.absolute_path)
+                git_runner.force_pull(repo.absolute_path, ref_name=current_branch)
 
         resolved_branch = (
             current_branch

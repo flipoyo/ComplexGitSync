@@ -117,10 +117,10 @@ $ cgitsync pull-force [spec.cgs|snapshot.gts]
 \end{lstlisting}
 
 Destructively resynchronises the same tree.  The root repository is forced to
-the selected remote branch with \texttt{git fetch}, \texttt{git reset --hard},
-and \texttt{git clean -fd}; child submodules are then force-updated
-parent-first.  This command can discard local uncommitted changes and
-untracked files.
+the selected remote branch with \texttt{git fetch},
+\texttt{git checkout -B <branch> FETCH\_HEAD}, and \texttt{git clean -fd};
+child submodules are then force-updated parent-first.  This command can
+discard local uncommitted changes and untracked files.
 
 \subsection{\texttt{clone}}
 

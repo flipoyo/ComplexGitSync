@@ -477,7 +477,7 @@ def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch,
 
     assert calls == [
         (("fetch", "origin", "main"), repo_path),
-        (("reset", "--hard", "FETCH_HEAD"), repo_path),
+        (("checkout", "-B", "main", "FETCH_HEAD"), repo_path),
         (("clean", "-fd"), repo_path),
     ]
 
@@ -564,7 +564,11 @@ def test_restart_tree_force_resets_root_then_forces_submodules_parent_first(tmp_
 
     restart_tree_force(registry, runner)
 
-    assert runner.force_pulled == [(root_path, "origin", "main")]
+    assert runner.force_pulled == [
+        (root_path, "origin", "main"),
+        (root_path / "middle", "origin", "main"),
+        (root_path / "middle" / "sub", "origin", "main"),
+    ]
     assert runner.force_updated_submodules == [
         (root_path, Path("middle")),
         (root_path / "middle", Path("sub")),
@@ -576,6 +580,8 @@ def test_restart_tree_force_resets_root_then_forces_submodules_parent_first(tmp_
     assert executed_force_paths == [
         root_path,
         root_path / "middle",
+        root_path / "middle",
+        root_path / "middle" / "sub",
         root_path / "middle" / "sub",
     ]
     assert root_path / "middle" in runner.reset_hard_paths

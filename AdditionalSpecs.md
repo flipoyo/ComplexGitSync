@@ -364,9 +364,9 @@ The canonical user-facing lifecycle contract is:
    - If the safe fast-forward pull fails because local files would be
      overwritten, the CLI prints `You can try cgitsync pull-force command`.
    - `pull-force(.cgs/.gts)` is the destructive recovery variant: root runs
-     `git fetch`, `git reset --hard`, and `git clean -fd`; children are
-     force-updated through parent submodule links in `ROOT -> PARENT -> LEAF`
-     order.
+     `git fetch`, `git checkout -B <branch> FETCH_HEAD`, and `git clean -fd`;
+     children are force-updated through parent submodule links in
+     `ROOT -> PARENT -> LEAF` order.
 
 3. Global git operations driven by a GitTree instance; same command for all
    GitRepos from leaves to parents to the root project repository:
