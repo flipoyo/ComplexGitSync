@@ -357,9 +357,13 @@ The canonical user-facing lifecycle contract is:
 
 2. `pull(.cgs/.gts)` → resync an existing tree → `READY`
    - `client.pull("examples/complexgitsync.cgs")`
+   - `.gts` input is loaded as the starting registry, then the tree is pulled
+     in parent-first order: `ROOT -> PARENT -> LEAF`. The project root is a
+     real `NodeType.ROOT` repository and receives the root `git pull` before
+     parent and leaf submodules are updated.
 
 3. Global git operations driven by a GitTree instance; same command for all
-   GitRepos from leaves to parents to Project_repo:
+   GitRepos from leaves to parents to the root project repository:
    - `client.checkout("feature/my-branch")`
    - `client.add()`
    - `client.git(registry, "commit", "message CGS#VERSION")`

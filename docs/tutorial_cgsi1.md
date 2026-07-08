@@ -200,7 +200,21 @@ pixi run cgitsync purge ../CGSil1.cgs
 
 ---
 
-### Step 4 — Stage changes
+### Step 4 — Pull
+
+Resynchronise the existing workspace from the current root branch:
+
+```bash
+pixi run cgitsync pull
+```
+
+`pull` includes the project root repository. It runs parent-first:
+`ROOT -> PARENT -> LEAF`, pulling the root repo before updating parent and
+leaf submodules through their parent repositories.
+
+---
+
+### Step 5 — Stage changes
 
 Stage all uncommitted file changes across every repository in the tree:
 
@@ -215,9 +229,11 @@ The command discovers the `.gts` snapshot automatically from
 pixi run cgitsync add --gts /path/to/workspace/.cgitsync/state/CGSil1.gts
 ```
 
+Mutation commands run leaf-first: `LEAF -> PARENT -> ROOT`.
+
 ---
 
-### Step 5 — Commit
+### Step 6 — Commit
 
 Commit staged changes with a shared message across all dirty repositories:
 
@@ -233,7 +249,7 @@ pixi run cgitsync commit -m "my commit message"
 
 ---
 
-### Step 6 — Push
+### Step 7 — Push
 
 Push every repository to its configured remote, leaf-first:
 
@@ -249,7 +265,7 @@ pixi run cgitsync status
 
 ---
 
-### Step 7 — Freeze
+### Step 8 — Freeze
 
 Bundle outstanding changes into a release commit, tag, and push, then
 emit a versioned `.gts` snapshot:
@@ -263,7 +279,7 @@ snapshot entry.
 
 ---
 
-### Step 8 — Launch Release
+### Step 9 — Launch Release
 
 Check out the frozen release tag across the READY tree:
 
@@ -282,12 +298,13 @@ pixi run cgitsync launch_release v1.1.0
 | 3 | `cgitsync initialise ../CGSil1.cgs` | Attach the root repo and clone child repos |
 | recovery | `cgitsync clean-init ../CGSil1.cgs` | Purge generated clone state, then initialise |
 | cleanup | `cgitsync purge ../CGSil1.cgs` | Remove root-level generated clone state |
-| 4 | `cgitsync add` | Stage all changes |
-| 5 | `cgitsync commit "message"` | Commit across the tree |
-| 6 | `cgitsync push` | Push to remotes |
+| 4 | `cgitsync pull` | Resync root, parent, and leaf repos |
+| 5 | `cgitsync add` | Stage all changes |
+| 6 | `cgitsync commit "message"` | Commit across the tree |
+| 7 | `cgitsync push` | Push to remotes |
 | optional | `cgitsync status` | Inspect local cleanliness and recorded snapshot drift |
-| 7 | `cgitsync freeze v1.1.0` | Release commit + tag + snapshot |
-| 8 | `cgitsync launch_release v1.1.0` | Check out the frozen release tag |
+| 8 | `cgitsync freeze v1.1.0` | Release commit + tag + snapshot |
+| 9 | `cgitsync launch_release v1.1.0` | Check out the frozen release tag |
 
 See `tests/integration/test_tuto_cgsi1.py` for a runnable sandbox that
-exercises all eight steps against local bare-repo remotes.
+exercises the full workflow against local bare-repo remotes.

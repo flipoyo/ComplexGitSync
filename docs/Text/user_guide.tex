@@ -100,9 +100,13 @@ $ cgitsync pull [spec.cgs|snapshot.gts]
 \end{lstlisting}
 
 Resynchronises the project tree.  \texttt{.cgs} sources reload the source,
-discover nested configs, check out the current branch across the tree, and end
-in \texttt{READY}.  \texttt{.gts} sources restore the saved state, cloning
-missing repositories and checking out recorded refs as needed.
+discover nested configs, then resynchronise the loaded tree.  \texttt{.gts}
+sources load the saved registry as the starting point and then run the same
+pull workflow.  In both cases the operation starts at the project root:
+\texttt{root -> parent -> leaf}.  The root repository receives
+\texttt{git pull --ff-only}; each child repository is then updated through its
+parent submodule link.  Use \texttt{launch\_release} when you want to check out
+a frozen recorded release state instead of pulling current remotes.
 
 \subsection{\texttt{clone}}
 

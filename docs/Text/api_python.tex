@@ -119,7 +119,10 @@ client.purge_cgs("../CGSil1.cgs", output_path=cgspath)
 
 # 5. READY methods — unified git interface
 registry = client.get_dependency_registry()
+# Pull uses ROOT -> PARENT -> LEAF, including the project root repository.
+client.pull(".cgitsync/state/CGSil1.gts")
 client.checkout("feature/my-branch")
+# Mutations use LEAF -> PARENT -> ROOT.
 client.add()
 client.git(registry, "commit", "feat: update CGSil1 CGS#1")
 client.git(registry, "push")

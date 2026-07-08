@@ -190,8 +190,9 @@ client.purge_cgs(source, output_path=cgspath)
 client.initialise(snapshot)
 
 # READY-state operations mirror the CLI.
+client.pull(snapshot)  # root -> parent -> leaf, including the project root repo
 client.checkout("feature/my-branch")
-client.add()
+client.add()  # leaf -> parent -> root
 client.commit("feat: update CGSil1 CGS#1")
 client.push()
 client.tag("v1.2.3")
@@ -211,7 +212,9 @@ Primary commands:
   files, and root `.gitmodules`
 - `clone <file.cgs>`: clone the full project tree from a `.cgs` spec; this is
   the direct CLI entry point for `ComplexGitSyncClient.clone`
-- `pull [file.cgs|file.gts]`: resynchronise an existing tree
+- `pull [file.cgs|file.gts]`: resynchronise an existing tree parent-first
+  (`root -> parent -> leaf`). The project root repository is pulled first;
+  child repositories are then updated through their parent submodule links.
 - `branch <name>`: create a shared branch across the READY tree without checkout
 - `checkout <branch-or-tag> [--ref-kind branch|tag]`: switch the tree ref
 - `add`: run `git add --all` leaf-first

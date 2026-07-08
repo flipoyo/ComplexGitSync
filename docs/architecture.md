@@ -66,6 +66,12 @@ such as checkout, branch, add, commit, push, freeze, and launch_release act on
 SHAs, lifecycle state, and sync state for a workspace snapshot. It is loaded
 back into `WorkingGitTree` when commands resume from an existing workspace.
 
+`pull(.cgs|.gts)` uses that runtime tree as the input registry and
+resynchronises parent-first: `ROOT -> PARENT -> LEAF`. The project root
+repository is pulled first, then child repositories are updated from their
+parent submodule links. Mutation commands (`add`, `commit`, `push`, `freeze`)
+use the opposite order: `LEAF -> PARENT -> ROOT`.
+
 ```mermaid
 flowchart LR
     CGS[.cgs authoring spec] --> REF[GitTree reference tree]

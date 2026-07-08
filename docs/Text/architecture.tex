@@ -125,7 +125,10 @@ being processed, providing defence-in-depth against any residual back-references
 that escape the registry cleanup phase.
 
 \texttt{topological\_sort(registry)} returns entries in parent-first order
-(Kahn's BFS algorithm) for safe sequential clone/pull operations.
+(Kahn's BFS algorithm) for safe sequential clone/pull operations.  Runtime
+\texttt{pull} uses the same three-level direction: \texttt{ROOT -> PARENT ->
+LEAF}; the project root repository is pulled before child submodules are
+updated from their parent repositories.
 
 Figure~\ref{fig:core-model} shows the full object model for Tier~1.
 
@@ -197,10 +200,11 @@ tree-wide synchronisation actions implemented in \texttt{operations.py}.
 
 \begin{figure}[ht]
 \centering
-\caption{Synchronisation operations: \texttt{checkout\_tree} runs
-  propagate\,→\,create\,→\,git checkout parent-first; \texttt{add\_tree},
-  \texttt{commit\_tree}, and \texttt{push\_tree} iterate leaf-first so that
-  inner repos are synchronized before their parents.}
+\caption{Synchronisation operations: \texttt{pull}/\texttt{checkout\_tree}
+  process \texttt{ROOT -> PARENT -> LEAF}; \texttt{add\_tree},
+  \texttt{commit\_tree}, and \texttt{push\_tree} iterate
+  \texttt{LEAF -> PARENT -> ROOT} so that inner repos are synchronized before
+  their parents.}
 \label{fig:ops-sequence}
 \input{figures/operations_sequence}
 \end{figure}

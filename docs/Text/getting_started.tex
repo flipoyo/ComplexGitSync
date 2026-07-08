@@ -143,6 +143,11 @@ $ pixi run cgitsync freeze release-2026.05
 $ pixi run cgitsync launch_release release-2026.05
 \end{lstlisting}
 
+\texttt{pull} walks the tree parent-first, including the project root:
+\texttt{root -> parent -> leaf}.  Mutation commands such as \texttt{add},
+\texttt{commit}, \texttt{push}, and \texttt{freeze} walk the opposite direction:
+\texttt{leaf -> parent -> root}.
+
 Pass \texttt{--gts <snapshot.gts>} when you want to pin a command to an
 explicit snapshot, and pass \texttt{--dry-run} to \texttt{add},
 \texttt{commit}, \texttt{push}, or \texttt{freeze} to preview
