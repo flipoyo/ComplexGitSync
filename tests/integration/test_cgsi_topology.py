@@ -180,6 +180,7 @@ workspace_validated = true
 ledger_checkpoint = true
 synchronized_ref_kind = "tag"
 synchronized_ref_name = "release-1"
+release-name = "release-1"
 restore_operation = "launch_state"
 
 [project]

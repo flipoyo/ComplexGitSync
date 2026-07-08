@@ -243,8 +243,9 @@ detached HEADs, unresolved merges, missing remotes, branch divergence, or
 missing nested repository links. `freeze` also requires a release tag name that
 does not already exist.
 
-Each `.lgr` snapshot entry points to an immutable `.gts` file named
-`gts-XXXXXX.gts`; the project-name `.gts` file is the latest-state pointer.
+Each `.lgr` snapshot entry points to an immutable `.gts` file. Release freezes
+use `gts-XXXXXX-<release-name>.gts`; other snapshots keep `gts-XXXXXX.gts`.
+The project-name `.gts` file is the latest-state pointer.
 
 ## CGSil1 nested-tooling setup
 

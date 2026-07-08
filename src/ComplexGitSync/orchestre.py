@@ -723,6 +723,12 @@ class GtsDocument(ConfigDocument):
                 synchronized_ref_name = freeze_manifest.get("synchronized_ref_name")
                 if not isinstance(synchronized_ref_name, str) or not synchronized_ref_name.strip():
                     errors.append("[freeze_manifest] synchronized_ref_name must be a non-empty string")
+                release_name = freeze_manifest.get("release-name")
+                if release_name is not None:
+                    if not isinstance(release_name, str) or not release_name.strip():
+                        errors.append("[freeze_manifest] release-name must be a non-empty string")
+                    elif isinstance(synchronized_ref_name, str) and release_name != synchronized_ref_name:
+                        errors.append("[freeze_manifest] release-name must match synchronized_ref_name")
                 for invariant_key in (
                     "immutable_snapshot",
                     "workspace_validated",
@@ -847,6 +853,7 @@ class GtsDocument(ConfigDocument):
                 "ledger_checkpoint": freeze_manifest.get("ledger_checkpoint"),
                 "synchronized_ref_kind": freeze_manifest.get("synchronized_ref_kind"),
                 "synchronized_ref_name": freeze_manifest.get("synchronized_ref_name"),
+                "release-name": freeze_manifest.get("release-name"),
                 "restore_operation": freeze_manifest.get("restore_operation"),
             }
         return payload
@@ -923,6 +930,7 @@ class GtsDocument(ConfigDocument):
                 "ledger_checkpoint": freeze_manifest.get("ledger_checkpoint"),
                 "synchronized_ref_kind": freeze_manifest.get("synchronized_ref_kind"),
                 "synchronized_ref_name": freeze_manifest.get("synchronized_ref_name"),
+                "release-name": freeze_manifest.get("release-name"),
                 "restore_operation": freeze_manifest.get("restore_operation"),
             }
         return payload
@@ -2225,8 +2233,15 @@ def _build_freeze_manifest(registry: WorkingGitTree) -> dict[str, Any]:
         "ledger_checkpoint": True,
         "synchronized_ref_kind": RefKind.TAG.value,
         "synchronized_ref_name": tag_name,
+        "release-name": tag_name,
         "restore_operation": "launch_state",
     }
+
+
+def _release_snapshot_slug(release_name: str) -> str:
+    """Return a filesystem-friendly release suffix for immutable .gts files."""
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", release_name.strip()).strip(".-_")
+    return slug or "release"
 
 
 # ============================================================
@@ -3707,7 +3722,18 @@ class ComplexGitSyncClient:
                 self.source_path is not None and self.source_path.suffix == ".gts"
             )
             if latest_output_path is not None and not source_is_runtime_snapshot:
-                immutable_output_path = resolved_output_path.parent / f"{register_id}.gts"
+                immutable_name = f"{register_id}.gts"
+                if command_origin in _FREEZE_COMMAND_ORIGINS:
+                    freeze_manifest = document.to_dict().get("freeze_manifest", {})
+                    release_name = ""
+                    if isinstance(freeze_manifest, dict):
+                        release_name = str(
+                            freeze_manifest.get("release-name")
+                            or freeze_manifest.get("synchronized_ref_name")
+                            or ""
+                        )
+                    immutable_name = f"{register_id}-{_release_snapshot_slug(release_name)}.gts"
+                immutable_output_path = resolved_output_path.parent / immutable_name
                 if immutable_output_path != resolved_output_path:
                     document.to_toml(immutable_output_path)
                     resolved_output_path = immutable_output_path

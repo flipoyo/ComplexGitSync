@@ -1626,10 +1626,33 @@ def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
     assert snapshot_data["freeze_manifest"]["schema_version"] == "1.0"
     assert snapshot_data["freeze_manifest"]["synchronized_ref_kind"] == "tag"
     assert snapshot_data["freeze_manifest"]["synchronized_ref_name"] == "release-1"
+    assert snapshot_data["freeze_manifest"]["release-name"] == "release-1"
     assert snapshot_data["freeze_manifest"]["restore_operation"] == "launch_state"
     assert snapshot_data["freeze_manifest"]["immutable_snapshot"] is True
     assert snapshot_data["freeze_manifest"]["workspace_validated"] is True
     assert snapshot_data["freeze_manifest"]["ledger_checkpoint"] is True
+    assert result.recompute_tree_state() == TreeLifecycleState.READY
+
+
+def test_client_freeze_release_writes_release_name_and_named_immutable_gts(tmp_path):
+    import tomllib
+
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    _mark_all_children_as_submodules(client.registry, runner)
+    root_path = client.registry.get("root").absolute_path
+
+    result = client.freeze_release("release-1")
+
+    immutable_snapshot = root_path / ".cgitsync" / "state" / "gts-000001-release-1.gts"
+    latest_snapshot = root_path / ".cgitsync" / "state" / "project.gts"
+    assert immutable_snapshot.exists()
+    assert latest_snapshot.exists()
+    snapshot_data = tomllib.loads(immutable_snapshot.read_text(encoding="utf-8"))
+    assert snapshot_data["freeze_manifest"]["release-name"] == "release-1"
+    lgr_data = tomllib.loads((root_path / "project.lgr").read_text(encoding="utf-8"))
+    assert lgr_data["register"]["current_snapshot_id"] == "gts-000001"
+    assert lgr_data["register"]["current_snapshot_path"].endswith("gts-000001-release-1.gts")
+    assert lgr_data["snapshots"][0]["snapshot_path"].endswith("gts-000001-release-1.gts")
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
 

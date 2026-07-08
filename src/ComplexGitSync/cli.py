@@ -1303,6 +1303,8 @@ def _find_matching_lgr_snapshot_file(
         recorded_path.parent / f"{snapshot_id}.gts",
         cgshome / ".cgitsync" / "state" / f"{snapshot_id}.gts",
     ]
+    candidates.extend(sorted(recorded_path.parent.glob(f"{snapshot_id}-*.gts")))
+    candidates.extend(sorted((cgshome / ".cgitsync" / "state").glob(f"{snapshot_id}-*.gts")))
     seen: set[Path] = set()
     for candidate in candidates:
         resolved = candidate.resolve()

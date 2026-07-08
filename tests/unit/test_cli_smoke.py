@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from ComplexGitSync import __version__
-from ComplexGitSync.cli import main
+from ComplexGitSync.cli import _snapshot_file_hash, main
 
 
 def test_main_without_command_prints_help(capsys):
@@ -78,6 +78,48 @@ gts_snapshot_id = "gts-000001"
 
     assert exit_code == 0
     assert captured_call["source"] == snapshot_path.resolve()
+
+
+def test_load_command_resolves_release_named_ledger_id(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load(self, source, *, discover_nested=False):
+            captured_call["source"] = Path(source)
+            captured_call["discover_nested"] = discover_nested
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    stale_snapshot_path = tmp_path / ".cgitsync" / "state" / "gts-000001.gts"
+    release_snapshot_path = tmp_path / ".cgitsync" / "state" / "gts-000001-release-1.gts"
+    release_snapshot_path.parent.mkdir(parents=True)
+    valid_snapshot_path = _write_ready_gts(tmp_path)
+    release_snapshot_path.write_text(valid_snapshot_path.read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "demo.lgr").write_text(
+        f"""
+[register]
+current_snapshot_id = "gts-000001"
+current_snapshot_path = "{stale_snapshot_path.as_posix()}"
+
+[[snapshots]]
+id = "gts-000001"
+snapshot_hash = "{_snapshot_file_hash(release_snapshot_path)}"
+snapshot_path = "{stale_snapshot_path.as_posix()}"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(["load", "gts-000001", "--search-dir", str(tmp_path)])
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["source"] == release_snapshot_path.resolve()
 
 
 def test_print_command_renders_cgs_summary(tmp_path, capsys):

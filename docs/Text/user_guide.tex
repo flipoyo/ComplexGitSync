@@ -195,8 +195,11 @@ boundaries. Dirty worktrees and stale recorded \texttt{commit\_sha} values are
 reported as warnings because freeze will stage, commit, and snapshot them.
 Freeze snapshots also include a deterministic \texttt{freeze\_manifest} section
 that records freeze invariants (immutable snapshot, validated workspace,
-synchronized tag, ledger checkpoint) and declares \texttt{launch\_state} as the
-canonical restore operation.
+synchronized tag, \texttt{release-name}, ledger checkpoint) and declares
+\texttt{launch\_state} as the canonical restore operation. Their immutable
+snapshot filename includes the release, for example
+\texttt{gts-000001-release-2026.05.gts}, while the ledger id remains
+\texttt{gts-000001}.
 With \texttt{--dry-run}, \cgscli{} prints the planned add/commit/tag/push graph
 for the loaded workspace without mutating it.
 
