@@ -4,7 +4,7 @@
 
 Project: CGS — ComplexGraphSync  
 Former name: ComplexGitSync  
-Target algorithm: `@CGS(.delta, X, .nabla) -> .delta*`  
+Target algorithm: `@CGS(.delta, X, .nabla) -> .delta*` if `.delta` exists; otherwise `@CGS(.cgs, X, .nabla) -> .delta*`  
 First operator: `X = sync-compilation`  
 First backend: `graph.git`  
 Target environment: `linux:default-ubuntu24.04`, `python3.11`, `pixi`  
@@ -17,11 +17,13 @@ Specification license: Apache-2.0 for `@CGS.md` only
 
 The current repository already implements a Python 3.11 CLI around nested Git repository trees. The public entry point is currently `cgitsync`, the package is `ComplexGitSync`, and the current documents are `.cgs`, `.gts`, `.lgr`, with `.goc` already present as a command/orchestration document in the codebase.
 
-The repository must now be reduced and renamed around the minimal compiler equation:
+The repository must now be reduced and renamed around the minimal compiler equation. Important file rule: `.cgs` remains valid and canonical as the source project description. `.gts` is renamed to `.delta`. When `.delta` exists, it is the priority compiler input; when it does not exist, the compiler accepts `.cgs` directly and emits `.delta*`.
 
 ```text
 @CGS : (DELTA, CrossingOperator, NABLA) -> DELTA_STAR
 @CGS(.delta, sync-compilation, .nabla) -> .delta*
+# fallback source form when no .delta exists
+@CGS(.cgs, sync-compilation, .nabla) -> .delta*
 ```
 
 This plan deliberately avoids broad feature expansion. It converts the existing implementation into a smaller, cleaner, graph-first CLI where Git is only the first backend: `graph.git`.
@@ -35,9 +37,10 @@ This plan deliberately avoids broad feature expansion. It converts the existing 
 | ComplexGitSync | ComplexGraphSync | Project name |
 | cgitsync | cgs | CLI command |
 | git | graph.git | First backend |
-| `.cgs` | `.delta` | Declarative `GraphTree` |
+| `.cgs` | `.cgs` | Source project description; remains valid input |
+| `.gts` | `.delta` | Canonical `GraphTree` / `DELTA` document |
 | `.goc` | `.nabla` | Environmental `Tangle` |
-| `.gts` | `.delta*` | Generated `WorkingGraphTree` snapshot |
+| generated state | `.delta*` / `.delta-star.toml` | Generated `WorkingGraphTree` snapshot |
 | GitTree | GraphTree | Backend-neutral graph tree |
 | GitTreeState | WorkingGraphTree | Result of compilation |
 | GitRunner | GraphGitRunner | Git backend runner |
@@ -70,7 +73,8 @@ Acceptance criteria:
 
 - `@CGS.md` exists at repository root.
 - The file defines `@CGS : (Δ, X, ∇) -> Δ*`.
-- The file defines `.delta`, `.nabla`, and `.delta*`.
+- The file defines `.cgs`, `.delta`, `.nabla`, and `.delta*`.
+- The file states the input precedence rule: use `.delta` when present; otherwise use `.cgs`.
 - The file states `X = sync-compilation`.
 - The file states `git -> graph.git` and `cgitsync -> cgs`.
 - No old architecture document is allowed to override `@CGS.md`.
@@ -190,28 +194,42 @@ Acceptance criteria:
 
 ## Milestone 2 — File Vocabulary Migration
 
-### CGS-T020 — Introduce `.delta` as canonical input document
+### CGS-T020 — Preserve `.cgs` and rename `.gts` to `.delta`
 
 Priority: P0  
 Type: parser / document layer  
-Scope: former `CgsDocument`
+Scope: former `CgsDocument`, former `GtsDocument`
 
-Rename conceptual parser:
+Do not rename `.cgs` to `.delta`. The `.cgs` file remains the source project description and remains a valid compiler input.
+
+The former `.gts` layer becomes `.delta`:
 
 ```text
-CgsDocument -> DeltaDocument
-.cgs -> .delta
+.gts -> .delta
+GtsDocument -> DeltaDocument
 ```
 
-A `.delta` is a text description of a `GraphTree`. It should initially reuse the stable TOML schema of `.cgs` where possible, but the code and help must describe it as a `GraphTree`, not as a Git tree.
+A `.delta` is the canonical `DELTA` / `GraphTree` document used by the compiler when it exists. It may be generated from `.cgs`, edited directly, or supplied as the primary input.
+
+Compiler input precedence:
+
+```text
+if file.delta exists:
+    @CGS(.delta, X, .nabla) -> .delta*
+else:
+    @CGS(.cgs, X, .nabla) -> .delta*
+```
 
 Acceptance criteria:
 
+- `cgs validate file.cgs` works.
 - `cgs validate file.delta` works.
-- `cgs initialise file.delta` works.
-- Parser class is named `DeltaDocument`.
-- Error messages say `.delta`.
-- `.cgs` is accepted only as deprecated compatibility input.
+- `cgs compile file.delta --operator sync-compilation --nabla file.nabla` works.
+- `cgs compile file.cgs --operator sync-compilation --nabla file.nabla` works when no `.delta` is supplied.
+- Parser class for `.cgs` remains explicit, for example `CgsDocument`.
+- Parser class for `.delta` is named `DeltaDocument`.
+- `.gts` is accepted only as deprecated compatibility input for `.delta`.
+- `.cgs` is not deprecated.
 
 ### CGS-T021 — Introduce `.nabla` as environmental Tangle document
 
@@ -249,29 +267,22 @@ Acceptance criteria:
 
 Priority: P0  
 Type: state snapshot / document layer  
-Scope: former `GtsDocument`
+Scope: generated compiler output
 
-Rename conceptual snapshot:
-
-```text
-GtsDocument -> DeltaStarDocument
-.gts -> .delta-star.toml or .delta_star
-```
-
-Because `*` is awkward in filenames and shells, the operational filename should be:
+The compiler output is `Δ*` / `DELTA Star`, a generated `WorkingGraphTree` snapshot. Because `*` is awkward in filenames and shells, the operational filename should be:
 
 ```text
 .delta-star.toml
 ```
 
-while the ontology term remains `Δ*` / `DELTA Star`.
+Do not map `.gts` to `.delta*`; `.gts` maps to `.delta`. `DELTA Star` is the result of applying `@CGS` to `.delta` or `.cgs` with `X` and `.nabla`.
 
 Acceptance criteria:
 
 - Generated snapshots use `.delta-star.toml`.
 - Snapshot document kind is `delta_star`.
 - CLI output calls it `WorkingGraphTree`.
-- `.gts` remains readable only as deprecated compatibility input.
+- `.gts` remains readable only as deprecated compatibility input for `.delta`, not as `.delta*`.
 
 ### CGS-T023 — Rename runtime directory `.cgitsync` to `.cgs`
 
@@ -437,18 +448,24 @@ Add canonical command:
 
 ```bash
 pixi run cgs compile path/to/project.delta --operator sync-compilation --nabla path/to/environment.nabla
+# or, when no .delta exists:
+pixi run cgs compile path/to/project.cgs --operator sync-compilation --nabla path/to/environment.nabla
 ```
 
 Also support the compact form:
 
 ```bash
 pixi run cgs sync path/to/project.delta --nabla path/to/environment.nabla
+# or, when no .delta exists:
+pixi run cgs sync path/to/project.cgs --nabla path/to/environment.nabla
 ```
 
 Acceptance criteria:
 
 - `cgs compile <file.delta> --operator sync-compilation --nabla <file.nabla>` works.
+- `cgs compile <file.cgs> --operator sync-compilation --nabla <file.nabla>` works.
 - `cgs sync <file.delta> --nabla <file.nabla>` works as alias for the first operator.
+- `cgs sync <file.cgs> --nabla <file.nabla>` works when `.delta` is absent or not supplied.
 - Output is a `.delta-star.toml` path.
 - Output logs include `operator=sync-compilation` and `backend=graph.git`.
 
@@ -554,9 +571,12 @@ Document only this first workflow:
 
 ```bash
 pixi install
-pixi run cgs validate project.delta
+pixi run cgs validate project.cgs
+pixi run cgs validate project.delta        # when present
 pixi run cgs validate default-ubuntu24.04.nabla
 pixi run cgs compile project.delta --operator sync-compilation --nabla default-ubuntu24.04.nabla
+# or, when project.delta does not exist:
+pixi run cgs compile project.cgs --operator sync-compilation --nabla default-ubuntu24.04.nabla
 pixi run cgs status
 pixi run cgs add
 pixi run cgs commit "feat: synchronize graph"
@@ -588,18 +608,18 @@ Acceptance criteria:
 
 ## Milestone 7 — Compatibility and Migration
 
-### CGS-T070 — Add compatibility readers for `.cgs`, `.goc`, `.gts`
+### CGS-T070 — Add compatibility readers for `.goc` and `.gts`; preserve `.cgs`
 
 Priority: P1  
 Type: migration  
 Scope: document layer
 
-Support old file types as inputs during transition:
+Support old file types and current source files during transition:
 
 ```text
-.cgs -> DeltaDocument with deprecation warning
+.cgs -> CgsDocument, valid source input, no deprecation warning
 .goc -> NablaDocument with deprecation warning if schema can be mapped
-.gts -> DeltaStarDocument with deprecation warning
+.gts -> DeltaDocument with deprecation warning
 ```
 
 Acceptance criteria:
@@ -617,8 +637,8 @@ Scope: `cli.py`, document serializers
 Add:
 
 ```bash
-pixi run cgs migrate old.cgs --to project.delta
-pixi run cgs migrate old.gts --to latest.delta-star.toml
+pixi run cgs migrate old.gts --to project.delta
+pixi run cgs compile project.cgs --operator sync-compilation --nabla default.nabla
 ```
 
 Acceptance criteria:
@@ -633,7 +653,7 @@ Priority: P1
 Type: examples  
 Scope: `examples/`
 
-Update examples to use `.delta` and `.nabla`. Keep CGSil/CGSih only as project names if still useful. Do not rely on blocked GitLab URLs in canonical examples.
+Update examples to use `.cgs`, optional `.delta`, and `.nabla`. Keep CGSil/CGSih only as project names if still useful. Do not rely on blocked GitLab URLs in canonical examples.
 
 Acceptance criteria:
 
@@ -658,7 +678,7 @@ Acceptance criteria:
 - `Node`, `Edge`, `GraphTree`, `Tangle`, `CrossingOperator`, `WorkingGraphTree` are tested.
 - Tests assert stable serialization where relevant.
 
-### CGS-T081 — Add document parser tests for `.delta`, `.nabla`, `.delta-star.toml`
+### CGS-T081 — Add document parser tests for `.cgs`, `.delta`, `.nabla`, `.delta-star.toml`
 
 Priority: P0  
 Type: tests  
@@ -666,6 +686,7 @@ Scope: `tests/unit/`
 
 Acceptance criteria:
 
+- Valid `.cgs` passes.
 - Valid `.delta` passes.
 - Invalid `.delta` fails.
 - Valid `.nabla` passes.
@@ -684,7 +705,8 @@ Use local temporary Git repositories to avoid external network dependency.
 Acceptance criteria:
 
 - Test creates a minimal root + child repository graph locally.
-- `cgs compile ... --operator sync-compilation --nabla ...` succeeds.
+- `cgs compile example.delta --operator sync-compilation --nabla example.nabla` succeeds.
+- `cgs compile example.cgs --operator sync-compilation --nabla example.nabla` succeeds when `.delta` is absent.
 - Output `.delta-star.toml` exists.
 - Output contains backend `graph.git`, environment id, operator, nodes, edges, and resolved refs.
 
@@ -697,7 +719,8 @@ Scope: `tests/integration/`
 Acceptance criteria:
 
 - `pixi run cgs --help` succeeds.
-- `pixi run cgs validate example.delta` succeeds.
+- `pixi run cgs validate example.cgs` succeeds.
+- `pixi run cgs validate example.delta` succeeds when present.
 - `pixi run cgs validate example.nabla` succeeds.
 - `pixi run cgs sync example.delta --nabla example.nabla` succeeds in a local fixture.
 
@@ -728,7 +751,8 @@ Scope: examples, README, CI
 Create a minimal demonstration with:
 
 ```text
-example.delta
+example.cgs
+optional example.delta
 example.nabla
 local graph.git repositories
 resulting latest.delta-star.toml
@@ -752,7 +776,7 @@ Acceptance criteria:
 
 - `@CGS.md` exists.
 - `cgs` CLI works.
-- `.delta`, `.nabla`, `.delta-star.toml` are canonical.
+- `.cgs`, `.delta`, `.nabla`, `.delta-star.toml` are correctly defined: `.cgs` remains valid source input; `.delta` replaces `.gts`; `.nabla` replaces `.goc`; `.delta-star.toml` is generated `Δ*`.
 - `sync-compilation` works on a local graph.git fixture.
 - Software license metadata says EPL-2.0.
 - `@CGS.md` states Apache-2.0 as its document license.
