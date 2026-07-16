@@ -51,8 +51,16 @@ from ComplexGitSync.orchestre import ComplexGitSyncClient, GitRunner, RuntimeSta
 
 
 def _current_lgr_snapshot_path(root_path: Path, register_name: str = "project.lgr") -> Path:
-    data = tomllib.loads((root_path / register_name).read_text(encoding="utf-8"))
+    register_path = _current_lgr_path(root_path, register_name)
+    data = tomllib.loads(register_path.read_text(encoding="utf-8"))
     return Path(data["register"]["current_snapshot_path"]).resolve()
+
+
+def _current_lgr_path(root_path: Path, register_name: str = "project.lgr") -> Path:
+    candidates = sorted((root_path / ".cgitsync").glob(f"state(*)_*/{register_name}"))
+    if candidates:
+        return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
+    return root_path / register_name
 
 
 def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:
@@ -1756,8 +1764,9 @@ def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
 
     assert runner.committed, "Expected commit calls during freeze_release"
     assert runner.tagged, "Expected tag calls during freeze_release"
-    assert output_gts.exists()
-    snapshot_data = tomllib.loads(output_gts.read_text(encoding="utf-8"))
+    assert not output_gts.exists()
+    snapshot_path = _current_lgr_snapshot_path(client.registry.get("root").absolute_path)
+    snapshot_data = tomllib.loads(snapshot_path.read_text(encoding="utf-8"))
     assert snapshot_data["freeze_manifest"]["schema_version"] == "1.0"
     assert snapshot_data["freeze_manifest"]["synchronized_ref_kind"] == "tag"
     assert snapshot_data["freeze_manifest"]["synchronized_ref_name"] == "release-1"
@@ -1783,7 +1792,7 @@ def test_client_freeze_release_writes_release_name_and_named_immutable_gts(tmp_p
     assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", immutable_snapshot.parent.name)
     snapshot_data = tomllib.loads(immutable_snapshot.read_text(encoding="utf-8"))
     assert snapshot_data["freeze_manifest"]["release-name"] == "release-1"
-    lgr_data = tomllib.loads((root_path / "project.lgr").read_text(encoding="utf-8"))
+    lgr_data = tomllib.loads(_current_lgr_path(root_path).read_text(encoding="utf-8"))
     assert re.fullmatch(r"state\([0-9a-f]{64}\)", lgr_data["register"]["current_snapshot_id"])
     assert lgr_data["register"]["current_snapshot_path"].endswith(
         f"{immutable_snapshot.parent.name}/project.gts"
@@ -1839,7 +1848,7 @@ def test_freeze_snapshot_loaded_from_gts_creates_new_named_immutable_gts(tmp_pat
     assert immutable_snapshot.exists()
     assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", immutable_snapshot.parent.name)
 
-    lgr_data = tomllib.loads((root.absolute_path / "project.lgr").read_text(encoding="utf-8"))
+    lgr_data = tomllib.loads(_current_lgr_path(root.absolute_path).read_text(encoding="utf-8"))
     assert re.fullmatch(r"state\([0-9a-f]{64}\)", lgr_data["register"]["current_snapshot_id"])
     assert lgr_data["register"]["current_snapshot_path"].endswith(
         f"{immutable_snapshot.parent.name}/project.gts"
@@ -1935,7 +1944,8 @@ def test_client_freeze_state_delegates_and_writes_named_gts(tmp_path):
 
     assert runner.committed, "Expected commit calls during freeze_state"
     assert runner.tagged, "Expected tag calls during freeze_state"
-    assert output_gts.exists()
+    assert not output_gts.exists()
+    assert _current_lgr_snapshot_path(client.registry.get("root").absolute_path).exists()
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
 

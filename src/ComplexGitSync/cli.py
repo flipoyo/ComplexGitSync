@@ -16,6 +16,7 @@ from .orchestre import (
     ComplexGitSyncClient,
     GtsDocument,
     _parse_state_hash,
+    _state_order_from_directory_name,
     _state_snapshot_candidates,
     _state_snapshot_candidates_for_id,
     create_run_logger,
@@ -1333,8 +1334,6 @@ def _run_with_logging(
         resolved_source,
         project_root=project_root,
     )
-    if active_client.run_logger is not None and active_client.run_logger.log_path is not None:
-        print(f"log_file={active_client.run_logger.log_path}")
     active_client.run_logger.log_event(
         "command_start",
         command=command_name,
@@ -1357,6 +1356,8 @@ def _run_with_logging(
                     else None
                 ),
             )
+            if active_client.run_logger.log_path is not None:
+                print(f"log_file={active_client.run_logger.log_path}")
         if command_name == "initialise":
             print("Try clean-init method", file=sys.stderr, flush=True)
         if command_name == "pull":
@@ -1371,6 +1372,8 @@ def _run_with_logging(
             status="ok",
             tree_lifecycle_state=(tree_state.lifecycle_state if tree_state else None),
         )
+        if active_client.run_logger.log_path is not None:
+            print(f"log_file={active_client.run_logger.log_path}")
     return exit_code
 
 
@@ -1486,6 +1489,11 @@ def _normalise_snapshot_selector(source: str, data: dict) -> str:
 
 
 def _discover_lgr_path(cgshome: Path) -> Path:
+    canonical_entries = _state_lgr_candidates(cgshome)
+    if canonical_entries:
+        canonical_entries.sort(key=lambda path: (path.stat().st_mtime, str(path)), reverse=True)
+        return canonical_entries[0]
+
     lgr_entries = sorted(cgshome.glob("*.lgr"))
     if not lgr_entries:
         raise FileNotFoundError(f"No .lgr register found under CGSHOME: {cgshome}")
@@ -1493,6 +1501,18 @@ def _discover_lgr_path(cgshome: Path) -> Path:
         names = ", ".join(path.name for path in lgr_entries)
         raise FileNotFoundError(f"Multiple .lgr registers found under {cgshome}: {names}")
     return lgr_entries[0]
+
+
+def _state_lgr_candidates(cgshome: Path) -> list[Path]:
+    cgitsync_dir = cgshome / ".cgitsync"
+    if not cgitsync_dir.is_dir():
+        return []
+    candidates: list[Path] = []
+    for state_dir in sorted(cgitsync_dir.iterdir(), key=lambda path: path.name):
+        if not state_dir.is_dir() or _state_order_from_directory_name(state_dir.name) is None:
+            continue
+        candidates.extend(sorted(state_dir.glob("*.lgr")))
+    return candidates
 
 
 def _find_matching_lgr_snapshot_file(

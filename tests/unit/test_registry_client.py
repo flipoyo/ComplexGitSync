@@ -7,7 +7,13 @@ from pathlib import Path, PureWindowsPath
 import pytest
 
 from ComplexGitSync.L0 import hash_time_l0_anchor, new_time_l0_anchor
-from ComplexGitSync.orchestre import ComplexGitSyncClient, GocDocument, _path_to_environment_marker
+from ComplexGitSync.orchestre import (
+    ComplexGitSyncClient,
+    GocDocument,
+    _path_to_environment_marker,
+    _resolve_memory_state_directory,
+    _state_directory_name,
+)
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState, SyncState, WorkingRepo
 from ComplexGitSync.git_tree import WorkingGitTree, GitTree, TreeLifecycleState, make_repo_id, normalize_node_types
@@ -1247,12 +1253,35 @@ def test_time_l0_anchor_hash_is_public_identity_only():
     assert not hasattr(state, "anchor")
 
 
+def test_state_directory_suffix_is_scoped_to_exact_state_hash(tmp_path):
+    cgitsync_dir = tmp_path / ".cgitsync"
+    state_hash = "a" * 64
+    other_hash = "b" * 64
+    (cgitsync_dir / _state_directory_name(state_hash, 0)).mkdir(parents=True)
+    (cgitsync_dir / _state_directory_name(state_hash, 1)).mkdir()
+
+    same_hash_state = _resolve_memory_state_directory(cgitsync_dir, state_hash)
+    other_hash_state = _resolve_memory_state_directory(cgitsync_dir, other_hash)
+
+    assert same_hash_state.state_order == 2
+    assert same_hash_state.final_path.name == _state_directory_name(state_hash, 2)
+    assert other_hash_state.state_order == 0
+    assert other_hash_state.final_path.name == _state_directory_name(other_hash, 0)
+
+
 def _current_lgr_snapshot_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
-    data = tomllib.loads((workspace / register_name).read_text(encoding="utf-8"))
+    data = tomllib.loads(_current_lgr_path(workspace, register_name).read_text(encoding="utf-8"))
     raw_path = data["register"]["current_snapshot_path"]
     if raw_path.startswith("$HOME/"):
         return Path(raw_path.replace("$HOME", str(Path.home()), 1)).resolve()
     return Path(raw_path).resolve()
+
+
+def _current_lgr_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
+    candidates = sorted((workspace / ".cgitsync").glob(f"state(*)_*/{register_name}"))
+    if candidates:
+        return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
+    return workspace / register_name
 
 
 def test_client_load_cgs_writes_gts_snapshot(tmp_path):
@@ -1265,7 +1294,10 @@ def test_client_load_cgs_writes_gts_snapshot(tmp_path):
     assert len(state_dirs) == 1
     assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", state_dirs[0].name)
     assert (state_dirs[0] / "project.gts").is_file()
+    assert (state_dirs[0] / "project.cgs").is_file()
+    assert (state_dirs[0] / "demo.lgr").is_file()
     assert not (state_dirs[0] / ".counter").exists()
+    assert not (tmp_path / "demo.lgr").exists()
 
 
 def test_client_load_cgs_writes_counter_only_in_debug_mode(monkeypatch, tmp_path):
@@ -1284,11 +1316,11 @@ def test_client_load_cgs_updates_project_local_lgr(tmp_path):
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
-    expected_lgr = tmp_path / "demo.lgr"
 
     client = ComplexGitSyncClient()
     client.load(config_path)
 
+    expected_lgr = _current_lgr_path(tmp_path)
     data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
     state_id = data["register"]["current_snapshot_id"]
     state_hash = data["register"]["current_state_hash"]
@@ -1320,7 +1352,7 @@ def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path
     assert snapshot_data["project"]["root_absolute_path"] == "$HOME/workspace/demo"
     assert snapshot_data["project"]["source_cgs_path"] == "$HOME/workspace/demo/project.cgs"
 
-    lgr_data = tomllib.loads((workspace / "demo.lgr").read_text(encoding="utf-8"))
+    lgr_data = tomllib.loads(_current_lgr_path(workspace).read_text(encoding="utf-8"))
     state_id = lgr_data["register"]["current_snapshot_id"]
     assert re.fullmatch(r"state\([0-9a-f]{64}\)", state_id)
     assert lgr_data["register"]["current_snapshot_path"] == (
@@ -1336,18 +1368,18 @@ def test_client_snapshot_generation_assigns_time_l0_state_for_each_write(tmp_pat
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
-    expected_lgr = tmp_path / "demo.lgr"
 
     client = ComplexGitSyncClient()
     client.load(config_path)
     client.expand(config_path)
 
+    expected_lgr = _current_lgr_path(tmp_path)
     data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
     state_ids = [entry["id"] for entry in data["snapshots"]]
     assert len(state_ids) == 2
     assert len(set(state_ids)) == 2
     assert all(re.fullmatch(r"state\([0-9a-f]{64}\)", state_id) for state_id in state_ids)
-    assert [entry["state_order"] for entry in data["snapshots"]] == [0, 1]
+    assert [entry["state_order"] for entry in data["snapshots"]] == [0, 0]
     assert data["register"]["current_snapshot_id"] == state_ids[-1]
 
 
@@ -1560,11 +1592,11 @@ def test_client_write_gts_snapshot_records_ledger_event(tmp_path):
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
-    expected_lgr = tmp_path / "demo.lgr"
 
     client = ComplexGitSyncClient()
     client.load(config_path)
 
+    expected_lgr = _current_lgr_path(tmp_path)
     data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
     assert "ledger" in data
     assert len(data["ledger"]) == 1
@@ -1582,13 +1614,13 @@ def test_client_multiple_operations_create_linked_ledger_events(tmp_path):
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
-    expected_lgr = tmp_path / "demo.lgr"
 
     client = ComplexGitSyncClient()
     client.load(config_path)
     client.expand(config_path)
     client.validate(config_path)
 
+    expected_lgr = _current_lgr_path(tmp_path)
     data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
     events = data["ledger"]
     assert len(events) == 3
@@ -1610,12 +1642,12 @@ def test_client_multiple_operations_create_linked_ledger_events(tmp_path):
 
 def test_client_get_ledger_history_via_public_api(tmp_path):
     config_path = _write_root_cgs(tmp_path)
-    expected_lgr = tmp_path / "demo.lgr"
 
     client = ComplexGitSyncClient()
     client.load(config_path)
     client.expand(config_path)
 
+    expected_lgr = _current_lgr_path(tmp_path)
     history = client.get_ledger_history(expected_lgr)
     assert len(history) == 2
     assert history[0]["operation"] == "load"
@@ -1624,12 +1656,12 @@ def test_client_get_ledger_history_via_public_api(tmp_path):
 
 def test_client_replay_ledger_reconstructs_history(tmp_path):
     config_path = _write_root_cgs(tmp_path)
-    expected_lgr = tmp_path / "demo.lgr"
 
     client = ComplexGitSyncClient()
     client.load(config_path)
     client.expand(config_path)
 
+    expected_lgr = _current_lgr_path(tmp_path)
     replay = client.replay_ledger(expected_lgr)
     history = client.get_ledger_history(expected_lgr)
     assert replay == history
@@ -1639,11 +1671,11 @@ def test_sync_ledger_workspace_hash_matches_gts_snapshot_hash(tmp_path):
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
-    expected_lgr = tmp_path / "demo.lgr"
 
     client = ComplexGitSyncClient()
     client.load(config_path)
 
+    expected_lgr = _current_lgr_path(tmp_path)
     lgr_data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
     expected_snapshot = _current_lgr_snapshot_path(tmp_path)
     gts_data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))

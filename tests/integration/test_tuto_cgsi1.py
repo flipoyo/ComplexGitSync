@@ -293,8 +293,15 @@ def _prepare_existing_root(output_path: Path, sandbox: dict[str, Path]) -> Path:
 
 
 def _current_lgr_snapshot_path(project_root: Path, register_name: str) -> Path:
-    data = tomllib.loads((project_root / register_name).read_text(encoding="utf-8"))
+    data = tomllib.loads(_current_lgr_path(project_root, register_name).read_text(encoding="utf-8"))
     return Path(data["register"]["current_snapshot_path"]).resolve()
+
+
+def _current_lgr_path(project_root: Path, register_name: str) -> Path:
+    candidates = sorted((project_root / ".cgitsync").glob(f"state(*)_*/{register_name}"))
+    if candidates:
+        return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
+    return project_root / register_name
 
 
 def _patch_git_identity(monkeypatch) -> None:

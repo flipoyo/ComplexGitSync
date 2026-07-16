@@ -60,6 +60,13 @@ def _run_git(repo_path: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def _current_lgr_path(repo_path: Path, register_name: str = "demo.lgr") -> Path:
+    candidates = sorted((repo_path / ".cgitsync").glob(f"state(*)_*/{register_name}"))
+    if candidates:
+        return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
+    return repo_path / register_name
+
+
 def _write_ready_gts(snapshot_path: Path, *, root_path: Path, commit_sha: str) -> Path:
     snapshot_path.write_text(
         f"""
@@ -547,7 +554,7 @@ class TestGitCommandCycleIntegration:
 
         remote_tags = _run_git(repo, "ls-remote", "--tags", "origin")
         assert "refs/tags/v0.2.0" in remote_tags
-        lgr_path = repo / "demo.lgr"
+        lgr_path = _current_lgr_path(repo)
         assert lgr_path.is_file()
         lgr_data = tomllib.loads(lgr_path.read_text(encoding="utf-8"))
         assert re.fullmatch(r"state\([0-9a-f]{64}\)", lgr_data["register"]["current_snapshot_id"])

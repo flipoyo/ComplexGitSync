@@ -222,21 +222,52 @@ def _state_directory_name(state_hash: str, state_order: int) -> str:
     return f"{_format_state_id(state_hash)}_{state_order}"
 
 
+def _temporary_state_directory_name(state_hash: str, state_order: int) -> str:
+    if state_order < 0:
+        raise ValueError("state_order must be non-negative")
+    return f".tmp-{_state_directory_name(state_hash, state_order)}"
+
+
 def _state_order_from_directory_name(name: str) -> int | None:
     match = _STATE_DIR_RE.fullmatch(name)
     return int(match.group(2)) if match else None
 
 
-def _next_state_directory_order(cgitsync_dir: Path) -> int:
+def _next_state_directory_order(cgitsync_dir: Path, state_hash: str) -> int:
+    _format_state_id(state_hash)
     max_order = -1
     if cgitsync_dir.is_dir():
         for entry in cgitsync_dir.iterdir():
             if not entry.is_dir():
                 continue
-            state_order = _state_order_from_directory_name(entry.name)
-            if state_order is not None:
-                max_order = max(max_order, state_order)
+            match = _STATE_DIR_RE.fullmatch(entry.name)
+            if match is None or match.group(1) != state_hash:
+                continue
+            max_order = max(max_order, int(match.group(2)))
     return max_order + 1
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryStateDirectory:
+    state_hash: str
+    state_order: int
+    final_path: Path
+    temporary_path: Path
+
+
+def _resolve_memory_state_directory(cgitsync_dir: Path, state_hash: str) -> MemoryStateDirectory:
+    state_order = _next_state_directory_order(cgitsync_dir, state_hash)
+    while True:
+        final_path = cgitsync_dir / _state_directory_name(state_hash, state_order)
+        temporary_path = cgitsync_dir / _temporary_state_directory_name(state_hash, state_order)
+        if not final_path.exists() and not temporary_path.exists():
+            return MemoryStateDirectory(
+                state_hash=state_hash,
+                state_order=state_order,
+                final_path=final_path,
+                temporary_path=temporary_path,
+            )
+        state_order += 1
 
 
 def _state_snapshot_candidates(cgitsync_dir: Path) -> list[Path]:
@@ -261,6 +292,26 @@ def _state_snapshot_candidates_for_id(cgitsync_dir: Path, state_id: str) -> list
         if state_dir.is_dir() and _STATE_DIR_RE.fullmatch(state_dir.name) is not None:
             candidates.extend(sorted(state_dir.glob("*.gts")))
     return candidates
+
+
+def _state_artifact_candidates(cgitsync_dir: Path, filename: str) -> list[Path]:
+    candidates: list[Path] = []
+    if not cgitsync_dir.is_dir():
+        return candidates
+    for state_dir in sorted(cgitsync_dir.iterdir(), key=lambda path: path.name):
+        if not state_dir.is_dir() or _STATE_DIR_RE.fullmatch(state_dir.name) is None:
+            continue
+        candidate = state_dir / filename
+        if candidate.is_file():
+            candidates.append(candidate)
+    return candidates
+
+
+def _latest_state_artifact(cgitsync_dir: Path, filename: str) -> Path | None:
+    candidates = _state_artifact_candidates(cgitsync_dir, filename)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
 def _debug_counter_enabled() -> bool:
@@ -1207,6 +1258,7 @@ class CommandRunLogger:
     def __init__(self, logger: logging.Logger, *, log_path: Path | None = None) -> None:
         self._logger = logger
         self.log_path = log_path
+        self._buffered_lines: list[str] = []
 
     def log_event(self, event: str, *, level: int = logging.INFO, **fields: object) -> None:
         """Log *event* together with arbitrary keyword *fields* as a JSON record."""
@@ -1219,7 +1271,22 @@ class CommandRunLogger:
                 record[key] = value
             else:
                 record[key] = str(value)
-        self._logger.log(level, json.dumps(record, default=str))
+        line = json.dumps(record, default=str)
+        self._buffered_lines.append(line)
+        self._logger.log(level, line)
+        if self.log_path is not None:
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.log_path.open("a", encoding="utf-8") as handle:
+                handle.write(f"{line}\n")
+
+    def bind_log_file(self, log_path: Path | str) -> None:
+        """Write buffered records to *log_path* and append future records there."""
+        self.log_path = Path(log_path)
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self.log_path.write_text(
+            "".join(f"{line}\n" for line in self._buffered_lines),
+            encoding="utf-8",
+        )
 
     @staticmethod
     def _operation_for_event(event: str, fields: dict[str, object]) -> str:
@@ -1253,20 +1320,11 @@ def create_run_logger(
 ) -> CommandRunLogger:
     """Create a :class:`CommandRunLogger` for a specific command invocation."""
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    log_filename = f"{timestamp}-{command_name}.log"
-    log_dir = _resolve_log_dir(project_root, project_log_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / log_filename
 
     logger_name = f"ComplexGitSync.run.{command_name}.{timestamp}"
     logger = logging.getLogger(logger_name)
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
-
-    fh = logging.FileHandler(log_path, encoding="utf-8")
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(logging.Formatter("%(message)s"))
-    logger.addHandler(fh)
 
     console_level = logging.INFO if profile == "verbose" else logging.WARNING
     ch = logging.StreamHandler()
@@ -1274,7 +1332,7 @@ def create_run_logger(
     ch.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(ch)
 
-    return CommandRunLogger(logger, log_path=log_path)
+    return CommandRunLogger(logger)
 
 
 def _resolve_log_dir(project_root: Path | None, project_log_dir: Any) -> Path:
@@ -1346,10 +1404,16 @@ class LocalGitRegister:
         *,
         state_hash: str | None = None,
         state_order: int | None = None,
+        recorded_snapshot_path: Path | str | None = None,
     ) -> str:
         resolved_snapshot_path = Path(snapshot_path).resolve()
         snapshot_hash = self._hash_snapshot_file(resolved_snapshot_path)
-        snapshot_path_marker = _path_to_environment_marker(resolved_snapshot_path)
+        public_snapshot_path = (
+            Path(recorded_snapshot_path).resolve()
+            if recorded_snapshot_path is not None
+            else resolved_snapshot_path
+        )
+        snapshot_path_marker = _path_to_environment_marker(public_snapshot_path)
 
         data = self._load()
         snapshots = data.setdefault("snapshots", [])
@@ -1357,7 +1421,7 @@ class LocalGitRegister:
         public_state_hash = state_hash if state_hash is not None else state_anchor.state_hash
         snapshot_id = _format_state_id(public_state_hash)
         if state_order is None:
-            state_order = self._next_state_order(snapshots)
+            state_order = self._next_state_order(snapshots, public_state_hash)
         recorded_at = (
             datetime.now(timezone.utc)
             .isoformat(timespec="milliseconds")
@@ -1391,11 +1455,16 @@ class LocalGitRegister:
             return {"register": {}, "snapshots": []}
         return tomllib.loads(self.register_path.read_text(encoding="utf-8"))
 
-    def _next_state_order(self, snapshots: list[dict[str, Any]]) -> int:
+    def _next_state_order(self, snapshots: list[dict[str, Any]], state_hash: str) -> int:
         """Return the next local ordering suffix for State directories."""
         max_order = -1
         for entry in snapshots:
             if not isinstance(entry, dict):
+                continue
+            entry_state_hash = entry.get("state_hash")
+            if not isinstance(entry_state_hash, str):
+                entry_state_hash = _parse_state_hash(str(entry.get("id", "")))
+            if entry_state_hash != state_hash:
                 continue
             raw_order = entry.get("state_order")
             if isinstance(raw_order, int):
@@ -1407,8 +1476,13 @@ class LocalGitRegister:
                     max_order = max(max_order, int(raw_id.removeprefix("gts-")) - 1)
                 except ValueError:
                     continue
-        cgitsync_dir = self.register_path.parent / ".cgitsync"
-        return max(max_order + 1, _next_state_directory_order(cgitsync_dir))
+        register_parent = self.register_path.parent
+        cgitsync_dir = (
+            register_parent.parent
+            if _STATE_DIR_RE.fullmatch(register_parent.name) is not None
+            else register_parent / ".cgitsync"
+        )
+        return max(max_order + 1, _next_state_directory_order(cgitsync_dir, state_hash))
 
     def _write_debug_counter(self, state_dir: Path, state_order: int) -> None:
         if _STATE_DIR_RE.fullmatch(state_dir.name) is None:
@@ -3613,7 +3687,7 @@ class ComplexGitSyncClient:
         for entry in iter_tree(loaded_registry):
             ref_name = self._determine_launch_ref(entry)
 
-            if not entry.absolute_path.exists():
+            if not entry.absolute_path.exists() or not (entry.absolute_path / ".git").exists():
                 remote_url = self._build_remote_url(entry)
                 if not remote_url:
                     raise GitSyncError(f"No remote URL available for repository {entry.name}.")
@@ -3906,65 +3980,78 @@ class ComplexGitSyncClient:
         else:
             snapshot_stem = root_entry.name
         snapshot_name = f"{snapshot_stem}.gts"
-        explicit_output_path = Path(output_path).resolve() if output_path is not None else None
-        canonical_state_hash: str | None = None
-        canonical_state_order: int | None = None
+        state_anchor = new_time_l0_anchor()
+        canonical_state_hash = state_anchor.state_hash
+        cgitsync_dir = root_entry.absolute_path / ".cgitsync"
+        cgitsync_dir.mkdir(parents=True, exist_ok=True)
+        memory_state = _resolve_memory_state_directory(cgitsync_dir, canonical_state_hash)
+        memory_state.temporary_path.mkdir(parents=True, exist_ok=False)
 
-        if output_path is None or root_entry.absolute_path.exists():
-            state_anchor = new_time_l0_anchor()
-            canonical_state_hash = state_anchor.state_hash
-            cgitsync_dir = root_entry.absolute_path / ".cgitsync"
-            canonical_state_order = _next_state_directory_order(cgitsync_dir)
-            state_dir = cgitsync_dir / _state_directory_name(
-                canonical_state_hash,
-                canonical_state_order,
-            )
-            resolved_output_path = state_dir / snapshot_name
-        else:
-            resolved_output_path = explicit_output_path
+        final_output_path = memory_state.final_path / snapshot_name
+        staged_output_path = memory_state.temporary_path / snapshot_name
+        document.to_toml(staged_output_path)
 
-        resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
-        document.to_toml(resolved_output_path)
-        if explicit_output_path is not None and explicit_output_path != resolved_output_path:
-            explicit_output_path.parent.mkdir(parents=True, exist_ok=True)
-            document.to_toml(explicit_output_path)
-        self.loaded_snapshot_path = resolved_output_path
+        if self.source_path is not None and self.source_path.suffix == ".cgs" and self.source_path.is_file():
+            shutil.copy2(self.source_path, memory_state.temporary_path / self.source_path.name)
+
         self._log_event(
             "gts_write",
-            snapshot_path=resolved_output_path,
+            snapshot_path=final_output_path,
             source_cgs_path=self.source_path,
             tree_lifecycle_state=registry.lifecycle_state,
         )
-        register_path = root_entry.absolute_path / f"{root_entry.name}.lgr"
-        if root_entry.absolute_path.exists():
-            register_id = LocalGitRegister(register_path).record_snapshot(
-                resolved_output_path,
-                state_hash=canonical_state_hash,
-                state_order=canonical_state_order,
+
+        register_filename = f"{root_entry.name}.lgr"
+        staged_register_path = memory_state.temporary_path / register_filename
+        final_register_path = memory_state.final_path / register_filename
+        previous_register_path = _latest_state_artifact(cgitsync_dir, register_filename)
+        legacy_register_path = root_entry.absolute_path / register_filename
+        if previous_register_path is None and legacy_register_path.is_file():
+            previous_register_path = legacy_register_path
+        if previous_register_path is not None:
+            shutil.copy2(previous_register_path, staged_register_path)
+
+        register_id = LocalGitRegister(staged_register_path).record_snapshot(
+            staged_output_path,
+            state_hash=canonical_state_hash,
+            state_order=memory_state.state_order,
+            recorded_snapshot_path=final_output_path,
+        )
+        self._log_event(
+            "lgr_update",
+            register_path=final_register_path,
+            snapshot_path=final_output_path,
+            snapshot_id=register_id,
+        )
+        workspace_hash = document.snapshot_hash or document.compute_snapshot_hash()
+        affected_repos = sorted(entry.name for entry in registry.values())
+        ledger_id = SyncLedger(staged_register_path).record_event(
+            operation=command_origin,
+            workspace_hash=workspace_hash,
+            gts_snapshot_id=register_id,
+            affected_repos=affected_repos,
+        )
+        self._log_event(
+            "ledger_event",
+            register_path=final_register_path,
+            sync_id=ledger_id,
+            operation=command_origin,
+            workspace_hash=workspace_hash,
+            gts_snapshot_id=register_id,
+        )
+
+        memory_state.temporary_path.rename(memory_state.final_path)
+        if _debug_counter_enabled():
+            (memory_state.final_path / ".counter").write_text(
+                f"{memory_state.state_order}\n",
+                encoding="utf-8",
             )
-            self._log_event(
-                "lgr_update",
-                register_path=register_path,
-                snapshot_path=resolved_output_path,
-                snapshot_id=register_id,
-            )
-            workspace_hash = document.snapshot_hash or document.compute_snapshot_hash()
-            affected_repos = sorted(entry.name for entry in registry.values())
-            ledger_id = SyncLedger(register_path).record_event(
-                operation=command_origin,
-                workspace_hash=workspace_hash,
-                gts_snapshot_id=register_id,
-                affected_repos=affected_repos,
-            )
-            self._log_event(
-                "ledger_event",
-                register_path=register_path,
-                sync_id=ledger_id,
-                operation=command_origin,
-                workspace_hash=workspace_hash,
-                gts_snapshot_id=register_id,
-            )
-        return resolved_output_path
+        if legacy_register_path.is_file():
+            legacy_register_path.unlink()
+        self.loaded_snapshot_path = final_output_path
+        if self.run_logger is not None:
+            self.run_logger.bind_log_file(memory_state.final_path / f"{snapshot_stem}.log")
+        return final_output_path
 
     def get_ledger_history(self, register_path: str | Path) -> list[dict[str, Any]]:
         """Return all ledger events for *register_path* in topological DAG order.

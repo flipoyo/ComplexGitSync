@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import tomllib
 from types import SimpleNamespace
 
@@ -22,11 +23,7 @@ def test_initialise_command_restores_gts_snapshot(tmp_path, capsys):
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "log_file=" in captured.out
-    log_file_line = next((line for line in captured.out.splitlines() if line.startswith("log_file=")), None)
-    assert log_file_line is not None
-    log_file_path = Path(log_file_line.split("=", 1)[1])
-    assert log_file_path.is_file()
+    assert "log_file=" not in captured.out
     assert "workflow=load->validate" in captured.out
     assert "READY" in captured.out
     assert "ready=true" in captured.out
@@ -211,22 +208,26 @@ def test_initialise_command_requires_source(capsys):
     assert "the following arguments are required: source" in captured.err
 
 
-def test_initialise_command_creates_log_file(monkeypatch, tmp_path, capsys):
-    gts_path = _write_ready_gts(tmp_path)
+def test_validate_command_creates_state_local_log_file(monkeypatch, tmp_path, capsys):
+    config_path = _write_project_cgs(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
 
-    exit_code = main(["initialise", str(gts_path)])
+    exit_code = main(["validate", str(config_path)])
     captured = capsys.readouterr()
 
     log_dir = tmp_path / "state-home" / "ComplexGitSync" / "logs"
-    log_files = sorted(log_dir.glob("*-initialise.log"))
+    log_file_line = next((line for line in captured.out.splitlines() if line.startswith("log_file=")), None)
+    assert log_file_line is not None
+    log_file = Path(log_file_line.split("=", 1)[1])
 
     assert exit_code == 0
-    assert "READY" in captured.out
-    assert "operation_sequence=GT-LOAD->GT-VALIDATE" in captured.out
-    assert len(log_files) == 1
-    log_content = log_files[0].read_text(encoding="utf-8")
-    assert log_content.splitlines()[0].startswith('{"operation": "GT-CLONE", "event": "command_start"')
+    assert "DECLARED" in captured.out
+    assert not log_dir.exists()
+    assert log_file.is_file()
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", log_file.parent.name)
+    assert log_file.parent.parent == tmp_path / ".cgitsync"
+    log_content = log_file.read_text(encoding="utf-8")
+    assert log_content.splitlines()[0].startswith('{"operation": "GT-VALIDATE", "event": "command_start"')
     assert '"event": "command_start"' in log_content
     assert '"event": "command_end"' in log_content
 
@@ -587,7 +588,7 @@ def test_initialise_command_output_path_is_forwarded(monkeypatch, capsys, tmp_pa
     assert captured_call["output_path"] == output_path
 
 
-def test_initialise_command_gts_creates_log_file_verbose(monkeypatch, tmp_path, capsys):
+def test_initialise_command_gts_does_not_write_external_log_file(monkeypatch, tmp_path, capsys):
     gts_path = _write_ready_gts(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
 
@@ -595,16 +596,12 @@ def test_initialise_command_gts_creates_log_file_verbose(monkeypatch, tmp_path, 
     captured = capsys.readouterr()
 
     log_dir = tmp_path / "state-home" / "ComplexGitSync" / "logs"
-    log_files = sorted(log_dir.glob("*-initialise.log"))
 
     assert exit_code == 0
     assert "READY" in captured.out
     assert "operation_sequence=GT-LOAD->GT-VALIDATE" in captured.out
-    assert len(log_files) == 1
-    log_content = log_files[0].read_text(encoding="utf-8")
-    assert log_content.splitlines()[0].startswith('{"operation": "GT-CLONE", "event": "command_start"')
-    assert '"event": "command_start"' in log_content
-    assert '"event": "command_end"' in log_content
+    assert "log_file=" not in captured.out
+    assert not log_dir.exists()
 
 
 def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
@@ -615,6 +612,13 @@ def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
 
         def pull(self, source):
             captured_call["source"] = Path(source)
+            self.run_logger.bind_log_file(
+                tmp_path
+                / "project"
+                / ".cgitsync"
+                / f"state({'a' * 64})_0"
+                / "project.log"
+            )
             return SimpleNamespace(
                 get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "project")
             )
@@ -628,13 +632,18 @@ def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
     source_path = tmp_path / "project.cgs"
     source_path.touch()
     exit_code = main(["pull", str(source_path)])
+    captured = capsys.readouterr()
 
     log_dir = tmp_path / "state-home" / "ComplexGitSync" / "logs"
-    log_files = sorted(log_dir.glob("*-pull.log"))
+    log_file_line = next((line for line in captured.out.splitlines() if line.startswith("log_file=")), None)
+    assert log_file_line is not None
+    log_file = Path(log_file_line.split("=", 1)[1])
 
     assert exit_code == 0
-    assert len(log_files) == 1
-    log_content = log_files[0].read_text(encoding="utf-8")
+    assert not log_dir.exists()
+    assert log_file.is_file()
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", log_file.parent.name)
+    log_content = log_file.read_text(encoding="utf-8")
     assert '"event": "command_start"' in log_content
     assert '"event": "command_end"' in log_content
 
