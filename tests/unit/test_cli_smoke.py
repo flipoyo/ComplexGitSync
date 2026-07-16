@@ -1271,7 +1271,7 @@ def test_gts_auto_discovery_no_snapshot_under_cgshome_raises_error(monkeypatch, 
     (workspace / ".cgitsync" / "state").mkdir(parents=True)
 
     monkeypatch.setenv("CGSHOME", str(workspace))
-    with pytest.raises(FileNotFoundError, match=r"No .gts snapshot found in CGSHOME/.cgitsync/state"):
+    with pytest.raises(FileNotFoundError, match=r"No .gts snapshot found under CGSHOME/.cgitsync"):
         _discover_gts_path()
 
 
@@ -1287,6 +1287,25 @@ def test_gts_auto_discovery_falls_back_to_most_recent(tmp_path):
     old_gts.touch()
     new_gts.touch()
     # Explicitly set different modification times so the test is deterministic
+    os.utime(old_gts, (1000.0, 1000.0))
+    os.utime(new_gts, (2000.0, 2000.0))
+
+    result = _discover_gts_path(search_dir=tmp_path)
+    assert result == new_gts.resolve()
+
+
+def test_gts_auto_discovery_falls_back_to_canonical_state_dirs(tmp_path):
+    import os
+    from ComplexGitSync.cli import _discover_gts_path
+
+    old_state = tmp_path / ".cgitsync" / ("state(" + "a" * 64 + ")_0")
+    new_state = tmp_path / ".cgitsync" / ("state(" + "b" * 64 + ")_1")
+    old_state.mkdir(parents=True)
+    new_state.mkdir(parents=True)
+    old_gts = old_state / "project.gts"
+    new_gts = new_state / "project.gts"
+    old_gts.touch()
+    new_gts.touch()
     os.utime(old_gts, (1000.0, 1000.0))
     os.utime(new_gts, (2000.0, 2000.0))
 

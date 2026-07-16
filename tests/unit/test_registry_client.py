@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path, PureWindowsPath
 
 import pytest
 
+from ComplexGitSync.L0 import hash_time_l0_anchor, new_time_l0_anchor
 from ComplexGitSync.orchestre import ComplexGitSyncClient, GocDocument, _path_to_environment_marker
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState, SyncState, WorkingRepo
@@ -917,7 +919,13 @@ def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
 
     snapshot_path = state_store.latest_snapshot_for(config_path)
     assert snapshot_path is not None
-    assert snapshot_path == (tmp_path / "workspace" / "demo" / ".cgitsync" / "state" / "project.gts").resolve()
+    assert re.fullmatch(
+        r"state\([0-9a-f]{64}\)_0",
+        snapshot_path.parent.name,
+    )
+    assert snapshot_path == (
+        tmp_path / "workspace" / "demo" / ".cgitsync" / snapshot_path.parent.name / "project.gts"
+    ).resolve()
 
     reloaded_client = ComplexGitSyncClient(state_store=state_store)
     reloaded_registry = reloaded_client.load_runtime_or_cgs(config_path)
@@ -1230,35 +1238,71 @@ def test_make_repo_id_only_collapses_explicit_dot_relative_path():
     assert make_repo_id("root", "", "") == "root:"
 
 
+def test_time_l0_anchor_hash_is_public_identity_only():
+    state = new_time_l0_anchor()
+
+    assert re.fullmatch(r"[0-9a-f]{64}", state.state_hash)
+    assert state.state_id == f"state({state.state_hash})"
+    assert hash_time_l0_anchor("local-test-anchor") == hash_time_l0_anchor("local-test-anchor")
+    assert not hasattr(state, "anchor")
+
+
+def _current_lgr_snapshot_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
+    data = tomllib.loads((workspace / register_name).read_text(encoding="utf-8"))
+    raw_path = data["register"]["current_snapshot_path"]
+    if raw_path.startswith("$HOME/"):
+        return Path(raw_path.replace("$HOME", str(Path.home()), 1)).resolve()
+    return Path(raw_path).resolve()
+
+
 def test_client_load_cgs_writes_gts_snapshot(tmp_path):
     config_path = _write_root_cgs(tmp_path)
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
 
     client = ComplexGitSyncClient()
     client.load(config_path)
 
-    assert expected_snapshot.is_file()
+    state_dirs = sorted((tmp_path / ".cgitsync").glob("state(*)_*"))
+    assert len(state_dirs) == 1
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", state_dirs[0].name)
+    assert (state_dirs[0] / "project.gts").is_file()
+    assert not (state_dirs[0] / ".counter").exists()
+
+
+def test_client_load_cgs_writes_counter_only_in_debug_mode(monkeypatch, tmp_path):
+    config_path = _write_root_cgs(tmp_path)
+    monkeypatch.setenv("CGITSYNC_DEBUG_COUNTER", "1")
+
+    client = ComplexGitSyncClient()
+    client.load(config_path)
+
+    state_dirs = sorted((tmp_path / ".cgitsync").glob("state(*)_*"))
+    assert len(state_dirs) == 1
+    assert (state_dirs[0] / ".counter").read_text(encoding="utf-8") == "0\n"
 
 
 def test_client_load_cgs_updates_project_local_lgr(tmp_path):
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
-    expected_snapshot = (tmp_path / ".cgitsync" / "state" / "gts-000001.gts").resolve()
-    expected_latest_alias = tmp_path / ".cgitsync" / "state" / "project.gts"
     expected_lgr = tmp_path / "demo.lgr"
 
     client = ComplexGitSyncClient()
     client.load(config_path)
 
     data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
+    state_id = data["register"]["current_snapshot_id"]
+    state_hash = data["register"]["current_state_hash"]
+    expected_snapshot = (tmp_path / ".cgitsync" / f"{state_id}_0" / "project.gts").resolve()
     expected_path_marker = _path_to_environment_marker(expected_snapshot)
-    assert data["register"]["current_snapshot_id"] == "gts-000001"
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)", state_id)
+    assert state_id == f"state({state_hash})"
     assert data["register"]["current_snapshot_path"] == expected_path_marker
     assert len(data["snapshots"]) == 1
-    assert data["snapshots"][0]["id"] == "gts-000001"
+    assert data["snapshots"][0]["id"] == state_id
+    assert data["snapshots"][0]["state_hash"] == state_hash
+    assert data["snapshots"][0]["state_order"] == 0
     assert data["snapshots"][0]["snapshot_path"] == expected_path_marker
-    assert expected_latest_alias.is_file()
+    assert expected_snapshot.is_file()
 
 
 def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path):
@@ -1271,18 +1315,24 @@ def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path
     client = ComplexGitSyncClient()
     client.load(config_path)
 
-    snapshot_path = workspace / ".cgitsync" / "state" / "project.gts"
+    snapshot_path = _current_lgr_snapshot_path(workspace)
     snapshot_data = tomllib.loads(snapshot_path.read_text(encoding="utf-8"))
     assert snapshot_data["project"]["root_absolute_path"] == "$HOME/workspace/demo"
     assert snapshot_data["project"]["source_cgs_path"] == "$HOME/workspace/demo/project.cgs"
 
     lgr_data = tomllib.loads((workspace / "demo.lgr").read_text(encoding="utf-8"))
-    assert lgr_data["register"]["current_snapshot_path"] == "$HOME/workspace/demo/.cgitsync/state/gts-000001.gts"
-    assert lgr_data["snapshots"][0]["snapshot_path"] == "$HOME/workspace/demo/.cgitsync/state/gts-000001.gts"
-    assert (workspace / ".cgitsync" / "state" / "project.gts").is_file()
+    state_id = lgr_data["register"]["current_snapshot_id"]
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)", state_id)
+    assert lgr_data["register"]["current_snapshot_path"] == (
+        f"$HOME/workspace/demo/.cgitsync/{state_id}_0/project.gts"
+    )
+    assert lgr_data["snapshots"][0]["snapshot_path"] == (
+        f"$HOME/workspace/demo/.cgitsync/{state_id}_0/project.gts"
+    )
+    assert snapshot_path.is_file()
 
 
-def test_client_snapshot_generation_deduplicates_identical_workspace_entries(tmp_path):
+def test_client_snapshot_generation_assigns_time_l0_state_for_each_write(tmp_path):
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
@@ -1293,38 +1343,40 @@ def test_client_snapshot_generation_deduplicates_identical_workspace_entries(tmp
     client.expand(config_path)
 
     data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
-    assert [entry["id"] for entry in data["snapshots"]] == ["gts-000001"]
-    assert data["register"]["current_snapshot_id"] == "gts-000001"
+    state_ids = [entry["id"] for entry in data["snapshots"]]
+    assert len(state_ids) == 2
+    assert len(set(state_ids)) == 2
+    assert all(re.fullmatch(r"state\([0-9a-f]{64}\)", state_id) for state_id in state_ids)
+    assert [entry["state_order"] for entry in data["snapshots"]] == [0, 1]
+    assert data["register"]["current_snapshot_id"] == state_ids[-1]
 
 
 def test_client_expand_cgs_writes_gts_snapshot(tmp_path):
     config_path = _write_root_cgs(tmp_path)
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
 
     client = ComplexGitSyncClient()
     client.expand(config_path)
 
-    assert expected_snapshot.is_file()
+    assert _current_lgr_snapshot_path(tmp_path).is_file()
 
 
 def test_client_validate_cgs_writes_gts_snapshot(tmp_path):
     config_path = _write_root_cgs(tmp_path)
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
 
     client = ComplexGitSyncClient()
     client.validate(config_path)
 
-    assert expected_snapshot.is_file()
+    assert _current_lgr_snapshot_path(tmp_path).is_file()
 
 
 def test_client_load_gts_snapshot_has_correct_command_origin(tmp_path):
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
 
     ComplexGitSyncClient().load(config_path)
 
+    expected_snapshot = _current_lgr_snapshot_path(tmp_path)
     data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
     assert data["document"]["command_origin"] == "load"
     assert data["document"]["CGS_VERSION"]
@@ -1343,10 +1395,10 @@ def test_client_expand_gts_snapshot_has_correct_command_origin(tmp_path):
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
 
     ComplexGitSyncClient().expand(config_path)
 
+    expected_snapshot = _current_lgr_snapshot_path(tmp_path)
     data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
     assert data["document"]["command_origin"] == "expand"
     assert data["document"]["CGS_VERSION"]
@@ -1359,10 +1411,10 @@ def test_client_validate_gts_snapshot_has_correct_command_origin(tmp_path):
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
 
     ComplexGitSyncClient().validate(config_path)
 
+    expected_snapshot = _current_lgr_snapshot_path(tmp_path)
     data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
     assert data["document"]["command_origin"] == "validate"
     assert data["document"]["CGS_VERSION"]
@@ -1519,7 +1571,8 @@ def test_client_write_gts_snapshot_records_ledger_event(tmp_path):
     event = data["ledger"][0]
     assert event["sync_id"] == "lgr-000001"
     assert event["operation"] == "load"
-    assert event["gts_snapshot_id"] == "gts-000001"
+    assert event["gts_snapshot_id"] == data["register"]["current_snapshot_id"]
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)", event["gts_snapshot_id"])
     assert len(event["workspace_hash"]) == 64
     assert "demo" in event["affected_repos"]
     assert event["parent_sync_ids"] == []
@@ -1548,8 +1601,11 @@ def test_client_multiple_operations_create_linked_ledger_events(tmp_path):
     snapshot_paths = [Path(entry["snapshot_path"]) for entry in data["snapshots"]]
     assert len(snapshot_paths) == len(set(snapshot_paths))
     for snapshot in data["snapshots"]:
-        assert Path(snapshot["snapshot_path"]).is_file()
-        assert Path(snapshot["snapshot_path"]).name == f"{snapshot['id']}.gts"
+        snapshot_path = Path(snapshot["snapshot_path"])
+        assert snapshot_path.is_file()
+        assert re.fullmatch(r"state\([0-9a-f]{64}\)_\d+", snapshot_path.parent.name)
+        assert snapshot_path.name == "project.gts"
+        assert snapshot_path.parent.name.startswith(f"{snapshot['id']}_")
 
 
 def test_client_get_ledger_history_via_public_api(tmp_path):
@@ -1584,12 +1640,12 @@ def test_sync_ledger_workspace_hash_matches_gts_snapshot_hash(tmp_path):
 
     config_path = _write_root_cgs(tmp_path)
     expected_lgr = tmp_path / "demo.lgr"
-    expected_snapshot = tmp_path / ".cgitsync" / "state" / "project.gts"
 
     client = ComplexGitSyncClient()
     client.load(config_path)
 
     lgr_data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
+    expected_snapshot = _current_lgr_snapshot_path(tmp_path)
     gts_data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
 
     ledger_hash = lgr_data["ledger"][0]["workspace_hash"]

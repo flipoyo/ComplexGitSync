@@ -19,6 +19,7 @@ These tests exercise:
 
 from __future__ import annotations
 
+import re
 import subprocess
 import tomllib
 import tomli_w
@@ -542,17 +543,19 @@ class TestGitCommandCycleIntegration:
 
         cycle_file.write_text("cli cycle 2\n", encoding="utf-8")
         assert cli_main(["freeze", "v0.2.0", "--gts", str(snapshot)]) == 0
-        assert cli_main(["launch_release", "v0.2.0", "--gts", str(snapshot)]) == 0
+        assert cli_main(["launch-release", "v0.2.0", "--gts", str(snapshot)]) == 0
 
         remote_tags = _run_git(repo, "ls-remote", "--tags", "origin")
         assert "refs/tags/v0.2.0" in remote_tags
         lgr_path = repo / "demo.lgr"
         assert lgr_path.is_file()
         lgr_data = tomllib.loads(lgr_path.read_text(encoding="utf-8"))
-        assert lgr_data["register"]["current_snapshot_id"] == "gts-000001" # Bug here, probably if the project backed-up former state 
+        assert re.fullmatch(r"state\([0-9a-f]{64}\)", lgr_data["register"]["current_snapshot_id"])
         snapshot_path_parts = Path(lgr_data["register"]["current_snapshot_path"]).parts
-        assert snapshot_path_parts[-3:] == (".cgitsync", "state", "demo.gts")
-        assert len(lgr_data["snapshots"]) == 1
+        assert snapshot_path_parts[-3] == ".cgitsync"
+        assert re.fullmatch(r"state\([0-9a-f]{64}\)_\d+", snapshot_path_parts[-2])
+        assert snapshot_path_parts[-1] == "demo.gts"
+        assert len(lgr_data["snapshots"]) >= 1
 
     def test_tag_preflight_blocks_detached_head(self, ready_single_repo_snapshot):
         repo = ready_single_repo_snapshot["repo"]

@@ -92,6 +92,7 @@ from .git_tree import (
     register_relative_path,
     topological_sort as _topological_sort,
 )
+from .L0 import new_time_l0_anchor
 from .operations import (
     validate_branch_topology as _validate_branch_topology,
     BranchTopologyReport,
@@ -103,6 +104,8 @@ from .operations import (
 
 _MISSING = object()
 _SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
+_STATE_ID_RE = re.compile(r"^state\(([0-9a-f]{64})\)$")
+_STATE_DIR_RE = re.compile(r"^state\(([0-9a-f]{64})\)_(\d+)$")
 _FREEZE_COMMAND_ORIGINS = frozenset({"freeze", "freeze_release", "freeze_state"})
 
 
@@ -200,6 +203,69 @@ def _preferred_path_separators() -> tuple[str, ...]:
             seen.add(separator)
             separators.append(separator)
     return tuple(separators)
+
+
+def _format_state_id(state_hash: str) -> str:
+    if _SHA256_HEX_RE.fullmatch(state_hash) is None:
+        raise ValueError("state_hash must be a lowercase hexadecimal SHA-256 digest")
+    return f"state({state_hash})"
+
+
+def _parse_state_hash(state_id: str) -> str | None:
+    match = _STATE_ID_RE.fullmatch(state_id)
+    return match.group(1) if match else None
+
+
+def _state_directory_name(state_hash: str, state_order: int) -> str:
+    if state_order < 0:
+        raise ValueError("state_order must be non-negative")
+    return f"{_format_state_id(state_hash)}_{state_order}"
+
+
+def _state_order_from_directory_name(name: str) -> int | None:
+    match = _STATE_DIR_RE.fullmatch(name)
+    return int(match.group(2)) if match else None
+
+
+def _next_state_directory_order(cgitsync_dir: Path) -> int:
+    max_order = -1
+    if cgitsync_dir.is_dir():
+        for entry in cgitsync_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            state_order = _state_order_from_directory_name(entry.name)
+            if state_order is not None:
+                max_order = max(max_order, state_order)
+    return max_order + 1
+
+
+def _state_snapshot_candidates(cgitsync_dir: Path) -> list[Path]:
+    candidates: list[Path] = []
+    if cgitsync_dir.is_dir():
+        for state_dir in sorted(cgitsync_dir.iterdir(), key=lambda path: path.name):
+            if not state_dir.is_dir() or _STATE_DIR_RE.fullmatch(state_dir.name) is None:
+                continue
+            candidates.extend(sorted(state_dir.glob("*.gts")))
+    legacy_state_dir = cgitsync_dir / "state"
+    if legacy_state_dir.is_dir():
+        candidates.extend(sorted(legacy_state_dir.glob("*.gts")))
+    return candidates
+
+
+def _state_snapshot_candidates_for_id(cgitsync_dir: Path, state_id: str) -> list[Path]:
+    state_hash = _parse_state_hash(state_id)
+    if state_hash is None or not cgitsync_dir.is_dir():
+        return []
+    candidates: list[Path] = []
+    for state_dir in sorted(cgitsync_dir.glob(f"{state_id}_*"), key=lambda path: path.name):
+        if state_dir.is_dir() and _STATE_DIR_RE.fullmatch(state_dir.name) is not None:
+            candidates.extend(sorted(state_dir.glob("*.gts")))
+    return candidates
+
+
+def _debug_counter_enabled() -> bool:
+    value = os.environ.get("CGITSYNC_DEBUG_COUNTER", "")
+    return value.lower() in {"1", "true", "yes", "on"}
 
 
 def _local_status_from_porcelain(status_lines: list[str]) -> str:
@@ -1261,62 +1327,63 @@ class LocalGitRegister:
 
     The TOML structure keeps:
     - a ``[register]`` section for the current snapshot pointer, and
-    - a ``[[snapshots]]`` list for stable ``gts-XXXXXX`` identifiers.
+    - a ``[[snapshots]]`` list for public ``state(HASH(.@))`` identifiers.
 
-    Snapshot entries are deduplicated by snapshot file hash.
+    The private TIME-L0 anchor never leaves the local execution context.
+    ``snapshot_hash`` remains the canonical hash of the ``.gts`` payload, but it
+    does not participate in State identity.
     """
 
     _HASH_CHUNK_SIZE = 65536
 
-    def __init__(self, register_path: Path | str) -> None:
+    def __init__(self, register_path: Path | str, *, debug_counter: bool | None = None) -> None:
         self.register_path = Path(register_path)
+        self.debug_counter = _debug_counter_enabled() if debug_counter is None else debug_counter
 
-    def record_snapshot(self, snapshot_path: Path | str) -> str:
+    def record_snapshot(
+        self,
+        snapshot_path: Path | str,
+        *,
+        state_hash: str | None = None,
+        state_order: int | None = None,
+    ) -> str:
         resolved_snapshot_path = Path(snapshot_path).resolve()
         snapshot_hash = self._hash_snapshot_file(resolved_snapshot_path)
         snapshot_path_marker = _path_to_environment_marker(resolved_snapshot_path)
 
         data = self._load()
         snapshots = data.setdefault("snapshots", [])
-        snapshot_index = {
-            str(entry.get("snapshot_hash")): entry
-            for entry in snapshots
-            if isinstance(entry, dict) and entry.get("snapshot_hash")
-        }
-        path_index = {
-            str(entry.get("snapshot_path")): entry
-            for entry in snapshots
-            if isinstance(entry, dict) and entry.get("snapshot_path")
-        }
-        existing = snapshot_index.get(snapshot_hash) or path_index.get(snapshot_path_marker)
-
-        if existing is None:
-            snapshot_id = self._next_snapshot_id(snapshots)
-            recorded_at = (
-                datetime.now(timezone.utc)
-                .isoformat(timespec="milliseconds")
-                .replace("+00:00", "Z")
-            )
-            snapshots.append(
-                {
-                    "id": snapshot_id,
-                    "snapshot_hash": snapshot_hash,
-                    "snapshot_path": snapshot_path_marker,
-                    "recorded_at": recorded_at,
-                }
-            )
-        else:
-            snapshot_id = str(existing["id"])
-            existing["snapshot_hash"] = snapshot_hash
-            existing["snapshot_path"] = snapshot_path_marker
+        state_anchor = new_time_l0_anchor() if state_hash is None else None
+        public_state_hash = state_hash if state_hash is not None else state_anchor.state_hash
+        snapshot_id = _format_state_id(public_state_hash)
+        if state_order is None:
+            state_order = self._next_state_order(snapshots)
+        recorded_at = (
+            datetime.now(timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
+        snapshots.append(
+            {
+                "id": snapshot_id,
+                "state_hash": public_state_hash,
+                "state_order": state_order,
+                "snapshot_hash": snapshot_hash,
+                "snapshot_path": snapshot_path_marker,
+                "recorded_at": recorded_at,
+            }
+        )
 
         register = data.setdefault("register", {})
         register["current_snapshot_id"] = snapshot_id
+        register["current_state_hash"] = public_state_hash
         register["current_snapshot_hash"] = snapshot_hash
         register["current_snapshot_path"] = snapshot_path_marker
 
         self.register_path.parent.mkdir(parents=True, exist_ok=True)
         self.register_path.write_text(tomli_w.dumps(data), encoding="utf-8")
+        if self.debug_counter:
+            self._write_debug_counter(resolved_snapshot_path.parent, state_order)
         return snapshot_id
 
     def _load(self) -> dict[str, Any]:
@@ -1324,17 +1391,29 @@ class LocalGitRegister:
             return {"register": {}, "snapshots": []}
         return tomllib.loads(self.register_path.read_text(encoding="utf-8"))
 
-    def _next_snapshot_id(self, snapshots: list[dict[str, Any]]) -> str:
-        """Return the next sequential local id in ``gts-XXXXXX`` format."""
-        max_id = 0
+    def _next_state_order(self, snapshots: list[dict[str, Any]]) -> int:
+        """Return the next local ordering suffix for State directories."""
+        max_order = -1
         for entry in snapshots:
+            if not isinstance(entry, dict):
+                continue
+            raw_order = entry.get("state_order")
+            if isinstance(raw_order, int):
+                max_order = max(max_order, raw_order)
+                continue
             raw_id = str(entry.get("id", ""))
             if raw_id.startswith("gts-"):
                 try:
-                    max_id = max(max_id, int(raw_id.removeprefix("gts-")))
+                    max_order = max(max_order, int(raw_id.removeprefix("gts-")) - 1)
                 except ValueError:
                     continue
-        return f"gts-{max_id + 1:06d}"
+        cgitsync_dir = self.register_path.parent / ".cgitsync"
+        return max(max_order + 1, _next_state_directory_order(cgitsync_dir))
+
+    def _write_debug_counter(self, state_dir: Path, state_order: int) -> None:
+        if _STATE_DIR_RE.fullmatch(state_dir.name) is None:
+            return
+        (state_dir / ".counter").write_text(f"{state_order}\n", encoding="utf-8")
 
     def _hash_snapshot_file(self, snapshot_path: Path) -> str:
         """Compute a canonical snapshot hash for ``snapshot_path``."""
@@ -1423,7 +1502,7 @@ class SyncLedger:
         timestamp       = "2026-05-20T19:48:50.159Z"
         actor           = "user"
         workspace_hash  = "<sha256>"      # document.snapshot_hash from .gts
-        gts_snapshot_id = "gts-000001"    # links to [[snapshots]] entry
+        gts_snapshot_id = "state(<hash>)" # links to [[snapshots]] entry
         affected_repos  = ["demo", "dep"]
 
     ``workspace_hash`` is the canonical SHA-256 digest of the ``.gts``
@@ -1454,7 +1533,7 @@ class SyncLedger:
             The canonical SHA-256 snapshot hash (``GtsDocument.snapshot_hash``)
             that identifies the workspace state after the operation.
         gts_snapshot_id:
-            The local snapshot id (``gts-XXXXXX``) assigned by the
+            The public State id (``state(HASH(.@))``) assigned by the
             :class:`LocalGitRegister` for the same ``.gts`` file.
         affected_repos:
             Ordered list of repository names involved in the operation.
@@ -2524,7 +2603,7 @@ class ComplexGitSyncClient:
           CGSPATH, and CGSHOME is derived as ``CGSPATH/<project_name>`` after
           reading the ``.cgs``.  The root repository at CGSHOME is treated as
           already existing and is never recloned.  All ComplexGitSync state is
-          written under ``CGSHOME/.cgitsync/state/``.
+          written under ``CGSHOME/.cgitsync/state(<hash>)_n/``.
         - ``.gts`` source: restores from a saved snapshot (calls
           :meth:`load_gts`).  Use this for existing projects that already have
           a ``.gts`` state file.
@@ -2566,7 +2645,7 @@ class ComplexGitSyncClient:
         dependencies declared in the ``.cgs`` document.
 
         All ComplexGitSync state is stored under
-        ``CGSHOME/.cgitsync/state/``.
+        ``CGSHOME/.cgitsync/state(<hash>)_n/``.
 
         Parameters
         ----------
@@ -3029,7 +3108,11 @@ class ComplexGitSyncClient:
             )
             self._log_event("pull_start", snapshot_path=resolved_source)
             registry = self.load_gts(resolved_source)
-            self.orchestre.git_tree.git.pull(self.git_runner)
+            registry_values = registry.values() if hasattr(registry, "values") else ()
+            if any(not entry.absolute_path.exists() for entry in registry_values):
+                registry = self._restore_gts_snapshot(resolved_source)
+            else:
+                self.orchestre.git_tree.git.pull(self.git_runner)
             if not registry.is_ready():
                 raise GitSyncError("pull did not produce a READY tree.")
             snapshot_path = self.write_gts_snapshot(command_origin="pull")
@@ -3812,26 +3895,39 @@ class ComplexGitSyncClient:
     ) -> Path:
         registry = self.get_dependency_registry()
         root_entry = registry.get("root")
-        if output_path is None:
-            if self.source_path is not None and self.source_path.suffix == ".cgs":
-                snapshot_stem = self.source_path.stem
-            else:
-                snapshot_stem = root_entry.name
-            snapshot_name = f"{snapshot_stem}.gts"
-            latest_output_path = root_entry.absolute_path / ".cgitsync" / "state" / snapshot_name
-            resolved_output_path = latest_output_path
-        else:
-            latest_output_path = None
-            resolved_output_path = Path(output_path).resolve()
-
-        resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
         document = build_gts_document_from_registry(
             registry,
             command_origin=command_origin,
             source_cgs_path=self.source_path,
             freeze_name=freeze_name,
         )
+        if self.source_path is not None and self.source_path.suffix == ".cgs":
+            snapshot_stem = self.source_path.stem
+        else:
+            snapshot_stem = root_entry.name
+        snapshot_name = f"{snapshot_stem}.gts"
+        explicit_output_path = Path(output_path).resolve() if output_path is not None else None
+        canonical_state_hash: str | None = None
+        canonical_state_order: int | None = None
+
+        if output_path is None or root_entry.absolute_path.exists():
+            state_anchor = new_time_l0_anchor()
+            canonical_state_hash = state_anchor.state_hash
+            cgitsync_dir = root_entry.absolute_path / ".cgitsync"
+            canonical_state_order = _next_state_directory_order(cgitsync_dir)
+            state_dir = cgitsync_dir / _state_directory_name(
+                canonical_state_hash,
+                canonical_state_order,
+            )
+            resolved_output_path = state_dir / snapshot_name
+        else:
+            resolved_output_path = explicit_output_path
+
+        resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
         document.to_toml(resolved_output_path)
+        if explicit_output_path is not None and explicit_output_path != resolved_output_path:
+            explicit_output_path.parent.mkdir(parents=True, exist_ok=True)
+            document.to_toml(explicit_output_path)
         self.loaded_snapshot_path = resolved_output_path
         self._log_event(
             "gts_write",
@@ -3841,26 +3937,11 @@ class ComplexGitSyncClient:
         )
         register_path = root_entry.absolute_path / f"{root_entry.name}.lgr"
         if root_entry.absolute_path.exists():
-            register_id = LocalGitRegister(register_path).record_snapshot(resolved_output_path)
-            if latest_output_path is not None:
-                immutable_name = f"{register_id}.gts"
-                if command_origin in _FREEZE_COMMAND_ORIGINS:
-                    freeze_manifest = document.to_dict().get("freeze_manifest", {})
-                    release_name = ""
-                    if isinstance(freeze_manifest, dict):
-                        release_name = str(
-                            freeze_manifest.get("release-name")
-                            or freeze_manifest.get("synchronized_ref_name")
-                            or ""
-                        )
-                    immutable_name = f"{register_id}-{_release_snapshot_slug(release_name)}.gts"
-                immutable_output_path = resolved_output_path.parent / immutable_name
-                if immutable_output_path != resolved_output_path:
-                    document.to_toml(immutable_output_path)
-                    resolved_output_path = immutable_output_path
-                    register_id = LocalGitRegister(register_path).record_snapshot(resolved_output_path)
-                    document.to_toml(latest_output_path)
-                self.loaded_snapshot_path = resolved_output_path
+            register_id = LocalGitRegister(register_path).record_snapshot(
+                resolved_output_path,
+                state_hash=canonical_state_hash,
+                state_order=canonical_state_order,
+            )
             self._log_event(
                 "lgr_update",
                 register_path=register_path,
@@ -3883,7 +3964,7 @@ class ComplexGitSyncClient:
                 workspace_hash=workspace_hash,
                 gts_snapshot_id=register_id,
             )
-        return latest_output_path or resolved_output_path
+        return resolved_output_path
 
     def get_ledger_history(self, register_path: str | Path) -> list[dict[str, Any]]:
         """Return all ledger events for *register_path* in topological DAG order.

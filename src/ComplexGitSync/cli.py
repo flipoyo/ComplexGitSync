@@ -11,7 +11,15 @@ from collections.abc import Sequence
 from . import __version__
 from .git_repo import RefKind
 from .git_tree import ProjectTreeState, iter_tree_leaf_first
-from .orchestre import CgsDocument, ComplexGitSyncClient, GtsDocument, create_run_logger
+from .orchestre import (
+    CgsDocument,
+    ComplexGitSyncClient,
+    GtsDocument,
+    _parse_state_hash,
+    _state_snapshot_candidates,
+    _state_snapshot_candidates_for_id,
+    create_run_logger,
+)
 
 
 _PLANNED_COMMANDS: dict[str, str] = {
@@ -95,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
             else:
                 subparser.set_defaults(handler=_handle_purge)
         elif command_name == "load":
-            subparser.add_argument("source", help="Path to a .cgs/.gts file, or a local .lgr id such as 1, lgr-000001, or gts-000001.")
+            subparser.add_argument("source", help="Path to a .cgs/.gts file, or a local .lgr id such as 1, lgr-000001, state(<hash>), or legacy gts-000001.")
             subparser.add_argument(
                 "--discover-nested",
                 action="store_true",
@@ -147,7 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to a .cgs or .gts file to inspect. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -172,7 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -185,7 +193,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to a .cgs or .gts file to inspect. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -198,7 +206,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -226,7 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to the local .cgs or .gts file to pull from. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -234,7 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -250,7 +258,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to the .gts snapshot that holds the READY registry. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -258,7 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -278,7 +286,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to the .gts snapshot that holds the READY registry. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -286,7 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -310,7 +318,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to the .gts snapshot that holds the READY registry. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -318,7 +326,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -341,7 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to the .gts snapshot that holds the READY registry. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -349,7 +357,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -367,7 +375,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to the .gts snapshot that holds the READY registry. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -375,7 +383,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -395,7 +403,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to the .gts snapshot that holds the READY registry. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -403,7 +411,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -428,7 +436,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to the .gts snapshot that holds the READY registry. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -436,7 +444,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -450,7 +458,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to the .gts snapshot that holds the READY registry. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -458,7 +466,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -477,7 +485,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to the .gts snapshot that holds the READY registry. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -485,7 +493,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -506,7 +514,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Path to the .gts snapshot that holds the READY registry. "
                     "When omitted the latest .gts snapshot is discovered automatically "
-                    "from CGSHOME/.cgitsync/state/."
+                    "under CGSHOME/.cgitsync/."
                 ),
             )
             subparser.add_argument(
@@ -514,7 +522,7 @@ def build_parser() -> argparse.ArgumentParser:
                 metavar="DIR",
                 help=(
                     "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state/*.gts. When omitted, uses $CGSHOME "
+                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
                     "or walks up from the current working directory."
                 ),
             )
@@ -1465,11 +1473,15 @@ def _normalise_snapshot_selector(source: str, data: dict) -> str:
                 if isinstance(snapshot_id, str) and snapshot_id:
                     return snapshot_id
         raise FileNotFoundError(f"Ledger event id {raw!r} was not found.")
+    if _parse_state_hash(raw) is not None:
+        return raw
+    if len(raw) == 64 and all(char in "0123456789abcdef" for char in raw):
+        return f"state({raw})"
     if raw.startswith("gts-"):
         return raw
     raise FileNotFoundError(
         f"Cannot resolve load source {source!r}. Pass a .cgs/.gts path, a numeric ledger id, "
-        "or an id like lgr-000001/gts-000001."
+        "or an id like lgr-000001, state(<hash>), or legacy gts-000001."
     )
 
 
@@ -1489,11 +1501,13 @@ def _find_matching_lgr_snapshot_file(
     expected_hash: str,
     cgshome: Path,
 ) -> Path | None:
+    cgitsync_dir = cgshome / ".cgitsync"
     candidates = [
         recorded_path,
         recorded_path.parent / f"{snapshot_id}.gts",
         cgshome / ".cgitsync" / "state" / f"{snapshot_id}.gts",
     ]
+    candidates.extend(_state_snapshot_candidates_for_id(cgitsync_dir, snapshot_id))
     candidates.extend(sorted(recorded_path.parent.glob(f"{snapshot_id}-*.gts")))
     candidates.extend(sorted((cgshome / ".cgitsync" / "state").glob(f"{snapshot_id}-*.gts")))
     seen: set[Path] = set()
@@ -1570,7 +1584,7 @@ def _discover_gts_path(search_dir: str | Path | None = None) -> Path:
     Raises
     ------
     FileNotFoundError
-        If CGSHOME cannot be located, or if ``CGSHOME/.cgitsync/state``
+        If CGSHOME cannot be located, or if ``CGSHOME/.cgitsync``
         contains no ``.gts`` snapshots.
     """
     cgshome = _discover_cgshome(search_dir)
@@ -1585,15 +1599,14 @@ def _discover_gts_path(search_dir: str | Path | None = None) -> Path:
     except (FileNotFoundError, tomllib.TOMLDecodeError):
         pass
 
-    state_dir = cgshome / ".cgitsync" / "state"
-    if state_dir.is_dir():
-        gts_entries = [(p, p.stat().st_mtime) for p in state_dir.glob("*.gts")]
-        if gts_entries:
-            gts_entries.sort(key=lambda x: x[1], reverse=True)
-            return gts_entries[0][0]
+    cgitsync_dir = cgshome / ".cgitsync"
+    gts_entries = [(path, path.stat().st_mtime) for path in _state_snapshot_candidates(cgitsync_dir)]
+    if gts_entries:
+        gts_entries.sort(key=lambda x: x[1], reverse=True)
+        return gts_entries[0][0].resolve()
 
     raise FileNotFoundError(
-        f"No .gts snapshot found in CGSHOME/.cgitsync/state: {state_dir}. "
+        f"No .gts snapshot found under CGSHOME/.cgitsync: {cgitsync_dir}. "
         "Run 'cgitsync initialise' first, or pass --gts FILE explicitly."
     )
 
@@ -1620,7 +1633,7 @@ def _resolve_workspace_source(source: str | None, search_dir: str | None) -> Pat
     -------
     Path
         The explicit source path, or the latest workspace snapshot under
-        ``CGSHOME/.cgitsync/state`` when *source* is omitted.
+        ``CGSHOME/.cgitsync`` when *source* is omitted.
 
     Raises
     ------

@@ -30,6 +30,7 @@ All eight tutorial CLI steps are validated:
 from __future__ import annotations
 
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -197,7 +198,9 @@ class TestTutoCGSil1CLI:
         assert project_root.exists()
         assert (project_root / "CGSil2").exists()
         assert (project_root / "CGSih1").exists()
-        assert (project_root / ".cgitsync" / "state" / "CGSil1.gts").is_file()
+        gts_path = _current_lgr_snapshot_path(project_root, "CGSil1.lgr")
+        assert gts_path.is_file()
+        assert gts_path.parent.name.startswith("state(")
 
     # ── Tutorial steps 4-8 (end-to-end git cycle) ──────────────────────────
 
@@ -218,7 +221,7 @@ class TestTutoCGSil1CLI:
         )
         capsys.readouterr()
 
-        gts_path = project_root / ".cgitsync" / "state" / "CGSil1.gts"
+        gts_path = _current_lgr_snapshot_path(project_root, "CGSil1.lgr")
         assert gts_path.is_file()
 
         # Step 4: add (after touching a new file in the root repo)
@@ -287,6 +290,11 @@ def _prepare_existing_root(output_path: Path, sandbox: dict[str, Path]) -> Path:
         capture_output=True,
     )
     return project_root
+
+
+def _current_lgr_snapshot_path(project_root: Path, register_name: str) -> Path:
+    data = tomllib.loads((project_root / register_name).read_text(encoding="utf-8"))
+    return Path(data["register"]["current_snapshot_path"]).resolve()
 
 
 def _patch_git_identity(monkeypatch) -> None:

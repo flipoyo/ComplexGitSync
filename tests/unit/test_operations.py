@@ -5,7 +5,9 @@ ComplexGitSyncClient façade methods checkout / commit / push.
 
 from __future__ import annotations
 
+import re
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -46,6 +48,11 @@ from ComplexGitSync.orchestre import ComplexGitSyncClient, GitRunner, RuntimeSta
 # ---------------------------------------------------------------------------
 # Shared helpers / fixtures
 # ---------------------------------------------------------------------------
+
+
+def _current_lgr_snapshot_path(root_path: Path, register_name: str = "project.lgr") -> Path:
+    data = tomllib.loads((root_path / register_name).read_text(encoding="utf-8"))
+    return Path(data["register"]["current_snapshot_path"]).resolve()
 
 
 def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:
@@ -1530,11 +1537,9 @@ def test_client_checkout_updates_registry_and_writes_gts(tmp_path):
         assert entry.current_ref_name == "feature-x"
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
-    # snapshot written inside root
-    snapshot_dir = root_path / ".cgitsync" / "state"
-    assert snapshot_dir.exists()
-    gts_files = list(snapshot_dir.glob("*.gts"))
-    assert gts_files, "Expected at least one .gts snapshot"
+    snapshot_path = _current_lgr_snapshot_path(root_path)
+    assert snapshot_path.exists()
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", snapshot_path.parent.name)
 
 
 def test_client_checkout_delegates_to_gittree_git_checkout(tmp_path, monkeypatch):
@@ -1773,16 +1778,19 @@ def test_client_freeze_release_writes_release_name_and_named_immutable_gts(tmp_p
 
     result = client.freeze("release-1")
 
-    immutable_snapshot = root_path / ".cgitsync" / "state" / "gts-000001-release-1.gts"
-    latest_snapshot = root_path / ".cgitsync" / "state" / "project.gts"
+    immutable_snapshot = _current_lgr_snapshot_path(root_path)
     assert immutable_snapshot.exists()
-    assert latest_snapshot.exists()
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", immutable_snapshot.parent.name)
     snapshot_data = tomllib.loads(immutable_snapshot.read_text(encoding="utf-8"))
     assert snapshot_data["freeze_manifest"]["release-name"] == "release-1"
     lgr_data = tomllib.loads((root_path / "project.lgr").read_text(encoding="utf-8"))
-    assert lgr_data["register"]["current_snapshot_id"] == "gts-000001"
-    assert lgr_data["register"]["current_snapshot_path"].endswith("gts-000001-release-1.gts")
-    assert lgr_data["snapshots"][0]["snapshot_path"].endswith("gts-000001-release-1.gts")
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)", lgr_data["register"]["current_snapshot_id"])
+    assert lgr_data["register"]["current_snapshot_path"].endswith(
+        f"{immutable_snapshot.parent.name}/project.gts"
+    )
+    assert lgr_data["snapshots"][0]["snapshot_path"].endswith(
+        f"{immutable_snapshot.parent.name}/project.gts"
+    )
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
 
@@ -1803,10 +1811,9 @@ def test_write_freeze_snapshot_uses_explicit_freeze_name_over_stale_registry_tag
         freeze_name="20260708-v3",
     )
 
-    immutable_snapshot = root.absolute_path / ".cgitsync" / "state" / "gts-000001-20260708-v3.gts"
-    assert result == root.absolute_path / ".cgitsync" / "state" / "project.gts"
-    assert immutable_snapshot.exists()
-    snapshot_data = tomllib.loads(immutable_snapshot.read_text(encoding="utf-8"))
+    assert result.exists()
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", result.parent.name)
+    snapshot_data = tomllib.loads(result.read_text(encoding="utf-8"))
     assert snapshot_data["freeze_manifest"]["release-name"] == "20260708-v3"
     assert snapshot_data["freeze_manifest"]["synchronized_ref_name"] == "20260708-v3"
 
@@ -1826,17 +1833,16 @@ def test_freeze_snapshot_loaded_from_gts_creates_new_named_immutable_gts(tmp_pat
 
     result = client.freeze("20260708-v4")
 
-    immutable_snapshot = root.absolute_path / ".cgitsync" / "state" / "gts-000001-20260708-v4.gts"
-    latest_snapshot = root.absolute_path / ".cgitsync" / "state" / "project.gts"
+    immutable_snapshot = _current_lgr_snapshot_path(root.absolute_path)
     assert result.recompute_tree_state() == TreeLifecycleState.READY
     assert source_snapshot.read_text(encoding="utf-8") == original_source_content
-    assert latest_snapshot.exists()
     assert immutable_snapshot.exists()
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", immutable_snapshot.parent.name)
 
     lgr_data = tomllib.loads((root.absolute_path / "project.lgr").read_text(encoding="utf-8"))
-    assert lgr_data["register"]["current_snapshot_id"] == "gts-000001"
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)", lgr_data["register"]["current_snapshot_id"])
     assert lgr_data["register"]["current_snapshot_path"].endswith(
-        "gts-000001-20260708-v4.gts"
+        f"{immutable_snapshot.parent.name}/project.gts"
     )
     snapshot_data = tomllib.loads(immutable_snapshot.read_text(encoding="utf-8"))
     assert snapshot_data["freeze_manifest"]["release-name"] == "20260708-v4"
@@ -1863,9 +1869,9 @@ def test_client_launch_release_checkouts_release_tag_and_writes_gts(tmp_path, mo
         "ref_kind": RefKind.TAG,
         "tree": None,
     }
-    snapshot_dir = client.registry.get("root").absolute_path / ".cgitsync" / "state"
-    gts_files = list(snapshot_dir.glob("*.gts"))
-    assert gts_files, "Expected launch_release to write a .gts snapshot"
+    snapshot_path = _current_lgr_snapshot_path(client.registry.get("root").absolute_path)
+    assert snapshot_path.exists()
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", snapshot_path.parent.name)
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
 
