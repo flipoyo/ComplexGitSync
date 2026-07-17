@@ -196,6 +196,14 @@ def _resolve_document_path(raw_path: str) -> Path:
     return Path(_expand_environment_markers(raw_path)).expanduser().resolve()
 
 
+def _rebase_path_under_root(path: Path | str, *, old_root: Path, new_root: Path) -> Path:
+    resolved_path = Path(path).expanduser().resolve()
+    try:
+        return (new_root.resolve() / resolved_path.relative_to(old_root.resolve())).resolve()
+    except ValueError:
+        return resolved_path
+
+
 def _preferred_path_separators() -> tuple[str, ...]:
     separators: list[str] = []
     seen: set[str] = set()
@@ -1808,6 +1816,21 @@ class MemoryRetrieveResult:
     status: str
 
 
+@dataclass(frozen=True, slots=True)
+class MemoryReloadResult:
+    """Result returned by ``@name.reload`` execution-context restore operations."""
+
+    binding: MemoryBinding
+    retrieve_result: MemoryRetrieveResult
+    project_root: Path
+    cgitsync_path: Path
+    state_path: Path
+    snapshot_path: Path
+    source_cgs_path: Path | None
+    registry: WorkingGitTree
+    status: str
+
+
 class MemoryBindingStore:
     """Persist and load Memory bindings under ``CGSHOME/.cgitsync``."""
 
@@ -1974,6 +1997,112 @@ def _validate_memory_cgitsync_tree(cgitsync_dir: Path | str) -> tuple[Path, ...]
     for state_path in state_paths:
         _validate_current_memory_path(state_path)
     return state_paths
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryReloadSelection:
+    """Selected State artefacts read from a recovered MemoryFS tree."""
+
+    state_path: Path
+    snapshot_path: Path
+    source_cgs_path: Path | None
+
+
+def _select_latest_memory_state(
+    cgitsync_dir: Path | str,
+    state_paths: Sequence[Path],
+) -> MemoryReloadSelection:
+    """Select the latest reloadable State from a recovered ``.cgitsync`` tree."""
+    resolved_cgitsync = Path(cgitsync_dir).expanduser().resolve()
+    if not state_paths:
+        raise GitSyncError("Retrieved Memory contains no State to reload.")
+
+    candidates: list[tuple[tuple[int, str, float, str], MemoryReloadSelection]] = []
+    for state_path in state_paths:
+        resolved_state = Path(state_path).expanduser().resolve()
+        lgr_candidates = sorted(resolved_state.glob("*.lgr"))
+        if not lgr_candidates:
+            raise GitSyncError(f"Retrieved State is missing a Memory register: {resolved_state}")
+        lgr_path = lgr_candidates[0]
+        try:
+            register_data = tomllib.loads(lgr_path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            raise GitSyncError(f"Retrieved Memory register is invalid: {lgr_path}") from exc
+
+        snapshot_path = _resolve_memory_register_snapshot_path(
+            register_data,
+            recovered_cgitsync_dir=resolved_cgitsync,
+            fallback_state_dir=resolved_state,
+        )
+        if snapshot_path is None:
+            gts_candidates = sorted(resolved_state.glob("*.gts"))
+            if not gts_candidates:
+                raise GitSyncError(f"Retrieved State is missing a .gts snapshot: {resolved_state}")
+            snapshot_path = gts_candidates[-1].resolve()
+
+        source_cgs_candidates = sorted(resolved_state.glob("*.cgs"))
+        source_cgs_path = (
+            source_cgs_candidates[0].resolve() if source_cgs_candidates else None
+        )
+        snapshots = register_data.get("snapshots", [])
+        snapshots_count = len(snapshots) if isinstance(snapshots, list) else 0
+        latest_recorded_at = ""
+        if isinstance(snapshots, list):
+            for entry in snapshots:
+                if isinstance(entry, dict) and isinstance(entry.get("recorded_at"), str):
+                    latest_recorded_at = max(latest_recorded_at, entry["recorded_at"])
+        sort_key = (
+            snapshots_count,
+            latest_recorded_at,
+            resolved_state.stat().st_mtime,
+            resolved_state.name,
+        )
+        candidates.append(
+            (
+                sort_key,
+                MemoryReloadSelection(
+                    state_path=resolved_state,
+                    snapshot_path=snapshot_path,
+                    source_cgs_path=source_cgs_path,
+                ),
+            )
+        )
+
+    if not candidates:
+        raise GitSyncError("Retrieved Memory contains no reloadable State.")
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def _resolve_memory_register_snapshot_path(
+    register_data: dict[str, Any],
+    *,
+    recovered_cgitsync_dir: Path,
+    fallback_state_dir: Path,
+) -> Path | None:
+    """Resolve an ``.lgr`` current snapshot path into the recovered MemoryFS tree."""
+    raw_current = register_data.get("register", {}).get("current_snapshot_path")
+    if not isinstance(raw_current, str) or not raw_current:
+        return None
+
+    expanded = Path(_expand_environment_markers(raw_current)).expanduser()
+    if not expanded.is_absolute():
+        candidate = (fallback_state_dir / expanded).resolve()
+        if candidate.is_file() and recovered_cgitsync_dir in candidate.parents:
+            return candidate
+
+    parts = expanded.parts
+    if ".cgitsync" in parts:
+        marker_index = len(parts) - 1 - parts[::-1].index(".cgitsync")
+        relative_parts = parts[marker_index + 1:]
+        if relative_parts:
+            candidate = recovered_cgitsync_dir.joinpath(*relative_parts).resolve()
+            if candidate.is_file():
+                return candidate
+
+    resolved = expanded.resolve()
+    if resolved.is_file() and recovered_cgitsync_dir in resolved.parents:
+        return resolved
+    return None
 
 
 def _memory_copy_ignore(_directory: str, names: list[str]) -> set[str]:
@@ -3400,6 +3529,95 @@ class ComplexGitSyncClient:
             status=result.status,
         )
         return result
+
+    def reload(
+        self,
+        name: str,
+        *,
+        output_path: str | Path | None = None,
+        branch: str = "main",
+        service: str = DEFAULT_MEMORY_SERVICE,
+        remote_name: str = DEFAULT_MEMORY_REMOTE_NAME,
+    ) -> MemoryReloadResult:
+        """Restore execution context from externally retrieved Memory."""
+        retrieve_result = self.retrieve(
+            name,
+            output_path=output_path,
+            branch=branch,
+            service=service,
+            remote_name=remote_name,
+        )
+        state_paths = _validate_memory_cgitsync_tree(retrieve_result.cgitsync_path)
+        selection = _select_latest_memory_state(retrieve_result.cgitsync_path, state_paths)
+        registry = self.load_gts(selection.snapshot_path)
+        self._rebase_registry_to_project_root(
+            registry,
+            project_root=retrieve_result.project_root,
+            source_cgs_path=selection.source_cgs_path,
+        )
+        self.loaded_snapshot_path = selection.snapshot_path
+        self.source_path = selection.source_cgs_path or selection.snapshot_path
+        if selection.source_cgs_path is not None:
+            self.state_store.record_snapshot(selection.source_cgs_path, selection.snapshot_path)
+
+        result = MemoryReloadResult(
+            binding=retrieve_result.binding,
+            retrieve_result=retrieve_result,
+            project_root=retrieve_result.project_root,
+            cgitsync_path=retrieve_result.cgitsync_path,
+            state_path=selection.state_path,
+            snapshot_path=selection.snapshot_path,
+            source_cgs_path=selection.source_cgs_path,
+            registry=registry,
+            status="reloaded",
+        )
+        self._log_event(
+            "memory_reload",
+            name=result.binding.name,
+            alias=result.binding.alias,
+            project_root=result.project_root,
+            cgitsync_path=result.cgitsync_path,
+            state_path=result.state_path,
+            snapshot_path=result.snapshot_path,
+            source_cgs_path=result.source_cgs_path,
+            status=result.status,
+        )
+        return result
+
+    def _rebase_registry_to_project_root(
+        self,
+        registry: WorkingGitTree,
+        *,
+        project_root: Path,
+        source_cgs_path: Path | None,
+    ) -> None:
+        """Re-root a loaded snapshot registry under the recovered project root."""
+        root_entry = registry.get(ROOT_REPO_ID)
+        previous_root = root_entry.absolute_path
+        root_entry.absolute_path = project_root.resolve()
+        root_entry.relative_path = Path(".")
+        if source_cgs_path is not None:
+            root_entry.source_cgs_path = source_cgs_path.resolve()
+
+        for entry in iter_tree(registry):
+            if entry.repo_id == ROOT_REPO_ID or entry.parent_id is None:
+                continue
+            parent = registry.get(entry.parent_id)
+            relative_path = entry.relative_path
+            if relative_path is None:
+                try:
+                    relative_path = entry.absolute_path.relative_to(previous_root)
+                except ValueError:
+                    relative_path = Path(entry.name)
+            entry.absolute_path = (parent.absolute_path / relative_path).resolve()
+            if entry.source_cgs_path is not None:
+                entry.source_cgs_path = _rebase_path_under_root(
+                    entry.source_cgs_path,
+                    old_root=previous_root,
+                    new_root=project_root,
+                )
+        registry.recompute_tree_state()
+        self.orchestre.git_tree.git.bind_tree(registry)
 
     def _trigger_memorize_after_success(
         self,

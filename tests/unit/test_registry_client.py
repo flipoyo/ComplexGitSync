@@ -12,6 +12,7 @@ from ComplexGitSync.L0 import hash_time_l0_anchor, new_time_l0_anchor
 from ComplexGitSync.orchestre import (
     ComplexGitSyncClient,
     GocDocument,
+    LocalGitRegister,
     MemoryBinding,
     _path_to_environment_marker,
     _resolve_memory_state_directory,
@@ -1534,6 +1535,71 @@ def test_client_retrieve_rejects_remote_revision_mismatch_before_reload(tmp_path
     assert not (tmp_path / "workspace" / "CGSil1" / ".cgitsync").exists()
 
 
+def test_client_reload_restores_context_from_retrieved_memory(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    remote_root = tmp_path / "remote-memory"
+    original_root = tmp_path / "isolated-old-root" / "CGSil1"
+    state_path = _write_reloadable_memory_state(
+        remote_root,
+        "CGSil1",
+        original_root=original_root,
+    )
+    runner = _MemoryPersistenceRunner()
+    runner.remote_ref = "1" * 40
+    runner.remote_cgitsync_source = remote_root / ".cgitsync"
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    result = client.reload("CGSil1", output_path=tmp_path / "workspace")
+
+    expected_root = (tmp_path / "workspace" / "CGSil1").resolve()
+    expected_state = expected_root / ".cgitsync" / state_path.name
+    assert result.status == "reloaded"
+    assert result.retrieve_result.status == "retrieved"
+    assert result.project_root == expected_root
+    assert result.state_path == expected_state
+    assert result.snapshot_path == expected_state / "CGSil1.gts"
+    assert result.source_cgs_path == expected_state / "CGSil1.cgs"
+    assert result.registry is client.registry
+    assert client.loaded_snapshot_path == result.snapshot_path
+    assert client.source_path == result.source_cgs_path
+    root_entry = result.registry.get("root")
+    assert root_entry.name == "CGSil1"
+    assert root_entry.absolute_path == expected_root
+    assert root_entry.source_cgs_path == result.source_cgs_path
+    assert result.registry.is_ready()
+    assert not original_root.exists()
+
+
+def test_client_reload_selects_latest_recovered_memory_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    remote_root = tmp_path / "remote-memory"
+    original_root = tmp_path / "isolated-old-root" / "CGSil1"
+    older_state = _write_reloadable_memory_state(
+        remote_root,
+        "CGSil1",
+        original_root=original_root,
+        state_hash="a" * 64,
+    )
+    latest_state = _write_reloadable_memory_state(
+        remote_root,
+        "CGSil1",
+        original_root=original_root,
+        state_hash="b" * 64,
+        include_previous_snapshot=older_state / "CGSil1.gts",
+    )
+    runner = _MemoryPersistenceRunner()
+    runner.remote_ref = "1" * 40
+    runner.remote_cgitsync_source = remote_root / ".cgitsync"
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    result = client.reload("CGSil1", output_path=tmp_path / "workspace")
+
+    expected_root = (tmp_path / "workspace" / "CGSil1").resolve()
+    assert result.state_path == expected_root / ".cgitsync" / latest_state.name
+    assert result.snapshot_path == result.state_path / "CGSil1.gts"
+    assert result.registry.get("root").absolute_path == expected_root
+
+
 def _current_lgr_snapshot_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
     data = tomllib.loads(_current_lgr_path(workspace, register_name).read_text(encoding="utf-8"))
     raw_path = data["register"]["current_snapshot_path"]
@@ -2095,6 +2161,54 @@ def _write_complete_memory_state(project_root: Path, project_name: str) -> Path:
     return state_dir.resolve()
 
 
+def _write_reloadable_memory_state(
+    project_root: Path,
+    project_name: str,
+    *,
+    original_root: Path,
+    state_hash: str = "a" * 64,
+    state_order: int = 0,
+    include_previous_snapshot: Path | None = None,
+) -> Path:
+    state_dir = project_root / ".cgitsync" / f"state({state_hash})_{state_order}"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    cgs_path = state_dir / f"{project_name}.cgs"
+    cgs_path.write_text(
+        f"""
+[document]
+format_version = "1.0"
+
+[project]
+name = "{project_name}"
+default_branch = "main"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    gts_path = _write_ready_gts(
+        state_dir / f"{project_name}.gts",
+        root_path=original_root,
+        project_name=project_name,
+    )
+    register_path = state_dir / f"{project_name}.lgr"
+    register = LocalGitRegister(register_path)
+    if include_previous_snapshot is not None:
+        register.record_snapshot(
+            include_previous_snapshot,
+            state_hash="a" * 64,
+            state_order=0,
+            recorded_snapshot_path=include_previous_snapshot,
+        )
+    register.record_snapshot(
+        gts_path,
+        state_hash=state_hash,
+        state_order=state_order,
+        recorded_snapshot_path=gts_path,
+    )
+    (state_dir / f"{project_name}.log").write_text(f"{project_name} log\n", encoding="utf-8")
+    return state_dir.resolve()
+
+
 def _hash_memory_tree(cgitsync_dir: Path) -> str:
     digest = hashlib.sha256()
     for path in sorted(candidate for candidate in cgitsync_dir.rglob("*") if candidate.is_file()):
@@ -2214,7 +2328,12 @@ nested_config = "disabled"
     return config_path
 
 
-def _write_ready_gts(snapshot_path: Path, *, root_path: Path) -> Path:
+def _write_ready_gts(
+    snapshot_path: Path,
+    *,
+    root_path: Path,
+    project_name: str = "demo",
+) -> Path:
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
     snapshot_path.write_text(
         f"""
@@ -2224,7 +2343,7 @@ generated_at = "2026-01-01T00:00:00Z"
 command_origin = "clone"
 
 [project]
-name = "demo"
+name = "{project_name}"
 root_absolute_path = "{root_path.as_posix()}"
 
 [tree_state]
@@ -2233,7 +2352,7 @@ is_ready = true
 registry_complete = true
 
 [[repo_state]]
-name = "demo"
+name = "{project_name}"
 node_type = "root"
 absolute_path = "{root_path.as_posix()}"
 relative_path = "."
@@ -2247,7 +2366,7 @@ resolved_ref_kind = "branch"
 resolved_ref_name = "main"
 commit_sha = "sha-demo"
 project_owner_name = "owner"
-project_name = "demo"
+project_name = "{project_name}"
 """.strip()
         + "\n",
         encoding="utf-8",

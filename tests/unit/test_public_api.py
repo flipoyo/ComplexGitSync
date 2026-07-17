@@ -16,6 +16,7 @@ from ComplexGitSync import (
     MemoryBinding,
     MemoryMemorizeResult,
     MemoryRememberResult,
+    MemoryReloadResult,
     MemoryRetrieveResult,
     NestedConfigDiscoveryError,
     RepoNode,
@@ -42,6 +43,7 @@ def test_package_root_exports_refactor_guard_symbols():
     assert MemoryBinding.__name__ == "MemoryBinding"
     assert MemoryMemorizeResult.__name__ == "MemoryMemorizeResult"
     assert MemoryRememberResult.__name__ == "MemoryRememberResult"
+    assert MemoryReloadResult.__name__ == "MemoryReloadResult"
     assert MemoryRetrieveResult.__name__ == "MemoryRetrieveResult"
     assert SyncLedger.__name__ == "SyncLedger"
 
