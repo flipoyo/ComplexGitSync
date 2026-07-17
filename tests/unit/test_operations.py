@@ -1858,6 +1858,30 @@ def test_client_push_does_not_memorize_when_project_push_fails(tmp_path, monkeyp
     assert client.last_memory_result is None
 
 
+def test_client_push_does_not_memorize_when_memoryfs_write_fails(tmp_path, monkeypatch):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    _mark_all_children_as_submodules(client.registry, runner)
+    project_root = client.registry.get("root").absolute_path
+    _save_test_memory_binding(project_root)
+    calls: list[Path] = []
+
+    def _failing_write_gts_snapshot(*_args, **_kwargs):
+        raise GitSyncError("MemoryFS snapshot write failed")
+
+    def _fake_memorize(current_memory_path, *, branch="main"):
+        calls.append(Path(current_memory_path))
+
+    monkeypatch.setattr(client, "write_gts_snapshot", _failing_write_gts_snapshot)
+    monkeypatch.setattr(client, "memorize", _fake_memorize)
+
+    with pytest.raises(GitSyncError, match="MemoryFS snapshot write failed"):
+        client.push()
+
+    assert runner.pushed, "Expected project push to happen before MemoryFS failure"
+    assert calls == []
+    assert client.last_memory_result is None
+
+
 def test_client_tag_requires_ready_tree(tmp_path):
     client, runner = _make_client_with_ready_registry(tmp_path)
     for entry in client.registry.values():
@@ -1983,6 +2007,43 @@ def test_client_freeze_release_workflow_memorizes_only_final_state(tmp_path, mon
     assert client.last_memory_result.current_memory_path == calls[0]
 
 
+def test_client_freeze_release_workflow_does_not_memorize_when_push_fails(
+    tmp_path,
+    monkeypatch,
+):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    _mark_all_children_as_submodules(client.registry, runner)
+    project_root = client.registry.get("root").absolute_path
+    _save_test_memory_binding(project_root)
+    client.source_path = project_root / "project.gts"
+    calls: list[Path] = []
+
+    def _failing_push(
+        repo_path,
+        *,
+        remote="origin",
+        ref_name=None,
+        set_upstream=False,
+    ):
+        raise GitSyncError(f"workflow push failed for {repo_path}")
+
+    def _fake_memorize(current_memory_path, *, branch="main"):
+        calls.append(Path(current_memory_path))
+
+    monkeypatch.setattr(client, "memorize", _fake_memorize)
+    monkeypatch.setattr(client, "add", lambda: client.registry)
+    monkeypatch.setattr(client, "commit", lambda _message, stage_all=True: client.registry)
+    monkeypatch.setattr(client, "pull", lambda _source_path: client.registry)
+    monkeypatch.setattr(runner, "push", _failing_push)
+
+    with pytest.raises(GitSyncError, match="workflow push failed"):
+        client.freeze_release("release-1", "release commit")
+
+    assert calls == []
+    assert client.last_memory_result is None
+    assert client._memory_trigger_suppression_depth == 0
+
+
 def test_client_freeze_release_does_not_memorize_when_freeze_fails(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     _mark_all_children_as_submodules(client.registry, runner)
@@ -2008,6 +2069,33 @@ def test_client_freeze_release_does_not_memorize_when_freeze_fails(tmp_path, mon
     with pytest.raises(GitSyncError, match="freeze push failed"):
         client.freeze("release-1")
 
+    assert calls == []
+    assert client.last_memory_result is None
+
+
+def test_client_freeze_release_does_not_memorize_when_memoryfs_write_fails(
+    tmp_path,
+    monkeypatch,
+):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    _mark_all_children_as_submodules(client.registry, runner)
+    project_root = client.registry.get("root").absolute_path
+    _save_test_memory_binding(project_root)
+    calls: list[Path] = []
+
+    def _failing_write_gts_snapshot(*_args, **_kwargs):
+        raise GitSyncError("MemoryFS snapshot write failed")
+
+    def _fake_memorize(current_memory_path, *, branch="main"):
+        calls.append(Path(current_memory_path))
+
+    monkeypatch.setattr(client, "write_gts_snapshot", _failing_write_gts_snapshot)
+    monkeypatch.setattr(client, "memorize", _fake_memorize)
+
+    with pytest.raises(GitSyncError, match="MemoryFS snapshot write failed"):
+        client.freeze("release-1")
+
+    assert runner.pushed, "Expected freeze-release push to happen before MemoryFS failure"
     assert calls == []
     assert client.last_memory_result is None
 
