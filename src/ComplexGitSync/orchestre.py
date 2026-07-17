@@ -4916,6 +4916,22 @@ class ComplexGitSyncClient:
             workspace_hash=workspace_hash,
             gts_snapshot_id=register_id,
         )
+        staged_log_path = memory_state.temporary_path / f"{snapshot_stem}.log"
+        final_log_path = memory_state.final_path / f"{snapshot_stem}.log"
+        if self.run_logger is None:
+            staged_log_path.write_text(
+                json.dumps(
+                    {
+                        "event": "memory_state_finalized",
+                        "command_origin": command_origin,
+                        "state_id": _format_state_id(canonical_state_hash),
+                        "state_order": memory_state.state_order,
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
 
         memory_state.temporary_path.rename(memory_state.final_path)
         if _debug_counter_enabled():
@@ -4927,7 +4943,7 @@ class ComplexGitSyncClient:
             legacy_register_path.unlink()
         self.loaded_snapshot_path = final_output_path
         if self.run_logger is not None:
-            self.run_logger.bind_log_file(memory_state.final_path / f"{snapshot_stem}.log")
+            self.run_logger.bind_log_file(final_log_path)
         return final_output_path
 
     def get_ledger_history(self, register_path: str | Path) -> list[dict[str, Any]]:

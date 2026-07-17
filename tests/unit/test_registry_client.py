@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import shutil
 import tomllib
@@ -1958,9 +1959,10 @@ def test_sync_ledger_actor_auto_detected_when_none(tmp_path):
     assert events[0]["actor"] != ""
 
 
-def test_client_write_gts_snapshot_records_ledger_event(tmp_path):
+def test_client_write_gts_snapshot_records_ledger_event(tmp_path, monkeypatch):
     import tomllib
 
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
     config_path = _write_root_cgs(tmp_path)
 
     client = ComplexGitSyncClient()
@@ -1978,6 +1980,15 @@ def test_client_write_gts_snapshot_records_ledger_event(tmp_path):
     assert len(event["workspace_hash"]) == 64
     assert "demo" in event["affected_repos"]
     assert event["parent_sync_ids"] == []
+    [log_path] = sorted(expected_lgr.parent.glob("*.log"))
+    assert log_path.is_file()
+    log_text = log_path.read_text(encoding="utf-8")
+    log_data = json.loads(log_text)
+    assert log_data["event"] == "memory_state_finalized"
+    assert log_data["command_origin"] == "load"
+    assert log_data["state_id"] == data["register"]["current_snapshot_id"]
+    assert log_data["state_order"] == 0
+    assert "@" not in log_text
 
 
 def test_client_multiple_operations_create_linked_ledger_events(tmp_path):
