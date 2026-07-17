@@ -1446,6 +1446,94 @@ def test_client_retrieve_rejects_incomplete_remote_memory(tmp_path, monkeypatch)
     assert not (tmp_path / "workspace" / "CGSil1" / ".cgitsync").exists()
 
 
+def test_client_retrieve_rejects_memory_when_fsck_fails_before_reload(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    remote_root = tmp_path / "remote-memory"
+    _write_complete_memory_state(remote_root, "CGSil1")
+    runner = _MemoryPersistenceRunner()
+    runner.remote_ref = "1" * 40
+    runner.remote_cgitsync_source = remote_root / ".cgitsync"
+    runner.fail_fsck = True
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    with pytest.raises(GitSyncError, match="git fsck --full failed"):
+        client.retrieve("CGSil1", output_path=tmp_path / "workspace")
+
+    assert runner.fsck_paths
+    assert not (tmp_path / "workspace" / "CGSil1" / ".cgitsync").exists()
+
+
+def test_client_retrieve_rejects_missing_cgitsync_root_before_reload(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    runner = _MemoryPersistenceRunner()
+    runner.remote_ref = "1" * 40
+    runner.remote_cgitsync_source = None
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    with pytest.raises(GitSyncError, match="missing expected \\.cgitsync root"):
+        client.retrieve("CGSil1", output_path=tmp_path / "workspace")
+
+    assert runner.fsck_paths
+    assert not (tmp_path / "workspace" / "CGSil1" / ".cgitsync").exists()
+
+
+def test_client_retrieve_rejects_malformed_state_directory_before_reload(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    remote_root = tmp_path / "remote-memory"
+    _write_complete_memory_state(remote_root, "CGSil1")
+    (remote_root / ".cgitsync" / "state_0001").mkdir()
+    runner = _MemoryPersistenceRunner()
+    runner.remote_ref = "1" * 40
+    runner.remote_cgitsync_source = remote_root / ".cgitsync"
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    with pytest.raises(GitSyncError, match="invalid \\.cgitsync entr"):
+        client.retrieve("CGSil1", output_path=tmp_path / "workspace")
+
+    assert runner.fsck_paths
+    assert not (tmp_path / "workspace" / "CGSil1" / ".cgitsync").exists()
+
+
+def test_client_retrieve_rejects_missing_memory_artifacts_before_reload(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    remote_root = tmp_path / "remote-memory"
+    state_dir = remote_root / ".cgitsync" / f"state({'a' * 64})_0"
+    state_dir.mkdir(parents=True)
+    (state_dir / "CGSil1.gts").write_text("CGSil1 gts\n", encoding="utf-8")
+    runner = _MemoryPersistenceRunner()
+    runner.remote_ref = "1" * 40
+    runner.remote_cgitsync_source = remote_root / ".cgitsync"
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    with pytest.raises(GitSyncError, match="missing Memory artefact"):
+        client.retrieve("CGSil1", output_path=tmp_path / "workspace")
+
+    assert runner.fsck_paths
+    assert not (tmp_path / "workspace" / "CGSil1" / ".cgitsync").exists()
+
+
+def test_client_retrieve_rejects_remote_revision_mismatch_before_reload(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    remote_root = tmp_path / "remote-memory"
+    _write_complete_memory_state(remote_root, "CGSil1")
+    runner = _MemoryPersistenceRunner()
+    runner.remote_ref = "1" * 40
+    runner.remote_cgitsync_source = remote_root / ".cgitsync"
+    remote_refs = ["1" * 40, "2" * 40]
+
+    def _remote_head(_remote_url: str, branch: str = "main") -> str | None:
+        return remote_refs.pop(0)
+
+    runner.remote_head = _remote_head
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    with pytest.raises(GitSyncError, match="remote ref does not match"):
+        client.retrieve("CGSil1", output_path=tmp_path / "workspace")
+
+    assert runner.fsck_paths
+    assert not (tmp_path / "workspace" / "CGSil1" / ".cgitsync").exists()
+
+
 def _current_lgr_snapshot_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
     data = tomllib.loads(_current_lgr_path(workspace, register_name).read_text(encoding="utf-8"))
     raw_path = data["register"]["current_snapshot_path"]
@@ -1923,6 +2011,7 @@ class _MemoryPersistenceRunner(_MemoryValidationRunner):
         self.fetches: list[tuple[Path, str, str]] = []
         self.clones: list[tuple[str, Path, str]] = []
         self.fsck_paths: list[Path] = []
+        self.fail_fsck = False
 
     def init_repository(self, repo_path: Path | str) -> None:
         repo = Path(repo_path)
@@ -1950,6 +2039,8 @@ class _MemoryPersistenceRunner(_MemoryValidationRunner):
 
     def fsck_full(self, repo_path: Path | str) -> None:
         self.fsck_paths.append(Path(repo_path))
+        if self.fail_fsck:
+            raise GitSyncError("git fsck --full failed")
 
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
         repo = Path(destination)

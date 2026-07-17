@@ -1940,6 +1940,9 @@ def _validate_memory_cgitsync_tree(cgitsync_dir: Path | str) -> tuple[Path, ...]
     resolved = Path(cgitsync_dir).expanduser().resolve()
     if not resolved.is_dir():
         raise GitSyncError(f"Retrieved Memory is missing expected .cgitsync root: {resolved}")
+    if resolved.name != ".cgitsync":
+        raise GitSyncError(f"Retrieved Memory root must be named .cgitsync: {resolved}")
+    invalid_entries: list[Path] = []
     state_paths = tuple(
         sorted(
             (
@@ -1950,6 +1953,22 @@ def _validate_memory_cgitsync_tree(cgitsync_dir: Path | str) -> tuple[Path, ...]
             key=lambda path: path.name,
         )
     )
+    for candidate in resolved.iterdir():
+        if candidate.is_dir():
+            if _STATE_DIR_RE.fullmatch(candidate.name) is None:
+                invalid_entries.append(candidate)
+            continue
+        if candidate.is_file() and candidate.name == MEMORY_CONFIG_FILENAME:
+            continue
+        invalid_entries.append(candidate)
+    if invalid_entries:
+        rendered = ", ".join(
+            path.name for path in sorted(invalid_entries, key=lambda path: path.name)
+        )
+        plural = "y" if len(invalid_entries) == 1 else "ies"
+        raise GitSyncError(
+            f"Retrieved Memory contains invalid .cgitsync entr{plural}: {rendered}"
+        )
     if not state_paths:
         raise GitSyncError(f"Retrieved Memory contains no canonical State directories: {resolved}")
     for state_path in state_paths:
