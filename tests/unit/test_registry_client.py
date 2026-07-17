@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import shutil
 import tomllib
 from pathlib import Path, PureWindowsPath
 
@@ -1396,6 +1397,55 @@ def test_client_memorize_requires_memory_binding(tmp_path):
         client.memorize(memory_path)
 
 
+def test_client_retrieve_recovers_remote_memory_repository(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    remote_root = tmp_path / "remote-memory"
+    remote_state = _write_complete_memory_state(remote_root, "CGSil1")
+    runner = _MemoryPersistenceRunner()
+    runner.remote_ref = "1" * 40
+    runner.remote_cgitsync_source = remote_root / ".cgitsync"
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    result = client.retrieve("CGSil1", output_path=tmp_path / "workspace")
+
+    expected_root = (tmp_path / "workspace" / "CGSil1").resolve()
+    expected_url = "git@forge43.io:/srv/git/CGSil1.git"
+    assert result.binding.alias == "@forge43@CGSil1"
+    assert result.binding.remote_url == expected_url
+    assert result.project_root == expected_root
+    assert result.cgitsync_path == expected_root / ".cgitsync"
+    assert result.memory_repository_path == (
+        tmp_path / "state-home" / "ComplexGitSync" / "memory-repositories"
+        / hashlib.sha256(str(expected_root).encode()).hexdigest()[:24]
+    )
+    assert result.state_paths == (result.cgitsync_path / remote_state.name,)
+    assert result.local_ref == "1" * 40
+    assert result.remote_ref == "1" * 40
+    assert result.verified is True
+    assert result.status == "retrieved"
+    assert runner.validated_remotes == [expected_url]
+    assert runner.clones == [(expected_url, result.memory_repository_path, "main")]
+    assert runner.fsck_paths == [result.memory_repository_path]
+    assert (result.cgitsync_path / remote_state.name / "CGSil1.gts").is_file()
+    assert client.load_memory_binding(expected_root) == result.binding
+
+
+def test_client_retrieve_rejects_incomplete_remote_memory(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    remote_root = tmp_path / "remote-memory"
+    (remote_root / ".cgitsync").mkdir(parents=True)
+    runner = _MemoryPersistenceRunner()
+    runner.remote_ref = "1" * 40
+    runner.remote_cgitsync_source = remote_root / ".cgitsync"
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    with pytest.raises(GitSyncError, match="no canonical State"):
+        client.retrieve("CGSil1", output_path=tmp_path / "workspace")
+
+    assert runner.fsck_paths
+    assert not (tmp_path / "workspace" / "CGSil1" / ".cgitsync").exists()
+
+
 def _current_lgr_snapshot_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
     data = tomllib.loads(_current_lgr_path(workspace, register_name).read_text(encoding="utf-8"))
     raw_path = data["register"]["current_snapshot_path"]
@@ -1865,11 +1915,14 @@ class _MemoryPersistenceRunner(_MemoryValidationRunner):
         self.remotes: dict[Path, dict[str, str]] = {}
         self.remote_ref: str | None = None
         self.remote_tree_hash: str | None = None
+        self.remote_cgitsync_source: Path | None = None
         self.local_refs: dict[Path, str | None] = {}
         self.staged_hashes: dict[Path, str | None] = {}
         self.commits: list[str] = []
         self.pushes: list[tuple[Path, str, str | None]] = []
         self.fetches: list[tuple[Path, str, str]] = []
+        self.clones: list[tuple[str, Path, str]] = []
+        self.fsck_paths: list[Path] = []
 
     def init_repository(self, repo_path: Path | str) -> None:
         repo = Path(repo_path)
@@ -1894,6 +1947,18 @@ class _MemoryPersistenceRunner(_MemoryValidationRunner):
 
     def reset_to_fetch_head(self, repo_path: Path | str) -> None:
         self.local_refs[Path(repo_path)] = self.remote_ref
+
+    def fsck_full(self, repo_path: Path | str) -> None:
+        self.fsck_paths.append(Path(repo_path))
+
+    def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
+        repo = Path(destination)
+        repo.mkdir(parents=True, exist_ok=True)
+        self.clones.append((remote_url, repo, branch))
+        self.git_repositories.add(repo)
+        self.local_refs[repo] = self.remote_ref
+        if self.remote_cgitsync_source is not None:
+            shutil.copytree(self.remote_cgitsync_source, repo / ".cgitsync")
 
     def stage_all(self, repo_path: Path | str) -> None:
         repo = Path(repo_path)

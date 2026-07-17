@@ -52,6 +52,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     # Memory commands
     "remember": "Bind a .cgs artefact to its external SSH-Git Memory endpoint.",
     "memorize": "Persist a finalized local Memory State to the configured SSH-Git remote.",
+    "retrieve": "Retrieve an external SSH-Git Memory repository into a clean CGSHOME.",
 }
 
 
@@ -264,6 +265,32 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Memory repository branch to update (default: main).",
             )
             subparser.set_defaults(handler=_handle_memorize)
+        elif command_name == "retrieve":
+            subparser.add_argument("name", help="Memory artefact name, for example CGSil1.")
+            subparser.add_argument(
+                "--output-path",
+                dest="output_path",
+                help=(
+                    "CGSPATH: parent directory where CGSHOME is recovered as "
+                    "CGSPATH/<name>. Defaults to $CGSHOME when set, else CWD/<name>."
+                ),
+            )
+            subparser.add_argument(
+                "--branch",
+                default="main",
+                help="Memory repository branch to retrieve (default: main).",
+            )
+            subparser.add_argument(
+                "--service",
+                default=DEFAULT_MEMORY_SERVICE,
+                help=f"External Memory service hostname (default: {DEFAULT_MEMORY_SERVICE}).",
+            )
+            subparser.add_argument(
+                "--remote-name",
+                default=DEFAULT_MEMORY_REMOTE_NAME,
+                help=f"Local Memory remote name (default: {DEFAULT_MEMORY_REMOTE_NAME}).",
+            )
+            subparser.set_defaults(handler=_handle_retrieve)
         elif command_name in {"pull", "pull-force"}:
             subparser.add_argument(
                 "source",
@@ -769,6 +796,22 @@ def _handle_memorize(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_retrieve(args: argparse.Namespace) -> int:
+    source = Path(args.output_path).expanduser() if args.output_path else Path.cwd()
+    return _run_with_logging(
+        command_name="retrieve",
+        source=source,
+        runner=lambda client, _source: _execute_retrieve(
+            client,
+            args.name,
+            output_path=args.output_path,
+            branch=args.branch,
+            service=args.service,
+            remote_name=args.remote_name,
+        ),
+    )
+
+
 def _handle_pull(args: argparse.Namespace) -> int:
     source = _resolve_workspace_source(args.source, getattr(args, "search_dir", None))
     return _run_with_logging(
@@ -1059,6 +1102,38 @@ def _execute_memorize(
     print(f"pushed={str(result.pushed).lower()}")
     print(f"verified={str(result.verified).lower()}")
     print(f"remote_ref={result.remote_ref or ''}")
+    print(f"status={result.status}")
+    return 0
+
+
+def _execute_retrieve(
+    client: ComplexGitSyncClient,
+    name: str,
+    *,
+    output_path: str | Path | None = None,
+    branch: str = "main",
+    service: str = DEFAULT_MEMORY_SERVICE,
+    remote_name: str = DEFAULT_MEMORY_REMOTE_NAME,
+) -> int:
+    result = client.retrieve(
+        name,
+        output_path=output_path,
+        branch=branch,
+        service=service,
+        remote_name=remote_name,
+    )
+    binding = result.binding
+    print("operation=memory.retrieve")
+    print(f"name={binding.name}")
+    print(f"alias={binding.alias}")
+    print(f"remote_name={binding.remote_name}")
+    print(f"remote_url={binding.remote_url}")
+    print(f"project_root={result.project_root}")
+    print(f"memory_repository_path={result.memory_repository_path}")
+    print(f"cgitsync_path={result.cgitsync_path}")
+    print(f"state_count={len(result.state_paths)}")
+    print(f"verified={str(result.verified).lower()}")
+    print(f"remote_ref={result.remote_ref}")
     print(f"status={result.status}")
     return 0
 

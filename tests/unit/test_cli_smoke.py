@@ -297,6 +297,66 @@ def test_memorize_command_persists_current_memory_path(monkeypatch, capsys, tmp_
     assert "status=persisted" in captured.out
 
 
+def test_retrieve_command_recovers_named_memory(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def retrieve(
+            self,
+            name,
+            *,
+            output_path=None,
+            branch="main",
+            service="forge43.io",
+            remote_name="forge43",
+        ):
+            captured_call["name"] = name
+            captured_call["output_path"] = output_path
+            captured_call["branch"] = branch
+            captured_call["service"] = service
+            captured_call["remote_name"] = remote_name
+            binding = SimpleNamespace(
+                name="CGSil1",
+                alias="@forge43@CGSil1",
+                remote_name="forge43",
+                remote_url="git@forge43.io:/srv/git/CGSil1.git",
+            )
+            recovered_root = tmp_path / "workspace" / "CGSil1"
+            return SimpleNamespace(
+                binding=binding,
+                project_root=recovered_root,
+                memory_repository_path=tmp_path / "state-home" / "memory-repositories" / "abc",
+                cgitsync_path=recovered_root / ".cgitsync",
+                state_paths=(recovered_root / ".cgitsync" / f"state({'a' * 64})_0",),
+                verified=True,
+                remote_ref="1" * 40,
+                status="retrieved",
+            )
+
+        def get_tree_state(self):
+            return None
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    output_path = str(tmp_path / "workspace")
+    exit_code = main(["retrieve", "CGSil1", "--output-path", output_path, "--branch", "main"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call == {
+        "name": "CGSil1",
+        "output_path": output_path,
+        "branch": "main",
+        "service": "forge43.io",
+        "remote_name": "forge43",
+    }
+    assert "operation=memory.retrieve" in captured.out
+    assert "alias=@forge43@CGSil1" in captured.out
+    assert "state_count=1" in captured.out
+    assert "verified=true" in captured.out
+    assert "status=retrieved" in captured.out
+
+
 def test_initialise_command_requires_source(capsys):
     with pytest.raises(SystemExit) as exc_info:
         main(["initialise"])

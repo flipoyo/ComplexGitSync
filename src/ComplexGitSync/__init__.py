@@ -70,6 +70,7 @@ from .orchestre import (
     MemoryBinding,
     MemoryMemorizeResult,
     MemoryRememberResult,
+    MemoryRetrieveResult,
     Orchestre,
     SyncLedger,
 )
@@ -131,6 +132,7 @@ __all__ = [
     "MemoryBinding",
     "MemoryMemorizeResult",
     "MemoryRememberResult",
+    "MemoryRetrieveResult",
     "Orchestre",
     "SyncLedger",
 ]
