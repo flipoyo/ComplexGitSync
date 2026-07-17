@@ -1,47 +1,121 @@
+---
+title: "@CGS — ComplexGraphSync"
+subtitle: "Graph Specification"
+license: "Apache-2.0"
+mermaid: true
+---
+
 # @CGS — ComplexGraphSync
 
-## ALPHA0001.05 — Axiomatic Foundation
+## Graph Specification
 
 License: Apache-2.0
 
 ---
 
-## Statement
+# Statement
 
-`@CGS` is a deterministic Graph × Graph Synchronizer.
+```text
+@CGS is a deterministic Graph × Graph Synchronizer.
+
+CGS := ComplexGraphSync
 
 The fundamental problem is synchronization.
 
-Time is required because two distinct synchronized resolutions must never occupy the same ordered occurrence.
+@CGS compares two opposed Graph interpretations.
 
-```text
-@CGS : G × G -> G*
+If both interpretations resolve to one identical deterministic state,
+@CGS produces PoE.
+
+PoE is anchored by @.
+
+The synchronized result is an active Graph G*.
 ```
 
-`G*` denotes a synchronized Graph instantiated as a Gateway and anchored in `L0`.
+```mermaid
+flowchart LR
+    LEFT["LEFT Graph interpretation"]
+    RIGHT["RIGHT Graph interpretation"]
+    CGS["@CGS"]
+    SYNC{"SYNC"}
+    VOID["void"]
+    POE["PoE"]
+    TIME["@"]
+    ACTIVE["G*"]
 
-```text
-CGS := ComplexGraphSync
+    LEFT --> CGS
+    RIGHT --> CGS
+    CGS --> SYNC
+
+    SYNC -->|"different"| VOID
+    SYNC -->|"identical"| POE
+
+    POE --> TIME
+    TIME --> ACTIVE
 ```
-
-CGS is not an operating system.
-
-CGS is a synchronization system for complex Graphs.
 
 ---
 
-## PRIME G
-
-Every constituent of a Graph is itself a Graph.
+# Fundamental Transition
 
 ```text
-ALPHA ∈ G
-DELTA ∈ G
-NABLA ∈ G
-CHI   ∈ G
+G
+-> opposed interpretations
+-> SYNC
+-> PoE XOR void
+-> @
+-> G*
 ```
 
-Canonical definitions:
+```mermaid
+flowchart LR
+    G["G"]
+    SPLIT["Opposed interpretations"]
+    SYNC{"SYNC"}
+    VOID["void"]
+    POE["PoE"]
+    AT["@"]
+    GSTAR["G*"]
+
+    G --> SPLIT
+    SPLIT --> SYNC
+    SYNC -->|"not identical"| VOID
+    SYNC -->|"identical"| POE
+    POE --> AT
+    AT --> GSTAR
+```
+
+---
+
+# Graph Primitive
+
+```text
+PRIME G := {
+    NAME
+    NODE
+    EDGE
+    OP
+}
+```
+
+```mermaid
+flowchart TB
+    G["PRIME G"]
+
+    NAME["NAME"]
+    NODE["NODE"]
+    EDGE["EDGE"]
+    OP["OP"]
+
+    G --> NAME
+    G --> NODE
+    G --> EDGE
+    G --> OP
+```
+
+---
+
+# Canonical Graph Members
 
 ```text
 G.NAME := ALPHA
@@ -50,157 +124,116 @@ G.EDGE := NABLA
 G.OP   := CHI
 ```
 
-Therefore:
+```mermaid
+flowchart TB
+    G["G"]
 
-```text
-PRIME G := {
-    NAME : ALPHA
-    NODE : DELTA
-    EDGE : NABLA
-    OP   : CHI
-}
+    ALPHA["ALPHA"]
+    DELTA["DELTA"]
+    NABLA["NABLA"]
+    CHI["CHI"]
+
+    G -->|"NAME"| ALPHA
+    G -->|"NODE"| DELTA
+    G -->|"EDGE"| NABLA
+    G -->|"OP"| CHI
 ```
 
-Canonical Graph:
+---
 
-```text
-G := {
-    ALPHA
-    DELTA
-    NABLA
-    CHI
-}
-```
-
-Where:
+# Canonical Meanings
 
 ```text
 ALPHA := Graph identity
 DELTA := Graph state
 NABLA := Graph relation
 CHI   := Graph operator
+
+DELTA := DAG
+NABLA := TANGLE
 ```
-
-`DELTA` is a DAG.
-
-`NABLA` is a TANGLE.
-
-`CHI` interprets oriented relations.
-
-```mermaid
-flowchart TB
-    G["PRIME G"]
-
-    A["ALPHA<br/>NAME"]
-    D["DELTA<br/>NODE"]
-    N["NABLA<br/>EDGE"]
-    C["CHI<br/>OP"]
-
-    G --> A
-    G --> D
-    G --> N
-    G --> C
-```
-
----
-
-## Graph Orientation
-
-Let `l` and `r` be two Nodes connected by one oriented Edge.
-
-```text
-l --NABLA--> r
-```
-
-The Graph reads the Edge in its declared direction.
-
-```text
-G : l -> r
-```
-
-The Operator interprets the same Edge in the opposite direction.
-
-```text
-*OP : r <- l
-```
-
-Since:
-
-```text
-OP := CHI
-```
-
-then:
-
-```text
-*OP := *CHI
-```
-
-Canonical orientation law:
-
-```text
-G(l -> r) <=> *CHI(r <- l)
-```
-
-The Edge remains unique.
-
-Only its reading direction differs.
 
 ```mermaid
 flowchart LR
-    L["LEFT<br/>l : DELTA"]
-    R["RIGHT<br/>r : DELTA"]
+    ALPHA["ALPHA<br/>Identity"]
+    DELTA["DELTA<br/>State / DAG"]
+    NABLA["NABLA<br/>Relation / TANGLE"]
+    CHI["CHI<br/>Operator"]
 
-    L -->|"NABLA<br/>G reads left to right"| R
-    R -->|"CHI<br/>*OP reads right to left"| L
+    ALPHA --> DELTA
+    DELTA --> NABLA
+    NABLA --> CHI
+    CHI --> ALPHA
 ```
 
 ---
 
-## Synchronization
-
-Let:
+# Graph Orientation
 
 ```text
-LEFT  := G(l -> r)
-RIGHT := *OP(r <- l)
+A Graph relation is oriented.
+
+G reads the declared relation from LEFT to RIGHT.
+
+CHI interprets the same relation from RIGHT to LEFT.
+
+The relation remains unique.
+
+Only the interpretation direction is opposed.
 ```
 
-The synchronization law is:
+```mermaid
+flowchart LR
+    L["LEFT Node"]
+    R["RIGHT Node"]
+
+    L -->|"NABLA / G reads"| R
+    R -->|"CHI interprets"| L
+```
+
+---
+
+# LEFT and RIGHT
 
 ```text
-SYNC(LEFT, RIGHT) :=
+LEFT  := G reads l -> r
+RIGHT := CHI reads r <- l
+```
+
+```mermaid
+flowchart TB
+    RELATION["One oriented relation"]
+
+    LEFT["LEFT interpretation"]
+    RIGHT["RIGHT interpretation"]
+
+    RELATION --> LEFT
+    RELATION --> RIGHT
+```
+
+---
+
+# Synchronization
+
+```text
+SYNC compares LEFT and RIGHT.
+
+SYNC returns:
 
     void    iff LEFT != RIGHT
     PoE     iff LEFT == RIGHT
 ```
 
-Therefore:
-
-```text
-PoE iff G(l -> r) == *OP(r <- l)
-```
-
-`PoE` is the Proof of Existence of one deterministic fact.
-
-It proves that two opposed readings of one relation resolve to the same state.
-
-`PoE` is not an Operator.
-
-`PoE` is the result of deterministic equality.
-
 ```mermaid
 flowchart LR
-    GL["G<br/>LEFT -> RIGHT"]
-    OR["*OP<br/>RIGHT <- LEFT"]
-
+    LEFT["LEFT"]
+    RIGHT["RIGHT"]
     SYNC{"SYNC"}
-
     VOID["void"]
     POE["PoE"]
 
-    GL --> SYNC
-    OR --> SYNC
+    LEFT --> SYNC
+    RIGHT --> SYNC
 
     SYNC -->|"LEFT != RIGHT"| VOID
     SYNC -->|"LEFT == RIGHT"| POE
@@ -208,504 +241,552 @@ flowchart LR
 
 ---
 
-## L0
-
-`L0` is the temporal anchoring layer.
-
-Its only role is to order synchronized occurrences.
+# Proof of Existence
 
 ```text
-L0 := PRIME OP
+PoE := Proof of Existence
+
+PoE is not an Operator.
+
+PoE is the deterministic proof that LEFT and RIGHT
+resolve to one identical Graph state.
 ```
 
-`AT` is the only Operator admissible on `L0`.
+```mermaid
+flowchart LR
+    LEFT["LEFT state"]
+    RIGHT["RIGHT state"]
+    EQUALITY{"identical?"}
+    VOID["void"]
+    POE["PoE"]
 
-```text
-AT : L0
+    LEFT --> EQUALITY
+    RIGHT --> EQUALITY
+
+    EQUALITY -->|"no"| VOID
+    EQUALITY -->|"yes"| POE
 ```
 
-The canonical resolution of `AT` is:
+---
+
+# L0
 
 ```text
-AT(LEFT, RIGHT) :=
+L0 := temporal anchoring layer
+
+TIME is the only primitive of L0.
+
+L0 orders synchronized occurrences.
+
+L0 does not create PoE.
+
+PoE permits a synchronized occurrence to be anchored.
+```
+
+```mermaid
+flowchart LR
+    POE["PoE"]
+    L0["L0"]
+    TIME["TIMESTAMP"]
+    AT["@"]
+    ORDER["Ordered occurrence"]
+
+    POE --> L0
+    L0 --> TIME
+    TIME --> AT
+    AT --> ORDER
+```
+
+---
+
+# AT
+
+```text
+AT := temporal Operator of L0
+
+AT returns:
 
     void         iff LEFT != RIGHT
     TIMESTAMP    iff LEFT == RIGHT
+
+@ := instantiated TIMESTAMP
 ```
 
-Define:
+```mermaid
+flowchart LR
+    LEFT["LEFT"]
+    RIGHT["RIGHT"]
+    ATOP{"AT"}
+    VOID["void"]
+    TS["TIMESTAMP"]
+    INSTANCE["@"]
 
-```text
-TIMESTAMP := PRIME CHI
+    LEFT --> ATOP
+    RIGHT --> ATOP
+
+    ATOP -->|"different"| VOID
+    ATOP -->|"identical"| TS
+    TS --> INSTANCE
 ```
 
-An instantiated TIMESTAMP is:
+---
 
-```text
-@ := *TIMESTAMP
-```
-
-A synchronized occurrence is ordered as follows:
+# Temporal Order
 
 ```text
 @0 < @1 < @2 < ... < @n
-```
 
-The sequence of valid temporal occurrences is:
+Each valid occurrence is strictly ordered.
 
-```text
-L0 := {
-    @0
-    @1
-    @2
-    ...
-    @n
-}
-```
-
-with the invariant:
-
-```text
-@i+1 > @i
-```
-
-The clock supplies order.
-
-`PoE` supplies deterministic existence.
-
-```mermaid
-flowchart LR
-    L["LEFT"]
-    R["RIGHT"]
-
-    AT{"AT"}
-
-    VOID["void"]
-    TS["TIMESTAMP"]
-    OCC["@ = *TIMESTAMP"]
-
-    L --> AT
-    R --> AT
-
-    AT -->|"LEFT != RIGHT"| VOID
-    AT -->|"LEFT == RIGHT"| TS
-
-    TS --> OCC
-```
-
----
-
-## Time Anchoring
-
-Synchronization produces a deterministic fact.
-
-`L0` gives that fact an ordered temporal occurrence.
-
-```text
-SYNC produces PoE
-PoE permits TIMESTAMP
-TIMESTAMP instantiates @
-@ anchors the synchronized state
-```
-
-Canonical transition:
-
-```text
-Gi
-    -> SYNC
-    -> PoE
-    -> @i+1
-    -> Gi+1
+A later synchronized occurrence must have a later temporal anchor.
 ```
 
 ```mermaid
 flowchart LR
-    GI["G at @i"]
+    A0["@0"]
+    A1["@1"]
+    A2["@2"]
+    AN["@n"]
 
-    READG["G reads<br/>LEFT -> RIGHT"]
-    READOP["*OP reads<br/>RIGHT <- LEFT"]
-
-    SYNC{"SYNC"}
-    VOID["void"]
-    POE["PoE"]
-    NEXT["@i+1"]
-    GN["G at @i+1"]
-
-    GI --> READG
-    GI --> READOP
-
-    READG --> SYNC
-    READOP --> SYNC
-
-    SYNC -->|"false"| VOID
-    SYNC -->|"true"| POE
-
-    POE --> NEXT
-    NEXT --> GN
+    A0 --> A1
+    A1 --> A2
+    A2 --> AN
 ```
 
 ---
 
-## Gateway
-
-The symbol `*` denotes a Gateway.
+# Gateway
 
 ```text
 * := Gateway
-```
 
-For any Graph `G`:
-
-```text
 *G := Gateway(G)
-```
 
-An active Graph is therefore a Gateway between `.PUBLIC` and `.PRIVATE`.
+@ instantiates the Gateway.
 
-```text
-.PUBLIC <-> *G <-> .PRIVATE
-```
-
-The Gateway is instantiated by `@`.
-
-```text
-* = @
-```
-
-This means:
-
-```text
 *G := @G
 ```
 
-or equivalently:
-
-```text
-@G := Gateway(G)
-```
-
-A Graph becomes active when it exposes a Gateway.
-
-```text
-G  := Graph
-*G := Active Graph
-*G := Gateway Graph
-```
-
-The three statements are compatible:
-
-```text
-active Graph == Gateway Graph == @G
-```
-
 ```mermaid
 flowchart LR
-    PUB[".PUBLIC"]
-    GW["*G = @G<br/>Gateway"]
-    PRIV[".PRIVATE"]
+    G["G"]
+    STAR["*"]
+    GATEWAY["*G"]
+    INSTANCE["@G"]
 
-    PUB <-->|"PUBLIC exchange"| GW
-    GW <-->|"PRIVATE exchange"| PRIV
+    G --> STAR
+    STAR --> GATEWAY
+    GATEWAY --> INSTANCE
 ```
 
 ---
 
-## PUBLIC and PRIVATE
-
-Canonical values:
+# Active Graph
 
 ```text
-.PUBLIC  := 0
-.PRIVATE := 1
-```
+G* := active Graph
 
-`.PUBLIC` is the exposed Graph space.
+A Graph becomes active iff:
 
-`.PRIVATE` is the local Graph memory.
+    LEFT == RIGHT
+    SYNC returns PoE
+    PoE is anchored by @
 
-The Gateway is the only admissible crossing point.
-
-```text
-.PUBLIC <-> *G <-> .PRIVATE
-```
-
-There is no direct crossing:
-
-```text
-.PUBLIC !-> .PRIVATE
-.PRIVATE !-> .PUBLIC
-```
-
-All communication passes through the Gateway.
-
-```text
-.PUBLIC -> *G -> .PRIVATE
-.PRIVATE -> *G -> .PUBLIC
-```
-
-The Gateway may:
-
-```text
-listen
-interpret
-synchronize
-emit
-```
-
-The Gateway may not expose the complete `.PRIVATE` state.
-
-```text
-PUBLIC artefact != PRIVATE state
-```
-
-```mermaid
-flowchart LR
-    PUB[".PUBLIC<br/>Request or artefact"]
-    GW["*G<br/>Gateway"]
-    PRIV[".PRIVATE<br/>Local memory"]
-
-    PUB -->|"listen"| GW
-    GW -->|"interpret"| PRIV
-
-    PRIV -->|"local state"| GW
-    GW -->|"emit artefact"| PUB
-
-    PUB -.->|"no direct access"| PRIV
-    PRIV -.->|"no direct disclosure"| PUB
-```
-
----
-
-## Active Graph
-
-An active Graph is a Gateway.
-
-```text
-G* := {
-    G
-    *OP
-    @
-}
-```
-
-Equivalent form:
-
-```text
-G* := {
-    ALPHA
-    DELTA
-    NABLA
-    *CHI
-    @
-}
-```
-
-Where:
-
-```text
-ALPHA := identity
-DELTA := state
-NABLA := relation
-*CHI  := Gateway Operator
-@     := temporal occurrence
-```
-
-A Graph is active if and only if its two opposed readings synchronize and the result is anchored in `L0`.
-
-```text
-G* iff SYNC(G, *OP) == PoE at @
-```
-
-Canonical law:
-
-```text
-G*
-iff
-G(l -> r) == *OP(r <- l)
-at @
+An active Graph is a PUBLIC–PRIVATE Gateway.
 ```
 
 ```mermaid
 flowchart TB
     G["G"]
-    OP["*OP"]
+    CHI["CHI"]
     SYNC{"SYNC"}
     POE["PoE"]
     AT["@"]
-    ACTIVE["G*<br/>Active Gateway Graph"]
+    ACTIVE["G*"]
 
     G --> SYNC
-    OP --> SYNC
+    CHI --> SYNC
 
-    SYNC -->|"equal"| POE
+    SYNC -->|"identical"| POE
     POE --> AT
     AT --> ACTIVE
 ```
 
 ---
 
-## @CGS
-
-The canonical entry point is:
+# PUBLIC and PRIVATE
 
 ```text
-@CGS(.ALPHA.)
+.PUBLIC  := 1
+.PRIVATE := 0
+
+.PUBLIC is the exposed Graph space.
+
+.PRIVATE is the local Graph state.
+
+The Gateway is the unique frontier between both spaces.
 ```
-
-The current interpretation is:
-
-```text
-LEFT  := .ALPHA
-RIGHT := @OP(.)
-```
-
-`@CGS` synchronizes the two readings.
-
-```text
-@CGS(LEFT, RIGHT) := SYNC(LEFT, RIGHT)
-```
-
-Complete canonical form:
-
-```text
-@CGS :
-    G × G
-    -> SYNC
-    -> PoE
-    -> @
-    -> G*
-```
-
-`@CGS` does not merely transform one Graph.
-
-It determines whether two Graph readings resolve to one synchronized occurrence.
 
 ```mermaid
 flowchart LR
-    G1["Graph reading 1"]
-    G2["Graph reading 2"]
+    PUBLIC[".PUBLIC"]
+    GATEWAY["*G Gateway"]
+    PRIVATE[".PRIVATE"]
 
-    CGS["@CGS<br/>ComplexGraphSync"]
+    PUBLIC <--> GATEWAY
+    GATEWAY <--> PRIVATE
+```
 
-    SYNC{"SYNC"}
+---
+
+# Gateway Invariant
+
+```text
+.PUBLIC cannot access .PRIVATE directly.
+
+.PRIVATE cannot emit to .PUBLIC directly.
+
+Every crossing passes through the active Gateway.
+```
+
+```mermaid
+flowchart LR
+    PUBLIC[".PUBLIC"]
+    GATEWAY["*G"]
+    PRIVATE[".PRIVATE"]
+
+    PUBLIC -. "forbidden direct access" .-> PRIVATE
+    PRIVATE -. "forbidden direct emission" .-> PUBLIC
+
+    PUBLIC --> GATEWAY
+    GATEWAY --> PRIVATE
+    PRIVATE --> GATEWAY
+    GATEWAY --> PUBLIC
+```
+
+---
+
+# Gateway Operations
+
+```text
+The Gateway may:
+
+    listen
+    interpret
+    synchronize
+    emit
+
+The Gateway may not expose the complete .PRIVATE state.
+```
+
+```mermaid
+flowchart TB
+    GATEWAY["*G Gateway"]
+
+    LISTEN["listen"]
+    INTERPRET["interpret"]
+    SYNC["synchronize"]
+    EMIT["emit"]
+
+    GATEWAY --> LISTEN
+    GATEWAY --> INTERPRET
+    GATEWAY --> SYNC
+    GATEWAY --> EMIT
+```
+
+---
+
+# PUBLIC Request Protocol
+
+```text
+1. .PUBLIC submits a request.
+2. The Gateway receives the request.
+3. The Gateway transfers the request to .PRIVATE.
+4. .PRIVATE resolves the request locally.
+5. The local result returns to the Gateway.
+```
+
+```mermaid
+sequenceDiagram
+    participant P as .PUBLIC
+    participant G as Gateway
+    participant R as .PRIVATE
+
+    P->>G: request
+    G->>R: interpret locally
+    R-->>G: local result
+```
+
+---
+
+# Synchronization Protocol
+
+```text
+1. The Gateway constructs LEFT and RIGHT interpretations.
+2. @CGS receives both interpretations.
+3. SYNC compares both states.
+4. Different states return void.
+5. Identical states return PoE.
+```
+
+```mermaid
+sequenceDiagram
+    participant G as Gateway
+    participant C as @CGS
+    participant S as SYNC
+
+    G->>C: LEFT and RIGHT
+    C->>S: compare
+
+    alt LEFT != RIGHT
+        S-->>C: void
+    else LEFT == RIGHT
+        S-->>C: PoE
+    end
+```
+
+---
+
+# Temporal Anchoring Protocol
+
+```text
+1. PoE validates the synchronized state.
+2. L0 receives the validated occurrence.
+3. AT creates a TIMESTAMP.
+4. The TIMESTAMP is instantiated as @.
+5. @ anchors the synchronized Graph state.
+```
+
+```mermaid
+sequenceDiagram
+    participant C as @CGS
+    participant L as L0
+    participant A as AT
+    participant G as G*
+
+    C->>L: PoE
+    L->>A: validated occurrence
+    A-->>L: TIMESTAMP
+    L-->>G: @
+```
+
+---
+
+# Emission Protocol
+
+```text
+The synchronized occurrence produces two distinct results:
+
+    .PUBLIC artefact
+    .PRIVATE state
+
+The .PUBLIC artefact is a projection.
+
+The .PRIVATE state is the complete local result.
+
+The artefact is not the private state.
+```
+
+```mermaid
+flowchart LR
+    ACTIVE["G*"]
+    GATEWAY["Gateway"]
+
+    PUBLIC[".PUBLIC artefact"]
+    PRIVATE[".PRIVATE state"]
+
+    ACTIVE --> GATEWAY
+    GATEWAY --> PUBLIC
+    GATEWAY --> PRIVATE
+```
+
+---
+
+# Public Projection
+
+```text
+.PUBLIC artefact := projection(.PRIVATE state)
+
+.PUBLIC artefact != .PRIVATE state
+```
+
+```mermaid
+flowchart LR
+    PRIVATE[".PRIVATE state"]
+    GATEWAY["*G"]
+    PROJECTION["Projection"]
+    PUBLIC[".PUBLIC artefact"]
+
+    PRIVATE --> GATEWAY
+    GATEWAY --> PROJECTION
+    PROJECTION --> PUBLIC
+```
+
+---
+
+# @CGS Entry Point
+
+```text
+Canonical public entry:
+
+    @CGS(.)
+
+Canonical private entry:
+
+    @CGS(., ALPHA)
+
+General form:
+
+    @CGS(., list)
+
+list may be empty.
+```
+
+```mermaid
+flowchart LR
+    DOT["."]
+    LIST["list"]
+    CGS["@CGS"]
+    INSTANCE["Graph instance"]
+
+    DOT --> CGS
+    LIST --> CGS
+    CGS --> INSTANCE
+```
+
+---
+
+# @CGS Responsibility
+
+```text
+@CGS synchronizes Graph interpretations.
+
+@CGS does not persist Graph memory.
+
+@CGS does not replace the Gateway.
+
+@CGS does not expose .PRIVATE.
+
+@CGS returns either void or a PoE-validated occurrence.
+```
+
+```mermaid
+flowchart TB
+    CGS["@CGS"]
+
+    INPUT["Graph interpretations"]
+    SYNC["Synchronization"]
     VOID["void"]
-    POE["PoE"]
-    TIME["@"]
-    GACTIVE["G*"]
+    VALID["PoE-validated occurrence"]
 
-    G1 --> CGS
-    G2 --> CGS
-
+    INPUT --> CGS
     CGS --> SYNC
-
-    SYNC -->|"different"| VOID
-    SYNC -->|"equal"| POE
-
-    POE --> TIME
-    TIME --> GACTIVE
+    SYNC --> VOID
+    SYNC --> VALID
 ```
 
 ---
 
-## DELTA Synchronization
-
-`DELTA` is the synchronized Graph state.
+# DELTA
 
 ```text
+DELTA := deterministic Graph state
 DELTA := DAG
-```
 
-A synchronized DELTA is:
+DELTA* := synchronized active Graph state
 
-```text
-DELTA* := {
-    ALPHA
-    DELTA
-    NABLA
-    *CHI
-    @
-}
-```
-
-Canonical transformation:
-
-```text
-@CGS(DELTA, NABLA) -> DELTA*
-```
-
-A new `DELTA*` exists only when synchronization succeeds.
-
-```text
-DELTA* exists iff PoE
-```
-
-Its occurrence is uniquely anchored:
-
-```text
-DELTA*@i
+DELTA* exists iff PoE.
 ```
 
 ```mermaid
 flowchart LR
-    D["DELTA<br/>DAG state"]
-    N["NABLA<br/>TANGLE relation"]
-    C["@CGS"]
+    DELTA["DELTA"]
+    NABLA["NABLA"]
+    CGS["@CGS"]
+    POE["PoE"]
+    AT["@"]
+    STAR["DELTA*"]
 
-    S{"SYNC"}
-    P["PoE"]
-    T["@"]
-    DS["DELTA*"]
-
-    D --> C
-    N --> C
-
-    C --> S
-    S -->|"equal"| P
-    S -->|"different"| V["void"]
-
-    P --> T
-    T --> DS
+    DELTA --> CGS
+    NABLA --> CGS
+    CGS --> POE
+    POE --> AT
+    AT --> STAR
 ```
 
 ---
 
-## Memory
+# NABLA
 
-For the current ALPHA Series, `@OEMS` is only a Memory System.
+```text
+NABLA := Graph relation
+NABLA := TANGLE
+
+NABLA carries the oriented relation between Graph Nodes.
+
+NABLA is interpreted by CHI.
+```
+
+```mermaid
+flowchart LR
+    LEFT["LEFT Node"]
+    NABLA["NABLA"]
+    RIGHT["RIGHT Node"]
+    CHI["CHI"]
+
+    LEFT --> NABLA
+    NABLA --> RIGHT
+    CHI --> NABLA
+```
+
+---
+
+# CHI
+
+```text
+CHI := oriented Graph Operator
+
+CHI interprets the relation from the opposite orientation.
+
+CHI does not create the relation.
+
+CHI does not emit by itself.
+
+CHI contributes the opposed interpretation required by SYNC.
+```
+
+```mermaid
+flowchart LR
+    RELATION["NABLA relation"]
+    FORWARD["G reading"]
+    REVERSE["CHI interpretation"]
+    SYNC["SYNC"]
+
+    RELATION --> FORWARD
+    RELATION --> REVERSE
+
+    FORWARD --> SYNC
+    REVERSE --> SYNC
+```
+
+---
+
+# OEMS
 
 ```text
 OEMS := Ontology Existence Memory System
-```
 
-Its current function is:
+For the current ALPHA Series:
 
-```text
-@OEMS(G*) -> MEMORY(G*)
-```
+    OEMS is a Memory System.
 
-`@OEMS` persists synchronized Graph occurrences.
+@OEMS persists synchronized active Graphs.
 
-It does not:
+@OEMS does not execute @CGS.
 
-```text
-define SYNC
-operate the Gateway
-generate PoE
-control L0
-replace @CGS
-```
+@OEMS does not generate PoE.
 
-It only persists the result.
-
-```text
-@CGS produces G*
-@OEMS persists G*
-```
-
-Canonical relation:
-
-```text
-@CGS -> G* -> @OEMS -> MEMORY
+@OEMS does not control L0.
 ```
 
 ```mermaid
@@ -724,60 +805,75 @@ flowchart LR
 
 ---
 
-## Private Memory Structure
+# Responsibility Separation
 
-The private memory of one active Graph contains:
+```text
+@CGS synchronizes G.
+
+L0 orders the occurrence.
+
+@ anchors the occurrence.
+
+The Gateway separates .PUBLIC and .PRIVATE.
+
+@OEMS persists G*.
+```
+
+```mermaid
+flowchart LR
+    G["G"]
+    CGS["@CGS"]
+    L0["L0"]
+    AT["@"]
+    GATEWAY["Gateway"]
+    OEMS["@OEMS"]
+    MEMORY["Memory"]
+
+    G --> CGS
+    CGS --> L0
+    L0 --> AT
+    AT --> GATEWAY
+    GATEWAY --> OEMS
+    OEMS --> MEMORY
+```
+
+---
+
+# Private Memory
 
 ```text
 .PRIVATE(G*) := {
     ALPHA
     DELTA
     NABLA
-    *CHI
+    CHI
     ORIGIN
     @
 }
 ```
 
-Where:
-
-```text
-ALPHA  := local identity
-DELTA  := synchronized state
-NABLA  := persistent relations
-*CHI   := Gateway interpretation
-ORIGIN := provenance
-@      := temporal anchor
-```
-
-The private memory is not a public report.
-
-It is the complete local Graph state.
-
 ```mermaid
 flowchart TB
-    PRIVATE[".PRIVATE(G*)"]
+    PRIVATE[".PRIVATE G*"]
 
-    A["ALPHA<br/>Identity"]
-    D["DELTA<br/>State"]
-    N["NABLA<br/>Relations"]
-    C["*CHI<br/>Gateway interpretation"]
-    O["ORIGIN<br/>Provenance"]
-    T["@<br/>Temporal anchor"]
+    ALPHA["ALPHA"]
+    DELTA["DELTA"]
+    NABLA["NABLA"]
+    CHI["CHI"]
+    ORIGIN["ORIGIN"]
+    AT["@"]
 
-    PRIVATE --> A
-    PRIVATE --> D
-    PRIVATE --> N
-    PRIVATE --> C
-    PRIVATE --> O
-    PRIVATE --> T
+    PRIVATE --> ALPHA
+    PRIVATE --> DELTA
+    PRIVATE --> NABLA
+    PRIVATE --> CHI
+    PRIVATE --> ORIGIN
+    PRIVATE --> AT
 ```
 
 ---
 
-## Public Projection
-
-The public side receives only an artefact emitted by the Gateway.
+# Public Artefact
 
 ```text
 .PUBLIC(G*) := {
@@ -787,112 +883,22 @@ The public side receives only an artefact emitted by the Gateway.
 }
 ```
 
-The public projection is derived from the private state.
-
-```text
-.PUBLIC artefact := projection(.PRIVATE state)
-```
-
-But:
-
-```text
-.PUBLIC artefact != .PRIVATE state
-```
-
-The public projection may include:
-
-```text
-report
-status
-result
-proof reference
-timestamp
-public Graph
-```
-
-It may not contain undisclosed private memory.
-
 ```mermaid
-flowchart LR
-    PRIVATE[".PRIVATE state"]
-    GW["*G Gateway"]
-    PROJECTION["PUBLIC projection"]
-    PUBLIC[".PUBLIC artefact"]
+flowchart TB
+    PUBLIC[".PUBLIC G*"]
 
-    PRIVATE --> GW
-    GW --> PROJECTION
-    PROJECTION --> PUBLIC
+    REQUEST["REQUEST"]
+    ARTEFACT["ARTEFACT"]
+    AT["@"]
+
+    PUBLIC --> REQUEST
+    PUBLIC --> ARTEFACT
+    PUBLIC --> AT
 ```
 
 ---
 
-## forge43.io
-
-`forge43.io` will provide the first concrete example of `.PUBLIC` and `.PRIVATE` sharing through a Gateway.
-
-It is not part of the core axiom.
-
-It is the first implementation model.
-
-```text
-forge43.io := external lightweight SSH-Git Gateway
-```
-
-The conceptual flow is:
-
-```text
-.PUBLIC request
-    -> forge43.io Gateway
-    -> .PRIVATE Git service
-    -> synchronization
-    -> PoE
-    -> @
-    -> PUBLIC artefact
-    -> PRIVATE memory
-```
-
-```mermaid
-flowchart LR
-    USER[".PUBLIC<br/>User or remote Node"]
-
-    FORGE["forge43.io<br/>*G Gateway"]
-
-    PRIVATE[".PRIVATE<br/>SSH-Git service"]
-
-    CGS["@CGS"]
-    SYNC{"SYNC"}
-
-    VOID["void"]
-    POE["PoE"]
-    TIME["@"]
-
-    PUBOUT[".PUBLIC<br/>Artefact"]
-    PRIVMEM[".PRIVATE<br/>Persistent state"]
-
-    OEMS["@OEMS<br/>Memory System"]
-
-    USER -->|"request"| FORGE
-    FORGE --> PRIVATE
-
-    PRIVATE --> CGS
-    CGS --> SYNC
-
-    SYNC -->|"different"| VOID
-    SYNC -->|"equal"| POE
-
-    POE --> TIME
-
-    TIME --> PUBOUT
-    TIME --> PRIVMEM
-
-    PRIVMEM --> OEMS
-```
-
----
-
-## Local Memory Landing Point
-
-The local memory landing point is `.cgitsync`.
+# Local Persistence
 
 ```text
 .cgitsync/
@@ -900,84 +906,149 @@ The local memory landing point is `.cgitsync`.
 ├── state(hash(@)_1)/
 ├── state(hash(@)_2)/
 └── state(hash(@)_n)/
-```
 
-Each synchronized occurrence is anchored by the hash of `@`.
+state identifier := state(hash(@)_i)
 
-```text
-state identifier := hash(@)
-```
+When hash(@) changes:
 
-For one temporal anchor:
-
-```text
-state(hash(@)_0)
-state(hash(@)_1)
-...
-state(hash(@)_n)
-```
-
-The local index `i` belongs only to the current `hash(@)`.
-
-When `hash(@)` changes:
-
-```text
-i := 0
-```
-
-Canonical invariant:
-
-```text
-hash(@) changes => local state index reinitializes
+    i := 0
 ```
 
 ```mermaid
 flowchart TB
-    AT1["@a"]
-    HASH1["hash(@a)"]
-    S10["state(hash(@a)_0)"]
-    S11["state(hash(@a)_1)"]
-    S1N["state(hash(@a)_n)"]
+    A1["@a"]
+    H1["hash(@a)"]
 
-    AT2["@b"]
-    HASH2["hash(@b)"]
-    S20["state(hash(@b)_0)"]
+    S10["state 0"]
+    S11["state 1"]
+    S1N["state n"]
 
-    AT1 --> HASH1
-    HASH1 --> S10
+    A2["@b"]
+    H2["hash(@b)"]
+    S20["state 0"]
+
+    A1 --> H1
+    H1 --> S10
     S10 --> S11
     S11 --> S1N
 
-    AT2 --> HASH2
-    HASH2 --> S20
+    A2 --> H2
+    H2 --> S20
 
-    S1N -. "new hash => i resets to 0" .-> S20
+    S1N -. "new hash resets index" .-> S20
 ```
 
 ---
 
-## Complete Synchronization Cycle
+# forge43.io
 
 ```text
-1. A Graph exposes a Gateway.
-2. .PUBLIC submits a request.
-3. *G receives the request.
-4. *OP reads the Graph from the opposite orientation.
-5. @CGS compares both readings.
-6. LEFT != RIGHT returns void.
-7. LEFT == RIGHT produces PoE.
-8. PoE permits a TIMESTAMP.
-9. TIMESTAMP instantiates @.
-10. @ anchors the new Graph state.
-11. .PRIVATE receives the complete state.
-12. .PUBLIC receives an emitted artefact.
-13. @OEMS persists the private synchronized occurrence.
+forge43.io is an external lightweight SSH-Git Gateway.
+
+It exemplifies PUBLIC–PRIVATE sharing.
+
+It is an implementation example.
+
+It is not a core axiom.
+```
+
+```mermaid
+flowchart LR
+    PUBLIC[".PUBLIC"]
+    FORGE["forge43.io"]
+    PRIVATE[".PRIVATE"]
+
+    PUBLIC -->|"request"| FORGE
+    FORGE -->|"private execution"| PRIVATE
+
+    PRIVATE -->|"local result"| FORGE
+    FORGE -->|"public artefact"| PUBLIC
+```
+
+---
+
+# forge43.io Synchronization Protocol
+
+```text
+1. .PUBLIC submits a request to forge43.io.
+2. forge43.io opens the Gateway.
+3. .PRIVATE resolves the request.
+4. @CGS synchronizes LEFT and RIGHT.
+5. void terminates an invalid resolution.
+6. PoE validates an identical resolution.
+7. @ anchors the synchronized occurrence.
+8. The Gateway emits a public artefact.
+9. The complete private state remains local.
+10. @OEMS persists G*.
 ```
 
 ```mermaid
 sequenceDiagram
     participant P as .PUBLIC
-    participant G as *G Gateway
+    participant F as forge43.io
+    participant R as .PRIVATE
+    participant C as @CGS
+    participant L as L0
+    participant M as @OEMS
+
+    P->>F: request
+    F->>R: private execution
+    R-->>F: local result
+    F->>C: LEFT and RIGHT
+
+    alt different
+        C-->>F: void
+        F-->>P: no synchronized artefact
+    else identical
+        C->>L: PoE
+        L-->>C: @
+        C-->>F: G*
+        F-->>P: public artefact
+        F-->>R: private state
+        R->>M: persist G*
+    end
+```
+
+---
+
+# Complete Protocol
+
+```text
+1. A Graph exposes a Gateway.
+
+2. .PUBLIC submits a request.
+
+3. The Gateway transfers the request to .PRIVATE.
+
+4. .PRIVATE resolves the request locally.
+
+5. The Gateway constructs LEFT and RIGHT interpretations.
+
+6. @CGS compares both interpretations.
+
+7. Different interpretations return void.
+
+8. Identical interpretations return PoE.
+
+9. PoE permits temporal anchoring.
+
+10. L0 creates a TIMESTAMP.
+
+11. The TIMESTAMP is instantiated as @.
+
+12. @ anchors the synchronized occurrence.
+
+13. The Gateway emits a .PUBLIC artefact.
+
+14. The complete .PRIVATE state remains local.
+
+15. @OEMS persists the active Graph G*.
+```
+
+```mermaid
+sequenceDiagram
+    participant P as .PUBLIC
+    participant G as Gateway
     participant R as .PRIVATE
     participant C as @CGS
     participant T as L0
@@ -985,9 +1056,9 @@ sequenceDiagram
 
     P->>G: request
     G->>R: interpret request
-    R->>G: local Graph state
+    R-->>G: local Graph state
 
-    G->>C: LEFT and RIGHT readings
+    G->>C: LEFT and RIGHT
     C->>C: SYNC
 
     alt LEFT != RIGHT
@@ -997,116 +1068,133 @@ sequenceDiagram
         C->>T: PoE
         T-->>C: @
         C-->>G: synchronized G*
-        G-->>P: PUBLIC artefact
-        G-->>R: PRIVATE synchronized state
+        G-->>P: .PUBLIC artefact
+        G-->>R: .PRIVATE state
         R->>M: persist G*
     end
 ```
 
 ---
 
-## Canonical Equations
+# Axiomatic Graph
 
 ```text
-CGS := ComplexGraphSync
+AXIOM 1
+Every constituent of G is a Graph.
+
+AXIOM 2
+Every Graph relation is oriented.
+
+AXIOM 3
+G and CHI interpret one relation from opposed orientations.
+
+AXIOM 4
+SYNC returns PoE iff both interpretations are identical.
+
+AXIOM 5
+SYNC returns void iff both interpretations differ.
+
+AXIOM 6
+PoE is anchored by @.
+
+AXIOM 7
+@ is ordered by L0.
+
+AXIOM 8
+An active Graph is a PUBLIC–PRIVATE Gateway.
+
+AXIOM 9
+.PUBLIC and .PRIVATE never cross directly.
+
+AXIOM 10
+@CGS synchronizes Graphs.
+
+AXIOM 11
+@OEMS persists active Graphs.
 ```
 
-```text
-G := {
-    ALPHA
-    DELTA
-    NABLA
-    CHI
-}
-```
+```mermaid
+flowchart TB
+    G["G"]
+    ORIENTATION["Oriented relation"]
+    LEFT["LEFT"]
+    RIGHT["RIGHT"]
+    SYNC{"SYNC"}
+    VOID["void"]
+    POE["PoE"]
+    L0["L0"]
+    AT["@"]
+    ACTIVE["G*"]
+    GATEWAY["PUBLIC–PRIVATE Gateway"]
+    OEMS["@OEMS"]
 
-```text
-G : LEFT -> RIGHT
-```
+    G --> ORIENTATION
+    ORIENTATION --> LEFT
+    ORIENTATION --> RIGHT
 
-```text
-*OP : RIGHT <- LEFT
-```
+    LEFT --> SYNC
+    RIGHT --> SYNC
 
-```text
-PoE iff LEFT == RIGHT
-```
+    SYNC -->|"different"| VOID
+    SYNC -->|"identical"| POE
 
-```text
-SYNC(LEFT, RIGHT) :=
-
-    void    iff LEFT != RIGHT
-    PoE     iff LEFT == RIGHT
-```
-
-```text
-TIMESTAMP := PRIME CHI
-```
-
-```text
-@ := *TIMESTAMP
-```
-
-```text
-* := Gateway
-```
-
-```text
-*G := @G
-```
-
-```text
-.PUBLIC <-> *G <-> .PRIVATE
-```
-
-```text
-G* iff SYNC(G, *OP) == PoE at @
-```
-
-```text
-@CGS : G × G -> G*
-```
-
-```text
-@OEMS(G*) -> MEMORY(G*)
+    POE --> L0
+    L0 --> AT
+    AT --> ACTIVE
+    ACTIVE --> GATEWAY
+    ACTIVE --> OEMS
 ```
 
 ---
 
-## Axiomatic Summary
+# Canonical Summary
 
 ```text
-SYNC produces the deterministic fact.
+CGS := ComplexGraphSync
+
+G := Graph
+
+DELTA := Graph state
+
+NABLA := Graph relation
+
+CHI := oriented Graph Operator
+
+SYNC := deterministic comparison
+
+PoE := Proof of Existence
+
+L0 := temporal ordering layer
+
+@ := temporal anchor
+
+* := Gateway
+
+G* := active Graph
+
+.PUBLIC := exposed Graph space
+
+.PRIVATE := local Graph state
+
+@CGS := Graph × Graph Synchronizer
+
+@OEMS := persistent memory of G*
 ```
 
-```text
-PoE proves the equality of opposed readings.
-```
+```mermaid
+flowchart LR
+    G["G"]
+    CGS["@CGS"]
+    SYNC["SYNC"]
+    POE["PoE"]
+    AT["@"]
+    GSTAR["G*"]
+    OEMS["@OEMS"]
 
-```text
-L0 orders the synchronized occurrence.
-```
-
-```text
-@ anchors the occurrence.
-```
-
-```text
-* exposes the Gateway.
-```
-
-```text
-*G is the active PUBLIC-PRIVATE Graph frontier.
-```
-
-```text
-@CGS synchronizes Graphs.
-```
-
-```text
-@OEMS persists synchronized Graphs.
-```
-
-```text
-forge43.io exemplifies the first external PUBLIC-PRIVATE Gateway.
+    G --> CGS
+    CGS --> SYNC
+    SYNC --> POE
+    POE --> AT
+    AT --> GSTAR
+    GSTAR --> OEMS
 ```
