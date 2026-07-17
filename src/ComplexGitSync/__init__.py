@@ -67,6 +67,8 @@ from .orchestre import (
     GocDocument,
     GtsDocument,
     LocalGitRegister,
+    MemoryBinding,
+    MemoryRememberResult,
     Orchestre,
     SyncLedger,
 )
@@ -125,6 +127,8 @@ __all__ = [
     "GtsDocument",
     "GitRunner",
     "LocalGitRegister",
+    "MemoryBinding",
+    "MemoryRememberResult",
     "Orchestre",
     "SyncLedger",
 ]

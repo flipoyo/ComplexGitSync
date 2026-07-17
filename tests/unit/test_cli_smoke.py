@@ -198,6 +198,57 @@ def test_purge_command_removes_generated_clone_state(monkeypatch, capsys, tmp_pa
     assert str(removed[1]) in captured.out
 
 
+def test_remember_command_binds_external_memory(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def resolve_initialise_cgshome(self, source, *, output_path=None):
+            captured_call["resolve_source"] = Path(source)
+            captured_call["resolve_output_path"] = output_path
+            return Path(output_path) / "CGSil1"
+
+        def remember(self, source, *, output_path=None, service="forge43.io", remote_name="forge43"):
+            captured_call["remember_source"] = Path(source)
+            captured_call["remember_output_path"] = output_path
+            captured_call["service"] = service
+            captured_call["remote_name"] = remote_name
+            binding = SimpleNamespace(
+                name="CGSil1",
+                alias="@forge43@CGSil1",
+                remote_name="forge43",
+                remote_url="git@forge43.io:/srv/git/CGSil1.git",
+            )
+            return SimpleNamespace(
+                binding=binding,
+                config_path=Path(output_path) / "CGSil1" / ".cgitsync" / "memory.toml",
+                remote_validated=True,
+            )
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    config_path = tmp_path / "CGSil1.cgs"
+    config_path.touch()
+    output_path = str(tmp_path / "workspace")
+
+    exit_code = main(["remember", str(config_path), "--output-path", output_path])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["resolve_source"] == config_path
+    assert captured_call["resolve_output_path"] == output_path
+    assert captured_call["remember_source"] == config_path.resolve()
+    assert captured_call["remember_output_path"] == output_path
+    assert captured_call["service"] == "forge43.io"
+    assert captured_call["remote_name"] == "forge43"
+    assert "operation=memory.remember" in captured.out
+    assert "name=CGSil1" in captured.out
+    assert "alias=@forge43@CGSil1" in captured.out
+    assert "remote_url=git@forge43.io:/srv/git/CGSil1.git" in captured.out
+    assert "remote_validated=true" in captured.out
+    assert "remembered=true" in captured.out
+    assert "log_file=" not in captured.out
+
+
 def test_initialise_command_requires_source(capsys):
     with pytest.raises(SystemExit) as exc_info:
         main(["initialise"])

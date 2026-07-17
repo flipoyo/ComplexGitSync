@@ -10,6 +10,7 @@ from ComplexGitSync.L0 import hash_time_l0_anchor, new_time_l0_anchor
 from ComplexGitSync.orchestre import (
     ComplexGitSyncClient,
     GocDocument,
+    MemoryBinding,
     _path_to_environment_marker,
     _resolve_memory_state_directory,
     _state_directory_name,
@@ -1269,6 +1270,60 @@ def test_state_directory_suffix_is_scoped_to_exact_state_hash(tmp_path):
     assert other_hash_state.final_path.name == _state_directory_name(other_hash, 0)
 
 
+def test_client_remember_binds_external_memory_endpoint_without_state_or_push(tmp_path):
+    config_path = _write_root_cgs(tmp_path, project_name="CGSil1")
+    cgspath = tmp_path / "workspace"
+    runner = _MemoryValidationRunner()
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    result = client.remember(config_path, output_path=cgspath)
+
+    expected_root = cgspath / "CGSil1"
+    expected_url = "git@forge43.io:/srv/git/CGSil1.git"
+    assert result.project_root == expected_root.resolve()
+    assert result.binding.name == "CGSil1"
+    assert result.binding.alias == "@forge43@CGSil1"
+    assert result.binding.remote_name == "forge43"
+    assert result.binding.remote_url == expected_url
+    assert result.remote_validated is True
+    assert runner.validated_remotes == [expected_url]
+    assert runner.pushed == []
+
+    data = tomllib.loads(result.config_path.read_text(encoding="utf-8"))
+    assert data["memory"]["name"] == "CGSil1"
+    assert data["memory"]["alias"] == "@forge43@CGSil1"
+    assert data["memory"]["remote_url"] == expected_url
+    assert data["memory"]["remote_name"] == "forge43"
+    assert data["memory"]["service"] == "forge43.io"
+    assert data["memory"]["validated_at"]
+    assert result.config_path == expected_root.resolve() / ".cgitsync" / "memory.toml"
+    assert not list((expected_root / ".cgitsync").glob("state(*)_*"))
+
+    reloaded = ComplexGitSyncClient().load_memory_binding(expected_root)
+    assert reloaded == result.binding
+
+
+def test_client_remember_does_not_persist_binding_when_remote_validation_fails(tmp_path):
+    config_path = _write_root_cgs(tmp_path, project_name="CGSil1")
+    cgspath = tmp_path / "workspace"
+    runner = _MemoryValidationRunner(fail=True)
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    with pytest.raises(GitSyncError, match="SSH authentication failed"):
+        client.remember(config_path, output_path=cgspath)
+
+    assert runner.validated_remotes == ["git@forge43.io:/srv/git/CGSil1.git"]
+    assert not (cgspath / "CGSil1" / ".cgitsync" / "memory.toml").exists()
+
+
+def test_memory_binding_rejects_unsafe_names_and_unsupported_services():
+    with pytest.raises(ConfigValidationError, match="Memory artefact name"):
+        MemoryBinding.for_name("../CGSil1")
+
+    with pytest.raises(ConfigValidationError, match="Unsupported Memory service"):
+        MemoryBinding.for_name("CGSil1", service="example.com")
+
+
 def _current_lgr_snapshot_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
     data = tomllib.loads(_current_lgr_path(workspace, register_name).read_text(encoding="utf-8"))
     raw_path = data["register"]["current_snapshot_path"]
@@ -1685,23 +1740,23 @@ def test_sync_ledger_workspace_hash_matches_gts_snapshot_hash(tmp_path):
     assert ledger_hash == snapshot_hash
 
 
-def _write_root_cgs(tmp_path, *, nested_child: bool = False):
+def _write_root_cgs(tmp_path, *, nested_child: bool = False, project_name: str = "demo"):
     nested_config = 'nested_config = "auto"\n' if nested_child else ""
     config_path = tmp_path / "project.cgs"
     config_path.write_text(
         (
-            """
+            f"""
 [document]
 format_version = "1.0"
 
 [project]
-name = "demo"
+name = "{project_name}"
 default_branch = "main"
 
 [[repos]]
 gitprovider = "github"
 project_owner_name = "owner"
-project_name = "demo"
+project_name = "{project_name}"
 relative_path = "."
 
 [[repos]]
@@ -1716,6 +1771,19 @@ relative_path = "deps/child-repo"
         encoding="utf-8",
     )
     return config_path
+
+
+class _MemoryValidationRunner:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.validated_remotes: list[str] = []
+        self.pushed: list[str] = []
+
+    def validate_memory_remote(self, remote_url: str) -> str:
+        self.validated_remotes.append(remote_url)
+        if self.fail:
+            raise GitSyncError("SSH authentication failed")
+        return ""
 
 
 def _write_goc_plan(tmp_path: Path, *, source: str, actions: str) -> Path:

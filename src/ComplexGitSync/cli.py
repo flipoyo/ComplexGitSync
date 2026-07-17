@@ -14,6 +14,8 @@ from .git_tree import ProjectTreeState, iter_tree_leaf_first
 from .orchestre import (
     CgsDocument,
     ComplexGitSyncClient,
+    DEFAULT_MEMORY_REMOTE_NAME,
+    DEFAULT_MEMORY_SERVICE,
     GtsDocument,
     _parse_state_hash,
     _state_order_from_directory_name,
@@ -47,6 +49,8 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
     # Configuration commands
     "configure": "Create a .cgs project specification file interactively.",
+    # Memory commands
+    "remember": "Bind a .cgs artefact to its external SSH-Git Memory endpoint.",
 }
 
 
@@ -227,6 +231,27 @@ def build_parser() -> argparse.ArgumentParser:
                 ),
             )
             subparser.set_defaults(handler=_handle_clone)
+        elif command_name == "remember":
+            subparser.add_argument("source", help="Path to the local .cgs artefact to bind.")
+            subparser.add_argument(
+                "--output-path",
+                dest="output_path",
+                help=(
+                    "CGSPATH: parent directory used to derive CGSHOME as "
+                    "CGSPATH/<project-name> after the .cgs is read."
+                ),
+            )
+            subparser.add_argument(
+                "--service",
+                default=DEFAULT_MEMORY_SERVICE,
+                help=f"External Memory service hostname (default: {DEFAULT_MEMORY_SERVICE}).",
+            )
+            subparser.add_argument(
+                "--remote-name",
+                default=DEFAULT_MEMORY_REMOTE_NAME,
+                help=f"Local Memory remote name (default: {DEFAULT_MEMORY_REMOTE_NAME}).",
+            )
+            subparser.set_defaults(handler=_handle_remember)
         elif command_name in {"pull", "pull-force"}:
             subparser.add_argument(
                 "source",
@@ -699,6 +724,26 @@ def _handle_clone(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_remember(args: argparse.Namespace) -> int:
+    source_path = Path(args.source)
+    output_path = getattr(args, "output_path", None)
+    client = ComplexGitSyncClient()
+    project_root = client.resolve_initialise_cgshome(source_path, output_path=output_path)
+    return _run_with_logging(
+        command_name="remember",
+        source=source_path,
+        client=client,
+        project_root=project_root,
+        runner=lambda active_client, source: _execute_remember(
+            active_client,
+            source,
+            output_path=output_path,
+            service=args.service,
+            remote_name=args.remote_name,
+        ),
+    )
+
+
 def _handle_pull(args: argparse.Namespace) -> int:
     source = _resolve_workspace_source(args.source, getattr(args, "search_dir", None))
     return _run_with_logging(
@@ -939,6 +984,32 @@ def _execute_purge_cgs(
             print(path)
     else:
         print("removed: none")
+    return 0
+
+
+def _execute_remember(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    output_path: str | None = None,
+    service: str = DEFAULT_MEMORY_SERVICE,
+    remote_name: str = DEFAULT_MEMORY_REMOTE_NAME,
+) -> int:
+    result = client.remember(
+        source_path,
+        output_path=output_path,
+        service=service,
+        remote_name=remote_name,
+    )
+    binding = result.binding
+    print("operation=memory.remember")
+    print(f"name={binding.name}")
+    print(f"alias={binding.alias}")
+    print(f"remote_name={binding.remote_name}")
+    print(f"remote_url={binding.remote_url}")
+    print(f"config_path={result.config_path}")
+    print(f"remote_validated={str(result.remote_validated).lower()}")
+    print("remembered=true")
     return 0
 
 

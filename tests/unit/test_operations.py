@@ -1313,6 +1313,24 @@ def test_git_runner_push_can_set_upstream(monkeypatch):
     assert captured["cwd"] == "/tmp/repo"
 
 
+def test_git_runner_validate_memory_remote_uses_read_only_ls_remote(monkeypatch):
+    runner = GitRunner()
+    captured: dict[str, object] = {}
+
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
+        captured["args"] = args
+        captured["cwd"] = cwd
+        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(GitRunner, "_run", _spy_run)
+
+    result = runner.validate_memory_remote("git@forge43.io:/srv/git/CGSil1.git")
+
+    assert result == ""
+    assert captured["args"] == ("ls-remote", "git@forge43.io:/srv/git/CGSil1.git")
+    assert captured["cwd"] is None
+
+
 def test_git_runner_file_transport_detection_handles_windows_paths():
     assert GitRunner._uses_file_transport("file:///tmp/remote.git") is True
     assert GitRunner._uses_file_transport("/tmp/remote.git") is True

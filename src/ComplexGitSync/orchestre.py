@@ -11,6 +11,7 @@ Classes defined here (Tier 2 — Actions):
     GocDocument             .goc command script parser/validator
     CommandRunLogger        Structured JSON event logger for a command run
     RuntimeStateStore       Persistent snapshot-pointer registry (.cgs → .gts)
+    MemoryBinding           External SSH-Git Memory endpoint binding
     GitRunner               Git subprocess wrapper
 
 Classes defined here (Tier 3 — Client / API):
@@ -312,6 +313,17 @@ def _latest_state_artifact(cgitsync_dir: Path, filename: str) -> Path | None:
     if not candidates:
         return None
     return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+_MEMORY_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_MEMORY_REMOTE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_MEMORY_SERVICE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
+_MEMORY_SSH_URL_RE = re.compile(
+    r"^git@(?P<host>[A-Za-z0-9][A-Za-z0-9.-]*):/srv/git/(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)\.git$"
+)
+DEFAULT_MEMORY_SERVICE = "forge43.io"
+DEFAULT_MEMORY_REMOTE_NAME = "forge43"
+MEMORY_CONFIG_FILENAME = "memory.toml"
 
 
 def _debug_counter_enabled() -> bool:
@@ -1290,6 +1302,8 @@ class CommandRunLogger:
 
     @staticmethod
     def _operation_for_event(event: str, fields: dict[str, object]) -> str:
+        if event.startswith("memory_"):
+            return "CGS-MEM"
         if event == "nested_cgs_discovery":
             return "GT-DISCOVER"
         if event in {"repo_state_transition", "tree_state_transition"}:
@@ -1678,6 +1692,172 @@ class SyncLedger:
         return f"lgr-{max_id + 1:06d}"
 
 
+@dataclass(frozen=True, slots=True)
+class MemoryBinding:
+    """External SSH-Git Memory endpoint binding for one artefact."""
+
+    name: str
+    service: str
+    alias: str
+    remote_name: str
+    remote_url: str
+
+    @classmethod
+    def for_name(
+        cls,
+        name: str,
+        *,
+        service: str = DEFAULT_MEMORY_SERVICE,
+        remote_name: str = DEFAULT_MEMORY_REMOTE_NAME,
+    ) -> "MemoryBinding":
+        validated_name = _validate_memory_name(name)
+        validated_service = _validate_memory_service(service)
+        validated_remote_name = _validate_memory_remote_name(remote_name)
+        service_alias = validated_service.split(".", 1)[0]
+        alias = f"@{service_alias}@{validated_name}"
+        remote_url = f"git@{validated_service}:/srv/git/{validated_name}.git"
+        return cls(
+            name=validated_name,
+            service=validated_service,
+            alias=alias,
+            remote_name=validated_remote_name,
+            remote_url=remote_url,
+        )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MemoryBinding":
+        binding = cls(
+            name=str(data.get("name", "")),
+            service=str(data.get("service", "")),
+            alias=str(data.get("alias", "")),
+            remote_name=str(data.get("remote_name", "")),
+            remote_url=str(data.get("remote_url", "")),
+        )
+        binding.validate()
+        return binding
+
+    def validate(self) -> None:
+        _validate_memory_name(self.name)
+        _validate_memory_service(self.service)
+        _validate_memory_remote_name(self.remote_name)
+        expected = MemoryBinding.for_name(
+            self.name,
+            service=self.service,
+            remote_name=self.remote_name,
+        )
+        if self.alias != expected.alias:
+            raise ConfigValidationError(
+                f"Memory alias drift: expected {expected.alias!r}, got {self.alias!r}"
+            )
+        if self.remote_url != expected.remote_url:
+            raise ConfigValidationError(
+                f"Memory remote URL drift: expected {expected.remote_url!r}, got {self.remote_url!r}"
+            )
+        _validate_memory_ssh_url(self.remote_url, name=self.name, service=self.service)
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "name": self.name,
+            "service": self.service,
+            "alias": self.alias,
+            "remote_name": self.remote_name,
+            "remote_url": self.remote_url,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryRememberResult:
+    """Result returned by ``@name.remember`` binding operations."""
+
+    binding: MemoryBinding
+    config_path: Path
+    project_root: Path
+    remote_validated: bool
+
+
+class MemoryBindingStore:
+    """Persist and load Memory bindings under ``CGSHOME/.cgitsync``."""
+
+    def __init__(self, project_root: Path | str) -> None:
+        self.project_root = Path(project_root).expanduser().resolve()
+
+    @property
+    def config_path(self) -> Path:
+        return self.project_root / ".cgitsync" / MEMORY_CONFIG_FILENAME
+
+    def save(self, binding: MemoryBinding) -> Path:
+        binding.validate()
+        validated_at = (
+            datetime.now(timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
+        data = {
+            "memory": {
+                "schema_version": "1.0",
+                **binding.to_dict(),
+                "validated_at": validated_at,
+            }
+        }
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        self.config_path.write_text(tomli_w.dumps(data), encoding="utf-8")
+        return self.config_path
+
+    def load(self) -> MemoryBinding:
+        if not self.config_path.is_file():
+            raise GitSyncError(f"No Memory binding found at {self.config_path}")
+        data = tomllib.loads(self.config_path.read_text(encoding="utf-8"))
+        raw_binding = data.get("memory", {})
+        if not isinstance(raw_binding, dict):
+            raise ConfigValidationError(f"Invalid Memory binding file: {self.config_path}")
+        return MemoryBinding.from_dict(raw_binding)
+
+
+def _validate_memory_name(name: str) -> str:
+    if not isinstance(name, str) or _MEMORY_NAME_RE.fullmatch(name) is None:
+        raise ConfigValidationError(
+            "Memory artefact name must contain only letters, numbers, '.', '_', or '-', "
+            "and must start with a letter or number."
+        )
+    return name
+
+
+def _validate_memory_service(service: str) -> str:
+    if not isinstance(service, str) or _MEMORY_SERVICE_RE.fullmatch(service) is None:
+        raise ConfigValidationError("Memory service must be a hostname.")
+    if service != DEFAULT_MEMORY_SERVICE:
+        raise ConfigValidationError(
+            f"Unsupported Memory service {service!r}; expected {DEFAULT_MEMORY_SERVICE!r}."
+        )
+    return service
+
+
+def _validate_memory_remote_name(remote_name: str) -> str:
+    if not isinstance(remote_name, str) or _MEMORY_REMOTE_NAME_RE.fullmatch(remote_name) is None:
+        raise ConfigValidationError(
+            "Memory remote name must contain only letters, numbers, '.', '_', or '-', "
+            "and must start with a letter or number."
+        )
+    return remote_name
+
+
+def _validate_memory_ssh_url(remote_url: str, *, name: str, service: str) -> str:
+    match = _MEMORY_SSH_URL_RE.fullmatch(remote_url)
+    if match is None:
+        raise ConfigValidationError(
+            "Memory remote URL must use SSH scp syntax: git@forge43.io:/srv/git/<NAME>.git"
+        )
+    if match.group("host") != service:
+        raise ConfigValidationError(
+            f"Memory remote host mismatch: expected {service!r}, got {match.group('host')!r}."
+        )
+    if match.group("name") != name:
+        raise ConfigValidationError(
+            f"Memory remote repository mismatch: expected {name!r}, got {match.group('name')!r}."
+        )
+    return remote_url
+
+
 @dataclass(slots=True)
 class GitRunner:
     """Git subprocess wrapper — executes git commands for clone/checkout/push actions."""
@@ -1693,6 +1873,11 @@ class GitRunner:
     def _remote_ref_exists(self, remote_url: str, ref_selector: str, ref_name: str) -> bool:
         completed = self._run("ls-remote", ref_selector, remote_url, ref_name)
         return bool(completed.stdout.strip())
+
+    def validate_memory_remote(self, remote_url: str) -> str:
+        """Validate read-only SSH access to a Memory bare repository."""
+        completed = self._run("ls-remote", remote_url)
+        return completed.stdout.strip()
 
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
         destination_path = Path(destination)
@@ -2906,6 +3091,47 @@ class ComplexGitSyncClient:
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
         return self.resolve_cgshome(document, source_path, output_path=output_path)
+
+    def remember(
+        self,
+        config_path: str | Path,
+        *,
+        output_path: str | Path | None = None,
+        service: str = DEFAULT_MEMORY_SERVICE,
+        remote_name: str = DEFAULT_MEMORY_REMOTE_NAME,
+    ) -> MemoryRememberResult:
+        """Bind a ``.cgs`` artefact to its external SSH-Git Memory endpoint."""
+        source_path = Path(config_path).resolve()
+        document = CgsDocument.from_toml(source_path)
+        project_root = self.resolve_cgshome(document, source_path, output_path=output_path)
+        binding = MemoryBinding.for_name(
+            document.project_name or source_path.stem,
+            service=service,
+            remote_name=remote_name,
+        )
+        self.git_runner.validate_memory_remote(binding.remote_url)
+        store = MemoryBindingStore(project_root)
+        config_file = store.save(binding)
+        self._log_event(
+            "memory_remember",
+            name=binding.name,
+            alias=binding.alias,
+            remote_name=binding.remote_name,
+            remote_url=binding.remote_url,
+            project_root=project_root,
+            config_path=config_file,
+            remote_validated=True,
+        )
+        return MemoryRememberResult(
+            binding=binding,
+            config_path=config_file,
+            project_root=project_root,
+            remote_validated=True,
+        )
+
+    def load_memory_binding(self, project_root: str | Path) -> MemoryBinding:
+        """Load a persisted external Memory binding from ``CGSHOME``."""
+        return MemoryBindingStore(project_root).load()
 
     def load(
         self,
