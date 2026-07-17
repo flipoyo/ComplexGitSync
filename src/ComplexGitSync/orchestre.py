@@ -2940,6 +2940,7 @@ class ComplexGitSyncClient:
     loaded_snapshot_path: Path | None = None
     last_memory_result: MemoryMemorizeResult | None = None
     run_logger: CommandRunLogger | None = None
+    _memory_trigger_suppression_depth: int = 0
 
     def is_loaded(self) -> bool:
         return self.registry is not None or bool(self.orchestre.git_tree.repos)
@@ -3249,19 +3250,32 @@ class ComplexGitSyncClient:
         """Load a persisted external Memory binding from ``CGSHOME``."""
         return MemoryBindingStore(project_root).load()
 
-    def _trigger_memorize_after_successful_push(
+    def _trigger_memorize_after_success(
         self,
         current_memory_path: str | Path,
+        *,
+        trigger: str,
     ) -> MemoryMemorizeResult | None:
         """Persist the current Memory State when the project has a binding."""
         memory_path = Path(current_memory_path).resolve()
         project_root = memory_path.parent.parent
+        if self._memory_trigger_suppression_depth > 0:
+            self.last_memory_result = None
+            self._log_event(
+                "memory_memorize_skipped",
+                trigger=trigger,
+                reason="suppressed",
+                current_memory_path=memory_path,
+                project_root=project_root,
+            )
+            return None
+
         binding_store = MemoryBindingStore(project_root)
         if not binding_store.config_path.is_file():
             self.last_memory_result = None
             self._log_event(
                 "memory_memorize_skipped",
-                trigger="push.success",
+                trigger=trigger,
                 reason="missing_binding",
                 current_memory_path=memory_path,
                 project_root=project_root,
@@ -3270,7 +3284,7 @@ class ComplexGitSyncClient:
 
         self._log_event(
             "memory_memorize_trigger",
-            trigger="push.success",
+            trigger=trigger,
             current_memory_path=memory_path,
             project_root=project_root,
         )
@@ -3278,7 +3292,7 @@ class ComplexGitSyncClient:
         self.last_memory_result = result
         self._log_event(
             "memory_memorize_triggered",
-            trigger="push.success",
+            trigger=trigger,
             current_memory_path=memory_path,
             status=result.status,
             commit_created=result.commit_created,
@@ -3927,7 +3941,10 @@ class ComplexGitSyncClient:
         snapshot_path = self.write_gts_snapshot(command_origin="push")
         if self.source_path is not None:
             self.state_store.record_snapshot(self.source_path, snapshot_path)
-        memory_result = self._trigger_memorize_after_successful_push(snapshot_path.parent)
+        memory_result = self._trigger_memorize_after_success(
+            snapshot_path.parent,
+            trigger="push.success",
+        )
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="push")
         self._log_event(
             "push_end",
@@ -4047,6 +4064,7 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
+        self.last_memory_result = None
         self._log_event(
             "freeze_release_start",
             tag_name=tag_name,
@@ -4066,8 +4084,17 @@ class ComplexGitSyncClient:
         )
         if self.source_path is not None:
             self.state_store.record_snapshot(self.source_path, snapshot_path)
+        memory_result = self._trigger_memorize_after_success(
+            snapshot_path.parent,
+            trigger="freeze-release.success",
+        )
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="freeze_release")
-        self._log_event("freeze_release_end", tag_name=tag_name, output_gts=snapshot_path)
+        self._log_event(
+            "freeze_release_end",
+            tag_name=tag_name,
+            output_gts=snapshot_path,
+            memory_status=(memory_result.status if memory_result is not None else "unbound"),
+        )
         return registry
 
     def freeze_release(
@@ -4101,7 +4128,11 @@ class ComplexGitSyncClient:
             self.pull_force(self.source_path)
         else:
             self.pull(self.source_path)
-        self.push()
+        self._memory_trigger_suppression_depth += 1
+        try:
+            self.push()
+        finally:
+            self._memory_trigger_suppression_depth -= 1
         registry = self.freeze(
             release_name,
             output_gts=output_gts,

@@ -1928,6 +1928,90 @@ def test_client_freeze_release_writes_release_name_and_named_immutable_gts(tmp_p
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
 
+def test_client_freeze_release_triggers_memorize_once_after_success(tmp_path, monkeypatch):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    _mark_all_children_as_submodules(client.registry, runner)
+    project_root = client.registry.get("root").absolute_path
+    binding = _save_test_memory_binding(project_root)
+    calls: list[tuple[Path, str, int]] = []
+
+    def _fake_memorize(current_memory_path, *, branch="main"):
+        memory_path = Path(current_memory_path).resolve()
+        calls.append((memory_path, branch, len(runner.pushed)))
+        return _memory_result_for_push_trigger(binding, memory_path, project_root)
+
+    monkeypatch.setattr(client, "memorize", _fake_memorize)
+
+    client.freeze("release-1")
+
+    assert len(calls) == 1
+    memory_path, branch, pushed_count_at_call = calls[0]
+    assert branch == "main"
+    assert pushed_count_at_call == len(runner.pushed)
+    assert memory_path == client.loaded_snapshot_path.parent
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", memory_path.name)
+    assert client.last_memory_result is not None
+    assert client.last_memory_result.current_memory_path == memory_path
+    assert client.last_memory_result.status == "persisted"
+
+
+def test_client_freeze_release_workflow_memorizes_only_final_state(tmp_path, monkeypatch):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    _mark_all_children_as_submodules(client.registry, runner)
+    project_root = client.registry.get("root").absolute_path
+    binding = _save_test_memory_binding(project_root)
+    client.source_path = project_root / "project.gts"
+    client.state_store = RuntimeStateStore(tmp_path / "runtime-state")
+    calls: list[Path] = []
+
+    def _fake_memorize(current_memory_path, *, branch="main"):
+        memory_path = Path(current_memory_path).resolve()
+        calls.append(memory_path)
+        return _memory_result_for_push_trigger(binding, memory_path, project_root)
+
+    monkeypatch.setattr(client, "memorize", _fake_memorize)
+    monkeypatch.setattr(client, "add", lambda: client.registry)
+    monkeypatch.setattr(client, "commit", lambda _message, stage_all=True: client.registry)
+    monkeypatch.setattr(client, "pull", lambda _source_path: client.registry)
+
+    client.freeze_release("release-1", "release commit")
+
+    assert len(calls) == 1
+    assert calls[0] == client.loaded_snapshot_path.parent
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", calls[0].name)
+    assert client.last_memory_result is not None
+    assert client.last_memory_result.current_memory_path == calls[0]
+
+
+def test_client_freeze_release_does_not_memorize_when_freeze_fails(tmp_path, monkeypatch):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    _mark_all_children_as_submodules(client.registry, runner)
+    project_root = client.registry.get("root").absolute_path
+    _save_test_memory_binding(project_root)
+    calls: list[Path] = []
+
+    def _failing_push(
+        repo_path,
+        *,
+        remote="origin",
+        ref_name=None,
+        set_upstream=False,
+    ):
+        raise GitSyncError(f"freeze push failed for {repo_path}")
+
+    def _fake_memorize(current_memory_path, *, branch="main"):
+        calls.append(Path(current_memory_path))
+
+    monkeypatch.setattr(runner, "push", _failing_push)
+    monkeypatch.setattr(client, "memorize", _fake_memorize)
+
+    with pytest.raises(GitSyncError, match="freeze push failed"):
+        client.freeze("release-1")
+
+    assert calls == []
+    assert client.last_memory_result is None
+
+
 def test_write_freeze_snapshot_uses_explicit_freeze_name_over_stale_registry_tag(tmp_path):
     import tomllib
 
