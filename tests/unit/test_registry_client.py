@@ -1600,6 +1600,45 @@ def test_client_reload_selects_latest_recovered_memory_state(tmp_path, monkeypat
     assert result.registry.get("root").absolute_path == expected_root
 
 
+def test_client_reload_recovers_cgsil1_artifacts_after_local_memory_isolation(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    persisted_root = tmp_path / "persisted-local" / "CGSil1"
+    persisted_state = _write_reloadable_memory_state(
+        persisted_root,
+        "CGSil1",
+        original_root=persisted_root,
+    )
+    expected_artifacts = {
+        suffix: (persisted_state / f"CGSil1.{suffix}").read_bytes()
+        for suffix in ("cgs", "gts", "log", "lgr")
+    }
+
+    external_root = tmp_path / "forge43-memory" / "CGSil1"
+    shutil.copytree(persisted_root / ".cgitsync", external_root / ".cgitsync")
+    shutil.rmtree(persisted_root)
+    assert not persisted_root.exists()
+
+    runner = _MemoryPersistenceRunner()
+    runner.remote_ref = "1" * 40
+    runner.remote_cgitsync_source = external_root / ".cgitsync"
+    client = ComplexGitSyncClient(git_runner=runner)
+
+    result = client.reload("CGSil1", output_path=tmp_path / "recovered-workspace")
+
+    expected_root = (tmp_path / "recovered-workspace" / "CGSil1").resolve()
+    assert result.project_root == expected_root
+    assert result.state_path == expected_root / ".cgitsync" / persisted_state.name
+    assert result.snapshot_path == result.state_path / "CGSil1.gts"
+    assert result.source_cgs_path == result.state_path / "CGSil1.cgs"
+    for suffix, expected_bytes in expected_artifacts.items():
+        recovered_artifact = result.state_path / f"CGSil1.{suffix}"
+        assert recovered_artifact.is_file()
+        assert recovered_artifact.read_bytes() == expected_bytes
+    assert result.registry.get("root").absolute_path == expected_root
+    assert result.registry.get("root").source_cgs_path == result.source_cgs_path
+    assert not persisted_root.exists()
+
+
 def _current_lgr_snapshot_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
     data = tomllib.loads(_current_lgr_path(workspace, register_name).read_text(encoding="utf-8"))
     raw_path = data["register"]["current_snapshot_path"]
