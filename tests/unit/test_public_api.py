@@ -14,6 +14,7 @@ from ComplexGitSync import (
     GitSyncError,
     GitTree,
     MemoryBinding,
+    MemoryMemorizeResult,
     MemoryRememberResult,
     NestedConfigDiscoveryError,
     RepoNode,
@@ -38,6 +39,7 @@ def test_package_root_exports_refactor_guard_symbols():
     assert RepoNode.__name__ == "RepoNode"
     assert ComplexGitSyncClient.__name__ == "ComplexGitSyncClient"
     assert MemoryBinding.__name__ == "MemoryBinding"
+    assert MemoryMemorizeResult.__name__ == "MemoryMemorizeResult"
     assert MemoryRememberResult.__name__ == "MemoryRememberResult"
     assert SyncLedger.__name__ == "SyncLedger"
 

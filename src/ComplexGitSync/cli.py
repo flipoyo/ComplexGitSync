@@ -51,6 +51,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "configure": "Create a .cgs project specification file interactively.",
     # Memory commands
     "remember": "Bind a .cgs artefact to its external SSH-Git Memory endpoint.",
+    "memorize": "Persist a finalized local Memory State to the configured SSH-Git remote.",
 }
 
 
@@ -252,6 +253,17 @@ def build_parser() -> argparse.ArgumentParser:
                 help=f"Local Memory remote name (default: {DEFAULT_MEMORY_REMOTE_NAME}).",
             )
             subparser.set_defaults(handler=_handle_remember)
+        elif command_name == "memorize":
+            subparser.add_argument(
+                "current_memory_path",
+                help="Path to a finalized .cgitsync/state(<hash>)_i/ Memory State directory.",
+            )
+            subparser.add_argument(
+                "--branch",
+                default="main",
+                help="Memory repository branch to update (default: main).",
+            )
+            subparser.set_defaults(handler=_handle_memorize)
         elif command_name in {"pull", "pull-force"}:
             subparser.add_argument(
                 "source",
@@ -744,6 +756,19 @@ def _handle_remember(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_memorize(args: argparse.Namespace) -> int:
+    memory_path = Path(args.current_memory_path)
+    return _run_with_logging(
+        command_name="memorize",
+        source=memory_path,
+        runner=lambda client, source: _execute_memorize(
+            client,
+            source,
+            branch=args.branch,
+        ),
+    )
+
+
 def _handle_pull(args: argparse.Namespace) -> int:
     source = _resolve_workspace_source(args.source, getattr(args, "search_dir", None))
     return _run_with_logging(
@@ -1010,6 +1035,31 @@ def _execute_remember(
     print(f"config_path={result.config_path}")
     print(f"remote_validated={str(result.remote_validated).lower()}")
     print("remembered=true")
+    return 0
+
+
+def _execute_memorize(
+    client: ComplexGitSyncClient,
+    current_memory_path: Path,
+    *,
+    branch: str = "main",
+) -> int:
+    result = client.memorize(current_memory_path, branch=branch)
+    binding = result.binding
+    print("operation=memory.memorize")
+    print(f"name={binding.name}")
+    print(f"alias={binding.alias}")
+    print(f"remote_name={binding.remote_name}")
+    print(f"remote_url={binding.remote_url}")
+    print(f"current_memory_path={result.current_memory_path}")
+    print(f"memory_repository_path={result.memory_repository_path}")
+    print(f"state_hash={result.state_hash}")
+    print(f"state_order={result.state_order}")
+    print(f"commit_created={str(result.commit_created).lower()}")
+    print(f"pushed={str(result.pushed).lower()}")
+    print(f"verified={str(result.verified).lower()}")
+    print(f"remote_ref={result.remote_ref or ''}")
+    print(f"status={result.status}")
     return 0
 
 

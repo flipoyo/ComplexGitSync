@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import tomllib
 from pathlib import Path, PureWindowsPath
@@ -1324,6 +1325,77 @@ def test_memory_binding_rejects_unsafe_names_and_unsupported_services():
         MemoryBinding.for_name("CGSil1", service="example.com")
 
 
+def test_client_memorize_persists_current_memory_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    config_path = _write_root_cgs(tmp_path, project_name="CGSil1")
+    runner = _MemoryPersistenceRunner()
+    client = ComplexGitSyncClient(git_runner=runner)
+    client.remember(config_path, output_path=tmp_path)
+    memory_path = _write_complete_memory_state(tmp_path / "CGSil1", "CGSil1")
+
+    result = client.memorize(memory_path)
+
+    assert result.binding.alias == "@forge43@CGSil1"
+    assert result.binding.remote_url == "git@forge43.io:/srv/git/CGSil1.git"
+    assert result.current_memory_path == memory_path.resolve()
+    assert result.project_root == (tmp_path / "CGSil1").resolve()
+    assert result.state_hash == "a" * 64
+    assert result.state_order == 0
+    assert result.commit_created is True
+    assert result.pushed is True
+    assert result.verified is True
+    assert result.status == "persisted"
+    assert result.local_ref == result.remote_ref
+    assert runner.commits == ["memory(CGSil1): persist state aaaaaaaa iteration 0"]
+    assert runner.pushes == [
+        (result.memory_repository_path, "forge43", "main:main")
+    ]
+    mirrored_state = result.memory_repository_path / ".cgitsync" / memory_path.name
+    assert (mirrored_state / "CGSil1.gts").is_file()
+
+
+def test_client_memorize_is_idempotent_for_unchanged_memory(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    config_path = _write_root_cgs(tmp_path, project_name="CGSil1")
+    runner = _MemoryPersistenceRunner()
+    client = ComplexGitSyncClient(git_runner=runner)
+    client.remember(config_path, output_path=tmp_path)
+    memory_path = _write_complete_memory_state(tmp_path / "CGSil1", "CGSil1")
+
+    first = client.memorize(memory_path)
+    second = client.memorize(memory_path)
+
+    assert first.commit_created is True
+    assert first.pushed is True
+    assert second.commit_created is False
+    assert second.pushed is False
+    assert second.verified is True
+    assert second.status == "unchanged"
+    assert len(runner.commits) == 1
+    assert len(runner.pushes) == 1
+    assert second.remote_ref == first.remote_ref
+
+
+def test_client_memorize_rejects_incomplete_memory_state(tmp_path):
+    project_root = tmp_path / "CGSil1"
+    incomplete = project_root / ".cgitsync" / f"state({'a' * 64})_0"
+    incomplete.mkdir(parents=True)
+    (incomplete / "CGSil1.gts").write_text("gts\n", encoding="utf-8")
+
+    client = ComplexGitSyncClient(git_runner=_MemoryPersistenceRunner())
+
+    with pytest.raises(GitSyncError, match="missing Memory artefact"):
+        client.memorize(incomplete)
+
+
+def test_client_memorize_requires_memory_binding(tmp_path):
+    memory_path = _write_complete_memory_state(tmp_path / "CGSil1", "CGSil1")
+    client = ComplexGitSyncClient(git_runner=_MemoryPersistenceRunner())
+
+    with pytest.raises(GitSyncError, match="No Memory binding"):
+        client.memorize(memory_path)
+
+
 def _current_lgr_snapshot_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
     data = tomllib.loads(_current_lgr_path(workspace, register_name).read_text(encoding="utf-8"))
     raw_path = data["register"]["current_snapshot_path"]
@@ -1784,6 +1856,98 @@ class _MemoryValidationRunner:
         if self.fail:
             raise GitSyncError("SSH authentication failed")
         return ""
+
+
+class _MemoryPersistenceRunner(_MemoryValidationRunner):
+    def __init__(self) -> None:
+        super().__init__()
+        self.git_repositories: set[Path] = set()
+        self.remotes: dict[Path, dict[str, str]] = {}
+        self.remote_ref: str | None = None
+        self.remote_tree_hash: str | None = None
+        self.local_refs: dict[Path, str | None] = {}
+        self.staged_hashes: dict[Path, str | None] = {}
+        self.commits: list[str] = []
+        self.pushes: list[tuple[Path, str, str | None]] = []
+        self.fetches: list[tuple[Path, str, str]] = []
+
+    def init_repository(self, repo_path: Path | str) -> None:
+        repo = Path(repo_path)
+        repo.mkdir(parents=True, exist_ok=True)
+        self.git_repositories.add(repo)
+        self.local_refs.setdefault(repo, None)
+
+    def is_git_repository(self, repo_path: Path | str) -> bool:
+        return Path(repo_path) in self.git_repositories
+
+    def checkout_branch(self, repo_path: Path | str, branch: str) -> None:
+        return None
+
+    def configure_remote(self, repo_path: Path | str, remote_name: str, remote_url: str) -> None:
+        self.remotes.setdefault(Path(repo_path), {})[remote_name] = remote_url
+
+    def remote_head(self, remote_url: str, branch: str = "main") -> str | None:
+        return self.remote_ref
+
+    def fetch_branch(self, repo_path: Path | str, remote_name: str, branch: str) -> None:
+        self.fetches.append((Path(repo_path), remote_name, branch))
+
+    def reset_to_fetch_head(self, repo_path: Path | str) -> None:
+        self.local_refs[Path(repo_path)] = self.remote_ref
+
+    def stage_all(self, repo_path: Path | str) -> None:
+        repo = Path(repo_path)
+        self.staged_hashes[repo] = _hash_memory_tree(repo / ".cgitsync")
+
+    def has_staged_changes(self, repo_path: Path | str) -> bool:
+        return self.staged_hashes.get(Path(repo_path)) != self.remote_tree_hash
+
+    def commit(self, repo_path: Path | str, message: str) -> None:
+        repo = Path(repo_path)
+        self.commits.append(message)
+        self.local_refs[repo] = f"{len(self.commits):040x}"
+
+    def push(
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+        set_upstream: bool = False,
+    ) -> None:
+        repo = Path(repo_path)
+        self.pushes.append((repo, remote, ref_name))
+        self.remote_ref = self.local_refs[repo]
+        self.remote_tree_hash = self.staged_hashes[repo]
+
+    def rev_parse_head(self, repo_path: Path | str) -> str:
+        local_ref = self.local_refs.get(Path(repo_path))
+        if local_ref is None:
+            raise GitSyncError("No local Memory commit")
+        return local_ref
+
+
+def _write_complete_memory_state(project_root: Path, project_name: str) -> Path:
+    state_hash = "a" * 64
+    state_dir = project_root / ".cgitsync" / f"state({state_hash})_0"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    for suffix in ("cgs", "gts", "lgr", "log"):
+        (state_dir / f"{project_name}.{suffix}").write_text(
+            f"{project_name} {suffix}\n",
+            encoding="utf-8",
+        )
+    return state_dir.resolve()
+
+
+def _hash_memory_tree(cgitsync_dir: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(candidate for candidate in cgitsync_dir.rglob("*") if candidate.is_file()):
+        relative = path.relative_to(cgitsync_dir)
+        digest.update(relative.as_posix().encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def _write_goc_plan(tmp_path: Path, *, source: str, actions: str) -> Path:
