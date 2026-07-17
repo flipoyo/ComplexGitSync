@@ -2938,6 +2938,7 @@ class ComplexGitSyncClient:
     registry: WorkingGitTree | None = None
     source_path: Path | None = None
     loaded_snapshot_path: Path | None = None
+    last_memory_result: MemoryMemorizeResult | None = None
     run_logger: CommandRunLogger | None = None
 
     def is_loaded(self) -> bool:
@@ -3247,6 +3248,44 @@ class ComplexGitSyncClient:
     def load_memory_binding(self, project_root: str | Path) -> MemoryBinding:
         """Load a persisted external Memory binding from ``CGSHOME``."""
         return MemoryBindingStore(project_root).load()
+
+    def _trigger_memorize_after_successful_push(
+        self,
+        current_memory_path: str | Path,
+    ) -> MemoryMemorizeResult | None:
+        """Persist the current Memory State when the project has a binding."""
+        memory_path = Path(current_memory_path).resolve()
+        project_root = memory_path.parent.parent
+        binding_store = MemoryBindingStore(project_root)
+        if not binding_store.config_path.is_file():
+            self.last_memory_result = None
+            self._log_event(
+                "memory_memorize_skipped",
+                trigger="push.success",
+                reason="missing_binding",
+                current_memory_path=memory_path,
+                project_root=project_root,
+            )
+            return None
+
+        self._log_event(
+            "memory_memorize_trigger",
+            trigger="push.success",
+            current_memory_path=memory_path,
+            project_root=project_root,
+        )
+        result = self.memorize(memory_path)
+        self.last_memory_result = result
+        self._log_event(
+            "memory_memorize_triggered",
+            trigger="push.success",
+            current_memory_path=memory_path,
+            status=result.status,
+            commit_created=result.commit_created,
+            pushed=result.pushed,
+            verified=result.verified,
+        )
+        return result
 
     def memorize(
         self,
@@ -3882,13 +3921,18 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
+        self.last_memory_result = None
         self._log_event("push_start")
         self.orchestre.git_tree.git.push(self.git_runner)
         snapshot_path = self.write_gts_snapshot(command_origin="push")
         if self.source_path is not None:
             self.state_store.record_snapshot(self.source_path, snapshot_path)
+        memory_result = self._trigger_memorize_after_successful_push(snapshot_path.parent)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="push")
-        self._log_event("push_end")
+        self._log_event(
+            "push_end",
+            memory_status=(memory_result.status if memory_result is not None else "unbound"),
+        )
         return registry
 
     def tag(self, tag_name: str) -> WorkingGitTree:
