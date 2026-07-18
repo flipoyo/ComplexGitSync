@@ -7,7 +7,7 @@ belong in a separate `AdditionalSpecs.md` at the project root.
 
 ---
 
-## Object-Oriented Design
+## PYTHON SPECS - Object-Oriented Native Design X Flux Encapsulation
 
 Every project is strictly object-oriented.
 
