@@ -29,7 +29,7 @@ If both interpretations resolve to one identical deterministic state,
 
 PoE is anchored by @.
 
-The synchronized result is an active Graph G*.
+The synchronized result is an active Graph *G.
 ```
 
 ```mermaid
@@ -41,7 +41,7 @@ flowchart LR
     VOID["void"]
     POE["PoE"]
     TIME["@"]
-    ACTIVE["G*"]
+    ACTIVE["*G"]
 
     LEFT --> CGS
     RIGHT --> CGS
@@ -64,7 +64,7 @@ G
 -> SYNC
 -> PoE XOR void
 -> @
--> G*
+-> *G
 ```
 
 ```mermaid
@@ -75,7 +75,7 @@ flowchart LR
     VOID["void"]
     POE["PoE"]
     AT["@"]
-    GSTAR["G*"]
+    GSTAR["*G"]
 
     G --> SPLIT
     SPLIT --> SYNC

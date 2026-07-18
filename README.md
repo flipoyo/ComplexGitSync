@@ -6,6 +6,10 @@ workspace from one local specification and one tracked workspace state.
 This README is intentionally focused on the **Multi-repo Sync CLI**. The public
 entry point is `cgitsync`.
 
+It is the Alpha Series of ComplexGraphSync, per say CGS. CGS service is requestable @CGS.
+
+@CGS is a deterministic Graph × Graph Synchronizer, that instanciates active Graph G* and anchored it in a L0 based on time only.
+
 ## What the CLI manages
 
 ComplexGitSync treats a project as a repository tree:
