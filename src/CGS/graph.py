@@ -1,9 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
+from .errors import CGSContractError, ErrorCode
 from .serialization import FrozenJson, freeze_json, thaw_json
+
+
+GRAPH_NAME_PATTERN = r"@?[A-Za-z][A-Za-z0-9]*(?:[._:-][A-Za-z0-9]+)*"
+_GRAPH_NAME_RE = re.compile(rf"\A{GRAPH_NAME_PATTERN}\Z", re.ASCII)
+
+
+def validate_graph_name(name: object) -> str:
+    """Validate the language-neutral public Graph identifier grammar."""
+
+    if not isinstance(name, str) or not _GRAPH_NAME_RE.fullmatch(name) or ".@" in name:
+        raise CGSContractError(
+            ErrorCode.INVALID_GRAPH_NAME,
+            "Graph name does not satisfy the canonical public identifier grammar",
+        )
+    return name
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -16,9 +33,7 @@ class Graph:
     op: FrozenJson
 
     def __init__(self, name: str, node: Any, edge: Any, op: Any) -> None:
-        if not isinstance(name, str) or not name:
-            raise ValueError("Graph.name must be a non-empty string")
-        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "name", validate_graph_name(name))
         object.__setattr__(self, "node", freeze_json(node))
         object.__setattr__(self, "edge", freeze_json(edge))
         object.__setattr__(self, "op", freeze_json(op))

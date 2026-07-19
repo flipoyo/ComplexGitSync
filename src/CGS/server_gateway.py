@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ._authority import _AuthorityScope, require_cgs_authority
+from ._authority import require_cgs_authority
 from .errors import CGSError, ErrorCode
 from .gateway import Gateway, GatewayResult
 from .living_graph import LivingGraph
@@ -48,7 +48,7 @@ class ServerGateway:
         validated: GatewayResult,
         state: State,
         *,
-        _authority: _AuthorityScope,
+        _authority: object,
     ) -> GatewayResult:
         return gateway.transfer(validated, state, _authority=_authority)
 
@@ -80,7 +80,16 @@ class ServerGateway:
         self,
         publication: ServerPublication,
         *,
-        _authority: _AuthorityScope | None = None,
-    ) -> None:
-        require_cgs_authority(_authority)  # type: ignore[arg-type]
+        _authority: object | None = None,
+    ) -> CGSError | None:
+        require_cgs_authority(_authority)
         self._publications = self._publications + (publication,)
+        return None
+
+    def _snapshot(self, *, _authority: object) -> tuple[ServerPublication, ...]:
+        require_cgs_authority(_authority)
+        return self._publications
+
+    def _restore(self, publications: tuple[ServerPublication, ...], *, _authority: object) -> None:
+        require_cgs_authority(_authority)
+        self._publications = publications

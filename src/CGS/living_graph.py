@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ._authority import _AuthorityScope, require_cgs_authority
+from ._authority import require_cgs_authority
 from .graph import Graph
 from .serialization import FrozenJson
 from .state import State
@@ -34,7 +34,7 @@ class LivingGraph:
         gateway: "Gateway",
         state: State,
         *,
-        _authority: _AuthorityScope,
+        _authority: object,
     ) -> "LivingGraph":
         require_cgs_authority(_authority)
         living = cls(graph, gateway)

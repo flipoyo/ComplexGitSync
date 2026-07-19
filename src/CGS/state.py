@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ._authority import _AuthorityScope, require_cgs_authority
+from ._authority import require_cgs_authority
 from .serialization import FrozenJson, freeze_json, thaw_json
 from .state_id import StateId
 
@@ -61,9 +61,9 @@ class State:
         payload: FrozenJson,
         *,
         validated: bool,
-        _authority: _AuthorityScope | None = None,
+        _authority: object | None = None,
     ) -> None:
-        require_cgs_authority(_authority)  # type: ignore[arg-type]
+        require_cgs_authority(_authority)
         if not validated:
             raise ValueError("authoritative State must be validated")
         object.__setattr__(self, "graph_name", graph_name)

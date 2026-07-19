@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from ._authority import _AuthorityScope, require_cgs_authority
-from .errors import CGSError, ErrorCode
+from ._authority import require_cgs_authority
+from .errors import CGSContractError, CGSError, ErrorCode
 from .graph import Graph
 from .living_graph import LivingGraph
 from .serialization import canonical_json
@@ -128,7 +128,7 @@ class Gateway:
         validated: GatewayResult,
         state: State,
         *,
-        _authority: _AuthorityScope,
+        _authority: object,
     ) -> GatewayResult:
         require_cgs_authority(_authority)
         if not validated.ok or validated.stage != GatewayStage.VALIDATED:
@@ -171,5 +171,8 @@ class Gateway:
             or not isinstance(transferred.value, LivingGraph)
             or transferred.value.state is None
         ):
-            raise ValueError("only a transferred authoritative State may be emitted")
+            raise CGSContractError(
+                ErrorCode.EMISSION_REJECTED,
+                "only a transferred authoritative State may be emitted",
+            )
         return transferred.value

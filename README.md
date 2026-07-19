@@ -20,13 +20,19 @@ See also [@alpha-tech](.cgitsync/.CORE/.CGS/.ONTOLOGY/@CGS.CORE.md).
 The internal `CGS` package is the executable Python prototype of the future
 Rust infrastructure boundary. It exports `Graph`, `Gateway`, `LivingGraph`,
 `State`, `StateOntology`, `StateCoreGraph`, `L0`, `StateId`, `MemorySystem`,
-`ServerGateway`, and the `CGS.serve` facade.
+`ServerGateway`, and the `CGS.serve` facade. `CGS.recover` verifies and restores
+a complete authoritative State from CGS-owned Memory without exposing that
+Memory through the public server projections.
 
 `@CGS` exclusively owns Graph activation, authoritative State creation and
 identity, L0 anchoring, validated Memory persistence, and the physical server
 Gateway. `@ComplexGitSync` supplies candidate State through its minimal
 `cgs_binding.serve` adapter and consumes the result unchanged; it does not
-duplicate infrastructure. The generated public views are
+duplicate infrastructure. Every accepted service call receives a distinct,
+strictly ordered Time-L0 occurrence, and its public `StateId` is the SHA-256
+identity of the private occurrence anchor. Graph names use a constrained
+language-neutral identifier grammar so they cannot inject Mermaid structure.
+The generated public views are
 [@CGS.GRAPH.md](@CGS.GRAPH.md),
 [@ComplexGitSync.GRAPH.md](@ComplexGitSync.GRAPH.md), and
 [STATE@.CORE.md](STATE@.CORE.md).
@@ -320,4 +326,3 @@ used to derive `CGSHOME=$CGSPATH/<project-name>`.
 - Main Developer: Nicolas Flipo
 - Contributors (ongoing): Simone Mazzarelli, Tristan Bourgeois, Nicolas Gallois, Pierre Guillou, Fabien Ors
 - AI assistance: ChatGPT, Copilot@github, Mistral Vibe, Claude
-

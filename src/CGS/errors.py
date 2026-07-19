@@ -6,6 +6,7 @@ from enum import Enum
 
 class ErrorCode(str, Enum):
     INVALID_GRAPH = "invalid_graph"
+    INVALID_GRAPH_NAME = "invalid_graph_name"
     INVALID_CANDIDATE = "invalid_candidate"
     PARTIAL_STATE = "partial_state"
     GRAPH_NAME_MISMATCH = "graph_name_mismatch"
@@ -13,9 +14,13 @@ class ErrorCode(str, Enum):
     INVALID_PIPELINE_STAGE = "invalid_pipeline_stage"
     OWNERSHIP_VIOLATION = "ownership_violation"
     INVALID_AUTHORITATIVE_STATE = "invalid_authoritative_state"
+    EMISSION_REJECTED = "emission_rejected"
     MEMORY_REJECTED = "memory_rejected"
+    MEMORY_NOT_FOUND = "memory_not_found"
+    MEMORY_CORRUPT = "memory_corrupt"
     SERVER_REJECTED = "server_rejected"
     OPERATOR_FAILED = "operator_failed"
+    SERVICE_COMMIT_FAILED = "service_commit_failed"
 
 
 @dataclass(frozen=True, slots=True)

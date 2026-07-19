@@ -9,9 +9,10 @@ flowchart LR
     ADAPTER --> CGS["CGS.serve"]
     CGS --> SERVER["@SERVER@ComplexGitSync<br/>Gateway"]
     SERVER --> LIVING["*ComplexGitSync<br/>validated State"]
-    CGS --> MEMORY["@MS@ComplexGitSync<br/>validated public record"]
+    CGS --> MEMORY["@MS@ComplexGitSync<br/>complete validated State Memory"]
     SERVER --> PUBLIC[".PUBLIC<br/>State Ontology + State CORE Graph"]
 ```
 
 PRIME `G`, `L0`, authoritative `StateId`, generic Memory, and the physical
-server Gateway remain exclusively under `@CGS`.
+server Gateway remain exclusively under `@CGS`. Complete Memory content is not
+part of either public server projection.

@@ -1,6 +1,6 @@
 import pytest
 
-from CGS import CandidateState, ErrorCode, Gateway, GatewayStage
+from CGS import CGSContractError, CandidateState, ErrorCode, Gateway, GatewayStage
 
 
 def test_gateway_runs_explicit_pipeline_without_direct_crossing(graph, candidate) -> None:
@@ -25,5 +25,10 @@ def test_gateway_rejects_wrong_stage_and_differing_interpretations(graph) -> Non
     candidate = CandidateState("Demo", {"value": 1}, {"value": 2}, {})
     invalid = gateway.validate(gateway.interpret(gateway.listen(candidate)))
     assert invalid.error.code == ErrorCode.VALIDATION_FAILED
-    with pytest.raises(ValueError):
+    with pytest.raises(CGSContractError) as ontology_error:
         gateway.emit_state_ontology(invalid)
+    with pytest.raises(CGSContractError) as core_error:
+        gateway.emit_state_core_graph(invalid)
+
+    assert ontology_error.value.error.code == ErrorCode.EMISSION_REJECTED
+    assert core_error.value.error.code == ErrorCode.EMISSION_REJECTED

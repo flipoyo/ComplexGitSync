@@ -1,19 +1,26 @@
 from __future__ import annotations
 
-from enum import Enum
+
+class _AuthorityCapability:
+    """Opaque prototype capability; the Rust boundary will hold the real token."""
+
+    __slots__ = ()
+
+    def __new__(cls) -> "_AuthorityCapability":
+        raise TypeError("CGS authority cannot be constructed")
+
+    def __repr__(self) -> str:
+        return "<_AuthorityCapability redacted>"
+
+    def __reduce__(self) -> object:
+        raise TypeError("CGS authority cannot be serialized")
 
 
-class _AuthorityScope(str, Enum):
-    """Language-neutral prototype of the future kernel capability."""
-
-    CGS_KERNEL_V1 = "cgs-kernel-v1"
+CGS_AUTHORITY = object.__new__(_AuthorityCapability)
 
 
-CGS_AUTHORITY = _AuthorityScope.CGS_KERNEL_V1
-
-
-def require_cgs_authority(authority: _AuthorityScope) -> None:
-    if authority != CGS_AUTHORITY:
+def require_cgs_authority(authority: object | None) -> None:
+    if authority is not CGS_AUTHORITY:
         from .errors import ErrorCode, OwnershipError
 
         raise OwnershipError(

@@ -14,3 +14,6 @@ flowchart LR
     X --> ONTOLOGY["STATE Ontology<br/>NAME / NODE / EDGE / OP"]
     X --> CORE["State CORE Graph<br/>public living projection"]
 ```
+
+Complete authoritative State Memory and temporal occurrence data remain
+behind the Gateway and are not fields of this projection.
