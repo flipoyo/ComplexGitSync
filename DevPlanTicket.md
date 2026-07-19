@@ -132,7 +132,27 @@ Then Edit @ComplexGitSync.md - Axiomatic
 Implement the new PRIMITIVES @SRC
 For each PRIME G generate a Unittest of the Gateway @G
 
-## T3 Memory System Sync - *STX (*STereoX)
+## T3 @MS activation
+
+@MS depends on @forge43 activation.
+
+Write a protocol for instantiating a SERVER.
+
+It means installing an Access to a SERVER from a CLIENT, secured by a protocole level ssh tunnel. 
+
+SERVER is a linux VPS (alpha series -> ubuntu)
+
+The protocol is a server admin protocol : 
+    orchestrates ssh protocol for safe tunneling CLIENT<-X->SERVER
+    install git
+    boot @CGS gateway which is *SERVER-NAME = @forge43
+    A CLIENT is always considered PUBLIC by the Gateway 
+
+Instantiate @MS@Project if necessary 'Initial Repo'
+
+Serves @MS@Project@STATE@
+
+## T4 Memory System Sync - *STX (*STereoX)
 
 STX=G{STereoX,@FS,@MS,@CGS}
 
@@ -149,14 +169,14 @@ freeze-release MUST include a merge command at the end
 
 launch-release MUST include a branch checkout
 
-## T4 Case Test
+## T5 Case Test
 
 Project = 'CGSil1'
 NODE : GitRepo = {$Project,@forge43@git,@FS,@CGS@ComplexGitSync(launch-release)}
 EDGE : GitTree = {@$Project,@GitRepo,@FS,@CGS@MS} -manages branch and CLIENT - SERVEUR - branch SYNC
 STX : CLI = {@$Project,@MS,@FS,@CGS@ComplexGitSync(freeze-release)}
 
-## T5 Logic Check
+## T6 Logic Check
 
 Check if the AXIOMATIC and the ONTOLOGY are 0:1 1:1 Logical
 
