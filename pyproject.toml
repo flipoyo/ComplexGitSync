@@ -29,7 +29,7 @@ dev = [
 cgitsync = "ComplexGitSync.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ComplexGitSync"]
+packages = ["src/CGS", "src/ComplexGitSync"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

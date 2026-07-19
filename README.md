@@ -11,9 +11,25 @@ entry point is `cgitsync`.
 
 It is the Alpha Series of ComplexGraphSync, per say CGS. CGS service is requestable @CGS.
 
-@CGS is a deterministic [Graph × Graph Synchronizer](.cgitsync/.CORE/.CGS/@CGS.CORE.md),
+@CGS is a deterministic [Graph × Graph Synchronizer](.cgitsync/.CORE/.CGS/.ONTOLOGY/@CGS.CORE.md),
 that instanciates active Graph *G and anchored it in a L0 based on time only.
-See also [@alpha-tech](.cgitsync/.CORE/.CGS/@CGS.CORE.md).
+See also [@alpha-tech](.cgitsync/.CORE/.CGS/.ONTOLOGY/@CGS.CORE.md).
+
+## Phase 1 backend ownership and interfaces
+
+The internal `CGS` package is the executable Python prototype of the future
+Rust infrastructure boundary. It exports `Graph`, `Gateway`, `LivingGraph`,
+`State`, `StateOntology`, `StateCoreGraph`, `L0`, `StateId`, `MemorySystem`,
+`ServerGateway`, and the `CGS.serve` facade.
+
+`@CGS` exclusively owns Graph activation, authoritative State creation and
+identity, L0 anchoring, validated Memory persistence, and the physical server
+Gateway. `@ComplexGitSync` supplies candidate State through its minimal
+`cgs_binding.serve` adapter and consumes the result unchanged; it does not
+duplicate infrastructure. The generated public views are
+[@CGS.GRAPH.md](@CGS.GRAPH.md),
+[@ComplexGitSync.GRAPH.md](@ComplexGitSync.GRAPH.md), and
+[STATE@.CORE.md](STATE@.CORE.md).
 
 ## What the CLI manages
 
@@ -304,5 +320,4 @@ used to derive `CGSHOME=$CGSPATH/<project-name>`.
 - Main Developer: Nicolas Flipo
 - Contributors (ongoing): Simone Mazzarelli, Tristan Bourgeois, Nicolas Gallois, Pierre Guillou, Fabien Ors
 - AI assistance: ChatGPT, Copilot@github, Mistral Vibe, Claude
-
 

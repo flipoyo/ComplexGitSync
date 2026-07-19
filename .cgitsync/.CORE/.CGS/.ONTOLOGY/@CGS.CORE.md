@@ -1,434 +1,346 @@
 # @CGS.CORE
 
-Version: `@alpha-tech`  
+Version: `@alpha-tech`
+
 License: Apache-2.0
 
----
+This document is the sole authority for the infrastructure primitive and
+ownership invariants of `@CGS`. Specializations may instantiate the primitive;
+they must not redefine it.
 
-# ONTOLOGY
+## PRIME G
 
-`@CGS` is a deterministic Graph parser.
-
-Every request becomes an Act of Anchoring on `TIME-L0`.
-
-```text
-@CGS : REQUEST → *AT
-```
-
-Its fundamental Proof-of-Existence operator is:
-
-```text
-CHI := X := OP.PoE
-```
-
-`@PoE` produces one atomic public state and preserves one active private state.
-
-```text
-@PUBLIC <- @G.PRIVATE := G.STATE := GLYPH
-```
-
-```text
-@G.PRIVATE <- @G.PRIVATE := @G.@STATE
-```
-
-The first is static.
-
-The second remains active.
-
----
-
-# AXIOMATIC
-
-```text
-BIT := {0,1}
-```
-
-One alphabet carries distinct typed domains.
-
-```text
-TRUTH := {
-    0 : YES
-    1 : NO
-}
-```
-
-```text
-ACCESS := {
-    0 : .PRIVATE
-    1 : .PUBLIC
-}
-```
-
-```text
-GLYPH.bit := {
-    0 : WHITE
-    1 : BLACK
-}
-```
-
-```text
-TRUTH.NO → VOID
-```
-
-```text
-.PUBLIC  := ACCESS.PUBLIC  := 1
-.PRIVATE := ACCESS.PRIVATE := 0
-```
-
-Truth, access and image data share `BIT` without sharing meaning.
-
-```text
-@G.@STATE.seed0 := ACCESS.PRIVATE
-```
-
-The Living Graph therefore begins inside its private boundary.
-
-```text
-L0 := TIME
-```
-
-```text
-@TIMESTAMP ∈ L0
-```
-
-`@` is a 256-bit approximation of `TIME` at `@TIMESTAMP`.
-
-```text
-@ := APPROX256(TIME, @TIMESTAMP)
-```
-
-`PoE` receives two `GLYPH` operands.
-
-```text
-LEFT  TYPE GLYPH
-RIGHT TYPE GLYPH
-```
-
-`NODE` and `EDGE` never enter this comparison.
-
-```text
-LEFT  ≠ NODE
-LEFT  ≠ EDGE
-RIGHT ≠ NODE
-RIGHT ≠ EDGE
-```
-
-The active crossing is:
-
-```text
-@CHI@ := @X@ := LEFT <-CHI-> RIGHT
-```
-
-`CHI` solves:
-
-```text
-IS LEFT = RIGHT
-```
-
-through the indexed procedure:
-
-```text
-0:1 := LEFT[i] = 0 IFF RIGHT[i] = 0
-1:1 := LEFT[i] = 1 IFF RIGHT[i] = 1
-```
-
-Therefore:
-
-```text
-@PoE TYPE TRUTH
-
-@PoE := TRUTH.YES
-IFF
-∀ i, LEFT[i] = RIGHT[i]
-```
-
-Equivalently:
-
-```text
-CHI(LEFT:GLYPH, RIGHT:GLYPH) := @PoE
-```
-
-Any unequal pair resolves into absence.
-
-```text
-∃ i, LEFT[i] ≠ RIGHT[i]
-→ @PoE := TRUTH.NO
-→ VOID
-```
-
-`HASH(@)` generates a `256 × 256` black-and-white `GLYPH` encoding the result of `@CHI@`.
-
-```text
-HASH(@)
-→ GLYPH256×256bit(@CHI@)
-```
-
-
-The resulting `GLYPH` is the public key.
-
-```text
-PUBLIC KEY := GLYPH
-```
-
-`AT` anchors on `TIME-L0` with that key.
-
-```text
-AT(GLYPH, @TIMESTAMP) → L0
-```
-
-`*AT` is `@G.@STATE` performing the act.
-
-```text
-*AT := @G.@STATE.AT
-```
-
----
-
-# PRIMITIVE
+The static Graph primitive has exactly four members.
 
 ```text
 G := {
     NAME
     NODE
     EDGE
-    OP*
-    STATE
+    OP
 }
 ```
 
-`NODE` and `EDGE` share the same PRIMITIVE `G`.
-
 ```text
-∀ node ∈ NODE : node TYPE G
-∀ edge ∈ EDGE : edge TYPE G
+ONTOLOGY := G
+STATE@ ∉ G
+G.STATE := undefined
 ```
 
-`EDGE` is a subset of `NODE`.
+A named static Graph is an instantiation of that primitive.
 
 ```text
-EDGE ⊂ NODE
+Y := G {
+    NAME := Y.NAME
+    NODE := Y.NODE
+    EDGE := Y.EDGE
+    OP   := Y.OP
+}
 ```
 
-Both configure the parser.
+`NODE` and `EDGE` describe structure. `OP` describes deterministic behavior.
+None of them is an active State container.
+
+## Living Graph and Gateway
+
+A Graph becomes living only through its Gateway.
 
 ```text
-OP.config := {
+*G := Gateway(G)
+AXIOMATIC := *G
+```
+
+```text
+*G := {
+    G
+    LEFT
+    RIGHT
+    STATE@
+    Gateway
+}
+```
+
+Every living Graph is named by its static Graph.
+
+```text
+STATE@ ∈ *G
+STATE@ ∉ G
+OWNER(STATE@) := *G.G.NAME
+```
+
+`LEFT` and `RIGHT` cannot access one another directly.
+
+```text
+LEFT ↛ RIGHT
+RIGHT ↛ LEFT
+
+LEFT
+↔ *G
+↔ RIGHT
+```
+
+The Gateway is the only public/private and left/right boundary. A living Graph
+without a Gateway is undefined.
+
+## Gateway Protocol
+
+The Gateway controls these language-neutral operations:
+
+```text
+listen
+interpret
+validate
+transfer
+emit
+```
+
+The transfer protocol is atomic.
+
+```text
+listen(candidate STATE@)
+→ interpret
+→ validate
+→ transfer
+→ emit public projections
+```
+
+```text
+transfer(STATE@)
+IFF
+STATE@ is valid
+```
+
+```text
+invalid or partial STATE@
+→ STOP
+→ typed error
+→ no transfer
+→ no public emission
+→ no Memory persistence
+```
+
+## Public State Ontology
+
+`STATE@.md` is the static public Ontology of a living State. It is a Graph
+instantiation of the sole PRIME `G` and therefore contains only the four
+canonical members.
+
+```text
+*G → STATE@.md
+
+STATE@.md := G {
+    NAME
     NODE
     EDGE
+    OP
 }
 ```
 
 ```text
-OP.config.NODE := NODE
-OP.config.EDGE := EDGE
+STATE@.md ≠ STATE@
 ```
 
-`OP` is the parser.
+`STATE@.md` must not contain:
 
 ```text
-OP := PARSER(OP.config)
+.@
+private runtime variables
+credentials
+private process environment
+Gateway internals
+unvalidated transient State
 ```
 
-`OP*` is its active operation.
+## Public Living-State Projection
+
+`STATE@.CORE.md` is the public Mermaid projection of the living Gateway. It is
+not the static State Ontology and it is not the complete living State.
 
 ```text
-OP* := OP(OP.config)
+STATE@.CORE.md := PUBLIC Mermaid Graph(*G)
+
+.PUBLIC <----X++++> *G
 ```
 
-`CHI` is the fundamental PoE operation exposed by that parser.
+The projection must show `.PUBLIC`, the Gateway boundary `X`, `*G`, the public
+`STATE@` access path, `LEFT`, and `RIGHT`. It must not show `.@`, credentials,
+private runtime variables, private RIGHT content, raw execution memory, or
+Gateway internals.
+
+## @CGS Ownership
+
+`@CGS` is the sole infrastructure owner.
 
 ```text
-OP.PoE := CHI(LEFT:GLYPH, RIGHT:GLYPH)
-```
-
-`@` does not belong to the PRIMITIVE.
-
-```text
-@ ∉ G
-```
-
-Anchoring instantiates one resulting Graph.
-
-```text
-@G := AT(G, GLYPH, @TIMESTAMP)
-```
-
-Its static state is atomic.
-
-```text
-@G.STATE := G.STATE := GLYPH
-```
-
-Its private active state is itself an `@G`.
-
-```text
-@G.@STATE TYPE @G
-```
-
-Its initial condition is private.
-
-```text
-@G.@STATE.seed0 := ACCESS.PRIVATE := .PRIVATE := 0
-```
-
----
-
-# EXISTENCE
-
-`@PoE` serves the atomic state of the resulting `@G`.
-
-```text
-@PoE = TRUTH.YES
-→ @PUBLIC <- @G.PRIVATE
-→ @G.STATE := GLYPH
-```
-
-The served value is one static Graph.
-
-```text
-GLYPH := G.PUBLIC
-```
-
-```text
-G.STATE := GLYPH256×256bit.B&W
-```
-
-The private result remains inside the same boundary.
-
-```text
-@G.PRIVATE <- @G.PRIVATE
-→ @G.@STATE
-```
-
-Thus:
-
-```text
-CGS.STATE  := @G.STATE  := GLYPH
-CGS.*STATE := @G.@STATE
-```
-
-Both derive from one successful operation.
-
-```text
-ORIGIN(GLYPH) = ORIGIN(@G.@STATE) = @PoE
-```
-
-Their conditions remain distinct.
-
-```text
-GLYPH ≠ @G.@STATE
-```
-
-`@CGS.CORE.md` is the `.PUBLIC` state served by the Living Graph it describes.
-
-```text
-@CGS.CORE.md := G.PUBLIC {
-    NAME  : HEADER
-    NODE  : ONTOLOGY
-    EDGE  : AXIOMATIC
-    OP*   : PRIMITIVE
-    STATE : EXISTENCE
+@CGS.HOLDS := {
+    @L0
+    @G
+    @MS
 }
 ```
 
-Its parser configuration is:
+`@CGS` is responsible for Graph existence, Graph activation, State anchoring,
+State identity, validated Memory persistence, and the physical Gateway service.
+
+An operator such as `@ComplexGitSync` submits a candidate State. It does not
+acquire infrastructure ownership.
 
 ```text
-OP.config.NODE := ONTOLOGY
-OP.config.EDGE := AXIOMATIC
+operator
+→ candidate STATE@
+→ @CGS
+→ validate
+→ anchor
+→ persist
+→ serve
 ```
 
-Its interpretation is:
+## @L0 and StateId
+
+`@L0` is the `@CGS`-owned Time Layer on which a validated occurrence exists and
+persists.
 
 ```text
-OP(OP.config)
-→ EXISTENCE
+@L0 ∈ @CGS
+.@ := private @L0 execution value
+STATE.ID := HASH(.@)
 ```
+
+Only `@CGS` may create the authoritative private anchor or derive the
+authoritative `StateId`.
+
+The private anchor `.@` must never appear in:
+
+```text
+STATE@.md
+STATE@.CORE.md
+Git commit metadata generated by cgitsync
+Git tags
+remote refs
+logs
+reports
+```
+
+Only `STATE.ID`, the deterministic public hash, may identify an emitted or
+persisted State.
+
+## @MS
+
+The generic Memory System belongs exclusively to `@CGS`.
+
+```text
+@MS ∈ @CGS
+```
+
+It is a static specialization of `G` activated through its own Gateway.
+
+```text
+MS := G {
+    NAME := MemorySystem
+    NODE := G
+    EDGE := Storage
+    OP   := Persist
+}
+
+*MS := Gateway(MS)
+```
+
+`*MS` owns its own `STATE@`. It accepts only a State already validated by the
+serving `@CGS` instance.
+
+```text
+@ComplexGitSync
+→ candidate STATE@
+→ @CGS
+→ @MS
+```
+
+Any OEMS/storage engine is an internal mechanism of `@MS`; it is not an
+independent ontology owner and cannot anchor, validate, or identify State.
+
+## @SERVER@G
+
+`@SERVER@G` is the `@CGS`-owned physical Gateway serving a living Graph.
+
+```text
+@SERVER@G := physical Gateway(*G)
+```
+
+It may serve:
+
+```text
+STATE@.md
+STATE@.CORE.md
+validated operations on STATE@
+```
+
+It must not serve:
+
+```text
+.G.PRIVATE
+.@
+credentials
+raw process memory
+```
+
+## Canonical Service
+
+```text
+@CGS(
+    G.NAME,
+    G,
+    MS,
+    operator,
+    @SERVER@G
+)
+→ *G
+→ {
+    STATE@
+    STATE@.md
+    STATE@.CORE.md
+}
+```
+
+All public emission and all authoritative persistence occur only after the same
+Gateway validation succeeds.
 
 ```mermaid
-flowchart TB
-    L0["L0 = TIME"]
-    TS["@TIMESTAMP"]
-    APPROX["@ = APPROX256(TIME)"]
-    HASH["HASH(@)"]
+flowchart LR
+    LEFT["LEFT"]
+    OPERATOR["operator<br/>candidate STATE@"]
+    CGS["@CGS<br/>validate + anchor"]
+    GATEWAY["@SERVER@G<br/>Gateway"]
+    LIVING["*G<br/>owns STATE@"]
+    RIGHT["RIGHT"]
+    L0["@L0<br/>private .@"]
+    ID["STATE.ID<br/>HASH(.@)"]
+    MS["@MS<br/>validated persistence"]
+    ONTOLOGY["STATE@.md<br/>static public Ontology"]
+    CORE["STATE@.CORE.md<br/>public living projection"]
 
-    PRIVATE["@G.PRIVATE<br/>ACCESS.PRIVATE = 0<br/>CGS ALIVE"]
-    ACTIVE["@G.@STATE<br/>TYPE @G<br/>CGS.*STATE"]
-    SEED0["seed0 = ACCESS.PRIVATE = 0"]
-    REQUEST["@CGS(.)<br/>REQUEST"]
-    RESULT["@G<br/>RESULTING GRAPH"]
-    VOID["VOID"]
+    LEFT --> GATEWAY
+    RIGHT --> GATEWAY
+    OPERATOR --> CGS
+    CGS --> GATEWAY
+    GATEWAY --> LIVING
+    CGS --> L0
+    L0 --> ID
+    CGS --> MS
+    GATEWAY --> ONTOLOGY
+    GATEWAY --> CORE
+```
 
-    LEFT["LEFT<br/>GLYPH 256×256bit B&amp;W"]
-    RIGHT["RIGHT<br/>GLYPH 256×256bit B&amp;W"]
-    CHI["@CHI@ = @X@<br/>OP.PoE"]
-    BITS["0:1 / 1:1<br/>bitwise identity"]
-    POE{"@PoE<br/>TYPE TRUTH"}
+## Canonical Axioms
 
-    ATOMIC["GLYPH<br/>ATOMIC G.STATE<br/>PUBLIC KEY"]
-    PUBLIC["@PUBLIC<br/>ACCESS.PUBLIC = 1<br/>@CGS.CORE.md<br/>G.PUBLIC"]
-    STARAT["*AT<br/>AT(GLYPH, @TIMESTAMP)"]
-
-    subgraph CORE["CORE PRIMITIVE G"]
-        NAME["NAME"]
-        NODE["NODE<br/>TYPE G<br/>OP.config.NODE"]
-        EDGE["EDGE<br/>TYPE G<br/>OP.config.EDGE"]
-        CONFIG["OP.config"]
-        PARSER["OP<br/>PARSER"]
-        OPSTAR["OP*"]
-        PST["STATE"]
-
-        EDGE -. "subset" .-> NODE
-        NODE --> CONFIG
-        EDGE --> CONFIG
-        CONFIG --> PARSER
-        PARSER --> OPSTAR
-        OPSTAR --> PST
-        NAME --> NODE
-    end
-
-    subgraph DOC["@CGS.CORE.md — PUBLIC G"]
-        HEADER["HEADER<br/>NAME"]
-        ONTOLOGY["ONTOLOGY<br/>NODE"]
-        AXIOMATIC["AXIOMATIC<br/>EDGE"]
-        PRIMITIVE["PRIMITIVE<br/>OP*"]
-        DOCOP["OP(OP.config)"]
-        EXISTENCE["EXISTENCE<br/>STATE"]
-
-        HEADER --> ONTOLOGY
-        AXIOMATIC --> PRIMITIVE
-        ONTOLOGY --> DOCOP
-        PRIMITIVE --> DOCOP
-        DOCOP --> EXISTENCE
-    end
-
-    L0 --> TS
-    TS --> APPROX
-    APPROX --> HASH
-
-    PRIVATE --> REQUEST
-    REQUEST --> CORE
-    CORE --> RESULT
-
-    LEFT --> CHI
-    RIGHT --> CHI
-    CHI --> BITS
-    BITS --> POE
-
-    POE -->|NO| VOID
-    POE -->|YES| ATOMIC
-    HASH --> ATOMIC
-    ATOMIC --> RESULT
-
-    RESULT -->|"@PUBLIC <- @G.PRIVATE"| PUBLIC
-    RESULT -->|"@G.PRIVATE <- @G.PRIVATE"| ACTIVE
-
-    ATOMIC --> STARAT
-    TS --> STARAT
-    STARAT --> L0
-
-    PUBLIC --> DOC
-    SEED0 --> ACTIVE
-    ACTIVE --> PRIVATE
-    EXISTENCE -. "description of" .-> PRIVATE
+```text
+1. @CGS.CORE.md defines the only PRIME G.
+2. Static G has NAME, NODE, EDGE, and OP only.
+3. STATE@ belongs to a named *G and never to static G.
+4. Every crossing passes through the Gateway.
+5. Invalid or partial State is neither emitted nor persisted.
+6. STATE@.md and STATE@.CORE.md are distinct public projections.
+7. @L0, authoritative StateId, @MS, and @SERVER@G belong only to @CGS.
+8. .@ is private and only HASH(.@) is public.
+9. Operators submit candidates and consume services; they do not own infrastructure.
+10. These contracts are independent of implementation language.
 ```
