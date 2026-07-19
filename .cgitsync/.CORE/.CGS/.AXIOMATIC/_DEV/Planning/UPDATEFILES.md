@@ -1,1 +1,5 @@
-Update files such as ./src/*, README.md, documentation files in docs, DevPlan.md, AdditionalSpecs.md
+
+
+.PRIVATE .DEV RETURN :
+    .PUBLIC:    ./README.md
+    .PRIVATE:   .src/*, DevPlanTickets.md, AdditionalSpecs.md
