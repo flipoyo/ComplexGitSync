@@ -50,3 +50,30 @@ def test_graph_name_rejects_reserved_or_mermaid_injection(name: str) -> None:
 
     assert raised.value.error.code == ErrorCode.INVALID_GRAPH_NAME
     assert name not in raised.value.error.message
+
+
+@pytest.mark.parametrize(
+    "private_value",
+    (
+        {"runtime": "private"},
+        {"nested": [{"process-environment": {"safe": False}}]},
+        {"nested": {"private_right": "hidden"}},
+        {"nested": {"raw_memory": "hidden"}},
+        {"nested": {"gateway_internals": "hidden"}},
+        {"nested": "credential=hidden"},
+        {"nested": "private runtime"},
+        {"nested": "PATH=/private"},
+        {"nested": "/env/PATH"},
+        {"nested": "RIGHT=private"},
+        {"nested": "raw process memory"},
+        {"nested": ".@"},
+    ),
+)
+def test_graph_recursively_rejects_private_public_values_without_echo(private_value) -> None:
+    with pytest.raises(CGSContractError) as raised:
+        Graph("Demo", private_value, [], "sync")
+
+    assert raised.value.error.code == ErrorCode.INVALID_GRAPH
+    message = raised.value.error.message.casefold()
+    for fragment in ("hidden", "path=/private", ".@"):
+        assert fragment not in message

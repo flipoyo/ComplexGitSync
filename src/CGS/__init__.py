@@ -1,4 +1,5 @@
 from .cgs import CGS, CandidateOperator, ServiceResult, ServiceStatus
+from .drivers import DriverReceipt, EchoValueDriver, ValueDriver
 from .errors import CGSContractError, CGSError, ErrorCode, OwnershipError
 from .gateway import Gateway, GatewayResult, GatewayStage
 from .graph import Graph
@@ -18,6 +19,8 @@ __all__ = [
     "CandidateOperator",
     "CandidateState",
     "ErrorCode",
+    "DriverReceipt",
+    "EchoValueDriver",
     "Gateway",
     "GatewayResult",
     "GatewayStage",
@@ -37,4 +40,5 @@ __all__ = [
     "StateCoreGraph",
     "StateId",
     "StateOntology",
+    "ValueDriver",
 ]

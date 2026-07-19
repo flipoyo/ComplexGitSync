@@ -1,11 +1,10 @@
+import inspect
+
 import pytest
 
-from CGS import CGS, CandidateState, OwnershipError, State, StateId
-
-
-class EqualityForgery:
-    def __eq__(self, other):
-        return True
+import CGS
+from CGS import CGS as Kernel
+from CGS import CandidateState, OwnershipError, State, StateId
 
 
 def test_candidate_is_not_authoritative(candidate) -> None:
@@ -14,47 +13,47 @@ def test_candidate_is_not_authoritative(candidate) -> None:
     assert not hasattr(candidate, "state_id")
 
 
-def test_authoritative_state_cannot_be_constructed_outside_cgs(candidate) -> None:
+@pytest.mark.parametrize("value", ("0" * 64, object(), None))
+def test_state_id_public_construction_always_fails(value) -> None:
     with pytest.raises(OwnershipError):
-        StateId("0" * 64)
+        StateId(value)  # type: ignore[arg-type]
 
+
+def test_state_public_construction_always_fails(candidate) -> None:
     with pytest.raises(OwnershipError):
         State(
             "Demo",
-            object(),  # type: ignore[arg-type]
+            "0" * 64,
+            "1" * 64,
+            "2" * 64,
             candidate.left,
             candidate.right,
             candidate.payload,
-            validated=True,
         )
 
 
-def test_cgs_returns_validated_authoritative_state(
+def test_cgs_returns_bound_validated_authoritative_state(
     graph, candidate, memory_system, server_gateway
 ) -> None:
-    result = CGS.serve("Demo", graph, memory_system, candidate, server_gateway)
+    result = Kernel.serve("Demo", graph, memory_system, candidate, server_gateway)
+
+    assert result.ok
     state = result.living_graph.state
-    assert isinstance(state, State)
-    assert isinstance(state.state_id, StateId)
+    assert type(state) is State
+    assert type(state.state_id) is StateId
     assert state.validated is True
+    assert state.graph_binding == graph.digest
+    assert state.gateway_binding == result.living_graph.gateway.binding
+    assert len(state.state_digest) == 64
 
 
-def test_string_and_equality_authority_forgeries_cannot_create_state(
-    graph, candidate, memory_system, server_gateway
-) -> None:
-    served = CGS.serve("Demo", graph, memory_system, candidate, server_gateway)
-    state = served.living_graph.state
+def test_no_authority_capability_is_exported_or_accepted() -> None:
+    assert not hasattr(CGS, "CGS_AUTHORITY")
+    assert "_authority" not in inspect.signature(State).parameters
+    assert "_authority" not in inspect.signature(StateId).parameters
 
-    for forged in ("cgs-kernel-v1", object(), EqualityForgery()):
-        with pytest.raises(OwnershipError):
-            StateId(state.state_id.value, _authority=forged)
-        with pytest.raises(OwnershipError):
-            State(
-                state.graph_name,
-                state.state_id,
-                state.left,
-                state.right,
-                state.payload,
-                validated=True,
-                _authority=forged,
-            )
+
+@pytest.mark.parametrize("primitive", (State, StateId))
+def test_authoritative_primitives_reject_subclass_construction(primitive) -> None:
+    with pytest.raises(TypeError, match="sealed"):
+        type("ForgedPrimitive", (primitive,), {})

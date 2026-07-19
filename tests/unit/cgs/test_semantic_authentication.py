@@ -2,299 +2,168 @@ import json
 
 import pytest
 
-from CGS import (
-    CGS,
-    CandidateState,
-    ErrorCode,
-    Gateway,
-    GatewayResult,
-    GatewayStage,
-    Graph,
-    LivingGraph,
-    MemoryRecord,
-    MemoryResult,
-    MemorySystem,
-    ServerGateway,
-    ServerPublication,
-    State,
-    StateId,
-    StateOntology,
+from CGS import CGS, CandidateState, ErrorCode, MemorySystem, ServerGateway
+from CGS.serialization import canonical_json
+
+from .driver_helpers import RecordingDriver
+
+
+def test_rollback_restores_records_publications_and_current_ms_state(graph) -> None:
+    driver = RecordingDriver()
+    memory = MemorySystem(driver=driver)
+    server = ServerGateway(driver=driver)
+    first = CGS.serve("Demo", graph, memory, CandidateState("Demo", 1, 1, {"revision": 1}), server)
+    assert first.ok
+    memory_before = memory._journal_snapshot()
+    server_before = server._journal_snapshot()
+    decoded_records = memory.records
+    decoded_ms_state = memory.memory_state
+    decoded_publications = server.publications
+    driver.behavior["publish"] = "reject"
+
+    failed = CGS.serve("Demo", graph, memory, CandidateState("Demo", 2, 2, {"revision": 2}), server)
+
+    assert not failed.ok
+    assert failed.error.code == ErrorCode.SERVICE_COMMIT_FAILED
+    assert memory._journal_snapshot() == memory_before
+    assert server._journal_snapshot() == server_before
+    assert memory.records == decoded_records
+    assert memory.memory_state == decoded_ms_state
+    assert server.publications == decoded_publications
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("state_id", "graph_binding", "gateway_binding", "state_digest", "record_digest"),
 )
-from CGS.gateway import ValidatedCandidate, _InterpretedState
-from CGS.serialization import canonical_json, freeze_json
+def test_recovery_rejects_forged_sealed_memory_blobs(graph, candidate, field) -> None:
+    memory = MemorySystem()
+    served = CGS.serve("Demo", graph, memory, candidate, ServerGateway())
+    assert served.ok
+    requested = served.living_graph.state.state_id.value
+    value = json.loads(memory._record_blobs[0])
+    value[field] = "f" * 64 if value[field] != "f" * 64 else "e" * 64
+    object.__setattr__(memory, "_record_blobs", (canonical_json(value),))
+
+    recovered = CGS.recover(memory, requested)
+
+    assert not recovered.ok
+    assert recovered.state is None
+    assert recovered.record is None
+    assert recovered.error.code in {ErrorCode.MEMORY_CORRUPT, ErrorCode.MEMORY_NOT_FOUND}
+    assert recovered.error.message == "CGS rejected the operation"
 
 
-PRIVATE_TEXT = "credential=semantic-secret .@ RIGHT=private /env/PATH"
+def test_recovery_rejects_noncanonical_and_non_json_memory_blobs(graph, candidate) -> None:
+    memory = MemorySystem()
+    served = CGS.serve("Demo", graph, memory, candidate, ServerGateway())
+    requested = served.living_graph.state.state_id.value
+
+    for forged in ("not-json", '{ "state_id": "%s" }' % requested):
+        object.__setattr__(memory, "_record_blobs", (forged,))
+        recovered = CGS.recover(memory, requested)
+        assert not recovered.ok
+        assert recovered.state is None
+        assert recovered.error.code == ErrorCode.MEMORY_CORRUPT
 
 
-def unrelated_record() -> MemoryRecord:
-    return MemoryRecord(
-        graph_name="Unrelated",
-        state_id="f" * 64,
-        left=freeze_json({"credential": PRIVATE_TEXT}),
-        right=freeze_json({"credential": PRIVATE_TEXT}),
-        payload=freeze_json({"private": PRIVATE_TEXT}),
-        validated=True,
-        state_digest="0" * 64,
-    )
+def test_recovery_fails_closed_when_any_journal_blob_is_corrupt(graph, candidate) -> None:
+    memory = MemorySystem()
+    served = CGS.serve("Demo", graph, memory, candidate, ServerGateway())
+    requested = served.living_graph.state.state_id.value
+    valid = memory._record_blobs[0]
+    object.__setattr__(memory, "_record_blobs", ("not-json", valid))
+
+    recovered = CGS.recover(memory, requested)
+
+    assert not recovered.ok
+    assert recovered.error.code == ErrorCode.MEMORY_CORRUPT
 
 
-def assert_semantic_rejection(result, memory, server, code) -> None:
-    assert not result.ok
-    assert result.error.code == code
-    assert result.error.message == "CGS rejected the operation"
-    assert result.living_graph is None
-    assert result.state_ontology is None
-    assert result.state_core_graph is None
-    assert memory.records == ()
-    assert server.publications == ()
-    public = json.dumps(result.to_public_dict(), sort_keys=True)
-    for fragment in (
-        "credential",
-        "semantic-secret",
-        ".@",
-        "RIGHT",
-        "private",
-        "/env",
-        "PATH",
+def test_operator_receives_detached_graph_and_cannot_mutate_kernel_input(graph) -> None:
+    seen = []
+
+    class MutatingOperator:
+        def candidate_state(self, detached_graph):
+            seen.append(detached_graph)
+            object.__setattr__(detached_graph, "name", "Changed")
+            return CandidateState("Demo", {"tree": 1}, {"tree": 1}, {})
+
+    result = CGS.serve("Demo", graph, MemorySystem(), MutatingOperator(), ServerGateway())
+
+    assert result.ok
+    assert seen[0] is not graph
+    assert graph.name == "Demo"
+    assert result.living_graph.graph.name == "Demo"
+
+
+def test_callback_mutation_cannot_change_deep_snapshot_or_committed_values(graph) -> None:
+    driver = RecordingDriver()
+    for operation in (
+        "listen",
+        "interpret",
+        "validate",
+        "transfer",
+        "emit_state_ontology",
+        "emit_state_core_graph",
+        "memory.prepare",
+        "prepare_publication",
+        "memory.persist",
+        "publish",
     ):
-        assert fragment not in public
-
-
-class LieInterpret(ServerGateway):
-    def interpret(self, gateway, listened):
-        candidate = listened.value
-        left = canonical_json(candidate.left)
-        forged = _InterpretedState(candidate=candidate, left_json=left, right_json=left)
-        return GatewayResult(stage=GatewayStage.INTERPRETED, value=forged)
-
-
-class LieValidate(ServerGateway):
-    def validate(self, gateway, interpreted):
-        candidate = interpreted.value.candidate
-        forged = ValidatedCandidate(
-            candidate=candidate,
-            validation_digest_material=canonical_json(candidate.to_dict()),
-        )
-        return GatewayResult(stage=GatewayStage.VALIDATED, value=forged)
-
-
-@pytest.mark.parametrize("server_type", (LieInterpret, LieValidate))
-def test_cgs_decisive_validation_rejects_semantic_gateway_lies(graph, server_type) -> None:
-    candidate = CandidateState("Demo", {"tree": 1}, {"tree": 2}, {})
-    memory = MemorySystem()
-    server = server_type()
+        driver.behavior[operation] = "mutate_detached"
+    memory = MemorySystem(driver=driver)
+    server = ServerGateway(driver=driver)
+    candidate = CandidateState("Demo", {"tree": [1]}, {"tree": [1]}, {"runtime": 1})
 
     result = CGS.serve("Demo", graph, memory, candidate, server)
 
-    assert_semantic_rejection(result, memory, server, ErrorCode.INVALID_PIPELINE_STAGE)
+    assert result.ok
+    assert memory.records[0].left == candidate.left
+    assert result.living_graph.state.payload == candidate.payload
+    assert "credential" not in canonical_json(server.publications[0].to_dict())
 
 
-class AlterTransfer(ServerGateway):
-    def __init__(self, mode: str) -> None:
-        super().__init__()
-        self.mode = mode
+def test_recovery_driver_cannot_supply_or_mutate_records(graph, candidate) -> None:
+    driver = RecordingDriver()
+    memory = MemorySystem(driver=driver)
+    served = CGS.serve("Demo", graph, memory, candidate, ServerGateway())
+    before = memory._journal_snapshot()
+    driver.behavior["memory.recover"] = "mutate_detached"
 
-    def transfer(self, gateway, validated, state, *, _authority):
-        altered_graph = gateway.graph
-        altered_gateway = gateway
-        altered_state = state
-        if self.mode == "graph":
-            altered_graph = Graph(
-                gateway.graph.name,
-                {"credential": PRIVATE_TEXT},
-                gateway.graph.edge,
-                gateway.graph.op,
-            )
-        elif self.mode == "gateway":
-            altered_gateway = Gateway(gateway.graph)
-        else:
-            altered_id = state.state_id
-            left = state.left
-            right = state.right
-            payload = state.payload
-            if self.mode == "state_id":
-                altered_id = StateId("e" * 64, _authority=_authority)
-            elif self.mode == "left":
-                left = freeze_json({"credential": PRIVATE_TEXT})
-            elif self.mode == "right":
-                right = freeze_json({"private": PRIVATE_TEXT})
-            elif self.mode == "payload":
-                payload = freeze_json({"credential": PRIVATE_TEXT})
-            altered_state = State(
-                state.graph_name,
-                altered_id,
-                left,
-                right,
-                payload,
-                validated=True,
-                _authority=_authority,
-            )
-        living = LivingGraph._with_state(
-            altered_graph,
-            altered_gateway,
-            altered_state,
-            _authority=_authority,
-        )
-        return GatewayResult(stage=GatewayStage.TRANSFERRED, value=living)
+    recovered = CGS.recover(memory, served.living_graph.state.state_id)
+
+    assert recovered.ok
+    assert recovered.record == memory.records[0]
+    assert memory._journal_snapshot() == before
+    operation, message = driver.calls[-1]
+    assert operation == "memory.recover"
+    assert set(json.loads(message)) == {"state_id"}
 
 
-@pytest.mark.parametrize("mode", ("graph", "gateway", "state_id", "left", "right", "payload"))
-def test_transfer_semantics_authenticate_graph_gateway_and_state(graph, candidate, mode) -> None:
-    memory = MemorySystem()
-    server = AlterTransfer(mode)
+def test_invalid_recovery_identity_does_not_reach_driver() -> None:
+    driver = RecordingDriver()
+    recovered = CGS.recover(MemorySystem(driver=driver), "credential=hidden")
 
-    result = CGS.serve("Demo", graph, memory, candidate, server)
-
-    assert_semantic_rejection(result, memory, server, ErrorCode.INVALID_PIPELINE_STAGE)
-
-
-class AlterOntology(ServerGateway):
-    def __init__(self, field: str) -> None:
-        super().__init__()
-        self.field = field
-
-    def emit_state_ontology(self, gateway, transferred):
-        canonical = super().emit_state_ontology(gateway, transferred)
-        values = {
-            "name": canonical.name,
-            "node": canonical.node,
-            "edge": canonical.edge,
-            "op": canonical.op,
-        }
-        values[self.field] = freeze_json({"credential": PRIVATE_TEXT})
-        return StateOntology(**values)
+    assert not recovered.ok
+    assert recovered.error.code == ErrorCode.MEMORY_REJECTED
+    assert driver.calls == []
 
 
-@pytest.mark.parametrize("field", ("node", "edge", "op"))
-def test_canonical_ontology_rejects_private_field_substitution(graph, candidate, field) -> None:
-    memory = MemorySystem()
-    server = AlterOntology(field)
-
-    result = CGS.serve("Demo", graph, memory, candidate, server)
-
-    assert_semantic_rejection(result, memory, server, ErrorCode.EMISSION_REJECTED)
-
-
-class AlterPublication(ServerGateway):
-    def __init__(self, mode: str) -> None:
-        super().__init__()
-        self.mode = mode
-
-    def prepare_publication(self, living_graph, state_ontology, state_core_graph):
-        if self.mode == "projection":
-            state_ontology = StateOntology(
-                name=state_ontology.name,
-                node=freeze_json({"credential": PRIVATE_TEXT}),
-                edge=state_ontology.edge,
-                op=state_ontology.op,
-            )
-        operations = ("state", "state-core", "validated-operation")
-        if self.mode == "operations":
-            operations = operations + (PRIVATE_TEXT,)
-        return ServerPublication(state_ontology, state_core_graph, operations)
-
-
-@pytest.mark.parametrize("mode", ("projection", "operations"))
-def test_publication_must_equal_canonical_complete_value(graph, candidate, mode) -> None:
-    memory = MemorySystem()
-    server = AlterPublication(mode)
-
-    result = CGS.serve("Demo", graph, memory, candidate, server)
-
-    assert_semantic_rejection(result, memory, server, ErrorCode.SERVER_REJECTED)
-
-
-class FalsePrepareMemory(MemorySystem):
-    def __init__(self, mode: str) -> None:
-        super().__init__()
-        self.mode = mode
-
-    def prepare(self, state):
-        if self.mode == "empty":
-            return MemoryResult()
-        return MemoryResult(record=unrelated_record())
-
-
-@pytest.mark.parametrize("mode", ("empty", "unrelated"))
-def test_memory_prepare_must_equal_canonical_record(graph, candidate, mode) -> None:
-    memory = FalsePrepareMemory(mode)
+def test_publication_property_is_a_fresh_decoded_value(graph, candidate) -> None:
     server = ServerGateway()
+    served = CGS.serve("Demo", graph, MemorySystem(), candidate, server)
+    assert served.ok
 
-    result = CGS.serve("Demo", graph, memory, candidate, server)
+    publication = server.publications[0]
+    object.__setattr__(publication, "state_id", "f" * 64)
 
-    assert_semantic_rejection(result, memory, server, ErrorCode.MEMORY_REJECTED)
-
-
-class FalseResultPersist(MemorySystem):
-    def __init__(self, mode: str) -> None:
-        super().__init__()
-        self.mode = mode
-
-    def persist(self, state, *, _authority=None):
-        if self.mode == "empty":
-            return MemoryResult()
-        return MemoryResult(record=unrelated_record())
+    assert server.publications[0].state_id == served.living_graph.state.state_id.value
 
 
-@pytest.mark.parametrize("mode", ("empty", "unrelated"))
-def test_memory_persist_result_must_equal_canonical_record(graph, candidate, mode) -> None:
-    memory = FalseResultPersist(mode)
-    server = ServerGateway()
+def test_no_importable_authority_module_or_capability() -> None:
+    import CGS
 
-    result = CGS.serve("Demo", graph, memory, candidate, server)
-
-    assert_semantic_rejection(result, memory, server, ErrorCode.SERVICE_COMMIT_FAILED)
-
-
-class FalsePersist(MemorySystem):
-    def persist(self, state, *, _authority=None):
-        return MemorySystem.prepare(self, state)
-
-
-class ExtraPersist(MemorySystem):
-    def persist(self, state, *, _authority=None):
-        result = MemorySystem.persist(self, state, _authority=_authority)
-        self._records = self._records + (unrelated_record(),)
-        return result
-
-
-@pytest.mark.parametrize("memory_type", (FalsePersist, ExtraPersist))
-def test_memory_persistence_postcondition_rejects_missing_or_extra_record(
-    graph, candidate, memory_type
-) -> None:
-    memory = memory_type()
-    server = ServerGateway()
-
-    result = CGS.serve("Demo", graph, memory, candidate, server)
-
-    assert_semantic_rejection(result, memory, server, ErrorCode.SERVICE_COMMIT_FAILED)
-
-
-class SilentPublish(ServerGateway):
-    def publish(self, publication, *, _authority=None):
-        return None
-
-
-class ExtraPublish(ServerGateway):
-    def publish(self, publication, *, _authority=None):
-        ServerGateway.publish(self, publication, _authority=_authority)
-        altered = ServerPublication(
-            publication.state_ontology,
-            publication.state_core_graph,
-            publication.operations + (PRIVATE_TEXT,),
-        )
-        self._publications = self._publications + (altered,)
-        return None
-
-
-@pytest.mark.parametrize("server_type", (SilentPublish, ExtraPublish))
-def test_publication_postcondition_rejects_silent_or_extra_write(
-    graph, candidate, server_type
-) -> None:
-    memory = MemorySystem()
-    server = server_type()
-
-    result = CGS.serve("Demo", graph, memory, candidate, server)
-
-    assert_semantic_rejection(result, memory, server, ErrorCode.SERVICE_COMMIT_FAILED)
+    assert not hasattr(CGS, "CGS_AUTHORITY")
+    with pytest.raises(ModuleNotFoundError):
+        __import__("CGS._authority")

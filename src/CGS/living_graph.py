@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ._authority import require_cgs_authority
 from .graph import Graph
 from .serialization import FrozenJson
 from .state import State
@@ -27,18 +26,10 @@ class LivingGraph:
         object.__setattr__(self, "left", None)
         object.__setattr__(self, "right", None)
 
-    @classmethod
-    def _with_state(
-        cls,
-        graph: Graph,
-        gateway: "Gateway",
-        state: State,
-        *,
-        _authority: object,
-    ) -> "LivingGraph":
-        require_cgs_authority(_authority)
-        living = cls(graph, gateway)
-        object.__setattr__(living, "state", state)
-        object.__setattr__(living, "left", state.left)
-        object.__setattr__(living, "right", state.right)
-        return living
+
+def _new_living_graph(graph: Graph, gateway: "Gateway", state: State) -> LivingGraph:
+    living = LivingGraph(graph, gateway)
+    object.__setattr__(living, "state", state)
+    object.__setattr__(living, "left", state.left)
+    object.__setattr__(living, "right", state.right)
+    return living

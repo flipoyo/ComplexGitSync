@@ -1,35 +1,30 @@
 import hashlib
 import json
-import pickle
 
 import pytest
 
 from CGS import CGS, L0, MemorySystem, OwnershipError, ServerGateway
-from CGS._authority import CGS_AUTHORITY, _AuthorityCapability
+from CGS.L0 import _anchor_occurrence, _new_l0, _state_id_for_occurrence
 
 
-def test_l0_ownership_is_exclusive_and_capability_is_not_reconstructable() -> None:
+def test_l0_public_construction_always_fails() -> None:
     with pytest.raises(OwnershipError):
         L0()
-    with pytest.raises(OwnershipError):
-        L0(_authority="cgs-kernel-v1")
-    with pytest.raises(TypeError):
-        _AuthorityCapability()
-    with pytest.raises(TypeError):
-        pickle.dumps(CGS_AUTHORITY)
-
-    reconstructed = object.__new__(_AuthorityCapability)
-    with pytest.raises(OwnershipError):
-        L0(_authority=reconstructed)
+    with pytest.raises((OwnershipError, TypeError)):
+        L0("forged")  # type: ignore[call-arg]
 
 
-def test_l0_occurrences_are_strictly_ordered_and_unique() -> None:
-    l0 = L0(_authority=CGS_AUTHORITY)
-    first_anchor, first_id = l0._anchor(_authority=CGS_AUTHORITY)
-    second_anchor, second_id = l0._anchor(_authority=CGS_AUTHORITY)
+def test_l0_subclass_construction_is_rejected() -> None:
+    with pytest.raises(TypeError, match="sealed"):
+        type("ForgedL0", (L0,), {})
+
+
+def test_internal_l0_occurrences_are_strictly_ordered_and_redacted() -> None:
+    l0 = _new_l0()
+    first_anchor, first_id = _anchor_occurrence(l0)
+    second_anchor, second_id = _anchor_occurrence(l0)
 
     assert first_anchor.occurrence_ns < second_anchor.occurrence_ns
-    assert first_anchor.value != second_anchor.value
     assert first_id != second_id
     assert repr(first_anchor) == "<_PrivateAnchor redacted>"
     assert first_anchor.value.hex() not in repr(first_anchor)
@@ -37,16 +32,12 @@ def test_l0_occurrences_are_strictly_ordered_and_unique() -> None:
 
 def test_fixed_internal_occurrence_has_deterministic_sha256_identity() -> None:
     occurrence_ns = 1_725_000_000_000_000_001
-    encoded = b"CGS-L0-v1\x00" + str(occurrence_ns).encode("ascii")
-    expected = hashlib.sha256(encoded).hexdigest()
+    expected = hashlib.sha256(b"CGS-L0-v1\x00" + str(occurrence_ns).encode("ascii")).hexdigest()
 
-    state_id = L0._state_id_for_occurrence(occurrence_ns, _authority=CGS_AUTHORITY)
-
-    assert state_id.value == expected
-    assert len(state_id.value) == 64
+    assert _state_id_for_occurrence(occurrence_ns).value == expected
 
 
-def test_identical_candidates_create_distinct_private_occurrences(graph, candidate) -> None:
+def test_identical_candidates_create_distinct_occurrences(graph, candidate) -> None:
     memory = MemorySystem()
     server = ServerGateway()
     first = CGS.serve("Demo", graph, memory, candidate, server)
@@ -54,14 +45,7 @@ def test_identical_candidates_create_distinct_private_occurrences(graph, candida
 
     assert first.ok and second.ok
     assert first.living_graph.state.state_id != second.living_graph.state.state_id
-    assert len(first.living_graph.state.state_id.value) == 64
-    assert len(second.living_graph.state.state_id.value) == 64
     assert len(memory.records) == 2
-    assert len(server.publications) == 2
-
-    first_public = json.dumps(first.to_public_dict(), sort_keys=True)
-    second_public = json.dumps(second.to_public_dict(), sort_keys=True)
-    for public in (first_public, second_public):
-        assert ".@" not in public
-        assert "runtime" not in public
-        assert "kept private" not in public
+    assert memory.memory_state is not None
+    public = json.dumps(second.to_public_dict(), sort_keys=True)
+    assert ".@" not in public

@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
-from ._authority import CGS_AUTHORITY
 from .errors import CGSError, ErrorCode
 from .gateway import (
     Gateway,
@@ -14,11 +13,22 @@ from .gateway import (
     _InterpretedState,
 )
 from .graph import Graph
-from .L0 import L0
+from .L0 import _anchor_occurrence, _new_l0
 from .living_graph import LivingGraph
-from .memory_system import MemoryRecoveryResult, MemoryResult, MemorySystem
-from .server_gateway import ServerGateway, ServerPublication
-from .state import CandidateState, State
+from .memory_system import (
+    MemoryRecoveryResult,
+    MemoryResult,
+    MemorySystem,
+    _record_for_state,
+    _verify_commit,
+)
+from .server_gateway import (
+    ServerGateway,
+    ServerPublication,
+    _canonical_publication,
+    _publication_blob,
+)
+from .state import CandidateState, State, _new_state
 from .state_core_graph import StateCoreGraph
 from .state_id import StateId
 from .state_ontology import StateOntology
@@ -64,7 +74,7 @@ class ServiceResult:
 
 
 class CGS:
-    """Canonical @CGS facade and sole authoritative State creator."""
+    """Canonical @CGS facade and sole authoritative construction path."""
 
     @classmethod
     def serve(
@@ -75,98 +85,68 @@ class CGS:
         operator: CandidateState | CandidateOperator,
         server_gateway: ServerGateway,
     ) -> ServiceResult:
-        if not isinstance(graph, Graph):
-            return cls._failure(CGSError(ErrorCode.INVALID_GRAPH, "invalid static Graph", "serve"))
-        if graph_name != graph.name:
-            return cls._failure(
-                CGSError(
-                    ErrorCode.GRAPH_NAME_MISMATCH,
-                    "graph_name does not match Graph.name",
-                    "serve",
-                )
-            )
-        if not isinstance(memory_system, MemorySystem):
-            return cls._failure(
-                CGSError(ErrorCode.MEMORY_REJECTED, "invalid MemorySystem", "serve")
-            )
-        if not isinstance(server_gateway, ServerGateway):
-            return cls._failure(
-                CGSError(ErrorCode.SERVER_REJECTED, "invalid ServerGateway", "serve")
-            )
+        if type(graph) is not Graph:
+            return cls._failure(cls._stable_error(ErrorCode.INVALID_GRAPH, "serve"))
+        if type(memory_system) is not MemorySystem:
+            return cls._failure(cls._stable_error(ErrorCode.MEMORY_REJECTED, "serve"))
+        if type(server_gateway) is not ServerGateway:
+            return cls._failure(cls._stable_error(ErrorCode.SERVER_REJECTED, "serve"))
+        try:
+            canonical_graph = graph.detached_copy()
+        except Exception:
+            return cls._failure(cls._stable_error(ErrorCode.INVALID_GRAPH, "serve"))
+        if graph_name != canonical_graph.name:
+            return cls._failure(cls._stable_error(ErrorCode.GRAPH_NAME_MISMATCH, "serve"))
 
-        candidate = cls._candidate(operator, graph)
+        candidate = cls._candidate(operator, canonical_graph.detached_copy())
         if isinstance(candidate, CGSError):
             return cls._failure(candidate)
 
-        memory_snapshot = MemorySystem._snapshot(memory_system, _authority=CGS_AUTHORITY)
-        server_snapshot = ServerGateway._snapshot(server_gateway, _authority=CGS_AUTHORITY)
+        memory_snapshot = memory_system._journal_snapshot()
+        server_snapshot = server_gateway._journal_snapshot()
+        gateway = Gateway(canonical_graph)
 
-        gateway = Gateway(graph)
         try:
             canonical_listened = Gateway.listen(gateway, candidate)
-            physical_listened = server_gateway.listen(gateway, candidate)
-            contract_error = cls._gateway_contract_error(
-                physical_listened, GatewayStage.LISTENED, CandidateState, "listen"
+            physical_listened = server_gateway.listen(gateway, candidate.detached_copy())
+            failure = cls._authenticate_gateway_result(
+                canonical_listened,
+                physical_listened,
+                GatewayStage.LISTENED,
+                CandidateState,
+                "listen",
             )
-            if contract_error is not None or physical_listened != canonical_listened:
+            if failure:
                 return cls._atomic_failure(
-                    contract_error or cls._stable_error(ErrorCode.INVALID_PIPELINE_STAGE, "listen"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
-                )
-            if canonical_listened.error is not None:
-                return cls._atomic_failure(
-                    cls._pipeline_error(canonical_listened, "listen"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
+                    failure, memory_system, server_gateway, memory_snapshot, server_snapshot
                 )
 
             canonical_interpreted = Gateway.interpret(gateway, canonical_listened)
             physical_interpreted = server_gateway.interpret(gateway, canonical_listened)
-            contract_error = cls._gateway_contract_error(
+            failure = cls._authenticate_gateway_result(
+                canonical_interpreted,
                 physical_interpreted,
                 GatewayStage.INTERPRETED,
                 _InterpretedState,
                 "interpret",
             )
-            if contract_error is not None or physical_interpreted != canonical_interpreted:
+            if failure:
                 return cls._atomic_failure(
-                    contract_error
-                    or cls._stable_error(ErrorCode.INVALID_PIPELINE_STAGE, "interpret"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
-                )
-            if canonical_interpreted.error is not None:
-                return cls._atomic_failure(
-                    cls._pipeline_error(canonical_interpreted, "interpret"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
+                    failure, memory_system, server_gateway, memory_snapshot, server_snapshot
                 )
 
             canonical_validated = Gateway.validate(gateway, canonical_interpreted)
             physical_validated = server_gateway.validate(gateway, canonical_interpreted)
-            contract_error = cls._gateway_contract_error(
+            failure = cls._authenticate_gateway_result(
+                canonical_validated,
                 physical_validated,
                 GatewayStage.VALIDATED,
                 ValidatedCandidate,
                 "validate",
             )
-            if contract_error is not None or physical_validated != canonical_validated:
+            if failure:
                 return cls._atomic_failure(
-                    contract_error
-                    or cls._stable_error(ErrorCode.INVALID_PIPELINE_STAGE, "validate"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
+                    failure, memory_system, server_gateway, memory_snapshot, server_snapshot
                 )
             if canonical_validated.error is not None:
                 return cls._atomic_failure(
@@ -186,45 +166,29 @@ class CGS:
             )
 
         try:
-            l0 = L0(_authority=CGS_AUTHORITY)
-            _private_anchor, state_id = l0._anchor(_authority=CGS_AUTHORITY)
-            state = State(
-                graph_name=graph.name,
+            l0 = _new_l0()
+            _private_anchor, state_id = _anchor_occurrence(l0)
+            state = _new_state(
+                graph_name=canonical_graph.name,
+                graph_binding=canonical_graph.digest,
+                gateway_binding=gateway.binding,
                 state_id=state_id,
                 left=candidate.left,
                 right=candidate.right,
                 payload=candidate.payload,
-                validated=True,
-                _authority=CGS_AUTHORITY,
             )
-            canonical_transferred = Gateway.transfer(
-                gateway, canonical_validated, state, _authority=CGS_AUTHORITY
-            )
-            physical_transferred = server_gateway.transfer(
-                gateway, canonical_validated, state, _authority=CGS_AUTHORITY
-            )
-            contract_error = cls._gateway_contract_error(
+            canonical_transferred = Gateway.transfer(gateway, canonical_validated, state)
+            physical_transferred = server_gateway.transfer(gateway, canonical_validated, state)
+            failure = cls._authenticate_gateway_result(
+                canonical_transferred,
                 physical_transferred,
                 GatewayStage.TRANSFERRED,
                 LivingGraph,
                 "transfer",
             )
-            if contract_error is not None or physical_transferred != canonical_transferred:
+            if failure:
                 return cls._atomic_failure(
-                    contract_error
-                    or cls._stable_error(ErrorCode.INVALID_PIPELINE_STAGE, "transfer"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
-                )
-            if canonical_transferred.error is not None:
-                return cls._atomic_failure(
-                    cls._pipeline_error(canonical_transferred, "transfer"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
+                    failure, memory_system, server_gateway, memory_snapshot, server_snapshot
                 )
         except Exception:
             return cls._atomic_failure(
@@ -237,9 +201,9 @@ class CGS:
 
         living = canonical_transferred.value
         if (
-            type(living.graph) is not Graph
-            or living.graph != graph
-            or living.gateway is not gateway
+            type(living) is not LivingGraph
+            or living.graph != canonical_graph
+            or living.gateway != gateway
             or type(living.state) is not State
             or living.state != state
             or living.left != state.left
@@ -260,28 +224,11 @@ class CGS:
                 type(physical_ontology) is not StateOntology
                 or physical_ontology != canonical_ontology
             ):
-                return cls._atomic_failure(
-                    cls._stable_error(ErrorCode.EMISSION_REJECTED, "emit.state_ontology"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
-                )
-            canonical_core_graph = Gateway.emit_state_core_graph(gateway, canonical_transferred)
-            physical_core_graph = server_gateway.emit_state_core_graph(
-                gateway, canonical_transferred
-            )
-            if (
-                type(physical_core_graph) is not StateCoreGraph
-                or physical_core_graph != canonical_core_graph
-            ):
-                return cls._atomic_failure(
-                    cls._stable_error(ErrorCode.EMISSION_REJECTED, "emit.state_core_graph"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
-                )
+                raise ValueError("invalid physical ontology")
+            canonical_core = Gateway.emit_state_core_graph(gateway, canonical_transferred)
+            physical_core = server_gateway.emit_state_core_graph(gateway, canonical_transferred)
+            if type(physical_core) is not StateCoreGraph or physical_core != canonical_core:
+                raise ValueError("invalid physical core projection")
         except Exception:
             return cls._atomic_failure(
                 cls._stable_error(ErrorCode.EMISSION_REJECTED, "emit"),
@@ -291,42 +238,29 @@ class CGS:
                 server_snapshot,
             )
 
-        ontology = canonical_ontology
-        core_graph = canonical_core_graph
-
         try:
-            canonical_memory = MemorySystem.prepare(memory_system, state)
+            canonical_memory = _record_for_state(state)
             physical_memory = memory_system.prepare(state)
             if (
                 type(physical_memory) is not MemoryResult
                 or physical_memory != canonical_memory
                 or not canonical_memory.ok
-                or memory_system.records != memory_snapshot
+                or memory_system._journal_snapshot() != memory_snapshot
             ):
-                return cls._atomic_failure(
-                    cls._stable_error(ErrorCode.MEMORY_REJECTED, "memory.prepare"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
-                )
-            canonical_publication = ServerGateway.prepare_publication(
-                server_gateway, living, ontology, core_graph
+                raise ValueError("invalid physical Memory preparation")
+            canonical_publication = _canonical_publication(
+                living, canonical_ontology, canonical_core
             )
-            physical_publication = server_gateway.prepare_publication(living, ontology, core_graph)
+            physical_publication = server_gateway.prepare_publication(
+                living, canonical_ontology, canonical_core
+            )
             if (
                 type(canonical_publication) is not ServerPublication
                 or type(physical_publication) is not ServerPublication
                 or physical_publication != canonical_publication
-                or server_gateway.publications != server_snapshot
+                or server_gateway._journal_snapshot() != server_snapshot
             ):
-                return cls._atomic_failure(
-                    cls._stable_error(ErrorCode.SERVER_REJECTED, "server.prepare"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
-                )
+                raise ValueError("invalid physical publication preparation")
         except Exception:
             return cls._atomic_failure(
                 cls._stable_error(ErrorCode.SERVICE_COMMIT_FAILED, "prepare"),
@@ -336,41 +270,22 @@ class CGS:
                 server_snapshot,
             )
 
-        expected_record = canonical_memory.record
-        expected_records = (
-            memory_snapshot
-            if expected_record in memory_snapshot
-            else memory_snapshot + (expected_record,)
-        )
-        expected_publications = server_snapshot + (canonical_publication,)
+        assert canonical_memory.record is not None
         try:
-            persisted = memory_system.persist(state, _authority=CGS_AUTHORITY)
+            persisted = memory_system.persist(state)
             if (
                 type(persisted) is not MemoryResult
                 or persisted != canonical_memory
-                or memory_system.records != expected_records
+                or not _verify_commit(memory_system, memory_snapshot, canonical_memory.record)
             ):
-                return cls._atomic_failure(
-                    cls._stable_error(ErrorCode.SERVICE_COMMIT_FAILED, "memory.persist"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
-                )
-            publication_failure = server_gateway.publish(
-                canonical_publication, _authority=CGS_AUTHORITY
-            )
+                raise ValueError("invalid physical Memory commit")
+            publication_failure = server_gateway.publish(canonical_publication)
+            expected_server = server_snapshot + (_publication_blob(canonical_publication),)
             if (
                 publication_failure is not None
-                or server_gateway.publications != expected_publications
+                or server_gateway._journal_snapshot() != expected_server
             ):
-                return cls._atomic_failure(
-                    cls._stable_error(ErrorCode.SERVICE_COMMIT_FAILED, "server.publish"),
-                    memory_system,
-                    server_gateway,
-                    memory_snapshot,
-                    server_snapshot,
-                )
+                raise ValueError("invalid physical publication commit")
         except Exception:
             return cls._atomic_failure(
                 cls._stable_error(ErrorCode.SERVICE_COMMIT_FAILED, "commit"),
@@ -383,44 +298,91 @@ class CGS:
         return ServiceResult(
             status=ServiceStatus.SUCCESS,
             living_graph=living,
-            state_ontology=ontology,
-            state_core_graph=core_graph,
+            state_ontology=canonical_ontology,
+            state_core_graph=canonical_core,
         )
 
     @classmethod
     def recover(cls, memory_system: MemorySystem, state_id: StateId | str) -> MemoryRecoveryResult:
-        if not isinstance(memory_system, MemorySystem):
+        if type(memory_system) is not MemorySystem:
             return MemoryRecoveryResult(
                 error=cls._stable_error(ErrorCode.MEMORY_REJECTED, "memory.recover")
             )
+        snapshot = memory_system._journal_snapshot()
         try:
-            recovered = memory_system.recover(state_id, _authority=CGS_AUTHORITY)
+            recovered = memory_system.recover(state_id)
         except Exception:
+            memory_system._restore_journal(snapshot)
             return MemoryRecoveryResult(
                 error=cls._stable_error(ErrorCode.MEMORY_REJECTED, "memory.recover")
             )
-        if not isinstance(recovered, MemoryRecoveryResult) or not recovered.ok:
+        if memory_system._journal_snapshot() != snapshot:
+            memory_system._restore_journal(snapshot)
+            return MemoryRecoveryResult(
+                error=cls._stable_error(ErrorCode.MEMORY_CORRUPT, "memory.recover")
+            )
+        if type(recovered) is not MemoryRecoveryResult or not recovered.ok:
             code = (
                 recovered.error.code
-                if isinstance(recovered, MemoryRecoveryResult) and recovered.error
+                if type(recovered) is MemoryRecoveryResult and recovered.error
                 else ErrorCode.MEMORY_REJECTED
             )
             return MemoryRecoveryResult(error=cls._stable_error(code, "memory.recover"))
+        assert recovered.state is not None and recovered.record is not None
+        canonical = _record_for_state(recovered.state)
+        requested = state_id.value if type(state_id) is StateId else state_id
+        if (
+            not canonical.ok
+            or canonical.record != recovered.record
+            or recovered.state.state_id.value != requested
+        ):
+            return MemoryRecoveryResult(
+                error=cls._stable_error(ErrorCode.MEMORY_CORRUPT, "memory.recover")
+            )
         return recovered
 
     @staticmethod
     def _candidate(
         operator: CandidateState | CandidateOperator, graph: Graph
     ) -> CandidateState | CGSError:
-        if isinstance(operator, CandidateState):
-            return operator
         try:
-            candidate = operator.candidate_state(graph)
+            candidate = (
+                operator.detached_copy()
+                if type(operator) is CandidateState
+                else operator.candidate_state(graph.detached_copy())
+            )
+            if type(candidate) is not CandidateState:
+                return CGS._stable_error(ErrorCode.INVALID_CANDIDATE, "operator")
+            return candidate.detached_copy()
         except Exception:
             return CGS._stable_error(ErrorCode.OPERATOR_FAILED, "operator")
-        if not isinstance(candidate, CandidateState):
-            return CGS._stable_error(ErrorCode.INVALID_CANDIDATE, "operator")
-        return candidate
+
+    @staticmethod
+    def _authenticate_gateway_result(
+        canonical: GatewayResult,
+        physical: object,
+        expected_stage: GatewayStage,
+        expected_value_type: type[object],
+        stage: str,
+    ) -> CGSError | None:
+        if type(physical) is not GatewayResult:
+            return CGS._stable_error(ErrorCode.INVALID_PIPELINE_STAGE, stage)
+        if physical.error is not None:
+            if (
+                type(physical.error) is not CGSError
+                or physical.stage is not None
+                or physical.value is not None
+            ):
+                return CGS._stable_error(ErrorCode.INVALID_PIPELINE_STAGE, stage)
+        elif physical.stage != expected_stage or type(physical.value) is not expected_value_type:
+            return CGS._stable_error(ErrorCode.INVALID_PIPELINE_STAGE, stage)
+        if physical != canonical:
+            return (
+                CGS._pipeline_error(physical, stage)
+                if physical.error is not None
+                else CGS._stable_error(ErrorCode.INVALID_PIPELINE_STAGE, stage)
+            )
+        return None
 
     @staticmethod
     def _pipeline_error(result: GatewayResult, stage: str) -> CGSError:
@@ -428,47 +390,8 @@ class CGS:
         return CGS._stable_error(code, stage)
 
     @staticmethod
-    def _gateway_contract_error(
-        result: object,
-        expected_stage: GatewayStage,
-        expected_value_type: type[object],
-        stage: str,
-    ) -> CGSError | None:
-        if type(result) is not GatewayResult:
-            return CGS._stable_error(ErrorCode.INVALID_PIPELINE_STAGE, stage)
-        if result.error is not None:
-            if (
-                not isinstance(result.error, CGSError)
-                or result.stage is not None
-                or result.value is not None
-            ):
-                return CGS._stable_error(ErrorCode.INVALID_PIPELINE_STAGE, stage)
-            return None
-        if result.stage != expected_stage or type(result.value) is not expected_value_type:
-            return CGS._stable_error(ErrorCode.INVALID_PIPELINE_STAGE, stage)
-        return None
-
-    @staticmethod
     def _stable_error(code: ErrorCode, stage: str) -> CGSError:
         return CGSError(code, "CGS rejected the operation", stage)
-
-    @staticmethod
-    def _rollback(
-        memory_system: MemorySystem,
-        server_gateway: ServerGateway,
-        memory_snapshot: tuple[object, ...],
-        server_snapshot: tuple[object, ...],
-    ) -> None:
-        MemorySystem._restore(
-            memory_system,
-            memory_snapshot,
-            _authority=CGS_AUTHORITY,  # type: ignore[arg-type]
-        )
-        ServerGateway._restore(
-            server_gateway,
-            server_snapshot,
-            _authority=CGS_AUTHORITY,  # type: ignore[arg-type]
-        )
 
     @classmethod
     def _atomic_failure(
@@ -476,10 +399,16 @@ class CGS:
         error: CGSError,
         memory_system: MemorySystem,
         server_gateway: ServerGateway,
-        memory_snapshot: tuple[object, ...],
-        server_snapshot: tuple[object, ...],
+        memory_snapshot: object,
+        server_snapshot: tuple[str, ...],
     ) -> ServiceResult:
-        cls._rollback(memory_system, server_gateway, memory_snapshot, server_snapshot)
+        memory_system._restore_journal(memory_snapshot)  # type: ignore[arg-type]
+        server_gateway._restore_journal(server_snapshot)
+        if (
+            memory_system._journal_snapshot() != memory_snapshot
+            or server_gateway._journal_snapshot() != server_snapshot
+        ):
+            return cls._failure(cls._stable_error(ErrorCode.SERVICE_COMMIT_FAILED, "rollback"))
         return cls._failure(error)
 
     @staticmethod

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import hashlib
 from typing import Any
 
-from ._authority import require_cgs_authority
 from .errors import CGSContractError, CGSError, ErrorCode
 from .graph import Graph
-from .living_graph import LivingGraph
+from .living_graph import LivingGraph, _new_living_graph
 from .serialization import canonical_json
-from .state import CandidateState, State
+from .state import CandidateState, State, _state_digest
 from .state_core_graph import StateCoreGraph
 from .state_ontology import StateOntology
 
@@ -35,6 +35,9 @@ class GatewayResult:
 @dataclass(frozen=True, slots=True)
 class _InterpretedState:
     candidate: CandidateState
+    candidate_digest: str
+    graph_binding: str
+    gateway_binding: str
     left_json: str
     right_json: str
 
@@ -42,14 +45,23 @@ class _InterpretedState:
 @dataclass(frozen=True, slots=True)
 class ValidatedCandidate:
     candidate: CandidateState
-    validation_digest_material: str
+    candidate_digest: str
+    graph_binding: str
+    gateway_binding: str
 
 
+@dataclass(frozen=True, slots=True, init=False)
 class Gateway:
-    __slots__ = ("graph",)
+    graph: Graph
+    binding: str
 
     def __init__(self, graph: Graph) -> None:
-        self.graph = graph
+        canonical_graph = graph.detached_copy()
+        binding = hashlib.sha256(
+            b"CGS-GATEWAY-v1\x00" + canonical_graph.to_json().encode("utf-8")
+        ).hexdigest()
+        object.__setattr__(self, "graph", canonical_graph)
+        object.__setattr__(self, "binding", binding)
 
     @staticmethod
     def _stage_error(stage: str, message: str) -> GatewayResult:
@@ -59,7 +71,7 @@ class Gateway:
         )
 
     def listen(self, candidate: CandidateState) -> GatewayResult:
-        if not isinstance(candidate, CandidateState):
+        if type(candidate) is not CandidateState:
             return GatewayResult(
                 stage=None,
                 error=CGSError(
@@ -68,36 +80,60 @@ class Gateway:
                     "listen",
                 ),
             )
-        return GatewayResult(stage=GatewayStage.LISTENED, value=candidate)
+        try:
+            detached = candidate.detached_copy()
+        except (TypeError, ValueError):
+            return GatewayResult(
+                stage=None,
+                error=CGSError(ErrorCode.INVALID_CANDIDATE, "invalid CandidateState", "listen"),
+            )
+        return GatewayResult(stage=GatewayStage.LISTENED, value=detached)
 
     def interpret(self, listened: GatewayResult) -> GatewayResult:
-        if not listened.ok or listened.stage != GatewayStage.LISTENED:
+        if (
+            type(listened) is not GatewayResult
+            or not listened.ok
+            or listened.stage != GatewayStage.LISTENED
+            or type(listened.value) is not CandidateState
+        ):
             return self._stage_error("interpret", "listen must succeed before interpret")
-        candidate = listened.value
-        if not isinstance(candidate, CandidateState):
-            return self._stage_error("interpret", "listened value is not a CandidateState")
+        candidate = listened.value.detached_copy()
+        digest = hashlib.sha256(
+            b"CGS-CANDIDATE-v1\x00" + canonical_json(candidate.to_dict()).encode("utf-8")
+        ).hexdigest()
         interpreted = _InterpretedState(
             candidate=candidate,
+            candidate_digest=digest,
+            graph_binding=self.graph.digest,
+            gateway_binding=self.binding,
             left_json=canonical_json(candidate.left),
             right_json=canonical_json(candidate.right),
         )
         return GatewayResult(stage=GatewayStage.INTERPRETED, value=interpreted)
 
     def validate(self, interpreted: GatewayResult) -> GatewayResult:
-        if not interpreted.ok or interpreted.stage != GatewayStage.INTERPRETED:
+        if (
+            type(interpreted) is not GatewayResult
+            or not interpreted.ok
+            or interpreted.stage != GatewayStage.INTERPRETED
+            or type(interpreted.value) is not _InterpretedState
+        ):
             return self._stage_error("validate", "interpret must succeed before validate")
         value = interpreted.value
-        if not isinstance(value, _InterpretedState):
-            return self._stage_error("validate", "interpreted value has invalid type")
-        candidate = value.candidate
+        candidate = value.candidate.detached_copy()
+        expected_digest = hashlib.sha256(
+            b"CGS-CANDIDATE-v1\x00" + canonical_json(candidate.to_dict()).encode("utf-8")
+        ).hexdigest()
+        if (
+            value.candidate_digest != expected_digest
+            or value.graph_binding != self.graph.digest
+            or value.gateway_binding != self.binding
+        ):
+            return self._stage_error("validate", "interpreted binding is invalid")
         if not candidate.complete or not candidate.graph_name:
             return GatewayResult(
                 stage=None,
-                error=CGSError(
-                    ErrorCode.PARTIAL_STATE,
-                    "candidate State is partial",
-                    "validate",
-                ),
+                error=CGSError(ErrorCode.PARTIAL_STATE, "candidate State is partial", "validate"),
             )
         if candidate.graph_name != self.graph.name:
             return GatewayResult(
@@ -117,28 +153,41 @@ class Gateway:
                     "validate",
                 ),
             )
-        validated = ValidatedCandidate(
-            candidate=candidate,
-            validation_digest_material=canonical_json(candidate.to_dict()),
+        return GatewayResult(
+            stage=GatewayStage.VALIDATED,
+            value=ValidatedCandidate(
+                candidate=candidate,
+                candidate_digest=expected_digest,
+                graph_binding=self.graph.digest,
+                gateway_binding=self.binding,
+            ),
         )
-        return GatewayResult(stage=GatewayStage.VALIDATED, value=validated)
 
-    def transfer(
-        self,
-        validated: GatewayResult,
-        state: State,
-        *,
-        _authority: object,
-    ) -> GatewayResult:
-        require_cgs_authority(_authority)
-        if not validated.ok or validated.stage != GatewayStage.VALIDATED:
+    def transfer(self, validated: GatewayResult, state: State) -> GatewayResult:
+        if (
+            type(validated) is not GatewayResult
+            or not validated.ok
+            or validated.stage != GatewayStage.VALIDATED
+            or type(validated.value) is not ValidatedCandidate
+        ):
             return self._stage_error("transfer", "validate must succeed before transfer")
         receipt = validated.value
-        if not isinstance(receipt, ValidatedCandidate):
-            return self._stage_error("transfer", "validation receipt has invalid type")
-        candidate = receipt.candidate
+        candidate = receipt.candidate.detached_copy()
+        candidate_digest = hashlib.sha256(
+            b"CGS-CANDIDATE-v1\x00" + canonical_json(candidate.to_dict()).encode("utf-8")
+        ).hexdigest()
         if (
-            not state.validated
+            type(state) is not State
+            or receipt.candidate_digest != candidate_digest
+            or receipt.graph_binding != self.graph.digest
+            or receipt.gateway_binding != self.binding
+            or not candidate.complete
+            or candidate.graph_name != self.graph.name
+            or canonical_json(candidate.left) != canonical_json(candidate.right)
+            or state.graph_binding != self.graph.digest
+            or state.gateway_binding != self.binding
+            or _state_digest(state.to_memory_data()) != state.state_digest
+            or not state.validated
             or state.graph_name != self.graph.name
             or state.left != candidate.left
             or state.right != candidate.right
@@ -152,7 +201,7 @@ class Gateway:
                     "transfer",
                 ),
             )
-        living = LivingGraph._with_state(self.graph, self, state, _authority=_authority)
+        living = _new_living_graph(self.graph, self, state)
         return GatewayResult(stage=GatewayStage.TRANSFERRED, value=living)
 
     def emit_state_ontology(self, transferred: GatewayResult) -> StateOntology:
@@ -166,10 +215,11 @@ class Gateway:
     @staticmethod
     def _require_transferred(transferred: GatewayResult) -> LivingGraph:
         if (
-            not transferred.ok
+            type(transferred) is not GatewayResult
+            or not transferred.ok
             or transferred.stage != GatewayStage.TRANSFERRED
-            or not isinstance(transferred.value, LivingGraph)
-            or transferred.value.state is None
+            or type(transferred.value) is not LivingGraph
+            or type(transferred.value.state) is not State
         ):
             raise CGSContractError(
                 ErrorCode.EMISSION_REJECTED,

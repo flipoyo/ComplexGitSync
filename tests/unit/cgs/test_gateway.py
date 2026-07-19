@@ -1,6 +1,18 @@
+from dataclasses import replace
+
 import pytest
 
-from CGS import CGSContractError, CandidateState, ErrorCode, Gateway, GatewayStage
+from CGS import (
+    CGS,
+    CGSContractError,
+    CandidateState,
+    ErrorCode,
+    Gateway,
+    GatewayResult,
+    GatewayStage,
+    MemorySystem,
+    ServerGateway,
+)
 
 
 def test_gateway_runs_explicit_pipeline_without_direct_crossing(graph, candidate) -> None:
@@ -32,3 +44,18 @@ def test_gateway_rejects_wrong_stage_and_differing_interpretations(graph) -> Non
 
     assert ontology_error.value.error.code == ErrorCode.EMISSION_REJECTED
     assert core_error.value.error.code == ErrorCode.EMISSION_REJECTED
+
+
+def test_transfer_recomputes_candidate_and_state_bindings(graph, candidate) -> None:
+    gateway = Gateway(graph)
+    validated = gateway.validate(gateway.interpret(gateway.listen(candidate)))
+    served = CGS.serve("Demo", graph, MemorySystem(), candidate, ServerGateway())
+    state = served.living_graph.state
+    forged_receipt = replace(validated.value, candidate_digest="0" * 64)
+
+    forged = gateway.transfer(GatewayResult(GatewayStage.VALIDATED, forged_receipt), state)
+    assert forged.error.code == ErrorCode.INVALID_AUTHORITATIVE_STATE
+
+    object.__setattr__(state, "state_digest", "0" * 64)
+    mutated = gateway.transfer(validated, state)
+    assert mutated.error.code == ErrorCode.INVALID_AUTHORITATIVE_STATE

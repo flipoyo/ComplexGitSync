@@ -5,8 +5,8 @@ import hashlib
 import threading
 import time
 
-from ._authority import CGS_AUTHORITY, require_cgs_authority
-from .state_id import StateId
+from .errors import ErrorCode, OwnershipError
+from .state_id import StateId, _new_state_id
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -19,39 +19,52 @@ class _PrivateAnchor:
 
 
 class L0:
-    """CGS-owned deterministic occurrence anchoring service."""
+    """Public marker for the CGS-owned Time Layer; construction is kernel-only."""
 
     __slots__ = ()
-    _clock_lock = threading.Lock()
-    _last_occurrence_ns = 0
 
-    def __init__(self, *, _authority: object | None = None) -> None:
-        require_cgs_authority(_authority)
+    def __init_subclass__(cls, **_kwargs: object) -> None:
+        raise TypeError("L0 is sealed")
 
-    @classmethod
-    def _next_occurrence_ns(cls, *, _authority: object) -> int:
-        require_cgs_authority(_authority)
-        with cls._clock_lock:
-            occurrence_ns = max(time.time_ns(), cls._last_occurrence_ns + 1)
-            cls._last_occurrence_ns = occurrence_ns
-            return occurrence_ns
+    def __init__(self) -> None:
+        raise OwnershipError(
+            ErrorCode.OWNERSHIP_VIOLATION,
+            "L0 can only be created by the CGS kernel",
+        )
 
-    @staticmethod
-    def _encode_occurrence(occurrence_ns: int, *, _authority: object) -> bytes:
-        require_cgs_authority(_authority)
-        if occurrence_ns < 0:
-            raise ValueError("L0 occurrence must be non-negative")
-        return b"CGS-L0-v1\x00" + str(occurrence_ns).encode("ascii")
 
-    @classmethod
-    def _state_id_for_occurrence(cls, occurrence_ns: int, *, _authority: object) -> StateId:
-        anchor_value = cls._encode_occurrence(occurrence_ns, _authority=_authority)
-        return StateId(hashlib.sha256(anchor_value).hexdigest(), _authority=CGS_AUTHORITY)
+_CLOCK_LOCK = threading.Lock()
+_LAST_OCCURRENCE_NS = 0
 
-    def _anchor(self, *, _authority: object) -> tuple[_PrivateAnchor, StateId]:
-        require_cgs_authority(_authority)
-        occurrence_ns = self._next_occurrence_ns(_authority=_authority)
-        anchor_value = self._encode_occurrence(occurrence_ns, _authority=_authority)
-        anchor = _PrivateAnchor(occurrence_ns=occurrence_ns, value=anchor_value)
-        state_id = self._state_id_for_occurrence(occurrence_ns, _authority=_authority)
-        return anchor, state_id
+
+def _new_l0() -> L0:
+    return object.__new__(L0)
+
+
+def _next_occurrence_ns() -> int:
+    global _LAST_OCCURRENCE_NS
+    with _CLOCK_LOCK:
+        occurrence_ns = max(time.time_ns(), _LAST_OCCURRENCE_NS + 1)
+        _LAST_OCCURRENCE_NS = occurrence_ns
+        return occurrence_ns
+
+
+def _encode_occurrence(occurrence_ns: int) -> bytes:
+    if occurrence_ns < 0:
+        raise ValueError("L0 occurrence must be non-negative")
+    return b"CGS-L0-v1\x00" + str(occurrence_ns).encode("ascii")
+
+
+def _state_id_for_occurrence(occurrence_ns: int) -> StateId:
+    return _new_state_id(hashlib.sha256(_encode_occurrence(occurrence_ns)).hexdigest())
+
+
+def _anchor_occurrence(_l0: L0) -> tuple[_PrivateAnchor, StateId]:
+    if type(_l0) is not L0:
+        raise OwnershipError(
+            ErrorCode.OWNERSHIP_VIOLATION,
+            "only the CGS kernel Time Layer may anchor an occurrence",
+        )
+    occurrence_ns = _next_occurrence_ns()
+    value = _encode_occurrence(occurrence_ns)
+    return _PrivateAnchor(occurrence_ns, value), _state_id_for_occurrence(occurrence_ns)
