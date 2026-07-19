@@ -10,7 +10,10 @@ SERIES := @alpha-tech
 CORE   := .cgitsync/atCGS.CORE.md
 MEMORY := @forge43@ComplexGitSync
 STATE  := ACTIVE
+AGENTS := AgentOrchestration.md
 ```
+
+Execution protocol: [AgentOrchestration.md](AgentOrchestration.md)
 
 Repository baseline:
 
