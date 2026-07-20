@@ -9,28 +9,51 @@ and Gateway internals are excluded.
 flowchart LR
 
 PUBLIC["LEFT=.PUBLIC"]
-PRIVATE["RIGHT=.PRIVATE"]
-ONTOLOGY["PRIME G"]
-LIVING["*G"]
-CGS["@CGS"]
-STATE["*G.STATE@"]
 
 subgraph X["@G Gateway X"]
-    CORE["HASH@"]
+  
+  PARSER["parser"]
+  REPORT["Static public report '.md'"]
+
+
+    subgraph LIVING["*G"]
+        ONTOLOGY["PRIME G: *G.G"]
+        subgraph PRIVATE["RIGHT=.PRIVATE"]
+            
+              subgraph CGS["@CGS interpretes   request"]
+            TIMESTAMP["@"]
+            HASH["HASH@"]
+            STATE["*G.STATE@"]
+        end
+
+           
+        
+        end
+
+
+        
+      
+        
+    end
 end
 
-PUBLIC ==>|request @G| X
-X -->|private access| PRIVATE
-PRIVATE --> LIVING
-ONTOLOGY --> LIVING
-LIVING --> CGS
 
-CGS --> |interpretes G| STATE
-STATE -.-> |HASH| CGS
-CGS --> |HASH| CORE
-CORE ==>|serves| PUBLIC
-CORE --> STATE
-CORE --> LIVING
+
+
+
+PUBLIC ==>|request @G| PARSER
+PARSER ==> |PUBLIC request| TIMESTAMP
+ONTOLOGY -.-> TIMESTAMP
+
+CGS -->  STATE
+TIMESTAMP -.-> HASH
+HASH -.-> STATE
+
+STATE ==> |PUBLIC emit| REPORT
+
+
+REPORT ==>|Gateway serves| PUBLIC
+
 STATE --> LIVING
 ```
 
