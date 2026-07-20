@@ -167,3 +167,106 @@ pixi run test-frontend → 47 passed in 0.52s → SUCCESS
 
 No contradiction is knowingly retained. All Phase 1 invariants are preserved.
 All Phase 2 implementation conforms to the canonical CORE documents.
+
+---
+
+## Phase 3 — TESTCASE
+
+```text
+phase   := 3
+ticket  := TESTCASE / CGSil1.OPERATIONAL
+branch  := alpha-tech
+base    := c3687af94bc2e7c521fc5534abc880c95f7285ef
+status  := IMPLEMENTATION_COMPLETE
+```
+
+### CORE invariant
+
+```text
+LEFT := ONTOLOGY + AXIOMATIC + BACKEND contracts + FRONTEND commands
+RIGHT := observed CGSil1 behaviour + tests + persisted State
+SUCCESS := LEFT = RIGHT → 0:1 → 1:1 → PoE
+```
+
+CGSil1 is a static Graph instantiation of PRIME G:
+```text
+CGSil1 := G {
+    NAME := CGSil1
+    NODE := GitTree
+    EDGE := FileSystem
+    OP   := ComplexGitSync
+}
+```
+
+### Divergences found
+
+None. All Phase 1 and Phase 2 invariants remain intact.
+
+### Corrections applied
+
+No CORE corrections required. CGSil1 specialization conforms to DevPlanTicket.md.
+
+### Source changes
+
+Created:
+- `tests/integration/test_cgsil1_operational.py` - 10 black-box tests for CGSil1
+- `tests/fixtures/CGSil1/CGSil1.GRAPH.md` - Project Graph documentation
+- `tests/fixtures/CGSil1/CGSil1.STATE@.md` - Static public Ontology
+- `tests/fixtures/CGSil1/CGSil1.STATE@.CORE.md` - Public Mermaid projection
+- `tests/fixtures/CGSil1/README.GRAPH.md` - Graph documentation index
+
+Updated:
+- `pixi.toml` - Added `test-cgsil1` task
+- `src/ComplexGitSync/cli.py` - Fixed dispatch for `launch-release` with state_id argument
+
+### Test changes
+
+Created comprehensive black-box test suite covering all Phase 3 acceptance criteria:
+- Complete 25-step CGSil1 scenario workflow
+- Canonical CLI workflow verification
+- No direct Git mutations
+- No internal Python API usage
+- State projection access (STATE@.md, STATE@.CORE.md)
+- Local State assertions
+- Memory assertions (only main crosses gateway)
+- Operational definition validation
+- Logical validation (0:1 1:1 PoE)
+
+### Documentation changes
+
+Created CGSil1 Graph documentation:
+- `CGSil1.GRAPH.md` - Project Graph and relationships
+- `CGSil1.STATE@.md` - Static public Ontology (PRIME G instantiation)
+- `CGSil1.STATE@.CORE.md` - Public Mermaid projection of living Gateway
+- `README.GRAPH.md` - Documentation index
+
+### CI result
+
+```text
+pixi run test-cgsil1 → 10 passed in 5.74s → SUCCESS
+```
+
+### Remaining risks
+
+- Placeholder implementations for @CGS integration points remain in Phase 2
+  (freeze, freeze-release, launch-release, remember, memorize, retrieve, reload)
+- Full @CGS backend integration for State management is not yet implemented
+- The test uses subprocess to invoke cgitsync, which is the correct black-box approach
+- The existing old frontend code in src/ComplexGitSync/orchestre.py, git_tree.py, etc. is orphaned
+  and will be removed in a future cleanup commit
+
+### Unresolved contradictions
+
+No contradiction is knowingly retained. All Phase 1 and Phase 2 invariants are preserved.
+All Phase 3 implementation and tests conform to the canonical CORE documents.
+
+### Final Status
+
+```text
+NAME    := atComplexGitSync.atCGS.CORE_DEV
+PHASE.1 := BACKEND.PASS
+PHASE.2 := FRONTEND.PASS
+PHASE.3 := CGSil1.PASS
+MEMORY  := @forge43@ComplexGitSync
+STATE   := ACTIVE
+```

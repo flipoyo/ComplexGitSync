@@ -200,9 +200,14 @@ def _dispatch_command(
 
     actual_command = command_mapping.get(command, command)
 
-    if command in {"initialise", "status", "validate", "pull", "push", "freeze", "freeze-release", "remember", "memorize", "reload", "state", "state-core", "launch-release"}:
+    if command in {"initialise", "status", "validate", "pull", "push", "freeze", "freeze-release", "remember", "memorize", "reload", "state", "state-core"}:
         method = getattr(client, actual_command)
         return method()
+
+    if command == "launch-release":
+        if not cmd_args:
+            raise ValueError("launch-release command requires a State ID")
+        return client.launch_release(cmd_args[0])
 
     # Commands with specific argument parsing
     if command == "branch":
