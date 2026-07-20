@@ -325,4 +325,4 @@ used to derive `CGSHOME=$CGSPATH/<project-name>`.
 - Project Manager: Nicolas Flipo
 - Main Developer: Nicolas Flipo
 - Contributors (ongoing): Simone Mazzarelli, Tristan Bourgeois, Nicolas Gallois, Pierre Guillou, Fabien Ors
-- AI assistance: ChatGPT, Copilot@github, Mistral Vibe, Claude
+- AI assistance: ChatGPT 5.4-5.6, mistral-medium-3.5, Copilot@github
