@@ -221,3 +221,8 @@ __marimo__/
 # Anchored to root and directory-only so src/ComplexGitSync/ is unaffected
 apoub*
 .pytest_cache/
+.codex/
+.agents/
+AGENTS.md 
+AgentOrchestration.md
+DevPlanTicket*
