@@ -95,3 +95,75 @@ projections, private-anchor exclusions, exclusive L0/StateId/MS/server
 ownership, consumer-only ComplexGitSync specialization, and language-neutral
 contract. The implementation gate is open; ticket acceptance is not yet
 claimed.
+
+---
+
+## Phase 2 — FRONTEND
+
+```text
+phase   := 2
+ticket  := FRONTEND / ComplexGitSync.cgitsync_FRONTEND
+branch  := alpha-tech
+base    := 406752c62687db3e908d417565ed0fb86a1c1150e7bbc4cb
+status  := IMPLEMENTATION_COMPLETE
+```
+
+### CORE invariant
+
+```text
+PUBLIC ENTRY := pixi run cgitsync
+Python package := internal canonical interface
+cgitsync → controls all Git mutations
+manual Git mutation → forbidden
+direct user Python API → not required
+```
+
+### Divergences found
+
+None. Phase 1 BACKEND invariants remain intact.
+
+### Corrections applied
+
+No CORE corrections required. Implementation conforms to DevPlanTicket.md Phase 2 specifications.
+
+### Source changes
+
+Created:
+- `src/ComplexGitSync/cli.py` - CLI entry point with argument parsing
+- `src/ComplexGitSync/complex_git_sync_client.py` - FrontEnd application service
+- `src/ComplexGitSync/git_runner.py` - Controlled Git command executor
+
+Updated:
+- `src/ComplexGitSync/__init__.py` - Expose CLI, client, and GitRunner
+- `pixi.toml` - Added `test-frontend` task
+
+### Test changes
+
+Created:
+- `tests/unit/test_frontend_cli.py` - 47 tests covering all Phase 2 acceptance criteria
+
+### Documentation changes
+
+None in this phase. Documentation updates deferred to Phase 3.
+
+### CI result
+
+```text
+pixi install → SUCCESS
+pixi run cgitsync --help → SUCCESS
+pixi run test-frontend → 47 passed in 0.52s → SUCCESS
+```
+
+### Remaining risks
+
+- Phase 2 CLI commands currently return placeholder responses for @CGS integration points
+  (freeze, freeze-release, launch-release, remember, memorize, retrieve, reload, state, state-core)
+- These placeholders will be replaced with actual @CGS calls in Phase 3
+- The @CGS backend integration for State management is not yet implemented
+- The existing old frontend code in src/ComplexGitSync/orchestre.py, git_tree.py, etc. is orphaned
+  and will be removed in a future cleanup commit
+
+### Unresolved contradictions
+
+No contradiction is knowingly retained. All Phase 1 invariants are preserved.
+All Phase 2 implementation conforms to the canonical CORE documents.

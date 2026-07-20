@@ -7,6 +7,7 @@ platforms = ["linux-64", "win-64", "osx-arm64"]
 [tasks]
 test = "python -m pytest"
 test-backend = "python -m pytest tests/unit/cgs"
+test-frontend = "python -m pytest tests/unit/test_frontend_cli.py -v"
 
 [dependencies]
 python = "3.11.*"
