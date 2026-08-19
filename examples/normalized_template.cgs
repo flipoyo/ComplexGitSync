@@ -32,6 +32,17 @@ nested_config = "auto"
 relative_path = "example-library"
 
 [[repos]]
+gitprovider = "codeberg"
+project_owner_name = "GX4G"
+project_name = "GX4G"
+repo_name = "GX4G"
+default_branch = "main"
+fallback_branch = "main"
+access_protocol = "ssh"
+nested_config = "auto"
+relative_path = "GX4G"
+
+[[repos]]
 gitprovider = "github"
 project_owner_name = "example-org"
 project_name = "example-docs"

@@ -47,6 +47,12 @@ Repository identifiers use `provider:owner/repository`. ComplexGitSync fills in
 nested `.cgs` discovery. A unique repository matching `project` is the root at
 `.`. Use an inline table only to override a default:
 
+The canonical providers are `github` (`github.com`), `gitlab` (`gitlab.com`),
+`codeberg` (`codeberg.org`), and `custom`. For example,
+`codeberg:GX4G/GX4G` resolves to provider `codeberg`, owner `GX4G`, and
+repository `GX4G`. GitHub, GitLab, and Codeberg generate SSH or HTTPS remotes.
+Custom hosting never guesses a host and requires `gitprovider_url`.
+
 - `default_branch` / `fallback_branch`: preferred and fallback branches.
 - `access_protocol`: `ssh` (default) or `https`.
 - `relative_path`: location relative to the parent repository; defaults to the
@@ -56,6 +62,9 @@ nested `.cgs` discovery. A unique repository matching `project` is the root at
 
 Example: `{ repository = "github:owner/docs", relative_path = "documentation",
 nested_config = "disabled" }`.
+
+Custom example:
+`{ repository = "custom:team/tool", gitprovider_url = "https://git.example.com" }`.
 
 Start new specifications from [examples/template.cgs](examples/template.cgs).
 It demonstrates both plain repository identifiers and an inline override. For

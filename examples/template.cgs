@@ -7,5 +7,6 @@ project = "example-project"
 repos = [
     "github:example-org/example-project",
     "gitlab:example-group/example-library",
+    "codeberg:GX4G/GX4G",
     { repository = "github:example-org/example-docs", default_branch = "develop", fallback_branch = "main", access_protocol = "https", relative_path = "docs", nested_config = "disabled" },
 ]

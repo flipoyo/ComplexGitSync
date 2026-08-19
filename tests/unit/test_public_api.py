@@ -6,10 +6,12 @@ import pytest
 
 from ComplexGitSync import (
     ArchitectureNotLoadedError,
+    CANONICAL_GIT_PROVIDERS,
     ComplexGitSyncClient,
     ComplexGitSyncError,
     ConfigValidationError,
     FallbackRejectedError,
+    GitProvider,
     GitRepo,
     GitSyncError,
     GitTree,
@@ -18,11 +20,13 @@ from ComplexGitSync import (
     MemoryRememberResult,
     MemoryReloadResult,
     MemoryRetrieveResult,
+    KNOWN_PROVIDER_HOSTS,
     NestedConfigDiscoveryError,
     RepoNode,
     SyncLedger,
     TreeNotReadyError,
     add_tree,
+    parse_repository_identifier,
 )
 from ComplexGitSync.git_repo import NodeType, WorkingRepo
 from ComplexGitSync.git_tree import WorkingGitTree
@@ -47,6 +51,13 @@ def test_package_root_exports_refactor_guard_symbols():
     assert MemoryReloadResult.__name__ == "MemoryReloadResult"
     assert MemoryRetrieveResult.__name__ == "MemoryRetrieveResult"
     assert SyncLedger.__name__ == "SyncLedger"
+
+
+def test_package_root_exports_codeberg_provider_contract():
+    assert GitProvider.CODEBERG.value == "codeberg"
+    assert CANONICAL_GIT_PROVIDERS == {"github", "gitlab", "codeberg", "custom"}
+    assert KNOWN_PROVIDER_HOSTS[GitProvider.CODEBERG] == "codeberg.org"
+    assert parse_repository_identifier("codeberg:GX4G/GX4G")["repo_name"] == "GX4G"
 
 
 def test_public_config_validation_error_covers_invalid_cgs_documents():

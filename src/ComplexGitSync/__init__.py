@@ -16,9 +16,11 @@ from .errors import (
 # --- Tier 1 — Core State (git_repo.py) ---
 from .git_repo import (
     AccessProtocol,
+    CANONICAL_GIT_PROVIDERS,
     DiscoveryState,
     GitProvider,
     GitRepo,
+    KNOWN_PROVIDER_HOSTS,
     NodeType,
     RefKind,
     RepoAddress,
@@ -26,6 +28,7 @@ from .git_repo import (
     RepoNode,
     SyncState,
     WorkingRepo,
+    parse_repository_identifier,
 )
 
 # --- Tier 1 — Core State + Tree Utilities (git_tree.py) ---
@@ -59,7 +62,7 @@ from .operations import (
 )
 
 # --- Cross-cutting document definitions ---
-from .cgs import CgsDocument, normalize_cgs, parse_cgs, parse_repository_identifier
+from .cgs import CgsDocument, normalize_cgs, parse_cgs
 from .config_document import ConfigDocument
 
 # --- Tier 2/3 — Actions + Client (orchestre.py) ---
@@ -90,9 +93,11 @@ __all__ = [
     "TreeNotReadyError",
     # git_repo.py
     "AccessProtocol",
+    "CANONICAL_GIT_PROVIDERS",
     "DiscoveryState",
     "GitProvider",
     "GitRepo",
+    "KNOWN_PROVIDER_HOSTS",
     "NodeType",
     "RefKind",
     "RepoAddress",
@@ -100,6 +105,7 @@ __all__ = [
     "RepoNode",
     "SyncState",
     "WorkingRepo",
+    "parse_repository_identifier",
     # git_tree.py
     "GitTree",
     "ProjectTreeState",
@@ -129,7 +135,6 @@ __all__ = [
     "ConfigDocument",
     "normalize_cgs",
     "parse_cgs",
-    "parse_repository_identifier",
     # orchestre.py
     "ComplexGitSyncClient",
     "GocDocument",

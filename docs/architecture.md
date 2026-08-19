@@ -88,6 +88,14 @@ that reference; and a relative `.cgs` filename selects an exact config inside
 the repository. Explicit config paths are not allowed to escape the repository
 root.
 
+Provider identity is centralized in `git_repo.py`. `GitProvider`,
+`CANONICAL_GIT_PROVIDERS`, `KNOWN_PROVIDER_HOSTS`,
+`parse_repository_identifier()`, and `RepoAddress` are the single definitions
+used by `.cgs`, interactive configuration, and runtime remote composition. The
+known-host map is `github -> github.com`, `gitlab -> gitlab.com`, and
+`codeberg -> codeberg.org`. `custom` is deliberately absent: it requires an
+explicit `gitprovider_url` and never falls back to a guessed host.
+
 `WorkingGitTree` is the runtime form. It inherits reference-tree metadata from
 `GitTree` and stores `WorkingRepo` nodes keyed by runtime `repo_id`. Operations
 such as checkout, branch, add, commit, push, freeze, and launch_release act on

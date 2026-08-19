@@ -191,6 +191,14 @@ searches the repository root for exactly one \texttt{*.cgs},
 \texttt{.cgs} path selects an exact file inside the repository. Explicit paths
 may not escape the repository root.
 
+Provider handling is centralized in \texttt{git\_repo.py}: the
+\texttt{GitProvider} enum, canonical provider set, known-host map,
+repository-identifier parser, and \texttt{RepoAddress} URL composer are shared
+by authoring and runtime code. GitHub, GitLab, and Codeberg map respectively to
+\texttt{github.com}, \texttt{gitlab.com}, and \texttt{codeberg.org}.
+\texttt{custom} has no known-host entry and requires an explicit
+\texttt{gitprovider\_url}; no fallback host is guessed.
+
 Before any mutating workflow step (\texttt{commit}, \texttt{push},
 \texttt{tag}, or \texttt{freeze}), the action layer now runs a workspace
 preflight validator. It checks dirty worktrees, detached HEADs, missing

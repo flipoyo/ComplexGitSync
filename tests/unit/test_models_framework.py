@@ -7,6 +7,7 @@ from ComplexGitSync.git_repo import GitProvider
 from ComplexGitSync.git_repo import GitRepo
 from ComplexGitSync.git_tree import GitTree
 from ComplexGitSync.git_repo import RepoAddress
+from ComplexGitSync.git_repo import KNOWN_PROVIDER_HOSTS
 
 
 def test_gitrepo_defaults_match_plan_contract():
@@ -157,6 +158,34 @@ def test_gittree_from_prompt_builds_reference_tree_with_project_defaults(monkeyp
     assert repos[1]["nested_config"] == "auto"
 
 
+def test_gittree_from_prompt_accepts_codeberg_provider(monkeypatch):
+    responses = iter(
+        [
+            "GX4G",
+            "main",
+            "GX4G",
+            "codeberg",
+            "ssh",
+            "1",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
+
+    tree = GitTree.from_prompt()
+
+    assert tree.repo_template.gitprovider == GitProvider.CODEBERG
+    assert tree.repos["GX4G"].gitprovider == GitProvider.CODEBERG
+    assert RepoAddress.from_repo(tree.repos["GX4G"]).to_ssh() == (
+        "git@codeberg.org:GX4G/GX4G.git"
+    )
+
+
 def test_client_configure_writes_valid_cgs_from_prompt(monkeypatch, tmp_path):
     responses = iter(
         [
@@ -206,6 +235,38 @@ def test_repo_address_github_https():
         project_owner_name="flipoyo",
     )
     assert addr.to_https() == "https://github.com/flipoyo/ComplexGitSync.git"
+
+
+@pytest.mark.parametrize(
+    ("provider", "owner", "provider_url", "expected_host"),
+    [
+        (GitProvider.GITHUB, "octocat", None, "github.com"),
+        (GitProvider.GITLAB, "gitlab-org", None, "gitlab.com"),
+        (GitProvider.CODEBERG, "GX4G", None, "codeberg.org"),
+        (GitProvider.CUSTOM, "internal", "https://git.example.com", "git.example.com"),
+    ],
+)
+def test_repo_address_all_providers_generate_ssh_and_https(
+    provider, owner, provider_url, expected_host
+):
+    addr = RepoAddress(
+        gitprovider=provider,
+        project_name="project",
+        project_owner_name=owner,
+        gitprovider_url=provider_url,
+    )
+
+    assert addr.to_ssh() == f"git@{expected_host}:{owner}/project.git"
+    assert addr.to_https() == f"https://{expected_host}/{owner}/project.git"
+
+
+def test_known_provider_hosts_are_complete_and_exclude_custom():
+    assert KNOWN_PROVIDER_HOSTS == {
+        GitProvider.GITHUB: "github.com",
+        GitProvider.GITLAB: "gitlab.com",
+        GitProvider.CODEBERG: "codeberg.org",
+    }
+    assert GitProvider.CUSTOM not in KNOWN_PROVIDER_HOSTS
 
 
 def test_repo_address_to_url_dispatches_on_protocol():

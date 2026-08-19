@@ -16,6 +16,16 @@ def test_main_without_command_prints_help(capsys):
     assert "cgitsync" in captured.out
 
 
+def test_configure_help_lists_all_canonical_providers(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["configure", "--help"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 0
+    for provider in ("GitHub", "GitLab", "Codeberg", "custom"):
+        assert provider in captured.out
+
+
 def test_initialise_command_restores_gts_snapshot(tmp_path, capsys):
     gts_path = _write_ready_gts(tmp_path)
 

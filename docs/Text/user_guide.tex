@@ -330,6 +330,38 @@ the final path segment is the repository name. The document pipeline is:
 \texttt{PARSE -> NORMALIZE -> VALIDATE -> canonical CgsDocument}
 \end{center}
 
+The canonical providers and hosts are:
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Provider} & \textbf{Host} & \textbf{Remote generation} \\
+\hline
+\texttt{github}   & \texttt{github.com}   & SSH and HTTPS \\
+\texttt{gitlab}   & \texttt{gitlab.com}   & SSH and HTTPS \\
+\texttt{codeberg} & \texttt{codeberg.org} & SSH and HTTPS \\
+\texttt{custom}   & explicit URL required & SSH and HTTPS \\
+\end{tabular}
+\end{center}
+
+Repository-ID parsing is provider-independent and deterministic. For example:
+
+\begin{lstlisting}
+codeberg:GX4G/GX4G
+\end{lstlisting}
+
+normalizes to \texttt{gitprovider = codeberg},
+\texttt{project\_owner\_name = GX4G}, and
+\texttt{repo\_name = GX4G}. A custom identifier must use an inline table so
+the host is explicit:
+
+\begin{lstlisting}
+{ repository = "custom:team/tool", gitprovider_url = "https://git.example.com" }
+\end{lstlisting}
+
+No host is inferred for \texttt{custom}. The configured access protocol then
+selects \texttt{git@host:owner/repository.git} or
+\texttt{https://host/owner/repository.git}.
+
 Normalization supplies \texttt{default\_branch = main}, makes
 \texttt{fallback\_branch} equal to that default, selects
 \texttt{access\_protocol = ssh}, enables \texttt{nested\_config = auto}, and

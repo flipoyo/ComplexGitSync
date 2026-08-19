@@ -26,7 +26,7 @@ transport   = "ssh"           # ssh | https
 source = "cawaqsviz.cgs"
 name   = "CaWaQS-ViZ"          # project display name
 repo_name = "cawaqsviz"        # repository slug (distinct from project display name)
-gitprovider = "gitlab"         # github | gitlab
+gitprovider = "gitlab"         # github | gitlab | codeberg | custom
 project_owner_name = "gviz/cawaqsviz"  # GitLab namespace fallback when group_name is omitted
 # gitprovider_address (computed with transport=ssh):
 # git@gitlab.com:gviz/cawaqsviz/cawaqsviz.git

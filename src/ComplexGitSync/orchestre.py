@@ -53,6 +53,7 @@ from .errors import (
 )
 from .git_repo import (
     AccessProtocol,
+    CANONICAL_GIT_PROVIDERS,
     DiscoveryState,
     GitProvider,
     GitRepo,
@@ -60,6 +61,7 @@ from .git_repo import (
     RefKind,
     RepoLifecycleState,
     RepoNode,
+    RepoAddress,
     WorkingRepo,
     SyncState,
 )
@@ -851,7 +853,7 @@ class GocDocument(ConfigDocument):
     _VALID_INTERACTIONS = frozenset(("interactive", "direct"))
     _VALID_PROFILES = frozenset(("verbose", "whisper_sync"))
     _VALID_TRANSPORTS = frozenset(("ssh", "https"))
-    _VALID_PROJECT_GITPROVIDERS = frozenset(("github", "gitlab"))
+    _VALID_PROJECT_GITPROVIDERS = CANONICAL_GIT_PROVIDERS
     _DEFAULT_PROJECT_GITPROVIDER = "github"
 
     SESSION_DEFAULTS: dict[str, str] = {
@@ -900,11 +902,31 @@ class GocDocument(ConfigDocument):
                 errors.append(
                     "[project].project_owner_name is required when [project].gitprovider is 'github'"
                 )
+            if provider == "codeberg" and not project.get("project_owner_name"):
+                errors.append(
+                    "[project].project_owner_name is required when "
+                    "[project].gitprovider is 'codeberg'"
+                )
             if provider == "gitlab" and not (project.get("group_name") or project.get("project_owner_name")):
                 errors.append(
                     "[project].group_name or [project].project_owner_name is required when "
                     "[project].gitprovider is 'gitlab'"
                 )
+            if provider == "custom" and not (
+                project.get("group_name") or project.get("project_owner_name")
+            ):
+                errors.append(
+                    "[project].group_name or [project].project_owner_name is required when "
+                    "[project].gitprovider is 'custom'"
+                )
+        custom_url = project.get("gitprovider_url")
+        if provider == "custom" and (
+            not isinstance(custom_url, str) or not custom_url.strip()
+        ):
+            errors.append(
+                "[project].gitprovider_url is required when "
+                "[project].gitprovider is 'custom'"
+            )
 
         interaction = self.read("session.interaction", self.SESSION_DEFAULTS["interaction"])
         if interaction not in self._VALID_INTERACTIONS:
@@ -992,30 +1014,19 @@ class GocDocument(ConfigDocument):
         if not repo_name:
             return None
         provider = str(project.get("gitprovider", self._DEFAULT_PROJECT_GITPROVIDER))
-        host = self._resolve_provider_host(provider, project.get("gitprovider_url"))
-        if provider == "github":
-            namespace = project.get("project_owner_name")
-        elif provider == "gitlab":
-            namespace = project.get("group_name") or project.get("project_owner_name")
-        else:
+        try:
+            gitprovider = GitProvider(provider)
+        except ValueError:
             return None
-        if not namespace:
-            return None
-        if self.transport == "ssh":
-            return f"git@{host}:{namespace}/{repo_name}.git"
-        return f"https://{host}/{namespace}/{repo_name}.git"
-
-    @staticmethod
-    def _resolve_provider_host(gitprovider: str, gitprovider_url: Any) -> str:
-        if gitprovider_url:
-            base = str(gitprovider_url).strip()
-            parsed = urlsplit(base if "://" in base else f"https://{base}")
-            host = parsed.netloc or parsed.path.strip("/").split("/", 1)[0]
-            if host:
-                return host
-        if gitprovider == "gitlab":
-            return "gitlab.com"
-        return "github.com"
+        address = RepoAddress(
+            gitprovider=gitprovider,
+            project_name=str(repo_name),
+            repo_name=str(repo_name),
+            project_owner_name=_as_optional_str(project.get("project_owner_name")),
+            group_name=_as_optional_str(project.get("group_name")),
+            gitprovider_url=_as_optional_str(project.get("gitprovider_url")),
+        )
+        return address.to_url(AccessProtocol(self.transport))
 
 
 # ============================================================

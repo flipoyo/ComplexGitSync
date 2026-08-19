@@ -10,7 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.cgs import CgsDocument, normalize_cgs, parse_cgs
+from ComplexGitSync.cgs import (
+    CgsDocument,
+    normalize_cgs,
+    parse_cgs,
+    parse_repository_identifier,
+)
 from ComplexGitSync.config_document import ConfigDocument
 from ComplexGitSync.orchestre import GocDocument, GtsDocument
 from ComplexGitSync.errors import ConfigValidationError
@@ -174,6 +179,51 @@ class TestConfigDocumentBase:
 class TestCgsDocumentValid:
     def test_cgs_document_is_owned_by_cgs_module(self):
         assert CgsDocument.__module__ == "ComplexGitSync.cgs"
+
+    def test_repository_identifier_parser_is_centralized_in_git_repo(self):
+        assert parse_repository_identifier.__module__ == "ComplexGitSync.git_repo"
+
+    @pytest.mark.parametrize(
+        ("identifier", "provider", "owner", "name"),
+        [
+            ("github:octocat/Hello-World", "github", "octocat", "Hello-World"),
+            ("gitlab:group/subgroup/project", "gitlab", "group/subgroup", "project"),
+            ("codeberg:GX4G/GX4G", "codeberg", "GX4G", "GX4G"),
+            ("custom:internal/tools", "custom", "internal", "tools"),
+        ],
+    )
+    def test_all_provider_identifiers_parse_deterministically(
+        self, identifier, provider, owner, name
+    ):
+        parsed = parse_repository_identifier(identifier)
+
+        assert parsed == {
+            "gitprovider": provider,
+            "project_owner_name": owner,
+            "project_name": name,
+            "repo_name": name,
+        }
+
+    @pytest.mark.parametrize(
+        ("identifier", "overrides"),
+        [
+            ("github:octocat/Hello-World", {}),
+            ("gitlab:group/subgroup/project", {}),
+            ("codeberg:GX4G/GX4G", {}),
+            ("custom:internal/tools", {"gitprovider_url": "https://git.example.com"}),
+        ],
+    )
+    def test_all_providers_normalize_and_validate(self, identifier, overrides):
+        repo = identifier if not overrides else {"repository": identifier, **overrides}
+
+        document = CgsDocument.from_dict({"project": "demo", "repos": [repo]})
+
+        normalized = document.repos[0]
+        assert normalized["gitprovider"] == identifier.split(":", 1)[0]
+        assert normalized["default_branch"] == "main"
+        assert normalized["fallback_branch"] == "main"
+        assert normalized["access_protocol"] == "ssh"
+        document.validate()
 
     def test_from_dict_minimal(self):
         doc = CgsDocument.from_dict(MINIMAL_CGS)
@@ -528,6 +578,16 @@ class TestCgsDocumentInvalid:
         }
         self._assert_validation_error(data, "gitprovider")
 
+    @pytest.mark.parametrize("gitprovider_url", [None, "", "   ", 42])
+    def test_custom_provider_requires_explicit_gitprovider_url(self, gitprovider_url):
+        repo = {"repository": "custom:internal/tools"}
+        if gitprovider_url is not None:
+            repo["gitprovider_url"] = gitprovider_url
+        self._assert_validation_error(
+            {"project": "tools", "repos": [repo]},
+            "gitprovider_url is required for custom provider",
+        )
+
     def test_invalid_access_protocol(self):
         data = {
             "document": {"format_version": "1.0"},
@@ -840,6 +900,43 @@ class TestGocDocumentValid:
         doc = GocDocument.from_dict(data)
         assert doc.project_gitprovider_address == "git@gitlab.com:gviz/cawaqsviz/cawaqsviz.git"
 
+    @pytest.mark.parametrize(
+        ("transport", "expected"),
+        [
+            ("ssh", "git@codeberg.org:GX4G/GX4G.git"),
+            ("https", "https://codeberg.org/GX4G/GX4G.git"),
+        ],
+    )
+    def test_project_gitprovider_address_for_codeberg(self, transport, expected):
+        data = {
+            **MINIMAL_GOC,
+            "session": {"transport": transport},
+            "project": {
+                "source": "project.cgs",
+                "repo_name": "GX4G",
+                "gitprovider": "codeberg",
+                "project_owner_name": "GX4G",
+            },
+        }
+
+        assert GocDocument.from_dict(data).project_gitprovider_address == expected
+
+    def test_project_gitprovider_address_for_custom_uses_explicit_url(self):
+        data = {
+            **MINIMAL_GOC,
+            "project": {
+                "source": "project.cgs",
+                "repo_name": "tools",
+                "gitprovider": "custom",
+                "project_owner_name": "internal",
+                "gitprovider_url": "https://git.example.com",
+            },
+        }
+
+        assert GocDocument.from_dict(data).project_gitprovider_address == (
+            "git@git.example.com:internal/tools.git"
+        )
+
     def test_project_provider_only_is_allowed_without_identity_fields(self):
         data = {
             **MINIMAL_GOC,
@@ -942,6 +1039,27 @@ class TestGocDocumentInvalid:
             "actions": [{"command": "validate"}],
         }
         self._assert_validation_error(data, "group_name or \\[project\\]\\.project_owner_name")
+
+    def test_project_identity_missing_codeberg_owner(self):
+        data = {
+            "document": {"format_version": "1.0"},
+            "project": {"source": "p.cgs", "repo_name": "repo", "gitprovider": "codeberg"},
+            "actions": [{"command": "pull"}],
+        }
+        self._assert_validation_error(data, "project_owner_name")
+
+    def test_project_identity_custom_requires_explicit_url(self):
+        data = {
+            "document": {"format_version": "1.0"},
+            "project": {
+                "source": "p.cgs",
+                "repo_name": "repo",
+                "gitprovider": "custom",
+                "project_owner_name": "owner",
+            },
+            "actions": [{"command": "pull"}],
+        }
+        self._assert_validation_error(data, "gitprovider_url")
 
     def test_project_identity_invalid_provider(self):
         data = {

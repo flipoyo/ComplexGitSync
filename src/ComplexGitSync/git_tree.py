@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, Iterator, TypeVar
 from .errors import ConfigValidationError, NestedConfigDiscoveryError
 from .git_repo import (
     AccessProtocol,
+    CANONICAL_GIT_PROVIDERS,
     DiscoveryState,
     GitProvider,
     GitRepo,
@@ -326,13 +327,13 @@ class GitTree:
             raise ValueError("Default owner/group name is required")
         
         # Git provider for template
-        gitprovider_str = input("Default git provider [github/gitlab/custom]: ").strip().lower()
-        if gitprovider_str == "gitlab":
-            gitprovider = GitProvider.GITLAB
-        elif gitprovider_str == "custom":
-            gitprovider = GitProvider.CUSTOM
+        gitprovider_str = input(
+            "Default git provider [github/gitlab/codeberg/custom]: "
+        ).strip().lower()
+        if gitprovider_str in CANONICAL_GIT_PROVIDERS:
+            gitprovider = GitProvider(gitprovider_str)
         else:
-            if gitprovider_str not in ("", "github"):
+            if gitprovider_str:
                 print("Warning: Invalid git provider, using github")
             gitprovider = GitProvider.GITHUB
 
@@ -436,20 +437,19 @@ class GitTree:
         # Git provider
         gitprovider_prompt = f"  Git provider [{repo_template.gitprovider.value}]: "
         gitprovider_str = input(gitprovider_prompt).strip().lower()
-        if gitprovider_str in ("", "github", "gitlab", "custom"):
-            if gitprovider_str == "gitlab":
-                gitprovider = GitProvider.GITLAB
-            elif gitprovider_str == "github":
-                gitprovider = GitProvider.GITHUB
-            elif gitprovider_str == "custom":
-                gitprovider = GitProvider.CUSTOM
-            else:  # Empty string - use template default
-                gitprovider = repo_template.gitprovider
+        if not gitprovider_str:
+            gitprovider = repo_template.gitprovider
+        elif gitprovider_str in CANONICAL_GIT_PROVIDERS:
+            gitprovider = GitProvider(gitprovider_str)
         else:
             print("  Warning: Invalid git provider, using template default")
             gitprovider = repo_template.gitprovider
 
-        gitprovider_url = repo_template.gitprovider_url
+        gitprovider_url = (
+            repo_template.gitprovider_url
+            if gitprovider == repo_template.gitprovider
+            else None
+        )
         if gitprovider == GitProvider.CUSTOM:
             url_prompt = (
                 f"  Custom provider URL [{gitprovider_url}]: "

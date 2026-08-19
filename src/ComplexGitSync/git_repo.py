@@ -20,6 +20,7 @@ Classes / enums defined here (Tier 1 — Core State):
 from __future__ import annotations
 
 import hashlib
+import re
 import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
@@ -44,7 +45,58 @@ class GitProvider(StrEnum):
 
     GITHUB = "github"
     GITLAB = "gitlab"
+    CODEBERG = "codeberg"
     CUSTOM = "custom"
+
+
+KNOWN_PROVIDER_HOSTS: dict[GitProvider, str] = {
+    GitProvider.GITHUB: "github.com",
+    GitProvider.GITLAB: "gitlab.com",
+    GitProvider.CODEBERG: "codeberg.org",
+}
+"""Canonical hosts for first-class providers with deterministic remotes."""
+
+CANONICAL_GIT_PROVIDERS = frozenset(provider.value for provider in GitProvider)
+"""Provider names accepted by configuration documents and interactive input."""
+
+_PROVIDER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+_REPOSITORY_SEGMENT_RE = re.compile(r"^[^\s/:\\]+$")
+
+
+def parse_repository_identifier(identifier: str) -> dict[str, str]:
+    """Parse ``provider:owner/repository`` into canonical identity fields.
+
+    Nested namespaces are accepted; the last path segment is the repository
+    name and all preceding segments form ``project_owner_name``. Provider
+    validation is deliberately separate so callers can report syntax and
+    unsupported-provider errors independently.
+    """
+    if not isinstance(identifier, str) or identifier != identifier.strip():
+        raise ValueError("repository identifier must be a trimmed string")
+    if identifier.count(":") != 1:
+        raise ValueError("expected 'provider:owner/repository'")
+
+    provider, address = identifier.split(":", 1)
+    segments = address.split("/")
+    if (
+        not _PROVIDER_RE.fullmatch(provider)
+        or len(segments) < 2
+        or any(
+            not segment
+            or segment in {".", ".."}
+            or not _REPOSITORY_SEGMENT_RE.fullmatch(segment)
+            for segment in segments
+        )
+    ):
+        raise ValueError("expected 'provider:owner/repository'")
+
+    repository_name = segments[-1]
+    return {
+        "gitprovider": provider,
+        "project_owner_name": "/".join(segments[:-1]),
+        "project_name": repository_name,
+        "repo_name": repository_name,
+    }
 
 
 class NodeType(StrEnum):
@@ -256,9 +308,12 @@ class RepoAddress:
             raise ValueError(
                 "gitprovider_url is required for custom provider addresses."
             )
-        if self.gitprovider == GitProvider.GITLAB:
-            return "gitlab.com"
-        return "github.com"
+        try:
+            return KNOWN_PROVIDER_HOSTS[self.gitprovider]
+        except KeyError as exc:
+            raise ValueError(
+                f"No canonical host is registered for provider {self.gitprovider!s}."
+            ) from exc
 
     def _resolve_namespace(self) -> str:
         if self.gitprovider == GitProvider.GITLAB:
@@ -271,10 +326,10 @@ class RepoAddress:
                     "group_name or project_owner_name is required for GitLab addresses."
                 )
             return namespace
-        if self.gitprovider == GitProvider.GITHUB:
+        if self.gitprovider in {GitProvider.GITHUB, GitProvider.CODEBERG}:
             if not self.project_owner_name:
                 raise ValueError(
-                    "project_owner_name is required for GitHub addresses."
+                    f"project_owner_name is required for {self.gitprovider.value} addresses."
                 )
             return self.project_owner_name
         ns = self.group_name or self.project_owner_name

@@ -48,7 +48,10 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "tag": "Create and push a tag across a READY tree.",
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
     # Configuration commands
-    "configure": "Create a concise .cgs project specification interactively.",
+    "configure": (
+        "Create a concise .cgs specification for GitHub, GitLab, Codeberg, "
+        "or a custom provider."
+    ),
     # Memory commands
     "remember": "Bind a .cgs artefact to its external SSH-Git Memory endpoint.",
     "memorize": "Persist a finalized local Memory State to the configured SSH-Git remote.",

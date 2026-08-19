@@ -61,6 +61,14 @@ Each identifier uses \texttt{provider:owner/repository}.  ComplexGitSync runs
 repository name as its path.  A unique repository matching the project name
 is mounted at \texttt{.}.  Advanced tables are reserved for overrides.
 
+Canonical providers are \texttt{github}, \texttt{gitlab},
+\texttt{codeberg}, and \texttt{custom}. Their known hosts are
+\texttt{github.com}, \texttt{gitlab.com}, and \texttt{codeberg.org}; SSH and
+HTTPS remotes are generated automatically. Custom hosting requires an explicit
+\texttt{gitprovider\_url} and never guesses a host. For example,
+\texttt{codeberg:GX4G/GX4G} identifies owner \texttt{GX4G} and repository
+\texttt{GX4G} on Codeberg.
+
 Copy \texttt{examples/template.cgs} when starting a specification. It combines
 plain repository identifiers with one inline override. Developers can compare
 it with \texttt{examples/normalized\_template.cgs}, which shows the complete
