@@ -121,7 +121,7 @@ can evolve silently; the delivered CI automation remains attached to `main`.
 - Compatibility aliases: `read` → `load`, `verify` → `validate`, `clone` → `initialise(.cgs)` equivalent.
 - `freeze` is the primary versioning command; `freeze-release` and `freeze-state` remain available.
 - `expand`+`fix_circularities` enforce a DAG-compatible tangle behavior: shared repos are canonicalized only when declared refs are hash-compatible.
-- `.cgs` supports repo-level `branch`/`tag` declarations; when both are present, `validate` enforces hash equivalence and raises `incompatibilities between branch (hash) and tag(val) in .cgs` on mismatch.
+- `.cgs` supports repo-level `branch`/`tag` declarations with offline static validation; explicit runtime resolution checks remote availability (`tag` takes precedence when both are present).
 - `freeze` emits the next `.gts` id and records it in the project-local `<project>.lgr` register.
 - `.gts` snapshots now include schema versioning and deterministic hashing: `document.schema_version`, `document.hash_algorithm`, and canonical `document.snapshot_hash` (SHA-256) validated on load.
 - The T36..T37 continuation roadmap is now delivered in `DevPlanTickets.md`.

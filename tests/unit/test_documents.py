@@ -5,6 +5,8 @@ from __future__ import annotations
 import builtins
 import copy
 import json
+import socket
+import subprocess
 import textwrap
 from pathlib import Path
 
@@ -20,7 +22,6 @@ from ComplexGitSync.cgs_format import (
 from ComplexGitSync.config_document import ConfigDocument
 from ComplexGitSync.orchestre import GocDocument, GtsDocument
 from ComplexGitSync.errors import ConfigValidationError
-from ComplexGitSync.git_repo import GitRepo
 
 # ---------------------------------------------------------------------------
 # Fixtures – minimal valid raw dicts
@@ -411,25 +412,47 @@ class TestCgsDocumentValid:
         }
         CgsDocument.from_dict(data)
 
-    def test_branch_tag_pair_accepted_when_hashes_match(self, monkeypatch):
-        data = {
-            "document": {"format_version": "1.0"},
-            "project": {"name": "P", "default_branch": "main"},
-            "repos": [
-                {
-                    "project_owner_name": "o",
-                    "project_name": "r",
-                    "branch": "main",
-                    "tag": "v1.0.0",
-                }
-            ],
+    @pytest.mark.parametrize(
+        ("identifier", "overrides"),
+        [
+            (
+                "github:this-owner-does-not-need-to-exist/this-repo-does-not-need-to-exist",
+                {},
+            ),
+            ("gitlab:fictitious-group/fictitious-repository", {}),
+            ("codeberg:fictitious-owner/fictitious-repository", {}),
+            (
+                "custom:fictitious-owner/fictitious-repository",
+                {"gitprovider_url": "https://git.invalid"},
+            ),
+        ],
+    )
+    def test_cgs_format_pipeline_is_offline_for_every_provider(
+        self, identifier, overrides, monkeypatch, tmp_path
+    ):
+        def _forbid_runtime_access(*_args, **_kwargs):
+            raise AssertionError(".cgs format processing attempted Git or network access")
+
+        monkeypatch.setattr(subprocess, "run", _forbid_runtime_access)
+        monkeypatch.setattr(socket, "create_connection", _forbid_runtime_access)
+
+        repository = {
+            "repository": identifier,
+            "branch": "branch-does-not-need-to-exist",
+            "tag": "tag-does-not-need-to-exist",
+            **overrides,
         }
-        monkeypatch.setattr(
-            GitRepo,
-            "_get_hash",
-            lambda self, branch="main", tag=None: "same-hash",
+        document = CgsDocument.from_dict(
+            {"project": "offline-format-check", "repos": [repository]}
         )
-        CgsDocument.from_dict(data)
+        document.validate()
+
+        output = tmp_path / "offline.cgs"
+        document.to_toml(output)
+        reloaded = CgsDocument.from_toml(output)
+
+        assert reloaded.repos[0]["branch"] == "branch-does-not-need-to-exist"
+        assert reloaded.repos[0]["tag"] == "tag-does-not-need-to-exist"
 
     def test_from_toml_parses_example_file(self):
         examples = Path(__file__).parent.parent.parent / "examples"
@@ -617,27 +640,6 @@ class TestCgsDocumentInvalid:
             "repos": "not-a-list",
         }
         self._assert_validation_error(data, "repos")
-
-    def test_branch_tag_pair_rejected_when_hashes_differ(self, monkeypatch):
-        data = {
-            "document": {"format_version": "1.0"},
-            "project": {"name": "P", "default_branch": "main"},
-            "repos": [
-                {
-                    "project_owner_name": "o",
-                    "project_name": "r",
-                    "branch": "main",
-                    "tag": "v1.0.0",
-                }
-            ],
-        }
-        monkeypatch.setattr(
-            GitRepo,
-            "_get_hash",
-            lambda self, branch="main", tag=None: "branch-hash" if tag is None else "tag-hash",
-        )
-        self._assert_validation_error(data, "incompatibilities between branch \\(hash\\) and tag\\(val\\) in \\.cgs")
-
 
 # ===========================================================================
 # GtsDocument

@@ -6,6 +6,9 @@ Human-authored shorthand is normalized into the complete canonical dictionaries
 consumed by :mod:`ComplexGitSync.git_tree` and :mod:`ComplexGitSync.orchestre`::
 
     PARSE (tomllib) -> NORMALIZE -> VALIDATE -> CgsDocument
+
+Every stage in this module is deterministic and offline. Remote existence,
+reference resolution, and other Git checks belong to the explicit runtime layer.
 """
 
 from __future__ import annotations
@@ -21,12 +24,9 @@ import tomli_w
 from .config_document import ConfigDocument
 from .errors import ConfigValidationError
 from .git_repo import (
-    AccessProtocol,
     GitProvider,
-    GitRepo,
     validate_git_provider,
 )
-from .git_tree import _as_optional_str, _parse_enum
 
 DEFAULT_FORMAT_VERSION = "1.0"
 DEFAULT_BRANCH = "main"
@@ -255,6 +255,7 @@ class CgsDocument(ConfigDocument):
         return cls.from_dict(parse_cgs(path))
 
     def validate(self) -> None:  # noqa: C901
+        """Validate static document properties without Git or network access."""
         errors: list[str] = []
 
         for key in self._REQUIRED_DOCUMENT_KEYS:
@@ -293,8 +294,7 @@ class CgsDocument(ConfigDocument):
                     errors.append(f"repos[{idx}].{exc}")
                     provider_is_valid = False
                 access_protocol = repo.get("access_protocol", DEFAULT_ACCESS_PROTOCOL)
-                protocol_is_valid = access_protocol in self._VALID_ACCESS_PROTOCOLS
-                if not protocol_is_valid:
+                if access_protocol not in self._VALID_ACCESS_PROTOCOLS:
                     errors.append(
                         f"repos[{idx}].access_protocol invalid: {access_protocol!r} "
                         f"(choose from: {sorted(self._VALID_ACCESS_PROTOCOLS)})"
@@ -325,37 +325,6 @@ class CgsDocument(ConfigDocument):
                             f"repos[{idx}].nested_config must be 'auto', 'disabled', "
                             f"or a .cgs relative path; got: {nested!r}"
                         )
-                branch = _as_optional_str(repo.get("branch"))
-                tag = _as_optional_str(repo.get("tag"))
-                if branch and tag and provider_is_valid and protocol_is_valid:
-                    probe = GitRepo(
-                        project_owner_name=str(repo.get("project_owner_name")),
-                        project_name=str(repo.get("project_name")),
-                        repo_name=(
-                            _as_optional_str(repo.get("repo_name"))
-                            if repo.get("repo_name") is not None
-                            else str(repo.get("project_name"))
-                        ),
-                        gitprovider=_parse_enum(
-                            GitProvider,
-                            repo.get("gitprovider"),
-                            GitProvider.GITHUB,
-                        ),
-                        group_name=_as_optional_str(repo.get("group_name")),
-                        gitprovider_url=_as_optional_str(repo.get("gitprovider_url")),
-                        access_protocol=_parse_enum(
-                            AccessProtocol,
-                            repo.get("access_protocol"),
-                            AccessProtocol.SSH,
-                        ),
-                    )
-                    branch_hash = probe._get_hash(branch=branch)
-                    tag_hash = probe._get_hash(branch=branch, tag=tag)
-                    if branch_hash != tag_hash:
-                        errors.append(
-                            "incompatibilities between branch (hash) and tag(val) in .cgs"
-                        )
-
         if errors:
             raise ConfigValidationError(
                 "Invalid .cgs document:\n" + "\n".join(f"  • {error}" for error in errors)

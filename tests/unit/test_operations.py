@@ -1338,6 +1338,40 @@ def test_git_runner_validate_memory_remote_uses_read_only_ls_remote(monkeypatch)
     assert captured["cwd"] is None
 
 
+@pytest.mark.parametrize(
+    ("method_name", "selector", "ref_name"),
+    [
+        ("remote_branch_exists", "--heads", "main"),
+        ("remote_tag_exists", "--tags", "v1.0.0"),
+    ],
+)
+def test_git_runner_remote_ref_resolution_is_explicit_runtime_work(
+    monkeypatch, method_name, selector, ref_name
+):
+    runner = GitRunner()
+    captured: dict[str, object] = {}
+
+    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
+        captured["args"] = args
+        captured["cwd"] = cwd
+        return subprocess.CompletedProcess(
+            args=["git", *args], returncode=0, stdout="deadbeef\tref\n", stderr=""
+        )
+
+    monkeypatch.setattr(GitRunner, "_run", _spy_run)
+
+    exists = getattr(runner, method_name)("git@github.com:owner/repository.git", ref_name)
+
+    assert exists is True
+    assert captured["args"] == (
+        "ls-remote",
+        selector,
+        "git@github.com:owner/repository.git",
+        ref_name,
+    )
+    assert captured["cwd"] is None
+
+
 def test_git_runner_file_transport_detection_handles_windows_paths():
     assert GitRunner._uses_file_transport("file:///tmp/remote.git") is True
     assert GitRunner._uses_file_transport("/tmp/remote.git") is True

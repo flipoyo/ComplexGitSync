@@ -31,6 +31,9 @@ validation, and serialization through `CgsDocument`. The format-neutral
 consumes validated `.cgs` documents and owns orchestration/runtime behavior.
 The shared textual repository-ID parser is `cgs_format.parse_repo_id()`;
 `git_repo.py` receives separated identities and owns provider/remote behavior.
+Parsing, normalization, validation, and serialization are deterministic and
+offline; remote existence and branch/tag availability are checked only during
+explicit Git runtime operations.
 
 The normal `.cgs` authoring form is intentionally small:
 

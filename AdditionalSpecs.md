@@ -79,8 +79,9 @@ Key classes and their role in information processing:
 | `RepoNode` | Immutable snapshot of a node's tree position for read-only traversal |
 | `ProjectTreeState` | Frozen snapshot of overall tree readiness (returned by the Client to callers) |
 
-`GitRepo` exposes `_get_hash(branch="main", tag=None)` to resolve a reference
-hash used by validation/circularity reconciliation logic.
+`GitRepo` construction is side-effect free. Remote branch and tag availability
+is resolved explicitly by `GitRunner` during runtime clone/resolution steps;
+`.cgs` parsing and validation never query a remote.
 
 Supporting enumerations (one per file):
 
@@ -202,9 +203,10 @@ cgitsync validate-topology --gts project.gts
 Actions that **must produce READY** or fail explicitly:
 `initialise(.cgs)`, `initialise(.gts)`, `pull(.cgs)`, `pull(.gts)`, `checkout(.gts)`.
 
-When `.cgs` entries declare both `branch` and `tag`, validation must confirm
-that both extraction modes resolve to the same hash; otherwise it raises:
-`incompatibilities between branch (hash) and tag(val) in .cgs`.
+When `.cgs` entries declare `branch` or `tag`, format validation checks only
+their static document representation. Runtime resolution selects the declared
+target (`tag` takes precedence when both are present) and verifies its remote
+availability through `GitRunner`.
 
 ### Tier 3 — Client / API
 

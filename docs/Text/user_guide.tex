@@ -367,6 +367,11 @@ The textual grammar and its only parser, \texttt{parse\_repo\_id()}, live in
 already-separated provider, owner, and repository fields and composes remotes;
 it does not parse authoring shorthand.
 
+The \texttt{.cgs} format pipeline is deterministic and offline. A syntactically
+valid repository may therefore reference a host, owner, branch, or tag that is
+not currently reachable. Remote existence and reference availability are checked
+only by explicit Git operations during runtime resolution and execution.
+
 Normalization supplies \texttt{default\_branch = main}, makes
 \texttt{fallback\_branch} equal to that default, selects
 \texttt{access\_protocol = ssh}, enables \texttt{nested\_config = auto}, and

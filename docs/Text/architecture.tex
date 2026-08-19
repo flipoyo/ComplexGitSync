@@ -165,11 +165,10 @@ internal steps of those workflows.
 \end{tabular}
 \end{center}
 
-For \texttt{.cgs} refs, repositories can be declared by branch or by tag.  If
-both are declared for the same repo, \texttt{validate} enforces hash
-equivalence and raises
-\texttt{incompatibilities between branch (hash) and tag(val) in .cgs} when they
-differ.
+For \texttt{.cgs} refs, repositories can be declared by branch or by tag.
+Format validation is static and does not resolve either reference remotely.
+The runtime layer selects the declared target (tag takes precedence when both
+are present) and checks its availability through \texttt{GitRunner}.
 
 The authoring boundary is explicitly
 \texttt{PARSE -> NORMALIZE -> VALIDATE}.  TOML parsing produces authoring data;
@@ -195,6 +194,12 @@ The textual \texttt{provider:owner/repository} grammar belongs exclusively to
 \texttt{cgs\_format.py}. Its \texttt{parse\_repo\_id()} function owns syntax validation
 and splitting. Normalization uses that function, and CLI repository arguments
 must reuse it rather than introduce another parser.
+
+The complete \texttt{.cgs} format pipeline is deterministic and offline.
+Parsing, normalization, validation, and serialization do not probe repositories
+or execute Git. Remote existence and branch/tag availability are resolved only
+after the validated document enters the runtime layer, through explicit
+\texttt{GitRunner} operations.
 
 Provider behavior remains in \texttt{git\_repo.py}: the
 \texttt{GitProvider} enum, canonical provider set, known-host map, and

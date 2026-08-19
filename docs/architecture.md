@@ -93,6 +93,12 @@ The textual `provider:owner/repository` grammar belongs exclusively to
 normalization calls that same function, and future CLI repository arguments
 must reuse it rather than introduce another parser.
 
+The complete `.cgs` format pipeline is deterministic and offline. Parsing,
+normalization, validation, and serialization never probe repositories or run
+Git. Remote existence and branch/tag availability are resolved only after the
+validated document has entered the runtime layer, through explicit `GitRunner`
+operations.
+
 Provider behavior belongs to `git_repo.py`. `GitProvider`,
 `CANONICAL_GIT_PROVIDERS`, `KNOWN_PROVIDER_HOSTS`, and `RepoAddress` are the
 single definitions used for canonical provider membership and runtime remote
