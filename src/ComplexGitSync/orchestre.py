@@ -2976,11 +2976,33 @@ class ComplexGitSyncClient:
             relative to the current working directory
             (``CWD=$CGSHOME/ComplexGitSync``), unless ``CGSHOME`` is set.
         """
+        source_path = Path(config_path).resolve()
+        document = CgsDocument.from_toml(source_path)
+        return self.initialise_cgs_document(
+            document,
+            source_path=source_path,
+            output_path=output_path,
+            clean_before_clone=clean_before_clone,
+        )
+
+    def initialise_cgs_document(
+        self,
+        document: CgsDocument,
+        *,
+        source_path: str | Path,
+        output_path: str | Path | None = None,
+        clean_before_clone: bool = False,
+    ) -> WorkingGitTree:
+        """Initialise from an already-normalized, validated ``CgsDocument``.
+
+        ``source_path`` is the logical origin used for relative paths, state
+        metadata, and logging. It need not exist for direct CLI authoring.
+        """
+        document.validate()
         previous_tree_state = (
             self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         )
-        source_path = Path(config_path).resolve()
-        document = CgsDocument.from_toml(source_path)
+        source_path = Path(source_path).resolve()
         cgshome = self.resolve_cgshome(document, source_path, output_path=output_path)
         project_root = cgshome
 

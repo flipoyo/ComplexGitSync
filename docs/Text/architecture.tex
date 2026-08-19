@@ -178,6 +178,14 @@ relative paths.  Validation receives only the complete canonical
 \texttt{CgsDocument}.  Authoring syntax is therefore not the internal
 representation.
 
+File and CLI authoring converge at this boundary. The CLI collects
+\texttt{--project} and repeatable \texttt{--repo} values, then calls
+\texttt{CgsDocument.from\_project\_definition()}; it owns no repository grammar
+or normalization. Loading an equivalent \texttt{.cgs} file and using the CLI
+definition produce semantically identical canonical documents.
+\texttt{create-cgs} runs the same offline pipeline and serializes the result
+without entering Git runtime.
+
 Repository placement is parent-relative. At the top level the parent path is
 the project root; during nested discovery it is the repository whose
 \texttt{.cgs} is being expanded. Thus \texttt{../sibling} resolves to an

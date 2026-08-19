@@ -57,6 +57,7 @@ public CLI surface.
 \begin{lstlisting}[language=bash]
 $ cgitsync initialise <spec.cgs> [--output-path DIR]
 $ cgitsync initialise <snapshot.gts>
+$ cgitsync initialise --project NAME --repo PROVIDER:OWNER/REPO [--repo ...] [--output-path DIR]
 \end{lstlisting}
 
 Unified initialisation entry point.  Dispatches on file extension:
@@ -71,9 +72,26 @@ Unified initialisation entry point.  Dispatches on file extension:
     \texttt{Try clean-init method}.
   \item \texttt{.gts} source (restore mode): loads a saved snapshot directly.
     On success, ends in the lifecycle state recorded in the snapshot.
+  \item Direct CLI authoring: requires \texttt{--project} and at least one
+    repeatable \texttt{--repo}. It is mutually exclusive with a source file.
+    The CLI collects values only; \texttt{cgs\_format.py} parses, normalizes,
+    and validates them into the same canonical \texttt{CgsDocument} produced
+    from an equivalent \texttt{.cgs} file.
 \end{itemize}
 
-Both paths end in a \texttt{READY} tree or fail explicitly.
+All initialization paths end in a \texttt{READY} tree or fail explicitly.
+
+\subsection{\texttt{create-cgs}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync create-cgs --project CGSil1 \
+    --repo github:flipoyo/ComplexGitSync \
+    --repo codeberg:GX4G/GX4G \
+    --output CGSil1.cgs
+\end{lstlisting}
+
+Builds the canonical \texttt{CgsDocument} through the offline format pipeline
+and serializes concise \texttt{.cgs} TOML. It performs no Git or network work.
 
 \subsection{\texttt{clean-init}}
 

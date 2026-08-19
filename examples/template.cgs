@@ -1,6 +1,9 @@
 # Copy this file to start a project specification. Repository identifiers use
 # provider:owner/repository. Keep plain strings when defaults are sufficient;
 # use an inline table only for values that need to differ.
+# Project/repository-only files can instead be generated with repeatable CLI
+# options: cgitsync create-cgs --project NAME --repo PROVIDER:OWNER/REPO
+# --output FILE. Use this template when inline overrides are required.
 
 project = "example-project"
 

@@ -1,11 +1,14 @@
 from pathlib import Path
 import re
+import socket
+import subprocess
 import tomllib
 from types import SimpleNamespace
 
 import pytest
 
 from ComplexGitSync import __version__
+from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.cli import _snapshot_file_hash, main
 
 
@@ -24,6 +27,18 @@ def test_configure_help_lists_all_canonical_providers(capsys):
     assert exc_info.value.code == 0
     for provider in ("GitHub", "GitLab", "Codeberg", "custom"):
         assert provider in captured.out
+
+
+@pytest.mark.parametrize("command", ["initialise", "create-cgs"])
+def test_cli_project_definition_help_documents_repeatable_repos(command, capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main([command, "--help"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 0
+    assert "--project" in captured.out
+    assert "--repo" in captured.out
+    assert "repeat" in captured.out
 
 
 def test_initialise_command_restores_gts_snapshot(tmp_path, capsys):
@@ -119,6 +134,119 @@ def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):
     assert "tree:" in captured.out
     assert "demo (project)" in captured.out
     assert "READY ready=true" in captured.out
+
+
+@pytest.mark.parametrize(
+    "repositories",
+    [
+        ["github:example/example-project"],
+        [
+            "gitlab:CGS_test/CGSil1",
+            "codeberg:GX4G/GX4G",
+        ],
+    ],
+)
+def test_initialise_accepts_direct_cli_project_definition(
+    repositories, monkeypatch, capsys, tmp_path
+):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def resolve_cgshome(self, document, source_path, *, output_path=None):
+            captured_call["resolved_document"] = document
+            captured_call["logical_source"] = Path(source_path)
+            captured_call["output_path"] = output_path
+            return tmp_path / "workspace" / str(document.project_name)
+
+        def initialise_cgs_document(
+            self, document, *, source_path, output_path=None, clean_before_clone=False
+        ):
+            captured_call["document"] = document
+            captured_call["source_path"] = Path(source_path)
+            captured_call["clean_before_clone"] = clean_before_clone
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(
+                    absolute_path=tmp_path / "workspace" / str(document.project_name)
+                )
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"),
+                is_ready=True,
+                registry_complete=True,
+            )
+
+        def format_repo_tree(self):
+            return "CGSil1 (project)"
+
+    def _run_without_logging(*, runner, client, source, **_kwargs):
+        return runner(client, Path(source).resolve())
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._run_with_logging", _run_without_logging)
+    monkeypatch.chdir(tmp_path)
+
+    argv = ["initialise", "--project", "CGSil1"]
+    for repository in repositories:
+        argv.extend(["--repo", repository])
+
+    exit_code = main(argv)
+    captured = capsys.readouterr()
+
+    expected = CgsDocument.from_dict({"project": "CGSil1", "repos": repositories})
+    assert exit_code == 0
+    assert isinstance(captured_call["document"], CgsDocument)
+    assert captured_call["document"].to_dict() == expected.to_dict()
+    assert captured_call["resolved_document"] is captured_call["document"]
+    assert captured_call["source_path"] == tmp_path / "CGSil1.cgs"
+    assert "workflow=load->expand->validate->clone" in captured.out
+
+
+def test_create_cgs_writes_equivalent_validated_document(
+    monkeypatch, capsys, tmp_path
+):
+    def _forbid_runtime_access(*_args, **_kwargs):
+        raise AssertionError("create-cgs attempted Git or network access")
+
+    monkeypatch.setattr(subprocess, "run", _forbid_runtime_access)
+    monkeypatch.setattr(socket, "create_connection", _forbid_runtime_access)
+
+    output = tmp_path / "CGSil1.cgs"
+    repositories = [
+        "github:flipoyo/ComplexGitSync",
+        "codeberg:GX4G/GX4G",
+    ]
+    exit_code = main(
+        [
+            "create-cgs",
+            "--project",
+            "CGSil1",
+            "--repo",
+            repositories[0],
+            "--repo",
+            repositories[1],
+            "--output",
+            str(output),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    generated = CgsDocument.from_toml(output)
+    equivalent_source = tmp_path / "equivalent.cgs"
+    equivalent_source.write_text(
+        'project = "CGSil1"\n\n'
+        'repos = [\n'
+        '    "github:flipoyo/ComplexGitSync",\n'
+        '    "codeberg:GX4G/GX4G",\n'
+        ']\n',
+        encoding="utf-8",
+    )
+    equivalent = CgsDocument.from_toml(equivalent_source)
+    assert exit_code == 0
+    assert generated.to_dict() == equivalent.to_dict()
+    assert "codeberg:GX4G/GX4G" in output.read_text(encoding="utf-8")
+    assert f".cgs file written to: {output.resolve()}" in captured.out
 
 
 def test_initialise_command_failure_suggests_clean_init(monkeypatch, capsys, tmp_path):
@@ -430,14 +558,66 @@ def test_reload_command_restores_named_memory_context(monkeypatch, capsys, tmp_p
     assert "status=reloaded" in captured.out
 
 
-def test_initialise_command_requires_source(capsys):
+def test_initialise_command_requires_source_or_project(capsys):
     with pytest.raises(SystemExit) as exc_info:
         main(["initialise"])
 
     captured = capsys.readouterr()
 
     assert exc_info.value.code == 2
-    assert "the following arguments are required: source" in captured.err
+    assert "requires SOURCE or --project" in captured.err
+
+
+def test_initialise_cli_definition_requires_project(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["initialise", "--repo", "github:owner/repository"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "requires SOURCE or --project" in captured.err
+
+
+def test_initialise_cli_definition_requires_repo(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["initialise", "--project", "demo"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "requires at least one --repo" in captured.err
+
+
+def test_initialise_rejects_source_and_cli_definition(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "initialise",
+                "project.cgs",
+                "--project",
+                "demo",
+                "--repo",
+                "github:owner/repository",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "SOURCE or --project with --repo, not both" in captured.err
+
+
+@pytest.mark.parametrize(
+    "argv, missing_option",
+    [
+        (["create-cgs", "--repo", "github:owner/repository", "--output", "p.cgs"], "--project"),
+        (["create-cgs", "--project", "demo", "--output", "p.cgs"], "--repo"),
+    ],
+)
+def test_create_cgs_requires_project_and_repo(argv, missing_option, capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(argv)
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert missing_option in captured.err
 
 
 def test_validate_command_creates_state_local_log_file(monkeypatch, tmp_path, capsys):

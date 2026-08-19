@@ -47,6 +47,27 @@ repos = [
 ]
 ```
 
+The equivalent project can be supplied directly to the CLI; `--repo` is
+repeatable and the CLI delegates every identifier to `cgs_format.py`:
+
+```bash
+cgitsync initialise \
+    --project CGSil1 \
+    --repo gitlab:CGS_test/CGSil1 \
+    --repo codeberg:GX4G/GX4G
+```
+
+Use exactly one authoring path: either `SOURCE`, or `--project` with at least
+one `--repo`. To write the same definition without performing Git operations:
+
+```bash
+cgitsync create-cgs \
+    --project CGSil1 \
+    --repo github:flipoyo/ComplexGitSync \
+    --repo codeberg:GX4G/GX4G \
+    --output CGSil1.cgs
+```
+
 Repository identifiers use `provider:owner/repository`. ComplexGitSync fills in
 `main` branches, `ssh` access, the repository name as its path, and automatic
 nested `.cgs` discovery. A unique repository matching `project` is the root at
@@ -119,6 +140,14 @@ From the CGSil1 `.cgs` specification, initialise the full repository tree under
 # Equivalent to: pixi run cgitsync initialise ../CGSil1.cgs --output-path "$CGSPATH"
 # with the default CGSPATH value ../..
 pixi run cgitsync initialise ../CGSil1.cgs
+```
+
+An existing `.cgs` is optional. The equivalent direct-authoring form is:
+
+```bash
+pixi run cgitsync initialise --project CGSil1 \
+    --repo gitlab:CGS_test/CGSil1 \
+    --repo codeberg:GX4G/GX4G
 ```
 
 CLI output includes a readable `operation_sequence` such as
@@ -270,9 +299,12 @@ client.launch_release("release-2026.05")
 
 Minimalist commands:
 
-- `initialise <file.cgs|file.gts>`: clone from a spec or load from a snapshot;
-  for `.cgs`, omitted `--output-path` defaults to `CGSPATH=../..`; on failure,
-  the CLI suggests `clean-init`
+- `initialise SOURCE` or `initialise --project NAME --repo ID [--repo ID ...]`:
+  clone from a file/direct definition or load a snapshot; the two authoring
+  forms are mutually exclusive. For `.cgs` or direct definitions, omitted
+  `--output-path` defaults to `CGSPATH=../..`
+- `create-cgs --project NAME --repo ID [--repo ID ...] --output FILE`: validate
+  and serialize an offline CLI project definition
 - `clean-init <file.cgs>`: run `load->expand->validate->purge->clone`
 - `freeze-release <name> <message>`: from a READY tree, run
   `add -> commit -> pull -> push -> freeze`

@@ -56,9 +56,9 @@ classDiagram
 `.cgs` parsing, serialization, constants, and validation. Its static
 repository topology is converted into a reference `GitTree`. The shared
 format-neutral `ConfigDocument` base remains in `config_document.py` because
-runtime `.gts` and `.goc` documents use it too. The `configure` command builds
-the reference tree from prompts, validates the generated `.cgs` document, and
-writes it to disk; `orchestre.py` owns that orchestration rather than the
+runtime `.gts` and `.goc` documents use it too. The interactive `configure`
+command and non-interactive `create-cgs` command both produce a validated
+`CgsDocument`; `orchestre.py` owns runtime orchestration rather than the
 authoring-format definition.
 
 The boundary is an explicit `PARSE -> NORMALIZE -> VALIDATE` pipeline. Parsing
@@ -67,6 +67,13 @@ repository shorthand and deterministic defaults into a canonical
 `CgsDocument`; validation checks only that canonical representation. The
 authoring syntax and internal representation are therefore deliberately
 different.
+
+File and CLI authoring converge at this boundary. The CLI collects `--project`
+and repeatable `--repo` values, then calls
+`CgsDocument.from_project_definition()`; it contains no repository grammar or
+normalization. Loading an equivalent `.cgs` and using the CLI definition must
+produce semantically identical canonical documents. `create-cgs` runs that
+same offline pipeline and serializes the result without entering Git runtime.
 
 The two representations are kept as an executable example pair:
 [`examples/template.cgs`](../examples/template.cgs) is the concise file users

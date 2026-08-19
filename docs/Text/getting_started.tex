@@ -105,6 +105,19 @@ snapshot under \texttt{<workspace>/.cgitsync/state/}, and leaves the tree
 $ pixi run cgitsync initialise examples/complexgitsync.cgs
 \end{lstlisting}
 
+The same canonical project definition can be authored directly. The
+\texttt{--repo} option is repeatable:
+
+\begin{lstlisting}[language=bash]
+$ pixi run cgitsync initialise --project CGSil1 \
+    --repo gitlab:CGS_test/CGSil1 \
+    --repo codeberg:GX4G/GX4G
+\end{lstlisting}
+
+Use either a source file or \texttt{--project} plus \texttt{--repo}, never
+both. To serialize the CLI definition without initializing a workspace, use
+\texttt{create-cgs --project ... --repo ... --output FILE}.
+
 When \texttt{--output-path} is omitted, \cgscli{} uses the workspace-level
 default \texttt{CGSPATH=../..}, then derives
 \texttt{CGSHOME=CGSPATH/<project-name>}. The explicit equivalent is:

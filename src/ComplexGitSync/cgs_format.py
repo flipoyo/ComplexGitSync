@@ -250,6 +250,19 @@ class CgsDocument(ConfigDocument):
         return document
 
     @classmethod
+    def from_project_definition(
+        cls,
+        project: str,
+        repositories: list[str],
+    ) -> "CgsDocument":
+        """Build a canonical document from format-level authoring values.
+
+        Callers collect the project name and textual repository identifiers;
+        this format boundary owns their parsing, normalization, and validation.
+        """
+        return cls.from_dict({"project": project, "repos": list(repositories)})
+
+    @classmethod
     def from_toml(cls, path: Path | str) -> "CgsDocument":
         """Run the explicit TOML parse, normalization, and validation pipeline."""
         return cls.from_dict(parse_cgs(path))
