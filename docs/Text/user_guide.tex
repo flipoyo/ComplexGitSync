@@ -310,51 +310,48 @@ counts, current HEAD, and the commit recorded in the loaded \texttt{.gts}.
 \subsection{Local Authoring Spec (\texttt{.cgs})}
 
 A TOML file that describes the repository tree to manage. It is the only
-hand-authored input; it is never modified at runtime.
+hand-authored input; it is never modified at runtime.  The normal form has two
+top-level keys:
 
-\textbf{Top-level sections:}
+\begin{lstlisting}
+project = "CGSil1"
+repos = [
+  "gitlab:CGS_test/CGSil1",
+  "gitlab:CGS_test/CGSil2",
+  "github:flipoyo/CGSih1",
+]
+\end{lstlisting}
 
-\begin{itemize}
-  \item \texttt{[document]} — mandatory; contains \texttt{format\_version}.
-  \item \texttt{[project]} — mandatory; project-level metadata (see
-        Table~\ref{tab:project-fields}).
-  \item \texttt{[[repos]]} — one entry per managed repository
-        (see Table~\ref{tab:repo-fields}).
-\end{itemize}
+Repository identifiers have the form
+\texttt{provider:owner/repository}. Nested GitLab namespaces are supported;
+the final path segment is the repository name. The document pipeline is:
 
-\begin{table}[h]
-\centering
-\begin{tabular}{lll}
-\hline
-\textbf{Field} & \textbf{Type} & \textbf{Description} \\
-\hline
-\texttt{name}           & string  & Human-readable project label \\
-\texttt{repo\_name}     & string  & Git repository slug \\
-\texttt{default\_branch}& string  & Default branch (e.g.\ \texttt{main}) \\
-\texttt{gitprovider}    & string  & Provider (\texttt{github}, \texttt{gitlab}, \texttt{custom}) \\
-\texttt{gitprovider\_url}& string & Required for \texttt{custom} provider \\
-\hline
-\end{tabular}
-\caption{Project-level fields in \texttt{.cgs}}
-\label{tab:project-fields}
-\end{table}
+\begin{center}
+\texttt{PARSE -> NORMALIZE -> VALIDATE -> canonical CgsDocument}
+\end{center}
 
-\begin{table}[h]
-\centering
-\begin{tabular}{lll}
-\hline
-\textbf{Field} & \textbf{Type} & \textbf{Description} \\
-\hline
-\texttt{gitprovider}         & string  & Provider override for this repo \\
-\texttt{project\_owner\_name}& string  & GitHub owner / GitLab group \\
-\texttt{project\_name}       & string  & Repository name on the provider \\
-\texttt{relative\_path}      & string  & Path relative to project root \\
-\texttt{gitprovider\_url}    & string  & Required for \texttt{custom} provider \\
-\hline
-\end{tabular}
-\caption{Per-repository fields in \texttt{.cgs}}
-\label{tab:repo-fields}
-\end{table}
+Normalization supplies \texttt{default\_branch = main}, makes
+\texttt{fallback\_branch} equal to that default, selects
+\texttt{access\_protocol = ssh}, enables \texttt{nested\_config = auto}, and
+uses the repository name as \texttt{relative\_path}. If exactly one repository
+name matches \texttt{project}, its path is inferred as \texttt{.}.
+
+Advanced inline tables are used only where a value differs from those
+defaults:
+
+\begin{lstlisting}
+project = "demo"
+repos = [
+  "github:owner/demo",
+  { repository = "github:owner/docs", relative_path = "documentation", nested_config = "disabled" },
+]
+\end{lstlisting}
+
+The legacy advanced \texttt{[project]} and \texttt{[[repos]]} tables remain
+accepted for project-wide branch settings, custom provider URLs, tags, and
+other explicit overrides.  Unknown providers, malformed identifiers,
+duplicates, and missing \texttt{project} or \texttt{repos} are rejected before
+a \texttt{GitTree} is built.
 
 \subsection{Git Tree State Snapshot (\texttt{.gts})}
 
@@ -459,9 +456,9 @@ instead.
 \section{Error Reference}
 
 \begin{description}
-  \item[\texttt{ValueError}] Raised when a required field is missing or a
-    field value is invalid (e.g.\ unknown \texttt{gitprovider},
-    missing \texttt{gitprovider\_url} for a \texttt{custom} provider).
+  \item[\texttt{ConfigValidationError}] Raised when \texttt{project} or
+    \texttt{repos} is missing, a repository identifier is malformed, or a
+    canonical field is invalid (for example an unknown \texttt{gitprovider}).
   \item[\texttt{GitSyncError}] Raised when clone-time Git operations fail,
     for example because the remote branch cannot be resolved or the target
     directory is already occupied.
@@ -477,8 +474,9 @@ instead.
     Add a \texttt{gitprovider\_url} field to the offending
     \texttt{[[repos]]} entry in your \texttt{.cgs} file.
   \item[\texttt{validate} exits non-zero despite a correct-looking file]
-    Check that \texttt{[document]} contains \texttt{format\_version = "1.0"}
-    and that every \texttt{[[repos]]} block includes
+    Check that \texttt{project} is present and every \texttt{repos} entry uses
+    \texttt{provider:owner/repository}. For advanced \texttt{[[repos]]}
+    blocks without a \texttt{repository} shorthand, include
     \texttt{project\_owner\_name} and \texttt{project\_name}.
   \item[\texttt{Clone destination already exists and is not empty}]
     Re-run \texttt{clone} with \texttt{--target-dir} to force a clean location,

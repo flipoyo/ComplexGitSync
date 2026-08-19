@@ -563,9 +563,7 @@ class GitTree:
             ("repos", repos_list),
         ])
         
-        cgs_document = CgsDocument(cgs_data)
-        cgs_document.validate()
-        return cgs_document
+        return CgsDocument.from_dict(cgs_data)
 
 
 # ---------------------------------------------------------------------------

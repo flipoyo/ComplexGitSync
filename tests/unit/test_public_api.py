@@ -50,7 +50,7 @@ def test_package_root_exports_refactor_guard_symbols():
 
 
 def test_public_config_validation_error_covers_invalid_cgs_documents():
-    with pytest.raises(ConfigValidationError, match="default_branch"):
+    with pytest.raises(ConfigValidationError, match="repos"):
         CgsDocument.from_dict(
             {
                 "document": {"format_version": "1.0"},

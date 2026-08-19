@@ -59,7 +59,7 @@ from .operations import (
 )
 
 # --- Cross-cutting document definitions ---
-from .cgs import CgsDocument
+from .cgs import CgsDocument, normalize_cgs, parse_cgs, parse_repository_identifier
 from .config_document import ConfigDocument
 
 # --- Tier 2/3 — Actions + Client (orchestre.py) ---
@@ -127,6 +127,9 @@ __all__ = [
     # cgs.py / config_document.py
     "CgsDocument",
     "ConfigDocument",
+    "normalize_cgs",
+    "parse_cgs",
+    "parse_repository_identifier",
     # orchestre.py
     "ComplexGitSyncClient",
     "GocDocument",

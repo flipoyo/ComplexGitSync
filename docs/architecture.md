@@ -61,6 +61,13 @@ the reference tree from prompts, validates the generated `.cgs` document, and
 writes it to disk; `orchestre.py` owns that orchestration rather than the
 authoring-format definition.
 
+The boundary is an explicit `PARSE -> NORMALIZE -> VALIDATE` pipeline. Parsing
+uses Python's TOML parser and produces authoring data; normalization expands
+repository shorthand and deterministic defaults into a canonical
+`CgsDocument`; validation checks only that canonical representation. The
+authoring syntax and internal representation are therefore deliberately
+different.
+
 `WorkingGitTree` is the runtime form. It inherits reference-tree metadata from
 `GitTree` and stores `WorkingRepo` nodes keyed by runtime `repo_id`. Operations
 such as checkout, branch, add, commit, push, freeze, and launch_release act on
@@ -82,7 +89,10 @@ cleaned before child submodules are force-updated.
 
 ```mermaid
 flowchart LR
-    CGS[.cgs authoring spec] --> REF[GitTree reference tree]
+    CGS[.cgs authoring TOML] --> PARSE[Parse]
+    PARSE --> NORMALIZE[Normalize]
+    NORMALIZE --> VALIDATE[Validate canonical CgsDocument]
+    VALIDATE --> REF[GitTree reference tree]
     REF --> WORK[WorkingGitTree runtime tree]
     WORK --> OPS[Operations]
     WORK --> GTS[.gts runtime snapshot]

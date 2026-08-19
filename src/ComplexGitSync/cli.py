@@ -36,7 +36,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "launch-release": "Check out a frozen release tag from a READY tree.",
     # Expert commands
     "purge": "Remove generated clone state for a .cgs workspace.",
-    "validate": "Validate a .cgs or .gts topology and print the lifecycle state.",
+    "validate": "Parse, normalize, and validate a .cgs or validate a .gts topology.",
     "clone": "Clone a nested project tree from .cgs.",
     "pull": "Resynchronise an existing project tree from .cgs or .gts.",
     "pull-force": "Destructively resynchronise an existing project tree from .cgs or .gts.",
@@ -48,7 +48,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "tag": "Create and push a tag across a READY tree.",
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
     # Configuration commands
-    "configure": "Create a .cgs project specification file interactively.",
+    "configure": "Create a concise .cgs project specification interactively.",
     # Memory commands
     "remember": "Bind a .cgs artefact to its external SSH-Git Memory endpoint.",
     "memorize": "Persist a finalized local Memory State to the configured SSH-Git remote.",

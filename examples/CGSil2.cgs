@@ -1,46 +1,9 @@
-# CGSil2 — Integration Suite nested config (GitLab child)
-# ──────────────────────────────────────────────────────────────────────────────
-# This file lives inside the CGSil2 repository (GitLab).
-# ComplexGitSync discovers it when expanding the CGSil1 project
-# (because CGSil2 is declared with nested_config = "auto" in CGSil1.cgs).
-#
-# DUPLICATION scenario:
-#   CGSil2 also references CGSih1 (at ../CGSih1 relative to CGSil2).
-#   CGSih1 is already registered at the root level by CGSil1.cgs.
-#   ComplexGitSync's discovery guard detects the same absolute path and
-#   prevents adding a second entry for CGSih1 under CGSil2.
-#
-# nested_config = "disabled" on the CGSih1 reference here avoids redundant
-# re-scanning of CGSih1.cgs from CGSil2's perspective; the canonical entry
-# from CGSil1 already covers CGSih1 and its subtree.
+# Nested CGSil2 topology. The CGSih1 cross-reference needs overrides because
+# it points to a sibling and must not trigger another nested scan.
 
-[document]
-format_version = "1.0"
+project = "CGSil2"
 
-[project]
-name           = "CGSil2"
-default_branch = "main"
-
-# ── Repositories ─────────────────────────────────────────────────────────────
-
-[[repos]]
-gitprovider        = "gitlab"
-project_owner_name = "flipoyo"
-project_name       = "CGSil2"
-default_branch     = "main"
-fallback_branch    = "main"
-access_protocol    = "ssh"
-relative_path      = "."
-# Self-reference — identifies this repository as the root of this nested tree.
-
-[[repos]]
-gitprovider        = "github"
-project_owner_name = "flipoyo"
-project_name       = "CGSih1"
-default_branch     = "main"
-fallback_branch    = "main"
-access_protocol    = "ssh"
-relative_path      = "../CGSih1"
-# Cross-provider reference: same physical repo as root:CGSih1.
-# The discovery guard deduplicates; fix_circularities() cleans up residuals.
-nested_config      = "disabled"
+repos = [
+    "gitlab:CGS_test/CGSil2",
+    { repository = "github:flipoyo/CGSih1", relative_path = "../CGSih1", nested_config = "disabled" },
+]

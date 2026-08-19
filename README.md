@@ -25,10 +25,30 @@ The CLI uses these local documents:
 - `.gts`: "GitTreeState" --> generated workspace snapshot
 - `.lgr`: "LocalGitRegister" --> generated local register and append-only sync ledger
 
-Internally, `src/ComplexGitSync/cgs.py` owns `.cgs` parsing, validation, and
-serialization through `CgsDocument`. The format-neutral `ConfigDocument` base
-lives in `config_document.py`, while `orchestre.py` consumes validated `.cgs`
-documents and owns orchestration/runtime behavior.
+Internally, `src/ComplexGitSync/cgs.py` owns `.cgs` parsing, normalization,
+validation, and serialization through `CgsDocument`. The format-neutral
+`ConfigDocument` base lives in `config_document.py`, while `orchestre.py`
+consumes validated `.cgs` documents and owns orchestration/runtime behavior.
+
+The normal `.cgs` authoring form is intentionally small:
+
+```toml
+project = "CGSil1"
+
+repos = [
+    "gitlab:CGS_test/CGSil1",
+    "gitlab:CGS_test/CGSil2",
+    "github:flipoyo/CGSih1",
+]
+```
+
+Repository identifiers use `provider:owner/repository`. ComplexGitSync runs
+`PARSE -> NORMALIZE -> VALIDATE`, supplying `main` as the default and fallback
+branch, `ssh` access, `auto` nested-config discovery, and the repository name
+as its relative path. A single repository whose name matches `project` is
+mounted at `.`. Advanced inline tables are needed only for overrides, for
+example `{ repository = "github:owner/docs", relative_path = "documentation",
+nested_config = "disabled" }`.
 
 Authentication is delegated to Git. If `git clone`, `git fetch`, `git push`,
 and your credential helper work locally, `cgitsync` uses the same setup.

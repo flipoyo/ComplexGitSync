@@ -50,42 +50,19 @@ lifecycle and sync state there, and persist generated `.gts` snapshots under
 Place the following file at the root of the CGSil1 repository:
 
 ```toml
-[document]
-format_version = "1.0"
+project = "CGSil1"
 
-[project]
-name           = "CGSil1"
-default_branch = "main"
-
-[[repos]]
-gitprovider        = "gitlab"
-project_owner_name = "CGS_test"
-project_name       = "CGSil1"
-default_branch     = "main"
-fallback_branch    = "main"
-access_protocol    = "ssh"
-relative_path      = "."
-
-[[repos]]
-gitprovider        = "gitlab"
-project_owner_name = "CGS_test"
-project_name       = "CGSil2"
-default_branch     = "main"
-fallback_branch    = "main"
-access_protocol    = "ssh"
-relative_path      = "CGSil2"
-nested_config      = "auto"
-
-[[repos]]
-gitprovider        = "github"
-project_owner_name = "CGS_test"
-project_name       = "CGSih1"
-default_branch     = "main"
-fallback_branch    = "main"
-access_protocol    = "ssh"
-relative_path      = "CGSih1"
-nested_config      = "auto"
+repos = [
+    "gitlab:CGS_test/CGSil1",
+    "gitlab:CGS_test/CGSil2",
+    "github:flipoyo/CGSih1",
+]
 ```
+
+The parser normalizes this authoring form before validation. It supplies
+`main`, `ssh`, and `auto`, uses repository names as child paths, and infers
+`CGSil1` as the root at `.` because its repository name uniquely matches the
+project name.
 
 For a new project, the interactive equivalent is:
 

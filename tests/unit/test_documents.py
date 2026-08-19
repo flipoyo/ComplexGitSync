@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.cgs import CgsDocument
+from ComplexGitSync.cgs import CgsDocument, normalize_cgs, parse_cgs
 from ComplexGitSync.config_document import ConfigDocument
 from ComplexGitSync.orchestre import GocDocument, GtsDocument
 from ComplexGitSync.errors import ConfigValidationError
@@ -25,6 +25,15 @@ MINIMAL_CGS: dict = {
     "project": {"name": "TestProject", "default_branch": "main"},
     "repos": [
         {"project_owner_name": "owner", "project_name": "repo-a"},
+    ],
+}
+
+MINIMAL_AUTHORING_CGS: dict = {
+    "project": "CGSil1",
+    "repos": [
+        "gitlab:CGS_test/CGSil1",
+        "gitlab:CGS_test/CGSil2",
+        "github:flipoyo/CGSih1",
     ],
 }
 
@@ -171,6 +180,99 @@ class TestCgsDocumentValid:
         assert isinstance(doc, CgsDocument)
         assert doc.DOCUMENT_KIND == "cgs"
 
+    def test_minimal_authoring_form_normalizes_to_canonical_document(self):
+        doc = CgsDocument.from_dict(MINIMAL_AUTHORING_CGS)
+
+        assert doc.project_name == "CGSil1"
+        assert doc.default_branch == "main"
+        assert doc.read("document.format_version") == "1.0"
+        assert [repo["project_name"] for repo in doc.repos] == [
+            "CGSil1",
+            "CGSil2",
+            "CGSih1",
+        ]
+
+    def test_normalization_supplies_deterministic_repo_defaults(self):
+        [root, child, _] = CgsDocument.from_dict(MINIMAL_AUTHORING_CGS).repos
+
+        assert root["relative_path"] == "."
+        assert child["relative_path"] == "CGSil2"
+        for repo in (root, child):
+            assert repo["default_branch"] == "main"
+            assert repo["fallback_branch"] == "main"
+            assert repo["access_protocol"] == "ssh"
+            assert repo["nested_config"] == "auto"
+
+    def test_root_path_is_not_inferred_when_project_match_is_ambiguous(self):
+        doc = CgsDocument.from_dict(
+            {
+                "project": "demo",
+                "repos": [
+                    {"repository": "github:one/demo", "relative_path": "github-demo"},
+                    {"repository": "gitlab:two/demo", "relative_path": "gitlab-demo"},
+                ],
+            }
+        )
+
+        assert [repo["relative_path"] for repo in doc.repos] == [
+            "github-demo",
+            "gitlab-demo",
+        ]
+
+    def test_normalization_does_not_mutate_authoring_data(self):
+        authoring = copy.deepcopy(MINIMAL_AUTHORING_CGS)
+        expected = copy.deepcopy(authoring)
+
+        normalize_cgs(authoring)
+
+        assert authoring == expected
+
+    def test_toml_pipeline_uses_stdlib_parser_then_normalizes(self, tmp_path: Path):
+        source = tmp_path / "minimal.cgs"
+        source.write_text(
+            'project = "demo"\nrepos = ["github:owner/demo", "github:owner/child"]\n',
+            encoding="utf-8",
+        )
+
+        assert parse_cgs(source)["project"] == "demo"
+        document = CgsDocument.from_toml(source)
+        assert document.repos[0]["relative_path"] == "."
+        assert document.repos[1]["relative_path"] == "child"
+
+    def test_advanced_repository_overrides_are_preserved(self):
+        doc = CgsDocument.from_dict(
+            {
+                "project": {"name": "demo", "default_branch": "develop"},
+                "repos": [
+                    "github:owner/demo",
+                    {
+                        "repository": "gitlab:group/subgroup/child",
+                        "default_branch": "release",
+                        "fallback_branch": "stable",
+                        "access_protocol": "https",
+                        "nested_config": "disabled",
+                        "relative_path": "vendor/child",
+                    },
+                ],
+            }
+        )
+
+        child = doc.repos[1]
+        assert child["project_owner_name"] == "group/subgroup"
+        assert child["project_name"] == "child"
+        assert child["default_branch"] == "release"
+        assert child["fallback_branch"] == "stable"
+        assert child["access_protocol"] == "https"
+        assert child["nested_config"] == "disabled"
+        assert child["relative_path"] == "vendor/child"
+
+    def test_toml_serialization_prefers_minimal_authoring_syntax(self, tmp_path: Path):
+        output = tmp_path / "minimal.cgs"
+        CgsDocument.from_dict(MINIMAL_AUTHORING_CGS).to_toml(output)
+
+        authoring = parse_cgs(output)
+        assert authoring == MINIMAL_AUTHORING_CGS
+
     def test_project_name_property(self):
         doc = CgsDocument.from_dict(MINIMAL_CGS)
         assert doc.project_name == "TestProject"
@@ -199,8 +301,7 @@ class TestCgsDocumentValid:
 
     def test_gitprovider_defaults_to_github(self):
         doc = CgsDocument.from_dict(MINIMAL_CGS)
-        # No explicit gitprovider in MINIMAL_CGS repos; validation passes.
-        assert doc.repos[0].get("gitprovider") is None  # not stored explicitly
+        assert doc.repos[0]["gitprovider"] == "github"
 
     def test_explicit_github_provider_accepted(self):
         data = {
@@ -304,13 +405,13 @@ class TestCgsDocumentInvalid:
         with pytest.raises(ConfigValidationError, match=fragment):
             CgsDocument.from_dict(data)
 
-    def test_missing_format_version(self):
+    def test_missing_format_version_is_normalized(self):
         data = {
             "document": {},
             "project": {"name": "P", "default_branch": "main"},
             "repos": [{"project_owner_name": "o", "project_name": "r"}],
         }
-        self._assert_validation_error(data, "format_version")
+        assert CgsDocument.from_dict(data).read("document.format_version") == "1.0"
 
     def test_missing_project_name(self):
         data = {
@@ -320,13 +421,63 @@ class TestCgsDocumentInvalid:
         }
         self._assert_validation_error(data, "name")
 
-    def test_missing_project_default_branch(self):
+    def test_missing_project(self):
+        self._assert_validation_error(
+            {"repos": ["github:owner/repo"]},
+            "project",
+        )
+
+    def test_missing_repos(self):
+        self._assert_validation_error(
+            {"project": "demo"},
+            "repos",
+        )
+
+    def test_empty_repos(self):
+        self._assert_validation_error(
+            {"project": "demo", "repos": []},
+            "at least one repository",
+        )
+
+    @pytest.mark.parametrize(
+        "identifier",
+        [
+            "github-owner/repo",
+            "github:repo",
+            "github:/repo",
+            "github:owner/",
+            "github:owner//repo",
+            "github:owner/repo with spaces",
+        ],
+    )
+    def test_invalid_repository_identifier(self, identifier: str):
+        self._assert_validation_error(
+            {"project": "demo", "repos": [identifier]},
+            "invalid repository identifier",
+        )
+
+    def test_unknown_provider_in_shorthand(self):
+        self._assert_validation_error(
+            {"project": "demo", "repos": ["bitbucket:owner/demo"]},
+            "gitprovider invalid",
+        )
+
+    def test_duplicate_repository_identifier(self):
+        self._assert_validation_error(
+            {
+                "project": "demo",
+                "repos": ["github:owner/demo", "github:owner/demo"],
+            },
+            "duplicate repository identifier",
+        )
+
+    def test_missing_project_default_branch_is_normalized(self):
         data = {
             "document": {"format_version": "1.0"},
             "project": {"name": "P"},
             "repos": [{"project_owner_name": "o", "project_name": "r"}],
         }
-        self._assert_validation_error(data, "default_branch")
+        assert CgsDocument.from_dict(data).default_branch == "main"
 
     def test_missing_repo_project_owner_name(self):
         data = {

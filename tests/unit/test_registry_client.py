@@ -39,6 +39,24 @@ def test_client_load_cgs_builds_reviewable_registry(tmp_path):
     assert registry.get("root:deps/child-repo").absolute_path == (tmp_path / "deps/child-repo").resolve()
 
 
+def test_client_loads_minimal_cgs_into_existing_canonical_registry(tmp_path):
+    config_path = tmp_path / "minimal.cgs"
+    config_path.write_text(
+        'project = "demo"\nrepos = ["github:owner/demo", "gitlab:team/child"]\n',
+        encoding="utf-8",
+    )
+
+    registry = ComplexGitSyncClient().load_cgs(config_path)
+
+    root = registry.get("root")
+    child = registry.get("root:child")
+    assert root.project_owner_name == "owner"
+    assert root.default_branch == "main"
+    assert child.project_owner_name == "team"
+    assert child.relative_path == Path("child")
+    assert child.fallback_branch == "main"
+
+
 def test_client_load_cgs_supports_tag_target_ref(tmp_path):
     config_path = tmp_path / "tagged.cgs"
     config_path.write_text(

@@ -171,6 +171,14 @@ equivalence and raises
 \texttt{incompatibilities between branch (hash) and tag(val) in .cgs} when they
 differ.
 
+The authoring boundary is explicitly
+\texttt{PARSE -> NORMALIZE -> VALIDATE}.  TOML parsing produces authoring data;
+normalization expands \texttt{provider:owner/repository} identifiers and fills
+\texttt{main} branch defaults, \texttt{ssh}, automatic nested discovery, and
+relative paths.  Validation receives only the complete canonical
+\texttt{CgsDocument}.  Authoring syntax is therefore not the internal
+representation.
+
 Before any mutating workflow step (\texttt{commit}, \texttt{push},
 \texttt{tag}, or \texttt{freeze}), the action layer now runs a workspace
 preflight validator. It checks dirty worktrees, detached HEADs, missing
@@ -267,7 +275,7 @@ src/ComplexGitSync/
 
   # --- Document layer (cross-cutting) ---
   config_document.py           ConfigDocument (format-neutral base)
-  cgs.py                       CgsDocument (.cgs parsing and validation)
+  cgs.py                       CgsDocument (.cgs parse/normalize/validate)
   orchestre.py                 GtsDocument, GocDocument
   errors.py                    exception hierarchy
 \end{lstlisting}

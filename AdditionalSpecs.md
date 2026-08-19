@@ -317,6 +317,17 @@ Do **not** split it into plugins or separate packages.
 - Every document class must expose `to_toml`, `to_json`, `to_yaml`,
   `from_toml`, `from_json`, and `from_yaml`.
 
+### `.cgs` authoring contract
+
+The preferred TOML form contains `project = "<name>"` and a `repos` array of
+`provider:owner/repository` identifiers. Loading is explicitly
+`PARSE -> NORMALIZE -> VALIDATE`: normalization produces the complete
+canonical `CgsDocument` used by `GitTree`, supplies `main`, `ssh`, automatic
+nested discovery, and deterministic relative paths, and infers `.` for one
+unambiguous project-name repository. Inline or legacy repository tables remain
+available for explicit overrides. Authoring syntax is not the internal
+representation.
+
 ### `.gts` formal snapshot contract
 
 `.gts` snapshots are canonical workspace checkpoints with deterministic hashing.

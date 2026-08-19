@@ -44,8 +44,22 @@ $ pixi run cgitsync --help
 \section{Create or Check a Project Spec}
 
 A \texttt{.cgs} file is the local authoring spec for the repository tree. It
-declares the project, each repository remote, each relative path, and optional
-nested configuration discovery.
+normally contains only a project name and repository identifiers:
+
+\begin{lstlisting}
+project = "CGSil1"
+repos = [
+  "gitlab:CGS_test/CGSil1",
+  "gitlab:CGS_test/CGSil2",
+  "github:flipoyo/CGSih1",
+]
+\end{lstlisting}
+
+Each identifier uses \texttt{provider:owner/repository}.  ComplexGitSync runs
+\texttt{PARSE -> NORMALIZE -> VALIDATE} and supplies deterministic defaults:
+\texttt{main} branches, \texttt{ssh}, \texttt{nested\_config = auto}, and the
+repository name as its path.  A unique repository matching the project name
+is mounted at \texttt{.}.  Advanced tables are reserved for overrides.
 
 \begin{lstlisting}[language=bash]
 $ pixi run cgitsync validate examples/complexgitsync.cgs

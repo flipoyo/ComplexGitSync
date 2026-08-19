@@ -2450,6 +2450,10 @@ def build_registry_from_cgs_document(
         _validate_repo_shape(repo)
         if _is_root_repo_spec(repo, document.project_name, root_identity_assigned):
             _apply_repo_identity(root_entry, repo, document.default_branch)
+            # The source .cgs for the project root is already loaded.  The
+            # authoring default ``nested_config = auto`` applies to its
+            # descendants and must not make the root pending again.
+            root_entry.discovery_state = DiscoveryState.RESOLVED
             root_identity_assigned = True
             continue
 
@@ -2689,7 +2693,9 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
     pending_entries = [
         entry
         for entry in registry.values()
-        if entry.repo_id != ROOT_REPO_ID and entry.nested_config not in {None, "disabled"}
+        if entry.repo_id != ROOT_REPO_ID
+        and entry.nested_config not in {None, "disabled"}
+        and entry.discovery_state != DiscoveryState.RESOLVED
     ]
 
     # Pre-build a set of all known absolute paths for O(1) circularity detection.
@@ -2718,6 +2724,8 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
             _validate_repo_shape(repo)
             if not root_identity_assigned and repo.get("project_name") == nested_document.project_name:
                 _apply_repo_identity(entry, repo, nested_document.default_branch)
+                # This nested document has just been resolved for ``entry``.
+                entry.discovery_state = DiscoveryState.RESOLVED
                 root_identity_assigned = True
                 continue
 
