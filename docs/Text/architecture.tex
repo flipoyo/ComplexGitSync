@@ -186,6 +186,16 @@ definition produce semantically identical canonical documents.
 \texttt{create-cgs} runs the same offline pipeline and serializes the result
 without entering Git runtime.
 
+The boundary is also responsible for the reverse projection.
+\texttt{CgsDocument.to\_git\_tree()} creates the reference model and
+\texttt{CgsDocument.from\_git\_tree()} converts a reference or working tree
+back to canonical configuration. \texttt{GitTree.to\_cgs()} remains only as a
+convenience delegate; it does not assemble repository tables or format TOML.
+The minimal serializer then removes deterministically reconstructible defaults.
+After the generated TOML is parsed and normalized again, its canonical
+representation must equal the one before serialization. Byte equality is not
+part of this contract.
+
 Repository placement is parent-relative. At the top level the parent path is
 the project root; during nested discovery it is the repository whose
 \texttt{.cgs} is being expanded. Thus \texttt{../sibling} resolves to an
@@ -313,7 +323,7 @@ src/ComplexGitSync/
 
   # --- Document layer (cross-cutting) ---
   config_document.py           ConfigDocument (format-neutral base)
-  cgs_format.py                CgsDocument (.cgs parse/normalize/validate)
+  cgs_format.py                CgsDocument (.cgs parse/normalize/validate/serialize)
   orchestre.py                 GtsDocument, GocDocument
   errors.py                    exception hierarchy
 \end{lstlisting}

@@ -7,6 +7,11 @@ consumed by :mod:`ComplexGitSync.git_tree` and :mod:`ComplexGitSync.orchestre`::
 
     PARSE (tomllib) -> NORMALIZE -> VALIDATE -> CgsDocument
 
+The reverse path projects a :class:`GitTree` into a canonical document before
+this module removes reconstructible defaults and writes concise TOML::
+
+    GitTree -> CgsDocument -> MINIMIZE -> SERIALIZE (tomli_w)
+
 Every stage in this module is deterministic and offline. Remote existence,
 reference resolution, and other Git checks belong to the explicit runtime layer.
 """
@@ -17,16 +22,21 @@ import copy
 import re
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import tomli_w
 
 from .config_document import ConfigDocument
 from .errors import ConfigValidationError
 from .git_repo import (
+    AccessProtocol,
     GitProvider,
+    GitRepo,
     validate_git_provider,
 )
+
+if TYPE_CHECKING:
+    from .git_tree import GitTree
 
 DEFAULT_FORMAT_VERSION = "1.0"
 DEFAULT_BRANCH = "main"
@@ -36,6 +46,7 @@ DEFAULT_NESTED_CONFIG = "auto"
 _PROVIDER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 _REPOSITORY_SEGMENT_RE = re.compile(r"^[^\s/:\\]+$")
 _MISSING = object()
+_TREE_FORMAT_METADATA_KEY = "ComplexGitSync.cgs_format"
 
 
 def parse_cgs(path: Path | str) -> dict[str, Any]:
@@ -217,6 +228,140 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
     return canonical
 
 
+def _enum_text(value: Any, default: str) -> str:
+    """Return an enum-like value as its canonical string."""
+    if value is None:
+        return default
+    return str(getattr(value, "value", value))
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _canonical_repo_identity(repo: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(repo.get("gitprovider") or GitProvider.GITHUB.value),
+        str(repo.get("project_owner_name") or ""),
+        str(repo.get("repo_name") or repo.get("project_name") or ""),
+    )
+
+
+def _tree_repo_identity(repo: Any) -> tuple[str, str, str]:
+    return (
+        _enum_text(getattr(repo, "gitprovider", None), GitProvider.GITHUB.value),
+        str(getattr(repo, "project_owner_name", None) or ""),
+        str(
+            getattr(repo, "repo_name", None)
+            or getattr(repo, "project_name", None)
+            or getattr(repo, "name", None)
+            or ""
+        ),
+    )
+
+
+def _unique_tree_key(tree: "GitTree", repo: GitRepo) -> str:
+    """Choose a deterministic internal key without parsing authoring syntax."""
+    base = repo.project_name
+    if base not in tree.repos:
+        return base
+    provider, owner, repository_name = _tree_repo_identity(repo)
+    candidate = f"{provider}:{owner}/{repository_name}"
+    suffix = 2
+    while candidate in tree.repos:
+        candidate = f"{provider}:{owner}/{repository_name}#{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _root_tree_value(tree: "GitTree", *attributes: str) -> Any:
+    repos = list(tree.repos.values())
+    ordered = sorted(
+        repos,
+        key=lambda repo: (
+            getattr(repo, "repo_id", None) != "root",
+            str(getattr(repo, "relative_path", "")) not in {"", "."},
+        ),
+    )
+    for repo in ordered:
+        for attribute in attributes:
+            value = getattr(repo, attribute, None)
+            if value:
+                return value
+    return None
+
+
+def _repo_data_from_tree(
+    repo: Any,
+    metadata: Any,
+    *,
+    project_default_branch: str,
+    project_default_remote: str,
+) -> dict[str, Any]:
+    """Map one normalized tree entry back to canonical repository data."""
+    data = copy.deepcopy(metadata) if isinstance(metadata, dict) else {}
+    project_name = str(
+        getattr(repo, "project_name", None) or getattr(repo, "name", None) or ""
+    )
+    repository_name = str(getattr(repo, "repo_name", None) or project_name)
+    data.update(
+        {
+            "gitprovider": _enum_text(
+                getattr(repo, "gitprovider", None),
+                GitProvider.GITHUB.value,
+            ),
+            "project_owner_name": str(getattr(repo, "project_owner_name", None) or ""),
+            "project_name": project_name,
+            "repo_name": repository_name,
+            "access_protocol": _enum_text(
+                getattr(repo, "access_protocol", None),
+                DEFAULT_ACCESS_PROTOCOL,
+            ),
+        }
+    )
+
+    for attribute in ("group_name", "gitprovider_url"):
+        value = getattr(repo, attribute, None)
+        if value is None:
+            data.pop(attribute, None)
+        else:
+            data[attribute] = str(value)
+
+    repo_default_branch = getattr(repo, "default_branch", None) or data.get(
+        "default_branch"
+    )
+    repo_default_branch = str(repo_default_branch or project_default_branch)
+    data["default_branch"] = repo_default_branch
+    data["fallback_branch"] = str(
+        getattr(repo, "fallback_branch", None)
+        or data.get("fallback_branch")
+        or repo_default_branch
+    )
+
+    relative_path = getattr(repo, "relative_path", None)
+    if relative_path is not None:
+        data["relative_path"] = str(relative_path)
+    nested_config = getattr(repo, "nested_config", None)
+    if nested_config is not None:
+        data["nested_config"] = str(nested_config)
+
+    if "branch" not in data and "tag" not in data:
+        target_kind = _enum_text(getattr(repo, "target_ref_kind", None), "")
+        target_name = getattr(repo, "target_ref_name", None)
+        if target_kind == "tag" and target_name:
+            data["tag"] = str(target_name)
+        elif target_kind == "branch" and target_name != repo_default_branch:
+            data["branch"] = str(target_name)
+
+    if "remote_name" not in data:
+        remote_name = getattr(repo, "remote_name", None)
+        if remote_name and str(remote_name) != project_default_remote:
+            data["remote_name"] = str(remote_name)
+    return data
+
+
 class CgsDocument(ConfigDocument):
     """Canonical ``.cgs`` project topology produced from authoring TOML.
 
@@ -266,6 +411,128 @@ class CgsDocument(ConfigDocument):
     def from_toml(cls, path: Path | str) -> "CgsDocument":
         """Run the explicit TOML parse, normalization, and validation pipeline."""
         return cls.from_dict(parse_cgs(path))
+
+    @classmethod
+    def from_git_tree(cls, tree: "GitTree") -> "CgsDocument":
+        """Project a reference or working Git tree into canonical ``.cgs`` data.
+
+        This method owns the configuration-field mapping.  The tree supplies
+        normalized repository and topology state but never constructs TOML or
+        interprets the textual repository-identifier grammar.
+        """
+        project_name = tree.project_name or _root_tree_value(tree, "project_name", "name")
+        if not project_name:
+            raise ValueError("GitTree.project_name is required to generate .cgs")
+
+        default_branch = tree.default_branch or _root_tree_value(
+            tree,
+            "default_branch",
+            "target_ref_name",
+        )
+        if not default_branch:
+            raise ValueError("GitTree.default_branch is required to generate .cgs")
+
+        preserved = copy.deepcopy(
+            tree.format_metadata.get(_TREE_FORMAT_METADATA_KEY, {})
+        )
+        document_data = preserved.get("document", {})
+        if not isinstance(document_data, dict):
+            document_data = {}
+        document_data.setdefault("format_version", DEFAULT_FORMAT_VERSION)
+
+        project_data = preserved.get("project", {})
+        if not isinstance(project_data, dict):
+            project_data = {}
+        project_data.update(
+            {
+                "name": str(project_name),
+                "default_branch": str(default_branch),
+            }
+        )
+
+        canonical: dict[str, Any] = {
+            "document": document_data,
+            "project": project_data,
+            "repos": [],
+        }
+        top_level = preserved.get("top_level", {})
+        if isinstance(top_level, dict):
+            canonical.update(top_level)
+
+        for tree_key, repo in tree.repos.items():
+            metadata = tree._repo_metadata.get(tree_key)
+            if metadata is None:
+                metadata = tree._repo_metadata.get(str(repo.project_name), {})
+            canonical["repos"].append(
+                _repo_data_from_tree(
+                    repo,
+                    metadata,
+                    project_default_branch=str(default_branch),
+                    project_default_remote=str(project_data.get("default_remote_name", "origin")),
+                )
+            )
+
+        return cls.from_dict(canonical)
+
+    def to_git_tree(self) -> "GitTree":
+        """Build a reference :class:`GitTree` from this canonical document."""
+        from .git_tree import GitTree
+
+        tree = GitTree(
+            project_name=self.project_name,
+            default_branch=self.default_branch,
+        )
+        for repo_data in self.repos:
+            repo = GitRepo(
+                project_owner_name=str(repo_data["project_owner_name"]),
+                project_name=str(repo_data["project_name"]),
+                repo_name=str(repo_data.get("repo_name") or repo_data["project_name"]),
+                gitprovider=GitProvider(str(repo_data.get("gitprovider", "github"))),
+                group_name=_optional_text(repo_data.get("group_name")),
+                gitprovider_url=_optional_text(repo_data.get("gitprovider_url")),
+                access_protocol=AccessProtocol(
+                    str(repo_data.get("access_protocol", DEFAULT_ACCESS_PROTOCOL))
+                ),
+            )
+            tree_key = _unique_tree_key(tree, repo)
+            tree.repos[tree_key] = repo
+            tree._repo_metadata[tree_key] = copy.deepcopy(repo_data)
+
+        self.attach_serialization_context(tree)
+        return tree
+
+    def attach_serialization_context(self, tree: "GitTree") -> None:
+        """Retain canonical semantics on *tree* for a lossless projection back.
+
+        The retained state is opaque to :mod:`git_tree`; only this format
+        adapter assigns or interprets it.  This preserves document/project
+        extensions and exceptional repository configuration across the model
+        boundary without moving authoring grammar into the tree.
+        """
+        data = self.to_dict()
+        tree.format_metadata[_TREE_FORMAT_METADATA_KEY] = {
+            "document": copy.deepcopy(data.get("document", {})),
+            "project": copy.deepcopy(data.get("project", {})),
+            "top_level": {
+                key: copy.deepcopy(value)
+                for key, value in data.items()
+                if key not in {"document", "project", "repos"}
+            },
+        }
+
+        unmatched = list(data.get("repos", []))
+        for tree_key, repo in tree.repos.items():
+            identity = _tree_repo_identity(repo)
+            match_index = next(
+                (
+                    index
+                    for index, candidate in enumerate(unmatched)
+                    if _canonical_repo_identity(candidate) == identity
+                ),
+                None,
+            )
+            if match_index is not None:
+                tree._repo_metadata[tree_key] = copy.deepcopy(unmatched.pop(match_index))
 
     def validate(self) -> None:  # noqa: C901
         """Validate static document properties without Git or network access."""

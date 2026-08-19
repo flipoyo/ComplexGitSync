@@ -167,52 +167,6 @@ class GitRepo:
     def resolved_group_name(self) -> str:
         return self.group_name or self.project_name
 
-    def to_cgs(self, include_defaults: bool = True) -> dict[str, Any]:
-        """Convert this GitRepo to a .cgs repository entry dictionary.
-        
-        Parameters
-        ----------
-        include_defaults : bool
-            If True (default), includes all fields with their values.
-            If False, only includes fields that differ from defaults.
-        """
-        repo_dict: dict[str, Any] = {
-            "project_owner_name": self.project_owner_name,
-            "project_name": self.project_name,
-        }
-        
-        if include_defaults:
-            # Always include these fields for explicit .cgs files
-            repo_dict["gitprovider"] = self.gitprovider.value
-            repo_dict["access_protocol"] = self.access_protocol.value
-            
-            # Include optional fields if they are set
-            if self.repo_name is not None:
-                repo_dict["repo_name"] = self.repo_name
-            if self.group_name is not None:
-                repo_dict["group_name"] = self.group_name
-            if self.gitprovider_url is not None:
-                repo_dict["gitprovider_url"] = self.gitprovider_url
-        else:
-            # Only include fields that differ from defaults
-            if self.repo_name is not None:
-                repo_dict["repo_name"] = self.repo_name
-            
-            if self.gitprovider != GitProvider.GITHUB:
-                repo_dict["gitprovider"] = self.gitprovider.value
-            
-            if self.group_name is not None:
-                repo_dict["group_name"] = self.group_name
-            
-            if self.gitprovider_url is not None:
-                repo_dict["gitprovider_url"] = self.gitprovider_url
-            
-            if self.access_protocol != AccessProtocol.SSH:
-                repo_dict["access_protocol"] = self.access_protocol.value
-        
-        return repo_dict
-
-
 # ---------------------------------------------------------------------------
 # RepoAddress — URL derivation from GitRepo
 # ---------------------------------------------------------------------------

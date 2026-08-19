@@ -2500,6 +2500,7 @@ def build_registry_from_cgs_document(
 
     normalize_node_types(registry)
     registry.recompute_tree_state()
+    document.attach_serialization_context(registry)
     return registry
 
 

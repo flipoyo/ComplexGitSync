@@ -20,7 +20,6 @@ classDiagram
         gitprovider
         access_protocol
         commit_sha
-        to_cgs()
     }
 
     class WorkingRepo {
@@ -39,7 +38,7 @@ classDiagram
         project_name
         default_branch
         from_prompt()
-        to_cgs()
+        to_cgs() delegates
     }
 
     class WorkingGitTree {
@@ -67,6 +66,14 @@ repository shorthand and deterministic defaults into a canonical
 `CgsDocument`; validation checks only that canonical representation. The
 authoring syntax and internal representation are therefore deliberately
 different.
+
+The boundary is bidirectional. `CgsDocument.to_git_tree()` projects canonical
+configuration into the reference model; `CgsDocument.from_git_tree()` projects
+a reference or working tree back into canonical configuration; and
+`to_authoring_dict()` / `to_toml()` emit concise TOML. `GitTree.to_cgs()` is
+only a delegate to that format-owned conversion. Re-parsing and normalizing the
+result must reproduce the original canonical semantics; byte-for-byte TOML
+equality is intentionally not required.
 
 File and CLI authoring converge at this boundary. The CLI collects `--project`
 and repeatable `--repo` values, then calls
@@ -139,6 +146,9 @@ flowchart LR
     PARSE --> NORMALIZE[Normalize]
     NORMALIZE --> VALIDATE[Validate canonical CgsDocument]
     VALIDATE --> REF[GitTree reference tree]
+    REF --> PROJECT[Project through cgs_format.py]
+    PROJECT --> SERIALIZE[Serialize minimal .cgs TOML]
+    SERIALIZE --> CGS
     REF --> WORK[WorkingGitTree runtime tree]
     WORK --> OPS[Operations]
     WORK --> GTS[.gts runtime snapshot]
@@ -147,9 +157,11 @@ flowchart LR
 
 ## Cleanup Boundary
 
-Phase 5 keeps the runtime registry surface focused. `WorkingGitTree` and
-`WorkingRepo` are the runtime types; `GitTree` and `GitRepo` remain the
-reference types used to create and validate `.cgs` documents.
+The runtime registry surface remains focused. `WorkingGitTree` and
+`WorkingRepo` are the runtime types; `GitTree` and `GitRepo` carry canonical
+repository state but do not parse repository identifiers or format TOML.
+Opaque adapter metadata preserves exceptional configuration during a semantic
+round trip and is interpreted only by `cgs_format.py`.
 
 ## Tree Lifecycle States
 

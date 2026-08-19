@@ -419,6 +419,24 @@ Two checked-in files document this boundary. Copy
 provided as a developer reference for the canonical \texttt{CgsDocument}
 shape. The two files are regression-tested for semantic equivalence.
 
+Generated specifications use the same concise representation. The
+\texttt{GitTree.to\_cgs()} convenience method delegates model projection to
+\texttt{cgs\_format.py}; neither \texttt{GitTree} nor \texttt{GitRepo} formats
+TOML or implements the authoring grammar. Serialization omits every default
+that normalization can deterministically reconstruct and retains inline tables
+only for exceptional settings such as a non-default branch, path, protocol,
+tag, custom host, or discovery rule.
+
+The supported round trip is semantic:
+
+\begin{center}
+\texttt{.cgs -> CgsDocument -> GitTree -> CgsDocument -> .cgs}
+\end{center}
+
+Parsing and normalizing the generated file must reproduce the initial
+canonical document. Whitespace, comments, and TOML table layout need not be
+byte-for-byte identical.
+
 \subsection{Repository Placement and Nested Discovery}
 
 For every non-root entry, \texttt{relative\_path} is relative to the parent

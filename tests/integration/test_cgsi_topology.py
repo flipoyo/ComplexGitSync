@@ -517,6 +517,26 @@ class TestCgsiExampleFiles:
         assert cgsih1_refs[0].get("relative_path") == ".."
         assert cgsih1_refs[0].get("nested_config") == "disabled"
 
+    def test_every_example_has_a_semantic_tree_and_toml_round_trip(self, tmp_path):
+        from ComplexGitSync.cgs_format import CgsDocument, parse_cgs
+
+        for source in sorted(self.examples.glob("*.cgs")):
+            before = CgsDocument.from_toml(source)
+            output = tmp_path / source.name
+
+            before.to_git_tree().to_cgs().to_toml(output)
+            after = CgsDocument.from_toml(output)
+
+            assert after.to_dict() == before.to_dict(), source.name
+            if source.name != "normalized_template.cgs":
+                authoring = parse_cgs(output)
+                assert "document" not in authoring, source.name
+                assert all(
+                    isinstance(repo, str)
+                    or (isinstance(repo, dict) and "repository" in repo)
+                    for repo in authoring["repos"]
+                ), source.name
+
 
 class TestGitCommandCycleIntegration:
     """READY .gts snapshots support the full git command cycle."""

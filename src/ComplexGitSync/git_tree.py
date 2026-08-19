@@ -243,8 +243,10 @@ class GitTree:
     default_branch: str | None = None
     repo_template: GitRepo | None = None
     
-    # Additional metadata for .cgs generation
-    _repo_metadata: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Opaque metadata retained by format adapters during model round-trips.
+    # GitTree does not interpret authoring syntax or serialize file formats.
+    format_metadata: dict[str, Any] = field(default_factory=dict, repr=False)
+    _repo_metadata: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
 
     def add_repo(self, repo: GitRepo) -> None:
         self.repos[repo.project_name] = repo
@@ -277,6 +279,10 @@ class GitTree:
                     )
                 del self.repos[project_name]
                 self.repos[project_name_override] = repo
+                if project_name in self._repo_metadata:
+                    self._repo_metadata[project_name_override] = self._repo_metadata.pop(
+                        project_name
+                    )
                 repo.project_name = project_name_override
         if group_name is not None:
             repo.group_name = group_name
@@ -508,62 +514,10 @@ class GitTree:
         ), relative_path, nested_config, default_branch, fallback_branch
 
     def to_cgs(self) -> "CgsDocument":
-        """Convert this GitTree to a CgsDocument.
-        
-        Returns
-        -------
-        CgsDocument
-            A .cgs document ready to be written to disk.
-        """
-        from collections import OrderedDict
+        """Delegate conversion to the ``.cgs`` format boundary."""
         from .cgs_format import CgsDocument
-        
-        if self.project_name is None:
-            raise ValueError("GitTree.project_name is required to generate .cgs")
-        
-        if self.default_branch is None:
-            raise ValueError("GitTree.default_branch is required to generate .cgs")
-        
-        # Build repos list with additional metadata (relative_path, nested_config)
-        repos_list = []
-        
-        for repo in self.repos.values():
-            repo_dict = repo.to_cgs()
-            
-            # Add metadata from prompts
-            if repo.project_name in self._repo_metadata:
-                metadata = self._repo_metadata[repo.project_name]
-                if metadata.get('relative_path'):
-                    repo_dict['relative_path'] = metadata['relative_path']
-                if metadata.get('nested_config'):
-                    repo_dict['nested_config'] = metadata['nested_config']
-                # Use per-repo branches if available, otherwise fall back to GitTree defaults
-                if metadata.get('default_branch'):
-                    repo_dict['default_branch'] = metadata['default_branch']
-                else:
-                    repo_dict['default_branch'] = self.default_branch
-                if metadata.get('fallback_branch'):
-                    repo_dict['fallback_branch'] = metadata['fallback_branch']
-                else:
-                    repo_dict['fallback_branch'] = self.default_branch
-            else:
-                # Fallback to GitTree defaults if no metadata
-                repo_dict['default_branch'] = self.default_branch
-                repo_dict['fallback_branch'] = self.default_branch
-            
-            repos_list.append(repo_dict)
-        
-        # Use OrderedDict to ensure TOML sections are written in the correct order
-        cgs_data = OrderedDict([
-            ("document", OrderedDict([("format_version", "1.0")])),
-            ("project", OrderedDict([
-                ("name", self.project_name),
-                ("default_branch", self.default_branch),
-            ])),
-            ("repos", repos_list),
-        ])
-        
-        return CgsDocument.from_dict(cgs_data)
+
+        return CgsDocument.from_git_tree(self)
 
 
 # ---------------------------------------------------------------------------
@@ -666,33 +620,10 @@ class WorkingGitTree(GitTree):
         return self.is_complete()
 
     def to_cgs(self) -> "CgsDocument":
-        """Convert the working tree to a runtime-free ``.cgs`` document."""
-        reference_tree = GitTree(
-            project_name=self.project_name or self._root_project_name(),
-            default_branch=self.default_branch or self._root_default_branch(),
-            repo_template=self.repo_template,
-        )
-        for repo in self.values():
-            project_name = repo.project_name or repo.name
-            reference_tree.add_repo(
-                GitRepo(
-                    project_owner_name=repo.project_owner_name or "",
-                    project_name=project_name,
-                    repo_name=repo.repo_name,
-                    gitprovider=repo.gitprovider,
-                    group_name=repo.group_name,
-                    gitprovider_url=repo.gitprovider_url,
-                    access_protocol=repo.access_protocol,
-                    commit_sha=repo.commit_sha,
-                )
-            )
-            reference_tree._repo_metadata[project_name] = {
-                "relative_path": str(repo.relative_path or "."),
-                "nested_config": repo.nested_config or "",
-                "default_branch": repo.default_branch or "",
-                "fallback_branch": repo.fallback_branch or "",
-            }
-        return reference_tree.to_cgs()
+        """Delegate runtime-free conversion to the ``.cgs`` format boundary."""
+        from .cgs_format import CgsDocument
+
+        return CgsDocument.from_git_tree(self)
 
     def to_gts(
         self,

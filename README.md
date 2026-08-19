@@ -99,6 +99,12 @@ shows the exact canonical document produced from that template after defaults
 and root-path inference are applied. The normalized file is a reference for the
 internal model, not the preferred hand-authored form.
 
+Generated `.cgs` files use the same concise form. `GitTree.to_cgs()` delegates
+the model conversion to `cgs_format.py`, whose serializer omits reconstructible
+defaults and keeps inline tables only for exceptional settings. A generated
+file may differ in whitespace or table layout, but parsing and normalizing it
+produces the same canonical `CgsDocument` as the source.
+
 Authentication is delegated to Git. If `git clone`, `git fetch`, `git push`,
 and your credential helper work locally, `cgitsync` uses the same setup.
 

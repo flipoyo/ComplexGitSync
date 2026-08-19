@@ -20,7 +20,11 @@ from ComplexGitSync.cgs_format import (
     parse_repository_identifier,
 )
 from ComplexGitSync.config_document import ConfigDocument
-from ComplexGitSync.orchestre import GocDocument, GtsDocument
+from ComplexGitSync.orchestre import (
+    GocDocument,
+    GtsDocument,
+    build_registry_from_cgs_document,
+)
 from ComplexGitSync.errors import ConfigValidationError
 
 # ---------------------------------------------------------------------------
@@ -326,6 +330,82 @@ class TestCgsDocumentValid:
         authoring = parse_cgs(output)
         assert authoring == MINIMAL_AUTHORING_CGS
 
+    def test_semantic_round_trip_through_reference_git_tree(self, tmp_path: Path):
+        before = CgsDocument.from_dict(
+            {
+                "document": {"format_version": "1.0", "profile": "portable"},
+                "project": {
+                    "name": "demo",
+                    "default_branch": "develop",
+                    "default_remote_name": "upstream",
+                },
+                "repos": [
+                    "github:owner/demo",
+                    {
+                        "repository": "gitlab:group/subgroup/library",
+                        "branch": "release",
+                        "fallback_branch": "stable",
+                        "access_protocol": "https",
+                        "relative_path": "vendor/library",
+                        "nested_config": "disabled",
+                        "remote_name": "origin",
+                    },
+                    {"repository": "codeberg:GX4G/GX4G", "tag": "v2.0.0"},
+                    {
+                        "repository": "custom:team/tool",
+                        "gitprovider_url": "https://git.example.test",
+                    },
+                ],
+                "runtime": {"interaction": "direct"},
+                "extension": {"enabled": True},
+            }
+        )
+
+        tree = before.to_git_tree()
+        generated = tree.to_cgs()
+        output = tmp_path / "round-trip.cgs"
+        generated.to_toml(output)
+        after = CgsDocument.from_toml(output)
+
+        assert after.to_dict() == before.to_dict()
+        authoring = parse_cgs(output)
+        assert authoring["repos"][0] == "github:owner/demo"
+        assert authoring["repos"][2] == {
+            "repository": "codeberg:GX4G/GX4G",
+            "tag": "v2.0.0",
+        }
+        assert "format_version" not in authoring["document"]
+
+    def test_semantic_round_trip_through_working_git_tree(self, tmp_path: Path):
+        before = CgsDocument.from_dict(
+            {
+                "project": {"name": "demo", "default_branch": "develop"},
+                "repos": [
+                    "github:owner/demo",
+                    {
+                        "repository": "gitlab:group/library",
+                        "branch": "release",
+                        "fallback_branch": "stable",
+                        "access_protocol": "https",
+                        "relative_path": "vendor/library",
+                        "nested_config": "disabled",
+                    },
+                    {"repository": "codeberg:GX4G/GX4G", "tag": "v2.0.0"},
+                ],
+            }
+        )
+        tree = build_registry_from_cgs_document(
+            before,
+            tmp_path / "source.cgs",
+            project_root=tmp_path / "demo",
+        )
+
+        output = tmp_path / "working-round-trip.cgs"
+        tree.to_cgs().to_toml(output)
+        after = CgsDocument.from_toml(output)
+
+        assert after.to_dict() == before.to_dict()
+
     def test_project_name_property(self):
         doc = CgsDocument.from_dict(MINIMAL_CGS)
         assert doc.project_name == "TestProject"
@@ -446,11 +526,13 @@ class TestCgsDocumentValid:
             {"project": "offline-format-check", "repos": [repository]}
         )
         document.validate()
+        tree_document = document.to_git_tree().to_cgs()
 
         output = tmp_path / "offline.cgs"
-        document.to_toml(output)
+        tree_document.to_toml(output)
         reloaded = CgsDocument.from_toml(output)
 
+        assert tree_document.to_dict() == document.to_dict()
         assert reloaded.repos[0]["branch"] == "branch-does-not-need-to-exist"
         assert reloaded.repos[0]["tag"] == "tag-does-not-need-to-exist"
 
