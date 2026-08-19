@@ -1,7 +1,7 @@
 import pytest
 
 from ComplexGitSync.git_repo import AccessProtocol
-from ComplexGitSync.orchestre import CgsDocument
+from ComplexGitSync.cgs import CgsDocument
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 from ComplexGitSync.git_repo import GitProvider
 from ComplexGitSync.git_repo import GitRepo

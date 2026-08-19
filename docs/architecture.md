@@ -52,10 +52,14 @@ classDiagram
 
 ## Documents And Trees
 
-`CgsDocument` is the authoring format. It describes the static repository
-topology and is converted into a reference `GitTree`. The `configure` command
-builds that reference tree from prompts, validates the generated `.cgs`
-document, and writes it to disk.
+`CgsDocument`, defined in `cgs.py`, is the authoring-format boundary. It owns
+`.cgs` parsing, serialization, constants, and validation. Its static
+repository topology is converted into a reference `GitTree`. The shared
+format-neutral `ConfigDocument` base remains in `config_document.py` because
+runtime `.gts` and `.goc` documents use it too. The `configure` command builds
+the reference tree from prompts, validates the generated `.cgs` document, and
+writes it to disk; `orchestre.py` owns that orchestration rather than the
+authoring-format definition.
 
 `WorkingGitTree` is the runtime form. It inherits reference-tree metadata from
 `GitTree` and stores `WorkingRepo` nodes keyed by runtime `repo_id`. Operations

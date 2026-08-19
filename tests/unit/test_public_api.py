@@ -26,7 +26,8 @@ from ComplexGitSync import (
 )
 from ComplexGitSync.git_repo import NodeType, WorkingRepo
 from ComplexGitSync.git_tree import WorkingGitTree
-from ComplexGitSync.orchestre import CgsDocument, GitRunner
+from ComplexGitSync.cgs import CgsDocument
+from ComplexGitSync.orchestre import GitRunner
 
 
 def test_package_root_exports_refactor_guard_symbols():

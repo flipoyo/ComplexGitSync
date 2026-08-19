@@ -266,8 +266,9 @@ src/ComplexGitSync/
                                CommandRunLogger + create_run_logger
 
   # --- Document layer (cross-cutting) ---
-  orchestre.py                 ConfigDocument, CgsDocument,
-                               GtsDocument, GocDocument
+  config_document.py           ConfigDocument (format-neutral base)
+  cgs.py                       CgsDocument (.cgs parsing and validation)
+  orchestre.py                 GtsDocument, GocDocument
   errors.py                    exception hierarchy
 \end{lstlisting}
 
@@ -281,7 +282,10 @@ All persistent documents share the \texttt{ConfigDocument} base class, which
 provides format-agnostic serialisation (\texttt{to\_toml}, \texttt{to\_json},
 \texttt{to\_yaml}) and factory methods (\texttt{from\_toml}, \texttt{from\_json},
 \texttt{from\_yaml}).  Subclasses add document-specific validation and
-convenience properties.
+convenience properties.  The base is defined in
+\texttt{config\_document.py}; \texttt{cgs.py} owns the complete
+\texttt{.cgs}-specific boundary, while \texttt{orchestre.py} consumes validated
+documents and retains runtime/orchestration responsibilities.
 
 \begin{itemize}
   \item \textbf{CgsDocument} (\texttt{.cgs}) — the authoring spec; describes

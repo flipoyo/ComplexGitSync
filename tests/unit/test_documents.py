@@ -1,4 +1,4 @@
-"""Tests for documents.py – ConfigDocument, CgsDocument, GtsDocument, GocDocument."""
+"""Tests for the shared, .cgs, and runtime document implementations."""
 
 from __future__ import annotations
 
@@ -10,12 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.orchestre import (
-    CgsDocument,
-    ConfigDocument,
-    GocDocument,
-    GtsDocument,
-)
+from ComplexGitSync.cgs import CgsDocument
+from ComplexGitSync.config_document import ConfigDocument
+from ComplexGitSync.orchestre import GocDocument, GtsDocument
 from ComplexGitSync.errors import ConfigValidationError
 from ComplexGitSync.git_repo import GitRepo
 
@@ -166,6 +163,9 @@ class TestConfigDocumentBase:
 
 
 class TestCgsDocumentValid:
+    def test_cgs_document_is_owned_by_cgs_module(self):
+        assert CgsDocument.__module__ == "ComplexGitSync.cgs"
+
     def test_from_dict_minimal(self):
         doc = CgsDocument.from_dict(MINIMAL_CGS)
         assert isinstance(doc, CgsDocument)

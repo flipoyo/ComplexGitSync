@@ -58,11 +58,13 @@ from .operations import (
     validate_branch_topology,
 )
 
+# --- Cross-cutting document definitions ---
+from .cgs import CgsDocument
+from .config_document import ConfigDocument
+
 # --- Tier 2/3 — Actions + Client (orchestre.py) ---
 from .orchestre import (
-    CgsDocument,
     ComplexGitSyncClient,
-    ConfigDocument,
     GitRunner,
     GocDocument,
     GtsDocument,
@@ -122,10 +124,11 @@ __all__ = [
     "restart_tree_force",
     "tag_tree",
     "validate_branch_topology",
-    # orchestre.py
+    # cgs.py / config_document.py
     "CgsDocument",
-    "ComplexGitSyncClient",
     "ConfigDocument",
+    # orchestre.py
+    "ComplexGitSyncClient",
     "GocDocument",
     "GtsDocument",
     "GitRunner",

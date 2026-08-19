@@ -516,7 +516,7 @@ class GitTree:
             A .cgs document ready to be written to disk.
         """
         from collections import OrderedDict
-        from .orchestre import CgsDocument
+        from .cgs import CgsDocument
         
         if self.project_name is None:
             raise ValueError("GitTree.project_name is required to generate .cgs")
@@ -1388,7 +1388,7 @@ def iter_tree_leaf_first(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
 
 
 # ---------------------------------------------------------------------------
-# Private helpers (also used by orchestre.py builders)
+# Private helpers (also used by cgs.py validation and orchestre.py builders)
 # ---------------------------------------------------------------------------
 
 

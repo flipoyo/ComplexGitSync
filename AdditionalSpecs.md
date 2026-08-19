@@ -276,8 +276,8 @@ state_store.py           RuntimeStateStore
 ### Document layer (cross-cutting, read by Tier 2)
 
 ```
-config_document.py       ConfigDocument  (base)
-cgs_document.py          CgsDocument     (.cgs)
+config_document.py       ConfigDocument  (shared format-neutral base)
+cgs.py                   CgsDocument     (.cgs)
 gts_document.py          GtsDocument     (.gts)
 goc_document.py          GocDocument     (.goc)
 documents.py             re-export shim

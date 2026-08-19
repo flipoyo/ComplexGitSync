@@ -1,6 +1,6 @@
 # Audit — Module Regrouping Analysis
 
-**Status:** Temporary planning document — will be removed once regrouping is complete.
+**Status:** Regrouping record, updated for the `.cgs` Phase 1 extraction.
 
 This file flags every `.py` file under `src/ComplexGitSync/` against:
 - **Anchor** — which of the three core files owns this file's code (`GitRepo` / `GitTree` / `Orchestre`)
@@ -15,7 +15,8 @@ This file flags every `.py` file under `src/ComplexGitSync/` against:
 |---|---|---|
 | `git_repo.py` | Tier 1 — Core State | Per-repo identity, state enums, legacy repo entry |
 | `git_tree.py` | Tier 1/2 — Core State + Actions | Tree structure, registry, lifecycle, render, tree utilities |
-| `orchestre.py` | Tier 2/3 — Actions + Client | Documents, infrastructure, registry builders, discovery, Client |
+| `orchestre.py` | Tier 2/3 — Actions + Client | Runtime documents, infrastructure, registry builders, discovery, Client |
+| `cgs.py` | Cross-cutting document boundary | `.cgs` parsing, serialization, constants, and validation |
 
 ---
 
@@ -26,12 +27,12 @@ This file flags every `.py` file under `src/ComplexGitSync/` against:
 | `__init__.py` | — | — | stay (update imports) | Package public API surface |
 | `__main__.py` | Orchestre | client | stay | Entry point for `python -m ComplexGitSync` |
 | `access_protocol.py` | **GitRepo** | state | **absorb → git_repo.py** | SSH/HTTPS enum tightly coupled to GitRepo identity |
-| `cgs_document.py` | **Orchestre** | action | **absorb → orchestre.py** | `.cgs` authoring spec; consumed by registry builders and discovery |
+| `cgs.py` | cross-cutting | document | stay | `.cgs` authoring spec boundary; consumed by registry builders and discovery |
 | `cli.py` | Orchestre | client | stay | CLI entry point; only thin delegation to ComplexGitSyncClient |
 | `client.py` | **Orchestre** | client | **absorb → orchestre.py** | ComplexGitSyncClient is the Client-API layer owned by Orchestre |
-| `config_document.py` | **Orchestre** | action | **absorb → orchestre.py** | Base document class; all document I/O lives in Orchestre tier |
+| `config_document.py` | cross-cutting | document | stay | Format-neutral base shared by `.cgs`, `.gts`, and `.goc` |
 | `dependency_tree_registry.py` | **GitTree** | state | **absorb → git_tree.py** | legacy runtime registry is GitTree's authoritative runtime graph |
-| `discovery.py` | Orchestre | action | **absorb → orchestre.py** | Uses CgsDocument (Orchestre tier) to resolve nested configs |
+| `discovery.py` | Orchestre | action | **absorb → orchestre.py** | Uses `CgsDocument` from `cgs.py` to resolve nested configs |
 | `discovery_state.py` | **GitRepo** | state | **absorb → git_repo.py** | Per-repo discovery status enum |
 | `documents.py` | Orchestre | action | stay (update shim → orchestre.py) | Backward-compat re-export shim |
 | `errors.py` | cross-cutting | — | stay | Exception hierarchy used by all tiers; no upward deps |
@@ -70,7 +71,12 @@ git_repo.py        (no package imports)
    ↓
 git_tree.py        (imports from git_repo.py, errors.py)
    ↓
-orchestre.py       (imports from git_tree.py, git_repo.py, errors.py)
+config_document.py (no package imports)
+   ↓
+cgs.py             (imports from config_document.py, git_tree.py, git_repo.py)
+   ↓
+orchestre.py       (imports from cgs.py, config_document.py, git_tree.py,
+                    git_repo.py, errors.py)
    ↓
 cli.py             (imports from orchestre.py via __init__.py / client shim)
 ```
