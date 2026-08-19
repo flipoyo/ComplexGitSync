@@ -28,7 +28,7 @@ from .git_repo import (
     RepoNode,
     SyncState,
     WorkingRepo,
-    parse_repository_identifier,
+    validate_git_provider,
 )
 
 # --- Tier 1 — Core State + Tree Utilities (git_tree.py) ---
@@ -62,7 +62,13 @@ from .operations import (
 )
 
 # --- Cross-cutting document definitions ---
-from .cgs import CgsDocument, normalize_cgs, parse_cgs
+from .cgs_format import (
+    CgsDocument,
+    normalize_cgs,
+    parse_cgs,
+    parse_repo_id,
+    parse_repository_identifier,
+)
 from .config_document import ConfigDocument
 
 # --- Tier 2/3 — Actions + Client (orchestre.py) ---
@@ -105,7 +111,7 @@ __all__ = [
     "RepoNode",
     "SyncState",
     "WorkingRepo",
-    "parse_repository_identifier",
+    "validate_git_provider",
     # git_tree.py
     "GitTree",
     "ProjectTreeState",
@@ -130,11 +136,13 @@ __all__ = [
     "restart_tree_force",
     "tag_tree",
     "validate_branch_topology",
-    # cgs.py / config_document.py
+    # cgs_format.py / config_document.py
     "CgsDocument",
     "ConfigDocument",
     "normalize_cgs",
     "parse_cgs",
+    "parse_repo_id",
+    "parse_repository_identifier",
     # orchestre.py
     "ComplexGitSyncClient",
     "GocDocument",

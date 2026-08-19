@@ -1,6 +1,6 @@
 """Format-neutral configuration document I/O for ComplexGitSync.
 
-The shared :class:`ConfigDocument` base lives outside both ``cgs.py`` and
+The shared :class:`ConfigDocument` base lives outside both ``cgs_format.py`` and
 ``orchestre.py`` because it is also used by runtime formats such as ``.gts``
 and ``.goc``.
 """

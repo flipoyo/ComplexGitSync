@@ -38,7 +38,6 @@ from typing import TYPE_CHECKING, Any, Iterator, TypeVar
 from .errors import ConfigValidationError, NestedConfigDiscoveryError
 from .git_repo import (
     AccessProtocol,
-    CANONICAL_GIT_PROVIDERS,
     DiscoveryState,
     GitProvider,
     GitRepo,
@@ -47,6 +46,7 @@ from .git_repo import (
     RepoLifecycleState,
     SyncState,
     WorkingRepo,
+    validate_git_provider,
 )
 
 _E = TypeVar("_E", bound=Enum)
@@ -327,12 +327,11 @@ class GitTree:
             raise ValueError("Default owner/group name is required")
         
         # Git provider for template
-        gitprovider_str = input(
-            "Default git provider [github/gitlab/codeberg/custom]: "
-        ).strip().lower()
-        if gitprovider_str in CANONICAL_GIT_PROVIDERS:
-            gitprovider = GitProvider(gitprovider_str)
-        else:
+        provider_choices = "/".join(provider.value for provider in GitProvider)
+        gitprovider_str = input(f"Default git provider [{provider_choices}]: ").strip().lower()
+        try:
+            gitprovider = GitProvider(gitprovider_str or GitProvider.GITHUB.value)
+        except ValueError:
             if gitprovider_str:
                 print("Warning: Invalid git provider, using github")
             gitprovider = GitProvider.GITHUB
@@ -340,8 +339,7 @@ class GitTree:
         gitprovider_url = None
         if gitprovider == GitProvider.CUSTOM:
             gitprovider_url = input("Default custom provider URL: ").strip()
-            if not gitprovider_url:
-                raise ValueError("Default custom provider URL is required for custom providers")
+        validate_git_provider(gitprovider, gitprovider_url=gitprovider_url)
         
         # Access protocol for template
         access_protocol_str = (
@@ -437,11 +435,13 @@ class GitTree:
         # Git provider
         gitprovider_prompt = f"  Git provider [{repo_template.gitprovider.value}]: "
         gitprovider_str = input(gitprovider_prompt).strip().lower()
-        if not gitprovider_str:
-            gitprovider = repo_template.gitprovider
-        elif gitprovider_str in CANONICAL_GIT_PROVIDERS:
-            gitprovider = GitProvider(gitprovider_str)
-        else:
+        try:
+            gitprovider = (
+                GitProvider(gitprovider_str)
+                if gitprovider_str
+                else repo_template.gitprovider
+            )
+        except ValueError:
             print("  Warning: Invalid git provider, using template default")
             gitprovider = repo_template.gitprovider
 
@@ -457,10 +457,10 @@ class GitTree:
                 else "  Custom provider URL: "
             )
             gitprovider_url = input(url_prompt).strip() or gitprovider_url
-            if not gitprovider_url:
-                raise ValueError(
-                    f"Custom provider URL is required for repository {repo_index}"
-                )
+        try:
+            validate_git_provider(gitprovider, gitprovider_url=gitprovider_url)
+        except ValueError as exc:
+            raise ValueError(f"Repository {repo_index}: {exc}") from exc
         
         # Access protocol
         access_protocol_prompt = f"  Access protocol [{repo_template.access_protocol.value}]: "
@@ -516,7 +516,7 @@ class GitTree:
             A .cgs document ready to be written to disk.
         """
         from collections import OrderedDict
-        from .cgs import CgsDocument
+        from .cgs_format import CgsDocument
         
         if self.project_name is None:
             raise ValueError("GitTree.project_name is required to generate .cgs")
@@ -1386,7 +1386,7 @@ def iter_tree_leaf_first(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
 
 
 # ---------------------------------------------------------------------------
-# Private helpers (also used by cgs.py validation and orchestre.py builders)
+# Private helpers (also used by cgs_format.py validation and orchestre.py builders)
 # ---------------------------------------------------------------------------
 
 

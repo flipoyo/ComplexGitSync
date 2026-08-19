@@ -1,8 +1,9 @@
-"""Parse, normalize, validate, and serialize ``.cgs`` authoring files.
+"""Own the parse, normalize, validate, and serialize boundary for ``.cgs`` files.
 
-TOML remains the lexical format. Human-authored shorthand is normalized into
-the complete canonical dictionaries consumed by :mod:`ComplexGitSync.git_tree`
-and :mod:`ComplexGitSync.orchestre`::
+TOML remains the lexical format. This module exclusively owns the textual
+``provider:owner/repository`` grammar through :func:`parse_repo_id`.
+Human-authored shorthand is normalized into the complete canonical dictionaries
+consumed by :mod:`ComplexGitSync.git_tree` and :mod:`ComplexGitSync.orchestre`::
 
     PARSE (tomllib) -> NORMALIZE -> VALIDATE -> CgsDocument
 """
@@ -10,6 +11,7 @@ and :mod:`ComplexGitSync.orchestre`::
 from __future__ import annotations
 
 import copy
+import re
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -20,10 +22,9 @@ from .config_document import ConfigDocument
 from .errors import ConfigValidationError
 from .git_repo import (
     AccessProtocol,
-    CANONICAL_GIT_PROVIDERS,
     GitProvider,
     GitRepo,
-    parse_repository_identifier,
+    validate_git_provider,
 )
 from .git_tree import _as_optional_str, _parse_enum
 
@@ -32,6 +33,8 @@ DEFAULT_BRANCH = "main"
 DEFAULT_ACCESS_PROTOCOL = "ssh"
 DEFAULT_NESTED_CONFIG = "auto"
 
+_PROVIDER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+_REPOSITORY_SEGMENT_RE = re.compile(r"^[^\s/:\\]+$")
 _MISSING = object()
 
 
@@ -39,6 +42,48 @@ def parse_cgs(path: Path | str) -> dict[str, Any]:
     """Parse TOML from *path* without applying semantic interpretation."""
     with open(path, "rb") as stream:
         return tomllib.load(stream)
+
+
+def parse_repo_id(identifier: str) -> dict[str, str]:
+    """Parse authoring shorthand into a normalized repository identity.
+
+    The only accepted textual grammar is ``provider:owner/repository``.
+    Nested owner namespaces are supported: the last slash-delimited segment is
+    the repository name and all preceding segments form
+    ``project_owner_name``. Canonical provider membership is validated later
+    with the normalized document so shorthand and advanced tables share one
+    provider-validation path.
+    """
+    if not isinstance(identifier, str) or identifier != identifier.strip():
+        raise ValueError("repository identifier must be a trimmed string")
+    if identifier.count(":") != 1:
+        raise ValueError("expected 'provider:owner/repository'")
+
+    provider, address = identifier.split(":", 1)
+    segments = address.split("/")
+    if (
+        not _PROVIDER_RE.fullmatch(provider)
+        or len(segments) < 2
+        or any(
+            not segment
+            or segment in {".", ".."}
+            or not _REPOSITORY_SEGMENT_RE.fullmatch(segment)
+            for segment in segments
+        )
+    ):
+        raise ValueError("expected 'provider:owner/repository'")
+
+    repository_name = segments[-1]
+    return {
+        "gitprovider": provider,
+        "project_owner_name": "/".join(segments[:-1]),
+        "project_name": repository_name,
+        "repo_name": repository_name,
+    }
+
+
+# Backward-compatible public name. This is an alias, not a second parser.
+parse_repository_identifier = parse_repo_id
 
 
 def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
@@ -121,7 +166,7 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
             continue
 
         try:
-            parsed = parse_repository_identifier(identifier)
+            parsed = parse_repo_id(identifier)
         except ValueError as exc:
             errors.append(f"repos[{index}] invalid repository identifier {identifier!r}: {exc}")
             continue
@@ -184,7 +229,6 @@ class CgsDocument(ConfigDocument):
     _REQUIRED_DOCUMENT_KEYS = ("format_version",)
     _REQUIRED_PROJECT_KEYS = ("name", "default_branch")
     _REQUIRED_REPO_KEYS = ("project_owner_name", "project_name")
-    _VALID_GITPROVIDERS = CANONICAL_GIT_PROVIDERS
     _VALID_ACCESS_PROTOCOLS = frozenset(("ssh", "https"))
     _VALID_NESTED_CONFIG_SPECIAL = frozenset(("auto", "disabled"))
 
@@ -238,19 +282,16 @@ class CgsDocument(ConfigDocument):
                         errors.append(f"repos[{idx}] missing required key: '{key}'")
 
                 gitprovider = repo.get("gitprovider", GitProvider.GITHUB.value)
-                provider_is_valid = gitprovider in self._VALID_GITPROVIDERS
-                if not provider_is_valid:
-                    errors.append(
-                        f"repos[{idx}].gitprovider invalid: {gitprovider!r} "
-                        f"(choose from: {sorted(self._VALID_GITPROVIDERS)})"
-                    )
                 custom_url = repo.get("gitprovider_url")
-                if gitprovider == GitProvider.CUSTOM.value and (
-                    not isinstance(custom_url, str) or not custom_url.strip()
-                ):
-                    errors.append(
-                        f"repos[{idx}].gitprovider_url is required for custom provider"
+                try:
+                    validate_git_provider(
+                        gitprovider,
+                        gitprovider_url=custom_url,
                     )
+                    provider_is_valid = True
+                except ValueError as exc:
+                    errors.append(f"repos[{idx}].{exc}")
+                    provider_is_valid = False
                 access_protocol = repo.get("access_protocol", DEFAULT_ACCESS_PROTOCOL)
                 protocol_is_valid = access_protocol in self._VALID_ACCESS_PROTOCOLS
                 if not protocol_is_valid:
@@ -441,5 +482,6 @@ __all__ = [
     "DEFAULT_NESTED_CONFIG",
     "normalize_cgs",
     "parse_cgs",
+    "parse_repo_id",
     "parse_repository_identifier",
 ]

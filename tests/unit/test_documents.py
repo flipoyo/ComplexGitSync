@@ -10,10 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.cgs import (
+from ComplexGitSync.cgs_format import (
     CgsDocument,
     normalize_cgs,
     parse_cgs,
+    parse_repo_id,
     parse_repository_identifier,
 )
 from ComplexGitSync.config_document import ConfigDocument
@@ -178,10 +179,11 @@ class TestConfigDocumentBase:
 
 class TestCgsDocumentValid:
     def test_cgs_document_is_owned_by_cgs_module(self):
-        assert CgsDocument.__module__ == "ComplexGitSync.cgs"
+        assert CgsDocument.__module__ == "ComplexGitSync.cgs_format"
 
-    def test_repository_identifier_parser_is_centralized_in_git_repo(self):
-        assert parse_repository_identifier.__module__ == "ComplexGitSync.git_repo"
+    def test_repository_identifier_parser_is_owned_by_cgs(self):
+        assert parse_repo_id.__module__ == "ComplexGitSync.cgs_format"
+        assert parse_repository_identifier is parse_repo_id
 
     @pytest.mark.parametrize(
         ("identifier", "provider", "owner", "name"),
@@ -195,7 +197,7 @@ class TestCgsDocumentValid:
     def test_all_provider_identifiers_parse_deterministically(
         self, identifier, provider, owner, name
     ):
-        parsed = parse_repository_identifier(identifier)
+        parsed = parse_repo_id(identifier)
 
         assert parsed == {
             "gitprovider": provider,
@@ -1038,7 +1040,7 @@ class TestGocDocumentInvalid:
             "project": {"source": "p.cgs", "repo_name": "repo", "gitprovider": "gitlab"},
             "actions": [{"command": "validate"}],
         }
-        self._assert_validation_error(data, "group_name or \\[project\\]\\.project_owner_name")
+        self._assert_validation_error(data, "group_name or project_owner_name")
 
     def test_project_identity_missing_codeberg_owner(self):
         data = {

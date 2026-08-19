@@ -3,7 +3,7 @@
 This module is the **Orchestre anchor** — the authoritative source for runtime
 document handling, infrastructure services, registry builders, nested config
 discovery, and the public client API. The ``.cgs`` authoring format is defined
-in :mod:`ComplexGitSync.cgs`.
+in :mod:`ComplexGitSync.cgs_format`.
 
 Classes defined here (Tier 2 — Actions):
     GtsDocument             .gts state snapshot parser/validator
@@ -44,7 +44,7 @@ from urllib.parse import urlsplit
 import tomli_w
 
 from . import __version__ as CGS_VERSION
-from .cgs import CgsDocument
+from .cgs_format import CgsDocument
 from .config_document import ConfigDocument
 from .errors import (
     ConfigValidationError,
@@ -53,7 +53,6 @@ from .errors import (
 )
 from .git_repo import (
     AccessProtocol,
-    CANONICAL_GIT_PROVIDERS,
     DiscoveryState,
     GitProvider,
     GitRepo,
@@ -64,6 +63,7 @@ from .git_repo import (
     RepoAddress,
     WorkingRepo,
     SyncState,
+    validate_git_provider,
 )
 from .git_tree import (
     ROOT_REPO_ID,
@@ -853,7 +853,6 @@ class GocDocument(ConfigDocument):
     _VALID_INTERACTIONS = frozenset(("interactive", "direct"))
     _VALID_PROFILES = frozenset(("verbose", "whisper_sync"))
     _VALID_TRANSPORTS = frozenset(("ssh", "https"))
-    _VALID_PROJECT_GITPROVIDERS = CANONICAL_GIT_PROVIDERS
     _DEFAULT_PROJECT_GITPROVIDER = "github"
 
     SESSION_DEFAULTS: dict[str, str] = {
@@ -885,49 +884,35 @@ class GocDocument(ConfigDocument):
             )
 
         provider = str(project.get("gitprovider", self._DEFAULT_PROJECT_GITPROVIDER))
-        if project.get("gitprovider") is not None and provider not in self._VALID_PROJECT_GITPROVIDERS:
-            errors.append(
-                f"[project].gitprovider invalid: {provider!r} "
-                f"(choose from: {sorted(self._VALID_PROJECT_GITPROVIDERS)})"
+        try:
+            validated_provider = validate_git_provider(
+                provider,
+                gitprovider_url=project.get("gitprovider_url"),
             )
+        except ValueError as exc:
+            errors.append(f"[project].{exc}")
+            validated_provider = None
 
         identity_fields_present = any(
             project.get(key)
             for key in ("repo_name", "project_owner_name", "group_name", "gitprovider_url")
         )
-        if identity_fields_present:
+        if identity_fields_present and validated_provider is not None:
             if not project.get("repo_name"):
                 errors.append("[project] missing required key for address composition: 'repo_name'")
-            if provider == "github" and not project.get("project_owner_name"):
-                errors.append(
-                    "[project].project_owner_name is required when [project].gitprovider is 'github'"
+            else:
+                address = RepoAddress(
+                    gitprovider=validated_provider,
+                    project_name=str(project["repo_name"]),
+                    repo_name=str(project["repo_name"]),
+                    project_owner_name=_as_optional_str(project.get("project_owner_name")),
+                    group_name=_as_optional_str(project.get("group_name")),
+                    gitprovider_url=_as_optional_str(project.get("gitprovider_url")),
                 )
-            if provider == "codeberg" and not project.get("project_owner_name"):
-                errors.append(
-                    "[project].project_owner_name is required when "
-                    "[project].gitprovider is 'codeberg'"
-                )
-            if provider == "gitlab" and not (project.get("group_name") or project.get("project_owner_name")):
-                errors.append(
-                    "[project].group_name or [project].project_owner_name is required when "
-                    "[project].gitprovider is 'gitlab'"
-                )
-            if provider == "custom" and not (
-                project.get("group_name") or project.get("project_owner_name")
-            ):
-                errors.append(
-                    "[project].group_name or [project].project_owner_name is required when "
-                    "[project].gitprovider is 'custom'"
-                )
-        custom_url = project.get("gitprovider_url")
-        if provider == "custom" and (
-            not isinstance(custom_url, str) or not custom_url.strip()
-        ):
-            errors.append(
-                "[project].gitprovider_url is required when "
-                "[project].gitprovider is 'custom'"
-            )
-
+                try:
+                    address.validate()
+                except ValueError as exc:
+                    errors.append(f"[project].{exc}")
         interaction = self.read("session.interaction", self.SESSION_DEFAULTS["interaction"])
         if interaction not in self._VALID_INTERACTIONS:
             errors.append(

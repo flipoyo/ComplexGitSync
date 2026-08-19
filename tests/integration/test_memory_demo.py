@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.cgs import CgsDocument
+from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.git_tree import TreeLifecycleState
 from ComplexGitSync.orchestre import (

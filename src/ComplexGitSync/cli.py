@@ -9,7 +9,7 @@ from pathlib import Path
 from collections.abc import Sequence
 
 from . import __version__
-from .cgs import CgsDocument
+from .cgs_format import CgsDocument
 from .git_repo import RefKind
 from .git_tree import ProjectTreeState, iter_tree_leaf_first
 from .orchestre import (

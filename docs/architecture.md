@@ -52,7 +52,7 @@ classDiagram
 
 ## Documents And Trees
 
-`CgsDocument`, defined in `cgs.py`, is the authoring-format boundary. It owns
+`CgsDocument`, defined in `cgs_format.py`, is the authoring-format boundary. It owns
 `.cgs` parsing, serialization, constants, and validation. Its static
 repository topology is converted into a reference `GitTree`. The shared
 format-neutral `ConfigDocument` base remains in `config_document.py` because
@@ -88,13 +88,18 @@ that reference; and a relative `.cgs` filename selects an exact config inside
 the repository. Explicit config paths are not allowed to escape the repository
 root.
 
-Provider identity is centralized in `git_repo.py`. `GitProvider`,
-`CANONICAL_GIT_PROVIDERS`, `KNOWN_PROVIDER_HOSTS`,
-`parse_repository_identifier()`, and `RepoAddress` are the single definitions
-used by `.cgs`, interactive configuration, and runtime remote composition. The
-known-host map is `github -> github.com`, `gitlab -> gitlab.com`, and
-`codeberg -> codeberg.org`. `custom` is deliberately absent: it requires an
-explicit `gitprovider_url` and never falls back to a guessed host.
+The textual `provider:owner/repository` grammar belongs exclusively to
+`cgs_format.py`. Its `parse_repo_id()` function owns syntax validation and splitting;
+normalization calls that same function, and future CLI repository arguments
+must reuse it rather than introduce another parser.
+
+Provider behavior belongs to `git_repo.py`. `GitProvider`,
+`CANONICAL_GIT_PROVIDERS`, `KNOWN_PROVIDER_HOSTS`, and `RepoAddress` are the
+single definitions used for canonical provider membership and runtime remote
+composition. The known-host map is `github -> github.com`,
+`gitlab -> gitlab.com`, and `codeberg -> codeberg.org`. `custom` is deliberately
+absent: it requires an explicit `gitprovider_url` and never falls back to a
+guessed host.
 
 `WorkingGitTree` is the runtime form. It inherits reference-tree metadata from
 `GitTree` and stores `WorkingRepo` nodes keyed by runtime `repo_id`. Operations

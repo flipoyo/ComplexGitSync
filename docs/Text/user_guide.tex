@@ -362,6 +362,11 @@ No host is inferred for \texttt{custom}. The configured access protocol then
 selects \texttt{git@host:owner/repository.git} or
 \texttt{https://host/owner/repository.git}.
 
+The textual grammar and its only parser, \texttt{parse\_repo\_id()}, live in
+\texttt{cgs\_format.py}. The provider model in \texttt{git\_repo.py} receives the
+already-separated provider, owner, and repository fields and composes remotes;
+it does not parse authoring shorthand.
+
 Normalization supplies \texttt{default\_branch = main}, makes
 \texttt{fallback\_branch} equal to that default, selects
 \texttt{access\_protocol = ssh}, enables \texttt{nested\_config = auto}, and

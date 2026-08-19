@@ -25,10 +25,12 @@ The CLI uses these local documents:
 - `.gts`: "GitTreeState" --> generated workspace snapshot
 - `.lgr`: "LocalGitRegister" --> generated local register and append-only sync ledger
 
-Internally, `src/ComplexGitSync/cgs.py` owns `.cgs` parsing, normalization,
+Internally, `src/ComplexGitSync/cgs_format.py` owns `.cgs` parsing, normalization,
 validation, and serialization through `CgsDocument`. The format-neutral
 `ConfigDocument` base lives in `config_document.py`, while `orchestre.py`
 consumes validated `.cgs` documents and owns orchestration/runtime behavior.
+The shared textual repository-ID parser is `cgs_format.parse_repo_id()`;
+`git_repo.py` receives separated identities and owns provider/remote behavior.
 
 The normal `.cgs` authoring form is intentionally small:
 

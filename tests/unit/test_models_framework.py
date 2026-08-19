@@ -1,13 +1,14 @@
 import pytest
 
 from ComplexGitSync.git_repo import AccessProtocol
-from ComplexGitSync.cgs import CgsDocument
+from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 from ComplexGitSync.git_repo import GitProvider
 from ComplexGitSync.git_repo import GitRepo
 from ComplexGitSync.git_tree import GitTree
 from ComplexGitSync.git_repo import RepoAddress
 from ComplexGitSync.git_repo import KNOWN_PROVIDER_HOSTS
+from ComplexGitSync.git_repo import validate_git_provider
 
 
 def test_gitrepo_defaults_match_plan_contract():
@@ -267,6 +268,24 @@ def test_known_provider_hosts_are_complete_and_exclude_custom():
         GitProvider.CODEBERG: "codeberg.org",
     }
     assert GitProvider.CUSTOM not in KNOWN_PROVIDER_HOSTS
+
+
+@pytest.mark.parametrize(
+    ("provider", "provider_url"),
+    [
+        ("github", None),
+        ("gitlab", None),
+        ("codeberg", None),
+        ("custom", "https://git.example.com"),
+    ],
+)
+def test_canonical_provider_validation_accepts_all_four(provider, provider_url):
+    assert validate_git_provider(provider, gitprovider_url=provider_url).value == provider
+
+
+def test_canonical_provider_validation_rejects_unknown_provider():
+    with pytest.raises(ValueError, match="gitprovider invalid"):
+        validate_git_provider("bitbucket")
 
 
 def test_repo_address_to_url_dispatches_on_protocol():

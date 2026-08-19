@@ -277,7 +277,7 @@ state_store.py           RuntimeStateStore
 
 ```
 config_document.py       ConfigDocument  (shared format-neutral base)
-cgs.py                   CgsDocument     (.cgs)
+cgs_format.py            CgsDocument     (.cgs)
 gts_document.py          GtsDocument     (.gts)
 goc_document.py          GocDocument     (.goc)
 documents.py             re-export shim

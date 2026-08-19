@@ -2,6 +2,8 @@
 
 This module is the **GitRepo anchor** — the authoritative source for all
 per-repository identity types, state enumerations, and structural definitions.
+It receives already-separated identity fields; textual repository-ID authoring
+syntax is parsed only by :func:`ComplexGitSync.cgs_format.parse_repo_id`.
 
 Classes / enums defined here (Tier 1 — Core State):
     AccessProtocol      SSH vs HTTPS transport selection
@@ -20,11 +22,11 @@ Classes / enums defined here (Tier 1 — Core State):
 from __future__ import annotations
 
 import hashlib
-import re
 import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 
@@ -59,44 +61,31 @@ KNOWN_PROVIDER_HOSTS: dict[GitProvider, str] = {
 CANONICAL_GIT_PROVIDERS = frozenset(provider.value for provider in GitProvider)
 """Provider names accepted by configuration documents and interactive input."""
 
-_PROVIDER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
-_REPOSITORY_SEGMENT_RE = re.compile(r"^[^\s/:\\]+$")
 
+def validate_git_provider(
+    provider: Any,
+    *,
+    gitprovider_url: Any = None,
+) -> GitProvider:
+    """Validate an already-separated provider value and its host requirement.
 
-def parse_repository_identifier(identifier: str) -> dict[str, str]:
-    """Parse ``provider:owner/repository`` into canonical identity fields.
-
-    Nested namespaces are accepted; the last path segment is the repository
-    name and all preceding segments form ``project_owner_name``. Provider
-    validation is deliberately separate so callers can report syntax and
-    unsupported-provider errors independently.
+    This function does not parse repository authoring syntax. It validates the
+    canonical provider field shared by document and CLI workflows and enforces
+    the rule that ``custom`` has no inferred host.
     """
-    if not isinstance(identifier, str) or identifier != identifier.strip():
-        raise ValueError("repository identifier must be a trimmed string")
-    if identifier.count(":") != 1:
-        raise ValueError("expected 'provider:owner/repository'")
+    try:
+        parsed = provider if isinstance(provider, GitProvider) else GitProvider(provider)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"gitprovider invalid: {provider!r} "
+            f"(choose from: {sorted(CANONICAL_GIT_PROVIDERS)})"
+        ) from exc
 
-    provider, address = identifier.split(":", 1)
-    segments = address.split("/")
-    if (
-        not _PROVIDER_RE.fullmatch(provider)
-        or len(segments) < 2
-        or any(
-            not segment
-            or segment in {".", ".."}
-            or not _REPOSITORY_SEGMENT_RE.fullmatch(segment)
-            for segment in segments
-        )
+    if parsed == GitProvider.CUSTOM and (
+        not isinstance(gitprovider_url, str) or not gitprovider_url.strip()
     ):
-        raise ValueError("expected 'provider:owner/repository'")
-
-    repository_name = segments[-1]
-    return {
-        "gitprovider": provider,
-        "project_owner_name": "/".join(segments[:-1]),
-        "project_name": repository_name,
-        "repo_name": repository_name,
-    }
+        raise ValueError("gitprovider_url is required for custom provider")
+    return parsed
 
 
 class NodeType(StrEnum):
@@ -215,8 +204,6 @@ class GitRepo:
             If True (default), includes all fields with their values.
             If False, only includes fields that differ from defaults.
         """
-        from typing import Any
-        
         repo_dict: dict[str, Any] = {
             "project_owner_name": self.project_owner_name,
             "project_name": self.project_name,
@@ -344,6 +331,12 @@ class RepoAddress:
         if not name:
             raise ValueError("repo_name or project_name is required for repository addresses.")
         return name
+
+    def validate(self) -> None:
+        """Validate canonical provider, host, namespace, and repository fields."""
+        self._resolve_host()
+        self._resolve_namespace()
+        self._resolve_repo_name()
 
     def to_ssh(self) -> str:
         """Return the SSH remote URL (``git@host:namespace/repo_name.git``)."""
