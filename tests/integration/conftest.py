@@ -37,122 +37,42 @@ import pytest
 
 def _cgsi1_cgs() -> str:
     return """\
-[document]
-format_version = "1.0"
-
-[project]
-name           = "CGSil1"
-default_branch = "main"
-
-[[repos]]
-gitprovider        = "gitlab"
-project_owner_name = "flipoyo"
-project_name       = "CGSil1"
-default_branch     = "main"
-fallback_branch    = "main"
-relative_path      = "."
-
-[[repos]]
-gitprovider        = "gitlab"
-project_owner_name = "flipoyo"
-project_name       = "CGSil2"
-default_branch     = "main"
-fallback_branch    = "main"
-relative_path      = "CGSil2"
-nested_config      = "auto"
-
-[[repos]]
-gitprovider        = "github"
-project_owner_name = "flipoyo"
-project_name       = "CGSih1"
-default_branch     = "main"
-fallback_branch    = "main"
-relative_path      = "CGSih1"
-nested_config      = "auto"
+project = "CGSil1"
+repos = [
+    "gitlab:CGS_test/CGSil1",
+    "gitlab:CGS_test/CGSil2",
+    "github:flipoyo/CGSih1",
+]
 """
 
 
 def _cgsi2_cgs() -> str:
     return """\
-[document]
-format_version = "1.0"
-
-[project]
-name           = "CGSil2"
-default_branch = "main"
-
-[[repos]]
-gitprovider        = "gitlab"
-project_owner_name = "flipoyo"
-project_name       = "CGSil2"
-default_branch     = "main"
-fallback_branch    = "main"
-relative_path      = "."
-
-[[repos]]
-gitprovider        = "github"
-project_owner_name = "flipoyo"
-project_name       = "CGSih1"
-default_branch     = "main"
-fallback_branch    = "main"
-relative_path      = "../CGSih1"
-nested_config      = "disabled"
+project = "CGSil2"
+repos = [
+    "gitlab:CGS_test/CGSil2",
+    { repository = "github:flipoyo/CGSih1", relative_path = "../CGSih1", nested_config = "disabled" },
+]
 """
 
 
 def _cgsih1_cgs() -> str:
     return """\
-[document]
-format_version = "1.0"
-
-[project]
-name           = "CGSih1"
-default_branch = "main"
-
-[[repos]]
-gitprovider        = "github"
-project_owner_name = "flipoyo"
-project_name       = "CGSih1"
-default_branch     = "main"
-fallback_branch    = "main"
-relative_path      = "."
-
-[[repos]]
-gitprovider        = "github"
-project_owner_name = "flipoyo"
-project_name       = "CGSih2"
-default_branch     = "main"
-fallback_branch    = "main"
-relative_path      = "CGSih2"
-nested_config      = "auto"
+project = "CGSih1"
+repos = [
+    "github:flipoyo/CGSih1",
+    "github:flipoyo/CGSih2",
+]
 """
 
 
 def _cgsih2_cgs() -> str:
     return """\
-[document]
-format_version = "1.0"
-
-[project]
-name           = "CGSih2"
-default_branch = "main"
-
-[[repos]]
-gitprovider        = "github"
-project_owner_name = "flipoyo"
-project_name       = "CGSih2"
-default_branch     = "main"
-fallback_branch    = "main"
-relative_path      = "."
-
-[[repos]]
-gitprovider        = "github"
-project_owner_name = "flipoyo"
-project_name       = "CGSih1"
-default_branch     = "main"
-fallback_branch    = "main"
-relative_path      = ".."
-nested_config      = "disabled"
+project = "CGSih2"
+repos = [
+    "github:flipoyo/CGSih2",
+    { repository = "github:flipoyo/CGSih1", relative_path = "..", nested_config = "disabled" },
+]
 """
 
 

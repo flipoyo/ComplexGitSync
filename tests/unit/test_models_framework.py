@@ -1,12 +1,14 @@
 import pytest
 
 from ComplexGitSync.git_repo import AccessProtocol
-from ComplexGitSync.orchestre import CgsDocument
+from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 from ComplexGitSync.git_repo import GitProvider
 from ComplexGitSync.git_repo import GitRepo
 from ComplexGitSync.git_tree import GitTree
 from ComplexGitSync.git_repo import RepoAddress
+from ComplexGitSync.git_repo import KNOWN_PROVIDER_HOSTS
+from ComplexGitSync.git_repo import validate_git_provider
 
 
 def test_gitrepo_defaults_match_plan_contract():
@@ -49,6 +51,26 @@ def test_client_loaded_state_uses_orchestre_tree_registration():
         GitRepo(project_owner_name="flipoyo", project_name="ComplexGitSync")
     )
     assert client.is_loaded() is True
+
+
+def test_client_configure_is_noninteractive_and_delegates_to_cgs_format(
+    monkeypatch, tmp_path
+):
+    def _forbid_prompt(*_args, **_kwargs):
+        raise AssertionError("Python configuration API attempted interactive input")
+
+    monkeypatch.setattr("builtins.input", _forbid_prompt)
+    output = tmp_path / "GX4G.cgs"
+
+    document = ComplexGitSyncClient().configure(
+        "GX4G",
+        ["codeberg:GX4G/GX4G"],
+        output_path=output,
+    )
+
+    assert isinstance(document, CgsDocument)
+    assert document.to_dict() == CgsDocument.from_toml(output).to_dict()
+    assert document.to_git_tree().repos["GX4G"].gitprovider == GitProvider.CODEBERG
 
 
 def test_gittree_correction_methods_fail_for_unknown_repo():
@@ -115,76 +137,6 @@ def test_gittree_to_cgs_returns_valid_reference_document():
         assert "sync_state" not in repo_data
 
 
-def test_gittree_from_prompt_builds_reference_tree_with_project_defaults(monkeypatch):
-    responses = iter(
-        [
-            "demo",
-            "develop",
-            "owner",
-            "",
-            "",
-            "2",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "child",
-            "",
-            "",
-            "",
-            "",
-            "deps/child",
-            "",
-        ]
-    )
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
-
-    tree = GitTree.from_prompt()
-    document = tree.to_cgs()
-
-    assert type(tree) is GitTree
-    assert tree.project_name == "demo"
-    assert tree.default_branch == "develop"
-    assert list(tree.repos) == ["demo", "child"]
-    repos = document.to_dict()["repos"]
-    assert repos[0]["project_name"] == "demo"
-    assert repos[0]["default_branch"] == "develop"
-    assert repos[1]["project_name"] == "child"
-    assert repos[1]["default_branch"] == "develop"
-    assert repos[1]["nested_config"] == "auto"
-
-
-def test_client_configure_writes_valid_cgs_from_prompt(monkeypatch, tmp_path):
-    responses = iter(
-        [
-            "demo",
-            "main",
-            "owner",
-            "",
-            "",
-            "1",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
-    output_path = tmp_path / "demo.cgs"
-
-    document = ComplexGitSyncClient().configure(output_path=output_path)
-
-    assert output_path.is_file()
-    assert document.project_name == "demo"
-    reloaded = CgsDocument.from_toml(output_path)
-    assert reloaded.project_name == "demo"
-
-
 # ---------------------------------------------------------------------------
 # RepoAddress tests
 # ---------------------------------------------------------------------------
@@ -206,6 +158,56 @@ def test_repo_address_github_https():
         project_owner_name="flipoyo",
     )
     assert addr.to_https() == "https://github.com/flipoyo/ComplexGitSync.git"
+
+
+@pytest.mark.parametrize(
+    ("provider", "owner", "provider_url", "expected_host"),
+    [
+        (GitProvider.GITHUB, "octocat", None, "github.com"),
+        (GitProvider.GITLAB, "gitlab-org", None, "gitlab.com"),
+        (GitProvider.CODEBERG, "GX4G", None, "codeberg.org"),
+        (GitProvider.CUSTOM, "internal", "https://git.example.com", "git.example.com"),
+    ],
+)
+def test_repo_address_all_providers_generate_ssh_and_https(
+    provider, owner, provider_url, expected_host
+):
+    addr = RepoAddress(
+        gitprovider=provider,
+        project_name="project",
+        project_owner_name=owner,
+        gitprovider_url=provider_url,
+    )
+
+    assert addr.to_ssh() == f"git@{expected_host}:{owner}/project.git"
+    assert addr.to_https() == f"https://{expected_host}/{owner}/project.git"
+
+
+def test_known_provider_hosts_are_complete_and_exclude_custom():
+    assert KNOWN_PROVIDER_HOSTS == {
+        GitProvider.GITHUB: "github.com",
+        GitProvider.GITLAB: "gitlab.com",
+        GitProvider.CODEBERG: "codeberg.org",
+    }
+    assert GitProvider.CUSTOM not in KNOWN_PROVIDER_HOSTS
+
+
+@pytest.mark.parametrize(
+    ("provider", "provider_url"),
+    [
+        ("github", None),
+        ("gitlab", None),
+        ("codeberg", None),
+        ("custom", "https://git.example.com"),
+    ],
+)
+def test_canonical_provider_validation_accepts_all_four(provider, provider_url):
+    assert validate_git_provider(provider, gitprovider_url=provider_url).value == provider
+
+
+def test_canonical_provider_validation_rejects_unknown_provider():
+    with pytest.raises(ValueError, match="gitprovider invalid"):
+        validate_git_provider("bitbucket")
 
 
 def test_repo_address_to_url_dispatches_on_protocol():

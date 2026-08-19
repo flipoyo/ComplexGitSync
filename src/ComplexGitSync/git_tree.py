@@ -231,7 +231,6 @@ class GitTree:
     Project metadata:
     - project_name: The unique project name (only stored here)
     - default_branch: Default branch for the project
-    - repo_template: Default GitRepo values used to initialize new repos
     """
 
     repos: dict[str, GitRepo] = field(default_factory=dict)
@@ -240,10 +239,11 @@ class GitTree:
     # Project metadata - unique to GitTree
     project_name: str | None = None
     default_branch: str | None = None
-    repo_template: GitRepo | None = None
     
-    # Additional metadata for .cgs generation
-    _repo_metadata: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Opaque metadata retained by format adapters during model round-trips.
+    # GitTree does not interpret authoring syntax or serialize file formats.
+    format_metadata: dict[str, Any] = field(default_factory=dict, repr=False)
+    _repo_metadata: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
 
     def add_repo(self, repo: GitRepo) -> None:
         self.repos[repo.project_name] = repo
@@ -276,6 +276,10 @@ class GitTree:
                     )
                 del self.repos[project_name]
                 self.repos[project_name_override] = repo
+                if project_name in self._repo_metadata:
+                    self._repo_metadata[project_name_override] = self._repo_metadata.pop(
+                        project_name
+                    )
                 repo.project_name = project_name_override
         if group_name is not None:
             repo.group_name = group_name
@@ -296,276 +300,11 @@ class GitTree:
             entry.target_ref_kind = RefKind.TAG
             entry.target_ref_name = tag_name
 
-    @classmethod
-    def from_prompt(cls) -> "GitTree":
-        """Create a GitTree instance from terminal prompts.
-        
-        Collects project metadata and repository information interactively
-        to build a complete GitTree ready for .cgs generation.
-        
-        Returns
-        -------
-        GitTree
-            A configured GitTree instance with project_name, default_branch,
-            repo_template, and repos populated from user input.
-        """
-        print("=== ComplexGitSync Configuration ===")
-        print("Create a .cgs project specification file")
-        
-        # Project metadata
-        project_name = input("Project name: ").strip()
-        if not project_name:
-            raise ValueError("Project name is required")
-        
-        default_branch = input("Default branch [main]: ").strip() or "main"
-        
-        # Default repo template
-        print("\n--- Default Repo Template (used for all repos, can be overridden per repo) ---")
-        owner_group = input("Default owner/group name: ").strip()
-        if not owner_group:
-            raise ValueError("Default owner/group name is required")
-        
-        # Git provider for template
-        gitprovider_str = input("Default git provider [github/gitlab/custom]: ").strip().lower()
-        if gitprovider_str == "gitlab":
-            gitprovider = GitProvider.GITLAB
-        elif gitprovider_str == "custom":
-            gitprovider = GitProvider.CUSTOM
-        else:
-            if gitprovider_str not in ("", "github"):
-                print("Warning: Invalid git provider, using github")
-            gitprovider = GitProvider.GITHUB
-
-        gitprovider_url = None
-        if gitprovider == GitProvider.CUSTOM:
-            gitprovider_url = input("Default custom provider URL: ").strip()
-            if not gitprovider_url:
-                raise ValueError("Default custom provider URL is required for custom providers")
-        
-        # Access protocol for template
-        access_protocol_str = (
-            input("Default access protocol [ssh/https]: ").strip().lower() or "ssh"
-        )
-        access_protocol = (
-            AccessProtocol.HTTPS
-            if access_protocol_str == "https"
-            else AccessProtocol.SSH
-        )
-        
-        # Create repo template
-        repo_template = GitRepo(
-            project_owner_name=owner_group,
-            project_name="",  # Will be set per repo
-            gitprovider=gitprovider,
-            gitprovider_url=gitprovider_url,
-            access_protocol=access_protocol,
-        )
-        
-        # Number of repositories
-        while True:
-            num_repos_input = input("\nNumber of repositories: ").strip()
-            if not num_repos_input:
-                print("Error: Number of repositories is required")
-                continue
-            try:
-                num_repos = int(num_repos_input)
-                if num_repos < 1:
-                    print("Error: Number of repositories must be at least 1")
-                    continue
-                break
-            except ValueError:
-                print("Error: Please enter a valid number")
-        
-        print(f"\n--- Repository Configuration (total: {num_repos}) ---")
-        
-        git_tree = cls(
-            project_name=project_name,
-            default_branch=default_branch,
-            repo_template=repo_template,
-        )
-        
-        for i in range(num_repos):
-            print(f"\nRepository {i + 1}:")
-            repo, relative_path, nested_config, default_branch, fallback_branch = (
-                git_tree._prompt_repo_config(
-                    i + 1,
-                    num_repos,
-                    repo_template,
-                    project_default_branch=default_branch,
-                )
-            )
-            # Store additional repo metadata for .cgs generation
-            git_tree._repo_metadata[repo.project_name] = {
-                'relative_path': relative_path,
-                'nested_config': nested_config,
-                'default_branch': default_branch,
-                'fallback_branch': fallback_branch,
-            }
-            git_tree.add_repo(repo)
-        
-        return git_tree
-
-    def _prompt_repo_config(
-        self,
-        repo_index: int,
-        total_repos: int,
-        repo_template: GitRepo,
-        *,
-        project_default_branch: str,
-    ) -> tuple[GitRepo, str, str | None, str, str]:
-        """Prompt for a single repository configuration.
-        
-        Returns
-        -------
-        tuple[GitRepo, str, str | None, str, str]
-            GitRepo instance, relative_path, nested_config, default_branch, fallback_branch
-        """
-        # Start with template defaults
-        project_owner_name = (
-            input(f"  Project owner name [{repo_template.project_owner_name}]: ").strip()
-            or repo_template.project_owner_name
-        )
-        if repo_index == 1 and self.project_name:
-            project_name_prompt = f"  Project name [{self.project_name}]: "
-            project_name = input(project_name_prompt).strip() or self.project_name
-        else:
-            project_name = input("  Project name: ").strip()
-        if not project_name:
-            raise ValueError(f"Project name is required for repository {repo_index}")
-        
-        # Git provider
-        gitprovider_prompt = f"  Git provider [{repo_template.gitprovider.value}]: "
-        gitprovider_str = input(gitprovider_prompt).strip().lower()
-        if gitprovider_str in ("", "github", "gitlab", "custom"):
-            if gitprovider_str == "gitlab":
-                gitprovider = GitProvider.GITLAB
-            elif gitprovider_str == "github":
-                gitprovider = GitProvider.GITHUB
-            elif gitprovider_str == "custom":
-                gitprovider = GitProvider.CUSTOM
-            else:  # Empty string - use template default
-                gitprovider = repo_template.gitprovider
-        else:
-            print("  Warning: Invalid git provider, using template default")
-            gitprovider = repo_template.gitprovider
-
-        gitprovider_url = repo_template.gitprovider_url
-        if gitprovider == GitProvider.CUSTOM:
-            url_prompt = (
-                f"  Custom provider URL [{gitprovider_url}]: "
-                if gitprovider_url
-                else "  Custom provider URL: "
-            )
-            gitprovider_url = input(url_prompt).strip() or gitprovider_url
-            if not gitprovider_url:
-                raise ValueError(
-                    f"Custom provider URL is required for repository {repo_index}"
-                )
-        
-        # Access protocol
-        access_protocol_prompt = f"  Access protocol [{repo_template.access_protocol.value}]: "
-        access_protocol_str = input(access_protocol_prompt).strip().lower()
-        if access_protocol_str in ("", "ssh", "https"):
-            if access_protocol_str == "https":
-                access_protocol = AccessProtocol.HTTPS
-            elif access_protocol_str == "ssh":
-                access_protocol = AccessProtocol.SSH
-            else:  # Empty string - use template default
-                access_protocol = repo_template.access_protocol
-        else:
-            print("  Warning: Invalid access protocol, using template default")
-            access_protocol = repo_template.access_protocol
-        
-        # Default branch
-        branch_default = project_default_branch or "main"
-        default_branch = input(f"  Default branch [{branch_default}]: ").strip() or branch_default
-        
-        # Fallback branch
-        fallback_branch = input(f"  Fallback branch [{default_branch}]: ").strip()
-        if not fallback_branch:
-            fallback_branch = default_branch
-        
-        # Relative path
-        if repo_index == 1:
-            relative_path = "."
-        else:
-            relative_path = input(f"  Relative path [{project_name}]: ").strip() or project_name
-        
-        # Nested config (only for non-root repos)
-        nested_config: str | None = None
-        if repo_index > 1:
-            nested_config = input("  Nested config [auto/disabled]: ").strip() or "auto"
-        
-        return GitRepo(
-            project_owner_name=project_owner_name,
-            project_name=project_name,
-            gitprovider=gitprovider,
-            access_protocol=access_protocol,
-            # Optional fields use template defaults or None
-            group_name=repo_template.group_name,
-            gitprovider_url=gitprovider_url,
-            repo_name=repo_template.repo_name,
-        ), relative_path, nested_config, default_branch, fallback_branch
-
     def to_cgs(self) -> "CgsDocument":
-        """Convert this GitTree to a CgsDocument.
-        
-        Returns
-        -------
-        CgsDocument
-            A .cgs document ready to be written to disk.
-        """
-        from collections import OrderedDict
-        from .orchestre import CgsDocument
-        
-        if self.project_name is None:
-            raise ValueError("GitTree.project_name is required to generate .cgs")
-        
-        if self.default_branch is None:
-            raise ValueError("GitTree.default_branch is required to generate .cgs")
-        
-        # Build repos list with additional metadata (relative_path, nested_config)
-        repos_list = []
-        
-        for repo in self.repos.values():
-            repo_dict = repo.to_cgs()
-            
-            # Add metadata from prompts
-            if repo.project_name in self._repo_metadata:
-                metadata = self._repo_metadata[repo.project_name]
-                if metadata.get('relative_path'):
-                    repo_dict['relative_path'] = metadata['relative_path']
-                if metadata.get('nested_config'):
-                    repo_dict['nested_config'] = metadata['nested_config']
-                # Use per-repo branches if available, otherwise fall back to GitTree defaults
-                if metadata.get('default_branch'):
-                    repo_dict['default_branch'] = metadata['default_branch']
-                else:
-                    repo_dict['default_branch'] = self.default_branch
-                if metadata.get('fallback_branch'):
-                    repo_dict['fallback_branch'] = metadata['fallback_branch']
-                else:
-                    repo_dict['fallback_branch'] = self.default_branch
-            else:
-                # Fallback to GitTree defaults if no metadata
-                repo_dict['default_branch'] = self.default_branch
-                repo_dict['fallback_branch'] = self.default_branch
-            
-            repos_list.append(repo_dict)
-        
-        # Use OrderedDict to ensure TOML sections are written in the correct order
-        cgs_data = OrderedDict([
-            ("document", OrderedDict([("format_version", "1.0")])),
-            ("project", OrderedDict([
-                ("name", self.project_name),
-                ("default_branch", self.default_branch),
-            ])),
-            ("repos", repos_list),
-        ])
-        
-        cgs_document = CgsDocument(cgs_data)
-        cgs_document.validate()
-        return cgs_document
+        """Delegate conversion to the ``.cgs`` format boundary."""
+        from .cgs_format import CgsDocument
+
+        return CgsDocument.from_git_tree(self)
 
 
 # ---------------------------------------------------------------------------
@@ -668,33 +407,10 @@ class WorkingGitTree(GitTree):
         return self.is_complete()
 
     def to_cgs(self) -> "CgsDocument":
-        """Convert the working tree to a runtime-free ``.cgs`` document."""
-        reference_tree = GitTree(
-            project_name=self.project_name or self._root_project_name(),
-            default_branch=self.default_branch or self._root_default_branch(),
-            repo_template=self.repo_template,
-        )
-        for repo in self.values():
-            project_name = repo.project_name or repo.name
-            reference_tree.add_repo(
-                GitRepo(
-                    project_owner_name=repo.project_owner_name or "",
-                    project_name=project_name,
-                    repo_name=repo.repo_name,
-                    gitprovider=repo.gitprovider,
-                    group_name=repo.group_name,
-                    gitprovider_url=repo.gitprovider_url,
-                    access_protocol=repo.access_protocol,
-                    commit_sha=repo.commit_sha,
-                )
-            )
-            reference_tree._repo_metadata[project_name] = {
-                "relative_path": str(repo.relative_path or "."),
-                "nested_config": repo.nested_config or "",
-                "default_branch": repo.default_branch or "",
-                "fallback_branch": repo.fallback_branch or "",
-            }
-        return reference_tree.to_cgs()
+        """Delegate runtime-free conversion to the ``.cgs`` format boundary."""
+        from .cgs_format import CgsDocument
+
+        return CgsDocument.from_git_tree(self)
 
     def to_gts(
         self,
@@ -1388,7 +1104,7 @@ def iter_tree_leaf_first(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
 
 
 # ---------------------------------------------------------------------------
-# Private helpers (also used by orchestre.py builders)
+# Private helpers (also used by cgs_format.py validation and orchestre.py builders)
 # ---------------------------------------------------------------------------
 
 

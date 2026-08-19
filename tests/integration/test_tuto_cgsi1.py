@@ -80,41 +80,12 @@ def _seed_remote_repo(base: Path, name: str) -> tuple[Path, Path]:
 def _cgsi1_tutorial_cgs() -> str:
     """CGSil1.cgs used in the tutorial sandbox (nested_config disabled for CI)."""
     return """\
-[document]
-format_version = "1.0"
-
-[project]
-name           = "CGSil1"
-default_branch = "main"
-
-[[repos]]
-gitprovider        = "gitlab"
-project_owner_name = "CGS_test"
-project_name       = "CGSil1"
-default_branch     = "main"
-fallback_branch    = "main"
-access_protocol    = "ssh"
-relative_path      = "."
-
-[[repos]]
-gitprovider        = "gitlab"
-project_owner_name = "CGS_test"
-project_name       = "CGSil2"
-default_branch     = "main"
-fallback_branch    = "main"
-access_protocol    = "ssh"
-relative_path      = "CGSil2"
-nested_config      = "disabled"
-
-[[repos]]
-gitprovider        = "github"
-project_owner_name = "CGS_test"
-project_name       = "CGSih1"
-default_branch     = "main"
-fallback_branch    = "main"
-access_protocol    = "ssh"
-relative_path      = "CGSih1"
-nested_config      = "disabled"
+project = "CGSil1"
+repos = [
+    "gitlab:CGS_test/CGSil1",
+    { repository = "gitlab:CGS_test/CGSil2", nested_config = "disabled" },
+    { repository = "github:flipoyo/CGSih1", nested_config = "disabled" },
+]
 """
 
 

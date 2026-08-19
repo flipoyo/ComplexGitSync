@@ -15,7 +15,7 @@ All repository structure and packaging files in place.
 All enums, exceptions, and bootstrap classes implemented and importable.
 
 ### T02 — Node Model and Registry Model ✅
-`RepoNode`, `legacy repo entry`, `legacy runtime registry`, readiness helpers,
+`RepoNode`, `WorkingRepo`, `WorkingGitTree`, readiness helpers,
 and leaf-to-parent promotion all implemented.
 
 ### T03 — Logging Subsystem ✅

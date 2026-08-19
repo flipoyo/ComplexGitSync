@@ -1,23 +1,31 @@
-"""Tests for documents.py – ConfigDocument, CgsDocument, GtsDocument, GocDocument."""
+"""Tests for the shared, .cgs, and runtime document implementations."""
 
 from __future__ import annotations
 
 import builtins
 import copy
 import json
+import socket
+import subprocess
 import textwrap
 from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.orchestre import (
+from ComplexGitSync.cgs_format import (
     CgsDocument,
-    ConfigDocument,
+    normalize_cgs,
+    parse_cgs,
+    parse_repo_id,
+    parse_repository_identifier,
+)
+from ComplexGitSync.config_document import ConfigDocument
+from ComplexGitSync.orchestre import (
     GocDocument,
     GtsDocument,
+    build_registry_from_cgs_document,
 )
 from ComplexGitSync.errors import ConfigValidationError
-from ComplexGitSync.git_repo import GitRepo
 
 # ---------------------------------------------------------------------------
 # Fixtures – minimal valid raw dicts
@@ -28,6 +36,15 @@ MINIMAL_CGS: dict = {
     "project": {"name": "TestProject", "default_branch": "main"},
     "repos": [
         {"project_owner_name": "owner", "project_name": "repo-a"},
+    ],
+}
+
+MINIMAL_AUTHORING_CGS: dict = {
+    "project": "CGSil1",
+    "repos": [
+        "gitlab:CGS_test/CGSil1",
+        "gitlab:CGS_test/CGSil2",
+        "github:flipoyo/CGSih1",
     ],
 }
 
@@ -166,10 +183,228 @@ class TestConfigDocumentBase:
 
 
 class TestCgsDocumentValid:
+    def test_cgs_document_is_owned_by_cgs_format_module(self):
+        assert CgsDocument.__module__ == "ComplexGitSync.cgs_format"
+
+    def test_repository_identifier_parser_is_owned_by_cgs(self):
+        assert parse_repo_id.__module__ == "ComplexGitSync.cgs_format"
+        assert parse_repository_identifier is parse_repo_id
+
+    @pytest.mark.parametrize(
+        ("identifier", "provider", "owner", "name"),
+        [
+            ("github:octocat/Hello-World", "github", "octocat", "Hello-World"),
+            ("gitlab:group/subgroup/project", "gitlab", "group/subgroup", "project"),
+            ("codeberg:GX4G/GX4G", "codeberg", "GX4G", "GX4G"),
+            ("custom:internal/tools", "custom", "internal", "tools"),
+        ],
+    )
+    def test_all_provider_identifiers_parse_deterministically(
+        self, identifier, provider, owner, name
+    ):
+        parsed = parse_repo_id(identifier)
+
+        assert parsed == {
+            "gitprovider": provider,
+            "project_owner_name": owner,
+            "project_name": name,
+            "repo_name": name,
+        }
+
+    @pytest.mark.parametrize(
+        ("identifier", "overrides"),
+        [
+            ("github:octocat/Hello-World", {}),
+            ("gitlab:group/subgroup/project", {}),
+            ("codeberg:GX4G/GX4G", {}),
+            ("custom:internal/tools", {"gitprovider_url": "https://git.example.com"}),
+        ],
+    )
+    def test_all_providers_normalize_and_validate(self, identifier, overrides):
+        repo = identifier if not overrides else {"repository": identifier, **overrides}
+
+        document = CgsDocument.from_dict({"project": "demo", "repos": [repo]})
+
+        normalized = document.repos[0]
+        assert normalized["gitprovider"] == identifier.split(":", 1)[0]
+        assert normalized["default_branch"] == "main"
+        assert normalized["fallback_branch"] == "main"
+        assert normalized["access_protocol"] == "ssh"
+        document.validate()
+
     def test_from_dict_minimal(self):
         doc = CgsDocument.from_dict(MINIMAL_CGS)
         assert isinstance(doc, CgsDocument)
         assert doc.DOCUMENT_KIND == "cgs"
+
+    def test_minimal_authoring_form_normalizes_to_canonical_document(self):
+        doc = CgsDocument.from_dict(MINIMAL_AUTHORING_CGS)
+
+        assert doc.project_name == "CGSil1"
+        assert doc.default_branch == "main"
+        assert doc.read("document.format_version") == "1.0"
+        assert [repo["project_name"] for repo in doc.repos] == [
+            "CGSil1",
+            "CGSil2",
+            "CGSih1",
+        ]
+
+    def test_normalization_supplies_deterministic_repo_defaults(self):
+        [root, child, _] = CgsDocument.from_dict(MINIMAL_AUTHORING_CGS).repos
+
+        assert root["relative_path"] == "."
+        assert child["relative_path"] == "CGSil2"
+        for repo in (root, child):
+            assert repo["default_branch"] == "main"
+            assert repo["fallback_branch"] == "main"
+            assert repo["access_protocol"] == "ssh"
+            assert repo["nested_config"] == "auto"
+
+    def test_root_path_is_not_inferred_when_project_match_is_ambiguous(self):
+        doc = CgsDocument.from_dict(
+            {
+                "project": "demo",
+                "repos": [
+                    {"repository": "github:one/demo", "relative_path": "github-demo"},
+                    {"repository": "gitlab:two/demo", "relative_path": "gitlab-demo"},
+                ],
+            }
+        )
+
+        assert [repo["relative_path"] for repo in doc.repos] == [
+            "github-demo",
+            "gitlab-demo",
+        ]
+
+    def test_normalization_does_not_mutate_authoring_data(self):
+        authoring = copy.deepcopy(MINIMAL_AUTHORING_CGS)
+        expected = copy.deepcopy(authoring)
+
+        normalize_cgs(authoring)
+
+        assert authoring == expected
+
+    def test_toml_pipeline_uses_stdlib_parser_then_normalizes(self, tmp_path: Path):
+        source = tmp_path / "minimal.cgs"
+        source.write_text(
+            'project = "demo"\nrepos = ["github:owner/demo", "github:owner/child"]\n',
+            encoding="utf-8",
+        )
+
+        assert parse_cgs(source)["project"] == "demo"
+        document = CgsDocument.from_toml(source)
+        assert document.repos[0]["relative_path"] == "."
+        assert document.repos[1]["relative_path"] == "child"
+
+    def test_advanced_repository_overrides_are_preserved(self):
+        doc = CgsDocument.from_dict(
+            {
+                "project": {"name": "demo", "default_branch": "develop"},
+                "repos": [
+                    "github:owner/demo",
+                    {
+                        "repository": "gitlab:group/subgroup/child",
+                        "default_branch": "release",
+                        "fallback_branch": "stable",
+                        "access_protocol": "https",
+                        "nested_config": "disabled",
+                        "relative_path": "vendor/child",
+                    },
+                ],
+            }
+        )
+
+        child = doc.repos[1]
+        assert child["project_owner_name"] == "group/subgroup"
+        assert child["project_name"] == "child"
+        assert child["default_branch"] == "release"
+        assert child["fallback_branch"] == "stable"
+        assert child["access_protocol"] == "https"
+        assert child["nested_config"] == "disabled"
+        assert child["relative_path"] == "vendor/child"
+
+    def test_toml_serialization_prefers_minimal_authoring_syntax(self, tmp_path: Path):
+        output = tmp_path / "minimal.cgs"
+        CgsDocument.from_dict(MINIMAL_AUTHORING_CGS).to_toml(output)
+
+        authoring = parse_cgs(output)
+        assert authoring == MINIMAL_AUTHORING_CGS
+
+    def test_semantic_round_trip_through_reference_git_tree(self, tmp_path: Path):
+        before = CgsDocument.from_dict(
+            {
+                "document": {"format_version": "1.0", "profile": "portable"},
+                "project": {
+                    "name": "demo",
+                    "default_branch": "develop",
+                    "default_remote_name": "upstream",
+                },
+                "repos": [
+                    "github:owner/demo",
+                    {
+                        "repository": "gitlab:group/subgroup/library",
+                        "branch": "release",
+                        "fallback_branch": "stable",
+                        "access_protocol": "https",
+                        "relative_path": "vendor/library",
+                        "nested_config": "disabled",
+                        "remote_name": "origin",
+                    },
+                    {"repository": "codeberg:GX4G/GX4G", "tag": "v2.0.0"},
+                    {
+                        "repository": "custom:team/tool",
+                        "gitprovider_url": "https://git.example.test",
+                    },
+                ],
+                "runtime": {"interaction": "direct"},
+                "extension": {"enabled": True},
+            }
+        )
+
+        tree = before.to_git_tree()
+        generated = tree.to_cgs()
+        output = tmp_path / "round-trip.cgs"
+        generated.to_toml(output)
+        after = CgsDocument.from_toml(output)
+
+        assert after.to_dict() == before.to_dict()
+        authoring = parse_cgs(output)
+        assert authoring["repos"][0] == "github:owner/demo"
+        assert authoring["repos"][2] == {
+            "repository": "codeberg:GX4G/GX4G",
+            "tag": "v2.0.0",
+        }
+        assert "format_version" not in authoring["document"]
+
+    def test_semantic_round_trip_through_working_git_tree(self, tmp_path: Path):
+        before = CgsDocument.from_dict(
+            {
+                "project": {"name": "demo", "default_branch": "develop"},
+                "repos": [
+                    "github:owner/demo",
+                    {
+                        "repository": "gitlab:group/library",
+                        "branch": "release",
+                        "fallback_branch": "stable",
+                        "access_protocol": "https",
+                        "relative_path": "vendor/library",
+                        "nested_config": "disabled",
+                    },
+                    {"repository": "codeberg:GX4G/GX4G", "tag": "v2.0.0"},
+                ],
+            }
+        )
+        tree = build_registry_from_cgs_document(
+            before,
+            tmp_path / "source.cgs",
+            project_root=tmp_path / "demo",
+        )
+
+        output = tmp_path / "working-round-trip.cgs"
+        tree.to_cgs().to_toml(output)
+        after = CgsDocument.from_toml(output)
+
+        assert after.to_dict() == before.to_dict()
 
     def test_project_name_property(self):
         doc = CgsDocument.from_dict(MINIMAL_CGS)
@@ -199,8 +434,7 @@ class TestCgsDocumentValid:
 
     def test_gitprovider_defaults_to_github(self):
         doc = CgsDocument.from_dict(MINIMAL_CGS)
-        # No explicit gitprovider in MINIMAL_CGS repos; validation passes.
-        assert doc.repos[0].get("gitprovider") is None  # not stored explicitly
+        assert doc.repos[0]["gitprovider"] == "github"
 
     def test_explicit_github_provider_accepted(self):
         data = {
@@ -258,25 +492,49 @@ class TestCgsDocumentValid:
         }
         CgsDocument.from_dict(data)
 
-    def test_branch_tag_pair_accepted_when_hashes_match(self, monkeypatch):
-        data = {
-            "document": {"format_version": "1.0"},
-            "project": {"name": "P", "default_branch": "main"},
-            "repos": [
-                {
-                    "project_owner_name": "o",
-                    "project_name": "r",
-                    "branch": "main",
-                    "tag": "v1.0.0",
-                }
-            ],
+    @pytest.mark.parametrize(
+        ("identifier", "overrides"),
+        [
+            (
+                "github:this-owner-does-not-need-to-exist/this-repo-does-not-need-to-exist",
+                {},
+            ),
+            ("gitlab:fictitious-group/fictitious-repository", {}),
+            ("codeberg:fictitious-owner/fictitious-repository", {}),
+            (
+                "custom:fictitious-owner/fictitious-repository",
+                {"gitprovider_url": "https://git.invalid"},
+            ),
+        ],
+    )
+    def test_cgs_format_pipeline_is_offline_for_every_provider(
+        self, identifier, overrides, monkeypatch, tmp_path
+    ):
+        def _forbid_runtime_access(*_args, **_kwargs):
+            raise AssertionError(".cgs format processing attempted Git or network access")
+
+        monkeypatch.setattr(subprocess, "run", _forbid_runtime_access)
+        monkeypatch.setattr(socket, "create_connection", _forbid_runtime_access)
+
+        repository = {
+            "repository": identifier,
+            "branch": "branch-does-not-need-to-exist",
+            "tag": "tag-does-not-need-to-exist",
+            **overrides,
         }
-        monkeypatch.setattr(
-            GitRepo,
-            "_get_hash",
-            lambda self, branch="main", tag=None: "same-hash",
+        document = CgsDocument.from_dict(
+            {"project": "offline-format-check", "repos": [repository]}
         )
-        CgsDocument.from_dict(data)
+        document.validate()
+        tree_document = document.to_git_tree().to_cgs()
+
+        output = tmp_path / "offline.cgs"
+        tree_document.to_toml(output)
+        reloaded = CgsDocument.from_toml(output)
+
+        assert tree_document.to_dict() == document.to_dict()
+        assert reloaded.repos[0]["branch"] == "branch-does-not-need-to-exist"
+        assert reloaded.repos[0]["tag"] == "tag-does-not-need-to-exist"
 
     def test_from_toml_parses_example_file(self):
         examples = Path(__file__).parent.parent.parent / "examples"
@@ -298,19 +556,42 @@ class TestCgsDocumentValid:
         assert doc.project_name == "HydrologicalTwinAlphaSeries"
         assert len(doc.repos) == 2
 
+    def test_all_cgs_examples_use_shorthand_authoring_shape(self):
+        examples = Path(__file__).parent.parent.parent / "examples"
+
+        for path in examples.glob("*.cgs"):
+            if path.name == "normalized_template.cgs":
+                continue
+            authoring = parse_cgs(path)
+            assert "document" not in authoring, path.name
+            assert isinstance(authoring["project"], (str, dict)), path.name
+            assert all(
+                isinstance(repo, str)
+                or (isinstance(repo, dict) and "repository" in repo)
+                for repo in authoring["repos"]
+            ), path.name
+
+    def test_template_and_normalized_template_are_semantically_equivalent(self):
+        examples = Path(__file__).parent.parent.parent / "examples"
+
+        concise = CgsDocument.from_toml(examples / "template.cgs")
+        normalized = CgsDocument.from_toml(examples / "normalized_template.cgs")
+
+        assert concise.to_dict() == normalized.to_dict()
+
 
 class TestCgsDocumentInvalid:
     def _assert_validation_error(self, data: dict, fragment: str) -> None:
         with pytest.raises(ConfigValidationError, match=fragment):
             CgsDocument.from_dict(data)
 
-    def test_missing_format_version(self):
+    def test_missing_format_version_is_normalized(self):
         data = {
             "document": {},
             "project": {"name": "P", "default_branch": "main"},
             "repos": [{"project_owner_name": "o", "project_name": "r"}],
         }
-        self._assert_validation_error(data, "format_version")
+        assert CgsDocument.from_dict(data).read("document.format_version") == "1.0"
 
     def test_missing_project_name(self):
         data = {
@@ -320,13 +601,63 @@ class TestCgsDocumentInvalid:
         }
         self._assert_validation_error(data, "name")
 
-    def test_missing_project_default_branch(self):
+    def test_missing_project(self):
+        self._assert_validation_error(
+            {"repos": ["github:owner/repo"]},
+            "project",
+        )
+
+    def test_missing_repos(self):
+        self._assert_validation_error(
+            {"project": "demo"},
+            "repos",
+        )
+
+    def test_empty_repos(self):
+        self._assert_validation_error(
+            {"project": "demo", "repos": []},
+            "at least one repository",
+        )
+
+    @pytest.mark.parametrize(
+        "identifier",
+        [
+            "github-owner/repo",
+            "github:repo",
+            "github:/repo",
+            "github:owner/",
+            "github:owner//repo",
+            "github:owner/repo with spaces",
+        ],
+    )
+    def test_invalid_repository_identifier(self, identifier: str):
+        self._assert_validation_error(
+            {"project": "demo", "repos": [identifier]},
+            "invalid repository identifier",
+        )
+
+    def test_unknown_provider_in_shorthand(self):
+        self._assert_validation_error(
+            {"project": "demo", "repos": ["bitbucket:owner/demo"]},
+            "gitprovider invalid",
+        )
+
+    def test_duplicate_repository_identifier(self):
+        self._assert_validation_error(
+            {
+                "project": "demo",
+                "repos": ["github:owner/demo", "github:owner/demo"],
+            },
+            "duplicate repository identifier",
+        )
+
+    def test_missing_project_default_branch_is_normalized(self):
         data = {
             "document": {"format_version": "1.0"},
             "project": {"name": "P"},
             "repos": [{"project_owner_name": "o", "project_name": "r"}],
         }
-        self._assert_validation_error(data, "default_branch")
+        assert CgsDocument.from_dict(data).default_branch == "main"
 
     def test_missing_repo_project_owner_name(self):
         data = {
@@ -353,6 +684,16 @@ class TestCgsDocumentInvalid:
             ],
         }
         self._assert_validation_error(data, "gitprovider")
+
+    @pytest.mark.parametrize("gitprovider_url", [None, "", "   ", 42])
+    def test_custom_provider_requires_explicit_gitprovider_url(self, gitprovider_url):
+        repo = {"repository": "custom:internal/tools"}
+        if gitprovider_url is not None:
+            repo["gitprovider_url"] = gitprovider_url
+        self._assert_validation_error(
+            {"project": "tools", "repos": [repo]},
+            "gitprovider_url is required for custom provider",
+        )
 
     def test_invalid_access_protocol(self):
         data = {
@@ -381,27 +722,6 @@ class TestCgsDocumentInvalid:
             "repos": "not-a-list",
         }
         self._assert_validation_error(data, "repos")
-
-    def test_branch_tag_pair_rejected_when_hashes_differ(self, monkeypatch):
-        data = {
-            "document": {"format_version": "1.0"},
-            "project": {"name": "P", "default_branch": "main"},
-            "repos": [
-                {
-                    "project_owner_name": "o",
-                    "project_name": "r",
-                    "branch": "main",
-                    "tag": "v1.0.0",
-                }
-            ],
-        }
-        monkeypatch.setattr(
-            GitRepo,
-            "_get_hash",
-            lambda self, branch="main", tag=None: "branch-hash" if tag is None else "tag-hash",
-        )
-        self._assert_validation_error(data, "incompatibilities between branch \\(hash\\) and tag\\(val\\) in \\.cgs")
-
 
 # ===========================================================================
 # GtsDocument
@@ -666,6 +986,43 @@ class TestGocDocumentValid:
         doc = GocDocument.from_dict(data)
         assert doc.project_gitprovider_address == "git@gitlab.com:gviz/cawaqsviz/cawaqsviz.git"
 
+    @pytest.mark.parametrize(
+        ("transport", "expected"),
+        [
+            ("ssh", "git@codeberg.org:GX4G/GX4G.git"),
+            ("https", "https://codeberg.org/GX4G/GX4G.git"),
+        ],
+    )
+    def test_project_gitprovider_address_for_codeberg(self, transport, expected):
+        data = {
+            **MINIMAL_GOC,
+            "session": {"transport": transport},
+            "project": {
+                "source": "project.cgs",
+                "repo_name": "GX4G",
+                "gitprovider": "codeberg",
+                "project_owner_name": "GX4G",
+            },
+        }
+
+        assert GocDocument.from_dict(data).project_gitprovider_address == expected
+
+    def test_project_gitprovider_address_for_custom_uses_explicit_url(self):
+        data = {
+            **MINIMAL_GOC,
+            "project": {
+                "source": "project.cgs",
+                "repo_name": "tools",
+                "gitprovider": "custom",
+                "project_owner_name": "internal",
+                "gitprovider_url": "https://git.example.com",
+            },
+        }
+
+        assert GocDocument.from_dict(data).project_gitprovider_address == (
+            "git@git.example.com:internal/tools.git"
+        )
+
     def test_project_provider_only_is_allowed_without_identity_fields(self):
         data = {
             **MINIMAL_GOC,
@@ -767,7 +1124,28 @@ class TestGocDocumentInvalid:
             "project": {"source": "p.cgs", "repo_name": "repo", "gitprovider": "gitlab"},
             "actions": [{"command": "validate"}],
         }
-        self._assert_validation_error(data, "group_name or \\[project\\]\\.project_owner_name")
+        self._assert_validation_error(data, "group_name or project_owner_name")
+
+    def test_project_identity_missing_codeberg_owner(self):
+        data = {
+            "document": {"format_version": "1.0"},
+            "project": {"source": "p.cgs", "repo_name": "repo", "gitprovider": "codeberg"},
+            "actions": [{"command": "pull"}],
+        }
+        self._assert_validation_error(data, "project_owner_name")
+
+    def test_project_identity_custom_requires_explicit_url(self):
+        data = {
+            "document": {"format_version": "1.0"},
+            "project": {
+                "source": "p.cgs",
+                "repo_name": "repo",
+                "gitprovider": "custom",
+                "project_owner_name": "owner",
+            },
+            "actions": [{"command": "pull"}],
+        }
+        self._assert_validation_error(data, "gitprovider_url")
 
     def test_project_identity_invalid_provider(self):
         data = {

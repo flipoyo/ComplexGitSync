@@ -2,6 +2,8 @@
 
 This module is the **GitRepo anchor** — the authoritative source for all
 per-repository identity types, state enumerations, and structural definitions.
+It receives already-separated identity fields; textual repository-ID authoring
+syntax is parsed only by :func:`ComplexGitSync.cgs_format.parse_repo_id`.
 
 Classes / enums defined here (Tier 1 — Core State):
     AccessProtocol      SSH vs HTTPS transport selection
@@ -11,7 +13,7 @@ Classes / enums defined here (Tier 1 — Core State):
     RepoLifecycleState  Per-repo lifecycle progression
     SyncState           Synchronization status relative to the remote
     DiscoveryState      Nested .cgs discovery status
-    GitRepo             Immutable static identity of a single repository
+    GitRepo             Canonical reference identity of a single repository
     WorkingRepo         Mutable runtime repository used by WorkingGitTree
     RepoAddress         Derives the remote URL from a GitRepo
     RepoNode            Immutable snapshot of a repo's tree position
@@ -19,11 +21,10 @@ Classes / enums defined here (Tier 1 — Core State):
 
 from __future__ import annotations
 
-import hashlib
-import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 
@@ -44,7 +45,45 @@ class GitProvider(StrEnum):
 
     GITHUB = "github"
     GITLAB = "gitlab"
+    CODEBERG = "codeberg"
     CUSTOM = "custom"
+
+
+KNOWN_PROVIDER_HOSTS: dict[GitProvider, str] = {
+    GitProvider.GITHUB: "github.com",
+    GitProvider.GITLAB: "gitlab.com",
+    GitProvider.CODEBERG: "codeberg.org",
+}
+"""Canonical hosts for first-class providers with deterministic remotes."""
+
+CANONICAL_GIT_PROVIDERS = frozenset(provider.value for provider in GitProvider)
+"""Canonical provider names shared by format validation and Git behavior."""
+
+
+def validate_git_provider(
+    provider: Any,
+    *,
+    gitprovider_url: Any = None,
+) -> GitProvider:
+    """Validate an already-separated provider value and its host requirement.
+
+    This function does not parse repository authoring syntax. It validates the
+    canonical provider field shared by document and CLI workflows and enforces
+    the rule that ``custom`` has no inferred host.
+    """
+    try:
+        parsed = provider if isinstance(provider, GitProvider) else GitProvider(provider)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"gitprovider invalid: {provider!r} "
+            f"(choose from: {sorted(CANONICAL_GIT_PROVIDERS)})"
+        ) from exc
+
+    if parsed == GitProvider.CUSTOM and (
+        not isinstance(gitprovider_url, str) or not gitprovider_url.strip()
+    ):
+        raise ValueError("gitprovider_url is required for custom provider")
+    return parsed
 
 
 class NodeType(StrEnum):
@@ -107,11 +146,13 @@ class DiscoveryState(StrEnum):
 
 @dataclass(slots=True)
 class GitRepo:
-    """Immutable static identity of a single repository.
+    """Canonical reference identity of a single repository.
 
     Captures the provider, namespace, project name, access protocol, and
-    resolved commit SHA.  Runtime mutable state lives in
-    :class:`WorkingRepo`.
+    optionally a resolved commit SHA. Runtime tree and synchronization state
+    lives in :class:`WorkingRepo`. Construction is side-effect free: remote
+    inspection is performed explicitly by the runtime Git layer, never by this
+    dataclass.
     """
 
     project_owner_name: str
@@ -126,81 +167,6 @@ class GitRepo:
     @property
     def resolved_group_name(self) -> str:
         return self.group_name or self.project_name
-
-    def _get_hash(
-        self,
-        branch: str = "main",
-        tag: str | None = None,
-    ) -> str:
-        """Return a stable hash for the selected remote branch or tag reference."""
-        selected_branch = branch or "main"
-        ref = f"refs/tags/{tag}" if tag else f"refs/heads/{selected_branch}"
-        try:
-            remote_url = RepoAddress.from_repo(self).to_url(self.access_protocol)
-            if any(ch.isspace() for ch in remote_url):
-                raise ValueError("remote URL contains whitespace")
-            completed = subprocess.run(  # noqa: S603
-                ["git", "ls-remote", remote_url, ref],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            lines = [line for line in completed.stdout.splitlines() if line.strip()]
-            if lines:
-                peeled = [line for line in lines if line.endswith("^{}")]
-                chosen = peeled[0] if peeled else lines[0]
-                return chosen.split()[0]
-        except (ValueError, OSError, subprocess.SubprocessError):
-            pass
-        return hashlib.sha256(f"{self.project_name}:{selected_branch}:{tag or ''}".encode()).hexdigest()
-
-    def to_cgs(self, include_defaults: bool = True) -> dict[str, Any]:
-        """Convert this GitRepo to a .cgs repository entry dictionary.
-        
-        Parameters
-        ----------
-        include_defaults : bool
-            If True (default), includes all fields with their values.
-            If False, only includes fields that differ from defaults.
-        """
-        from typing import Any
-        
-        repo_dict: dict[str, Any] = {
-            "project_owner_name": self.project_owner_name,
-            "project_name": self.project_name,
-        }
-        
-        if include_defaults:
-            # Always include these fields for explicit .cgs files
-            repo_dict["gitprovider"] = self.gitprovider.value
-            repo_dict["access_protocol"] = self.access_protocol.value
-            
-            # Include optional fields if they are set
-            if self.repo_name is not None:
-                repo_dict["repo_name"] = self.repo_name
-            if self.group_name is not None:
-                repo_dict["group_name"] = self.group_name
-            if self.gitprovider_url is not None:
-                repo_dict["gitprovider_url"] = self.gitprovider_url
-        else:
-            # Only include fields that differ from defaults
-            if self.repo_name is not None:
-                repo_dict["repo_name"] = self.repo_name
-            
-            if self.gitprovider != GitProvider.GITHUB:
-                repo_dict["gitprovider"] = self.gitprovider.value
-            
-            if self.group_name is not None:
-                repo_dict["group_name"] = self.group_name
-            
-            if self.gitprovider_url is not None:
-                repo_dict["gitprovider_url"] = self.gitprovider_url
-            
-            if self.access_protocol != AccessProtocol.SSH:
-                repo_dict["access_protocol"] = self.access_protocol.value
-        
-        return repo_dict
-
 
 # ---------------------------------------------------------------------------
 # RepoAddress — URL derivation from GitRepo
@@ -256,9 +222,12 @@ class RepoAddress:
             raise ValueError(
                 "gitprovider_url is required for custom provider addresses."
             )
-        if self.gitprovider == GitProvider.GITLAB:
-            return "gitlab.com"
-        return "github.com"
+        try:
+            return KNOWN_PROVIDER_HOSTS[self.gitprovider]
+        except KeyError as exc:
+            raise ValueError(
+                f"No canonical host is registered for provider {self.gitprovider!s}."
+            ) from exc
 
     def _resolve_namespace(self) -> str:
         if self.gitprovider == GitProvider.GITLAB:
@@ -271,10 +240,10 @@ class RepoAddress:
                     "group_name or project_owner_name is required for GitLab addresses."
                 )
             return namespace
-        if self.gitprovider == GitProvider.GITHUB:
+        if self.gitprovider in {GitProvider.GITHUB, GitProvider.CODEBERG}:
             if not self.project_owner_name:
                 raise ValueError(
-                    "project_owner_name is required for GitHub addresses."
+                    f"project_owner_name is required for {self.gitprovider.value} addresses."
                 )
             return self.project_owner_name
         ns = self.group_name or self.project_owner_name
@@ -289,6 +258,12 @@ class RepoAddress:
         if not name:
             raise ValueError("repo_name or project_name is required for repository addresses.")
         return name
+
+    def validate(self) -> None:
+        """Validate canonical provider, host, namespace, and repository fields."""
+        self._resolve_host()
+        self._resolve_namespace()
+        self._resolve_repo_name()
 
     def to_ssh(self) -> str:
         """Return the SSH remote URL (``git@host:namespace/repo_name.git``)."""

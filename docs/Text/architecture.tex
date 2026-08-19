@@ -4,8 +4,8 @@
 \label{chap:architecture}
 
 This chapter describes how \cgspkg{} is structured around three explicit tiers
-and explains the interaction between its classes.  Every domain class lives in
-its own \texttt{.py} module (DevSpecs § Object-Oriented Design).
+and explains the interaction between its classes. Related domain classes are
+grouped in modules according to the responsibility boundaries below.
 
 % -----------------------------------------------------------------------
 \section{Three-Tier Architecture}
@@ -20,8 +20,8 @@ Figure~\ref{fig:three-tier} shows the overall layout.
 \begin{figure}[ht]
 \centering
 \caption{Three-tier architecture: Client/API exposes state-gated methods;
-  Actions operate on Core Data; Core Data is centred on \texttt{GitTree} and
-  its \texttt{GitRepo} parent--leaf graph.}
+  Actions operate on Core Data; Core Data separates reference identities from
+  the \texttt{WorkingGitTree} parent--leaf runtime graph.}
 \label{fig:three-tier}
 \input{figures/three_tier}
 \end{figure}
@@ -74,25 +74,26 @@ declaration time; runtime expansion normalizes this into a DAG via
 \section{Tier 1 — Core Data}
 \label{sec:tier-core}
 
-The entire system is centred on \textbf{\texttt{GitTree}}, which owns the
-parent--leaf graph of \textbf{\texttt{GitRepo}} nodes.  A project consists of
-one \emph{root} repository that may nest \emph{parent} repositories (each of
-which can own further children) and \emph{leaf} repositories (terminal nodes).
+The reference model is centred on \textbf{\texttt{GitTree}}, which owns
+canonical \textbf{\texttt{GitRepo}} identities. Its runtime counterpart,
+\textbf{\texttt{WorkingGitTree}}, adds the parent--leaf graph of mutable
+\textbf{\texttt{WorkingRepo}} nodes. A project consists of one \emph{root}
+repository that may nest \emph{parent} repositories and terminal \emph{leaf}
+repositories.
 
 Figure~\ref{fig:gittree-nodes} shows a representative project tree.
 
 \begin{figure}[ht]
 \centering
-\caption{\texttt{GitTree} is a parent--leaf graph of \texttt{GitRepo} nodes.
+\caption{\texttt{WorkingGitTree} is a parent--leaf graph of
+  \texttt{WorkingRepo} nodes.
   Root and parent nodes own nested \texttt{.cgs} files discovered during
   \texttt{clone} or \texttt{discover\_nested\_configs}.}
 \label{fig:gittree-nodes}
 \input{figures/gittree_nodes}
 \end{figure}
 
-The runtime counterpart of \texttt{GitTree} is the
-\texttt{WorkingGitTree}, which holds a mutable
-\texttt{WorkingRepo} per node.  Registry entries are indexed by a
+Registry entries in \texttt{WorkingGitTree} are indexed by a
 colon-separated repo ID derived from their position in the tree (e.g.\
 \texttt{root:deps/child-repo:docs}).
 Cross-referenced parents therefore create a tangle-like declaration layer, but
@@ -165,11 +166,69 @@ internal steps of those workflows.
 \end{tabular}
 \end{center}
 
-For \texttt{.cgs} refs, repositories can be declared by branch or by tag.  If
-both are declared for the same repo, \texttt{validate} enforces hash
-equivalence and raises
-\texttt{incompatibilities between branch (hash) and tag(val) in .cgs} when they
-differ.
+For \texttt{.cgs} refs, repositories can be declared by branch or by tag.
+Format validation is static and does not resolve either reference remotely.
+The runtime layer selects the declared target (tag takes precedence when both
+are present) and checks its availability through \texttt{GitRunner}.
+
+The authoring boundary is explicitly
+\texttt{PARSE -> NORMALIZE -> VALIDATE}.  TOML parsing produces authoring data;
+normalization expands \texttt{provider:owner/repository} identifiers and fills
+\texttt{main} branch defaults, \texttt{ssh}, automatic nested discovery, and
+relative paths.  Validation receives only the complete canonical
+\texttt{CgsDocument}.  Authoring syntax is therefore not the internal
+representation.
+
+File and CLI authoring converge at this boundary. The CLI collects
+\texttt{--project} and repeatable \texttt{--repo} values, then calls the
+non-interactive \texttt{ComplexGitSyncClient.configure()} Python API. Python
+callers can use the same method directly. The facade delegates to
+\texttt{CgsDocument}; neither it nor the CLI owns repository grammar or
+normalization. Loading an equivalent \texttt{.cgs} file and using either
+definition path produce semantically identical canonical documents.
+\texttt{create-cgs} runs the same offline pipeline and serializes the result
+without entering Git runtime.
+
+The boundary is also responsible for the reverse projection.
+\texttt{CgsDocument.to\_git\_tree()} creates the reference model and
+\texttt{CgsDocument.from\_git\_tree()} converts a reference or working tree
+back to canonical configuration. \texttt{GitTree.to\_cgs()} remains only as a
+convenience delegate; it does not assemble repository tables or format TOML.
+The minimal serializer then removes deterministically reconstructible defaults.
+After the generated TOML is parsed and normalized again, its canonical
+representation must equal the one before serialization. Byte equality is not
+part of this contract.
+
+Repository placement is parent-relative. At the top level the parent path is
+the project root; during nested discovery it is the repository whose
+\texttt{.cgs} is being expanded. Thus \texttt{../sibling} resolves to an
+existing sibling directory. Discovery compares normalized absolute paths and
+keeps an existing registry entry instead of inserting a duplicate.
+
+Placement and traversal are independent. \texttt{nested\_config = auto}
+searches the repository root for exactly one \texttt{*.cgs},
+\texttt{disabled} stops discovery through that reference, and a relative
+\texttt{.cgs} path selects an exact file inside the repository. Explicit paths
+may not escape the repository root.
+
+The textual \texttt{provider:owner/repository} grammar belongs exclusively to
+\texttt{cgs\_format.py}. Its \texttt{parse\_repo\_id()} function owns syntax validation
+and splitting. Normalization uses that function, and CLI repository arguments
+must reuse it rather than introduce another parser.
+
+The complete \texttt{.cgs} format pipeline is deterministic and offline.
+Parsing, normalization, validation, and serialization do not probe repositories
+or execute Git. Remote existence and branch/tag availability are resolved only
+after the validated document enters the runtime layer, through explicit
+\texttt{GitRunner} operations.
+
+Provider behavior remains in \texttt{git\_repo.py}: the
+\texttt{GitProvider} enum, canonical provider set, known-host map, and
+\texttt{RepoAddress} URL composer operate on already-separated identity
+fields. GitHub, GitLab, and Codeberg map respectively to \texttt{github.com},
+\texttt{gitlab.com}, and \texttt{codeberg.org}. \texttt{custom} has no
+known-host entry and requires an explicit \texttt{gitprovider\_url}; no
+fallback host is guessed.
 
 Before any mutating workflow step (\texttt{commit}, \texttt{push},
 \texttt{tag}, or \texttt{freeze}), the action layer now runs a workspace
@@ -224,9 +283,11 @@ tree-wide synchronisation actions implemented in \texttt{operations.py}.
     fallback decision, and \texttt{.gts} write/load.
 \end{itemize}
 
-\texttt{Orchestre} is the coordination layer between the Client and
-\texttt{GitTree}.  The CLI (\texttt{cli.py}) maps terminal sub-commands to
-Client method calls one-to-one; there is no hidden logic in the CLI layer.
+\texttt{Orchestre} is the coordination layer between the Client and the tree
+models. The CLI (\texttt{cli.py}) collects terminal arguments or interactive
+prompt values, then delegates to the reusable Client API. The Client delegates
+format semantics to \texttt{cgs\_format.py}; runtime operations remain
+separate.
 
 Figure~\ref{fig:client-gating} shows how the Client gates action access based
 on the live tree state.
@@ -266,8 +327,9 @@ src/ComplexGitSync/
                                CommandRunLogger + create_run_logger
 
   # --- Document layer (cross-cutting) ---
-  orchestre.py                 ConfigDocument, CgsDocument,
-                               GtsDocument, GocDocument
+  config_document.py           ConfigDocument (format-neutral base)
+  cgs_format.py                CgsDocument (.cgs parse/normalize/validate/serialize)
+  orchestre.py                 GtsDocument, GocDocument
   errors.py                    exception hierarchy
 \end{lstlisting}
 
@@ -281,7 +343,10 @@ All persistent documents share the \texttt{ConfigDocument} base class, which
 provides format-agnostic serialisation (\texttt{to\_toml}, \texttt{to\_json},
 \texttt{to\_yaml}) and factory methods (\texttt{from\_toml}, \texttt{from\_json},
 \texttt{from\_yaml}).  Subclasses add document-specific validation and
-convenience properties.
+convenience properties.  The base is defined in
+\texttt{config\_document.py}; \texttt{cgs\_format.py} owns the complete
+\texttt{.cgs}-specific boundary, while \texttt{orchestre.py} consumes validated
+documents and retains runtime/orchestration responsibilities.
 
 \begin{itemize}
   \item \textbf{CgsDocument} (\texttt{.cgs}) — the authoring spec; describes

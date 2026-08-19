@@ -57,6 +57,7 @@ public CLI surface.
 \begin{lstlisting}[language=bash]
 $ cgitsync initialise <spec.cgs> [--output-path DIR]
 $ cgitsync initialise <snapshot.gts>
+$ cgitsync initialise --project NAME --repo PROVIDER:OWNER/REPO [--repo ...] [--output-path DIR]
 \end{lstlisting}
 
 Unified initialisation entry point.  Dispatches on file extension:
@@ -71,9 +72,28 @@ Unified initialisation entry point.  Dispatches on file extension:
     \texttt{Try clean-init method}.
   \item \texttt{.gts} source (restore mode): loads a saved snapshot directly.
     On success, ends in the lifecycle state recorded in the snapshot.
+  \item Direct CLI authoring: requires \texttt{--project} and at least one
+    repeatable \texttt{--repo}. It is mutually exclusive with a source file.
+    The CLI collects values only and calls
+    \texttt{ComplexGitSyncClient.configure()}; that reusable Python API
+    delegates parsing, normalization, and validation to \texttt{cgs\_format.py}
+    and produces the same canonical \texttt{CgsDocument} as an equivalent
+    \texttt{.cgs} file.
 \end{itemize}
 
-Both paths end in a \texttt{READY} tree or fail explicitly.
+All initialization paths end in a \texttt{READY} tree or fail explicitly.
+
+\subsection{\texttt{create-cgs}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync create-cgs --project CGSil1 \
+    --repo github:flipoyo/ComplexGitSync \
+    --repo codeberg:GX4G/GX4G \
+    --output CGSil1.cgs
+\end{lstlisting}
+
+Builds the canonical \texttt{CgsDocument} through the offline format pipeline
+and serializes concise \texttt{.cgs} TOML. It performs no Git or network work.
 
 \subsection{\texttt{clean-init}}
 
@@ -310,51 +330,153 @@ counts, current HEAD, and the commit recorded in the loaded \texttt{.gts}.
 \subsection{Local Authoring Spec (\texttt{.cgs})}
 
 A TOML file that describes the repository tree to manage. It is the only
-hand-authored input; it is never modified at runtime.
+hand-authored input; it is never modified at runtime.  The normal form has two
+top-level keys:
 
-\textbf{Top-level sections:}
+\begin{lstlisting}
+project = "CGSil1"
+repos = [
+  "gitlab:CGS_test/CGSil1",
+  "gitlab:CGS_test/CGSil2",
+  "github:flipoyo/CGSih1",
+]
+\end{lstlisting}
+
+Repository identifiers have the form
+\texttt{provider:owner/repository}. Nested GitLab namespaces are supported;
+the final path segment is the repository name. The document pipeline is:
+
+\begin{center}
+\texttt{PARSE -> NORMALIZE -> VALIDATE -> canonical CgsDocument}
+\end{center}
+
+The canonical providers and hosts are:
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Provider} & \textbf{Host} & \textbf{Remote generation} \\
+\hline
+\texttt{github}   & \texttt{github.com}   & SSH and HTTPS \\
+\texttt{gitlab}   & \texttt{gitlab.com}   & SSH and HTTPS \\
+\texttt{codeberg} & \texttt{codeberg.org} & SSH and HTTPS \\
+\texttt{custom}   & explicit URL required & SSH and HTTPS \\
+\end{tabular}
+\end{center}
+
+Repository-ID parsing is provider-independent and deterministic. For example:
+
+\begin{lstlisting}
+codeberg:GX4G/GX4G
+\end{lstlisting}
+
+normalizes to \texttt{gitprovider = codeberg},
+\texttt{project\_owner\_name = GX4G}, and
+\texttt{repo\_name = GX4G}. A custom identifier must use an inline table so
+the host is explicit:
+
+\begin{lstlisting}
+{ repository = "custom:team/tool", gitprovider_url = "https://git.example.com" }
+\end{lstlisting}
+
+No host is inferred for \texttt{custom}. The configured access protocol then
+selects \texttt{git@host:owner/repository.git} or
+\texttt{https://host/owner/repository.git}.
+
+The textual grammar and its only parser, \texttt{parse\_repo\_id()}, live in
+\texttt{cgs\_format.py}. The provider model in \texttt{git\_repo.py} receives the
+already-separated provider, owner, and repository fields and composes remotes;
+it does not parse authoring shorthand.
+
+The \texttt{.cgs} format pipeline is deterministic and offline. A syntactically
+valid repository may therefore reference a host, owner, branch, or tag that is
+not currently reachable. Remote existence and reference availability are checked
+only by explicit Git operations during runtime resolution and execution.
+
+Normalization supplies \texttt{default\_branch = main}, makes
+\texttt{fallback\_branch} equal to that default, selects
+\texttt{access\_protocol = ssh}, enables \texttt{nested\_config = auto}, and
+uses the repository name as \texttt{relative\_path}. If exactly one repository
+name matches \texttt{project}, its path is inferred as \texttt{.}.
+
+Advanced inline tables are used only where a value differs from those
+defaults:
+
+\begin{lstlisting}
+project = "demo"
+repos = [
+  "github:owner/demo",
+  { repository = "github:owner/docs", relative_path = "documentation", nested_config = "disabled" },
+]
+\end{lstlisting}
+
+The legacy advanced \texttt{[project]} and \texttt{[[repos]]} tables remain
+accepted for project-wide branch settings, custom provider URLs, tags, and
+other explicit overrides.  Unknown providers, malformed identifiers,
+duplicates, and missing \texttt{project} or \texttt{repos} are rejected before
+a \texttt{GitTree} is built.
+
+Two checked-in files document this boundary. Copy
+\texttt{examples/template.cgs} for normal authoring. Its equivalent
+\texttt{examples/normalized\_template.cgs} expands every inferred field and is
+provided as a developer reference for the canonical \texttt{CgsDocument}
+shape. The two files are regression-tested for semantic equivalence.
+
+Generated specifications use the same concise representation. The
+\texttt{GitTree.to\_cgs()} convenience method delegates model projection to
+\texttt{cgs\_format.py}; neither \texttt{GitTree} nor \texttt{GitRepo} formats
+TOML or implements the authoring grammar. Serialization omits every default
+that normalization can deterministically reconstruct and retains inline tables
+only for exceptional settings such as a non-default branch, path, protocol,
+tag, custom host, or discovery rule.
+
+The supported round trip is semantic:
+
+\begin{center}
+\texttt{.cgs -> CgsDocument -> GitTree -> CgsDocument -> .cgs}
+\end{center}
+
+Parsing and normalizing the generated file must reproduce the initial
+canonical document. Whitespace, comments, and TOML table layout need not be
+byte-for-byte identical.
+
+\subsection{Repository Placement and Nested Discovery}
+
+For every non-root entry, \texttt{relative\_path} is relative to the parent
+repository represented by the current \texttt{.cgs}; it is not relative to
+the process working directory. At the top level that parent is the project
+root. While expanding a nested config, it is the repository containing that
+config. The default is the repository name. A unique repository matching the
+project name uses \texttt{.} because it represents the current root.
+
+The \texttt{nested\_config} option controls whether traversal continues after
+the repository is available:
 
 \begin{itemize}
-  \item \texttt{[document]} — mandatory; contains \texttt{format\_version}.
-  \item \texttt{[project]} — mandatory; project-level metadata (see
-        Table~\ref{tab:project-fields}).
-  \item \texttt{[[repos]]} — one entry per managed repository
-        (see Table~\ref{tab:repo-fields}).
+  \item \texttt{auto} (default) loads the sole root-level \texttt{*.cgs} file,
+        if one exists; multiple matches are rejected as ambiguous.
+  \item \texttt{disabled} does not inspect the repository for nested config.
+  \item A relative path ending in \texttt{.cgs} loads that exact file inside
+        the repository. It may not escape the repository root.
 \end{itemize}
 
-\begin{table}[h]
-\centering
-\begin{tabular}{lll}
-\hline
-\textbf{Field} & \textbf{Type} & \textbf{Description} \\
-\hline
-\texttt{name}           & string  & Human-readable project label \\
-\texttt{repo\_name}     & string  & Git repository slug \\
-\texttt{default\_branch}& string  & Default branch (e.g.\ \texttt{main}) \\
-\texttt{gitprovider}    & string  & Provider (\texttt{github}, \texttt{gitlab}, \texttt{custom}) \\
-\texttt{gitprovider\_url}& string & Required for \texttt{custom} provider \\
-\hline
-\end{tabular}
-\caption{Project-level fields in \texttt{.cgs}}
-\label{tab:project-fields}
-\end{table}
+For the integration topology, \texttt{CGSil2.cgs} contains:
 
-\begin{table}[h]
-\centering
-\begin{tabular}{lll}
-\hline
-\textbf{Field} & \textbf{Type} & \textbf{Description} \\
-\hline
-\texttt{gitprovider}         & string  & Provider override for this repo \\
-\texttt{project\_owner\_name}& string  & GitHub owner / GitLab group \\
-\texttt{project\_name}       & string  & Repository name on the provider \\
-\texttt{relative\_path}      & string  & Path relative to project root \\
-\texttt{gitprovider\_url}    & string  & Required for \texttt{custom} provider \\
-\hline
-\end{tabular}
-\caption{Per-repository fields in \texttt{.cgs}}
-\label{tab:repo-fields}
-\end{table}
+\begin{lstlisting}
+{ repository = "github:flipoyo/CGSih1", relative_path = "../CGSih1", nested_config = "disabled" }
+\end{lstlisting}
+
+Because the config describes the tree below \texttt{CGSil2}, the path resolves
+from that directory:
+
+\begin{center}
+\texttt{<CGSHOME>/CGSil2/../CGSih1 -> <CGSHOME>/CGSih1}
+\end{center}
+
+It therefore references the existing sibling declared by \texttt{CGSil1.cgs},
+instead of cloning another \texttt{CGSih1} under \texttt{CGSil2}. Discovery
+recognizes the already-registered absolute path and keeps the canonical entry.
+The cross-reference is \texttt{disabled} because the canonical root-level
+\texttt{CGSih1} entry is responsible for loading \texttt{CGSih1.cgs}.
 
 \subsection{Git Tree State Snapshot (\texttt{.gts})}
 
@@ -459,9 +581,9 @@ instead.
 \section{Error Reference}
 
 \begin{description}
-  \item[\texttt{ValueError}] Raised when a required field is missing or a
-    field value is invalid (e.g.\ unknown \texttt{gitprovider},
-    missing \texttt{gitprovider\_url} for a \texttt{custom} provider).
+  \item[\texttt{ConfigValidationError}] Raised when \texttt{project} or
+    \texttt{repos} is missing, a repository identifier is malformed, or a
+    canonical field is invalid (for example an unknown \texttt{gitprovider}).
   \item[\texttt{GitSyncError}] Raised when clone-time Git operations fail,
     for example because the remote branch cannot be resolved or the target
     directory is already occupied.
@@ -477,8 +599,9 @@ instead.
     Add a \texttt{gitprovider\_url} field to the offending
     \texttt{[[repos]]} entry in your \texttt{.cgs} file.
   \item[\texttt{validate} exits non-zero despite a correct-looking file]
-    Check that \texttt{[document]} contains \texttt{format\_version = "1.0"}
-    and that every \texttt{[[repos]]} block includes
+    Check that \texttt{project} is present and every \texttt{repos} entry uses
+    \texttt{provider:owner/repository}. For advanced \texttt{[[repos]]}
+    blocks without a \texttt{repository} shorthand, include
     \texttt{project\_owner\_name} and \texttt{project\_name}.
   \item[\texttt{Clone destination already exists and is not empty}]
     Re-run \texttt{clone} with \texttt{--target-dir} to force a clean location,

@@ -44,8 +44,43 @@ $ pixi run cgitsync --help
 \section{Create or Check a Project Spec}
 
 A \texttt{.cgs} file is the local authoring spec for the repository tree. It
-declares the project, each repository remote, each relative path, and optional
-nested configuration discovery.
+normally contains only a project name and repository identifiers:
+
+\begin{lstlisting}
+project = "CGSil1"
+repos = [
+  "gitlab:CGS_test/CGSil1",
+  "gitlab:CGS_test/CGSil2",
+  "github:flipoyo/CGSih1",
+]
+\end{lstlisting}
+
+Each identifier uses \texttt{provider:owner/repository}.  ComplexGitSync runs
+\texttt{PARSE -> NORMALIZE -> VALIDATE} and supplies deterministic defaults:
+\texttt{main} branches, \texttt{ssh}, \texttt{nested\_config = auto}, and the
+repository name as its path.  A unique repository matching the project name
+is mounted at \texttt{.}.  Advanced tables are reserved for overrides.
+
+Canonical providers are \texttt{github}, \texttt{gitlab},
+\texttt{codeberg}, and \texttt{custom}. Their known hosts are
+\texttt{github.com}, \texttt{gitlab.com}, and \texttt{codeberg.org}; SSH and
+HTTPS remotes are generated automatically. Custom hosting requires an explicit
+\texttt{gitprovider\_url} and never guesses a host. For example,
+\texttt{codeberg:GX4G/GX4G} identifies owner \texttt{GX4G} and repository
+\texttt{GX4G} on Codeberg.
+
+Copy \texttt{examples/template.cgs} when starting a specification. It combines
+plain repository identifiers with one inline override. Developers can compare
+it with \texttt{examples/normalized\_template.cgs}, which shows the complete
+canonical document after normalization and is not intended as the usual
+hand-authored form.
+
+The common inline options are \texttt{default\_branch},
+\texttt{fallback\_branch}, \texttt{access\_protocol},
+\texttt{relative\_path}, and \texttt{nested\_config}. A relative path is
+resolved from the parent repository. Nested config can be \texttt{auto} to
+load the sole root-level \texttt{*.cgs}, \texttt{disabled} to stop discovery,
+or a relative \texttt{.cgs} path to select an exact file inside the repository.
 
 \begin{lstlisting}[language=bash]
 $ pixi run cgitsync validate examples/complexgitsync.cgs
@@ -69,6 +104,19 @@ snapshot under \texttt{<workspace>/.cgitsync/state/}, and leaves the tree
 \begin{lstlisting}[language=bash]
 $ pixi run cgitsync initialise examples/complexgitsync.cgs
 \end{lstlisting}
+
+The same canonical project definition can be authored directly. The
+\texttt{--repo} option is repeatable:
+
+\begin{lstlisting}[language=bash]
+$ pixi run cgitsync initialise --project CGSil1 \
+    --repo gitlab:CGS_test/CGSil1 \
+    --repo codeberg:GX4G/GX4G
+\end{lstlisting}
+
+Use either a source file or \texttt{--project} plus \texttt{--repo}, never
+both. To serialize the CLI definition without initializing a workspace, use
+\texttt{create-cgs --project ... --repo ... --output FILE}.
 
 When \texttt{--output-path} is omitted, \cgscli{} uses the workspace-level
 default \texttt{CGSPATH=../..}, then derives

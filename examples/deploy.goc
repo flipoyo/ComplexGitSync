@@ -1,0 +1,29 @@
+# ComplexGitSync deployment orchestration example
+
+[document]
+format_version = "1.0"
+
+[session]
+interaction = "interactive"
+profile = "verbose"
+transport = "ssh"
+
+[project]
+source = "complexgitsync.cgs"
+name = "ComplexGitSync"
+repo_name = "ComplexGitSync"
+gitprovider = "github"
+project_owner_name = "flipoyo"
+
+[[actions]]
+command = "pull"
+
+[[actions]]
+command = "checkout"
+
+[actions.args]
+ref = "autoTest"
+ref_type = "branch"
+
+[[actions]]
+command = "pull"

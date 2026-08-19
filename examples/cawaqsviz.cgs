@@ -1,67 +1,10 @@
-# CaWaQS-Viz project authoring spec
-# ──────────────────────────────────────────────────────────────────────────────
-# This .cgs file describes the static topology of the CaWaQS-Viz project.
-# It is the starting point for clone, restart, checkout, and validate commands.
-# Never embed runtime state here.
-# The tree prefers autoTest and falls back to main when needed.
+# CaWaQS-Viz uses autoTest globally and falls back to main. Only values that
+# differ from normal .cgs defaults are declared on repository entries.
 
-[document]
-format_version = "1.0"
+project = { name = "CaWaQS-Viz", default_branch = "autoTest" }
 
-[project]
-name             = "CaWaQS-Viz"
-default_branch   = "autoTest"
-transport        = "ssh"
-default_remote_name = "origin"
-# Optional: override the default log directory
-# log_dir = ".cgitsync/logs"
-
-[runtime]
-interaction               = "interactive"   # interactive | direct
-profile                   = "verbose"       # verbose | whisper_sync
-prompt_scope              = "per-event"
-warn_on_fallback          = true
-allow_mixed_resolution    = true
-nested_config_discovery   = true
-log_level                 = "info"
-
-# ── Repositories ───────────────────────────────────────────────────────────
-
-[[repos]]
-gitprovider        = "gitlab"
-project_owner_name = "gviz/cawaqsviz"
-project_name       = "CaWaQS-Viz"
-# repo_name defaults to project_name for remote URLs when omitted
-# group_name defaults to project_owner_name for GitLab when omitted
-default_branch     = "autoTest"
-fallback_branch    = "main"
-access_protocol    = "ssh"
-# This is the root repository; no relative_path needed.
-
-[[repos]]
-gitprovider        = "github"
-project_owner_name = "flipoyo"
-project_name       = "HydrologicalTwinAlphaSeries"
-group_name         = "HydrologicalTwinAlphaSeries"
-default_branch     = "autoTest"
-fallback_branch    = "main"
-access_protocol    = "ssh"
-# When this repo is cloned locally, ComplexGitSync scans it for a nested .cgs.
-nested_config      = "auto"
-
-[repos.ref_policy]
-prefer_tag = false
-
-[repos.runtime]
-warn_on_fallback = true
-
-[[repos]]
-gitprovider        = "github"
-project_owner_name = "flipoyo"
-project_name       = "CWV_user_guide"
-group_name         = "CWV_user_guide"
-default_branch     = "autoTest"
-fallback_branch    = "main"
-access_protocol    = "ssh"
-# No nested repos under the user guide.
-nested_config      = "disabled"
+repos = [
+    { repository = "gitlab:gviz/cawaqsviz/CaWaQS-Viz", fallback_branch = "main" },
+    { repository = "github:flipoyo/HydrologicalTwinAlphaSeries", fallback_branch = "main" },
+    { repository = "github:flipoyo/CWV_user_guide", fallback_branch = "main", nested_config = "disabled" },
+]

@@ -1,5 +1,9 @@
 # ComplexGitSync DevPlan
 
+> **Historical baseline.** This document preserves the initial design and may
+> contain legacy module names or verbose `.cgs` examples. Current architecture
+> and format rules live in `AdditionalSpecs.md` and `docs/architecture.md`.
+
 ## Purpose
 ComplexGitSync is a standalone project that manages a nested Git repository tree from local `.cgs` project specifications and generated `.gts` Git Tree State snapshots.
 
@@ -278,12 +282,13 @@ The registry must:
 - `log_level = "info"`
 
 ### Required Per-Repo Keys
-- `gitprovider` where values are `github`, `gitlab`, or `custom`
-- `owner_name` (called _owner_ on GitHub, _group_ on GitLab; `group_name` accepted as alias)
+- `gitprovider` where values are `github`, `gitlab`, `codeberg`, or `custom`
+- `project_owner_name` (called _owner_ on GitHub and Codeberg, _group_ on GitLab;
+  `group_name` accepted as the GitLab namespace override)
 - `project_name`
 
 ### Optional Per-Repo Identity Keys
-- `gitprovider_url` (required when `gitprovider` is `custom`; inferred for `github` and `gitlab`)
+- `gitprovider_url` (required when `gitprovider` is `custom`; inferred for `github`, `gitlab`, and `codeberg`)
 
 ### Optional Per-Repo Keys
 - `default_branch`

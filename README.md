@@ -6,9 +6,8 @@ workspace from one local specification and one tracked workspace state.
 This README is intentionally focused on the **Multi-repo Sync CLI**. The public
 entry point is `cgitsync`.
 
-It is the Alpha Series of ComplexGraphSync, per say CGS. CGS service is requestable @CGS.
-
-@CGS is a deterministic Graph × Graph Synchronizer, that instanciates active Graph G* and anchored it in a L0 based on time only.
+It is the Alpha Series of ComplexGraphSync. <!--, per say CGS. CGS service is requestable @CGS. 
+@CGS is a deterministic Graph × Graph Synchronizer, that instanciates active Graph G* and anchored it in a L0 based on time only. -->
 
 ## What the CLI manages
 
@@ -24,6 +23,91 @@ The CLI uses these local documents:
 - `.cgs`: "ComplexGitSync" --> hand-written project topology/specification
 - `.gts`: "GitTreeState" --> generated workspace snapshot
 - `.lgr`: "LocalGitRegister" --> generated local register and append-only sync ledger
+
+Internally, `src/ComplexGitSync/cgs_format.py` owns `.cgs` parsing, normalization,
+validation, and serialization through `CgsDocument`. The format-neutral
+`ConfigDocument` base lives in `config_document.py`, while `orchestre.py`
+consumes validated `.cgs` documents and owns orchestration/runtime behavior.
+The shared textual repository-ID parser is `cgs_format.parse_repo_id()`;
+`git_repo.py` receives separated identities and owns provider/remote behavior.
+Parsing, normalization, validation, and serialization are deterministic and
+offline; remote existence and branch/tag availability are checked only during
+explicit Git runtime operations.
+
+The reusable Python entry point for project definitions is
+`ComplexGitSyncClient.configure(project, repositories, output_path=None)`.
+CLI authoring commands collect values and call this method; the method delegates
+all `.cgs` semantics to `CgsDocument` and performs no Git or network operation.
+
+The normal `.cgs` authoring form is intentionally small:
+
+```toml
+project = "CGSil1"
+
+repos = [
+    "gitlab:CGS_test/CGSil1",
+    "gitlab:CGS_test/CGSil2",
+    "github:flipoyo/CGSih1",
+]
+```
+
+The equivalent project can be supplied directly to the CLI; `--repo` is
+repeatable and the CLI delegates every identifier to `cgs_format.py`:
+
+```bash
+cgitsync initialise \
+    --project CGSil1 \
+    --repo gitlab:CGS_test/CGSil1 \
+    --repo codeberg:GX4G/GX4G
+```
+
+Use exactly one authoring path: either `SOURCE`, or `--project` with at least
+one `--repo`. To write the same definition without performing Git operations:
+
+```bash
+cgitsync create-cgs \
+    --project CGSil1 \
+    --repo github:flipoyo/ComplexGitSync \
+    --repo codeberg:GX4G/GX4G \
+    --output CGSil1.cgs
+```
+
+Repository identifiers use `provider:owner/repository`. ComplexGitSync fills in
+`main` branches, `ssh` access, the repository name as its path, and automatic
+nested `.cgs` discovery. A unique repository matching `project` is the root at
+`.`. Use an inline table only to override a default:
+
+The canonical providers are `github` (`github.com`), `gitlab` (`gitlab.com`),
+`codeberg` (`codeberg.org`), and `custom`. For example,
+`codeberg:GX4G/GX4G` resolves to provider `codeberg`, owner `GX4G`, and
+repository `GX4G`. GitHub, GitLab, and Codeberg generate SSH or HTTPS remotes.
+Custom hosting never guesses a host and requires `gitprovider_url`.
+
+- `default_branch` / `fallback_branch`: preferred and fallback branches.
+- `access_protocol`: `ssh` (default) or `https`.
+- `relative_path`: location relative to the parent repository; defaults to the
+  repository name.
+- `nested_config`: `auto` scans that repository for one root-level `*.cgs`,
+  `disabled` does not scan it, and a `.cgs` path selects a specific file.
+
+Example: `{ repository = "github:owner/docs", relative_path = "documentation",
+nested_config = "disabled" }`.
+
+Custom example:
+`{ repository = "custom:team/tool", gitprovider_url = "https://git.example.com" }`.
+
+Start new specifications from [examples/template.cgs](examples/template.cgs).
+It demonstrates both plain repository identifiers and an inline override. For
+developers, [examples/normalized_template.cgs](examples/normalized_template.cgs)
+shows the exact canonical document produced from that template after defaults
+and root-path inference are applied. The normalized file is a reference for the
+internal model, not the preferred hand-authored form.
+
+Generated `.cgs` files use the same concise form. `GitTree.to_cgs()` delegates
+the model conversion to `cgs_format.py`, whose serializer omits reconstructible
+defaults and keeps inline tables only for exceptional settings. A generated
+file may differ in whitespace or table layout, but parsing and normalizing it
+produces the same canonical `CgsDocument` as the source.
 
 Authentication is delegated to Git. If `git clone`, `git fetch`, `git push`,
 and your credential helper work locally, `cgitsync` uses the same setup.
@@ -66,6 +150,14 @@ From the CGSil1 `.cgs` specification, initialise the full repository tree under
 # Equivalent to: pixi run cgitsync initialise ../CGSil1.cgs --output-path "$CGSPATH"
 # with the default CGSPATH value ../..
 pixi run cgitsync initialise ../CGSil1.cgs
+```
+
+An existing `.cgs` is optional. The equivalent direct-authoring form is:
+
+```bash
+pixi run cgitsync initialise --project CGSil1 \
+    --repo gitlab:CGS_test/CGSil1 \
+    --repo codeberg:GX4G/GX4G
 ```
 
 CLI output includes a readable `operation_sequence` such as
@@ -180,6 +272,14 @@ from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
+# Define or serialize a project without invoking the CLI or Git runtime.
+definition = client.configure(
+    "GX4G",
+    ["codeberg:GX4G/GX4G"],
+    output_path="GX4G.cgs",  # optional
+)
+reference_tree = definition.to_git_tree()
+
 source = Path("../CGSil1.cgs")
 cgspath = Path("../..")
 cgshome = cgspath / "CGSil1"
@@ -217,9 +317,12 @@ client.launch_release("release-2026.05")
 
 Minimalist commands:
 
-- `initialise <file.cgs|file.gts>`: clone from a spec or load from a snapshot;
-  for `.cgs`, omitted `--output-path` defaults to `CGSPATH=../..`; on failure,
-  the CLI suggests `clean-init`
+- `initialise SOURCE` or `initialise --project NAME --repo ID [--repo ID ...]`:
+  clone from a file/direct definition or load a snapshot; the two authoring
+  forms are mutually exclusive. For `.cgs` or direct definitions, omitted
+  `--output-path` defaults to `CGSPATH=../..`
+- `create-cgs --project NAME --repo ID [--repo ID ...] --output FILE`: validate
+  and serialize an offline CLI project definition
 - `clean-init <file.cgs>`: run `load->expand->validate->purge->clone`
 - `freeze-release <name> <message>`: from a READY tree, run
   `add -> commit -> pull -> push -> freeze`

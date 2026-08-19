@@ -461,32 +461,32 @@ class TestCgsiExampleFiles:
         self.examples = Path(__file__).parent.parent.parent / "examples"
 
     def test_cgsi1_example_parses(self):
-        from ComplexGitSync.orchestre import CgsDocument
+        from ComplexGitSync.cgs_format import CgsDocument
         doc = CgsDocument.from_toml(self.examples / "CGSil1.cgs")
         assert doc.project_name == "CGSil1"
         assert doc.default_branch == "main"
         assert len(doc.repos) == 3
 
     def test_cgsi2_example_parses(self):
-        from ComplexGitSync.orchestre import CgsDocument
+        from ComplexGitSync.cgs_format import CgsDocument
         doc = CgsDocument.from_toml(self.examples / "CGSil2.cgs")
         assert doc.project_name == "CGSil2"
         assert len(doc.repos) == 2
 
     def test_cgsih1_example_parses(self):
-        from ComplexGitSync.orchestre import CgsDocument
+        from ComplexGitSync.cgs_format import CgsDocument
         doc = CgsDocument.from_toml(self.examples / "CGSih1.cgs")
         assert doc.project_name == "CGSih1"
         assert len(doc.repos) == 2
 
     def test_cgsih2_example_parses(self):
-        from ComplexGitSync.orchestre import CgsDocument
+        from ComplexGitSync.cgs_format import CgsDocument
         doc = CgsDocument.from_toml(self.examples / "CGSih2.cgs")
         assert doc.project_name == "CGSih2"
         assert len(doc.repos) == 2
 
     def test_cgsi1_example_references_cgsi2_and_cgsih1(self):
-        from ComplexGitSync.orchestre import CgsDocument
+        from ComplexGitSync.cgs_format import CgsDocument
         doc = CgsDocument.from_toml(self.examples / "CGSil1.cgs")
         repo_names = [r["project_name"] for r in doc.repos]
         assert "CGSil2" in repo_names
@@ -494,7 +494,7 @@ class TestCgsiExampleFiles:
 
     def test_cgsi2_example_references_cgsih1_with_disabled_nested_config(self):
         """CGSil2.cgs references CGSih1 (duplication scenario) with nested_config=disabled."""
-        from ComplexGitSync.orchestre import CgsDocument
+        from ComplexGitSync.cgs_format import CgsDocument
         doc = CgsDocument.from_toml(self.examples / "CGSil2.cgs")
         cgsih1_refs = [r for r in doc.repos if r["project_name"] == "CGSih1"]
         assert len(cgsih1_refs) == 1
@@ -502,7 +502,7 @@ class TestCgsiExampleFiles:
 
     def test_cgsi2_example_cgsih1_relative_path_is_parent_sibling(self):
         """CGSil2.cgs must reference CGSih1 at ../CGSih1 (sibling in root)."""
-        from ComplexGitSync.orchestre import CgsDocument
+        from ComplexGitSync.cgs_format import CgsDocument
         doc = CgsDocument.from_toml(self.examples / "CGSil2.cgs")
         cgsih1_refs = [r for r in doc.repos if r["project_name"] == "CGSih1"]
         assert len(cgsih1_refs) == 1
@@ -510,12 +510,32 @@ class TestCgsiExampleFiles:
 
     def test_cgsih2_example_references_cgsih1_at_dotdot(self):
         """CGSih2.cgs must reference CGSih1 at '..' (the cycle back-reference)."""
-        from ComplexGitSync.orchestre import CgsDocument
+        from ComplexGitSync.cgs_format import CgsDocument
         doc = CgsDocument.from_toml(self.examples / "CGSih2.cgs")
         cgsih1_refs = [r for r in doc.repos if r["project_name"] == "CGSih1"]
         assert len(cgsih1_refs) == 1
         assert cgsih1_refs[0].get("relative_path") == ".."
         assert cgsih1_refs[0].get("nested_config") == "disabled"
+
+    def test_every_example_has_a_semantic_tree_and_toml_round_trip(self, tmp_path):
+        from ComplexGitSync.cgs_format import CgsDocument, parse_cgs
+
+        for source in sorted(self.examples.glob("*.cgs")):
+            before = CgsDocument.from_toml(source)
+            output = tmp_path / source.name
+
+            before.to_git_tree().to_cgs().to_toml(output)
+            after = CgsDocument.from_toml(output)
+
+            assert after.to_dict() == before.to_dict(), source.name
+            if source.name != "normalized_template.cgs":
+                authoring = parse_cgs(output)
+                assert "document" not in authoring, source.name
+                assert all(
+                    isinstance(repo, str)
+                    or (isinstance(repo, dict) and "repository" in repo)
+                    for repo in authoring["repos"]
+                ), source.name
 
 
 class TestGitCommandCycleIntegration:

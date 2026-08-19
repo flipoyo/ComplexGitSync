@@ -1,12 +1,11 @@
 """Orchestration hub for ComplexGitSync.
 
-This module is the **Orchestre anchor** — the authoritative source for all
-document I/O, infrastructure services, registry builders, nested config
-discovery, and the public client API.
+This module is the **Orchestre anchor** — the authoritative source for runtime
+document handling, infrastructure services, registry builders, nested config
+discovery, and the public client API. The ``.cgs`` authoring format is defined
+in :mod:`ComplexGitSync.cgs_format`.
 
 Classes defined here (Tier 2 — Actions):
-    ConfigDocument          Base class for all document types
-    CgsDocument             .cgs authoring spec parser/validator
     GtsDocument             .gts state snapshot parser/validator
     GocDocument             .goc command script parser/validator
     CommandRunLogger        Structured JSON event logger for a command run
@@ -28,7 +27,6 @@ Builder / discovery functions defined here:
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 import logging
@@ -46,6 +44,8 @@ from urllib.parse import urlsplit
 import tomli_w
 
 from . import __version__ as CGS_VERSION
+from .cgs_format import CgsDocument
+from .config_document import ConfigDocument
 from .errors import (
     ConfigValidationError,
     GitSyncError,
@@ -60,8 +60,10 @@ from .git_repo import (
     RefKind,
     RepoLifecycleState,
     RepoNode,
+    RepoAddress,
     WorkingRepo,
     SyncState,
+    validate_git_provider,
 )
 from .git_tree import (
     ROOT_REPO_ID,
@@ -100,27 +102,13 @@ from .operations import (
 )
 
 # ============================================================
-#  Document layer — ConfigDocument base + subclasses
+#  Runtime document layer — .gts and .goc
 # ============================================================
 
-_MISSING = object()
 _SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 _STATE_ID_RE = re.compile(r"^state\(([0-9a-f]{64})\)$")
 _STATE_DIR_RE = re.compile(r"^state\(([0-9a-f]{64})\)_(\d+)$")
 _FREEZE_COMMAND_ORIGINS = frozenset({"freeze", "freeze_release", "freeze_state"})
-
-
-def _dot_get(data: dict[str, Any], key: str, default: Any = None) -> Any:
-    """Return the value at the dot-separated *key* path inside *data*."""
-    parts = key.split(".")
-    node: Any = data
-    for part in parts:
-        if not isinstance(node, dict):
-            return default
-        node = node.get(part, _MISSING)
-        if node is _MISSING:
-            return default
-    return node
 
 
 def _collect_errors(checks: list[tuple[bool, str]]) -> list[str]:
@@ -458,241 +446,6 @@ def _render_status_table(rows: list[tuple[str, str, str, str, str, str, str, str
     lines = [render_row(headers), "-" * (sum(widths) + 12)]
     lines.extend(render_row(row) for row in rows)
     return "\n".join(lines)
-
-
-class ConfigDocument:
-    """Base class for all ComplexGitSync configuration document types.
-
-    Every subclass wraps a raw dictionary and exposes:
-
-    Instance methods
-    ~~~~~~~~~~~~~~~~
-    * ``read(key, default=None)`` – dot-path traversal into the underlying dict
-    * ``get(key, default=None)``  – alias for ``read``
-    * ``print()``                 – write a human-readable representation to stdout
-    * ``to_dict()``               – return a deep copy of the underlying dict
-    * ``validate()``              – raise ``ConfigValidationError`` on schema violations
-
-    Class-method factories
-    ~~~~~~~~~~~~~~~~~~~~~~
-    * ``from_dict(data)``    – create and validate from a plain dict
-    * ``from_toml(path)``    – load from a ``.toml`` / ``.cgs`` / ``.gts`` / ``.goc`` file
-    * ``from_json(path)``    – load from a ``.json`` file
-    * ``from_yaml(path)``    – load from a ``.yml`` / ``.yaml`` file (requires PyYAML)
-
-    Serializers
-    ~~~~~~~~~~~
-    * ``to_toml(path)``       – write as TOML
-    * ``to_json(path)``       – write as JSON
-    * ``to_yaml(path)``       – write as YAML (requires PyYAML)
-    """
-
-    FORMAT_VERSION: str = "1.0"
-    DOCUMENT_KIND: str = "base"
-
-    def __init__(self, data: dict[str, Any]) -> None:
-        if not isinstance(data, dict):
-            raise TypeError(f"ConfigDocument data must be a dict, got {type(data).__name__!r}.")
-        self._data: dict[str, Any] = data
-
-    def read(self, key: str, default: Any = None) -> Any:
-        """Return the value at the dot-separated *key* path, or *default*."""
-        return _dot_get(self._data, key, default)
-
-    def get(self, key: str, default: Any = None) -> Any:
-        """Alias for :meth:`read`."""
-        return self.read(key, default)
-
-    def print(self) -> None:
-        """Print the document as TOML to *stdout*."""
-        print(tomli_w.dumps(self._data))
-
-    def to_dict(self) -> dict[str, Any]:
-        """Return a deep copy of the underlying dictionary."""
-        return copy.deepcopy(self._data)
-
-    def validate(self) -> None:
-        """Validate required fields.  Raises :exc:`ConfigValidationError` on failure."""
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ConfigDocument":
-        """Create a document from a plain dictionary and validate it."""
-        doc = cls(data)
-        doc.validate()
-        return doc
-
-    @classmethod
-    def from_toml(cls, path: Path | str) -> "ConfigDocument":
-        """Load a document from a TOML file (includes ``.cgs``, ``.gts``, ``.goc``)."""
-        with open(path, "rb") as fh:
-            data = tomllib.load(fh)
-        return cls.from_dict(data)
-
-    @classmethod
-    def from_json(cls, path: Path | str) -> "ConfigDocument":
-        """Load a document from a JSON file."""
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-        return cls.from_dict(data)
-
-    @classmethod
-    def from_yaml(cls, path: Path | str) -> "ConfigDocument":
-        """Load a document from a YAML file.
-
-        Requires ``PyYAML``. Install the package with the ``yaml`` extra.
-        """
-        try:
-            import yaml  # type: ignore[import-untyped]
-        except ImportError as exc:
-            raise ImportError(
-                "PyYAML is required for YAML support.  "
-                "Install ComplexGitSync with the yaml extra using pixi."
-            ) from exc
-        with open(path, encoding="utf-8") as fh:
-            data = yaml.safe_load(fh)
-        return cls.from_dict(data)
-
-    def to_toml(self, path: Path | str) -> None:
-        """Write the document to a TOML file."""
-        with open(path, "wb") as fh:
-            tomli_w.dump(self._data, fh)
-
-    def to_json(self, path: Path | str, *, indent: int = 2) -> None:
-        """Write the document to a JSON file."""
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(self._data, fh, indent=indent)
-
-    def to_yaml(self, path: Path | str) -> None:
-        """Write the document to a YAML file.
-
-        Requires ``PyYAML``. Install the package with the ``yaml`` extra.
-        """
-        try:
-            import yaml  # type: ignore[import-untyped]
-        except ImportError as exc:
-            raise ImportError(
-                "PyYAML is required for YAML support.  "
-                "Install ComplexGitSync with the yaml extra using pixi."
-            ) from exc
-        with open(path, "w", encoding="utf-8") as fh:
-            yaml.dump(self._data, fh, default_flow_style=False, allow_unicode=True)
-
-    def __repr__(self) -> str:  # pragma: no cover
-        return f"{self.__class__.__name__}(kind={self.DOCUMENT_KIND!r})"
-
-
-class CgsDocument(ConfigDocument):
-    """Parser and validator for ``.cgs`` authoring spec files.
-
-    A ``.cgs`` file is a TOML document that describes the **static** project
-    topology: which repositories belong to the tree, how they relate, and what
-    runtime defaults apply.  It is **never** a runtime snapshot.
-    """
-
-    DOCUMENT_KIND = "cgs"
-
-    _REQUIRED_DOCUMENT_KEYS = ("format_version",)
-    _REQUIRED_PROJECT_KEYS = ("name", "default_branch")
-    _REQUIRED_REPO_KEYS = ("project_owner_name", "project_name")
-    _VALID_GITPROVIDERS = frozenset(("github", "gitlab", "custom"))
-    _VALID_ACCESS_PROTOCOLS = frozenset(("ssh", "https"))
-    _VALID_NESTED_CONFIG_SPECIAL = frozenset(("auto", "disabled"))
-
-    RUNTIME_DEFAULTS: dict[str, Any] = {
-        "interaction": "interactive",
-        "profile": "verbose",
-        "prompt_scope": "per-event",
-        "warn_on_fallback": True,
-        "allow_mixed_resolution": True,
-        "nested_config_discovery": True,
-        "log_level": "info",
-    }
-
-    def validate(self) -> None:  # noqa: C901
-        errors: list[str] = []
-
-        for key in self._REQUIRED_DOCUMENT_KEYS:
-            if self.read(f"document.{key}") is None:
-                errors.append(f"[document] missing required key: '{key}'")
-
-        for key in self._REQUIRED_PROJECT_KEYS:
-            if self.read(f"project.{key}") is None:
-                errors.append(f"[project] missing required key: '{key}'")
-
-        repos = self._data.get("repos", [])
-        if not isinstance(repos, list):
-            errors.append("'repos' must be an array of tables ([[repos]])")
-        else:
-            for idx, repo in enumerate(repos):
-                if not isinstance(repo, dict):
-                    errors.append(f"repos[{idx}] must be a table")
-                    continue
-                for key in self._REQUIRED_REPO_KEYS:
-                    if not repo.get(key):
-                        errors.append(f"repos[{idx}] missing required key: '{key}'")
-                gitprovider = repo.get("gitprovider", "github")
-                if gitprovider not in self._VALID_GITPROVIDERS:
-                    errors.append(
-                        f"repos[{idx}].gitprovider invalid: {gitprovider!r} "
-                        f"(choose from: {sorted(self._VALID_GITPROVIDERS)})"
-                    )
-                access_protocol = repo.get("access_protocol", "ssh")
-                if access_protocol not in self._VALID_ACCESS_PROTOCOLS:
-                    errors.append(
-                        f"repos[{idx}].access_protocol invalid: {access_protocol!r} "
-                        f"(choose from: {sorted(self._VALID_ACCESS_PROTOCOLS)})"
-                    )
-                nested = repo.get("nested_config")
-                if nested is not None and nested not in self._VALID_NESTED_CONFIG_SPECIAL:
-                    if not str(nested).endswith(".cgs"):
-                        errors.append(
-                            f"repos[{idx}].nested_config must be 'auto', 'disabled', "
-                            f"or a .cgs relative path; got: {nested!r}"
-                        )
-                branch = _as_optional_str(repo.get("branch")) or _as_optional_str(repo.get("default_branch"))
-                tag = _as_optional_str(repo.get("tag"))
-                if branch and tag:
-                    probe = GitRepo(
-                        project_owner_name=str(repo.get("project_owner_name")),
-                        project_name=str(repo.get("project_name")),
-                        repo_name=(
-                            _as_optional_str(repo.get("repo_name"))
-                            if repo.get("repo_name") is not None
-                            else str(repo.get("project_name"))
-                        ),
-                        gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
-                        group_name=_as_optional_str(repo.get("group_name")),
-                        gitprovider_url=_as_optional_str(repo.get("gitprovider_url")),
-                        access_protocol=_parse_enum(
-                            AccessProtocol,
-                            repo.get("access_protocol"),
-                            AccessProtocol.SSH,
-                        ),
-                    )
-                    branch_hash = probe._get_hash(branch=branch)
-                    tag_hash = probe._get_hash(branch=branch, tag=tag)
-                    if branch_hash != tag_hash:
-                        errors.append("incompatibilities between branch (hash) and tag(val) in .cgs")
-
-        if errors:
-            raise ConfigValidationError(
-                "Invalid .cgs document:\n" + "\n".join(f"  • {e}" for e in errors)
-            )
-
-    @property
-    def project_name(self) -> str | None:
-        return self.read("project.name")
-
-    @property
-    def default_branch(self) -> str | None:
-        return self.read("project.default_branch")
-
-    @property
-    def repos(self) -> list[dict[str, Any]]:
-        return list(self._data.get("repos", []))
-
-    def runtime_setting(self, key: str) -> Any:
-        return self._data.get("runtime", {}).get(key, self.RUNTIME_DEFAULTS.get(key))
 
 
 def _ref_token(ref_kind: RefKind | str | None, ref_name: str | None) -> str | None:
@@ -1100,7 +853,6 @@ class GocDocument(ConfigDocument):
     _VALID_INTERACTIONS = frozenset(("interactive", "direct"))
     _VALID_PROFILES = frozenset(("verbose", "whisper_sync"))
     _VALID_TRANSPORTS = frozenset(("ssh", "https"))
-    _VALID_PROJECT_GITPROVIDERS = frozenset(("github", "gitlab"))
     _DEFAULT_PROJECT_GITPROVIDER = "github"
 
     SESSION_DEFAULTS: dict[str, str] = {
@@ -1132,29 +884,35 @@ class GocDocument(ConfigDocument):
             )
 
         provider = str(project.get("gitprovider", self._DEFAULT_PROJECT_GITPROVIDER))
-        if project.get("gitprovider") is not None and provider not in self._VALID_PROJECT_GITPROVIDERS:
-            errors.append(
-                f"[project].gitprovider invalid: {provider!r} "
-                f"(choose from: {sorted(self._VALID_PROJECT_GITPROVIDERS)})"
+        try:
+            validated_provider = validate_git_provider(
+                provider,
+                gitprovider_url=project.get("gitprovider_url"),
             )
+        except ValueError as exc:
+            errors.append(f"[project].{exc}")
+            validated_provider = None
 
         identity_fields_present = any(
             project.get(key)
             for key in ("repo_name", "project_owner_name", "group_name", "gitprovider_url")
         )
-        if identity_fields_present:
+        if identity_fields_present and validated_provider is not None:
             if not project.get("repo_name"):
                 errors.append("[project] missing required key for address composition: 'repo_name'")
-            if provider == "github" and not project.get("project_owner_name"):
-                errors.append(
-                    "[project].project_owner_name is required when [project].gitprovider is 'github'"
+            else:
+                address = RepoAddress(
+                    gitprovider=validated_provider,
+                    project_name=str(project["repo_name"]),
+                    repo_name=str(project["repo_name"]),
+                    project_owner_name=_as_optional_str(project.get("project_owner_name")),
+                    group_name=_as_optional_str(project.get("group_name")),
+                    gitprovider_url=_as_optional_str(project.get("gitprovider_url")),
                 )
-            if provider == "gitlab" and not (project.get("group_name") or project.get("project_owner_name")):
-                errors.append(
-                    "[project].group_name or [project].project_owner_name is required when "
-                    "[project].gitprovider is 'gitlab'"
-                )
-
+                try:
+                    address.validate()
+                except ValueError as exc:
+                    errors.append(f"[project].{exc}")
         interaction = self.read("session.interaction", self.SESSION_DEFAULTS["interaction"])
         if interaction not in self._VALID_INTERACTIONS:
             errors.append(
@@ -1241,30 +999,19 @@ class GocDocument(ConfigDocument):
         if not repo_name:
             return None
         provider = str(project.get("gitprovider", self._DEFAULT_PROJECT_GITPROVIDER))
-        host = self._resolve_provider_host(provider, project.get("gitprovider_url"))
-        if provider == "github":
-            namespace = project.get("project_owner_name")
-        elif provider == "gitlab":
-            namespace = project.get("group_name") or project.get("project_owner_name")
-        else:
+        try:
+            gitprovider = GitProvider(provider)
+        except ValueError:
             return None
-        if not namespace:
-            return None
-        if self.transport == "ssh":
-            return f"git@{host}:{namespace}/{repo_name}.git"
-        return f"https://{host}/{namespace}/{repo_name}.git"
-
-    @staticmethod
-    def _resolve_provider_host(gitprovider: str, gitprovider_url: Any) -> str:
-        if gitprovider_url:
-            base = str(gitprovider_url).strip()
-            parsed = urlsplit(base if "://" in base else f"https://{base}")
-            host = parsed.netloc or parsed.path.strip("/").split("/", 1)[0]
-            if host:
-                return host
-        if gitprovider == "gitlab":
-            return "gitlab.com"
-        return "github.com"
+        address = RepoAddress(
+            gitprovider=gitprovider,
+            project_name=str(repo_name),
+            repo_name=str(repo_name),
+            project_owner_name=_as_optional_str(project.get("project_owner_name")),
+            group_name=_as_optional_str(project.get("group_name")),
+            gitprovider_url=_as_optional_str(project.get("gitprovider_url")),
+        )
+        return address.to_url(AccessProtocol(self.transport))
 
 
 # ============================================================
@@ -2699,6 +2446,10 @@ def build_registry_from_cgs_document(
         _validate_repo_shape(repo)
         if _is_root_repo_spec(repo, document.project_name, root_identity_assigned):
             _apply_repo_identity(root_entry, repo, document.default_branch)
+            # The source .cgs for the project root is already loaded.  The
+            # authoring default ``nested_config = auto`` applies to its
+            # descendants and must not make the root pending again.
+            root_entry.discovery_state = DiscoveryState.RESOLVED
             root_identity_assigned = True
             continue
 
@@ -2749,6 +2500,7 @@ def build_registry_from_cgs_document(
 
     normalize_node_types(registry)
     registry.recompute_tree_state()
+    document.attach_serialization_context(registry)
     return registry
 
 
@@ -2938,7 +2690,9 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
     pending_entries = [
         entry
         for entry in registry.values()
-        if entry.repo_id != ROOT_REPO_ID and entry.nested_config not in {None, "disabled"}
+        if entry.repo_id != ROOT_REPO_ID
+        and entry.nested_config not in {None, "disabled"}
+        and entry.discovery_state != DiscoveryState.RESOLVED
     ]
 
     # Pre-build a set of all known absolute paths for O(1) circularity detection.
@@ -2967,6 +2721,8 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
             _validate_repo_shape(repo)
             if not root_identity_assigned and repo.get("project_name") == nested_document.project_name:
                 _apply_repo_identity(entry, repo, nested_document.default_branch)
+                # This nested document has just been resolved for ``entry``.
+                entry.discovery_state = DiscoveryState.RESOLVED
                 root_identity_assigned = True
                 continue
 
@@ -3106,6 +2862,7 @@ class ComplexGitSyncClient:
 
     The canonical user-facing lifecycle is::
 
+        configure(project, repositories) → CgsDocument  (offline)
         initialise(.cgs)  → clone all repos → READY  (new project)
         initialise(.gts)  → restore snapshot → READY  (existing project)
         pull(.cgs/.gts)   → resync existing tree
@@ -3132,6 +2889,40 @@ class ComplexGitSyncClient:
 
     def is_loaded(self) -> bool:
         return self.registry is not None or bool(self.orchestre.git_tree.repos)
+
+    def configure(
+        self,
+        project: str | dict[str, Any],
+        repositories: Sequence[str | dict[str, Any]],
+        *,
+        output_path: str | Path | None = None,
+    ) -> CgsDocument:
+        """Create a canonical ``.cgs`` document without interactive input.
+
+        This public Python facade accepts the same authoring values collected
+        by the CLI. Parsing, default normalization, and static validation are
+        delegated to :class:`CgsDocument`; optional serialization is delegated
+        to its ``to_toml()`` method. No Git or network operation is performed.
+
+        Parameters
+        ----------
+        project:
+            A project-name string or an authoring project table.
+        repositories:
+            Repository identifiers or advanced authoring tables.
+        output_path:
+            Optional destination for concise ``.cgs`` TOML. When omitted, the
+            validated document is returned without writing a file.
+        """
+        document = CgsDocument.from_dict(
+            {
+                "project": project,
+                "repos": list(repositories),
+            }
+        )
+        if output_path is not None:
+            document.to_toml(Path(output_path))
+        return document
 
     def load_cgs(
         self,
@@ -3221,11 +3012,33 @@ class ComplexGitSyncClient:
             relative to the current working directory
             (``CWD=$CGSHOME/ComplexGitSync``), unless ``CGSHOME`` is set.
         """
+        source_path = Path(config_path).resolve()
+        document = CgsDocument.from_toml(source_path)
+        return self.initialise_cgs_document(
+            document,
+            source_path=source_path,
+            output_path=output_path,
+            clean_before_clone=clean_before_clone,
+        )
+
+    def initialise_cgs_document(
+        self,
+        document: CgsDocument,
+        *,
+        source_path: str | Path,
+        output_path: str | Path | None = None,
+        clean_before_clone: bool = False,
+    ) -> WorkingGitTree:
+        """Initialise from an already-normalized, validated ``CgsDocument``.
+
+        ``source_path`` is the logical origin used for relative paths, state
+        metadata, and logging. It need not exist for direct CLI authoring.
+        """
+        document.validate()
         previous_tree_state = (
             self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         )
-        source_path = Path(config_path).resolve()
-        document = CgsDocument.from_toml(source_path)
+        source_path = Path(source_path).resolve()
         cgshome = self.resolve_cgshome(document, source_path, output_path=output_path)
         project_root = cgshome
 
@@ -5025,41 +4838,6 @@ class ComplexGitSyncClient:
     def validate_topology(self) -> BranchTopologyReport:
         """Inspect and validate the workspace branch topology."""
         return self.validate_branch_topology()
-
-    def configure(self, output_path: str | Path | None = None) -> CgsDocument:
-        """Create a .cgs project specification file from terminal prompts.
-        
-        Uses GitTree.from_prompt() to collect project metadata and repository
-        information interactively, then converts to a CgsDocument.
-        
-        Parameters
-        ----------
-        output_path : str | Path | None
-            Path to write the .cgs file. If None, user will be prompted.
-        
-        Returns
-        -------
-        CgsDocument
-            The configured .cgs document, ready to be written with to_toml().
-        """
-        from .git_tree import GitTree
-        
-        # Create GitTree via prompts
-        git_tree = GitTree.from_prompt()
-        
-        # Convert to CgsDocument
-        cgs_document = git_tree.to_cgs()
-        
-        if output_path is None:
-            default_name = f"{cgs_document.project_name or 'project'}.cgs"
-            raw_output_path = input(f"\nOutput .cgs path [{default_name}]: ").strip()
-            output_path = raw_output_path or default_name
-
-        output_file = Path(output_path) if isinstance(output_path, str) else output_path
-        cgs_document.to_toml(output_file)
-        print(f"\n.cgs file written to: {output_file.resolve()}")
-        
-        return cgs_document
 
     def _resolve_project_root(
         self,

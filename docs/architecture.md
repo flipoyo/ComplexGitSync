@@ -20,7 +20,6 @@ classDiagram
         gitprovider
         access_protocol
         commit_sha
-        to_cgs()
     }
 
     class WorkingRepo {
@@ -38,8 +37,7 @@ classDiagram
         repos
         project_name
         default_branch
-        from_prompt()
-        to_cgs()
+        to_cgs() delegates
     }
 
     class WorkingGitTree {
@@ -52,10 +50,80 @@ classDiagram
 
 ## Documents And Trees
 
-`CgsDocument` is the authoring format. It describes the static repository
-topology and is converted into a reference `GitTree`. The `configure` command
-builds that reference tree from prompts, validates the generated `.cgs`
-document, and writes it to disk.
+`CgsDocument`, defined in `cgs_format.py`, is the authoring-format boundary. It owns
+`.cgs` parsing, serialization, constants, and validation. Its static
+repository topology is converted into a reference `GitTree`. The shared
+format-neutral `ConfigDocument` base remains in `config_document.py` because
+runtime `.gts` and `.goc` documents use it too. For interactive `configure`,
+`cli.py` collects prompt values and passes them to the non-interactive
+`ComplexGitSyncClient.configure()` Python API; `create-cgs` and direct
+`initialise --project/--repo` use the same facade. That method delegates to
+`CgsDocument`. `orchestre.py` owns runtime orchestration and the reusable public
+facade rather than CLI collection or the authoring-format definition.
+
+The boundary is an explicit `PARSE -> NORMALIZE -> VALIDATE` pipeline. Parsing
+uses Python's TOML parser and produces authoring data; normalization expands
+repository shorthand and deterministic defaults into a canonical
+`CgsDocument`; validation checks only that canonical representation. The
+authoring syntax and internal representation are therefore deliberately
+different.
+
+The boundary is bidirectional. `CgsDocument.to_git_tree()` projects canonical
+configuration into the reference model; `CgsDocument.from_git_tree()` projects
+a reference or working tree back into canonical configuration; and
+`to_authoring_dict()` / `to_toml()` emit concise TOML. `GitTree.to_cgs()` is
+only a delegate to that format-owned conversion. Re-parsing and normalizing the
+result must reproduce the original canonical semantics; byte-for-byte TOML
+equality is intentionally not required.
+
+File and CLI authoring converge at this boundary. The CLI collects `--project`
+and repeatable `--repo` values, then calls
+`ComplexGitSyncClient.configure()`. Python callers can invoke the same method
+directly. The facade calls `CgsDocument` and contains no repository grammar or
+normalization. Loading an equivalent `.cgs` and using either definition path
+must produce semantically identical canonical documents. `create-cgs` runs
+that same offline pipeline and serializes the result without entering Git
+runtime.
+
+The two representations are kept as an executable example pair:
+[`examples/template.cgs`](../examples/template.cgs) is the concise file users
+can copy, while
+[`examples/normalized_template.cgs`](../examples/normalized_template.cgs) is
+its complete canonical expansion for developers. Tests require both files to
+normalize to the same `CgsDocument`.
+
+Repository paths are parent-relative. At the top level the base is the project
+root; while expanding a nested `.cgs`, the base is the repository whose config
+is being expanded. Resolution uses `(parent.absolute_path / relative_path)` and
+normalizes `..`, which lets a nested document refer to an already-registered
+sibling or ancestor. If that absolute path is already in the registry,
+discovery keeps the existing entry instead of creating a duplicate.
+
+`nested_config` controls traversal independently of placement. `auto` searches
+the referenced repository root for exactly one `*.cgs`; `disabled` stops at
+that reference; and a relative `.cgs` filename selects an exact config inside
+the repository. Explicit config paths are not allowed to escape the repository
+root.
+
+The textual `provider:owner/repository` grammar belongs exclusively to
+`cgs_format.py`. Its `parse_repo_id()` function owns syntax validation and splitting;
+normalization calls that same function, and CLI repository arguments reuse it
+through `ComplexGitSyncClient.configure()` and `CgsDocument` rather than
+introducing another parser.
+
+The complete `.cgs` format pipeline is deterministic and offline. Parsing,
+normalization, validation, and serialization never probe repositories or run
+Git. Remote existence and branch/tag availability are resolved only after the
+validated document has entered the runtime layer, through explicit `GitRunner`
+operations.
+
+Provider behavior belongs to `git_repo.py`. `GitProvider`,
+`CANONICAL_GIT_PROVIDERS`, `KNOWN_PROVIDER_HOSTS`, and `RepoAddress` are the
+single definitions used for canonical provider membership and runtime remote
+composition. The known-host map is `github -> github.com`,
+`gitlab -> gitlab.com`, and `codeberg -> codeberg.org`. `custom` is deliberately
+absent: it requires an explicit `gitprovider_url` and never falls back to a
+guessed host.
 
 `WorkingGitTree` is the runtime form. It inherits reference-tree metadata from
 `GitTree` and stores `WorkingRepo` nodes keyed by runtime `repo_id`. Operations
@@ -78,7 +146,13 @@ cleaned before child submodules are force-updated.
 
 ```mermaid
 flowchart LR
-    CGS[.cgs authoring spec] --> REF[GitTree reference tree]
+    CGS[.cgs authoring TOML] --> PARSE[Parse]
+    PARSE --> NORMALIZE[Normalize]
+    NORMALIZE --> VALIDATE[Validate canonical CgsDocument]
+    VALIDATE --> REF[GitTree reference tree]
+    REF --> PROJECT[Project through cgs_format.py]
+    PROJECT --> SERIALIZE[Serialize minimal .cgs TOML]
+    SERIALIZE --> CGS
     REF --> WORK[WorkingGitTree runtime tree]
     WORK --> OPS[Operations]
     WORK --> GTS[.gts runtime snapshot]
@@ -87,9 +161,11 @@ flowchart LR
 
 ## Cleanup Boundary
 
-Phase 5 keeps the runtime registry surface focused. `WorkingGitTree` and
-`WorkingRepo` are the runtime types; `GitTree` and `GitRepo` remain the
-reference types used to create and validate `.cgs` documents.
+The runtime registry surface remains focused. `WorkingGitTree` and
+`WorkingRepo` are the runtime types; `GitTree` and `GitRepo` carry canonical
+repository state but do not parse repository identifiers or format TOML.
+Opaque adapter metadata preserves exceptional configuration during a semantic
+round trip and is interpreted only by `cgs_format.py`.
 
 ## Tree Lifecycle States
 

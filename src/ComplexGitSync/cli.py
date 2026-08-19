@@ -9,10 +9,10 @@ from pathlib import Path
 from collections.abc import Sequence
 
 from . import __version__
-from .git_repo import RefKind
+from .cgs_format import DEFAULT_ACCESS_PROTOCOL, DEFAULT_BRANCH, CgsDocument
+from .git_repo import GitProvider, RefKind
 from .git_tree import ProjectTreeState, iter_tree_leaf_first
 from .orchestre import (
-    CgsDocument,
     ComplexGitSyncClient,
     DEFAULT_MEMORY_REMOTE_NAME,
     DEFAULT_MEMORY_SERVICE,
@@ -36,7 +36,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "launch-release": "Check out a frozen release tag from a READY tree.",
     # Expert commands
     "purge": "Remove generated clone state for a .cgs workspace.",
-    "validate": "Validate a .cgs or .gts topology and print the lifecycle state.",
+    "validate": "Parse, normalize, and validate a .cgs or validate a .gts topology.",
     "clone": "Clone a nested project tree from .cgs.",
     "pull": "Resynchronise an existing project tree from .cgs or .gts.",
     "pull-force": "Destructively resynchronise an existing project tree from .cgs or .gts.",
@@ -48,7 +48,11 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "tag": "Create and push a tag across a READY tree.",
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
     # Configuration commands
-    "configure": "Create a .cgs project specification file interactively.",
+    "configure": (
+        "Create a concise .cgs specification for GitHub, GitLab, Codeberg, "
+        "or a custom provider."
+    ),
+    "create-cgs": "Create a validated .cgs specification from CLI project definitions.",
     # Memory commands
     "remember": "Bind a .cgs artefact to its external SSH-Git Memory endpoint.",
     "memorize": "Persist a finalized local Memory State to the configured SSH-Git remote.",
@@ -87,20 +91,41 @@ def build_parser() -> argparse.ArgumentParser:
         else:
             subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
         if command_name in {"initialise", "clean-init", "purge"}:
-            subparser.add_argument(
-                "source",
-                help=(
+            source_options = {
+                "help": (
                     "Path to a .cgs spec"
                     if command_name in {"clean-init", "purge"}
-                    else "Path to a .cgs spec (clone mode) or .gts snapshot (restore mode)."
-                ),
-            )
+                    else (
+                        "Path to a .cgs spec or .gts snapshot. Omit when using "
+                        "--project with one or more --repo options."
+                    )
+                )
+            }
+            if command_name == "initialise":
+                source_options["nargs"] = "?"
+            subparser.add_argument("source", **source_options)
+            if command_name == "initialise":
+                subparser.add_argument(
+                    "--project",
+                    help="Project name for direct CLI authoring.",
+                )
+                subparser.add_argument(
+                    "--repo",
+                    action="append",
+                    default=[],
+                    metavar="PROVIDER:OWNER/REPOSITORY",
+                    help=(
+                        "Repository identifier collected by the CLI and parsed by "
+                        "cgs_format.py; repeat for multiple repositories."
+                    ),
+                )
             subparser.add_argument(
                 "--output-path",
                 dest="output_path",
                 help=(
                     "CGSPATH: parent directory used to derive CGSHOME as "
-                    "CGSPATH/<project-name> after the .cgs is read (.cgs mode only). "
+                    "CGSPATH/<project-name> after the project definition is normalized "
+                    "(.cgs or direct CLI mode). "
                     "Defaults to ../.. relative to CWD ($CGSHOME/ComplexGitSync)."
                 ),
             )
@@ -627,17 +652,54 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Path to write the .cgs file.",
             )
             subparser.set_defaults(handler=_handle_configure)
+        elif command_name == "create-cgs":
+            subparser.add_argument("--project", required=True, help="Project name.")
+            subparser.add_argument(
+                "--repo",
+                action="append",
+                required=True,
+                metavar="PROVIDER:OWNER/REPOSITORY",
+                help=(
+                    "Repository identifier parsed and normalized by cgs_format.py; "
+                    "repeat for multiple repositories."
+                ),
+            )
+            subparser.add_argument(
+                "--output",
+                required=True,
+                metavar="FILE",
+                help="Path to write the validated .cgs file.",
+            )
+            subparser.set_defaults(handler=_handle_create_cgs)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "initialise":
+        _validate_initialise_definition(parser, args)
     handler = getattr(args, "handler", None)
     if handler is None:
         parser.print_help()
         return 0
     return handler(args)
+
+
+def _validate_initialise_definition(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+) -> None:
+    """Enforce SOURCE XOR (--project and repeatable --repo)."""
+    source = getattr(args, "source", None)
+    project = getattr(args, "project", None)
+    repositories = getattr(args, "repo", [])
+    if source is not None and (project is not None or repositories):
+        parser.error("initialise accepts SOURCE or --project with --repo, not both")
+    if source is None and project is None:
+        parser.error("initialise requires SOURCE or --project with at least one --repo")
+    if source is None and not repositories:
+        parser.error("initialise --project requires at least one --repo")
 
 
 def _handle_load(args: argparse.Namespace) -> int:
@@ -650,6 +712,29 @@ def _handle_load(args: argparse.Namespace) -> int:
 
 
 def _handle_initialise(args: argparse.Namespace) -> int:
+    if args.source is None:
+        client = ComplexGitSyncClient()
+        document = client.configure(args.project, args.repo)
+        logical_source = Path.cwd() / f"{document.project_name or 'project'}.cgs"
+        output_path = getattr(args, "output_path", None)
+        project_root = client.resolve_cgshome(
+            document,
+            logical_source,
+            output_path=output_path,
+        )
+        return _run_with_logging(
+            command_name="initialise",
+            source=logical_source,
+            client=client,
+            project_root=project_root,
+            runner=lambda active_client, _source: _execute_initialise_cgs_document(
+                active_client,
+                document,
+                logical_source=logical_source,
+                output_path=output_path,
+            ),
+        )
+
     source_path = Path(args.source)
     if source_path.suffix == ".cgs":
         output_path = getattr(args, "output_path", None)
@@ -1014,9 +1099,154 @@ def _handle_status(args: argparse.Namespace) -> int:
 
 
 def _handle_configure(args: argparse.Namespace) -> int:
+    project, repositories = _prompt_cgs_definition()
     output_path = getattr(args, "output", None)
-    client = ComplexGitSyncClient()
-    client.configure(output_path=output_path)
+    if output_path is None:
+        default_name = f"{project.get('name') or 'project'}.cgs"
+        output_path = (
+            input(f"\nOutput .cgs path [{default_name}]: ").strip() or default_name
+        )
+
+    output_file = Path(output_path)
+    ComplexGitSyncClient().configure(
+        project,
+        repositories,
+        output_path=output_file,
+    )
+    print(f"\n.cgs file written to: {output_file.resolve()}")
+    return 0
+
+
+def _prompt_cgs_definition() -> tuple[dict[str, str], list[dict[str, str]]]:
+    """Collect interactive authoring values for the public Python facade.
+
+    This function owns terminal interaction only. It neither constructs a
+    ``CgsDocument`` nor interprets repository-identifier grammar.
+    """
+    print("=== ComplexGitSync Configuration ===")
+    print("Create a .cgs project specification file")
+
+    project_name = input("Project name: ").strip()
+    authored_default_branch = input(f"Default branch [{DEFAULT_BRANCH}]: ").strip()
+
+    print("\n--- Repository defaults (each repository may override them) ---")
+    default_owner = input("Default owner/group name: ").strip()
+    provider_choices = "/".join(provider.value for provider in GitProvider)
+    authored_default_provider = input(
+        f"Default git provider [{GitProvider.GITHUB.value}; choices: {provider_choices}]: "
+    ).strip()
+    displayed_default_provider = (
+        authored_default_provider or GitProvider.GITHUB.value
+    )
+    default_provider_url: str | None = None
+    if displayed_default_provider == GitProvider.CUSTOM.value:
+        default_provider_url = input("Default custom provider URL: ").strip() or None
+    authored_default_protocol = input(
+        f"Default access protocol [{DEFAULT_ACCESS_PROTOCOL}; choices: ssh/https]: "
+    ).strip()
+    displayed_default_protocol = authored_default_protocol or DEFAULT_ACCESS_PROTOCOL
+
+    while True:
+        raw_count = input("\nNumber of repositories: ").strip()
+        try:
+            repository_count = int(raw_count)
+        except ValueError:
+            print("Error: Please enter a valid number")
+            continue
+        if repository_count < 1:
+            print("Error: Number of repositories must be at least 1")
+            continue
+        break
+
+    print(f"\n--- Repository Configuration (total: {repository_count}) ---")
+    repositories: list[dict[str, str]] = []
+    for index in range(repository_count):
+        print(f"\nRepository {index + 1}:")
+        owner = (
+            input(f"  Project owner name [{default_owner}]: ").strip()
+            or default_owner
+        )
+        if index == 0:
+            repository_name = (
+                input(f"  Project name [{project_name}]: ").strip()
+                or project_name
+            )
+        else:
+            repository_name = input("  Project name: ").strip()
+        authored_provider = input(
+            f"  Git provider [{displayed_default_provider}]: "
+        ).strip()
+        displayed_provider = authored_provider or displayed_default_provider
+
+        provider_url: str | None = None
+        if displayed_provider == GitProvider.CUSTOM.value:
+            inherited_url = (
+                default_provider_url
+                if displayed_provider == displayed_default_provider
+                else None
+            )
+            prompt = (
+                f"  Custom provider URL [{inherited_url}]: "
+                if inherited_url
+                else "  Custom provider URL: "
+            )
+            provider_url = input(prompt).strip() or inherited_url
+
+        authored_protocol = input(
+            f"  Access protocol [{displayed_default_protocol}]: "
+        ).strip()
+        displayed_branch = authored_default_branch or DEFAULT_BRANCH
+        authored_repo_branch = input(
+            f"  Default branch [{displayed_branch}]: "
+        ).strip()
+        displayed_repo_branch = authored_repo_branch or displayed_branch
+        authored_fallback_branch = input(
+            f"  Fallback branch [{displayed_repo_branch}]: "
+        ).strip()
+
+        repository: dict[str, str] = {
+            "project_owner_name": owner,
+            "project_name": repository_name,
+        }
+        effective_provider = authored_provider or authored_default_provider
+        if effective_provider:
+            repository["gitprovider"] = effective_provider
+        if provider_url is not None:
+            repository["gitprovider_url"] = provider_url
+        effective_protocol = authored_protocol or authored_default_protocol
+        if effective_protocol:
+            repository["access_protocol"] = effective_protocol
+        if authored_repo_branch:
+            repository["default_branch"] = authored_repo_branch
+        if authored_fallback_branch:
+            repository["fallback_branch"] = authored_fallback_branch
+        if index > 0:
+            authored_relative_path = input(
+                f"  Relative path [{repository_name}]: "
+            ).strip()
+            if authored_relative_path:
+                repository["relative_path"] = authored_relative_path
+            authored_nested_config = input(
+                "  Nested config [auto/disabled]: "
+            ).strip()
+            if authored_nested_config:
+                repository["nested_config"] = authored_nested_config
+        repositories.append(repository)
+
+    project: dict[str, str] = {"name": project_name}
+    if authored_default_branch:
+        project["default_branch"] = authored_default_branch
+    return project, repositories
+
+
+def _handle_create_cgs(args: argparse.Namespace) -> int:
+    output_path = Path(args.output)
+    ComplexGitSyncClient().configure(
+        args.project,
+        args.repo,
+        output_path=output_path,
+    )
+    print(f".cgs file written to: {output_path.resolve()}")
     return 0
 
 
@@ -1042,6 +1272,33 @@ def _execute_initialise_cgs(
     print("workflow=load->expand->validate->clone")
     print("git_command=git clone (executed per repo)")
     registry = client.initialise_cgs(source_path, output_path=output_path)
+    tree_state = client.get_tree_state()
+    print(
+        f"{_format_tree_state_line(tree_state)} "
+        f"root={registry.get('root').absolute_path}"
+    )
+    outline = _format_repo_tree_outline(client)
+    if outline:
+        print("tree:")
+        print(outline)
+    return 0
+
+
+def _execute_initialise_cgs_document(
+    client: ComplexGitSyncClient,
+    document: CgsDocument,
+    *,
+    logical_source: Path,
+    output_path: str | None = None,
+) -> int:
+    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE")
+    print("workflow=load->expand->validate->clone")
+    print("git_command=git clone (executed per repo)")
+    registry = client.initialise_cgs_document(
+        document,
+        source_path=logical_source,
+        output_path=output_path,
+    )
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
