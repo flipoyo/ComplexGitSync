@@ -353,6 +353,51 @@ other explicit overrides.  Unknown providers, malformed identifiers,
 duplicates, and missing \texttt{project} or \texttt{repos} are rejected before
 a \texttt{GitTree} is built.
 
+Two checked-in files document this boundary. Copy
+\texttt{examples/template.cgs} for normal authoring. Its equivalent
+\texttt{examples/normalized\_template.cgs} expands every inferred field and is
+provided as a developer reference for the canonical \texttt{CgsDocument}
+shape. The two files are regression-tested for semantic equivalence.
+
+\subsection{Repository Placement and Nested Discovery}
+
+For every non-root entry, \texttt{relative\_path} is relative to the parent
+repository represented by the current \texttt{.cgs}; it is not relative to
+the process working directory. At the top level that parent is the project
+root. While expanding a nested config, it is the repository containing that
+config. The default is the repository name. A unique repository matching the
+project name uses \texttt{.} because it represents the current root.
+
+The \texttt{nested\_config} option controls whether traversal continues after
+the repository is available:
+
+\begin{itemize}
+  \item \texttt{auto} (default) loads the sole root-level \texttt{*.cgs} file,
+        if one exists; multiple matches are rejected as ambiguous.
+  \item \texttt{disabled} does not inspect the repository for nested config.
+  \item A relative path ending in \texttt{.cgs} loads that exact file inside
+        the repository. It may not escape the repository root.
+\end{itemize}
+
+For the integration topology, \texttt{CGSil2.cgs} contains:
+
+\begin{lstlisting}
+{ repository = "github:flipoyo/CGSih1", relative_path = "../CGSih1", nested_config = "disabled" }
+\end{lstlisting}
+
+Because the config describes the tree below \texttt{CGSil2}, the path resolves
+from that directory:
+
+\begin{center}
+\texttt{<CGSHOME>/CGSil2/../CGSih1 -> <CGSHOME>/CGSih1}
+\end{center}
+
+It therefore references the existing sibling declared by \texttt{CGSil1.cgs},
+instead of cloning another \texttt{CGSih1} under \texttt{CGSil2}. Discovery
+recognizes the already-registered absolute path and keeps the canonical entry.
+The cross-reference is \texttt{disabled} because the canonical root-level
+\texttt{CGSih1} entry is responsible for loading \texttt{CGSih1.cgs}.
+
 \subsection{Git Tree State Snapshot (\texttt{.gts})}
 
 A TOML file generated automatically by bootstrapping and release operations.

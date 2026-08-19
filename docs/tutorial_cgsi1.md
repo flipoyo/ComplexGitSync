@@ -64,6 +64,43 @@ The parser normalizes this authoring form before validation. It supplies
 `CGSil1` as the root at `.` because its repository name uniquely matches the
 project name.
 
+### Paths and nested configuration
+
+For a non-root repository, `relative_path` is resolved from its parent
+repository directory—not from the shell's current directory. In a nested
+`.cgs`, that parent is the repository described by the nested file. Omitting
+the option places a repository at its repository name.
+
+For example, `CGSil2.cgs` contains:
+
+```toml
+{ repository = "github:flipoyo/CGSih1", relative_path = "../CGSih1", nested_config = "disabled" }
+```
+
+The file describes children of `CGSil2`, so if `CGSil2` is at
+`<CGSHOME>/CGSil2`, the path resolves as follows:
+
+```text
+<CGSHOME>/CGSil2/../CGSih1  ->  <CGSHOME>/CGSih1
+```
+
+This points to the existing `CGSih1` sibling already declared by
+`CGSil1.cgs`; it does not request another clone inside `CGSil2`. The duplicate
+absolute path is recognized and the canonical root-level entry is retained.
+
+`nested_config` controls whether discovery continues inside the referenced
+repository:
+
+- `"auto"` (default) loads the sole root-level `*.cgs` file, if present; more
+  than one is ambiguous and rejected.
+- `"disabled"` does not inspect that repository for another `.cgs` file.
+- A relative `.cgs` path, such as `"config/children.cgs"`, loads that exact file
+  from inside the repository and may not escape it.
+
+Thus the CGSil2 cross-reference uses `"disabled"`: the canonical `CGSih1`
+entry from `CGSil1.cgs`, not this duplicate route, owns discovery of
+`CGSih1.cgs` and its `CGSih2` child.
+
 For a new project, the interactive equivalent is:
 
 ```bash

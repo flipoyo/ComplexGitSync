@@ -399,6 +399,29 @@ class TestCgsDocumentValid:
         assert doc.project_name == "HydrologicalTwinAlphaSeries"
         assert len(doc.repos) == 2
 
+    def test_all_cgs_examples_use_shorthand_authoring_shape(self):
+        examples = Path(__file__).parent.parent.parent / "examples"
+
+        for path in examples.glob("*.cgs"):
+            if path.name == "normalized_template.cgs":
+                continue
+            authoring = parse_cgs(path)
+            assert "document" not in authoring, path.name
+            assert isinstance(authoring["project"], (str, dict)), path.name
+            assert all(
+                isinstance(repo, str)
+                or (isinstance(repo, dict) and "repository" in repo)
+                for repo in authoring["repos"]
+            ), path.name
+
+    def test_template_and_normalized_template_are_semantically_equivalent(self):
+        examples = Path(__file__).parent.parent.parent / "examples"
+
+        concise = CgsDocument.from_toml(examples / "template.cgs")
+        normalized = CgsDocument.from_toml(examples / "normalized_template.cgs")
+
+        assert concise.to_dict() == normalized.to_dict()
+
 
 class TestCgsDocumentInvalid:
     def _assert_validation_error(self, data: dict, fragment: str) -> None:

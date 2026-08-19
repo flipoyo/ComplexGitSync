@@ -179,6 +179,18 @@ relative paths.  Validation receives only the complete canonical
 \texttt{CgsDocument}.  Authoring syntax is therefore not the internal
 representation.
 
+Repository placement is parent-relative. At the top level the parent path is
+the project root; during nested discovery it is the repository whose
+\texttt{.cgs} is being expanded. Thus \texttt{../sibling} resolves to an
+existing sibling directory. Discovery compares normalized absolute paths and
+keeps an existing registry entry instead of inserting a duplicate.
+
+Placement and traversal are independent. \texttt{nested\_config = auto}
+searches the repository root for exactly one \texttt{*.cgs},
+\texttt{disabled} stops discovery through that reference, and a relative
+\texttt{.cgs} path selects an exact file inside the repository. Explicit paths
+may not escape the repository root.
+
 Before any mutating workflow step (\texttt{commit}, \texttt{push},
 \texttt{tag}, or \texttt{freeze}), the action layer now runs a workspace
 preflight validator. It checks dirty worktrees, detached HEADs, missing

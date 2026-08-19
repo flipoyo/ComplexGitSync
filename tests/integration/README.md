@@ -35,7 +35,11 @@ CGSil1 (GitLab, root)
 ### Structural challenges
 
 **Duplication** — `CGSil2.cgs` references `CGSih1` at `../CGSih1` (the same
-physical directory as `root:CGSih1`).  ComplexGitSync's discovery guard
+physical directory as `root:CGSih1`). Because paths in that nested file are
+relative to the `CGSil2` directory, `<CGSHOME>/CGSil2/../CGSih1` normalizes to
+`<CGSHOME>/CGSih1`. `nested_config = "disabled"` means this duplicate route
+does not scan `CGSih1` again; the canonical entry owns that discovery.
+ComplexGitSync's discovery guard
 (`registered_paths` set in `discover_nested_configs`) detects the matching
 absolute path and skips the duplicate.  The canonical `root:CGSih1` entry is
 kept; no `root:CGSil2:CGSih1` entry is created.

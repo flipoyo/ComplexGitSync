@@ -1,5 +1,7 @@
-# Nested CGSil2 topology. The CGSih1 cross-reference needs overrides because
-# it points to a sibling and must not trigger another nested scan.
+# This file describes the tree below the CGSil2 repository. Paths are relative
+# to CGSil2, so ../CGSih1 resolves to the existing CGSih1 sibling in the parent
+# CGSil1 workspace. Discovery is disabled on this cross-reference: CGSih1's
+# canonical entry in CGSil1.cgs is responsible for reading CGSih1.cgs.
 
 project = "CGSil2"
 

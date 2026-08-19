@@ -1,0 +1,11 @@
+# Copy this file to start a project specification. Repository identifiers use
+# provider:owner/repository. Keep plain strings when defaults are sufficient;
+# use an inline table only for values that need to differ.
+
+project = "example-project"
+
+repos = [
+    "github:example-org/example-project",
+    "gitlab:example-group/example-library",
+    { repository = "github:example-org/example-docs", default_branch = "develop", fallback_branch = "main", access_protocol = "https", relative_path = "docs", nested_config = "disabled" },
+]

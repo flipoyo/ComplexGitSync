@@ -68,6 +68,26 @@ repository shorthand and deterministic defaults into a canonical
 authoring syntax and internal representation are therefore deliberately
 different.
 
+The two representations are kept as an executable example pair:
+[`examples/template.cgs`](../examples/template.cgs) is the concise file users
+can copy, while
+[`examples/normalized_template.cgs`](../examples/normalized_template.cgs) is
+its complete canonical expansion for developers. Tests require both files to
+normalize to the same `CgsDocument`.
+
+Repository paths are parent-relative. At the top level the base is the project
+root; while expanding a nested `.cgs`, the base is the repository whose config
+is being expanded. Resolution uses `(parent.absolute_path / relative_path)` and
+normalizes `..`, which lets a nested document refer to an already-registered
+sibling or ancestor. If that absolute path is already in the registry,
+discovery keeps the existing entry instead of creating a duplicate.
+
+`nested_config` controls traversal independently of placement. `auto` searches
+the referenced repository root for exactly one `*.cgs`; `disabled` stops at
+that reference; and a relative `.cgs` filename selects an exact config inside
+the repository. Explicit config paths are not allowed to escape the repository
+root.
+
 `WorkingGitTree` is the runtime form. It inherits reference-tree metadata from
 `GitTree` and stores `WorkingRepo` nodes keyed by runtime `repo_id`. Operations
 such as checkout, branch, add, commit, push, freeze, and launch_release act on

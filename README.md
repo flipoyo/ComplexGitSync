@@ -42,13 +42,27 @@ repos = [
 ]
 ```
 
-Repository identifiers use `provider:owner/repository`. ComplexGitSync runs
-`PARSE -> NORMALIZE -> VALIDATE`, supplying `main` as the default and fallback
-branch, `ssh` access, `auto` nested-config discovery, and the repository name
-as its relative path. A single repository whose name matches `project` is
-mounted at `.`. Advanced inline tables are needed only for overrides, for
-example `{ repository = "github:owner/docs", relative_path = "documentation",
+Repository identifiers use `provider:owner/repository`. ComplexGitSync fills in
+`main` branches, `ssh` access, the repository name as its path, and automatic
+nested `.cgs` discovery. A unique repository matching `project` is the root at
+`.`. Use an inline table only to override a default:
+
+- `default_branch` / `fallback_branch`: preferred and fallback branches.
+- `access_protocol`: `ssh` (default) or `https`.
+- `relative_path`: location relative to the parent repository; defaults to the
+  repository name.
+- `nested_config`: `auto` scans that repository for one root-level `*.cgs`,
+  `disabled` does not scan it, and a `.cgs` path selects a specific file.
+
+Example: `{ repository = "github:owner/docs", relative_path = "documentation",
 nested_config = "disabled" }`.
+
+Start new specifications from [examples/template.cgs](examples/template.cgs).
+It demonstrates both plain repository identifiers and an inline override. For
+developers, [examples/normalized_template.cgs](examples/normalized_template.cgs)
+shows the exact canonical document produced from that template after defaults
+and root-path inference are applied. The normalized file is a reference for the
+internal model, not the preferred hand-authored form.
 
 Authentication is delegated to Git. If `git clone`, `git fetch`, `git push`,
 and your credential helper work locally, `cgitsync` uses the same setup.

@@ -61,6 +61,19 @@ Each identifier uses \texttt{provider:owner/repository}.  ComplexGitSync runs
 repository name as its path.  A unique repository matching the project name
 is mounted at \texttt{.}.  Advanced tables are reserved for overrides.
 
+Copy \texttt{examples/template.cgs} when starting a specification. It combines
+plain repository identifiers with one inline override. Developers can compare
+it with \texttt{examples/normalized\_template.cgs}, which shows the complete
+canonical document after normalization and is not intended as the usual
+hand-authored form.
+
+The common inline options are \texttt{default\_branch},
+\texttt{fallback\_branch}, \texttt{access\_protocol},
+\texttt{relative\_path}, and \texttt{nested\_config}. A relative path is
+resolved from the parent repository. Nested config can be \texttt{auto} to
+load the sole root-level \texttt{*.cgs}, \texttt{disabled} to stop discovery,
+or a relative \texttt{.cgs} path to select an exact file inside the repository.
+
 \begin{lstlisting}[language=bash]
 $ pixi run cgitsync validate examples/complexgitsync.cgs
 $ pixi run cgitsync view-tree examples/complexgitsync.cgs

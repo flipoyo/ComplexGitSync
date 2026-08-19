@@ -1,0 +1,43 @@
+# Canonical expansion of template.cgs after normalization. This file is a
+# developer reference for the internal CgsDocument shape; users should normally
+# copy template.cgs and rely on deterministic defaults.
+
+[document]
+format_version = "1.0"
+
+[project]
+name = "example-project"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "example-org"
+project_name = "example-project"
+repo_name = "example-project"
+default_branch = "main"
+fallback_branch = "main"
+access_protocol = "ssh"
+nested_config = "auto"
+relative_path = "."
+
+[[repos]]
+gitprovider = "gitlab"
+project_owner_name = "example-group"
+project_name = "example-library"
+repo_name = "example-library"
+default_branch = "main"
+fallback_branch = "main"
+access_protocol = "ssh"
+nested_config = "auto"
+relative_path = "example-library"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "example-org"
+project_name = "example-docs"
+repo_name = "example-docs"
+default_branch = "develop"
+fallback_branch = "main"
+access_protocol = "https"
+nested_config = "disabled"
+relative_path = "docs"
