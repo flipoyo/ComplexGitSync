@@ -2862,6 +2862,7 @@ class ComplexGitSyncClient:
 
     The canonical user-facing lifecycle is::
 
+        configure(project, repositories) → CgsDocument  (offline)
         initialise(.cgs)  → clone all repos → READY  (new project)
         initialise(.gts)  → restore snapshot → READY  (existing project)
         pull(.cgs/.gts)   → resync existing tree
@@ -2888,6 +2889,40 @@ class ComplexGitSyncClient:
 
     def is_loaded(self) -> bool:
         return self.registry is not None or bool(self.orchestre.git_tree.repos)
+
+    def configure(
+        self,
+        project: str | dict[str, Any],
+        repositories: Sequence[str | dict[str, Any]],
+        *,
+        output_path: str | Path | None = None,
+    ) -> CgsDocument:
+        """Create a canonical ``.cgs`` document without interactive input.
+
+        This public Python facade accepts the same authoring values collected
+        by the CLI. Parsing, default normalization, and static validation are
+        delegated to :class:`CgsDocument`; optional serialization is delegated
+        to its ``to_toml()`` method. No Git or network operation is performed.
+
+        Parameters
+        ----------
+        project:
+            A project-name string or an authoring project table.
+        repositories:
+            Repository identifiers or advanced authoring tables.
+        output_path:
+            Optional destination for concise ``.cgs`` TOML. When omitted, the
+            validated document is returned without writing a file.
+        """
+        document = CgsDocument.from_dict(
+            {
+                "project": project,
+                "repos": list(repositories),
+            }
+        )
+        if output_path is not None:
+            document.to_toml(Path(output_path))
+        return document
 
     def load_cgs(
         self,
@@ -4803,41 +4838,6 @@ class ComplexGitSyncClient:
     def validate_topology(self) -> BranchTopologyReport:
         """Inspect and validate the workspace branch topology."""
         return self.validate_branch_topology()
-
-    def configure(self, output_path: str | Path | None = None) -> CgsDocument:
-        """Create a .cgs project specification file from terminal prompts.
-        
-        Uses GitTree.from_prompt() to collect project metadata and repository
-        information interactively, then converts to a CgsDocument.
-        
-        Parameters
-        ----------
-        output_path : str | Path | None
-            Path to write the .cgs file. If None, user will be prompted.
-        
-        Returns
-        -------
-        CgsDocument
-            The configured .cgs document, ready to be written with to_toml().
-        """
-        from .git_tree import GitTree
-        
-        # Create GitTree via prompts
-        git_tree = GitTree.from_prompt()
-        
-        # Convert to CgsDocument
-        cgs_document = git_tree.to_cgs()
-        
-        if output_path is None:
-            default_name = f"{cgs_document.project_name or 'project'}.cgs"
-            raw_output_path = input(f"\nOutput .cgs path [{default_name}]: ").strip()
-            output_path = raw_output_path or default_name
-
-        output_file = Path(output_path) if isinstance(output_path, str) else output_path
-        cgs_document.to_toml(output_file)
-        print(f"\n.cgs file written to: {output_file.resolve()}")
-        
-        return cgs_document
 
     def _resolve_project_root(
         self,

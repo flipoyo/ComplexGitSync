@@ -1,5 +1,9 @@
 # ComplexGitSync Architecture Refactoring — Development Plan
 
+> **Completed historical migration plan.** References to the former runtime
+> registry, mutable entry type, and `GitTree.from_prompt()` are retained only
+> to explain the refactor; they are not current APIs.
+
 > **Objective**: Simplify the ComplexGitSync architecture by eliminating the dual tree representation (`GitTree` + `legacy runtime registry`) in favor of a unified class hierarchy where `WorkingGitTree` inherits from `GitTree` and adds runtime state. Remove all deprecated functions and clean up the codebase.
 
 ---

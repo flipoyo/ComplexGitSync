@@ -1,5 +1,9 @@
 # ComplexGitSync DevPlan
 
+> **Historical baseline.** This document preserves the initial design and may
+> contain legacy module names or verbose `.cgs` examples. Current architecture
+> and format rules live in `AdditionalSpecs.md` and `docs/architecture.md`.
+
 ## Purpose
 ComplexGitSync is a standalone project that manages a nested Git repository tree from local `.cgs` project specifications and generated `.gts` Git Tree State snapshots.
 

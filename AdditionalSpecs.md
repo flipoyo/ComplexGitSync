@@ -27,9 +27,9 @@ one tier; dependencies only flow **downward** (API → Actions → Core).
                          │ reads / mutates
 ┌────────────────────────▼────────────────────────────┐
 │  Tier 1 — Core Data (information processing)        │
-│  GitTree  ·  GitRepo  ·  legacy runtime registry     │
-│  legacy repo entry  ·  RepoAddress                  │
-│  Centred on GitTree and its parent-leaf node graph  │
+│  GitTree · GitRepo · WorkingGitTree · WorkingRepo   │
+│  RepoAddress                                        │
+│  Centred on reference and working tree structures   │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -56,25 +56,30 @@ Operational consequences:
 
 ### Tier 1 — Core Data
 
-The entire system is centred on **`GitTree`**, which owns the parent-leaf graph
-of **`GitRepo`** nodes.
+The reference model is centred on **`GitTree`**, which owns canonical
+**`GitRepo`** identities. **`WorkingGitTree`** extends it with the parent-leaf
+runtime graph of mutable **`WorkingRepo`** nodes.
 
 ```
 GitTree
-  └── root       (GitRepo, NodeType = ROOT)
-        ├── dep  (GitRepo, NodeType = PARENT)
-        │     └── sub  (GitRepo, NodeType = LEAF)
-        └── lib  (GitRepo, NodeType = LEAF)
+  ├── project identity  (GitRepo)
+  └── dependency identities (GitRepo, ...)
+
+WorkingGitTree
+  └── root       (WorkingRepo, NodeType = ROOT)
+        ├── dep  (WorkingRepo, NodeType = PARENT)
+        │     └── sub  (WorkingRepo, NodeType = LEAF)
+        └── lib  (WorkingRepo, NodeType = LEAF)
 ```
 
 Key classes and their role in information processing:
 
 | Class | Role |
 |---|---|
-| `GitRepo` | Immutable identity of a single repository (provider, namespace, project name, protocol, SHA) |
-| `GitTree` | Owns the in-memory dict of GitRepo objects; manages repo-level corrections |
-| `legacy runtime registry` | Authoritative runtime graph; maps repo IDs to mutable `legacy repo entry` records |
-| `legacy repo entry` | One mutable runtime record per node — static identity + dynamic sync state |
+| `GitRepo` | Canonical reference identity of one repository (provider, namespace, project name, protocol, SHA) |
+| `GitTree` | Reference-tree structure containing `GitRepo` objects and format-adapter metadata |
+| `WorkingGitTree` | Authoritative runtime graph; maps repo IDs to mutable `WorkingRepo` records |
+| `WorkingRepo` | One mutable runtime node — canonical identity plus tree and synchronization state |
 | `RepoAddress` | Derives the remote URL from a `GitRepo`; no side-effects |
 | `RepoNode` | Immutable snapshot of a node's tree position for read-only traversal |
 | `ProjectTreeState` | Frozen snapshot of overall tree readiness (returned by the Client to callers) |
@@ -83,7 +88,7 @@ Key classes and their role in information processing:
 is resolved explicitly by `GitRunner` during runtime clone/resolution steps;
 `.cgs` parsing and validation never query a remote.
 
-Supporting enumerations (one per file):
+Supporting enumerations:
 
 | Enum | Values |
 |---|---|
@@ -213,7 +218,7 @@ availability through `GitRunner`.
 `ComplexGitSyncClient` is the single public facade.  It:
 
 - Holds references to `Orchestre`, `GitRunner`, `RuntimeStateStore`, and the
-  live `legacy runtime registry`.
+  live `WorkingGitTree`.
 - Computes the current `TreeLifecycleState` on demand and gates every action
   against it.
 - Emits structured log events for every state transition, action start/end,
@@ -223,66 +228,49 @@ availability through `GitRunner`.
 - Exposes terminal observability views: `view_tree` (topology + branch/local/sync)
   and `view_operation` (tabular runtime state).
 
-`Orchestre` is the coordination layer between the Client and the `GitTree`.
-The CLI (`cli.py`) maps terminal sub-commands to Client method calls
-one-to-one; there is no hidden logic in the CLI layer.
+`Orchestre` is the coordination layer between the Client and the tree models.
+The CLI (`cli.py`) collects arguments or interactive prompt values and delegates
+them to the non-interactive `ComplexGitSyncClient.configure()` Python API.
+That facade delegates format semantics to `cgs_format.py`; runtime commands
+remain separate Client operations.
 
 ---
 
 ## Object Model — Class Grouping by Tier
 
-### Tier 1: Core Data (one .py per class)
+### Tier 1: Core Data
 
 ```
-git_repo.py              GitRepo
-git_tree.py              GitTree
-repo_address.py          RepoAddress
-repo_registry_entry.py   legacy repo entry
-dependency_tree_registry.py  legacy runtime registry
-repo_node.py             RepoNode
-project_tree_state.py    ProjectTreeState
-
-# Enums
-node_type.py             NodeType
-tree_lifecycle_state.py  TreeLifecycleState
-repo_lifecycle_state.py  RepoLifecycleState
-sync_state.py            SyncState
-discovery_state.py       DiscoveryState
-ref_kind.py              RefKind
-git_provider.py          GitProvider
-access_protocol.py       AccessProtocol
+git_repo.py   GitRepo, WorkingRepo, RepoAddress, RepoNode,
+              provider registry and repository-level enums
+git_tree.py   GitTree, WorkingGitTree, ProjectTreeState,
+              TreeLifecycleState, traversal and tree-state helpers
 ```
 
-### Tier 2: Actions (one .py per class / function group)
+### Tier 2: Actions
 
 ```
-discovery.py             discover_nested_configs()
 operations.py            propagate_global_branch, create_global_branch
                          checkout_tree, commit_tree, push_tree
                          tag_tree, freeze_release_tree
-registry.py              builder functions (build_registry_from_cgs_document, …)
-render.py                format_project_tree / format_registry_json
+orchestre.py             registry builders, nested discovery, runtime
+                         documents and orchestration services
 ```
 
 ### Tier 3: Client / API
 
 ```
-client.py                ComplexGitSyncClient
-orchestre.py             Orchestre
-cli.py                   build_parser / main
-git_runner.py            GitRunner
-run_logger.py            CommandRunLogger + create_run_logger
-state_store.py           RuntimeStateStore
+orchestre.py             Orchestre, ComplexGitSyncClient, GitRunner,
+                         CommandRunLogger, RuntimeStateStore
+cli.py                   argument/prompt collection, build_parser, main
 ```
 
 ### Document layer (cross-cutting, read by Tier 2)
 
 ```
 config_document.py       ConfigDocument  (shared format-neutral base)
-cgs_format.py            CgsDocument     (.cgs)
-gts_document.py          GtsDocument     (.gts)
-goc_document.py          GocDocument     (.goc)
-documents.py             re-export shim
+cgs_format.py            CgsDocument and the complete .cgs boundary
+orchestre.py             GtsDocument / GocDocument runtime documents
 errors.py                exception hierarchy
 ```
 
@@ -329,6 +317,12 @@ nested discovery, and deterministic relative paths, and infers `.` for one
 unambiguous project-name repository. Inline or legacy repository tables remain
 available for explicit overrides. Authoring syntax is not the internal
 representation.
+
+`cgs_format.py` is the unique, bidirectional `.cgs` boundary. Its parse,
+normalize, validate, tree-projection, minimize, and serialize paths are offline
+and deterministic. `GitTree.to_cgs()` is only a delegation point. Serializing
+and parsing again must preserve canonical semantics, although byte equality is
+not required.
 
 ### `.gts` formal snapshot contract
 
@@ -438,7 +432,7 @@ All registry entries that resolve to the anchor's path *and* whose parent
 belongs to a non-anchor SCC node are *back-edge* entries.  These are flagged
 `is_external_reference = True` then removed from the registry.
 
-The `is_external_reference` flag on `legacy repo entry` marks a repository
+The `is_external_reference` flag on `WorkingRepo` marks a repository
 reference that must **not** be cloned recursively.  It represents a
 SYNC_DEPENDENCY edge that has been downgraded to an EXTERNAL_REFERENCE to
 break the cycle.
@@ -560,7 +554,8 @@ One of `github`, `gitlab`, `codeberg`, or `custom`; defaults to `github`.
 
 > **Terminology note:** GitHub calls the top-level namespace an _owner_;
 > GitLab calls it a _group_. This project uses `project_owner_name` for both;
-> `group_name` is accepted as an alias and resolves to the same field.
+> `project_owner_name` is the portable namespace. For GitLab, an explicit
+> `group_name` overrides it when constructing the remote URL.
 
 **`RepoAddress` composition**
 

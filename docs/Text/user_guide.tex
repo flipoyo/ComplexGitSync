@@ -74,9 +74,11 @@ Unified initialisation entry point.  Dispatches on file extension:
     On success, ends in the lifecycle state recorded in the snapshot.
   \item Direct CLI authoring: requires \texttt{--project} and at least one
     repeatable \texttt{--repo}. It is mutually exclusive with a source file.
-    The CLI collects values only; \texttt{cgs\_format.py} parses, normalizes,
-    and validates them into the same canonical \texttt{CgsDocument} produced
-    from an equivalent \texttt{.cgs} file.
+    The CLI collects values only and calls
+    \texttt{ComplexGitSyncClient.configure()}; that reusable Python API
+    delegates parsing, normalization, and validation to \texttt{cgs\_format.py}
+    and produces the same canonical \texttt{CgsDocument} as an equivalent
+    \texttt{.cgs} file.
 \end{itemize}
 
 All initialization paths end in a \texttt{READY} tree or fail explicitly.

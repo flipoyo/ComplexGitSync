@@ -13,7 +13,7 @@ Classes / enums defined here (Tier 1 — Core State):
     RepoLifecycleState  Per-repo lifecycle progression
     SyncState           Synchronization status relative to the remote
     DiscoveryState      Nested .cgs discovery status
-    GitRepo             Immutable static identity of a single repository
+    GitRepo             Canonical reference identity of a single repository
     WorkingRepo         Mutable runtime repository used by WorkingGitTree
     RepoAddress         Derives the remote URL from a GitRepo
     RepoNode            Immutable snapshot of a repo's tree position
@@ -57,7 +57,7 @@ KNOWN_PROVIDER_HOSTS: dict[GitProvider, str] = {
 """Canonical hosts for first-class providers with deterministic remotes."""
 
 CANONICAL_GIT_PROVIDERS = frozenset(provider.value for provider in GitProvider)
-"""Provider names accepted by configuration documents and interactive input."""
+"""Canonical provider names shared by format validation and Git behavior."""
 
 
 def validate_git_provider(
@@ -146,12 +146,13 @@ class DiscoveryState(StrEnum):
 
 @dataclass(slots=True)
 class GitRepo:
-    """Immutable static identity of a single repository.
+    """Canonical reference identity of a single repository.
 
     Captures the provider, namespace, project name, access protocol, and
-    resolved commit SHA.  Runtime mutable state lives in
-    :class:`WorkingRepo`. Construction is side-effect free: remote inspection
-    is performed explicitly by the runtime Git layer, never by this dataclass.
+    optionally a resolved commit SHA. Runtime tree and synchronization state
+    lives in :class:`WorkingRepo`. Construction is side-effect free: remote
+    inspection is performed explicitly by the runtime Git layer, never by this
+    dataclass.
     """
 
     project_owner_name: str

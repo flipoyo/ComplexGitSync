@@ -152,6 +152,14 @@ def test_initialise_accepts_direct_cli_project_definition(
     captured_call: dict[str, object] = {}
 
     class StubClient:
+        def configure(self, project, repositories, *, output_path=None):
+            captured_call["configured_project"] = project
+            captured_call["configured_repositories"] = list(repositories)
+            captured_call["configuration_output_path"] = output_path
+            return CgsDocument.from_dict(
+                {"project": project, "repos": list(repositories)}
+            )
+
         def resolve_cgshome(self, document, source_path, *, output_path=None):
             captured_call["resolved_document"] = document
             captured_call["logical_source"] = Path(source_path)
@@ -198,6 +206,9 @@ def test_initialise_accepts_direct_cli_project_definition(
     assert exit_code == 0
     assert isinstance(captured_call["document"], CgsDocument)
     assert captured_call["document"].to_dict() == expected.to_dict()
+    assert captured_call["configured_project"] == "CGSil1"
+    assert captured_call["configured_repositories"] == repositories
+    assert captured_call["configuration_output_path"] is None
     assert captured_call["resolved_document"] is captured_call["document"]
     assert captured_call["source_path"] == tmp_path / "CGSil1.cgs"
     assert "workflow=load->expand->validate->clone" in captured.out
@@ -247,6 +258,126 @@ def test_create_cgs_writes_equivalent_validated_document(
     assert generated.to_dict() == equivalent.to_dict()
     assert "codeberg:GX4G/GX4G" in output.read_text(encoding="utf-8")
     assert f".cgs file written to: {output.resolve()}" in captured.out
+
+
+def test_create_cgs_delegates_to_public_python_configuration_api(
+    monkeypatch, tmp_path
+):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def configure(self, project, repositories, *, output_path=None):
+            captured_call["project"] = project
+            captured_call["repositories"] = list(repositories)
+            captured_call["output_path"] = output_path
+            document = CgsDocument.from_dict(
+                {"project": project, "repos": list(repositories)}
+            )
+            document.to_toml(output_path)
+            return document
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    output = tmp_path / "GX4G.cgs"
+
+    exit_code = main(
+        [
+            "create-cgs",
+            "--project",
+            "GX4G",
+            "--repo",
+            "codeberg:GX4G/GX4G",
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured_call == {
+        "project": "GX4G",
+        "repositories": ["codeberg:GX4G/GX4G"],
+        "output_path": output,
+    }
+    assert CgsDocument.from_toml(output).project_name == "GX4G"
+
+
+def test_configure_collects_input_then_writes_validated_cgs(
+    monkeypatch, capsys, tmp_path
+):
+    responses = iter(
+        [
+            "demo",
+            "main",
+            "owner",
+            "",
+            "",
+            "1",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
+    output = tmp_path / "demo.cgs"
+
+    exit_code = main(["configure", "--output", str(output)])
+
+    document = CgsDocument.from_toml(output)
+    assert exit_code == 0
+    assert document.project_name == "demo"
+    assert document.repos[0]["gitprovider"] == "github"
+    assert document.to_authoring_dict() == {
+        "project": "demo",
+        "repos": ["github:owner/demo"],
+    }
+    assert "[project]" not in output.read_text(encoding="utf-8")
+    assert f".cgs file written to: {output.resolve()}" in capsys.readouterr().out
+
+
+def test_configure_collects_codeberg_as_first_class_provider(monkeypatch, tmp_path):
+    responses = iter(
+        [
+            "GX4G",
+            "main",
+            "GX4G",
+            "codeberg",
+            "ssh",
+            "1",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
+    output = tmp_path / "GX4G.cgs"
+
+    assert main(["configure", "--output", str(output)]) == 0
+
+    document = CgsDocument.from_toml(output)
+    assert document.to_dict() == CgsDocument.from_project_definition(
+        "GX4G", ["codeberg:GX4G/GX4G"]
+    ).to_dict()
+    assert "codeberg:GX4G/GX4G" in output.read_text(encoding="utf-8")
+
+
+def test_file_and_cli_codeberg_authoring_are_semantically_equivalent(tmp_path):
+    source = tmp_path / "GX4G.cgs"
+    source.write_text(
+        'project = "GX4G"\n\nrepos = [\n    "codeberg:GX4G/GX4G",\n]\n',
+        encoding="utf-8",
+    )
+
+    from_file = CgsDocument.from_toml(source)
+    from_cli = CgsDocument.from_project_definition(
+        "GX4G", ["codeberg:GX4G/GX4G"]
+    )
+
+    assert from_file.to_dict() == from_cli.to_dict()
 
 
 def test_initialise_command_failure_suggests_clean_init(monkeypatch, capsys, tmp_path):

@@ -19,6 +19,28 @@ validate(.cgs|.gts) -> .gts READY -> pull(.cgs|.gts) -> checkout(.gts) ->
 add -> git(tree,"commit",msg) -> git(tree,"push") -> git(tree,"tag",name) ->
 freeze}.
 
+\section{Programmatic Project Configuration}
+
+Project configuration does not require the CLI or an existing \texttt{.cgs}
+file. The public facade accepts authoring values non-interactively and delegates
+normalization, static validation, and optional serialization to
+\texttt{cgs\_format.py}. It performs no Git or network operations.
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import ComplexGitSyncClient
+
+client = ComplexGitSyncClient()
+document = client.configure(
+    "GX4G",
+    ["codeberg:GX4G/GX4G"],
+    output_path="GX4G.cgs",  # optional
+)
+reference_tree = document.to_git_tree()
+\end{lstlisting}
+
+The CLI commands \texttt{configure}, \texttt{create-cgs}, and direct
+\texttt{initialise --project/--repo} authoring are adapters over this method.
+
 \section{From Empty Registry to READY via \texttt{.gts}}
 
 \begin{lstlisting}[language=Python]
@@ -117,7 +139,7 @@ client.clean_initialise_cgs("../CGSil1.cgs", output_path=cgspath)
 # Cleanup only:
 client.purge_cgs("../CGSil1.cgs", output_path=cgspath)
 
-# 5. READY methods — unified git interface
+# 5. READY methods - unified git interface
 registry = client.get_dependency_registry()
 # Pull uses ROOT -> PARENT -> LEAF, including the project root repository.
 client.pull(".cgitsync/state/CGSil1.gts")

@@ -183,7 +183,7 @@ class TestConfigDocumentBase:
 
 
 class TestCgsDocumentValid:
-    def test_cgs_document_is_owned_by_cgs_module(self):
+    def test_cgs_document_is_owned_by_cgs_format_module(self):
         assert CgsDocument.__module__ == "ComplexGitSync.cgs_format"
 
     def test_repository_identifier_parser_is_owned_by_cgs(self):

@@ -53,6 +53,26 @@ def test_client_loaded_state_uses_orchestre_tree_registration():
     assert client.is_loaded() is True
 
 
+def test_client_configure_is_noninteractive_and_delegates_to_cgs_format(
+    monkeypatch, tmp_path
+):
+    def _forbid_prompt(*_args, **_kwargs):
+        raise AssertionError("Python configuration API attempted interactive input")
+
+    monkeypatch.setattr("builtins.input", _forbid_prompt)
+    output = tmp_path / "GX4G.cgs"
+
+    document = ComplexGitSyncClient().configure(
+        "GX4G",
+        ["codeberg:GX4G/GX4G"],
+        output_path=output,
+    )
+
+    assert isinstance(document, CgsDocument)
+    assert document.to_dict() == CgsDocument.from_toml(output).to_dict()
+    assert document.to_git_tree().repos["GX4G"].gitprovider == GitProvider.CODEBERG
+
+
 def test_gittree_correction_methods_fail_for_unknown_repo():
     tree = GitTree()
 
@@ -115,104 +135,6 @@ def test_gittree_to_cgs_returns_valid_reference_document():
     for repo_data in data["repos"]:
         assert "repo_lifecycle_state" not in repo_data
         assert "sync_state" not in repo_data
-
-
-def test_gittree_from_prompt_builds_reference_tree_with_project_defaults(monkeypatch):
-    responses = iter(
-        [
-            "demo",
-            "develop",
-            "owner",
-            "",
-            "",
-            "2",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "child",
-            "",
-            "",
-            "",
-            "",
-            "deps/child",
-            "",
-        ]
-    )
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
-
-    tree = GitTree.from_prompt()
-    document = tree.to_cgs()
-
-    assert type(tree) is GitTree
-    assert tree.project_name == "demo"
-    assert tree.default_branch == "develop"
-    assert list(tree.repos) == ["demo", "child"]
-    repos = document.to_dict()["repos"]
-    assert repos[0]["project_name"] == "demo"
-    assert repos[0]["default_branch"] == "develop"
-    assert repos[1]["project_name"] == "child"
-    assert repos[1]["default_branch"] == "develop"
-    assert repos[1]["nested_config"] == "auto"
-
-
-def test_gittree_from_prompt_accepts_codeberg_provider(monkeypatch):
-    responses = iter(
-        [
-            "GX4G",
-            "main",
-            "GX4G",
-            "codeberg",
-            "ssh",
-            "1",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
-
-    tree = GitTree.from_prompt()
-
-    assert tree.repo_template.gitprovider == GitProvider.CODEBERG
-    assert tree.repos["GX4G"].gitprovider == GitProvider.CODEBERG
-    assert RepoAddress.from_repo(tree.repos["GX4G"]).to_ssh() == (
-        "git@codeberg.org:GX4G/GX4G.git"
-    )
-
-
-def test_client_configure_writes_valid_cgs_from_prompt(monkeypatch, tmp_path):
-    responses = iter(
-        [
-            "demo",
-            "main",
-            "owner",
-            "",
-            "",
-            "1",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
-    output_path = tmp_path / "demo.cgs"
-
-    document = ComplexGitSyncClient().configure(output_path=output_path)
-
-    assert output_path.is_file()
-    assert document.project_name == "demo"
-    reloaded = CgsDocument.from_toml(output_path)
-    assert reloaded.project_name == "demo"
 
 
 # ---------------------------------------------------------------------------

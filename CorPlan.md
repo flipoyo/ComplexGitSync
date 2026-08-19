@@ -1,8 +1,13 @@
 # CorPlan — Cartographie des classes et plan de correction minimaliste
 
+> **Archive historique.** Ce plan et son image décrivent l'architecture avant
+> la consolidation `GitRepo`/`WorkingRepo` et `GitTree`/`WorkingGitTree`. Ils ne
+> constituent pas la spécification actuelle; voir `AdditionalSpecs.md` et
+> `docs/architecture.md`.
+
 ## 1) Livrable de cartographie
 
-- Fichier PNG: `docs/figures/class_interactions_map.png`
+- Fichier PNG historique: `docs/figures/class_interactions_map.png`
 - Vue synthétique incluse:
   - noyau objet (`GitRepo`, `GitTree`, `legacy runtime registry`)
   - orchestration (`Orchestre`, `ComplexGitSyncClient`, `GitRunner`, `RuntimeStateStore`)

@@ -1,5 +1,9 @@
 # ComplexGitSync DevPlan Tickets
 
+> **Historical ticket archive.** Legacy names and verbose `.cgs` forms below
+> describe the original implementation plan, not the current architecture or
+> preferred authoring syntax.
+
 ## Ticketing Rules
 - Each ticket must produce working code or validated documentation.
 - Respect dependencies strictly unless the ticket is marked parallelizable.

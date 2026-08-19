@@ -10,7 +10,7 @@
     font=\ttfamily\footnotesize,
     inner sep=5pt,
   },
-  step/.style={opbox, fill=green!10, draw=green!50},
+  operationstep/.style={opbox, fill=green!10, draw=green!50},
   gatebox/.style={opbox, fill=yellow!15, draw=yellow!60!black,
                   minimum width=2.4cm, minimum height=0.8cm,
                   font=\sffamily\scriptsize},
@@ -27,17 +27,17 @@
 
 \node[gatebox] (co-gate) at (0,-1.0) {assert READY};
 
-\node[step] (co-propagate) at (0,-2.4) {
+\node[operationstep] (co-propagate) at (0,-2.4) {
   \textbf{propagate\_global\_branch}\\
   set target ref on\\every entry (in-memory)
 };
 
-\node[step] (co-create) at (0,-4.1) {
+\node[operationstep] (co-create) at (0,-4.1) {
   \textbf{create\_global\_branch}\\
   git branch if missing\\(parent-first)
 };
 
-\node[step] (co-checkout) at (0,-5.8) {
+\node[operationstep] (co-checkout) at (0,-5.8) {
   \textbf{git checkout}\\
   each repo, parent-first\\refresh entry state
 };
@@ -56,7 +56,7 @@
 
 \node[gatebox] (ad-gate) at (4.3,-1.0) {assert READY};
 
-\node[step] (ad-stage) at (4.3,-3.25) {
+\node[operationstep] (ad-stage) at (4.3,-3.25) {
   \textbf{git add --all}\\
   each repo\\(leaf-first)
 };
@@ -73,15 +73,15 @@
 
 \node[gatebox] (cm-gate) at (8.6,-1.0) {assert READY};
 
-\node[step] (cm-stage) at (8.6,-2.4) {
+\node[operationstep] (cm-stage) at (8.6,-2.4) {
   \textbf{git add --all}\\(when stage\_all=True)
 };
 
-\node[step] (cm-skip) at (8.6,-4.1) {
+\node[operationstep] (cm-skip) at (8.6,-4.1) {
   skip if no staged\\changes
 };
 
-\node[step] (cm-commit) at (8.6,-5.8) {
+\node[operationstep] (cm-commit) at (8.6,-5.8) {
   \textbf{git commit}\\
   each repo with staged\\changes; refresh SHA
 };
@@ -100,7 +100,7 @@
 
 \node[gatebox] (pu-gate) at (12.9,-1.0) {assert READY};
 
-\node[step] (pu-push) at (12.9,-3.25) {
+\node[operationstep] (pu-push) at (12.9,-3.25) {
   \textbf{git push}\\
   remote = entry.remote\_name\\
   (default: "origin")\\

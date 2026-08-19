@@ -37,7 +37,6 @@ classDiagram
         repos
         project_name
         default_branch
-        from_prompt()
         to_cgs() delegates
     }
 
@@ -55,10 +54,12 @@ classDiagram
 `.cgs` parsing, serialization, constants, and validation. Its static
 repository topology is converted into a reference `GitTree`. The shared
 format-neutral `ConfigDocument` base remains in `config_document.py` because
-runtime `.gts` and `.goc` documents use it too. The interactive `configure`
-command and non-interactive `create-cgs` command both produce a validated
-`CgsDocument`; `orchestre.py` owns runtime orchestration rather than the
-authoring-format definition.
+runtime `.gts` and `.goc` documents use it too. For interactive `configure`,
+`cli.py` collects prompt values and passes them to the non-interactive
+`ComplexGitSyncClient.configure()` Python API; `create-cgs` and direct
+`initialise --project/--repo` use the same facade. That method delegates to
+`CgsDocument`. `orchestre.py` owns runtime orchestration and the reusable public
+facade rather than CLI collection or the authoring-format definition.
 
 The boundary is an explicit `PARSE -> NORMALIZE -> VALIDATE` pipeline. Parsing
 uses Python's TOML parser and produces authoring data; normalization expands
@@ -77,10 +78,12 @@ equality is intentionally not required.
 
 File and CLI authoring converge at this boundary. The CLI collects `--project`
 and repeatable `--repo` values, then calls
-`CgsDocument.from_project_definition()`; it contains no repository grammar or
-normalization. Loading an equivalent `.cgs` and using the CLI definition must
-produce semantically identical canonical documents. `create-cgs` runs that
-same offline pipeline and serializes the result without entering Git runtime.
+`ComplexGitSyncClient.configure()`. Python callers can invoke the same method
+directly. The facade calls `CgsDocument` and contains no repository grammar or
+normalization. Loading an equivalent `.cgs` and using either definition path
+must produce semantically identical canonical documents. `create-cgs` runs
+that same offline pipeline and serializes the result without entering Git
+runtime.
 
 The two representations are kept as an executable example pair:
 [`examples/template.cgs`](../examples/template.cgs) is the concise file users
@@ -104,8 +107,9 @@ root.
 
 The textual `provider:owner/repository` grammar belongs exclusively to
 `cgs_format.py`. Its `parse_repo_id()` function owns syntax validation and splitting;
-normalization calls that same function, and future CLI repository arguments
-must reuse it rather than introduce another parser.
+normalization calls that same function, and CLI repository arguments reuse it
+through `ComplexGitSyncClient.configure()` and `CgsDocument` rather than
+introducing another parser.
 
 The complete `.cgs` format pipeline is deterministic and offline. Parsing,
 normalization, validation, and serialization never probe repositories or run

@@ -1,4 +1,4 @@
-% gittree_nodes.tex — TikZ figure showing GitRepo parent-leaf tree structure
+% gittree_nodes.tex — TikZ figure showing WorkingRepo parent-leaf tree structure
 % Included by docs/architecture.tex (Figure gittree-nodes).
 
 \begin{tikzpicture}[
@@ -18,15 +18,15 @@
 
 % Root
 \node[rootnode] (root) at (0,0) {
-  \textbf{root GitRepo}\\NodeType = ROOT
+  \textbf{root WorkingRepo}\\NodeType = ROOT
 };
 
 % Two direct children of root
 \node[parentnode] (parent) at (-3,-2) {
-  \textbf{nested GitRepo}\\NodeType = PARENT
+  \textbf{nested WorkingRepo}\\NodeType = PARENT
 };
 \node[leafnode] (lib) at (3,-2) {
-  \textbf{leaf GitRepo}\\NodeType = LEAF
+  \textbf{leaf WorkingRepo}\\NodeType = LEAF
 };
 
 % Children of parent
@@ -44,7 +44,7 @@
 \draw[treearrow] (parent.south) -- (sub2.north);
 
 % Annotations
-\node[label, right=0.3cm of root] {initialise(.cgs) seeds the root GitTree entry};
+\node[label, right=0.3cm of root] {initialise(.cgs) seeds the root runtime entry};
 \node[label, right=0.2cm of parent] {initialise discovers nested repos recursively};
 \node[label, right=0.2cm of lib] {READY tree leaf tracked in the saved .gts};
 \node[label, right=0.2cm of sub1] {nested\_config = "disabled"};

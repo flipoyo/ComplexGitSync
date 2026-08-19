@@ -6,9 +6,8 @@ workspace from one local specification and one tracked workspace state.
 This README is intentionally focused on the **Multi-repo Sync CLI**. The public
 entry point is `cgitsync`.
 
-It is the Alpha Series of ComplexGraphSync, per say CGS. CGS service is requestable @CGS.
-
-@CGS is a deterministic Graph × Graph Synchronizer, that instanciates active Graph G* and anchored it in a L0 based on time only.
+It is the Alpha Series of ComplexGraphSync. <!--, per say CGS. CGS service is requestable @CGS. 
+@CGS is a deterministic Graph × Graph Synchronizer, that instanciates active Graph G* and anchored it in a L0 based on time only. -->
 
 ## What the CLI manages
 
@@ -34,6 +33,11 @@ The shared textual repository-ID parser is `cgs_format.parse_repo_id()`;
 Parsing, normalization, validation, and serialization are deterministic and
 offline; remote existence and branch/tag availability are checked only during
 explicit Git runtime operations.
+
+The reusable Python entry point for project definitions is
+`ComplexGitSyncClient.configure(project, repositories, output_path=None)`.
+CLI authoring commands collect values and call this method; the method delegates
+all `.cgs` semantics to `CgsDocument` and performs no Git or network operation.
 
 The normal `.cgs` authoring form is intentionally small:
 
@@ -267,6 +271,14 @@ from pathlib import Path
 from ComplexGitSync import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
+
+# Define or serialize a project without invoking the CLI or Git runtime.
+definition = client.configure(
+    "GX4G",
+    ["codeberg:GX4G/GX4G"],
+    output_path="GX4G.cgs",  # optional
+)
+reference_tree = definition.to_git_tree()
 
 source = Path("../CGSil1.cgs")
 cgspath = Path("../..")
