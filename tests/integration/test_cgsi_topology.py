@@ -649,9 +649,9 @@ class TestCloneAndLaunchReleaseLifecycle:
         leaf_clone = clone_target / "deps" / "leaf"
         assert root_clone.exists()
         assert leaf_clone.exists()
-        assert (root_clone / ".gitignore").read_text(encoding="utf-8") == ".gitmodules\ndeps/leaf\n"
-        submodule_modes = _run_git(root_clone, "ls-files", "--stage", "--", "deps/leaf")
-        assert submodule_modes.startswith("160000 ")
+        assert (leaf_clone / ".git").exists()
+        tracked_modes = _run_git(root_clone, "ls-files", "--stage", "--", "deps/leaf")
+        assert tracked_modes == ""
 
     def test_pull_gts_clones_missing_local_repos(self, local_two_repo_remotes, monkeypatch, tmp_path):
         restore_root = tmp_path / "launch-workspace"

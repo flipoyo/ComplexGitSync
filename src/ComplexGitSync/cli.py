@@ -1600,7 +1600,7 @@ def _execute_pull_force(
     client: ComplexGitSyncClient,
     source_path: Path,
 ) -> int:
-    print("git_command=git fetch && git checkout -B <branch> FETCH_HEAD && git clean -fd, then forced submodule update")
+    print("git_command=git fetch && git checkout -B <branch> FETCH_HEAD && git clean -fd (executed per repo)")
     registry = client.pull_force(source_path)
     tree_state = client.get_tree_state()
     print(

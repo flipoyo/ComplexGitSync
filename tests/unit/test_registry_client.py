@@ -214,7 +214,7 @@ def test_initialise_cgs_derives_cgshome_from_output_path_and_project_name(tmp_pa
     assert "state" in str(snapshot_path)
 
 
-def test_purge_cgs_removes_top_level_repos_ledgers_and_gitmodules(tmp_path):
+def test_purge_cgs_removes_top_level_repos_and_ledgers(tmp_path):
     cgspath = tmp_path / "workspace"
     cgshome = cgspath / "demo"
     top_level_child = cgshome / "child-repo"
@@ -222,7 +222,6 @@ def test_purge_cgs_removes_top_level_repos_ledgers_and_gitmodules(tmp_path):
     top_level_child.mkdir(parents=True)
     nested_child.mkdir(parents=True)
     (cgshome / "demo.lgr").write_text("ledger\n", encoding="utf-8")
-    (cgshome / ".gitmodules").write_text("modules\n", encoding="utf-8")
 
     config_path = tmp_path / "project.cgs"
     config_path.write_text(
@@ -261,10 +260,8 @@ relative_path = "deps/nested-repo"
 
     assert top_level_child in removed
     assert cgshome / "demo.lgr" in removed
-    assert cgshome / ".gitmodules" in removed
     assert not top_level_child.exists()
     assert not (cgshome / "demo.lgr").exists()
-    assert not (cgshome / ".gitmodules").exists()
     assert nested_child.exists()
 
 
@@ -905,7 +902,6 @@ def test_status_ignores_cgitsync_managed_generated_files(tmp_path):
     fake_runner.status_lines[root_path.resolve()] = [
         " M .cgitsync/state/demo.gts",
         " M demo.lgr",
-        "A  .gitmodules",
         "?? .gitignore",
     ]
 
@@ -948,18 +944,13 @@ def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
     assert docs_entry.resolved_ref_name == "main"
     assert [branch for _, _, branch in fake_runner.clones] == ["main", "autoTest", "main"]
     assert [
-        (remote, relative.as_posix(), branch)
-        for _, remote, relative, branch in fake_runner.submodule_adds
+        (remote, destination)
+        for remote, destination, _ in fake_runner.clones
     ] == [
-        ("git@github.com:owner/child-repo.git", "deps/child-repo", "autoTest"),
-        ("git@github.com:owner/docs.git", "docs", "main"),
+        ("git@github.com:owner/demo.git", root_entry.absolute_path),
+        ("git@github.com:owner/child-repo.git", child_entry.absolute_path),
+        ("git@github.com:owner/docs.git", docs_entry.absolute_path),
     ]
-    assert (root_entry.absolute_path / ".gitignore").read_text(encoding="utf-8") == (
-        ".gitmodules\ndeps/child-repo\n"
-    )
-    assert (child_entry.absolute_path / ".gitignore").read_text(encoding="utf-8") == (
-        ".gitmodules\ndocs\n"
-    )
 
     snapshot_path = state_store.latest_snapshot_for(config_path)
     assert snapshot_path is not None
@@ -1020,28 +1011,6 @@ def test_clone_cgs_replaces_nested_destination_populated_by_parent_clone(tmp_pat
         "git@github.com:owner/docs.git",
     ]
     assert [branch for _, _, branch in fake_runner.clones] == ["main", "main"]
-    assert [
-        (remote, relative.as_posix(), branch)
-        for _, remote, relative, branch in fake_runner.submodule_adds
-    ] == [("git@github.com:owner/docs.git", "docs", "main")]
-
-
-def test_clone_cgs_fails_when_nested_repo_not_tracked_as_submodule(tmp_path):
-    class _FakeGitRunnerNoSubmodules(_FakeGitRunner):
-        def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
-            return False
-
-    config_path = _write_root_plus_docs_clone_cgs(tmp_path)
-    runner = _FakeGitRunnerNoSubmodules(
-        {
-            "git@github.com:owner/ComplexGitSync.git": {"main"},
-            "git@github.com:owner/docs.git": {"main"},
-        }
-    )
-    client = ComplexGitSyncClient(git_runner=runner)
-
-    with pytest.raises(GitSyncError, match="Submodule constraint violated"):
-        client.clone_cgs(config_path, target_dir=tmp_path / "workspace" / "ComplexGitSync")
 
 
 def test_make_repo_id_normalizes_windows_style_paths():
@@ -2461,8 +2430,6 @@ class _FakeGitRunner:
     def __init__(self, remote_branches: dict[str, set[str]]):
         self.remote_branches = remote_branches
         self.clones: list[tuple[str, Path, str]] = []
-        self.submodule_adds: list[tuple[Path, str, Path, str]] = []
-        self._submodule_paths: set[tuple[Path, Path]] = set()
         self.branch_overrides: dict[Path, str | None] = {}
         self.status_lines: dict[Path, list[str]] = {}
         self.tracking_states: dict[Path, SyncState | None] = {}
@@ -2506,42 +2473,6 @@ nested_config = "disabled"
                 + "\n",
                 encoding="utf-8",
             )
-
-    def _ensure_gitignore_entries(self, repo_path: Path, *entries: str) -> None:
-        gitignore_path = repo_path / ".gitignore"
-        try:
-            existing_content = gitignore_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            existing_content = ""
-        existing_entries = existing_content.splitlines()
-        missing_entries = [entry for entry in entries if entry not in existing_entries]
-        if not missing_entries:
-            return
-
-        prefix = "" if not existing_content or existing_content.endswith("\n") else "\n"
-
-        with gitignore_path.open("a", encoding="utf-8") as handle:
-            handle.write(prefix)
-            handle.write("\n".join(missing_entries))
-            handle.write("\n")
-
-    def add_submodule(
-        self,
-        repo_path: Path | str,
-        remote_url: str,
-        relative_path: Path | str,
-        *,
-        branch: str,
-    ) -> None:
-        parent_path = Path(repo_path).resolve()
-        rel_path = Path(relative_path)
-        self.submodule_adds.append((parent_path, remote_url, rel_path, branch))
-        self._submodule_paths.add((parent_path, rel_path))
-        self._ensure_gitignore_entries(parent_path, ".gitmodules", rel_path.as_posix())
-        self.clone(remote_url, parent_path / rel_path, branch=branch)
-
-    def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
-        return (Path(repo_path).resolve(), Path(relative_path)) in self._submodule_paths
 
     def rev_parse_head(self, repo_path: Path | str) -> str:
         repo_name = Path(repo_path).name

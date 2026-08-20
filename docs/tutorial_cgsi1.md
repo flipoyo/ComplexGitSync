@@ -40,8 +40,9 @@ flowchart TD
 
 `CGSil1.cgs` remains the source of truth for the reference tree. Runtime
 commands load that reference into a `WorkingGitTree`, update repository
-lifecycle and sync state there, and persist generated `.gts` snapshots under
-`$CGSHOME/.cgitsync/state/`.
+lifecycle and sync state there, and persist each generated `.gts` snapshot
+under its own content-addressed `$CGSHOME/.cgitsync/state(<hash>)_<n>/`
+directory, recorded in the project's `.lgr` register.
 
 ---
 
@@ -183,12 +184,12 @@ git_command=git clone (executed per repo)
 READY ready=true complete=true root=/path/to/CGSil1
 ```
 
-A runtime snapshot is written to
-`$CGSHOME/.cgitsync/state/CGSil1.gts`. Subsequent commands load this
-snapshot automatically.
+A runtime snapshot is written under `$CGSHOME/.cgitsync/` and recorded in
+the project's `.lgr` register. Subsequent commands resolve this snapshot
+automatically — no explicit `.gts` path is required.
 
-If a previous failed run left partial child checkouts or stale submodule
-metadata, `initialise` fails explicitly and prints:
+If a previous failed run left partial child checkouts, `initialise` fails
+explicitly and prints:
 
 ```
 Try clean-init method
@@ -205,8 +206,7 @@ pixi run cgitsync clean-init ../CGSil1.cgs
 `operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE`
 and `workflow=load->expand->validate->purge->clone`. The `purge` phase removes
 generated clone state from `$CGSHOME`: repositories declared directly under the
-root, project `*.lgr` files, and the root `.gitmodules` file. The cleanup can
-also be run alone:
+root and project `*.lgr` files. The cleanup can also be run alone:
 
 ```bash
 pixi run cgitsync purge ../CGSil1.cgs
@@ -223,8 +223,8 @@ pixi run cgitsync pull
 ```
 
 `pull` includes the project root repository. It runs parent-first:
-`ROOT -> PARENT -> LEAF`, pulling the root repo before updating parent and
-leaf submodules through their parent repositories.
+`ROOT -> PARENT -> LEAF`, pulling every repository — root, parent, and leaf
+alike — as its own plain `git pull`.
 If local files block this safe pull, the CLI suggests `cgitsync pull-force`.
 Use that recovery command only when discarding local uncommitted and untracked
 work is acceptable.
@@ -239,11 +239,12 @@ Stage all uncommitted file changes across every repository in the tree:
 pixi run cgitsync add
 ```
 
-The command discovers the `.gts` snapshot automatically from
-`$CGSHOME/.cgitsync/state/`. Use `--gts` to pass the path explicitly:
+The command discovers the `.gts` snapshot automatically via the project's
+`.lgr` register under `$CGSHOME/.cgitsync/`. Use `--gts` to pass the path
+explicitly:
 
 ```bash
-pixi run cgitsync add --gts /path/to/workspace/.cgitsync/state/CGSil1.gts
+pixi run cgitsync add --gts "/path/to/workspace/.cgitsync/state(<hash>)_<n>/CGSil1.gts"
 ```
 
 Mutation commands run leaf-first: `LEAF -> PARENT -> ROOT`.
