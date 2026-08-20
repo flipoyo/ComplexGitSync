@@ -5,6 +5,22 @@ workspace — a tree of nested repositories — from one local `.cgs`
 specification (file or CLI specs) or one tracked `.gts` workspace-state snapshot. The public
 entry point is `cgitsync`.
 
+```mermaid
+flowchart LR
+    CGS[".cgs spec"] --> CLI((cgitsync))
+    GTS[".gts snapshot"] -.->|restore| CLI
+
+    subgraph TREE["nested Git repo tree"]
+        direction TB
+        Root["root repo"] --> A["repo A"]
+        Root --> B["repo B"]
+        A --> A1["nested repo A.1"]
+    end
+
+    CLI ==>|sync as one unit| TREE
+    TREE ==>|freeze| GTS
+```
+
 ## Install & run
 
 ```bash

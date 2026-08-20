@@ -22,6 +22,11 @@ CI (`.github/workflows/ci.yml`) runs both `lint` and `test` on push/PR to
 The module responsibilities are strict and audited — see
 [audit.md](audit.md) for the full write-up. Summary:
 
+Update `audit.md`'s responsibility table and dependency-path diagram
+whenever a task adds, removes, or moves module responsibility (new module,
+changed delegation, changed boundary) — before committing, as part of that
+task's change, not as a separate follow-up.
+
 | Module | Responsibility |
 |---|---|
 | `cgs_format.py` | `.cgs` TOML parsing/authoring grammar, normalization, static validation, `CgsDocument`, serialization. Deterministic and offline — no `subprocess`, no Git, no remote calls. |
