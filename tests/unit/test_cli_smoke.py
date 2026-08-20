@@ -2129,3 +2129,19 @@ commit_sha = "abc123"
         encoding="utf-8",
     )
     return gts_path
+
+
+def test_readme_documents_every_cli_command():
+    """README.md's command reference must list every _PLANNED_COMMANDS entry.
+
+    Guards against the CLI surface (cli.py) and the user-facing docs (README.md)
+    drifting apart, as happened previously when configure/remember/memorize/
+    retrieve/reload were added to cli.py but never documented.
+    """
+    from ComplexGitSync.cli import _PLANNED_COMMANDS
+
+    readme_path = Path(__file__).resolve().parents[2] / "README.md"
+    readme_text = readme_path.read_text(encoding="utf-8")
+
+    missing = [command for command in _PLANNED_COMMANDS if f"`{command}`" not in readme_text]
+    assert not missing, f"README.md command reference is missing: {missing}"
