@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import builtins
 import copy
-import json
 import socket
 import subprocess
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -20,12 +18,12 @@ from ComplexGitSync.cgs_format import (
     parse_repository_identifier,
 )
 from ComplexGitSync.config_document import ConfigDocument
+from ComplexGitSync.errors import ConfigValidationError
 from ComplexGitSync.orchestre import (
     GocDocument,
     GtsDocument,
     build_registry_from_cgs_document,
 )
-from ComplexGitSync.errors import ConfigValidationError
 
 # ---------------------------------------------------------------------------
 # Fixtures – minimal valid raw dicts

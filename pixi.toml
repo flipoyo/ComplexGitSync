@@ -6,10 +6,12 @@ platforms = ["linux-64", "win-64", "osx-arm64"]
 
 [tasks]
 test = "python -m pytest"
+lint = "ruff check ."
 
 [dependencies]
 python = "3.11.*"
 pytest = "*"
+ruff = "*"
 
 [pypi-dependencies]
 complexgitsync = { path = ".", editable = true }

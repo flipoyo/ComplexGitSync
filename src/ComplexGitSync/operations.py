@@ -28,12 +28,11 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pathlib import Path
-
 from .errors import GitSyncError, TreeNotReadyError
-from .git_repo import RefKind, RepoLifecycleState, WorkingRepo, SyncState
+from .git_repo import RefKind, RepoLifecycleState, SyncState, WorkingRepo
 from .git_tree import WorkingGitTree, iter_tree, iter_tree_leaf_first
 
 if TYPE_CHECKING:
@@ -583,7 +582,7 @@ class BranchTopologyReport:
 
 def validate_branch_topology(
     tree: WorkingGitTree,
-    git_runner: "GitRunner",
+    git_runner: GitRunner,
 ) -> BranchTopologyReport:
     """Inspect and validate the workspace branch topology.
 

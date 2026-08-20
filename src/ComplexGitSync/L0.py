@@ -11,7 +11,7 @@ import os
 import secrets
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +28,7 @@ class TimeL0State:
 def new_time_l0_anchor() -> TimeL0State:
     """Create a private TIME-L0 anchor for one generated State."""
 
-    instant = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+    instant = datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
     private_anchor = (
         f"TIME-L0:{instant}:{time.time_ns()}:{os.getpid()}:{secrets.token_hex(16)}"
     )
@@ -38,4 +38,4 @@ def new_time_l0_anchor() -> TimeL0State:
 def hash_time_l0_anchor(anchor: str) -> str:
     """Return ``HASH(.@)`` for a private TIME-L0 anchor."""
 
-    return hashlib.sha256(f".{anchor}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f".{anchor}".encode()).hexdigest()

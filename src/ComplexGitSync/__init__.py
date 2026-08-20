@@ -3,6 +3,15 @@
 __version__ = "0002.01"
 
 # --- Tier 1 — Public Errors (errors.py) ---
+# --- Cross-cutting document definitions ---
+from .cgs_format import (
+    CgsDocument,
+    normalize_cgs,
+    parse_cgs,
+    parse_repo_id,
+    parse_repository_identifier,
+)
+from .config_document import ConfigDocument
 from .errors import (
     ArchitectureNotLoadedError,
     ComplexGitSyncError,
@@ -15,12 +24,12 @@ from .errors import (
 
 # --- Tier 1 — Core State (git_repo.py) ---
 from .git_repo import (
-    AccessProtocol,
     CANONICAL_GIT_PROVIDERS,
+    KNOWN_PROVIDER_HOSTS,
+    AccessProtocol,
     DiscoveryState,
     GitProvider,
     GitRepo,
-    KNOWN_PROVIDER_HOSTS,
     NodeType,
     RefKind,
     RepoAddress,
@@ -33,9 +42,9 @@ from .git_repo import (
 
 # --- Tier 1 — Core State + Tree Utilities (git_tree.py) ---
 from .git_tree import (
+    ROOT_REPO_ID,
     GitTree,
     ProjectTreeState,
-    ROOT_REPO_ID,
     TreeLifecycleState,
     WorkingGitTree,
     find_strongly_connected_components,
@@ -61,16 +70,6 @@ from .operations import (
     validate_branch_topology,
 )
 
-# --- Cross-cutting document definitions ---
-from .cgs_format import (
-    CgsDocument,
-    normalize_cgs,
-    parse_cgs,
-    parse_repo_id,
-    parse_repository_identifier,
-)
-from .config_document import ConfigDocument
-
 # --- Tier 2/3 — Actions + Client (orchestre.py) ---
 from .orchestre import (
     ComplexGitSyncClient,
@@ -80,8 +79,8 @@ from .orchestre import (
     LocalGitRegister,
     MemoryBinding,
     MemoryMemorizeResult,
-    MemoryRememberResult,
     MemoryReloadResult,
+    MemoryRememberResult,
     MemoryRetrieveResult,
     Orchestre,
     SyncLedger,

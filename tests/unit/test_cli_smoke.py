@@ -1,15 +1,15 @@
-from pathlib import Path
 import re
 import socket
 import subprocess
 import tomllib
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from ComplexGitSync import __version__
 from ComplexGitSync.cgs_format import CgsDocument
-from ComplexGitSync.cli import _snapshot_file_hash, main
+from ComplexGitSync.cli import main
 
 
 def test_main_without_command_prints_help(capsys):
@@ -1830,6 +1830,7 @@ def test_gts_auto_discovery_no_snapshot_under_cgshome_raises_error(monkeypatch, 
 def test_gts_auto_discovery_falls_back_to_most_recent(tmp_path):
     """_discover_gts_path returns the most recently modified .gts without a .lgr."""
     import os
+
     from ComplexGitSync.cli import _discover_gts_path
 
     state_dir = tmp_path / ".cgitsync" / "state"
@@ -1848,6 +1849,7 @@ def test_gts_auto_discovery_falls_back_to_most_recent(tmp_path):
 
 def test_gts_auto_discovery_falls_back_to_canonical_state_dirs(tmp_path):
     import os
+
     from ComplexGitSync.cli import _discover_gts_path
 
     old_state = tmp_path / ".cgitsync" / ("state(" + "a" * 64 + ")_0")
@@ -1867,6 +1869,7 @@ def test_gts_auto_discovery_falls_back_to_canonical_state_dirs(tmp_path):
 
 def test_gts_auto_discovery_prefers_lgr_current_snapshot(tmp_path):
     import os
+
     from ComplexGitSync.cli import _discover_gts_path
 
     state_dir = tmp_path / ".cgitsync" / "state"

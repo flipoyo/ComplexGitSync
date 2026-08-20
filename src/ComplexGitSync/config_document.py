@@ -86,28 +86,28 @@ class ConfigDocument:
         """Validate required fields.  Raises :exc:`ConfigValidationError` on failure."""
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ConfigDocument":
+    def from_dict(cls, data: dict[str, Any]) -> ConfigDocument:
         """Create a document from a plain dictionary and validate it."""
         doc = cls(data)
         doc.validate()
         return doc
 
     @classmethod
-    def from_toml(cls, path: Path | str) -> "ConfigDocument":
+    def from_toml(cls, path: Path | str) -> ConfigDocument:
         """Load a document from a TOML file (includes ``.cgs``, ``.gts``, ``.goc``)."""
         with open(path, "rb") as fh:
             data = tomllib.load(fh)
         return cls.from_dict(data)
 
     @classmethod
-    def from_json(cls, path: Path | str) -> "ConfigDocument":
+    def from_json(cls, path: Path | str) -> ConfigDocument:
         """Load a document from a JSON file."""
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         return cls.from_dict(data)
 
     @classmethod
-    def from_yaml(cls, path: Path | str) -> "ConfigDocument":
+    def from_yaml(cls, path: Path | str) -> ConfigDocument:
         """Load a document from a YAML file.
 
         Requires ``PyYAML``. Install the package with the ``yaml`` extra.

@@ -20,14 +20,13 @@ from ComplexGitSync.git_repo import (
     SyncState,
 )
 from ComplexGitSync.git_tree import (
-    WorkingGitTree,
     GitTree,
     TreeLifecycleState,
+    WorkingGitTree,
     iter_tree,
     iter_tree_leaf_first,
 )
 from ComplexGitSync.operations import (
-    BranchTopologyConflict,
     BranchTopologyReport,
     add_tree,
     branch_tree,
@@ -50,7 +49,6 @@ from ComplexGitSync.orchestre import (
     MemoryMemorizeResult,
     RuntimeStateStore,
 )
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers / fixtures
@@ -185,7 +183,7 @@ def _make_deep_ready_registry(tmp_path: Path) -> WorkingGitTree:
 
 def _mark_all_children_as_submodules(
     registry: WorkingGitTree,
-    runner: "_FakeGitRunnerForOperations",
+    runner: _FakeGitRunnerForOperations,
 ) -> None:
     for entry in registry.values():
         if entry.parent_id is None:

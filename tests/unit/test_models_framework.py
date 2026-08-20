@@ -1,14 +1,16 @@
 import pytest
 
-from ComplexGitSync.git_repo import AccessProtocol
 from ComplexGitSync.cgs_format import CgsDocument
-from ComplexGitSync.orchestre import ComplexGitSyncClient
-from ComplexGitSync.git_repo import GitProvider
-from ComplexGitSync.git_repo import GitRepo
+from ComplexGitSync.git_repo import (
+    KNOWN_PROVIDER_HOSTS,
+    AccessProtocol,
+    GitProvider,
+    GitRepo,
+    RepoAddress,
+    validate_git_provider,
+)
 from ComplexGitSync.git_tree import GitTree
-from ComplexGitSync.git_repo import RepoAddress
-from ComplexGitSync.git_repo import KNOWN_PROVIDER_HOSTS
-from ComplexGitSync.git_repo import validate_git_provider
+from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 
 def test_gitrepo_defaults_match_plan_contract():

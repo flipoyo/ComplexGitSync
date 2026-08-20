@@ -5,17 +5,17 @@ import logging
 import os
 import sys
 import tomllib
-from pathlib import Path
 from collections.abc import Sequence
+from pathlib import Path
 
 from . import __version__
 from .cgs_format import DEFAULT_ACCESS_PROTOCOL, DEFAULT_BRANCH, CgsDocument
 from .git_repo import GitProvider, RefKind
 from .git_tree import ProjectTreeState, iter_tree_leaf_first
 from .orchestre import (
-    ComplexGitSyncClient,
     DEFAULT_MEMORY_REMOTE_NAME,
     DEFAULT_MEMORY_SERVICE,
+    ComplexGitSyncClient,
     GtsDocument,
     _parse_state_hash,
     _state_order_from_directory_name,
@@ -23,7 +23,6 @@ from .orchestre import (
     _state_snapshot_candidates_for_id,
     create_run_logger,
 )
-
 
 _PLANNED_COMMANDS: dict[str, str] = {
     # Minimalist commands
@@ -76,13 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command")
     for command_name, help_text in _PLANNED_COMMANDS.items():
-        if command_name == "view-tree":
-            subparser = subparsers.add_parser(
-                command_name,
-                help=help_text,
-                description=help_text,
-            )
-        elif command_name == "view-operation":
+        if command_name == "view-tree" or command_name == "view-operation":
             subparser = subparsers.add_parser(
                 command_name,
                 help=help_text,

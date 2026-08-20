@@ -35,10 +35,11 @@ import re
 import shutil
 import subprocess
 import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 from urllib.parse import urlsplit
 
 import tomli_w
@@ -58,47 +59,48 @@ from .git_repo import (
     GitRepo,
     NodeType,
     RefKind,
-    RepoLifecycleState,
-    RepoNode,
     RepoAddress,
-    WorkingRepo,
+    RepoLifecycleState,
     SyncState,
+    WorkingRepo,
     validate_git_provider,
 )
 from .git_tree import (
     ROOT_REPO_ID,
-    WorkingGitTree,
     GitTree,
     ProjectTreeState,
     TreeLifecycleState,
+    WorkingGitTree,
     _apply_repo_identity,
     _as_optional_str,
     _initial_discovery_state,
     _is_root_repo_spec,
     _normalise_relative_path,
-    _normalize_repo_id_segment,
     _parse_enum,
     _parse_gts_node_type,
     _parse_optional_enum,
     _validate_repo_shape,
     build_tree_state,
-    fix_circularities as _fix_circularities,
     format_project_tree,
+    format_repo_tree_outline,
     format_view_operation,
     format_view_tree,
-    format_repo_tree_outline,
     iter_tree,
     iter_tree_leaf_first,
     make_repo_id,
     normalize_node_types,
     promote_to_parent,
     register_relative_path,
-    topological_sort as _topological_sort,
+)
+from .git_tree import (
+    fix_circularities as _fix_circularities,
 )
 from .L0 import new_time_l0_anchor
 from .operations import (
-    validate_branch_topology as _validate_branch_topology,
     BranchTopologyReport,
+)
+from .operations import (
+    validate_branch_topology as _validate_branch_topology,
 )
 
 # ============================================================
@@ -1088,7 +1090,7 @@ def create_run_logger(
     project_log_dir: Any = None,
 ) -> CommandRunLogger:
     """Create a :class:`CommandRunLogger` for a specific command invocation."""
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
     logger_name = f"ComplexGitSync.run.{command_name}.{timestamp}"
     logger = logging.getLogger(logger_name)
@@ -1192,7 +1194,7 @@ class LocalGitRegister:
         if state_order is None:
             state_order = self._next_state_order(snapshots, public_state_hash)
         recorded_at = (
-            datetime.now(timezone.utc)
+            datetime.now(UTC)
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         )
@@ -1393,7 +1395,7 @@ class SyncLedger:
         )
 
         timestamp = (
-            datetime.now(timezone.utc)
+            datetime.now(UTC)
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         )
@@ -1464,7 +1466,7 @@ class MemoryBinding:
         *,
         service: str = DEFAULT_MEMORY_SERVICE,
         remote_name: str = DEFAULT_MEMORY_REMOTE_NAME,
-    ) -> "MemoryBinding":
+    ) -> MemoryBinding:
         validated_name = _validate_memory_name(name)
         validated_service = _validate_memory_service(service)
         validated_remote_name = _validate_memory_remote_name(remote_name)
@@ -1480,7 +1482,7 @@ class MemoryBinding:
         )
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MemoryBinding":
+    def from_dict(cls, data: dict[str, Any]) -> MemoryBinding:
         binding = cls(
             name=str(data.get("name", "")),
             service=str(data.get("service", "")),
@@ -1591,7 +1593,7 @@ class MemoryBindingStore:
     def save(self, binding: MemoryBinding) -> Path:
         binding.validate()
         validated_at = (
-            datetime.now(timezone.utc)
+            datetime.now(UTC)
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         )
@@ -2587,7 +2589,7 @@ def build_gts_document_from_registry(
     data: dict[str, Any] = {
         "document": {
             "CGS_VERSION": CGS_VERSION,
-            "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "command_origin": command_origin,
         },
         "project": {
@@ -4150,7 +4152,7 @@ class ComplexGitSyncClient:
 
     def git(
         self,
-        gittree: "WorkingGitTree | None",
+        gittree: WorkingGitTree | None,
         command: str,
         *args: str,
     ) -> WorkingGitTree:

@@ -22,10 +22,10 @@ from __future__ import annotations
 import re
 import subprocess
 import tomllib
-import tomli_w
 from pathlib import Path
 
 import pytest
+import tomli_w
 
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.errors import GitSyncError

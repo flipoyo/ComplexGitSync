@@ -5,8 +5,9 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync import (
-    ArchitectureNotLoadedError,
     CANONICAL_GIT_PROVIDERS,
+    KNOWN_PROVIDER_HOSTS,
+    ArchitectureNotLoadedError,
     ComplexGitSyncClient,
     ComplexGitSyncError,
     ConfigValidationError,
@@ -17,10 +18,9 @@ from ComplexGitSync import (
     GitTree,
     MemoryBinding,
     MemoryMemorizeResult,
-    MemoryRememberResult,
     MemoryReloadResult,
+    MemoryRememberResult,
     MemoryRetrieveResult,
-    KNOWN_PROVIDER_HOSTS,
     NestedConfigDiscoveryError,
     RepoNode,
     SyncLedger,
@@ -30,9 +30,9 @@ from ComplexGitSync import (
     parse_repository_identifier,
     validate_git_provider,
 )
+from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.git_repo import NodeType, WorkingRepo
 from ComplexGitSync.git_tree import WorkingGitTree
-from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.orchestre import GitRunner
 
 

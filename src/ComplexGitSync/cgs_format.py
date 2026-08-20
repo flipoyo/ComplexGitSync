@@ -97,7 +97,7 @@ def parse_repo_id(identifier: str) -> dict[str, str]:
 parse_repository_identifier = parse_repo_id
 
 
-def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
+def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:
     """Return the canonical internal representation for parsed ``.cgs`` data.
 
     Both the minimal authoring form and the legacy advanced table form are
@@ -262,7 +262,7 @@ def _tree_repo_identity(repo: Any) -> tuple[str, str, str]:
     )
 
 
-def _unique_tree_key(tree: "GitTree", repo: GitRepo) -> str:
+def _unique_tree_key(tree: GitTree, repo: GitRepo) -> str:
     """Choose a deterministic internal key without parsing authoring syntax."""
     base = repo.project_name
     if base not in tree.repos:
@@ -276,7 +276,7 @@ def _unique_tree_key(tree: "GitTree", repo: GitRepo) -> str:
     return candidate
 
 
-def _root_tree_value(tree: "GitTree", *attributes: str) -> Any:
+def _root_tree_value(tree: GitTree, *attributes: str) -> Any:
     repos = list(tree.repos.values())
     ordered = sorted(
         repos,
@@ -388,7 +388,7 @@ class CgsDocument(ConfigDocument):
     }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "CgsDocument":
+    def from_dict(cls, data: dict[str, Any]) -> CgsDocument:
         """Normalize and validate already-parsed authoring data."""
         document = cls(normalize_cgs(data))
         document.validate()
@@ -399,7 +399,7 @@ class CgsDocument(ConfigDocument):
         cls,
         project: str,
         repositories: list[str],
-    ) -> "CgsDocument":
+    ) -> CgsDocument:
         """Build a canonical document from format-level authoring values.
 
         Callers collect the project name and textual repository identifiers;
@@ -408,12 +408,12 @@ class CgsDocument(ConfigDocument):
         return cls.from_dict({"project": project, "repos": list(repositories)})
 
     @classmethod
-    def from_toml(cls, path: Path | str) -> "CgsDocument":
+    def from_toml(cls, path: Path | str) -> CgsDocument:
         """Run the explicit TOML parse, normalization, and validation pipeline."""
         return cls.from_dict(parse_cgs(path))
 
     @classmethod
-    def from_git_tree(cls, tree: "GitTree") -> "CgsDocument":
+    def from_git_tree(cls, tree: GitTree) -> CgsDocument:
         """Project a reference or working Git tree into canonical ``.cgs`` data.
 
         This method owns the configuration-field mapping.  The tree supplies
@@ -474,7 +474,7 @@ class CgsDocument(ConfigDocument):
 
         return cls.from_dict(canonical)
 
-    def to_git_tree(self) -> "GitTree":
+    def to_git_tree(self) -> GitTree:
         """Build a reference :class:`GitTree` from this canonical document."""
         from .git_tree import GitTree
 
@@ -501,7 +501,7 @@ class CgsDocument(ConfigDocument):
         self.attach_serialization_context(tree)
         return tree
 
-    def attach_serialization_context(self, tree: "GitTree") -> None:
+    def attach_serialization_context(self, tree: GitTree) -> None:
         """Retain canonical semantics on *tree* for a lossless projection back.
 
         The retained state is opaque to :mod:`git_tree`; only this format
@@ -534,7 +534,7 @@ class CgsDocument(ConfigDocument):
             if match_index is not None:
                 tree._repo_metadata[tree_key] = copy.deepcopy(unmatched.pop(match_index))
 
-    def validate(self) -> None:  # noqa: C901
+    def validate(self) -> None:
         """Validate static document properties without Git or network access."""
         errors: list[str] = []
 
@@ -724,11 +724,11 @@ class CgsDocument(ConfigDocument):
 
 
 __all__ = [
-    "CgsDocument",
     "DEFAULT_ACCESS_PROTOCOL",
     "DEFAULT_BRANCH",
     "DEFAULT_FORMAT_VERSION",
     "DEFAULT_NESTED_CONFIG",
+    "CgsDocument",
     "normalize_cgs",
     "parse_cgs",
     "parse_repo_id",

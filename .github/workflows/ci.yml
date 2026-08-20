@@ -18,5 +18,7 @@ jobs:
       - uses: prefix-dev/setup-pixi@v0.8.1
       - name: Install package
         run: pixi install
+      - name: Lint
+        run: pixi run lint
       - name: Run tests
         run: pixi run test

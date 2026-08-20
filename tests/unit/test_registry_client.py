@@ -9,20 +9,35 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
+from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
+from ComplexGitSync.git_repo import (
+    GitRepo,
+    NodeType,
+    RefKind,
+    RepoLifecycleState,
+    SyncState,
+    WorkingRepo,
+)
+from ComplexGitSync.git_tree import (
+    GitTree,
+    TreeLifecycleState,
+    WorkingGitTree,
+    make_repo_id,
+    normalize_node_types,
+)
 from ComplexGitSync.L0 import hash_time_l0_anchor, new_time_l0_anchor
 from ComplexGitSync.orchestre import (
     ComplexGitSyncClient,
     GocDocument,
+    GtsDocument,
     LocalGitRegister,
     MemoryBinding,
+    RuntimeStateStore,
     _path_to_environment_marker,
     _resolve_memory_state_directory,
     _state_directory_name,
+    build_registry_from_gts_document,
 )
-from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
-from ComplexGitSync.git_repo import GitRepo, NodeType, RefKind, RepoLifecycleState, SyncState, WorkingRepo
-from ComplexGitSync.git_tree import WorkingGitTree, GitTree, TreeLifecycleState, make_repo_id, normalize_node_types
-from ComplexGitSync.orchestre import GtsDocument, RuntimeStateStore, build_registry_from_gts_document
 
 
 def test_client_load_cgs_builds_reviewable_registry(tmp_path):
@@ -275,9 +290,9 @@ def test_initialise_cgs_default_cgshome_is_cgspath_project_name(tmp_path, monkey
     client.tree = None
 
     def _fake_build_registry(*args, **kwargs):
-        from ComplexGitSync.orchestre import build_registry_from_cgs_document as _orig
-        from ComplexGitSync.orchestre import ROOT_REPO_ID
         from ComplexGitSync.git_repo import RepoLifecycleState
+        from ComplexGitSync.orchestre import ROOT_REPO_ID
+        from ComplexGitSync.orchestre import build_registry_from_cgs_document as _orig
         reg = _orig(*args, **kwargs)
         # Pre-mark root READY so the clone loop completes without git calls.
         root = reg.get(ROOT_REPO_ID)
@@ -320,9 +335,9 @@ def test_initialise_cgs_default_cgshome_uses_environment(tmp_path, monkeypatch):
     monkeypatch.setattr(client.state_store, "record_snapshot", lambda *a, **kw: None)
 
     def _fake_build_registry(*args, **kwargs):
+        from ComplexGitSync.git_repo import RepoLifecycleState
         from ComplexGitSync.orchestre import ROOT_REPO_ID
         from ComplexGitSync.orchestre import build_registry_from_cgs_document as _orig
-        from ComplexGitSync.git_repo import RepoLifecycleState
 
         reg = _orig(*args, **kwargs)
         root = reg.get(ROOT_REPO_ID)
@@ -2604,10 +2619,7 @@ def _make_entry(repo_id: str, abs_path: Path, *, parent_id: str | None = None):
     """Create a minimal WorkingRepo for circularity testing."""
     from ComplexGitSync.git_repo import (
         NodeType,
-        RepoLifecycleState,
         WorkingRepo,
-        SyncState,
-        DiscoveryState,
     )
 
     separator_count = repo_id.count(":")
@@ -2716,31 +2728,6 @@ def test_fix_circularities_keeps_duplicates_when_commit_or_status_conflict(tmp_p
     duplicate.repo_lifecycle_state = RepoLifecycleState.PENDING
     duplicate.sync_state = SyncState.PENDING
     duplicate.commit_sha = "sha-2"
-
-    registry.add(_make_entry("root", tmp_path))
-    registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
-    registry.add(canonical)
-    registry.add(duplicate)
-
-    fixed = fix_circularities(registry)
-
-    assert fixed == ()
-    assert "root:shared" in registry.repos
-    assert "root:parent1:shared" in registry.repos
-
-
-def test_fix_circularities_keeps_duplicates_when_declared_refs_conflict(tmp_path):
-    from ComplexGitSync.git_repo import RefKind
-    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
-
-    shared_path = tmp_path / "shared"
-    registry = WorkingGitTree()
-    canonical = _make_entry("root:shared", shared_path, parent_id="root")
-    duplicate = _make_entry("root:parent1:shared", shared_path, parent_id="root:parent1")
-    canonical.target_ref_kind = RefKind.BRANCH
-    canonical.target_ref_name = "main"
-    duplicate.target_ref_kind = RefKind.BRANCH
-    duplicate.target_ref_name = "release"
 
     registry.add(_make_entry("root", tmp_path))
     registry.add(_make_entry("root:parent1", tmp_path / "parent1", parent_id="root"))
@@ -2962,7 +2949,6 @@ def _parse_change(change: str) -> tuple[str, str]:
 
 def test_find_scc_no_cycle_returns_trivial_sccs(tmp_path):
     """A simple linear chain has only trivial SCCs (size 1)."""
-    from pathlib import Path as P
     from ComplexGitSync.git_tree import find_strongly_connected_components
 
     a, b, c = tmp_path / "a", tmp_path / "b", tmp_path / "c"

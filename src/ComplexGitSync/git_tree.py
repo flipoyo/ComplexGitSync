@@ -29,13 +29,13 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path, PurePath, PurePosixPath
-from typing import TYPE_CHECKING, Any, Iterator, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
-from .errors import ConfigValidationError, NestedConfigDiscoveryError
+from .errors import ConfigValidationError
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
@@ -53,7 +53,8 @@ _E = TypeVar("_E", bound=Enum)
 ROOT_REPO_ID = "root"
 
 if TYPE_CHECKING:
-    from .orchestre import GitRunner
+    from .cgs_format import CgsDocument
+    from .orchestre import GitRunner, GtsDocument
 
 
 @dataclass(slots=True)
@@ -64,16 +65,16 @@ class GitTreeGitCommands:
     when callers omit an explicit tree argument.
     """
 
-    working_tree: "WorkingGitTree | None" = field(default=None)
+    working_tree: WorkingGitTree | None = field(default=None)
 
-    def bind_tree(self, tree: "WorkingGitTree") -> "WorkingGitTree":
+    def bind_tree(self, tree: WorkingGitTree) -> WorkingGitTree:
         self.working_tree = tree
         return tree
 
     def _resolve_tree(
         self,
-        tree: "WorkingGitTree | None" = None,
-    ) -> "WorkingGitTree":
+        tree: WorkingGitTree | None = None,
+    ) -> WorkingGitTree:
         if isinstance(tree, WorkingGitTree):
             self.working_tree = tree
             return tree
@@ -83,11 +84,11 @@ class GitTreeGitCommands:
 
     def checkout(
         self,
-        git_runner: "GitRunner",
+        git_runner: GitRunner,
         branch_name: str,
         *,
         ref_kind: RefKind = RefKind.BRANCH,
-        tree: "WorkingGitTree | None" = None,
+        tree: WorkingGitTree | None = None,
     ) -> None:
         from .operations import checkout_tree
 
@@ -95,10 +96,10 @@ class GitTreeGitCommands:
 
     def branch(
         self,
-        git_runner: "GitRunner",
+        git_runner: GitRunner,
         branch_name: str,
         *,
-        tree: "WorkingGitTree | None" = None,
+        tree: WorkingGitTree | None = None,
     ) -> None:
         from .operations import branch_tree
 
@@ -106,9 +107,9 @@ class GitTreeGitCommands:
 
     def pull(
         self,
-        git_runner: "GitRunner",
+        git_runner: GitRunner,
         *,
-        tree: "WorkingGitTree | None" = None,
+        tree: WorkingGitTree | None = None,
     ) -> None:
         from .operations import restart_tree
 
@@ -116,9 +117,9 @@ class GitTreeGitCommands:
 
     def pull_force(
         self,
-        git_runner: "GitRunner",
+        git_runner: GitRunner,
         *,
-        tree: "WorkingGitTree | None" = None,
+        tree: WorkingGitTree | None = None,
     ) -> None:
         from .operations import restart_tree_force
 
@@ -126,9 +127,9 @@ class GitTreeGitCommands:
 
     def add(
         self,
-        git_runner: "GitRunner",
+        git_runner: GitRunner,
         *,
-        tree: "WorkingGitTree | None" = None,
+        tree: WorkingGitTree | None = None,
     ) -> None:
         from .operations import add_tree
 
@@ -136,11 +137,11 @@ class GitTreeGitCommands:
 
     def commit(
         self,
-        git_runner: "GitRunner",
+        git_runner: GitRunner,
         message: str,
         *,
         stage_all: bool = True,
-        tree: "WorkingGitTree | None" = None,
+        tree: WorkingGitTree | None = None,
     ) -> None:
         from .operations import commit_tree
 
@@ -148,9 +149,9 @@ class GitTreeGitCommands:
 
     def push(
         self,
-        git_runner: "GitRunner",
+        git_runner: GitRunner,
         *,
-        tree: "WorkingGitTree | None" = None,
+        tree: WorkingGitTree | None = None,
     ) -> None:
         from .operations import push_tree
 
@@ -158,10 +159,10 @@ class GitTreeGitCommands:
 
     def tag(
         self,
-        git_runner: "GitRunner",
+        git_runner: GitRunner,
         tag_name: str,
         *,
-        tree: "WorkingGitTree | None" = None,
+        tree: WorkingGitTree | None = None,
     ) -> None:
         from .operations import tag_tree
 
@@ -169,12 +170,12 @@ class GitTreeGitCommands:
 
     def freeze(
         self,
-        git_runner: "GitRunner",
+        git_runner: GitRunner,
         tag_name: str,
         *,
         message: str | None = None,
         stage_all: bool = True,
-        tree: "WorkingGitTree | None" = None,
+        tree: WorkingGitTree | None = None,
     ) -> None:
         from .operations import freeze_release_tree
 
@@ -188,7 +189,7 @@ class GitTreeGitCommands:
 
     def clone(
         self,
-        git_runner: "GitRunner",
+        git_runner: GitRunner,
         remote_url: str,
         destination: Path | str,
         *,
@@ -294,13 +295,13 @@ class GitTree:
         except KeyError as exc:
             raise KeyError(f"Unknown repository '{project_name}' in GitTree.") from exc
 
-    def propagate_tag(self, registry: "WorkingGitTree", tag_name: str) -> None:
+    def propagate_tag(self, registry: WorkingGitTree, tag_name: str) -> None:
         """Propagate *tag_name* across *registry* from parent to leaves."""
         for entry in iter_tree(registry):
             entry.target_ref_kind = RefKind.TAG
             entry.target_ref_name = tag_name
 
-    def to_cgs(self) -> "CgsDocument":
+    def to_cgs(self) -> CgsDocument:
         """Delegate conversion to the ``.cgs`` format boundary."""
         from .cgs_format import CgsDocument
 
@@ -406,7 +407,7 @@ class WorkingGitTree(GitTree):
         """Return ``True`` when the runtime tree has all required repo paths."""
         return self.is_complete()
 
-    def to_cgs(self) -> "CgsDocument":
+    def to_cgs(self) -> CgsDocument:
         """Delegate runtime-free conversion to the ``.cgs`` format boundary."""
         from .cgs_format import CgsDocument
 
@@ -417,7 +418,7 @@ class WorkingGitTree(GitTree):
         *,
         command_origin: str = "snapshot",
         source_cgs_path: Path | None = None,
-    ) -> "GtsDocument":
+    ) -> GtsDocument:
         """Convert the working tree to a ``.gts`` snapshot document."""
         from .orchestre import build_gts_document_from_registry
 
