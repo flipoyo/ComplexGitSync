@@ -12,6 +12,9 @@ pixi install
 pixi run cgitsync --help
 ```
 
+This project is developed with Pixi only; `pip install -e .` is not a
+supported development workflow.
+
 ## Quickstart
 
 The example below uses the CGSil1 reference topology
