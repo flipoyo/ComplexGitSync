@@ -2062,220 +2062,6 @@ class GitRunner:
         """Create *tag_name* in *repo_path*."""
         self._run("tag", tag_name, cwd=repo_path)
 
-    def add_submodule(
-        self,
-        repo_path: Path | str,
-        remote_url: str,
-        relative_path: Path | str,
-        *,
-        branch: str,
-    ) -> None:
-        """Add a submodule in *repo_path* at *relative_path* pinned to *branch*."""
-        self._ensure_gitmodules_in_worktree(repo_path)
-        self._remove_stale_submodule_link(repo_path, relative_path)
-        args: list[str] = []
-        if self._uses_file_transport(remote_url):
-            args.extend(["-c", "protocol.file.allow=always"])
-        args.extend(
-            [
-                "submodule",
-                "add",
-                "--force",
-                "-b",
-                branch,
-                remote_url,
-                str(relative_path),
-            ]
-        )
-        self._run(*args, cwd=repo_path)
-        self._ensure_gitignore_entries(repo_path, ".gitmodules", Path(relative_path).as_posix())
-
-    def _remove_stale_submodule_link(
-        self,
-        repo_path: Path | str,
-        relative_path: Path | str,
-    ) -> None:
-        """Remove an existing index/.gitmodules link before recreating a submodule."""
-        submodule_path = Path(relative_path).as_posix()
-        found_stale_link = False
-        listed = subprocess.run(
-            [str(self.executable), "ls-files", "--error-unmatch", "--", submodule_path],
-            cwd=str(repo_path),
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        if listed.returncode == 0:
-            self._run("rm", "-f", "--cached", "--", submodule_path, cwd=repo_path)
-            found_stale_link = True
-        elif listed.returncode != 1:
-            details = listed.stderr.strip() or listed.stdout.strip() or "unknown git error"
-            raise GitSyncError(
-                "Git command failed "
-                f"({self.executable} ls-files --error-unmatch -- {submodule_path}): {details}"
-            )
-
-        gitmodules_path = Path(repo_path) / ".gitmodules"
-        if not gitmodules_path.exists():
-            return
-        sections = self._gitmodules_sections_for_path(repo_path, submodule_path)
-        for section in sections:
-            self._run("config", "-f", ".gitmodules", "--remove-section", section, cwd=repo_path)
-        if sections:
-            found_stale_link = True
-        if found_stale_link:
-            self._remove_stale_submodule_gitdir(repo_path, submodule_path)
-            self._remove_stale_submodule_worktree(repo_path, submodule_path)
-
-    def _remove_stale_submodule_gitdir(
-        self,
-        repo_path: Path | str,
-        submodule_path: str,
-    ) -> None:
-        result = self._run("rev-parse", "--git-path", f"modules/{submodule_path}", cwd=repo_path)
-        raw_path = result.stdout.strip()
-        if not raw_path:
-            return
-        gitdir_path = Path(raw_path)
-        if not gitdir_path.is_absolute():
-            gitdir_path = Path(repo_path) / gitdir_path
-        if gitdir_path.is_dir():
-            shutil.rmtree(gitdir_path)
-        elif gitdir_path.exists():
-            gitdir_path.unlink()
-
-    def _remove_stale_submodule_worktree(
-        self,
-        repo_path: Path | str,
-        submodule_path: str,
-    ) -> None:
-        worktree_path = Path(repo_path) / submodule_path
-        if worktree_path.is_dir():
-            shutil.rmtree(worktree_path)
-        elif worktree_path.exists():
-            worktree_path.unlink()
-
-    def _gitmodules_sections_for_path(
-        self,
-        repo_path: Path | str,
-        submodule_path: str,
-    ) -> list[str]:
-        result = subprocess.run(
-            [
-                str(self.executable),
-                "config",
-                "-f",
-                ".gitmodules",
-                "--get-regexp",
-                r"^submodule\..*\.path$",
-            ],
-            cwd=str(repo_path),
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        if result.returncode == 1:
-            return []
-        if result.returncode != 0:
-            details = result.stderr.strip() or result.stdout.strip() or "unknown git error"
-            raise GitSyncError(
-                "Git command failed "
-                f"({self.executable} config -f .gitmodules --get-regexp ^submodule\\..*\\.path$): {details}"
-            )
-
-        sections: list[str] = []
-        for line in result.stdout.splitlines():
-            key, _, value = line.partition(" ")
-            if value != submodule_path:
-                continue
-            match = re.fullmatch(r"submodule\.(.+)\.path", key)
-            if match:
-                sections.append(f"submodule.{match.group(1)}")
-        return sections
-
-    def _ensure_gitmodules_in_worktree(self, repo_path: Path | str) -> None:
-        """Ensure ``.gitmodules`` exists in the worktree before adding a submodule."""
-        gitmodules_path = Path(repo_path) / ".gitmodules"
-        if gitmodules_path.exists():
-            return
-
-        tracked_command = [str(self.executable), "ls-files", "--error-unmatch", ".gitmodules"]
-        tracked = subprocess.run(
-            tracked_command,
-            cwd=str(repo_path),
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        if tracked.returncode == 0:
-            self._run("checkout", "--", ".gitmodules", cwd=repo_path)
-            return
-        if tracked.returncode != 1:
-            command = " ".join(tracked_command)
-            stderr = tracked.stderr.strip()
-            stdout = tracked.stdout.strip()
-            if stderr:
-                details = stderr
-            elif stdout:
-                details = stdout
-            else:
-                details = "no output from git command"
-            raise GitSyncError(
-                "Expected returncode 0 (tracked) or 1 (not tracked); "
-                f"got {tracked.returncode} "
-                f"({command}): {details}"
-            )
-
-        gitmodules_path.touch()
-
-    def _ensure_gitignore_entries(self, repo_path: Path | str, *entries: str) -> None:
-        """Create or append missing ignore entries in the local ``.gitignore``."""
-        gitignore_path = Path(repo_path) / ".gitignore"
-        try:
-            existing_content = gitignore_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            existing_content = ""
-        existing_entries = existing_content.splitlines()
-        missing_entries = [entry for entry in entries if entry not in existing_entries]
-        if not missing_entries:
-            return
-
-        prefix = "" if not existing_content or existing_content.endswith("\n") else "\n"
-
-        with gitignore_path.open("a", encoding="utf-8") as handle:
-            handle.write(prefix)
-            handle.write("\n".join(missing_entries))
-            handle.write("\n")
-
-    def update_submodule(self, repo_path: Path | str, relative_path: Path | str) -> None:
-        """Sync and update a tracked submodule path from its parent repository."""
-        submodule_path = str(relative_path)
-        self._run("submodule", "sync", "--", submodule_path, cwd=repo_path)
-        self._run(
-            "submodule",
-            "update",
-            "--init",
-            "--remote",
-            "--",
-            submodule_path,
-            cwd=repo_path,
-        )
-
-    def update_submodule_force(self, repo_path: Path | str, relative_path: Path | str) -> None:
-        """Force update a tracked submodule path from its parent repository."""
-        submodule_path = str(relative_path)
-        self._run("submodule", "sync", "--", submodule_path, cwd=repo_path)
-        self._run(
-            "submodule",
-            "update",
-            "--init",
-            "--remote",
-            "--force",
-            "--",
-            submodule_path,
-            cwd=repo_path,
-        )
-
     def remote_exists(self, repo_path: Path | str, remote: str = "origin") -> bool:
         """Return ``True`` when *remote* exists in *repo_path*."""
         try:
@@ -2363,15 +2149,6 @@ class GitRunner:
             text=True,
         )
         return upstream.returncode == 0
-
-    def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
-        """Return ``True`` when *relative_path* is tracked as a git submodule."""
-        result = self._run("ls-files", "--stage", "--", str(relative_path), cwd=repo_path)
-        lines = [line for line in result.stdout.splitlines() if line.strip()]
-        if not lines:
-            return False
-        mode = lines[0].split(maxsplit=1)[0]
-        return mode == "160000"
 
     def _run(
         self,
@@ -3122,7 +2899,7 @@ class ComplexGitSyncClient:
         *,
         output_path: str | Path | None = None,
     ) -> tuple[Path, ...]:
-        """Remove immediate child repos, project ledgers, and .gitmodules from CGSHOME."""
+        """Remove immediate child repos and project ledgers from CGSHOME."""
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
         cgshome = self.resolve_cgshome(document, source_path, output_path=output_path)
@@ -3165,11 +2942,6 @@ class ComplexGitSyncClient:
             if self._remove_workspace_path(lgr_path):
                 removed.append(lgr_path)
                 self._log_event("fs_purge_removed", path=lgr_path)
-
-        gitmodules_path = root_path / ".gitmodules"
-        if self._remove_workspace_path(gitmodules_path):
-            removed.append(gitmodules_path)
-            self._log_event("fs_purge_removed", path=gitmodules_path)
 
         self._log_event("fs_purge_end", root_path=root_path, removed_count=len(removed))
         return tuple(removed)
@@ -4596,7 +4368,7 @@ class ComplexGitSyncClient:
         registry: WorkingGitTree,
         entry: WorkingRepo,
     ) -> set[Path]:
-        managed_paths: set[Path] = {Path(".gitmodules"), Path(".cgitsync")}
+        managed_paths: set[Path] = {Path(".cgitsync")}
         if entry.parent_id is None:
             managed_paths.add(Path(f"{entry.name}.lgr"))
         for child in registry.children_of(entry.repo_id):
@@ -4932,34 +4704,21 @@ class ComplexGitSyncClient:
                     f"Unable to clear nested clone destination for {entry.name} at {entry.absolute_path}: {exc}"
                 ) from exc
 
-        registry = self.get_dependency_registry()
-        if entry.parent_id is None:
-            self.orchestre.git_tree.git.clone(
-                self.git_runner,
-                remote_url,
-                entry.absolute_path,
-                branch=selected_ref,
-            )
-        else:
-            parent = registry.get(entry.parent_id)
+        if entry.parent_id is not None:
+            parent = self.get_dependency_registry().get(entry.parent_id)
             try:
-                relative_path = entry.absolute_path.relative_to(parent.absolute_path)
+                entry.absolute_path.relative_to(parent.absolute_path)
             except ValueError as exc:
                 raise GitSyncError(
                     f"Repository {entry.name} at {entry.absolute_path} is not under its parent path "
                     f"{parent.absolute_path}."
                 ) from exc
-            self.git_runner.add_submodule(
-                parent.absolute_path,
-                remote_url,
-                relative_path,
-                branch=selected_ref,
-            )
-            if not self.git_runner.is_submodule(parent.absolute_path, relative_path):
-                raise GitSyncError(
-                    f"Submodule constraint violated: {parent.name}/{relative_path.as_posix()} "
-                    f"is not tracked as a git submodule."
-                )
+        self.orchestre.git_tree.git.clone(
+            self.git_runner,
+            remote_url,
+            entry.absolute_path,
+            branch=selected_ref,
+        )
         current_ref = self.git_runner.current_branch(entry.absolute_path) or selected_ref
         fallback_applied = current_ref != (entry.target_ref_name or selected_ref)
 

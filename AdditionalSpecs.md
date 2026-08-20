@@ -134,13 +134,11 @@ CLI dry-run mode (T36): `add`, `commit`, `push`, `tag`, and `freeze` accept
 Workspace preflight invariants:
 - `commit`, `push`, `tag`, and `freeze` all run a workspace preflight engine before mutation.
 - The engine checks dirty worktrees, detached HEADs, missing remotes, branch divergence,
-  unresolved merges, missing submodule links, and stale recorded `commit_sha` values.
+  unresolved merges, and stale recorded `commit_sha` values.
 - Diagnostics are severity-based: warnings are emitted for actionable-but-allowed states
   (for example ahead branches, dirty trees on `commit`/`freeze`, or stale snapshot SHAs),
   while blocking errors stop the operation.
 - `tag` must still reject dirty worktrees and pre-existing tags.
-- `push`, `tag`, and `freeze` must reject parent/child layouts where children are not
-  tracked as git submodules.
 - Tag creation is always non-forcing (`git tag <name>`); replacing an existing tag is not allowed.
 
 ### Branch Topology Propagation Rules (T35)
@@ -365,15 +363,14 @@ The canonical user-facing lifecycle contract is:
 2. `pull(.cgs/.gts)` → resync an existing tree → `READY`
    - `client.pull("examples/complexgitsync.cgs")`
    - `.gts` input is loaded as the starting registry, then the tree is pulled
-     in parent-first order: `ROOT -> PARENT -> LEAF`. The project root is a
-     real `NodeType.ROOT` repository and receives the root `git pull` before
-     parent and leaf submodules are updated.
+     in parent-first order: `ROOT -> PARENT -> LEAF`. Every repository — root,
+     parent, and leaf alike — is a plain independent clone and receives its
+     own `git pull`.
    - If the safe fast-forward pull fails because local files would be
      overwritten, the CLI prints `You can try cgitsync pull-force command`.
-   - `pull-force(.cgs/.gts)` is the destructive recovery variant: root runs
-     `git fetch`, `git checkout -B <branch> FETCH_HEAD`, and `git clean -fd`;
-     children are force-updated through parent submodule links in
-     `ROOT -> PARENT -> LEAF` order.
+   - `pull-force(.cgs/.gts)` is the destructive recovery variant: every
+     repository runs `git fetch`, `git checkout -B <branch> FETCH_HEAD`, and
+     `git clean -fd`, in `ROOT -> PARENT -> LEAF` order.
 
 3. Global git operations driven by a GitTree instance; same command for all
    GitRepos from leaves to parents to the root project repository:

@@ -181,19 +181,6 @@ def _make_deep_ready_registry(tmp_path: Path) -> WorkingGitTree:
     return registry
 
 
-def _mark_all_children_as_submodules(
-    registry: WorkingGitTree,
-    runner: _FakeGitRunnerForOperations,
-) -> None:
-    for entry in registry.values():
-        if entry.parent_id is None:
-            continue
-        parent = registry.get(entry.parent_id)
-        relative_path = entry.absolute_path.relative_to(parent.absolute_path)
-        if relative_path != Path("."):
-            runner.add_submodule_link(parent.absolute_path, relative_path)
-
-
 class _FakeGitRunnerForOperations:
     """Minimal fake GitRunner for operation unit tests.
 
@@ -213,8 +200,6 @@ class _FakeGitRunnerForOperations:
         self.force_pulled: list[tuple[Path, str, str | None]] = []
         self.tagged: list[tuple[Path, str]] = []
         self.cloned: list[tuple[str, Path, str]] = []
-        self.updated_submodules: list[tuple[Path, Path]] = []
-        self.force_updated_submodules: list[tuple[Path, Path]] = []
         self.reset_hard_paths: list[Path] = []
         self.cleaned_paths: list[Path] = []
         self.command_order: list[tuple[str, Path]] = []
@@ -225,7 +210,6 @@ class _FakeGitRunnerForOperations:
         self._current_branches: dict[Path, str | None] = {}
         self._existing_remotes: dict[Path, set[str]] = {}
         self._existing_tags: dict[Path, set[str]] = {}
-        self._submodule_links: set[tuple[Path, Path]] = set()
         self._gitlinks: dict[Path, set[Path]] = {}
         self._tracking_states: dict[Path, SyncState | None] = {}
         self._has_upstream: dict[Path, bool] = {}
@@ -310,12 +294,8 @@ class _FakeGitRunnerForOperations:
         path = Path(repo_path)
         self.pulled.append((path, remote, ref_name))
         self.command_order.append(("pull", path))
-
-    def update_submodule(self, repo_path: Path | str, relative_path: Path | str) -> None:
-        parent_path = Path(repo_path)
-        rel_path = Path(relative_path)
-        self.updated_submodules.append((parent_path, rel_path))
-        self.command_order.append(("submodule_update", parent_path / rel_path))
+        if ref_name is not None:
+            self._current_branches[path] = ref_name
 
     def force_pull(
         self,
@@ -327,6 +307,8 @@ class _FakeGitRunnerForOperations:
         path = Path(repo_path)
         self.force_pulled.append((path, remote, ref_name))
         self.command_order.append(("force_pull", path))
+        if ref_name is not None:
+            self._current_branches[path] = ref_name
 
     def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None:
         path = Path(repo_path)
@@ -337,12 +319,6 @@ class _FakeGitRunnerForOperations:
         path = Path(repo_path)
         self.cleaned_paths.append(path)
         self.command_order.append(("clean_untracked", path))
-
-    def update_submodule_force(self, repo_path: Path | str, relative_path: Path | str) -> None:
-        parent_path = Path(repo_path)
-        rel_path = Path(relative_path)
-        self.force_updated_submodules.append((parent_path, rel_path))
-        self.command_order.append(("submodule_update_force", parent_path / rel_path))
 
     def set_staged(self, repo_path: Path | str, value: bool) -> None:
         """Helper: manually set whether a repo has staged changes."""
@@ -376,9 +352,6 @@ class _FakeGitRunnerForOperations:
     def branch_tracking_state(self, repo_path: Path | str) -> SyncState | None:
         return self._tracking_states.get(Path(repo_path), SyncState.ALIGNED)
 
-    def is_submodule(self, repo_path: Path | str, relative_path: Path | str) -> bool:
-        return (Path(repo_path), Path(relative_path)) in self._submodule_links
-
     def set_remote_exists(self, repo_path: Path | str, remote: str, exists: bool) -> None:
         path = Path(repo_path)
         remotes = self._existing_remotes.setdefault(path, set())
@@ -389,12 +362,6 @@ class _FakeGitRunnerForOperations:
 
     def add_existing_tag(self, repo_path: Path | str, tag_name: str) -> None:
         self._existing_tags.setdefault(Path(repo_path), set()).add(tag_name)
-
-    def add_submodule_link(self, repo_path: Path | str, relative_path: Path | str) -> None:
-        parent = Path(repo_path)
-        relative = Path(relative_path)
-        self._submodule_links.add((parent, relative))
-        self._gitlinks.setdefault(parent, set()).add(relative)
 
     def add_gitlink(self, repo_path: Path | str, relative_path: Path | str) -> None:
         self._gitlinks.setdefault(Path(repo_path), set()).add(Path(relative_path))
@@ -507,17 +474,18 @@ def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch,
 # ---------------------------------------------------------------------------
 
 
-def test_restart_tree_pulls_from_root_and_updates_children_as_submodules(tmp_path):
+def test_restart_tree_pulls_root_and_children(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     root_path = tmp_path / "project"
     runner._current_branches[root_path] = "feature-restart"
 
     restart_tree(registry, runner)
 
-    assert runner.pulled == [(root_path, "origin", "feature-restart")]
-    assert runner.updated_submodules == [(root_path, Path("deps/leaf"))]
+    assert runner.pulled == [
+        (root_path, "origin", "feature-restart"),
+        (root_path / "deps" / "leaf", "origin", "feature-restart"),
+    ]
     assert registry.is_ready()
 
 
@@ -527,7 +495,6 @@ def test_client_pull_gts_pulls_root_then_updates_parents_and_leaves(tmp_path):
     registry.to_gts(command_origin="snapshot").to_toml(snapshot_path)
 
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     runner._current_branches[tmp_path / "deep"] = "main"
     client = ComplexGitSyncClient(
         git_runner=runner,
@@ -537,18 +504,21 @@ def test_client_pull_gts_pulls_root_then_updates_parents_and_leaves(tmp_path):
     result = client.pull(snapshot_path)
 
     assert result.is_ready()
-    assert runner.pulled == [(tmp_path / "deep", "origin", "main")]
+    assert runner.pulled == [
+        (tmp_path / "deep", "origin", "main"),
+        (tmp_path / "deep" / "middle", "origin", "main"),
+        (tmp_path / "deep" / "middle" / "sub", "origin", "main"),
+    ]
     assert runner.command_order == [
         ("pull", tmp_path / "deep"),
-        ("submodule_update", tmp_path / "deep" / "middle"),
-        ("submodule_update", tmp_path / "deep" / "middle" / "sub"),
+        ("pull", tmp_path / "deep" / "middle"),
+        ("pull", tmp_path / "deep" / "middle" / "sub"),
     ]
 
 
 def test_restart_tree_propagates_branch_to_all_entries(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     root_path = tmp_path / "project"
     runner._current_branches[root_path] = "sync-branch"
 
@@ -559,10 +529,9 @@ def test_restart_tree_propagates_branch_to_all_entries(tmp_path):
         assert entry.current_ref_name == "sync-branch"
 
 
-def test_restart_tree_runs_pull_and_submodule_updates_parent_first(tmp_path):
+def test_restart_tree_runs_pull_parent_first(tmp_path):
     registry = _make_deep_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     root_path = tmp_path / "deep"
     runner._current_branches[root_path] = "main"
 
@@ -575,10 +544,9 @@ def test_restart_tree_runs_pull_and_submodule_updates_parent_first(tmp_path):
     assert root_idx < middle_idx < sub_idx
 
 
-def test_restart_tree_force_resets_root_then_forces_submodules_parent_first(tmp_path):
+def test_restart_tree_force_pulls_parent_first(tmp_path):
     registry = _make_deep_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     root_path = tmp_path / "deep"
     runner._current_branches[root_path] = "main"
 
@@ -589,29 +557,19 @@ def test_restart_tree_force_resets_root_then_forces_submodules_parent_first(tmp_
         (root_path / "middle", "origin", "main"),
         (root_path / "middle" / "sub", "origin", "main"),
     ]
-    assert runner.force_updated_submodules == [
-        (root_path, Path("middle")),
-        (root_path / "middle", Path("sub")),
-    ]
     executed_force_paths = [
-        path for action, path in runner.command_order
-        if action in {"force_pull", "submodule_update_force"}
+        path for action, path in runner.command_order if action == "force_pull"
     ]
     assert executed_force_paths == [
         root_path,
         root_path / "middle",
-        root_path / "middle",
-        root_path / "middle" / "sub",
         root_path / "middle" / "sub",
     ]
-    assert root_path / "middle" in runner.reset_hard_paths
-    assert root_path / "middle" / "sub" in runner.cleaned_paths
 
 
 def test_restart_tree_falls_back_to_resolved_ref_when_no_current_branch(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     root_path = tmp_path / "project"
     runner._current_branches[root_path] = None
     # Set a resolved ref name on the root entry as fallback
@@ -619,15 +577,10 @@ def test_restart_tree_falls_back_to_resolved_ref_when_no_current_branch(tmp_path
 
     restart_tree(registry, runner)
 
-    assert runner.pulled == [(root_path, "origin", "fallback-branch")]
-
-
-def test_restart_tree_fails_when_child_is_not_tracked_as_submodule(tmp_path):
-    registry = _make_ready_registry(tmp_path)
-    runner = _FakeGitRunnerForOperations()
-
-    with pytest.raises(GitSyncError, match="linked as submodules"):
-        restart_tree(registry, runner)
+    assert runner.pulled == [
+        (root_path, "origin", "fallback-branch"),
+        (root_path / "deps" / "leaf", "origin", "fallback-branch"),
+    ]
 
 
 def test_restart_tree_fails_when_child_path_is_outside_parent(tmp_path):
@@ -996,7 +949,6 @@ def test_push_tree_pushes_leaf_before_root(tmp_path):
     """Leaves must be pushed before their parents."""
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
 
     push_tree(registry, runner)
 
@@ -1010,7 +962,6 @@ def test_push_tree_deep_hierarchy_leaf_first(tmp_path):
     """Ordering must be sub → middle → root for a 3-level tree."""
     registry = _make_deep_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
 
     push_tree(registry, runner)
 
@@ -1025,7 +976,6 @@ def test_push_tree_deep_hierarchy_leaf_first(tmp_path):
 def test_push_tree_updates_commit_sha(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
 
     root_path = registry.get("root").absolute_path
     leaf_path = registry.get("root:deps/leaf").absolute_path
@@ -1041,7 +991,6 @@ def test_push_tree_updates_commit_sha(tmp_path):
 def test_push_tree_uses_remote_name_and_resolved_ref(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
 
     push_tree(registry, runner)
 
@@ -1057,7 +1006,6 @@ def test_push_tree_defaults_remote_to_origin_when_not_set(tmp_path):
         entry.remote_name = None
 
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     push_tree(registry, runner)
 
     for _, remote, _ in runner.pushed:
@@ -1067,7 +1015,6 @@ def test_push_tree_defaults_remote_to_origin_when_not_set(tmp_path):
 def test_push_tree_sets_upstream_when_current_branch_is_unpublished(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
 
     for entry in registry.values():
         entry.resolved_ref_name = "btest0"
@@ -1086,7 +1033,6 @@ def test_push_tree_sets_upstream_when_current_branch_is_unpublished(tmp_path):
 def test_push_tree_does_not_set_upstream_when_upstream_exists(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
 
     for entry in registry.values():
         runner._has_upstream[entry.absolute_path] = True
@@ -1099,7 +1045,6 @@ def test_push_tree_does_not_set_upstream_when_upstream_exists(tmp_path):
 def test_push_tree_tree_remains_ready(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
 
     push_tree(registry, runner)
 
@@ -1125,7 +1070,6 @@ def test_tag_tree_requires_ready_tree(tmp_path):
 def test_tag_tree_tags_and_pushes_leaf_first(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
 
     tag_tree(registry, runner, "v1.0.0")
 
@@ -1143,7 +1087,6 @@ def test_tag_tree_tags_and_pushes_leaf_first(tmp_path):
 def test_freeze_release_tree_commits_tags_and_pushes_leaf_first(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
 
     freeze_release_tree(registry, runner, "release-1")
 
@@ -1161,7 +1104,6 @@ def test_freeze_release_tree_commits_tags_and_pushes_leaf_first(tmp_path):
 def test_tag_tree_preflight_fails_when_tag_exists(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     root_path = registry.get("root").absolute_path
     runner.add_existing_tag(root_path, "v1.0.0")
 
@@ -1172,7 +1114,6 @@ def test_tag_tree_preflight_fails_when_tag_exists(tmp_path):
 def test_tag_tree_preflight_fails_when_tree_is_dirty(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     leaf_path = registry.get("root:deps/leaf").absolute_path
     runner.set_staged(leaf_path, True)
 
@@ -1183,7 +1124,6 @@ def test_tag_tree_preflight_fails_when_tree_is_dirty(tmp_path):
 def test_tag_tree_preflight_ignores_unmanaged_gitlink_dirty_state(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     root_path = registry.get("root").absolute_path
     runner.add_gitlink(root_path, "ComplexGitSync")
     runner.add_status_line(root_path, " M ComplexGitSync")
@@ -1196,7 +1136,6 @@ def test_tag_tree_preflight_ignores_unmanaged_gitlink_dirty_state(tmp_path):
 def test_tag_tree_preflight_ignores_managed_state_files(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     root_path = registry.get("root").absolute_path
     runner.add_status_line(root_path, " M .cgitsync/state/project.gts")
     runner.add_status_line(root_path, "?? project.lgr")
@@ -1209,7 +1148,6 @@ def test_tag_tree_preflight_ignores_managed_state_files(tmp_path):
 def test_commit_tree_preflight_warns_when_tree_is_dirty(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     leaf_path = registry.get("root:deps/leaf").absolute_path
     runner.set_unstaged(leaf_path, True)
 
@@ -1222,7 +1160,6 @@ def test_commit_tree_preflight_warns_when_tree_is_dirty(tmp_path):
 def test_push_tree_preflight_warns_when_branch_is_ahead(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     root_path = registry.get("root").absolute_path
     runner.set_tracking_state(root_path, SyncState.AHEAD)
 
@@ -1230,18 +1167,9 @@ def test_push_tree_preflight_warns_when_branch_is_ahead(tmp_path):
         push_tree(registry, runner)
 
 
-def test_tag_tree_preflight_fails_when_child_is_not_submodule(tmp_path):
-    registry = _make_ready_registry(tmp_path)
-    runner = _FakeGitRunnerForOperations()
-
-    with pytest.raises(GitSyncError, match="not linked as submodule"):
-        tag_tree(registry, runner, "v1.0.0")
-
-
 def test_push_tree_preflight_fails_when_merge_is_unresolved(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     root_path = registry.get("root").absolute_path
     runner.set_unresolved_merge(root_path, True)
 
@@ -1252,7 +1180,6 @@ def test_push_tree_preflight_fails_when_merge_is_unresolved(tmp_path):
 def test_tag_tree_preflight_warns_when_commit_sha_does_not_match_head(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     root_path = registry.get("root").absolute_path
     runner._shas[root_path] = "actual-sha"
     registry.get("root").commit_sha = "recorded-sha"
@@ -1264,7 +1191,6 @@ def test_tag_tree_preflight_warns_when_commit_sha_does_not_match_head(tmp_path):
 def test_freeze_release_preflight_fails_when_branches_misalign(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     root_path = registry.get("root").absolute_path
     leaf_path = registry.get("root:deps/leaf").absolute_path
     runner._current_branches[root_path] = "main"
@@ -1277,7 +1203,6 @@ def test_freeze_release_preflight_fails_when_branches_misalign(tmp_path):
 def test_tag_tree_preflight_fails_when_repo_is_detached(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    _mark_all_children_as_submodules(registry, runner)
     leaf_path = registry.get("root:deps/leaf").absolute_path
     runner._current_branches[leaf_path] = None
 
@@ -1376,194 +1301,6 @@ def test_git_runner_file_transport_detection_handles_windows_paths():
     assert GitRunner._uses_file_transport(r"C:\tmp\remote.git") is True
     assert GitRunner._uses_file_transport("https://example.com/repo.git") is False
     assert GitRunner._uses_file_transport("git@github.com:owner/repo.git") is False
-
-
-def test_git_runner_add_submodule_restores_tracked_gitmodules(monkeypatch, tmp_path):
-    runner = GitRunner()
-    repo_path = tmp_path / "repo"
-    repo_path.mkdir()
-    calls: list[tuple[str, ...]] = []
-
-    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
-        calls.append(args)
-        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
-
-    def _fake_subprocess_run(args, **_kwargs):
-        if args[-1] == ".gitmodules":
-            return subprocess.CompletedProcess(args=args, returncode=0, stdout=".gitmodules", stderr="")
-        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
-
-    monkeypatch.setattr(GitRunner, "_run", _spy_run)
-    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
-
-    runner.add_submodule(
-        repo_path,
-        "git@github.com:owner/child.git",
-        Path("deps") / "child",
-        branch="main",
-    )
-
-    assert calls[0] == ("checkout", "--", ".gitmodules")
-    assert calls[1] == (
-        "submodule",
-        "add",
-        "--force",
-        "-b",
-        "main",
-        "git@github.com:owner/child.git",
-        "deps/child",
-    )
-
-
-def test_git_runner_add_submodule_creates_gitmodules_when_missing(monkeypatch, tmp_path):
-    runner = GitRunner()
-    repo_path = tmp_path / "repo"
-    repo_path.mkdir()
-    calls: list[tuple[str, ...]] = []
-
-    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
-        calls.append(args)
-        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
-
-    def _fake_subprocess_run(args, **_kwargs):
-        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
-
-    monkeypatch.setattr(GitRunner, "_run", _spy_run)
-    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
-
-    runner.add_submodule(
-        repo_path,
-        "git@github.com:owner/child.git",
-        Path("deps") / "child",
-        branch="main",
-    )
-
-    assert (repo_path / ".gitmodules").is_file()
-    assert (repo_path / ".gitmodules").read_text(encoding="utf-8") == ""
-    assert calls == [
-        (
-            "submodule",
-            "add",
-            "--force",
-            "-b",
-            "main",
-            "git@github.com:owner/child.git",
-            "deps/child",
-        )
-    ]
-
-
-def test_git_runner_add_submodule_creates_gitignore_when_missing(monkeypatch, tmp_path):
-    runner = GitRunner()
-    repo_path = tmp_path / "repo"
-    repo_path.mkdir()
-
-    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
-        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
-
-    def _fake_subprocess_run(args, **_kwargs):
-        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
-
-    monkeypatch.setattr(GitRunner, "_run", _spy_run)
-    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
-
-    runner.add_submodule(
-        repo_path,
-        "git@github.com:owner/child.git",
-        Path("deps") / "child",
-        branch="main",
-    )
-
-    assert (repo_path / ".gitignore").read_text(encoding="utf-8") == ".gitmodules\ndeps/child\n"
-
-
-def test_git_runner_add_submodule_appends_missing_gitignore_entries(monkeypatch, tmp_path):
-    runner = GitRunner()
-    repo_path = tmp_path / "repo"
-    repo_path.mkdir()
-    # Intentionally omit the trailing newline to verify append-only behavior.
-    (repo_path / ".gitignore").write_text("existing-entry\n.gitmodules", encoding="utf-8")
-
-    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
-        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
-
-    def _fake_subprocess_run(args, **_kwargs):
-        if args[-1] == ".gitmodules":
-            return subprocess.CompletedProcess(args=args, returncode=0, stdout=".gitmodules", stderr="")
-        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
-
-    monkeypatch.setattr(GitRunner, "_run", _spy_run)
-    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
-
-    runner.add_submodule(
-        repo_path,
-        "git@github.com:owner/child.git",
-        Path("deps") / "child",
-        branch="main",
-    )
-
-    assert (repo_path / ".gitignore").read_text(encoding="utf-8") == (
-        "existing-entry\n.gitmodules\ndeps/child\n"
-    )
-
-
-def test_git_runner_add_submodule_removes_existing_index_link(monkeypatch, tmp_path):
-    runner = GitRunner()
-    repo_path = tmp_path / "repo"
-    repo_path.mkdir()
-    stale_worktree = repo_path / "deps" / "child"
-    stale_worktree.mkdir(parents=True)
-    (repo_path / ".gitmodules").write_text(
-        """
-[submodule "deps/child"]
-	path = deps/child
-	url = git@github.com:owner/old-child.git
-""".lstrip(),
-        encoding="utf-8",
-    )
-    calls: list[tuple[str, ...]] = []
-
-    def _spy_run(_self, *args: str, cwd: Path | str | None = None):
-        calls.append(args)
-        return subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
-
-    def _fake_subprocess_run(args, **_kwargs):
-        if args[:3] == ["git", "ls-files", "--error-unmatch"]:
-            return subprocess.CompletedProcess(args=args, returncode=0, stdout="deps/child", stderr="")
-        if "--get-regexp" in args:
-            return subprocess.CompletedProcess(
-                args=args,
-                returncode=0,
-                stdout="submodule.deps/child.path deps/child\n",
-                stderr="",
-            )
-        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
-
-    monkeypatch.setattr(GitRunner, "_run", _spy_run)
-    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
-
-    runner.add_submodule(
-        repo_path,
-        "git@github.com:owner/child.git",
-        Path("deps") / "child",
-        branch="main",
-    )
-
-    assert calls == [
-        ("rm", "-f", "--cached", "--", "deps/child"),
-        ("config", "-f", ".gitmodules", "--remove-section", "submodule.deps/child"),
-        ("rev-parse", "--git-path", "modules/deps/child"),
-        (
-            "submodule",
-            "add",
-            "--force",
-            "-b",
-            "main",
-            "git@github.com:owner/child.git",
-            "deps/child",
-        ),
-    ]
-    assert not stale_worktree.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -1812,7 +1549,6 @@ def test_client_push_requires_ready_tree(tmp_path):
 
 def test_client_push_delegates_to_push_tree(tmp_path):
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
 
     result = client.push()
 
@@ -1822,7 +1558,6 @@ def test_client_push_delegates_to_push_tree(tmp_path):
 
 def test_client_push_skips_memorize_without_memory_binding(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
 
     def _unexpected_memorize(*_args, **_kwargs):
         pytest.fail("push must not call memorize without a Memory binding")
@@ -1836,7 +1571,6 @@ def test_client_push_skips_memorize_without_memory_binding(tmp_path, monkeypatch
 
 def test_client_push_triggers_memorize_once_after_success(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
     project_root = client.registry.get("root").absolute_path
     binding = _save_test_memory_binding(project_root)
     calls: list[tuple[Path, str, int]] = []
@@ -1863,7 +1597,6 @@ def test_client_push_triggers_memorize_once_after_success(tmp_path, monkeypatch)
 
 def test_client_push_does_not_memorize_when_project_push_fails(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
     project_root = client.registry.get("root").absolute_path
     _save_test_memory_binding(project_root)
     calls: list[Path] = []
@@ -1892,7 +1625,6 @@ def test_client_push_does_not_memorize_when_project_push_fails(tmp_path, monkeyp
 
 def test_client_push_does_not_memorize_when_memoryfs_write_fails(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
     project_root = client.registry.get("root").absolute_path
     _save_test_memory_binding(project_root)
     calls: list[Path] = []
@@ -1926,7 +1658,6 @@ def test_client_tag_requires_ready_tree(tmp_path):
 
 def test_client_tag_delegates_to_tag_tree(tmp_path):
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
 
     result = client.tag("v1.0.0")
 
@@ -1938,7 +1669,6 @@ def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
     import tomllib
 
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
     output_gts = tmp_path / "release.gts"
 
     result = client.freeze("release-1", output_gts=output_gts)
@@ -1963,7 +1693,6 @@ def test_client_freeze_release_writes_release_name_and_named_immutable_gts(tmp_p
     import tomllib
 
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
     root_path = client.registry.get("root").absolute_path
 
     result = client.freeze("release-1")
@@ -1986,7 +1715,6 @@ def test_client_freeze_release_writes_release_name_and_named_immutable_gts(tmp_p
 
 def test_client_freeze_release_triggers_memorize_once_after_success(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
     project_root = client.registry.get("root").absolute_path
     binding = _save_test_memory_binding(project_root)
     calls: list[tuple[Path, str, int]] = []
@@ -2013,7 +1741,6 @@ def test_client_freeze_release_triggers_memorize_once_after_success(tmp_path, mo
 
 def test_client_freeze_release_workflow_memorizes_only_final_state(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
     project_root = client.registry.get("root").absolute_path
     binding = _save_test_memory_binding(project_root)
     client.source_path = project_root / "project.gts"
@@ -2044,7 +1771,6 @@ def test_client_freeze_release_workflow_does_not_memorize_when_push_fails(
     monkeypatch,
 ):
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
     project_root = client.registry.get("root").absolute_path
     _save_test_memory_binding(project_root)
     client.source_path = project_root / "project.gts"
@@ -2078,7 +1804,6 @@ def test_client_freeze_release_workflow_does_not_memorize_when_push_fails(
 
 def test_client_freeze_release_does_not_memorize_when_freeze_fails(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
     project_root = client.registry.get("root").absolute_path
     _save_test_memory_binding(project_root)
     calls: list[Path] = []
@@ -2110,7 +1835,6 @@ def test_client_freeze_release_does_not_memorize_when_memoryfs_write_fails(
     monkeypatch,
 ):
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
     project_root = client.registry.get("root").absolute_path
     _save_test_memory_binding(project_root)
     calls: list[Path] = []
@@ -2160,7 +1884,6 @@ def test_freeze_snapshot_loaded_from_gts_creates_new_named_immutable_gts(tmp_pat
     import tomllib
 
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
     root = client.registry.get("root")
     source_snapshot = root.absolute_path / ".cgitsync" / "state" / "gts-000005.gts"
     source_snapshot.parent.mkdir(parents=True, exist_ok=True)
@@ -2266,7 +1989,6 @@ def test_client_add_raises_when_no_registry_loaded():
 
 def test_client_freeze_state_delegates_and_writes_named_gts(tmp_path):
     client, runner = _make_client_with_ready_registry(tmp_path)
-    _mark_all_children_as_submodules(client.registry, runner)
     output_gts = tmp_path / "internal-state.gts"
 
     result = client.freeze_state("state-1", output_gts=output_gts)

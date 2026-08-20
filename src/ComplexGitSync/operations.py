@@ -110,10 +110,8 @@ def restart_tree(
     """Resynchronize the full tree using the root repository's current branch.
 
     Reads the current branch from the root repository, propagates it across
-    all repos, then synchronizes parent-first:
-
-    * root repository: ``git pull --ff-only``
-    * child repositories: submodule sync/update from their parent repository
+    all repos, then pulls every repository (parent-first) with
+    ``git pull --ff-only``.
 
     Does not require a ``READY`` tree; intended for use after loading a
     ``.cgs`` file (``DECLARED`` state).  Produces a ``READY`` tree or
@@ -131,9 +129,7 @@ def restart_tree(
     propagate_global_branch(tree, current_branch)
 
     for repo in iter_tree(tree):
-        if repo.parent_id is None:
-            git_runner.pull(repo.absolute_path, ref_name=current_branch)
-        else:
+        if repo.parent_id is not None:
             parent = tree.get(repo.parent_id)
             try:
                 relative_path = repo.absolute_path.relative_to(parent.absolute_path)
@@ -146,22 +142,9 @@ def restart_tree(
                     "pull preflight failed: child repository cannot share the exact parent path "
                     f"({parent.name}->{repo.name})."
                 )
-            if not git_runner.is_submodule(parent.absolute_path, relative_path):
-                raise GitSyncError(
-                    "pull preflight failed: child repositories must be linked as submodules "
-                    f"({parent.name}->{repo.name}:{relative_path.as_posix()})."
-                )
-            git_runner.update_submodule(parent.absolute_path, relative_path)
+        git_runner.pull(repo.absolute_path, ref_name=current_branch)
 
-        # Branch refresh uses repo-specific behavior:
-        # - children keep the propagated root branch contract because submodule
-        #   updates may leave them detached.
-        # - root reads its actual current branch (with fallback).
-        resolved_branch = (
-            current_branch
-            if repo.parent_id is not None
-            else (git_runner.current_branch(repo.absolute_path) or current_branch)
-        )
+        resolved_branch = git_runner.current_branch(repo.absolute_path) or current_branch
         _refresh_repo_after_checkout(repo, resolved_branch, RefKind.BRANCH, git_runner)
 
     tree.recompute_tree_state()
@@ -190,9 +173,7 @@ def restart_tree_force(
     propagate_global_branch(tree, current_branch)
 
     for repo in iter_tree(tree):
-        if repo.parent_id is None:
-            git_runner.force_pull(repo.absolute_path, ref_name=current_branch)
-        else:
+        if repo.parent_id is not None:
             parent = tree.get(repo.parent_id)
             try:
                 relative_path = repo.absolute_path.relative_to(parent.absolute_path)
@@ -205,23 +186,9 @@ def restart_tree_force(
                     "pull-force preflight failed: child repository cannot share the exact parent path "
                     f"({parent.name}->{repo.name})."
                 )
-            if not git_runner.is_submodule(parent.absolute_path, relative_path):
-                raise GitSyncError(
-                    "pull-force preflight failed: child repositories must be linked as submodules "
-                    f"({parent.name}->{repo.name}:{relative_path.as_posix()})."
-                )
-            if repo.absolute_path.exists():
-                git_runner.reset_hard(repo.absolute_path)
-                git_runner.clean_untracked(repo.absolute_path)
-            git_runner.update_submodule_force(parent.absolute_path, relative_path)
-            if repo.absolute_path.exists():
-                git_runner.force_pull(repo.absolute_path, ref_name=current_branch)
+        git_runner.force_pull(repo.absolute_path, ref_name=current_branch)
 
-        resolved_branch = (
-            current_branch
-            if repo.parent_id is not None
-            else (git_runner.current_branch(repo.absolute_path) or current_branch)
-        )
+        resolved_branch = git_runner.current_branch(repo.absolute_path) or current_branch
         _refresh_repo_after_checkout(repo, resolved_branch, RefKind.BRANCH, git_runner)
 
     tree.recompute_tree_state()
@@ -739,13 +706,6 @@ def _collect_preflight_diagnostics(
     diagnostics.extend(_collect_branch_alignment_diagnostics(tree, git_runner))
     diagnostics.extend(_collect_tracking_diagnostics(tree, git_runner))
     diagnostics.extend(
-        _collect_submodule_diagnostics(
-            tree,
-            git_runner,
-            blocking=operation_name != "commit",
-        )
-    )
-    diagnostics.extend(
         _collect_commit_sha_diagnostics(
             tree,
             git_runner,
@@ -901,63 +861,6 @@ def _collect_tracking_diagnostics(
                 )
             )
     return diagnostics
-
-
-def _collect_submodule_diagnostics(
-    tree: WorkingGitTree,
-    git_runner: GitRunner,
-    *,
-    blocking: bool,
-) -> list[PreflightDiagnostic]:
-    missing: list[PreflightDiagnostic] = []
-    severity = PreflightSeverity.BLOCKING_ERROR if blocking else PreflightSeverity.WARNING
-    for repo in iter_tree_leaf_first(tree):
-        if repo.parent_id is None:
-            continue
-        if repo.parent_id not in tree.repos:
-            missing.append(
-                PreflightDiagnostic(
-                    severity,
-                    repo.name,
-                    f"parent repository {repo.parent_id!r} is missing from the tree.",
-                )
-            )
-            continue
-        parent = tree.get(repo.parent_id)
-        try:
-            relative_path = repo.absolute_path.relative_to(parent.absolute_path)
-        except ValueError:
-            missing.append(
-                PreflightDiagnostic(
-                    severity,
-                    repo.name,
-                    f"repository path {repo.absolute_path} is outside parent path {parent.absolute_path}.",
-                )
-            )
-            continue
-        if relative_path == Path("."):
-            continue
-        if not repo.absolute_path.exists():
-            missing.append(
-                PreflightDiagnostic(
-                    severity,
-                    repo.name,
-                    f"submodule path {relative_path.as_posix()!r} is missing on disk.",
-                )
-            )
-            continue
-        if not git_runner.is_submodule(parent.absolute_path, relative_path):
-            missing.append(
-                PreflightDiagnostic(
-                    severity,
-                    repo.name,
-                    (
-                        f"repository is not linked as submodule {relative_path.as_posix()!r} "
-                        f"from parent {parent.name!r}."
-                    ),
-                )
-            )
-    return missing
 
 
 def _collect_commit_sha_diagnostics(
