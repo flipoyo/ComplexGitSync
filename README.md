@@ -1,364 +1,83 @@
 # ComplexGitSync v0002.01
 
 ComplexGitSync is a command-line tool for synchronising a multi-repository Git
-workspace from one local specification and one tracked workspace state.
-
-This README is intentionally focused on the **Multi-repo Sync CLI**. The public
+workspace — a tree of nested repositories — from one local `.cgs`
+specification (file or CLI specs) or one tracked `.gts` workspace-state snapshot. The public
 entry point is `cgitsync`.
 
-It is the Alpha Series of ComplexGraphSync. <!--, per say CGS. CGS service is requestable @CGS. 
-@CGS is a deterministic Graph × Graph Synchronizer, that instanciates active Graph G* and anchored it in a L0 based on time only. -->
-
-## What the CLI manages
-
-ComplexGitSync treats a project as a repository tree:
-
-- one root repository
-- parent and leaf repositories nested under that root
-- deterministic snapshots of the whole workspace
-- tree-wide Git operations run in a safe order
-
-The CLI uses these local documents:
-
-- `.cgs`: "ComplexGitSync" --> hand-written project topology/specification
-- `.gts`: "GitTreeState" --> generated workspace snapshot
-- `.lgr`: "LocalGitRegister" --> generated local register and append-only sync ledger
-
-Internally, `src/ComplexGitSync/cgs_format.py` owns `.cgs` parsing, normalization,
-validation, and serialization through `CgsDocument`. The format-neutral
-`ConfigDocument` base lives in `config_document.py`, while `orchestre.py`
-consumes validated `.cgs` documents and owns orchestration/runtime behavior.
-The shared textual repository-ID parser is `cgs_format.parse_repo_id()`;
-`git_repo.py` receives separated identities and owns provider/remote behavior.
-Parsing, normalization, validation, and serialization are deterministic and
-offline; remote existence and branch/tag availability are checked only during
-explicit Git runtime operations.
-
-The reusable Python entry point for project definitions is
-`ComplexGitSyncClient.configure(project, repositories, output_path=None)`.
-CLI authoring commands collect values and call this method; the method delegates
-all `.cgs` semantics to `CgsDocument` and performs no Git or network operation.
-
-The normal `.cgs` authoring form is intentionally small:
-
-```toml
-project = "CGSil1"
-
-repos = [
-    "gitlab:CGS_test/CGSil1",
-    "gitlab:CGS_test/CGSil2",
-    "github:flipoyo/CGSih1",
-]
-```
-
-The equivalent project can be supplied directly to the CLI; `--repo` is
-repeatable and the CLI delegates every identifier to `cgs_format.py`:
+## Install & run
 
 ```bash
-cgitsync initialise \
-    --project CGSil1 \
-    --repo gitlab:CGS_test/CGSil1 \
-    --repo codeberg:GX4G/GX4G
+pixi install
+pixi run cgitsync --help
 ```
 
-Use exactly one authoring path: either `SOURCE`, or `--project` with at least
-one `--repo`. To write the same definition without performing Git operations:
+## Quickstart
 
-```bash
-cgitsync create-cgs \
-    --project CGSil1 \
-    --repo github:flipoyo/ComplexGitSync \
-    --repo codeberg:GX4G/GX4G \
-    --output CGSil1.cgs
-```
-
-Repository identifiers use `provider:owner/repository`. ComplexGitSync fills in
-`main` branches, `ssh` access, the repository name as its path, and automatic
-nested `.cgs` discovery. A unique repository matching `project` is the root at
-`.`. Use an inline table only to override a default:
-
-The canonical providers are `github` (`github.com`), `gitlab` (`gitlab.com`),
-`codeberg` (`codeberg.org`), and `custom`. For example,
-`codeberg:GX4G/GX4G` resolves to provider `codeberg`, owner `GX4G`, and
-repository `GX4G`. GitHub, GitLab, and Codeberg generate SSH or HTTPS remotes.
-Custom hosting never guesses a host and requires `gitprovider_url`.
-
-- `default_branch` / `fallback_branch`: preferred and fallback branches.
-- `access_protocol`: `ssh` (default) or `https`.
-- `relative_path`: location relative to the parent repository; defaults to the
-  repository name.
-- `nested_config`: `auto` scans that repository for one root-level `*.cgs`,
-  `disabled` does not scan it, and a `.cgs` path selects a specific file.
-
-Example: `{ repository = "github:owner/docs", relative_path = "documentation",
-nested_config = "disabled" }`.
-
-Custom example:
-`{ repository = "custom:team/tool", gitprovider_url = "https://git.example.com" }`.
-
-Start new specifications from [examples/template.cgs](examples/template.cgs).
-It demonstrates both plain repository identifiers and an inline override. For
-developers, [examples/normalized_template.cgs](examples/normalized_template.cgs)
-shows the exact canonical document produced from that template after defaults
-and root-path inference are applied. The normalized file is a reference for the
-internal model, not the preferred hand-authored form.
-
-Generated `.cgs` files use the same concise form. `GitTree.to_cgs()` delegates
-the model conversion to `cgs_format.py`, whose serializer omits reconstructible
-defaults and keeps inline tables only for exceptional settings. A generated
-file may differ in whitespace or table layout, but parsing and normalizing it
-produces the same canonical `CgsDocument` as the source.
-
-Authentication is delegated to Git. If `git clone`, `git fetch`, `git push`,
-and your credential helper work locally, `cgitsync` uses the same setup.
-
-## Install for CLI usage
+The example below uses the CGSil1 reference topology
+(<https://gitlab.com/CGS_test/CGSil1>). Commands run from
+`$CGSHOME/ComplexGitSync`; `CGSHOME=$CGSPATH/<project-name>`, and `CGSPATH`
+defaults to `../..` relative to the current directory.
 
 ```bash
 git clone https://gitlab.com/CGS_test/CGSil1.git
 cd CGSil1
 git clone https://github.com/flipoyo/ComplexGitSync.git
 cd ComplexGitSync
-pixi install
-pixi run cgitsync --help
-```
-
-The reference topology used below is the CGSil1 test case:
-<https://gitlab.com/CGS_test/CGSil1>. In this setup, commands are launched from
-the `ComplexGitSync` tooling checkout (`CWD=$CGSHOME/ComplexGitSync`).
-`CGSPATH` is the parent output path and `CGSHOME=$CGSPATH/<project-name>` is
-the project root where ComplexGitSync stores runtime metadata. When
-`--output-path` is omitted, the CLI uses `CGSPATH=../..` relative to `CWD`.
-
-For commands that explicitly spell out snapshot paths, set the same default in
-your shell:
-
-```bash
 export CGSPATH="${CGSPATH:-../..}"
 export CGSHOME="${CGSHOME:-$CGSPATH/CGSil1}"
-```
 
-## Primary workflow
-
-### 1. Initialise a workspace
-
-From the CGSil1 `.cgs` specification, initialise the full repository tree under
-`$CGSHOME` and write the first runtime `.gts` snapshot under
-`$CGSHOME/.cgitsync/state/`:
-
-```bash
-# Equivalent to: pixi run cgitsync initialise ../CGSil1.cgs --output-path "$CGSPATH"
-# with the default CGSPATH value ../..
+# Initialise: clone the tree from a .cgs spec, or restore it from a .gts snapshot
 pixi run cgitsync initialise ../CGSil1.cgs
-```
 
-An existing `.cgs` is optional. The equivalent direct-authoring form is:
-
-```bash
-pixi run cgitsync initialise --project CGSil1 \
-    --repo gitlab:CGS_test/CGSil1 \
-    --repo codeberg:GX4G/GX4G
-```
-
-CLI output includes a readable `operation_sequence` such as
-`GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE`. Structured log records also put
-the operation code first (`GT-DISCOVER`, `GT-VALIDATE`, `FS-PURGE`, `GT-CLONE`)
-before the detailed event payload.
-
-If an existing partial checkout or stale submodule metadata blocks
-initialisation, `initialise` fails explicitly and prints `Try clean-init method`.
-Use `clean-init` to run the same load/expand/validate flow with a cleanup step
-inserted before cloning:
-
-```bash
-pixi run cgitsync clean-init ../CGSil1.cgs
-```
-
-The cleanup step is also available on its own:
-
-```bash
-pixi run cgitsync purge ../CGSil1.cgs
-```
-
-`purge` removes generated clone state from `$CGSHOME`: immediate child
-repository directories declared directly under the project root, project
-`*.lgr` files, and the root `.gitmodules` file.
-
-From the saved CGSil1 `.gts` snapshot, restore/load that state:
-
-```bash
-pixi run cgitsync initialise "$CGSHOME/.cgitsync/state/CGSil1.gts"
-```
-
-### 2. Inspect the synchronised tree
-
-```bash
+# Inspect the synchronised tree
 pixi run cgitsync status
 pixi run cgitsync view-tree "$CGSHOME/.cgitsync/state/CGSil1.gts"
-pixi run cgitsync view-tree "$CGSHOME/.cgitsync/state/CGSil1.gts" --depth 2 --collapse CGSih1
-```
 
-Example `view-tree` output:
-```text
-CGSil1 (root) [ALIGNED] @e6cfdb8
-├── CGSih1 (parent) [ALIGNED] @9e2a9d8
-│   └── CGSih2 (leaf) [ALIGNED] @8e14bfa
-└── CGSil2 (leaf) [ALIGNED] @0511d53
-```
-
-If no source is passed to `status`, `view-tree`, or the READY-state Git
-commands below, the CLI discovers the latest snapshot from
-`$CGSHOME/.cgitsync/state/`. `CGSHOME` can be set explicitly; when it is not,
-the initialisation default is `CGSPATH=../..` and later commands can also discover the
-workspace by walking upward from the current directory.
-
-### 3. Keep the workspace in sync
-
-```bash
+# Minimalist sync/release cycle
 pixi run cgitsync freeze-release release-2026.05 "release 2026.05"
 pixi run cgitsync launch-release release-2026.05
-```
 
-The expert workflow exposes each step separately:
-
-```bash
+# Equivalent expert, step-by-step form
 pixi run cgitsync pull
-pixi run cgitsync branch feature/my-branch
-pixi run cgitsync checkout feature/my-branch
 pixi run cgitsync add
-pixi run cgitsync commit "feat: update CGSil1 CGS#1"
+pixi run cgitsync commit "feat: update CGSil1"
 pixi run cgitsync push
-pixi run cgitsync tag release-2026.05
 pixi run cgitsync freeze release-2026.05
-pixi run cgitsync launch-release release-2026.05
 ```
 
-Mutation commands print a concise human result by default: the `log_file=...`
-path, the final tree state, and a `repos:` tree with one line per repository.
-Structured JSON events are written to the log file for audit/debugging instead
-of being streamed on the console.
-
-Every command also accepts an explicit snapshot path when you do not want
-automatic discovery:
-
-```bash
-pixi run cgitsync add --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
-pixi run cgitsync commit "feat: update CGSil1 CGS#1" --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
-pixi run cgitsync push --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
-pixi run cgitsync freeze release-2026.05 --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
-pixi run cgitsync launch-release release-2026.05 --gts "$CGSHOME/.cgitsync/state/CGSil1.gts"
-```
-
-Use `--dry-run` on mutation commands to preview the execution plan:
-
-```bash
-pixi run cgitsync add --dry-run
-pixi run cgitsync commit "feat: update CGSil1 CGS#1" --dry-run
-pixi run cgitsync push --dry-run
-pixi run cgitsync freeze release-2026.05 --dry-run
-pixi run cgitsync freeze-release release-2026.05 "release 2026.05" --dry-run
-```
-
-## Python API parity
-
-The CLI is the recommended interface for the CGSil1 Multi-repo Sync workflow.
-For tests or automation that call the Python facade directly, use the same
-CGSil1 paths rather than the generic examples:
-
-```python
-from pathlib import Path
-
-from ComplexGitSync import ComplexGitSyncClient
-
-client = ComplexGitSyncClient()
-
-# Define or serialize a project without invoking the CLI or Git runtime.
-definition = client.configure(
-    "GX4G",
-    ["codeberg:GX4G/GX4G"],
-    output_path="GX4G.cgs",  # optional
-)
-reference_tree = definition.to_git_tree()
-
-source = Path("../CGSil1.cgs")
-cgspath = Path("../..")
-cgshome = cgspath / "CGSil1"
-snapshot = cgshome / ".cgitsync/state/CGSil1.gts"
-
-# Initialise the CGSil1 test topology from its .cgs spec.
-# Same default as the CLI: output_path defaults to CGSPATH=../..
-client.initialise(source)
-
-# Equivalent explicit form:
-client.initialise(source, output_path=cgspath)
-
-# Recovery path for partial/stale clone state:
-client.clean_initialise_cgs(source, output_path=cgspath)
-
-# Cleanup only:
-client.purge_cgs(source, output_path=cgspath)
-
-# Or load the saved CGSil1 runtime snapshot.
-client.initialise(snapshot)
-
-# READY-state operations mirror the CLI.
-client.pull(snapshot)  # root -> parent -> leaf, including the project root repo
-client.checkout("feature/my-branch")
-client.add()  # leaf -> parent -> root
-client.commit("feat: update CGSil1 CGS#1")
-client.push()
-client.tag("v1.2.3")
-client.freeze("release-2026.05")
-client.freeze_release("release-2026.05", "release 2026.05")
-client.launch_release("release-2026.05")
-```
+Run any command with `--help` for its full option list (`--dry-run`, explicit
+`--gts` paths, `--project`/`--repo` direct authoring, etc.).
 
 ## Command reference
 
-Minimalist commands:
-
-- `initialise SOURCE` or `initialise --project NAME --repo ID [--repo ID ...]`:
-  clone from a file/direct definition or load a snapshot; the two authoring
-  forms are mutually exclusive. For `.cgs` or direct definitions, omitted
-  `--output-path` defaults to `CGSPATH=../..`
-- `create-cgs --project NAME --repo ID [--repo ID ...] --output FILE`: validate
-  and serialize an offline CLI project definition
-- `clean-init <file.cgs>`: run `load->expand->validate->purge->clone`
-- `freeze-release <name> <message>`: from a READY tree, run
-  `add -> commit -> pull -> push -> freeze`
-- `freeze-release-force <name> <message>`: same release workflow, but uses
-  `pull-force` instead of `pull`
-- `status [--gts <file.gts>]`: summarize local cleanliness, local/upstream
-  branch tracking (`LOCAL_BRANCH`, `UPSTREAM_BRANCH`, `SYNC` with ahead/behind
-  counts), and recorded SHA drift
-- `view-tree [file.cgs|file.gts]`: render the repository tree with node type,
-  sync state, commit SHA, and fallback branch (if not main)
-- `launch-release <name>`: check out a frozen release tag across a READY tree
-
-Expert commands:
-
-- `purge <file.cgs>`: remove immediate root-level child repos, root `*.lgr`
-  files, and root `.gitmodules`
-- `validate <file.cgs|file.gts>`: validate a spec or snapshot
-- `clone <file.cgs>`: clone the full project tree from a `.cgs` spec; this is
-  the direct CLI entry point for `ComplexGitSyncClient.clone`
-- `pull [file.cgs|file.gts]`: resynchronise an existing tree parent-first
-  (`root -> parent -> leaf`). The project root repository is pulled first;
-  child repositories are then updated through their parent submodule links.
-  If local work blocks the pull, the CLI prints
-  `You can try cgitsync pull-force command`.
-- `pull-force [file.cgs|file.gts]`: destructive recovery pull. The root repo is
-  forced onto the remote branch with `git fetch`, `git checkout -B <branch>
-  FETCH_HEAD`, and `git clean -fd`; child submodules are then force-updated
-  parent-first.
-- `branch <name>`: create a shared branch across the READY tree without checkout
-- `checkout <branch-or-tag> [--ref-kind branch|tag]`: switch the tree ref
-- `add`: run `git add --all` leaf-first
-- `commit <message>`: commit dirty repositories leaf-first
-- `push`: push repositories leaf-first; when the current branch has no upstream,
-  publish it with `git push -u origin <branch>`
-- `tag <name>`: create and push a tag leaf-first
-- `freeze <name>`: commit, tag, push, snapshot, and update the local register
+| Group | Command | Description |
+|---|---|---|
+| Minimalist | `initialise` | Initialise a project tree: clone(.cgs) or restore state(.gts). |
+| Minimalist | `clean-init` | Purge generated clone state, then initialise from a .cgs spec. |
+| Minimalist | `freeze-release` | Run add, commit, pull, push, and freeze from a READY tree. |
+| Minimalist | `freeze-release-force` | Run add, commit, pull-force, push, and freeze from a READY tree. |
+| Minimalist | `status` | Summarize tree readiness and sync state. |
+| Minimalist | `view-tree` | Render a topology-focused tree view in terminal. |
+| Minimalist | `launch-release` | Check out a frozen release tag from a READY tree. |
+| Expert | `purge` | Remove generated clone state for a .cgs workspace. |
+| Expert | `validate` | Parse, normalize, and validate a .cgs or validate a .gts topology. |
+| Expert | `clone` | Clone a nested project tree from .cgs. |
+| Expert | `pull` | Resynchronise an existing project tree from .cgs or .gts. |
+| Expert | `pull-force` | Destructively resynchronise an existing project tree from .cgs or .gts. |
+| Expert | `checkout` | Synchronize the tree to a branch or tag. |
+| Expert | `branch` | Create a branch across the full READY tree without checkout. |
+| Expert | `add` | Stage all changes across a READY tree. |
+| Expert | `commit` | Commit dirty repositories from a READY tree. |
+| Expert | `push` | Push repositories from a READY tree. |
+| Expert | `tag` | Create and push a tag across a READY tree. |
+| Expert | `freeze` | Freeze a versioned state and emit a .gts snapshot. |
+| Configuration | `configure` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
+| Configuration | `create-cgs` | Create a validated .cgs specification from CLI project definitions. |
+| Memory | `remember` | Bind a .cgs artefact to its external SSH-Git Memory endpoint. |
+| Memory | `memorize` | Persist a finalized local Memory State to the configured SSH-Git remote. |
+| Memory | `retrieve` | Retrieve an external SSH-Git Memory repository into a clean CGSHOME. |
+| Memory | `reload` | Retrieve external Memory and restore the ComplexGitSync execution context. |
 
 ## Safety checks
 
@@ -366,34 +85,17 @@ Before `commit`, `push`, and `freeze`, the CLI runs workspace preflight
 validation. It reports actionable warnings such as dirty worktrees, ahead
 branches, or stale recorded snapshot SHAs, and blocks unsafe states such as
 detached HEADs, unresolved merges, missing remotes, branch divergence, or
-missing nested repository links. `freeze` also requires a release tag name that
-does not already exist.
+missing nested repository links. `freeze` also requires a release tag name
+that does not already exist.
 
-Each `.lgr` snapshot entry points to an immutable `.gts` file. Release freezes
-use `gts-XXXXXX-<release-name>.gts`; other snapshots keep `gts-XXXXXX.gts`.
-The project-name `.gts` file is the latest-state pointer.
+Each `.lgr` snapshot entry points to an immutable `.gts` file. Release
+freezes use `gts-XXXXXX-<release-name>.gts`; other snapshots keep
+`gts-XXXXXX.gts`. The project-name `.gts` file is the latest-state pointer.
 
-## CGSil1 nested-tooling setup
+## Further reading
 
-When ComplexGitSync is cloned inside another project workspace, run `pixi` from
-the ComplexGitSync clone but keep `.cgitsync` paths relative to the project
-workspace:
-
-```bash
-git clone https://gitlab.com/CGS_test/CGSil1.git
-cd CGSil1
-git clone https://github.com/flipoyo/ComplexGitSync.git
-cd ComplexGitSync
-
-export CGSPATH="${CGSPATH:-../..}"
-export CGSHOME="${CGSHOME:-$CGSPATH/CGSil1}"
-pixi run cgitsync initialise ../CGSil1.cgs
-pixi run cgitsync view-tree "$CGSHOME/.cgitsync/state/CGSil1.gts"
-```
-
-Omitting `--output-path` is equivalent to `--output-path "$CGSPATH"` with the
-default `CGSPATH=../..`. The `.cgs` file is read first, then its project name is
-used to derive `CGSHOME=$CGSPATH/<project-name>`.
+- [docs/tutorial_cgsi1.md](docs/tutorial_cgsi1.md) — full CGSil1 walkthrough, step by step.
+- [docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference book, including the Python API (`ComplexGitSyncClient`) and complete command details.
 
 ## Authorship
 
