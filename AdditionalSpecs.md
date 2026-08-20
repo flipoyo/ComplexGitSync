@@ -358,7 +358,7 @@ The canonical user-facing lifecycle contract is:
    - `client.initialise("examples/complexgitsync.cgs")`
    
    OR `initialise(.gts)` → restore from snapshot → `.gts READY`  *(existing project)*
-   - `client.initialise(".cgitsync/state/complexgitsync.gts")`
+   - `client.initialise(".cgitsync/state(<hash>)_<n>/complexgitsync.gts")`
 
 2. `pull(.cgs/.gts)` → resync an existing tree → `READY`
    - `client.pull("examples/complexgitsync.cgs")`

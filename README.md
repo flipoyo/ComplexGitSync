@@ -51,7 +51,7 @@ pixi run cgitsync initialise ../CGSil1.cgs
 
 # Inspect the synchronised tree
 pixi run cgitsync status
-pixi run cgitsync view-tree "$CGSHOME/.cgitsync/state/CGSil1.gts"
+pixi run cgitsync view-tree
 
 # Minimalist sync/release cycle
 pixi run cgitsync freeze-release release-2026.05 "release 2026.05"
@@ -103,13 +103,15 @@ Run any command with `--help` for its full option list (`--dry-run`, explicit
 Before `commit`, `push`, and `freeze`, the CLI runs workspace preflight
 validation. It reports actionable warnings such as dirty worktrees, ahead
 branches, or stale recorded snapshot SHAs, and blocks unsafe states such as
-detached HEADs, unresolved merges, missing remotes, branch divergence, or
-missing nested repository links. `freeze` also requires a release tag name
-that does not already exist.
+detached HEADs, unresolved merges, missing remotes, or branch divergence.
+`freeze` also requires a release tag name that does not already exist.
 
-Each `.lgr` snapshot entry points to an immutable `.gts` file. Release
-freezes use `gts-XXXXXX-<release-name>.gts`; other snapshots keep
-`gts-XXXXXX.gts`. The project-name `.gts` file is the latest-state pointer.
+Each generated `.gts` snapshot lives under its own content-addressed
+`$CGSHOME/.cgitsync/state(<hash>)_<n>/` directory and is recorded in the
+project's `.lgr` register, which always points at the current snapshot.
+Commands that accept a `.gts` source resolve it automatically via that
+register when no explicit path is given — pass `--gts FILE` (or a positional
+source, depending on the command) only to override that discovery.
 
 ## Further reading
 
