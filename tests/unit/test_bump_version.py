@@ -58,10 +58,11 @@ def test_read_current_version_rejects_malformed_version(tmp_path):
         bump_version.read_current_version(pyproject_path)
 
 
-def test_apply_version_syncs_all_three_manifests_and_preserves_formatting(tmp_path):
+def test_apply_version_syncs_all_four_manifests_and_preserves_formatting(tmp_path):
     pyproject_path = tmp_path / "pyproject.toml"
     pixi_toml_path = tmp_path / "pixi.toml"
     init_path = tmp_path / "__init__.py"
+    readme_path = tmp_path / "README.md"
 
     pyproject_path.write_text(
         '[build-system]\nrequires = ["hatchling>=1.27"]\n\n'
@@ -78,12 +79,14 @@ def test_apply_version_syncs_all_three_manifests_and_preserves_formatting(tmp_pa
         '"""ComplexGitSync package."""\n\n__version__ = "0002.01"\n\nfrom .cli import main\n',
         encoding="utf-8",
     )
+    readme_path.write_text("# ComplexGitSync v0002.01\n\nMinimal docs.\n", encoding="utf-8")
 
     bump_version.apply_version(
         "0002.02",
         pyproject_path=pyproject_path,
         pixi_toml_path=pixi_toml_path,
         init_path=init_path,
+        readme_path=readme_path,
     )
 
     assert 'version = "0002.02"' in pyproject_path.read_text(encoding="utf-8")
@@ -92,15 +95,19 @@ def test_apply_version_syncs_all_three_manifests_and_preserves_formatting(tmp_pa
     assert 'channels = ["conda-forge"]' in pixi_toml_path.read_text(encoding="utf-8")
     assert '__version__ = "0002.02"' in init_path.read_text(encoding="utf-8")
     assert "from .cli import main" in init_path.read_text(encoding="utf-8")
+    assert "# ComplexGitSync v0002.02" in readme_path.read_text(encoding="utf-8")
+    assert "Minimal docs." in readme_path.read_text(encoding="utf-8")
 
 
 def test_apply_version_raises_when_field_is_missing(tmp_path):
     pyproject_path = tmp_path / "pyproject.toml"
     pixi_toml_path = tmp_path / "pixi.toml"
     init_path = tmp_path / "__init__.py"
+    readme_path = tmp_path / "README.md"
     pyproject_path.write_text('[project]\nname = "demo"\n', encoding="utf-8")
     pixi_toml_path.write_text('[workspace]\nname = "demo"\n', encoding="utf-8")
     init_path.write_text('"""demo"""\n', encoding="utf-8")
+    readme_path.write_text("# demo\n", encoding="utf-8")
 
     with pytest.raises(bump_version.VersionSyncError, match="could not find a version field"):
         bump_version.apply_version(
@@ -108,6 +115,7 @@ def test_apply_version_raises_when_field_is_missing(tmp_path):
             pyproject_path=pyproject_path,
             pixi_toml_path=pixi_toml_path,
             init_path=init_path,
+            readme_path=readme_path,
         )
 
 
