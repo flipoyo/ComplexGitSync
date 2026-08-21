@@ -99,12 +99,23 @@ settles and **before** `registry.recompute_tree_state()` /
 - **Phase A — pre-pull (safe only in this milestone).** For every repo
   with children, parent-first: `git_runner.pull(R, ref_name=<current branch>)`.
   If this fails for any such repo: **do not** write that repo's
-  `.gitignore` (pass its `repo_id` in `sync_gitignore`'s `skip`), raise a
-  clear error (reuse `GitSyncError`) naming the repo and the underlying
-  pull failure, and leave the tree **not** `READY`. No fallback, no
-  forcing — that's Milestone 2. This matches the existing failure shape of
-  `Ambiguous nested .cgs discovery`/`Submodule constraint violated`: a
-  named, actionable error, non-zero exit, nothing silently degraded.
+  `.gitignore` (skip it), raise a clear error (reuse `GitSyncError`) naming
+  the repo and the underlying pull failure, and never return a completed
+  registry to the caller. No fallback, no forcing — that's Milestone 2.
+  This matches the existing failure shape of `Ambiguous nested .cgs
+  discovery`/`Submodule constraint violated`: a named, actionable error,
+  non-zero exit, nothing silently degraded.
+
+  **Correction found during implementation:** `registry.is_ready()` is
+  purely a function of each repo's already-set clone/checkout state
+  (`repo_lifecycle_state`); it does not and should not reflect whether the
+  `.gitignore` sync itself succeeded. So "leave the tree not READY" isn't
+  literally true — `is_ready()` can still report `True` for the
+  already-cloned repos. What actually matters, and is what the raised
+  exception guarantees: `initialise`/`pull` never return a registry, never
+  write a `.gts` snapshot, and never record anything in the state store —
+  the operation as a whole did not complete, regardless of the individual
+  repos' own clone state.
 - **Phase B — write.** Call `sync_gitignore(registry, skip=phase_a_failures)`.
 
 Readiness requires the `.gitignore` **content** to be correct (Phase B

@@ -1261,8 +1261,8 @@ def _execute_initialise_cgs(
     *,
     output_path: str | None = None,
 ) -> int:
-    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE")
-    print("workflow=load->expand->validate->clone")
+    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE->GT-GITIGNORE")
+    print("workflow=load->expand->validate->clone->gitignore")
     print("git_command=git clone (executed per repo)")
     registry = client.initialise_cgs(source_path, output_path=output_path)
     tree_state = client.get_tree_state()
@@ -1270,6 +1270,7 @@ def _execute_initialise_cgs(
         f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
+    _print_gitignore_sync_report(client)
     outline = _format_repo_tree_outline(client)
     if outline:
         print("tree:")
@@ -1284,8 +1285,8 @@ def _execute_initialise_cgs_document(
     logical_source: Path,
     output_path: str | None = None,
 ) -> int:
-    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE")
-    print("workflow=load->expand->validate->clone")
+    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE->GT-GITIGNORE")
+    print("workflow=load->expand->validate->clone->gitignore")
     print("git_command=git clone (executed per repo)")
     registry = client.initialise_cgs_document(
         document,
@@ -1297,6 +1298,7 @@ def _execute_initialise_cgs_document(
         f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
+    _print_gitignore_sync_report(client)
     outline = _format_repo_tree_outline(client)
     if outline:
         print("tree:")
@@ -1312,8 +1314,8 @@ def _execute_clean_init_cgs(
 ) -> int:
     if source_path.suffix != ".cgs":
         raise ValueError("clean-init expects a .cgs source.")
-    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE")
-    print("workflow=load->expand->validate->purge->clone")
+    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE->GT-GITIGNORE")
+    print("workflow=load->expand->validate->purge->clone->gitignore")
     print("git_command=git clone (executed per repo)")
     registry = client.clean_init(source_path, output_path=output_path)
     tree_state = client.get_tree_state()
@@ -1321,6 +1323,7 @@ def _execute_clean_init_cgs(
         f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
+    _print_gitignore_sync_report(client)
     outline = _format_repo_tree_outline(client)
     if outline:
         print("tree:")
@@ -1592,6 +1595,7 @@ def _execute_pull(
         f"{_format_tree_state_line(tree_state)} "
         f"root={registry.get('root').absolute_path}"
     )
+    _print_gitignore_sync_report(client)
     _print_repo_tree_result(client)
     return 0
 
@@ -2253,6 +2257,23 @@ def _print_repo_tree_result(client: ComplexGitSyncClient) -> None:
     if tree:
         print("repos:")
         print(tree)
+
+
+def _print_gitignore_sync_report(client: ComplexGitSyncClient) -> None:
+    """Print what ``.gitignore`` sync changed (DevPlanTicket Milestone 1).
+
+    Always verbose, never silent: nothing is staged, committed, or pushed
+    at this milestone, so this is purely informational — it tells the user
+    exactly what changed and that persisting it is currently a manual step.
+    """
+    try:
+        synced_entries = client.last_gitignore_sync
+    except AttributeError:
+        return
+    for entry in synced_entries:
+        print(f".gitignore updated (not committed): {entry.name} ({entry.absolute_path})")
+        for relative_path in entry.added_paths:
+            print(f"  + {relative_path}")
 
 
 _INSPECTION_HANDLERS = {

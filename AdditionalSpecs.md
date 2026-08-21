@@ -359,6 +359,18 @@ The canonical user-facing lifecycle contract is:
    
    OR `initialise(.gts)` → restore from snapshot → `.gts READY`  *(existing project)*
    - `client.initialise(".cgitsync/state(<hash>)_<n>/complexgitsync.gts")`
+   - Before the tree is confirmed ready, every repo with children (root or
+     any nested repo that itself has further nested children) is safely
+     pulled (parent-first) and has its `.gitignore` updated with the
+     relative path of each immediate child — nested repos are plain
+     independent clones, not gitlinks, so without this a parent's `git
+     status`/`git add` would otherwise see a child's working tree as
+     ordinary untracked content. If the safe pull for one of these repos
+     fails, `initialise` raises immediately and nothing is written — no
+     forcing is attempted on the caller's behalf. Nothing is staged,
+     committed, or pushed by this step; it only writes the file and prints
+     what changed (`.gitignore updated (not committed): ...`). The CLI logs
+     this as the `GT-GITIGNORE` phase, after `GT-CLONE`.
 
 2. `pull(.cgs/.gts)` → resync an existing tree → `READY`
    - `client.pull("examples/complexgitsync.cgs")`
@@ -371,6 +383,10 @@ The canonical user-facing lifecycle contract is:
    - `pull-force(.cgs/.gts)` is the destructive recovery variant: every
      repository runs `git fetch`, `git checkout -B <branch> FETCH_HEAD`, and
      `git clean -fd`, in `ROOT -> PARENT -> LEAF` order.
+   - `pull` (`.cgs` source) also runs the same `.gitignore` sync described
+     under `initialise` above, once the tree-wide pull completes.
+     `pull-force` does not — it is a destructive recovery command, not a
+     lifecycle path this sync is wired into.
 
 3. Global git operations driven by a GitTree instance; same command for all
    GitRepos from leaves to parents to the root project repository:
@@ -592,7 +608,7 @@ transitions.
 CLI display requirements:
 
 - `initialise(.cgs)` must explicitly show the lifecycle pipeline
-  (`load -> expand -> validate -> clone`).
+  (`load -> expand -> validate -> clone -> gitignore`).
 - command output must explicitly show the selected per-run log file path
   (`log_file=...`).
 - git actions must print the concrete git command being applied.

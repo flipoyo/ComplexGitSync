@@ -214,6 +214,103 @@ def test_initialise_cgs_derives_cgshome_from_output_path_and_project_name(tmp_pa
     assert "state" in str(snapshot_path)
 
 
+def test_initialise_cgs_writes_gitignore_for_every_parent_bearing_repo(tmp_path, monkeypatch):
+    """DevPlanTicket Milestone 1: .gitignore sync runs before readiness."""
+    cgspath = tmp_path / "workspace"
+    cgshome = cgspath / "demo"
+    wcd = cgshome / "ComplexGitSync"
+    wcd.mkdir(parents=True)
+    monkeypatch.chdir(wcd)
+
+    config_path = _write_clone_ready_cgs(tmp_path)
+    fake_runner = _FakeGitRunner(
+        {
+            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/docs.git": {"main"},
+        }
+    )
+    client = ComplexGitSyncClient(git_runner=fake_runner, state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"))
+
+    registry = client.initialise_cgs(config_path, output_path=cgspath)
+
+    root_entry = registry.get("root")
+    child_entry = registry.get("root:deps/child-repo")
+
+    assert (root_entry.absolute_path / ".gitignore").read_text(encoding="utf-8").splitlines() == [
+        "deps/child-repo"
+    ]
+    assert (child_entry.absolute_path / ".gitignore").read_text(encoding="utf-8").splitlines() == ["docs"]
+
+    synced_repo_ids = {entry.repo_id for entry in client.last_gitignore_sync}
+    assert synced_repo_ids == {"root", "root:deps/child-repo"}
+    added_by_repo = {entry.repo_id: entry.added_paths for entry in client.last_gitignore_sync}
+    assert added_by_repo["root"] == ("deps/child-repo",)
+    assert added_by_repo["root:deps/child-repo"] == ("docs",)
+
+
+def test_initialise_cgs_pulls_parent_bearing_repos_before_gitignore_write(tmp_path, monkeypatch):
+    cgspath = tmp_path / "workspace"
+    cgshome = cgspath / "demo"
+    wcd = cgshome / "ComplexGitSync"
+    wcd.mkdir(parents=True)
+    monkeypatch.chdir(wcd)
+
+    config_path = _write_clone_ready_cgs(tmp_path)
+    fake_runner = _FakeGitRunner(
+        {
+            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/docs.git": {"main"},
+        }
+    )
+    client = ComplexGitSyncClient(git_runner=fake_runner, state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"))
+
+    registry = client.initialise_cgs(config_path, output_path=cgspath)
+
+    pulled_paths = {path for path, _, _ in fake_runner.pulled}
+    assert registry.get("root").absolute_path.resolve() in pulled_paths
+    assert registry.get("root:deps/child-repo").absolute_path.resolve() in pulled_paths
+    # The leaf "docs" has no children of its own, so it is never pulled by
+    # the .gitignore lifecycle sync.
+    assert registry.get("root:deps/child-repo:docs").absolute_path.resolve() not in pulled_paths
+
+
+def test_initialise_cgs_raises_and_blocks_readiness_when_gitignore_preflight_pull_fails(
+    tmp_path, monkeypatch
+):
+    """No forcing, no silent degradation: a blocked safe pull is a hard error."""
+    cgspath = tmp_path / "workspace"
+    cgshome = cgspath / "demo"
+    wcd = cgshome / "ComplexGitSync"
+    wcd.mkdir(parents=True)
+    monkeypatch.chdir(wcd)
+
+    config_path = _write_clone_ready_cgs(tmp_path)
+
+    class _FailingPullGitRunner(_FakeGitRunner):
+        def pull(self, repo_path, *, remote="origin", ref_name=None):
+            if Path(repo_path).resolve() == cgshome.resolve():
+                raise GitSyncError("simulated: local changes block a fast-forward pull")
+            super().pull(repo_path, remote=remote, ref_name=ref_name)
+
+    state_store = RuntimeStateStore(base_dir=tmp_path / "runtime-state")
+    fake_runner = _FailingPullGitRunner(
+        {
+            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/docs.git": {"main"},
+        }
+    )
+    client = ComplexGitSyncClient(git_runner=fake_runner, state_store=state_store)
+
+    with pytest.raises(GitSyncError, match="gitignore sync preflight failed"):
+        client.initialise_cgs(config_path, output_path=cgspath)
+
+    # No .gitignore was written for any repo, and no snapshot was ever
+    # recorded — the operation never completed, regardless of the
+    # already-cloned repos' own individual clone/checkout state.
+    assert not (cgshome / ".gitignore").exists()
+    assert state_store.latest_snapshot_for(config_path) is None
+
+
 def test_purge_cgs_removes_top_level_repos_and_ledgers(tmp_path):
     cgspath = tmp_path / "workspace"
     cgshome = cgspath / "demo"
@@ -2430,6 +2527,7 @@ class _FakeGitRunner:
     def __init__(self, remote_branches: dict[str, set[str]]):
         self.remote_branches = remote_branches
         self.clones: list[tuple[str, Path, str]] = []
+        self.pulled: list[tuple[Path, str, str | None]] = []
         self.branch_overrides: dict[Path, str | None] = {}
         self.status_lines: dict[Path, list[str]] = {}
         self.tracking_states: dict[Path, SyncState | None] = {}
@@ -2477,6 +2575,15 @@ nested_config = "disabled"
     def rev_parse_head(self, repo_path: Path | str) -> str:
         repo_name = Path(repo_path).name
         return f"sha-{repo_name}"
+
+    def pull(
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+    ) -> None:
+        self.pulled.append((Path(repo_path).resolve(), remote, ref_name))
 
     def current_branch(self, repo_path: Path | str) -> str | None:
         resolved = Path(repo_path).resolve()
@@ -3143,3 +3250,117 @@ def test_fix_circularities_pending_clone_skips_external_reference(tmp_path):
     ]
     assert len(pending) == 2  # root + normal (root is also DECLARED)
     assert all(not e.is_external_reference for e in pending)
+
+
+# ---------------------------------------------------------------------------
+# sync_gitignore tests (DevPlanTicket Milestone 1)
+# ---------------------------------------------------------------------------
+
+
+def test_sync_gitignore_writes_children_at_every_parent_bearing_level(tmp_path):
+    from ComplexGitSync.git_tree import sync_gitignore
+
+    root_path = tmp_path / "root"
+    middle_path = root_path / "middle"
+    sub_path = middle_path / "sub"
+    sibling_path = root_path / "sibling-leaf"
+    for path in (root_path, middle_path, sub_path, sibling_path):
+        path.mkdir(parents=True)
+
+    registry = WorkingGitTree()
+    registry.add(_make_entry("root", root_path))
+    registry.add(_make_entry("root:middle", middle_path, parent_id="root"))
+    registry.add(_make_entry("root:middle:sub", sub_path, parent_id="root:middle"))
+    registry.add(_make_entry("root:sibling-leaf", sibling_path, parent_id="root"))
+
+    changed = sync_gitignore(registry)
+
+    assert set(changed) == {"root", "root:middle"}
+    assert (root_path / ".gitignore").read_text(encoding="utf-8").splitlines() == [
+        "middle",
+        "sibling-leaf",
+    ]
+    assert (middle_path / ".gitignore").read_text(encoding="utf-8").splitlines() == ["sub"]
+    assert not (sub_path / ".gitignore").exists()
+    assert not (sibling_path / ".gitignore").exists()
+
+
+def test_sync_gitignore_preserves_existing_lines_and_only_appends_missing(tmp_path):
+    from ComplexGitSync.git_tree import sync_gitignore
+
+    root_path = tmp_path / "root"
+    child_path = root_path / "child-repo"
+    other_child_path = root_path / "other-child"
+    root_path.mkdir()
+    child_path.mkdir()
+    other_child_path.mkdir()
+    (root_path / ".gitignore").write_text("# custom comment\nbuild/\nchild-repo\n", encoding="utf-8")
+
+    registry = WorkingGitTree()
+    registry.add(_make_entry("root", root_path))
+    registry.add(_make_entry("root:child-repo", child_path, parent_id="root"))
+    registry.add(_make_entry("root:other-child", other_child_path, parent_id="root"))
+
+    changed = sync_gitignore(registry)
+
+    assert changed == ("root",)
+    assert (root_path / ".gitignore").read_text(encoding="utf-8").splitlines() == [
+        "# custom comment",
+        "build/",
+        "child-repo",
+        "other-child",
+    ]
+
+
+def test_sync_gitignore_second_call_is_a_no_op(tmp_path):
+    from ComplexGitSync.git_tree import sync_gitignore
+
+    root_path = tmp_path / "root"
+    child_path = root_path / "child-repo"
+    root_path.mkdir()
+    child_path.mkdir()
+
+    registry = WorkingGitTree()
+    registry.add(_make_entry("root", root_path))
+    registry.add(_make_entry("root:child-repo", child_path, parent_id="root"))
+
+    first = sync_gitignore(registry)
+    content_after_first = (root_path / ".gitignore").read_text(encoding="utf-8")
+    second = sync_gitignore(registry)
+
+    assert first == ("root",)
+    assert second == ()
+    assert (root_path / ".gitignore").read_text(encoding="utf-8") == content_after_first
+
+
+def test_sync_gitignore_skip_leaves_repo_untouched(tmp_path):
+    from ComplexGitSync.git_tree import sync_gitignore
+
+    root_path = tmp_path / "root"
+    child_path = root_path / "child-repo"
+    root_path.mkdir()
+    child_path.mkdir()
+
+    registry = WorkingGitTree()
+    registry.add(_make_entry("root", root_path))
+    registry.add(_make_entry("root:child-repo", child_path, parent_id="root"))
+
+    changed = sync_gitignore(registry, skip={"root"})
+
+    assert changed == ()
+    assert not (root_path / ".gitignore").exists()
+
+
+def test_sync_gitignore_ignores_leaf_with_no_children(tmp_path):
+    from ComplexGitSync.git_tree import sync_gitignore
+
+    leaf_path = tmp_path / "leaf"
+    leaf_path.mkdir()
+
+    registry = WorkingGitTree()
+    registry.add(_make_entry("root", leaf_path))
+
+    changed = sync_gitignore(registry)
+
+    assert changed == ()
+    assert not (leaf_path / ".gitignore").exists()

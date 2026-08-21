@@ -91,6 +91,7 @@ from .git_tree import (
     normalize_node_types,
     promote_to_parent,
     register_relative_path,
+    sync_gitignore,
 )
 from .git_tree import (
     fix_circularities as _fix_circularities,
@@ -2626,6 +2627,16 @@ class Orchestre:
         self.git_tree.add_repo(repo)
 
 
+@dataclass(frozen=True, slots=True)
+class GitignoreSyncEntry:
+    """One repo whose ``.gitignore`` was created or modified by ``sync_gitignore()``."""
+
+    repo_id: str
+    name: str
+    absolute_path: Path
+    added_paths: tuple[str, ...]
+
+
 # ============================================================
 #  ComplexGitSyncClient — public API facade (Tier 3)
 # ============================================================
@@ -2663,6 +2674,7 @@ class ComplexGitSyncClient:
     source_path: Path | None = None
     loaded_snapshot_path: Path | None = None
     last_memory_result: MemoryMemorizeResult | None = None
+    last_gitignore_sync: tuple[GitignoreSyncEntry, ...] = ()
     run_logger: CommandRunLogger | None = None
     _memory_trigger_suppression_depth: int = 0
 
@@ -2702,6 +2714,81 @@ class ComplexGitSyncClient:
         if output_path is not None:
             document.to_toml(Path(output_path))
         return document
+
+    def _sync_gitignore_lifecycle(self, *, pre_pull: bool = True) -> tuple[GitignoreSyncEntry, ...]:
+        """Run the ``.gitignore`` lifecycle sync (DevPlanTicket Milestone 1).
+
+        Every repo with children is safely pulled (parent-first, via
+        :func:`iter_tree`) before its ``.gitignore`` is written, so the
+        write starts from an up-to-date base. If the safe pull fails for
+        any such repo, no ``.gitignore`` is written at all and this raises
+        :exc:`~.errors.GitSyncError` immediately — no forcing, no silent
+        degradation (a follow-up milestone adds an opt-in force-pull
+        fallback). Returns one :class:`GitignoreSyncEntry` per repo whose
+        ``.gitignore`` was actually created or modified, and also records
+        them on :attr:`last_gitignore_sync` for the CLI to report.
+
+        *pre_pull* can be set to ``False`` when the caller already pulled
+        every repo in the tree immediately beforehand (e.g. ``restart()``'s
+        own tree-wide pull already satisfies this step; repeating it here
+        would just be a redundant no-op fast-forward per repo).
+        """
+        registry = self.registry
+        assert registry is not None
+
+        if pre_pull:
+            for entry in iter_tree(registry):
+                if not registry.children_of(entry.repo_id):
+                    continue
+                current_branch = self.git_runner.current_branch(entry.absolute_path)
+                if current_branch is None:
+                    current_branch = entry.resolved_ref_name or entry.target_ref_name or "main"
+                try:
+                    self.git_runner.pull(entry.absolute_path, ref_name=current_branch)
+                except GitSyncError as exc:
+                    raise GitSyncError(
+                        f"gitignore sync preflight failed: could not safely pull {entry.name!r} "
+                        f"({entry.absolute_path}) before writing its .gitignore: {exc}"
+                    ) from exc
+
+        pending_paths: dict[str, tuple[str, ...]] = {}
+        for entry in iter_tree(registry):
+            children = registry.children_of(entry.repo_id)
+            if not children:
+                continue
+            gitignore_path = entry.absolute_path / ".gitignore"
+            try:
+                existing_lines = gitignore_path.read_text(encoding="utf-8").splitlines()
+            except FileNotFoundError:
+                existing_lines = []
+            relative_paths = sorted(
+                child.absolute_path.relative_to(entry.absolute_path).as_posix() for child in children
+            )
+            missing = tuple(path for path in relative_paths if path not in existing_lines)
+            if missing:
+                pending_paths[entry.repo_id] = missing
+
+        changed_repo_ids = sync_gitignore(registry)
+
+        synced_entries = tuple(
+            GitignoreSyncEntry(
+                repo_id=repo_id,
+                name=registry.get(repo_id).name,
+                absolute_path=registry.get(repo_id).absolute_path,
+                added_paths=pending_paths.get(repo_id, ()),
+            )
+            for repo_id in changed_repo_ids
+        )
+        for record in synced_entries:
+            self._log_event(
+                "gitignore_sync_updated",
+                repo_id=record.repo_id,
+                repo_name=record.name,
+                absolute_path=record.absolute_path,
+                added_paths=record.added_paths,
+            )
+        self.last_gitignore_sync = synced_entries
+        return synced_entries
 
     def load_cgs(
         self,
@@ -2855,6 +2942,7 @@ class ComplexGitSyncClient:
         if fixed:
             self._log_circularity_fixes(fixed)
         self._assert_nested_discovery_complete()
+        self._sync_gitignore_lifecycle()
         self.registry.recompute_tree_state()
         if not self.registry.is_ready():
             raise GitSyncError("Initialise did not produce a READY tree.")
@@ -3605,6 +3693,7 @@ class ComplexGitSyncClient:
         self._log_event("restart_start", config_path=resolved_path)
         registry = self.load_cgs(resolved_path, discover_nested=True)
         self.orchestre.git_tree.git.pull(self.git_runner)
+        self._sync_gitignore_lifecycle(pre_pull=False)
         if not registry.is_ready():
             raise GitSyncError("restart did not produce a READY tree.")
         snapshot_path = self.write_gts_snapshot(command_origin="restart")

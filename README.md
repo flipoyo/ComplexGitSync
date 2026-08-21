@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.02
+# ComplexGitSync v0002.03
 
 ComplexGitSync is a command-line tool for synchronising a multi-repository Git
 workspace — a tree of nested repositories — from one local `.cgs`
@@ -112,6 +112,13 @@ project's `.lgr` register, which always points at the current snapshot.
 Commands that accept a `.gts` source resolve it automatically via that
 register when no explicit path is given — pass `--gts FILE` (or a positional
 source, depending on the command) only to override that discovery.
+
+`initialise`/`clean-init`/`pull` also keep `.gitignore` in sync across the
+whole tree: every repo with children (root or any nested repo that itself
+has nested children) gets the relative path of each immediate child added
+to its `.gitignore`, since nested repos are plain clones rather than
+gitlinks. This only writes the file and prints what changed — nothing is
+staged, committed, or pushed automatically.
 
 ## Further reading
 

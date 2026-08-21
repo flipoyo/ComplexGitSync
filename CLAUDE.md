@@ -31,7 +31,7 @@ task's change, not as a separate follow-up.
 |---|---|
 | `cgs_format.py` | `.cgs` TOML parsing/authoring grammar, normalization, static validation, `CgsDocument`, serialization. Deterministic and offline — no `subprocess`, no Git, no remote calls. |
 | `git_repo.py` | Canonical repository identity, provider registry, remote URL construction, per-repository runtime state. |
-| `git_tree.py` | Tree structures (`GitTree`/`WorkingGitTree`), traversal, lifecycle state; `to_cgs()` only delegates to `cgs_format.py`. |
+| `git_tree.py` | Tree structures (`GitTree`/`WorkingGitTree`), traversal, lifecycle state; `to_cgs()` only delegates to `cgs_format.py`. Also maintains `.gitignore` across the tree (`sync_gitignore`) — filesystem-only, no Git/subprocess. |
 | `orchestre.py` | Runtime documents (`GtsDocument`), registry construction, nested discovery, Git execution, orchestration. |
 | `config_document.py` | Format-neutral `ConfigDocument` base shared by `CgsDocument`/`GtsDocument`. |
 | `cli.py` | Argument/prompt collection only; delegates all `.cgs`/`.gts` semantics downstream. |
