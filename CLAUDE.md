@@ -9,13 +9,16 @@ snapshot. See [README.md](README.md) for user-facing docs and CLI usage.
 This project uses Pixi, not bare `pip`/`venv`.
 
 ```bash
-pixi install     # create/update the environment (run after touching pixi.toml or dependencies)
-pixi run test    # pytest, tests/unit + tests/integration
-pixi run lint    # ruff check .
+pixi install         # create/update the environment (run after touching pixi.toml or dependencies)
+pixi run test        # pytest, tests/unit + tests/integration
+pixi run lint        # ruff check .
+pixi run bump-version  # bump YYYY.XX in pyproject.toml and sync pixi.toml/__init__.py/README.md
 ```
 
 CI (`.github/workflows/ci.yml`) runs both `lint` and `test` on push/PR to
-`main`/`lechat`. Run both locally before pushing.
+`main`/`lechat`. Run both locally before pushing. Run `bump-version` when
+wrapping up a feature branch, ahead of the auto-increment CI performs on
+merge to main (see `AdditionalSpecs.md`'s Versioning section).
 
 ## Architecture boundary
 
@@ -31,9 +34,10 @@ task's change, not as a separate follow-up.
 |---|---|
 | `cgs_format.py` | `.cgs` TOML parsing/authoring grammar, normalization, static validation, `CgsDocument`, serialization. Deterministic and offline — no `subprocess`, no Git, no remote calls. |
 | `git_repo.py` | Canonical repository identity, provider registry, remote URL construction, per-repository runtime state. |
-| `git_tree.py` | Tree structures (`GitTree`/`WorkingGitTree`), traversal, lifecycle state; `to_cgs()` only delegates to `cgs_format.py`. |
+| `git_tree.py` | Tree structures (`GitTree`/`WorkingGitTree`), traversal, lifecycle state; `to_cgs()` only delegates to `cgs_format.py`. Also maintains `.gitignore` across the tree (`sync_gitignore`) — filesystem-only, no Git/subprocess. |
 | `orchestre.py` | Runtime documents (`GtsDocument`), registry construction, nested discovery, Git execution, orchestration. |
 | `config_document.py` | Format-neutral `ConfigDocument` base shared by `CgsDocument`/`GtsDocument`. |
+| `master.py` | Workspace-local Git identity (`MasterConfig`) for ComplexGitSync's own automated commits; defaults to local git config, overridable/persisted per `CGSHOME` via `.cgitsync/master.toml` — not part of the `.cgs`/`.gts` project spec. |
 | `cli.py` | Argument/prompt collection only; delegates all `.cgs`/`.gts` semantics downstream. |
 
 Data flow: `CLI / Python caller → ComplexGitSyncClient.configure() → cgs_format.py → CgsDocument → GitTree → orchestre.py → GitRepo / Git`.

@@ -260,6 +260,8 @@ orchestre.py             registry builders, nested discovery, runtime
 ```
 orchestre.py             Orchestre, ComplexGitSyncClient, GitRunner,
                          CommandRunLogger, RuntimeStateStore
+master.py                MasterConfig — workspace-local Git identity for
+                         ComplexGitSync-authored commits (not project spec)
 cli.py                   argument/prompt collection, build_parser, main
 ```
 
@@ -359,6 +361,35 @@ The canonical user-facing lifecycle contract is:
    
    OR `initialise(.gts)` → restore from snapshot → `.gts READY`  *(existing project)*
    - `client.initialise(".cgitsync/state(<hash>)_<n>/complexgitsync.gts")`
+   - Before the tree is confirmed ready, every repo with children (root or
+     any nested repo that itself has further nested children) is safely
+     pulled (parent-first) and has its `.gitignore` updated with the
+     relative path of each immediate child — nested repos are plain
+     independent clones, not gitlinks, so without this a parent's `git
+     status`/`git add` would otherwise see a child's working tree as
+     ordinary untracked content. If the safe pull for one of these repos
+     fails, `initialise` raises immediately and nothing is written — no
+     forcing is attempted on the caller's behalf, unless `--force-gitignore-sync`
+     is explicitly passed, in which case that one repo falls back to a
+     pull-force recovery (never a force-*push*) instead of erroring out.
+     By default nothing is staged, committed, or pushed by this step; it
+     only writes the file and prints what changed
+     (`.gitignore updated (not committed): ...`). Passing
+     `--commit-gitignore` is explicit approval to also stage (only
+     `.gitignore`, never `git add --all`), commit — with a message listing
+     exactly which children were added — and push each changed repo; the
+     printed report then reads `committed and pushed` instead. The CLI logs
+     this as the `GT-GITIGNORE` phase, after `GT-CLONE`. The commit identity
+     defaults to whatever `git config user.name`/`user.email` already
+     resolves to locally — nothing extra is passed to `git commit` unless an
+     override is configured. `--git-user-name`/`--git-user-email` set that
+     override via `MasterConfig` (`master.py`) and persist it to
+     `CGSHOME/.cgitsync/master.toml`, a workspace-local file that is not part
+     of the `.cgs`/`.gts` project spec and is preserved by `purge`/
+     `clean-init` (unlike generated clone state). `MasterConfig.load()` reads
+     any previously persisted override at the start of `initialise`/
+     `clean-init`/`pull`, so it applies to every subsequent invocation on
+     that workspace without repeating the flags.
 
 2. `pull(.cgs/.gts)` → resync an existing tree → `READY`
    - `client.pull("examples/complexgitsync.cgs")`
@@ -371,6 +402,10 @@ The canonical user-facing lifecycle contract is:
    - `pull-force(.cgs/.gts)` is the destructive recovery variant: every
      repository runs `git fetch`, `git checkout -B <branch> FETCH_HEAD`, and
      `git clean -fd`, in `ROOT -> PARENT -> LEAF` order.
+   - `pull` (`.cgs` source) also runs the same `.gitignore` sync described
+     under `initialise` above, once the tree-wide pull completes.
+     `pull-force` does not — it is a destructive recovery command, not a
+     lifecycle path this sync is wired into.
 
 3. Global git operations driven by a GitTree instance; same command for all
    GitRepos from leaves to parents to the root project repository:
@@ -592,7 +627,7 @@ transitions.
 CLI display requirements:
 
 - `initialise(.cgs)` must explicitly show the lifecycle pipeline
-  (`load -> expand -> validate -> clone`).
+  (`load -> expand -> validate -> clone -> gitignore`).
 - command output must explicitly show the selected per-run log file path
   (`log_file=...`).
 - git actions must print the concrete git command being applied.
@@ -620,3 +655,11 @@ CLI display requirements:
 The authoritative version is kept in `pyproject.toml`. CI auto-increments it
 on every push or merge to the main branch following the `YYYY.XX` scheme
 defined in `DevSpecs.md`.
+
+For a manual bump (e.g. after finishing a feature branch, before CI runs),
+use `pixi run bump-version` (`scripts/bump_version.py`). It reads the
+current version from `pyproject.toml`, computes the next `YYYY.XX` value,
+and writes that same value into every other manifest that mirrors it:
+`pixi.toml`'s `[workspace].version`, `src/ComplexGitSync/__init__.py`'s
+`__version__`, and the version heading in `README.md`. Pass `--dry-run` to
+preview the `old -> new` transition without writing anything.

@@ -22,6 +22,7 @@ Functions defined here (Tier 2 — Actions / tree utilities):
     format_registry_json        Render the registry as JSON
     iter_tree                   Iterate the registry parent-first (root → leaves)
     iter_tree_leaf_first        Iterate the registry leaf-first (leaves → root)
+    sync_gitignore              Update .gitignore for every repo with children
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import deque
-from collections.abc import Iterator, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path, PurePath, PurePosixPath
@@ -1102,6 +1103,63 @@ def iter_tree(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
 def iter_tree_leaf_first(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
     """Yield every repo in *tree* in leaf-first (leaves → root) order."""
     yield from reversed(list(_iter_tree(tree)))
+
+
+# ---------------------------------------------------------------------------
+# .gitignore synchronization
+# ---------------------------------------------------------------------------
+
+
+def sync_gitignore(tree: WorkingGitTree, *, skip: Collection[str] = ()) -> tuple[str, ...]:
+    """Update ``.gitignore`` for every repo in *tree* that has children.
+
+    Propagates parent-first (``ROOT -> PARENT -> LEAF``, via :func:`iter_tree`).
+    Repo_ids in *skip* are left untouched this run — this call performs no
+    Git operations of its own, so callers that need a repo to be pulled
+    before its ``.gitignore`` is written (see ``orchestre.py``) are
+    responsible for excluding any repo that couldn't be safely pulled.
+
+    Returns the repo_ids whose ``.gitignore`` was actually created or
+    modified.
+    """
+    changed: list[str] = []
+    for entry in iter_tree(tree):
+        if entry.repo_id in skip:
+            continue
+        children = tree.children_of(entry.repo_id)
+        if not children:
+            continue
+        relative_paths = sorted(
+            child.absolute_path.relative_to(entry.absolute_path).as_posix() for child in children
+        )
+        if _update_gitignore_file(entry.absolute_path, relative_paths):
+            changed.append(entry.repo_id)
+    return tuple(changed)
+
+
+def _update_gitignore_file(repo_path: Path, relative_paths: Sequence[str]) -> bool:
+    """Append any of *relative_paths* missing from ``repo_path/.gitignore``.
+
+    Preserves all pre-existing lines/comments/ordering; only appends
+    entries that are missing. Returns ``True`` if the file was created or
+    modified, ``False`` if every entry was already present.
+    """
+    gitignore_path = repo_path / ".gitignore"
+    try:
+        existing_content = gitignore_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        existing_content = ""
+    existing_entries = existing_content.splitlines()
+    missing_entries = [entry for entry in relative_paths if entry not in existing_entries]
+    if not missing_entries:
+        return False
+
+    prefix = "" if not existing_content or existing_content.endswith("\n") else "\n"
+    with gitignore_path.open("a", encoding="utf-8") as handle:
+        handle.write(prefix)
+        handle.write("\n".join(missing_entries))
+        handle.write("\n")
+    return True
 
 
 # ---------------------------------------------------------------------------

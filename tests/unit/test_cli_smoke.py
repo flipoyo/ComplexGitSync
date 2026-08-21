@@ -41,6 +41,30 @@ def test_cli_project_definition_help_documents_repeatable_repos(command, capsys)
     assert "repeat" in captured.out
 
 
+@pytest.mark.parametrize("command", ["initialise", "clean-init", "pull"])
+def test_gitignore_sync_flags_documented_on_relevant_commands(command, capsys):
+    """DevPlanTicket Milestone 2 (M2.0): flags registered on exactly these three."""
+    with pytest.raises(SystemExit) as exc_info:
+        main([command, "--help"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 0
+    assert "--commit-gitignore" in captured.out
+    assert "--force-gitignore-sync" in captured.out
+    assert "--git-user-name" in captured.out
+    assert "--git-user-email" in captured.out
+
+
+def test_gitignore_sync_flags_rejected_on_unrelated_command(capsys):
+    """A global flag would silently no-op on view-tree; it must instead error."""
+    with pytest.raises(SystemExit) as exc_info:
+        main(["view-tree", "--commit-gitignore"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "unrecognized arguments" in captured.err
+
+
 def test_initialise_command_restores_gts_snapshot(tmp_path, capsys):
     gts_path = _write_ready_gts(tmp_path)
 
@@ -105,7 +129,7 @@ def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):
                 else tmp_path / "workspace" / "project"
             )
 
-        def initialise_cgs(self, source, *, output_path=None):
+        def initialise_cgs(self, source, *, output_path=None, **_kwargs):
             captured_call["source"] = Path(source)
             captured_call["output_path"] = output_path
             return SimpleNamespace(
@@ -167,7 +191,7 @@ def test_initialise_accepts_direct_cli_project_definition(
             return tmp_path / "workspace" / str(document.project_name)
 
         def initialise_cgs_document(
-            self, document, *, source_path, output_path=None, clean_before_clone=False
+            self, document, *, source_path, output_path=None, clean_before_clone=False, **_kwargs
         ):
             captured_call["document"] = document
             captured_call["source_path"] = Path(source_path)
@@ -385,7 +409,7 @@ def test_initialise_command_failure_suggests_clean_init(monkeypatch, capsys, tmp
         def resolve_initialise_cgshome(self, source, *, output_path=None):
             return tmp_path / "workspace" / "project"
 
-        def initialise_cgs(self, source, *, output_path=None):
+        def initialise_cgs(self, source, *, output_path=None, **_kwargs):
             raise RuntimeError("clone failed")
 
     monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
@@ -406,7 +430,7 @@ def test_clean_init_command_purges_before_clone(monkeypatch, capsys, tmp_path):
         def resolve_initialise_cgshome(self, source, *, output_path=None):
             return Path(output_path) / "project"
 
-        def clean_init(self, source, *, output_path=None):
+        def clean_init(self, source, *, output_path=None, **_kwargs):
             captured_call["source"] = Path(source)
             captured_call["output_path"] = output_path
             return SimpleNamespace(
@@ -1104,7 +1128,7 @@ def test_initialise_command_output_path_is_forwarded(monkeypatch, capsys, tmp_pa
         def resolve_initialise_cgshome(self, source, *, output_path=None):
             return Path(output_path) / "project"
 
-        def initialise_cgs(self, source, *, output_path=None):
+        def initialise_cgs(self, source, *, output_path=None, **_kwargs):
             captured_call["source"] = Path(source)
             captured_call["output_path"] = output_path
             return SimpleNamespace(
@@ -1153,7 +1177,7 @@ def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
     class StubClient:
         run_logger = None
 
-        def pull(self, source):
+        def pull(self, source, **_kwargs):
             captured_call["source"] = Path(source)
             self.run_logger.bind_log_file(
                 tmp_path
@@ -1195,7 +1219,7 @@ def test_pull_command_failure_suggests_pull_force(monkeypatch, tmp_path, capsys)
     class StubClient:
         run_logger = None
 
-        def pull(self, source):
+        def pull(self, source, **_kwargs):
             raise RuntimeError("local changes would be overwritten")
 
     monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
@@ -1972,7 +1996,7 @@ def test_pull_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
     class StubClient:
         run_logger = None
 
-        def pull(self, source):
+        def pull(self, source, **_kwargs):
             captured_call["source"] = Path(source)
             return SimpleNamespace(
                 get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "workspace" / "demo")

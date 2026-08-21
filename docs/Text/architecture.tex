@@ -128,8 +128,9 @@ that escape the registry cleanup phase.
 \texttt{topological\_sort(registry)} returns entries in parent-first order
 (Kahn's BFS algorithm) for safe sequential clone/pull operations.  Runtime
 \texttt{pull} uses the same three-level direction: \texttt{ROOT -> PARENT ->
-LEAF}; the project root repository is pulled before child submodules are
-updated from their parent repositories.
+LEAF}; every repository --- root, parent, and leaf alike --- is a plain
+independent clone and is pulled in that same parent-first order, rather than
+through any submodule linkage.
 
 Figure~\ref{fig:core-model} shows the full object model for Tier~1.
 
@@ -233,8 +234,8 @@ fallback host is guessed.
 Before any mutating workflow step (\texttt{commit}, \texttt{push},
 \texttt{tag}, or \texttt{freeze}), the action layer now runs a workspace
 preflight validator. It checks dirty worktrees, detached HEADs, missing
-remotes, branch divergence, unresolved merges, missing submodule links, and
-stale recorded \texttt{commit\_sha} values. Diagnostics are severity-based:
+remotes, branch divergence, unresolved merges, and stale recorded
+\texttt{commit\_sha} values. Diagnostics are severity-based:
 warnings report actionable-but-allowed states, while blocking errors stop the
 operation. \texttt{tag} still requires a clean worktree and a non-existing tag.
 
@@ -312,7 +313,8 @@ src/ComplexGitSync/
   git_repo.py                  GitRepo, WorkingRepo, RepoAddress,
                                RepoNode, enums
   git_tree.py                  GitTree, WorkingGitTree,
-                               ProjectTreeState, tree utilities
+                               ProjectTreeState, tree utilities,
+                               sync_gitignore (.gitignore maintenance)
 
   # --- Tier 2: Actions ---
   operations.py                propagate_global_branch, create_global_branch
@@ -325,6 +327,8 @@ src/ComplexGitSync/
   cli.py                       build_parser / main
   orchestre.py                 GitRunner, RuntimeStateStore,
                                CommandRunLogger + create_run_logger
+  master.py                    MasterConfig (workspace-local Git identity
+                               for ComplexGitSync-authored commits)
 
   # --- Document layer (cross-cutting) ---
   config_document.py           ConfigDocument (format-neutral base)

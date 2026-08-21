@@ -1,9 +1,22 @@
 # DevPlanTicket — Automatic `.gitignore` sync for nested repo trees
 
-Status: **proposal, not implemented**. Organised into 3 milestones, each a
-self-contained, independently shippable increment — implement and merge
-Milestone 1 first; Milestones 2 and 3 build on it but not on each other
-(Milestone 3 can be built in parallel with, or after, Milestone 2).
+Status: **All three milestones implemented, tested, and documented.**
+Organised into 3 milestones, each a self-contained, independently
+shippable increment. Milestones 2 and 3 build on Milestone 1 but not on
+each other (Milestone 3 was built in parallel with Milestone 2).
+
+Wrap-up note: Milestone 3 landed with `MasterConfig`/`master.py` fully
+built and unit-tested, but two integration gaps were found and fixed
+during wrap-up: (1) `--git-user-name`/`--git-user-email` were never
+registered as CLI flags, and (2) `_commit_and_push_gitignore_sync` never
+called `MasterConfig.resolve_identity()`, so a configured override would
+never actually reach the `git commit` call. Both are now wired end-to-end
+and covered by an integration test (`--git-user-name`/`--git-user-email`
+flow through the CLI, persist to `.cgitsync/master.toml`, and are used by
+the commit step). A `tests/unit/conftest.py` autouse fixture was also
+added to reset `MasterConfig`'s process-wide override between tests —
+without it, any test exercising `configure()`/`persist()`/`load()` would
+leak its override into every test that ran afterward in the same session.
 
 Terminology note: **"Phase A/B/C"** below names the three steps that run
 *inside the CLI at execution time* (pre-pull → write → commit). **"Milestone
@@ -99,12 +112,23 @@ settles and **before** `registry.recompute_tree_state()` /
 - **Phase A — pre-pull (safe only in this milestone).** For every repo
   with children, parent-first: `git_runner.pull(R, ref_name=<current branch>)`.
   If this fails for any such repo: **do not** write that repo's
-  `.gitignore` (pass its `repo_id` in `sync_gitignore`'s `skip`), raise a
-  clear error (reuse `GitSyncError`) naming the repo and the underlying
-  pull failure, and leave the tree **not** `READY`. No fallback, no
-  forcing — that's Milestone 2. This matches the existing failure shape of
-  `Ambiguous nested .cgs discovery`/`Submodule constraint violated`: a
-  named, actionable error, non-zero exit, nothing silently degraded.
+  `.gitignore` (skip it), raise a clear error (reuse `GitSyncError`) naming
+  the repo and the underlying pull failure, and never return a completed
+  registry to the caller. No fallback, no forcing — that's Milestone 2.
+  This matches the existing failure shape of `Ambiguous nested .cgs
+  discovery`/`Submodule constraint violated`: a named, actionable error,
+  non-zero exit, nothing silently degraded.
+
+  **Correction found during implementation:** `registry.is_ready()` is
+  purely a function of each repo's already-set clone/checkout state
+  (`repo_lifecycle_state`); it does not and should not reflect whether the
+  `.gitignore` sync itself succeeded. So "leave the tree not READY" isn't
+  literally true — `is_ready()` can still report `True` for the
+  already-cloned repos. What actually matters, and is what the raised
+  exception guarantees: `initialise`/`pull` never return a registry, never
+  write a `.gts` snapshot, and never record anything in the state store —
+  the operation as a whole did not complete, regardless of the individual
+  repos' own clone state.
 - **Phase B — write.** Call `sync_gitignore(registry, skip=phase_a_failures)`.
 
 Readiness requires the `.gitignore` **content** to be correct (Phase B
@@ -161,11 +185,20 @@ opt-in, plus an opt-in recovery path for Phase A failures.
 
 ### M2.0 Flag scope (resolves Q2: per-command, not global)
 
+**Correction found during implementation:** `restart` is a Python-API-only
+method, not its own CLI subcommand — `pull` reaches it internally for
+`.cgs` sources. So this is three CLI subparsers, not four: `initialise`,
+`clean-init`, `pull`. (The Python API's `restart()`/`pull()`/
+`initialise_cgs`/`initialise_cgs_document`/`clean_init` methods all accept
+`commit_gitignore`/`force_gitignore_sync` directly, so the "four" framing
+below still holds one level down, at the method layer — it's only the CLI
+subparser count that's three.)
+
 `--commit-gitignore`, `--force-gitignore-sync`, `--git-user-name`, and
-`--git-user-email` are registered on exactly the four commands that run
-discovery and can trigger this automation: `initialise`, `clean-init`,
-`pull`, `restart` — via one shared argparse argument-group helper in
-`cli.py` so the four subparsers stay identical rather than drifting.
+`--git-user-email` are registered on exactly the three CLI commands that
+run discovery and can trigger this automation: `initialise`, `clean-init`,
+`pull` — via one shared argparse argument-group helper in `cli.py` so the
+three subparsers stay identical rather than drifting.
 
 They are **not** top-level/global flags sitting before the subcommand
 (`cgitsync --commit-gitignore initialise ...`), and they are **not**
@@ -173,7 +206,7 @@ registered on every subcommand either. Both alternatives were considered
 and rejected: a true global flag would silently no-op on commands where it
 has no meaning (`view-tree`, `status`, `tag`, ...), which is exactly the
 kind of surprising side effect this ticket is trying to avoid elsewhere
-(§ Non-goals). Scoping to the four relevant commands only means `--help`
+(§ Non-goals). Scoping to the three relevant commands only means `--help`
 on any of them shows exactly what applies, and passing one of these flags
 to an unrelated command is a normal argparse "unrecognized argument"
 error instead of a silent no-op.
@@ -370,7 +403,7 @@ class MasterConfig:
 - Wiring into read-only commands (`view-tree`, `status`, `print`, `expand`,
   `tree`) — scoped to `initialise`/`clean-init`/`pull`/`restart` only.
 - Force-push, under any flag, at any milestone.
-- A dedicated standalone "set identity" command — the four commands' own
+- A dedicated standalone "set identity" command — the three commands' own
   `--git-user-name`/`--git-user-email` flags (M2.0, M3.1) are the only way
   to set it for now; revisit only if that turns out to be inconvenient in
   practice.

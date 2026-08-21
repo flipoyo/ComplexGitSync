@@ -1,6 +1,6 @@
 """ComplexGitSync package: deterministic distributed workspace synchronization over Git trees."""
 
-__version__ = "0002.02"
+__version__ = "0002.05"
 
 # --- Tier 1 — Public Errors (errors.py) ---
 # --- Cross-cutting document definitions ---
@@ -53,6 +53,7 @@ from .git_tree import (
     iter_tree_leaf_first,
     topological_sort,
 )
+from .master import MasterConfig
 
 # --- Tier 2 — Actions (operations.py) ---
 from .operations import (
@@ -94,6 +95,7 @@ __all__ = [
     "ConfigValidationError",
     "FallbackRejectedError",
     "GitSyncError",
+    "MasterConfig",
     "NestedConfigDiscoveryError",
     "TreeNotReadyError",
     # git_repo.py

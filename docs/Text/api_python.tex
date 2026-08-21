@@ -141,8 +141,13 @@ client.purge_cgs("../CGSil1.cgs", output_path=cgspath)
 
 # 5. READY methods - unified git interface
 registry = client.get_dependency_registry()
-# Pull uses ROOT -> PARENT -> LEAF, including the project root repository.
-client.pull(".cgitsync/state/CGSil1.gts")
+# Pull uses ROOT -> PARENT -> LEAF; every repository in the tree is a plain
+# independent clone (there are no gitlinks) and receives its own git pull.
+# A .gts source must be an actual snapshot path (find the current one via
+# RuntimeStateStore.latest_snapshot_for(), the same lookup the CLI uses when
+# a command's snapshot argument is omitted) -- unlike a .cgs source, there is
+# no fixed, predictable filename to hard-code here.
+client.pull("../CGSil1.cgs")
 client.checkout("feature/my-branch")
 # Mutations use LEAF -> PARENT -> ROOT.
 client.add()
@@ -153,3 +158,51 @@ client.git(registry, "tag", "v1.2.3")
 # 6. freeze -> next .gts id
 client.freeze("release-2026.05")
 \end{lstlisting}
+
+\section{\texttt{.gitignore} Lifecycle Sync and Commit Identity}
+
+\texttt{initialise\_cgs}, \texttt{initialise\_cgs\_document},
+\texttt{clean\_initialise\_cgs}, \texttt{clean\_init}, \texttt{restart}, and
+\texttt{pull} (for \texttt{.cgs} sources) all accept the same four optional
+keyword arguments, mirroring the CLI's \texttt{--commit-gitignore},
+\texttt{--force-gitignore-sync}, \texttt{--git-user-name}, and
+\texttt{--git-user-email} flags:
+
+\begin{lstlisting}[language=Python]
+from ComplexGitSync import ComplexGitSyncClient, MasterConfig
+
+client = ComplexGitSyncClient()
+client.initialise_cgs(
+    "../CGSil1.cgs",
+    output_path=cgspath,
+    commit_gitignore=True,       # stage/commit/push each changed .gitignore
+    force_gitignore_sync=False,  # pull-force fallback for a blocked repo
+    git_user_name="cgitsync-bot",
+    git_user_email="bot@example.com",
+)
+
+# The identity above is persisted to CGSHOME/.cgitsync/master.toml, so a
+# later call on the same workspace picks it up without repeating it:
+client.initialise_cgs("../CGSil1.cgs", output_path=cgspath, commit_gitignore=True)
+assert MasterConfig.resolve_identity(cgshome, client.git_runner) == (
+    "cgitsync-bot",
+    "bot@example.com",
+)
+\end{lstlisting}
+
+All four keyword arguments default to \texttt{False}/\texttt{None}: by
+default, every repository with children (root, or any nested repository
+that itself has further nested children) is safely pulled and has its
+\texttt{.gitignore} updated, but nothing is staged, committed, or pushed,
+and the commit identity --- were a commit ever made --- would be whatever
+\texttt{git config user.name}/\texttt{user.email} already resolves to
+locally. \texttt{MasterConfig} (\texttt{master.py}) is the class behind the
+identity override: \texttt{configure()} sets it in memory for the current
+process, \texttt{persist(cgshome, ...)} writes it to
+\texttt{CGSHOME/.cgitsync/master.toml} (and also updates the in-memory
+value), \texttt{load(cgshome)} reads a previously persisted override back
+in, and \texttt{resolve\_identity(repo\_path, git\_runner)} returns the
+\texttt{(user\_name, user\_email)} pair --- or \texttt{(None, None)} to defer
+entirely to local git config. This file is workspace-local configuration,
+not part of the \texttt{.cgs}/\texttt{.gts} project spec, and is preserved
+(not deleted) by \texttt{purge}/\texttt{clean-init}.

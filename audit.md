@@ -10,8 +10,9 @@ under `Planning/` and are explicitly marked as archives.
 |---|---|
 | `cgs_format.py` | `.cgs` TOML parsing, authoring grammar, normalization, static validation, `CgsDocument`/tree projection, minimization, and serialization |
 | `config_document.py` | Format-neutral `ConfigDocument` base (parse/normalize/serialize scaffolding) shared by `CgsDocument` (`cgs_format.py`) and `GtsDocument`/`GocDocument` (`orchestre.py`); no Git access and no format-specific grammar of its own |
+| `master.py` | Local, workspace-scoped Git identity configuration for ComplexGitSync's own automated commits; defaults to local git config, overridable and persisted per `CGSHOME` workspace via `.cgitsync/master.toml` — not part of the `.cgs`/`.gts` project spec |
 | `git_repo.py` | Canonical repository identity, provider registry, remote URL construction, and per-repository runtime state |
-| `git_tree.py` | Reference and working tree structures, traversal, lifecycle state, and thin `to_cgs()` delegation |
+| `git_tree.py` | Reference and working tree structures, traversal, lifecycle state, thin `to_cgs()` delegation, and `.gitignore` maintenance across the tree (`sync_gitignore`) — filesystem-only, no `subprocess`/Git/network |
 | `operations.py` | Tier 2 "Actions" (see `AdditionalSpecs.md`): leaf/parent-first Git operations over a `WorkingGitTree` + `GitRunner` — `checkout_tree`, `branch_tree`, `add_tree`, `commit_tree`, `push_tree`, `tag_tree`, `freeze_release_tree`, branch-topology validation. Requires a `READY` tree; raises `TreeNotReadyError` otherwise |
 | `orchestre.py` | Runtime documents, registry construction, nested discovery, `GitRunner`, and the `ComplexGitSyncClient` orchestration facade; delegates tree-level Git actions to `operations.py` rather than re-implementing them |
 | `cli.py` | CLI argument and prompt collection, then delegation to the format or runtime boundary |
@@ -25,6 +26,8 @@ The `.cgs` dependency path is:
 
 ```text
 CLI values --------> ComplexGitSyncClient.configure() <-------- Python caller
+              \                   |
+               \-----------> master.py
                                   |
 .cgs TOML ----------------> cgs_format.py <----> config_document.py
                                   |
