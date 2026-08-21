@@ -2004,6 +2004,10 @@ class GitRunner:
         """Stage all changes in *repo_path* (``git add --all``)."""
         self._run("add", "--all", cwd=repo_path)
 
+    def stage_path(self, repo_path: Path | str, relative_path: str) -> None:
+        """Stage a single path in *repo_path* (``git add -- <relative_path>``)."""
+        self._run("add", "--", relative_path, cwd=repo_path)
+
     def commit(self, repo_path: Path | str, message: str) -> None:
         """Commit staged changes in *repo_path* with *message* (``git commit``)."""
         self._run("commit", "-m", message, cwd=repo_path)
@@ -2635,6 +2639,7 @@ class GitignoreSyncEntry:
     name: str
     absolute_path: Path
     added_paths: tuple[str, ...]
+    committed: bool = False
 
 
 # ============================================================
@@ -2715,16 +2720,30 @@ class ComplexGitSyncClient:
             document.to_toml(Path(output_path))
         return document
 
-    def _sync_gitignore_lifecycle(self, *, pre_pull: bool = True) -> tuple[GitignoreSyncEntry, ...]:
-        """Run the ``.gitignore`` lifecycle sync (DevPlanTicket Milestone 1).
+    def _sync_gitignore_lifecycle(
+        self,
+        *,
+        pre_pull: bool = True,
+        force_pull_fallback: bool = False,
+        commit: bool = False,
+    ) -> tuple[GitignoreSyncEntry, ...]:
+        """Run the ``.gitignore`` lifecycle sync (DevPlanTicket Milestones 1-2).
 
         Every repo with children is safely pulled (parent-first, via
         :func:`iter_tree`) before its ``.gitignore`` is written, so the
         write starts from an up-to-date base. If the safe pull fails for
-        any such repo, no ``.gitignore`` is written at all and this raises
-        :exc:`~.errors.GitSyncError` immediately — no forcing, no silent
-        degradation (a follow-up milestone adds an opt-in force-pull
-        fallback). Returns one :class:`GitignoreSyncEntry` per repo whose
+        any such repo:
+
+        - by default (*force_pull_fallback* False), no ``.gitignore`` is
+          written at all and this raises :exc:`~.errors.GitSyncError`
+          immediately — no forcing, no silent degradation;
+        - with *force_pull_fallback* True (``--force-gitignore-sync``),
+          that one repo falls back to :meth:`GitRunner.force_pull`
+          (fetch + ``checkout -B <branch> FETCH_HEAD`` + ``clean -fd``)
+          instead of erroring out. This never force-*pushes* — that
+          remains forbidden regardless of any flag.
+
+        Returns one :class:`GitignoreSyncEntry` per repo whose
         ``.gitignore`` was actually created or modified, and also records
         them on :attr:`last_gitignore_sync` for the CLI to report.
 
@@ -2732,6 +2751,12 @@ class ComplexGitSyncClient:
         every repo in the tree immediately beforehand (e.g. ``restart()``'s
         own tree-wide pull already satisfies this step; repeating it here
         would just be a redundant no-op fast-forward per repo).
+
+        *commit* gates Phase C (``--commit-gitignore``): when ``False``
+        (the default), nothing is staged, committed, or pushed — the sync
+        only writes the file and reports what changed. When ``True``, each
+        changed repo has its ``.gitignore`` staged (and only that file),
+        committed, and pushed — see :meth:`_commit_and_push_gitignore_sync`.
         """
         registry = self.registry
         assert registry is not None
@@ -2746,10 +2771,12 @@ class ComplexGitSyncClient:
                 try:
                     self.git_runner.pull(entry.absolute_path, ref_name=current_branch)
                 except GitSyncError as exc:
-                    raise GitSyncError(
-                        f"gitignore sync preflight failed: could not safely pull {entry.name!r} "
-                        f"({entry.absolute_path}) before writing its .gitignore: {exc}"
-                    ) from exc
+                    if not force_pull_fallback:
+                        raise GitSyncError(
+                            f"gitignore sync preflight failed: could not safely pull {entry.name!r} "
+                            f"({entry.absolute_path}) before writing its .gitignore: {exc}"
+                        ) from exc
+                    self.git_runner.force_pull(entry.absolute_path, ref_name=current_branch)
 
         pending_paths: dict[str, tuple[str, ...]] = {}
         for entry in iter_tree(registry):
@@ -2776,6 +2803,7 @@ class ComplexGitSyncClient:
                 name=registry.get(repo_id).name,
                 absolute_path=registry.get(repo_id).absolute_path,
                 added_paths=pending_paths.get(repo_id, ()),
+                committed=commit,
             )
             for repo_id in changed_repo_ids
         )
@@ -2787,8 +2815,38 @@ class ComplexGitSyncClient:
                 absolute_path=record.absolute_path,
                 added_paths=record.added_paths,
             )
+        if commit and synced_entries:
+            self._commit_and_push_gitignore_sync(synced_entries)
         self.last_gitignore_sync = synced_entries
         return synced_entries
+
+    def _commit_and_push_gitignore_sync(self, entries: tuple[GitignoreSyncEntry, ...]) -> None:
+        """Phase C (DevPlanTicket Milestone 2, ``--commit-gitignore``).
+
+        Only called once the caller has explicitly approved it. For each
+        entry: stage ``.gitignore`` alone (never ``git add --all`` — this
+        must not sweep in unrelated dirty work already in progress),
+        commit with a message listing exactly which children were added,
+        then push. Never force-pushes.
+        """
+        for record in entries:
+            current_branch = self.git_runner.current_branch(record.absolute_path)
+            self.git_runner.stage_path(record.absolute_path, ".gitignore")
+            message_lines = [
+                "chore(cgitsync): sync .gitignore for nested repo tree",
+                "",
+                "Added:",
+            ]
+            message_lines.extend(f"  {path}" for path in record.added_paths)
+            self.git_runner.commit(record.absolute_path, "\n".join(message_lines))
+            self.git_runner.push(record.absolute_path, ref_name=current_branch)
+            self._log_event(
+                "gitignore_sync_committed",
+                repo_id=record.repo_id,
+                repo_name=record.name,
+                absolute_path=record.absolute_path,
+                added_paths=record.added_paths,
+            )
 
     def load_cgs(
         self,
@@ -2857,6 +2915,8 @@ class ComplexGitSyncClient:
         *,
         output_path: str | Path | None = None,
         clean_before_clone: bool = False,
+        commit_gitignore: bool = False,
+        force_gitignore_sync: bool = False,
     ) -> WorkingGitTree:
         """Initialise a workspace using CGSPATH/CGSHOME semantics.
 
@@ -2877,6 +2937,14 @@ class ComplexGitSyncClient:
             ``CGSPATH/<project_name>``.  When *None*, defaults to ``../..``
             relative to the current working directory
             (``CWD=$CGSHOME/ComplexGitSync``), unless ``CGSHOME`` is set.
+        commit_gitignore:
+            Explicit approval (``--commit-gitignore``) to stage, commit, and
+            push any ``.gitignore`` the lifecycle sync updates. Default
+            ``False``: the sync only writes the file and reports it.
+        force_gitignore_sync:
+            Opt-in (``--force-gitignore-sync``) fallback to pull-force
+            semantics for a repo whose safe pull fails before its
+            ``.gitignore`` is synced, instead of raising. Never force-pushes.
         """
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
@@ -2885,6 +2953,8 @@ class ComplexGitSyncClient:
             source_path=source_path,
             output_path=output_path,
             clean_before_clone=clean_before_clone,
+            commit_gitignore=commit_gitignore,
+            force_gitignore_sync=force_gitignore_sync,
         )
 
     def initialise_cgs_document(
@@ -2894,11 +2964,15 @@ class ComplexGitSyncClient:
         source_path: str | Path,
         output_path: str | Path | None = None,
         clean_before_clone: bool = False,
+        commit_gitignore: bool = False,
+        force_gitignore_sync: bool = False,
     ) -> WorkingGitTree:
         """Initialise from an already-normalized, validated ``CgsDocument``.
 
         ``source_path`` is the logical origin used for relative paths, state
         metadata, and logging. It need not exist for direct CLI authoring.
+        See :meth:`initialise_cgs` for ``commit_gitignore``/
+        ``force_gitignore_sync``.
         """
         document.validate()
         previous_tree_state = (
@@ -2942,7 +3016,10 @@ class ComplexGitSyncClient:
         if fixed:
             self._log_circularity_fixes(fixed)
         self._assert_nested_discovery_complete()
-        self._sync_gitignore_lifecycle()
+        self._sync_gitignore_lifecycle(
+            force_pull_fallback=force_gitignore_sync,
+            commit=commit_gitignore,
+        )
         self.registry.recompute_tree_state()
         if not self.registry.is_ready():
             raise GitSyncError("Initialise did not produce a READY tree.")
@@ -2964,12 +3041,16 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         output_path: str | Path | None = None,
+        commit_gitignore: bool = False,
+        force_gitignore_sync: bool = False,
     ) -> WorkingGitTree:
         """Initialise a .cgs workspace after purging generated clone state."""
         return self.initialise_cgs(
             config_path,
             output_path=output_path,
             clean_before_clone=True,
+            commit_gitignore=commit_gitignore,
+            force_gitignore_sync=force_gitignore_sync,
         )
 
     def clean_init(
@@ -2977,9 +3058,16 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         output_path: str | Path | None = None,
+        commit_gitignore: bool = False,
+        force_gitignore_sync: bool = False,
     ) -> WorkingGitTree:
         """Initialise a .cgs workspace after purging generated clone state."""
-        return self.clean_initialise_cgs(config_path, output_path=output_path)
+        return self.clean_initialise_cgs(
+            config_path,
+            output_path=output_path,
+            commit_gitignore=commit_gitignore,
+            force_gitignore_sync=force_gitignore_sync,
+        )
 
     def purge_cgs(
         self,
@@ -3680,20 +3768,32 @@ class ComplexGitSyncClient:
         """Clone a project tree from a ``.cgs`` source."""
         return self.clone_cgs(config_path, target_dir=target_dir, output_path=output_path)
 
-    def restart(self, config_path: str | Path) -> WorkingGitTree:
+    def restart(
+        self,
+        config_path: str | Path,
+        *,
+        commit_gitignore: bool = False,
+        force_gitignore_sync: bool = False,
+    ) -> WorkingGitTree:
         """Resynchronize an already-cloned tree from a ``.cgs`` file.
 
         Loads the ``.cgs`` configuration, discovers nested configs, then
         checks out the root repository's current branch across the whole tree
         parent-first.  Ends in ``READY`` or raises
-        :exc:`~ComplexGitSync.errors.GitSyncError`.
+        :exc:`~ComplexGitSync.errors.GitSyncError`. See
+        :meth:`ComplexGitSyncClient.initialise_cgs` for
+        ``commit_gitignore``/``force_gitignore_sync``.
         """
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         resolved_path = Path(config_path).resolve()
         self._log_event("restart_start", config_path=resolved_path)
         registry = self.load_cgs(resolved_path, discover_nested=True)
         self.orchestre.git_tree.git.pull(self.git_runner)
-        self._sync_gitignore_lifecycle(pre_pull=False)
+        self._sync_gitignore_lifecycle(
+            pre_pull=False,
+            force_pull_fallback=force_gitignore_sync,
+            commit=commit_gitignore,
+        )
         if not registry.is_ready():
             raise GitSyncError("restart did not produce a READY tree.")
         snapshot_path = self.write_gts_snapshot(command_origin="restart")
@@ -3702,11 +3802,27 @@ class ComplexGitSyncClient:
         self._log_event("restart_end", config_path=resolved_path)
         return registry
 
-    def pull(self, source_path: str | Path) -> WorkingGitTree:
-        """Resynchronize from a ``.cgs`` spec or restore from a ``.gts`` snapshot."""
+    def pull(
+        self,
+        source_path: str | Path,
+        *,
+        commit_gitignore: bool = False,
+        force_gitignore_sync: bool = False,
+    ) -> WorkingGitTree:
+        """Resynchronize from a ``.cgs`` spec or restore from a ``.gts`` snapshot.
+
+        ``commit_gitignore``/``force_gitignore_sync`` only apply to ``.cgs``
+        sources (dispatched to :meth:`restart`) — a ``.gts`` source runs no
+        discovery, so there is nothing new for the ``.gitignore`` lifecycle
+        sync to find.
+        """
         resolved_source = Path(source_path).resolve()
         if resolved_source.suffix == ".cgs":
-            return self.restart(resolved_source)
+            return self.restart(
+                resolved_source,
+                commit_gitignore=commit_gitignore,
+                force_gitignore_sync=force_gitignore_sync,
+            )
         if resolved_source.suffix == ".gts":
             previous_tree_state = (
                 self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED

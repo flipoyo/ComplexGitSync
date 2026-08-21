@@ -311,6 +311,104 @@ def test_initialise_cgs_raises_and_blocks_readiness_when_gitignore_preflight_pul
     assert state_store.latest_snapshot_for(config_path) is None
 
 
+def test_initialise_cgs_default_does_not_commit_gitignore(tmp_path, monkeypatch):
+    """DevPlanTicket Milestone 2: report-only remains the default."""
+    cgspath = tmp_path / "workspace"
+    cgshome = cgspath / "demo"
+    wcd = cgshome / "ComplexGitSync"
+    wcd.mkdir(parents=True)
+    monkeypatch.chdir(wcd)
+
+    config_path = _write_clone_ready_cgs(tmp_path)
+    fake_runner = _FakeGitRunner(
+        {
+            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/docs.git": {"main"},
+        }
+    )
+    client = ComplexGitSyncClient(git_runner=fake_runner, state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"))
+
+    client.initialise_cgs(config_path, output_path=cgspath)
+
+    assert fake_runner.staged_paths == []
+    assert fake_runner.commits == []
+    assert fake_runner.pushed == []
+    assert client.last_gitignore_sync
+    assert all(entry.committed is False for entry in client.last_gitignore_sync)
+
+
+def test_initialise_cgs_commit_gitignore_stages_commits_and_pushes(tmp_path, monkeypatch):
+    """DevPlanTicket Milestone 2: --commit-gitignore is explicit approval."""
+    cgspath = tmp_path / "workspace"
+    cgshome = cgspath / "demo"
+    wcd = cgshome / "ComplexGitSync"
+    wcd.mkdir(parents=True)
+    monkeypatch.chdir(wcd)
+
+    config_path = _write_clone_ready_cgs(tmp_path)
+    fake_runner = _FakeGitRunner(
+        {
+            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/docs.git": {"main"},
+        }
+    )
+    client = ComplexGitSyncClient(git_runner=fake_runner, state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"))
+
+    registry = client.initialise_cgs(config_path, output_path=cgspath, commit_gitignore=True)
+
+    root_path = registry.get("root").absolute_path.resolve()
+    child_path = registry.get("root:deps/child-repo").absolute_path.resolve()
+
+    assert set(fake_runner.staged_paths) == {(root_path, ".gitignore"), (child_path, ".gitignore")}
+    assert {path for path, _ in fake_runner.commits} == {root_path, child_path}
+    pushed_by_path = {path: (remote, ref_name) for path, remote, ref_name in fake_runner.pushed}
+    assert pushed_by_path[root_path][0] == "origin"
+    assert pushed_by_path[child_path] == ("origin", "autoTest")
+
+    commit_by_path = dict(fake_runner.commits)
+    assert commit_by_path[root_path] == (
+        "chore(cgitsync): sync .gitignore for nested repo tree\n\nAdded:\n  deps/child-repo"
+    )
+    assert commit_by_path[child_path] == (
+        "chore(cgitsync): sync .gitignore for nested repo tree\n\nAdded:\n  docs"
+    )
+    assert all(entry.committed is True for entry in client.last_gitignore_sync)
+
+
+def test_initialise_cgs_force_gitignore_sync_recovers_from_blocked_pull(tmp_path, monkeypatch):
+    """DevPlanTicket Milestone 2: pull-force fallback is opt-in only."""
+    cgspath = tmp_path / "workspace"
+    cgshome = cgspath / "demo"
+    wcd = cgshome / "ComplexGitSync"
+    wcd.mkdir(parents=True)
+    monkeypatch.chdir(wcd)
+
+    config_path = _write_clone_ready_cgs(tmp_path)
+
+    class _FailingPullGitRunner(_FakeGitRunner):
+        def pull(self, repo_path, *, remote="origin", ref_name=None):
+            if Path(repo_path).resolve() == cgshome.resolve():
+                raise GitSyncError("simulated: local changes block a fast-forward pull")
+            super().pull(repo_path, remote=remote, ref_name=ref_name)
+
+    fake_runner = _FailingPullGitRunner(
+        {
+            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/docs.git": {"main"},
+        }
+    )
+    client = ComplexGitSyncClient(git_runner=fake_runner, state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"))
+
+    registry = client.initialise_cgs(config_path, output_path=cgspath, force_gitignore_sync=True)
+
+    root_path = registry.get("root").absolute_path.resolve()
+    assert any(path == root_path for path, _, _ in fake_runner.force_pulled)
+    assert (root_path / ".gitignore").read_text(encoding="utf-8").splitlines() == ["deps/child-repo"]
+    # force_gitignore_sync only covers the pull step — it never implies
+    # --commit-gitignore, so nothing is staged/committed/pushed here.
+    assert fake_runner.staged_paths == []
+
+
 def test_purge_cgs_removes_top_level_repos_and_ledgers(tmp_path):
     cgspath = tmp_path / "workspace"
     cgshome = cgspath / "demo"
@@ -673,7 +771,7 @@ def test_client_pull_dispatches_to_restart_for_cgs(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_restart(config_path):
+    def _fake_restart(config_path, **_kwargs):
         captured["config_path"] = config_path
         return "ok"
 
@@ -2528,6 +2626,10 @@ class _FakeGitRunner:
         self.remote_branches = remote_branches
         self.clones: list[tuple[str, Path, str]] = []
         self.pulled: list[tuple[Path, str, str | None]] = []
+        self.force_pulled: list[tuple[Path, str, str | None]] = []
+        self.staged_paths: list[tuple[Path, str]] = []
+        self.commits: list[tuple[Path, str]] = []
+        self.pushed: list[tuple[Path, str, str | None]] = []
         self.branch_overrides: dict[Path, str | None] = {}
         self.status_lines: dict[Path, list[str]] = {}
         self.tracking_states: dict[Path, SyncState | None] = {}
@@ -2584,6 +2686,31 @@ nested_config = "disabled"
         ref_name: str | None = None,
     ) -> None:
         self.pulled.append((Path(repo_path).resolve(), remote, ref_name))
+
+    def force_pull(
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+    ) -> None:
+        self.force_pulled.append((Path(repo_path).resolve(), remote, ref_name))
+
+    def stage_path(self, repo_path: Path | str, relative_path: str) -> None:
+        self.staged_paths.append((Path(repo_path).resolve(), relative_path))
+
+    def commit(self, repo_path: Path | str, message: str) -> None:
+        self.commits.append((Path(repo_path).resolve(), message))
+
+    def push(
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+        set_upstream: bool = False,
+    ) -> None:
+        self.pushed.append((Path(repo_path).resolve(), remote, ref_name))
 
     def current_branch(self, repo_path: Path | str) -> str | None:
         resolved = Path(repo_path).resolve()

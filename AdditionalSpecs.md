@@ -367,9 +367,16 @@ The canonical user-facing lifecycle contract is:
      status`/`git add` would otherwise see a child's working tree as
      ordinary untracked content. If the safe pull for one of these repos
      fails, `initialise` raises immediately and nothing is written — no
-     forcing is attempted on the caller's behalf. Nothing is staged,
-     committed, or pushed by this step; it only writes the file and prints
-     what changed (`.gitignore updated (not committed): ...`). The CLI logs
+     forcing is attempted on the caller's behalf, unless `--force-gitignore-sync`
+     is explicitly passed, in which case that one repo falls back to a
+     pull-force recovery (never a force-*push*) instead of erroring out.
+     By default nothing is staged, committed, or pushed by this step; it
+     only writes the file and prints what changed
+     (`.gitignore updated (not committed): ...`). Passing
+     `--commit-gitignore` is explicit approval to also stage (only
+     `.gitignore`, never `git add --all`), commit — with a message listing
+     exactly which children were added — and push each changed repo; the
+     printed report then reads `committed and pushed` instead. The CLI logs
      this as the `GT-GITIGNORE` phase, after `GT-CLONE`.
 
 2. `pull(.cgs/.gts)` → resync an existing tree → `READY`

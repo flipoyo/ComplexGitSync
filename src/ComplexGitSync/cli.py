@@ -60,6 +60,36 @@ _PLANNED_COMMANDS: dict[str, str] = {
 }
 
 
+def _add_gitignore_sync_arguments(subparser: argparse.ArgumentParser) -> None:
+    """Register the DevPlanTicket Milestone 2 ``.gitignore``-sync flags.
+
+    Shared by ``initialise``/``clean-init``/``pull`` (the commands that run
+    discovery and can trigger the sync) so the three subparsers stay
+    identical rather than drifting. Not registered on any other command —
+    a global/top-level flag would silently no-op on commands where it has
+    no meaning (``view-tree``, ``status``, ...).
+    """
+    subparser.add_argument(
+        "--commit-gitignore",
+        action="store_true",
+        help=(
+            "Explicit approval to stage, commit, and push any .gitignore "
+            "the .gitignore lifecycle sync updates. Without this flag, the "
+            "sync only writes the file and reports what changed."
+        ),
+    )
+    subparser.add_argument(
+        "--force-gitignore-sync",
+        action="store_true",
+        help=(
+            "If a repo's safe pull fails before its .gitignore is synced, "
+            "fall back to pull-force semantics (fetch, checkout -B <branch> "
+            "FETCH_HEAD, clean -fd) for that repo instead of erroring out. "
+            "Never force-pushes."
+        ),
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cgitsync",
@@ -122,6 +152,8 @@ def build_parser() -> argparse.ArgumentParser:
                     "Defaults to ../.. relative to CWD ($CGSHOME/ComplexGitSync)."
                 ),
             )
+            if command_name in {"initialise", "clean-init"}:
+                _add_gitignore_sync_arguments(subparser)
             if command_name == "initialise":
                 subparser.set_defaults(handler=_handle_initialise)
             elif command_name == "clean-init":
@@ -356,6 +388,8 @@ def build_parser() -> argparse.ArgumentParser:
                     "or walks up from the current working directory."
                 ),
             )
+            if command_name == "pull":
+                _add_gitignore_sync_arguments(subparser)
             subparser.set_defaults(
                 handler=_handle_pull_force if command_name == "pull-force" else _handle_pull
             )
@@ -705,6 +739,8 @@ def _handle_load(args: argparse.Namespace) -> int:
 
 
 def _handle_initialise(args: argparse.Namespace) -> int:
+    commit_gitignore = getattr(args, "commit_gitignore", False)
+    force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
     if args.source is None:
         client = ComplexGitSyncClient()
         document = client.configure(args.project, args.repo)
@@ -725,6 +761,8 @@ def _handle_initialise(args: argparse.Namespace) -> int:
                 document,
                 logical_source=logical_source,
                 output_path=output_path,
+                commit_gitignore=commit_gitignore,
+                force_gitignore_sync=force_gitignore_sync,
             ),
         )
 
@@ -742,6 +780,8 @@ def _handle_initialise(args: argparse.Namespace) -> int:
                 active_client,
                 source,
                 output_path=output_path,
+                commit_gitignore=commit_gitignore,
+                force_gitignore_sync=force_gitignore_sync,
             ),
         )
     return _run_with_logging(
@@ -754,6 +794,8 @@ def _handle_initialise(args: argparse.Namespace) -> int:
 def _handle_clean_init(args: argparse.Namespace) -> int:
     source_path = Path(args.source)
     output_path = getattr(args, "output_path", None)
+    commit_gitignore = getattr(args, "commit_gitignore", False)
+    force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
     client = ComplexGitSyncClient()
     project_root = client.resolve_initialise_cgshome(source_path, output_path=output_path)
     return _run_with_logging(
@@ -765,6 +807,8 @@ def _handle_clean_init(args: argparse.Namespace) -> int:
             active_client,
             source,
             output_path=output_path,
+            commit_gitignore=commit_gitignore,
+            force_gitignore_sync=force_gitignore_sync,
         ),
     )
 
@@ -935,10 +979,17 @@ def _handle_reload(args: argparse.Namespace) -> int:
 
 def _handle_pull(args: argparse.Namespace) -> int:
     source = _resolve_workspace_source(args.source, getattr(args, "search_dir", None))
+    commit_gitignore = getattr(args, "commit_gitignore", False)
+    force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
     return _run_with_logging(
         command_name="pull",
         source=source,
-        runner=lambda client, source: _execute_pull(client, source),
+        runner=lambda client, source: _execute_pull(
+            client,
+            source,
+            commit_gitignore=commit_gitignore,
+            force_gitignore_sync=force_gitignore_sync,
+        ),
     )
 
 
@@ -1260,11 +1311,18 @@ def _execute_initialise_cgs(
     source_path: Path,
     *,
     output_path: str | None = None,
+    commit_gitignore: bool = False,
+    force_gitignore_sync: bool = False,
 ) -> int:
     print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE->GT-GITIGNORE")
     print("workflow=load->expand->validate->clone->gitignore")
     print("git_command=git clone (executed per repo)")
-    registry = client.initialise_cgs(source_path, output_path=output_path)
+    registry = client.initialise_cgs(
+        source_path,
+        output_path=output_path,
+        commit_gitignore=commit_gitignore,
+        force_gitignore_sync=force_gitignore_sync,
+    )
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -1284,6 +1342,8 @@ def _execute_initialise_cgs_document(
     *,
     logical_source: Path,
     output_path: str | None = None,
+    commit_gitignore: bool = False,
+    force_gitignore_sync: bool = False,
 ) -> int:
     print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE->GT-GITIGNORE")
     print("workflow=load->expand->validate->clone->gitignore")
@@ -1292,6 +1352,8 @@ def _execute_initialise_cgs_document(
         document,
         source_path=logical_source,
         output_path=output_path,
+        commit_gitignore=commit_gitignore,
+        force_gitignore_sync=force_gitignore_sync,
     )
     tree_state = client.get_tree_state()
     print(
@@ -1311,13 +1373,20 @@ def _execute_clean_init_cgs(
     source_path: Path,
     *,
     output_path: str | None = None,
+    commit_gitignore: bool = False,
+    force_gitignore_sync: bool = False,
 ) -> int:
     if source_path.suffix != ".cgs":
         raise ValueError("clean-init expects a .cgs source.")
     print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE->GT-GITIGNORE")
     print("workflow=load->expand->validate->purge->clone->gitignore")
     print("git_command=git clone (executed per repo)")
-    registry = client.clean_init(source_path, output_path=output_path)
+    registry = client.clean_init(
+        source_path,
+        output_path=output_path,
+        commit_gitignore=commit_gitignore,
+        force_gitignore_sync=force_gitignore_sync,
+    )
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -1588,8 +1657,15 @@ def _execute_clone(
 def _execute_pull(
     client: ComplexGitSyncClient,
     source_path: Path,
+    *,
+    commit_gitignore: bool = False,
+    force_gitignore_sync: bool = False,
 ) -> int:
-    registry = client.pull(source_path)
+    registry = client.pull(
+        source_path,
+        commit_gitignore=commit_gitignore,
+        force_gitignore_sync=force_gitignore_sync,
+    )
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -2260,18 +2336,21 @@ def _print_repo_tree_result(client: ComplexGitSyncClient) -> None:
 
 
 def _print_gitignore_sync_report(client: ComplexGitSyncClient) -> None:
-    """Print what ``.gitignore`` sync changed (DevPlanTicket Milestone 1).
+    """Print what ``.gitignore`` sync changed (DevPlanTicket Milestones 1-2).
 
-    Always verbose, never silent: nothing is staged, committed, or pushed
-    at this milestone, so this is purely informational — it tells the user
-    exactly what changed and that persisting it is currently a manual step.
+    Always verbose, never silent. By default nothing is staged, committed,
+    or pushed — this is purely informational. With ``--commit-gitignore``
+    each entry was also committed and pushed; the report reflects that
+    instead, so the flag changes what happened, not whether the user is
+    told about it.
     """
     try:
         synced_entries = client.last_gitignore_sync
     except AttributeError:
         return
     for entry in synced_entries:
-        print(f".gitignore updated (not committed): {entry.name} ({entry.absolute_path})")
+        status = "committed and pushed" if entry.committed else "not committed"
+        print(f".gitignore updated ({status}): {entry.name} ({entry.absolute_path})")
         for relative_path in entry.added_paths:
             print(f"  + {relative_path}")
 

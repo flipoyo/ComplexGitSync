@@ -117,8 +117,13 @@ source, depending on the command) only to override that discovery.
 whole tree: every repo with children (root or any nested repo that itself
 has nested children) gets the relative path of each immediate child added
 to its `.gitignore`, since nested repos are plain clones rather than
-gitlinks. This only writes the file and prints what changed — nothing is
-staged, committed, or pushed automatically.
+gitlinks. By default this only writes the file and prints what changed —
+nothing is staged, committed, or pushed automatically. Pass
+`--commit-gitignore` to explicitly approve staging, committing, and
+pushing just that file (never `--force`). If a repo can't be safely pulled
+before the sync, the command errors out rather than guessing; pass
+`--force-gitignore-sync` to fall back to a pull-force recovery for that
+repo instead (force-*pushing* remains unavailable everywhere).
 
 ## Further reading
 
