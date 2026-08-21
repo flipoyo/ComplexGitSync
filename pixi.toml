@@ -1,12 +1,13 @@
 [workspace]
 name = "ComplexGitSync"
-version = "0002.01"
+version = "0002.02"
 channels = ["conda-forge"]
 platforms = ["linux-64", "win-64", "osx-arm64"]
 
 [tasks]
 test = "python -m pytest"
 lint = "ruff check ."
+bump-version = "python scripts/bump_version.py"
 
 [dependencies]
 python = "3.11.*"
