@@ -9,6 +9,7 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
+from ComplexGitSync import MasterConfig
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import (
     GitRepo,
@@ -360,6 +361,76 @@ relative_path = "deps/nested-repo"
     assert not top_level_child.exists()
     assert not (cgshome / "demo.lgr").exists()
     assert nested_child.exists()
+
+
+def test_purge_cgs_keeps_workspace_master_config(tmp_path):
+    cgspath = tmp_path / "workspace"
+    cgshome = cgspath / "demo"
+    (cgshome / ".cgitsync").mkdir(parents=True)
+    master_config = cgshome / ".cgitsync" / "master.toml"
+    master_config.write_text("[master]\nuser_name = 'cgitsync-bot'\n", encoding="utf-8")
+
+    config_path = tmp_path / "project.cgs"
+    config_path.write_text(
+        """
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "demo"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "child-repo"
+relative_path = "child-repo"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    client = ComplexGitSyncClient(git_runner=_FakeGitRunner({}))
+
+    client.purge_cgs(config_path, output_path=cgspath)
+
+    assert master_config.is_file()
+    assert "cgitsync-bot" in master_config.read_text(encoding="utf-8")
+
+
+def test_clean_init_keeps_workspace_master_config(tmp_path, monkeypatch):
+    cgspath = tmp_path / "workspace"
+    cgshome = cgspath / "demo"
+    wcd = cgshome / "ComplexGitSync"
+    wcd.mkdir(parents=True)
+    monkeypatch.chdir(wcd)
+
+    master_config = cgshome / ".cgitsync" / "master.toml"
+    master_config.parent.mkdir(parents=True, exist_ok=True)
+    master_config.write_text("[master]\nuser_email = 'bot@example.com'\n", encoding="utf-8")
+
+    config_path = _write_clone_ready_cgs(tmp_path)
+    fake_runner = _FakeGitRunner(
+        {
+            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/docs.git": {"main"},
+        }
+    )
+    client = ComplexGitSyncClient(
+        git_runner=fake_runner,
+        state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"),
+    )
+
+    client.clean_init(config_path, output_path=cgspath)
+
+    assert master_config.is_file()
+    assert "bot@example.com" in master_config.read_text(encoding="utf-8")
+    assert MasterConfig.resolve_identity(cgshome, client.git_runner) == (None, "bot@example.com")
 
 
 def test_initialise_cgs_default_cgshome_is_cgspath_project_name(tmp_path, monkeypatch):

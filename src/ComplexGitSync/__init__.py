@@ -53,6 +53,7 @@ from .git_tree import (
     iter_tree_leaf_first,
     topological_sort,
 )
+from .master import MasterConfig
 
 # --- Tier 2 — Actions (operations.py) ---
 from .operations import (
@@ -94,6 +95,7 @@ __all__ = [
     "ConfigValidationError",
     "FallbackRejectedError",
     "GitSyncError",
+    "MasterConfig",
     "NestedConfigDiscoveryError",
     "TreeNotReadyError",
     # git_repo.py
