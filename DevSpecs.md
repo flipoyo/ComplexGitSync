@@ -59,6 +59,10 @@ Package versions follow `YYYY.XX` calendar versioning.
 - The authoritative version is kept in the project's packaging manifest
   (e.g. `pyproject.toml`); CI increments it automatically on every push or
   merge to the main branch.
+- Projects that also mirror the version into other manifests/docs (e.g. a
+  `pixi.toml` workspace version, a package `__version__`, a README heading)
+  should provide a single dev command that bumps the reference manifest and
+  syncs the rest in one step, rather than editing each file by hand.
 
 ## Python Environment and Package Management
 

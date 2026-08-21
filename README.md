@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.03
+# ComplexGitSync v0002.05
 
 ComplexGitSync is a command-line tool for synchronising a multi-repository Git
 workspace — a tree of nested repositories — from one local `.cgs`
@@ -123,7 +123,11 @@ nothing is staged, committed, or pushed automatically. Pass
 pushing just that file (never `--force`). If a repo can't be safely pulled
 before the sync, the command errors out rather than guessing; pass
 `--force-gitignore-sync` to fall back to a pull-force recovery for that
-repo instead (force-*pushing* remains unavailable everywhere).
+repo instead (force-*pushing* remains unavailable everywhere). The commit
+identity defaults to local git config; pass `--git-user-name`/
+`--git-user-email` to override it — the override is persisted to
+`$CGSHOME/.cgitsync/master.toml`, so later invocations on the same
+workspace pick it up without repeating the flags.
 
 ## Further reading
 

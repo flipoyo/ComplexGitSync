@@ -1,10 +1,22 @@
 # DevPlanTicket — Automatic `.gitignore` sync for nested repo trees
 
-Status: **Milestone 1 — implemented. Milestone 2 — implemented.
-Milestone 3 — in progress (parallel).** Organised into 3 milestones, each a
-self-contained, independently shippable increment. Milestones 2 and 3
-build on Milestone 1 but not on each other (Milestone 3 can be built in
-parallel with, or after, Milestone 2).
+Status: **All three milestones implemented, tested, and documented.**
+Organised into 3 milestones, each a self-contained, independently
+shippable increment. Milestones 2 and 3 build on Milestone 1 but not on
+each other (Milestone 3 was built in parallel with Milestone 2).
+
+Wrap-up note: Milestone 3 landed with `MasterConfig`/`master.py` fully
+built and unit-tested, but two integration gaps were found and fixed
+during wrap-up: (1) `--git-user-name`/`--git-user-email` were never
+registered as CLI flags, and (2) `_commit_and_push_gitignore_sync` never
+called `MasterConfig.resolve_identity()`, so a configured override would
+never actually reach the `git commit` call. Both are now wired end-to-end
+and covered by an integration test (`--git-user-name`/`--git-user-email`
+flow through the CLI, persist to `.cgitsync/master.toml`, and are used by
+the commit step). A `tests/unit/conftest.py` autouse fixture was also
+added to reset `MasterConfig`'s process-wide override between tests —
+without it, any test exercising `configure()`/`persist()`/`load()` would
+leak its override into every test that ran afterward in the same session.
 
 Terminology note: **"Phase A/B/C"** below names the three steps that run
 *inside the CLI at execution time* (pre-pull → write → commit). **"Milestone

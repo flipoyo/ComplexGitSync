@@ -126,19 +126,23 @@ default \texttt{CGSPATH=../..}, then derives
 $ pixi run cgitsync initialise examples/complexgitsync.cgs --output-path "$CGSPATH"
 \end{lstlisting}
 
-From a previously generated snapshot:
+From a previously generated snapshot (resolved automatically via the
+project's \texttt{.lgr} register; pass the path explicitly only to override
+that discovery):
 
 \begin{lstlisting}[language=bash]
-$ pixi run cgitsync initialise .cgitsync/state/complexgitsync.gts
+$ pixi run cgitsync initialise
 \end{lstlisting}
 
 Successful \texttt{.cgs} initialisation prints a readable operation sequence
-\texttt{GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE}, the explicit workflow
-\texttt{load->expand->validate->clone}, the per-repository \texttt{git clone}
-action, the resolved root path, and a compact tree outline. Structured log
+\texttt{GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE->GT-GITIGNORE}, the
+explicit workflow \texttt{load->expand->validate->clone->gitignore}, the
+per-repository \texttt{git clone} action, the resolved root path, a report of
+any \texttt{.gitignore} changes, and a compact tree outline. Structured log
 records also put the operation code first, for example \texttt{GT-DISCOVER},
-\texttt{GT-VALIDATE}, \texttt{FS-PURGE}, or \texttt{GT-CLONE}.
-If a stale partial checkout or previous submodule link blocks the clone step,
+\texttt{GT-VALIDATE}, \texttt{FS-PURGE}, \texttt{GT-CLONE}, or
+\texttt{GT-GITIGNORE}.
+If a stale partial checkout blocks the clone step,
 \texttt{initialise} fails explicitly and prints
 \texttt{Try clean-init method}.  Use \texttt{clean-init} to insert a purge
 phase between validation and cloning:
@@ -148,29 +152,37 @@ $ pixi run cgitsync clean-init examples/complexgitsync.cgs
 \end{lstlisting}
 
 The explicit operation sequence is
-\texttt{GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE}; the matching
-workflow is \texttt{load->expand->validate->purge->clone}.  The purge phase can
-also be run on its own:
+\texttt{GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE->GT-GITIGNORE};
+the matching workflow is \texttt{load->expand->validate->purge->clone->gitignore}.
+The purge phase can also be run on its own:
 
 \begin{lstlisting}[language=bash]
 $ pixi run cgitsync purge examples/complexgitsync.cgs
 \end{lstlisting}
 
 \texttt{purge} removes generated clone state from \texttt{CGSHOME}: immediate
-child repository directories declared directly under the project root, project
-\texttt{*.lgr} files, and the root \texttt{.gitmodules} file.
+child repository directories declared directly under the project root, and
+project \texttt{*.lgr} files. A persisted Git identity override at
+\texttt{.cgitsync/master.toml} (see the \texttt{initialise} entry in the
+Command Reference chapter for \texttt{--git-user-name}/\texttt{--git-user-email})
+is workspace configuration, not clone state, and is left untouched.
 
 % -----------------------------------------------------------------------
 \section{Inspect the Runtime State}
 
 \begin{lstlisting}[language=bash]
-$ pixi run cgitsync view-tree .cgitsync/state/complexgitsync.gts
-$ pixi run cgitsync view-tree .cgitsync/state/complexgitsync.gts --depth 2 --collapse parent_2
+$ pixi run cgitsync view-tree
+$ pixi run cgitsync view-tree --depth 2 --collapse parent_2
 $ pixi run cgitsync status
 \end{lstlisting}
 
 If a command accepts an optional snapshot and none is provided, \cgscli{}
-discovers the latest \texttt{.gts} from \texttt{CGSHOME/.cgitsync/state/}.
+discovers the latest \texttt{.gts} automatically via the project's
+\texttt{.lgr} register under \texttt{CGSHOME/.cgitsync/}. Each generated
+\texttt{.gts} snapshot actually lives under its own content-addressed
+\texttt{CGSHOME/.cgitsync/state(<hash>)\_<n>/} directory; pass an explicit
+path (e.g. \texttt{--gts FILE}, or a positional source, depending on the
+command) only to override that discovery.
 \texttt{CGSHOME} can be set explicitly; for \texttt{initialise(.cgs)} the
 default is \texttt{CGSPATH=../..}, and later commands can also discover the
 workspace by walking upward from the current directory.

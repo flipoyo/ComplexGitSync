@@ -2852,7 +2852,13 @@ class ComplexGitSyncClient:
                 "Added:",
             ]
             message_lines.extend(f"  {path}" for path in record.added_paths)
-            self.git_runner.commit(record.absolute_path, "\n".join(message_lines))
+            user_name, user_email = MasterConfig.resolve_identity(record.absolute_path, self.git_runner)
+            self.git_runner.commit(
+                record.absolute_path,
+                "\n".join(message_lines),
+                user_name=user_name,
+                user_email=user_email,
+            )
             self.git_runner.push(record.absolute_path, ref_name=current_branch)
             self._log_event(
                 "gitignore_sync_committed",
@@ -2931,6 +2937,8 @@ class ComplexGitSyncClient:
         clean_before_clone: bool = False,
         commit_gitignore: bool = False,
         force_gitignore_sync: bool = False,
+        git_user_name: str | None = None,
+        git_user_email: str | None = None,
     ) -> WorkingGitTree:
         """Initialise a workspace using CGSPATH/CGSHOME semantics.
 
@@ -2959,6 +2967,13 @@ class ComplexGitSyncClient:
             Opt-in (``--force-gitignore-sync``) fallback to pull-force
             semantics for a repo whose safe pull fails before its
             ``.gitignore`` is synced, instead of raising. Never force-pushes.
+        git_user_name, git_user_email:
+            Override the Git identity used for ComplexGitSync-authored
+            commits (``--git-user-name``/``--git-user-email``). Persisted to
+            ``CGSHOME/.cgitsync/master.toml`` via :class:`~.master.MasterConfig`
+            so later invocations on this workspace pick it up without
+            repeating the flag. ``None`` (the default) leaves whatever is
+            already configured/persisted, or local git config, untouched.
         """
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
@@ -2969,6 +2984,8 @@ class ComplexGitSyncClient:
             clean_before_clone=clean_before_clone,
             commit_gitignore=commit_gitignore,
             force_gitignore_sync=force_gitignore_sync,
+            git_user_name=git_user_name,
+            git_user_email=git_user_email,
         )
 
     def initialise_cgs_document(
@@ -2980,13 +2997,15 @@ class ComplexGitSyncClient:
         clean_before_clone: bool = False,
         commit_gitignore: bool = False,
         force_gitignore_sync: bool = False,
+        git_user_name: str | None = None,
+        git_user_email: str | None = None,
     ) -> WorkingGitTree:
         """Initialise from an already-normalized, validated ``CgsDocument``.
 
         ``source_path`` is the logical origin used for relative paths, state
         metadata, and logging. It need not exist for direct CLI authoring.
         See :meth:`initialise_cgs` for ``commit_gitignore``/
-        ``force_gitignore_sync``.
+        ``force_gitignore_sync``/``git_user_name``/``git_user_email``.
         """
         document.validate()
         previous_tree_state = (
@@ -2995,6 +3014,8 @@ class ComplexGitSyncClient:
         source_path = Path(source_path).resolve()
         cgshome = self.resolve_cgshome(document, source_path, output_path=output_path)
         MasterConfig.load(cgshome)
+        if git_user_name is not None or git_user_email is not None:
+            MasterConfig.persist(cgshome, user_name=git_user_name, user_email=git_user_email)
         project_root = cgshome
 
         self.registry = build_registry_from_cgs_document(
@@ -3058,6 +3079,8 @@ class ComplexGitSyncClient:
         output_path: str | Path | None = None,
         commit_gitignore: bool = False,
         force_gitignore_sync: bool = False,
+        git_user_name: str | None = None,
+        git_user_email: str | None = None,
     ) -> WorkingGitTree:
         """Initialise a .cgs workspace after purging generated clone state."""
         return self.initialise_cgs(
@@ -3066,6 +3089,8 @@ class ComplexGitSyncClient:
             clean_before_clone=True,
             commit_gitignore=commit_gitignore,
             force_gitignore_sync=force_gitignore_sync,
+            git_user_name=git_user_name,
+            git_user_email=git_user_email,
         )
 
     def clean_init(
@@ -3075,6 +3100,8 @@ class ComplexGitSyncClient:
         output_path: str | Path | None = None,
         commit_gitignore: bool = False,
         force_gitignore_sync: bool = False,
+        git_user_name: str | None = None,
+        git_user_email: str | None = None,
     ) -> WorkingGitTree:
         """Initialise a .cgs workspace after purging generated clone state."""
         return self.clean_initialise_cgs(
@@ -3082,6 +3109,8 @@ class ComplexGitSyncClient:
             output_path=output_path,
             commit_gitignore=commit_gitignore,
             force_gitignore_sync=force_gitignore_sync,
+            git_user_name=git_user_name,
+            git_user_email=git_user_email,
         )
 
     def purge_cgs(
@@ -3789,6 +3818,8 @@ class ComplexGitSyncClient:
         *,
         commit_gitignore: bool = False,
         force_gitignore_sync: bool = False,
+        git_user_name: str | None = None,
+        git_user_email: str | None = None,
     ) -> WorkingGitTree:
         """Resynchronize an already-cloned tree from a ``.cgs`` file.
 
@@ -3797,12 +3828,16 @@ class ComplexGitSyncClient:
         parent-first.  Ends in ``READY`` or raises
         :exc:`~ComplexGitSync.errors.GitSyncError`. See
         :meth:`ComplexGitSyncClient.initialise_cgs` for
-        ``commit_gitignore``/``force_gitignore_sync``.
+        ``commit_gitignore``/``force_gitignore_sync``/``git_user_name``/
+        ``git_user_email``.
         """
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         resolved_path = Path(config_path).resolve()
         self._log_event("restart_start", config_path=resolved_path)
-        MasterConfig.load(self.resolve_initialise_cgshome(resolved_path))
+        restart_cgshome = self.resolve_initialise_cgshome(resolved_path)
+        MasterConfig.load(restart_cgshome)
+        if git_user_name is not None or git_user_email is not None:
+            MasterConfig.persist(restart_cgshome, user_name=git_user_name, user_email=git_user_email)
         registry = self.load_cgs(resolved_path, discover_nested=True)
         self.orchestre.git_tree.git.pull(self.git_runner)
         self._sync_gitignore_lifecycle(
@@ -3824,13 +3859,15 @@ class ComplexGitSyncClient:
         *,
         commit_gitignore: bool = False,
         force_gitignore_sync: bool = False,
+        git_user_name: str | None = None,
+        git_user_email: str | None = None,
     ) -> WorkingGitTree:
         """Resynchronize from a ``.cgs`` spec or restore from a ``.gts`` snapshot.
 
-        ``commit_gitignore``/``force_gitignore_sync`` only apply to ``.cgs``
-        sources (dispatched to :meth:`restart`) — a ``.gts`` source runs no
-        discovery, so there is nothing new for the ``.gitignore`` lifecycle
-        sync to find.
+        ``commit_gitignore``/``force_gitignore_sync``/``git_user_name``/
+        ``git_user_email`` only apply to ``.cgs`` sources (dispatched to
+        :meth:`restart`) — a ``.gts`` source runs no discovery, so there is
+        nothing new for the ``.gitignore`` lifecycle sync to find.
         """
         resolved_source = Path(source_path).resolve()
         if resolved_source.suffix == ".cgs":
@@ -3838,6 +3875,8 @@ class ComplexGitSyncClient:
                 resolved_source,
                 commit_gitignore=commit_gitignore,
                 force_gitignore_sync=force_gitignore_sync,
+                git_user_name=git_user_name,
+                git_user_email=git_user_email,
             )
         if resolved_source.suffix == ".gts":
             previous_tree_state = (

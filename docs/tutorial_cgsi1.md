@@ -178,11 +178,22 @@ pixi run cgitsync initialise ../CGSil1.cgs --output-path "$CGSPATH"
 Expected output (all repos cloned, tree is `READY`):
 
 ```
-operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE
-workflow=load->expand->validate->clone
+operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE->GT-GITIGNORE
+workflow=load->expand->validate->clone->gitignore
 git_command=git clone (executed per repo)
 READY ready=true complete=true root=/path/to/CGSil1
 ```
+
+`GT-GITIGNORE` is the `.gitignore` lifecycle sync: every repo with children
+(root, or any nested repo with further nested children) is safely pulled
+and has its `.gitignore` updated with the relative path of each immediate
+child, since nested repos are plain independent clones, not gitlinks. By
+default this only writes the file and reports what changed
+(`.gitignore updated (not committed): ...`) — pass `--commit-gitignore` to
+also stage/commit/push it, and `--git-user-name`/`--git-user-email` to
+override the commit identity (persisted to `$CGSHOME/.cgitsync/master.toml`
+for later invocations on this workspace). If a repo's safe pull fails here,
+`initialise` errors out unless `--force-gitignore-sync` is passed.
 
 A runtime snapshot is written under `$CGSHOME/.cgitsync/` and recorded in
 the project's `.lgr` register. Subsequent commands resolve this snapshot
@@ -203,10 +214,13 @@ pixi run cgitsync clean-init ../CGSil1.cgs
 ```
 
 `clean-init` prints
-`operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE`
-and `workflow=load->expand->validate->purge->clone`. The `purge` phase removes
-generated clone state from `$CGSHOME`: repositories declared directly under the
-root and project `*.lgr` files. The cleanup can also be run alone:
+`operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE->GT-GITIGNORE`
+and `workflow=load->expand->validate->purge->clone->gitignore`. The `purge`
+phase removes generated clone state from `$CGSHOME`: repositories declared
+directly under the root and project `*.lgr` files — a persisted
+`.cgitsync/master.toml` identity override, if any, is workspace
+configuration, not clone state, and is left in place. The cleanup can also
+be run alone:
 
 ```bash
 pixi run cgitsync purge ../CGSil1.cgs
@@ -228,6 +242,12 @@ alike — as its own plain `git pull`.
 If local files block this safe pull, the CLI suggests `cgitsync pull-force`.
 Use that recovery command only when discarding local uncommitted and untracked
 work is acceptable.
+
+`pull` also runs the same `.gitignore` lifecycle sync as `initialise` (Step 3
+above) once the tree-wide pull completes, and accepts the same
+`--commit-gitignore`/`--force-gitignore-sync`/`--git-user-name`/
+`--git-user-email` flags. `pull-force` does not run this sync — it is a
+destructive recovery command, not a lifecycle path the sync is wired into.
 
 ---
 

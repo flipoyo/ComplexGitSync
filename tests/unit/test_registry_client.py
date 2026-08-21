@@ -374,6 +374,64 @@ def test_initialise_cgs_commit_gitignore_stages_commits_and_pushes(tmp_path, mon
         "chore(cgitsync): sync .gitignore for nested repo tree\n\nAdded:\n  docs"
     )
     assert all(entry.committed is True for entry in client.last_gitignore_sync)
+    # No identity override configured: every commit must pass (None, None),
+    # leaving GitRunner.commit to fall back entirely to local git config.
+    assert all(user_name is None and user_email is None for _, user_name, user_email in fake_runner.commit_identities)
+
+
+def test_initialise_cgs_git_user_flags_persist_and_are_used_for_the_commit(tmp_path, monkeypatch):
+    """DevPlanTicket Milestone 3: --git-user-name/--git-user-email flow into
+    the commit step and persist to CGSHOME/.cgitsync/master.toml so a later
+    invocation on the same workspace picks them up without repeating the flags."""
+    cgspath = tmp_path / "workspace"
+    cgshome = cgspath / "demo"
+    wcd = cgshome / "ComplexGitSync"
+    wcd.mkdir(parents=True)
+    monkeypatch.chdir(wcd)
+
+    config_path = _write_clone_ready_cgs(tmp_path)
+    fake_runner = _FakeGitRunner(
+        {
+            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/docs.git": {"main"},
+        }
+    )
+    client = ComplexGitSyncClient(git_runner=fake_runner, state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"))
+
+    registry = client.initialise_cgs(
+        config_path,
+        output_path=cgspath,
+        commit_gitignore=True,
+        git_user_name="cgitsync-bot",
+        git_user_email="bot@example.com",
+    )
+
+    root_path = registry.get("root").absolute_path.resolve()
+    child_path = registry.get("root:deps/child-repo").absolute_path.resolve()
+
+    # The commit step actually used the override, for every changed repo.
+    assert set(fake_runner.commit_identities) == {
+        (root_path, "cgitsync-bot", "bot@example.com"),
+        (child_path, "cgitsync-bot", "bot@example.com"),
+    }
+
+    # Persisted to disk, not just held in memory for this invocation.
+    master_config_path = cgshome / ".cgitsync" / "master.toml"
+    assert master_config_path.is_file()
+    persisted = tomllib.loads(master_config_path.read_text(encoding="utf-8"))
+    assert persisted == {"master": {"user_name": "cgitsync-bot", "user_email": "bot@example.com"}}
+
+    # A later invocation on the same workspace that doesn't repeat the
+    # flags still picks up the persisted identity via MasterConfig.load().
+    MasterConfig._override_name = None
+    MasterConfig._override_email = None
+    assert MasterConfig.resolve_identity(cgshome, fake_runner) == (None, None)
+    second_client = ComplexGitSyncClient(
+        git_runner=fake_runner, state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state")
+    )
+    (cgshome / ".gitignore").unlink()
+    second_client.initialise_cgs(config_path, output_path=cgspath, commit_gitignore=True)
+    assert (root_path, "cgitsync-bot", "bot@example.com") in second_client.git_runner.commit_identities
 
 
 def test_initialise_cgs_force_gitignore_sync_recovers_from_blocked_pull(tmp_path, monkeypatch):
@@ -2700,6 +2758,7 @@ class _FakeGitRunner:
         self.force_pulled: list[tuple[Path, str, str | None]] = []
         self.staged_paths: list[tuple[Path, str]] = []
         self.commits: list[tuple[Path, str]] = []
+        self.commit_identities: list[tuple[Path, str | None, str | None]] = []
         self.pushed: list[tuple[Path, str, str | None]] = []
         self.branch_overrides: dict[Path, str | None] = {}
         self.status_lines: dict[Path, list[str]] = {}
@@ -2770,8 +2829,16 @@ nested_config = "disabled"
     def stage_path(self, repo_path: Path | str, relative_path: str) -> None:
         self.staged_paths.append((Path(repo_path).resolve(), relative_path))
 
-    def commit(self, repo_path: Path | str, message: str) -> None:
+    def commit(
+        self,
+        repo_path: Path | str,
+        message: str,
+        *,
+        user_name: str | None = None,
+        user_email: str | None = None,
+    ) -> None:
         self.commits.append((Path(repo_path).resolve(), message))
+        self.commit_identities.append((Path(repo_path).resolve(), user_name, user_email))
 
     def push(
         self,

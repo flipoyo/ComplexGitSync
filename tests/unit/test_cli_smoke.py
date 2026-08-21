@@ -51,6 +51,8 @@ def test_gitignore_sync_flags_documented_on_relevant_commands(command, capsys):
     assert exc_info.value.code == 0
     assert "--commit-gitignore" in captured.out
     assert "--force-gitignore-sync" in captured.out
+    assert "--git-user-name" in captured.out
+    assert "--git-user-email" in captured.out
 
 
 def test_gitignore_sync_flags_rejected_on_unrelated_command(capsys):

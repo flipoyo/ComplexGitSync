@@ -61,7 +61,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
 
 
 def _add_gitignore_sync_arguments(subparser: argparse.ArgumentParser) -> None:
-    """Register the DevPlanTicket Milestone 2 ``.gitignore``-sync flags.
+    """Register the DevPlanTicket Milestone 2/3 ``.gitignore``-sync flags.
 
     Shared by ``initialise``/``clean-init``/``pull`` (the commands that run
     discovery and can trigger the sync) so the three subparsers stay
@@ -86,6 +86,28 @@ def _add_gitignore_sync_arguments(subparser: argparse.ArgumentParser) -> None:
             "fall back to pull-force semantics (fetch, checkout -B <branch> "
             "FETCH_HEAD, clean -fd) for that repo instead of erroring out. "
             "Never force-pushes."
+        ),
+    )
+    subparser.add_argument(
+        "--git-user-name",
+        dest="git_user_name",
+        metavar="NAME",
+        help=(
+            "Override the Git author name used for ComplexGitSync-authored "
+            "commits (e.g. the --commit-gitignore step). Persisted to "
+            "CGSHOME/.cgitsync/master.toml so later invocations on this "
+            "workspace pick it up without repeating the flag. Defaults to "
+            "the local git config when never set."
+        ),
+    )
+    subparser.add_argument(
+        "--git-user-email",
+        dest="git_user_email",
+        metavar="EMAIL",
+        help=(
+            "Override the Git author email used for ComplexGitSync-authored "
+            "commits. Persisted to CGSHOME/.cgitsync/master.toml alongside "
+            "--git-user-name; see that flag for details."
         ),
     )
 
@@ -741,6 +763,8 @@ def _handle_load(args: argparse.Namespace) -> int:
 def _handle_initialise(args: argparse.Namespace) -> int:
     commit_gitignore = getattr(args, "commit_gitignore", False)
     force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
+    git_user_name = getattr(args, "git_user_name", None)
+    git_user_email = getattr(args, "git_user_email", None)
     if args.source is None:
         client = ComplexGitSyncClient()
         document = client.configure(args.project, args.repo)
@@ -763,6 +787,8 @@ def _handle_initialise(args: argparse.Namespace) -> int:
                 output_path=output_path,
                 commit_gitignore=commit_gitignore,
                 force_gitignore_sync=force_gitignore_sync,
+                git_user_name=git_user_name,
+                git_user_email=git_user_email,
             ),
         )
 
@@ -782,6 +808,8 @@ def _handle_initialise(args: argparse.Namespace) -> int:
                 output_path=output_path,
                 commit_gitignore=commit_gitignore,
                 force_gitignore_sync=force_gitignore_sync,
+                git_user_name=git_user_name,
+                git_user_email=git_user_email,
             ),
         )
     return _run_with_logging(
@@ -796,6 +824,8 @@ def _handle_clean_init(args: argparse.Namespace) -> int:
     output_path = getattr(args, "output_path", None)
     commit_gitignore = getattr(args, "commit_gitignore", False)
     force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
+    git_user_name = getattr(args, "git_user_name", None)
+    git_user_email = getattr(args, "git_user_email", None)
     client = ComplexGitSyncClient()
     project_root = client.resolve_initialise_cgshome(source_path, output_path=output_path)
     return _run_with_logging(
@@ -809,6 +839,8 @@ def _handle_clean_init(args: argparse.Namespace) -> int:
             output_path=output_path,
             commit_gitignore=commit_gitignore,
             force_gitignore_sync=force_gitignore_sync,
+            git_user_name=git_user_name,
+            git_user_email=git_user_email,
         ),
     )
 
@@ -981,6 +1013,8 @@ def _handle_pull(args: argparse.Namespace) -> int:
     source = _resolve_workspace_source(args.source, getattr(args, "search_dir", None))
     commit_gitignore = getattr(args, "commit_gitignore", False)
     force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
+    git_user_name = getattr(args, "git_user_name", None)
+    git_user_email = getattr(args, "git_user_email", None)
     return _run_with_logging(
         command_name="pull",
         source=source,
@@ -989,6 +1023,8 @@ def _handle_pull(args: argparse.Namespace) -> int:
             source,
             commit_gitignore=commit_gitignore,
             force_gitignore_sync=force_gitignore_sync,
+            git_user_name=git_user_name,
+            git_user_email=git_user_email,
         ),
     )
 
@@ -1313,6 +1349,8 @@ def _execute_initialise_cgs(
     output_path: str | None = None,
     commit_gitignore: bool = False,
     force_gitignore_sync: bool = False,
+    git_user_name: str | None = None,
+    git_user_email: str | None = None,
 ) -> int:
     print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE->GT-GITIGNORE")
     print("workflow=load->expand->validate->clone->gitignore")
@@ -1322,6 +1360,8 @@ def _execute_initialise_cgs(
         output_path=output_path,
         commit_gitignore=commit_gitignore,
         force_gitignore_sync=force_gitignore_sync,
+        git_user_name=git_user_name,
+        git_user_email=git_user_email,
     )
     tree_state = client.get_tree_state()
     print(
@@ -1344,6 +1384,8 @@ def _execute_initialise_cgs_document(
     output_path: str | None = None,
     commit_gitignore: bool = False,
     force_gitignore_sync: bool = False,
+    git_user_name: str | None = None,
+    git_user_email: str | None = None,
 ) -> int:
     print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE->GT-GITIGNORE")
     print("workflow=load->expand->validate->clone->gitignore")
@@ -1354,6 +1396,8 @@ def _execute_initialise_cgs_document(
         output_path=output_path,
         commit_gitignore=commit_gitignore,
         force_gitignore_sync=force_gitignore_sync,
+        git_user_name=git_user_name,
+        git_user_email=git_user_email,
     )
     tree_state = client.get_tree_state()
     print(
@@ -1375,6 +1419,8 @@ def _execute_clean_init_cgs(
     output_path: str | None = None,
     commit_gitignore: bool = False,
     force_gitignore_sync: bool = False,
+    git_user_name: str | None = None,
+    git_user_email: str | None = None,
 ) -> int:
     if source_path.suffix != ".cgs":
         raise ValueError("clean-init expects a .cgs source.")
@@ -1386,6 +1432,8 @@ def _execute_clean_init_cgs(
         output_path=output_path,
         commit_gitignore=commit_gitignore,
         force_gitignore_sync=force_gitignore_sync,
+        git_user_name=git_user_name,
+        git_user_email=git_user_email,
     )
     tree_state = client.get_tree_state()
     print(
@@ -1660,11 +1708,15 @@ def _execute_pull(
     *,
     commit_gitignore: bool = False,
     force_gitignore_sync: bool = False,
+    git_user_name: str | None = None,
+    git_user_email: str | None = None,
 ) -> int:
     registry = client.pull(
         source_path,
         commit_gitignore=commit_gitignore,
         force_gitignore_sync=force_gitignore_sync,
+        git_user_name=git_user_name,
+        git_user_email=git_user_email,
     )
     tree_state = client.get_tree_state()
     print(

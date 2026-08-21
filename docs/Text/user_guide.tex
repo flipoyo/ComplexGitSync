@@ -60,7 +60,8 @@ inspection aliases such as \texttt{print}, \texttt{view-operation}, and
 \subsection{\texttt{initialise}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync initialise <spec.cgs> [--output-path DIR]
+$ cgitsync initialise <spec.cgs> [--output-path DIR] [--commit-gitignore]
+    [--force-gitignore-sync] [--git-user-name NAME] [--git-user-email EMAIL]
 $ cgitsync initialise <snapshot.gts>
 $ cgitsync initialise --project NAME --repo PROVIDER:OWNER/REPO [--repo ...] [--output-path DIR]
 \end{lstlisting}
@@ -87,6 +88,27 @@ Unified initialisation entry point.  Dispatches on file extension:
 \end{itemize}
 
 All initialization paths end in a \texttt{READY} tree or fail explicitly.
+
+Before a \texttt{.cgs} source is confirmed ready, every repository with
+children (root, or any nested repository that itself has further nested
+children) is safely pulled parent-first and has its \texttt{.gitignore}
+updated with the relative path of each immediate child --- nested
+repositories are plain independent clones rather than gitlinks, so without
+this a parent's \texttt{git status}/\texttt{git add} would otherwise see a
+child's working tree as ordinary untracked content. This is logged as the
+\texttt{GT-GITIGNORE} phase, after \texttt{GT-CLONE}. If the safe pull for
+one of these repositories fails, \texttt{initialise} raises immediately and
+nothing is written; pass \texttt{--force-gitignore-sync} to instead fall
+back to a pull-force recovery for that one repository (never a force-push).
+By default nothing is staged, committed, or pushed by this step --- it only
+writes the file and prints what changed. Pass \texttt{--commit-gitignore}
+to explicitly approve staging (\texttt{.gitignore} alone), committing (with
+a message listing exactly which children were added), and pushing each
+changed repository. The commit identity defaults to local git config;
+\texttt{--git-user-name}/\texttt{--git-user-email} override it and persist
+the override to \texttt{CGSHOME/.cgitsync/master.toml} via
+\texttt{MasterConfig}, so later invocations on the same workspace pick it up
+without repeating the flags.
 
 \subsection{\texttt{configure}}
 
@@ -119,19 +141,23 @@ and serializes concise \texttt{.cgs} TOML. It performs no Git or network work.
 \subsection{\texttt{clean-init}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync clean-init <spec.cgs> [--output-path DIR]
+$ cgitsync clean-init <spec.cgs> [--output-path DIR] [--commit-gitignore]
+    [--force-gitignore-sync] [--git-user-name NAME] [--git-user-email EMAIL]
 \end{lstlisting}
 
 Recovery-oriented initialisation for a \texttt{.cgs} source. It follows the
-same high-level pipeline as \texttt{initialise(.cgs)}, but inserts a cleanup
+same high-level pipeline as \texttt{initialise(.cgs)} (including the
+\texttt{.gitignore} lifecycle sync described there), but inserts a cleanup
 phase before cloning:
 
 \begin{center}
-\texttt{load->expand->validate->purge->clone}
+\texttt{load->expand->validate->purge->clone->gitignore}
 \end{center}
 
-Use it when an earlier initialisation attempt left partial child checkouts,
-stale submodule metadata, or an obsolete root \texttt{.gitmodules} file.
+Use it when an earlier initialisation attempt left partial child checkouts.
+\texttt{CGSHOME/.cgitsync/master.toml} (the persisted Git identity override,
+if any) is preserved by the purge phase --- it is workspace-local
+configuration, not generated clone state.
 
 \subsection{\texttt{purge}}
 
@@ -141,26 +167,36 @@ $ cgitsync purge <spec.cgs> [--output-path DIR]
 
 Removes generated clone state from the resolved \texttt{CGSHOME} without
 cloning. It deletes child repository directories declared directly under the
-project root, project-local \texttt{*.lgr} files, and the root
-\texttt{.gitmodules} file. Nested directories that are not immediate root
-children are left untouched by this command.
+project root and project-local \texttt{*.lgr} files. Nested directories that
+are not immediate root children, and \texttt{.cgitsync/master.toml} (see
+\texttt{clean-init} above), are left untouched by this command.
 
 \subsection{\texttt{pull}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync pull [spec.cgs|snapshot.gts]
+$ cgitsync pull [spec.cgs|snapshot.gts] [--commit-gitignore]
+    [--force-gitignore-sync] [--git-user-name NAME] [--git-user-email EMAIL]
 \end{lstlisting}
 
 Resynchronises the project tree.  \texttt{.cgs} sources reload the source,
 discover nested configs, then resynchronise the loaded tree.  \texttt{.gts}
 sources load the saved registry as the starting point and then run the same
 pull workflow.  In both cases the operation starts at the project root:
-\texttt{root -> parent -> leaf}.  The root repository receives
-\texttt{git pull --ff-only}; each child repository is then updated through its
-parent submodule link.  Use \texttt{launch-release} when you want to check out
-a frozen recorded release state instead of pulling current remotes.
-If local changes block this safe pull, the CLI prints
+\texttt{root -> parent -> leaf}.  Every repository --- root, parent, and leaf
+alike --- is a plain independent clone and receives its own
+\texttt{git pull --ff-only}.  Use \texttt{launch-release} when you want to
+check out a frozen recorded release state instead of pulling current
+remotes.  If local changes block this safe pull, the CLI prints
 \texttt{You can try cgitsync pull-force command}.
+
+For a \texttt{.cgs} source, \texttt{pull} also runs the same
+\texttt{.gitignore} lifecycle sync described under \texttt{initialise} ---
+including \texttt{--commit-gitignore}, \texttt{--force-gitignore-sync}, and
+the \texttt{--git-user-name}/\texttt{--git-user-email} identity override ---
+once the tree-wide pull completes. A \texttt{.gts} source runs no discovery,
+so there is nothing new for the sync to find. \texttt{pull-force} does not
+run this sync at all; it is a destructive recovery command, not a lifecycle
+path the sync is wired into.
 
 \subsection{\texttt{pull-force}}
 
@@ -168,11 +204,11 @@ If local changes block this safe pull, the CLI prints
 $ cgitsync pull-force [spec.cgs|snapshot.gts]
 \end{lstlisting}
 
-Destructively resynchronises the same tree.  The root repository is forced to
-the selected remote branch with \texttt{git fetch},
-\texttt{git checkout -B <branch> FETCH\_HEAD}, and \texttt{git clean -fd};
-child submodules are then force-updated parent-first.  This command can
-discard local uncommitted changes and untracked files.
+Destructively resynchronises the same tree.  Every repository --- root,
+parent, and leaf alike --- is forced to the selected remote branch,
+parent-first, with \texttt{git fetch}, \texttt{git checkout -B <branch>
+FETCH\_HEAD}, and \texttt{git clean -fd}.  This command can discard local
+uncommitted changes and untracked files; it never force-pushes.
 
 \subsection{\texttt{clone}}
 
@@ -225,8 +261,8 @@ Commits changes across the tree, leaf-first.  Loads the READY registry from
 \texttt{git add --all} step (suppressed by \texttt{--no-stage}) are silently
 skipped. Requires a \texttt{READY} tree; the tree remains \texttt{READY} on success.
 Commit preflight now emits warnings for actionable workspace issues such as
-dirty worktrees, ahead branches, stale recorded \texttt{commit\_sha} values,
-or child repositories that are not linked as submodules.
+dirty worktrees, ahead branches, or stale recorded \texttt{commit\_sha}
+values.
 With \texttt{--dry-run}, \cgscli{} prints the planned stage/commit sequence
 without performing git writes.
 
@@ -243,9 +279,9 @@ READY registry from \texttt{--gts}.  Each repo is pushed to
 \texttt{entry.remote\_name} (defaulting to \texttt{"origin"}) on its currently
 resolved branch.  Refreshes the stored hash in \texttt{GitTree}.  Requires a
 \texttt{READY} tree; the tree remains \texttt{READY} on success. Push preflight
-blocks detached HEADs, missing remotes, unresolved merges, behind/diverged
-branches, and missing submodule links; it warns when the local branch is ahead
-or when the loaded snapshot records an older \texttt{commit\_sha}.
+blocks detached HEADs, missing remotes, unresolved merges, and
+behind/diverged branches; it warns when the local branch is ahead or when
+the loaded snapshot records an older \texttt{commit\_sha}.
 With \texttt{--dry-run}, \cgscli{} prints the push plan without mutating any
 repository.
 
@@ -273,8 +309,7 @@ create+push the shared release tag, refresh SHA/state, and write a
 \texttt{.gts} snapshot. Loads the READY registry from \texttt{--gts}.
 Requires \texttt{READY} and leaves the tree \texttt{READY}. Freeze preflight
 checks remote availability, branch alignment, detached HEADs, unresolved
-merges, tag absence, and submodule links for all parent/child repository
-boundaries. Dirty worktrees and stale recorded \texttt{commit\_sha} values are
+merges, and tag absence. Dirty worktrees and stale recorded \texttt{commit\_sha} values are
 reported as warnings because freeze will stage, commit, and snapshot them.
 Freeze snapshots also include a deterministic \texttt{freeze\_manifest} section
 that records freeze invariants (immutable snapshot, validated workspace,
