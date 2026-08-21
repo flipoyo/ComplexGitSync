@@ -97,6 +97,7 @@ from .git_tree import (
     fix_circularities as _fix_circularities,
 )
 from .L0 import new_time_l0_anchor
+from .master import MasterConfig
 from .operations import (
     BranchTopologyReport,
 )
@@ -2008,9 +2009,22 @@ class GitRunner:
         """Stage a single path in *repo_path* (``git add -- <relative_path>``)."""
         self._run("add", "--", relative_path, cwd=repo_path)
 
-    def commit(self, repo_path: Path | str, message: str) -> None:
+    def commit(
+        self,
+        repo_path: Path | str,
+        message: str,
+        *,
+        user_name: str | None = None,
+        user_email: str | None = None,
+    ) -> None:
         """Commit staged changes in *repo_path* with *message* (``git commit``)."""
-        self._run("commit", "-m", message, cwd=repo_path)
+        args: list[str] = []
+        if user_name is not None:
+            args.extend(["-c", f"user.name={user_name}"])
+        if user_email is not None:
+            args.extend(["-c", f"user.email={user_email}"])
+        args.extend(["commit", "-m", message])
+        self._run(*args, cwd=repo_path)
 
     def push(
         self,
@@ -2980,6 +2994,7 @@ class ComplexGitSyncClient:
         )
         source_path = Path(source_path).resolve()
         cgshome = self.resolve_cgshome(document, source_path, output_path=output_path)
+        MasterConfig.load(cgshome)
         project_root = cgshome
 
         self.registry = build_registry_from_cgs_document(
@@ -3787,6 +3802,7 @@ class ComplexGitSyncClient:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         resolved_path = Path(config_path).resolve()
         self._log_event("restart_start", config_path=resolved_path)
+        MasterConfig.load(self.resolve_initialise_cgshome(resolved_path))
         registry = self.load_cgs(resolved_path, discover_nested=True)
         self.orchestre.git_tree.git.pull(self.git_runner)
         self._sync_gitignore_lifecycle(

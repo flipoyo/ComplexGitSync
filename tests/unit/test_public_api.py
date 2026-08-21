@@ -16,6 +16,7 @@ from ComplexGitSync import (
     GitRepo,
     GitSyncError,
     GitTree,
+    MasterConfig,
     MemoryBinding,
     MemoryMemorizeResult,
     MemoryReloadResult,
@@ -45,6 +46,7 @@ def test_package_root_exports_refactor_guard_symbols():
     assert issubclass(TreeNotReadyError, ComplexGitSyncError)
     assert GitRepo.__name__ == "GitRepo"
     assert GitTree.__name__ == "GitTree"
+    assert MasterConfig.__name__ == "MasterConfig"
     assert RepoNode.__name__ == "RepoNode"
     assert ComplexGitSyncClient.__name__ == "ComplexGitSyncClient"
     assert MemoryBinding.__name__ == "MemoryBinding"
