@@ -165,6 +165,7 @@ workspace pick it up without repeating the flags.
 ## Further reading
 
 - [docs/tutorial_cgsi1.md](docs/tutorial_cgsi1.md) — full CGSil1 walkthrough, step by step.
+- [docs/tutorial_cawaqs.md](docs/tutorial_cawaqs.md) — bootstrap the `cawaqs` multi-repo workspace, then hand off to its existing `make` build.
 - [docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference book, including the Python API (`ComplexGitSyncClient`) and complete command details.
 
 ## Authorship
