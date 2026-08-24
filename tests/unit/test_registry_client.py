@@ -692,6 +692,43 @@ def test_resolve_clone_root_uses_output_path_as_base(tmp_path):
     assert result == (output_path / "demo").resolve()
 
 
+def test_resolve_bootstrap_root_uses_cgs_path_override(tmp_path):
+    client = ComplexGitSyncClient()
+    cgs_path = tmp_path / "elsewhere"
+
+    result = client.resolve_bootstrap_root("myproject", cgs_path=cgs_path)
+
+    assert result == (cgs_path / "myproject").resolve()
+
+
+def test_resolve_bootstrap_root_defaults_under_home_cgs(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    client = ComplexGitSyncClient()
+
+    result = client.resolve_bootstrap_root("myproject")
+
+    assert result.parent.parent == (tmp_path / ".cgs").resolve()
+    assert result.name == "myproject"
+    assert (tmp_path / ".cgs").is_dir()
+
+
+def test_resolve_bootstrap_root_rejects_empty_project_name():
+    client = ComplexGitSyncClient()
+
+    with pytest.raises(ValueError, match="non-empty project_name"):
+        client.resolve_bootstrap_root("")
+
+
+def test_bootstrap_rejects_non_cgs_source(tmp_path):
+    client = ComplexGitSyncClient()
+    gts_path = tmp_path / "demo.gts"
+    gts_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"\.cgs source"):
+        client.bootstrap(gts_path, "myproject")
+
+
 def test_client_validate_cgs_returns_declared_state(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()

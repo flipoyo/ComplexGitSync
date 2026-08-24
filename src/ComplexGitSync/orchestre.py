@@ -3812,6 +3812,69 @@ class ComplexGitSyncClient:
         """Clone a project tree from a ``.cgs`` source."""
         return self.clone_cgs(config_path, target_dir=target_dir, output_path=output_path)
 
+    def resolve_bootstrap_root(
+        self,
+        project_name: str,
+        *,
+        cgs_path: str | Path | None = None,
+    ) -> Path:
+        """Resolve the isolated CGSHOME a :meth:`bootstrap` run will clone into.
+
+        ``project_name`` always forms the final path segment, regardless of
+        the ``.cgs`` document's own ``project_name`` field, so the
+        destination is explicit rather than inferred. When *cgs_path* is
+        omitted, it defaults to a fresh ``$HOME/.cgs/CGS<timestamp>/``
+        directory (``$HOME/.cgs`` is created if missing) so a bootstrapped
+        project never lands inside the ComplexGitSync clone itself — running
+        ComplexGitSync standalone must never mix its own repo with the
+        project state it manages.
+        """
+        if not project_name:
+            raise ValueError("bootstrap requires a non-empty project_name.")
+        if cgs_path is not None:
+            cgspath = Path(cgs_path).expanduser().resolve()
+        else:
+            cgs_root = (Path.home() / ".cgs").expanduser().resolve()
+            cgs_root.mkdir(parents=True, exist_ok=True)
+            cgspath = cgs_root / f"CGS{datetime.now(UTC):%Y%m%d%H%M%S}"
+        return (cgspath / project_name).resolve()
+
+    def bootstrap(
+        self,
+        config_path: str | Path,
+        project_name: str,
+        *,
+        cgs_path: str | Path | None = None,
+    ) -> WorkingGitTree:
+        """Bootstrap a brand-new workspace tree from a standalone ComplexGitSync clone.
+
+        Unlike :meth:`initialise_cgs` (which assumes CGSHOME already exists,
+        with ComplexGitSync itself cloned inside it), this clones the full
+        tree — including the root — from scratch, so ComplexGitSync can be
+        run from its own clone (e.g. installed once, used across many
+        projects) without ever writing project state into it. See
+        :meth:`resolve_bootstrap_root` for how the destination is derived
+        from *project_name* and *cgs_path*.
+
+        Parameters
+        ----------
+        config_path:
+            Path to the ``.cgs`` authoring spec.
+        project_name:
+            Required name for the workspace; forms the last path segment of
+            CGSHOME regardless of the ``.cgs`` document's own project name.
+        cgs_path:
+            CGSPATH override. When *None*, defaults to a fresh
+            ``$HOME/.cgs/CGS<timestamp>/`` directory.
+        """
+        source_path = Path(config_path).resolve()
+        if source_path.suffix != ".cgs":
+            raise ValueError(
+                f"bootstrap requires a .cgs source, got '{source_path.suffix}' for {source_path!s}."
+            )
+        target_dir = self.resolve_bootstrap_root(project_name, cgs_path=cgs_path)
+        return self.clone_cgs(source_path, target_dir=target_dir)
+
     def restart(
         self,
         config_path: str | Path,

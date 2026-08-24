@@ -33,6 +33,10 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "status": "Summarize tree readiness and sync state.",
     "view-tree": "Render a topology-focused tree view in terminal.",
     "launch-release": "Check out a frozen release tag from a READY tree.",
+    "bootstrap": (
+        "Clone a brand-new project tree into an isolated CGSHOME, for running "
+        "ComplexGitSync from its own standalone clone (not nested inside the project)."
+    ),
     # Expert commands
     "purge": "Remove generated clone state for a .cgs workspace.",
     "validate": "Parse, normalize, and validate a .cgs or validate a .gts topology.",
@@ -306,6 +310,26 @@ def build_parser() -> argparse.ArgumentParser:
                 ),
             )
             subparser.set_defaults(handler=_handle_clone)
+        elif command_name == "bootstrap":
+            subparser.add_argument("source", help="Path to the local .cgs file to clone from.")
+            subparser.add_argument(
+                "project_name",
+                help=(
+                    "Required workspace name; forms the last path segment of CGSHOME "
+                    "regardless of the .cgs document's own project name."
+                ),
+            )
+            subparser.add_argument(
+                "--cgs-path",
+                dest="cgs_path",
+                help=(
+                    "CGSPATH override; CGSHOME becomes CGSPATH/<project_name>. Defaults "
+                    "to a fresh $HOME/.cgs/CGS<timestamp>/ directory (created if "
+                    "missing), so the project never lands inside the ComplexGitSync "
+                    "clone itself."
+                ),
+            )
+            subparser.set_defaults(handler=_handle_bootstrap)
         elif command_name == "remember":
             subparser.add_argument("source", help="Path to the local .cgs artefact to bind.")
             subparser.add_argument(
@@ -940,6 +964,26 @@ def _handle_clone(args: argparse.Namespace) -> int:
             source,
             target_dir=args.target_dir,
             output_path=getattr(args, "output_path", None),
+        ),
+    )
+
+
+def _handle_bootstrap(args: argparse.Namespace) -> int:
+    client = ComplexGitSyncClient()
+    project_root = client.resolve_bootstrap_root(
+        args.project_name,
+        cgs_path=getattr(args, "cgs_path", None),
+    )
+    return _run_with_logging(
+        command_name="bootstrap",
+        source=Path(args.source),
+        client=client,
+        project_root=project_root,
+        runner=lambda active_client, source: _execute_bootstrap(
+            active_client,
+            source,
+            project_name=args.project_name,
+            cgs_path=getattr(args, "cgs_path", None),
         ),
     )
 
@@ -1694,6 +1738,23 @@ def _execute_clone(
 ) -> int:
     print("git_command=git clone (executed per repo)")
     registry = client.clone(source_path, target_dir=target_dir, output_path=output_path)
+    tree_state = client.get_tree_state()
+    print(
+        f"{_format_tree_state_line(tree_state)} "
+        f"root={registry.get('root').absolute_path}"
+    )
+    return 0
+
+
+def _execute_bootstrap(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    project_name: str,
+    cgs_path: str | None = None,
+) -> int:
+    print("git_command=git clone (executed per repo)")
+    registry = client.bootstrap(source_path, project_name, cgs_path=cgs_path)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "

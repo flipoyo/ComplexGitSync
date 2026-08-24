@@ -653,6 +653,33 @@ class TestCloneAndLaunchReleaseLifecycle:
         tracked_modes = _run_git(root_clone, "ls-files", "--stage", "--", "deps/leaf")
         assert tracked_modes == ""
 
+    def test_bootstrap_clones_into_isolated_home_cgs_by_default(
+        self, local_two_repo_remotes, monkeypatch, tmp_path
+    ):
+        clone_spec = local_two_repo_remotes["clone_spec"]
+        fake_home = tmp_path / "fake-home"
+        fake_home.mkdir()
+        client = ComplexGitSyncClient()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        monkeypatch.setattr(
+            client,
+            "_build_remote_url",
+            lambda entry: (
+                str(local_two_repo_remotes["root_remote"])
+                if entry.name == "RootRepo"
+                else str(local_two_repo_remotes["leaf_remote"])
+            ),
+        )
+
+        registry = client.bootstrap(clone_spec, "demo-standalone")
+
+        assert registry.is_ready() is True
+        root_clone = registry.get("root").absolute_path
+        assert root_clone.name == "demo-standalone"
+        assert root_clone.parent.parent == (fake_home / ".cgs").resolve()
+        assert (root_clone / "deps" / "leaf" / ".git").exists()
+
     def test_pull_gts_clones_missing_local_repos(self, local_two_repo_remotes, monkeypatch, tmp_path):
         restore_root = tmp_path / "launch-workspace"
         restore_leaf = restore_root / "deps" / "leaf"

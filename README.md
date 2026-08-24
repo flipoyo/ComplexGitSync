@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.05
+# ComplexGitSync v0002.06
 
 ComplexGitSync is a command-line tool for synchronising a multi-repository Git
 workspace — a tree of nested repositories — from one local `.cgs`
@@ -33,18 +33,31 @@ supported development workflow.
 
 ## Quickstart
 
+ComplexGitSync locates its workspace through two variables, `CGSPATH` and
+`CGSHOME` (`CGSHOME = CGSPATH/<project-name>`) — but you don't need to set
+either by hand for the common cases below; both have defaults baked into
+`orchestre.py`, so the `export` lines only matter if you want to override
+them.
+
+- **Nested mode** (`initialise`, below): ComplexGitSync is cloned *inside*
+  the project tree it manages. Run from `$CGSHOME/ComplexGitSync` and
+  `CGSPATH` defaults to `../..` relative to the current directory — i.e. the
+  parent of `$CGSHOME` — with no export needed. Set `CGSPATH`/`CGSHOME`
+  explicitly only to point at a different location.
+- **Standalone mode** (`bootstrap`, further down): ComplexGitSync is cloned
+  once, on its own, and reused across projects — never nested inside any of
+  them. `CGSPATH` defaults to a fresh `$HOME/.cgs/CGS<timestamp>/`
+  directory (created automatically) so project state never lands inside the
+  ComplexGitSync clone itself.
+
 The example below uses the CGSil1 reference topology
-(<https://gitlab.com/CGS_test/CGSil1>). Commands run from
-`$CGSHOME/ComplexGitSync`; `CGSHOME=$CGSPATH/<project-name>`, and `CGSPATH`
-defaults to `../..` relative to the current directory.
+(<https://gitlab.com/CGS_test/CGSil1>) in nested mode.
 
 ```bash
 git clone https://gitlab.com/CGS_test/CGSil1.git
 cd CGSil1
 git clone https://github.com/flipoyo/ComplexGitSync.git
 cd ComplexGitSync
-export CGSPATH="${CGSPATH:-../..}"
-export CGSHOME="${CGSHOME:-$CGSPATH/CGSil1}"
 
 # Initialise: clone the tree from a .cgs spec, or restore it from a .gts snapshot
 pixi run cgitsync initialise ../CGSil1.cgs
@@ -68,11 +81,31 @@ pixi run cgitsync freeze release-2026.05
 Run any command with `--help` for its full option list (`--dry-run`, explicit
 `--gts` paths, `--project`/`--repo` direct authoring, etc.).
 
+### Standalone mode
+
+To use ComplexGitSync without cloning it inside the project it manages —
+e.g. one ComplexGitSync clone reused across many projects — use `bootstrap`
+instead of `initialise`. It requires an explicit `project_name` and clones
+the full tree, root included, into an isolated `CGSHOME` under
+`$HOME/.cgs/` by default:
+
+```bash
+git clone https://github.com/flipoyo/ComplexGitSync.git
+cd ComplexGitSync
+pixi run cgitsync bootstrap examples/CGSil1.cgs CGSil1
+```
+
+Pass `--cgs-path` to place `CGSHOME` somewhere else instead of the
+`$HOME/.cgs/CGS<timestamp>/` default. Every other command (`status`,
+`pull`, `freeze-release`, ...) then works the same way once `CGSHOME` is
+set (either export it, or run from inside the bootstrapped tree).
+
 ## Command reference
 
 | Group | Command | Description |
 |---|---|---|
 | Minimalist | `initialise` | Initialise a project tree: clone(.cgs) or restore state(.gts). |
+| Minimalist | `bootstrap` | Clone a brand-new project tree into an isolated CGSHOME, for running ComplexGitSync standalone (not nested inside the project). |
 | Minimalist | `clean-init` | Purge generated clone state, then initialise from a .cgs spec. |
 | Minimalist | `freeze-release` | Run add, commit, pull, push, and freeze from a READY tree. |
 | Minimalist | `freeze-release-force` | Run add, commit, pull-force, push, and freeze from a READY tree. |

@@ -1121,6 +1121,73 @@ def test_clone_command_output_path_is_forwarded(monkeypatch, capsys, tmp_path):
     assert captured_call["output_path"] == output_path
 
 
+def test_bootstrap_command_uses_client_method(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def resolve_bootstrap_root(self, project_name, *, cgs_path=None):
+            captured_call["resolve_project_name"] = project_name
+            captured_call["resolve_cgs_path"] = cgs_path
+            return tmp_path / "cgspath" / project_name
+
+        def bootstrap(self, source, project_name, *, cgs_path=None):
+            captured_call["source"] = Path(source)
+            captured_call["project_name"] = project_name
+            captured_call["cgs_path"] = cgs_path
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(
+                    absolute_path=tmp_path / "cgspath" / project_name
+                )
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    exit_code = main(["bootstrap", "project.cgs", "myproject"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["resolve_project_name"] == "myproject"
+    assert captured_call["source"] == Path("project.cgs").resolve()
+    assert captured_call["project_name"] == "myproject"
+    assert captured_call["cgs_path"] is None
+    assert "READY ready=true complete=true" in captured.out
+
+
+def test_bootstrap_command_forwards_cgs_path(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def resolve_bootstrap_root(self, project_name, *, cgs_path=None):
+            captured_call["resolve_cgs_path"] = cgs_path
+            return Path(cgs_path) / project_name
+
+        def bootstrap(self, source, project_name, *, cgs_path=None):
+            captured_call["cgs_path"] = cgs_path
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=Path(cgs_path) / project_name)
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    cgs_path = str(tmp_path / "custom")
+    exit_code = main(["bootstrap", "project.cgs", "myproject", "--cgs-path", cgs_path])
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["resolve_cgs_path"] == cgs_path
+    assert captured_call["cgs_path"] == cgs_path
+
+
 def test_initialise_command_output_path_is_forwarded(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
