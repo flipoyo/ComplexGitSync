@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s --max-time 10 \"https://api.github.com/repos/flipoyo/hydrological_twin\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('message','exists'\\), '| private=', d.get\\('private'\\), '| default_branch=', d.get\\('default_branch'\\)\\)\")",
+      "Bash(git ls-remote *)"
+    ]
+  }
+}
