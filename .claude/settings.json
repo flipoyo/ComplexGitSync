@@ -9,7 +9,8 @@
       "Bash(python3 -c ' *)",
       "Bash(grep -i \"cgs\\\\|\\\\.py$\\\\|readme\")",
       "Bash(latexmk -pdf -interaction=nonstopmode -halt-on-error MASTER.tex)",
-      "Bash(latexmk -c)"
+      "Bash(latexmk -c)",
+      "Bash(git checkout *)"
     ]
   }
 }

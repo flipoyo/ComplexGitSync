@@ -3,8 +3,29 @@
 Versions follow ``YYYY.XX``: ``XX`` increments on every release (01 -> 99),
 and once it would exceed 99, ``YYYY`` increments and ``XX`` resets to 01
 (e.g. ``0000.99 -> 0001.01``). ``pyproject.toml`` is the reference; the same
-value is written into ``pixi.toml``, ``src/ComplexGitSync/__init__.py``, and
-the README title.
+value is written into ``pixi.toml``, ``src/ComplexGitSync/__init__.py``, the
+README title, and the ``\\cgsversion`` LaTeX macro in the docs sources.
+
+Only two ``.tex`` files hardcode a version, by defining that macro:
+``docs/Setup/Shortcuts.tex`` (used by the live ``docs/MASTER.tex`` build and
+every ``docs/c_*.tex`` standalone chapter) and ``docs/preamble.tex`` (used
+only by ``docs/main.tex``). Every other ``.tex`` file --- ``MASTER.tex`` and
+all four ``c_*.tex`` title pages --- *references* ``\\cgsversion`` rather
+than a literal version, so updating the two definitions covers the whole
+docs tree.
+
+Note that ``docs/main.tex`` does not currently compile: it ``\\input``s
+``getting_started``/``user_guide``/``python_api``/``architecture``, none of
+which still exist under those names after the docs were restructured into
+``docs/Text/`` + ``docs/Setup/`` + ``docs/MASTER.tex`` (commit 280b75d).
+``docs/preamble.tex`` is kept in sync here anyway so the version is already
+correct if that build is ever repaired; it is cheap and cannot go stale
+silently.
+
+This script only rewrites sources. The tracked PDFs in ``docs/`` embed the
+version on their title pages, so rebuild them (``latexmk -pdf MASTER.tex``
+and each ``c_*.tex``, from within ``docs/``) and commit the result whenever
+a bump needs to be visible in the published PDFs.
 """
 
 from __future__ import annotations
@@ -13,6 +34,7 @@ import argparse
 import re
 import sys
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -20,11 +42,17 @@ PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 PIXI_TOML_PATH = REPO_ROOT / "pixi.toml"
 INIT_PATH = REPO_ROOT / "src" / "ComplexGitSync" / "__init__.py"
 README_PATH = REPO_ROOT / "README.md"
+DOCS_SHORTCUTS_PATH = REPO_ROOT / "docs" / "Setup" / "Shortcuts.tex"
+DOCS_PREAMBLE_PATH = REPO_ROOT / "docs" / "preamble.tex"
+DOCS_TEX_PATHS = (DOCS_SHORTCUTS_PATH, DOCS_PREAMBLE_PATH)
 
 VERSION_RE = re.compile(r"^\d{4}\.\d{2}$")
 _TOML_VERSION_FIELD_RE = re.compile(r'(^version = ")(\d{4}\.\d{2})(")', re.MULTILINE)
 _DUNDER_VERSION_FIELD_RE = re.compile(r'(^__version__ = ")(\d{4}\.\d{2})(")', re.MULTILINE)
 _README_TITLE_VERSION_RE = re.compile(r"(^# ComplexGitSync v)(\d{4}\.\d{2})($)", re.MULTILINE)
+_CGSVERSION_MACRO_RE = re.compile(
+    r"(^\\newcommand\{\\cgsversion\}\{)(\d{4}\.\d{2})(\})", re.MULTILINE
+)
 
 
 class VersionSyncError(RuntimeError):
@@ -72,12 +100,15 @@ def apply_version(
     pixi_toml_path: Path = PIXI_TOML_PATH,
     init_path: Path = INIT_PATH,
     readme_path: Path = README_PATH,
+    docs_tex_paths: Sequence[Path] = DOCS_TEX_PATHS,
 ) -> None:
-    """Write *new_version* into every synced manifest."""
+    """Write *new_version* into every synced manifest and docs source."""
     _substitute_version(pyproject_path, _TOML_VERSION_FIELD_RE, new_version)
     _substitute_version(pixi_toml_path, _TOML_VERSION_FIELD_RE, new_version)
     _substitute_version(init_path, _DUNDER_VERSION_FIELD_RE, new_version)
     _substitute_version(readme_path, _README_TITLE_VERSION_RE, new_version)
+    for docs_path in docs_tex_paths:
+        _substitute_version(docs_path, _CGSVERSION_MACRO_RE, new_version)
 
 
 def main(argv: list[str] | None = None) -> int:
