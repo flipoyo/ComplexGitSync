@@ -16,7 +16,12 @@
       "Bash(.pixi)",
       "Bash(/home/flipoyo/Programmes/ComplexGitSync/.pixi/envs/default/bin/python3.11 -)",
       "Bash(grep -n \"^Status:\\\\|^| 4 —\\\\|^### Deliverable$\" planning/Onboarding_DevPlanTicket.md)",
-      "Bash(cd /home/flipoyo/Programmes/ComplexGitSync *)"
+      "Bash(cd /home/flipoyo/Programmes/ComplexGitSync *)",
+      "Bash(latexmk -pdf -interaction=nonstopmode MASTER.tex)",
+      "Bash(latexmk -pdf -interaction=nonstopmode c_user_guide.tex)",
+      "Bash(latexmk -c MASTER.tex)",
+      "Bash(latexmk -c c_user_guide.tex)",
+      "Bash(git -C /home/flipoyo/Programmes/ComplexGitSync status --short docs)"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-flipoyo-Programmes-ComplexGitSync/27041bb0-a77c-49c5-8134-2bfcf9978ee1/scratchpad"

@@ -1,0 +1,228 @@
+% worked_examples.tex — step-by-step runbooks for the checked-in examples/*
+% topologies, ordered from the easiest to the most advanced. Companion to,
+% not a repeat of, the per-command reference in Text/user_guide.tex and the
+% narrative tutorials docs/tutorial_cgsi1.md / docs/tutorial_cawaqs.md: this
+% section gives the exact command sequence for each topology and explains
+% what changes between them, and points to those other documents for flag
+% semantics and full expected-output transcripts.
+% -----------------------------------------------------------------------
+\section{Worked Examples: From \texttt{CGSil1} to \texttt{cawaqs}}
+\label{sec:worked-examples}
+
+\cgspkg{} ships four checked-in \texttt{examples/} topologies. Run through
+them in order: each one adds exactly one new idea on top of the last, so
+together they form a guided path from the simplest possible \texttt{.cgs}
+to a real 19-repository build tree.
+
+\begin{center}
+\begin{tabular}{lllp{5.3cm}}
+\textbf{Level} & \textbf{Topology} & \textbf{Entry point} & \textbf{New idea introduced} \\
+\hline
+1 & \texttt{CGSil1} & hand-authored \texttt{.cgs} & minimal spec, name-matching auto-mount \\
+2a & \texttt{cawaqsviz} & hand-authored \texttt{.cgs} & explicit overrides on a real, irregular tree \\
+2b & \texttt{cawaqsviz} & \texttt{discover} & drafting a \texttt{.cgs} from a checkout, no authoring at all \\
+2c & \texttt{cawaqsviz} & \texttt{import-submodules} & migrating an existing git-submodules project in \\
+3 & \texttt{cawaqs} & hand-authored \texttt{.cgs} & the same minimal-field style as Level~1, at 19-repo scale \\
+\end{tabular}
+\end{center}
+
+Levels~2a--2c are not three different projects: they are three different
+\emph{starting points} for the same real project, \texttt{cawaqsviz}, chosen
+so this section can demonstrate every route \cgspkg{} offers for arriving
+at a working \texttt{.cgs} --- write it by hand, derive it from a checkout,
+or migrate it from an existing submodules setup --- without inventing a
+fourth toy topology to do it.
+
+% -----------------------------------------------------------------------
+\subsection{Level 1 --- \texttt{CGSil1}: the minimal synthetic topology}
+
+\texttt{CGSil1} is the easiest way into \cgspkg{}: a 4-repository,
+mixed-provider tree with every field left at its default. Its full
+\texttt{.cgs} and the rationale for each line are in \S\ref{chap:user-guide}
+``Local Authoring Spec'' above; \texttt{docs/tutorial\_cgsi1.md} carries the
+full transcript with expected output for every step. What follows is the
+command sequence itself.
+
+\begin{lstlisting}[language=bash]
+# 1. Fetch the root repo and cgitsync itself (nested mode: cgitsync is
+#    cloned inside the tree it will manage).
+$ git clone https://gitlab.com/CGS_test/CGSil1
+$ cd CGSil1 && git clone https://github.com/flipoyo/ComplexGitSync
+$ cd ComplexGitSync
+
+# 2. Check the spec offline, no network beyond parsing.
+$ pixi run cgitsync validate ../CGSil1.cgs
+
+# 3. Preview the topology before touching disk.
+$ pixi run cgitsync view-tree ../CGSil1.cgs
+
+# 4. Clone every declared repo and reach READY.
+$ pixi run cgitsync initialise ../CGSil1.cgs
+
+# 5. The ordinary git cycle, run tree-wide from here on --- no path
+#    argument needed, the .gts snapshot is discovered automatically.
+$ pixi run cgitsync pull
+$ pixi run cgitsync add
+$ pixi run cgitsync commit "my commit message"
+$ pixi run cgitsync push
+
+# 6. Minimalist release: stage, commit, pull, push, freeze in one call.
+$ pixi run cgitsync freeze-release v1.1.0 "release v1.1.0"
+
+# 7. Return to a frozen release at any later point.
+$ pixi run cgitsync launch-release v1.1.0
+\end{lstlisting}
+
+The only \texttt{.cgs} idea this level relies on is the
+\textbf{name-matching auto-mount}: because \texttt{CGSil1}'s repository
+identifier's last segment equals \texttt{project = "CGSil1"}, the root is
+inferred at \texttt{relative\_path = "."} with no override written anywhere.
+That convenience is exactly what stops being safe once a project's
+identifier and display name diverge --- which is where Level~2 picks up.
+
+% -----------------------------------------------------------------------
+\subsection{Level 2 --- \texttt{cawaqsviz}: three ways to the same \texttt{.cgs}}
+
+\texttt{cawaqsviz} (\url{https://gitlab.com/cawaqs/gviz/cawaqsviz}) is a
+real GitLab project, nested three path segments deep, with two GitHub
+children that were, until recently, plain git submodules. It has no
+\texttt{.cgs} of its own anywhere upstream. That makes it a good vehicle for
+showing all three ways \cgspkg{} can produce a working \texttt{.cgs} for a
+project it does not already control the source of, ordered here by how much
+the operator has to already know about the tree before running the command.
+
+\subsubsection{2a --- Write it by hand}
+
+The most explicit, and most error-prone, route: read the project's own
+\texttt{.gitmodules} and topology, then author \texttt{examples/cawaqsviz.cgs}
+directly. Its corrected content and the exact mistakes the first draft made
+(wrong nested-subgroup identifier, missing \texttt{relative\_path}
+overrides, missing \texttt{nested\_config = "disabled"}) are already spelled
+out in \S\ref{chap:user-guide} ``Local Authoring Spec''; this level is about
+running it, not re-deriving it:
+
+\begin{lstlisting}[language=bash]
+$ pixi run cgitsync validate examples/cawaqsviz.cgs
+$ pixi run cgitsync bootstrap examples/cawaqsviz.cgs cawaqsviz-demo
+$ pixi run cgitsync view-tree --search-dir <path bootstrap printed>
+\end{lstlisting}
+
+\texttt{bootstrap} is used instead of \texttt{initialise} here because, unlike
+\texttt{CGSil1} above, this example is not meant to have \cgspkg{} cloned
+inside the tree it manages --- see \texttt{bootstrap} in
+\S\ref{chap:user-guide} for why the two commands pick different default
+locations.
+
+\subsubsection{2b --- Derive it with \texttt{discover} (autodiscover mode)}
+
+The opposite route: start from nothing but a checkout, and let \cgspkg{}
+read the filesystem instead of writing the \texttt{.cgs} by hand. This is
+the route to prefer whenever a checkout is already available, since it
+cannot repeat the hand-authoring mistakes of 2a --- \texttt{relative\_path}
+falls out of the walk directly instead of being typed.
+
+\begin{lstlisting}[language=bash]
+# A plain clone leaves submodule paths empty; initialise them first so
+# discover has something to find at those paths.
+$ git clone https://gitlab.com/cawaqs/gviz/cawaqsviz cawaqsviz-scan
+$ cd cawaqsviz-scan && git submodule update --init --recursive
+
+# Dry run: report what discover sees, write nothing.
+$ pixi run cgitsync discover . --max-depth 3
+
+# Satisfied with the report: draft the .cgs.
+$ pixi run cgitsync discover . --write cawaqsviz-discovered.cgs
+$ pixi run cgitsync validate cawaqsviz-discovered.cgs
+\end{lstlisting}
+
+The draft reconstructs 2a's hand-corrected file almost field-for-field: the
+root at \texttt{relative\_path = "."}, both children at their real submodule
+paths (\texttt{external/HydrologicalTwinAlphaSeries},
+\texttt{docs/CWV\_user\_guide}) rather than their bare repo names, and
+\texttt{nested\_config = "disabled"} on both, since neither has a
+\texttt{.cgs} of its own --- \texttt{discover} derives that last fact from
+the filesystem rather than assuming it, so it cannot omit it the way 2a's
+first draft did. See \texttt{discover} in \S\ref{chap:user-guide} for exactly
+what is and is not reported (no network calls, unresolvable remotes are
+warned about and left out, never guessed at).
+
+\subsubsection{2c --- Migrate it with \texttt{import-submodules}}
+
+The historical route: before either \texttt{.cgs} above existed,
+\texttt{cawaqsviz} tracked both children as real git submodules. This mode
+starts from that state and converts it, rather than describing a tree that
+is assumed to already be plain clones.
+
+\begin{lstlisting}[language=bash]
+# Dry run against a real cawaqsviz checkout that still has submodules:
+# reports name, path, URL, branch per submodule; changes nothing.
+$ pixi run cgitsync import-submodules /path/to/cawaqsviz
+
+# Convert: drop the gitlinks, retire .gitmodules, extend .gitignore,
+# and emit the equivalent .cgs entries.
+$ pixi run cgitsync import-submodules /path/to/cawaqsviz \
+    --apply --output cawaqsviz_submodules.cgs
+
+# Review and commit the resulting working-tree changes as usual.
+$ cd /path/to/cawaqsviz && git status
+$ git commit -m "chore: retire git submodules in favour of ComplexGitSync"
+\end{lstlisting}
+
+The full before/after picture (index, \texttt{.gitmodules},
+\texttt{.gitignore}) and the automated test that proves it against fixture
+repositories are in \texttt{docs/tutorial\_cgsi1.md} \S6 --- this level is
+the condensed command sequence, not a restatement of that walkthrough.
+\texttt{import-submodules} and \texttt{discover} answer different questions
+about the same tree: \texttt{discover} reports what is \emph{checked out},
+\texttt{import-submodules} reads what git \emph{declares} in
+\texttt{.gitmodules} and acts on it --- a submodule path that was never
+initialised is invisible to 2b but not to 2c.
+
+\subsubsection{A shared caveat across all three}
+
+\cgspkg{} stores no credentials and has no private-repository
+authentication story (\S\ref{chap:user-guide} ``\texttt{import-submodules}''
+and ``\texttt{discover}''). All three routes above assume every repository
+in the tree is reachable anonymously or through credentials the ambient
+environment (\texttt{ssh-agent}, an HTTPS credential helper) already holds.
+
+% -----------------------------------------------------------------------
+\subsection{Level 3 --- \texttt{cawaqs}: the same minimal style, at scale}
+
+\texttt{cawaqs} is the most advanced example not because it needs more
+\texttt{.cgs} features than \texttt{cawaqsviz} --- it needs fewer --- but
+because it applies Level~1's minimal, no-override style to a real
+19-repository build tree (root + 17 physics libraries across five GitLab
+groups + one required build-tooling repo) instead of a synthetic 4-repo one.
+Every entry's on-disk layout already matches the default
+\texttt{relative\_path = <repo\_name>}, so, unlike \texttt{cawaqsviz}, not a
+single override is written anywhere in \texttt{examples/cawaqs.cgs} beyond
+the shared branch-fallback convention:
+
+\begin{lstlisting}[language=bash]
+$ pixi run cgitsync validate examples/cawaqs.cgs
+$ pixi run cgitsync bootstrap examples/cawaqs.cgs cawaqs-smoke-test
+$ pixi run cgitsync view-tree --search-dir <path bootstrap printed>
+
+# Move the whole 19-repo tree to a shared branch in one call, falling
+# back to main per-repo wherever that branch does not exist.
+$ pixi run cgitsync checkout my-feature-branch
+\end{lstlisting}
+
+Reaching \texttt{READY} here only replaces the \emph{repository-fetching and
+branch-selection} half of \texttt{cawaqs}'s own
+\texttt{make\_Cawaqs.sh}/\texttt{make\_Cawaqs\_from\_branches.sh} scripts.
+\cgspkg{} does not compile anything: the remaining
+\texttt{make -f Makefile} build step is still the user's job, and only
+succeeds from this tree with \texttt{LIB\_HYDROSYSTEM\_PATH} left unset or
+pointed at the bootstrapped root --- the alternative shared,
+decoupled install layout those scripts also support is out of scope for
+\cgspkg{}'s containment model. See \texttt{docs/tutorial\_cawaqs.md} for the
+full boundary between what \cgspkg{} does and does not own for this project.
+
+\texttt{discover} is not a route into \texttt{cawaqs.cgs} the way it is for
+\texttt{cawaqsviz}: the 17 library repositories never coexist inside one
+directory tree until \emph{after} a \texttt{.cgs} already lists them, so
+there is no single checkout for a filesystem walk to scan. Authoring this
+one from documented developer knowledge, as Level~2a does for
+\texttt{cawaqsviz}, is the only available route.
