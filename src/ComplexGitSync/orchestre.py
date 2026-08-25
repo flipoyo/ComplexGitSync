@@ -27,6 +27,7 @@ Builder / discovery functions defined here:
 
 from __future__ import annotations
 
+import configparser
 import hashlib
 import json
 import logging
@@ -79,6 +80,7 @@ from .git_tree import (
     _parse_enum,
     _parse_gts_node_type,
     _parse_optional_enum,
+    _update_gitignore_file,
     _validate_repo_shape,
     build_tree_state,
     format_project_tree,
@@ -2077,6 +2079,14 @@ class GitRunner:
         """Remove untracked files and directories in *repo_path*."""
         self._run("clean", "-fd", cwd=repo_path)
 
+    def rm_cached(self, repo_path: Path | str, path: str) -> None:
+        """Remove *path* from the index (``git rm --cached``), keeping the working tree.
+
+        Drops a tracked gitlink without deleting the child's working tree or
+        its ``.git`` directory, preserving any local history inside the child.
+        """
+        self._run("rm", "--cached", path, cwd=repo_path)
+
     def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
         """Create *tag_name* in *repo_path*."""
         self._run("tag", tag_name, cwd=repo_path)
@@ -2646,6 +2656,113 @@ class Orchestre:
 
 
 @dataclass(frozen=True, slots=True)
+class SubmoduleEntry:
+    """One git submodule entry parsed from ``.gitmodules``."""
+
+    name: str
+    path: str
+    url: str
+    branch: str
+
+
+@dataclass(frozen=True, slots=True)
+class ImportSubmodulesReport:
+    """Result returned by :meth:`ComplexGitSyncClient.import_submodules`.
+
+    Attributes
+    ----------
+    submodules:
+        All submodule entries found in ``.gitmodules``.
+    applied:
+        ``True`` when the conversion was actually performed (``apply=True``).
+    converted:
+        Names of submodules that were converted (same as ``submodules`` when
+        ``applied`` is ``True``; empty tuple when dry-run).
+    cgs_entries:
+        Authoring-form ``repos`` tables for the converted submodules — ready
+        to pass to :meth:`ComplexGitSyncClient.configure`.
+    """
+
+    submodules: tuple[SubmoduleEntry, ...]
+    applied: bool
+    converted: tuple[str, ...]
+    cgs_entries: tuple[dict, ...]
+
+
+def _parse_gitmodules(content: str) -> list[SubmoduleEntry]:
+    """Parse ``.gitmodules`` file content into :class:`SubmoduleEntry` objects.
+
+    Handles the standard git config INI-like format::
+
+        [submodule "name"]
+            path = some/path
+            url  = https://example.com/owner/repo.git
+            branch = main      # optional
+    """
+    parser = configparser.RawConfigParser()
+    parser.read_string(content)
+
+    result: list[SubmoduleEntry] = []
+    for section in parser.sections():
+        name_match = re.match(r'^submodule\s+"(.+)"$', section)
+        if name_match is None:
+            continue
+        name = name_match.group(1)
+        path = parser.get(section, "path", fallback="").strip()
+        url = parser.get(section, "url", fallback="").strip()
+        branch = parser.get(section, "branch", fallback="main").strip() or "main"
+        if path and url:
+            result.append(SubmoduleEntry(name=name, path=path, url=url, branch=branch))
+    return result
+
+
+def _url_to_repo_identifier(url: str) -> str:
+    """Convert a git remote URL to a ComplexGitSync ``provider:owner/repo`` identifier.
+
+    Supports HTTPS and SSH URL forms for GitHub and GitLab.  Custom-host
+    URLs are passed through as-is (using the bare hostname as the provider
+    token), which will fail :func:`~ComplexGitSync.cgs_format.parse_repo_id`
+    validation downstream if the provider is not registered — the caller is
+    responsible for handling that case.
+
+    Examples
+    --------
+    >>> _url_to_repo_identifier("https://github.com/owner/repo.git")
+    'github:owner/repo'
+    >>> _url_to_repo_identifier("git@gitlab.com:group/sub/repo.git")
+    'gitlab:group/sub/repo'
+    """
+    _PROVIDER_MAP = {
+        "github.com": "github",
+        "gitlab.com": "gitlab",
+        "codeberg.org": "codeberg",
+    }
+
+    url = url.strip()
+    if url.endswith(".git"):
+        url = url[:-4]
+
+    # SSH format: git@hostname:path/to/repo
+    ssh_match = re.match(r"^git@([^:]+):(.+)$", url)
+    if ssh_match:
+        hostname = ssh_match.group(1).lower()
+        path = ssh_match.group(2).strip("/")
+        provider = _PROVIDER_MAP.get(hostname, hostname)
+        return f"{provider}:{path}"
+
+    # HTTPS/HTTP format: https://hostname/path/to/repo
+    parsed = urlsplit(url)
+    if parsed.scheme in ("https", "http") and parsed.netloc:
+        hostname = parsed.netloc.lower()
+        path = parsed.path.strip("/")
+        provider = _PROVIDER_MAP.get(hostname, hostname)
+        return f"{provider}:{path}"
+
+    # Unknown format — return stripped URL and let downstream validation fail
+    return url
+
+
+@dataclass(frozen=True, slots=True)
 class GitignoreSyncEntry:
     """One repo whose ``.gitignore`` was created or modified by ``sync_gitignore()``."""
 
@@ -2733,6 +2850,193 @@ class ComplexGitSyncClient:
         if output_path is not None:
             document.to_toml(Path(output_path))
         return document
+
+    def import_submodules(
+        self,
+        repo_root: str | Path,
+        *,
+        apply: bool = False,
+        output: str | Path | None = None,
+    ) -> ImportSubmodulesReport:
+        """Report or convert git submodules in *repo_root* to plain nested clones.
+
+        Parses ``<repo_root>/.gitmodules`` and, for each declared submodule:
+
+        * **Dry-run** (``apply=False``, the default): returns an
+          :class:`ImportSubmodulesReport` describing what would change
+          — submodule names, paths, URLs, branches, and the ``.cgs`` entries
+          that would be generated — without touching the repository.
+        * **Apply** (``apply=True``): for each submodule in turn —
+
+          1. Verifies the working tree at ``<repo_root>/<path>`` is clean
+             (``git status --porcelain`` empty) and raises
+             :exc:`~ComplexGitSync.errors.GitSyncError` if it is not —
+             the same check the preflight machinery in ``operations.py``
+             performs for every mutation operation.
+          2. Runs ``git rm --cached <path>`` in *repo_root*, dropping the
+             gitlink from the index while preserving the child's working
+             tree and ``.git`` directory (no re-clone, no local history
+             lost).
+          3. Removes the submodule's stanza from ``.gitmodules`` (deletes
+             the file entirely when all stanzas are removed), then stages
+             the updated file.
+          4. Calls the existing :func:`~ComplexGitSync.git_tree._update_gitignore_file`
+             helper (``git_tree.py``) to append ``<path>`` to
+             ``<repo_root>/.gitignore`` — the same step the ``.gitignore``
+             lifecycle sync performs for every parent-child relationship.
+
+        After applying, the converted submodule entries are available as
+        ``report.cgs_entries``.  When *output* is given, a validated
+        :class:`~ComplexGitSync.cgs_format.CgsDocument` containing those
+        entries is written to that path — suitable for manual integration
+        into the project's main ``.cgs`` file.
+
+        Parameters
+        ----------
+        repo_root:
+            Absolute (or resolvable) path to the local git repository that
+            contains a ``.gitmodules`` file.
+        apply:
+            When ``False`` (default) the method is a pure read: it reports
+            what would change without modifying anything. Set to ``True`` to
+            perform the conversion.
+        output:
+            Optional path for the emitted ``.cgs`` document.  Only written
+            when *apply* is ``True``.  Ignored in dry-run mode.
+
+        Returns
+        -------
+        ImportSubmodulesReport
+            Always returned, whether or not *apply* was set.
+        """
+        root = Path(repo_root).resolve()
+        gitmodules_path = root / ".gitmodules"
+
+        if not gitmodules_path.is_file():
+            self._log_event(
+                "import_submodules_no_gitmodules",
+                repo_root=str(root),
+                apply=apply,
+            )
+            return ImportSubmodulesReport(
+                submodules=(),
+                applied=False,
+                converted=(),
+                cgs_entries=(),
+            )
+
+        content = gitmodules_path.read_text(encoding="utf-8")
+        submodules = tuple(_parse_gitmodules(content))
+
+        self._log_event(
+            "import_submodules_start",
+            repo_root=str(root),
+            submodule_count=len(submodules),
+            apply=apply,
+        )
+
+        if not submodules:
+            return ImportSubmodulesReport(
+                submodules=(),
+                applied=False,
+                converted=(),
+                cgs_entries=(),
+            )
+
+        # Build .cgs entries from submodule data (used for both dry-run report
+        # and the apply path).
+        cgs_entries: list[dict] = []
+        for sub in submodules:
+            try:
+                identifier = _url_to_repo_identifier(sub.url)
+            except Exception:
+                identifier = sub.url  # leave invalid; downstream validate() will catch it
+            entry: dict = {
+                "repository": identifier,
+                "relative_path": sub.path,
+                "fallback_branch": sub.branch,
+                "nested_config": "disabled",
+            }
+            cgs_entries.append(entry)
+
+        if not apply:
+            return ImportSubmodulesReport(
+                submodules=submodules,
+                applied=False,
+                converted=(),
+                cgs_entries=tuple(cgs_entries),
+            )
+
+        # --- apply=True: perform the conversion ---
+
+        # 1. Preflight: every child working tree must be clean.
+        for sub in submodules:
+            child_path = root / sub.path
+            if not child_path.exists():
+                continue
+            dirty_lines = self.git_runner.status_porcelain(child_path)
+            if dirty_lines:
+                raise GitSyncError(
+                    f"import-submodules preflight failed: submodule '{sub.name}' "
+                    f"at '{sub.path}' has uncommitted changes — stage or stash them first.\n"
+                    + "\n".join(dirty_lines)
+                )
+
+        # 2. Per submodule: git rm --cached <path>, update .gitmodules, update .gitignore
+        converted: list[str] = []
+        for sub in submodules:
+            self.git_runner.rm_cached(root, sub.path)
+            converted.append(sub.name)
+            _update_gitignore_file(root, [sub.path])
+            self._log_event(
+                "import_submodules_converted",
+                repo_root=str(root),
+                submodule_name=sub.name,
+                submodule_path=sub.path,
+                submodule_url=sub.url,
+                submodule_branch=sub.branch,
+            )
+
+        # 3. Rewrite / remove .gitmodules — rebuild from remaining (unconverted)
+        #    stanzas. Since we convert ALL submodules here, the file is removed.
+        remaining_entries = [
+            s for s in _parse_gitmodules(content) if s.name not in converted
+        ]
+        if remaining_entries:
+            # Write back a .gitmodules with only the unconverted stanzas
+            cfg = configparser.RawConfigParser()
+            for sub in remaining_entries:
+                section = f'submodule "{sub.name}"'
+                cfg.add_section(section)
+                cfg.set(section, "path", sub.path)
+                cfg.set(section, "url", sub.url)
+                if sub.branch != "main":
+                    cfg.set(section, "branch", sub.branch)
+            import io
+            buf = io.StringIO()
+            cfg.write(buf)
+            gitmodules_path.write_text(buf.getvalue(), encoding="utf-8")
+            self.git_runner.stage_path(root, ".gitmodules")
+        else:
+            # All submodules converted — remove .gitmodules entirely
+            self.git_runner._run("rm", "--cached", ".gitmodules", cwd=root)
+            gitmodules_path.unlink(missing_ok=True)
+
+        # 4. Emit .cgs document when an output path is specified.
+        if output is not None:
+            project_name = root.name
+            self.configure(
+                project_name,
+                cgs_entries,
+                output_path=output,
+            )
+
+        return ImportSubmodulesReport(
+            submodules=submodules,
+            applied=True,
+            converted=tuple(converted),
+            cgs_entries=tuple(cgs_entries),
+        )
 
     def _sync_gitignore_lifecycle(
         self,
