@@ -1,0 +1,26 @@
+# CaWaQS tracks a shared branch name across the whole tree and falls back to
+# main when a dependency repo does not carry that branch.
+
+project = { name = "cawaqs", default_branch = "main" }
+
+repos = [
+    { repository = "gitlab:cawaqs/cawaqs", relative_path = ".", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libgc", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libpc", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libts", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libprint", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libio", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libchronos", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libspa", fallback_branch = "main" },
+    { repository = "gitlab:ghydro/libfp", fallback_branch = "main" },
+    { repository = "gitlab:ghydro/libnsat", fallback_branch = "main" },
+    { repository = "gitlab:ghydro/libhyd", fallback_branch = "main" },
+    { repository = "gitlab:ghydro/libaq", fallback_branch = "main" },
+    { repository = "gitlab:ghydro/libwet", fallback_branch = "main" },
+    { repository = "gitlab:gmesh/librsv", fallback_branch = "main" },
+    { repository = "gitlab:gmesh/libmesh", fallback_branch = "main" },
+    { repository = "gitlab:gtransp/libttc", fallback_branch = "main" },
+    { repository = "gitlab:gtransp/libseb", fallback_branch = "main" },
+    { repository = "gitlab:gmanagement/libap", fallback_branch = "main" },
+    { repository = "gitlab:gutil/scripts", fallback_branch = "main", nested_config = "disabled" },
+]
