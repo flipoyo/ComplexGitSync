@@ -208,6 +208,45 @@ not part of the \texttt{.cgs}/\texttt{.gts} project spec, and is preserved
 (not deleted) by \texttt{purge}/\texttt{clean-init}.
 
 
+\section{Repository Discovery: \texttt{discover\_repos}}
+
+\texttt{discover\_repos(root\_dir=None, *, max\_depth=5, output=None)} scans a
+directory for git repositories already checked out on disk and drafts a
+\texttt{.cgs} from what it finds --- the entry point for adopting a project
+that exists but has no specification yet:
+
+\begin{lstlisting}[language=python]
+from ComplexGitSync.orchestre import ComplexGitSyncClient
+
+client = ComplexGitSyncClient()
+
+# Read-only scan - nothing is cloned, fetched, or modified
+report = client.discover_repos("/path/to/checkout")
+for repo in report.repos:
+    print(repo.relative_path, repo.identifier, repo.branch)
+
+for warning in report.warnings:
+    print("unresolved:", warning)
+
+# Write the draft out (same call, with an output path)
+report = client.discover_repos("/path/to/checkout", output="draft.cgs")
+\end{lstlisting}
+
+The method returns a \texttt{DiscoverReport} dataclass with fields
+\texttt{root} (the scanned directory), \texttt{repos} (a tuple of
+\texttt{DiscoveredRepo}), \texttt{cgs\_entries} (authoring-form repo tables
+ready for \texttt{configure()}), \texttt{warnings}, and
+\texttt{project\_name}.  Each \texttt{DiscoveredRepo} carries
+\texttt{relative\_path}, \texttt{absolute\_path}, \texttt{remote\_url},
+\texttt{identifier}, \texttt{branch}, and \texttt{has\_cgs}.
+
+Repository addresses are resolved through the existing
+\texttt{parse\_repo\_id()} grammar; a repository with no \texttt{origin} or
+an unrecognised provider is reported in \texttt{warnings} and omitted from
+\texttt{cgs\_entries} rather than guessed at.  Passing \texttt{output}
+raises \texttt{GitSyncError} when nothing resolvable was found, so an empty
+draft is never written.
+
 \section{Submodule Migration: \texttt{import\_submodules}}
 
 \texttt{import\_submodules(repo\_root, *, apply=False, output=None)} converts
@@ -218,12 +257,12 @@ from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 client = ComplexGitSyncClient()
 
-# Dry run — inspect without changing anything
+# Dry run - inspect without changing anything
 report = client.import_submodules("/path/to/repo")
 for sub in report.submodules:
     print(sub.name, sub.path, sub.url)
 
-# Apply — convert and optionally emit a .cgs snippet
+# Apply - convert and optionally emit a .cgs snippet
 report = client.import_submodules(
     "/path/to/repo",
     apply=True,

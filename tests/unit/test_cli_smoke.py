@@ -2236,3 +2236,66 @@ def test_readme_documents_every_cli_command():
 
     missing = [command for command in _PLANNED_COMMANDS if f"`{command}`" not in readme_text]
     assert not missing, f"README.md command reference is missing: {missing}"
+
+
+def test_discover_command_uses_client_method(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def discover_repos(self, root, *, max_depth=5, output=None):
+            captured_call["root"] = Path(root)
+            captured_call["max_depth"] = max_depth
+            captured_call["output"] = output
+            return SimpleNamespace(
+                root=Path(root),
+                project_name="demo",
+                repos=(
+                    SimpleNamespace(
+                        relative_path=".",
+                        absolute_path=Path(root),
+                        remote_url="https://github.com/owner/demo.git",
+                        identifier="github:owner/demo",
+                        branch="main",
+                        has_cgs=False,
+                    ),
+                ),
+                cgs_entries=({"repository": "github:owner/demo", "relative_path": "."},),
+                warnings=(),
+            )
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    exit_code = main(["discover", str(tmp_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["root"] == tmp_path.resolve()
+    assert captured_call["output"] is None
+    assert "github:owner/demo" in captured.out
+    assert "Dry run" in captured.out
+
+
+def test_discover_command_forwards_write_and_max_depth(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def discover_repos(self, root, *, max_depth=5, output=None):
+            captured_call["max_depth"] = max_depth
+            captured_call["output"] = output
+            return SimpleNamespace(
+                root=Path(root),
+                project_name="demo",
+                repos=(),
+                cgs_entries=(),
+                warnings=(),
+            )
+
+    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+
+    out = str(tmp_path / "draft.cgs")
+    exit_code = main(["discover", str(tmp_path), "--write", out, "--max-depth", "2"])
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["max_depth"] == 2
+    assert captured_call["output"] == out

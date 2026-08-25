@@ -1,8 +1,10 @@
 # Onboarding_DevPlanTicket — Adopting `cawaqsviz` and `cawaqs` into ComplexGitSync
 
-Status: **Phase 1 implemented, tested, and documented (2026-08-25).**
-Phases 2 and 4 planned next; Phase 3 is being handled directly by GitHub
-Copilot, outside this ticket. Superseded and replaces the earlier
+Status: **All phases complete (2026-08-25).** Phase 1 (corrected
+`examples/cawaqsviz.cgs`), Phase 2 (`import-submodules`), and Phase 4
+(`discover`) are implemented, tested, and documented; Phase 3 (`cawaqs.cgs`)
+was handled directly by GitHub Copilot, outside this ticket.
+Superseded and replaces the earlier
 `ImprovementPlan_Onboarding.md` draft, which was written without inspecting
 the two real target repositories. Every fact below tagged **[verified
 2026-08-24]** was checked live against `gitlab.com`/`github.com` (GitLab
@@ -649,7 +651,27 @@ against reality rather than just theory:
   `cawaqsviz`/`HydrologicalTwinAlphaSeries` maintainers actually want that
   third-level submodule migrated too.
 
-### Deliverable
+### Deliverable — **implemented 2026-08-25**
+
+Shipped as specified, plus three things the build surfaced that the plan
+had not anticipated:
+
+- **A repository with no commits yet crashes `current_branch()`.** A fresh
+  `git init` has no resolvable `HEAD`, so the first implementation aborted
+  the whole scan on one such directory. Now reported as branch-less, the
+  same as a detached HEAD. Found by the test suite, not by inspection.
+- **`nested_config` is derived, not assumed.** A discovered repository that
+  contains no `*.cgs` of its own is pinned to `"disabled"`. This is
+  determined *from the filesystem*, not guessed — and it is precisely the
+  omission that made Phase 1's first corrected draft fail to clone
+  (Phase 1, Finding 6). A discovered draft therefore cannot repeat that
+  mistake.
+- **`docs/MASTER.tex` and `docs/c_api_python.tex` did not compile.**
+  Pre-existing breakage from Phase 2's docs: Unicode em-dashes inside
+  `lstlisting` blocks, which `inputenc` rejects in verbatim. Both tracked
+  PDFs had been un-rebuildable since. Fixed here (all five doc targets now
+  build) because the new "rebuild the docs before committing" rule in
+  `CLAUDE.md` is unenforceable while the build is broken.
 
 - **Python API:** `ComplexGitSyncClient.discover_repos(root_dir, *,
   max_depth=...)` — walk `root_dir`, stop descending once a `.git` is
@@ -702,4 +724,4 @@ example.
 | 1 — fix + prove `cawaqsviz.cgs` | 1 | — | No | **Done — 2026-08-25** |
 | 2 — `import-submodules` | 1 | 2's *acceptance test* uses 1's output | Yes, once `--apply` is run for real (deferred decision) | High |
 | 3 — author `cawaqs.cgs` | 2 | — | No | High — can run in parallel with 1/2 |
-| 4 — `cgitsync discover` | 1 | Its acceptance test reproduces Phase 1's output, but it can be built independently | No | High — sandbox-verified against the real `cawaqsviz` checkout, not hypothetical |
+| 4 — `cgitsync discover` | 1 | Its acceptance test reproduces Phase 1's output, but it can be built independently | No | **Done — 2026-08-25** |

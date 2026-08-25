@@ -10,7 +10,16 @@
       "Bash(grep -i \"cgs\\\\|\\\\.py$\\\\|readme\")",
       "Bash(latexmk -pdf -interaction=nonstopmode -halt-on-error MASTER.tex)",
       "Bash(latexmk -c)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(.pixi/envs/default/bin/python3.11 -c ' *)",
+      "Bash(grep -n \"parse_repo_id\\(\\) in \\\\`cgs_format\" -B3 -A8 CLAUDE.md)",
+      "Bash(.pixi)",
+      "Bash(/home/flipoyo/Programmes/ComplexGitSync/.pixi/envs/default/bin/python3.11 -)",
+      "Bash(grep -n \"^Status:\\\\|^| 4 —\\\\|^### Deliverable$\" planning/Onboarding_DevPlanTicket.md)",
+      "Bash(cd /home/flipoyo/Programmes/ComplexGitSync *)"
+    ],
+    "additionalDirectories": [
+      "/tmp/claude-1000/-home-flipoyo-Programmes-ComplexGitSync/27041bb0-a77c-49c5-8134-2bfcf9978ee1/scratchpad"
     ]
   }
 }
