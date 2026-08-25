@@ -554,6 +554,22 @@ class TestCgsDocumentValid:
         assert doc.project_name == "HydrologicalTwinAlphaSeries"
         assert len(doc.repos) == 2
 
+    def test_from_toml_parses_cawaqs_example(self):
+        examples = Path(__file__).parent.parent.parent / "examples"
+        doc = CgsDocument.from_toml(examples / "cawaqs.cgs")
+
+        assert doc.project_name == "cawaqs"
+        assert doc.default_branch == "main"
+        assert len(doc.repos) == 19
+        assert doc.repos[0]["gitprovider"] == "gitlab"
+        assert doc.repos[0]["project_owner_name"] == "cawaqs"
+        assert doc.repos[0]["project_name"] == "cawaqs"
+        assert doc.repos[0]["relative_path"] == "."
+        assert doc.repos[-1]["project_owner_name"] == "gutil"
+        assert doc.repos[-1]["project_name"] == "scripts"
+        assert doc.repos[-1]["nested_config"] == "disabled"
+        assert all(repo["fallback_branch"] == "main" for repo in doc.repos)
+
     def test_all_cgs_examples_use_shorthand_authoring_shape(self):
         examples = Path(__file__).parent.parent.parent / "examples"
 
