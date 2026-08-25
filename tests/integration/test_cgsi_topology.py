@@ -653,6 +653,53 @@ class TestCloneAndLaunchReleaseLifecycle:
         tracked_modes = _run_git(root_clone, "ls-files", "--stage", "--", "deps/leaf")
         assert tracked_modes == ""
 
+    def test_cawaqsviz_example_clones_into_corrected_nested_layout(self, monkeypatch, tmp_path):
+        """Onboarding_DevPlanTicket.md Phase 1 acceptance test.
+
+        Loads the real shipped examples/cawaqsviz.cgs (not a synthetic
+        copy) and routes its three declared repos to local bare-repo
+        fixtures, proving the corrected topology actually reaches READY
+        with each child physically nested at the exact relative_path
+        cawaqsviz's own code expects (external/... and docs/...), not the
+        flat/wrong layout the file described before this phase's fix.
+        """
+        examples_dir = Path(__file__).resolve().parents[2] / "examples"
+        cawaqsviz_cgs = examples_dir / "cawaqsviz.cgs"
+
+        root_remote, _ = _seed_remote_repo(tmp_path, "cawaqsviz-root")
+        htas_remote, _ = _seed_remote_repo(tmp_path, "htas")
+        guide_remote, _ = _seed_remote_repo(tmp_path, "user-guide")
+
+        clone_target = tmp_path / "workspace"
+        client = ComplexGitSyncClient()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            client,
+            "_build_remote_url",
+            lambda entry: {
+                "cawaqsviz": str(root_remote),
+                "HydrologicalTwinAlphaSeries": str(htas_remote),
+                "user_guide_CaWaQS-Viz": str(guide_remote),
+            }[entry.project_name],
+        )
+
+        registry = client.clone_cgs(cawaqsviz_cgs, target_dir=clone_target)
+
+        assert registry.is_ready() is True
+        root_entry = registry.get("root")
+        assert root_entry.absolute_path == clone_target
+        htas_clone = clone_target / "external" / "HydrologicalTwinAlphaSeries"
+        guide_clone = clone_target / "docs" / "CWV_user_guide"
+        assert (htas_clone / ".git").exists()
+        assert (guide_clone / ".git").exists()
+        # Plain independent clones, not gitlinks, per the project's own
+        # nested-repo model (DevPlanTicket_gitignore.md).
+        tracked_modes = _run_git(
+            clone_target, "ls-files", "--stage", "--",
+            "external/HydrologicalTwinAlphaSeries", "docs/CWV_user_guide",
+        )
+        assert tracked_modes == ""
+
     def test_bootstrap_clones_into_isolated_home_cgs_by_default(
         self, local_two_repo_remotes, monkeypatch, tmp_path
     ):
@@ -846,3 +893,166 @@ class TestImportSubmodules:
         assert report.submodules == ()
         assert report.applied is False
         assert report.converted == ()
+
+
+class TestDiscoverRepos:
+    """Integration tests for ComplexGitSyncClient.discover_repos() (Phase 4)."""
+
+    def _init_repo_with_remote(self, path: Path, remote_url: str, branch: str = "main") -> Path:
+        """Create a working repo at *path* with *remote_url* configured as origin."""
+        path.mkdir(parents=True, exist_ok=True)
+        _run_git(path, "init", "-b", branch)
+        _run_git(path, "config", "user.email", "integration@complexgitsync.test")
+        _run_git(path, "config", "user.name", "ComplexGitSync Integration")
+        (path / "README.md").write_text(f"{path.name}\n", encoding="utf-8")
+        _run_git(path, "add", "README.md")
+        _run_git(path, "commit", "-m", "initial")
+        _run_git(path, "remote", "add", "origin", remote_url)
+        return path
+
+    def test_discover_reproduces_phase1_cawaqsviz_topology(self, tmp_path):
+        """Acceptance test: a scan must rediscover Phase 1's hand-derived answer.
+
+        Phase 1 worked the cawaqsviz topology out by hand from .gitmodules and
+        got it wrong twice before it was right (wrong owner path, wrong repo
+        name, missing relative_paths, missing nested_config). Scanning a
+        checkout of the same shape must produce that same corrected topology
+        without any of those judgement calls.
+        """
+        root = tmp_path / "cawaqsviz"
+        self._init_repo_with_remote(root, "https://gitlab.com/cawaqs/gviz/cawaqsviz.git")
+        self._init_repo_with_remote(
+            root / "external" / "HydrologicalTwinAlphaSeries",
+            "https://github.com/flipoyo/HydrologicalTwinAlphaSeries.git",
+        )
+        self._init_repo_with_remote(
+            root / "docs" / "CWV_user_guide",
+            "https://github.com/flipoyo/user_guide_CaWaQS-Viz",
+        )
+
+        report = ComplexGitSyncClient().discover_repos(root)
+
+        assert report.warnings == ()
+        assert report.project_name == "cawaqsviz"
+        assert [r.relative_path for r in report.repos] == [
+            ".",
+            "docs/CWV_user_guide",
+            "external/HydrologicalTwinAlphaSeries",
+        ]
+        by_path = {e["relative_path"]: e for e in report.cgs_entries}
+        assert by_path["."]["repository"] == "gitlab:cawaqs/gviz/cawaqsviz"
+        assert (
+            by_path["external/HydrologicalTwinAlphaSeries"]["repository"]
+            == "github:flipoyo/HydrologicalTwinAlphaSeries"
+        )
+        assert (
+            by_path["docs/CWV_user_guide"]["repository"]
+            == "github:flipoyo/user_guide_CaWaQS-Viz"
+        )
+        # None of these fixtures carries its own .cgs, so every entry must be
+        # pinned to nested_config="disabled" — the exact omission that made
+        # Phase 1's first corrected draft fail to clone.
+        for entry in report.cgs_entries:
+            assert entry["nested_config"] == "disabled"
+
+    def test_discovered_draft_is_a_valid_cgs_document(self, tmp_path):
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
+        self._init_repo_with_remote(root / "libs" / "dep", "git@gitlab.com:group/sub/dep.git")
+        out = tmp_path / "drafted.cgs"
+
+        ComplexGitSyncClient().discover_repos(root, output=out)
+
+        # The draft must survive the real validation pipeline, not just look right.
+        tree_state = ComplexGitSyncClient().validate(out)
+        assert tree_state.registry_complete is True
+        text = out.read_text(encoding="utf-8")
+        assert "github:owner/proj" in text
+        assert "gitlab:group/sub/dep" in text
+
+    def test_ssh_remote_and_detached_head_are_handled(self, tmp_path):
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "git@github.com:owner/proj.git")
+        head = _run_git(root, "rev-parse", "HEAD")
+        _run_git(root, "checkout", "--detach", head)
+
+        report = ComplexGitSyncClient().discover_repos(root)
+
+        assert report.repos[0].identifier == "github:owner/proj"
+        assert report.repos[0].branch is None
+        # A detached HEAD yields no branch, so no fallback_branch is invented.
+        assert "fallback_branch" not in report.cgs_entries[0]
+
+    def test_repo_without_origin_is_warned_not_guessed(self, tmp_path):
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
+        orphan = root / "vendored"
+        orphan.mkdir()
+        _run_git(orphan, "init", "-b", "main")
+
+        report = ComplexGitSyncClient().discover_repos(root)
+
+        assert len(report.repos) == 2
+        assert len(report.cgs_entries) == 1
+        assert len(report.warnings) == 1
+        assert "vendored" in report.warnings[0]
+        assert "no 'origin' remote" in report.warnings[0]
+
+    def test_unrecognised_provider_is_warned_not_guessed(self, tmp_path):
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://git.example.com/team/tool.git")
+
+        report = ComplexGitSyncClient().discover_repos(root)
+
+        assert report.cgs_entries == ()
+        assert len(report.warnings) == 1
+        assert "does not map to a known" in report.warnings[0]
+
+    def test_uninitialised_submodule_directories_are_not_reported(self, tmp_path):
+        """A clone without --recurse-submodules leaves empty dirs; report nothing."""
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
+        (root / "external" / "NotCheckedOut").mkdir(parents=True)
+        (root / ".gitmodules").write_text(
+            '[submodule "external/NotCheckedOut"]\n'
+            "\tpath = external/NotCheckedOut\n"
+            "\turl = https://github.com/owner/notcheckedout.git\n",
+            encoding="utf-8",
+        )
+
+        report = ComplexGitSyncClient().discover_repos(root)
+
+        # discover reads the filesystem, never .gitmodules — that is
+        # import-submodules' job.
+        assert [r.relative_path for r in report.repos] == ["."]
+
+    def test_max_depth_bounds_the_walk(self, tmp_path):
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
+        self._init_repo_with_remote(root / "a" / "b" / "deep", "https://github.com/owner/deep.git")
+
+        shallow = ComplexGitSyncClient().discover_repos(root, max_depth=2)
+        deep = ComplexGitSyncClient().discover_repos(root, max_depth=3)
+
+        assert [r.relative_path for r in shallow.repos] == ["."]
+        assert [r.relative_path for r in deep.repos] == [".", "a/b/deep"]
+
+    def test_discover_is_read_only(self, tmp_path):
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
+        before = _run_git(root, "status", "--porcelain")
+
+        ComplexGitSyncClient().discover_repos(root)
+
+        assert _run_git(root, "status", "--porcelain") == before
+        assert not list(root.glob("*.cgs"))
+
+    def test_write_refuses_when_nothing_resolvable(self, tmp_path):
+        root = tmp_path / "empty"
+        root.mkdir()
+        out = tmp_path / "out.cgs"
+
+        with pytest.raises(GitSyncError, match="nothing to write"):
+            ComplexGitSyncClient().discover_repos(root, output=out)
+
+        assert not out.exists()

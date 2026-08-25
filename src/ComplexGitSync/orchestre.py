@@ -46,7 +46,7 @@ from urllib.parse import urlsplit
 import tomli_w
 
 from . import __version__ as CGS_VERSION
-from .cgs_format import CgsDocument
+from .cgs_format import CgsDocument, parse_repo_id
 from .config_document import ConfigDocument
 from .errors import (
     ConfigValidationError,
@@ -1913,6 +1913,20 @@ class GitRunner:
         """Create or reset the current branch to *branch*."""
         self._run("checkout", "-B", branch, cwd=repo_path)
 
+    def remote_get_url(self, repo_path: Path | str, remote_name: str = "origin") -> str | None:
+        """Return the URL configured for *remote_name*, or ``None`` when unset.
+
+        Used by :meth:`ComplexGitSyncClient.discover_repos` to recover a
+        checked-out repository's upstream address. A repository with no such
+        remote is a normal, reportable condition — not an error — so the
+        missing case is returned as ``None`` rather than raised.
+        """
+        try:
+            url = self._run("remote", "get-url", remote_name, cwd=repo_path).stdout.strip()
+        except GitSyncError:
+            return None
+        return url or None
+
     def configure_remote(self, repo_path: Path | str, remote_name: str, remote_url: str) -> None:
         """Add or update *remote_name* in *repo_path*."""
         try:
@@ -2762,6 +2776,113 @@ def _url_to_repo_identifier(url: str) -> str:
     return url
 
 
+DEFAULT_DISCOVER_MAX_DEPTH = 5
+
+
+def _walk_git_repositories(root: Path, *, max_depth: int) -> list[Path]:
+    """Return every directory under *root* that holds a ``.git``, root first.
+
+    Used by :meth:`ComplexGitSyncClient.discover_repos`. Two rules matter:
+
+    * A ``.git`` **file** counts, not just a directory. Git stores a
+      submodule's real git directory under ``<parent>/.git/modules/<name>``
+      and leaves a ``.git`` *file* in the working copy pointing at it.
+    * ``.git`` is never descended into, so those ``modules/<name>``
+      directories cannot be mistaken for a second copy of a repository that
+      was already reported from its working-tree location.
+
+    Depth is counted from *root* (itself depth 0). Nested repositories are
+    reported in addition to their parent, not instead of it: a parent and
+    its children are exactly the tree ComplexGitSync manages.
+    """
+    found: list[Path] = []
+
+    def _descend(directory: Path, depth: int) -> None:
+        if (directory / ".git").exists():
+            found.append(directory)
+        if depth >= max_depth:
+            return
+        try:
+            children = sorted(directory.iterdir())
+        except (PermissionError, OSError):
+            return
+        for child in children:
+            if not child.is_dir() or child.is_symlink():
+                continue
+            if child.name == ".git":
+                continue
+            _descend(child, depth + 1)
+
+    _descend(root, 0)
+    return found
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredRepo:
+    """One git repository found on disk by :meth:`ComplexGitSyncClient.discover_repos`.
+
+    Attributes
+    ----------
+    relative_path:
+        Location relative to the scanned root — ``"."`` for the root
+        repository itself. Taken directly from the filesystem walk, never
+        inferred from a repository name.
+    absolute_path:
+        Resolved location on disk.
+    remote_url:
+        ``origin``'s URL, or ``None`` when the repository has no ``origin``.
+    identifier:
+        Canonical ``provider:owner/repository`` shorthand, or ``None`` when
+        *remote_url* is missing or could not be parsed into one.
+    branch:
+        Currently checked-out branch, or ``None`` on a detached HEAD.
+    has_cgs:
+        ``True`` when the repository already contains its own ``*.cgs``.
+        Drives ``nested_config`` in the generated draft: a child without one
+        must be ``"disabled"``, or nested discovery looks for a file that
+        does not exist and the clone fails.
+    """
+
+    relative_path: str
+    absolute_path: Path
+    remote_url: str | None
+    identifier: str | None
+    branch: str | None
+    has_cgs: bool
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoverReport:
+    """Result returned by :meth:`ComplexGitSyncClient.discover_repos`.
+
+    Attributes
+    ----------
+    root:
+        The scanned directory.
+    repos:
+        Every git repository found, root first, then children ordered by
+        ``relative_path``.
+    cgs_entries:
+        Authoring-form ``repos`` tables for the repositories that could be
+        fully resolved — ready to pass to
+        :meth:`ComplexGitSyncClient.configure`.
+    warnings:
+        Human-readable notes about repositories that were found but could
+        *not* be turned into a ``.cgs`` entry (no ``origin``, or a remote
+        URL that is not a recognised ``provider:owner/repository``). These
+        are reported for a human to resolve, never guessed at.
+    project_name:
+        Name proposed for the draft document, taken from the root
+        repository's own name when it is resolvable, else the directory name.
+    """
+
+    root: Path
+    repos: tuple[DiscoveredRepo, ...]
+    cgs_entries: tuple[dict, ...]
+    warnings: tuple[str, ...]
+    project_name: str
+
+
 @dataclass(frozen=True, slots=True)
 class GitignoreSyncEntry:
     """One repo whose ``.gitignore`` was created or modified by ``sync_gitignore()``."""
@@ -3036,6 +3157,164 @@ class ComplexGitSyncClient:
             applied=True,
             converted=tuple(converted),
             cgs_entries=tuple(cgs_entries),
+        )
+
+    def discover_repos(
+        self,
+        root_dir: str | Path | None = None,
+        *,
+        max_depth: int = DEFAULT_DISCOVER_MAX_DEPTH,
+        output: str | Path | None = None,
+    ) -> DiscoverReport:
+        """Scan *root_dir* for git repositories and draft a ``.cgs`` from what is there.
+
+        This is the entry point for adopting a project that exists on disk
+        but has no ``.cgs`` describing it yet. It is a **pure read** of the
+        filesystem and of each repository's git config: nothing is cloned,
+        fetched, staged, or modified, and no network call is made.
+
+        The walk descends from *root_dir* up to *max_depth* levels, treating
+        every directory that contains a ``.git`` entry as a repository. It
+        never descends *into* a ``.git`` directory — for a submodule the real
+        git directory lives at ``<parent>/.git/modules/<name>`` while the
+        child's own ``.git`` is a file, so walking into it would report the
+        same repository twice.
+
+        For each repository found, ``origin``'s URL is read and converted to
+        the canonical ``provider:owner/repository`` shorthand through the
+        *existing* :func:`~ComplexGitSync.cgs_format.parse_repo_id` grammar —
+        this method adds no second parser. ``relative_path`` comes straight
+        from the walk rather than from a repository name, so a child mounted
+        at ``external/Thing`` is recorded there and not at ``Thing``.
+
+        Repositories with no ``origin``, or whose remote URL does not resolve
+        to a registered provider, are reported in ``warnings`` and left out
+        of ``cgs_entries``. They are never guessed at: a draft that silently
+        invented an address would be worse than one that says what it could
+        not determine.
+
+        Only what is **checked out at scan time** can be found. In particular
+        a repository cloned without ``--recurse-submodules`` leaves its
+        submodule paths as empty directories, and those are correctly not
+        reported here; recovering them from git metadata instead is
+        :meth:`import_submodules`' job.
+
+        Parameters
+        ----------
+        root_dir:
+            Directory to scan. Defaults to the current working directory.
+        max_depth:
+            Maximum directory depth to descend below *root_dir*
+            (default :data:`DEFAULT_DISCOVER_MAX_DEPTH`). The root itself is
+            depth 0.
+        output:
+            Optional path to write the drafted ``.cgs`` to. When omitted,
+            the draft is only returned — matching the "report first, write
+            only when asked" posture of ``--commit-gitignore`` and
+            ``import-submodules --apply``.
+
+        Returns
+        -------
+        DiscoverReport
+            The repositories found, the draft ``.cgs`` entries, and any
+            warnings.
+        """
+        root = Path(root_dir).resolve() if root_dir is not None else Path.cwd().resolve()
+        if not root.is_dir():
+            raise GitSyncError(f"discover: not a directory: {root}")
+
+        repos: list[DiscoveredRepo] = []
+        warnings: list[str] = []
+
+        for repo_path in _walk_git_repositories(root, max_depth=max_depth):
+            relative = repo_path.relative_to(root).as_posix() if repo_path != root else "."
+            remote_url = self.git_runner.remote_get_url(repo_path)
+            try:
+                branch = self.git_runner.current_branch(repo_path)
+            except GitSyncError:
+                # A repository with no commits yet has no resolvable HEAD.
+                # That is a perfectly ordinary thing to find on disk, so it
+                # must not abort the scan — report it as branch-less, the
+                # same as a detached HEAD.
+                branch = None
+            has_cgs = any(repo_path.glob("*.cgs"))
+
+            identifier: str | None = None
+            if remote_url is None:
+                warnings.append(
+                    f"{relative}: no 'origin' remote — cannot determine an address; "
+                    f"add one, or add this repository to the .cgs by hand."
+                )
+            else:
+                candidate = _url_to_repo_identifier(remote_url)
+                try:
+                    parse_repo_id(candidate)
+                except ValueError as exc:
+                    warnings.append(
+                        f"{relative}: remote {remote_url!r} does not map to a known "
+                        f"provider:owner/repository ({exc}); add this repository to "
+                        f"the .cgs by hand, or declare a custom provider for it."
+                    )
+                else:
+                    identifier = candidate
+
+            repos.append(
+                DiscoveredRepo(
+                    relative_path=relative,
+                    absolute_path=repo_path,
+                    remote_url=remote_url,
+                    identifier=identifier,
+                    branch=branch,
+                    has_cgs=has_cgs,
+                )
+            )
+
+        root_repo = next((r for r in repos if r.relative_path == "."), None)
+        project_name = root.name
+        if root_repo is not None and root_repo.identifier is not None:
+            project_name = root_repo.identifier.rsplit("/", 1)[-1]
+
+        cgs_entries: list[dict] = []
+        for repo in repos:
+            if repo.identifier is None:
+                continue
+            entry: dict = {
+                "repository": repo.identifier,
+                "relative_path": repo.relative_path,
+            }
+            if repo.branch:
+                entry["fallback_branch"] = repo.branch
+            # A repository with no .cgs of its own must not be left on the
+            # default "auto", which would make nested discovery hunt for a
+            # file that does not exist and fail the clone.
+            if not repo.has_cgs:
+                entry["nested_config"] = "disabled"
+            cgs_entries.append(entry)
+
+        self._log_event(
+            "discover_repos",
+            root=str(root),
+            repo_count=len(repos),
+            entry_count=len(cgs_entries),
+            warning_count=len(warnings),
+            max_depth=max_depth,
+            output=str(output) if output is not None else None,
+        )
+
+        if output is not None:
+            if not cgs_entries:
+                raise GitSyncError(
+                    f"discover: no resolvable git repository found under {root} — "
+                    f"nothing to write."
+                )
+            self.configure(project_name, cgs_entries, output_path=output)
+
+        return DiscoverReport(
+            root=root,
+            repos=tuple(repos),
+            cgs_entries=tuple(cgs_entries),
+            warnings=tuple(warnings),
+            project_name=project_name,
         )
 
     def _sync_gitignore_lifecycle(

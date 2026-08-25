@@ -42,13 +42,14 @@ DAG event in the \texttt{[[ledger]]} section of the \texttt{.lgr} file.
 \section{Commands}
 
 The CLI exposes four command groups once a \texttt{GitTree} is \texttt{READY}.
-The minimalist level is \texttt{initialise}, \texttt{clean-init},
-\texttt{freeze-release}, \texttt{freeze-release-force}, \texttt{status},
-\texttt{view-tree}, and \texttt{launch-release}.  The expert level exposes
+The minimalist level is \texttt{initialise}, \texttt{bootstrap},
+\texttt{clean-init}, \texttt{freeze-release}, \texttt{freeze-release-force},
+\texttt{status}, \texttt{view-tree}, and \texttt{launch-release}.  The expert level exposes
 the individual operations: \texttt{branch}, \texttt{checkout}, \texttt{purge},
 \texttt{validate}, \texttt{clone}, \texttt{pull}, \texttt{pull-force},
 \texttt{add}, \texttt{commit}, \texttt{push}, \texttt{tag}, \texttt{freeze},
-and \texttt{import-submodules}.  The configuration level, \texttt{configure} and
+and \texttt{import-submodules}.  The configuration level, \texttt{discover},
+\texttt{configure} and
 \texttt{create-cgs}, authors a \texttt{.cgs} specification without requiring
 existing state.  The memory level, \texttt{remember}, \texttt{memorize},
 \texttt{retrieve}, and \texttt{reload}, binds a project to an external
@@ -109,6 +110,80 @@ changed repository. The commit identity defaults to local git config;
 the override to \texttt{CGSHOME/.cgitsync/master.toml} via
 \texttt{MasterConfig}, so later invocations on the same workspace pick it up
 without repeating the flags.
+
+\subsection{\texttt{bootstrap}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync bootstrap <spec.cgs> <project_name> [--cgs-path DIR]
+\end{lstlisting}
+
+Clones the full repository tree from a \texttt{.cgs} source into an
+isolated \texttt{CGSHOME}, for running \cgscli{} from its own standalone
+clone rather than nested inside the project tree it manages --- one
+\cgspkg{} clone reused across many projects. It delegates to the same
+\texttt{ComplexGitSyncClient.clone\_cgs} pipeline as \texttt{clone} below,
+and so shares its branch-fallback and nested-discovery behaviour, but
+differs from both \texttt{clone} and \texttt{initialise} in two ways:
+
+\begin{itemize}
+  \item \texttt{project\_name} is a required positional argument, not
+    inferred from the \texttt{.cgs} document. It always forms the final
+    path segment of \texttt{CGSHOME}, regardless of the specification's own
+    \texttt{project} name.
+  \item \texttt{CGSPATH} does not default to \texttt{../..} relative to the
+    current directory (that default assumes \cgspkg{} is cloned inside the
+    tree it manages --- the nested-mode case \texttt{initialise} is for).
+    When \texttt{--cgs-path} is omitted, \texttt{CGSPATH} instead defaults
+    to a fresh \texttt{\$HOME/.cgs/CGS<timestamp>/} directory, created
+    automatically if it does not exist, so a bootstrapped project can never
+    land inside \cgspkg{}'s own clone.
+\end{itemize}
+
+\subsection{\texttt{discover}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync discover [ROOT] [--write FILE] [--max-depth N]
+\end{lstlisting}
+
+Scans \texttt{ROOT} (default: the current directory) for git repositories
+and drafts a \texttt{.cgs} from what is checked out, through the
+\texttt{ComplexGitSyncClient.discover\_repos()} facade. This is the entry
+point for adopting a project that exists on disk but has no \texttt{.cgs}
+describing it yet.
+
+The command is a pure read of the filesystem and of each repository's git
+config: nothing is cloned, fetched, staged, or modified, and no network
+call is made. Without \texttt{--write} it only prints what it found,
+matching the ``report first, write only when asked'' posture of
+\texttt{--commit-gitignore} and \texttt{import-submodules --apply}.
+
+The walk descends up to \texttt{--max-depth} levels (default~5;
+\texttt{ROOT} itself is depth~0), treating every directory that contains a
+\texttt{.git} entry as a repository. It never descends \emph{into} a
+\texttt{.git} directory: for a submodule the real git directory lives at
+\texttt{<parent>/.git/modules/<name>} while the child's own \texttt{.git} is
+a file, so walking into it would report the same repository twice.
+
+For each repository, \texttt{origin}'s URL is read and converted to the
+canonical \texttt{provider:owner/repository} shorthand through the existing
+\texttt{parse\_repo\_id()} grammar --- this command adds no second parser.
+\texttt{relative\_path} is taken straight from the walk rather than from a
+repository name, so a child mounted at \texttt{external/Thing} is recorded
+there and not at \texttt{Thing}. A repository that contains no
+\texttt{*.cgs} of its own is pinned to \texttt{nested\_config = "disabled"},
+since leaving it on the default \texttt{auto} would make nested discovery
+hunt for a file that does not exist.
+
+Repositories with no \texttt{origin}, or whose remote URL does not resolve
+to a registered provider, are reported as warnings and left out of the
+draft. They are never guessed at: a draft that silently invented an address
+would be worse than one that states what it could not determine. Always
+review the generated file, then \texttt{validate} it.
+
+Only what is \emph{checked out at scan time} can be found. A repository
+cloned without \texttt{--recurse-submodules} leaves its submodule paths as
+empty directories, and those are correctly not reported; recovering them
+from git metadata instead is \texttt{import-submodules}' job.
 
 \subsection{\texttt{configure}}
 
@@ -569,6 +644,27 @@ local sandbox topology, while \texttt{docs/tutorial\_cawaqs.md} documents the
 larger CaWaQS onboarding tree and the point where \cgscli{} hands off to the
 project's existing \texttt{make}-based build workflow.
 
+\texttt{examples/cawaqsviz.cgs} is a third, real-world (not synthetic)
+example, describing
+\url{https://gitlab.com/cawaqs/gviz/cawaqsviz}. It exercises several of the
+patterns above at once: a nested GitLab subgroup path
+(\texttt{cawaqs/gviz/cawaqsviz}, three segments rather than a plain
+\texttt{owner/repository} pair), an explicit \texttt{relative\_path = "."}
+on the root entry rather than relying on the project-name auto-mount rule,
+two GitHub children mounted at non-default relative paths
+(\texttt{external/HydrologicalTwinAlphaSeries} and
+\texttt{docs/CWV\_user\_guide}), and \texttt{nested\_config = "disabled"}
+on both children, since neither has a \texttt{.cgs} of its own --- without
+it, the default \texttt{auto} nested discovery looks for one and fails.
+This file previously shipped with a nonexistent repository identifier, an
+invalid \texttt{default\_branch}, and one missing \texttt{nested\_config}
+override; it was corrected and given real end-to-end test coverage
+(\texttt{tests/integration/test\_cgsi\_topology.py}, and one verified run
+against the live repositories) as \texttt{planning/Onboarding\_DevPlanTicket.md}
+Phase~1. See \texttt{docs/tutorial\_cgsi1.md} \S5 for the full worked
+example, and \texttt{bootstrap} above for running \cgspkg{} against it
+without cloning \cgspkg{} inside the tree it manages.
+
 Generated specifications use the same concise representation. The
 \texttt{GitTree.to\_cgs()} convenience method delegates model projection to
 \texttt{cgs\_format.py}; neither \texttt{GitTree} nor \texttt{GitRepo} formats
@@ -711,10 +807,14 @@ state it records.  Events are parents-before-children in DAG order.
 
 \cgspkg{} uses project files for topology and does not require global topology
 configuration. Snapshot discovery can use \texttt{CGSHOME}; when it is not set,
-the \texttt{initialise(.cgs)} output-path default is \texttt{CGSPATH=../..}; later
+the \texttt{initialise(.cgs)} output-path default is \texttt{CGSPATH=../..}
+(nested mode: \cgspkg{} cloned inside the tree it manages); later
 commands can also walk upward from the current directory to find
-\texttt{.cgitsync/state/}. The logging and runtime-state subsystems use the
-user state directory by default:
+\texttt{.cgitsync/state/}. \texttt{bootstrap(.cgs)} uses a different
+default instead --- \texttt{CGSPATH=\$HOME/.cgs/CGS<timestamp>/}, created
+automatically --- since it is meant for a \cgspkg{} clone that is not
+nested inside any project tree; see \texttt{bootstrap} above. The logging
+and runtime-state subsystems use the user state directory by default:
 
 \begin{itemize}
   \item logs: \texttt{~/.local/state/ComplexGitSync/logs/}

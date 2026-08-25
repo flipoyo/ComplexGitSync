@@ -1,6 +1,10 @@
 # Onboarding_DevPlanTicket — Adopting `cawaqsviz` and `cawaqs` into ComplexGitSync
 
-Status: **Proposal.** Superseded and replaces the earlier
+Status: **All phases complete (2026-08-25).** Phase 1 (corrected
+`examples/cawaqsviz.cgs`), Phase 2 (`import-submodules`), and Phase 4
+(`discover`) are implemented, tested, and documented; Phase 3 (`cawaqs.cgs`)
+was handled directly by GitHub Copilot, outside this ticket.
+Superseded and replaces the earlier
 `ImprovementPlan_Onboarding.md` draft, which was written without inspecting
 the two real target repositories. Every fact below tagged **[verified
 2026-08-24]** was checked live against `gitlab.com`/`github.com` (GitLab
@@ -148,63 +152,87 @@ fixing that before anything else touches this target.
   (`docs/CWV_user_guide`), not the upstream repo name — the two must not be
   conflated. `HydrologicalTwinAlphaSeries` also confirmed to exist with
   `main` default branch.
+- **Finding 6 — caught only by actually running the integration test, not
+  by inspection:** the first correction (Findings 1-5) still left
+  `nested_config` unset (defaulting to `"auto"`) on
+  `HydrologicalTwinAlphaSeries`. `GET
+  api.github.com/repos/flipoyo/HydrologicalTwinAlphaSeries/contents/`
+  confirms it has no `.cgs` of its own — so `"auto"` nested discovery would
+  (and, in the first version of this phase's own integration test, did)
+  fail with `GitSyncError: Nested configuration for
+  HydrologicalTwinAlphaSeries is not resolved: MISSING`. This is exactly
+  the class of bug Finding 2 predicted `validate`-only checking would miss
+  — it takes an actual clone attempt to surface it, which is the whole
+  reason this phase's test plan below insists on one.
 
-### Deliverable — corrected `examples/cawaqsviz.cgs`
+### Deliverable — corrected `examples/cawaqsviz.cgs` **[implemented,
+2026-08-25]**
 
 ```toml
 project = { name = "CaWaQS-Viz", default_branch = "main" }
 
 repos = [
     { repository = "gitlab:cawaqs/gviz/cawaqsviz", relative_path = ".", fallback_branch = "main" },
-    { repository = "github:flipoyo/HydrologicalTwinAlphaSeries", relative_path = "external/HydrologicalTwinAlphaSeries", fallback_branch = "main" },
+    { repository = "github:flipoyo/HydrologicalTwinAlphaSeries", relative_path = "external/HydrologicalTwinAlphaSeries", fallback_branch = "main", nested_config = "disabled" },
     { repository = "github:flipoyo/user_guide_CaWaQS-Viz", relative_path = "docs/CWV_user_guide", fallback_branch = "main", nested_config = "disabled" },
 ]
 ```
 
-No Python API or CLI change is required to *author* this — `cgitsync
+(Both children now carry `nested_config = "disabled"` per Finding 6 — the
+first draft of this deliverable only set it on the third repo and the
+integration test below caught the gap before it shipped.)
+
+No Python API or CLI change was required to *author* this — `cgitsync
 configure` already interactively prompts for `fallback_branch`,
 `relative_path`, and `nested_config` per repo (`cli.py:1327-1357`); it's
 authoring-tool-capable today. (`create-cgs`, the non-interactive flag-based
 sibling, is not — see the note at the end of this phase.)
 
-### Test plan (this is the "actually get it tested" part)
+### Test plan — **done, 2026-08-25**
 
 `validate` alone re-proves nothing new (it's offline/static — see Finding
 2). "Tested" here means an integration test that exercises a real clone
 against fixture remotes shaped exactly like the corrected topology, plus a
-one-time manual run against the live repos:
+one-time manual run against the live repos. Both are now done:
 
-1. **Automated, in-repo:** add an integration test in
-   `tests/integration/test_cgsi_topology.py`, following the existing
-   `local_two_repo_remotes` / `test_bootstrap_clones_into_isolated_home_cgs_by_default`
-   pattern (added earlier this session) but with **three** local bare-repo
-   fixtures mirroring the corrected `cawaqsviz.cgs` shape: a root repo, and
-   two children at `external/<name>` and `docs/<name>` — i.e. nested at a
-   *subdirectory*, not flat, since that's the one thing the CGSil1/local
-   fixtures used elsewhere in the suite don't currently exercise. Assert
-   the tree reaches `READY` and both children land at the exact
-   `relative_path` declared.
-2. **Manual, one-time, against the real repos:** since CI has no reason to
-   hold live credentials for `gitlab.com/cawaqs` or push traffic there,
-   have a team member run
-   `cgitsync bootstrap examples/cawaqsviz.cgs cawaqsviz-smoke-test` once
-   against the corrected file and confirm a `READY` tree with both
-   submodule paths populated. Record the result (pass/fail, date, who ran
-   it) in this ticket's Status line when done — that's what turns "never
-   tested" into "tested."
+1. **Automated, in-repo — done.** Added
+   `tests/integration/test_cgsi_topology.py::
+   TestCloneAndLaunchReleaseLifecycle::
+   test_cawaqsviz_example_clones_into_corrected_nested_layout`. It loads
+   the real shipped `examples/cawaqsviz.cgs` (not a synthetic copy) and
+   routes its three declared repos to local bare-repo fixtures — two
+   nested at a *subdirectory* (`external/<name>`, `docs/<name>`), which is
+   the one shape the CGSil1/local fixtures used elsewhere in the suite
+   didn't already exercise. This is the test that caught Finding 6 before
+   the fix shipped. Asserts `READY`, exact `relative_path`s, and that both
+   children are plain independent clones (`git ls-files --stage` empty for
+   their paths — no gitlink). `pixi run lint` and `pixi run test` both
+   pass (568 tests).
+2. **Manual, one-time, against the real repos — done.** Ran
+   `cgitsync bootstrap examples/cawaqsviz.cgs cawaqsviz-live-verify
+   --cgs-path <scratch dir>` against the actual live `gitlab.com/cawaqs`
+   and `github.com/flipoyo` repositories on **2026-08-25**. Result:
+   `READY ready=true complete=true`, root at commit `acf67e9`, both
+   children cloned at their exact declared paths
+   (`external/HydrologicalTwinAlphaSeries` @ `9fb6bc2`,
+   `docs/CWV_user_guide` @ `67f4d4d`), confirmed via `view-tree`. Scratch
+   clone deleted afterward — this is a point-in-time record, not a
+   standing fixture. **"Never tested" is resolved.**
 
-### Documentation deliverable (mandatory)
+### Documentation deliverable (mandatory) — **done, 2026-08-25**
 
-- `examples/cawaqsviz.cgs`: the correction itself.
+- `examples/cawaqsviz.cgs`: the correction itself, plus an in-file comment
+  summarizing why (dated, references this ticket).
 - No `README.md` command-table change needed (no new command in this
-  phase).
-- Add a short callout in `docs/tutorial_cgsi1.md` or a new
-  `docs/tutorial_cawaqsviz.md` pointing at `examples/cawaqsviz.cgs` as a
-  second worked example (multi-provider: GitLab root + two GitHub
-  children) — today it's an untitled fixture nobody explains; Phase 2's
-  documentation deliverable will extend this same section, so don't
-  duplicate structure, just leave a place for Phase 2 to add to.
-- `audit.md`: **no change** — this phase touches no module boundary.
+  phase) — confirmed, none made.
+- Added `docs/tutorial_cgsi1.md` §5 ("A real-world example:
+  `examples/cawaqsviz.cgs`") pointing at the corrected file, with the
+  topology diagram, the `nested_config` gotcha from Finding 6 spelled out,
+  and a pointer to the new integration test and the 2026-08-25 live-repo
+  run above. Phase 2's documentation deliverable extends this same
+  section rather than duplicating it.
+- `audit.md`: **no change** — confirmed, this phase touched no module
+  boundary (only `examples/`, `tests/integration/`, and `docs/`).
 
 ### Minor CLI gap noticed in passing (not blocking, worth a follow-up ticket)
 
@@ -623,7 +651,27 @@ against reality rather than just theory:
   `cawaqsviz`/`HydrologicalTwinAlphaSeries` maintainers actually want that
   third-level submodule migrated too.
 
-### Deliverable
+### Deliverable — **implemented 2026-08-25**
+
+Shipped as specified, plus three things the build surfaced that the plan
+had not anticipated:
+
+- **A repository with no commits yet crashes `current_branch()`.** A fresh
+  `git init` has no resolvable `HEAD`, so the first implementation aborted
+  the whole scan on one such directory. Now reported as branch-less, the
+  same as a detached HEAD. Found by the test suite, not by inspection.
+- **`nested_config` is derived, not assumed.** A discovered repository that
+  contains no `*.cgs` of its own is pinned to `"disabled"`. This is
+  determined *from the filesystem*, not guessed — and it is precisely the
+  omission that made Phase 1's first corrected draft fail to clone
+  (Phase 1, Finding 6). A discovered draft therefore cannot repeat that
+  mistake.
+- **`docs/MASTER.tex` and `docs/c_api_python.tex` did not compile.**
+  Pre-existing breakage from Phase 2's docs: Unicode em-dashes inside
+  `lstlisting` blocks, which `inputenc` rejects in verbatim. Both tracked
+  PDFs had been un-rebuildable since. Fixed here (all five doc targets now
+  build) because the new "rebuild the docs before committing" rule in
+  `CLAUDE.md` is unenforceable while the build is broken.
 
 - **Python API:** `ComplexGitSyncClient.discover_repos(root_dir, *,
   max_depth=...)` — walk `root_dir`, stop descending once a `.git` is
@@ -673,7 +721,7 @@ example.
 
 | Phase | Target | Depends on | Mutates a live repo? | Priority |
 |---|---|---|---|---|
-| 1 — fix + prove `cawaqsviz.cgs` | 1 | — | No | High — start here |
+| 1 — fix + prove `cawaqsviz.cgs` | 1 | — | No | **Done — 2026-08-25** |
 | 2 — `import-submodules` | 1 | 2's *acceptance test* uses 1's output | Yes, once `--apply` is run for real (deferred decision) | High |
 | 3 — author `cawaqs.cgs` | 2 | — | No | High — can run in parallel with 1/2 |
-| 4 — `cgitsync discover` | 1 | Its acceptance test reproduces Phase 1's output, but it can be built independently | No | High — sandbox-verified against the real `cawaqsviz` checkout, not hypothetical |
+| 4 — `cgitsync discover` | 1 | Its acceptance test reproduces Phase 1's output, but it can be built independently | No | **Done — 2026-08-25** |

@@ -12,13 +12,34 @@ This project uses Pixi, not bare `pip`/`venv`.
 pixi install         # create/update the environment (run after touching pixi.toml or dependencies)
 pixi run test        # pytest, tests/unit + tests/integration
 pixi run lint        # ruff check .
-pixi run bump-version  # bump YYYY.XX in pyproject.toml and sync pixi.toml/__init__.py/README.md
+pixi run bump-version  # bump YYYY.XX and sync every manifest and doc (see below)
 ```
 
 CI (`.github/workflows/ci.yml`) runs both `lint` and `test` on push/PR to
-`main`/`lechat`. Run both locally before pushing. Run `bump-version` when
-wrapping up a feature branch, ahead of the auto-increment CI performs on
-merge to main (see `AdditionalSpecs.md`'s Versioning section).
+`main`/`lechat`. Run both locally before pushing.
+
+## Before committing
+
+Do all of these as part of the change, not as a follow-up:
+
+1. **`pixi run lint` and `pixi run test` must both pass.** The full suite
+   must pass before any merge to main (`DevSpecs.md`, *Testing*).
+2. **Run `pixi run bump-version`** when wrapping up a feature branch, ahead
+   of the auto-increment CI performs on merge to main (`DevSpecs.md`,
+   *Versioning*; `AdditionalSpecs.md`). `pyproject.toml` holds the
+   authoritative `YYYY.XX` version; the one command syncs `pixi.toml`,
+   `src/ComplexGitSync/__init__.py`, the README title, and the
+   `\cgsversion` macro in `docs/Setup/Shortcuts.tex` and
+   `docs/preamble.tex`. DevSpecs requires a single command for this —
+   never hand-edit those version fields. `--dry-run` previews it.
+3. **Rebuild the docs if you changed them.** `bump-version` rewrites `.tex`
+   sources but does *not* regenerate the tracked PDFs:
+   `cd docs && latexmk -pdf MASTER.tex` (plus each `c_*.tex` you touched).
+4. **Update `audit.md`** if module responsibility moved (see below).
+5. **Document any new CLI command** in the README command table *and*
+   `docs/Text/user_guide.tex`, and its client method in
+   `docs/Text/api_python.tex`. The README half is enforced by
+   `tests/unit/test_cli_smoke.py::test_readme_documents_every_cli_command`.
 
 ## Architecture boundary
 
@@ -46,6 +67,15 @@ Data flow: `CLI / Python caller → ComplexGitSyncClient.configure() → cgs_for
 don't add another one in `cli.py`, `git_tree.py`, `git_repo.py`, or
 `orchestre.py`. Keep parsing/validation offline-safe; only explicit runtime
 Git operations may touch the network.
+
+**The CLI mirrors the Python API.** End users only use the CLI, so every
+capability must exist in both layers: implement it as a
+`ComplexGitSyncClient` method carrying all the semantics, then wire a thin
+`_handle_*` → `_execute_*` pair in `cli.py` that collects arguments, calls
+that one method, and prints. A client method with no CLI surface is
+unreachable for users; a CLI command with logic of its own breaks the
+mirror. `cli.py` must never touch `subprocess`/Git or parse repository
+identifiers.
 
 ## File formats
 

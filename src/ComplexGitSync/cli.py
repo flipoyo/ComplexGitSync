@@ -13,6 +13,7 @@ from .cgs_format import DEFAULT_ACCESS_PROTOCOL, DEFAULT_BRANCH, CgsDocument
 from .git_repo import GitProvider, RefKind
 from .git_tree import ProjectTreeState, iter_tree_leaf_first
 from .orchestre import (
+    DEFAULT_DISCOVER_MAX_DEPTH,
     DEFAULT_MEMORY_REMOTE_NAME,
     DEFAULT_MEMORY_SERVICE,
     ComplexGitSyncClient,
@@ -51,6 +52,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "tag": "Create and push a tag across a READY tree.",
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
     "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
+    "discover": "Scan a directory for git repositories and draft a .cgs from what is checked out.",
     # Configuration commands
     "configure": (
         "Create a concise .cgs specification for GitHub, GitLab, Codeberg, "
@@ -774,6 +776,37 @@ def build_parser() -> argparse.ArgumentParser:
                 ),
             )
             subparser.set_defaults(handler=_handle_import_submodules)
+        elif command_name == "discover":
+            subparser.add_argument(
+                "root",
+                nargs="?",
+                default=None,
+                help=(
+                    "Directory to scan for git repositories. "
+                    "Defaults to the current working directory."
+                ),
+            )
+            subparser.add_argument(
+                "--write",
+                metavar="FILE",
+                default=None,
+                help=(
+                    "Write the drafted .cgs to FILE. Without this flag the "
+                    "command only prints what it found (dry-run)."
+                ),
+            )
+            subparser.add_argument(
+                "--max-depth",
+                dest="max_depth",
+                type=_non_negative_int,
+                default=DEFAULT_DISCOVER_MAX_DEPTH,
+                metavar="N",
+                help=(
+                    "Maximum directory depth to descend below ROOT "
+                    f"(default: {DEFAULT_DISCOVER_MAX_DEPTH}; ROOT itself is depth 0)."
+                ),
+            )
+            subparser.set_defaults(handler=_handle_discover)
     return parser
 
 
@@ -1451,6 +1484,61 @@ def _execute_import_submodules(
         print(f"  ✓ {name}  ({sub.path})")
     if output:
         print(f".cgs entries written to: {Path(output).resolve()}")
+    return 0
+
+
+def _handle_discover(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve() if args.root else Path.cwd().resolve()
+    write = getattr(args, "write", None)
+    max_depth = getattr(args, "max_depth", DEFAULT_DISCOVER_MAX_DEPTH)
+    return _run_with_logging(
+        command_name="discover",
+        source=root,
+        runner=lambda client, source: _execute_discover(
+            client,
+            source,
+            write=write,
+            max_depth=max_depth,
+        ),
+    )
+
+
+def _execute_discover(
+    client: ComplexGitSyncClient,
+    source: Path,
+    *,
+    write: str | None = None,
+    max_depth: int = DEFAULT_DISCOVER_MAX_DEPTH,
+) -> int:
+    """Execute the discover command and print a human-readable report."""
+    report = client.discover_repos(source, max_depth=max_depth, output=write)
+
+    if not report.repos:
+        print(f"No git repository found under {report.root} (max depth {max_depth}).")
+        return 0
+
+    print(f"Found {len(report.repos)} git repository(ies) under {report.root}")
+    print(f"proposed project name: {report.project_name}\n")
+    for repo in report.repos:
+        marker = "?" if repo.identifier is None else "-"
+        print(f"  {marker} {repo.relative_path}")
+        print(f"      remote: {repo.remote_url or '(none)'}")
+        print(f"      id:     {repo.identifier or '(unresolved)'}")
+        print(f"      branch: {repo.branch or '(detached)'}")
+        print(f"      nested: {'auto (has its own .cgs)' if repo.has_cgs else 'disabled'}")
+        print()
+
+    if report.warnings:
+        print(f"{len(report.warnings)} repository(ies) could not be drafted:")
+        for warning in report.warnings:
+            print(f"  ! {warning}")
+        print()
+
+    if write:
+        print(f".cgs draft written to: {Path(write).resolve()}")
+        print("Review it, then run: cgitsync validate <file>")
+    else:
+        print("Dry run — pass --write FILE to save this draft as a .cgs.")
     return 0
 
 
