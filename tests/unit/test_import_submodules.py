@@ -7,8 +7,8 @@ helpers themselves need.
 import pytest
 
 from ComplexGitSync.orchestre import (
-    SubmoduleEntry,
     ImportSubmodulesReport,
+    SubmoduleEntry,
     _parse_gitmodules,
     _url_to_repo_identifier,
 )

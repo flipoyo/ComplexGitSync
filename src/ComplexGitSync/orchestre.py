@@ -80,6 +80,7 @@ from .git_tree import (
     _parse_enum,
     _parse_gts_node_type,
     _parse_optional_enum,
+    _update_gitignore_file,
     _validate_repo_shape,
     build_tree_state,
     format_project_tree,
@@ -93,7 +94,6 @@ from .git_tree import (
     promote_to_parent,
     register_relative_path,
     sync_gitignore,
-    _update_gitignore_file,
 )
 from .git_tree import (
     fix_circularities as _fix_circularities,
@@ -2984,7 +2984,6 @@ class ComplexGitSyncClient:
 
         # 2. Per submodule: git rm --cached <path>, update .gitmodules, update .gitignore
         converted: list[str] = []
-        remaining_stanzas: list[str] = list(content.splitlines())
         for sub in submodules:
             self.git_runner.rm_cached(root, sub.path)
             converted.append(sub.name)
@@ -3038,6 +3037,8 @@ class ComplexGitSyncClient:
             converted=tuple(converted),
             cgs_entries=tuple(cgs_entries),
         )
+
+    def _sync_gitignore_lifecycle(
         self,
         *,
         pre_pull: bool = True,

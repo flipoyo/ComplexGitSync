@@ -737,9 +737,12 @@ class TestImportSubmodules:
         _run_git(seed, "add", "README.md")
         _run_git(seed, "commit", "-m", "initial")
 
-        # Add the child as a submodule
+        # Add the child as a submodule — pass -c protocol.file.allow=always because
+        # recent git restricts the file:// transport by default.
         _run_git(
             seed,
+            "-c",
+            "protocol.file.allow=always",
             "submodule",
             "add",
             "--branch",
@@ -747,6 +750,13 @@ class TestImportSubmodules:
             child_remote.as_posix(),
             submodule_path,
         )
+        # Rewrite the submodule URL in .gitmodules to a recognisable github form so
+        # _url_to_repo_identifier() can parse it when --output is requested.
+        gitmodules_path = seed / ".gitmodules"
+        original = gitmodules_path.read_text(encoding="utf-8")
+        rewritten = original.replace(child_remote.as_posix(), "https://github.com/owner/child.git")
+        gitmodules_path.write_text(rewritten, encoding="utf-8")
+        _run_git(seed, "add", ".gitmodules")
         _run_git(seed, "commit", "-m", "add submodule")
         _run_git(seed, "remote", "add", "origin", parent_remote.as_posix())
         _run_git(seed, "push", "-u", "origin", "main")
