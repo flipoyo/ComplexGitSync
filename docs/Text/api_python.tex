@@ -206,3 +206,39 @@ in, and \texttt{resolve\_identity(repo\_path, git\_runner)} returns the
 entirely to local git config. This file is workspace-local configuration,
 not part of the \texttt{.cgs}/\texttt{.gts} project spec, and is preserved
 (not deleted) by \texttt{purge}/\texttt{clean-init}.
+
+
+\section{Submodule Migration: \texttt{import\_submodules}}
+
+\texttt{import\_submodules(repo\_root, *, apply=False, output=None)} converts
+git submodules in a local repository to plain ComplexGitSync nested clones:
+
+\begin{lstlisting}[language=python]
+from ComplexGitSync.orchestre import ComplexGitSyncClient
+
+client = ComplexGitSyncClient()
+
+# Dry run — inspect without changing anything
+report = client.import_submodules("/path/to/repo")
+for sub in report.submodules:
+    print(sub.name, sub.path, sub.url)
+
+# Apply — convert and optionally emit a .cgs snippet
+report = client.import_submodules(
+    "/path/to/repo",
+    apply=True,
+    output="imported_submodules.cgs",
+)
+print(report.converted)   # tuple of converted submodule names
+\end{lstlisting}
+
+The method returns an \texttt{ImportSubmodulesReport} dataclass with fields
+\texttt{submodules} (all entries found), \texttt{applied} (whether the
+conversion ran), \texttt{converted} (names of converted submodules), and
+\texttt{cgs\_entries} (authoring-form repo tables ready for
+\texttt{configure()}).  When \texttt{apply=False} (the default), no files
+are modified.  When \texttt{apply=True}, each submodule is removed from the
+index (\texttt{git rm --cached}), its stanza is removed from
+\texttt{.gitmodules}, and the parent's \texttt{.gitignore} is updated to
+ignore the child path.  The staged changes should then be reviewed and
+committed manually.
