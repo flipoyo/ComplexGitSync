@@ -1,6 +1,6 @@
 """Tutorial sandbox: complete CLI workflow for the CGSil1 topology.
 
-This test validates each step from docs/tutorial_cgsi1.md using three local
+This test validates each step from docs/tutorials/01_first_multi_repo_workspace.md using three local
 bare-repo remotes as stand-ins for the real GitLab / GitHub repositories at
 https://gitlab.com/CGS_test/CGSil1.
 
@@ -126,7 +126,7 @@ def cgsi1_sandbox(tmp_path: Path, monkeypatch) -> dict[str, Path]:
 
 
 class TestTutoCGSil1CLI:
-    """Validates every step of docs/tutorial_cgsi1.md in a local sandbox."""
+    """Validates every step of docs/tutorials/01_first_multi_repo_workspace.md in a local sandbox."""
 
     # ── Tutorial step 1 ────────────────────────────────────────────────────
 

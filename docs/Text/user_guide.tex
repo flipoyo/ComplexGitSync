@@ -11,8 +11,15 @@ configuration option, document format, and error condition exposed by
 
 The single entry-point is the \cgscli{} command.
 
+\textbf{\cgscli{} is a Pixi task, not a globally installed executable.}
+This project is developed and run exclusively through Pixi (\texttt{pixi
+install} once, per checkout) --- there is no \texttt{pip install} that puts
+a bare \texttt{cgitsync} on \texttt{\$PATH}. Every invocation shown in this
+chapter as \texttt{pixi run cgitsync ...} must be typed exactly that way;
+a bare \texttt{cgitsync ...} will not be found by the shell.
+
 \begin{lstlisting}[language=bash]
-$ cgitsync <command> [options]
+$ pixi run cgitsync <command> [options]
 \end{lstlisting}
 
 Running \cgscli{} without a command prints a help summary and exits with
@@ -61,10 +68,10 @@ inspection aliases such as \texttt{print}, \texttt{view-operation}, and
 \subsection{\texttt{initialise}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync initialise <spec.cgs> [--output-path DIR] [--commit-gitignore]
+$ pixi run cgitsync initialise <spec.cgs> [--output-path DIR] [--commit-gitignore]
     [--force-gitignore-sync] [--git-user-name NAME] [--git-user-email EMAIL]
-$ cgitsync initialise <snapshot.gts>
-$ cgitsync initialise --project NAME --repo PROVIDER:OWNER/REPO [--repo ...] [--output-path DIR]
+$ pixi run cgitsync initialise <snapshot.gts>
+$ pixi run cgitsync initialise --project NAME --repo PROVIDER:OWNER/REPO [--repo ...] [--output-path DIR]
 \end{lstlisting}
 
 Unified initialisation entry point.  Dispatches on file extension:
@@ -114,7 +121,7 @@ without repeating the flags.
 \subsection{\texttt{bootstrap}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync bootstrap <spec.cgs> <project_name> [--cgs-path DIR]
+$ pixi run cgitsync bootstrap <spec.cgs> <project_name> [--cgs-path DIR]
 \end{lstlisting}
 
 Clones the full repository tree from a \texttt{.cgs} source into an
@@ -142,7 +149,7 @@ differs from both \texttt{clone} and \texttt{initialise} in two ways:
 \subsection{\texttt{discover}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync discover [ROOT] [--write FILE] [--max-depth N]
+$ pixi run cgitsync discover [ROOT] [--write FILE] [--max-depth N]
 \end{lstlisting}
 
 Scans \texttt{ROOT} (default: the current directory) for git repositories
@@ -188,7 +195,7 @@ from git metadata instead is \texttt{import-submodules}' job.
 \subsection{\texttt{configure}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync configure [--output FILE]
+$ pixi run cgitsync configure [--output FILE]
 \end{lstlisting}
 
 Interactively prompts for a project name, default branch, and one or more
@@ -204,7 +211,7 @@ defaulting to \texttt{<project-name>.cgs}.
 \subsection{\texttt{create-cgs}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync create-cgs --project CGSil1 \
+$ pixi run cgitsync create-cgs --project CGSil1 \
     --repo github:flipoyo/ComplexGitSync \
     --repo codeberg:GX4G/GX4G \
     --output CGSil1.cgs
@@ -216,7 +223,7 @@ and serializes concise \texttt{.cgs} TOML. It performs no Git or network work.
 \subsection{\texttt{clean-init}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync clean-init <spec.cgs> [--output-path DIR] [--commit-gitignore]
+$ pixi run cgitsync clean-init <spec.cgs> [--output-path DIR] [--commit-gitignore]
     [--force-gitignore-sync] [--git-user-name NAME] [--git-user-email EMAIL]
 \end{lstlisting}
 
@@ -237,7 +244,7 @@ configuration, not generated clone state.
 \subsection{\texttt{purge}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync purge <spec.cgs> [--output-path DIR]
+$ pixi run cgitsync purge <spec.cgs> [--output-path DIR]
 \end{lstlisting}
 
 Removes generated clone state from the resolved \texttt{CGSHOME} without
@@ -249,7 +256,7 @@ are not immediate root children, and \texttt{.cgitsync/master.toml} (see
 \subsection{\texttt{pull}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync pull [spec.cgs|snapshot.gts] [--commit-gitignore]
+$ pixi run cgitsync pull [spec.cgs|snapshot.gts] [--commit-gitignore]
     [--force-gitignore-sync] [--git-user-name NAME] [--git-user-email EMAIL]
 \end{lstlisting}
 
@@ -276,7 +283,7 @@ path the sync is wired into.
 \subsection{\texttt{pull-force}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync pull-force [spec.cgs|snapshot.gts]
+$ pixi run cgitsync pull-force [spec.cgs|snapshot.gts]
 \end{lstlisting}
 
 Destructively resynchronises the same tree.  Every repository --- root,
@@ -288,7 +295,7 @@ uncommitted changes and untracked files; it never force-pushes.
 \subsection{\texttt{clone}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync clone <spec.cgs> [--target-dir DIR] [--output-path DIR]
+$ pixi run cgitsync clone <spec.cgs> [--target-dir DIR] [--output-path DIR]
 \end{lstlisting}
 
 Clones the full repository tree declared by the \texttt{.cgs} file. This CLI
@@ -306,7 +313,7 @@ same command.
 \subsection{\texttt{checkout}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync checkout <branch> [--gts <snapshot.gts>] [--ref-kind branch|tag]
+$ pixi run cgitsync checkout <branch> [--gts <snapshot.gts>] [--ref-kind branch|tag]
 \end{lstlisting}
 
 Checks out a branch or tag across the whole tree, parent-first.
@@ -317,7 +324,7 @@ On success the tree remains \texttt{READY} and a new \texttt{.gts} snapshot is w
 \subsection{\texttt{add}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync add [--gts <snapshot.gts>] [--dry-run]
+$ pixi run cgitsync add [--gts <snapshot.gts>] [--dry-run]
 \end{lstlisting}
 
 Stages all changes across the tree (\texttt{git add --all}), leaf-first.
@@ -328,7 +335,7 @@ mutate repositories.
 \subsection{\texttt{commit}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync commit <message> [--gts <snapshot.gts>] [--no-stage] [--dry-run]
+$ pixi run cgitsync commit <message> [--gts <snapshot.gts>] [--no-stage] [--dry-run]
 \end{lstlisting}
 
 Commits changes across the tree, leaf-first.  Loads the READY registry from
@@ -346,7 +353,7 @@ The commit message conventionally ends with \texttt{CGS\#VERSION}.
 \subsection{\texttt{push}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync push [--gts <snapshot.gts>] [--dry-run]
+$ pixi run cgitsync push [--gts <snapshot.gts>] [--dry-run]
 \end{lstlisting}
 
 Pushes all repositories to their configured remotes, leaf-first.  Loads the
@@ -363,8 +370,8 @@ repository.
 \subsection{\texttt{freeze-release}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync freeze-release <name> <message> [--gts <snapshot.gts>] [--dry-run]
-$ cgitsync freeze-release-force <name> <message> [--gts <snapshot.gts>] [--dry-run]
+$ pixi run cgitsync freeze-release <name> <message> [--gts <snapshot.gts>] [--dry-run]
+$ pixi run cgitsync freeze-release-force <name> <message> [--gts <snapshot.gts>] [--dry-run]
 \end{lstlisting}
 
 Minimalist release workflow from a READY tree. It chains public operations in
@@ -376,7 +383,7 @@ commit.
 \subsection{\texttt{freeze}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync freeze <name> [--gts <snapshot.gts>] [--dry-run]
+$ pixi run cgitsync freeze <name> [--gts <snapshot.gts>] [--dry-run]
 \end{lstlisting}
 
 Performs a release freeze across all repos, leaf-first: stage/commit,
@@ -399,7 +406,7 @@ for the loaded workspace without mutating it.
 \subsection{\texttt{import-submodules}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync import-submodules REPO_ROOT [--apply] [--output FILE]
+$ pixi run cgitsync import-submodules REPO_ROOT [--apply] [--output FILE]
 \end{lstlisting}
 
 Reads \texttt{REPO\_ROOT/.gitmodules} and reports (or converts) every declared
@@ -444,7 +451,7 @@ succeed.
 \subsection{\texttt{launch-release}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync launch-release <name> [--gts <snapshot.gts>]
+$ pixi run cgitsync launch-release <name> [--gts <snapshot.gts>]
 \end{lstlisting}
 
 Checks out the frozen release tag \texttt{<name>} across the loaded READY tree,
@@ -459,7 +466,7 @@ the CLI path, including initialisation and the READY git command cycle
 \subsection{\texttt{view-tree}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync view-tree [spec.cgs|snapshot.gts] [--depth N] [--collapse REPO]
+$ pixi run cgitsync view-tree [spec.cgs|snapshot.gts] [--depth N] [--collapse REPO]
 \end{lstlisting}
 
 Renders a deterministic terminal tree that focuses on repository topology and
@@ -488,7 +495,7 @@ subtrees.
 \subsection{\texttt{status}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync status [--gts FILE]
+$ pixi run cgitsync status [--gts FILE]
 \end{lstlisting}
 
 Summarises tree readiness and per-repository sync state. The table reports the
@@ -498,7 +505,7 @@ counts, current HEAD, and the commit recorded in the loaded \texttt{.gts}.
 \subsection{\texttt{remember}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync remember <spec.cgs> [--output-path DIR] [--service HOST] [--remote-name NAME]
+$ pixi run cgitsync remember <spec.cgs> [--output-path DIR] [--service HOST] [--remote-name NAME]
 \end{lstlisting}
 
 Binds the given \texttt{.cgs} artefact to its external SSH-Git Memory
@@ -509,7 +516,7 @@ defaults to \texttt{forge43}.
 \subsection{\texttt{memorize}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync memorize <memory-state-dir> [--branch BRANCH]
+$ pixi run cgitsync memorize <memory-state-dir> [--branch BRANCH]
 \end{lstlisting}
 
 Persists a finalized local Memory State directory
@@ -519,7 +526,7 @@ remote, on \texttt{--branch} (default \texttt{main}).
 \subsection{\texttt{retrieve}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync retrieve <name> [--output-path DIR] [--branch BRANCH] [--service HOST] [--remote-name NAME]
+$ pixi run cgitsync retrieve <name> [--output-path DIR] [--branch BRANCH] [--service HOST] [--remote-name NAME]
 \end{lstlisting}
 
 Retrieves the named external SSH-Git Memory repository into a clean
@@ -529,7 +536,7 @@ the current directory when \texttt{--output-path} is omitted).
 \subsection{\texttt{reload}}
 
 \begin{lstlisting}[language=bash]
-$ cgitsync reload <name> [--output-path DIR] [--branch BRANCH] [--service HOST] [--remote-name NAME]
+$ pixi run cgitsync reload <name> [--output-path DIR] [--branch BRANCH] [--service HOST] [--remote-name NAME]
 \end{lstlisting}
 
 Retrieves the named external Memory repository, then restores the
@@ -638,16 +645,25 @@ Two checked-in files document this boundary. Copy
 provided as a developer reference for the canonical \texttt{CgsDocument}
 shape. The two files are regression-tested for semantic equivalence.
 
-The repository also keeps two checked-in tutorial case tests for this
-authoring surface: \texttt{docs/tutorial\_cgsi1.md} walks a fully exercised
-local sandbox topology, while \texttt{docs/tutorial\_cawaqs.md} documents the
-larger CaWaQS onboarding tree and the point where \cgscli{} hands off to the
-project's existing \texttt{make}-based build workflow.
+The repository also keeps three checked-in, didactically ordered tutorials
+under \texttt{docs/tutorials/} --- easiest first, see
+\texttt{docs/tutorials/README.md} for the guided order --- exercising this
+authoring surface end to end:
+\texttt{docs/tutorials/01\_first\_multi\_repo\_workspace.md} walks a fully
+exercised local sandbox topology (\texttt{CGSil1}) through the complete CLI
+lifecycle;
+\texttt{docs/tutorials/02\_onboarding\_a\_real\_build\_tree.md} hand-authors
+a \texttt{.cgs} for the larger, real-world \texttt{cawaqs} tree and the
+point where \cgscli{} hands off to the project's existing
+\texttt{make}-based build workflow; and
+\texttt{docs/tutorials/03\_configuration\_discovery\_modes.md} covers the
+real-world \texttt{cawaqsviz} project (not synthetic) through all three
+ways \cgspkg{} can arrive at a working \texttt{.cgs} for a project it does
+not already control the source of.
 
-\texttt{examples/cawaqsviz.cgs} is a third, real-world (not synthetic)
-example, describing
-\url{https://gitlab.com/cawaqs/gviz/cawaqsviz}. It exercises several of the
-patterns above at once: a nested GitLab subgroup path
+\texttt{examples/cawaqsviz.cgs}, one of that third tutorial's routes,
+describes \url{https://gitlab.com/cawaqs/gviz/cawaqsviz} and exercises
+several patterns above at once: a nested GitLab subgroup path
 (\texttt{cawaqs/gviz/cawaqsviz}, three segments rather than a plain
 \texttt{owner/repository} pair), an explicit \texttt{relative\_path = "."}
 on the root entry rather than relying on the project-name auto-mount rule,
@@ -661,9 +677,9 @@ invalid \texttt{default\_branch}, and one missing \texttt{nested\_config}
 override; it was corrected and given real end-to-end test coverage
 (\texttt{tests/integration/test\_cgsi\_topology.py}, and one verified run
 against the live repositories) as \texttt{planning/Onboarding\_DevPlanTicket.md}
-Phase~1. See \texttt{docs/tutorial\_cgsi1.md} \S5 for the full worked
-example, and \texttt{bootstrap} above for running \cgspkg{} against it
-without cloning \cgspkg{} inside the tree it manages.
+Phase~1. See \texttt{docs/tutorials/03\_configuration\_discovery\_modes.md}
+for the full worked example, and \texttt{bootstrap} above for running
+\cgspkg{} against it without cloning \cgspkg{} inside the tree it manages.
 
 Generated specifications use the same concise representation. The
 \texttt{GitTree.to\_cgs()} convenience method delegates model projection to

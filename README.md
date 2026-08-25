@@ -1,13 +1,15 @@
-# ComplexGitSync v0002.10
+# ComplexGitSync v0002.11
 
 ComplexGitSync is a command-line tool for synchronising a multi-repository Git
 workspace — a tree of nested repositories — from one local `.cgs`
 specification (file or CLI specs) or one tracked `.gts` workspace-state snapshot. The public
-entry point is `cgitsync`.
+entry point is `cgitsync`, exposed as a **Pixi task** — there is no global
+install, so every invocation in this README and in the docs is
+`pixi run cgitsync ...`, never a bare `cgitsync ...`.
 
 ```mermaid
 flowchart LR
-    CGS[".cgs spec"] --> CLI((cgitsync))
+    CGS[".cgs spec"] --> CLI(("pixi run cgitsync"))
     GTS[".gts snapshot"] -.->|restore| CLI
 
     subgraph TREE["nested Git repo tree"]
@@ -177,14 +179,16 @@ stanza, and adds the path to `.gitignore`. It never force-pushes.
 The two compose: `discover` a checkout to get the topology for free,
 cross-check it against `.gitmodules`, then `--apply` to retire the
 submodules. `examples/cawaqsviz.cgs` is the worked result of exactly that
-path — see [docs/tutorial_cgsi1.md](docs/tutorial_cgsi1.md) §5.
+path — see
+[docs/tutorials/03_configuration_discovery_modes.md](docs/tutorials/03_configuration_discovery_modes.md).
 
 **3. Neither — write it from what the developers know.** Some projects
 never exist as one directory tree until a `.cgs` already lists them; their
 topology lives in a build script or in documentation. `cawaqs` is that case
 (17 C libraries fetched by a shell script across 5 GitLab groups) — see
-[docs/tutorial_cawaqs.md](docs/tutorial_cawaqs.md). Use `configure`
-(interactive) or `create-cgs` (flags) to author the spec directly.
+[docs/tutorials/02_onboarding_a_real_build_tree.md](docs/tutorials/02_onboarding_a_real_build_tree.md).
+Use `configure` (interactive) or `create-cgs` (flags) to author the spec
+directly.
 
 ## Safety checks
 
@@ -320,9 +324,13 @@ short version for contributors:
 
 ## Further reading
 
-- [docs/tutorial_cgsi1.md](docs/tutorial_cgsi1.md) — full CGSil1 walkthrough, step by step.
-- [docs/tutorial_cawaqs.md](docs/tutorial_cawaqs.md) — bootstrap the `cawaqs` multi-repo workspace, then hand off to its existing `make` build.
-- [docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference book, including the Python API (`ComplexGitSyncClient`) and complete command details.
+[docs/tutorials/](docs/tutorials/) — three tutorials, simplest to most advanced:
+
+1. [01_first_multi_repo_workspace.md](docs/tutorials/01_first_multi_repo_workspace.md) — full CLI lifecycle walkthrough on a synthetic sandbox tree.
+2. [02_onboarding_a_real_build_tree.md](docs/tutorials/02_onboarding_a_real_build_tree.md) — hand-author a `.cgs` for a real 19-repo project, then hand off to its existing `make` build.
+3. [03_configuration_discovery_modes.md](docs/tutorials/03_configuration_discovery_modes.md) — a real project with no `.cgs` of its own, reached three ways: by hand, `discover`, `import-submodules`.
+
+[docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference book, including the Python API (`ComplexGitSyncClient`) and complete command details.
 
 ## Authorship
 

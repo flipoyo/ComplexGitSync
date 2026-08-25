@@ -21,7 +21,14 @@
       "Bash(latexmk -pdf -interaction=nonstopmode c_user_guide.tex)",
       "Bash(latexmk -c MASTER.tex)",
       "Bash(latexmk -c c_user_guide.tex)",
-      "Bash(git -C /home/flipoyo/Programmes/ComplexGitSync status --short docs)"
+      "Bash(git -C /home/flipoyo/Programmes/ComplexGitSync status --short docs)",
+      "Bash(grep -n '\\\\$ cgitsync\\\\|cgitsync ' docs/Text/user_guide.tex)",
+      "Bash(grep -n '\\\\$ cgitsync' docs/Text/user_guide.tex)",
+      "Bash(grep -n '\\\\$ cgitsync\\\\b' docs/Text/worked_examples.tex)",
+      "Bash(grep -c '^\\\\$ cgitsync\\\\| \\\\$ cgitsync' docs/Text/user_guide.tex)",
+      "Bash(grep -n '^\\\\$ cgitsync' docs/Text/user_guide.tex)",
+      "Bash(sed -i 's/^\\\\$ cgitsync/$ pixi run cgitsync/' docs/Text/user_guide.tex)",
+      "Bash(grep -c '^\\\\$ pixi run cgitsync' docs/Text/user_guide.tex)"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-flipoyo-Programmes-ComplexGitSync/27041bb0-a77c-49c5-8134-2bfcf9978ee1/scratchpad"

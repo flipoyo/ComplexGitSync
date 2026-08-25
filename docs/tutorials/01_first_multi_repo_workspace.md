@@ -1,17 +1,32 @@
-# Minimalist Tutorial — CGSil1 CLI Workflow
+# Tutorial 1 of 3 — Your First Multi-Repo Workspace
 
-This tutorial walks through the complete CLI workflow for the **CGSil1** test
-topology, using the reference project at
-<https://gitlab.com/CGS_test/CGSil1>.
+**Start here.** This is the easiest of the three tutorials in
+[`docs/tutorials/`](README.md): it walks through the complete `cgitsync` CLI
+lifecycle — validate, initialise, and the full git cycle
+(add → commit → push → tag → freeze) — on a small, synthetic, mixed-provider
+tree with every field left at its default. Nothing here requires a private
+repository, real credentials, or an existing project to adopt.
 
-It covers every step from topology validation through initialisation to the full
-git cycle (add → commit → push → tag → freeze).
+The reference project is **CGSil1**, at
+<https://gitlab.com/CGS_test/CGSil1>. It exists purely as a sandbox for this
+tutorial; the topology it demonstrates is deliberately minimal so every
+concept introduced here — `.cgs` authoring, the READY lifecycle, tree-wide
+git operations, freeze/release — carries over unchanged to real projects.
+
+> **Every command below is a Pixi task.** `cgitsync` is not a globally
+> installed executable — always run it as `pixi run cgitsync ...`, never as
+> a bare `cgitsync ...` (run `pixi install` once per checkout first).
 
 > **Sandbox / CI note**
 > The companion test file
 > `tests/integration/test_tuto_cgsi1.py` reproduces every step below using
 > local bare-repo remotes so that the tutorial can be verified in CI without
 > any network access.
+
+**Next:** once you're comfortable with the lifecycle above, move on to
+[Tutorial 2 — Onboarding a Real Build Tree](02_onboarding_a_real_build_tree.md)
+to see the same `.cgs` authoring style applied to a real, much larger
+project.
 
 ---
 
@@ -119,7 +134,7 @@ topology without interactive input.
 
 Before starting, keep in mind that `CGSHOME=$CGSPATH/CGSil1`,
 `CWD=$CGSHOME/ComplexGitSync`, and commands are run from `$CWD`.
-When `--output-path` is omitted, `cgitsync initialise` behaves as if
+When `--output-path` is omitted, `pixi run cgitsync initialise` behaves as if
 `--output-path $CGSPATH` had been passed, with the default `CGSPATH=../..`
 relative to `$CWD`. The `.cgs` file is read first, then `CGSHOME` is derived
 from the project name; child repositories such as `CGSil2` and `CGSih1` are
@@ -239,7 +254,7 @@ pixi run cgitsync pull
 `pull` includes the project root repository. It runs parent-first:
 `ROOT -> PARENT -> LEAF`, pulling every repository — root, parent, and leaf
 alike — as its own plain `git pull`.
-If local files block this safe pull, the CLI suggests `cgitsync pull-force`.
+If local files block this safe pull, the CLI suggests `pixi run cgitsync pull-force`.
 Use that recovery command only when discarding local uncommitted and untracked
 work is acceptable.
 
@@ -337,19 +352,19 @@ pixi run cgitsync launch-release v1.1.0
 
 | Step | Command | Description |
 |------|---------|-------------|
-| 1 | `cgitsync validate ../CGSil1.cgs` | Parse and check the topology |
-| 2 | `cgitsync view-tree ../CGSil1.cgs` | Render the tree summary |
-| 3 | `cgitsync initialise ../CGSil1.cgs` | Attach the root repo and clone child repos |
-| recovery | `cgitsync clean-init ../CGSil1.cgs` | Purge generated clone state, then initialise |
-| cleanup | `cgitsync purge ../CGSil1.cgs` | Remove root-level generated clone state |
-| 4 | `cgitsync pull` | Resync root, parent, and leaf repos |
-| 5 | `cgitsync add` | Stage all changes |
-| 6 | `cgitsync commit "message"` | Commit across the tree |
-| 7 | `cgitsync push` | Push to remotes |
-| optional | `cgitsync status` | Inspect local cleanliness and recorded snapshot drift |
-| 8 | `cgitsync freeze-release v1.1.0 "release v1.1.0"` | Minimalist release workflow |
-| expert | `cgitsync freeze v1.1.0` | Expert release commit + tag + snapshot |
-| 9 | `cgitsync launch-release v1.1.0` | Check out the frozen release tag |
+| 1 | `pixi run cgitsync validate ../CGSil1.cgs` | Parse and check the topology |
+| 2 | `pixi run cgitsync view-tree ../CGSil1.cgs` | Render the tree summary |
+| 3 | `pixi run cgitsync initialise ../CGSil1.cgs` | Attach the root repo and clone child repos |
+| recovery | `pixi run cgitsync clean-init ../CGSil1.cgs` | Purge generated clone state, then initialise |
+| cleanup | `pixi run cgitsync purge ../CGSil1.cgs` | Remove root-level generated clone state |
+| 4 | `pixi run cgitsync pull` | Resync root, parent, and leaf repos |
+| 5 | `pixi run cgitsync add` | Stage all changes |
+| 6 | `pixi run cgitsync commit "message"` | Commit across the tree |
+| 7 | `pixi run cgitsync push` | Push to remotes |
+| optional | `pixi run cgitsync status` | Inspect local cleanliness and recorded snapshot drift |
+| 8 | `pixi run cgitsync freeze-release v1.1.0 "release v1.1.0"` | Minimalist release workflow |
+| expert | `pixi run cgitsync freeze v1.1.0` | Expert release commit + tag + snapshot |
+| 9 | `pixi run cgitsync launch-release v1.1.0` | Check out the frozen release tag |
 
 See `tests/integration/test_tuto_cgsi1.py` for a runnable sandbox that
 exercises the full workflow against local bare-repo remotes.
