@@ -353,3 +353,40 @@ pixi run cgitsync launch-release v1.1.0
 
 See `tests/integration/test_tuto_cgsi1.py` for a runnable sandbox that
 exercises the full workflow against local bare-repo remotes.
+
+## 5. A real-world example: `examples/cawaqsviz.cgs`
+
+CGSil1 above is a synthetic reference topology built to exercise every CLI
+step. `examples/cawaqsviz.cgs` is a second, real-world one:
+[gitlab.com/cawaqs/gviz/cawaqsviz](https://gitlab.com/cawaqs/gviz/cawaqsviz),
+a GitLab project nested three levels deep (`cawaqs/gviz/cawaqsviz` — a
+subgroup, not just an owner/repo pair), with two GitHub children mounted at
+non-default paths:
+
+```
+CaWaQS-Viz  (GitLab: cawaqs/gviz/cawaqsviz, root, mounted at ".")
+  ├── HydrologicalTwinAlphaSeries  (GitHub, at external/HydrologicalTwinAlphaSeries)
+  └── user_guide_CaWaQS-Viz        (GitHub, at docs/CWV_user_guide)
+```
+
+Neither child has a `.cgs` of its own, so both set
+`nested_config = "disabled"` — worth noting because that's an easy mistake
+to make (see `planning/Onboarding_DevPlanTicket.md`, Phase 1: the file
+originally shipped without those overrides, and without them ComplexGitSync
+tries to auto-discover a nested `.cgs` that doesn't exist and fails).
+
+Try it the same way as CGSil1's Quickstart, just with `bootstrap` (see
+[README.md](../README.md)'s Standalone mode section) since this example
+doesn't require ComplexGitSync to be cloned inside the tree it manages:
+
+```bash
+pixi run cgitsync bootstrap examples/cawaqsviz.cgs cawaqsviz-demo
+pixi run cgitsync view-tree --search-dir <the path bootstrap printed>
+```
+
+`tests/integration/test_cgsi_topology.py::
+TestCloneAndLaunchReleaseLifecycle::
+test_cawaqsviz_example_clones_into_corrected_nested_layout` exercises this
+exact file (not a copy) against local bare-repo remotes in CI; it was also
+run once against the real live repositories on 2026-08-25 and reached a
+`READY` tree with both children at their correct nested paths.

@@ -653,6 +653,53 @@ class TestCloneAndLaunchReleaseLifecycle:
         tracked_modes = _run_git(root_clone, "ls-files", "--stage", "--", "deps/leaf")
         assert tracked_modes == ""
 
+    def test_cawaqsviz_example_clones_into_corrected_nested_layout(self, monkeypatch, tmp_path):
+        """Onboarding_DevPlanTicket.md Phase 1 acceptance test.
+
+        Loads the real shipped examples/cawaqsviz.cgs (not a synthetic
+        copy) and routes its three declared repos to local bare-repo
+        fixtures, proving the corrected topology actually reaches READY
+        with each child physically nested at the exact relative_path
+        cawaqsviz's own code expects (external/... and docs/...), not the
+        flat/wrong layout the file described before this phase's fix.
+        """
+        examples_dir = Path(__file__).resolve().parents[2] / "examples"
+        cawaqsviz_cgs = examples_dir / "cawaqsviz.cgs"
+
+        root_remote, _ = _seed_remote_repo(tmp_path, "cawaqsviz-root")
+        htas_remote, _ = _seed_remote_repo(tmp_path, "htas")
+        guide_remote, _ = _seed_remote_repo(tmp_path, "user-guide")
+
+        clone_target = tmp_path / "workspace"
+        client = ComplexGitSyncClient()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            client,
+            "_build_remote_url",
+            lambda entry: {
+                "cawaqsviz": str(root_remote),
+                "HydrologicalTwinAlphaSeries": str(htas_remote),
+                "user_guide_CaWaQS-Viz": str(guide_remote),
+            }[entry.project_name],
+        )
+
+        registry = client.clone_cgs(cawaqsviz_cgs, target_dir=clone_target)
+
+        assert registry.is_ready() is True
+        root_entry = registry.get("root")
+        assert root_entry.absolute_path == clone_target
+        htas_clone = clone_target / "external" / "HydrologicalTwinAlphaSeries"
+        guide_clone = clone_target / "docs" / "CWV_user_guide"
+        assert (htas_clone / ".git").exists()
+        assert (guide_clone / ".git").exists()
+        # Plain independent clones, not gitlinks, per the project's own
+        # nested-repo model (DevPlanTicket_gitignore.md).
+        tracked_modes = _run_git(
+            clone_target, "ls-files", "--stage", "--",
+            "external/HydrologicalTwinAlphaSeries", "docs/CWV_user_guide",
+        )
+        assert tracked_modes == ""
+
     def test_bootstrap_clones_into_isolated_home_cgs_by_default(
         self, local_two_repo_remotes, monkeypatch, tmp_path
     ):
