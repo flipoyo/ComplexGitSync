@@ -50,6 +50,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "push": "Push repositories from a READY tree.",
     "tag": "Create and push a tag across a READY tree.",
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
+    "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
     # Configuration commands
     "configure": (
         "Create a concise .cgs specification for GitHub, GitLab, Codeberg, "
@@ -744,6 +745,35 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Path to write the validated .cgs file.",
             )
             subparser.set_defaults(handler=_handle_create_cgs)
+        elif command_name == "import-submodules":
+            subparser.add_argument(
+                "repo_root",
+                help=(
+                    "Path to the local git repository whose .gitmodules file "
+                    "lists the submodules to import."
+                ),
+            )
+            subparser.add_argument(
+                "--apply",
+                action="store_true",
+                default=False,
+                help=(
+                    "Perform the conversion: run 'git rm --cached' for each "
+                    "submodule, remove its .gitmodules stanza, and update "
+                    ".gitignore. Without this flag the command only prints "
+                    "what would change (dry-run)."
+                ),
+            )
+            subparser.add_argument(
+                "--output",
+                metavar="FILE",
+                default=None,
+                help=(
+                    "Write a .cgs snippet for the imported submodules to FILE. "
+                    "Only used when --apply is also set."
+                ),
+            )
+            subparser.set_defaults(handler=_handle_import_submodules)
     return parser
 
 
@@ -1371,6 +1401,56 @@ def _handle_create_cgs(args: argparse.Namespace) -> int:
         output_path=output_path,
     )
     print(f".cgs file written to: {output_path.resolve()}")
+    return 0
+
+
+def _handle_import_submodules(args: argparse.Namespace) -> int:
+    repo_root = Path(args.repo_root).resolve()
+    apply = args.apply
+    output = getattr(args, "output", None)
+    return _run_with_logging(
+        command_name="import-submodules",
+        source=repo_root,
+        runner=lambda client, source: _execute_import_submodules(
+            client,
+            source,
+            apply=apply,
+            output=output,
+        ),
+    )
+
+
+def _execute_import_submodules(
+    client: ComplexGitSyncClient,
+    source: Path,
+    *,
+    apply: bool = False,
+    output: str | None = None,
+) -> int:
+    """Execute the import-submodules command and print a human-readable report."""
+    report = client.import_submodules(source, apply=apply, output=output)
+
+    if not report.submodules:
+        print(f"No .gitmodules found at {source} — nothing to import.")
+        return 0
+
+    if not apply:
+        print(f"Dry run — {len(report.submodules)} submodule(s) in {source}/.gitmodules")
+        print("Pass --apply to perform the conversion.\n")
+        for sub in report.submodules:
+            print(f"  submodule: {sub.name}")
+            print(f"    path:   {sub.path}")
+            print(f"    url:    {sub.url}")
+            print(f"    branch: {sub.branch}")
+            print()
+        return 0
+
+    print(f"Converted {len(report.converted)} submodule(s) in {source}:")
+    for name in report.converted:
+        sub = next(s for s in report.submodules if s.name == name)
+        print(f"  ✓ {name}  ({sub.path})")
+    if output:
+        print(f".cgs entries written to: {Path(output).resolve()}")
     return 0
 
 

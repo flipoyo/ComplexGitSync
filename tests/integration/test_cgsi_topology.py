@@ -758,3 +758,138 @@ class TestCloneAndLaunchReleaseLifecycle:
         assert restore_leaf.exists()
         assert _run_git(restore_root, "rev-parse", "--abbrev-ref", "HEAD") == "main"
         assert _run_git(restore_leaf, "rev-parse", "--abbrev-ref", "HEAD") == "main"
+
+
+class TestImportSubmodules:
+    """Integration tests for ComplexGitSyncClient.import_submodules()."""
+
+    def _make_child_repo(self, tmp_path: Path, name: str) -> Path:
+        """Create a minimal git repo at tmp_path/name-remote.git and seed it."""
+        remote, _ = _seed_remote_repo(tmp_path, name)
+        return remote
+
+    def _make_parent_with_submodule(
+        self, tmp_path: Path, child_remote: Path, submodule_path: str
+    ) -> Path:
+        """Create a parent repo that has *child_remote* as a submodule at *submodule_path*."""
+        parent_remote = tmp_path / "parent-remote.git"
+        _run_git(tmp_path, "init", "--bare", parent_remote.as_posix())
+
+        seed = tmp_path / "parent-seed"
+        seed.mkdir()
+        _run_git(seed, "init", "-b", "main")
+        _run_git(seed, "config", "user.email", "integration@complexgitsync.test")
+        _run_git(seed, "config", "user.name", "ComplexGitSync Integration")
+        (seed / "README.md").write_text("parent\n", encoding="utf-8")
+        _run_git(seed, "add", "README.md")
+        _run_git(seed, "commit", "-m", "initial")
+
+        # Add the child as a submodule — pass -c protocol.file.allow=always because
+        # recent git restricts the file:// transport by default.
+        _run_git(
+            seed,
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "--branch",
+            "main",
+            child_remote.as_posix(),
+            submodule_path,
+        )
+        # Rewrite the submodule URL in .gitmodules to a recognisable github form so
+        # _url_to_repo_identifier() can parse it when --output is requested.
+        gitmodules_path = seed / ".gitmodules"
+        original = gitmodules_path.read_text(encoding="utf-8")
+        rewritten = original.replace(child_remote.as_posix(), "https://github.com/owner/child.git")
+        gitmodules_path.write_text(rewritten, encoding="utf-8")
+        _run_git(seed, "add", ".gitmodules")
+        _run_git(seed, "commit", "-m", "add submodule")
+        _run_git(seed, "remote", "add", "origin", parent_remote.as_posix())
+        _run_git(seed, "push", "-u", "origin", "main")
+
+        return seed  # return the working copy, not the bare
+
+    def test_dry_run_reports_submodules_without_changes(self, tmp_path):
+        child_remote = self._make_child_repo(tmp_path, "child")
+        parent_wc = self._make_parent_with_submodule(
+            tmp_path, child_remote, "deps/child"
+        )
+
+        client = ComplexGitSyncClient()
+        report = client.import_submodules(parent_wc, apply=False)
+
+        assert len(report.submodules) == 1
+        assert report.submodules[0].path == "deps/child"
+        assert report.applied is False
+        assert report.converted == ()
+        # .gitmodules must still exist (dry-run must not mutate)
+        assert (parent_wc / ".gitmodules").is_file()
+        # gitlink must still be tracked
+        stage = _run_git(parent_wc, "ls-files", "--stage", "--", "deps/child")
+        assert "160000" in stage
+
+    def test_import_submodules_converts_gitlinks_to_plain_clones(self, tmp_path):
+        child_remote = self._make_child_repo(tmp_path, "child")
+        parent_wc = self._make_parent_with_submodule(
+            tmp_path, child_remote, "deps/child"
+        )
+
+        client = ComplexGitSyncClient()
+        report = client.import_submodules(parent_wc, apply=True)
+
+        # Report reflects the conversion
+        assert report.applied is True
+        assert "child" in report.converted or "deps/child" in report.converted
+
+        # Gitlink removed from index
+        stage = _run_git(parent_wc, "ls-files", "--stage", "--", "deps/child")
+        assert "160000" not in stage
+
+        # Child working tree and .git still present
+        assert (parent_wc / "deps" / "child").is_dir()
+        assert (parent_wc / "deps" / "child" / ".git").exists()
+
+        # .gitignore now contains the child path
+        gitignore = (parent_wc / ".gitignore").read_text(encoding="utf-8")
+        assert "deps/child" in gitignore
+
+        # .gitmodules removed (all submodules converted)
+        assert not (parent_wc / ".gitmodules").is_file()
+
+    def test_import_submodules_writes_cgs_output(self, tmp_path):
+        child_remote = self._make_child_repo(tmp_path, "child")
+        parent_wc = self._make_parent_with_submodule(
+            tmp_path, child_remote, "deps/child"
+        )
+        output_path = tmp_path / "imported.cgs"
+
+        client = ComplexGitSyncClient()
+        report = client.import_submodules(parent_wc, apply=True, output=output_path)
+
+        assert report.applied is True
+        assert output_path.is_file()
+
+        # The emitted .cgs must parse and validate
+        from ComplexGitSync.cgs_format import CgsDocument
+        doc = CgsDocument.from_toml(output_path)
+        assert len(doc.repos) == 1
+        assert doc.repos[0].get("relative_path") == "deps/child"
+
+    def test_no_gitmodules_returns_empty_report(self, tmp_path):
+        # Create a plain git repo with no .gitmodules
+        seed = tmp_path / "plain"
+        seed.mkdir()
+        _run_git(seed, "init", "-b", "main")
+        _run_git(seed, "config", "user.email", "integration@complexgitsync.test")
+        _run_git(seed, "config", "user.name", "ComplexGitSync Integration")
+        (seed / "README.md").write_text("plain\n", encoding="utf-8")
+        _run_git(seed, "add", "README.md")
+        _run_git(seed, "commit", "-m", "initial")
+
+        client = ComplexGitSyncClient()
+        report = client.import_submodules(seed, apply=True)
+
+        assert report.submodules == ()
+        assert report.applied is False
+        assert report.converted == ()

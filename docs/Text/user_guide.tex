@@ -47,8 +47,8 @@ The minimalist level is \texttt{initialise}, \texttt{bootstrap},
 \texttt{status}, \texttt{view-tree}, and \texttt{launch-release}.  The expert level exposes
 the individual operations: \texttt{branch}, \texttt{checkout}, \texttt{purge},
 \texttt{validate}, \texttt{clone}, \texttt{pull}, \texttt{pull-force},
-\texttt{add}, \texttt{commit}, \texttt{push}, \texttt{tag}, and
-\texttt{freeze}.  The configuration level, \texttt{configure} and
+\texttt{add}, \texttt{commit}, \texttt{push}, \texttt{tag}, \texttt{freeze},
+and \texttt{import-submodules}.  The configuration level, \texttt{configure} and
 \texttt{create-cgs}, authors a \texttt{.cgs} specification without requiring
 existing state.  The memory level, \texttt{remember}, \texttt{memorize},
 \texttt{retrieve}, and \texttt{reload}, binds a project to an external
@@ -348,6 +348,51 @@ snapshot filename includes the release, for example
 \texttt{gts-000001}.
 With \texttt{--dry-run}, \cgscli{} prints the planned add/commit/tag/push graph
 for the loaded workspace without mutating it.
+
+\subsection{\texttt{import-submodules}}
+
+\begin{lstlisting}[language=bash]
+$ cgitsync import-submodules REPO_ROOT [--apply] [--output FILE]
+\end{lstlisting}
+
+Reads \texttt{REPO\_ROOT/.gitmodules} and reports (or converts) every declared
+git submodule to a plain ComplexGitSync nested clone.
+
+Without \texttt{--apply} (the default), the command performs a
+\emph{dry run}: it prints each submodule's name, path, URL, and branch, and
+the \texttt{.cgs} entry that would be generated, without touching the
+repository.
+
+With \texttt{--apply}:
+\begin{itemize}
+  \item Verifies every submodule's working tree is clean (\texttt{git status
+        --porcelain} must be empty); rejects dirty trees immediately.
+  \item Runs \texttt{git rm --cached <path>} per submodule, dropping the
+        gitlink from the index while leaving the child's working tree and
+        \texttt{.git} directory intact (no re-clone, no local history lost).
+  \item Removes the converted stanza from \texttt{.gitmodules} (deletes the
+        file entirely when all stanzas are converted) and stages the change.
+  \item Appends \texttt{<path>} to the parent's \texttt{.gitignore} using the
+        same helper that the \texttt{.gitignore} lifecycle sync uses.
+\end{itemize}
+
+The \texttt{--output FILE} option (only effective with \texttt{--apply})
+writes a validated \texttt{.cgs} snippet containing the converted submodule
+entries to \texttt{FILE}, suitable for integration into the project's main
+\texttt{.cgs} file.
+
+After applying, review and commit the staged changes manually:
+\begin{lstlisting}[language=bash]
+$ git -C REPO_ROOT status          # deleted .gitmodules, modified .gitignore
+$ git -C REPO_ROOT commit -m "chore: retire git submodules"
+\end{lstlisting}
+
+\textbf{Note:} ComplexGitSync stores no credentials and has no private-repo
+authentication story.  If a submodule's upstream is private and the ambient
+environment lacks access, the subsequent \cgscli{} \texttt{initialise} or
+\texttt{pull} will fail at the clone step.  The \texttt{import-submodules}
+step itself (which only touches the local index and working tree) will still
+succeed.
 
 \subsection{\texttt{launch-release}}
 

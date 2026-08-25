@@ -124,6 +124,7 @@ set (either export it, or run from inside the bootstrapped tree).
 | Expert | `push` | Push repositories from a READY tree. |
 | Expert | `tag` | Create and push a tag across a READY tree. |
 | Expert | `freeze` | Freeze a versioned state and emit a .gts snapshot. |
+| Expert | `import-submodules` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
 | Configuration | `configure` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
 | Configuration | `create-cgs` | Create a validated .cgs specification from CLI project definitions. |
 | Memory | `remember` | Bind a .cgs artefact to its external SSH-Git Memory endpoint. |
