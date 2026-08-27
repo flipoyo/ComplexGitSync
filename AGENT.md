@@ -6,6 +6,6 @@ example in `examples/complexgitsync.cgs`.
 ## Required local files and paths
 
 - `./DevSpec/DevSpecs.md` (DevSpec repository, usually a submodule)
-- `./AdditionalSpecs.md` (project-specific extension to DevSpecs)
+- `./AgentSpecs/AdditionalSpecs.md` (project-specific extension to DevSpecs)
 
 The top-level workflow and standards are still described in `AGENTS.md`.

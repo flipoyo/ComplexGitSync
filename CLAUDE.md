@@ -26,7 +26,7 @@ Do all of these as part of the change, not as a follow-up:
    must pass before any merge to main (`DevSpecs.md`, *Testing*).
 2. **Run `pixi run bump-version`** when wrapping up a feature branch, ahead
    of the auto-increment CI performs on merge to main (`DevSpecs.md`,
-   *Versioning*; `AdditionalSpecs.md`). `pyproject.toml` holds the
+   *Versioning*; `AgentSpecs/AdditionalSpecs.md`). `pyproject.toml` holds the
    authoritative `YYYY.XX` version; the one command syncs `pixi.toml`,
    `src/ComplexGitSync/__init__.py`, the README title, and the
    `\cgsversion` macro in `docs/Setup/Shortcuts.tex` and
@@ -89,4 +89,5 @@ identifiers.
 - `tests/unit/`, `tests/integration/` — pytest suites (`pixi run test` runs both).
 - `examples/*.cgs`, `*.gts` — sample specs used in docs/tests.
 - `docs/` — LaTeX-built reference docs; generated `.aux`/`.log`/etc. are gitignored, the built PDFs are tracked.
-- `AdditionalSpecs.md`, `DevSpecs.md`, `AGENT.md` — deeper spec/authoring references beyond this file.
+- `AgentSpecs/AdditionalSpecs.md`, `DevSpecs.md`, `AGENT.md` — deeper spec/authoring references beyond this file.
+- `AgentSpecs/` — active planning tickets and project-specific specs; `archive/` — completed/superseded plans, kept as historical record.

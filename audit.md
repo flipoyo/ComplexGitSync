@@ -2,7 +2,7 @@
 
 This is the current architecture audit for the `.cgs` format, CLI authoring,
 provider identity, and runtime boundary. Historical regrouping plans are kept
-under `Planning/` and are explicitly marked as archives.
+under `AgentSpecs/` and `archive/`, and are explicitly marked as archives.
 
 ## Responsibility boundaries
 
@@ -13,7 +13,7 @@ under `Planning/` and are explicitly marked as archives.
 | `master.py` | Local, workspace-scoped Git identity configuration for ComplexGitSync's own automated commits; defaults to local git config, overridable and persisted per `CGSHOME` workspace via `.cgitsync/master.toml` — not part of the `.cgs`/`.gts` project spec |
 | `git_repo.py` | Canonical repository identity, provider registry, remote URL construction, and per-repository runtime state |
 | `git_tree.py` | Reference and working tree structures, traversal, lifecycle state, thin `to_cgs()` delegation, and `.gitignore` maintenance across the tree (`sync_gitignore`) — filesystem-only, no `subprocess`/Git/network |
-| `operations.py` | Tier 2 "Actions" (see `AdditionalSpecs.md`): leaf/parent-first Git operations over a `WorkingGitTree` + `GitRunner` — `checkout_tree`, `branch_tree`, `add_tree`, `commit_tree`, `push_tree`, `tag_tree`, `freeze_release_tree`, branch-topology validation. Requires a `READY` tree; raises `TreeNotReadyError` otherwise |
+| `operations.py` | Tier 2 "Actions" (see `AgentSpecs/AdditionalSpecs.md`): leaf/parent-first Git operations over a `WorkingGitTree` + `GitRunner` — `checkout_tree`, `branch_tree`, `add_tree`, `commit_tree`, `push_tree`, `tag_tree`, `freeze_release_tree`, branch-topology validation. Requires a `READY` tree; raises `TreeNotReadyError` otherwise |
 | `orchestre.py` | Runtime documents, registry construction, nested discovery, `GitRunner`, and the `ComplexGitSyncClient` orchestration facade; delegates tree-level Git actions to `operations.py` rather than re-implementing them; reads and retires `.gitmodules` (submodule-to-nested-clone migration via `import_submodules`); scans a working tree for checked-out repositories to draft a `.cgs` (`discover_repos`), reusing `cgs_format.parse_repo_id` rather than parsing identifiers itself |
 | `cli.py` | CLI argument and prompt collection, then delegation to the format or runtime boundary |
 
@@ -85,7 +85,7 @@ without performing Git or network operations.
   paired with the minimal `examples/template.cgs`.
 - Explicit/verbose `.cgs` data in tests verifies advanced overrides and backward
   compatibility; it is not the recommended authoring style.
-- Files explicitly marked as historical under `Planning/`, and the archived
+- Files explicitly marked as historical under `AgentSpecs/`, and the archived
   `CorPlan.md` diagram, may retain old terminology to document migrations.
 - `.gts`, `.lgr`, synchronization, freeze, and kernel semantics remain outside
   this format/provider audit and were not redesigned.

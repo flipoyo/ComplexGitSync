@@ -217,12 +217,41 @@ grep -rn "TODO\|FIXME\|XXX\|HACK\|DEPRECATED" src/ComplexGitSync/
 
 ---
 
-## D7 — Repository root  `DELETE`
+## D7 — Repository root  `DELETE` — **done, 2026-08-27 (deviated from ticket, by operator decision)**
 
 **Keep:** `README.md`, `AGENT.md`, `DevSpecs.md`, `audit.md`, `LICENSE`.
 
 **Delete:** `CorPlan.md`, `UPDATEFILES.md`, `Planning/`, `archive/`, and
 `AdditionalSpecs.md` unless `audit.md` genuinely does not cover its content.
+
+**Outcome:** none of this step's assumptions held up under verification —
+`CorPlan.md` was never at root (only `planning/CorPlan.md`); `UPDATEFILES.md`
+is actively linked from `.github/PULL_REQUEST_TEMPLATE.md`; `planning/`
+contains this very ticket's own live tracking file; `archive/` holds
+substantial historical documentation, not clutter. Brought to the operator
+as three separate decisions rather than executed on the ticket's default:
+
+1. **`UPDATEFILES.md`** — deleted, content inlined directly into
+   `.github/PULL_REQUEST_TEMPLATE.md` instead of linked out, so nothing
+   broke.
+2. **`planning/` and `archive/`** — kept, not deleted. Explicit deviation
+   from "git history is the archive": `archive/`'s ~7 historical planning
+   docs and the still-referenced tickets under (the renamed) `AgentSpecs/`
+   were judged worth keeping as navigable files, not buried in git log.
+3. **`AdditionalSpecs.md`** — kept, not folded into `audit.md` (operator:
+   they serve different purposes and shouldn't be merged). Instead: moved
+   into the planning folder, and that folder renamed `planning/` →
+   `AgentSpecs/` (now holding `AdditionalSpecs.md` alongside the planning
+   tickets). Every cross-reference to the old `planning/`/root-level
+   `AdditionalSpecs.md` paths was updated in the live docs (`AGENT.md`,
+   `CLAUDE.md`, `audit.md`, `docs/Text/user_guide.tex`,
+   `docs/tutorials/03_configuration_discovery_modes.md`); `DevSpecs.md` and
+   `docs/DocSpecs.md` were left untouched since both are explicitly
+   project-agnostic templates describing a generic convention, not this
+   project's specific layout. `archive/*.md` and the other relocated
+   planning tickets (`CorPlan.md`, `Onboarding_DevPlanTicket.md`,
+   `DevPlanTicket_gitignore.md`) kept their internal prose as-is —
+   historical records, moved but not rewritten.
 
 ---
 

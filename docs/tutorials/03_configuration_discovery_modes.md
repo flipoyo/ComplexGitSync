@@ -47,7 +47,7 @@ CaWaQS-Viz  (GitLab: cawaqs/gviz/cawaqsviz, root, mounted at ".")
 
 Neither child has a `.cgs` of its own, so both need
 `nested_config = "disabled"` — an easy override to forget, and the mistake
-each mode below is checked against making (see `planning/Onboarding_DevPlanTicket.md`
+each mode below is checked against making (see `AgentSpecs/Onboarding_DevPlanTicket.md`
 Phase 1: the first hand-authored draft shipped without it, and without it
 `cgitsync` tries to auto-discover a nested `.cgs` that doesn't exist and
 fails).
