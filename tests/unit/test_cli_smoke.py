@@ -2238,6 +2238,30 @@ def test_readme_documents_every_cli_command():
     assert not missing, f"README.md command reference is missing: {missing}"
 
 
+def test_readme_command_reference_lists_only_real_commands():
+    """The reverse direction of the check above.
+
+    A command documented in README.md's ``## Command reference`` table that
+    the parser cannot actually build is as much a drift bug as an
+    undocumented command — build_parser() only ever creates a subparser for
+    a name that is a _PLANNED_COMMANDS key (see
+    test_parser_choices_match_planned_commands), so a phantom row here would
+    silently promise a command that errors with "invalid choice".
+    """
+    from ComplexGitSync.cli import _PLANNED_COMMANDS
+
+    readme_path = Path(__file__).resolve().parents[2] / "README.md"
+    readme_text = readme_path.read_text(encoding="utf-8")
+
+    table_match = re.search(r"## Command reference\n\n(.*?)\n\n##", readme_text, re.DOTALL)
+    assert table_match, "README.md's '## Command reference' table was not found."
+    documented = re.findall(r"^\| \S[^|]*\| `([a-z][a-z-]*)` \|", table_match.group(1), re.MULTILINE)
+    assert documented, "No command rows parsed from README.md's Command reference table."
+
+    phantom = [command for command in documented if command not in _PLANNED_COMMANDS]
+    assert not phantom, f"README.md documents commands the CLI cannot build: {phantom}"
+
+
 def test_discover_command_uses_client_method(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
