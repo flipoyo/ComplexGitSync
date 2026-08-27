@@ -1956,20 +1956,7 @@ def test_client_load_cgs_writes_gts_snapshot(tmp_path):
     assert (state_dirs[0] / "project.gts").is_file()
     assert (state_dirs[0] / "project.cgs").is_file()
     assert (state_dirs[0] / "demo.lgr").is_file()
-    assert not (state_dirs[0] / ".counter").exists()
     assert not (tmp_path / "demo.lgr").exists()
-
-
-def test_client_load_cgs_writes_counter_only_in_debug_mode(monkeypatch, tmp_path):
-    config_path = _write_root_cgs(tmp_path)
-    monkeypatch.setenv("CGITSYNC_DEBUG_COUNTER", "1")
-
-    client = ComplexGitSyncClient()
-    client.load(config_path)
-
-    state_dirs = sorted((tmp_path / ".cgitsync").glob("state(*)_*"))
-    assert len(state_dirs) == 1
-    assert (state_dirs[0] / ".counter").read_text(encoding="utf-8") == "0\n"
 
 
 def test_client_load_cgs_updates_project_local_lgr(tmp_path):

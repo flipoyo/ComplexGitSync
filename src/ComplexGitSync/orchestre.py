@@ -325,11 +325,6 @@ DEFAULT_MEMORY_REMOTE_NAME = "forge43"
 MEMORY_CONFIG_FILENAME = "memory.toml"
 
 
-def _debug_counter_enabled() -> bool:
-    value = os.environ.get("CGITSYNC_DEBUG_COUNTER", "")
-    return value.lower() in {"1", "true", "yes", "on"}
-
-
 def _local_status_from_porcelain(status_lines: list[str]) -> str:
     if not status_lines:
         return "clean"
@@ -898,9 +893,8 @@ class LocalGitRegister:
 
     _HASH_CHUNK_SIZE = 65536
 
-    def __init__(self, register_path: Path | str, *, debug_counter: bool | None = None) -> None:
+    def __init__(self, register_path: Path | str) -> None:
         self.register_path = Path(register_path)
-        self.debug_counter = _debug_counter_enabled() if debug_counter is None else debug_counter
 
     def record_snapshot(
         self,
@@ -950,8 +944,6 @@ class LocalGitRegister:
 
         self.register_path.parent.mkdir(parents=True, exist_ok=True)
         self.register_path.write_text(tomli_w.dumps(data), encoding="utf-8")
-        if self.debug_counter:
-            self._write_debug_counter(resolved_snapshot_path.parent, state_order)
         return snapshot_id
 
     def _load(self) -> dict[str, Any]:
@@ -987,11 +979,6 @@ class LocalGitRegister:
             else register_parent / ".cgitsync"
         )
         return max(max_order + 1, _next_state_directory_order(cgitsync_dir, state_hash))
-
-    def _write_debug_counter(self, state_dir: Path, state_order: int) -> None:
-        if _STATE_DIR_RE.fullmatch(state_dir.name) is None:
-            return
-        (state_dir / ".counter").write_text(f"{state_order}\n", encoding="utf-8")
 
     def _hash_snapshot_file(self, snapshot_path: Path) -> str:
         """Compute a canonical snapshot hash for ``snapshot_path``."""
@@ -5028,11 +5015,6 @@ class ComplexGitSyncClient:
             )
 
         memory_state.temporary_path.rename(memory_state.final_path)
-        if _debug_counter_enabled():
-            (memory_state.final_path / ".counter").write_text(
-                f"{memory_state.state_order}\n",
-                encoding="utf-8",
-            )
         if legacy_register_path.is_file():
             legacy_register_path.unlink()
         self.loaded_snapshot_path = final_output_path
