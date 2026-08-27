@@ -9,7 +9,7 @@ under `Planning/` and are explicitly marked as archives.
 | Module | Responsibility |
 |---|---|
 | `cgs_format.py` | `.cgs` TOML parsing, authoring grammar, normalization, static validation, `CgsDocument`/tree projection, minimization, and serialization |
-| `config_document.py` | Format-neutral `ConfigDocument` base (parse/normalize/serialize scaffolding) shared by `CgsDocument` (`cgs_format.py`) and `GtsDocument`/`GocDocument` (`orchestre.py`); no Git access and no format-specific grammar of its own |
+| `config_document.py` | Format-neutral `ConfigDocument` base (parse/normalize/serialize scaffolding) shared by `CgsDocument` (`cgs_format.py`) and `GtsDocument` (`orchestre.py`); no Git access and no format-specific grammar of its own |
 | `master.py` | Local, workspace-scoped Git identity configuration for ComplexGitSync's own automated commits; defaults to local git config, overridable and persisted per `CGSHOME` workspace via `.cgitsync/master.toml` — not part of the `.cgs`/`.gts` project spec |
 | `git_repo.py` | Canonical repository identity, provider registry, remote URL construction, and per-repository runtime state |
 | `git_tree.py` | Reference and working tree structures, traversal, lifecycle state, thin `to_cgs()` delegation, and `.gitignore` maintenance across the tree (`sync_gitignore`) — filesystem-only, no `subprocess`/Git/network |

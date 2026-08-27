@@ -270,7 +270,7 @@ cli.py                   argument/prompt collection, build_parser, main
 ```
 config_document.py       ConfigDocument  (shared format-neutral base)
 cgs_format.py            CgsDocument and the complete .cgs boundary
-orchestre.py             GtsDocument / GocDocument runtime documents
+orchestre.py             GtsDocument runtime document
 errors.py                exception hierarchy
 ```
 
@@ -299,7 +299,6 @@ Do **not** split it into plugins or separate packages.
 |---|---|---|
 | Local authoring spec | `.cgs` | TOML |
 | Generated Git Tree State snapshot | `.gts` | TOML |
-| Planning / GOC documents | `.goc` | TOML, YAML, or JSON |
 | Local Git Register | `.lgr` | TOML |
 
 - TOML read uses stdlib `tomllib`; TOML write uses `tomli-w`.
@@ -515,9 +514,8 @@ The `.lgr` register is responsible for:
 - tracking the current snapshot associated with the project
 - staying in sync with the project-local lifecycle state
 
-`print(.gts)` and `pull(.gts)` are available, and `.goc` plans can be executed
-through `ComplexGitSyncClient.orchestrate(<plan.goc>)`. Snapshot writes update
-the project-local `.lgr` register and keep the current snapshot pointer aligned.
+`print(.gts)` and `pull(.gts)` are available. Snapshot writes update the
+project-local `.lgr` register and keep the current snapshot pointer aligned.
 
 ### Sync Ledger (`[[ledger]]`)
 

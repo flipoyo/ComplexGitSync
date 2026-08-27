@@ -75,7 +75,6 @@ from .operations import (
 from .orchestre import (
     ComplexGitSyncClient,
     GitRunner,
-    GocDocument,
     GtsDocument,
     LocalGitRegister,
     MemoryBinding,
@@ -146,7 +145,6 @@ __all__ = [
     "parse_repository_identifier",
     # orchestre.py
     "ComplexGitSyncClient",
-    "GocDocument",
     "GtsDocument",
     "GitRunner",
     "LocalGitRegister",

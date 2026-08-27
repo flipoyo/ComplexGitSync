@@ -260,20 +260,8 @@
   repo\_states
 };
 
-\node[classbox, below right=1.6cm and 0.6cm of base] (goc) {
-  \textbf{GocDocument}
-  \nodepart{two}
-  DOCUMENT\_KIND = ``goc''
-  \nodepart{three}
-  project\_source\\
-  interaction / profile / transport\\
-  actions\\
-  session\_setting(key)
-};
-
 \draw[inharrow] (cgs.north) -- (base.south west);
 \draw[inharrow] (gts.north) -- (base.south);
-\draw[inharrow] (goc.north) -- (base.south east);
 
 \end{tikzpicture}
 \end{figure}

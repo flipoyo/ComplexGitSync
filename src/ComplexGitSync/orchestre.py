@@ -7,7 +7,6 @@ in :mod:`ComplexGitSync.cgs_format`.
 
 Classes defined here (Tier 2 — Actions):
     GtsDocument             .gts state snapshot parser/validator
-    GocDocument             .goc command script parser/validator
     CommandRunLogger        Structured JSON event logger for a command run
     RuntimeStateStore       Persistent snapshot-pointer registry (.cgs → .gts)
     MemoryBinding           External SSH-Git Memory endpoint binding
@@ -60,11 +59,9 @@ from .git_repo import (
     GitRepo,
     NodeType,
     RefKind,
-    RepoAddress,
     RepoLifecycleState,
     SyncState,
     WorkingRepo,
-    validate_git_provider,
 )
 from .git_tree import (
     ROOT_REPO_ID,
@@ -108,7 +105,7 @@ from .operations import (
 )
 
 # ============================================================
-#  Runtime document layer — .gts and .goc
+#  Runtime document layer — .gts
 # ============================================================
 
 _SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -750,194 +747,6 @@ class GtsDocument(ConfigDocument):
                 "restore_operation": freeze_manifest.get("restore_operation"),
             }
         return payload
-
-
-_VALID_GOC_COMMANDS = frozenset(
-    {
-        "checkout",
-        "pull",
-        "add",
-        "commit",
-        "push",
-        "tag",
-        "freeze",
-    }
-)
-
-
-class GocDocument(ConfigDocument):
-    """Parser and validator for ``.goc`` Git Orchestration Command files.
-
-    A ``.goc`` file is a TOML document that defines a **sequence of
-    ``cgitsync`` commands** to execute against a project.
-    """
-
-    DOCUMENT_KIND = "goc"
-
-    _REQUIRED_DOCUMENT_KEYS = ("format_version",)
-    _REQUIRED_PROJECT_KEYS = ("source",)
-    _VALID_INTERACTIONS = frozenset(("interactive", "direct"))
-    _VALID_PROFILES = frozenset(("verbose", "whisper_sync"))
-    _VALID_TRANSPORTS = frozenset(("ssh", "https"))
-    _DEFAULT_PROJECT_GITPROVIDER = "github"
-
-    SESSION_DEFAULTS: dict[str, str] = {
-        "interaction": "interactive",
-        "profile": "verbose",
-        "transport": "ssh",
-    }
-
-    def validate(self) -> None:
-        errors: list[str] = []
-
-        for key in self._REQUIRED_DOCUMENT_KEYS:
-            if self.read(f"document.{key}") is None:
-                errors.append(f"[document] missing required key: '{key}'")
-
-        for key in self._REQUIRED_PROJECT_KEYS:
-            if self.read(f"project.{key}") is None:
-                errors.append(f"[project] missing required key: '{key}'")
-
-        project = self._data.get("project", {})
-        if not isinstance(project, dict):
-            errors.append("[project] must be a table")
-            project = {}
-
-        source = self.read("project.source", "")
-        if source and not (str(source).endswith(".cgs") or str(source).endswith(".gts")):
-            errors.append(
-                f"[project].source must be a .cgs or .gts path; got: {source!r}"
-            )
-
-        provider = str(project.get("gitprovider", self._DEFAULT_PROJECT_GITPROVIDER))
-        try:
-            validated_provider = validate_git_provider(
-                provider,
-                gitprovider_url=project.get("gitprovider_url"),
-            )
-        except ValueError as exc:
-            errors.append(f"[project].{exc}")
-            validated_provider = None
-
-        identity_fields_present = any(
-            project.get(key)
-            for key in ("repo_name", "project_owner_name", "group_name", "gitprovider_url")
-        )
-        if identity_fields_present and validated_provider is not None:
-            if not project.get("repo_name"):
-                errors.append("[project] missing required key for address composition: 'repo_name'")
-            else:
-                address = RepoAddress(
-                    gitprovider=validated_provider,
-                    project_name=str(project["repo_name"]),
-                    repo_name=str(project["repo_name"]),
-                    project_owner_name=_as_optional_str(project.get("project_owner_name")),
-                    group_name=_as_optional_str(project.get("group_name")),
-                    gitprovider_url=_as_optional_str(project.get("gitprovider_url")),
-                )
-                try:
-                    address.validate()
-                except ValueError as exc:
-                    errors.append(f"[project].{exc}")
-        interaction = self.read("session.interaction", self.SESSION_DEFAULTS["interaction"])
-        if interaction not in self._VALID_INTERACTIONS:
-            errors.append(
-                f"[session].interaction invalid: {interaction!r} "
-                f"(choose from: {sorted(self._VALID_INTERACTIONS)})"
-            )
-
-        profile = self.read("session.profile", self.SESSION_DEFAULTS["profile"])
-        if profile not in self._VALID_PROFILES:
-            errors.append(
-                f"[session].profile invalid: {profile!r} "
-                f"(choose from: {sorted(self._VALID_PROFILES)})"
-            )
-
-        transport = self.read("session.transport", self.SESSION_DEFAULTS["transport"])
-        if transport not in self._VALID_TRANSPORTS:
-            errors.append(
-                f"[session].transport invalid: {transport!r} "
-                f"(choose from: {sorted(self._VALID_TRANSPORTS)})"
-            )
-
-        actions = self._data.get("actions", [])
-        if not isinstance(actions, list) or len(actions) == 0:
-            errors.append("'actions' must be a non-empty array of tables ([[actions]])")
-        else:
-            for idx, action in enumerate(actions):
-                if not isinstance(action, dict):
-                    errors.append(f"actions[{idx}] must be a table")
-                    continue
-                cmd = action.get("command")
-                if not cmd:
-                    errors.append(f"actions[{idx}] missing required key: 'command'")
-                elif cmd not in _VALID_GOC_COMMANDS:
-                    errors.append(
-                        f"actions[{idx}].command unknown: {cmd!r} "
-                        f"(valid commands: {sorted(_VALID_GOC_COMMANDS)})"
-                    )
-
-        if errors:
-            raise ConfigValidationError(
-                "Invalid .goc document:\n" + "\n".join(f"  • {e}" for e in errors)
-            )
-
-    @property
-    def project_source(self) -> str | None:
-        return self.read("project.source")
-
-    @property
-    def project_name(self) -> str | None:
-        return self.read("project.name")
-
-    @property
-    def project_repo_name(self) -> str | None:
-        return self.read("project.repo_name")
-
-    @property
-    def project_gitprovider_address(self) -> str | None:
-        return self._compose_project_gitprovider_address()
-
-    @property
-    def interaction(self) -> str:
-        return self.read("session.interaction", self.SESSION_DEFAULTS["interaction"])
-
-    @property
-    def profile(self) -> str:
-        return self.read("session.profile", self.SESSION_DEFAULTS["profile"])
-
-    @property
-    def transport(self) -> str:
-        return self.read("session.transport", self.SESSION_DEFAULTS["transport"])
-
-    @property
-    def actions(self) -> list[dict[str, Any]]:
-        return list(self._data.get("actions", []))
-
-    def session_setting(self, key: str) -> Any:
-        return self._data.get("session", {}).get(key, self.SESSION_DEFAULTS.get(key))
-
-    def _compose_project_gitprovider_address(self) -> str | None:
-        project = self._data.get("project", {})
-        if not isinstance(project, dict):
-            return None
-        repo_name = project.get("repo_name")
-        if not repo_name:
-            return None
-        provider = str(project.get("gitprovider", self._DEFAULT_PROJECT_GITPROVIDER))
-        try:
-            gitprovider = GitProvider(provider)
-        except ValueError:
-            return None
-        address = RepoAddress(
-            gitprovider=gitprovider,
-            project_name=str(repo_name),
-            repo_name=str(repo_name),
-            project_owner_name=_as_optional_str(project.get("project_owner_name")),
-            group_name=_as_optional_str(project.get("group_name")),
-            gitprovider_url=_as_optional_str(project.get("gitprovider_url")),
-        )
-        return address.to_url(AccessProtocol(self.transport))
 
 
 # ============================================================
@@ -4487,134 +4296,6 @@ class ComplexGitSyncClient:
         self._log_tree_transition(previous_tree_state, registry.lifecycle_state, reason="pull-force")
         self._log_event("pull_force_end", source_path=resolved_source, output_gts=snapshot_path)
         return registry
-
-    def orchestrate(
-        self,
-        plan_path: str | Path,
-        *,
-        stop_on_error: bool = True,
-    ) -> list[dict[str, Any]]:
-        """Execute a ``.goc`` orchestration plan through public client methods."""
-        resolved_plan = Path(plan_path).resolve()
-        document = GocDocument.from_toml(resolved_plan)
-        source = self._resolve_goc_project_source(document, resolved_plan)
-        report: list[dict[str, Any]] = []
-
-        for index, action in enumerate(document.actions):
-            raw_command = action.get("command")
-            if not isinstance(raw_command, str) or not raw_command.strip():
-                command_error = ValueError("action.command must be a non-empty string.")
-                report.append(
-                    {
-                        "index": index,
-                        "command": raw_command,
-                        "status": "error",
-                        "error": str(command_error),
-                    }
-                )
-                if stop_on_error:
-                    raise GitSyncError(
-                        f".goc action failed at index {index} ({raw_command!r}): {command_error}"
-                    ) from command_error
-                continue
-            command = raw_command.strip().lower()
-            raw_args = action.get("args")
-            args = raw_args if isinstance(raw_args, dict) else {}
-            try:
-                result = self._execute_goc_action(command, source, args)
-                report.append(
-                    {
-                        "index": index,
-                        "command": command,
-                        "status": "ok",
-                        "result": self._summarize_goc_result(result),
-                    }
-                )
-            except Exception as exc:
-                report.append(
-                    {
-                        "index": index,
-                        "command": command,
-                        "status": "error",
-                        "error": str(exc),
-                    }
-                )
-                if stop_on_error:
-                    raise GitSyncError(
-                        f".goc action failed at index {index} ({command!r}): {exc}"
-                    ) from exc
-        return report
-
-    def _resolve_goc_project_source(self, document: GocDocument, plan_path: Path) -> Path:
-        source = document.project_source
-        if not source:
-            raise ValueError("Invalid .goc document: [project].source is required.")
-        source_path = Path(_expand_environment_markers(source)).expanduser()
-        if not source_path.is_absolute():
-            source_path = (plan_path.parent / source_path).resolve()
-        else:
-            source_path = source_path.resolve()
-        return source_path
-
-    def _execute_goc_action(
-        self,
-        command: str,
-        source: Path,
-        args: dict[str, Any],
-    ) -> Any:
-        if command not in _VALID_GOC_COMMANDS:
-            raise ValueError(f"Unsupported .goc action command: {command!r}")
-
-        if command == "pull":
-            return self.git(self.registry, "pull", str(source))
-
-        if self.registry is None:
-            self.load_source(source, discover_nested=bool(args.get("discover_nested", False)))
-
-        active_registry = self.get_dependency_registry()
-        if command == "checkout":
-            ref_value = args.get("ref")
-            if ref_value is None or (isinstance(ref_value, str) and ref_value == ""):
-                raise ValueError("checkout action requires args.ref.")
-            return self.git(active_registry, "checkout", str(ref_value))
-        if command == "add":
-            return self.git(active_registry, "add")
-        if command == "commit":
-            message_value = args.get("message")
-            if message_value is None or (isinstance(message_value, str) and message_value == ""):
-                raise ValueError("commit action requires args.message.")
-            return self.git(active_registry, "commit", str(message_value))
-        if command == "push":
-            return self.git(active_registry, "push")
-        if command == "tag":
-            tag_value = args.get("name")
-            if tag_value is None or (isinstance(tag_value, str) and tag_value == ""):
-                raise ValueError("tag action requires args.name.")
-            return self.git(active_registry, "tag", str(tag_value))
-        if command == "freeze":
-            freeze_value = args.get("name")
-            if freeze_value is None or (isinstance(freeze_value, str) and freeze_value == ""):
-                raise ValueError("freeze action requires args.name.")
-            return self.git(active_registry, "freeze", str(freeze_value))
-
-    @staticmethod
-    def _summarize_goc_result(result: Any) -> Any:
-        if isinstance(result, WorkingGitTree):
-            return {
-                "lifecycle_state": result.lifecycle_state.value,
-                "repo_count": len(result.repos),
-            }
-        if isinstance(result, ProjectTreeState):
-            return {
-                "lifecycle_state": result.lifecycle_state.value,
-                "is_ready": result.is_ready,
-                "registry_complete": result.registry_complete,
-            }
-        if isinstance(result, Path):
-            return str(result)
-        if isinstance(result, (str, int, float, bool)) or result is None:
-            return result
-        return str(result)
 
     def checkout(
         self,

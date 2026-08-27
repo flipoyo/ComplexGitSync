@@ -1,8 +1,7 @@
 """Format-neutral configuration document I/O for ComplexGitSync.
 
 The shared :class:`ConfigDocument` base lives outside both ``cgs_format.py`` and
-``orchestre.py`` because it is also used by runtime formats such as ``.gts``
-and ``.goc``.
+``orchestre.py`` because it is also used by the runtime ``.gts`` format.
 """
 
 from __future__ import annotations
@@ -47,7 +46,7 @@ class ConfigDocument:
     Class-method factories
     ~~~~~~~~~~~~~~~~~~~~~~
     * ``from_dict(data)``    – create and validate from a plain dict
-    * ``from_toml(path)``    – load from a ``.toml`` / ``.cgs`` / ``.gts`` / ``.goc`` file
+    * ``from_toml(path)``    – load from a ``.toml`` / ``.cgs`` / ``.gts`` file
     * ``from_json(path)``    – load from a ``.json`` file
     * ``from_yaml(path)``    – load from a ``.yml`` / ``.yaml`` file (requires PyYAML)
 
@@ -94,7 +93,7 @@ class ConfigDocument:
 
     @classmethod
     def from_toml(cls, path: Path | str) -> ConfigDocument:
-        """Load a document from a TOML file (includes ``.cgs``, ``.gts``, ``.goc``)."""
+        """Load a document from a TOML file (includes ``.cgs``, ``.gts``)."""
         with open(path, "rb") as fh:
             data = tomllib.load(fh)
         return cls.from_dict(data)

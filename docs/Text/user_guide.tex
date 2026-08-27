@@ -547,8 +547,7 @@ ComplexGitSync execution context from it — the recovery path for a
 \section{Document Formats}
 
 \texttt{.cgs} means \textbf{ComplexGitSync} specification, \texttt{.gts} means
-\textbf{GitTreeState} snapshot, \texttt{.goc} means
-\textbf{GitOrchestrationCommand} plan, and \texttt{.lgr} means
+\textbf{GitTreeState} snapshot, and \texttt{.lgr} means
 \textbf{Local Git Register}.
 
 \subsection{Local Authoring Spec (\texttt{.cgs})}
@@ -779,11 +778,6 @@ state of the tree at a point in time.
         deduplicate equivalent snapshots.
 \end{itemize}
 
-\subsection{Planning / GOC Documents (\texttt{.goc})}
-
-Used for project identity and planning metadata. Supported in TOML, YAML, or
-JSON. YAML support requires the optional \texttt{PyYAML} dependency.
-
 \subsection{Local Git Register and Sync Ledger (\texttt{.lgr})}
 
 A TOML file maintained per project at \texttt{<project-root>/<Project\_name>.lgr}.
@@ -876,6 +870,6 @@ instead.
   \item[\texttt{No cloneable branch found for <repo>}]
     Confirm that the remote exposes either the repo's
     \texttt{default\_branch} or its \texttt{fallback\_branch}.
-  \item[PyYAML import error when using \texttt{.goc} files]
+  \item[PyYAML import error when calling \texttt{from\_yaml}/\texttt{to\_yaml}]
     Add PyYAML in the Pixi environment: \texttt{pixi add pyyaml}.
 \end{description}

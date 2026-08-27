@@ -333,7 +333,7 @@ src/ComplexGitSync/
   # --- Document layer (cross-cutting) ---
   config_document.py           ConfigDocument (format-neutral base)
   cgs_format.py                CgsDocument (.cgs parse/normalize/validate/serialize)
-  orchestre.py                 GtsDocument, GocDocument
+  orchestre.py                 GtsDocument
   errors.py                    exception hierarchy
 \end{lstlisting}
 
@@ -358,8 +358,6 @@ documents and retains runtime/orchestration responsibilities.
   \item \textbf{GtsDocument} (\texttt{.gts}) — a generated snapshot capturing
     the exact state of the tree including commit SHAs and absolute paths.
     \emph{Never} hand-edited.
-  \item \textbf{GocDocument} (\texttt{.goc}) — a command script encoding a
-     sequence of \texttt{cgitsync} commands with session defaults.
   \item \textbf{Local Git Register} (\texttt{.lgr}) — the project-local
     register that assigns one stable local id to each generated \texttt{.gts}
     and tracks the current snapshot pointer.

@@ -87,6 +87,6 @@ identifiers.
 
 - `src/ComplexGitSync/` — package source.
 - `tests/unit/`, `tests/integration/` — pytest suites (`pixi run test` runs both).
-- `examples/*.cgs`, `*.goc`, `*.gts` — sample specs used in docs/tests.
+- `examples/*.cgs`, `*.gts` — sample specs used in docs/tests.
 - `docs/` — LaTeX-built reference docs; generated `.aux`/`.log`/etc. are gitignored, the built PDFs are tracked.
 - `AdditionalSpecs.md`, `DevSpecs.md`, `AGENT.md` — deeper spec/authoring references beyond this file.

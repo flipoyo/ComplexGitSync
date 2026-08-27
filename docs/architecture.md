@@ -54,7 +54,7 @@ classDiagram
 `.cgs` parsing, serialization, constants, and validation. Its static
 repository topology is converted into a reference `GitTree`. The shared
 format-neutral `ConfigDocument` base remains in `config_document.py` because
-runtime `.gts` and `.goc` documents use it too. For interactive `configure`,
+the runtime `.gts` document uses it too. For interactive `configure`,
 `cli.py` collects prompt values and passes them to the non-interactive
 `ComplexGitSyncClient.configure()` Python API; `create-cgs` and direct
 `initialise --project/--repo` use the same facade. That method delegates to

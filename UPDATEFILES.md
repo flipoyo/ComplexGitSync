@@ -27,7 +27,7 @@ Python API. It also appears as a checklist in
   only and points here for the Python API.
 - [ ] `tests/unit/` — add/update coverage for the new/changed public symbol.
 
-## Any change to `.cgs` / `.gts` / `.lgr` / `.goc` semantics
+## Any change to `.cgs` / `.gts` / `.lgr` semantics
 
 - [ ] `docs/Text/user_guide.tex` — update `\section{Document Formats}`.
 - [ ] `audit.md` — update if it changes a module responsibility boundary.

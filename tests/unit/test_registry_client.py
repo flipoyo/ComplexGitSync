@@ -29,7 +29,6 @@ from ComplexGitSync.git_tree import (
 from ComplexGitSync.L0 import hash_time_l0_anchor, new_time_l0_anchor
 from ComplexGitSync.orchestre import (
     ComplexGitSyncClient,
-    GocDocument,
     GtsDocument,
     LocalGitRegister,
     MemoryBinding,
@@ -990,64 +989,6 @@ def test_client_pull_gts_resynchronizes_loaded_snapshot(monkeypatch):
     assert captured["recorded_snapshot_path"] == Path("pulled.gts").resolve()
 
 
-def test_client_orchestrate_executes_goc_actions_in_order(monkeypatch, tmp_path):
-    plan_path = _write_goc_plan(
-        tmp_path,
-        source="project.gts",
-        actions="""
-[[actions]]
-command = "pull"
-
-[[actions]]
-command = "checkout"
-[actions.args]
-ref = "autoTest"
-ref_type = "branch"
-
-[[actions]]
-command = "add"
-""",
-    )
-    client = ComplexGitSyncClient()
-    calls: list[tuple[str, tuple[str, ...]]] = []
-    registry = WorkingGitTree()
-
-    def _fake_git(bound_registry, command, *args):
-        assert bound_registry is client.registry or bound_registry is None
-        calls.append((command, tuple(str(a) for a in args)))
-        if command == "pull":
-            client.registry = registry
-        return client.registry if client.registry is not None else registry
-
-    monkeypatch.setattr(client, "git", _fake_git)
-
-    report = client.orchestrate(plan_path)
-
-    assert [entry["status"] for entry in report] == ["ok", "ok", "ok"]
-    assert calls == [
-        ("pull", (str((tmp_path / "project.gts").resolve()),)),
-        ("checkout", ("autoTest",)),
-        ("add", ()),
-    ]
-
-
-def test_client_orchestrate_reports_unsupported_actions(monkeypatch, tmp_path):
-    class _FakeGocDocument:
-        project_source = "project.cgs"
-        actions = [{"command": "unsupported-cmd"}]
-
-    monkeypatch.setattr(
-        GocDocument,
-        "from_toml",
-        classmethod(lambda cls, _path: _FakeGocDocument()),
-    )
-
-    report = ComplexGitSyncClient().orchestrate(tmp_path / "plan.goc", stop_on_error=False)
-
-    assert report[0]["status"] == "error"
-    assert "Unsupported .goc action command" in report[0]["error"]
-
-
 def test_client_print_supports_gts(tmp_path):
     snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=(tmp_path / "workspace" / "demo").resolve())
     client = ComplexGitSyncClient()
@@ -1585,21 +1526,6 @@ commit_sha = "abc123"
     assert root.resolved_ref_kind == RefKind.BRANCH
     assert root.resolved_ref_name == "main"
     assert root.fallback_branch == "main"
-
-
-def test_resolve_goc_project_source_expands_home_variable(monkeypatch, tmp_path):
-    fake_home = (tmp_path / "home" / "user").resolve()
-    monkeypatch.setenv("HOME", str(fake_home))
-    document = GocDocument.from_dict(
-        {
-            "document": {"format_version": "1.0"},
-            "project": {"source": "$HOME/workspace/demo/project.cgs"},
-            "actions": [{"command": "pull"}],
-        }
-    )
-
-    resolved = ComplexGitSyncClient()._resolve_goc_project_source(document, tmp_path / "plan.goc")
-    assert resolved == (fake_home / "workspace" / "demo" / "project.cgs")
 
 
 def test_make_repo_id_falls_back_to_name_when_relative_path_is_empty():
@@ -2631,26 +2557,6 @@ def _hash_memory_tree(cgitsync_dir: Path) -> str:
         digest.update(path.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
-
-
-def _write_goc_plan(tmp_path: Path, *, source: str, actions: str) -> Path:
-    plan_path = tmp_path / "plan.goc"
-    plan_path.write_text(
-        (
-            f"""
-[document]
-format_version = "1.0"
-
-[project]
-source = "{source}"
-""".strip()
-            + "\n\n"
-            + actions.strip()
-            + "\n"
-        ),
-        encoding="utf-8",
-    )
-    return plan_path
 
 
 def _nested_minimal(project_name: str) -> str:
