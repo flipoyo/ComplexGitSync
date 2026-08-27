@@ -150,7 +150,7 @@ parsing — **do not delete it in this step**.
 
 ---
 
-## D4 — `.goc` orchestration  `DELETE` — *decision required*
+## D4 — `.goc` orchestration  `DELETE` — *decision required* — **done, 2026-08-27**
 
 **Verify:**
 
@@ -165,9 +165,16 @@ section, `examples/*.goc`, any `.goc` test).
 **Acceptance.** Either `.goc` is on the active path with a command and a test,
 or `grep -ri goc src/` returns nothing.
 
+**Outcome:** the verify grep found the opposite of the ticket's assumption —
+`.goc` had ~44 passing tests and full docs coverage, just no CLI command.
+Brought to the operator as a real decision rather than auto-deleted on the
+ticket's default. **Decision: delete entirely.** Executed; see the `delete:
+.goc orchestration subsystem (D4)` commit. `grep -ri goc src/` now returns
+nothing.
+
 ---
 
-## D5 — Memory subsystem  `DELETE` — *decision required*
+## D5 — Memory subsystem  `DELETE` — *decision required* — **done, 2026-08-27**
 
 **Commands (4):** `remember`, `memorize`, `retrieve`, `reload`.
 
@@ -186,6 +193,16 @@ removing any of them. Getting this wrong breaks `freeze`.
 **Decide.** Delete entirely, or declare active and join the G1 net.
 
 **Acceptance.** No half state.
+
+**Outcome:** verification found this fully wired and live — all 4 commands
+registered in `cli.py`, a dedicated passing integration test
+(`tests/integration/test_memory_demo.py::test_cgsil1_external_memory_cycle_demo`),
+and hundreds of unit-test references across `test_registry_client.py`,
+`test_operations.py`, `test_cli_smoke.py`, `test_public_api.py`,
+`test_documents.py`. Brought to the operator alongside D4.
+**Decision: keep as-is.** No deletion made. Memory joins the G1
+characterisation net like every other live command — tracked here, not as
+a follow-up.
 
 ---
 
