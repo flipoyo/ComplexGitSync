@@ -682,9 +682,6 @@ class GtsDocument(ConfigDocument):
         return digest
 
     def _build_canonical_payload(self) -> dict[str, Any]:
-        if self._is_legacy_version_format():
-            return self._build_legacy_canonical_payload()
-
         project = self._data.get("project", {})
         tree_state = self._data.get("tree_state", {})
         repo_states = self._data.get("repo_state", [])
@@ -728,83 +725,6 @@ class GtsDocument(ConfigDocument):
         payload = {
             "document": {
                 "CGS_VERSION": self.schema_version,
-            },
-            "project": {
-                "name": project.get("name"),
-                "root_absolute_path": project.get("root_absolute_path"),
-                "source_cgs_path": project.get("source_cgs_path"),
-            },
-            "tree_state": {
-                "lifecycle_state": tree_state.get("lifecycle_state"),
-                "is_ready": tree_state.get("is_ready"),
-                "registry_complete": tree_state.get("registry_complete"),
-            },
-            "repo_state": canonical_repo_states,
-        }
-        if isinstance(freeze_manifest, dict):
-            payload["freeze_manifest"] = {
-                "schema_version": freeze_manifest.get("schema_version"),
-                "immutable_snapshot": freeze_manifest.get("immutable_snapshot"),
-                "workspace_validated": freeze_manifest.get("workspace_validated"),
-                "ledger_checkpoint": freeze_manifest.get("ledger_checkpoint"),
-                "synchronized_ref_kind": freeze_manifest.get("synchronized_ref_kind"),
-                "synchronized_ref_name": freeze_manifest.get("synchronized_ref_name"),
-                "release-name": freeze_manifest.get("release-name"),
-                "restore_operation": freeze_manifest.get("restore_operation"),
-            }
-        return payload
-
-    def _is_legacy_version_format(self) -> bool:
-        document = self._data.get("document", {})
-        return isinstance(document, dict) and document.get("CGS_VERSION") is None
-
-    def _build_legacy_canonical_payload(self) -> dict[str, Any]:
-        project = self._data.get("project", {})
-        tree_state = self._data.get("tree_state", {})
-        repo_states = self._data.get("repo_state", [])
-        freeze_manifest = self._data.get("freeze_manifest", {})
-        canonical_repo_states = []
-        for repo in repo_states if isinstance(repo_states, list) else []:
-            if not isinstance(repo, dict):
-                continue
-            canonical_repo_states.append(
-                {
-                    "name": repo.get("name"),
-                    "node_type": repo.get("node_type"),
-                    "absolute_path": repo.get("absolute_path"),
-                    "relative_path": repo.get("relative_path"),
-                    "parent_absolute_path": repo.get("parent_absolute_path"),
-                    "repo_lifecycle_state": repo.get("repo_lifecycle_state"),
-                    "sync_state": repo.get("sync_state"),
-                    "current_ref_kind": repo.get("current_ref_kind"),
-                    "current_ref_name": repo.get("current_ref_name"),
-                    "target_ref_kind": repo.get("target_ref_kind"),
-                    "target_ref_name": repo.get("target_ref_name"),
-                    "resolved_ref_kind": repo.get("resolved_ref_kind"),
-                    "resolved_ref_name": repo.get("resolved_ref_name"),
-                    "commit_sha": repo.get("commit_sha"),
-                    "project_owner_name": repo.get("project_owner_name"),
-                    "project_name": repo.get("project_name"),
-                    "repo_name": repo.get("repo_name"),
-                    "fallback_branch": repo.get("fallback_branch"),
-                    "fallback_applied": repo.get("fallback_applied"),
-                    "fallback_reason": repo.get("fallback_reason"),
-                    "discovery_state": repo.get("discovery_state"),
-                    "worktree_state": repo.get("worktree_state"),
-                    "is_reachable": repo.get("is_reachable"),
-                    "source_cgs_path": repo.get("source_cgs_path"),
-                }
-            )
-        canonical_repo_states.sort(
-            key=lambda repo: (
-                str(repo.get("absolute_path", "")),
-                str(repo.get("name", "")),
-            )
-        )
-        payload = {
-            "document": {
-                "schema_version": self.schema_version,
-                "hash_algorithm": self.read("document.hash_algorithm", self.HASH_ALGORITHM),
             },
             "project": {
                 "name": project.get("name"),
