@@ -131,14 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command")
     for command_name, help_text in _PLANNED_COMMANDS.items():
-        if command_name == "view-tree" or command_name == "view-operation":
-            subparser = subparsers.add_parser(
-                command_name,
-                help=help_text,
-                description=help_text,
-            )
-        else:
-            subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
+        subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
         if command_name in {"initialise", "clean-init", "purge"}:
             source_options = {
                 "help": (
