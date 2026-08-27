@@ -17,11 +17,8 @@ from .orchestre import (
     DEFAULT_MEMORY_REMOTE_NAME,
     DEFAULT_MEMORY_SERVICE,
     ComplexGitSyncClient,
-    GtsDocument,
-    _parse_state_hash,
     _state_order_from_directory_name,
     _state_snapshot_candidates,
-    _state_snapshot_candidates_for_id,
     create_run_logger,
 )
 
@@ -189,51 +186,16 @@ def build_parser() -> argparse.ArgumentParser:
                 subparser.set_defaults(handler=_handle_clean_init)
             else:
                 subparser.set_defaults(handler=_handle_purge)
-        elif command_name == "load":
-            subparser.add_argument("source", help="Path to a .cgs/.gts file, or a local .lgr id such as 1, lgr-000001, state(<hash>), or legacy gts-000001.")
+        elif command_name == "validate":
+            subparser.add_argument(
+                "source", help="Path to the local .cgs or .gts file to validate."
+            )
             subparser.add_argument(
                 "--discover-nested",
                 action="store_true",
                 help="Resolve nested .cgs files for locally available child repos.",
             )
-            subparser.add_argument(
-                "--search-dir",
-                metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME and the project .lgr when SOURCE is an id. "
-                    "When omitted, uses $CGSHOME or walks up from the current working directory."
-                ),
-            )
-            subparser.set_defaults(handler=_handle_load)
-        elif command_name == "expand":
-            subparser.add_argument("source", help="Path to the local .cgs or .gts file to expand.")
-            subparser.add_argument(
-                "--discover-nested",
-                action="store_true",
-                help="Resolve nested .cgs files for locally available child repos.",
-            )
-            subparser.set_defaults(handler=_handle_expand)
-        elif command_name == "tree":
-            subparser.add_argument("source", help="Path to the local .cgs or .gts file to inspect.")
-            subparser.add_argument(
-                "--discover-nested",
-                action="store_true",
-                help="Resolve nested .cgs files for locally available child repos.",
-            )
-            subparser.set_defaults(handler=_handle_tree)
-        elif command_name in {"validate", "print"}:
-            source_help = "Path to the local .cgs file to inspect."
-            if command_name == "print":
-                source_help = "Path to the local .cgs or .gts file to inspect."
-            elif command_name == "validate":
-                source_help = "Path to the local .cgs or .gts file to validate."
-            subparser.add_argument("source", help=source_help)
-            subparser.add_argument(
-                "--discover-nested",
-                action="store_true",
-                help="Resolve nested .cgs files for locally available child repos.",
-            )
-            subparser.set_defaults(handler=_INSPECTION_HANDLERS[command_name])
+            subparser.set_defaults(handler=_handle_validate)
         elif command_name == "view-tree":
             subparser.add_argument(
                 "source",
@@ -272,32 +234,6 @@ def build_parser() -> argparse.ArgumentParser:
                 ),
             )
             subparser.set_defaults(handler=_handle_view_tree)
-        elif command_name == "view-operation":
-            subparser.add_argument(
-                "source",
-                nargs="?",
-                default=None,
-                help=(
-                    "Path to a .cgs or .gts file to inspect. "
-                    "When omitted the latest .gts snapshot is discovered automatically "
-                    "under CGSHOME/.cgitsync/."
-                ),
-            )
-            subparser.add_argument(
-                "--discover-nested",
-                action="store_true",
-                help="Resolve nested .cgs files for locally available child repos.",
-            )
-            subparser.add_argument(
-                "--search-dir",
-                metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
-                    "or walks up from the current working directory."
-                ),
-            )
-            subparser.set_defaults(handler=_handle_view_operation)
         elif command_name == "clone":
             subparser.add_argument("source", help="Path to the local .cgs file to clone from.")
             subparser.add_argument(
@@ -691,14 +627,6 @@ def build_parser() -> argparse.ArgumentParser:
                 ),
             )
             subparser.set_defaults(handler=_handle_launch_release)
-        elif command_name == "validate-topology":
-            subparser.add_argument(
-                "--gts",
-                metavar="FILE",
-                required=True,
-                help="Path to the .gts snapshot that holds the registry.",
-            )
-            subparser.set_defaults(handler=_handle_validate_topology)
         elif command_name == "status":
             subparser.add_argument(
                 "--gts",
@@ -838,15 +766,6 @@ def _validate_initialise_definition(
         parser.error("initialise --project requires at least one --repo")
 
 
-def _handle_load(args: argparse.Namespace) -> int:
-    source = _resolve_load_source(args.source, getattr(args, "search_dir", None))
-    return _run_with_logging(
-        command_name="load",
-        source=source,
-        runner=lambda client, source: _execute_load(client, source, discover_nested=args.discover_nested),
-    )
-
-
 def _handle_initialise(args: argparse.Namespace) -> int:
     commit_gitignore = getattr(args, "commit_gitignore", False)
     force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
@@ -958,30 +877,6 @@ def _handle_validate(args: argparse.Namespace) -> int:
     )
 
 
-def _handle_print(args: argparse.Namespace) -> int:
-    return _run_with_logging(
-        command_name="print",
-        source=Path(args.source),
-        runner=lambda client, source: _execute_print(client, source, discover_nested=args.discover_nested),
-    )
-
-
-def _handle_expand(args: argparse.Namespace) -> int:
-    return _run_with_logging(
-        command_name="expand",
-        source=Path(args.source),
-        runner=lambda client, source: _execute_expand(client, source, discover_nested=args.discover_nested),
-    )
-
-
-def _handle_tree(args: argparse.Namespace) -> int:
-    return _run_with_logging(
-        command_name="tree",
-        source=Path(args.source),
-        runner=lambda client, source: _execute_tree(client, source, discover_nested=args.discover_nested),
-    )
-
-
 def _handle_view_tree(args: argparse.Namespace) -> int:
     source = _resolve_visualization_source(args.source, getattr(args, "search_dir", None))
     return _run_with_logging(
@@ -993,19 +888,6 @@ def _handle_view_tree(args: argparse.Namespace) -> int:
             discover_nested=args.discover_nested,
             depth=args.depth,
             collapse=tuple(args.collapse),
-        ),
-    )
-
-
-def _handle_view_operation(args: argparse.Namespace) -> int:
-    source = _resolve_visualization_source(args.source, getattr(args, "search_dir", None))
-    return _run_with_logging(
-        command_name="view-operation",
-        source=source,
-        runner=lambda client, source: _execute_view_operation(
-            client,
-            source,
-            discover_nested=args.discover_nested,
         ),
     )
 
@@ -1265,14 +1147,6 @@ def _handle_launch_release(args: argparse.Namespace) -> int:
         command_name="launch_release",
         source=gts_path,
         runner=lambda client, source: _execute_launch_release(client, source, release_name=args.release),
-    )
-
-
-def _handle_validate_topology(args: argparse.Namespace) -> int:
-    return _run_with_logging(
-        command_name="validate-topology",
-        source=Path(args.gts),
-        runner=lambda client, source: _execute_validate_topology(client, source),
     )
 
 
@@ -1539,18 +1413,6 @@ def _execute_discover(
         print("Review it, then run: cgitsync validate <file>")
     else:
         print("Dry run — pass --write FILE to save this draft as a .cgs.")
-    return 0
-
-
-def _execute_load(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    discover_nested: bool,
-) -> int:
-    client.load(source_path, discover_nested=discover_nested)
-    tree_state = client.get_tree_state()
-    print(_format_tree_state_line(tree_state))
     return 0
 
 
@@ -1823,45 +1685,6 @@ def _execute_validate(
     return 0
 
 
-def _execute_print(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    discover_nested: bool,
-) -> int:
-    print(
-        client.print(
-            source_path,
-            discover_nested=discover_nested,
-        )
-    )
-    return 0
-
-
-def _execute_expand(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    discover_nested: bool,
-) -> int:
-    print(client.expand(source_path, discover_nested=discover_nested))
-    return 0
-
-
-def _execute_tree(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    discover_nested: bool,
-) -> int:
-    if source_path.suffix == ".gts":
-        client.load_gts(source_path)
-    else:
-        client.load_runtime_or_cgs(source_path, discover_nested=discover_nested)
-    print(client.format_project_tree())
-    return 0
-
-
 def _execute_view_tree(
     client: ComplexGitSyncClient,
     source_path: Path,
@@ -1872,17 +1695,6 @@ def _execute_view_tree(
 ) -> int:
     _load_visualization_source(client, source_path, discover_nested=discover_nested)
     print(client.view_tree(depth=depth, collapse=collapse))
-    return 0
-
-
-def _execute_view_operation(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    discover_nested: bool,
-) -> int:
-    _load_visualization_source(client, source_path, discover_nested=discover_nested)
-    print(client.view_operation())
     return 0
 
 
@@ -2192,16 +2004,6 @@ def _execute_launch_release(
     return 0
 
 
-def _execute_validate_topology(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-) -> int:
-    _load_ready_registry_source(client, source_path)
-    report = client.validate_topology()
-    print(report.format())
-    return 0 if report.is_coherent else 1
-
-
 def _run_with_logging(
     *,
     command_name: str,
@@ -2304,73 +2106,6 @@ def _load_visualization_source(
         client.load_runtime_or_cgs(source_path, discover_nested=discover_nested)
 
 
-def _resolve_load_source(source: str, search_dir: str | Path | None = None) -> Path:
-    source_path = Path(source).expanduser()
-    if source_path.exists() or source_path.suffix in {".cgs", ".gts"}:
-        return source_path.resolve()
-    return _resolve_lgr_snapshot_source(source, search_dir)
-
-
-def _resolve_lgr_snapshot_source(source: str, search_dir: str | Path | None = None) -> Path:
-    cgshome = _discover_cgshome(search_dir)
-    register_path = _discover_lgr_path(cgshome)
-    data = tomllib.loads(register_path.read_text(encoding="utf-8"))
-    snapshot_id = _normalise_snapshot_selector(source, data)
-
-    for entry in data.get("snapshots", []):
-        if not isinstance(entry, dict) or entry.get("id") != snapshot_id:
-            continue
-        raw_snapshot_path = entry.get("snapshot_path")
-        if not isinstance(raw_snapshot_path, str) or not raw_snapshot_path:
-            break
-        snapshot_path = _expand_lgr_path(raw_snapshot_path).resolve()
-        expected_hash = entry.get("snapshot_hash")
-        if isinstance(expected_hash, str) and expected_hash:
-            matching_snapshot_path = _find_matching_lgr_snapshot_file(
-                snapshot_id,
-                snapshot_path,
-                expected_hash,
-                cgshome,
-            )
-            if matching_snapshot_path is not None:
-                return matching_snapshot_path
-            raise FileNotFoundError(
-                f"Snapshot {snapshot_id} is recorded in {register_path}, but no matching .gts file exists. "
-                f"Expected hash {expected_hash}."
-            )
-        if snapshot_path.is_file():
-            return snapshot_path
-        raise FileNotFoundError(
-            f"Snapshot {snapshot_id} is recorded in {register_path}, "
-            f"but the file does not exist: {snapshot_path}"
-        )
-
-    raise FileNotFoundError(f"Snapshot id {snapshot_id!r} was not found in {register_path}.")
-
-
-def _normalise_snapshot_selector(source: str, data: dict) -> str:
-    raw = source.strip()
-    if raw.isdigit():
-        raw = f"lgr-{int(raw):06d}"
-    if raw.startswith("lgr-"):
-        for event in data.get("ledger", []):
-            if isinstance(event, dict) and event.get("sync_id") == raw:
-                snapshot_id = event.get("gts_snapshot_id")
-                if isinstance(snapshot_id, str) and snapshot_id:
-                    return snapshot_id
-        raise FileNotFoundError(f"Ledger event id {raw!r} was not found.")
-    if _parse_state_hash(raw) is not None:
-        return raw
-    if len(raw) == 64 and all(char in "0123456789abcdef" for char in raw):
-        return f"state({raw})"
-    if raw.startswith("gts-"):
-        return raw
-    raise FileNotFoundError(
-        f"Cannot resolve load source {source!r}. Pass a .cgs/.gts path, a numeric ledger id, "
-        "or an id like lgr-000001, state(<hash>), or legacy gts-000001."
-    )
-
-
 def _discover_lgr_path(cgshome: Path) -> Path:
     canonical_entries = _state_lgr_candidates(cgshome)
     if canonical_entries:
@@ -2396,37 +2131,6 @@ def _state_lgr_candidates(cgshome: Path) -> list[Path]:
             continue
         candidates.extend(sorted(state_dir.glob("*.lgr")))
     return candidates
-
-
-def _find_matching_lgr_snapshot_file(
-    snapshot_id: str,
-    recorded_path: Path,
-    expected_hash: str,
-    cgshome: Path,
-) -> Path | None:
-    cgitsync_dir = cgshome / ".cgitsync"
-    candidates = [
-        recorded_path,
-        recorded_path.parent / f"{snapshot_id}.gts",
-        cgshome / ".cgitsync" / "state" / f"{snapshot_id}.gts",
-    ]
-    candidates.extend(_state_snapshot_candidates_for_id(cgitsync_dir, snapshot_id))
-    candidates.extend(sorted(recorded_path.parent.glob(f"{snapshot_id}-*.gts")))
-    candidates.extend(sorted((cgshome / ".cgitsync" / "state").glob(f"{snapshot_id}-*.gts")))
-    seen: set[Path] = set()
-    for candidate in candidates:
-        resolved = candidate.resolve()
-        if resolved in seen or not resolved.is_file():
-            continue
-        seen.add(resolved)
-        if _snapshot_file_hash(resolved) == expected_hash:
-            return resolved
-    return None
-
-
-def _snapshot_file_hash(snapshot_path: Path) -> str:
-    document = GtsDocument.from_toml(snapshot_path)
-    return document.snapshot_hash or document.compute_snapshot_hash()
 
 
 def _expand_lgr_path(raw_path: str) -> Path:
@@ -2634,9 +2338,3 @@ def _print_gitignore_sync_report(client: ComplexGitSyncClient) -> None:
         print(f".gitignore updated ({status}): {entry.name} ({entry.absolute_path})")
         for relative_path in entry.added_paths:
             print(f"  + {relative_path}")
-
-
-_INSPECTION_HANDLERS = {
-    "validate": _handle_validate,
-    "print": _handle_print,
-}

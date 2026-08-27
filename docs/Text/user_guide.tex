@@ -481,9 +481,9 @@ subtrees.
   \item \textbf{Reference branch}: The root repository's current branch is
         the canonical reference for all repos.
   \item \textbf{Leaf-to-root inheritance}: Branch targeting flows
-        root-first via \texttt{propagate\_global\_branch}.
-        \texttt{validate-topology} verifies the on-disk state without
-        issuing any git writes.
+        root-first via \texttt{propagate\_global\_branch}, verified
+        on-disk by \texttt{ComplexGitSyncClient.validate\_topology()}
+        (Python API only) without issuing any git writes.
   \item \textbf{Allowed divergence}: Repositories in a frozen
         (\texttt{TAG}) state produce a \texttt{tag\_divergence} diagnostic
         that does \emph{not} make the topology incoherent.
