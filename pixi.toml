@@ -14,6 +14,7 @@ check-ceilings = "python scripts/check_module_ceilings.py --check"
 python = "3.11.*"
 pytest = "*"
 ruff = "*"
+hypothesis = "*"
 
 [pypi-dependencies]
 complexgitsync = { path = ".", editable = true }
