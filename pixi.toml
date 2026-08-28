@@ -8,6 +8,7 @@ platforms = ["linux-64", "win-64", "osx-arm64"]
 test = "python -m pytest"
 lint = "ruff check ."
 bump-version = "python scripts/bump_version.py"
+check-ceilings = "python scripts/check_module_ceilings.py --check"
 
 [dependencies]
 python = "3.11.*"
