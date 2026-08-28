@@ -81,9 +81,9 @@
       "public_symbols": 16
     },
     "orchestre.py": {
-      "internal_imports": 49,
-      "loc": 3706,
-      "public_symbols": 19
+      "internal_imports": 50,
+      "loc": 3426,
+      "public_symbols": 18
     }
   },
   "ring0_modules": [

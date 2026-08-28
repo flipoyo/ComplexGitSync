@@ -36,6 +36,7 @@ from .git_repo import (
     WorkingRepo,
     validate_git_provider,
 )
+from .git_runner import GitRunner
 
 # --- Tier 1 — Core State + Tree Utilities (git_tree.py) ---
 from .git_tree import (
@@ -72,7 +73,6 @@ from .operations import (
 # --- Tier 2/3 — Actions + Client (orchestre.py) ---
 from .orchestre import (
     ComplexGitSyncClient,
-    GitRunner,
     LocalGitRegister,
     Orchestre,
     SyncLedger,
