@@ -1,10 +1,25 @@
 """gts_document — the .gts runtime state-snapshot document.
 
-Ring: 0 (pure — no I/O, no clock, no environment)
+Ring: 0 core + Ring-1 I/O adapter, co-located — see note below.
 Contract: parse, validate, and compute the canonical SHA-256 content hash of
     a ``.gts`` Git Tree State snapshot; the sole builder of that canonical
     payload (one hash code path, no fork).
-Imports: config_document, errors, git_repo
+Imports: config_document, config_document_io, errors, git_repo
+
+Ring-classification note (found during P2-integrate, same shape as the
+config_document.py/config_document_io.py split from WP-CFG): every real
+caller across the codebase — orchestre.py, tests/integration/, tests/unit/
+— invokes ``GtsDocument.from_toml(path)``/``.from_json(path)`` directly on
+this class, so the class itself must carry ``ConfigDocumentIOMixin``
+(Ring 1) rather than staying strictly Ring-0-pure. This mirrors
+``CgsDocument`` in ``cgs_format.py`` exactly. The pure remainder —
+validation, the canonical-hash builder, dot-path reads — is fully
+Ring-0-testable in isolation (see the "no filesystem access" tests in
+``tests/unit/test_gts_document.py``); only the six inherited I/O methods
+require a disk. ``scripts/check_module_ceilings.py``'s Ring-0 purity check
+is deliberately *not* applied to this module (or to ``cgs_format.py``) for
+this reason — it stays scoped to modules with no I/O-adapter mixin at all,
+e.g. ``errors.py``, ``ledger_entry.py``, ``integrity.py``.
 
 Extracted verbatim from ``orchestre.py`` (Wave 1, P2 of
 ``AgentSpecs/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
@@ -38,6 +53,7 @@ from typing import Any
 
 from . import __version__ as CGS_VERSION
 from .config_document import ConfigDocument
+from .config_document_io import ConfigDocumentIOMixin
 from .errors import ConfigValidationError
 from .git_repo import DiscoveryState, NodeType, RefKind, RepoLifecycleState
 
@@ -106,7 +122,7 @@ def _repo_ref_token(repo: dict[str, Any], prefix: str) -> str | None:
 # ============================================================
 
 
-class GtsDocument(ConfigDocument):
+class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     """Parser and validator for ``.gts`` Git Tree State snapshot files.
 
     A ``.gts`` file is a TOML document **generated** by ComplexGitSync.  It

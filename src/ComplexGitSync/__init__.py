@@ -50,6 +50,7 @@ from .git_tree import (
     iter_tree_leaf_first,
     topological_sort,
 )
+from .gts_document import GtsDocument
 from .master import MasterConfig
 
 # --- Tier 2 — Actions (operations.py) ---
@@ -72,7 +73,6 @@ from .operations import (
 from .orchestre import (
     ComplexGitSyncClient,
     GitRunner,
-    GtsDocument,
     LocalGitRegister,
     Orchestre,
     SyncLedger,
