@@ -46,6 +46,7 @@ import tomli_w
 from . import __version__ as CGS_VERSION
 from .cgs_format import CgsDocument, parse_repo_id
 from .config_document import ConfigDocument
+from .config_document_io import ConfigDocumentIOMixin
 from .errors import (
     ConfigValidationError,
     GitSyncError,
@@ -480,7 +481,7 @@ def _write_compact_refs(repo_data: dict[str, Any], entry: WorkingRepo) -> None:
         repo_data["resolved_ref"] = resolved
 
 
-class GtsDocument(ConfigDocument):
+class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     """Parser and validator for ``.gts`` Git Tree State snapshot files.
 
     A ``.gts`` file is a TOML document **generated** by ComplexGitSync.  It

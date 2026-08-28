@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 import tomli_w
 
 from .config_document import ConfigDocument
+from .config_document_io import ConfigDocumentIOMixin
 from .errors import ConfigValidationError
 from .git_repo import (
     AccessProtocol,
@@ -362,7 +363,7 @@ def _repo_data_from_tree(
     return data
 
 
-class CgsDocument(ConfigDocument):
+class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
     """Canonical ``.cgs`` project topology produced from authoring TOML.
 
     Use :meth:`from_toml` or :meth:`from_dict` so shorthand is normalized

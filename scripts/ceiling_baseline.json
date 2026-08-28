@@ -16,8 +16,8 @@
       "public_symbols": 0
     },
     "cgs_format.py": {
-      "internal_imports": 8,
-      "loc": 631,
+      "internal_imports": 9,
+      "loc": 632,
       "public_symbols": 9
     },
     "cli.py": {
@@ -27,7 +27,12 @@
     },
     "config_document.py": {
       "internal_imports": 0,
-      "loc": 122,
+      "loc": 89,
+      "public_symbols": 1
+    },
+    "config_document_io.py": {
+      "internal_imports": 1,
+      "loc": 98,
       "public_symbols": 1
     },
     "errors.py": {
@@ -56,8 +61,8 @@
       "public_symbols": 16
     },
     "orchestre.py": {
-      "internal_imports": 49,
-      "loc": 3927,
+      "internal_imports": 50,
+      "loc": 3928,
       "public_symbols": 20
     }
   },

@@ -18,6 +18,7 @@ from ComplexGitSync.cgs_format import (
     parse_repository_identifier,
 )
 from ComplexGitSync.config_document import ConfigDocument
+from ComplexGitSync.config_document_io import ConfigDocumentIOMixin
 from ComplexGitSync.errors import ConfigValidationError
 from ComplexGitSync.orchestre import (
     GtsDocument,
@@ -84,6 +85,17 @@ MINIMAL_GTS: dict = {
 # ===========================================================================
 
 
+class _ConfigDocumentWithIO(ConfigDocument, ConfigDocumentIOMixin):
+    """Test-only stand-in for a concrete subclass with file I/O mixed in.
+
+    ``ConfigDocument`` itself is Ring 0 (pure, no I/O) since WP-CFG
+    (AgentSpecs/20260828_Isolation_DevPlanTicket.md §0); every real subclass
+    (``CgsDocument``, ``GtsDocument``) picks up ``ConfigDocumentIOMixin``
+    directly, but the base class round-trip tests below need a concrete
+    combined class of their own rather than depending on either.
+    """
+
+
 class TestConfigDocumentBase:
     def test_from_dict_returns_instance(self):
         doc = ConfigDocument.from_dict({"key": "value"})
@@ -120,17 +132,17 @@ class TestConfigDocumentBase:
             ConfigDocument("not a dict")  # type: ignore[arg-type]
 
     def test_from_json_round_trip(self, tmp_path: Path):
-        doc = ConfigDocument({"hello": "world", "num": 3})
+        doc = _ConfigDocumentWithIO({"hello": "world", "num": 3})
         out = tmp_path / "doc.json"
         doc.to_json(out)
-        reloaded = ConfigDocument.from_json(out)
+        reloaded = _ConfigDocumentWithIO.from_json(out)
         assert reloaded.to_dict() == doc.to_dict()
 
     def test_from_toml_round_trip(self, tmp_path: Path):
-        doc = ConfigDocument({"section": {"key": "val"}})
+        doc = _ConfigDocumentWithIO({"section": {"key": "val"}})
         out = tmp_path / "doc.toml"
         doc.to_toml(out)
-        reloaded = ConfigDocument.from_toml(out)
+        reloaded = _ConfigDocumentWithIO.from_toml(out)
         assert reloaded.to_dict() == doc.to_dict()
 
     def test_from_yaml_missing_pyyaml_mentions_pixi(self, tmp_path: Path, monkeypatch):
@@ -146,7 +158,7 @@ class TestConfigDocumentBase:
         monkeypatch.setattr(builtins, "__import__", fake_import)
 
         with pytest.raises(ImportError, match="pixi"):
-            ConfigDocument.from_yaml(out)
+            _ConfigDocumentWithIO.from_yaml(out)
 
     def test_to_yaml_missing_pyyaml_mentions_pixi(self, tmp_path: Path, monkeypatch):
         out = tmp_path / "doc.yaml"
@@ -160,7 +172,7 @@ class TestConfigDocumentBase:
         monkeypatch.setattr(builtins, "__import__", fake_import)
 
         with pytest.raises(ImportError, match="pixi"):
-            ConfigDocument({"hello": "world"}).to_yaml(out)
+            _ConfigDocumentWithIO({"hello": "world"}).to_yaml(out)
 
     def test_read_intermediate_non_dict_returns_default(self):
         doc = ConfigDocument({"a": "scalar"})
