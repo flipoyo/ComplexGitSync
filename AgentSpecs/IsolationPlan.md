@@ -78,6 +78,7 @@ decisions in the original draft depend on them.
 | Private imports `cli.py` ← `orchestre.py` ("kills the four private imports") | Currently **two**: `_state_order_from_directory_name`, `_state_snapshot_candidates` (D1 already removed others). | `snapshot_resolver.py` still earns its keep, just against a smaller number — don't plan around a stale count. |
 | `RefactorStrategy.md` (superseded by this plan, §header) | **Does not exist** anywhere in the repo. | Reference removed below; if that ring model was ever written down, it isn't checked in — treat this plan as the ring model's first checked-in version, not a revision of one. |
 | `DevPlanTicket.md` (assumed-complete prerequisite, §header) | Wrong path. The actual file is `AgentSpecs/archive/20260826_Deletion_DevPlanTicket.md`. | Reference corrected below. |
+| Memory subsystem assumption | **Superseded by CleanupPass2 (2026-08-28).** This plan assumed Memory stayed (per Pass 1 D5); CleanupPass2 D1 subsequently deleted it entirely. | All Memory-related Ring-4 and module-map entries have been removed from this plan. Memory is now gone, not merely re-scoped. |
 
 **Net effect on this plan's own numbers:** the module-map LOC targets in §4
 sum to roughly 5,900 LOC for rings 0–3 plus up to ~3,200 for the `cli/`
@@ -95,15 +96,14 @@ directional, not a budget that closes exactly.
 
 | | Before | After D1–D9 (verified) |
 |---|---|---|
-| Public commands | 28 | 28 (unchanged — see feasibility review) |
+| Public commands | 28 | 24 (D1 of CleanupPass2 deleted Memory: remember/memorize/retrieve/reload) |
 | `.gts` hash code paths | 2 | 1 |
-| Ring-4 adapters | `cli`, `memory`, `.goc` runner | `cli`, `memory` |
-| External network surface | SSH-Git Memory transport | SSH-Git Memory transport (kept, D5) |
+| Ring-4 adapters | `cli`, `memory`, `.goc` runner | `cli` |
+| External network surface | SSH-Git Memory transport | none (Memory deleted by CleanupPass2 D1) |
 
 Two consequences, revised from the original three:
 
-- **`.goc` is gone**, so Ring 4 lost one adapter, not two. `cli` and `memory`
-  both remain and both need a Ring-4 boundary.
+- **`.goc` is gone** (D4), **Memory is gone** (CleanupPass2 D1), so Ring 4 is now `cli` only.
 - **`.gts` has one canonical payload builder**, so integrity work below has
   one digest algorithm to reason about rather than two. This part of the
   original rationale holds exactly as written.
@@ -121,8 +121,7 @@ remaining integrity surface the way the original draft implied.
 Imports flow downward only.
 
 ```
-Ring 4  ADAPTER          cli/                        memory/ (new — isolates
-                             |                         MemoryBinding et al.)
+Ring 4  ADAPTER          cli/
 Ring 3  ORCHESTRATION    orchestre.py  (Orchestre, ComplexGitSyncClient)
                              |
 Ring 2  GIT PROCESS      git_runner.py   operations.py
@@ -413,7 +412,7 @@ two omissions and the three ceiling gaps this adds).
 | `registry.py` | 2 | *(inside `orchestre.py`)* | ~450 | extracted from `orchestre.py` |
 | `orchestre.py` | 3 | 5,379 | ≤ 450 | `Orchestre` + `ComplexGitSyncClient` only |
 | `cli/` | 4 | *(`cli.py`, 2,333)* | ≤ 400/module | package, ~8 modules |
-| `memory/` | 4 | *(inside `orchestre.py`)* | TBD | **new** — isolates `MemoryBinding` and friends behind their own adapter boundary now that Memory is confirmed staying (D5) |
+
 
 No module over 500 is the goal; three modules (`cgs_format.py`, `git_tree.py`,
 `operations.py`) already exceed their individual targets before extraction
@@ -442,8 +441,7 @@ GATE G1  characterisation net — smaller now than before deletion,
     |         P4.3  cgitsync verify              the enforcement instrument
     |         P4.4  snapshot_resolver            removes the private-import leak
     |
-    +-- P5   remaining orchestre extractions    (registry, discovery, status,
-    |                                             memory/ adapter boundary)
+    +-- P5   remaining orchestre extractions    (registry, discovery, status)
     |
     +-- P6   handability enforcement            (ceilings — complexity via
                                                   ruff C90, module-size via a
@@ -516,7 +514,3 @@ plan.
    policy while keeping *all* entries — entries are small, and
    `MISSING_STATE` on a deliberately pruned state should be a distinct,
    expected finding rather than an error.
-5. **New: how does `memory/` get its own Ring-4 boundary?** Since Memory is
-   confirmed staying (D5), it needs the same adapter isolation `cli/` is
-   getting, not a bolt-on. Scope this explicitly in P5 rather than
-   discovering it mid-extraction.

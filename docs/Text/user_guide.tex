@@ -48,7 +48,7 @@ DAG event in the \texttt{[[ledger]]} section of the \texttt{.lgr} file.
 % -----------------------------------------------------------------------
 \section{Commands}
 
-The CLI exposes four command groups once a \texttt{GitTree} is \texttt{READY}.
+The CLI exposes three command groups once a \texttt{GitTree} is \texttt{READY}.
 The minimalist level is \texttt{initialise}, \texttt{bootstrap},
 \texttt{clean-init}, \texttt{freeze-release}, \texttt{freeze-release-force},
 \texttt{status}, \texttt{view-tree}, and \texttt{launch-release}.  The expert level exposes
@@ -58,10 +58,7 @@ the individual operations: \texttt{branch}, \texttt{checkout}, \texttt{purge},
 and \texttt{import-submodules}.  The configuration level, \texttt{discover},
 \texttt{configure} and
 \texttt{create-cgs}, authors a \texttt{.cgs} specification without requiring
-existing state.  The memory level, \texttt{remember}, \texttt{memorize},
-\texttt{retrieve}, and \texttt{reload}, binds a project to an external
-SSH-Git \emph{Memory} repository (distinct from the project's own remotes)
-and persists or restores a finalized local Memory State.  Redundant
+existing state.  Redundant
 inspection aliases such as \texttt{print}, \texttt{view-operation}, and
 \texttt{validate-topology} are not part of the public CLI surface.
 
@@ -501,47 +498,6 @@ $ pixi run cgitsync status [--gts FILE]
 Summarises tree readiness and per-repository sync state. The table reports the
 local branch, upstream branch, local worktree state, ahead/behind tracking
 counts, current HEAD, and the commit recorded in the loaded \texttt{.gts}.
-
-\subsection{\texttt{remember}}
-
-\begin{lstlisting}[language=bash]
-$ pixi run cgitsync remember <spec.cgs> [--output-path DIR] [--service HOST] [--remote-name NAME]
-\end{lstlisting}
-
-Binds the given \texttt{.cgs} artefact to its external SSH-Git Memory
-endpoint, resolving \texttt{CGSHOME} the same way \texttt{initialise} does.
-\texttt{--service} defaults to \texttt{forge43.io}; \texttt{--remote-name}
-defaults to \texttt{forge43}.
-
-\subsection{\texttt{memorize}}
-
-\begin{lstlisting}[language=bash]
-$ pixi run cgitsync memorize <memory-state-dir> [--branch BRANCH]
-\end{lstlisting}
-
-Persists a finalized local Memory State directory
-(\texttt{.cgitsync/state(<hash>)\_i/}) to the configured SSH-Git Memory
-remote, on \texttt{--branch} (default \texttt{main}).
-
-\subsection{\texttt{retrieve}}
-
-\begin{lstlisting}[language=bash]
-$ pixi run cgitsync retrieve <name> [--output-path DIR] [--branch BRANCH] [--service HOST] [--remote-name NAME]
-\end{lstlisting}
-
-Retrieves the named external SSH-Git Memory repository into a clean
-\texttt{CGSHOME} (\texttt{CGSPATH/<name>}; defaults to \texttt{\$CGSHOME} or
-the current directory when \texttt{--output-path} is omitted).
-
-\subsection{\texttt{reload}}
-
-\begin{lstlisting}[language=bash]
-$ pixi run cgitsync reload <name> [--output-path DIR] [--branch BRANCH] [--service HOST] [--remote-name NAME]
-\end{lstlisting}
-
-Retrieves the named external Memory repository, then restores the
-ComplexGitSync execution context from it — the recovery path for a
-\texttt{CGSHOME} that only has its Memory binding left.
 
 % -----------------------------------------------------------------------
 \section{Document Formats}

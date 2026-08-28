@@ -7,23 +7,15 @@ import pytest
 from ComplexGitSync import (
     CANONICAL_GIT_PROVIDERS,
     KNOWN_PROVIDER_HOSTS,
-    ArchitectureNotLoadedError,
     ComplexGitSyncClient,
     ComplexGitSyncError,
     ConfigValidationError,
-    FallbackRejectedError,
     GitProvider,
     GitRepo,
     GitSyncError,
     GitTree,
     MasterConfig,
-    MemoryBinding,
-    MemoryMemorizeResult,
-    MemoryReloadResult,
-    MemoryRememberResult,
-    MemoryRetrieveResult,
     NestedConfigDiscoveryError,
-    RepoNode,
     SyncLedger,
     TreeNotReadyError,
     add_tree,
@@ -38,22 +30,14 @@ from ComplexGitSync.orchestre import GitRunner
 
 
 def test_package_root_exports_refactor_guard_symbols():
-    assert issubclass(ArchitectureNotLoadedError, ComplexGitSyncError)
     assert issubclass(ConfigValidationError, ComplexGitSyncError)
-    assert issubclass(FallbackRejectedError, ComplexGitSyncError)
     assert issubclass(GitSyncError, ComplexGitSyncError)
     assert issubclass(NestedConfigDiscoveryError, ComplexGitSyncError)
     assert issubclass(TreeNotReadyError, ComplexGitSyncError)
     assert GitRepo.__name__ == "GitRepo"
     assert GitTree.__name__ == "GitTree"
     assert MasterConfig.__name__ == "MasterConfig"
-    assert RepoNode.__name__ == "RepoNode"
     assert ComplexGitSyncClient.__name__ == "ComplexGitSyncClient"
-    assert MemoryBinding.__name__ == "MemoryBinding"
-    assert MemoryMemorizeResult.__name__ == "MemoryMemorizeResult"
-    assert MemoryRememberResult.__name__ == "MemoryRememberResult"
-    assert MemoryReloadResult.__name__ == "MemoryReloadResult"
-    assert MemoryRetrieveResult.__name__ == "MemoryRetrieveResult"
     assert SyncLedger.__name__ == "SyncLedger"
 
 

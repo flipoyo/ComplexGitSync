@@ -4,7 +4,7 @@
 
 This is the current architecture audit for the `.cgs` format, CLI authoring,
 provider identity, and runtime boundary. Historical regrouping plans are kept
-under `AgentSpecs/` and `archive/`, and are explicitly marked as archives.
+under `AgentSpecs/archive/`, and are explicitly marked as archives.
 
 ## Responsibility boundaries
 

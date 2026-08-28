@@ -1,6 +1,6 @@
 """ComplexGitSync package: deterministic distributed workspace synchronization over Git trees."""
 
-__version__ = "0002.12"
+__version__ = "0002.14"
 
 # --- Tier 1 — Public Errors (errors.py) ---
 # --- Cross-cutting document definitions ---
@@ -13,10 +13,8 @@ from .cgs_format import (
 )
 from .config_document import ConfigDocument
 from .errors import (
-    ArchitectureNotLoadedError,
     ComplexGitSyncError,
     ConfigValidationError,
-    FallbackRejectedError,
     GitSyncError,
     NestedConfigDiscoveryError,
     TreeNotReadyError,
@@ -34,7 +32,6 @@ from .git_repo import (
     RefKind,
     RepoAddress,
     RepoLifecycleState,
-    RepoNode,
     SyncState,
     WorkingRepo,
     validate_git_provider,
@@ -77,11 +74,6 @@ from .orchestre import (
     GitRunner,
     GtsDocument,
     LocalGitRegister,
-    MemoryBinding,
-    MemoryMemorizeResult,
-    MemoryReloadResult,
-    MemoryRememberResult,
-    MemoryRetrieveResult,
     Orchestre,
     SyncLedger,
 )
@@ -89,10 +81,8 @@ from .orchestre import (
 __all__ = [
     "__version__",
     # errors.py
-    "ArchitectureNotLoadedError",
     "ComplexGitSyncError",
     "ConfigValidationError",
-    "FallbackRejectedError",
     "GitSyncError",
     "MasterConfig",
     "NestedConfigDiscoveryError",
@@ -108,7 +98,6 @@ __all__ = [
     "RefKind",
     "RepoAddress",
     "RepoLifecycleState",
-    "RepoNode",
     "SyncState",
     "WorkingRepo",
     "validate_git_provider",
@@ -148,11 +137,6 @@ __all__ = [
     "GtsDocument",
     "GitRunner",
     "LocalGitRegister",
-    "MemoryBinding",
-    "MemoryMemorizeResult",
-    "MemoryRememberResult",
-    "MemoryReloadResult",
-    "MemoryRetrieveResult",
     "Orchestre",
     "SyncLedger",
 ]
