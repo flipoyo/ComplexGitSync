@@ -13,10 +13,8 @@ from .cgs_format import (
 )
 from .config_document import ConfigDocument
 from .errors import (
-    ArchitectureNotLoadedError,
     ComplexGitSyncError,
     ConfigValidationError,
-    FallbackRejectedError,
     GitSyncError,
     NestedConfigDiscoveryError,
     TreeNotReadyError,
@@ -84,10 +82,8 @@ from .orchestre import (
 __all__ = [
     "__version__",
     # errors.py
-    "ArchitectureNotLoadedError",
     "ComplexGitSyncError",
     "ConfigValidationError",
-    "FallbackRejectedError",
     "GitSyncError",
     "MasterConfig",
     "NestedConfigDiscoveryError",

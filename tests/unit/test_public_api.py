@@ -7,11 +7,9 @@ import pytest
 from ComplexGitSync import (
     CANONICAL_GIT_PROVIDERS,
     KNOWN_PROVIDER_HOSTS,
-    ArchitectureNotLoadedError,
     ComplexGitSyncClient,
     ComplexGitSyncError,
     ConfigValidationError,
-    FallbackRejectedError,
     GitProvider,
     GitRepo,
     GitSyncError,
@@ -33,9 +31,7 @@ from ComplexGitSync.orchestre import GitRunner
 
 
 def test_package_root_exports_refactor_guard_symbols():
-    assert issubclass(ArchitectureNotLoadedError, ComplexGitSyncError)
     assert issubclass(ConfigValidationError, ComplexGitSyncError)
-    assert issubclass(FallbackRejectedError, ComplexGitSyncError)
     assert issubclass(GitSyncError, ComplexGitSyncError)
     assert issubclass(NestedConfigDiscoveryError, ComplexGitSyncError)
     assert issubclass(TreeNotReadyError, ComplexGitSyncError)
