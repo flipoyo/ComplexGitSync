@@ -90,7 +90,7 @@ identifiers.
 - `examples/*.cgs`, `*.gts` — sample specs used in docs/tests.
 - `docs/` — LaTeX-built reference docs; generated `.aux`/`.log`/etc. are gitignored, the built PDFs are tracked.
 - `AgentSpecs/AdditionalSpecs.md`, `DevSpecs.md`, `AGENT.md` — deeper spec/authoring references beyond this file.
-- `AgentSpecs/` — active planning tickets and project-specific specs; `archive/` — completed/superseded plans, kept as historical record.
+- `AgentSpecs/` — active planning tickets and project-specific specs; `AgentSpecs/archive/` — completed/superseded plans, kept as historical record.
 
 ## Document conventions
 
