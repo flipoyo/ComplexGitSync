@@ -453,14 +453,14 @@ boundaries, instead of two that quietly drifted apart.
 | | Before (Pass 1's D9 baseline) | After Pass 2 | 
 |---|---|---|
 | Public commands | 28 | 24 (D1) |
-| `orchestre.py` LOC | 5,379 | *(to be measured after D1)* |
-| `cli.py` LOC | 2,333 | *(to be measured after D1)* |
-| Exported-but-dead classes | 2 confirmed (+1 decision pending) | 0 (D2) |
-| Broken/orphaned `docs/*` files | 3 confirmed | 0 (D3) |
-| Archive locations | 2 (`archive/`, `AgentSpecs/archive/`) | 1 (D4) |
-| Live docs mentioning Memory | 2 | 0 (D5) |
+| `orchestre.py` LOC | 5,379 | 4,518 (D1: -861 lines) |
+| `cli.py` LOC | 2,333 | 2,061 (D1: -272 lines) |
+| Exported-but-dead classes | 2 confirmed (+1 decision pending) | 0 (D2: ArchitectureNotLoadedError, FallbackRejectedError, RepoNode all deleted) |
+| Broken/orphaned `docs/*` files | 3 confirmed | 0 (D3: main.tex, user_guide.tex, architecture.md deleted) |
+| Archive locations | 2 (`archive/`, `AgentSpecs/archive/`) | 1 (D4: all archive/ moved to AgentSpecs/archive/) |
+| Live docs mentioning Memory | 2 | 0 (D5: Memory references removed from README.md and user_guide.tex) |
 
-Fill in the LOC columns after D1 actually runs — do not estimate them here.
+Measured 2026-08-28 after all Pass 2 steps completed.
 
 ---
 
