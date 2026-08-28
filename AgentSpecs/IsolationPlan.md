@@ -1,5 +1,7 @@
 # ComplexGitSync — Isolation Plan (revised)
 
+*Created: 2026-08-28*
+
 **Supersedes:** the ring model in `RefactorStrategy.md` §3–§5
 **Assumes complete:** `DevPlanTicket.md` (deletion & cleanup, pass 1)
 **Two targets:**

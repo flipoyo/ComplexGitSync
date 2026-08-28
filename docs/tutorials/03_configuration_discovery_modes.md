@@ -1,5 +1,7 @@
 # Tutorial 3 of 3 — Configuration Discovery Modes
 
+*Created: 2026-08-25*
+
 **The most advanced of the three tutorials.** Tutorials
 [1](01_first_multi_repo_workspace.md) and
 [2](02_onboarding_a_real_build_tree.md) both hand-author a `.cgs` from

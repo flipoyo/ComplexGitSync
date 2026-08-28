@@ -1,5 +1,7 @@
 # Tutorial 2 of 3 — Onboarding a Real Build Tree
 
+*Created: 2026-08-25*
+
 **More advanced than Tutorial 1, same authoring style.** This tutorial takes
 the hand-authored `.cgs` habits from
 [Tutorial 1](01_first_multi_repo_workspace.md) and applies them to a real,

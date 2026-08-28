@@ -1,5 +1,7 @@
 # Architecture and Consistency Audit
 
+*Created: 2026-05-14*
+
 This is the current architecture audit for the `.cgs` format, CLI authoring,
 provider identity, and runtime boundary. Historical regrouping plans are kept
 under `AgentSpecs/` and `archive/`, and are explicitly marked as archives.
@@ -86,7 +88,8 @@ without performing Git or network operations.
 - Explicit/verbose `.cgs` data in tests verifies advanced overrides and backward
   compatibility; it is not the recommended authoring style.
 - Files explicitly marked as historical under `AgentSpecs/`, and the archived
-  `CorPlan.md` diagram, may retain old terminology to document migrations.
+  `AgentSpecs/archive/20260519_CorPlan.md` diagram, may retain old terminology
+  to document migrations.
 - `.gts`, `.lgr`, synchronization, freeze, and kernel semantics remain outside
   this format/provider audit and were not redesigned.
 

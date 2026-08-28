@@ -1,5 +1,7 @@
 # Tutorials
 
+*Created: 2026-08-25*
+
 Three worked examples, ordered from the simplest to the most advanced. Do
 them in order — each one builds on the last:
 

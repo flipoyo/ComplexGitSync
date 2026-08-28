@@ -1,7 +1,9 @@
 # AdditionalSpecs — ComplexGitSync-Specific Constraints
 
+*Created: 2026-05-13*
+
 This file documents project-specific constraints and refinements that apply
-**on top of** the general [DevSpecs](DevSpecs.md). Every rule in `DevSpecs.md`
+**on top of** the general [DevSpecs](../DevSpecs.md). Every rule in `DevSpecs.md`
 applies here; this file only adds or tightens rules for `ComplexGitSync`.
 
 ---

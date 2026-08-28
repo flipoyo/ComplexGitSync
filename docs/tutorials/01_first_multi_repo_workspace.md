@@ -1,5 +1,7 @@
 # Tutorial 1 of 3 — Your First Multi-Repo Workspace
 
+*Created: 2026-06-30*
+
 **Start here.** This is the easiest of the three tutorials in
 [`docs/tutorials/`](README.md): it walks through the complete `cgitsync` CLI
 lifecycle — validate, initialise, and the full git cycle

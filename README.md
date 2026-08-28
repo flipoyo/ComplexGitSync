@@ -1,5 +1,7 @@
 # ComplexGitSync v0002.11
 
+*Created: 2026-05-12*
+
 ComplexGitSync is a command-line tool for synchronising a multi-repository Git
 workspace — a tree of nested repositories — from one local `.cgs`
 specification (file or CLI specs) or one tracked `.gts` workspace-state snapshot. The public

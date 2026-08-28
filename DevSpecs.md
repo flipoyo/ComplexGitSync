@@ -1,5 +1,7 @@
 # DevSpecs — Standing Development Philosophy
 
+*Created: 2026-05-13*
+
 This file captures the owner's reusable, project-agnostic development
 principles. Every project that declares conformity to **DevSpecs** must follow
 every section below. Project-specific refinements and additional constraints

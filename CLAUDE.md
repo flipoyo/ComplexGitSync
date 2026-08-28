@@ -91,3 +91,30 @@ identifiers.
 - `docs/` — LaTeX-built reference docs; generated `.aux`/`.log`/etc. are gitignored, the built PDFs are tracked.
 - `AgentSpecs/AdditionalSpecs.md`, `DevSpecs.md`, `AGENT.md` — deeper spec/authoring references beyond this file.
 - `AgentSpecs/` — active planning tickets and project-specific specs; `archive/` — completed/superseded plans, kept as historical record.
+
+## Document conventions
+
+Follow [AgentSpecs/DOCSTYLE.md](AgentSpecs/DOCSTYLE.md) for how any Markdown
+document in this repo is written — abstract first, mermaid graph, audience
+separation, length, one authoritative file per purpose. It applies to every
+`README.md`, spec, and file under `docs/`.
+
+Every created document — specs (`DevSpecs.md`, `AgentSpecs/AdditionalSpecs.md`),
+planning tickets (`DevPlan*.md`, `DevPlanTickets*.md`, `CorPlan.md`-style
+plans), `audit.md`, `README.md`, and `docs/tutorials/*.md` — opens with a
+`*Created: YYYY-MM-DD*` line directly under its `# ` title, set once at
+authoring time and never rewritten on later edits. It records when the
+document was written, not when it was last touched: a "last updated" claim
+rots the moment someone forgets to bump it, which `AgentSpecs/DOCSTYLE.md`
+§5 already forbids ("no stale-by-design content"); a creation date is a
+historical fact and cannot go stale the same way.
+
+Planning tickets additionally follow the archival lifecycle already in use:
+active work lives as a plain-named file directly under `AgentSpecs/`; once
+the ticket is complete, move it to `AgentSpecs/archive/<YYYYMMDD>_<name>.md`.
+The filename prefix is the archive date and stands in for an in-body
+timestamp on an archived document — an already-archived ticket does not
+also carry a `Created:` line.
+
+Standalone LaTeX documents (`docs/*.tex` with their own `\documentclass`)
+already carry `\date{\today}` on the title page — keep this on any new one.
