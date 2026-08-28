@@ -9,7 +9,6 @@ Classes defined here (Tier 2 — Actions):
     GtsDocument             .gts state snapshot parser/validator
     CommandRunLogger        Structured JSON event logger for a command run
     RuntimeStateStore       Persistent snapshot-pointer registry (.cgs → .gts)
-    MemoryBinding           External SSH-Git Memory endpoint binding
     GitRunner               Git subprocess wrapper
 
 Classes defined here (Tier 3 — Client / API):
@@ -187,14 +186,6 @@ def _resolve_document_path(raw_path: str) -> Path:
     return Path(_expand_environment_markers(raw_path)).expanduser().resolve()
 
 
-def _rebase_path_under_root(path: Path | str, *, old_root: Path, new_root: Path) -> Path:
-    resolved_path = Path(path).expanduser().resolve()
-    try:
-        return (new_root.resolve() / resolved_path.relative_to(old_root.resolve())).resolve()
-    except ValueError:
-        return resolved_path
-
-
 def _preferred_path_separators() -> tuple[str, ...]:
     separators: list[str] = []
     seen: set[str] = set()
@@ -312,17 +303,6 @@ def _latest_state_artifact(cgitsync_dir: Path, filename: str) -> Path | None:
     if not candidates:
         return None
     return max(candidates, key=lambda path: path.stat().st_mtime)
-
-
-_MEMORY_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-_MEMORY_REMOTE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-_MEMORY_SERVICE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
-_MEMORY_SSH_URL_RE = re.compile(
-    r"^git@(?P<host>[A-Za-z0-9][A-Za-z0-9.-]*):/srv/git/(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)\.git$"
-)
-DEFAULT_MEMORY_SERVICE = "forge43.io"
-DEFAULT_MEMORY_REMOTE_NAME = "forge43"
-MEMORY_CONFIG_FILENAME = "memory.toml"
 
 
 def _local_status_from_porcelain(status_lines: list[str]) -> str:
@@ -1169,419 +1149,6 @@ class SyncLedger:
         return f"lgr-{max_id + 1:06d}"
 
 
-@dataclass(frozen=True, slots=True)
-class MemoryBinding:
-    """External SSH-Git Memory endpoint binding for one artefact."""
-
-    name: str
-    service: str
-    alias: str
-    remote_name: str
-    remote_url: str
-
-    @classmethod
-    def for_name(
-        cls,
-        name: str,
-        *,
-        service: str = DEFAULT_MEMORY_SERVICE,
-        remote_name: str = DEFAULT_MEMORY_REMOTE_NAME,
-    ) -> MemoryBinding:
-        validated_name = _validate_memory_name(name)
-        validated_service = _validate_memory_service(service)
-        validated_remote_name = _validate_memory_remote_name(remote_name)
-        service_alias = validated_service.split(".", 1)[0]
-        alias = f"@{service_alias}@{validated_name}"
-        remote_url = f"git@{validated_service}:/srv/git/{validated_name}.git"
-        return cls(
-            name=validated_name,
-            service=validated_service,
-            alias=alias,
-            remote_name=validated_remote_name,
-            remote_url=remote_url,
-        )
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> MemoryBinding:
-        binding = cls(
-            name=str(data.get("name", "")),
-            service=str(data.get("service", "")),
-            alias=str(data.get("alias", "")),
-            remote_name=str(data.get("remote_name", "")),
-            remote_url=str(data.get("remote_url", "")),
-        )
-        binding.validate()
-        return binding
-
-    def validate(self) -> None:
-        _validate_memory_name(self.name)
-        _validate_memory_service(self.service)
-        _validate_memory_remote_name(self.remote_name)
-        expected = MemoryBinding.for_name(
-            self.name,
-            service=self.service,
-            remote_name=self.remote_name,
-        )
-        if self.alias != expected.alias:
-            raise ConfigValidationError(
-                f"Memory alias drift: expected {expected.alias!r}, got {self.alias!r}"
-            )
-        if self.remote_url != expected.remote_url:
-            raise ConfigValidationError(
-                f"Memory remote URL drift: expected {expected.remote_url!r}, got {self.remote_url!r}"
-            )
-        _validate_memory_ssh_url(self.remote_url, name=self.name, service=self.service)
-
-    def to_dict(self) -> dict[str, str]:
-        return {
-            "name": self.name,
-            "service": self.service,
-            "alias": self.alias,
-            "remote_name": self.remote_name,
-            "remote_url": self.remote_url,
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryRememberResult:
-    """Result returned by ``@name.remember`` binding operations."""
-
-    binding: MemoryBinding
-    config_path: Path
-    project_root: Path
-    remote_validated: bool
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryMemorizeResult:
-    """Result returned by ``@name.memorize`` persistence operations."""
-
-    binding: MemoryBinding
-    current_memory_path: Path
-    project_root: Path
-    memory_repository_path: Path
-    state_hash: str
-    state_order: int
-    commit_created: bool
-    pushed: bool
-    verified: bool
-    local_ref: str | None
-    remote_ref: str | None
-    status: str
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryRetrieveResult:
-    """Result returned by ``@name.retrieve`` retrieval operations."""
-
-    binding: MemoryBinding
-    project_root: Path
-    memory_repository_path: Path
-    cgitsync_path: Path
-    state_paths: tuple[Path, ...]
-    local_ref: str
-    remote_ref: str
-    verified: bool
-    status: str
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryReloadResult:
-    """Result returned by ``@name.reload`` execution-context restore operations."""
-
-    binding: MemoryBinding
-    retrieve_result: MemoryRetrieveResult
-    project_root: Path
-    cgitsync_path: Path
-    state_path: Path
-    snapshot_path: Path
-    source_cgs_path: Path | None
-    registry: WorkingGitTree
-    status: str
-
-
-class MemoryBindingStore:
-    """Persist and load Memory bindings under ``CGSHOME/.cgitsync``."""
-
-    def __init__(self, project_root: Path | str) -> None:
-        self.project_root = Path(project_root).expanduser().resolve()
-
-    @property
-    def config_path(self) -> Path:
-        return self.project_root / ".cgitsync" / MEMORY_CONFIG_FILENAME
-
-    def save(self, binding: MemoryBinding) -> Path:
-        binding.validate()
-        validated_at = (
-            datetime.now(UTC)
-            .isoformat(timespec="milliseconds")
-            .replace("+00:00", "Z")
-        )
-        data = {
-            "memory": {
-                "schema_version": "1.0",
-                **binding.to_dict(),
-                "validated_at": validated_at,
-            }
-        }
-        self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        self.config_path.write_text(tomli_w.dumps(data), encoding="utf-8")
-        return self.config_path
-
-    def load(self) -> MemoryBinding:
-        if not self.config_path.is_file():
-            raise GitSyncError(f"No Memory binding found at {self.config_path}")
-        data = tomllib.loads(self.config_path.read_text(encoding="utf-8"))
-        raw_binding = data.get("memory", {})
-        if not isinstance(raw_binding, dict):
-            raise ConfigValidationError(f"Invalid Memory binding file: {self.config_path}")
-        return MemoryBinding.from_dict(raw_binding)
-
-
-def _validate_memory_name(name: str) -> str:
-    if not isinstance(name, str) or _MEMORY_NAME_RE.fullmatch(name) is None:
-        raise ConfigValidationError(
-            "Memory artefact name must contain only letters, numbers, '.', '_', or '-', "
-            "and must start with a letter or number."
-        )
-    return name
-
-
-def _validate_memory_service(service: str) -> str:
-    if not isinstance(service, str) or _MEMORY_SERVICE_RE.fullmatch(service) is None:
-        raise ConfigValidationError("Memory service must be a hostname.")
-    if service != DEFAULT_MEMORY_SERVICE:
-        raise ConfigValidationError(
-            f"Unsupported Memory service {service!r}; expected {DEFAULT_MEMORY_SERVICE!r}."
-        )
-    return service
-
-
-def _validate_memory_remote_name(remote_name: str) -> str:
-    if not isinstance(remote_name, str) or _MEMORY_REMOTE_NAME_RE.fullmatch(remote_name) is None:
-        raise ConfigValidationError(
-            "Memory remote name must contain only letters, numbers, '.', '_', or '-', "
-            "and must start with a letter or number."
-        )
-    return remote_name
-
-
-def _validate_memory_ssh_url(remote_url: str, *, name: str, service: str) -> str:
-    match = _MEMORY_SSH_URL_RE.fullmatch(remote_url)
-    if match is None:
-        raise ConfigValidationError(
-            "Memory remote URL must use SSH scp syntax: git@forge43.io:/srv/git/<NAME>.git"
-        )
-    if match.group("host") != service:
-        raise ConfigValidationError(
-            f"Memory remote host mismatch: expected {service!r}, got {match.group('host')!r}."
-        )
-    if match.group("name") != name:
-        raise ConfigValidationError(
-            f"Memory remote repository mismatch: expected {name!r}, got {match.group('name')!r}."
-        )
-    return remote_url
-
-
-def _resolve_memory_repository_base_dir() -> Path:
-    xdg_state = os.environ.get("XDG_STATE_HOME")
-    if xdg_state:
-        return Path(xdg_state) / "ComplexGitSync" / "memory-repositories"
-    return Path.home() / ".local" / "state" / "ComplexGitSync" / "memory-repositories"
-
-
-def _memory_repository_path(project_root: Path) -> Path:
-    key = hashlib.sha256(str(project_root.resolve()).encode()).hexdigest()[:24]
-    return _resolve_memory_repository_base_dir() / key
-
-
-def _validate_current_memory_path(current_memory_path: Path | str) -> tuple[Path, str, int]:
-    resolved = Path(current_memory_path).expanduser().resolve()
-    if not resolved.is_dir():
-        raise GitSyncError(f"current_memory_path does not exist or is not a directory: {resolved}")
-    if resolved.name.startswith(".tmp-"):
-        raise GitSyncError(f"current_memory_path is not finalized: {resolved}")
-    match = _STATE_DIR_RE.fullmatch(resolved.name)
-    if match is None:
-        raise GitSyncError(
-            "current_memory_path must be a canonical .cgitsync/state(<hash>)_i directory."
-        )
-    if resolved.parent.name != ".cgitsync":
-        raise GitSyncError(
-            "current_memory_path must live directly under a project .cgitsync directory."
-        )
-    required_patterns = {
-        ".cgs": "*.cgs",
-        ".gts": "*.gts",
-        ".lgr": "*.lgr",
-        ".log": "*.log",
-    }
-    missing = [
-        suffix
-        for suffix, pattern in required_patterns.items()
-        if not any(candidate.is_file() for candidate in resolved.glob(pattern))
-    ]
-    if missing:
-        raise GitSyncError(
-            f"current_memory_path is incomplete; missing Memory artefact(s): {', '.join(missing)}"
-        )
-    return resolved, match.group(1), int(match.group(2))
-
-
-def _validate_memory_cgitsync_tree(cgitsync_dir: Path | str) -> tuple[Path, ...]:
-    resolved = Path(cgitsync_dir).expanduser().resolve()
-    if not resolved.is_dir():
-        raise GitSyncError(f"Retrieved Memory is missing expected .cgitsync root: {resolved}")
-    if resolved.name != ".cgitsync":
-        raise GitSyncError(f"Retrieved Memory root must be named .cgitsync: {resolved}")
-    invalid_entries: list[Path] = []
-    state_paths = tuple(
-        sorted(
-            (
-                candidate
-                for candidate in resolved.iterdir()
-                if candidate.is_dir() and _STATE_DIR_RE.fullmatch(candidate.name) is not None
-            ),
-            key=lambda path: path.name,
-        )
-    )
-    for candidate in resolved.iterdir():
-        if candidate.is_dir():
-            if _STATE_DIR_RE.fullmatch(candidate.name) is None:
-                invalid_entries.append(candidate)
-            continue
-        if candidate.is_file() and candidate.name == MEMORY_CONFIG_FILENAME:
-            continue
-        invalid_entries.append(candidate)
-    if invalid_entries:
-        rendered = ", ".join(
-            path.name for path in sorted(invalid_entries, key=lambda path: path.name)
-        )
-        plural = "y" if len(invalid_entries) == 1 else "ies"
-        raise GitSyncError(
-            f"Retrieved Memory contains invalid .cgitsync entr{plural}: {rendered}"
-        )
-    if not state_paths:
-        raise GitSyncError(f"Retrieved Memory contains no canonical State directories: {resolved}")
-    for state_path in state_paths:
-        _validate_current_memory_path(state_path)
-    return state_paths
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryReloadSelection:
-    """Selected State artefacts read from a recovered MemoryFS tree."""
-
-    state_path: Path
-    snapshot_path: Path
-    source_cgs_path: Path | None
-
-
-def _select_latest_memory_state(
-    cgitsync_dir: Path | str,
-    state_paths: Sequence[Path],
-) -> MemoryReloadSelection:
-    """Select the latest reloadable State from a recovered ``.cgitsync`` tree."""
-    resolved_cgitsync = Path(cgitsync_dir).expanduser().resolve()
-    if not state_paths:
-        raise GitSyncError("Retrieved Memory contains no State to reload.")
-
-    candidates: list[tuple[tuple[int, str, float, str], MemoryReloadSelection]] = []
-    for state_path in state_paths:
-        resolved_state = Path(state_path).expanduser().resolve()
-        lgr_candidates = sorted(resolved_state.glob("*.lgr"))
-        if not lgr_candidates:
-            raise GitSyncError(f"Retrieved State is missing a Memory register: {resolved_state}")
-        lgr_path = lgr_candidates[0]
-        try:
-            register_data = tomllib.loads(lgr_path.read_text(encoding="utf-8"))
-        except tomllib.TOMLDecodeError as exc:
-            raise GitSyncError(f"Retrieved Memory register is invalid: {lgr_path}") from exc
-
-        snapshot_path = _resolve_memory_register_snapshot_path(
-            register_data,
-            recovered_cgitsync_dir=resolved_cgitsync,
-            fallback_state_dir=resolved_state,
-        )
-        if snapshot_path is None:
-            gts_candidates = sorted(resolved_state.glob("*.gts"))
-            if not gts_candidates:
-                raise GitSyncError(f"Retrieved State is missing a .gts snapshot: {resolved_state}")
-            snapshot_path = gts_candidates[-1].resolve()
-
-        source_cgs_candidates = sorted(resolved_state.glob("*.cgs"))
-        source_cgs_path = (
-            source_cgs_candidates[0].resolve() if source_cgs_candidates else None
-        )
-        snapshots = register_data.get("snapshots", [])
-        snapshots_count = len(snapshots) if isinstance(snapshots, list) else 0
-        latest_recorded_at = ""
-        if isinstance(snapshots, list):
-            for entry in snapshots:
-                if isinstance(entry, dict) and isinstance(entry.get("recorded_at"), str):
-                    latest_recorded_at = max(latest_recorded_at, entry["recorded_at"])
-        sort_key = (
-            snapshots_count,
-            latest_recorded_at,
-            resolved_state.stat().st_mtime,
-            resolved_state.name,
-        )
-        candidates.append(
-            (
-                sort_key,
-                MemoryReloadSelection(
-                    state_path=resolved_state,
-                    snapshot_path=snapshot_path,
-                    source_cgs_path=source_cgs_path,
-                ),
-            )
-        )
-
-    if not candidates:
-        raise GitSyncError("Retrieved Memory contains no reloadable State.")
-    return max(candidates, key=lambda item: item[0])[1]
-
-
-def _resolve_memory_register_snapshot_path(
-    register_data: dict[str, Any],
-    *,
-    recovered_cgitsync_dir: Path,
-    fallback_state_dir: Path,
-) -> Path | None:
-    """Resolve an ``.lgr`` current snapshot path into the recovered MemoryFS tree."""
-    raw_current = register_data.get("register", {}).get("current_snapshot_path")
-    if not isinstance(raw_current, str) or not raw_current:
-        return None
-
-    expanded = Path(_expand_environment_markers(raw_current)).expanduser()
-    if not expanded.is_absolute():
-        candidate = (fallback_state_dir / expanded).resolve()
-        if candidate.is_file() and recovered_cgitsync_dir in candidate.parents:
-            return candidate
-
-    parts = expanded.parts
-    if ".cgitsync" in parts:
-        marker_index = len(parts) - 1 - parts[::-1].index(".cgitsync")
-        relative_parts = parts[marker_index + 1:]
-        if relative_parts:
-            candidate = recovered_cgitsync_dir.joinpath(*relative_parts).resolve()
-            if candidate.is_file():
-                return candidate
-
-    resolved = expanded.resolve()
-    if resolved.is_file() and recovered_cgitsync_dir in resolved.parents:
-        return resolved
-    return None
-
-
-def _memory_copy_ignore(_directory: str, names: list[str]) -> set[str]:
-    return {
-        name
-        for name in names
-        if name == ".git" or name.startswith(".tmp-state(") or name.startswith(".tmp-")
-    }
-
-
 @dataclass(slots=True)
 class GitRunner:
     """Git subprocess wrapper — executes git commands for clone/checkout/push actions."""
@@ -1597,37 +1164,6 @@ class GitRunner:
     def _remote_ref_exists(self, remote_url: str, ref_selector: str, ref_name: str) -> bool:
         completed = self._run("ls-remote", ref_selector, remote_url, ref_name)
         return bool(completed.stdout.strip())
-
-    def validate_memory_remote(self, remote_url: str) -> str:
-        """Validate read-only SSH access to a Memory bare repository."""
-        completed = self._run("ls-remote", remote_url)
-        return completed.stdout.strip()
-
-    def remote_head(self, remote_url: str, branch: str = "main") -> str | None:
-        """Return the remote branch head SHA, or ``None`` when absent."""
-        completed = self._run("ls-remote", "--heads", remote_url, branch)
-        output = completed.stdout.strip()
-        if not output:
-            return None
-        return output.split(maxsplit=1)[0]
-
-    def init_repository(self, repo_path: Path | str) -> None:
-        """Initialise *repo_path* as a Git worktree."""
-        repo = Path(repo_path)
-        repo.mkdir(parents=True, exist_ok=True)
-        self._run("init", cwd=repo)
-
-    def is_git_repository(self, repo_path: Path | str) -> bool:
-        """Return ``True`` when *repo_path* is a Git worktree."""
-        try:
-            result = self._run("rev-parse", "--is-inside-work-tree", cwd=repo_path)
-        except GitSyncError:
-            return False
-        return result.stdout.strip() == "true"
-
-    def checkout_branch(self, repo_path: Path | str, branch: str) -> None:
-        """Create or reset the current branch to *branch*."""
-        self._run("checkout", "-B", branch, cwd=repo_path)
 
     def remote_get_url(self, repo_path: Path | str, remote_name: str = "origin") -> str | None:
         """Return the URL configured for *remote_name*, or ``None`` when unset.
@@ -1652,18 +1188,6 @@ class GitRunner:
             return
         if existing != remote_url:
             self._run("remote", "set-url", remote_name, remote_url, cwd=repo_path)
-
-    def fetch_branch(self, repo_path: Path | str, remote_name: str, branch: str) -> None:
-        """Fetch *remote_name/branch* into ``FETCH_HEAD``."""
-        self._run("fetch", remote_name, branch, cwd=repo_path)
-
-    def reset_to_fetch_head(self, repo_path: Path | str) -> None:
-        """Reset *repo_path* to the most recent ``FETCH_HEAD``."""
-        self._run("reset", "--hard", "FETCH_HEAD", cwd=repo_path)
-
-    def fsck_full(self, repo_path: Path | str) -> None:
-        """Verify the integrity of *repo_path* with ``git fsck --full``."""
-        self._run("fsck", "--full", cwd=repo_path)
 
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
         destination_path = Path(destination)
@@ -2646,10 +2170,8 @@ class ComplexGitSyncClient:
     registry: WorkingGitTree | None = None
     source_path: Path | None = None
     loaded_snapshot_path: Path | None = None
-    last_memory_result: MemoryMemorizeResult | None = None
     last_gitignore_sync: tuple[GitignoreSyncEntry, ...] = ()
     run_logger: CommandRunLogger | None = None
-    _memory_trigger_suppression_depth: int = 0
 
     def is_loaded(self) -> bool:
         return self.registry is not None or bool(self.orchestre.git_tree.repos)
@@ -3503,371 +3025,6 @@ class ComplexGitSyncClient:
         document = CgsDocument.from_toml(source_path)
         return self.resolve_cgshome(document, source_path, output_path=output_path)
 
-    def remember(
-        self,
-        config_path: str | Path,
-        *,
-        output_path: str | Path | None = None,
-        service: str = DEFAULT_MEMORY_SERVICE,
-        remote_name: str = DEFAULT_MEMORY_REMOTE_NAME,
-    ) -> MemoryRememberResult:
-        """Bind a ``.cgs`` artefact to its external SSH-Git Memory endpoint."""
-        source_path = Path(config_path).resolve()
-        document = CgsDocument.from_toml(source_path)
-        project_root = self.resolve_cgshome(document, source_path, output_path=output_path)
-        binding = MemoryBinding.for_name(
-            document.project_name or source_path.stem,
-            service=service,
-            remote_name=remote_name,
-        )
-        self.git_runner.validate_memory_remote(binding.remote_url)
-        store = MemoryBindingStore(project_root)
-        config_file = store.save(binding)
-        self._log_event(
-            "memory_remember",
-            name=binding.name,
-            alias=binding.alias,
-            remote_name=binding.remote_name,
-            remote_url=binding.remote_url,
-            project_root=project_root,
-            config_path=config_file,
-            remote_validated=True,
-        )
-        return MemoryRememberResult(
-            binding=binding,
-            config_path=config_file,
-            project_root=project_root,
-            remote_validated=True,
-        )
-
-    def load_memory_binding(self, project_root: str | Path) -> MemoryBinding:
-        """Load a persisted external Memory binding from ``CGSHOME``."""
-        return MemoryBindingStore(project_root).load()
-
-    def retrieve(
-        self,
-        name: str,
-        *,
-        output_path: str | Path | None = None,
-        branch: str = "main",
-        service: str = DEFAULT_MEMORY_SERVICE,
-        remote_name: str = DEFAULT_MEMORY_REMOTE_NAME,
-    ) -> MemoryRetrieveResult:
-        """Retrieve an external SSH-Git Memory repository into a local CGSHOME."""
-        binding = MemoryBinding.for_name(name, service=service, remote_name=remote_name)
-        if output_path is not None:
-            project_root = (Path(output_path).expanduser().resolve() / binding.name).resolve()
-        elif os.environ.get("CGSHOME"):
-            project_root = Path(os.environ["CGSHOME"]).expanduser().resolve()
-        else:
-            project_root = (Path.cwd() / binding.name).resolve()
-
-        self.git_runner.validate_memory_remote(binding.remote_url)
-        remote_ref = self.git_runner.remote_head(binding.remote_url, branch)
-        if remote_ref is None:
-            raise GitSyncError(
-                f"No remote Memory revision found for {binding.alias} on branch {branch!r}."
-            )
-
-        memory_repo = _memory_repository_path(project_root)
-        if not memory_repo.exists():
-            self.git_runner.clone(binding.remote_url, memory_repo, branch=branch)
-        elif self.git_runner.is_git_repository(memory_repo):
-            self.git_runner.configure_remote(memory_repo, binding.remote_name, binding.remote_url)
-            self.git_runner.fetch_branch(memory_repo, binding.remote_name, branch)
-            self.git_runner.reset_to_fetch_head(memory_repo)
-            self.git_runner.checkout_branch(memory_repo, branch)
-        else:
-            if any(memory_repo.iterdir()):
-                raise GitSyncError(
-                    f"Memory repository path exists but is not a Git worktree: {memory_repo}"
-                )
-            self.git_runner.clone(binding.remote_url, memory_repo, branch=branch)
-
-        self.git_runner.configure_remote(memory_repo, binding.remote_name, binding.remote_url)
-        self.git_runner.fsck_full(memory_repo)
-        local_ref = self.git_runner.rev_parse_head(memory_repo)
-        remote_after = self.git_runner.remote_head(binding.remote_url, branch)
-        verified = remote_after == local_ref
-        if not verified or remote_after is None:
-            raise GitSyncError(
-                "Memory retrieval verification failed: remote ref does not match local Memory commit."
-            )
-
-        source_cgitsync = memory_repo / ".cgitsync"
-        _validate_memory_cgitsync_tree(source_cgitsync)
-        project_root.mkdir(parents=True, exist_ok=True)
-        target_cgitsync = project_root / ".cgitsync"
-        if target_cgitsync.exists():
-            if any(target_cgitsync.iterdir()):
-                raise GitSyncError(
-                    f"Cannot retrieve Memory into non-empty .cgitsync directory: {target_cgitsync}"
-                )
-            target_cgitsync.rmdir()
-        shutil.copytree(source_cgitsync, target_cgitsync, ignore=_memory_copy_ignore)
-        MemoryBindingStore(project_root).save(binding)
-        state_paths = _validate_memory_cgitsync_tree(target_cgitsync)
-
-        result = MemoryRetrieveResult(
-            binding=binding,
-            project_root=project_root,
-            memory_repository_path=memory_repo,
-            cgitsync_path=target_cgitsync,
-            state_paths=state_paths,
-            local_ref=local_ref,
-            remote_ref=remote_after,
-            verified=True,
-            status="retrieved",
-        )
-        self._log_event(
-            "memory_retrieve",
-            name=binding.name,
-            alias=binding.alias,
-            remote_name=binding.remote_name,
-            remote_url=binding.remote_url,
-            project_root=project_root,
-            memory_repository_path=memory_repo,
-            cgitsync_path=target_cgitsync,
-            state_count=len(state_paths),
-            local_ref=local_ref,
-            remote_ref=remote_after,
-            verified=True,
-            status=result.status,
-        )
-        return result
-
-    def reload(
-        self,
-        name: str,
-        *,
-        output_path: str | Path | None = None,
-        branch: str = "main",
-        service: str = DEFAULT_MEMORY_SERVICE,
-        remote_name: str = DEFAULT_MEMORY_REMOTE_NAME,
-    ) -> MemoryReloadResult:
-        """Restore execution context from externally retrieved Memory."""
-        retrieve_result = self.retrieve(
-            name,
-            output_path=output_path,
-            branch=branch,
-            service=service,
-            remote_name=remote_name,
-        )
-        state_paths = _validate_memory_cgitsync_tree(retrieve_result.cgitsync_path)
-        selection = _select_latest_memory_state(retrieve_result.cgitsync_path, state_paths)
-        registry = self.load_gts(selection.snapshot_path)
-        self._rebase_registry_to_project_root(
-            registry,
-            project_root=retrieve_result.project_root,
-            source_cgs_path=selection.source_cgs_path,
-        )
-        self.loaded_snapshot_path = selection.snapshot_path
-        self.source_path = selection.source_cgs_path or selection.snapshot_path
-        if selection.source_cgs_path is not None:
-            self.state_store.record_snapshot(selection.source_cgs_path, selection.snapshot_path)
-
-        result = MemoryReloadResult(
-            binding=retrieve_result.binding,
-            retrieve_result=retrieve_result,
-            project_root=retrieve_result.project_root,
-            cgitsync_path=retrieve_result.cgitsync_path,
-            state_path=selection.state_path,
-            snapshot_path=selection.snapshot_path,
-            source_cgs_path=selection.source_cgs_path,
-            registry=registry,
-            status="reloaded",
-        )
-        self._log_event(
-            "memory_reload",
-            name=result.binding.name,
-            alias=result.binding.alias,
-            project_root=result.project_root,
-            cgitsync_path=result.cgitsync_path,
-            state_path=result.state_path,
-            snapshot_path=result.snapshot_path,
-            source_cgs_path=result.source_cgs_path,
-            status=result.status,
-        )
-        return result
-
-    def _rebase_registry_to_project_root(
-        self,
-        registry: WorkingGitTree,
-        *,
-        project_root: Path,
-        source_cgs_path: Path | None,
-    ) -> None:
-        """Re-root a loaded snapshot registry under the recovered project root."""
-        root_entry = registry.get(ROOT_REPO_ID)
-        previous_root = root_entry.absolute_path
-        root_entry.absolute_path = project_root.resolve()
-        root_entry.relative_path = Path(".")
-        if source_cgs_path is not None:
-            root_entry.source_cgs_path = source_cgs_path.resolve()
-
-        for entry in iter_tree(registry):
-            if entry.repo_id == ROOT_REPO_ID or entry.parent_id is None:
-                continue
-            parent = registry.get(entry.parent_id)
-            relative_path = entry.relative_path
-            if relative_path is None:
-                try:
-                    relative_path = entry.absolute_path.relative_to(previous_root)
-                except ValueError:
-                    relative_path = Path(entry.name)
-            entry.absolute_path = (parent.absolute_path / relative_path).resolve()
-            if entry.source_cgs_path is not None:
-                entry.source_cgs_path = _rebase_path_under_root(
-                    entry.source_cgs_path,
-                    old_root=previous_root,
-                    new_root=project_root,
-                )
-        registry.recompute_tree_state()
-        self.orchestre.git_tree.git.bind_tree(registry)
-
-    def _trigger_memorize_after_success(
-        self,
-        current_memory_path: str | Path,
-        *,
-        trigger: str,
-    ) -> MemoryMemorizeResult | None:
-        """Persist the current Memory State when the project has a binding."""
-        memory_path = Path(current_memory_path).resolve()
-        project_root = memory_path.parent.parent
-        if self._memory_trigger_suppression_depth > 0:
-            self.last_memory_result = None
-            self._log_event(
-                "memory_memorize_skipped",
-                trigger=trigger,
-                reason="suppressed",
-                current_memory_path=memory_path,
-                project_root=project_root,
-            )
-            return None
-
-        binding_store = MemoryBindingStore(project_root)
-        if not binding_store.config_path.is_file():
-            self.last_memory_result = None
-            self._log_event(
-                "memory_memorize_skipped",
-                trigger=trigger,
-                reason="missing_binding",
-                current_memory_path=memory_path,
-                project_root=project_root,
-            )
-            return None
-
-        self._log_event(
-            "memory_memorize_trigger",
-            trigger=trigger,
-            current_memory_path=memory_path,
-            project_root=project_root,
-        )
-        result = self.memorize(memory_path)
-        self.last_memory_result = result
-        self._log_event(
-            "memory_memorize_triggered",
-            trigger=trigger,
-            current_memory_path=memory_path,
-            status=result.status,
-            commit_created=result.commit_created,
-            pushed=result.pushed,
-            verified=result.verified,
-        )
-        return result
-
-    def memorize(
-        self,
-        current_memory_path: str | Path,
-        *,
-        branch: str = "main",
-    ) -> MemoryMemorizeResult:
-        """Persist a finalized local Memory State to the configured SSH-Git remote."""
-        memory_path, state_hash, state_order = _validate_current_memory_path(current_memory_path)
-        cgitsync_dir = memory_path.parent
-        project_root = cgitsync_dir.parent
-        binding = MemoryBindingStore(project_root).load()
-        binding.validate()
-        self.git_runner.validate_memory_remote(binding.remote_url)
-
-        memory_repo = _memory_repository_path(project_root)
-        if not memory_repo.exists():
-            self.git_runner.init_repository(memory_repo)
-        elif not self.git_runner.is_git_repository(memory_repo):
-            if any(memory_repo.iterdir()):
-                raise GitSyncError(f"Memory repository path exists but is not a Git worktree: {memory_repo}")
-            self.git_runner.init_repository(memory_repo)
-
-        self.git_runner.checkout_branch(memory_repo, branch)
-        self.git_runner.configure_remote(memory_repo, binding.remote_name, binding.remote_url)
-        remote_before = self.git_runner.remote_head(binding.remote_url, branch)
-        if remote_before is not None:
-            self.git_runner.fetch_branch(memory_repo, binding.remote_name, branch)
-            self.git_runner.reset_to_fetch_head(memory_repo)
-            self.git_runner.checkout_branch(memory_repo, branch)
-
-        target_cgitsync = memory_repo / ".cgitsync"
-        if target_cgitsync.exists():
-            shutil.rmtree(target_cgitsync)
-        shutil.copytree(cgitsync_dir, target_cgitsync, ignore=_memory_copy_ignore)
-
-        self.git_runner.stage_all(memory_repo)
-        commit_created = False
-        pushed = False
-        if self.git_runner.has_staged_changes(memory_repo):
-            commit_message = (
-                f"memory({binding.name}): persist state {state_hash[:8]} iteration {state_order}"
-            )
-            self.git_runner.commit(memory_repo, commit_message)
-            commit_created = True
-            self.git_runner.push(
-                memory_repo,
-                remote=binding.remote_name,
-                ref_name=f"{branch}:{branch}",
-            )
-            pushed = True
-
-        local_ref = self.git_runner.rev_parse_head(memory_repo)
-        remote_after = self.git_runner.remote_head(binding.remote_url, branch)
-        verified = remote_after == local_ref
-        if not verified:
-            raise GitSyncError(
-                "Memory persistence verification failed: remote ref does not match local Memory commit."
-            )
-        status = "persisted" if commit_created else "unchanged"
-        result = MemoryMemorizeResult(
-            binding=binding,
-            current_memory_path=memory_path,
-            project_root=project_root,
-            memory_repository_path=memory_repo,
-            state_hash=state_hash,
-            state_order=state_order,
-            commit_created=commit_created,
-            pushed=pushed,
-            verified=verified,
-            local_ref=local_ref,
-            remote_ref=remote_after,
-            status=status,
-        )
-        self._log_event(
-            "memory_memorize",
-            name=binding.name,
-            alias=binding.alias,
-            remote_name=binding.remote_name,
-            remote_url=binding.remote_url,
-            current_memory_path=memory_path,
-            memory_repository_path=memory_repo,
-            state_hash=state_hash,
-            state_order=state_order,
-            commit_created=commit_created,
-            pushed=pushed,
-            verified=verified,
-            local_ref=local_ref,
-            remote_ref=remote_after,
-            status=status,
-        )
-        return result
-
     def load(
         self,
         source_path: str | Path,
@@ -4385,21 +3542,13 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        self.last_memory_result = None
         self._log_event("push_start")
         self.orchestre.git_tree.git.push(self.git_runner)
         snapshot_path = self.write_gts_snapshot(command_origin="push")
         if self.source_path is not None:
             self.state_store.record_snapshot(self.source_path, snapshot_path)
-        memory_result = self._trigger_memorize_after_success(
-            snapshot_path.parent,
-            trigger="push.success",
-        )
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="push")
-        self._log_event(
-            "push_end",
-            memory_status=(memory_result.status if memory_result is not None else "unbound"),
-        )
+        self._log_event("push_end")
         return registry
 
     def tag(self, tag_name: str) -> WorkingGitTree:
@@ -4514,7 +3663,6 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        self.last_memory_result = None
         self._log_event(
             "freeze_release_start",
             tag_name=tag_name,
@@ -4534,16 +3682,11 @@ class ComplexGitSyncClient:
         )
         if self.source_path is not None:
             self.state_store.record_snapshot(self.source_path, snapshot_path)
-        memory_result = self._trigger_memorize_after_success(
-            snapshot_path.parent,
-            trigger="freeze-release.success",
-        )
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="freeze_release")
         self._log_event(
             "freeze_release_end",
             tag_name=tag_name,
             output_gts=snapshot_path,
-            memory_status=(memory_result.status if memory_result is not None else "unbound"),
         )
         return registry
 
@@ -4578,11 +3721,7 @@ class ComplexGitSyncClient:
             self.pull_force(self.source_path)
         else:
             self.pull(self.source_path)
-        self._memory_trigger_suppression_depth += 1
-        try:
-            self.push()
-        finally:
-            self._memory_trigger_suppression_depth -= 1
+        self.push()
         registry = self.freeze(
             release_name,
             output_gts=output_gts,

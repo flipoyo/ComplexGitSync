@@ -132,10 +132,6 @@ set (either export it, or run from inside the bootstrapped tree).
 | Configuration | `discover` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `configure` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
 | Configuration | `create-cgs` | Create a validated .cgs specification from CLI project definitions. |
-| Memory | `remember` | Bind a .cgs artefact to its external SSH-Git Memory endpoint. |
-| Memory | `memorize` | Persist a finalized local Memory State to the configured SSH-Git remote. |
-| Memory | `retrieve` | Retrieve an external SSH-Git Memory repository into a clean CGSHOME. |
-| Memory | `reload` | Retrieve external Memory and restore the ComplexGitSync execution context. |
 
 ## Adopting a project that has no `.cgs` yet
 

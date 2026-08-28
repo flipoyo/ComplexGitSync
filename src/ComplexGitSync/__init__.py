@@ -77,11 +77,6 @@ from .orchestre import (
     GitRunner,
     GtsDocument,
     LocalGitRegister,
-    MemoryBinding,
-    MemoryMemorizeResult,
-    MemoryReloadResult,
-    MemoryRememberResult,
-    MemoryRetrieveResult,
     Orchestre,
     SyncLedger,
 )
@@ -148,11 +143,6 @@ __all__ = [
     "GtsDocument",
     "GitRunner",
     "LocalGitRegister",
-    "MemoryBinding",
-    "MemoryMemorizeResult",
-    "MemoryRememberResult",
-    "MemoryReloadResult",
-    "MemoryRetrieveResult",
     "Orchestre",
     "SyncLedger",
 ]
