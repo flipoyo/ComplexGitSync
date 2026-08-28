@@ -16,7 +16,6 @@ Classes / enums defined here (Tier 1 — Core State):
     GitRepo             Canonical reference identity of a single repository
     WorkingRepo         Mutable runtime repository used by WorkingGitTree
     RepoAddress         Derives the remote URL from a GitRepo
-    RepoNode            Immutable snapshot of a repo's tree position
 """
 
 from __future__ import annotations
@@ -286,28 +285,6 @@ class RepoAddress:
         if protocol == AccessProtocol.SSH:
             return self.to_ssh()
         return self.to_https()
-
-
-# ---------------------------------------------------------------------------
-# RepoNode — immutable tree-position snapshot
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class RepoNode:
-    """Immutable snapshot of a repository's position in the dependency tree.
-
-    Used for read-only tree traversal; mutable state lives in
-    :class:`WorkingRepo`.
-    """
-
-    repo_id: str
-    name: str
-    absolute_path: Path
-    parent_id: str | None = None
-    relative_path: Path | None = None
-    source_cgs_path: Path | None = None
-    node_type: NodeType = NodeType.LEAF
 
 
 # ---------------------------------------------------------------------------

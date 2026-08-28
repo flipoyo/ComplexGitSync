@@ -16,7 +16,6 @@ from ComplexGitSync import (
     GitTree,
     MasterConfig,
     NestedConfigDiscoveryError,
-    RepoNode,
     SyncLedger,
     TreeNotReadyError,
     add_tree,
@@ -38,7 +37,6 @@ def test_package_root_exports_refactor_guard_symbols():
     assert GitRepo.__name__ == "GitRepo"
     assert GitTree.__name__ == "GitTree"
     assert MasterConfig.__name__ == "MasterConfig"
-    assert RepoNode.__name__ == "RepoNode"
     assert ComplexGitSyncClient.__name__ == "ComplexGitSyncClient"
     assert SyncLedger.__name__ == "SyncLedger"
 
