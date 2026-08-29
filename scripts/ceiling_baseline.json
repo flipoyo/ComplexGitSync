@@ -86,8 +86,8 @@
       "public_symbols": 16
     },
     "orchestre.py": {
-      "internal_imports": 54,
-      "loc": 3164,
+      "internal_imports": 60,
+      "loc": 3068,
       "public_symbols": 16
     },
     "paths.py": {

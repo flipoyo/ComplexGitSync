@@ -100,6 +100,10 @@ from .operations import (
 from .operations import (
     validate_branch_topology as _validate_branch_topology,
 )
+from .paths import _path_to_environment_marker, _resolve_document_path, _resolve_project_root
+from .paths import resolve_bootstrap_root as _resolve_bootstrap_root
+from .paths import resolve_cgshome as _resolve_cgshome
+from .paths import resolve_initialise_cgshome as _resolve_initialise_cgshome
 from .registry import (
     build_gts_document_from_registry,
     build_registry_from_cgs_document,
@@ -125,85 +129,6 @@ _FREEZE_COMMAND_ORIGINS = frozenset({"freeze", "freeze_release", "freeze_state"}
 
 def _collect_errors(checks: list[tuple[bool, str]]) -> list[str]:
     return [msg for ok, msg in checks if not ok]
-
-
-def _get_path_environment_markers() -> tuple[tuple[str, Path], ...]:
-    markers: list[tuple[str, Path]] = []
-    seen_paths: set[str] = set()
-
-    def add_marker(token: str, raw_value: str | None) -> None:
-        if not raw_value:
-            return
-        resolved = Path(raw_value).expanduser().resolve()
-        key = os.path.normcase(str(resolved))
-        if key in seen_paths:
-            return
-        seen_paths.add(key)
-        markers.append((token, resolved))
-
-    add_marker("$HOME", os.environ.get("HOME"))
-    add_marker("%USERPROFILE%", os.environ.get("USERPROFILE"))
-    homedrive = os.environ.get("HOMEDRIVE")
-    homepath = os.environ.get("HOMEPATH")
-    if homedrive and homepath:
-        add_marker("%HOMEDRIVE%%HOMEPATH%", f"{homedrive}{homepath}")
-    return tuple(markers)
-
-
-def _path_to_environment_marker(path: Path | str) -> str:
-    resolved_path = Path(path).expanduser().resolve()
-    for token, base_path in _get_path_environment_markers():
-        try:
-            relative = resolved_path.relative_to(base_path)
-        except ValueError:
-            continue
-        if relative == Path("."):
-            return token
-        return f"{token}/{relative.as_posix()}"
-    return str(resolved_path)
-
-
-def _expand_environment_markers(raw_path: str) -> str:
-    def _replace_prefixed_marker(value: str, marker: str, replacement: str) -> str:
-        if value == marker:
-            return replacement
-        for separator in _preferred_path_separators():
-            prefix = f"{marker}{separator}"
-            if value.startswith(prefix):
-                suffix = value[len(prefix):]
-                return f"{replacement}{separator}{suffix}"
-        return value
-
-    expanded = raw_path
-    home = os.environ.get("HOME")
-    if home:
-        expanded = _replace_prefixed_marker(expanded, "$HOME", home)
-    userprofile = os.environ.get("USERPROFILE")
-    if userprofile:
-        expanded = _replace_prefixed_marker(expanded, "%USERPROFILE%", userprofile)
-    homedrive = os.environ.get("HOMEDRIVE")
-    homepath = os.environ.get("HOMEPATH")
-    if homedrive and homepath:
-        expanded = _replace_prefixed_marker(
-            expanded,
-            "%HOMEDRIVE%%HOMEPATH%",
-            f"{homedrive}{homepath}",
-        )
-    return expanded
-
-
-def _resolve_document_path(raw_path: str) -> Path:
-    return Path(_expand_environment_markers(raw_path)).expanduser().resolve()
-
-
-def _preferred_path_separators() -> tuple[str, ...]:
-    separators: list[str] = []
-    seen: set[str] = set()
-    for separator in (os.sep, os.altsep, "/", "\\"):
-        if separator and separator not in seen:
-            seen.add(separator)
-            separators.append(separator)
-    return tuple(separators)
 
 
 def _format_state_id(state_hash: str) -> str:
@@ -2146,14 +2071,7 @@ class ComplexGitSyncClient:
         output_path: str | Path | None = None,
     ) -> Path:
         """Resolve CGSHOME from CGSPATH, the environment, or CWD."""
-        if output_path is not None:
-            cgspath = Path(output_path).expanduser().resolve()
-            return (cgspath / (document.project_name or source_path.stem)).resolve()
-        env_cgshome = os.environ.get("CGSHOME")
-        if env_cgshome:
-            return Path(env_cgshome).expanduser().resolve()
-        cgspath = (Path.cwd() / "../..").resolve()
-        return (cgspath / (document.project_name or source_path.stem)).resolve()
+        return _resolve_cgshome(document, source_path, output_path=output_path)
 
     def resolve_initialise_cgshome(
         self,
@@ -2162,9 +2080,7 @@ class ComplexGitSyncClient:
         output_path: str | Path | None = None,
     ) -> Path:
         """Read a .cgs file and resolve the CGSHOME initialise will use."""
-        source_path = Path(config_path).resolve()
-        document = CgsDocument.from_toml(source_path)
-        return self.resolve_cgshome(document, source_path, output_path=output_path)
+        return _resolve_initialise_cgshome(config_path, output_path=output_path)
 
     def load(
         self,
@@ -2344,7 +2260,7 @@ class ComplexGitSyncClient:
     ) -> Path:
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        return self._resolve_project_root(document, source_path, target_dir, output_path)
+        return _resolve_project_root(document, source_path, target_dir, output_path)
 
     def clone_cgs(
         self,
@@ -2356,7 +2272,7 @@ class ComplexGitSyncClient:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        project_root = self._resolve_project_root(document, source_path, target_dir, output_path)
+        project_root = _resolve_project_root(document, source_path, target_dir, output_path)
 
         self.registry = build_registry_from_cgs_document(
             document,
@@ -2426,15 +2342,7 @@ class ComplexGitSyncClient:
         ComplexGitSync standalone must never mix its own repo with the
         project state it manages.
         """
-        if not project_name:
-            raise ValueError("bootstrap requires a non-empty project_name.")
-        if cgs_path is not None:
-            cgspath = Path(cgs_path).expanduser().resolve()
-        else:
-            cgs_root = (Path.home() / ".cgs").expanduser().resolve()
-            cgs_root.mkdir(parents=True, exist_ok=True)
-            cgspath = cgs_root / f"CGS{datetime.now(UTC):%Y%m%d%H%M%S}"
-        return (cgspath / project_name).resolve()
+        return _resolve_bootstrap_root(project_name, cgs_path=cgs_path)
 
     def bootstrap(
         self,
@@ -3381,25 +3289,6 @@ class ComplexGitSyncClient:
     def validate_topology(self) -> BranchTopologyReport:
         """Inspect and validate the workspace branch topology."""
         return self.validate_branch_topology()
-
-    def _resolve_project_root(
-        self,
-        document: CgsDocument,
-        source_path: Path,
-        target_dir: str | Path | None,
-        output_path: str | Path | None = None,
-    ) -> Path:
-        if target_dir is not None:
-            return Path(target_dir).resolve()
-
-        base_dir = Path(output_path).resolve() if output_path is not None else Path.cwd()
-        default_root = (base_dir / (document.project_name or source_path.stem)).resolve()
-        if not default_root.exists() or (default_root.is_dir() and not any(default_root.iterdir())):
-            return default_root
-        raise GitSyncError(
-            f"Clone destination already exists and is not empty: {default_root}\n"
-            f"Choose a different --target-dir or ensure the directory is empty."
-        )
 
     def _pending_clone_entries(
         self,
