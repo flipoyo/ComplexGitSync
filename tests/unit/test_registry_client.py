@@ -24,11 +24,12 @@ from ComplexGitSync.git_tree import (
     make_repo_id,
     normalize_node_types,
 )
-from ComplexGitSync.L0 import hash_time_l0_anchor, new_time_l0_anchor
+from ComplexGitSync.ledger_entry import hash_time_l0_anchor, new_time_l0_anchor
 from ComplexGitSync.orchestre import (
     ComplexGitSyncClient,
     GtsDocument,
     RuntimeStateStore,
+    SystemClock,
     _path_to_environment_marker,
     _resolve_memory_state_directory,
     _state_directory_name,
@@ -1535,7 +1536,7 @@ def test_make_repo_id_only_collapses_explicit_dot_relative_path():
 
 
 def test_time_l0_anchor_hash_is_public_identity_only():
-    state = new_time_l0_anchor()
+    state = new_time_l0_anchor(SystemClock())
 
     assert re.fullmatch(r"[0-9a-f]{64}", state.state_hash)
     assert state.state_id == f"state({state.state_hash})"

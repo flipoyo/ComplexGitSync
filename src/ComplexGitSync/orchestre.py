@@ -31,7 +31,9 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
+import time
 import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -94,7 +96,7 @@ from .git_tree import (
     fix_circularities as _fix_circularities,
 )
 from .gts_document import GtsDocument
-from .L0 import new_time_l0_anchor
+from .ledger_entry import new_time_l0_anchor
 from .master import MasterConfig
 from .operations import (
     BranchTopologyReport,
@@ -615,6 +617,30 @@ def _resolve_state_base_dir() -> Path:
     return Path.home() / ".local" / "state" / "ComplexGitSync" / "snapshots"
 
 
+class SystemClock:
+    """Real :class:`~.ledger_entry.ClockProtocol` implementation.
+
+    The only place in ``orchestre.py`` that reads the wall clock, PID, or an
+    entropy source directly for TIME-L0 anchor generation — every other
+    caller goes through :func:`~.ledger_entry.new_time_l0_anchor`, which
+    stays deterministic and testable because it only ever sees this
+    Protocol, never the real ``datetime``/``time``/``os``/``secrets``
+    modules itself.
+    """
+
+    def now(self) -> datetime:
+        return datetime.now(UTC)
+
+    def time_ns(self) -> int:
+        return time.time_ns()
+
+    def pid(self) -> int:
+        return os.getpid()
+
+    def token_hex(self, nbytes: int) -> str:
+        return secrets.token_hex(nbytes)
+
+
 class LocalGitRegister:
     """Project-local ``.lgr`` register for generated ``.gts`` snapshots.
 
@@ -651,7 +677,7 @@ class LocalGitRegister:
 
         data = self._load()
         snapshots = data.setdefault("snapshots", [])
-        state_anchor = new_time_l0_anchor() if state_hash is None else None
+        state_anchor = new_time_l0_anchor(SystemClock()) if state_hash is None else None
         public_state_hash = state_hash if state_hash is not None else state_anchor.state_hash
         snapshot_id = _format_state_id(public_state_hash)
         if state_order is None:
@@ -3514,7 +3540,7 @@ class ComplexGitSyncClient:
         else:
             snapshot_stem = root_entry.name
         snapshot_name = f"{snapshot_stem}.gts"
-        state_anchor = new_time_l0_anchor()
+        state_anchor = new_time_l0_anchor(SystemClock())
         canonical_state_hash = state_anchor.state_hash
         cgitsync_dir = root_entry.absolute_path / ".cgitsync"
         cgitsync_dir.mkdir(parents=True, exist_ok=True)
