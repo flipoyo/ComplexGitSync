@@ -12,7 +12,7 @@
     },
     "cgs_format.py": {
       "internal_imports": 9,
-      "loc": 632,
+      "loc": 604,
       "public_symbols": 9
     },
     "cli.py": {
@@ -29,6 +29,11 @@
       "internal_imports": 1,
       "loc": 98,
       "public_symbols": 1
+    },
+    "discovery.py": {
+      "internal_imports": 20,
+      "loc": 204,
+      "public_symbols": 3
     },
     "errors.py": {
       "internal_imports": 0,
@@ -65,6 +70,11 @@
       "loc": 186,
       "public_symbols": 7
     },
+    "ledger_store.py": {
+      "internal_imports": 3,
+      "loc": 357,
+      "public_symbols": 16
+    },
     "master.py": {
       "internal_imports": 1,
       "loc": 81,
@@ -76,9 +86,34 @@
       "public_symbols": 16
     },
     "orchestre.py": {
-      "internal_imports": 50,
-      "loc": 3445,
-      "public_symbols": 19
+      "internal_imports": 49,
+      "loc": 3206,
+      "public_symbols": 16
+    },
+    "paths.py": {
+      "internal_imports": 2,
+      "loc": 176,
+      "public_symbols": 4
+    },
+    "registry.py": {
+      "internal_imports": 32,
+      "loc": 415,
+      "public_symbols": 3
+    },
+    "snapshot_resolver.py": {
+      "internal_imports": 0,
+      "loc": 196,
+      "public_symbols": 5
+    },
+    "state_store.py": {
+      "internal_imports": 0,
+      "loc": 118,
+      "public_symbols": 1
+    },
+    "status_render.py": {
+      "internal_imports": 1,
+      "loc": 92,
+      "public_symbols": 0
     }
   },
   "ring0_modules": [

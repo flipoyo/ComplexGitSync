@@ -44,7 +44,6 @@ from urllib.parse import urlsplit
 
 import tomli_w
 
-from . import __version__ as CGS_VERSION
 from .cgs_format import CgsDocument, parse_repo_id
 from .errors import (
     ConfigValidationError,
@@ -72,11 +71,8 @@ from .git_tree import (
     _apply_repo_identity,
     _as_optional_str,
     _initial_discovery_state,
-    _is_root_repo_spec,
     _normalise_relative_path,
     _parse_enum,
-    _parse_gts_node_type,
-    _parse_optional_enum,
     _update_gitignore_file,
     _validate_repo_shape,
     build_tree_state,
@@ -103,6 +99,11 @@ from .operations import (
 )
 from .operations import (
     validate_branch_topology as _validate_branch_topology,
+)
+from .registry import (
+    build_gts_document_from_registry,
+    build_registry_from_cgs_document,
+    build_registry_from_gts_document,
 )
 
 # ============================================================
@@ -929,273 +930,6 @@ class SyncLedger:
                 except ValueError:
                     continue
         return f"lgr-{max_id + 1:06d}"
-
-
-# ============================================================
-#  Registry builders — translate documents ↔ WorkingGitTree
-# ============================================================
-
-
-def build_registry_from_cgs_document(
-    document: CgsDocument,
-    config_path: Path | str,
-    *,
-    project_root: Path | str | None = None,
-) -> WorkingGitTree:
-    """Build a :class:`WorkingGitTree` from a ``.cgs`` document."""
-    source_path = Path(config_path).resolve()
-    root_path = (
-        Path(project_root).resolve() if project_root is not None else source_path.parent.resolve()
-    )
-    root_entry = WorkingRepo(
-        repo_id=ROOT_REPO_ID,
-        name=document.project_name or source_path.stem,
-        node_type=NodeType.ROOT,
-        parent_id=None,
-        absolute_path=root_path,
-        relative_path=Path("."),
-        source_cgs_path=source_path,
-        target_ref_kind=RefKind.BRANCH,
-        target_ref_name=document.default_branch,
-        default_branch=document.default_branch,
-        discovery_state=DiscoveryState.RESOLVED,
-        remote_name=document.read("project.default_remote_name", "origin"),
-    )
-
-    registry = WorkingGitTree()
-    registry.add(root_entry)
-
-    seen_relative_paths: set[Path] = set()
-    root_identity_assigned = False
-    for repo in document.repos:
-        _validate_repo_shape(repo)
-        if _is_root_repo_spec(repo, document.project_name, root_identity_assigned):
-            _apply_repo_identity(root_entry, repo, document.default_branch)
-            # The source .cgs for the project root is already loaded.  The
-            # authoring default ``nested_config = auto`` applies to its
-            # descendants and must not make the root pending again.
-            root_entry.discovery_state = DiscoveryState.RESOLVED
-            root_identity_assigned = True
-            continue
-
-        relative_path = _normalise_relative_path(repo)
-        register_relative_path(
-            seen_relative_paths,
-            relative_path,
-            error_type=ConfigValidationError,
-            context="root",
-        )
-
-        target_kind, target_name = _resolve_repo_target_ref(
-            repo,
-            document_default_branch=document.default_branch,
-        )
-        entry = WorkingRepo(
-            repo_id=make_repo_id(ROOT_REPO_ID, relative_path, str(repo["project_name"])),
-            name=str(repo["project_name"]),
-            node_type=NodeType.LEAF,
-            parent_id=ROOT_REPO_ID,
-            absolute_path=(root_path / relative_path).resolve(),
-            relative_path=relative_path,
-            source_cgs_path=source_path,
-            target_ref_kind=target_kind,
-            target_ref_name=target_name,
-            fallback_branch=_as_optional_str(repo.get("fallback_branch")),
-            discovery_state=_initial_discovery_state(repo.get("nested_config")),
-            gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
-            project_owner_name=_as_optional_str(repo.get("project_owner_name")),
-            project_name=_as_optional_str(repo.get("project_name")),
-            repo_name=(
-                _as_optional_str(repo.get("repo_name"))
-                if repo.get("repo_name") is not None
-                else _as_optional_str(repo.get("project_name"))
-            ),
-            group_name=_as_optional_str(repo.get("group_name")),
-            gitprovider_url=_as_optional_str(repo.get("gitprovider_url")),
-            access_protocol=_parse_enum(
-                AccessProtocol,
-                repo.get("access_protocol"),
-                AccessProtocol.SSH,
-            ),
-            default_branch=str(repo.get("default_branch") or document.default_branch),
-            nested_config=_as_optional_str(repo.get("nested_config")),
-            remote_name=str(repo.get("remote_name") or document.read("project.default_remote_name", "origin")),
-        )
-        registry.add(entry)
-
-    normalize_node_types(registry)
-    registry.recompute_tree_state()
-    document.attach_serialization_context(registry)
-    return registry
-
-
-def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
-    """Build a :class:`WorkingGitTree` from a ``.gts`` snapshot document."""
-    registry = WorkingGitTree()
-    path_to_repo_id: dict[Path, str] = {}
-    project_source_cgs_path = document.read("project.source_cgs_path")
-
-    repo_states = sorted(
-        document.repo_states,
-        key=lambda repo: (len(Path(str(repo["absolute_path"])).parts), str(repo["absolute_path"])),
-    )
-
-    for repo_state in repo_states:
-        absolute_path = _resolve_document_path(str(repo_state["absolute_path"]))
-        parent_absolute_path = (
-            _resolve_document_path(str(repo_state["parent_absolute_path"]))
-            if repo_state.get("parent_absolute_path")
-            else None
-        )
-        is_root = parent_absolute_path is None
-        parent_id = None if is_root else path_to_repo_id[parent_absolute_path]
-        repo_id = (
-            ROOT_REPO_ID
-            if is_root
-            else make_repo_id(parent_id, repo_state.get("relative_path"), str(repo_state["name"]))
-        )
-
-        entry = WorkingRepo(
-            repo_id=repo_id,
-            name=str(repo_state["name"]),
-            node_type=NodeType.ROOT if is_root else _parse_gts_node_type(str(repo_state.get("node_type", "leaf"))),
-            parent_id=parent_id,
-            absolute_path=absolute_path,
-            relative_path=(Path(str(repo_state["relative_path"])) if repo_state.get("relative_path") is not None else None),
-            source_cgs_path=(
-                _resolve_document_path(str(repo_state["source_cgs_path"]))
-                if repo_state.get("source_cgs_path")
-                else (_resolve_document_path(str(project_source_cgs_path)) if project_source_cgs_path else None)
-            ),
-            current_ref_kind=_parse_optional_enum(RefKind, _repo_ref_kind(repo_state, "current")),
-            current_ref_name=_repo_ref_name(repo_state, "current"),
-            target_ref_kind=_parse_optional_enum(RefKind, _repo_ref_kind(repo_state, "target")),
-            target_ref_name=_repo_ref_name(repo_state, "target"),
-            resolved_ref_kind=_parse_optional_enum(RefKind, _repo_ref_kind(repo_state, "resolved")),
-            resolved_ref_name=_repo_ref_name(repo_state, "resolved"),
-            commit_sha=_as_optional_str(repo_state.get("commit_sha")),
-            repo_lifecycle_state=RepoLifecycleState(str(repo_state["repo_lifecycle_state"])),
-            sync_state=SyncState(str(repo_state["sync_state"])),
-            discovery_state=DiscoveryState(str(repo_state.get("discovery_state", DiscoveryState.RESOLVED.value))),
-            fallback_branch=_as_optional_str(repo_state.get("fallback_branch", "main")),
-            fallback_applied=bool(repo_state.get("fallback_applied", False)),
-            fallback_reason=_as_optional_str(repo_state.get("fallback_reason")),
-            worktree_state=_as_optional_str(repo_state.get("worktree_state")),
-            is_reachable=bool(repo_state.get("is_reachable", True)),
-            project_owner_name=_as_optional_str(repo_state.get("project_owner_name")),
-            project_name=_as_optional_str(repo_state.get("project_name")),
-            repo_name=(
-                _as_optional_str(repo_state.get("repo_name"))
-                if repo_state.get("repo_name") is not None
-                else _as_optional_str(repo_state.get("project_name"))
-            ),
-            default_branch=_repo_ref_name(repo_state, "target"),
-        )
-        registry.add(entry)
-        path_to_repo_id[absolute_path] = repo_id
-
-    normalize_node_types(registry)
-    registry.recompute_tree_state()
-    return registry
-
-
-def build_gts_document_from_registry(
-    registry: WorkingGitTree,
-    *,
-    command_origin: str,
-    source_cgs_path: Path | None,
-    freeze_name: str | None = None,
-) -> GtsDocument:
-    """Build a :class:`GtsDocument` from the live *registry*."""
-    root_entry = registry.get(ROOT_REPO_ID)
-    tree_state = build_tree_state(registry)
-    data: dict[str, Any] = {
-        "document": {
-            "CGS_VERSION": CGS_VERSION,
-            "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "command_origin": command_origin,
-        },
-        "project": {
-            "name": root_entry.name,
-            "root_absolute_path": _path_to_environment_marker(root_entry.absolute_path),
-        },
-        "tree_state": {
-            "lifecycle_state": tree_state.lifecycle_state.value,
-            "is_ready": tree_state.is_ready,
-            "registry_complete": tree_state.registry_complete,
-        },
-        "tree": {
-            "lines": format_view_tree(registry).splitlines(),
-        },
-        "repo_state": [],
-    }
-    if source_cgs_path is not None:
-        data["project"]["source_cgs_path"] = _path_to_environment_marker(source_cgs_path)
-    if command_origin in _FREEZE_COMMAND_ORIGINS:
-        data["freeze_manifest"] = _build_freeze_manifest(registry, freeze_name=freeze_name)
-
-    for entry in sorted(registry.values(), key=lambda item: item.repo_id):
-        repo_data: dict[str, Any] = {
-            "name": entry.name,
-            "node_type": entry.node_type.value,
-            "absolute_path": _path_to_environment_marker(entry.absolute_path),
-            "relative_path": str(entry.relative_path) if entry.relative_path is not None else None,
-            "repo_lifecycle_state": entry.repo_lifecycle_state.value,
-            "sync_state": entry.sync_state.value,
-            "commit_sha": entry.commit_sha,
-            "fallback_reason": entry.fallback_reason,
-            "worktree_state": entry.worktree_state,
-            "source_cgs_path": (
-                _path_to_environment_marker(entry.source_cgs_path) if entry.source_cgs_path else None
-            ),
-            "project_owner_name": entry.project_owner_name,
-            "project_name": entry.project_name,
-            "repo_name": entry.repo_name,
-        }
-        _write_compact_refs(repo_data, entry)
-        if entry.discovery_state != DiscoveryState.RESOLVED:
-            repo_data["discovery_state"] = entry.discovery_state.value
-        if entry.fallback_branch and entry.fallback_branch != "main":
-            repo_data["fallback_branch"] = entry.fallback_branch
-        if entry.fallback_applied:
-            repo_data["fallback_applied"] = entry.fallback_applied
-        if not entry.is_reachable:
-            repo_data["is_reachable"] = entry.is_reachable
-        if entry.parent_id is not None:
-            repo_data["parent_absolute_path"] = _path_to_environment_marker(
-                registry.get(entry.parent_id).absolute_path
-            )
-        data["repo_state"].append({key: value for key, value in repo_data.items() if value is not None})
-
-    document = GtsDocument.from_dict(data)
-    document.ensure_snapshot_hash()
-    document.validate()
-    return document
-
-
-def _build_freeze_manifest(
-    registry: WorkingGitTree,
-    *,
-    freeze_name: str | None = None,
-) -> dict[str, Any]:
-    root_entry = registry.get(ROOT_REPO_ID)
-    tag_name = (
-        freeze_name
-        or root_entry.resolved_ref_name
-        or root_entry.target_ref_name
-        or root_entry.current_ref_name
-        or ""
-    )
-    return {
-        "schema_version": "1.0",
-        "immutable_snapshot": True,
-        "workspace_validated": True,
-        "ledger_checkpoint": True,
-        "synchronized_ref_kind": RefKind.TAG.value,
-        "synchronized_ref_name": tag_name,
-        "release-name": tag_name,
-        "restore_operation": "launch_state",
-    }
 
 
 def _release_snapshot_slug(release_name: str) -> str:
