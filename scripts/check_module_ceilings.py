@@ -194,7 +194,12 @@ def analyse_module(path: Path, *, ring0_modules: set[str]) -> ModuleReport:
     module_stem = path.stem
     if module_stem in ring0_modules or relative in ring0_modules:
         report.ring0_violations = _check_ring0_purity(tree)
-    if report.contract and "Imports" in report.contract:
+    if report.contract and "Imports" in report.contract and report.internal_imports:
+        # Only cross-checked when the module has at least one real internal
+        # import — a module with none is free to describe that fact in
+        # prose ("none", "stdlib only (...)", etc.) without tripping this
+        # check, since there is nothing to verify the prose against either
+        # way.
         declared = {
             name.strip().strip(".")
             for name in report.contract["Imports"].split(",")

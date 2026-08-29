@@ -105,6 +105,13 @@ from .registry import (
     build_registry_from_cgs_document,
     build_registry_from_gts_document,
 )
+from .status_render import (
+    _render_status_table,
+    _status_display_path,
+    _status_line_is_untracked,
+    _status_line_path,
+    _status_line_targets_any,
+)
 
 # ============================================================
 #  Runtime document layer — .gts
@@ -347,45 +354,6 @@ def _short_sha(value: str | None) -> str:
     return value[:8] if value else "-"
 
 
-def _status_display_path(entry: WorkingRepo, root_path: Path) -> str:
-    try:
-        relative = entry.absolute_path.relative_to(root_path)
-    except ValueError:
-        return str(entry.relative_path or entry.absolute_path)
-    if relative == Path("."):
-        return "."
-    return relative.as_posix()
-
-
-def _status_line_path(status_line: str) -> Path | None:
-    if len(status_line) < 4:
-        return None
-    raw_path = status_line[3:]
-    if " -> " in raw_path:
-        raw_path = raw_path.rsplit(" -> ", 1)[1]
-    raw_path = raw_path.strip().strip('"')
-    return Path(raw_path) if raw_path else None
-
-
-def _status_line_targets_any(status_line: str, paths: set[Path]) -> bool:
-    status_path = _status_line_path(status_line)
-    if status_path is None:
-        return False
-    return any(status_path == path or _path_is_relative_to(status_path, path) for path in paths)
-
-
-def _status_line_is_untracked(status_line: str) -> bool:
-    return status_line.startswith("?? ")
-
-
-def _path_is_relative_to(path: Path, parent: Path) -> bool:
-    try:
-        path.relative_to(parent)
-    except ValueError:
-        return False
-    return True
-
-
 def _unmanaged_gitlink_paths(
     registry: WorkingGitTree,
     entry: WorkingRepo,
@@ -403,30 +371,6 @@ def _unmanaged_gitlink_paths(
         except ValueError:
             continue
     return {path for path in gitlinks if path not in managed_children}
-
-
-def _render_status_table(rows: list[tuple[str, str, str, str, str, str, str, str]]) -> str:
-    headers = (
-        "REPOSITORY",
-        "PATH",
-        "LOCAL_BRANCH",
-        "UPSTREAM_BRANCH",
-        "LOCAL",
-        "SYNC",
-        "HEAD",
-        "RECORDED",
-    )
-    widths = [len(header) for header in headers]
-    for row in rows:
-        for index, value in enumerate(row):
-            widths[index] = max(widths[index], len(value))
-
-    def render_row(columns: Sequence[str]) -> str:
-        return "  ".join(value.ljust(widths[index]) for index, value in enumerate(columns))
-
-    lines = [render_row(headers), "-" * (sum(widths) + 12)]
-    lines.extend(render_row(row) for row in rows)
-    return "\n".join(lines)
 
 
 def _ref_token(ref_kind: RefKind | str | None, ref_name: str | None) -> str | None:
