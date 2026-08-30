@@ -12,7 +12,7 @@
     },
     "cgs_format.py": {
       "internal_imports": 9,
-      "loc": 604,
+      "loc": 615,
       "public_symbols": 9
     },
     "cli.py": {
@@ -37,12 +37,12 @@
     },
     "errors.py": {
       "internal_imports": 0,
-      "loc": 11,
+      "loc": 15,
       "public_symbols": 5
     },
     "git_repo.py": {
       "internal_imports": 0,
-      "loc": 262,
+      "loc": 267,
       "public_symbols": 12
     },
     "git_runner.py": {
@@ -52,7 +52,7 @@
     },
     "git_tree.py": {
       "internal_imports": 25,
-      "loc": 1012,
+      "loc": 1019,
       "public_symbols": 22
     },
     "gts_document.py": {
@@ -77,17 +77,17 @@
     },
     "master.py": {
       "internal_imports": 1,
-      "loc": 81,
+      "loc": 89,
       "public_symbols": 1
     },
     "operations.py": {
       "internal_imports": 10,
-      "loc": 825,
+      "loc": 830,
       "public_symbols": 16
     },
     "orchestre.py": {
       "internal_imports": 64,
-      "loc": 2847,
+      "loc": 2865,
       "public_symbols": 12
     },
     "paths.py": {

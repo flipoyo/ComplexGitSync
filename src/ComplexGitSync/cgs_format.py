@@ -1,4 +1,16 @@
-"""Own the parse, normalize, validate, and serialize boundary for ``.cgs`` files.
+"""cgs_format — parse, normalize, validate, and serialize boundary for ``.cgs`` files.
+
+Ring: 0 core + Ring-1 I/O adapter, co-located — CgsDocument inherits
+    ConfigDocumentIOMixin (Ring 1) because every real caller invokes
+    CgsDocument.from_toml()/.to_toml() directly on the class; the pure
+    remainder (parse_repo_id, normalize_cgs, validation) is fully
+    Ring-0-testable with no filesystem access. Same shape as
+    gts_document.py — see that module's docstring for the full rationale
+    (WP-CFG, AgentSpecs/20260828_Isolation_DevPlanTicket.md §0).
+Contract: own the textual provider:owner/repository authoring grammar and
+    the .cgs parse/normalize/validate/serialize pipeline; deterministic and
+    offline.
+Imports: config_document, config_document_io, errors, git_repo
 
 TOML remains the lexical format. This module exclusively owns the textual
 ``provider:owner/repository`` grammar through :func:`parse_repo_id`.

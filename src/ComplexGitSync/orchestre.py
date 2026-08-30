@@ -1,26 +1,45 @@
-"""Orchestration hub for ComplexGitSync.
+"""orchestre — orchestration hub for ComplexGitSync.
 
-This module is the **Orchestre anchor** — the authoritative source for runtime
-document handling, infrastructure services, registry builders, nested config
-discovery, and the public client API. The ``.cgs`` authoring format is defined
-in :mod:`ComplexGitSync.cgs_format`.
+Ring: 3 (imports downward from every Ring 0–2 module; owns the public
+    ComplexGitSyncClient facade — see AgentSpecs/IsolationPlan.md §1)
+Contract: coordinate one GitTree's lifecycle end to end — load/validate/
+    clone/sync/freeze — gating every mutating action on TreeLifecycleState;
+    delegate document parsing, path resolution, state-directory allocation,
+    registry translation, discovery, and status rendering to the Ring 0–2
+    modules below rather than re-implementing them.
+Imports: cgs_format, discovery, errors, git_repo, git_runner, git_tree,
+    gts_document, integrity, ledger_entry, ledger_store, master,
+    operations, paths, registry, state_store, status_render
 
-Classes defined here (Tier 2 — Actions):
-    GtsDocument             .gts state snapshot parser/validator
+This module is the **Orchestre anchor** — the authoritative source for the
+public client API and the infrastructure services (structured run logging,
+the local .lgr register/sync ledger) too small or too entangled with
+ComplexGitSyncClient's own state to extract on their own. Wave 1/2 of the
+isolation plan (AgentSpecs/20260828_Isolation_DevPlanTicket.md) moved
+everything else out: GtsDocument → gts_document.py, GitRunner → git_runner.py,
+the registry builders → registry.py, nested-config/.gitmodules discovery →
+discovery.py, the state-directory allocator → state_store.py, path/CGSHOME
+resolution → paths.py, pure status-table rendering → status_render.py, the
+CLI's default-snapshot resolution → snapshot_resolver.py, and the
+hash-chained register mechanics → ledger_entry.py/integrity.py/
+ledger_store.py (not yet wired into SyncLedger's actual write path — see
+ComplexGitSyncClient.verify()'s docstring).
+
+Classes still defined here (Tier 2 — Actions):
     CommandRunLogger        Structured JSON event logger for a command run
     RuntimeStateStore       Persistent snapshot-pointer registry (.cgs → .gts)
-    GitRunner               Git subprocess wrapper
+    SystemClock             Real ledger_entry.ClockProtocol implementation
+    LocalGitRegister        The (still single-file, not yet ledger_store-backed) .lgr writer
+    SyncLedger              Append-only sync-event ledger sharing LocalGitRegister's file
 
 Classes defined here (Tier 3 — Client / API):
     Orchestre               Coordination layer owning one GitTree
     ComplexGitSyncClient    Public facade; gates all actions on TreeLifecycleState
 
-Builder / discovery functions defined here:
-    build_registry_from_cgs_document
-    build_registry_from_gts_document
-    build_gts_document_from_registry
-    discover_nested_configs
-    create_run_logger
+A handful of private ref-token/status helpers (``_repo_ref_*``,
+``_status_*``, ``_unmanaged_gitlink_paths``) stayed here rather than moving
+to ``registry.py``/``status_render.py`` because they call ``self.git_runner``
+directly — real Git I/O, not pure formatting.
 """
 
 from __future__ import annotations

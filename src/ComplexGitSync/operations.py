@@ -1,4 +1,10 @@
-"""Tier 2 synchronization operations for ComplexGitSync.
+"""operations — Tier 2 synchronization operations for ComplexGitSync.
+
+Ring: 2 (no direct subprocess import; drives Git only through an injected
+    GitRunner-shaped object, same ring as git_runner.py per IsolationPlan.md §1)
+Contract: leaf/parent-first Git operations over a WorkingGitTree + GitRunner;
+    requires a READY tree for mutations, raises TreeNotReadyError otherwise.
+Imports: errors, git_repo, git_tree
 
 Each function operates on a :class:`~ComplexGitSync.git_tree.WorkingGitTree`
 and a :class:`~ComplexGitSync.orchestre.GitRunner`.  Mutation operations require a
