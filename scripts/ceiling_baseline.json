@@ -1,8 +1,8 @@
 {
   "modules": {
     "__init__.py": {
-      "internal_imports": 53,
-      "loc": 123,
+      "internal_imports": 55,
+      "loc": 126,
       "public_symbols": 0
     },
     "__main__.py": {
@@ -16,8 +16,8 @@
       "public_symbols": 9
     },
     "cli.py": {
-      "internal_imports": 14,
-      "loc": 1766,
+      "internal_imports": 15,
+      "loc": 1813,
       "public_symbols": 2
     },
     "config_document.py": {
@@ -86,8 +86,8 @@
       "public_symbols": 16
     },
     "orchestre.py": {
-      "internal_imports": 57,
-      "loc": 2814,
+      "internal_imports": 64,
+      "loc": 2847,
       "public_symbols": 12
     },
     "paths.py": {

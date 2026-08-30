@@ -52,6 +52,7 @@ from .git_tree import (
     topological_sort,
 )
 from .gts_document import GtsDocument
+from .integrity import Finding, VerificationReport
 from .master import MasterConfig
 
 # --- Tier 2 — Actions (operations.py) ---
@@ -132,6 +133,9 @@ __all__ = [
     "parse_cgs",
     "parse_repo_id",
     "parse_repository_identifier",
+    # integrity.py
+    "Finding",
+    "VerificationReport",
     # orchestre.py
     "ComplexGitSyncClient",
     "GtsDocument",

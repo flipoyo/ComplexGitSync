@@ -85,7 +85,9 @@ from .git_tree import (
     fix_circularities as _fix_circularities,
 )
 from .gts_document import GtsDocument
+from .integrity import Finding, VerificationReport, verify_chain
 from .ledger_entry import new_time_l0_anchor
+from .ledger_store import read_all_entries, read_head, recompute_head, verify_and_repair_head
 from .master import MasterConfig
 from .operations import (
     BranchTopologyReport,
@@ -2583,6 +2585,43 @@ class ComplexGitSyncClient:
             raise RuntimeError("No ComplexGitSync registry is loaded.")
         self.orchestre.git_tree.git.bind_tree(self.registry)
         return self.registry
+
+    def verify(self, cgshome: str | Path, *, repair: bool = False) -> VerificationReport:
+        """Verify the hash-chained ``.cgitsync/lgr`` register for tamper-evidence.
+
+        Checks chain linkage (``BROKEN_LINK``), entry-hash integrity
+        (``BAD_ENTRY_HASH``), sequence gaps/duplicates (``SEQ_GAP``/
+        ``SEQ_DUPLICATE``), and whether the cached ``HEAD`` pointer agrees
+        with the recomputed true head (``HEAD_STALE``). A register with no
+        entries yet is reported clean — nothing has been recorded, which is
+        not itself a problem.
+
+        Store-level checks (``MISSING_STATE``, ``ORPHAN_STATE``,
+        ``STATE_DIGEST_MISMATCH`` — cross-referencing entries against the
+        actual ``state(<hash>)_n/`` directories on disk) are not
+        implemented yet; this is chain-and-HEAD verification only.
+
+        With ``repair=True``, a stale ``HEAD`` cache is corrected in place.
+        Entries themselves are never rewritten or deleted — a broken chain
+        is reported, not silently healed (``IsolationPlan.md`` §2.6).
+        """
+        lgr_dir = Path(cgshome) / ".cgitsync" / "lgr"
+        entries = read_all_entries(lgr_dir)
+        report = verify_chain(entries)
+
+        if entries:
+            cached_head = read_head(lgr_dir)
+            true_head = recompute_head(lgr_dir)
+            if cached_head != true_head:
+                report.findings.append((
+                    entries[-1].seq,
+                    Finding.HEAD_STALE,
+                    f"cached HEAD={cached_head}, recomputed HEAD={true_head}",
+                ))
+            if repair:
+                verify_and_repair_head(lgr_dir)
+
+        return report
 
     def get_tree_state(self) -> ProjectTreeState:
         return build_tree_state(self.get_dependency_registry())

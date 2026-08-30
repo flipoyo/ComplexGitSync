@@ -16,6 +16,7 @@ from .orchestre import (
     create_run_logger,
 )
 from .snapshot_resolver import (
+    discover_cgshome,
     resolve_gts_path,
     resolve_visualization_source,
     resolve_workspace_source,
@@ -49,6 +50,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
     "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
     "discover": "Scan a directory for git repositories and draft a .cgs from what is checked out.",
+    "verify": "Verify the hash-chained .cgitsync/lgr register for tamper-evidence.",
     # Configuration commands
     "configure": (
         "Create a concise .cgs specification for GitHub, GitLab, Codeberg, "
@@ -638,6 +640,25 @@ def build_parser() -> argparse.ArgumentParser:
                 ),
             )
             subparser.set_defaults(handler=_handle_discover)
+        elif command_name == "verify":
+            subparser.add_argument(
+                "--search-dir",
+                metavar="DIR",
+                help=(
+                    "Directory used to resolve CGSHOME. When omitted, uses "
+                    "$CGSHOME or walks up from the current working directory."
+                ),
+            )
+            subparser.add_argument(
+                "--repair",
+                action="store_true",
+                help=(
+                    "Repair a stale HEAD cache to match the recomputed true "
+                    "head. Never rewrites or deletes a register entry — a "
+                    "broken chain is reported, not healed."
+                ),
+            )
+            subparser.set_defaults(handler=_handle_verify)
     return parser
 
 
@@ -994,6 +1015,15 @@ def _handle_status(args: argparse.Namespace) -> int:
         command_name="status",
         source=gts_path,
         runner=lambda client, source: _execute_status(client, source),
+    )
+
+
+def _handle_verify(args: argparse.Namespace) -> int:
+    cgshome = discover_cgshome(getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="verify",
+        source=cgshome,
+        runner=lambda client, source: _execute_verify(client, source, repair=args.repair),
     )
 
 
@@ -1429,6 +1459,27 @@ def _execute_status(
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
     return 0
+
+
+def _execute_verify(
+    client: ComplexGitSyncClient,
+    cgshome: Path,
+    *,
+    repair: bool,
+) -> int:
+    report = client.verify(cgshome, repair=repair)
+    print(f"cgshome={cgshome}")
+    if report.is_clean:
+        print("status=clean")
+        print("findings=0")
+        return 0
+    print("status=findings")
+    print(f"findings={len(report.findings)}")
+    for seq, finding, detail in report.findings:
+        print(f"seq={seq} finding={finding.name} detail={detail}")
+    if repair:
+        print("repair=attempted (HEAD cache only; entries are never rewritten or deleted)")
+    return 1
 
 
 def _execute_clone(
