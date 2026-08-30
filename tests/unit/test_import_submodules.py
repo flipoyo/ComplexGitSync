@@ -6,12 +6,8 @@ helpers themselves need.
 
 import pytest
 
-from ComplexGitSync.orchestre import (
-    ImportSubmodulesReport,
-    SubmoduleEntry,
-    _parse_gitmodules,
-    _url_to_repo_identifier,
-)
+from ComplexGitSync.discovery import ImportSubmodulesReport, SubmoduleEntry, _parse_gitmodules
+from ComplexGitSync.orchestre import _url_to_repo_identifier
 
 
 class TestParseGitmodules:
