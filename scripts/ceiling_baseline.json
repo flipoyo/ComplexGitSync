@@ -16,8 +16,8 @@
       "public_symbols": 9
     },
     "cli.py": {
-      "internal_imports": 13,
-      "loc": 1875,
+      "internal_imports": 14,
+      "loc": 1766,
       "public_symbols": 2
     },
     "config_document.py": {
@@ -86,9 +86,9 @@
       "public_symbols": 16
     },
     "orchestre.py": {
-      "internal_imports": 60,
-      "loc": 3068,
-      "public_symbols": 16
+      "internal_imports": 66,
+      "loc": 2988,
+      "public_symbols": 15
     },
     "paths.py": {
       "internal_imports": 2,

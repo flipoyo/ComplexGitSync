@@ -31,9 +31,11 @@ from ComplexGitSync.orchestre import (
     RuntimeStateStore,
     SystemClock,
     _path_to_environment_marker,
+    build_registry_from_gts_document,
+)
+from ComplexGitSync.state_store import (
     _resolve_memory_state_directory,
     _state_directory_name,
-    build_registry_from_gts_document,
 )
 
 

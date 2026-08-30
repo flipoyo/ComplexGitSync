@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
-import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -15,9 +13,12 @@ from .git_tree import ProjectTreeState, iter_tree_leaf_first
 from .orchestre import (
     DEFAULT_DISCOVER_MAX_DEPTH,
     ComplexGitSyncClient,
-    _state_order_from_directory_name,
-    _state_snapshot_candidates,
     create_run_logger,
+)
+from .snapshot_resolver import (
+    resolve_gts_path,
+    resolve_visualization_source,
+    resolve_workspace_source,
 )
 
 _PLANNED_COMMANDS: dict[str, str] = {
@@ -1827,151 +1828,19 @@ def _load_visualization_source(
         client.load_runtime_or_cgs(source_path, discover_nested=discover_nested)
 
 
-def _discover_lgr_path(cgshome: Path) -> Path:
-    canonical_entries = _state_lgr_candidates(cgshome)
-    if canonical_entries:
-        canonical_entries.sort(key=lambda path: (path.stat().st_mtime, str(path)), reverse=True)
-        return canonical_entries[0]
-
-    lgr_entries = sorted(cgshome.glob("*.lgr"))
-    if not lgr_entries:
-        raise FileNotFoundError(f"No .lgr register found under CGSHOME: {cgshome}")
-    if len(lgr_entries) > 1:
-        names = ", ".join(path.name for path in lgr_entries)
-        raise FileNotFoundError(f"Multiple .lgr registers found under {cgshome}: {names}")
-    return lgr_entries[0]
-
-
-def _state_lgr_candidates(cgshome: Path) -> list[Path]:
-    cgitsync_dir = cgshome / ".cgitsync"
-    if not cgitsync_dir.is_dir():
-        return []
-    candidates: list[Path] = []
-    for state_dir in sorted(cgitsync_dir.iterdir(), key=lambda path: path.name):
-        if not state_dir.is_dir() or _state_order_from_directory_name(state_dir.name) is None:
-            continue
-        candidates.extend(sorted(state_dir.glob("*.lgr")))
-    return candidates
-
-
-def _expand_lgr_path(raw_path: str) -> Path:
-    expanded = raw_path
-    home = os.environ.get("HOME")
-    if home:
-        expanded = expanded.replace("$HOME", home)
-    return Path(os.path.expandvars(expanded)).expanduser()
-
-
-def _discover_cgshome(search_dir: str | Path | None = None) -> Path:
-    """Resolve and return CGSHOME.
-
-    Resolution order:
-
-    1. Walk up from ``search_dir`` when provided.
-    2. Walk up from ``$CGSHOME`` when defined.
-    3. Walk up from the current working directory.
-
-    Raises
-    ------
-    FileNotFoundError
-        If no ancestor contains a ``.cgitsync`` directory.
-    """
-    start_dir: Path
-    search_origin: str
-    if search_dir is not None:
-        start_dir = Path(search_dir).expanduser().resolve()
-        search_origin = f"--search-dir ({start_dir})"
-    else:
-        env_cgshome = os.environ.get("CGSHOME")
-        if env_cgshome:
-            start_dir = Path(env_cgshome).expanduser().resolve()
-            search_origin = f"$CGSHOME ({start_dir})"
-        else:
-            start_dir = Path.cwd().resolve()
-            search_origin = f"current working directory ({start_dir})"
-
-    for candidate in (start_dir, *start_dir.parents):
-        if (candidate / ".cgitsync").is_dir():
-            return candidate.resolve()
-
-    raise FileNotFoundError(
-        "Unable to locate CGSHOME. "
-        f"Checked {search_origin} and its parents for a .cgitsync directory."
-    )
-
-
-def _discover_gts_path(search_dir: str | Path | None = None) -> Path:
-    """Return the most recently modified ``.gts`` snapshot under CGSHOME.
-
-    Parameters
-    ----------
-    search_dir:
-        Optional directory whose ancestors are searched first when resolving
-        CGSHOME.
-
-    Raises
-    ------
-    FileNotFoundError
-        If CGSHOME cannot be located, or if ``CGSHOME/.cgitsync``
-        contains no ``.gts`` snapshots.
-    """
-    cgshome = _discover_cgshome(search_dir)
-    try:
-        register_path = _discover_lgr_path(cgshome)
-        data = tomllib.loads(register_path.read_text(encoding="utf-8"))
-        current_snapshot_path = data.get("register", {}).get("current_snapshot_path")
-        if isinstance(current_snapshot_path, str) and current_snapshot_path:
-            resolved_current = _expand_lgr_path(current_snapshot_path).resolve()
-            if resolved_current.is_file():
-                return resolved_current
-    except (FileNotFoundError, tomllib.TOMLDecodeError):
-        pass
-
-    cgitsync_dir = cgshome / ".cgitsync"
-    gts_entries = [(path, path.stat().st_mtime) for path in _state_snapshot_candidates(cgitsync_dir)]
-    if gts_entries:
-        gts_entries.sort(key=lambda x: x[1], reverse=True)
-        return gts_entries[0][0].resolve()
-
-    raise FileNotFoundError(
-        f"No .gts snapshot found under CGSHOME/.cgitsync: {cgitsync_dir}. "
-        "Run 'cgitsync initialise' first, or pass --gts FILE explicitly."
-    )
-
-
 def _resolve_gts_path(gts: str | None, search_dir: str | None) -> Path:
     """Return the resolved .gts path, auto-discovering when *gts* is ``None``."""
-    if gts is not None:
-        return Path(gts)
-    return _discover_gts_path(search_dir)
+    return resolve_gts_path(gts, search_dir)
 
 
 def _resolve_workspace_source(source: str | None, search_dir: str | None) -> Path:
     """Return a workspace source path for commands that accept optional input.
 
-    Parameters
-    ----------
-    source:
-        Explicit ``.cgs`` or ``.gts`` path supplied on the command line.
-    search_dir:
-        Optional directory whose ancestors are searched first when resolving
-        CGSHOME during auto-discovery.
-
-    Returns
-    -------
-    Path
-        The explicit source path, or the latest workspace snapshot under
-        ``CGSHOME/.cgitsync`` when *source* is omitted.
-
-    Raises
-    ------
-    FileNotFoundError
-        If auto-discovery is required and CGSHOME or a workspace snapshot
-        cannot be located.
+    The explicit source path, or the latest workspace snapshot under
+    ``CGSHOME/.cgitsync`` when *source* is omitted (see
+    :func:`~ComplexGitSync.snapshot_resolver.resolve_workspace_source`).
     """
-    if source is not None:
-        return Path(source)
-    return _discover_gts_path(search_dir)
+    return resolve_workspace_source(source, search_dir)
 
 
 def _resolve_visualization_source(source: str | None, search_dir: str | None) -> Path:
@@ -1979,9 +1848,9 @@ def _resolve_visualization_source(source: str | None, search_dir: str | None) ->
 
     When *source* is provided it is returned as-is (may be .cgs or .gts).
     When *source* is ``None`` the latest .gts snapshot is discovered
-    automatically via :func:`_discover_gts_path`.
+    automatically.
     """
-    return _resolve_workspace_source(source, search_dir)
+    return resolve_visualization_source(source, search_dir)
 
 
 def _non_negative_int(raw: str) -> int:

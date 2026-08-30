@@ -109,6 +109,14 @@ from .registry import (
     build_registry_from_cgs_document,
     build_registry_from_gts_document,
 )
+from .state_store import (
+    _STATE_DIR_RE,
+    _format_state_id,
+    _latest_state_artifact,
+    _next_state_directory_order,
+    _parse_state_hash,
+    _resolve_memory_state_directory,
+)
 from .status_render import (
     _render_status_table,
     _status_display_path,
@@ -121,123 +129,11 @@ from .status_render import (
 #  Runtime document layer — .gts
 # ============================================================
 
-_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
-_STATE_ID_RE = re.compile(r"^state\(([0-9a-f]{64})\)$")
-_STATE_DIR_RE = re.compile(r"^state\(([0-9a-f]{64})\)_(\d+)$")
 _FREEZE_COMMAND_ORIGINS = frozenset({"freeze", "freeze_release", "freeze_state"})
 
 
 def _collect_errors(checks: list[tuple[bool, str]]) -> list[str]:
     return [msg for ok, msg in checks if not ok]
-
-
-def _format_state_id(state_hash: str) -> str:
-    if _SHA256_HEX_RE.fullmatch(state_hash) is None:
-        raise ValueError("state_hash must be a lowercase hexadecimal SHA-256 digest")
-    return f"state({state_hash})"
-
-
-def _parse_state_hash(state_id: str) -> str | None:
-    match = _STATE_ID_RE.fullmatch(state_id)
-    return match.group(1) if match else None
-
-
-def _state_directory_name(state_hash: str, state_order: int) -> str:
-    if state_order < 0:
-        raise ValueError("state_order must be non-negative")
-    return f"{_format_state_id(state_hash)}_{state_order}"
-
-
-def _temporary_state_directory_name(state_hash: str, state_order: int) -> str:
-    if state_order < 0:
-        raise ValueError("state_order must be non-negative")
-    return f".tmp-{_state_directory_name(state_hash, state_order)}"
-
-
-def _state_order_from_directory_name(name: str) -> int | None:
-    match = _STATE_DIR_RE.fullmatch(name)
-    return int(match.group(2)) if match else None
-
-
-def _next_state_directory_order(cgitsync_dir: Path, state_hash: str) -> int:
-    _format_state_id(state_hash)
-    max_order = -1
-    if cgitsync_dir.is_dir():
-        for entry in cgitsync_dir.iterdir():
-            if not entry.is_dir():
-                continue
-            match = _STATE_DIR_RE.fullmatch(entry.name)
-            if match is None or match.group(1) != state_hash:
-                continue
-            max_order = max(max_order, int(match.group(2)))
-    return max_order + 1
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryStateDirectory:
-    state_hash: str
-    state_order: int
-    final_path: Path
-    temporary_path: Path
-
-
-def _resolve_memory_state_directory(cgitsync_dir: Path, state_hash: str) -> MemoryStateDirectory:
-    state_order = _next_state_directory_order(cgitsync_dir, state_hash)
-    while True:
-        final_path = cgitsync_dir / _state_directory_name(state_hash, state_order)
-        temporary_path = cgitsync_dir / _temporary_state_directory_name(state_hash, state_order)
-        if not final_path.exists() and not temporary_path.exists():
-            return MemoryStateDirectory(
-                state_hash=state_hash,
-                state_order=state_order,
-                final_path=final_path,
-                temporary_path=temporary_path,
-            )
-        state_order += 1
-
-
-def _state_snapshot_candidates(cgitsync_dir: Path) -> list[Path]:
-    candidates: list[Path] = []
-    if cgitsync_dir.is_dir():
-        for state_dir in sorted(cgitsync_dir.iterdir(), key=lambda path: path.name):
-            if not state_dir.is_dir() or _STATE_DIR_RE.fullmatch(state_dir.name) is None:
-                continue
-            candidates.extend(sorted(state_dir.glob("*.gts")))
-    legacy_state_dir = cgitsync_dir / "state"
-    if legacy_state_dir.is_dir():
-        candidates.extend(sorted(legacy_state_dir.glob("*.gts")))
-    return candidates
-
-
-def _state_snapshot_candidates_for_id(cgitsync_dir: Path, state_id: str) -> list[Path]:
-    state_hash = _parse_state_hash(state_id)
-    if state_hash is None or not cgitsync_dir.is_dir():
-        return []
-    candidates: list[Path] = []
-    for state_dir in sorted(cgitsync_dir.glob(f"{state_id}_*"), key=lambda path: path.name):
-        if state_dir.is_dir() and _STATE_DIR_RE.fullmatch(state_dir.name) is not None:
-            candidates.extend(sorted(state_dir.glob("*.gts")))
-    return candidates
-
-
-def _state_artifact_candidates(cgitsync_dir: Path, filename: str) -> list[Path]:
-    candidates: list[Path] = []
-    if not cgitsync_dir.is_dir():
-        return candidates
-    for state_dir in sorted(cgitsync_dir.iterdir(), key=lambda path: path.name):
-        if not state_dir.is_dir() or _STATE_DIR_RE.fullmatch(state_dir.name) is None:
-            continue
-        candidate = state_dir / filename
-        if candidate.is_file():
-            candidates.append(candidate)
-    return candidates
-
-
-def _latest_state_artifact(cgitsync_dir: Path, filename: str) -> Path | None:
-    candidates = _state_artifact_candidates(cgitsync_dir, filename)
-    if not candidates:
-        return None
-    return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
 def _local_status_from_porcelain(status_lines: list[str]) -> str:
