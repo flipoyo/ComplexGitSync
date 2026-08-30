@@ -957,7 +957,12 @@ class ComplexGitSyncClient:
             document.to_toml(Path(output_path))
         return document
 
-    def import_submodules(
+    # Pre-existing complexity debt from before C90 was enabled (P6,
+    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # under this ticket, since a real refactor of the submodule-conversion
+    # flow risks behaviour change under time pressure. New code is enforced
+    # at 12.
+    def import_submodules(  # noqa: C901
         self,
         repo_root: str | Path,
         *,
@@ -1144,7 +1149,12 @@ class ComplexGitSyncClient:
             cgs_entries=tuple(cgs_entries),
         )
 
-    def discover_repos(
+    # Pre-existing complexity debt from before C90 was enabled (P6,
+    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # under this ticket, since a real refactor of the filesystem-walking
+    # discovery flow risks behaviour change under time pressure. New code
+    # is enforced at 12.
+    def discover_repos(  # noqa: C901
         self,
         root_dir: str | Path | None = None,
         *,
@@ -1302,7 +1312,12 @@ class ComplexGitSyncClient:
             project_name=project_name,
         )
 
-    def _sync_gitignore_lifecycle(
+    # Pre-existing complexity debt from before C90 was enabled (P6,
+    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # under this ticket, since a real refactor of the .gitignore sync flow
+    # risks behaviour change under time pressure. New code is enforced at
+    # 12.
+    def _sync_gitignore_lifecycle(  # noqa: C901
         self,
         *,
         pre_pull: bool = True,

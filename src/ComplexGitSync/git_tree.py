@@ -671,7 +671,11 @@ def _select_scc_anchor(
 # ---------------------------------------------------------------------------
 
 
-def fix_circularities(registry: WorkingGitTree) -> tuple[str, ...]:
+# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpecs/
+# 20260828_Isolation_DevPlanTicket.md) — flagged, not fixed under this
+# ticket, since a real refactor of cycle-breaking logic risks behaviour
+# change under time pressure. New code is enforced at 12.
+def fix_circularities(registry: WorkingGitTree) -> tuple[str, ...]:  # noqa: C901
     """Cycle-breaking engine: resolve circularities and produce a valid DAG.
 
     This function operates in two phases:

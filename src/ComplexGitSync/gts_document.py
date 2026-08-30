@@ -146,7 +146,12 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         "sync_state",
     )
 
-    def validate(self) -> None:
+    # Pre-existing complexity debt from before C90 was enabled (P6,
+    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # under this ticket, since a real refactor of .gts field validation
+    # risks behaviour change under time pressure. New code is enforced at
+    # 12.
+    def validate(self) -> None:  # noqa: C901
         errors: list[str] = []
 
         for key in self._REQUIRED_DOCUMENT_KEYS:

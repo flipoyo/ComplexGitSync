@@ -112,7 +112,13 @@ def _add_gitignore_sync_arguments(subparser: argparse.ArgumentParser) -> None:
     )
 
 
-def build_parser() -> argparse.ArgumentParser:
+# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpecs/
+# 20260828_Isolation_DevPlanTicket.md) — a single per-command if/elif chain
+# registering all subparsers. Expected to shrink naturally once the cli/
+# package split (also P6) breaks it into one builder function per command
+# group; not refactored ahead of that to avoid two overlapping changes to
+# the same function.
+def build_parser() -> argparse.ArgumentParser:  # noqa: C901
     parser = argparse.ArgumentParser(
         prog="cgitsync",
         description=(
@@ -1046,7 +1052,11 @@ def _handle_configure(args: argparse.Namespace) -> int:
     return 0
 
 
-def _prompt_cgs_definition() -> tuple[dict[str, str], list[dict[str, str]]]:
+# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpecs/
+# 20260828_Isolation_DevPlanTicket.md) — flagged, not fixed under this
+# ticket, since a real refactor of interactive-prompt flow control risks
+# behaviour change under time pressure. New code is enforced at 12.
+def _prompt_cgs_definition() -> tuple[dict[str, str], list[dict[str, str]]]:  # noqa: C901
     """Collect interactive authoring values for the public Python facade.
 
     This function owns terminal interaction only. It neither constructs a

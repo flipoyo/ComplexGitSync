@@ -91,7 +91,11 @@ def parse_repo_id(identifier: str) -> dict[str, str]:
 parse_repository_identifier = parse_repo_id
 
 
-def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:
+# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpecs/
+# 20260828_Isolation_DevPlanTicket.md) — flagged, not fixed under this
+# ticket, since a real refactor of .cgs normalization risks behaviour
+# change under time pressure. New code is enforced at 12.
+def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
     """Return the canonical internal representation for parsed ``.cgs`` data.
 
     Accepts both the minimal and legacy advanced-table forms; never mutates the input.
@@ -513,7 +517,12 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
             if match_index is not None:
                 tree._repo_metadata[tree_key] = copy.deepcopy(unmatched.pop(match_index))
 
-    def validate(self) -> None:
+    # Pre-existing complexity debt from before C90 was enabled (P6,
+    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # under this ticket, since a real refactor of .cgs static validation
+    # risks behaviour change under time pressure. New code is enforced at
+    # 12.
+    def validate(self) -> None:  # noqa: C901
         """Validate static document properties without Git or network access."""
         errors: list[str] = []
 
