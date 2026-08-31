@@ -14,8 +14,9 @@ book (`docs/MASTER.pdf`) — narrative chapters aimed at people *using*
 ComplexGitSync. `docs/tutorials/` is task-shaped walkthroughs, also
 user-facing. `docs/figures/` holds the TikZ sources those book chapters
 `\input`. None of the three ever documents the codebase's internal
-`Ring:`-based import-direction rules — those lived only in `AGENT.md` and
-each module's own docstring header, invisible to anyone reading the book.
+`Ring:`-based import-direction rules — those lived only in
+`AgentSpecs/audit.md` and each module's own docstring header, invisible to
+anyone reading the book.
 `docs/DevGuide/` is the missing dev-facing home for that model, with the
 diagrams the code split never got. See
 `AgentSpecs/20260831_DocRewritePlanTicket.md` for the full rationale.
@@ -31,8 +32,9 @@ want `README.md` or `docs/Text/`), and not people building the LaTeX book
 (they want `docs/Text/` and `docs/figures/` directly).
 
 **What you need to do with it.** Read `architecture.md` before moving a
-module between rings or adding a new one; it links out to `AGENT.md`, which
-stays the enforced, authoritative source for the import rules themselves.
+module between rings or adding a new one; it links out to
+`AgentSpecs/audit.md`, which stays the enforced, authoritative source for
+the import rules themselves.
 
 ```mermaid
 graph TD
@@ -54,7 +56,7 @@ graph TD
 
 | File | Covers |
 |---|---|
-| [`architecture.md`](architecture.md) | The Ring model, the Tier↔Ring mapping, a per-ring module dependency graph, a one-row-per-module contract table, and a condensed pointer to `AGENT.md`'s import rules and ceilings. |
+| [`architecture.md`](architecture.md) | The Ring model, the Tier↔Ring mapping, a per-ring module dependency graph, a one-row-per-module contract table, and a condensed pointer to `AgentSpecs/audit.md`'s import rules and ceilings. |
 
 This folder is deliberately small — an index plus one substantive file, not
 a second architecture book. New dev-facing diagrams belong in
