@@ -46,7 +46,9 @@ Do all of these as part of the change, not as a follow-up:
 
 The module responsibilities are strict and audited — see
 [AgentSpecs/AdditionalSpecs.md](AgentSpecs/AdditionalSpecs.md)'s
-"Architectural Overview" section for the full write-up. Summary:
+"Architectural Overview" section for the full write-up, including the
+"Ring" vocabulary (`Ring-0`…`Ring-4`, an import-direction/I/O-boundary
+grouping) the table below already uses. Summary:
 
 Update `AgentSpecs/AdditionalSpecs.md`'s responsibility table and
 dependency-path diagram whenever a task adds, removes, or moves module

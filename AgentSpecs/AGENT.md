@@ -10,7 +10,7 @@ multi-agent role template — see the `AGENT.md` template in
 generic handoff rules. What follows is only what differs from, or narrows,
 that template for this project specifically: which roles this project
 actually exercises, and the one project-specific handoff rule
-(`AgentSpecs/audit.md` binding Dev inside `src/ComplexGitSync/`).
+(`AgentSpecs/AdditionalSpecs.md` binding Dev inside `src/ComplexGitSync/`).
 
 ```mermaid
 graph TD
@@ -39,7 +39,9 @@ graph TD
 ## Project-specific handoff rule
 
 Rules specific to this package's own Python source — the ring model, import
-boundaries, module ceilings — live in `AgentSpecs/audit.md` and bind the Dev
-agent whenever it is working inside `src/ComplexGitSync/`. The template's
-other handoff rules (one concern per commit, up-front decomposition of
-multi-role tasks) apply here unchanged.
+boundaries, module ceilings — live in `AgentSpecs/AdditionalSpecs.md`'s
+"Architectural Overview" section and bind the Dev agent whenever it is
+working inside `src/ComplexGitSync/`. (`AgentSpecs/audit.md` is a different
+file — findings, legacy references, and open decisions/risks, not
+architecture rules.) The template's other handoff rules (one concern per
+commit, up-front decomposition of multi-role tasks) apply here unchanged.
