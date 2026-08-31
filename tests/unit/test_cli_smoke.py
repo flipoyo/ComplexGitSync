@@ -144,7 +144,7 @@ def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):
         def format_repo_tree(self):
             return "demo (project)\n└── child-repo (leaf)"
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
 
     config_path = tmp_path / "project.cgs"
     config_path.touch()
@@ -215,8 +215,8 @@ def test_initialise_accepts_direct_cli_project_definition(
     def _run_without_logging(*, runner, client, source, **_kwargs):
         return runner(client, Path(source).resolve())
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
-    monkeypatch.setattr("ComplexGitSync.cli._run_with_logging", _run_without_logging)
+    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli.minimalist._run_with_logging", _run_without_logging)
     monkeypatch.chdir(tmp_path)
 
     argv = ["initialise", "--project", "CGSil1"]
@@ -300,7 +300,7 @@ def test_create_cgs_delegates_to_public_python_configuration_api(
             document.to_toml(output_path)
             return document
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli.configuration.ComplexGitSyncClient", StubClient)
     output = tmp_path / "GX4G.cgs"
 
     exit_code = main(
@@ -412,7 +412,7 @@ def test_initialise_command_failure_suggests_clean_init(monkeypatch, capsys, tmp
         def initialise_cgs(self, source, *, output_path=None, **_kwargs):
             raise RuntimeError("clone failed")
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
 
     config_path = tmp_path / "project.cgs"
     config_path.touch()
@@ -445,7 +445,7 @@ def test_clean_init_command_purges_before_clone(monkeypatch, capsys, tmp_path):
         def format_repo_tree(self):
             return "demo (project)\n└── child-repo (leaf)"
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
 
     config_path = tmp_path / "project.cgs"
     config_path.touch()
@@ -474,7 +474,7 @@ def test_purge_command_removes_generated_clone_state(monkeypatch, capsys, tmp_pa
             captured_call["output_path"] = output_path
             return removed
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli.expert.ComplexGitSyncClient", StubClient)
 
     config_path = tmp_path / "project.cgs"
     config_path.touch()
@@ -595,7 +595,7 @@ def test_freeze_command_uses_client_handler(monkeypatch, capsys, tmp_path):
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -624,7 +624,7 @@ def test_freeze_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -659,7 +659,7 @@ def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_pat
         def view_tree(self):
             return "ROOT project [main] clean synced"
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -701,7 +701,7 @@ def test_freeze_release_force_command_uses_force_workflow(monkeypatch, capsys, t
         def view_tree(self):
             return "ROOT project [main] clean synced"
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -733,7 +733,7 @@ def test_tag_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def view_tree(self):
             return "ROOT project [main] clean synced"
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -801,7 +801,7 @@ def test_view_tree_command_supports_gts_and_render_options(monkeypatch, capsys, 
             captured_call["collapse"] = collapse
             return "demo (root) [ALIGNED] @abc1234"
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -854,7 +854,7 @@ def test_clone_command_uses_client_method(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli.expert.ComplexGitSyncClient", StubClient)
 
     target_dir = str(tmp_path / "workspace" / "demo")
     exit_code = main(["clone", "project.cgs", "--target-dir", target_dir])
@@ -888,7 +888,7 @@ def test_clone_command_output_path_is_forwarded(monkeypatch, capsys, tmp_path):
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli.expert.ComplexGitSyncClient", StubClient)
 
     output_path = str(tmp_path / "parent")
     exit_code = main(["clone", "project.cgs", "--output-path", output_path])
@@ -923,7 +923,7 @@ def test_bootstrap_command_uses_client_method(monkeypatch, capsys, tmp_path):
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
 
     exit_code = main(["bootstrap", "project.cgs", "myproject"])
     captured = capsys.readouterr()
@@ -955,7 +955,7 @@ def test_bootstrap_command_forwards_cgs_path(monkeypatch, capsys, tmp_path):
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
 
     cgs_path = str(tmp_path / "custom")
     exit_code = main(["bootstrap", "project.cgs", "myproject", "--cgs-path", cgs_path])
@@ -988,7 +988,7 @@ def test_initialise_command_output_path_is_forwarded(monkeypatch, capsys, tmp_pa
         def format_repo_tree(self):
             return "demo (project)\n└── child-repo (leaf)"
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
 
     config_path = tmp_path / "project.cgs"
     config_path.touch()
@@ -1038,7 +1038,7 @@ def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
 
     source_path = tmp_path / "project.cgs"
@@ -1067,7 +1067,7 @@ def test_pull_command_failure_suggests_pull_force(monkeypatch, tmp_path, capsys)
         def pull(self, source, **_kwargs):
             raise RuntimeError("local changes would be overwritten")
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
 
     source_path = tmp_path / "project.gts"
@@ -1094,7 +1094,7 @@ def test_pull_force_command_uses_client_handler(monkeypatch, tmp_path, capsys):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
 
     source_path = tmp_path / "project.gts"
@@ -1123,7 +1123,7 @@ def test_status_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
 
     gts_path = tmp_path / "project.gts"
@@ -1159,7 +1159,7 @@ def test_checkout_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -1188,7 +1188,7 @@ def test_branch_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
 
     gts_path = tmp_path / "project.gts"
@@ -1221,7 +1221,7 @@ def test_checkout_command_with_tag_ref_kind(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -1246,7 +1246,7 @@ def test_commit_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -1275,7 +1275,7 @@ def test_commit_command_accepts_message_option(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -1310,7 +1310,7 @@ def test_commit_command_no_stage_flag(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -1332,7 +1332,7 @@ def test_commit_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -1359,7 +1359,7 @@ def test_push_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -1384,7 +1384,7 @@ def test_push_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -1411,7 +1411,7 @@ def test_add_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -1436,7 +1436,7 @@ def test_add_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
         def get_tree_state(self):
             return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -1466,7 +1466,7 @@ def test_launch_release_command_uses_client_handler(monkeypatch, capsys, tmp_pat
         def view_tree(self):
             return "ROOT project [main] clean synced"
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
@@ -1499,7 +1499,7 @@ def test_launch_release_command_auto_discovers_gts(monkeypatch, capsys, tmp_path
         def view_tree(self):
             return "ROOT project [main] clean synced"
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     workspace = tmp_path / "workspace"
     state_dir = workspace / ".cgitsync" / "state"
@@ -1534,7 +1534,7 @@ def test_gts_auto_discovery_from_parent_cgitsync(monkeypatch, capsys, tmp_path):
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     # Simulate running from a tool subdir: cwd is tmp_path/ComplexGitSync
     # and the .gts lives in tmp_path/.cgitsync/state/
@@ -1572,7 +1572,7 @@ def test_gts_auto_discovery_walks_up_to_workspace_root(monkeypatch, capsys, tmp_
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     state_dir = tmp_path / ".cgitsync" / "state"
     state_dir.mkdir(parents=True)
@@ -1609,7 +1609,7 @@ def test_gts_auto_discovery_uses_cgshome_env(monkeypatch, capsys, tmp_path):
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     workspace = tmp_path / "workspace"
     state_dir = workspace / ".cgitsync" / "state"
@@ -1648,7 +1648,7 @@ def test_gts_auto_discovery_search_dir_option(monkeypatch, capsys, tmp_path):
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     custom_root = tmp_path / "myproject"
     state_dir = custom_root / ".cgitsync" / "state"
@@ -1781,7 +1781,7 @@ def test_checkout_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     workspace = tmp_path / "workspace"
     state_dir = workspace / ".cgitsync" / "state"
@@ -1816,7 +1816,7 @@ def test_branch_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
 
     workspace = tmp_path / "workspace"
@@ -1852,7 +1852,7 @@ def test_pull_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
                 lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     workspace = tmp_path / "workspace"
     state_dir = workspace / ".cgitsync" / "state"
@@ -1881,7 +1881,7 @@ def test_view_tree_auto_discovery(monkeypatch, capsys, tmp_path):
         def view_tree(self, *, depth=None, collapse=()):
             return "demo (root) [ALIGNED] @abc1234"
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     cwd = tmp_path / "ComplexGitSync"
     cwd.mkdir()
@@ -2065,7 +2065,7 @@ def test_discover_command_uses_client_method(monkeypatch, capsys, tmp_path):
                 warnings=(),
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     exit_code = main(["discover", str(tmp_path)])
     captured = capsys.readouterr()
@@ -2092,7 +2092,7 @@ def test_discover_command_forwards_write_and_max_depth(monkeypatch, capsys, tmp_
                 warnings=(),
             )
 
-    monkeypatch.setattr("ComplexGitSync.cli.ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
 
     out = str(tmp_path / "draft.cgs")
     exit_code = main(["discover", str(tmp_path), "--write", out, "--max-depth", "2"])
