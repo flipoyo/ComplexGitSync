@@ -20,6 +20,16 @@
       "loc": 1813,
       "public_symbols": 2
     },
+    "cli/_shared.py": {
+      "internal_imports": 8,
+      "loc": 243,
+      "public_symbols": 0
+    },
+    "cli/minimalist.py": {
+      "internal_imports": 13,
+      "loc": 613,
+      "public_symbols": 1
+    },
     "config_document.py": {
       "internal_imports": 0,
       "loc": 89,
