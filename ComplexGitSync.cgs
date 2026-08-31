@@ -8,4 +8,5 @@ repos = [
     "github:flipoyo/ComplexGitSync",
     "github:flipoyo/DevSpec",
     "github:flipoyo/DocComplexGitSync",
+    { repository = "github:flipoyo/DocSpec", relative_path = "docs/DocSpec", nested_config = "disabled" },
 ]
