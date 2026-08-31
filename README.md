@@ -129,58 +129,19 @@ set (either export it, or run from inside the bootstrapped tree).
 
 ## Adopting a project that has no `.cgs` yet
 
-The Quickstart above assumes a `.cgs` already exists. For a project that is
-already running but was never described as a ComplexGitSync tree, there are
-three starting points depending on what that project already carries.
+The Quickstart above assumes a `.cgs` already exists. Pick the row that
+matches the project:
 
-**1. It is checked out on disk — `discover` it.** Point `discover` at the
-working copy and it drafts a `.cgs` from what is actually there, reading
-each repository's `origin` and taking every `relative_path` straight from
-the filesystem:
+| Situation | Commands | Full walkthrough |
+|---|---|---|
+| Checked out on disk already | `pixi run cgitsync discover ~/work/project --write draft.cgs`<br>`pixi run cgitsync validate draft.cgs` | [03_configuration_discovery_modes.md](docs/tutorials/03_configuration_discovery_modes.md) |
+| Uses git submodules | `pixi run cgitsync import-submodules ~/work/project` (dry run)<br>`pixi run cgitsync import-submodules ~/work/project --apply --output project.cgs` | [03_configuration_discovery_modes.md](docs/tutorials/03_configuration_discovery_modes.md) |
+| Neither — topology lives in a build script or in developers' heads | `pixi run cgitsync configure` (interactive) or `create-cgs` (flags) | [02_onboarding_a_real_build_tree.md](docs/tutorials/02_onboarding_a_real_build_tree.md) |
 
-```bash
-pixi run cgitsync discover ~/work/cawaqsviz                   # dry run: report only
-pixi run cgitsync discover ~/work/cawaqsviz --write draft.cgs # save the draft
-pixi run cgitsync validate draft.cgs
-```
-
-`discover` is read-only and offline — it clones nothing, changes nothing,
-and contacts no remote. It reports only what is **checked out at scan
-time**: a repository cloned without `--recurse-submodules` leaves its
-submodule paths as empty directories, and those are deliberately not
-reported (run `git submodule update --init` first if you want them). A
-repository with no `origin`, or whose remote is not a recognised
-`provider:owner/repository`, is listed as a warning rather than guessed at,
-for you to fill in by hand. Always review the draft before using it.
-
-**2. It uses git submodules — `import-submodules` to retire them.**
-ComplexGitSync models nested repositories as plain independent clones plus a
-maintained `.gitignore`, not as gitlinks, so a submodule-based project needs
-a one-time migration. Dry-run first, then apply:
-
-```bash
-pixi run cgitsync import-submodules ~/work/cawaqsviz              # report only
-pixi run cgitsync import-submodules ~/work/cawaqsviz --apply \
-    --output cawaqsviz.cgs
-```
-
-`--apply` runs `git rm --cached` per submodule (dropping the gitlink while
-keeping the child's working tree and history), removes its `.gitmodules`
-stanza, and adds the path to `.gitignore`. It never force-pushes.
-
-The two compose: `discover` a checkout to get the topology for free,
-cross-check it against `.gitmodules`, then `--apply` to retire the
-submodules. `examples/cawaqsviz.cgs` is the worked result of exactly that
-path — see
-[docs/tutorials/03_configuration_discovery_modes.md](docs/tutorials/03_configuration_discovery_modes.md).
-
-**3. Neither — write it from what the developers know.** Some projects
-never exist as one directory tree until a `.cgs` already lists them; their
-topology lives in a build script or in documentation. `cawaqs` is that case
-(17 C libraries fetched by a shell script across 5 GitLab groups) — see
-[docs/tutorials/02_onboarding_a_real_build_tree.md](docs/tutorials/02_onboarding_a_real_build_tree.md).
-Use `configure` (interactive) or `create-cgs` (flags) to author the spec
-directly.
+`discover` and `import-submodules` compose: `discover` a checkout to get the
+topology for free, then `import-submodules --apply` to retire any
+submodules it found. Both are read-only until you pass `--write`/`--apply`
+— always review the draft before using it.
 
 ## Safety checks
 
@@ -215,47 +176,12 @@ workspace pick it up without repeating the flags.
 
 ## Developer guide
 
-### Environment and checks
-
 This project uses Pixi exclusively — `pip install -e .`, `python -m pip`, and
-`python -m venv` are not supported workflows (`DevSpecs.md`, *Python
-Environment and Package Management*).
-
-```bash
-pixi install          # create/update the environment (after touching pixi.toml)
-pixi run lint         # ruff check .
-pixi run test         # pytest: tests/unit + tests/integration
-pixi run bump-version # bump YYYY.XX and sync every manifest and doc
-```
-
-### Before you commit
-
-1. **`pixi run lint` and `pixi run test` must both pass.** CI
-   (`.github/workflows/ci.yml`) runs both on push/PR to `main`/`lechat`, and
-   the full suite must pass before any merge to the main branch
-   (`DevSpecs.md`, *Testing*).
-2. **Run `pixi run bump-version` when wrapping up a feature branch**, ahead of
-   the auto-increment CI performs on merge to main. Versions are `YYYY.XX`
-   calendar versions: `XX` increments per release, and rolls into `YYYY` after
-   99 (`0000.99 → 0001.01`).
-   `pyproject.toml` is the authoritative manifest; the one command syncs
-   `pixi.toml`, `src/ComplexGitSync/__init__.py`, the README title, and the
-   `\cgsversion` macro in `docs/Setup/Shortcuts.tex` and `docs/preamble.tex`.
-   Never edit those by hand — DevSpecs requires a single command that bumps
-   the reference and syncs the rest.
-   Use `pixi run bump-version --dry-run` to preview without writing.
-3. **Rebuild the docs if you changed them.** The `.tex` sources live in
-   `docs/Text/`; the built PDFs are tracked, and `bump-version` does *not*
-   regenerate them:
-   ```bash
-   cd docs && latexmk -pdf MASTER.tex   # plus each c_*.tex you touched
-   ```
-4. **Update `audit.md`** whenever a change adds, moves, or removes module
-   responsibility — as part of that change, not as a follow-up.
-5. **Document any new CLI command** in both the README command table and
-   `docs/Text/user_guide.tex`. This is enforced:
-   `tests/unit/test_cli_smoke.py::test_readme_documents_every_cli_command`
-   fails if a command in `_PLANNED_COMMANDS` is missing from the README.
+`python -m venv` are not supported workflows. See [CLAUDE.md](CLAUDE.md) for
+the full command list (`pixi install`, `pixi run test`, `pixi run lint`,
+`pixi run bump-version`) and its
+["Before committing"](CLAUDE.md#before-committing) checklist — the same
+rules govern every change in this repo, so this README doesn't restate them.
 
 ### Expert mode
 
@@ -296,23 +222,13 @@ Useful habits in expert mode:
 
 ### Architecture boundary
 
-The module boundaries are strict and audited — see [audit.md](audit.md). The
-short version for contributors:
-
-- **The `cli/` package collects arguments and delegates. Nothing else.**
-  Every command is a thin `_handle_*` → `_execute_*` pair calling one
-  `ComplexGitSyncClient` method. The CLI mirrors the Python API; it never
-  implements `.cgs`/`.gts` semantics, never touches git or `subprocess`, and
-  never parses repository identifiers.
-- **`parse_repo_id()` in `cgs_format.py` is the only repo-identifier
-  parser.** Do not add a second one in `cli/`, `git_tree.py`,
-  `git_repo.py`, or `orchestre.py`.
-- **`cgs_format.py` is deterministic and offline** — no `subprocess`, no
-  git, no network. Only explicit runtime git operations in `orchestre.py` /
-  `operations.py` may touch the network.
-- **Every new capability is a client method first**, then a CLI flag. A
-  Python method with no CLI surface is unusable by end users, who only use
-  the CLI; a CLI command with logic of its own breaks the mirror.
+The module boundaries are strict and audited — see [audit.md](audit.md) for
+the responsibility table and [CLAUDE.md](CLAUDE.md#architecture-boundary)
+for the full rule set (the `cli/` package only collects arguments and
+delegates, `parse_repo_id()` is the sole repo-identifier parser,
+`cgs_format.py` stays offline, every capability lands as a Python client
+method before a CLI flag). For the ring-by-ring module map and import
+graph, see [docs/DevGuide/architecture.md](docs/DevGuide/architecture.md).
 
 ## Further reading
 
