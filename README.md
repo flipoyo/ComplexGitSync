@@ -73,13 +73,6 @@ pixi run cgitsync view-tree
 # Minimalist sync/release cycle
 pixi run cgitsync freeze-release release-2026.05 "release 2026.05"
 pixi run cgitsync launch-release release-2026.05
-
-# Equivalent expert, step-by-step form
-pixi run cgitsync pull
-pixi run cgitsync add
-pixi run cgitsync commit "feat: update CGSil1"
-pixi run cgitsync push
-pixi run cgitsync freeze release-2026.05
 ```
 
 Run any command with `--help` for its full option list (`--dry-run`, explicit
