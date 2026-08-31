@@ -6,7 +6,6 @@ project = "ComplexGitSync"
 
 repos = [
     "github:flipoyo/ComplexGitSync",
-    "github:flipoyo/DocComplexGitSync",
+    { repository = "github:flipoyo/DDocComplexGitSync = "docs/"},
     { repository = "github:flipoyo/DevSpec", relative_path = "AgentSpec/DevSpec", nested_config = "disabled" },
-    { repository = "github:flipoyo/DocSpec", relative_path = "docs/DocSpec", nested_config = "disabled" },
 ]
