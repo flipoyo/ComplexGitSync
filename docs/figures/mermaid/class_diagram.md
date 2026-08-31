@@ -4,12 +4,21 @@
 
 ```mermaid
 graph TD
+    t3title["Tier 3 --- Client / API"]
     client["ComplexGitSyncClient"]
-    orchestre["Orchestre"]
-    gittree["GitTree"]
-    gitrepo["GitRepo"]
+    orchestreN["Orchestre"]
+    t3mods["also in orchestre.py: CommandRunLogger RuntimeStateStore..."]
+    t2title["Tier 2 --- Actions"]
     runner["GitRunner"]
-    repoaddr["RepoAddress"]
+    t2mods["supporting modules (Tier 2 --- Actions): operations.py --..."]
+    t1title["Tier 1 --- Core Data"]
+    gittree["GitTree / WorkingGitTree"]
+    gitrepo["GitRepo / WorkingRepo"]
+    t1mods["also Tier 1: master.py's MasterConfig (workspace-local co..."]
+    docttitle["Document layer (cross-cutting)"]
+    docmods["ConfigDocument (base) ... CgsDocument / GtsDocument, each..."]
+    clititle["cli/ adapter (Ring 4, outside the Tier model)"]
+    climods["cli/\_\_init\_\_.py (parser + dispatch) cli/minimalist.py..."]
     unloaded("UNLOADED")
     declared("DECLARED")
     pending("PENDING")
@@ -17,19 +26,15 @@ graph TD
     partial("PARTIAL")
     error("ERROR")
     base["ConfigDocument"]
+    iomixin["ConfigDocumentIOMixin"]
     cgs["CgsDocument"]
     gts["GtsDocument"]
     registry["WorkingGitTree"]
-    entry["WorkingRepo"]
+    entry["WorkingRepo (extends GitRepo)"]
     treestate["ProjectTreeState"]
     nodetype["NodeType (enum)"]
     tlc["TreeLifecycleState"]
     rlc["RepoLifecycleState"]
-    client -->|"1"| orchestre
-    client --> runner
-    orchestre -->|"1"| gittree
-    gittree -->|"0..*"| gitrepo
-    repoaddr -.->|"uses"| gitrepo
     unloaded -->|"load(.cgs)"| declared
     declared -->|"discover nested"| pending
     pending -->|"clone/validate"| ready
@@ -38,6 +43,7 @@ graph TD
     ready -->|"freeze / next .gts id + .lgr update"| declared
     cgs --> base
     gts --> base
+    gts -.-> iomixin
     registry -->|"0..*"| entry
     registry --> treestate
     entry --> nodetype

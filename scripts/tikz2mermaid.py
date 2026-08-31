@@ -79,6 +79,9 @@ _STYLE_SHAPE_MAP: list[tuple[str, tuple[str, str]]] = [
     ("tier",       ("[", "]")),
     ("box",        ("[", "]")),
     ("seclabel",   ("[", "]")),
+    ("tiertitle",  ("[", "]")),   # Tier section titles
+    ("modlist",    ("[", "]")),    # Module list nodes
+    ("smallnote",  ("[", "]")),   # Small note nodes
 ]
 
 
@@ -177,6 +180,9 @@ class TikzParser:
     def _parse_nodes(self) -> None:
         for m in _NODE_FULL_RE.finditer(self._source):
             style, nid, body = m.group(1), m.group(2).strip(), m.group(3)
+            # Skip background band nodes and other decorative elements
+            if any(pattern in nid for pattern in ["band", "bg", "background"]):
+                continue
             label = _extract_label(body)
             self._nodes[nid] = {"label": label, "style": style}
 
@@ -184,6 +190,9 @@ class TikzParser:
         for m in _NODE_RE.finditer(self._source):
             nid = m.group(1).strip()
             if nid not in self._nodes:
+                # Skip background band nodes and other decorative elements
+                if any(pattern in nid for pattern in ["band", "bg", "background"]):
+                    continue
                 label = _extract_label(m.group(2))
                 self._nodes[nid] = {"label": label, "style": ""}
 
@@ -197,6 +206,10 @@ class TikzParser:
             src_clean = re.split(r"\.", src)[0]
             dst_clean = re.split(r"\.", dst)[0]
             if src_clean == dst_clean:
+                continue
+            # Skip edges involving background band nodes
+            if any(pattern in src_clean for pattern in ["band", "bg", "background"]) or \
+               any(pattern in dst_clean for pattern in ["band", "bg", "background"]):
                 continue
             # Skip if neither endpoint was declared as a node
             # (avoids spurious edges from decorative draws)
