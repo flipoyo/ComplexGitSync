@@ -306,13 +306,13 @@ Useful habits in expert mode:
 The module boundaries are strict and audited — see [audit.md](audit.md). The
 short version for contributors:
 
-- **`cli.py` collects arguments and delegates. Nothing else.** Every command
-  is a thin `_handle_*` → `_execute_*` pair calling one
+- **The `cli/` package collects arguments and delegates. Nothing else.**
+  Every command is a thin `_handle_*` → `_execute_*` pair calling one
   `ComplexGitSyncClient` method. The CLI mirrors the Python API; it never
   implements `.cgs`/`.gts` semantics, never touches git or `subprocess`, and
   never parses repository identifiers.
 - **`parse_repo_id()` in `cgs_format.py` is the only repo-identifier
-  parser.** Do not add a second one in `cli.py`, `git_tree.py`,
+  parser.** Do not add a second one in `cli/`, `git_tree.py`,
   `git_repo.py`, or `orchestre.py`.
 - **`cgs_format.py` is deterministic and offline** — no `subprocess`, no
   git, no network. Only explicit runtime git operations in `orchestre.py` /

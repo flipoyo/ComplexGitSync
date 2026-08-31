@@ -60,12 +60,12 @@ task's change, not as a separate follow-up.
 | `git_runner.py` | Git subprocess wrapper — the sole `import subprocess` module. |
 | `operations.py` | Leaf/parent-first Git operations over a `WorkingGitTree` + `GitRunner`. |
 | `registry.py` | Translates `.cgs`/`.gts` documents to/from `WorkingGitTree`. |
-| `paths.py`, `state_store.py`, `discovery.py`, `status_render.py`, `snapshot_resolver.py` | Path/CGSHOME resolution, state-directory allocation, nested-config/`.gitmodules` discovery, pure status-table rendering, and default-`.gts`-snapshot resolution — each extracted from `orchestre.py`/`cli.py` during the isolation work (`AgentSpecs/20260828_Isolation_DevPlanTicket.md`). |
+| `paths.py`, `state_store.py`, `discovery.py`, `status_render.py`, `snapshot_resolver.py` | Path/CGSHOME resolution, state-directory allocation, nested-config/`.gitmodules` discovery, pure status-table rendering, and default-`.gts`-snapshot resolution — each extracted from `orchestre.py`/`cli/` during the isolation work (`AgentSpecs/20260828_Isolation_DevPlanTicket.md`). |
 | `ledger_entry.py`, `integrity.py`, `ledger_store.py` | Hash-chained register mechanics (entry construction, chain verification, atomic per-entry persistence) backing `cgitsync verify` — not yet wired into `SyncLedger`'s actual write path. |
 | `orchestre.py` | The `ComplexGitSyncClient` public facade and `Orchestre` coordination layer; delegates to every module above rather than re-implementing them; still owns run logging and the `.lgr` register/sync ledger directly. |
 | `config_document.py` / `config_document_io.py` | Format-neutral `ConfigDocument` base (pure) and its file-I/O mixin (Ring 1), shared by `CgsDocument`/`GtsDocument`. |
 | `master.py` | Workspace-local Git identity (`MasterConfig`) for ComplexGitSync's own automated commits; defaults to local git config, overridable/persisted per `CGSHOME` via `.cgitsync/master.toml` — not part of the `.cgs`/`.gts` project spec. |
-| `cli.py` | Argument/prompt collection only; delegates all `.cgs`/`.gts` semantics downstream. |
+| `cli/` | Argument/prompt collection only; delegates all `.cgs`/`.gts` semantics downstream. `_shared.py` (cross-command helpers) + `minimalist.py`/`expert.py`/`configuration.py` (one module per command group, README's own grouping) + `__init__.py` (assembles the parser, exposes `main`). |
 
 See [audit.md](audit.md) for the full module/ring table and
 [AGENT.md](AGENT.md) for the ring-import rules (downward-only imports,
@@ -75,17 +75,18 @@ boundary is checked against.
 Data flow: `CLI / Python caller → ComplexGitSyncClient.configure() → cgs_format.py → CgsDocument → GitTree → orchestre.py → registry.py / operations.py → GitRepo / git_runner.py`.
 
 `parse_repo_id()` in `cgs_format.py` is the *only* repo-identifier parser —
-don't add another one in `cli.py`, `git_tree.py`, `git_repo.py`, or
+don't add another one in `cli/`, `git_tree.py`, `git_repo.py`, or
 `orchestre.py`. Keep parsing/validation offline-safe; only explicit runtime
 Git operations may touch the network.
 
 **The CLI mirrors the Python API.** End users only use the CLI, so every
 capability must exist in both layers: implement it as a
 `ComplexGitSyncClient` method carrying all the semantics, then wire a thin
-`_handle_*` → `_execute_*` pair in `cli.py` that collects arguments, calls
-that one method, and prints. A client method with no CLI surface is
+`_handle_*` → `_execute_*` pair in the owning `cli/<group>.py` module (per
+README's Minimalist/Expert/Configuration grouping) that collects arguments,
+calls that one method, and prints. A client method with no CLI surface is
 unreachable for users; a CLI command with logic of its own breaks the
-mirror. `cli.py` must never touch `subprocess`/Git or parse repository
+mirror. `cli/` must never touch `subprocess`/Git or parse repository
 identifiers.
 
 ## File formats

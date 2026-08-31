@@ -27,7 +27,7 @@ ring, never a higher one.
 
 | Ring | Modules |
 |---|---|
-| 4 — ADAPTER | `cli.py` (a `cli/` package once P6-cli lands) |
+| 4 — ADAPTER | `cli/` package (`_shared.py`, `minimalist.py`, `expert.py`, `configuration.py`, `__init__.py` assembling them) |
 | 3 — ORCHESTRATION | `orchestre.py` (`Orchestre`, `ComplexGitSyncClient`) |
 | 2 — GIT PROCESS | `git_runner.py` (sole `subprocess` importer), `operations.py`, `registry.py` |
 | 1 — FILESYSTEM | `paths.py`, `ledger_store.py`, `state_store.py`, `snapshot_resolver.py`, `discovery.py`, `master.py`, `git_tree.py` (`.gitignore` writes) |
@@ -79,7 +79,7 @@ commit. This is the same discipline
 `AgentSpecs/archive/20260826_Deletion_DevPlanTicket.md` and
 `AgentSpecs/CleanupPass2_DevPlanTicket.md` used successfully; the isolation
 work continues it. A commit that both deletes duplicated code from
-`orchestre.py`/`cli.py` and authors a brand-new module is two concerns —
+`orchestre.py`/`cli/` and authors a brand-new module is two concerns —
 split it.
 
 ### The one hard prohibition

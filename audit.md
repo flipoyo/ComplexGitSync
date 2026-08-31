@@ -38,7 +38,7 @@ human-readable summary.
 | `operations.py` | 2 | Leaf/parent-first Git operations over a `WorkingGitTree` + `GitRunner` — `checkout_tree`, `branch_tree`, `add_tree`, `commit_tree`, `push_tree`, `tag_tree`, `freeze_release_tree`, branch-topology validation. Requires a `READY` tree; raises `TreeNotReadyError` otherwise. |
 | `registry.py` | 2 | Translates `.cgs`/`.gts` documents to/from `WorkingGitTree` (`build_registry_from_cgs_document`/`build_registry_from_gts_document`/`build_gts_document_from_registry`). |
 | `orchestre.py` | 3 | The `ComplexGitSyncClient` public facade and `Orchestre` coordination layer — gates every mutating action on `TreeLifecycleState`; delegates document parsing, path resolution, state allocation, registry translation, discovery, and status rendering to the Ring 0–2 modules above rather than re-implementing them; still owns structured run logging (`CommandRunLogger`) and the local `.lgr` register/sync ledger (`LocalGitRegister`/`SyncLedger`) directly. |
-| `cli.py` | 4 | CLI argument/prompt collection only; delegates all `.cgs`/`.gts` semantics downstream. |
+| `cli/` | 4 | CLI argument/prompt collection only; delegates all `.cgs`/`.gts` semantics downstream. Package: `_shared.py` (helpers used across every command group), `minimalist.py`/`expert.py`/`configuration.py` (one module per README's own command grouping, each owning its subset's parser registration + `_handle_*`/`_execute_*` pairs), `__init__.py` (assembles the parser from the three groups, exposes `main`/`build_parser`/`_PLANNED_COMMANDS`). |
 
 `__init__.py` and `__main__.py` are out of scope for this audit (public
 re-exports and the module entry-point shim respectively) — they carry no
@@ -82,7 +82,7 @@ only repository-authoring regexes (`_PROVIDER_RE` and
 `_REPOSITORY_SEGMENT_RE`). Both `.cgs` input and repeatable CLI `--repo` values
 flow through `CgsDocument` normalization. The public
 `ComplexGitSyncClient.configure()` facade delegates to that boundary without
-parsing identifiers itself. No parser exists in `cli.py`, `git_tree.py`,
+parsing identifiers itself. No parser exists in `cli/`, `git_tree.py`,
 `git_repo.py`, or `orchestre.py`.
 
 The supported authoring grammar is:
