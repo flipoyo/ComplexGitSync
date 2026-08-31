@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ComplexGitSync"
-version = "0002.15"
+version = "0002.16"
 description = "Synchronize nested Git repository trees from .cgs specs and .gts state snapshots."
 readme = "README.md"
 requires-python = ">=3.11"
