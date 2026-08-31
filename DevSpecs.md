@@ -13,7 +13,9 @@ order for an agent onboarding to the project — e.g. the project's own
 command/build-and-test reference first, then `AgentSpecs/` for everything
 else. Keeping it minimal avoids duplicating content that belongs in
 `AgentSpecs/AGENT.md` (the parallel-agent orchestration roster, see
-*Planning*) or `AgentSpecs/audit.md` (project-specific technical rules).
+*Planning*), `AgentSpecs/AdditionalSpecs.md` (architecture and
+project-specific technical rules), or `AgentSpecs/audit.md` (audit
+findings, legacy references, and open decisions/risks).
 
 ---
 

@@ -222,7 +222,8 @@ Useful habits in expert mode:
 
 ### Architecture boundary
 
-The module boundaries are strict and audited — see [AgentSpecs/audit.md](AgentSpecs/audit.md) for
+The module boundaries are strict and audited — see
+[AgentSpecs/AdditionalSpecs.md](AgentSpecs/AdditionalSpecs.md) for
 the responsibility table and [CLAUDE.md](CLAUDE.md#architecture-boundary)
 for the full rule set (the `cli/` package only collects arguments and
 delegates, `parse_repo_id()` is the sole repo-identifier parser,

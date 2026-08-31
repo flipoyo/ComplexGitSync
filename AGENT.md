@@ -10,8 +10,10 @@ rules of its own.
    architecture boundary summary.
 2. `AgentSpecs/` for everything else:
    [`AGENT.md`](AgentSpecs/AGENT.md) — the parallel-agent orchestration
-   roster; [`AdditionalSpecs.md`](AgentSpecs/AdditionalSpecs.md) and
-   [`audit.md`](AgentSpecs/audit.md) — architecture and project-specific
-   technical rules; any active `*_DevPlanTicket.md` — in-flight work.
+   roster; [`AdditionalSpecs.md`](AgentSpecs/AdditionalSpecs.md) —
+   architecture and project-specific technical rules;
+   [`audit.md`](AgentSpecs/audit.md) — audit findings, legacy references,
+   and open decisions/risks; any active `*_DevPlanTicket.md` — in-flight
+   work.
 3. [`DevSpecs.md`](DevSpecs.md) — the underlying, project-agnostic
    philosophy all of the above conforms to.

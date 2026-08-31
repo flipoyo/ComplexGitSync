@@ -35,7 +35,8 @@ Do all of these as part of the change, not as a follow-up:
 3. **Rebuild the docs if you changed them.** `bump-version` rewrites `.tex`
    sources but does *not* regenerate the tracked PDFs:
    `cd docs && latexmk -pdf MASTER.tex` (plus each `c_*.tex` you touched).
-4. **Update `AgentSpecs/audit.md`** if module responsibility moved (see below).
+4. **Update `AgentSpecs/AdditionalSpecs.md`'s architecture section** if
+   module responsibility moved (see below).
 5. **Document any new CLI command** in the README command table *and*
    `docs/Text/user_guide.tex`, and its client method in
    `docs/Text/api_python.tex`. The README half is enforced by
@@ -44,12 +45,13 @@ Do all of these as part of the change, not as a follow-up:
 ## Architecture boundary
 
 The module responsibilities are strict and audited — see
-[AgentSpecs/audit.md](AgentSpecs/audit.md) for the full write-up. Summary:
+[AgentSpecs/AdditionalSpecs.md](AgentSpecs/AdditionalSpecs.md)'s
+"Architectural Overview" section for the full write-up. Summary:
 
-Update `AgentSpecs/audit.md`'s responsibility table and dependency-path diagram
-whenever a task adds, removes, or moves module responsibility (new module,
-changed delegation, changed boundary) — before committing, as part of that
-task's change, not as a separate follow-up.
+Update `AgentSpecs/AdditionalSpecs.md`'s responsibility table and
+dependency-path diagram whenever a task adds, removes, or moves module
+responsibility (new module, changed delegation, changed boundary) — before
+committing, as part of that task's change, not as a separate follow-up.
 
 | Module | Responsibility |
 |---|---|
@@ -67,9 +69,11 @@ task's change, not as a separate follow-up.
 | `master.py` | Workspace-local Git identity (`MasterConfig`) for ComplexGitSync's own automated commits; defaults to local git config, overridable/persisted per `CGSHOME` via `.cgitsync/master.toml` — not part of the `.cgs`/`.gts` project spec. |
 | `cli/` | Argument/prompt collection only; delegates all `.cgs`/`.gts` semantics downstream. `_shared.py` (cross-command helpers) + `minimalist.py`/`expert.py`/`configuration.py` (one module per command group, README's own grouping) + `__init__.py` (assembles the parser, exposes `main`). |
 
-See [AgentSpecs/audit.md](AgentSpecs/audit.md) for the full module/ring table
-and its ring-import rules (downward-only imports, `subprocess` confinement,
-Ring-0 purity, the ceiling ratchet) this boundary is checked against.
+See [AgentSpecs/AdditionalSpecs.md](AgentSpecs/AdditionalSpecs.md) for the
+full module/ring table and its ring-import rules (downward-only imports,
+`subprocess` confinement, Ring-0 purity, the ceiling ratchet) this boundary
+is checked against; [AgentSpecs/audit.md](AgentSpecs/audit.md) tracks actual
+audit findings, not the architecture reference itself.
 
 Data flow: `CLI / Python caller → ComplexGitSyncClient.configure() → cgs_format.py → CgsDocument → GitTree → orchestre.py → registry.py / operations.py → GitRepo / git_runner.py`.
 

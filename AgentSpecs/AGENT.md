@@ -4,35 +4,19 @@
 
 ## Abstract — read this first
 
-**What this document is.** The roster of specialized agent roles used when
-several coding agents work on this project in parallel, and how an
-orchestration agent hands work between them.
-
-**Why it exists.** A single generalist agent working through a mixed task —
-new code, its tests, and its write-up — serially is slower and more error
-prone than splitting that task across role-scoped agents working at once.
-Splitting needs an explicit boundary per role so parallel work does not
-collide or duplicate effort.
-
-**What you will find.** A table of six agent roles, their scope, and where
-each one's boundary is; handoff rules for tasks that span more than one
-role.
-
-**Who it is for.** Anyone setting up or supervising a multi-agent session
-on this project.
-
-**What you need to do with it.** Route a task to the matching role before
-starting it. If a task straddles two roles, decompose it through the
-orchestration agent first rather than letting one agent drift into another
-role's scope.
+This is ComplexGitSync's filled-in instance of the project-agnostic
+multi-agent role template — see the `AGENT.md` template in
+`flipoyo/DevSpec` for the full six-role roster, scope definitions, and
+generic handoff rules. What follows is only what differs from, or narrows,
+that template for this project specifically: which roles this project
+actually exercises, and the one project-specific handoff rule
+(`AgentSpecs/audit.md` binding Dev inside `src/ComplexGitSync/`).
 
 ```mermaid
 graph TD
-    O["Orchestration<br/>architecture, design, specs"] --> D["Dev<br/>C, Python, Rust, Flex/Bison, Fortran, C++, Make, sh"]
-    O --> CI["CI/CD<br/>unit + integration tests, environment"]
-    O --> E["Editing<br/>LaTeX, Markdown, Mermaid, Slidev"]
-    O --> M["Maths<br/>equation solving, logic, inversion, state-space"]
-    M --> D
+    O["Orchestration<br/>specs, planning tickets"] --> D["Dev<br/>Python"]
+    O --> CI["CI/CD<br/>pixi lint + test"]
+    O --> E["Editing<br/>LaTeX, Markdown, Mermaid"]
     D --> CI
     E --> O
     CI --> O
@@ -41,27 +25,21 @@ graph TD
     class O orch;
 ```
 
----
+## Roles as used in this project
 
-## Agent roles
+| Agent | This project's scope |
+|---|---|
+| **Orchestration** | `DevSpecs.md`, `AgentSpecs/AdditionalSpecs.md`, `AgentSpecs/audit.md`, and the planning tickets under `AgentSpecs/`. |
+| **Dev** | Python only — `src/ComplexGitSync/` and `tests/`. The template's other listed languages (C, Rust, Flex/Bison, Fortran, C++, Make) are not part of this codebase. |
+| **CI/CD** | `pixi run lint` (ruff), `pixi run test` (pytest: `tests/unit` + `tests/integration`), and the Pixi environment itself. |
+| **Editing** | LaTeX under `docs/`, Markdown under `AgentSpecs/` and the README, and Mermaid diagrams. This project has no Slidev decks, so that part of the template's scope is unused here. |
+| **Maths** | Not used in practice — ComplexGitSync has no numerical/derivation work to route to this role. |
+| **Scientific editing** | Not used in practice — no bibliography or citation content in this project. |
 
-| Agent | Scope | Out of scope — hand off to |
-|---|---|---|
-| **Orchestration** | Architecture, design, and specs (`DevSpecs.md`, `AdditionalSpecs.md`, `AgentSpecs/audit.md`, planning tickets); decomposes an incoming task into role-scoped sub-tasks and reconciles their output. | Writing implementation code itself — assign it to Dev instead. |
-| **Dev (IT)** | Implementation and refactoring in ANSI C, Python, Rust, Flex, Bison, Fortran, C++, `make`, and shell (`.sh`). | Test-suite design and CI/pipeline wiring (→ CI/CD); prose/diagram formatting (→ Editing). |
-| **CI/CD** | Unit tests, integration tests, and the working environment (build tooling, package managers, pipeline configuration). | Writing the feature code under test (→ Dev). |
-| **Editing** | LaTeX, Markdown, Mermaid diagrams, Slidev decks. | Technical accuracy of the content it formats — that stays with the agent that authored it; Editing polishes structure and syntax, not substance. |
-| **Maths** | Equation solving, logic derivations, matrix inversion, state-space formulations. | Turning a derivation into production code — hands it to Dev with the derivation as its spec. |
-| **Scientific editing** | Bibliography management, citation formatting, academic English. | Technical content correctness — stays with the domain agent that wrote it. |
+## Project-specific handoff rule
 
-## Handoff rules
-
-- One concern per commit still applies across agents: a `DELETE`/`MOVE`/
-  `CHANGE` performed by one role is never bundled with another role's
-  change in the same commit.
-- A task that needs more than one role (e.g. a new numerical routine with
-  its own tests and a write-up) is decomposed by the orchestration agent
-  into role-scoped sub-tasks up front, not discovered mid-implementation.
-- Rules specific to this package's own Python source — the ring model,
-  import boundaries, module ceilings — live in `AgentSpecs/audit.md` and
-  bind the Dev agent whenever it is working inside `src/ComplexGitSync/`.
+Rules specific to this package's own Python source — the ring model, import
+boundaries, module ceilings — live in `AgentSpecs/audit.md` and bind the Dev
+agent whenever it is working inside `src/ComplexGitSync/`. The template's
+other handoff rules (one concern per commit, up-front decomposition of
+multi-role tasks) apply here unchanged.

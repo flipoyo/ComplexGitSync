@@ -234,6 +234,201 @@ them to the non-interactive `ComplexGitSyncClient.configure()` Python API.
 That facade delegates format semantics to `cgs_format.py`; runtime commands
 remain separate Client operations.
 
+### Tier and Ring are two different groupings of the same modules
+
+The sections below (moved here from `AgentSpecs/audit.md`, which used to
+carry them alongside its actual audit findings) describe the same module
+set through a second, orthogonal lens: **Ring**, an *import-direction/
+I/O-boundary* grouping, mechanically checked by
+`scripts/check_module_ceilings.py`, as opposed to Tier's *lifecycle-role*
+grouping above. The two do not collapse 1:1 — see
+`docs/DevGuide/architecture.md` §1 for the full Tier↔Ring reconciliation
+table; that document remains the place to look when the mapping between a
+Tier and a Ring needs spelling out precisely.
+
+## Responsibility boundaries
+
+Rewritten 2026-08-30 against the post-isolation-Wave-2 module set
+(`AgentSpecs/20260828_Isolation_DevPlanTicket.md`) — `orchestre.py` used to
+carry most of this table's Tier 2/3 responsibility directly; it now
+delegates each to its own module. See each module's own docstring header
+(`Ring:`/`Contract:`/`Imports:`, `AgentSpecs/IsolationPlan.md` §3.2) for the
+authoritative, machine-cross-checked version of this table — this is the
+human-readable summary.
+
+| Module | Ring | Responsibility |
+|---|---|---|
+| `errors.py` | 0 | The package's public exception hierarchy. |
+| `git_repo.py` | 0 | Per-repository identity types, state enumerations, provider registry, remote-URL construction. |
+| `ledger_entry.py` | 0 | Hash-chained register-entry construction and canonicalisation (pure chain math). |
+| `integrity.py` | 0 | `Finding` taxonomy and `verify_chain` — pure arithmetic checks over a register-entry sequence. |
+| `status_render.py` | 0 | Pure text rendering for `cgitsync status`'s repository table. |
+| `config_document.py` | 0 (+ Ring-1 adapter) | Pure `ConfigDocument` base — dict wrapping, dot-path reads, the `validate()` hook. |
+| `config_document_io.py` | 1 | `ConfigDocumentIOMixin` — the six file-I/O methods (`from_toml`/`to_toml`/etc.) `ConfigDocument` used to carry directly. |
+| `cgs_format.py` | 0 (+ Ring-1 adapter) | `.cgs` TOML parsing, authoring grammar (`parse_repo_id` — the *only* implementation), normalization, static validation, `CgsDocument`, minimization, serialization. |
+| `gts_document.py` | 0 (+ Ring-1 adapter) | `.gts` runtime state-snapshot parsing/validation; the one canonical content-hash builder. |
+| `master.py` | 1 | Local, workspace-scoped Git identity for ComplexGitSync's own automated commits; persisted per `CGSHOME` via `.cgitsync/master.toml` — not part of the `.cgs`/`.gts` project spec. |
+| `paths.py` | 1 | Environment-marker path portability (`$HOME`/`%USERPROFILE%`/etc.) and `CGSHOME`/`CGSPATH` resolution. |
+| `state_store.py` | 1 | Content-addressed `.cgitsync/state(<hash>)_n/` directory allocation — the general mechanism every lifecycle command uses (not related to the deleted Memory transport, despite the class name). |
+| `snapshot_resolver.py` | 1 | Resolves which `.gts` snapshot the CLI defaults to when a command omits one explicitly. |
+| `ledger_store.py` | 1 | Atomic, one-file-per-entry persistence for the hash-chained register (`O_EXCL`-style writes, secret scrubbing, the untrusted-`HEAD`-cache pattern) — authored, not yet wired into `SyncLedger`'s actual write path. |
+| `discovery.py` | 1 | Nested `.cgs` auto-discovery and `.gitmodules` parsing. |
+| `git_tree.py` | 1 | `GitTree`/`WorkingGitTree` structures, traversal, lifecycle state; `to_cgs()` delegates to `cgs_format.py`; `.gitignore` maintenance across the tree (`sync_gitignore`) — the reason this is Ring 1, not 0. |
+| `git_runner.py` | 2 | Git subprocess wrapper — the *only* module that imports `subprocess`. |
+| `operations.py` | 2 | Leaf/parent-first Git operations over a `WorkingGitTree` + `GitRunner` — `checkout_tree`, `branch_tree`, `add_tree`, `commit_tree`, `push_tree`, `tag_tree`, `freeze_release_tree`, branch-topology validation. Requires a `READY` tree; raises `TreeNotReadyError` otherwise. |
+| `registry.py` | 2 | Translates `.cgs`/`.gts` documents to/from `WorkingGitTree` (`build_registry_from_cgs_document`/`build_registry_from_gts_document`/`build_gts_document_from_registry`). |
+| `orchestre.py` | 3 | The `ComplexGitSyncClient` public facade and `Orchestre` coordination layer — gates every mutating action on `TreeLifecycleState`; delegates document parsing, path resolution, state allocation, registry translation, discovery, and status rendering to the Ring 0–2 modules above rather than re-implementing them; still owns structured run logging (`CommandRunLogger`) and the local `.lgr` register/sync ledger (`LocalGitRegister`/`SyncLedger`) directly. |
+| `cli/` | 4 | CLI argument/prompt collection only; delegates all `.cgs`/`.gts` semantics downstream. Package: `_shared.py` (helpers used across every command group), `minimalist.py`/`expert.py`/`configuration.py` (one module per README's own command grouping, each owning its subset's parser registration + `_handle_*`/`_execute_*` pairs), `__init__.py` (assembles the parser from the three groups, exposes `main`/`build_parser`/`_PLANNED_COMMANDS`). |
+
+`__init__.py` and `__main__.py` are out of scope for this audit (public
+re-exports and the module entry-point shim respectively) — they carry no
+`.cgs`/provider/runtime boundary logic of their own. `L0.py` no longer
+exists — its TIME-L0 anchor generation was absorbed into `ledger_entry.py`
+with an injectable clock (Wave 1).
+
+The `.cgs` dependency path is:
+
+```text
+CLI values --------> ComplexGitSyncClient.configure() <-------- Python caller
+              \                   |
+               \-----------> master.py
+                                  |
+.cgs TOML ----------------> cgs_format.py <----> config_document.py / config_document_io.py
+                                  |
+                              CgsDocument
+                                  |
+                                GitTree
+                                  |
+                              orchestre.py -------> registry.py (Ring 2: .cgs/.gts <-> WorkingGitTree)
+                                  |            \---> operations.py (Ring 2: Tier 2 actions)
+                                  |            \---> discovery.py, paths.py, state_store.py,
+                                  |                  status_render.py (Ring 1/0: delegated concerns)
+                                  |
+                        GitRepo / git_runner.py (Ring 2: the sole subprocess boundary)
+```
+
+`cgs_format.py` is deterministic and offline at its Ring-0 core. It does not
+import `subprocess`, run Git, resolve remote references, or check repository
+existence. Constructing a `GitRepo`, `RepoAddress`, `GitTree`, or
+`CgsDocument` has no remote side effects. (Its `ConfigDocumentIOMixin`-derived
+`from_toml`/`to_toml` methods do real file I/O — that boundary is now
+explicit via the Ring-1-adapter co-location noted in the table above, not
+implicit in an otherwise "pure" module.)
+
+## Ring model and import rules
+
+Added by `AgentSpecs/20260828_Isolation_DevPlanTicket.md` (P6) once the
+isolation work gave the package enough real modules for these rules to be
+checkable rather than aspirational. See `AgentSpecs/IsolationPlan.md` for
+the full design rationale; this section is the enforced-in-practice
+summary, and the authoritative source the rest of the docs (`CLAUDE.md`,
+`docs/DevGuide/architecture.md`) point back to.
+
+### The ring table
+
+Imports flow downward only — a module may import from a lower-numbered
+ring, never a higher one.
+
+| Ring | Modules |
+|---|---|
+| 4 — ADAPTER | `cli/` package (`_shared.py`, `minimalist.py`, `expert.py`, `configuration.py`, `__init__.py` assembling them) |
+| 3 — ORCHESTRATION | `orchestre.py` (`Orchestre`, `ComplexGitSyncClient`) |
+| 2 — GIT PROCESS | `git_runner.py` (sole `subprocess` importer), `operations.py`, `registry.py` |
+| 1 — FILESYSTEM | `paths.py`, `ledger_store.py`, `state_store.py`, `snapshot_resolver.py`, `discovery.py`, `master.py`, `git_tree.py` (`.gitignore` writes) |
+| 0 — PURE / OFFLINE | `errors.py`, `git_repo.py`, `ledger_entry.py`, `integrity.py`, `status_render.py`, plus the Ring-0 core of `config_document.py`/`cgs_format.py`/`gts_document.py` (each also carries a Ring-1 I/O adapter for real call-site compatibility — see those modules' own docstrings) |
+
+### The four import rules (machine-checked)
+
+1. **No upward imports.** Ring *n* imports from rings `< n` only.
+2. **`import subprocess` appears in exactly one module** — `git_runner.py`.
+3. **Ring 0 performs no I/O at all** — no `subprocess`, no `open()`, no
+   `pathlib` writes, no `os.environ`, no clock reads. Enforced for modules
+   listed in `scripts/ceiling_baseline.json`'s `ring0_modules` by
+   `pixi run check-ceilings`; extend that list as more modules earn it.
+4. **Ring 1 performs no `subprocess`.** Filesystem only.
+
+### Ceilings
+
+`scripts/check_module_ceilings.py` (`pixi run check-ceilings`) enforces a
+**ratchet, not a fixed number**: a module may never grow past its recorded
+baseline in `scripts/ceiling_baseline.json`; it may always shrink one.
+Directional targets, for context: ≤500 LOC hard / ≤350 target per module,
+≤7 public symbols, ≤6 internal imports. Cyclomatic complexity is enforced
+separately and absolutely via `ruff`'s `C90` selector (`pyproject.toml`,
+max 12) — a handful of pre-existing functions carry a documented
+`# noqa: C901` (search the codebase for "Pre-existing complexity debt");
+new code has no such exemption.
+
+### Docstring contracts
+
+Every module in `src/ComplexGitSync/` should open with:
+
+```python
+"""module_name — one-line summary.
+
+Ring: <0-4> (why, if not obvious)
+Contract: what this module guarantees, in one or two sentences.
+Imports: comma-separated internal modules, or "none"
+"""
+```
+
+`scripts/check_module_ceilings.py` cross-checks the declared `Imports:`
+list against the module's real `from .x import ...` statements when both
+are non-trivial — keep them in sync rather than let the header rot.
+
+### Commit discipline
+
+One concern per commit — `DELETE`/`MOVE`/`CHANGE` never mixed in the same
+commit. This is the same discipline
+`AgentSpecs/archive/20260826_Deletion_DevPlanTicket.md` and
+`AgentSpecs/CleanupPass2_DevPlanTicket.md` used successfully; the isolation
+work continues it. A commit that both deletes duplicated code from
+`orchestre.py`/`cli/` and authors a brand-new module is two concerns —
+split it.
+
+### The one hard prohibition
+
+> **Never hand-edit anything under `.cgitsync/`.** If a workspace's state
+> looks wrong, fix it by running the normal lifecycle commands again, or —
+> once wired into real use — `cgitsync verify --repair`, which only ever
+> repairs the `HEAD` cache and never rewrites or deletes a register entry.
+> An agent that corrupts `.cgitsync/` by hand and doesn't notice is the
+> realistic worst case in this workflow.
+
+## Format ownership
+
+`cgs_format.py` contains the only implementation of `parse_repo_id()` and the
+only repository-authoring regexes (`_PROVIDER_RE` and
+`_REPOSITORY_SEGMENT_RE`). Both `.cgs` input and repeatable CLI `--repo` values
+flow through `CgsDocument` normalization. The public
+`ComplexGitSyncClient.configure()` facade delegates to that boundary without
+parsing identifiers itself. No parser exists in `cli/`, `git_tree.py`,
+`git_repo.py`, or `orchestre.py`.
+
+The supported authoring grammar is:
+
+```text
+provider:owner/repository
+```
+
+Minimal TOML is the standard serialized form. Exceptional configuration uses
+inline repository tables. `GitTree.to_cgs()` delegates conversion to
+`CgsDocument.from_git_tree()`; TOML formatting and minimization remain in
+`cgs_format.py`. The required round trip is semantic, not byte-for-byte.
+
+## Provider contract
+
+| Provider | Canonical host | SSH and HTTPS | Validation |
+|---|---|---|---|
+| `github` | `github.com` | deterministic | owner and repository required |
+| `gitlab` | `gitlab.com` | deterministic | group/owner and repository required |
+| `codeberg` | `codeberg.org` | deterministic | owner and repository required |
+| `custom` | none | derived from explicit URL | `gitprovider_url` required; no host guessing |
+
+The provider registry is defined once in `git_repo.py`, next to remote
+construction. `cgs_format.py` uses that registry for static document validation
+without performing Git or network operations.
+
 ---
 
 ## Object Model — Class Grouping by Tier
