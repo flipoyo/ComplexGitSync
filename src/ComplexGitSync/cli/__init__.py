@@ -10,7 +10,7 @@ Contract: build the top-level argparse parser from each command group's
     __main__.py, every test) see the same surface cli.py used to.
 Imports: _shared, configuration, expert, minimalist
 
-Replaces the single 1,991-line cli.py (AgentSpecs/20260828_Isolation_
+Replaces the single 1,991-line cli.py (AgentSpec/20260828_Isolation_
 DevPlanTicket.md, Wave 3, P6-cli-integrate) with a package of five modules,
 each under the ~400 LOC target except the two largest command groups
 (cli/expert.py, cli/minimalist.py — 14 and 8 commands respectively; kept

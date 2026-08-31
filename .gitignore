@@ -224,3 +224,11 @@ __marimo__/
 # Anchored to root and directory-only so src/ComplexGitSync/ is unaffected
 /ComplexGitSync*/
 apoub*
+
+# Nested repos declared in ComplexGitSync.cgs (plain clones, not submodules —
+# see README's "nested repos are plain clones" note). ComplexGitSync's own
+# project-specific files live alongside these, not inside them: AgentSpec/
+# keeps AdditionalSpecs.md/audit.md/AGENT.md/DOCSTYLE.md/archive/ tracked
+# directly; only the nested DevSpec/DocSpec checkouts themselves are ignored.
+/AgentSpec/DevSpec/
+/docs/DocSpec/

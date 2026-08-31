@@ -1,6 +1,6 @@
 """Ratchet test: no src/ComplexGitSync module may grow past its recorded baseline.
 
-Backs AgentSpecs/20260828_Isolation_DevPlanTicket.md's orchestration model —
+Backs AgentSpec/20260828_Isolation_DevPlanTicket.md's orchestration model —
 every work package that touches a shared file (orchestre.py, cli.py, ...)
 must leave it the same size or smaller. See scripts/check_module_ceilings.py
 for the full contract (LOC ratchet, Ring-0 purity, docstring-header

@@ -10,7 +10,7 @@ Contract: convert between absolute, machine-specific paths and the portable
 Imports: cgs_format, errors
 
 Extracted verbatim from ``orchestre.py`` (Wave 2, P5-paths of
-``AgentSpecs/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
+``AgentSpec/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
 carries its own copy of every function below until a later, separate
 integration step deletes it there and re-points imports — this module does
 not change that file.

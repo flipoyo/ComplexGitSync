@@ -8,9 +8,9 @@ Known temporary duplication seam: ``recompute_entry_hash`` below reimplements
 the same canonicalisation routine (stable key ordering + deterministic JSON
 serialisation, sha256, ``"sha256:"`` prefix) that ``ledger_entry.py`` — authored
 concurrently as a separate, isolated work package, see
-``AgentSpecs/20260828_Isolation_DevPlanTicket.md`` WP P4.1 / P4.1-integrity —
+``AgentSpec/20260828_Isolation_DevPlanTicket.md`` WP P4.1 / P4.1-integrity —
 also implements. Both follow the "reuse ``GtsDocument``'s canonical-payload
-discipline" idea from ``AgentSpecs/IsolationPlan.md`` §2.2
+discipline" idea from ``AgentSpec/IsolationPlan.md`` §2.2
 (``orchestre.py``'s ``GtsDocument._build_canonical_payload`` /
 ``compute_snapshot_hash``, around line 483). This module is deliberately
 decoupled from ``ledger_entry.py`` — it depends only on the structural

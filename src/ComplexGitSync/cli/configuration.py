@@ -123,7 +123,7 @@ def _handle_configure(args: argparse.Namespace) -> int:
     return 0
 
 
-# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpecs/
+# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpec/
 # 20260828_Isolation_DevPlanTicket.md) — flagged, not fixed under this
 # ticket, since a real refactor of interactive-prompt flow control risks
 # behaviour change under time pressure. New code is enforced at 12.

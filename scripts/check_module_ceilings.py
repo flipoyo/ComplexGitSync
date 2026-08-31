@@ -1,7 +1,7 @@
 """Module-size ratchet and Ring-0 purity checker for the Isolation Plan.
 
-Operationalises three checks that `AgentSpecs/IsolationPlan.md` §3.1/§3.2 and
-`AgentSpecs/20260828_Isolation_DevPlanTicket.md` call for but that no `ruff`
+Operationalises three checks that `AgentSpec/IsolationPlan.md` §3.1/§3.2 and
+`AgentSpec/20260828_Isolation_DevPlanTicket.md` call for but that no `ruff`
 selector covers natively:
 
 1. **Ratchet, not a fixed ceiling.** Each module's LOC/public-symbol/

@@ -2,7 +2,7 @@
 
 These import directly from ``ComplexGitSync.status_render`` — never from
 ``ComplexGitSync.orchestre`` — to prove the extraction (P5-status of
-``AgentSpecs/20260828_Isolation_DevPlanTicket.md``) stands on its own: pure
+``AgentSpec/20260828_Isolation_DevPlanTicket.md``) stands on its own: pure
 text/path formatting, importable and fully testable with no Git binary, no
 filesystem, and no network. This does not replace the existing golden
 coverage of ``cgitsync status``'s printed output in

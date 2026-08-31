@@ -3,7 +3,7 @@
 *Created: 2026-05-13*
 
 This file documents project-specific constraints and refinements that apply
-**on top of** the general [DevSpecs](../DevSpecs.md). Every rule in `DevSpecs.md`
+**on top of** the general [DevSpecs](DevSpec/DevSpecs.md). Every rule in `DevSpecs.md`
 applies here; this file only adds or tightens rules for `ComplexGitSync`.
 
 ---
@@ -236,7 +236,7 @@ remain separate Client operations.
 
 ### Tier and Ring are two different groupings of the same modules
 
-The sections below (moved here from `AgentSpecs/audit.md`, which used to
+The sections below (moved here from `AgentSpec/audit.md`, which used to
 carry them alongside its actual audit findings) describe the same module
 set through a second, orthogonal lens: **Ring**, an *import-direction/
 I/O-boundary* grouping, mechanically checked by
@@ -249,10 +249,10 @@ Tier and a Ring needs spelling out precisely.
 ## Responsibility boundaries
 
 Rewritten 2026-08-30 against the post-isolation-Wave-2 module set
-(`AgentSpecs/20260828_Isolation_DevPlanTicket.md`) — `orchestre.py` used to
+(`AgentSpec/20260828_Isolation_DevPlanTicket.md`) — `orchestre.py` used to
 carry most of this table's Tier 2/3 responsibility directly; it now
 delegates each to its own module. See each module's own docstring header
-(`Ring:`/`Contract:`/`Imports:`, `AgentSpecs/IsolationPlan.md` §3.2) for the
+(`Ring:`/`Contract:`/`Imports:`, `AgentSpec/IsolationPlan.md` §3.2) for the
 authoritative, machine-cross-checked version of this table — this is the
 human-readable summary.
 
@@ -317,9 +317,9 @@ implicit in an otherwise "pure" module.)
 
 ## Ring model and import rules
 
-Added by `AgentSpecs/20260828_Isolation_DevPlanTicket.md` (P6) once the
+Added by `AgentSpec/20260828_Isolation_DevPlanTicket.md` (P6) once the
 isolation work gave the package enough real modules for these rules to be
-checkable rather than aspirational. See `AgentSpecs/IsolationPlan.md` for
+checkable rather than aspirational. See `AgentSpec/IsolationPlan.md` for
 the full design rationale; this section is the enforced-in-practice
 summary, and the authoritative source the rest of the docs (`CLAUDE.md`,
 `docs/DevGuide/architecture.md`) point back to.
@@ -380,8 +380,8 @@ are non-trivial — keep them in sync rather than let the header rot.
 
 One concern per commit — `DELETE`/`MOVE`/`CHANGE` never mixed in the same
 commit. This is the same discipline
-`AgentSpecs/archive/20260826_Deletion_DevPlanTicket.md` and
-`AgentSpecs/CleanupPass2_DevPlanTicket.md` used successfully; the isolation
+`AgentSpec/archive/20260826_Deletion_DevPlanTicket.md` and
+`AgentSpec/CleanupPass2_DevPlanTicket.md` used successfully; the isolation
 work continues it. A commit that both deletes duplicated code from
 `orchestre.py`/`cli/` and authors a brand-new module is two concerns —
 split it.

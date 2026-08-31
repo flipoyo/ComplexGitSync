@@ -2,7 +2,7 @@
 
 These import directly from ``ComplexGitSync.gts_document`` — never from
 ``ComplexGitSync.orchestre`` — to prove the extraction (P2 of
-``AgentSpecs/20260828_Isolation_DevPlanTicket.md``) actually stands on its
+``AgentSpec/20260828_Isolation_DevPlanTicket.md``) actually stands on its
 own: importable and fully testable with no Git binary, no filesystem beyond
 the plain TOML/JSON round-trips ``ConfigDocument`` already provides, and no
 network. This does not replace the existing ``GtsDocument`` coverage in

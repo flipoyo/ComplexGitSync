@@ -7,8 +7,8 @@ Contract: given already-computed values (a `WorkingRepo` entry plus a root
     never reads a file or the clock, and never mutates its input.
 Imports: git_repo
 
-Design reference: ``AgentSpecs/IsolationPlan.md`` §1/§4 (`status_render.py`
-row) and ``AgentSpecs/20260828_Isolation_DevPlanTicket.md`` §2 (P5-status,
+Design reference: ``AgentSpec/IsolationPlan.md`` §1/§4 (`status_render.py`
+row) and ``AgentSpec/20260828_Isolation_DevPlanTicket.md`` §2 (P5-status,
 Wave 2 Lane A). ``ComplexGitSyncClient.status()`` itself is **not** moved
 here — it calls ``self.git_runner.current_branch(...)``,
 ``.rev_parse_head(...)``, ``.upstream_ref(...)``, and

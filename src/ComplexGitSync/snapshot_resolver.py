@@ -14,7 +14,7 @@ Temporary duplication with ``state_store.py``
 ``_state_snapshot_candidates`` below are self-contained copies of logic that
 also lives in ``orchestre.py`` today and is, at the time this module was
 authored, being extracted *in parallel* by a different work package
-(P5-state, Wave 2 of ``AgentSpecs/20260828_Isolation_DevPlanTicket.md``) into
+(P5-state, Wave 2 of ``AgentSpec/20260828_Isolation_DevPlanTicket.md``) into
 its own ``state_store.py`` module — a general "content-addressed state
 directory" abstraction this module does not need in full. This module only
 needs the narrow slice of that family required to answer "which snapshot

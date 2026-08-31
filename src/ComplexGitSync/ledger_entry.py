@@ -8,10 +8,10 @@ Contract: given the previous chain entry (or none, for genesis) and the
     this module's.
 Imports: none
 
-Design reference: ``AgentSpecs/IsolationPlan.md`` §2.2 (hash-chained
+Design reference: ``AgentSpec/IsolationPlan.md`` §2.2 (hash-chained
 register schema) and §3.3 (``ClockProtocol``). This module also absorbs the
 responsibility of ``L0.py``'s ``new_time_l0_anchor()``/``hash_time_l0_anchor()``
-(see ``AgentSpecs/IsolationPlan.md``'s feasibility review, and §3.3): the
+(see ``AgentSpec/IsolationPlan.md``'s feasibility review, and §3.3): the
 same private TIME-L0 anchor generation, but driven through an injectable
 :class:`ClockProtocol` instead of reading ``datetime.now(UTC)``,
 ``time.time_ns()``, ``os.getpid()``, and ``secrets.token_hex()`` directly,
@@ -102,7 +102,7 @@ def new_time_l0_anchor(clock: ClockProtocol) -> TimeL0State:
 class LedgerEntry:
     """One hash-chained ``.lgr`` register entry.
 
-    Schema fixed by ``AgentSpecs/IsolationPlan.md`` §2.2 — do not add or
+    Schema fixed by ``AgentSpec/IsolationPlan.md`` §2.2 — do not add or
     rename fields without updating that document first.
     """
 

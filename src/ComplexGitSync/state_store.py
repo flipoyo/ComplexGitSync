@@ -22,7 +22,7 @@ content-addressed directory allocator every lifecycle command (``initialise``,
 Extracted verbatim from ``orchestre.py`` (module-level functions/class
 starting at ``_format_state_id``, plus the ``_SHA256_HEX_RE``/``_STATE_ID_RE``/
 ``_STATE_DIR_RE`` regex constants they depend on) as part of
-``AgentSpecs/20260828_Isolation_DevPlanTicket.md`` Wave 2, work package
+``AgentSpec/20260828_Isolation_DevPlanTicket.md`` Wave 2, work package
 P5-state. ``orchestre.py`` still carries its own copy of this code — a
 later, separate Lane-B integration step re-points its callers at this module
 and deletes the duplicate; this module is not wired in yet.

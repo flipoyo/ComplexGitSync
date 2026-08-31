@@ -1,7 +1,7 @@
 """orchestre — orchestration hub for ComplexGitSync.
 
 Ring: 3 (imports downward from every Ring 0–2 module; owns the public
-    ComplexGitSyncClient facade — see AgentSpecs/IsolationPlan.md §1)
+    ComplexGitSyncClient facade — see AgentSpec/IsolationPlan.md §1)
 Contract: coordinate one GitTree's lifecycle end to end — load/validate/
     clone/sync/freeze — gating every mutating action on TreeLifecycleState;
     delegate document parsing, path resolution, state-directory allocation,
@@ -15,7 +15,7 @@ This module is the **Orchestre anchor** — the authoritative source for the
 public client API and the infrastructure services (structured run logging,
 the local .lgr register/sync ledger) too small or too entangled with
 ComplexGitSyncClient's own state to extract on their own. Wave 1/2 of the
-isolation plan (AgentSpecs/20260828_Isolation_DevPlanTicket.md) moved
+isolation plan (AgentSpec/20260828_Isolation_DevPlanTicket.md) moved
 everything else out: GtsDocument → gts_document.py, GitRunner → git_runner.py,
 the registry builders → registry.py, nested-config/.gitmodules discovery →
 discovery.py, the state-directory allocator → state_store.py, path/CGSHOME
@@ -977,7 +977,7 @@ class ComplexGitSyncClient:
         return document
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # AgentSpec/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of the submodule-conversion
     # flow risks behaviour change under time pressure. New code is enforced
     # at 12.
@@ -1169,7 +1169,7 @@ class ComplexGitSyncClient:
         )
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # AgentSpec/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of the filesystem-walking
     # discovery flow risks behaviour change under time pressure. New code
     # is enforced at 12.
@@ -1332,7 +1332,7 @@ class ComplexGitSyncClient:
         )
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # AgentSpec/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of the .gitignore sync flow
     # risks behaviour change under time pressure. New code is enforced at
     # 12.

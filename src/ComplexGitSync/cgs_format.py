@@ -6,7 +6,7 @@ Ring: 0 core + Ring-1 I/O adapter, co-located — CgsDocument inherits
     remainder (parse_repo_id, normalize_cgs, validation) is fully
     Ring-0-testable with no filesystem access. Same shape as
     gts_document.py — see that module's docstring for the full rationale
-    (WP-CFG, AgentSpecs/20260828_Isolation_DevPlanTicket.md §0).
+    (WP-CFG, AgentSpec/20260828_Isolation_DevPlanTicket.md §0).
 Contract: own the textual provider:owner/repository authoring grammar and
     the .cgs parse/normalize/validate/serialize pipeline; deterministic and
     offline.
@@ -103,7 +103,7 @@ def parse_repo_id(identifier: str) -> dict[str, str]:
 parse_repository_identifier = parse_repo_id
 
 
-# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpecs/
+# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpec/
 # 20260828_Isolation_DevPlanTicket.md) — flagged, not fixed under this
 # ticket, since a real refactor of .cgs normalization risks behaviour
 # change under time pressure. New code is enforced at 12.
@@ -530,7 +530,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 tree._repo_metadata[tree_key] = copy.deepcopy(unmatched.pop(match_index))
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # AgentSpec/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of .cgs static validation
     # risks behaviour change under time pressure. New code is enforced at
     # 12.

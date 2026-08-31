@@ -679,7 +679,7 @@ def _select_scc_anchor(
 # ---------------------------------------------------------------------------
 
 
-# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpecs/
+# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpec/
 # 20260828_Isolation_DevPlanTicket.md) — flagged, not fixed under this
 # ticket, since a real refactor of cycle-breaking logic risks behaviour
 # change under time pressure. New code is enforced at 12.

@@ -8,9 +8,9 @@ are not bugs, the acceptance checks that back this project's format/provider
 guarantees, and open decisions or risks as they arise. The static
 architecture reference this file used to carry (the Ring model, module
 responsibility table, format ownership, and provider contract) moved to
-`AgentSpecs/AdditionalSpecs.md`'s "Architectural Overview" section — see
+`AgentSpec/AdditionalSpecs.md`'s "Architectural Overview" section — see
 that file, or `docs/DevGuide/architecture.md`, for how the system is built.
-Historical regrouping plans are kept under `AgentSpecs/archive/`, and are
+Historical regrouping plans are kept under `AgentSpec/archive/`, and are
 explicitly marked as archives.
 
 ## Intentional legacy references
@@ -19,8 +19,8 @@ explicitly marked as archives.
   paired with the minimal `examples/template.cgs`.
 - Explicit/verbose `.cgs` data in tests verifies advanced overrides and backward
   compatibility; it is not the recommended authoring style.
-- Files explicitly marked as historical under `AgentSpecs/`, and the archived
-  `AgentSpecs/archive/20260519_CorPlan.md` diagram, may retain old terminology
+- Files explicitly marked as historical under `AgentSpec/`, and the archived
+  `AgentSpec/archive/20260519_CorPlan.md` diagram, may retain old terminology
   to document migrations.
 - `.gts`, `.lgr`, synchronization, freeze, and kernel semantics remain outside
   this format/provider audit and were not redesigned.

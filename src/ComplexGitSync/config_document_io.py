@@ -6,8 +6,8 @@ Imports: config_document
 
 Home for the six ``open()`` call sites (plus ``print()``) that used to live
 on ``config_document.ConfigDocument`` itself before WP-CFG (see
-``AgentSpecs/20260828_Isolation_DevPlanTicket.md`` §0 and
-``AgentSpecs/IsolationPlan.md``) reclassified them out of Ring 0.
+``AgentSpec/20260828_Isolation_DevPlanTicket.md`` §0 and
+``AgentSpec/IsolationPlan.md``) reclassified them out of Ring 0.
 
 ``ConfigDocumentIOMixin`` is designed to be combined with
 :class:`~ComplexGitSync.config_document.ConfigDocument` (or any subclass of

@@ -54,17 +54,17 @@ Keep it to eight nodes or fewer. If the graph needs a legend, it is too complex.
 ## 3. Audience separation
 
 The table below describes the general pattern; a consuming project maps it
-onto its own file names (see the examples, which follow the `AgentSpecs/`
-layout `DevSpecs.md` establishes: `AgentSpecs/AdditionalSpecs.md`,
-`AgentSpecs/AGENT.md`, `AgentSpecs/audit.md`).
+onto its own file names (see the examples, which follow the `AgentSpec/`
+layout `DevSpecs.md` establishes: `AgentSpec/AdditionalSpecs.md`,
+`AgentSpec/AGENT.md`, `AgentSpec/audit.md`).
 
 | Document (general pattern) | Audience | Contains |
 |---|---|---|
 | root `README.md` | users | what it is, what it does, how to run it, where to go next |
-| the project's spec file(s) (e.g. `DevSpecs.md`, `AgentSpecs/AdditionalSpecs.md`) | developers | features, architecture, acceptance criteria |
+| the project's spec file(s) (e.g. `DevSpecs.md`, `AgentSpec/AdditionalSpecs.md`) | developers | features, architecture, acceptance criteria |
 | `docs/` | mixed, labelled per file | procedures, references, technical notes |
-| the agent-facing capability/roster file (e.g. `AgentSpecs/AGENT.md`) | agents + reviewers | capability verbs, zone, autonomy, review rule |
-| the audit/decision file (e.g. `AgentSpecs/audit.md`) | decision-makers | findings, risks, decisions required |
+| the agent-facing capability/roster file (e.g. `AgentSpec/AGENT.md`) | agents + reviewers | capability verbs, zone, autonomy, review rule |
+| the audit/decision file (e.g. `AgentSpec/audit.md`) | decision-makers | findings, risks, decisions required |
 
 A root `README.md` never contains build internals, API contracts, or CI
 configuration. Those move to a spec file or `docs/`, and the README links to

@@ -89,7 +89,7 @@ class _ConfigDocumentWithIO(ConfigDocument, ConfigDocumentIOMixin):
     """Test-only stand-in for a concrete subclass with file I/O mixed in.
 
     ``ConfigDocument`` itself is Ring 0 (pure, no I/O) since WP-CFG
-    (AgentSpecs/20260828_Isolation_DevPlanTicket.md §0); every real subclass
+    (AgentSpec/20260828_Isolation_DevPlanTicket.md §0); every real subclass
     (``CgsDocument``, ``GtsDocument``) picks up ``ConfigDocumentIOMixin``
     directly, but the base class round-trip tests below need a concrete
     combined class of their own rather than depending on either.

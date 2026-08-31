@@ -1,6 +1,6 @@
 """Characterisation net for ``configure``/``create-cgs`` as real CLI commands.
 
-Wave 0 of AgentSpecs/20260828_Isolation_DevPlanTicket.md (work package G1-c)
+Wave 0 of AgentSpec/20260828_Isolation_DevPlanTicket.md (work package G1-c)
 requires end-to-end coverage of ``cgitsync configure`` and
 ``cgitsync create-cgs`` invoked through the actual CLI entry point
 (``ComplexGitSync.cli.main``), not just their underlying

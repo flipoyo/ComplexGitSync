@@ -13,7 +13,7 @@ Contract: given a parsed ``.cgs`` (``CgsDocument``) or ``.gts``
 Imports: cgs_format, errors, git_repo, git_tree, gts_document
 
 Extracted from ``orchestre.py`` (Wave 2, P5-registry of
-``AgentSpecs/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
+``AgentSpec/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
 carries its own copy of ``build_registry_from_cgs_document``,
 ``build_registry_from_gts_document``, and ``build_gts_document_from_registry``
 until the separate P5-registry-integrate step deletes them there and

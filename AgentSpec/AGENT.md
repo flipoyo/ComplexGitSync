@@ -10,7 +10,7 @@ multi-agent role template — see the `AGENT.md` template in
 generic handoff rules. What follows is only what differs from, or narrows,
 that template for this project specifically: which roles this project
 actually exercises, and the one project-specific handoff rule
-(`AgentSpecs/AdditionalSpecs.md` binding Dev inside `src/ComplexGitSync/`).
+(`AgentSpec/AdditionalSpecs.md` binding Dev inside `src/ComplexGitSync/`).
 
 ```mermaid
 graph TD
@@ -29,19 +29,19 @@ graph TD
 
 | Agent | This project's scope |
 |---|---|
-| **Orchestration** | `DevSpecs.md`, `AgentSpecs/AdditionalSpecs.md`, `AgentSpecs/audit.md`, and the planning tickets under `AgentSpecs/`. |
+| **Orchestration** | `AgentSpec/DevSpec/DevSpecs.md`, `AgentSpec/AdditionalSpecs.md`, `AgentSpec/audit.md`, and the planning tickets under `AgentSpec/`. |
 | **Dev** | Python only — `src/ComplexGitSync/` and `tests/`. The template's other listed languages (C, Rust, Flex/Bison, Fortran, C++, Make) are not part of this codebase. |
 | **CI/CD** | `pixi run lint` (ruff), `pixi run test` (pytest: `tests/unit` + `tests/integration`), and the Pixi environment itself. |
-| **Editing** | LaTeX under `docs/`, Markdown under `AgentSpecs/` and the README, and Mermaid diagrams. This project has no Slidev decks, so that part of the template's scope is unused here. |
+| **Editing** | LaTeX under `docs/`, Markdown under `AgentSpec/` and the README, and Mermaid diagrams. This project has no Slidev decks, so that part of the template's scope is unused here. |
 | **Maths** | Not used in practice — ComplexGitSync has no numerical/derivation work to route to this role. |
 | **Scientific editing** | Not used in practice — no bibliography or citation content in this project. |
 
 ## Project-specific handoff rule
 
 Rules specific to this package's own Python source — the ring model, import
-boundaries, module ceilings — live in `AgentSpecs/AdditionalSpecs.md`'s
+boundaries, module ceilings — live in `AgentSpec/AdditionalSpecs.md`'s
 "Architectural Overview" section and bind the Dev agent whenever it is
-working inside `src/ComplexGitSync/`. (`AgentSpecs/audit.md` is a different
+working inside `src/ComplexGitSync/`. (`AgentSpec/audit.md` is a different
 file — findings, legacy references, and open decisions/risks, not
 architecture rules.) The template's other handoff rules (one concern per
 commit, up-front decomposition of multi-role tasks) apply here unchanged.

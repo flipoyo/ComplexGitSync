@@ -22,7 +22,7 @@ this reason — it stays scoped to modules with no I/O-adapter mixin at all,
 e.g. ``errors.py``, ``ledger_entry.py``, ``integrity.py``.
 
 Extracted verbatim from ``orchestre.py`` (Wave 1, P2 of
-``AgentSpecs/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
+``AgentSpec/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
 carries its own copy of ``GtsDocument`` until the separate P2-integrate step
 deletes it there and re-points imports — this module does not change that
 file.
@@ -147,7 +147,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     )
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # AgentSpec/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of .gts field validation
     # risks behaviour change under time pressure. New code is enforced at
     # 12.

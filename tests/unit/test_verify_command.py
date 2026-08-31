@@ -1,6 +1,6 @@
 """Tests for ComplexGitSyncClient.verify() and the `cgitsync verify` CLI command.
 
-Wave 2 work package P4.3 from AgentSpecs/20260828_Isolation_DevPlanTicket.md —
+Wave 2 work package P4.3 from AgentSpec/20260828_Isolation_DevPlanTicket.md —
 wires ledger_entry.py/integrity.py/ledger_store.py (Wave 1/2, already unit
 tested in isolation) into the actual `verify` command. These tests exercise
 that wiring, not the underlying chain-math/storage logic again.
