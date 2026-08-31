@@ -132,7 +132,10 @@ LEAF}; every repository --- root, parent, and leaf alike --- is a plain
 independent clone and is pulled in that same parent-first order, rather than
 through any submodule linkage.
 
-Figure~\ref{fig:core-model} shows the full object model for Tier~1.
+Figure~\ref{fig:core-model} shows the class overview across all three
+tiers, \texttt{GitTree}/\texttt{GitRepo} among them; the full current
+module-by-module Ring-level dependency graph lives in
+\texttt{docs/DevGuide/architecture.md}.
 
 % -----------------------------------------------------------------------
 \section{Tier 2 — Actions}
@@ -394,5 +397,11 @@ gts_doc = build_gts_document_from_registry(
 % -----------------------------------------------------------------------
 % Include all TikZ figures defined in figures/class_diagram.tex
 % -----------------------------------------------------------------------
+
+Figure~\ref{fig:core-model} is deliberately kept at Tier granularity rather
+than diagramming all of \texttt{src/ComplexGitSync/}'s current modules —
+see \texttt{docs/DevGuide/architecture.md} for the dev-facing companion
+that carries the full per-module Ring-level breakdown and dependency
+graph this chapter does not attempt to reproduce.
 
 \input{figures/class_diagram}

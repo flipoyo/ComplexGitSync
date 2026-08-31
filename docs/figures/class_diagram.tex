@@ -1,15 +1,23 @@
 % class_diagram.tex  — TikZ source for the ComplexGitSync class overview figure.
 %
-% This file is \input{} from docs/architecture.tex.  It draws three related
+% This file is \input{} from docs/architecture.tex.  It draws four related
 % diagrams on separate pages so each fits comfortably within an A4 margin:
 %
-%   Figure 1 — Core object model centred on GitTree
-%   Figure 2 — Document hierarchy (ConfigDocument and subclasses)
+%   Figure 1 — Class overview by tier (Tier 1/2/3 headline classes, plus the
+%              Document-layer and cli/-adapter modules that sit outside the
+%              Tier model — every src/ComplexGitSync/ module is named
+%              somewhere in this figure, see docs/DevGuide/architecture.md
+%              §2 for the full per-module dependency graph)
+%   Figure 2 — GitTree lifecycle state machine
+%   Figure 3 — Document hierarchy (ConfigDocument + the ConfigDocumentIOMixin
+%              file-I/O split)
 %   Figure 3 — Registry model (WorkingGitTree and supporting types)
 
 % ============================================================
 %  Shared TikZ style definitions
 % ============================================================
+
+\usetikzlibrary{calc}
 
 \tikzset{
   %— UML-style class box with three compartments
@@ -42,124 +50,175 @@
 }
 
 % ============================================================
-%  Figure 1 — Core object model centred on GitTree
+%  Figure 1 — Class overview by tier
 % ============================================================
+%
+% Same three-tier grouping as figures/three_tier.tex (blue = Tier 3, green =
+% Tier 2, orange = Tier 1), but drawn at class granularity: one or two
+% headline classbox(es) per tier plus a compact list of every other module
+% that tier owns.  The two module groups the book's Tier model never
+% described — the cross-cutting Document layer and the Ring-4 cli/ adapter
+% package (see docs/DevGuide/architecture.md §1's Tier<->Ring mapping) — get
+% their own smaller bands below, so every one of the ~27 modules in
+% src/ComplexGitSync/ is named once, either as a classbox or in a module
+% list.  Full per-module contracts and the real import graph live in
+% docs/DevGuide/architecture.md §2-§3; this figure stays at the zoom level a
+% book chapter read start-to-finish needs.
 
-\begin{figure}[ht]
+\begin{figure}[p]
 \centering
-\caption{Core object model: \texttt{ComplexGitSyncClient} orchestrates through
-  \texttt{Orchestre}, which owns the central \texttt{GitTree} composed of
-  \texttt{GitRepo} instances.  \texttt{RepoAddress} derives the remote URL from
-  a \texttt{GitRepo}.}
+\caption{Class overview by tier.  Headline classes for each of the three
+  tiers, plus the cross-cutting Document layer and the \texttt{cli/}
+  adapter package that the Tier model never described.  Every module in
+  \texttt{src/ComplexGitSync/} is named here, either as a class box or in a
+  tier's module list; see \texttt{docs/DevGuide/architecture.md} for the
+  full current module-by-module Ring-level dependency graph.}
 \label{fig:core-model}
 
-\begin{tikzpicture}[node distance=1.2cm and 2.2cm]
+\begin{tikzpicture}[
+  font=\sffamily,
+  tiertitle/.style={font=\sffamily\bfseries\small},
+  modlist/.style={font=\ttfamily\scriptsize, align=left, text width=9.6cm},
+  smallnote/.style={font=\ttfamily\scriptsize, align=left, text width=6.4cm},
+]
 
-% --- ComplexGitSyncClient ---
-\node[classbox] (client) {
+% -------- Tier 3 — Client / API --------
+\node[tiertitle] (t3title) at (0,0) {Tier 3 --- Client / API};
+\node[classbox, below=0.18cm of t3title.south west, anchor=north west] (client) {
   \textbf{ComplexGitSyncClient}
   \nodepart{two}
   orchestre: Orchestre\\
   git\_runner: GitRunner\\
   state\_store: RuntimeStateStore\\
-  registry: WorkingGitTree\\
-  run\_logger: CommandRunLogger
+  registry: WorkingGitTree | None\\
+  run\_logger: CommandRunLogger | None
   \nodepart{three}
-  read(cgs) / load\_gts(gts)\\
-  initialise(cgs|gts) / load(cgs|gts)\\
-  pull(cgs|gts) / clone(cgs)\\
-  checkout(ref) / add()\\
-  git(tree, cmd, args)\\
-  freeze(name)
+  configure() / initialise()\\
+  pull() / clone() / checkout()\\
+  add() / git(tree, cmd)\\
+  freeze() / verify()
 };
-
-% --- Orchestre ---
-\node[classbox, below=1.8cm of client] (orchestre) {
+\node[classbox, right=0.5cm of client] (orchestreN) {
   \textbf{Orchestre}
   \nodepart{two}
   git\_tree: GitTree
   \nodepart{three}
   register\_repo(repo)
 };
-
-% --- GitTree ---
-\node[classbox, below=1.8cm of orchestre] (gittree) {
-  \textbf{GitTree}
-  \nodepart{two}
-  repos: dict[str, GitRepo]
-  \nodepart{three}
-  add\_repo(repo)\\
-  force\_repo\_sha(name, sha)\\
-  force\_repo\_keys(name, **)
+\node[modlist, below=0.3cm of client.south west, anchor=north west] (t3mods) {
+  also in \texttt{orchestre.py}: \textit{CommandRunLogger} \textperiodcentered{}
+  \textit{RuntimeStateStore} \textperiodcentered{} \textit{LocalGitRegister}
+  (\texttt{.lgr} writer) \textperiodcentered{} \textit{SyncLedger}
 };
 
-% --- GitRepo ---
-\node[classbox, right=2.4cm of gittree] (gitrepo) {
-  \textbf{GitRepo}
-  \nodepart{two}
-  project\_name: str\\
-  project\_owner\_name: str\\
-  gitprovider: GitProvider\\
-  access\_protocol: AccessProtocol\\
-  commit\_sha: str | None
-  \nodepart{three}
-  resolved\_group\_name: str
-};
+\begin{pgfonlayer}{background}
+\node[fill=blue!12, draw=blue!40, thick, rounded corners=6pt, inner sep=0.18cm,
+      fit=(t3title)(client)(orchestreN)(t3mods)] (tier3band) {};
+\end{pgfonlayer}
 
-% --- GitRunner ---
-\node[classbox, right=2.4cm of client] (runner) {
+% -------- Tier 2 — Actions --------
+\node[tiertitle, below=0.5cm of tier3band.south west, anchor=north west] (t2title) {Tier 2 --- Actions};
+\node[classbox, below=0.18cm of t2title.south west, anchor=north west] (runner) {
   \textbf{GitRunner}
   \nodepart{two}
-  executable: str
+  executable: str = ``git''
   \nodepart{three}
-  clone(url, dest, branch)\\
-  rev\_parse\_head(path)\\
-  current\_branch(path)\\
-  local\_branch\_exists(path, b)\\
-  create\_branch(path, b)\\
-  checkout(path, b)\\
-  has\_unresolved\_merge(path)\\
-  branch\_tracking\_state(path)\\
-  has\_staged\_changes(path)\\
-  stage\_all(path)\\
-  commit(path, message)\\
-  push(path, remote, branch)\\
-  add\_submodule(path, url, rel, branch)
+  clone() / checkout()\\
+  commit() / push() / pull()\\
+  create\_branch() / create\_tag()\\
+  status\_porcelain() / branch\_tracking\_state()
+};
+\node[modlist, right=0.6cm of runner] (t2mods) {
+  supporting modules (\texttt{Tier 2 --- Actions}):\\
+  \textperiodcentered{} \texttt{operations.py} --- leaf/parent-first Git ops\\
+  \textperiodcentered{} \texttt{registry.py} --- build/serialize \texttt{WorkingGitTree}\\
+  \textperiodcentered{} \texttt{paths.py}, \texttt{discovery.py}\\
+  \textperiodcentered{} \texttt{state\_store.py}, \texttt{snapshot\_resolver.py}\\
+  \textperiodcentered{} \texttt{ledger\_store.py}
 };
 
-% --- RepoAddress ---
-\node[classbox, below=1.8cm of gitrepo] (repoaddr) {
-  \textbf{RepoAddress}
+\begin{pgfonlayer}{background}
+\node[fill=green!10, draw=green!40, thick, rounded corners=6pt, inner sep=0.18cm,
+      fit=(t2title)(runner)(t2mods)] (tier2band) {};
+\end{pgfonlayer}
+
+\draw[-{Stealth[length=8pt]}, thick, gray]
+  (tier3band.south) -- node[right, font=\scriptsize\itshape]{calls (state-gated)} (tier2band.north);
+
+% -------- Tier 1 — Core Data --------
+\node[tiertitle, below=0.5cm of tier2band.south west, anchor=north west] (t1title) {Tier 1 --- Core Data};
+\node[classbox, below=0.18cm of t1title.south west, anchor=north west] (gittree) {
+  \textbf{GitTree} / \textbf{WorkingGitTree}
   \nodepart{two}
-  gitprovider: GitProvider\\
-  project\_name: str\\
-  project\_owner\_name: str\\
-  group\_name: str | None\\
-  gitprovider\_url: str | None
+  repos: dict[str, GitRepo]\\
+  \textit{(WorkingGitTree: dict[str, WorkingRepo],}\\
+  \textit{ + lifecycle\_state: TreeLifecycleState)}
   \nodepart{three}
-  to\_ssh()\\
-  to\_https()\\
-  to\_url(protocol)\\
-  from\_repo(repo)
+  add\_repo() / force\_repo\_sha()\\
+  recompute\_tree\_state()\\
+  \textit{WorkingGitTree(GitTree)}
+};
+\node[classbox, right=0.5cm of gittree] (gitrepo) {
+  \textbf{GitRepo} / \textbf{WorkingRepo}
+  \nodepart{two}
+  project\_name / project\_owner\_name\\
+  gitprovider / access\_protocol\\
+  commit\_sha
+  \nodepart{three}
+  resolved\_group\_name\\
+  \textit{WorkingRepo(GitRepo)}: repo\_id,\\
+  \textit{node\_type, repo\_lifecycle\_state, ...}
+};
+\node[modlist, below=0.3cm of gittree.south west, anchor=north west] (t1mods) {
+  also Tier 1: \texttt{master.py}'s \textit{MasterConfig} (workspace-local
+  commit identity) \textperiodcentered{} \textit{RepoAddress} (URL composer,
+  \texttt{git\_repo.py})
 };
 
-% --- Arrows ---
-% Client -> Orchestre (composition)
-\draw[comporr] (client.south) -- node[right, font=\scriptsize]{1} (orchestre.north);
+\begin{pgfonlayer}{background}
+\node[fill=orange!10, draw=orange!40, thick, rounded corners=6pt, inner sep=0.18cm,
+      fit=(t1title)(gittree)(gitrepo)(t1mods)] (tier1band) {};
+\end{pgfonlayer}
 
-% Client -> GitRunner (has)
-\draw[hasarrow] (client.east) -- (runner.west);
+\draw[-{Stealth[length=8pt]}, thick, gray]
+  (tier2band.south) -- node[right, font=\scriptsize\itshape]{reads / mutates} (tier1band.north);
 
-% Orchestre -> GitTree (composition)
-\draw[comporr] (orchestre.south) -- node[right, font=\scriptsize]{1} (gittree.north);
+% -------- Cross-cutting: Document layer + cli/ adapter --------
+\node[tiertitle, below=0.5cm of tier1band.south west, anchor=north west] (docttitle) {Document layer (cross-cutting)};
+\node[smallnote, below=0.18cm of docttitle.south west, anchor=north west] (docmods) {
+  \textbf{ConfigDocument} (base) $\to$ \textbf{CgsDocument} / \textbf{GtsDocument},\\
+  each also mixing in \textit{ConfigDocumentIOMixin}\\
+  (\texttt{config\_document\_io.py}) for \texttt{from/to\_toml|json|yaml}.\\
+  Plus \texttt{errors.py}, and the no-Tier-home register/status\\
+  internals: \texttt{integrity.py}, \texttt{ledger\_entry.py},\\
+  \texttt{status\_render.py}
+};
 
-% GitTree -> GitRepo (composition / dict)
-\draw[comporr] (gittree.east) -- node[above, font=\scriptsize]{0..*} (gitrepo.west);
+\begin{pgfonlayer}{background}
+\node[fill=gray!12, draw=gray!50, thick, rounded corners=6pt, inner sep=0.18cm,
+      fit=(docttitle)(docmods)] (docband) {};
+\end{pgfonlayer}
 
-% RepoAddress -> GitRepo (uses)
-\draw[hasarrow, dashed] (repoaddr.north) -- node[right, font=\scriptsize]{uses} (gitrepo.south);
+\node[tiertitle, right=0.6cm of docband, anchor=north west] (clititle) at (docband.north east) {\texttt{cli/} adapter (Ring 4, outside the Tier model)};
+\node[smallnote, below=0.18cm of clititle.south west, anchor=north west] (climods) {
+  \texttt{cli/\_\_init\_\_.py} (parser + dispatch)\\
+  \texttt{cli/minimalist.py}, \texttt{cli/configuration.py},\\
+  \texttt{cli/expert.py} (one module per command group)\\
+  \texttt{cli/\_shared.py} (cross-command helpers)\\[2pt]
+  \textit{argument/prompt collection only --- calls into}\\
+  \textit{Tier 3 above, never touches Git directly}
+};
+
+\begin{pgfonlayer}{background}
+\node[fill=red!8, draw=red!40, thick, dashed, rounded corners=6pt, inner sep=0.18cm,
+      fit=(clititle)(climods)] (cliband) {};
+\end{pgfonlayer}
 
 \end{tikzpicture}
+
+\noindent\footnotesize\textit{Not shown: \texttt{\_\_init\_\_.py} (package
+re-exports) and \texttt{\_\_main\_\_.py} (entry-point stub) --- package
+assembly, not part of any tier or ring.}
 \end{figure}
 
 % ============================================================
@@ -213,8 +272,11 @@
 
 \begin{figure}[ht]
 \centering
-\caption{Document class hierarchy.  \texttt{ConfigDocument} is the abstract
-  base; each concrete subclass parses and validates one file format.}
+\caption{Document class hierarchy.  \texttt{ConfigDocument} (\texttt{config\_document.py})
+  is the abstract, I/O-free base; \texttt{ConfigDocumentIOMixin}
+  (\texttt{config\_document\_io.py}) supplies the file-based
+  \texttt{from/to\_toml|json|yaml} methods.  Each concrete document type
+  combines both via ordinary multiple inheritance.}
 \label{fig:document-hierarchy}
 
 \begin{tikzpicture}[node distance=1.2cm and 1.8cm]
@@ -227,8 +289,17 @@
   \nodepart{three}
   read(key) / get(key)\\
   validate()\\
+  to\_dict() / from\_dict(data)
+};
+
+\node[classbox, right=2.4cm of base] (iomixin) {
+  \textbf{ConfigDocumentIOMixin}
+  \nodepart{two}
+  config\_document\_io.py
+  \nodepart{three}
   from\_toml / from\_json / from\_yaml\\
-  to\_toml / to\_json / to\_yaml
+  to\_toml / to\_json / to\_yaml\\
+  print()
 };
 
 \node[classbox, below left=1.6cm and 0.6cm of base] (cgs) {
@@ -249,6 +320,7 @@
 \node[classbox, below=1.6cm of base] (gts) {
   \textbf{GtsDocument}
   \nodepart{two}
+  gts\_document.py\\
   DOCUMENT\_KIND = ``gts''
   \nodepart{three}
   schema\_version\\
@@ -262,6 +334,8 @@
 
 \draw[inharrow] (cgs.north) -- (base.south west);
 \draw[inharrow] (gts.north) -- (base.south);
+\draw[inharrow, dashed] (cgs.north east) -- ($(iomixin.south)+(-0.6,0)$);
+\draw[inharrow, dashed] (gts.east) -- (iomixin.south);
 
 \end{tikzpicture}
 \end{figure}
@@ -273,8 +347,10 @@
 \begin{figure}[ht]
 \centering
 \caption{Registry model.  \texttt{WorkingGitTree} is the authoritative
-  in-memory graph; \texttt{WorkingRepo} records both static identity
-  (from \texttt{.cgs}) and dynamic state (from synchronisation operations).}
+  in-memory graph; \texttt{WorkingRepo} \emph{extends} \texttt{GitRepo}
+  (Figure~\ref{fig:core-model}) rather than duplicating its identity
+  fields, adding only the mutable tree-position and synchronisation state
+  below.}
 \label{fig:registry-model}
 
 \begin{tikzpicture}[node distance=1.2cm and 2.0cm]
@@ -294,7 +370,7 @@
 
 % WorkingRepo
 \node[classbox, right=2.2cm of registry] (entry) {
-  \textbf{WorkingRepo}
+  \textbf{WorkingRepo} \textit{(extends GitRepo)}
   \nodepart{two}
   repo\_id / name / node\_type\\
   parent\_id / absolute\_path\\
@@ -303,7 +379,8 @@
   resolved\_ref\_kind / \_name\\
   repo\_lifecycle\_state\\
   sync\_state / discovery\_state\\
-  commit\_sha / fallback\_*
+  \textit{(+ inherited: project\_name,}\\
+  \textit{gitprovider, commit\_sha, ...)}
   \nodepart{three}
   (mutable dataclass)
 };
@@ -347,6 +424,7 @@
 % Arrows
 \draw[comporr] (registry.east) -- node[above, font=\scriptsize]{0..*} (entry.west);
 \draw[hasarrow] (registry.south) -- (treestate.north);
+\draw[inharrow, dashed] (entry.north) -- ++(0,1.0) node[above, font=\scriptsize\itshape]{GitRepo (Fig.~\ref{fig:core-model})};
 \draw[hasarrow] (entry.south west) -- (nodetype.north east);
 \draw[hasarrow] (entry.south) -- (rlc.north);
 \draw[hasarrow] (registry.south east) -- (tlc.north west);
