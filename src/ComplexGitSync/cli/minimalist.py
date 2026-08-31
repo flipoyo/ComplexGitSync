@@ -589,10 +589,16 @@ def _execute_bootstrap(
     print("git_command=git clone (executed per repo)")
     registry = client.bootstrap(source_path, project_name, cgs_path=cgs_path)
     tree_state = client.get_tree_state()
+    root_path = registry.get('root').absolute_path
     print(
         f"{_format_tree_state_line(tree_state)} "
-        f"root={registry.get('root').absolute_path}"
+        f"root={root_path}"
     )
+    # Print CGSHOME setup instructions for user convenience
+    print("\nTo use this workspace, run:")
+    print(f"  export CGSHOME={root_path}")
+    print("\nOr for the current command:")
+    print(f"  CGSHOME={root_path} pixi run cgitsync <command>")
     return 0
 
 

@@ -92,10 +92,26 @@ cd ComplexGitSync
 pixi run cgitsync bootstrap examples/CGSil1.cgs CGSil1
 ```
 
+**Important:** The `bootstrap` command prints the workspace path and CGSHOME
+setup instructions at the end of its output. Since `pixi run` must be
+executed from the ComplexGitSync directory (where `pixi.lock` is located),
+you must tell subsequent commands where to find your workspace by setting
+the `CGSHOME` environment variable:
+
+```bash
+# Copy the export command from bootstrap output, or use:
+export CGSHOME=/home/user/.cgs/CGS20260831131233/CGSil1
+pixi run cgitsync status
+pixi run cgitsync view-tree
+```
+
 Pass `--cgs-path` to place `CGSHOME` somewhere else instead of the
-`$HOME/.cgs/CGS<timestamp>/` default. Every other command (`status`,
-`pull`, `freeze-release`, ...) then works the same way once `CGSHOME` is
-set (either export it, or run from inside the bootstrapped tree).
+`$HOME/.cgs/CGS<timestamp>/` default. For a single command, you can also
+use the `--search-dir` flag:
+
+```bash
+pixi run cgitsync status --search-dir /home/user/.cgs/CGS20260831131233/CGSil1
+```
 
 ## Command reference
 
