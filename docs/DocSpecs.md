@@ -74,6 +74,44 @@ configuration option, and error condition. It must:
 - Documentation changes do not require code review approval, but must not
   contradict the source code.
 
+## Slidev — Presentations and Communication Objects
+
+For communication objects **other than** books, reports, and articles (which are
+produced with LaTeX as described above), **Slidev** is the preferred
+production and editing environment.
+
+Slidev is a Markdown-based slide framework powered by Vite and Vue. It is
+particularly suited for technical presentations, pitch decks, workshops, and
+any visual communication material that benefits from live-coding, animations,
+or interactive components.
+
+### Tooling
+
+| Concern       | Tool                              |
+|---------------|-----------------------------------|
+| Runtime       | Node.js ≥ 20 (Ubuntu 22+)        |
+| Package mgr   | npm                               |
+| Editor        | VS Code (`code`) or VSCodium (`codium`) |
+| Dev server    | `npm run dev` (Slidev/Vite)       |
+
+### Repository Layout
+
+The `slidev/` directory at the root of this repository provides helper scripts:
+
+- **`create_slidev_project.sh`** — scaffolds a new Slidev project.
+- **`launch_slidev_project.sh`** — launches an existing Slidev project (installs
+  deps, opens editor, starts dev server).
+
+### Workflow
+
+```bash
+# Create a new presentation
+./slidev/create_slidev_project.sh MyPresentation
+
+# Later, launch it for editing
+./slidev/launch_slidev_project.sh ./MyPresentation codium
+```
+
 ## Compiler and build requirements
 - Use `pdflatex` as baseline compiler.
 - Because `minted` is used in shared packages, compilation should support shell escape (`minted` calls the external Pygments process for syntax highlighting).

@@ -67,10 +67,9 @@ task's change, not as a separate follow-up.
 | `master.py` | Workspace-local Git identity (`MasterConfig`) for ComplexGitSync's own automated commits; defaults to local git config, overridable/persisted per `CGSHOME` via `.cgitsync/master.toml` — not part of the `.cgs`/`.gts` project spec. |
 | `cli/` | Argument/prompt collection only; delegates all `.cgs`/`.gts` semantics downstream. `_shared.py` (cross-command helpers) + `minimalist.py`/`expert.py`/`configuration.py` (one module per command group, README's own grouping) + `__init__.py` (assembles the parser, exposes `main`). |
 
-See [AgentSpecs/audit.md](AgentSpecs/audit.md) for the full module/ring table and
-[AGENT.md](AGENT.md) for the ring-import rules (downward-only imports,
-`subprocess` confinement, Ring-0 purity, the ceiling ratchet) this
-boundary is checked against.
+See [AgentSpecs/audit.md](AgentSpecs/audit.md) for the full module/ring table
+and its ring-import rules (downward-only imports, `subprocess` confinement,
+Ring-0 purity, the ceiling ratchet) this boundary is checked against.
 
 Data flow: `CLI / Python caller → ComplexGitSyncClient.configure() → cgs_format.py → CgsDocument → GitTree → orchestre.py → registry.py / operations.py → GitRepo / git_runner.py`.
 
@@ -101,8 +100,10 @@ identifiers.
 - `tests/unit/`, `tests/integration/` — pytest suites (`pixi run test` runs both).
 - `examples/*.cgs`, `*.gts` — sample specs used in docs/tests.
 - `docs/` — LaTeX-built reference docs; generated `.aux`/`.log`/etc. are gitignored, the built PDFs are tracked.
-- `AgentSpecs/AdditionalSpecs.md`, `DevSpecs.md`, `AGENT.md` — deeper spec/authoring references beyond this file.
+- `AGENT.md` — a minimal root pointer stating the reading order (this file, then `AgentSpecs/`); carries no rules of its own.
+- `AgentSpecs/AdditionalSpecs.md`, `DevSpecs.md` — deeper spec/authoring references beyond this file.
 - `AgentSpecs/` — active planning tickets and project-specific specs; `AgentSpecs/archive/` — completed/superseded plans, kept as historical record.
+- `AgentSpecs/AGENT.md` — the roster of specialized agent roles for parallel multi-agent work on this project (Dev, CI/CD, Editing, Orchestration, Maths, Scientific editing) and how they hand off work.
 
 ## Document conventions
 

@@ -5,7 +5,15 @@
 This file captures the owner's reusable, project-agnostic development
 principles. Every project that declares conformity to **DevSpecs** must follow
 every section below. Project-specific refinements and additional constraints
-belong in a separate `AdditionalSpecs.md` at the project root.
+belong in a separate `AdditionalSpecs.md`, kept together with this project's
+other deeper spec/authoring references in an `AgentSpecs/` directory at the
+project root (see *Planning* below for the full layout). A minimal `AGENT.md`
+also lives at the project root itself; its only job is to state the reading
+order for an agent onboarding to the project — e.g. the project's own
+command/build-and-test reference first, then `AgentSpecs/` for everything
+else. Keeping it minimal avoids duplicating content that belongs in
+`AgentSpecs/AGENT.md` (the parallel-agent orchestration roster, see
+*Planning*) or `AgentSpecs/audit.md` (project-specific technical rules).
 
 ---
 
@@ -43,7 +51,7 @@ Every stateful managed object progresses through a well-defined set of
 lifecycle states.
 
 - Lifecycle states and their valid transitions must be documented per project
-  in `AdditionalSpecs.md`.
+  in `AgentSpecs/AdditionalSpecs.md`.
 - Transitions must be explicit, validated, and logged.
 - Bootstrapping operations must produce a fully initialised object or fail
   explicitly — partial success is not acceptable.
@@ -65,6 +73,10 @@ Package versions follow `YYYY.XX` calendar versioning.
   `pixi.toml` workspace version, a package `__version__`, a README heading)
   should provide a single dev command that bumps the reference manifest and
   syncs the rest in one step, rather than editing each file by hand.
+- Versioning is integrated into CI for pushes, merges, and pull requests to
+  the main branch; the increment commit requires a direct push by an agent,
+  which needs a `PAT` (Personal/Private Access Token) configured on the
+  Git-hosting platform.
 
 ## Python Environment and Package Management
 
@@ -142,6 +154,16 @@ active plans are always easy to identify.
   keep on explicit request.
 - No planning document is ever hand-edited during an active implementation
   run; it is treated as read-only once the agent starts executing it.
+- **Locality**: `AgentSpecs/` (active and archived alike) is local to the
+  consuming project's own repository. It is never part of the shared
+  `DevSpec` repository this file ships from — a project's planning history
+  is project-specific, and syncing it back into `DevSpec` would leak one
+  project's tickets into every other project that consumes `DevSpecs.md`.
+  A project that mounts `DevSpec` as a submodule keeps `AgentSpecs/` as an
+  ordinary tracked directory of its own, outside the submodule boundary;
+  `DevSpec`'s own `.gitignore` should still exclude ticket-shaped paths
+  (`AgentSpecs/`, `*_DevPlanTicket.md`) as a second line of defense against
+  one getting staged inside the submodule checkout by mistake.
 
 ## Document Conventions
 
@@ -164,14 +186,16 @@ Every project must ship end-user documentation alongside the source code.
   repository.
 - The documentation format is LaTeX; the LaTeX project must be self-contained
   and buildable in isolation.
-- Every `docs/` directory must contain at least two documents:
+- Every `docs/` (or `Doc$ProjectName`) directory must contain at least two
+  documents:
   - **Getting Started** — explains the main workflow step by step, from
     installation through first successful use.
   - **User Guide** — fully documents every user-facing (client API) feature,
     command, and configuration option. Internal implementation details are
     explicitly out of scope.
 - The structure, style, and conventions for the `docs/` LaTeX project are
-  defined in `docs/DocSpecs.md` (project-agnostic) together with any
-  project-specific additions in `AdditionalSpecs.md`.
+  defined in `docs/DocSpec/DocSpecs.md` (project-agnostic) together with any
+  project-specific additions in `AgentSpecs/AdditionalSpecs.md`. This
+  information is accessible through `docs/AGENT.md`.
 - Documentation must be updated in the same PR as the code change that
   introduces or modifies a user-facing feature.
