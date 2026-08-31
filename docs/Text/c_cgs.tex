@@ -1,0 +1,681 @@
+% c_cgs.tex — Exhaustive Simplified Guide to Writing .cgs Files
+\chapter{Writing \.cgs Files: The Complete Authoring Guide}
+\label{chap:cgs-authoring}
+
+This section is the definitive reference for authoring \texttt{.cgs} (ComplexGitSync
+specification) files. It covers both the simplified shorthand syntax suitable for
+most use cases and the full advanced syntax for complex topologies, with practical
+guidelines, complete examples, and common pitfalls.
+
+% =======================================================================
+% WHAT IS A .cgs FILE
+% =======================================================================
+\subsection{What is a \.cgs File?}
+
+A \texttt{.cgs} file is a \textbf{TOML-formatted} specification that describes a tree
+of Git repositories to be managed as a single logical unit. It is the only
+hand-authored input in ComplexGitSync; all other documents (\texttt{.gts},
+\texttt{.lgr}) are generated automatically at runtime.
+
+\textbf{Key properties:}
+
+\begin{itemize}
+  \item \textbf{Offline and deterministic:} Parsing, normalization, and validation
+        require no network access. The same file always produces the same
+        internal representation.
+  \item \textbf{Never modified at runtime:} \texttt{.cgs} files are read-only during
+        execution. Snapshots (\texttt{.gts}) capture workspace state; they do not
+        update the specification.
+  \item \textbf{Two equivalent forms:} A concise shorthand syntax for simple cases,
+        and a verbose inline-table syntax for advanced overrides. Both normalize
+        to the same canonical internal document.
+  \item \textbf{Validation is strict:} Unknown fields, malformed identifiers, duplicates,
+        and missing required keys are rejected before any Git operations begin.
+\end{itemize}
+
+% =======================================================================
+% MINIMAL .cgs: THE SIMPLIFIED FORM
+% =======================================================================
+\subsection{Minimal \.cgs: The Simplified Form}
+\label{subsec:cgs-simplified}
+
+For the vast majority of projects, a \texttt{.cgs} file needs only two top-level
+keys: \texttt{project} (a string) and \texttt{repos} (a list of repository identifiers).
+
+\subsubsection{Basic Structure}
+
+\begin{lstlisting}
+project = "my-project"
+
+repos = [
+    "github:owner/repo1",
+    "gitlab:group/repo2",
+    "codeberg:user/repo3",
+]
+\end{lstlisting}
+
+\subsubsection{Repository Identifier Syntax}
+
+Each repository identifier follows the pattern:
+
+\begin{center}
+\texttt{provider:owner/repository}
+\end{center}
+
+\begin{description}
+  \item[provider] One of the supported Git providers: \texttt{github},
+        \texttt{gitlab}, \texttt{codeberg}, or \texttt{custom}.
+  \item[owner] The owner (user or organization/group) on the provider.
+  \item[repository] The repository name itself.
+\end{description}
+
+Nested namespace paths (e.g., GitLab subgroups) are supported. The final path
+segment is the repository name; all earlier segments join into
+\texttt{project\_owner\_name}:
+
+\begin{lstlisting}
+repos = [
+    "gitlab:my-group/my-subgroup/my-repo",  % 3-level namespace
+    "github:my-org/my-repo",              % 2-level namespace
+]
+\end{lstlisting}
+
+\textbf{Valid providers and their default hosts:}
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Provider} & \textbf{Host} & \textbf{Remotes Generated} \\ \hline
+\texttt{github}   & \texttt{github.com}   & SSH and HTTPS \\
+\texttt{gitlab}   & \texttt{gitlab.com}   & SSH and HTTPS \\
+\texttt{codeberg} & \texttt{codeberg.org} & SSH and HTTPS \\
+\texttt{custom}   & explicit URL required & SSH and HTTPS \\
+\end{tabular}
+\end{center}
+
+% =======================================================================
+% NORMALIZATION
+% =======================================================================
+\subsection{Normalization: What the Simplified Form Expands To}
+\label{subsec:cgs-normalization}
+
+The simplified shorthand is automatically \textbf{normalized} into a complete
+canonical document. Every omitted field receives a deterministic default value.
+
+\subsubsection{Default Values Applied During Normalization}
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Field} & \textbf{Default} & \textbf{Applied To} \\ \hline
+\texttt{format\_version} & \texttt{"1.0"} & document table \\
+\texttt{default\_branch} & \texttt{"main"} & project and each repo \\
+\texttt{fallback\_branch} & \texttt{"main"} & each repo \\
+\texttt{access\_protocol} & \texttt{"ssh"} & each repo \\
+\texttt{nested\_config} & \texttt{"auto"} & each repo \\
+\texttt{relative\_path} & repo name & each repo \\
+\end{tabular}
+\end{center}
+
+\subsubsection{Normalization Example}
+
+The following simplified input:
+
+\begin{lstlisting}
+project = "demo"
+
+repos = [
+    "github:acme/core",
+    "gitlab:acme/utils",
+]
+\end{lstlisting}
+
+Normalizes to this canonical form (conceptually):
+
+\begin{lstlisting}
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "acme"
+project_name = "core"
+repo_name = "core"
+default_branch = "main"
+fallback_branch = "main"
+access_protocol = "ssh"
+nested_config = "auto"
+relative_path = "core"
+
+[[repos]]
+gitprovider = "gitlab"
+project_owner_name = "acme"
+project_name = "utils"
+repo_name = "utils"
+default_branch = "main"
+fallback_branch = "main"
+access_protocol = "ssh"
+nested_config = "auto"
+relative_path = "utils"
+\end{lstlisting}
+
+\textbf{Important:} The project's \texttt{default\_branch} propagates to all repos
+unless explicitly overridden per-repo.
+
+% =======================================================================
+% INLINE TABLE SYNTAX: OVERRIDING DEFAULTS
+% =======================================================================
+\subsection{Inline Table Syntax: Overriding Defaults}
+\label{subsec:cgs-inline}
+
+When a repository needs non-default values for any field, use an \textbf{inline
+table} instead of a plain string. Only the fields that differ from defaults
+need to be specified.
+
+\subsubsection{Common Override Scenarios}
+
+\begin{lstlisting}
+project = "demo"
+
+repos = [
+    % Non-default branch
+    { repository = "github:acme/core", default_branch = "develop" },
+    
+    % Different default and fallback branches
+    { repository = "gitlab:acme/libs", 
+      default_branch = "next", 
+      fallback_branch = "main" },
+    
+    % Custom placement path
+    { repository = "github:acme/docs", 
+      relative_path = "documentation" },
+    
+    % HTTPS access instead of SSH
+    { repository = "codeberg:org/tool", 
+      access_protocol = "https" },
+    
+    % Disable nested config discovery
+    { repository = "github:acme/legacy", 
+      nested_config = "disabled" },
+    
+    % Custom provider with explicit URL
+    { repository = "custom:team/internal", 
+      gitprovider_url = "https://git.internal.company.com" },
+]
+\end{lstlisting}
+
+\subsubsection{Combined Overrides}
+
+Multiple overrides can be combined in a single inline table:
+
+\begin{lstlisting}
+repos = [
+    { repository = "github:acme/web", 
+      relative_path = "apps/web", 
+      default_branch = "production", 
+      fallback_branch = "staging",
+      access_protocol = "https",
+      nested_config = "disabled" },
+]
+\end{lstlisting}
+
+% =======================================================================
+% ADVANCED TABLE SYNTAX: LEGACY FORM
+% =======================================================================
+\subsection{Advanced Table Syntax: Legacy Form}
+\label{subsec:cgs-advanced}
+
+The legacy advanced form uses explicit TOML tables. Fully supported but not
+recommended for new files.
+
+\begin{lstlisting}
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+repository = "github:acme/core"
+
+[[repos]]
+repository = "gitlab:acme/utils"
+default_branch = "develop"
+relative_path = "lib/utils"
+\end{lstlisting}
+
+\textbf{When to use advanced tables:}
+
+\begin{itemize}
+  \item Project-wide settings in the \texttt{[project]} table
+  \item When you prefer visual separation between entries
+  \item For compatibility with old ComplexGitSync versions
+\end{itemize}
+
+\textbf{Note:} The \texttt{[project]} table can also be inline:
+\texttt{project = \{ name = "demo", default\_branch = "main" \}}.
+
+% =======================================================================
+% REPOSITORY PLACEMENT AND PATH RESOLUTION
+% =======================================================================
+\subsection{Repository Placement and Path Resolution}
+\label{subsec:cgs-placement}
+
+\subsubsection{relative\_path: Where Each Repository Lives}
+
+The \texttt{relative\_path} field determines where a repository is cloned relative
+to its parent. Default: the repository name.
+
+\begin{lstlisting}
+% Default: repo cloned at <parent>/repo_name
+repos = ["github:acme/core"]
+
+% Explicit: repo cloned at <parent>/apps/core
+repos = [
+    { repository = "github:acme/core", relative_path = "apps/core" }
+]
+\end{lstlisting}
+
+\subsubsection{Project Root Auto-Mount Rule}
+
+If exactly one repository name matches the project name, its
+\texttt{relative\_path} is automatically set to \texttt{"."}:
+
+\begin{lstlisting}
+project = "CGSil1"
+
+repos = [
+    "gitlab:CGS_test/CGSil1",  % Auto-mounted at "."
+    "gitlab:CGS_test/CGSil2",  % At "./CGSil2"
+    "github:flipoyo/CGSih1",   % At "./CGSih1"
+]
+\end{lstlisting}
+
+Equivalent to:
+
+\begin{lstlisting}
+project = "CGSil1"
+repos = [
+    { repository = "gitlab:CGS_test/CGSil1", relative_path = "." },
+    { repository = "gitlab:CGS_test/CGSil2", relative_path = "CGSil2" },
+    { repository = "github:flipoyo/CGSih1", relative_path = "CGSih1" },
+]
+\end{lstlisting}
+
+\subsubsection{Cross-Repository References}
+
+A repository can reference another repository in the same tree using relative paths:
+
+\begin{lstlisting}
+% In CGSil2.cgs (nested under CGSil2/):
+repos = [
+    { repository = "github:flipoyo/CGSih1", 
+      relative_path = "../CGSih1", 
+      nested_config = "disabled" }
+]
+\end{lstlisting}
+
+Here, \texttt{../CGSih1} resolves from \texttt{<CGSHOME>/CGSil2/} to
+\texttt{<CGSHOME>/CGSih1}, referencing the sibling declared elsewhere.
+
+% =======================================================================
+% NESTED CONFIGURATION DISCOVERY
+% =======================================================================
+\subsection{Nested Configuration Discovery}
+\label{subsec:cgs-nested}
+
+The \texttt{nested\_config} field controls whether ComplexGitSync looks for
+additional \texttt{.cgs} files inside each repository.
+
+\begin{description}
+  \item[\texttt{auto}] (default) Loads the sole root-level \texttt{*.cgs} file if
+        one exists; multiple matches are rejected.
+  \item[\texttt{disabled}] Does not inspect the repository for nested config.
+  \item[a relative path] A path ending in \texttt{.cgs} loads that exact file.
+\end{description}
+
+\subsubsection{Example: Multi-Level Nested Topology}
+
+\begin{lstlisting}
+project = "parent-project"
+
+repos = [
+    "github:org/parent",
+    { repository = "github:org/child-a", nested_config = "auto" },
+    { repository = "github:org/child-b", nested_config = "disabled" },
+    { repository = "github:org/child-c", nested_config = "config/prod.cgs" },
+]
+\end{lstlisting}
+
+% =======================================================================
+% ACCESS PROTOCOLS AND CUSTOM PROVIDERS
+% =======================================================================
+\subsection{Access Protocols and Custom Providers}
+\label{subsec:cgs-protocols}
+
+\subsubsection{SSH vs HTTPS}
+
+Default: SSH. To use HTTPS:
+
+\begin{lstlisting}
+repos = [
+    { repository = "github:owner/repo", access_protocol = "https" },
+]
+\end{lstlisting}
+
+Generated remotes:
+
+\begin{itemize}
+  \item SSH: \texttt{git@github.com:owner/repo.git}
+  \item HTTPS: \texttt{https://github.com/owner/repo.git}
+\end{itemize}
+
+\subsubsection{Custom Git Providers}
+
+For providers not in the built-in list, use \texttt{custom} with explicit URL:
+
+\begin{lstlisting}
+repos = [
+    { repository = "custom:team/project", 
+      gitprovider_url = "https://git.internal.mycompany.com" },
+]
+\end{lstlisting}
+
+\textbf{Important:} \texttt{gitprovider\_url} is \textbf{required} for \texttt{custom}.
+
+\begin{lstlisting}
+% INCORRECT - will fail validation
+repos = ["custom:team/project"]
+
+% CORRECT
+repos = [
+    { repository = "custom:team/project", 
+      gitprovider_url = "https://git.internal.company.com" }
+]
+\end{lstlisting}
+
+% =======================================================================
+% BRANCHES
+% =======================================================================
+\subsection{Branches: default\_branch and fallback\_branch}
+\label{subsec:cgs-branches}
+
+\subsubsection{Branch Resolution Order}
+
+When cloning or pulling:
+
+\begin{enumerate}
+  \item Repository's \texttt{default\_branch}
+  \item Project's \texttt{default\_branch}
+  \item Repository's \texttt{fallback\_branch}
+  \item Project's \texttt{fallback\_branch} (defaults to \texttt{main})
+\end{enumerate}
+
+\subsubsection{Practical Branch Patterns}
+
+\begin{lstlisting}
+% All repos use "main" (default)
+project = "my-project"
+repos = ["github:owner/repo1", "github:owner/repo2"]
+
+% All repos default to "develop"
+project = { name = "my-project", default_branch = "develop" }
+repos = ["github:owner/repo1", "github:owner/repo2"]
+
+% Per-repo overrides
+project = "my-project"
+repos = [
+    "github:owner/core",                    % Uses default "main"
+    { repository = "github:owner/feature", default_branch = "dev" },
+    { repository = "github:owner/stable", 
+      default_branch = "release", fallback_branch = "main" },
+]
+\end{lstlisting}
+
+% =======================================================================
+% COMPLETE FIELD REFERENCE
+% =======================================================================
+\subsection{Complete Reference: All Recognized Fields}
+\label{subsec:cgs-fields}
+
+\subsubsection{Top-Level Fields}
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Field} & \textbf{Type} & \textbf{Required} & \textbf{Default} \\ \hline
+\texttt{project} & string or table & yes & — \\
+\texttt{repos} & list & yes & — \\
+\texttt{document} & table & no & \texttt{\{format\_version = "1.0"\}} \\
+\end{tabular}
+\end{center}
+
+\subsubsection{Project Table Fields}
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Field} & \textbf{Type} & \textbf{Required} & \textbf{Default} \\ \hline
+\texttt{name} & string & yes & — \\
+\texttt{default\_branch} & string & no & \texttt{"main"} \\
+\end{tabular}
+\end{center}
+
+\subsubsection{Repository Fields}
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Field} & \textbf{Type} & \textbf{Required} & \textbf{Default} \\ \hline
+\texttt{repository} & string & yes* & — \\
+\texttt{gitprovider} & string & no & from \texttt{repository} \\
+\texttt{project\_owner\_name} & string & no & from \texttt{repository} \\
+\texttt{project\_name} & string & no & from \texttt{repository} \\
+\texttt{repo\_name} & string & no & from \texttt{repository} \\
+\texttt{default\_branch} & string & no & from project or \texttt{"main"} \\
+\texttt{fallback\_branch} & string & no & \texttt{"main"} \\
+\texttt{access\_protocol} & string & no & \texttt{"ssh"} \\
+\texttt{relative\_path} & string & no & repo name (or "." if matches project) \\
+\texttt{nested\_config} & string & no & \texttt{"auto"} \\
+\texttt{gitprovider\_url} & string & no** & — \\ \hline
+\end{tabular}
+\end{center}
+
+\begin{itemize}
+  \item[*] Either \texttt{repository} (shorthand) or the combination of
+        \texttt{gitprovider}, \texttt{project\_owner\_name}, \texttt{project\_name}
+        is required.
+  \item[**] \texttt{gitprovider\_url} is required when \texttt{gitprovider = "custom"}.
+\end{itemize}
+
+% =======================================================================
+% PRACTICAL EXAMPLES
+% =======================================================================
+\subsection{Practical Examples}
+\label{subsec:cgs-examples}
+
+\subsubsection{Example 1: Simple Monorepo-Style Project}
+
+\begin{lstlisting}
+project = "my-app"
+
+repos = [
+    "github:myorg/my-app",    % Root (auto-mounted at ".")
+    "github:myorg/core",     % At ./core
+    "github:myorg/ui",       % At ./ui
+    "github:myorg/api",      % At ./api
+]
+\end{lstlisting}
+
+\subsubsection{Example 2: Mixed Providers with Custom Branches}
+
+\begin{lstlisting}
+project = "cross-provider"
+
+repos = [
+    "github:myorg/main-repo",
+    { repository = "gitlab:mygroup/data", default_branch = "data-main" },
+    { repository = "codeberg:user/tools", access_protocol = "https" },
+]
+\end{lstlisting}
+
+\subsubsection{Example 3: Complex Topology with Nested Configs}
+
+\begin{lstlisting}
+project = "big-system"
+
+repos = [
+    "github:org/root",
+    { repository = "github:org/frontend", 
+      relative_path = "apps/frontend", nested_config = "auto" },
+    { repository = "github:org/database", 
+      relative_path = "infra/db", nested_config = "disabled" },
+    { repository = "github:thirdparty/lib", 
+      relative_path = "external/thirdparty-lib", nested_config = "disabled" },
+]
+\end{lstlisting}
+
+\subsubsection{Example 4: Real-World (cawaqsviz)}
+
+Based on \texttt{examples/cawaqsviz.cgs}:
+
+\begin{lstlisting}
+project = { name = "CaWaQS-Viz", default_branch = "main" }
+
+repos = [
+    { repository = "gitlab:cawaqs/gviz/cawaqsviz", 
+      relative_path = ".", fallback_branch = "main" },
+    { repository = "github:flipoyo/HydrologicalTwinAlphaSeries", 
+      relative_path = "external/HydrologicalTwinAlphaSeries", 
+      fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/user_guide_CaWaQS-Viz", 
+      relative_path = "docs/CWV_user_guide", 
+      fallback_branch = "main", nested_config = "disabled" },
+]
+\end{lstlisting}
+
+% =======================================================================
+% CLI AUTHORING TOOLS
+% =======================================================================
+\subsection{Authoring with CLI Tools}
+\label{subsec:cgs-cli-authoring}
+
+You do not need to write \texttt{.cgs} files by hand.
+
+\subsubsection{discover: Scan an Existing Checkout}
+
+\begin{lstlisting}[language=bash]
+$ pixi run cgitsync discover ~/work/myproject --write draft.cgs
+$ pixi run cgitsync validate draft.cgs
+\end{lstlisting}
+
+\subsubsection{configure: Interactive Prompt}
+
+\begin{lstlisting}[language=bash]
+$ pixi run cgitsync configure --output myproject.cgs
+\end{lstlisting}
+
+\subsubsection{create-cgs: Direct CLI Authoring}
+
+\begin{lstlisting}[language=bash]
+$ pixi run cgitsync create-cgs \
+    --project myproject \
+    --repo github:owner/repo1 \
+    --repo gitlab:group/repo2 \
+    --output myproject.cgs
+\end{lstlisting}
+
+All three use the same offline pipeline as direct TOML parsing.
+
+% =======================================================================
+% VALIDATION AND COMMON ERRORS
+% =======================================================================
+\subsection{Validation and Common Errors}
+\label{subsec:cgs-validation}
+
+Always validate before use:
+
+\begin{lstlisting}[language=bash]
+$ pixi run cgitsync validate myproject.cgs
+\end{lstlisting}
+
+\subsubsection{Validation Checks}
+
+\begin{itemize}
+  \item Presence of required keys (\texttt{project}, \texttt{repos})
+  \item Valid repository identifier syntax
+  \item Known provider names or custom with URL
+  \item \texttt{custom} providers have \texttt{gitprovider\_url}
+  \item Valid \texttt{nested\_config} values
+  \item Valid \texttt{access\_protocol} values
+  \item No duplicate repository declarations
+  \item Non-empty strings for all text fields
+\end{itemize}
+
+\subsubsection{Common Errors and Fixes}
+
+\begin{description}
+  \item[\texttt{project is required}] Add \texttt{project = "name"}.
+  \item[\texttt{repos is required}] Add \texttt{repos = [...]}. 
+  \item[\texttt{expected 'provider:owner/repository'}] Fix identifier syntax.
+  \item[\texttt{gitprovider\_url is required for custom provider}]
+        Add \texttt{gitprovider\_url = "https://..."}.
+  \item[\texttt{duplicate repository}] Remove one or make \texttt{relative\_path}
+        distinct.
+  \item[\texttt{nested\_config must be auto, disabled, or a path}]
+        Use valid value. Paths must end in \texttt{.cgs}.
+\end{description}
+
+% =======================================================================
+% TEMPLATES AND STARTING POINTS
+% =======================================================================
+\subsection{Templates and Starting Points}
+\label{subsec:cgs-templates}
+
+\subsubsection{Template Files}
+
+\begin{description}
+  \item[\texttt{examples/template.cgs}] Copy for normal authoring.
+  \item[\texttt{examples/normalized\_template.cgs}] Reference for canonical form.
+\end{description}
+
+\subsubsection{Quick Start Checklist}
+
+\begin{enumerate}
+  \item Copy \texttt{examples/template.cgs} to \texttt{<your-project>.cgs}
+  \item Edit \texttt{project} name
+  \item Add repositories to \texttt{repos} list
+  \item Override defaults only when necessary
+  \item Validate: \texttt{pixi run cgitsync validate <file>.cgs}
+  \item Initialize: \texttt{pixi run cgitsync initialise <file>.cgs}
+\end{enumerate}
+
+% =======================================================================
+% BEST PRACTICES
+% =======================================================================
+\subsection{Best Practices}
+\label{subsec:cgs-best-practices}
+
+\begin{itemize}
+  \item \textbf{Start simple:} Use plain strings until you need overrides.
+  \item \textbf{Use auto-mount:} Name one repo after project for automatic root.
+  \item \textbf{Validate early and often:} After every edit.
+  \item \textbf{Keep comments:} Document non-default values.
+  \item \textbf{Avoid advanced tables:} Inline tables are more maintainable.
+  \item \textbf{Use \texttt{nested\_config = "disabled"} judiciously:}
+        Only when certain repo has no \texttt{.cgs}.
+  \item \textbf{Prefer SSH:} Works well for most providers.
+  \item \textbf{Be explicit with custom:} Always include \texttt{gitprovider\_url}.
+\end{itemize}
+
+% =======================================================================
+% ROUND-TRIP GUARANTEE
+% =======================================================================
+\subsection{Internal Round-Trip Guarantee}
+\label{subsec:cgs-roundtrip}
+
+ComplexGitSync guarantees a semantic round-trip:
+
+\begin{center}
+\texttt{.cgs $\rightarrow$ CgsDocument $\rightarrow$ GitTree $\rightarrow$ CgsDocument $\rightarrow$ .cgs}
+\end{center}
+
+Parsing and normalizing a generated \texttt{.cgs} reproduces the canonical document.
+Whitespace and comments need not match byte-for-byte, but semantics must.
