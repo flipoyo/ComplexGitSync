@@ -25,6 +25,16 @@
       "loc": 243,
       "public_symbols": 0
     },
+    "cli/configuration.py": {
+      "internal_imports": 6,
+      "loc": 279,
+      "public_symbols": 1
+    },
+    "cli/expert.py": {
+      "internal_imports": 12,
+      "loc": 676,
+      "public_symbols": 1
+    },
     "cli/minimalist.py": {
       "internal_imports": 13,
       "loc": 613,
