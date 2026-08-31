@@ -171,7 +171,7 @@ not just in some verbose mode, since there is no other mode yet:
 
 ### M1.5 Docs
 
-- `audit.md` — `git_tree.py`'s responsibility row gains ".gitignore
+- `AgentSpecs/audit.md` — `git_tree.py`'s responsibility row gains ".gitignore
   maintenance across the tree." `git_repo.py`'s row is unaffected.
 - `AdditionalSpecs.md` / `README.md` — document the new `GT-GITIGNORE`
   lifecycle phase and that it only writes + reports, never commits.
@@ -386,7 +386,7 @@ class MasterConfig:
 
 ### M3.3 Docs
 
-- `audit.md` — new row for `master.py`: "Local, workspace-scoped Git
+- `AgentSpecs/audit.md` — new row for `master.py`: "Local, workspace-scoped Git
   identity configuration for ComplexGitSync's own automated commits;
   defaults to local git config, overridable and persisted per CGSHOME
   workspace via CLI — not part of the `.cgs`/`.gts` project spec."

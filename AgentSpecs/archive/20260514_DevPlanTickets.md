@@ -529,7 +529,7 @@ manifest content in emitted `.gts` files.
 - Added new figure source `docs/figures/positioning_matrix.tex` and linked it
   from the architecture chapter.
 - Completed an external compatibility check against `DevSpecs.md` and added
-  security follow-up ticket proposals to `audit.md`.
+  security follow-up ticket proposals to `AgentSpecs/audit.md`.
 
 ### T38 — Terminal Visualisation Views (`view_tree`, `view_operation`) (Medium)
 **Type**: UX / Observability  

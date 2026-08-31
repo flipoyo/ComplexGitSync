@@ -403,7 +403,7 @@ verified 2026-08-28 — re-run rather than trust these if time has passed.)
 - Update `CLAUDE.md`'s Layout section: it currently lists `archive/` as a
   separate top-level entry alongside `AgentSpecs/` — collapse to one line
   now that there's one location.
-- `audit.md` already says "kept under `AgentSpecs/` and `archive/`" (fixed
+- `AgentSpecs/audit.md` already says "kept under `AgentSpecs/` and `archive/`" (fixed
   during the timestamping pass) — update to name `AgentSpecs/archive/`
   alone.
 

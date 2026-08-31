@@ -111,7 +111,7 @@ mid-ticket.
 
 ### 1.2 `docs/DevGuide/` format: Markdown + Mermaid, not LaTeX
 
-**Recommendation: Markdown, not `.tex`.** `AGENT.md`, `audit.md`, and this
+**Recommendation: Markdown, not `.tex`.** `AGENT.md`, `AgentSpecs/audit.md`, and this
 ticket itself are already Markdown+Mermaid, no build step, fast to update,
 readable directly on GitHub and by any agent without a LaTeX toolchain. A
 dev guide meant to stay current alongside a codebase that's still being

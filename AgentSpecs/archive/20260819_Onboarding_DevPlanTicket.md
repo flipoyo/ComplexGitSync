@@ -231,7 +231,7 @@ one-time manual run against the live repos. Both are now done:
   and a pointer to the new integration test and the 2026-08-25 live-repo
   run above. Phase 2's documentation deliverable extends this same
   section rather than duplicating it.
-- `audit.md`: **no change** — confirmed, this phase touched no module
+- `AgentSpecs/audit.md`: **no change** — confirmed, this phase touched no module
   boundary (only `examples/`, `tests/integration/`, and `docs/`).
 
 ### Minor CLI gap noticed in passing (not blocking, worth a follow-up ticket)
@@ -344,7 +344,7 @@ ComplexGitSync owns the two children instead.
 - Extend the `cawaqsviz` walkthrough started in Phase 1's documentation
   deliverable with the actual before/after: `.gitmodules` in, plain clones
   + `.gitignore` out.
-- `audit.md`: update the `orchestre.py` row's responsibility description
+- `AgentSpecs/audit.md`: update the `orchestre.py` row's responsibility description
   to mention `.gitmodules`-based migration alongside "Git execution,
   orchestration" — this is a new capability inside an existing module, not
   a new module, but the audit table is a responsibility *description*, and
@@ -563,7 +563,7 @@ above); no new Python/CLI surface is required to *produce* this file.
   `make`/compile half — including the `LIB_HYDROSYSTEM_PATH` caveat from
   Finding 6, so nobody tries to bootstrap into the shared/decoupled layout
   and wonders why it doesn't work.
-- `audit.md`: **no change** — no module boundary moves in this phase.
+- `AgentSpecs/audit.md`: **no change** — no module boundary moves in this phase.
 
 ---
 

@@ -33,7 +33,7 @@ ring new code belongs in, or before wiring a new internal import.
 
 **What you need to do with it.** Nothing by default. Update §2's graph and
 §3's table when a module is added, removed, renamed, or moved between
-rings — same discipline `CLAUDE.md` already asks for `audit.md`.
+rings — same discipline `CLAUDE.md` already asks for `AgentSpecs/audit.md`.
 
 ```mermaid
 graph TD

@@ -35,7 +35,7 @@ Do all of these as part of the change, not as a follow-up:
 3. **Rebuild the docs if you changed them.** `bump-version` rewrites `.tex`
    sources but does *not* regenerate the tracked PDFs:
    `cd docs && latexmk -pdf MASTER.tex` (plus each `c_*.tex` you touched).
-4. **Update `audit.md`** if module responsibility moved (see below).
+4. **Update `AgentSpecs/audit.md`** if module responsibility moved (see below).
 5. **Document any new CLI command** in the README command table *and*
    `docs/Text/user_guide.tex`, and its client method in
    `docs/Text/api_python.tex`. The README half is enforced by
@@ -44,9 +44,9 @@ Do all of these as part of the change, not as a follow-up:
 ## Architecture boundary
 
 The module responsibilities are strict and audited — see
-[audit.md](audit.md) for the full write-up. Summary:
+[AgentSpecs/audit.md](AgentSpecs/audit.md) for the full write-up. Summary:
 
-Update `audit.md`'s responsibility table and dependency-path diagram
+Update `AgentSpecs/audit.md`'s responsibility table and dependency-path diagram
 whenever a task adds, removes, or moves module responsibility (new module,
 changed delegation, changed boundary) — before committing, as part of that
 task's change, not as a separate follow-up.
@@ -67,7 +67,7 @@ task's change, not as a separate follow-up.
 | `master.py` | Workspace-local Git identity (`MasterConfig`) for ComplexGitSync's own automated commits; defaults to local git config, overridable/persisted per `CGSHOME` via `.cgitsync/master.toml` — not part of the `.cgs`/`.gts` project spec. |
 | `cli/` | Argument/prompt collection only; delegates all `.cgs`/`.gts` semantics downstream. `_shared.py` (cross-command helpers) + `minimalist.py`/`expert.py`/`configuration.py` (one module per command group, README's own grouping) + `__init__.py` (assembles the parser, exposes `main`). |
 
-See [audit.md](audit.md) for the full module/ring table and
+See [AgentSpecs/audit.md](AgentSpecs/audit.md) for the full module/ring table and
 [AGENT.md](AGENT.md) for the ring-import rules (downward-only imports,
 `subprocess` confinement, Ring-0 purity, the ceiling ratchet) this
 boundary is checked against.
@@ -113,7 +113,7 @@ separation, length, one authoritative file per purpose. It applies to every
 
 Every created document — specs (`DevSpecs.md`, `AgentSpecs/AdditionalSpecs.md`),
 planning tickets (`DevPlan*.md`, `DevPlanTickets*.md`, `CorPlan.md`-style
-plans), `audit.md`, `README.md`, and `docs/tutorials/*.md` — opens with a
+plans), `AgentSpecs/audit.md`, `README.md`, and `docs/tutorials/*.md` — opens with a
 `*Created: YYYY-MM-DD*` line directly under its `# ` title, set once at
 authoring time and never rewritten on later edits. It records when the
 document was written, not when it was last touched: a "last updated" claim

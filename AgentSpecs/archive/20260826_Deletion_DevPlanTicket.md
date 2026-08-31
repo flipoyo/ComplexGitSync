@@ -219,10 +219,10 @@ grep -rn "TODO\|FIXME\|XXX\|HACK\|DEPRECATED" src/ComplexGitSync/
 
 ## D7 — Repository root  `DELETE` — **done, 2026-08-27 (deviated from ticket, by operator decision)**
 
-**Keep:** `README.md`, `AGENT.md`, `DevSpecs.md`, `audit.md`, `LICENSE`.
+**Keep:** `README.md`, `AGENT.md`, `DevSpecs.md`, `AgentSpecs/audit.md`, `LICENSE`.
 
 **Delete:** `CorPlan.md`, `UPDATEFILES.md`, `Planning/`, `archive/`, and
-`AdditionalSpecs.md` unless `audit.md` genuinely does not cover its content.
+`AdditionalSpecs.md` unless `AgentSpecs/audit.md` genuinely does not cover its content.
 
 **Outcome:** none of this step's assumptions held up under verification —
 `CorPlan.md` was never at root (only `planning/CorPlan.md`); `UPDATEFILES.md`
@@ -238,13 +238,13 @@ as three separate decisions rather than executed on the ticket's default:
    from "git history is the archive": `archive/`'s ~7 historical planning
    docs and the still-referenced tickets under (the renamed) `AgentSpecs/`
    were judged worth keeping as navigable files, not buried in git log.
-3. **`AdditionalSpecs.md`** — kept, not folded into `audit.md` (operator:
+3. **`AdditionalSpecs.md`** — kept, not folded into `AgentSpecs/audit.md` (operator:
    they serve different purposes and shouldn't be merged). Instead: moved
    into the planning folder, and that folder renamed `planning/` →
    `AgentSpecs/` (now holding `AdditionalSpecs.md` alongside the planning
    tickets). Every cross-reference to the old `planning/`/root-level
    `AdditionalSpecs.md` paths was updated in the live docs (`AGENT.md`,
-   `CLAUDE.md`, `audit.md`, `docs/Text/user_guide.tex`,
+   `CLAUDE.md`, `AgentSpecs/audit.md`, `docs/Text/user_guide.tex`,
    `docs/tutorials/03_configuration_discovery_modes.md`); `DevSpecs.md` and
    `docs/DocSpecs.md` were left untouched since both are explicitly
    project-agnostic templates describing a generic convention, not this
@@ -301,7 +301,7 @@ per-file percentages.
 
 **Root-level `.md` files landed at 5, not the target 4**, because the
 ticket's own "Keep" list (`README.md`, `AGENT.md`, `DevSpecs.md`,
-`audit.md`) omitted `CLAUDE.md` — which did not exist, or was not
+`AgentSpecs/audit.md`) omitted `CLAUDE.md` — which did not exist, or was not
 considered, when this ticket was written, but is self-evidently load-bearing
 (it is the active Claude Code project-instructions file) and was never a
 candidate for deletion. 5 is the honest count with `CLAUDE.md` correctly

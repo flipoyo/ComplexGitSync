@@ -58,7 +58,7 @@ Keep it to eight nodes or fewer. If the graph needs a legend, it is too complex.
 | `specs.md` | developers | features, architecture, acceptance criteria |
 | `docs/` | mixed, labelled per file | procedures, references, technical notes |
 | `.agent/SKILL.md` | agents + reviewers | capability verbs, zone, autonomy, review rule |
-| `audit.md` | decision-makers | findings, risks, decisions required |
+| `AgentSpecs/audit.md` | decision-makers | findings, risks, decisions required |
 
 A root `README.md` never contains build internals, API contracts, or CI
 configuration. Those move to `specs.md` or `docs/`, and the README links to them.
