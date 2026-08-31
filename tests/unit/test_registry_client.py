@@ -1092,6 +1092,45 @@ def test_discover_nested_configs_rejects_ambiguous_auto_discovery(tmp_path):
         client.discover_nested_configs()
 
 
+def test_assert_nested_discovery_complete_raises_on_missing_explicit_path(tmp_path):
+    """An explicit nested_config path that doesn't exist must still fail
+    ``_assert_nested_discovery_complete`` — this is the one MISSING case that
+    stays a real error after "auto" finding nothing was fixed to RESOLVED."""
+    root_cgs = tmp_path / "project.cgs"
+    root_cgs.write_text(
+        """
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "demo"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "child-repo"
+relative_path = "deps/child-repo"
+nested_config = "named.cgs"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "deps" / "child-repo").mkdir(parents=True)
+
+    client = ComplexGitSyncClient()
+    client.load_cgs(root_cgs, discover_nested=True)
+
+    with pytest.raises(GitSyncError, match="is not resolved: MISSING"):
+        client._assert_nested_discovery_complete()
+
+
 def test_tree_rendering_is_serialized_for_review(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     client = ComplexGitSyncClient()

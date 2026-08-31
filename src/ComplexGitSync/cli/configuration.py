@@ -298,7 +298,7 @@ def _execute_discover(
         print(f"      remote: {repo.remote_url or '(none)'}")
         print(f"      id:     {repo.identifier or '(unresolved)'}")
         print(f"      branch: {repo.branch or '(detached)'}")
-        print(f"      nested: {'auto (has its own .cgs)' if repo.has_cgs else 'disabled'}")
+        print(f"      nested: {'auto (has its own .cgs)' if repo.has_cgs else 'auto (no .cgs of its own)'}")
         print()
 
     if report.warnings:

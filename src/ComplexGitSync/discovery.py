@@ -65,9 +65,15 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
             entry.discovery_state = DiscoveryState.MISSING
             continue
 
-        nested_path = _resolve_nested_config_path(entry.absolute_path, entry.nested_config or "auto")
+        effective_nested_config = entry.nested_config or "auto"
+        nested_path = _resolve_nested_config_path(entry.absolute_path, effective_nested_config)
         if nested_path is None:
-            entry.discovery_state = DiscoveryState.MISSING
+            # "auto" finding zero *.cgs files is a normal leaf, not a
+            # mistake — only an explicit path that doesn't exist is a real
+            # error, since the user asserted a specific file must be there.
+            entry.discovery_state = (
+                DiscoveryState.RESOLVED if effective_nested_config == "auto" else DiscoveryState.MISSING
+            )
             continue
 
         nested_document = CgsDocument.from_toml(nested_path)

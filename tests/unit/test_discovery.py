@@ -31,7 +31,7 @@ from ComplexGitSync.discovery import (
     discover_nested_configs,
 )
 from ComplexGitSync.errors import NestedConfigDiscoveryError
-from ComplexGitSync.git_repo import NodeType
+from ComplexGitSync.git_repo import DiscoveryState, NodeType
 from ComplexGitSync.orchestre import build_registry_from_cgs_document
 
 
@@ -221,6 +221,53 @@ relative_path = "../parent2"
         parent2_entries = [e for e in registry.values() if e.name == "parent2"]
         assert len(parent2_entries) == 1
         assert parent2_entries[0].parent_id == "root"
+
+    def test_auto_with_zero_matches_resolves_not_missing(self, tmp_path):
+        """A leaf repo with nested_config="auto" and no *.cgs of its own must
+        resolve as a normal RESOLVED leaf, not a MISSING error."""
+        config_path = _write_root_cgs(tmp_path, nested_child=True)
+        (tmp_path / "deps" / "child-repo").mkdir(parents=True)
+
+        registry = _load_registry(config_path, discover_nested=True)
+
+        child_entry = registry.get("root:deps/child-repo")
+        assert child_entry.discovery_state == DiscoveryState.RESOLVED
+
+    def test_explicit_missing_path_stays_missing(self, tmp_path):
+        """An explicit nested_config path that doesn't exist is still a real
+        mistake and must stay MISSING, unlike "auto" finding nothing."""
+        root_cgs = tmp_path / "project.cgs"
+        root_cgs.write_text(
+            """
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "demo"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "child-repo"
+relative_path = "deps/child-repo"
+nested_config = "named.cgs"
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "deps" / "child-repo").mkdir(parents=True)
+
+        registry = _load_registry(root_cgs, discover_nested=True)
+
+        child_entry = registry.get("root:deps/child-repo")
+        assert child_entry.discovery_state == DiscoveryState.MISSING
 
 
 class TestResolveNestedConfigPath:

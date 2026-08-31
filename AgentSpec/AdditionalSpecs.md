@@ -98,7 +98,7 @@ Supporting enumerations:
 | `TreeLifecycleState` | user-facing: LOADED → PENDING → READY; implementation retains internal readiness states |
 | `RepoLifecycleState` | DECLARED → PENDING → READY / FALLBACK_READY; side: MISSING, ERROR |
 | `SyncState` | ALIGNED / FALLBACK_APPLIED / DIRTY / AHEAD / BEHIND / DIVERGED / ERROR / PENDING |
-| `DiscoveryState` | PENDING / RESOLVED / DISABLED / MISSING / AMBIGUOUS |
+| `DiscoveryState` | PENDING / RESOLVED / DISABLED / MISSING |
 | `RefKind` | AUTO / BRANCH / TAG / DETACHED / UNKNOWN |
 | `GitProvider` | github / gitlab / codeberg / custom |
 | `AccessProtocol` | ssh / https |

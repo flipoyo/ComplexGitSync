@@ -140,7 +140,6 @@ class DiscoveryState(StrEnum):
     RESOLVED = "RESOLVED"
     DISABLED = "DISABLED"
     MISSING = "MISSING"
-    AMBIGUOUS = "AMBIGUOUS"
 
 
 # ---------------------------------------------------------------------------

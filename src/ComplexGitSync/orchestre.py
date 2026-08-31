@@ -844,9 +844,9 @@ class DiscoveredRepo:
         Currently checked-out branch, or ``None`` on a detached HEAD.
     has_cgs:
         ``True`` when the repository already contains its own ``*.cgs``.
-        Drives ``nested_config`` in the generated draft: a child without one
-        must be ``"disabled"``, or nested discovery looks for a file that
-        does not exist and the clone fails.
+        Informational only: the generated draft leaves ``nested_config``
+        unset either way, since the default ``"auto"`` already resolves
+        cleanly whether or not a nested ``.cgs`` is present.
     """
 
     relative_path: str
@@ -1085,7 +1085,6 @@ class ComplexGitSyncClient:
                 "repository": identifier,
                 "relative_path": sub.path,
                 "fallback_branch": sub.branch,
-                "nested_config": "disabled",
             }
             cgs_entries.append(entry)
 
@@ -1298,11 +1297,9 @@ class ComplexGitSyncClient:
             }
             if repo.branch:
                 entry["fallback_branch"] = repo.branch
-            # A repository with no .cgs of its own must not be left on the
-            # default "auto", which would make nested discovery hunt for a
-            # file that does not exist and fail the clone.
-            if not repo.has_cgs:
-                entry["nested_config"] = "disabled"
+            # A repository with no .cgs of its own resolves cleanly on the
+            # default "auto" (zero matches -> RESOLVED), so it is left
+            # unset here rather than pinned to "disabled".
             cgs_entries.append(entry)
 
         self._log_event(

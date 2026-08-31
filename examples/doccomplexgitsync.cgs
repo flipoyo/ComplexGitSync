@@ -1,9 +1,10 @@
-# Nested documentation tree. DocComplexGitSync is inferred as the root and
-# DocSpec keeps automatic discovery disabled.
+# Nested documentation tree. DocComplexGitSync is inferred as the root;
+# DocSpec has no .cgs of its own, so the default "auto" discovery resolves
+# it as a normal leaf.
 
 project = { name = "DocComplexGitSync", default_branch = "autoTest" }
 
 repos = [
     { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main" },
-    { repository = "github:flipoyo/DocSpec", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/DocSpec", fallback_branch = "main" },
 ]

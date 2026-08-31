@@ -6,16 +6,15 @@
 # and "github:flipoyo/CWV_user_guide" 404s — the real GitHub repo is
 # user_guide_CaWaQS-Viz; CWV_user_guide is only its local directory name.
 # relative_path is explicit everywhere rather than relying on the
-# name-matching auto-mount convention (cgs_format.py:187-209).
-# nested_config = "disabled" on both children: neither
+# name-matching auto-mount convention (cgs_format.py:187-209). Neither
 # HydrologicalTwinAlphaSeries nor user_guide_CaWaQS-Viz has a .cgs of its
-# own (verified against the live repos), so the default "auto" nested
-# discovery would fail looking for one that doesn't exist.
+# own (verified against the live repos); the default "auto" nested
+# discovery resolves that to a normal leaf, so no override is needed.
 
 project = { name = "CaWaQS-Viz", default_branch = "main" }
 
 repos = [
     { repository = "gitlab:cawaqs/gviz/cawaqsviz", relative_path = ".", fallback_branch = "main" },
-    { repository = "github:flipoyo/HydrologicalTwinAlphaSeries", relative_path = "external/HydrologicalTwinAlphaSeries", fallback_branch = "main", nested_config = "disabled" },
-    { repository = "github:flipoyo/user_guide_CaWaQS-Viz", relative_path = "docs/CWV_user_guide", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/HydrologicalTwinAlphaSeries", relative_path = "external/HydrologicalTwinAlphaSeries", fallback_branch = "main" },
+    { repository = "github:flipoyo/user_guide_CaWaQS-Viz", relative_path = "docs/CWV_user_guide", fallback_branch = "main" },
 ]

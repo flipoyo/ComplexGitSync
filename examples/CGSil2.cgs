@@ -1,11 +1,13 @@
 # This file describes the tree below the CGSil2 repository. Paths are relative
 # to CGSil2, so ../CGSih1 resolves to the existing CGSih1 sibling in the parent
-# CGSil1 workspace. Discovery is disabled on this cross-reference: CGSih1's
-# canonical entry in CGSil1.cgs is responsible for reading CGSih1.cgs.
+# CGSil1 workspace. No nested_config override is needed on this cross-
+# reference: the absolute-path dedup guard in discover_nested_configs()
+# already skips re-registering CGSih1 (already registered as CGSil1's own
+# child) before its "auto" default ever gets a chance to reopen CGSih1.cgs.
 
 project = "CGSil2"
 
 repos = [
     "gitlab:CGS_test/CGSil2",
-    { repository = "github:flipoyo/CGSih1", relative_path = "../CGSih1", nested_config = "disabled" },
+    { repository = "github:flipoyo/CGSih1", relative_path = "../CGSih1" },
 ]

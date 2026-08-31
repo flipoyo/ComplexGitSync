@@ -1,9 +1,11 @@
 # Nested CGSih2 topology. The CGSih1 entry is the cycle back-reference, so its
-# parent-relative path and disabled discovery are explicit advanced overrides.
+# parent-relative path is an explicit advanced override; no nested_config
+# override is needed since the absolute-path dedup guard already prevents
+# CGSih1 from being re-registered through this back-reference.
 
 project = "CGSih2"
 
 repos = [
     "github:flipoyo/CGSih2",
-    { repository = "github:flipoyo/CGSih1", relative_path = "..", nested_config = "disabled" },
+    { repository = "github:flipoyo/CGSih1", relative_path = ".." },
 ]

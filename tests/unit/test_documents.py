@@ -571,7 +571,7 @@ class TestCgsDocumentValid:
         assert doc.repos[0]["relative_path"] == "."
         assert doc.repos[-1]["project_owner_name"] == "gutil"
         assert doc.repos[-1]["project_name"] == "scripts"
-        assert doc.repos[-1]["nested_config"] == "disabled"
+        assert doc.repos[-1]["nested_config"] == "auto"
         assert all(repo["fallback_branch"] == "main" for repo in doc.repos)
 
     def test_all_cgs_examples_use_shorthand_authoring_shape(self):

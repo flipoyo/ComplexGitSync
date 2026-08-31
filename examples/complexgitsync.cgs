@@ -5,6 +5,6 @@ project = { name = "ComplexGitSync", default_branch = "autoTest" }
 
 repos = [
     { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
-    { repository = "github:flipoyo/DevSpec", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/DevSpec", fallback_branch = "main" },
     { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "doccomplexgitsync.cgs" },
 ]

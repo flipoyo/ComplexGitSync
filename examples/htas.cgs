@@ -1,9 +1,9 @@
-# HydrologicalTwinAlphaSeries nested topology. The leaf disables further
-# discovery; all repositories use autoTest with main as fallback.
+# HydrologicalTwinAlphaSeries nested topology. hydrological_twin has no
+# .cgs of its own; all repositories use autoTest with main as fallback.
 
 project = { name = "HydrologicalTwinAlphaSeries", default_branch = "autoTest" }
 
 repos = [
     { repository = "github:flipoyo/HydrologicalTwinAlphaSeries", fallback_branch = "main" },
-    { repository = "github:flipoyo/hydrological_twin", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/hydrological_twin", fallback_branch = "main" },
 ]

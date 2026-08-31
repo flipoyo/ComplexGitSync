@@ -52,7 +52,7 @@
     },
     "discovery.py": {
       "internal_imports": 20,
-      "loc": 204,
+      "loc": 207,
       "public_symbols": 3
     },
     "errors.py": {

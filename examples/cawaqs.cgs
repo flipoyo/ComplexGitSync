@@ -22,5 +22,5 @@ repos = [
     { repository = "gitlab:gtransp/libttc", fallback_branch = "main" },
     { repository = "gitlab:gtransp/libseb", fallback_branch = "main" },
     { repository = "gitlab:gmanagement/libap", fallback_branch = "main" },
-    { repository = "gitlab:gutil/scripts", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "gitlab:gutil/scripts", fallback_branch = "main" },
 ]

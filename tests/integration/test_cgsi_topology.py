@@ -492,13 +492,15 @@ class TestCgsiExampleFiles:
         assert "CGSil2" in repo_names
         assert "CGSih1" in repo_names
 
-    def test_cgsi2_example_references_cgsih1_with_disabled_nested_config(self):
-        """CGSil2.cgs references CGSih1 (duplication scenario) with nested_config=disabled."""
+    def test_cgsi2_example_references_cgsih1_without_disabled_nested_config(self):
+        """CGSil2.cgs references CGSih1 (duplication scenario); the absolute-path
+        dedup guard alone prevents re-registration, so no nested_config override
+        is needed here."""
         from ComplexGitSync.cgs_format import CgsDocument
         doc = CgsDocument.from_toml(self.examples / "CGSil2.cgs")
         cgsih1_refs = [r for r in doc.repos if r["project_name"] == "CGSih1"]
         assert len(cgsih1_refs) == 1
-        assert cgsih1_refs[0].get("nested_config") == "disabled"
+        assert cgsih1_refs[0].get("nested_config") == "auto"
 
     def test_cgsi2_example_cgsih1_relative_path_is_parent_sibling(self):
         """CGSil2.cgs must reference CGSih1 at ../CGSih1 (sibling in root)."""
@@ -509,13 +511,15 @@ class TestCgsiExampleFiles:
         assert cgsih1_refs[0].get("relative_path") == "../CGSih1"
 
     def test_cgsih2_example_references_cgsih1_at_dotdot(self):
-        """CGSih2.cgs must reference CGSih1 at '..' (the cycle back-reference)."""
+        """CGSih2.cgs must reference CGSih1 at '..' (the cycle back-reference);
+        the absolute-path dedup guard alone prevents re-registration, so no
+        nested_config override is needed here."""
         from ComplexGitSync.cgs_format import CgsDocument
         doc = CgsDocument.from_toml(self.examples / "CGSih2.cgs")
         cgsih1_refs = [r for r in doc.repos if r["project_name"] == "CGSih1"]
         assert len(cgsih1_refs) == 1
         assert cgsih1_refs[0].get("relative_path") == ".."
-        assert cgsih1_refs[0].get("nested_config") == "disabled"
+        assert cgsih1_refs[0].get("nested_config") == "auto"
 
     def test_every_example_has_a_semantic_tree_and_toml_round_trip(self, tmp_path):
         from ComplexGitSync.cgs_format import CgsDocument, parse_cgs
@@ -949,11 +953,11 @@ class TestDiscoverRepos:
             by_path["docs/CWV_user_guide"]["repository"]
             == "github:flipoyo/user_guide_CaWaQS-Viz"
         )
-        # None of these fixtures carries its own .cgs, so every entry must be
-        # pinned to nested_config="disabled" — the exact omission that made
-        # Phase 1's first corrected draft fail to clone.
+        # None of these fixtures carries its own .cgs, so nested_config is
+        # left unset: the default "auto" already resolves to RESOLVED when
+        # it finds zero nested *.cgs files, so no pin is needed anymore.
         for entry in report.cgs_entries:
-            assert entry["nested_config"] == "disabled"
+            assert "nested_config" not in entry
 
     def test_discovered_draft_is_a_valid_cgs_document(self, tmp_path):
         root = tmp_path / "proj"
