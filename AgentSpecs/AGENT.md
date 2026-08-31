@@ -8,4 +8,5 @@ example in `examples/complexgitsync.cgs`.
 - `./DevSpec/DevSpecs.md` (DevSpec repository, usually a submodule)
 - `./AgentSpecs/AdditionalSpecs.md` (project-specific extension to DevSpecs)
 
-The top-level workflow and standards are still described in `AGENTS.md`.
+The top-level workflow and standards are still described in the root
+`AGENT.md`.

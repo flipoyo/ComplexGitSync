@@ -130,19 +130,30 @@ Logging is mandatory and first-class.
 Planning documents follow a defined lifecycle so that history is preserved and
 active plans are always easy to identify.
 
-- **Initial plan**: when a project is first planned, the agent writes
-  `DevPlan.md` and `DevPlanTickets.md` at the project root (or in a
-  `Planning/` sub-folder if one exists). Before any development begins, these
-  are saved as `InitialDevPlan.md` and `InitialDevPlanTickets.md`.
-- **Active plan**: a working agent that must (re-)plan writes a fresh
-  `DevPlan.md` and `DevPlanTickets.md`, overwriting any previous active plan.
-- **Version archive**: when a development phase is completed, the active plan
-  is saved as `YYYY.XXDevPlan.md` and `YYYY.XXDevPlanTickets.md`, and the
-  active agent instructions file is saved as `YYYY.XXAGENT.md`, where
-  `YYYY.XX` is the version that was delivered. Developers decide which archived
-  files to keep on explicit request.
-- No planning document is ever hand-edited during an active implementation run;
-  it is treated as read-only once the agent starts executing tickets.
+- **Active plan**: planning tickets live in an `AgentSpecs/` directory at the
+  project root — one file per initiative (e.g. `<Name>_DevPlanTicket.md`),
+  not a single pair overwritten on every re-plan. The project's own deeper
+  spec/authoring references (an `AdditionalSpecs.md`, an `audit.md`, an
+  `AGENT.md`) live in the same directory.
+- **Archival**: once a ticket is complete, it moves to
+  `AgentSpecs/archive/<YYYYMMDD>_<name>.md`. The archive-date filename prefix
+  stands in for an in-body timestamp, so an already-archived ticket does not
+  also carry a `Created:` line. Developers decide which archived files to
+  keep on explicit request.
+- No planning document is ever hand-edited during an active implementation
+  run; it is treated as read-only once the agent starts executing it.
+
+## Document Conventions
+
+Every created document — specs, active planning tickets, `README.md`, and
+generated reference docs — opens with a `*Created: YYYY-MM-DD*` line directly
+under its title, set once at authoring time and never rewritten on later
+edits. It records when the document was written, not when it was last
+touched: a "last updated" claim rots the moment someone forgets to bump it.
+
+Project-specific document style rules (headings, diagrams, audience
+separation, length limits) belong in `AdditionalSpecs.md` or a dedicated
+per-project style guide it references.
 
 ## Documentation
 
