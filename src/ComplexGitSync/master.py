@@ -1,4 +1,14 @@
-"""Workspace-local Git identity overrides for automated ComplexGitSync commits."""
+"""master — workspace-local Git identity overrides for automated ComplexGitSync commits.
+
+Ring: 1 (filesystem only, no subprocess)
+Contract: load/persist/resolve the Git author identity ComplexGitSync's own
+    commits use, overridable and persisted per CGSHOME via
+    .cgitsync/master.toml.
+Imports: none
+
+(``git_runner`` is imported only under ``typing.TYPE_CHECKING``, for the
+``GitRunner`` type hint on ``resolve_identity`` — never at runtime.)
+"""
 
 from __future__ import annotations
 

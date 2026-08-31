@@ -1,4 +1,12 @@
-"""Core dependency-tree model for ComplexGitSync.
+"""git_tree — core dependency-tree model for ComplexGitSync.
+
+Ring: 1 (filesystem only, no subprocess — sync_gitignore writes .gitignore
+    across the tree; confirmed by IsolationPlan.md's feasibility review,
+    which reclassified this module out of Ring 0 for exactly that reason)
+Contract: own the in-memory GitTree/WorkingGitTree structures, traversal,
+    lifecycle state, and .gitignore maintenance; to_cgs() only delegates
+    to cgs_format.py.
+Imports: cgs_format, errors, git_repo
 
 This module is the **GitTree anchor** — the authoritative source for the
 in-memory tree structure, lifecycle, registry, and tree-level utilities.
@@ -671,7 +679,11 @@ def _select_scc_anchor(
 # ---------------------------------------------------------------------------
 
 
-def fix_circularities(registry: WorkingGitTree) -> tuple[str, ...]:
+# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpecs/
+# 20260828_Isolation_DevPlanTicket.md) — flagged, not fixed under this
+# ticket, since a real refactor of cycle-breaking logic risks behaviour
+# change under time pressure. New code is enforced at 12.
+def fix_circularities(registry: WorkingGitTree) -> tuple[str, ...]:  # noqa: C901
     """Cycle-breaking engine: resolve circularities and produce a valid DAG.
 
     This function operates in two phases:

@@ -1,4 +1,10 @@
-"""Core per-repository identity model for ComplexGitSync.
+"""git_repo — core per-repository identity model for ComplexGitSync.
+
+Ring: 0 (pure — no I/O, no clock, no environment)
+Contract: define per-repository identity types, state enumerations, and
+    remote-URL construction; parse nothing (textual repository-ID authoring
+    syntax is parsed only by cgs_format.parse_repo_id).
+Imports: none
 
 This module is the **GitRepo anchor** — the authoritative source for all
 per-repository identity types, state enumerations, and structural definitions.

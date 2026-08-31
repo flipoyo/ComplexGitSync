@@ -55,7 +55,7 @@ The minimalist level is \texttt{initialise}, \texttt{bootstrap},
 the individual operations: \texttt{branch}, \texttt{checkout}, \texttt{purge},
 \texttt{validate}, \texttt{clone}, \texttt{pull}, \texttt{pull-force},
 \texttt{add}, \texttt{commit}, \texttt{push}, \texttt{tag}, \texttt{freeze},
-and \texttt{import-submodules}.  The configuration level, \texttt{discover},
+\texttt{import-submodules}, and \texttt{verify}.  The configuration level, \texttt{discover},
 \texttt{configure} and
 \texttt{create-cgs}, authors a \texttt{.cgs} specification without requiring
 existing state.  Redundant
@@ -444,6 +444,39 @@ environment lacks access, the subsequent \cgscli{} \texttt{initialise} or
 \texttt{pull} will fail at the clone step.  The \texttt{import-submodules}
 step itself (which only touches the local index and working tree) will still
 succeed.
+
+\subsection{\texttt{verify}}
+
+\begin{lstlisting}[language=bash]
+$ pixi run cgitsync verify [--search-dir DIR] [--repair]
+\end{lstlisting}
+
+Verifies the hash-chained \texttt{.cgitsync/lgr} register for
+tamper-evidence: every entry's \texttt{prev} field must match the previous
+entry's \texttt{entry\_hash} (\texttt{BROKEN\_LINK} if not), every entry's own
+\texttt{entry\_hash} must match its recomputed canonical hash
+(\texttt{BAD\_ENTRY\_HASH} if not), \texttt{seq} numbers must be gap-free and
+unique (\texttt{SEQ\_GAP}/\texttt{SEQ\_DUPLICATE}), and the cached \texttt{HEAD}
+pointer must agree with the recomputed true head (\texttt{HEAD\_STALE}). A
+register with no entries yet — the common case, since nothing currently
+writes to this format — is reported clean; that is not itself a finding.
+
+\texttt{CGSHOME} is located the same way as \texttt{status}: from
+\texttt{--search-dir}, else \texttt{\$CGSHOME}, else the current working
+directory's ancestors. Exits \texttt{0} when clean, \texttt{1} when any
+finding is reported.
+
+With \texttt{--repair}, a stale \texttt{HEAD} cache is corrected to match the
+recomputed true head. \textbf{Entries themselves are never rewritten or
+deleted} by \texttt{verify}, repair or not — a broken chain is reported, not
+silently healed, since a register that can be edited back to looking clean
+provides no evidence of anything.
+
+\textbf{Scope note:} this checks chain linkage and the \texttt{HEAD} cache
+only. Cross-referencing entries against the actual
+\texttt{state(<hash>)\_n/} directories on disk (\texttt{MISSING\_STATE},
+\texttt{ORPHAN\_STATE}, \texttt{STATE\_DIGEST\_MISMATCH}) is not implemented
+yet.
 
 \subsection{\texttt{launch-release}}
 

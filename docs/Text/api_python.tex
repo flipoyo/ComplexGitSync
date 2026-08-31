@@ -281,3 +281,44 @@ index (\texttt{git rm --cached}), its stanza is removed from
 \texttt{.gitmodules}, and the parent's \texttt{.gitignore} is updated to
 ignore the child path.  The staged changes should then be reviewed and
 committed manually.
+
+\section{Register Integrity: \texttt{verify}}
+
+\texttt{verify(cgshome, *, repair=False)} checks the hash-chained
+\texttt{.cgitsync/lgr} register under \texttt{cgshome} for tamper-evidence:
+
+\begin{lstlisting}[language=python]
+from ComplexGitSync.orchestre import ComplexGitSyncClient
+
+client = ComplexGitSyncClient()
+report = client.verify("/path/to/CGSHOME")
+
+if report.is_clean:
+    print("register is clean")
+else:
+    for seq, finding, detail in report.findings:
+        print(seq, finding.name, detail)
+
+# Repair a stale HEAD cache (never rewrites or deletes an entry)
+client.verify("/path/to/CGSHOME", repair=True)
+\end{lstlisting}
+
+Returns an \texttt{integrity.VerificationReport} (re-exported from the
+package root) whose \texttt{findings} list holds \texttt{(seq, Finding,
+detail)} tuples and whose \texttt{is\_clean} property is \texttt{True} when
+the list is empty. A register with no entries yet is reported clean — this
+is the common case today, since no command writes to this per-entry format
+yet (the CLI's \texttt{verify} command is the enforcement instrument; the
+migration of \texttt{SyncLedger}'s own writes to this format is a separate,
+future piece of work).  \texttt{Finding} enumerates
+\texttt{BROKEN\_LINK}, \texttt{BAD\_ENTRY\_HASH}, \texttt{SEQ\_GAP},
+\texttt{SEQ\_DUPLICATE}, and \texttt{HEAD\_STALE} for what this method
+actually checks (chain linkage and the \texttt{HEAD} cache); its remaining
+three members (\texttt{MISSING\_STATE}, \texttt{ORPHAN\_STATE},
+\texttt{STATE\_DIGEST\_MISMATCH}) are reserved for a future store-level
+verification pass that cross-references entries against the actual
+\texttt{state(<hash>)\_n/} directories on disk.
+
+With \texttt{repair=True}, a stale \texttt{HEAD} cache is corrected in
+place. Register entries are never rewritten or deleted by this method,
+repair or not — a broken chain is reported, not silently healed.

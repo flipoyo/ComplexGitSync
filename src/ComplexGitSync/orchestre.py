@@ -1,26 +1,45 @@
-"""Orchestration hub for ComplexGitSync.
+"""orchestre — orchestration hub for ComplexGitSync.
 
-This module is the **Orchestre anchor** — the authoritative source for runtime
-document handling, infrastructure services, registry builders, nested config
-discovery, and the public client API. The ``.cgs`` authoring format is defined
-in :mod:`ComplexGitSync.cgs_format`.
+Ring: 3 (imports downward from every Ring 0–2 module; owns the public
+    ComplexGitSyncClient facade — see AgentSpecs/IsolationPlan.md §1)
+Contract: coordinate one GitTree's lifecycle end to end — load/validate/
+    clone/sync/freeze — gating every mutating action on TreeLifecycleState;
+    delegate document parsing, path resolution, state-directory allocation,
+    registry translation, discovery, and status rendering to the Ring 0–2
+    modules below rather than re-implementing them.
+Imports: cgs_format, discovery, errors, git_repo, git_runner, git_tree,
+    gts_document, integrity, ledger_entry, ledger_store, master,
+    operations, paths, registry, state_store, status_render
 
-Classes defined here (Tier 2 — Actions):
-    GtsDocument             .gts state snapshot parser/validator
+This module is the **Orchestre anchor** — the authoritative source for the
+public client API and the infrastructure services (structured run logging,
+the local .lgr register/sync ledger) too small or too entangled with
+ComplexGitSyncClient's own state to extract on their own. Wave 1/2 of the
+isolation plan (AgentSpecs/20260828_Isolation_DevPlanTicket.md) moved
+everything else out: GtsDocument → gts_document.py, GitRunner → git_runner.py,
+the registry builders → registry.py, nested-config/.gitmodules discovery →
+discovery.py, the state-directory allocator → state_store.py, path/CGSHOME
+resolution → paths.py, pure status-table rendering → status_render.py, the
+CLI's default-snapshot resolution → snapshot_resolver.py, and the
+hash-chained register mechanics → ledger_entry.py/integrity.py/
+ledger_store.py (not yet wired into SyncLedger's actual write path — see
+ComplexGitSyncClient.verify()'s docstring).
+
+Classes still defined here (Tier 2 — Actions):
     CommandRunLogger        Structured JSON event logger for a command run
     RuntimeStateStore       Persistent snapshot-pointer registry (.cgs → .gts)
-    GitRunner               Git subprocess wrapper
+    SystemClock             Real ledger_entry.ClockProtocol implementation
+    LocalGitRegister        The (still single-file, not yet ledger_store-backed) .lgr writer
+    SyncLedger              Append-only sync-event ledger sharing LocalGitRegister's file
 
 Classes defined here (Tier 3 — Client / API):
     Orchestre               Coordination layer owning one GitTree
     ComplexGitSyncClient    Public facade; gates all actions on TreeLifecycleState
 
-Builder / discovery functions defined here:
-    build_registry_from_cgs_document
-    build_registry_from_gts_document
-    build_gts_document_from_registry
-    discover_nested_configs
-    create_run_logger
+A handful of private ref-token/status helpers (``_repo_ref_*``,
+``_status_*``, ``_unmanaged_gitlink_paths``) stayed here rather than moving
+to ``registry.py``/``status_render.py`` because they call ``self.git_runner``
+directly — real Git I/O, not pure formatting.
 """
 
 from __future__ import annotations
@@ -31,8 +50,9 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
-import subprocess
+import time
 import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -43,41 +63,33 @@ from urllib.parse import urlsplit
 
 import tomli_w
 
-from . import __version__ as CGS_VERSION
 from .cgs_format import CgsDocument, parse_repo_id
-from .config_document import ConfigDocument
+from .discovery import (
+    ImportSubmodulesReport,
+    _parse_gitmodules,
+    discover_nested_configs,
+)
 from .errors import (
     ConfigValidationError,
     GitSyncError,
-    NestedConfigDiscoveryError,
 )
 from .git_repo import (
-    AccessProtocol,
     DiscoveryState,
-    GitProvider,
     GitRepo,
-    NodeType,
     RefKind,
     RepoLifecycleState,
     SyncState,
     WorkingRepo,
 )
+from .git_runner import GitRunner
 from .git_tree import (
     ROOT_REPO_ID,
     GitTree,
     ProjectTreeState,
     TreeLifecycleState,
     WorkingGitTree,
-    _apply_repo_identity,
     _as_optional_str,
-    _initial_discovery_state,
-    _is_root_repo_spec,
-    _normalise_relative_path,
-    _parse_enum,
-    _parse_gts_node_type,
-    _parse_optional_enum,
     _update_gitignore_file,
-    _validate_repo_shape,
     build_tree_state,
     format_project_tree,
     format_repo_tree_outline,
@@ -85,16 +97,16 @@ from .git_tree import (
     format_view_tree,
     iter_tree,
     iter_tree_leaf_first,
-    make_repo_id,
     normalize_node_types,
-    promote_to_parent,
-    register_relative_path,
     sync_gitignore,
 )
 from .git_tree import (
     fix_circularities as _fix_circularities,
 )
-from .L0 import new_time_l0_anchor
+from .gts_document import GtsDocument
+from .integrity import Finding, VerificationReport, verify_chain
+from .ledger_entry import new_time_l0_anchor
+from .ledger_store import read_all_entries, read_head, recompute_head, verify_and_repair_head
 from .master import MasterConfig
 from .operations import (
     BranchTopologyReport,
@@ -102,207 +114,40 @@ from .operations import (
 from .operations import (
     validate_branch_topology as _validate_branch_topology,
 )
+from .paths import _path_to_environment_marker, _resolve_document_path, _resolve_project_root
+from .paths import resolve_bootstrap_root as _resolve_bootstrap_root
+from .paths import resolve_cgshome as _resolve_cgshome
+from .paths import resolve_initialise_cgshome as _resolve_initialise_cgshome
+from .registry import (
+    build_gts_document_from_registry,
+    build_registry_from_cgs_document,
+    build_registry_from_gts_document,
+)
+from .state_store import (
+    _STATE_DIR_RE,
+    _format_state_id,
+    _latest_state_artifact,
+    _next_state_directory_order,
+    _parse_state_hash,
+    _resolve_memory_state_directory,
+)
+from .status_render import (
+    _render_status_table,
+    _status_display_path,
+    _status_line_is_untracked,
+    _status_line_path,
+    _status_line_targets_any,
+)
 
 # ============================================================
 #  Runtime document layer — .gts
 # ============================================================
 
-_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
-_STATE_ID_RE = re.compile(r"^state\(([0-9a-f]{64})\)$")
-_STATE_DIR_RE = re.compile(r"^state\(([0-9a-f]{64})\)_(\d+)$")
 _FREEZE_COMMAND_ORIGINS = frozenset({"freeze", "freeze_release", "freeze_state"})
 
 
 def _collect_errors(checks: list[tuple[bool, str]]) -> list[str]:
     return [msg for ok, msg in checks if not ok]
-
-
-def _get_path_environment_markers() -> tuple[tuple[str, Path], ...]:
-    markers: list[tuple[str, Path]] = []
-    seen_paths: set[str] = set()
-
-    def add_marker(token: str, raw_value: str | None) -> None:
-        if not raw_value:
-            return
-        resolved = Path(raw_value).expanduser().resolve()
-        key = os.path.normcase(str(resolved))
-        if key in seen_paths:
-            return
-        seen_paths.add(key)
-        markers.append((token, resolved))
-
-    add_marker("$HOME", os.environ.get("HOME"))
-    add_marker("%USERPROFILE%", os.environ.get("USERPROFILE"))
-    homedrive = os.environ.get("HOMEDRIVE")
-    homepath = os.environ.get("HOMEPATH")
-    if homedrive and homepath:
-        add_marker("%HOMEDRIVE%%HOMEPATH%", f"{homedrive}{homepath}")
-    return tuple(markers)
-
-
-def _path_to_environment_marker(path: Path | str) -> str:
-    resolved_path = Path(path).expanduser().resolve()
-    for token, base_path in _get_path_environment_markers():
-        try:
-            relative = resolved_path.relative_to(base_path)
-        except ValueError:
-            continue
-        if relative == Path("."):
-            return token
-        return f"{token}/{relative.as_posix()}"
-    return str(resolved_path)
-
-
-def _expand_environment_markers(raw_path: str) -> str:
-    def _replace_prefixed_marker(value: str, marker: str, replacement: str) -> str:
-        if value == marker:
-            return replacement
-        for separator in _preferred_path_separators():
-            prefix = f"{marker}{separator}"
-            if value.startswith(prefix):
-                suffix = value[len(prefix):]
-                return f"{replacement}{separator}{suffix}"
-        return value
-
-    expanded = raw_path
-    home = os.environ.get("HOME")
-    if home:
-        expanded = _replace_prefixed_marker(expanded, "$HOME", home)
-    userprofile = os.environ.get("USERPROFILE")
-    if userprofile:
-        expanded = _replace_prefixed_marker(expanded, "%USERPROFILE%", userprofile)
-    homedrive = os.environ.get("HOMEDRIVE")
-    homepath = os.environ.get("HOMEPATH")
-    if homedrive and homepath:
-        expanded = _replace_prefixed_marker(
-            expanded,
-            "%HOMEDRIVE%%HOMEPATH%",
-            f"{homedrive}{homepath}",
-        )
-    return expanded
-
-
-def _resolve_document_path(raw_path: str) -> Path:
-    return Path(_expand_environment_markers(raw_path)).expanduser().resolve()
-
-
-def _preferred_path_separators() -> tuple[str, ...]:
-    separators: list[str] = []
-    seen: set[str] = set()
-    for separator in (os.sep, os.altsep, "/", "\\"):
-        if separator and separator not in seen:
-            seen.add(separator)
-            separators.append(separator)
-    return tuple(separators)
-
-
-def _format_state_id(state_hash: str) -> str:
-    if _SHA256_HEX_RE.fullmatch(state_hash) is None:
-        raise ValueError("state_hash must be a lowercase hexadecimal SHA-256 digest")
-    return f"state({state_hash})"
-
-
-def _parse_state_hash(state_id: str) -> str | None:
-    match = _STATE_ID_RE.fullmatch(state_id)
-    return match.group(1) if match else None
-
-
-def _state_directory_name(state_hash: str, state_order: int) -> str:
-    if state_order < 0:
-        raise ValueError("state_order must be non-negative")
-    return f"{_format_state_id(state_hash)}_{state_order}"
-
-
-def _temporary_state_directory_name(state_hash: str, state_order: int) -> str:
-    if state_order < 0:
-        raise ValueError("state_order must be non-negative")
-    return f".tmp-{_state_directory_name(state_hash, state_order)}"
-
-
-def _state_order_from_directory_name(name: str) -> int | None:
-    match = _STATE_DIR_RE.fullmatch(name)
-    return int(match.group(2)) if match else None
-
-
-def _next_state_directory_order(cgitsync_dir: Path, state_hash: str) -> int:
-    _format_state_id(state_hash)
-    max_order = -1
-    if cgitsync_dir.is_dir():
-        for entry in cgitsync_dir.iterdir():
-            if not entry.is_dir():
-                continue
-            match = _STATE_DIR_RE.fullmatch(entry.name)
-            if match is None or match.group(1) != state_hash:
-                continue
-            max_order = max(max_order, int(match.group(2)))
-    return max_order + 1
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryStateDirectory:
-    state_hash: str
-    state_order: int
-    final_path: Path
-    temporary_path: Path
-
-
-def _resolve_memory_state_directory(cgitsync_dir: Path, state_hash: str) -> MemoryStateDirectory:
-    state_order = _next_state_directory_order(cgitsync_dir, state_hash)
-    while True:
-        final_path = cgitsync_dir / _state_directory_name(state_hash, state_order)
-        temporary_path = cgitsync_dir / _temporary_state_directory_name(state_hash, state_order)
-        if not final_path.exists() and not temporary_path.exists():
-            return MemoryStateDirectory(
-                state_hash=state_hash,
-                state_order=state_order,
-                final_path=final_path,
-                temporary_path=temporary_path,
-            )
-        state_order += 1
-
-
-def _state_snapshot_candidates(cgitsync_dir: Path) -> list[Path]:
-    candidates: list[Path] = []
-    if cgitsync_dir.is_dir():
-        for state_dir in sorted(cgitsync_dir.iterdir(), key=lambda path: path.name):
-            if not state_dir.is_dir() or _STATE_DIR_RE.fullmatch(state_dir.name) is None:
-                continue
-            candidates.extend(sorted(state_dir.glob("*.gts")))
-    legacy_state_dir = cgitsync_dir / "state"
-    if legacy_state_dir.is_dir():
-        candidates.extend(sorted(legacy_state_dir.glob("*.gts")))
-    return candidates
-
-
-def _state_snapshot_candidates_for_id(cgitsync_dir: Path, state_id: str) -> list[Path]:
-    state_hash = _parse_state_hash(state_id)
-    if state_hash is None or not cgitsync_dir.is_dir():
-        return []
-    candidates: list[Path] = []
-    for state_dir in sorted(cgitsync_dir.glob(f"{state_id}_*"), key=lambda path: path.name):
-        if state_dir.is_dir() and _STATE_DIR_RE.fullmatch(state_dir.name) is not None:
-            candidates.extend(sorted(state_dir.glob("*.gts")))
-    return candidates
-
-
-def _state_artifact_candidates(cgitsync_dir: Path, filename: str) -> list[Path]:
-    candidates: list[Path] = []
-    if not cgitsync_dir.is_dir():
-        return candidates
-    for state_dir in sorted(cgitsync_dir.iterdir(), key=lambda path: path.name):
-        if not state_dir.is_dir() or _STATE_DIR_RE.fullmatch(state_dir.name) is None:
-            continue
-        candidate = state_dir / filename
-        if candidate.is_file():
-            candidates.append(candidate)
-    return candidates
-
-
-def _latest_state_artifact(cgitsync_dir: Path, filename: str) -> Path | None:
-    candidates = _state_artifact_candidates(cgitsync_dir, filename)
-    if not candidates:
-        return None
-    return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
 def _local_status_from_porcelain(status_lines: list[str]) -> str:
@@ -344,45 +189,6 @@ def _short_sha(value: str | None) -> str:
     return value[:8] if value else "-"
 
 
-def _status_display_path(entry: WorkingRepo, root_path: Path) -> str:
-    try:
-        relative = entry.absolute_path.relative_to(root_path)
-    except ValueError:
-        return str(entry.relative_path or entry.absolute_path)
-    if relative == Path("."):
-        return "."
-    return relative.as_posix()
-
-
-def _status_line_path(status_line: str) -> Path | None:
-    if len(status_line) < 4:
-        return None
-    raw_path = status_line[3:]
-    if " -> " in raw_path:
-        raw_path = raw_path.rsplit(" -> ", 1)[1]
-    raw_path = raw_path.strip().strip('"')
-    return Path(raw_path) if raw_path else None
-
-
-def _status_line_targets_any(status_line: str, paths: set[Path]) -> bool:
-    status_path = _status_line_path(status_line)
-    if status_path is None:
-        return False
-    return any(status_path == path or _path_is_relative_to(status_path, path) for path in paths)
-
-
-def _status_line_is_untracked(status_line: str) -> bool:
-    return status_line.startswith("?? ")
-
-
-def _path_is_relative_to(path: Path, parent: Path) -> bool:
-    try:
-        path.relative_to(parent)
-    except ValueError:
-        return False
-    return True
-
-
 def _unmanaged_gitlink_paths(
     registry: WorkingGitTree,
     entry: WorkingRepo,
@@ -400,30 +206,6 @@ def _unmanaged_gitlink_paths(
         except ValueError:
             continue
     return {path for path in gitlinks if path not in managed_children}
-
-
-def _render_status_table(rows: list[tuple[str, str, str, str, str, str, str, str]]) -> str:
-    headers = (
-        "REPOSITORY",
-        "PATH",
-        "LOCAL_BRANCH",
-        "UPSTREAM_BRANCH",
-        "LOCAL",
-        "SYNC",
-        "HEAD",
-        "RECORDED",
-    )
-    widths = [len(header) for header in headers]
-    for row in rows:
-        for index, value in enumerate(row):
-            widths[index] = max(widths[index], len(value))
-
-    def render_row(columns: Sequence[str]) -> str:
-        return "  ".join(value.ljust(widths[index]) for index, value in enumerate(columns))
-
-    lines = [render_row(headers), "-" * (sum(widths) + 12)]
-    lines.extend(render_row(row) for row in rows)
-    return "\n".join(lines)
 
 
 def _ref_token(ref_kind: RefKind | str | None, ref_name: str | None) -> str | None:
@@ -478,250 +260,6 @@ def _write_compact_refs(repo_data: dict[str, Any], entry: WorkingRepo) -> None:
         repo_data["target_ref"] = target
     if resolved is not None:
         repo_data["resolved_ref"] = resolved
-
-
-class GtsDocument(ConfigDocument):
-    """Parser and validator for ``.gts`` Git Tree State snapshot files.
-
-    A ``.gts`` file is a TOML document **generated** by ComplexGitSync.  It
-    captures the exact state of the full repository tree — including absolute
-    paths and commit SHAs.  It is **never** hand-edited.
-    """
-
-    DOCUMENT_KIND = "gts"
-    CURRENT_SCHEMA_VERSION = "1.1"
-    HASH_ALGORITHM = "sha256"
-    _SUPPORTED_HASH_ALGORITHMS = frozenset((HASH_ALGORITHM,))
-
-    _REQUIRED_DOCUMENT_KEYS = ("generated_at", "command_origin")
-    _REQUIRED_PROJECT_KEYS = ("name", "root_absolute_path")
-    _REQUIRED_TREE_STATE_KEYS = ("lifecycle_state", "is_ready", "registry_complete")
-    _REQUIRED_REPO_STATE_KEYS = (
-        "name",
-        "node_type",
-        "absolute_path",
-        "repo_lifecycle_state",
-        "sync_state",
-    )
-
-    def validate(self) -> None:
-        errors: list[str] = []
-
-        for key in self._REQUIRED_DOCUMENT_KEYS:
-            if self.read(f"document.{key}") is None:
-                errors.append(f"[document] missing required key: '{key}'")
-        if self.read("document.CGS_VERSION") is None and self.read("document.format_version") is None:
-            errors.append("[document] missing required key: 'CGS_VERSION'")
-
-        for key in self._REQUIRED_PROJECT_KEYS:
-            if self.read(f"project.{key}") is None:
-                errors.append(f"[project] missing required key: '{key}'")
-
-        for key in self._REQUIRED_TREE_STATE_KEYS:
-            if self.read(f"tree_state.{key}") is None:
-                errors.append(f"[tree_state] missing required key: '{key}'")
-
-        repo_states = self._data.get("repo_state", [])
-        if not isinstance(repo_states, list):
-            errors.append("'repo_state' must be an array of tables ([[repo_state]])")
-        else:
-            for idx, repo in enumerate(repo_states):
-                if not isinstance(repo, dict):
-                    errors.append(f"repo_state[{idx}] must be a table")
-                    continue
-                for key in self._REQUIRED_REPO_STATE_KEYS:
-                    if not repo.get(key):
-                        errors.append(f"repo_state[{idx}] missing required key: '{key}'")
-                node_type: NodeType | None = None
-                try:
-                    node_type = _parse_gts_node_type(repo.get("node_type"))
-                except ConfigValidationError as exc:
-                    node_type = None
-                    errors.append(f"repo_state[{idx}] invalid node_type: {exc}")
-                project_root_path = self.read("project.root_absolute_path")
-                is_project_root_repo = (
-                    isinstance(project_root_path, str)
-                    and str(repo.get("absolute_path", "")) == project_root_path
-                )
-                requires_parent_path = node_type != NodeType.ROOT and not is_project_root_repo
-                if requires_parent_path and not repo.get("parent_absolute_path"):
-                    errors.append(f"repo_state[{idx}] missing required key: 'parent_absolute_path'")
-                has_ref_name = any(
-                    _repo_ref_name(repo, prefix)
-                    for prefix in ("current", "target", "resolved")
-                )
-                if not has_ref_name:
-                    errors.append(
-                        f"repo_state[{idx}] must include at least one ref ('ref', 'current_ref', 'target_ref', or 'resolved_ref')"
-                    )
-                lifecycle = str(repo.get("repo_lifecycle_state", ""))
-                if lifecycle in {
-                    RepoLifecycleState.READY.value,
-                    RepoLifecycleState.FALLBACK_READY.value,
-                } and not repo.get("commit_sha"):
-                    errors.append(
-                        f"repo_state[{idx}] missing required key for READY repository: 'commit_sha'"
-                    )
-
-        hash_algorithm = self.read("document.hash_algorithm", self.HASH_ALGORITHM)
-        if not isinstance(hash_algorithm, str) or hash_algorithm not in self._SUPPORTED_HASH_ALGORITHMS:
-            errors.append(
-                f"[document] unsupported hash_algorithm '{hash_algorithm}' (supported: {', '.join(sorted(self._SUPPORTED_HASH_ALGORITHMS))})"
-            )
-
-        snapshot_hash = self.read("document.snapshot_hash")
-        if snapshot_hash is not None:
-            if not isinstance(snapshot_hash, str) or _SHA256_HEX_RE.fullmatch(snapshot_hash) is None:
-                errors.append("[document] snapshot_hash must be a lowercase hexadecimal SHA-256 digest")
-            elif snapshot_hash != self.compute_snapshot_hash():
-                errors.append("[document] snapshot_hash does not match canonical .gts content hash")
-
-        command_origin = self.read("document.command_origin")
-        if command_origin in _FREEZE_COMMAND_ORIGINS:
-            freeze_manifest = self._data.get("freeze_manifest")
-            if not isinstance(freeze_manifest, dict):
-                errors.append("[freeze_manifest] missing required table for freeze snapshots")
-            else:
-                if freeze_manifest.get("schema_version") != "1.0":
-                    errors.append("[freeze_manifest] schema_version must be '1.0'")
-                if freeze_manifest.get("restore_operation") != "launch_state":
-                    errors.append("[freeze_manifest] restore_operation must be 'launch_state'")
-                if freeze_manifest.get("synchronized_ref_kind") != RefKind.TAG.value:
-                    errors.append("[freeze_manifest] synchronized_ref_kind must be 'tag'")
-                synchronized_ref_name = freeze_manifest.get("synchronized_ref_name")
-                if not isinstance(synchronized_ref_name, str) or not synchronized_ref_name.strip():
-                    errors.append("[freeze_manifest] synchronized_ref_name must be a non-empty string")
-                release_name = freeze_manifest.get("release-name")
-                if release_name is not None:
-                    if not isinstance(release_name, str) or not release_name.strip():
-                        errors.append("[freeze_manifest] release-name must be a non-empty string")
-                    elif isinstance(synchronized_ref_name, str) and release_name != synchronized_ref_name:
-                        errors.append("[freeze_manifest] release-name must match synchronized_ref_name")
-                for invariant_key in (
-                    "immutable_snapshot",
-                    "workspace_validated",
-                    "ledger_checkpoint",
-                ):
-                    if freeze_manifest.get(invariant_key) is not True:
-                        errors.append(f"[freeze_manifest] {invariant_key} must be true")
-
-        if errors:
-            raise ConfigValidationError(
-                "Invalid .gts document:\n" + "\n".join(f"  • {e}" for e in errors)
-            )
-
-    @property
-    def lifecycle_state(self) -> str | None:
-        return self.read("tree_state.lifecycle_state")
-
-    @property
-    def is_ready(self) -> bool:
-        return bool(self.read("tree_state.is_ready", False))
-
-    @property
-    def repo_states(self) -> list[dict[str, Any]]:
-        return list(self._data.get("repo_state", []))
-
-    @property
-    def schema_version(self) -> str:
-        value = self.read("document.schema_version")
-        if isinstance(value, str) and value:
-            return value
-        value = self.read("document.CGS_VERSION")
-        if isinstance(value, str) and value:
-            return value
-        return CGS_VERSION
-
-    @property
-    def snapshot_hash(self) -> str | None:
-        value = self.read("document.snapshot_hash")
-        return value if isinstance(value, str) and value else None
-
-    def compute_snapshot_hash(self) -> str:
-        canonical_json = json.dumps(
-            self._build_canonical_payload(),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
-
-    def ensure_snapshot_hash(self) -> str:
-        document = self._data.setdefault("document", {})
-        document["CGS_VERSION"] = str(document.get("CGS_VERSION") or CGS_VERSION)
-        digest = self.compute_snapshot_hash()
-        document["snapshot_hash"] = digest
-        return digest
-
-    def _build_canonical_payload(self) -> dict[str, Any]:
-        project = self._data.get("project", {})
-        tree_state = self._data.get("tree_state", {})
-        repo_states = self._data.get("repo_state", [])
-        freeze_manifest = self._data.get("freeze_manifest", {})
-        canonical_repo_states = []
-        for repo in repo_states if isinstance(repo_states, list) else []:
-            if not isinstance(repo, dict):
-                continue
-            canonical_repo_states.append(
-                {
-                    "name": repo.get("name"),
-                    "node_type": repo.get("node_type"),
-                    "absolute_path": repo.get("absolute_path"),
-                    "relative_path": repo.get("relative_path"),
-                    "parent_absolute_path": repo.get("parent_absolute_path"),
-                    "repo_lifecycle_state": repo.get("repo_lifecycle_state"),
-                    "sync_state": repo.get("sync_state"),
-                    "current_ref": _repo_ref_token(repo, "current"),
-                    "target_ref": _repo_ref_token(repo, "target"),
-                    "resolved_ref": _repo_ref_token(repo, "resolved"),
-                    "commit_sha": repo.get("commit_sha"),
-                    "project_owner_name": repo.get("project_owner_name"),
-                    "project_name": repo.get("project_name"),
-                    "repo_name": repo.get("repo_name"),
-                    "fallback_branch": repo.get("fallback_branch", "main"),
-                    "fallback_applied": bool(repo.get("fallback_applied", False)),
-                    "fallback_reason": repo.get("fallback_reason"),
-                    "discovery_state": repo.get("discovery_state", DiscoveryState.RESOLVED.value),
-                    "worktree_state": repo.get("worktree_state"),
-                    "is_reachable": bool(repo.get("is_reachable", True)),
-                    "source_cgs_path": repo.get("source_cgs_path"),
-                }
-            )
-        # Canonical ordering: lexicographic sort on (absolute_path, name).
-        canonical_repo_states.sort(
-            key=lambda repo: (
-                str(repo.get("absolute_path", "")),
-                str(repo.get("name", "")),
-            )
-        )
-        payload = {
-            "document": {
-                "CGS_VERSION": self.schema_version,
-            },
-            "project": {
-                "name": project.get("name"),
-                "root_absolute_path": project.get("root_absolute_path"),
-                "source_cgs_path": project.get("source_cgs_path"),
-            },
-            "tree_state": {
-                "lifecycle_state": tree_state.get("lifecycle_state"),
-                "is_ready": tree_state.get("is_ready"),
-                "registry_complete": tree_state.get("registry_complete"),
-            },
-            "repo_state": canonical_repo_states,
-        }
-        if isinstance(freeze_manifest, dict):
-            payload["freeze_manifest"] = {
-                "schema_version": freeze_manifest.get("schema_version"),
-                "immutable_snapshot": freeze_manifest.get("immutable_snapshot"),
-                "workspace_validated": freeze_manifest.get("workspace_validated"),
-                "ledger_checkpoint": freeze_manifest.get("ledger_checkpoint"),
-                "synchronized_ref_kind": freeze_manifest.get("synchronized_ref_kind"),
-                "synchronized_ref_name": freeze_manifest.get("synchronized_ref_name"),
-                "release-name": freeze_manifest.get("release-name"),
-                "restore_operation": freeze_manifest.get("restore_operation"),
-            }
-        return payload
 
 
 # ============================================================
@@ -859,6 +397,30 @@ def _resolve_state_base_dir() -> Path:
     return Path.home() / ".local" / "state" / "ComplexGitSync" / "snapshots"
 
 
+class SystemClock:
+    """Real :class:`~.ledger_entry.ClockProtocol` implementation.
+
+    The only place in ``orchestre.py`` that reads the wall clock, PID, or an
+    entropy source directly for TIME-L0 anchor generation — every other
+    caller goes through :func:`~.ledger_entry.new_time_l0_anchor`, which
+    stays deterministic and testable because it only ever sees this
+    Protocol, never the real ``datetime``/``time``/``os``/``secrets``
+    modules itself.
+    """
+
+    def now(self) -> datetime:
+        return datetime.now(UTC)
+
+    def time_ns(self) -> int:
+        return time.time_ns()
+
+    def pid(self) -> int:
+        return os.getpid()
+
+    def token_hex(self, nbytes: int) -> str:
+        return secrets.token_hex(nbytes)
+
+
 class LocalGitRegister:
     """Project-local ``.lgr`` register for generated ``.gts`` snapshots.
 
@@ -895,7 +457,7 @@ class LocalGitRegister:
 
         data = self._load()
         snapshots = data.setdefault("snapshots", [])
-        state_anchor = new_time_l0_anchor() if state_hash is None else None
+        state_anchor = new_time_l0_anchor(SystemClock()) if state_hash is None else None
         public_state_hash = state_hash if state_hash is not None else state_anchor.state_hash
         snapshot_id = _format_state_id(public_state_hash)
         if state_order is None:
@@ -1149,745 +711,10 @@ class SyncLedger:
         return f"lgr-{max_id + 1:06d}"
 
 
-@dataclass(slots=True)
-class GitRunner:
-    """Git subprocess wrapper — executes git commands for clone/checkout/push actions."""
-
-    executable: str = "git"
-
-    def remote_branch_exists(self, remote_url: str, branch: str) -> bool:
-        return self._remote_ref_exists(remote_url, "--heads", branch)
-
-    def remote_tag_exists(self, remote_url: str, tag: str) -> bool:
-        return self._remote_ref_exists(remote_url, "--tags", tag)
-
-    def _remote_ref_exists(self, remote_url: str, ref_selector: str, ref_name: str) -> bool:
-        completed = self._run("ls-remote", ref_selector, remote_url, ref_name)
-        return bool(completed.stdout.strip())
-
-    def remote_get_url(self, repo_path: Path | str, remote_name: str = "origin") -> str | None:
-        """Return the URL configured for *remote_name*, or ``None`` when unset.
-
-        Used by :meth:`ComplexGitSyncClient.discover_repos` to recover a
-        checked-out repository's upstream address. A repository with no such
-        remote is a normal, reportable condition — not an error — so the
-        missing case is returned as ``None`` rather than raised.
-        """
-        try:
-            url = self._run("remote", "get-url", remote_name, cwd=repo_path).stdout.strip()
-        except GitSyncError:
-            return None
-        return url or None
-
-    def configure_remote(self, repo_path: Path | str, remote_name: str, remote_url: str) -> None:
-        """Add or update *remote_name* in *repo_path*."""
-        try:
-            existing = self._run("remote", "get-url", remote_name, cwd=repo_path).stdout.strip()
-        except GitSyncError:
-            self._run("remote", "add", remote_name, remote_url, cwd=repo_path)
-            return
-        if existing != remote_url:
-            self._run("remote", "set-url", remote_name, remote_url, cwd=repo_path)
-
-    def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
-        destination_path = Path(destination)
-        if destination_path.exists():
-            if not destination_path.is_dir() or any(destination_path.iterdir()):
-                raise GitSyncError(
-                    f"Clone destination already exists and is not empty: {destination_path}"
-                )
-        destination_path.parent.mkdir(parents=True, exist_ok=True)
-        args: list[str] = []
-        if self._uses_file_transport(remote_url):
-            args.extend(["-c", "protocol.file.allow=always"])
-        args.extend(
-            ["clone", "--branch", branch, "--single-branch", remote_url, str(destination_path)]
-        )
-        self._run(*args)
-
-    def rev_parse_head(self, repo_path: Path | str) -> str:
-        return self._run("rev-parse", "HEAD", cwd=repo_path).stdout.strip()
-
-    def current_branch(self, repo_path: Path | str) -> str | None:
-        branch = self._run("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_path).stdout.strip()
-        return None if branch == "HEAD" else branch
-
-    def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool:
-        """Return ``True`` if *branch* exists as a local branch in *repo_path*."""
-        try:
-            self._run("rev-parse", "--verify", f"refs/heads/{branch}", cwd=repo_path)
-            return True
-        except GitSyncError:
-            return False
-
-    def create_branch(self, repo_path: Path | str, branch: str) -> None:
-        """Create *branch* in *repo_path* without switching to it (``git branch``)."""
-        self._run("branch", branch, cwd=repo_path)
-
-    def checkout(self, repo_path: Path | str, branch: str) -> None:
-        """Switch *repo_path* to *branch* (``git checkout``)."""
-        self._run("checkout", branch, cwd=repo_path)
-
-    def has_uncommitted_changes(self, repo_path: Path | str) -> bool:
-        """Return ``True`` if *repo_path* has any tracked or staged modifications."""
-        result = self._run("status", "--porcelain", cwd=repo_path)
-        return bool(result.stdout.strip())
-
-    def status_porcelain(self, repo_path: Path | str) -> list[str]:
-        """Return ``git status --porcelain`` lines for *repo_path*."""
-        result = self._run("status", "--porcelain", cwd=repo_path)
-        return [line for line in result.stdout.splitlines() if line.strip()]
-
-    def tracked_gitlink_paths(self, repo_path: Path | str) -> set[Path]:
-        """Return paths tracked as gitlinks (mode ``160000``) in *repo_path*."""
-        result = self._run("ls-files", "--stage", cwd=repo_path)
-        gitlinks: set[Path] = set()
-        for line in result.stdout.splitlines():
-            if not line.startswith("160000 "):
-                continue
-            try:
-                path = line.split("\t", 1)[1]
-            except IndexError:
-                continue
-            gitlinks.add(Path(path))
-        return gitlinks
-
-    def has_staged_changes(self, repo_path: Path | str) -> bool:
-        """Return ``True`` if *repo_path* has changes staged for the next commit."""
-        result = self._run("diff", "--cached", "--name-only", cwd=repo_path)
-        return bool(result.stdout.strip())
-
-    def stage_all(self, repo_path: Path | str) -> None:
-        """Stage all changes in *repo_path* (``git add --all``)."""
-        self._run("add", "--all", cwd=repo_path)
-
-    def stage_path(self, repo_path: Path | str, relative_path: str) -> None:
-        """Stage a single path in *repo_path* (``git add -- <relative_path>``)."""
-        self._run("add", "--", relative_path, cwd=repo_path)
-
-    def commit(
-        self,
-        repo_path: Path | str,
-        message: str,
-        *,
-        user_name: str | None = None,
-        user_email: str | None = None,
-    ) -> None:
-        """Commit staged changes in *repo_path* with *message* (``git commit``)."""
-        args: list[str] = []
-        if user_name is not None:
-            args.extend(["-c", f"user.name={user_name}"])
-        if user_email is not None:
-            args.extend(["-c", f"user.email={user_email}"])
-        args.extend(["commit", "-m", message])
-        self._run(*args, cwd=repo_path)
-
-    def push(
-        self,
-        repo_path: Path | str,
-        *,
-        remote: str = "origin",
-        ref_name: str | None = None,
-        set_upstream: bool = False,
-    ) -> None:
-        """Push *remote* (and optionally *ref_name*) in *repo_path* (``git push``)."""
-        args = ["push"]
-        if set_upstream:
-            args.append("-u")
-        args.append(remote)
-        if ref_name:
-            args.append(ref_name)
-        self._run(*args, cwd=repo_path)
-
-    def pull(
-        self,
-        repo_path: Path | str,
-        *,
-        remote: str = "origin",
-        ref_name: str | None = None,
-    ) -> None:
-        """Pull *remote* (and optionally *ref_name*) in *repo_path* (``git pull --ff-only``)."""
-        args = ["pull", "--ff-only", remote]
-        if ref_name:
-            args.append(ref_name)
-        self._run(*args, cwd=repo_path)
-
-    def force_pull(
-        self,
-        repo_path: Path | str,
-        *,
-        remote: str = "origin",
-        ref_name: str | None = None,
-    ) -> None:
-        """Force the local branch to match *remote/ref_name* and clean untracked files."""
-        selected_ref = ref_name or self.current_branch(repo_path) or "main"
-        self._run("fetch", remote, selected_ref, cwd=repo_path)
-        self._run("checkout", "-B", selected_ref, "FETCH_HEAD", cwd=repo_path)
-        self.clean_untracked(repo_path)
-
-    def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None:
-        """Discard local tracked changes in *repo_path*."""
-        self._run("reset", "--hard", ref_name, cwd=repo_path)
-
-    def clean_untracked(self, repo_path: Path | str) -> None:
-        """Remove untracked files and directories in *repo_path*."""
-        self._run("clean", "-fd", cwd=repo_path)
-
-    def rm_cached(self, repo_path: Path | str, path: str) -> None:
-        """Remove *path* from the index (``git rm --cached``), keeping the working tree.
-
-        Drops a tracked gitlink without deleting the child's working tree or
-        its ``.git`` directory, preserving any local history inside the child.
-        """
-        self._run("rm", "--cached", path, cwd=repo_path)
-
-    def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
-        """Create *tag_name* in *repo_path*."""
-        self._run("tag", tag_name, cwd=repo_path)
-
-    def remote_exists(self, repo_path: Path | str, remote: str = "origin") -> bool:
-        """Return ``True`` when *remote* exists in *repo_path*."""
-        try:
-            self._run("remote", "get-url", remote, cwd=repo_path)
-            return True
-        except GitSyncError:
-            return False
-
-    def tag_exists(self, repo_path: Path | str, tag_name: str) -> bool:
-        """Return ``True`` when *tag_name* already exists in *repo_path*."""
-        completed = subprocess.run(
-            [self.executable, "show-ref", "--verify", "--quiet", f"refs/tags/{tag_name}"],
-            cwd=str(repo_path),
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        if completed.returncode == 0:
-            return True
-        if completed.returncode == 1:
-            return False
-        command = f"{self.executable} show-ref --verify refs/tags/{tag_name}"
-        details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"
-        raise GitSyncError(f"Git command failed ({command}): {details}")
-
-    def has_unresolved_merge(self, repo_path: Path | str) -> bool:
-        """Return ``True`` when *repo_path* has an in-progress merge conflict."""
-        completed = subprocess.run(
-            [self.executable, "rev-parse", "--verify", "--quiet", "MERGE_HEAD"],
-            cwd=str(repo_path),
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        if completed.returncode == 0:
-            return True
-        if completed.returncode == 1:
-            return False
-        command = f"{self.executable} rev-parse --verify --quiet MERGE_HEAD"
-        details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"
-        raise GitSyncError(f"Git command failed ({command}): {details}")
-
-    def branch_tracking_state(self, repo_path: Path | str) -> SyncState | None:
-        """Return upstream tracking state for the current branch in *repo_path*."""
-        counts = self.branch_tracking_counts(repo_path)
-        if counts is None:
-            return None
-        ahead, behind = counts
-        if ahead and behind:
-            return SyncState.DIVERGED
-        if ahead:
-            return SyncState.AHEAD
-        if behind:
-            return SyncState.BEHIND
-        return SyncState.ALIGNED
-
-    def upstream_ref(self, repo_path: Path | str) -> str | None:
-        """Return the upstream ref for the current branch, e.g. ``origin/main``."""
-        upstream = subprocess.run(
-            [self.executable, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
-            cwd=str(repo_path),
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        if upstream.returncode != 0:
-            return None
-        return upstream.stdout.strip() or None
-
-    def branch_tracking_counts(self, repo_path: Path | str) -> tuple[int, int] | None:
-        """Return ``(ahead, behind)`` counts against upstream for the current branch."""
-        if self.upstream_ref(repo_path) is None:
-            return None
-        counts = self._run("rev-list", "--left-right", "--count", "HEAD...@{upstream}", cwd=repo_path)
-        ahead_raw, behind_raw = counts.stdout.strip().split()
-        return (int(ahead_raw), int(behind_raw))
-
-    def has_upstream(self, repo_path: Path | str) -> bool:
-        """Return ``True`` when the current branch has an upstream configured."""
-        upstream = subprocess.run(
-            [self.executable, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
-            cwd=str(repo_path),
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        return upstream.returncode == 0
-
-    def _run(
-        self,
-        *args: str,
-        cwd: Path | str | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        completed = subprocess.run(
-            [self.executable, *args],
-            cwd=str(cwd) if cwd is not None else None,
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        if completed.returncode != 0:
-            command = " ".join([self.executable, *args])
-            details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"
-            raise GitSyncError(f"Git command failed ({command}): {details}")
-        return completed
-
-    @staticmethod
-    def _uses_file_transport(remote_url: str) -> bool:
-        parsed = urlsplit(remote_url)
-        if parsed.scheme == "file":
-            return True
-        if (
-            len(parsed.scheme) == 1
-            and len(remote_url) >= 2
-            and remote_url[1] == ":"
-            and parsed.scheme.isalpha()
-        ):
-            return True
-        if parsed.scheme:
-            return False
-        return bool(remote_url) and not remote_url.startswith("git@")
-
-
-# ============================================================
-#  Registry builders — translate documents ↔ WorkingGitTree
-# ============================================================
-
-
-def build_registry_from_cgs_document(
-    document: CgsDocument,
-    config_path: Path | str,
-    *,
-    project_root: Path | str | None = None,
-) -> WorkingGitTree:
-    """Build a :class:`WorkingGitTree` from a ``.cgs`` document."""
-    source_path = Path(config_path).resolve()
-    root_path = (
-        Path(project_root).resolve() if project_root is not None else source_path.parent.resolve()
-    )
-    root_entry = WorkingRepo(
-        repo_id=ROOT_REPO_ID,
-        name=document.project_name or source_path.stem,
-        node_type=NodeType.ROOT,
-        parent_id=None,
-        absolute_path=root_path,
-        relative_path=Path("."),
-        source_cgs_path=source_path,
-        target_ref_kind=RefKind.BRANCH,
-        target_ref_name=document.default_branch,
-        default_branch=document.default_branch,
-        discovery_state=DiscoveryState.RESOLVED,
-        remote_name=document.read("project.default_remote_name", "origin"),
-    )
-
-    registry = WorkingGitTree()
-    registry.add(root_entry)
-
-    seen_relative_paths: set[Path] = set()
-    root_identity_assigned = False
-    for repo in document.repos:
-        _validate_repo_shape(repo)
-        if _is_root_repo_spec(repo, document.project_name, root_identity_assigned):
-            _apply_repo_identity(root_entry, repo, document.default_branch)
-            # The source .cgs for the project root is already loaded.  The
-            # authoring default ``nested_config = auto`` applies to its
-            # descendants and must not make the root pending again.
-            root_entry.discovery_state = DiscoveryState.RESOLVED
-            root_identity_assigned = True
-            continue
-
-        relative_path = _normalise_relative_path(repo)
-        register_relative_path(
-            seen_relative_paths,
-            relative_path,
-            error_type=ConfigValidationError,
-            context="root",
-        )
-
-        target_kind, target_name = _resolve_repo_target_ref(
-            repo,
-            document_default_branch=document.default_branch,
-        )
-        entry = WorkingRepo(
-            repo_id=make_repo_id(ROOT_REPO_ID, relative_path, str(repo["project_name"])),
-            name=str(repo["project_name"]),
-            node_type=NodeType.LEAF,
-            parent_id=ROOT_REPO_ID,
-            absolute_path=(root_path / relative_path).resolve(),
-            relative_path=relative_path,
-            source_cgs_path=source_path,
-            target_ref_kind=target_kind,
-            target_ref_name=target_name,
-            fallback_branch=_as_optional_str(repo.get("fallback_branch")),
-            discovery_state=_initial_discovery_state(repo.get("nested_config")),
-            gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
-            project_owner_name=_as_optional_str(repo.get("project_owner_name")),
-            project_name=_as_optional_str(repo.get("project_name")),
-            repo_name=(
-                _as_optional_str(repo.get("repo_name"))
-                if repo.get("repo_name") is not None
-                else _as_optional_str(repo.get("project_name"))
-            ),
-            group_name=_as_optional_str(repo.get("group_name")),
-            gitprovider_url=_as_optional_str(repo.get("gitprovider_url")),
-            access_protocol=_parse_enum(
-                AccessProtocol,
-                repo.get("access_protocol"),
-                AccessProtocol.SSH,
-            ),
-            default_branch=str(repo.get("default_branch") or document.default_branch),
-            nested_config=_as_optional_str(repo.get("nested_config")),
-            remote_name=str(repo.get("remote_name") or document.read("project.default_remote_name", "origin")),
-        )
-        registry.add(entry)
-
-    normalize_node_types(registry)
-    registry.recompute_tree_state()
-    document.attach_serialization_context(registry)
-    return registry
-
-
-def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
-    """Build a :class:`WorkingGitTree` from a ``.gts`` snapshot document."""
-    registry = WorkingGitTree()
-    path_to_repo_id: dict[Path, str] = {}
-    project_source_cgs_path = document.read("project.source_cgs_path")
-
-    repo_states = sorted(
-        document.repo_states,
-        key=lambda repo: (len(Path(str(repo["absolute_path"])).parts), str(repo["absolute_path"])),
-    )
-
-    for repo_state in repo_states:
-        absolute_path = _resolve_document_path(str(repo_state["absolute_path"]))
-        parent_absolute_path = (
-            _resolve_document_path(str(repo_state["parent_absolute_path"]))
-            if repo_state.get("parent_absolute_path")
-            else None
-        )
-        is_root = parent_absolute_path is None
-        parent_id = None if is_root else path_to_repo_id[parent_absolute_path]
-        repo_id = (
-            ROOT_REPO_ID
-            if is_root
-            else make_repo_id(parent_id, repo_state.get("relative_path"), str(repo_state["name"]))
-        )
-
-        entry = WorkingRepo(
-            repo_id=repo_id,
-            name=str(repo_state["name"]),
-            node_type=NodeType.ROOT if is_root else _parse_gts_node_type(str(repo_state.get("node_type", "leaf"))),
-            parent_id=parent_id,
-            absolute_path=absolute_path,
-            relative_path=(Path(str(repo_state["relative_path"])) if repo_state.get("relative_path") is not None else None),
-            source_cgs_path=(
-                _resolve_document_path(str(repo_state["source_cgs_path"]))
-                if repo_state.get("source_cgs_path")
-                else (_resolve_document_path(str(project_source_cgs_path)) if project_source_cgs_path else None)
-            ),
-            current_ref_kind=_parse_optional_enum(RefKind, _repo_ref_kind(repo_state, "current")),
-            current_ref_name=_repo_ref_name(repo_state, "current"),
-            target_ref_kind=_parse_optional_enum(RefKind, _repo_ref_kind(repo_state, "target")),
-            target_ref_name=_repo_ref_name(repo_state, "target"),
-            resolved_ref_kind=_parse_optional_enum(RefKind, _repo_ref_kind(repo_state, "resolved")),
-            resolved_ref_name=_repo_ref_name(repo_state, "resolved"),
-            commit_sha=_as_optional_str(repo_state.get("commit_sha")),
-            repo_lifecycle_state=RepoLifecycleState(str(repo_state["repo_lifecycle_state"])),
-            sync_state=SyncState(str(repo_state["sync_state"])),
-            discovery_state=DiscoveryState(str(repo_state.get("discovery_state", DiscoveryState.RESOLVED.value))),
-            fallback_branch=_as_optional_str(repo_state.get("fallback_branch", "main")),
-            fallback_applied=bool(repo_state.get("fallback_applied", False)),
-            fallback_reason=_as_optional_str(repo_state.get("fallback_reason")),
-            worktree_state=_as_optional_str(repo_state.get("worktree_state")),
-            is_reachable=bool(repo_state.get("is_reachable", True)),
-            project_owner_name=_as_optional_str(repo_state.get("project_owner_name")),
-            project_name=_as_optional_str(repo_state.get("project_name")),
-            repo_name=(
-                _as_optional_str(repo_state.get("repo_name"))
-                if repo_state.get("repo_name") is not None
-                else _as_optional_str(repo_state.get("project_name"))
-            ),
-            default_branch=_repo_ref_name(repo_state, "target"),
-        )
-        registry.add(entry)
-        path_to_repo_id[absolute_path] = repo_id
-
-    normalize_node_types(registry)
-    registry.recompute_tree_state()
-    return registry
-
-
-def build_gts_document_from_registry(
-    registry: WorkingGitTree,
-    *,
-    command_origin: str,
-    source_cgs_path: Path | None,
-    freeze_name: str | None = None,
-) -> GtsDocument:
-    """Build a :class:`GtsDocument` from the live *registry*."""
-    root_entry = registry.get(ROOT_REPO_ID)
-    tree_state = build_tree_state(registry)
-    data: dict[str, Any] = {
-        "document": {
-            "CGS_VERSION": CGS_VERSION,
-            "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "command_origin": command_origin,
-        },
-        "project": {
-            "name": root_entry.name,
-            "root_absolute_path": _path_to_environment_marker(root_entry.absolute_path),
-        },
-        "tree_state": {
-            "lifecycle_state": tree_state.lifecycle_state.value,
-            "is_ready": tree_state.is_ready,
-            "registry_complete": tree_state.registry_complete,
-        },
-        "tree": {
-            "lines": format_view_tree(registry).splitlines(),
-        },
-        "repo_state": [],
-    }
-    if source_cgs_path is not None:
-        data["project"]["source_cgs_path"] = _path_to_environment_marker(source_cgs_path)
-    if command_origin in _FREEZE_COMMAND_ORIGINS:
-        data["freeze_manifest"] = _build_freeze_manifest(registry, freeze_name=freeze_name)
-
-    for entry in sorted(registry.values(), key=lambda item: item.repo_id):
-        repo_data: dict[str, Any] = {
-            "name": entry.name,
-            "node_type": entry.node_type.value,
-            "absolute_path": _path_to_environment_marker(entry.absolute_path),
-            "relative_path": str(entry.relative_path) if entry.relative_path is not None else None,
-            "repo_lifecycle_state": entry.repo_lifecycle_state.value,
-            "sync_state": entry.sync_state.value,
-            "commit_sha": entry.commit_sha,
-            "fallback_reason": entry.fallback_reason,
-            "worktree_state": entry.worktree_state,
-            "source_cgs_path": (
-                _path_to_environment_marker(entry.source_cgs_path) if entry.source_cgs_path else None
-            ),
-            "project_owner_name": entry.project_owner_name,
-            "project_name": entry.project_name,
-            "repo_name": entry.repo_name,
-        }
-        _write_compact_refs(repo_data, entry)
-        if entry.discovery_state != DiscoveryState.RESOLVED:
-            repo_data["discovery_state"] = entry.discovery_state.value
-        if entry.fallback_branch and entry.fallback_branch != "main":
-            repo_data["fallback_branch"] = entry.fallback_branch
-        if entry.fallback_applied:
-            repo_data["fallback_applied"] = entry.fallback_applied
-        if not entry.is_reachable:
-            repo_data["is_reachable"] = entry.is_reachable
-        if entry.parent_id is not None:
-            repo_data["parent_absolute_path"] = _path_to_environment_marker(
-                registry.get(entry.parent_id).absolute_path
-            )
-        data["repo_state"].append({key: value for key, value in repo_data.items() if value is not None})
-
-    document = GtsDocument.from_dict(data)
-    document.ensure_snapshot_hash()
-    document.validate()
-    return document
-
-
-def _build_freeze_manifest(
-    registry: WorkingGitTree,
-    *,
-    freeze_name: str | None = None,
-) -> dict[str, Any]:
-    root_entry = registry.get(ROOT_REPO_ID)
-    tag_name = (
-        freeze_name
-        or root_entry.resolved_ref_name
-        or root_entry.target_ref_name
-        or root_entry.current_ref_name
-        or ""
-    )
-    return {
-        "schema_version": "1.0",
-        "immutable_snapshot": True,
-        "workspace_validated": True,
-        "ledger_checkpoint": True,
-        "synchronized_ref_kind": RefKind.TAG.value,
-        "synchronized_ref_name": tag_name,
-        "release-name": tag_name,
-        "restore_operation": "launch_state",
-    }
-
-
 def _release_snapshot_slug(release_name: str) -> str:
     """Return a filesystem-friendly release suffix for immutable .gts files."""
     slug = re.sub(r"[^A-Za-z0-9._-]+", "-", release_name.strip()).strip(".-_")
     return slug or "release"
-
-
-# ============================================================
-#  Nested config discovery
-# ============================================================
-
-
-def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
-    """Discover nested ``.cgs`` files in already-cloned repositories."""
-    changes: list[str] = []
-    pending_entries = [
-        entry
-        for entry in registry.values()
-        if entry.repo_id != ROOT_REPO_ID
-        and entry.nested_config not in {None, "disabled"}
-        and entry.discovery_state != DiscoveryState.RESOLVED
-    ]
-
-    # Pre-build a set of all known absolute paths for O(1) circularity detection.
-    # Updated in-place as new entries are added during this call.
-    registered_paths: set[Path] = {e.absolute_path for e in registry.values() if e.absolute_path is not None}
-
-    for entry in pending_entries:
-        if not entry.absolute_path.exists():
-            entry.discovery_state = DiscoveryState.MISSING
-            continue
-
-        nested_path = _resolve_nested_config_path(entry.absolute_path, entry.nested_config or "auto")
-        if nested_path is None:
-            entry.discovery_state = DiscoveryState.MISSING
-            continue
-
-        nested_document = CgsDocument.from_toml(nested_path)
-        promote_to_parent(registry, entry.repo_id, nested_path)
-        entry.discovery_state = DiscoveryState.RESOLVED
-
-        root_identity_assigned = False
-        existing_child_paths = {
-            child.relative_path for child in registry.children_of(entry.repo_id) if child.relative_path is not None
-        }
-        for repo in nested_document.repos:
-            _validate_repo_shape(repo)
-            if not root_identity_assigned and repo.get("project_name") == nested_document.project_name:
-                _apply_repo_identity(entry, repo, nested_document.default_branch)
-                # This nested document has just been resolved for ``entry``.
-                entry.discovery_state = DiscoveryState.RESOLVED
-                root_identity_assigned = True
-                continue
-
-            relative_path = _normalise_relative_path(repo)
-            register_relative_path(
-                existing_child_paths,
-                relative_path,
-                error_type=NestedConfigDiscoveryError,
-                context=str(entry.absolute_path),
-            )
-
-            child_id = make_repo_id(entry.repo_id, relative_path, str(repo["project_name"]))
-            if child_id in registry.repos:
-                continue
-
-            child_absolute_path = (entry.absolute_path / relative_path).resolve()
-            # Skip children whose absolute path already exists in the registry.
-            # This prevents circularities at discovery time: if a parent's nested
-            # .cgs references another parent (already registered under a different
-            # repo_id), we do not create a duplicate entry here.  The standalone
-            # fix_circularities() function handles any pre-existing duplicates that
-            # were not prevented by this guard (e.g., loaded from an older .gts).
-            if child_absolute_path in registered_paths:
-                continue
-
-            target_kind, target_name = _resolve_repo_target_ref(
-                repo,
-                document_default_branch=nested_document.default_branch,
-            )
-            new_entry = registry.add(
-                WorkingRepo(
-                    repo_id=child_id,
-                    name=str(repo["project_name"]),
-                    node_type=NodeType.LEAF,
-                    parent_id=entry.repo_id,
-                    absolute_path=child_absolute_path,
-                    relative_path=relative_path,
-                    source_cgs_path=nested_path,
-                    target_ref_kind=target_kind,
-                    target_ref_name=target_name,
-                    fallback_branch=str(repo.get("fallback_branch")) if repo.get("fallback_branch") else None,
-                    discovery_state=_initial_discovery_state(repo.get("nested_config")),
-                    gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
-                    project_owner_name=str(repo.get("project_owner_name"))
-                    if repo.get("project_owner_name")
-                    else None,
-                    project_name=str(repo.get("project_name")) if repo.get("project_name") else None,
-                    repo_name=(
-                        str(repo.get("repo_name"))
-                        if repo.get("repo_name") is not None
-                        else (str(repo.get("project_name")) if repo.get("project_name") is not None else None)
-                    ),
-                    group_name=str(repo.get("group_name")) if repo.get("group_name") else None,
-                    gitprovider_url=str(repo.get("gitprovider_url"))
-                    if repo.get("gitprovider_url")
-                    else None,
-                    access_protocol=_parse_enum(
-                        AccessProtocol,
-                        repo.get("access_protocol"),
-                        AccessProtocol.SSH,
-                    ),
-                    default_branch=str(repo.get("default_branch") or nested_document.default_branch),
-                    nested_config=str(repo.get("nested_config")) if repo.get("nested_config") else None,
-                    remote_name=str(repo.get("remote_name") or entry.remote_name or "origin"),
-                )
-            )
-            registered_paths.add(new_entry.absolute_path)
-            changes.append(f"discovered:{child_id}")
-
-    normalize_node_types(registry)
-    registry.recompute_tree_state()
-    return tuple(changes)
-
-
-def _resolve_nested_config_path(repo_root: Path, nested_config: str) -> Path | None:
-    if nested_config == "disabled":
-        return None
-    if nested_config != "auto":
-        candidate = (repo_root / nested_config).resolve()
-        if repo_root not in candidate.parents and candidate != repo_root:
-            raise NestedConfigDiscoveryError(f"nested_config escapes repo root: {candidate}")
-        return candidate if candidate.is_file() else None
-
-    matches = sorted(repo_root.glob("*.cgs"))
-    if not matches:
-        return None
-    if len(matches) > 1:
-        raise NestedConfigDiscoveryError(f"Ambiguous nested .cgs discovery in {repo_root}")
-    return matches[0].resolve()
-
-
-def _resolve_repo_target_ref(
-    repo: dict[str, Any],
-    *,
-    document_default_branch: str | None,
-) -> tuple[RefKind, str | None]:
-    tag = _as_optional_str(repo.get("tag"))
-    if tag:
-        return (RefKind.TAG, tag)
-    branch = _as_optional_str(repo.get("branch")) or _as_optional_str(repo.get("default_branch"))
-    if branch is None:
-        branch = document_default_branch or "main"
-    return (RefKind.BRANCH, branch)
 
 
 # ============================================================
@@ -1907,67 +734,6 @@ class Orchestre:
 
     def register_repo(self, repo: GitRepo) -> None:
         self.git_tree.add_repo(repo)
-
-
-@dataclass(frozen=True, slots=True)
-class SubmoduleEntry:
-    """One git submodule entry parsed from ``.gitmodules``."""
-
-    name: str
-    path: str
-    url: str
-    branch: str
-
-
-@dataclass(frozen=True, slots=True)
-class ImportSubmodulesReport:
-    """Result returned by :meth:`ComplexGitSyncClient.import_submodules`.
-
-    Attributes
-    ----------
-    submodules:
-        All submodule entries found in ``.gitmodules``.
-    applied:
-        ``True`` when the conversion was actually performed (``apply=True``).
-    converted:
-        Names of submodules that were converted (same as ``submodules`` when
-        ``applied`` is ``True``; empty tuple when dry-run).
-    cgs_entries:
-        Authoring-form ``repos`` tables for the converted submodules — ready
-        to pass to :meth:`ComplexGitSyncClient.configure`.
-    """
-
-    submodules: tuple[SubmoduleEntry, ...]
-    applied: bool
-    converted: tuple[str, ...]
-    cgs_entries: tuple[dict, ...]
-
-
-def _parse_gitmodules(content: str) -> list[SubmoduleEntry]:
-    """Parse ``.gitmodules`` file content into :class:`SubmoduleEntry` objects.
-
-    Handles the standard git config INI-like format::
-
-        [submodule "name"]
-            path = some/path
-            url  = https://example.com/owner/repo.git
-            branch = main      # optional
-    """
-    parser = configparser.RawConfigParser()
-    parser.read_string(content)
-
-    result: list[SubmoduleEntry] = []
-    for section in parser.sections():
-        name_match = re.match(r'^submodule\s+"(.+)"$', section)
-        if name_match is None:
-            continue
-        name = name_match.group(1)
-        path = parser.get(section, "path", fallback="").strip()
-        url = parser.get(section, "url", fallback="").strip()
-        branch = parser.get(section, "branch", fallback="main").strip() or "main"
-        if path and url:
-            result.append(SubmoduleEntry(name=name, path=path, url=url, branch=branch))
-    return result
 
 
 def _url_to_repo_identifier(url: str) -> str:
@@ -2210,7 +976,12 @@ class ComplexGitSyncClient:
             document.to_toml(Path(output_path))
         return document
 
-    def import_submodules(
+    # Pre-existing complexity debt from before C90 was enabled (P6,
+    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # under this ticket, since a real refactor of the submodule-conversion
+    # flow risks behaviour change under time pressure. New code is enforced
+    # at 12.
+    def import_submodules(  # noqa: C901
         self,
         repo_root: str | Path,
         *,
@@ -2397,7 +1168,12 @@ class ComplexGitSyncClient:
             cgs_entries=tuple(cgs_entries),
         )
 
-    def discover_repos(
+    # Pre-existing complexity debt from before C90 was enabled (P6,
+    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # under this ticket, since a real refactor of the filesystem-walking
+    # discovery flow risks behaviour change under time pressure. New code
+    # is enforced at 12.
+    def discover_repos(  # noqa: C901
         self,
         root_dir: str | Path | None = None,
         *,
@@ -2555,7 +1331,12 @@ class ComplexGitSyncClient:
             project_name=project_name,
         )
 
-    def _sync_gitignore_lifecycle(
+    # Pre-existing complexity debt from before C90 was enabled (P6,
+    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # under this ticket, since a real refactor of the .gitignore sync flow
+    # risks behaviour change under time pressure. New code is enforced at
+    # 12.
+    def _sync_gitignore_lifecycle(  # noqa: C901
         self,
         *,
         pre_pull: bool = True,
@@ -3005,14 +1786,7 @@ class ComplexGitSyncClient:
         output_path: str | Path | None = None,
     ) -> Path:
         """Resolve CGSHOME from CGSPATH, the environment, or CWD."""
-        if output_path is not None:
-            cgspath = Path(output_path).expanduser().resolve()
-            return (cgspath / (document.project_name or source_path.stem)).resolve()
-        env_cgshome = os.environ.get("CGSHOME")
-        if env_cgshome:
-            return Path(env_cgshome).expanduser().resolve()
-        cgspath = (Path.cwd() / "../..").resolve()
-        return (cgspath / (document.project_name or source_path.stem)).resolve()
+        return _resolve_cgshome(document, source_path, output_path=output_path)
 
     def resolve_initialise_cgshome(
         self,
@@ -3021,9 +1795,7 @@ class ComplexGitSyncClient:
         output_path: str | Path | None = None,
     ) -> Path:
         """Read a .cgs file and resolve the CGSHOME initialise will use."""
-        source_path = Path(config_path).resolve()
-        document = CgsDocument.from_toml(source_path)
-        return self.resolve_cgshome(document, source_path, output_path=output_path)
+        return _resolve_initialise_cgshome(config_path, output_path=output_path)
 
     def load(
         self,
@@ -3203,7 +1975,7 @@ class ComplexGitSyncClient:
     ) -> Path:
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        return self._resolve_project_root(document, source_path, target_dir, output_path)
+        return _resolve_project_root(document, source_path, target_dir, output_path)
 
     def clone_cgs(
         self,
@@ -3215,7 +1987,7 @@ class ComplexGitSyncClient:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        project_root = self._resolve_project_root(document, source_path, target_dir, output_path)
+        project_root = _resolve_project_root(document, source_path, target_dir, output_path)
 
         self.registry = build_registry_from_cgs_document(
             document,
@@ -3285,15 +2057,7 @@ class ComplexGitSyncClient:
         ComplexGitSync standalone must never mix its own repo with the
         project state it manages.
         """
-        if not project_name:
-            raise ValueError("bootstrap requires a non-empty project_name.")
-        if cgs_path is not None:
-            cgspath = Path(cgs_path).expanduser().resolve()
-        else:
-            cgs_root = (Path.home() / ".cgs").expanduser().resolve()
-            cgs_root.mkdir(parents=True, exist_ok=True)
-            cgspath = cgs_root / f"CGS{datetime.now(UTC):%Y%m%d%H%M%S}"
-        return (cgspath / project_name).resolve()
+        return _resolve_bootstrap_root(project_name, cgs_path=cgs_path)
 
     def bootstrap(
         self,
@@ -3856,6 +2620,43 @@ class ComplexGitSyncClient:
         self.orchestre.git_tree.git.bind_tree(self.registry)
         return self.registry
 
+    def verify(self, cgshome: str | Path, *, repair: bool = False) -> VerificationReport:
+        """Verify the hash-chained ``.cgitsync/lgr`` register for tamper-evidence.
+
+        Checks chain linkage (``BROKEN_LINK``), entry-hash integrity
+        (``BAD_ENTRY_HASH``), sequence gaps/duplicates (``SEQ_GAP``/
+        ``SEQ_DUPLICATE``), and whether the cached ``HEAD`` pointer agrees
+        with the recomputed true head (``HEAD_STALE``). A register with no
+        entries yet is reported clean — nothing has been recorded, which is
+        not itself a problem.
+
+        Store-level checks (``MISSING_STATE``, ``ORPHAN_STATE``,
+        ``STATE_DIGEST_MISMATCH`` — cross-referencing entries against the
+        actual ``state(<hash>)_n/`` directories on disk) are not
+        implemented yet; this is chain-and-HEAD verification only.
+
+        With ``repair=True``, a stale ``HEAD`` cache is corrected in place.
+        Entries themselves are never rewritten or deleted — a broken chain
+        is reported, not silently healed (``IsolationPlan.md`` §2.6).
+        """
+        lgr_dir = Path(cgshome) / ".cgitsync" / "lgr"
+        entries = read_all_entries(lgr_dir)
+        report = verify_chain(entries)
+
+        if entries:
+            cached_head = read_head(lgr_dir)
+            true_head = recompute_head(lgr_dir)
+            if cached_head != true_head:
+                report.findings.append((
+                    entries[-1].seq,
+                    Finding.HEAD_STALE,
+                    f"cached HEAD={cached_head}, recomputed HEAD={true_head}",
+                ))
+            if repair:
+                verify_and_repair_head(lgr_dir)
+
+        return report
+
     def get_tree_state(self) -> ProjectTreeState:
         return build_tree_state(self.get_dependency_registry())
 
@@ -4077,7 +2878,7 @@ class ComplexGitSyncClient:
         else:
             snapshot_stem = root_entry.name
         snapshot_name = f"{snapshot_stem}.gts"
-        state_anchor = new_time_l0_anchor()
+        state_anchor = new_time_l0_anchor(SystemClock())
         canonical_state_hash = state_anchor.state_hash
         cgitsync_dir = root_entry.absolute_path / ".cgitsync"
         cgitsync_dir.mkdir(parents=True, exist_ok=True)
@@ -4240,25 +3041,6 @@ class ComplexGitSyncClient:
     def validate_topology(self) -> BranchTopologyReport:
         """Inspect and validate the workspace branch topology."""
         return self.validate_branch_topology()
-
-    def _resolve_project_root(
-        self,
-        document: CgsDocument,
-        source_path: Path,
-        target_dir: str | Path | None,
-        output_path: str | Path | None = None,
-    ) -> Path:
-        if target_dir is not None:
-            return Path(target_dir).resolve()
-
-        base_dir = Path(output_path).resolve() if output_path is not None else Path.cwd()
-        default_root = (base_dir / (document.project_name or source_path.stem)).resolve()
-        if not default_root.exists() or (default_root.is_dir() and not any(default_root.iterdir())):
-            return default_root
-        raise GitSyncError(
-            f"Clone destination already exists and is not empty: {default_root}\n"
-            f"Choose a different --target-dir or ensure the directory is empty."
-        )
 
     def _pending_clone_entries(
         self,

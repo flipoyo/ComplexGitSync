@@ -1,4 +1,9 @@
-"""ComplexGitSync custom exception hierarchy."""
+"""errors — ComplexGitSync custom exception hierarchy.
+
+Ring: 0 (pure — no I/O, no clock, no environment)
+Contract: define the package's public exception types; raise nothing itself.
+Imports: none
+"""
 
 
 class ComplexGitSyncError(Exception):

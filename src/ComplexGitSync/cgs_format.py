@@ -1,4 +1,16 @@
-"""Own the parse, normalize, validate, and serialize boundary for ``.cgs`` files.
+"""cgs_format — parse, normalize, validate, and serialize boundary for ``.cgs`` files.
+
+Ring: 0 core + Ring-1 I/O adapter, co-located — CgsDocument inherits
+    ConfigDocumentIOMixin (Ring 1) because every real caller invokes
+    CgsDocument.from_toml()/.to_toml() directly on the class; the pure
+    remainder (parse_repo_id, normalize_cgs, validation) is fully
+    Ring-0-testable with no filesystem access. Same shape as
+    gts_document.py — see that module's docstring for the full rationale
+    (WP-CFG, AgentSpecs/20260828_Isolation_DevPlanTicket.md §0).
+Contract: own the textual provider:owner/repository authoring grammar and
+    the .cgs parse/normalize/validate/serialize pipeline; deterministic and
+    offline.
+Imports: config_document, config_document_io, errors, git_repo
 
 TOML remains the lexical format. This module exclusively owns the textual
 ``provider:owner/repository`` grammar through :func:`parse_repo_id`.
@@ -27,13 +39,9 @@ from typing import TYPE_CHECKING, Any
 import tomli_w
 
 from .config_document import ConfigDocument
+from .config_document_io import ConfigDocumentIOMixin
 from .errors import ConfigValidationError
-from .git_repo import (
-    AccessProtocol,
-    GitProvider,
-    GitRepo,
-    validate_git_provider,
-)
+from .git_repo import AccessProtocol, GitProvider, GitRepo, validate_git_provider
 
 if TYPE_CHECKING:
     from .git_tree import GitTree
@@ -58,12 +66,10 @@ def parse_cgs(path: Path | str) -> dict[str, Any]:
 def parse_repo_id(identifier: str) -> dict[str, str]:
     """Parse authoring shorthand into a normalized repository identity.
 
-    The only accepted textual grammar is ``provider:owner/repository``.
-    Nested owner namespaces are supported: the last slash-delimited segment is
-    the repository name and all preceding segments form
-    ``project_owner_name``. Canonical provider membership is validated later
-    with the normalized document so shorthand and advanced tables share one
-    provider-validation path.
+    Only ``provider:owner/repository`` is accepted. The last slash segment is
+    the repository name; earlier segments join into ``project_owner_name``.
+    Provider membership is validated later against the normalized document,
+    so shorthand and advanced tables share one validation path.
     """
     if not isinstance(identifier, str) or identifier != identifier.strip():
         raise ValueError("repository identifier must be a trimmed string")
@@ -97,11 +103,14 @@ def parse_repo_id(identifier: str) -> dict[str, str]:
 parse_repository_identifier = parse_repo_id
 
 
-def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:
+# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpecs/
+# 20260828_Isolation_DevPlanTicket.md) — flagged, not fixed under this
+# ticket, since a real refactor of .cgs normalization risks behaviour
+# change under time pressure. New code is enforced at 12.
+def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
     """Return the canonical internal representation for parsed ``.cgs`` data.
 
-    Both the minimal authoring form and the legacy advanced table form are
-    accepted. The input mapping is never mutated.
+    Accepts both the minimal and legacy advanced-table forms; never mutates the input.
     """
     if not isinstance(data, dict):
         raise TypeError(f"ConfigDocument data must be a dict, got {type(data).__name__!r}.")
@@ -157,9 +166,7 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:
             repo_value = copy.deepcopy(value)
             identifier_keys = [key for key in ("repository", "repo") if key in repo_value]
             if len(identifier_keys) > 1:
-                errors.append(
-                    f"repos[{index}] must use only one of 'repository' or 'repo'"
-                )
+                errors.append(f"repos[{index}] must use only one of 'repository' or 'repo'")
                 continue
             if identifier_keys:
                 identifier = repo_value.pop(identifier_keys[0])
@@ -193,14 +200,9 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:
         if repo.get("repo_name") is None and repo.get("project_name") is not None:
             repo["repo_name"] = repo["project_name"]
 
-        repo_default_branch = repo.get("default_branch") or project.get(
-            "default_branch", DEFAULT_BRANCH
-        )
-        repo["default_branch"] = str(repo_default_branch)
-        repo["fallback_branch"] = str(repo.get("fallback_branch") or repo_default_branch)
-        repo["access_protocol"] = str(
-            repo.get("access_protocol") or DEFAULT_ACCESS_PROTOCOL
-        )
+        repo["default_branch"] = str(repo.get("default_branch") or project["default_branch"])
+        repo["fallback_branch"] = str(repo.get("fallback_branch") or repo["default_branch"])
+        repo["access_protocol"] = str(repo.get("access_protocol") or DEFAULT_ACCESS_PROTOCOL)
         repo["nested_config"] = str(repo.get("nested_config") or DEFAULT_NESTED_CONFIG)
 
         relative_path = repo.get("relative_path")
@@ -222,8 +224,7 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:
 
     if errors:
         raise ConfigValidationError(
-            "Invalid .cgs authoring document:\n"
-            + "\n".join(f"  • {error}" for error in errors)
+            "Invalid .cgs authoring document:\n" + "\n".join(f"  • {error}" for error in errors)
         )
     return canonical
 
@@ -239,6 +240,14 @@ def _optional_text(value: Any) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _resolve_override(overrides: dict[str, Any], key: str, value: Any, default: str) -> str:
+    """Coalesce *value* with *default*, recording an override in *overrides* when they differ."""
+    resolved = str(value or default)
+    if resolved != default:
+        overrides[key] = resolved
+    return resolved
 
 
 def _canonical_repo_identity(repo: dict[str, Any]) -> tuple[str, str, str]:
@@ -329,15 +338,12 @@ def _repo_data_from_tree(
         else:
             data[attribute] = str(value)
 
-    repo_default_branch = getattr(repo, "default_branch", None) or data.get(
-        "default_branch"
+    repo_default_branch = str(
+        getattr(repo, "default_branch", None) or data.get("default_branch") or project_default_branch
     )
-    repo_default_branch = str(repo_default_branch or project_default_branch)
     data["default_branch"] = repo_default_branch
     data["fallback_branch"] = str(
-        getattr(repo, "fallback_branch", None)
-        or data.get("fallback_branch")
-        or repo_default_branch
+        getattr(repo, "fallback_branch", None) or data.get("fallback_branch") or repo_default_branch
     )
 
     relative_path = getattr(repo, "relative_path", None)
@@ -362,7 +368,7 @@ def _repo_data_from_tree(
     return data
 
 
-class CgsDocument(ConfigDocument):
+class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
     """Canonical ``.cgs`` project topology produced from authoring TOML.
 
     Use :meth:`from_toml` or :meth:`from_dict` so shorthand is normalized
@@ -416,25 +422,20 @@ class CgsDocument(ConfigDocument):
     def from_git_tree(cls, tree: GitTree) -> CgsDocument:
         """Project a reference or working Git tree into canonical ``.cgs`` data.
 
-        This method owns the configuration-field mapping.  The tree supplies
-        normalized repository and topology state but never constructs TOML or
-        interprets the textual repository-identifier grammar.
+        Owns the configuration-field mapping; the tree supplies normalized state
+        but never constructs TOML or interprets the repository-identifier grammar.
         """
         project_name = tree.project_name or _root_tree_value(tree, "project_name", "name")
         if not project_name:
             raise ValueError("GitTree.project_name is required to generate .cgs")
 
         default_branch = tree.default_branch or _root_tree_value(
-            tree,
-            "default_branch",
-            "target_ref_name",
+            tree, "default_branch", "target_ref_name"
         )
         if not default_branch:
             raise ValueError("GitTree.default_branch is required to generate .cgs")
 
-        preserved = copy.deepcopy(
-            tree.format_metadata.get(_TREE_FORMAT_METADATA_KEY, {})
-        )
+        preserved = copy.deepcopy(tree.format_metadata.get(_TREE_FORMAT_METADATA_KEY, {}))
         document_data = preserved.get("document", {})
         if not isinstance(document_data, dict):
             document_data = {}
@@ -443,12 +444,7 @@ class CgsDocument(ConfigDocument):
         project_data = preserved.get("project", {})
         if not isinstance(project_data, dict):
             project_data = {}
-        project_data.update(
-            {
-                "name": str(project_name),
-                "default_branch": str(default_branch),
-            }
-        )
+        project_data.update({"name": str(project_name), "default_branch": str(default_branch)})
 
         canonical: dict[str, Any] = {
             "document": document_data,
@@ -504,10 +500,9 @@ class CgsDocument(ConfigDocument):
     def attach_serialization_context(self, tree: GitTree) -> None:
         """Retain canonical semantics on *tree* for a lossless projection back.
 
-        The retained state is opaque to :mod:`git_tree`; only this format
-        adapter assigns or interprets it.  This preserves document/project
-        extensions and exceptional repository configuration across the model
-        boundary without moving authoring grammar into the tree.
+        Opaque to :mod:`git_tree` — only this adapter reads it. Preserves
+        document/project extensions and exceptional repository configuration
+        across the model boundary without moving authoring grammar into the tree.
         """
         data = self.to_dict()
         tree.format_metadata[_TREE_FORMAT_METADATA_KEY] = {
@@ -534,7 +529,12 @@ class CgsDocument(ConfigDocument):
             if match_index is not None:
                 tree._repo_metadata[tree_key] = copy.deepcopy(unmatched.pop(match_index))
 
-    def validate(self) -> None:
+    # Pre-existing complexity debt from before C90 was enabled (P6,
+    # AgentSpecs/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # under this ticket, since a real refactor of .cgs static validation
+    # risks behaviour change under time pressure. New code is enforced at
+    # 12.
+    def validate(self) -> None:  # noqa: C901
         """Validate static document properties without Git or network access."""
         errors: list[str] = []
 
@@ -565,10 +565,7 @@ class CgsDocument(ConfigDocument):
                 gitprovider = repo.get("gitprovider", GitProvider.GITHUB.value)
                 custom_url = repo.get("gitprovider_url")
                 try:
-                    validate_git_provider(
-                        gitprovider,
-                        gitprovider_url=custom_url,
-                    )
+                    validate_git_provider(gitprovider, gitprovider_url=custom_url)
                     provider_is_valid = True
                 except ValueError as exc:
                     errors.append(f"repos[{idx}].{exc}")
@@ -586,8 +583,7 @@ class CgsDocument(ConfigDocument):
                     identity = (str(gitprovider), str(owner), str(repository_name))
                     if identity in seen_identifiers:
                         errors.append(
-                            "duplicate repository identifier: "
-                            f"{gitprovider}:{owner}/{repository_name}"
+                            f"duplicate repository identifier: {gitprovider}:{owner}/{repository_name}"
                         )
                     seen_identifiers.add(identity)
 
@@ -676,27 +672,27 @@ class CgsDocument(ConfigDocument):
             overrides: dict[str, Any] = {}
             if repo.get("project_name") != repository_name:
                 overrides["project_name"] = repo.get("project_name")
-            repo_default_branch = str(repo.get("default_branch") or project_default_branch)
-            if repo_default_branch != project_default_branch:
-                overrides["default_branch"] = repo_default_branch
-            fallback_branch = str(repo.get("fallback_branch") or repo_default_branch)
-            if fallback_branch != repo_default_branch:
-                overrides["fallback_branch"] = fallback_branch
-            access_protocol = str(repo.get("access_protocol") or DEFAULT_ACCESS_PROTOCOL)
-            if access_protocol != DEFAULT_ACCESS_PROTOCOL:
-                overrides["access_protocol"] = access_protocol
-            nested_config = str(repo.get("nested_config") or DEFAULT_NESTED_CONFIG)
-            if nested_config != DEFAULT_NESTED_CONFIG:
-                overrides["nested_config"] = nested_config
+            repo_default_branch = _resolve_override(
+                overrides, "default_branch", repo.get("default_branch"), project_default_branch
+            )
+            _resolve_override(
+                overrides, "fallback_branch", repo.get("fallback_branch"), repo_default_branch
+            )
+            _resolve_override(
+                overrides, "access_protocol", repo.get("access_protocol"), DEFAULT_ACCESS_PROTOCOL
+            )
+            _resolve_override(
+                overrides, "nested_config", repo.get("nested_config"), DEFAULT_NESTED_CONFIG
+            )
 
             expected_relative_path = (
                 "."
                 if matching_project_repos == 1 and repo.get("project_name") == project_name
                 else repository_name
             )
-            relative_path = str(repo.get("relative_path") or expected_relative_path)
-            if relative_path != expected_relative_path:
-                overrides["relative_path"] = relative_path
+            _resolve_override(
+                overrides, "relative_path", repo.get("relative_path"), expected_relative_path
+            )
 
             for key, value in repo.items():
                 if key not in canonical_keys:

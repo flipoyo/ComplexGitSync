@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ComplexGitSync"
-version = "0002.14"
+version = "0002.16"
 description = "Synchronize nested Git repository trees from .cgs specs and .gts state snapshots."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -33,6 +33,10 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = [".claude"]
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I"]
+select = ["E4", "E7", "E9", "F", "I", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
