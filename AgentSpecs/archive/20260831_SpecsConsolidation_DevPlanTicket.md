@@ -2,6 +2,20 @@
 
 *Created: 2026-08-31*
 
+**Status: done.** All work packages (`WP-SPEC0`–`WP-SPEC8`) executed and
+pushed. A fresh-agent comprehension check (run before the final push)
+caught one real stale cross-reference (`AgentSpecs/AGENT.md` still pointed
+at `audit.md` for the ring model after `WP-SPEC1` moved it to
+`AdditionalSpecs.md`) and one onboarding gap (root `AGENT.md` never
+mentioned `docs/DevGuide/`); both fixed before push. One acceptance
+criterion was not fully met: `flipoyo/DevSpec`'s push bundled the
+`DevSpecs.md` merge with three new template files in a single commit
+rather than one-concern-per-commit — left as-is rather than force-pushing
+a history rewrite to a repo just pushed to. `git log` on both
+`flipoyo/DevSpec` and `flipoyo/DocSpec` after the push, plus `pixi run
+lint`/`test` locally, are all clean; `DocSpec`'s two open PRs still apply
+without conflict.
+
 ## Abstract — read this first
 
 **The one-line version.** `AgentSpecs/audit.md` and `docs/DocSpecs.md`'s
