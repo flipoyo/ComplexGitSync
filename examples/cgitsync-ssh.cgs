@@ -1,7 +1,7 @@
 # Self-standing ComplexGitSync tree. autoTest is the project branch; repository
 # entries declare only fallback, path, and nested-discovery overrides.
 
-project = { name = "ComplexGitSync", default_branch = "autoTest" }
+project = { name = "ComplexGitSync", default_branch = "FAKE" }
 
 repos = [
     { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
