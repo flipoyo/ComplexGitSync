@@ -2061,6 +2061,14 @@ class ComplexGitSyncClient:
         if fixed:
             self._log_circularity_fixes(fixed)
         self._assert_nested_discovery_complete()
+        # Every repo was just freshly cloned, so a safe-pull preflight (as
+        # initialise_cgs_document runs before its own sync) can only be a
+        # no-op fast-forward here -- skip it. See BootstrapGitignoreSync
+        # DevPlanTicket: without this call, bootstrap/clone left every
+        # parent-bearing repo's .gitignore missing its immediate children,
+        # so plain `git status` saw each child as an embedded repository
+        # (gitlink-shaped) instead of the plain independent clone it is.
+        self._sync_gitignore_lifecycle(pre_pull=False, commit=False)
         self.registry.recompute_tree_state()
         if not self.registry.is_ready():
             raise GitSyncError("Clone did not produce a READY tree.")

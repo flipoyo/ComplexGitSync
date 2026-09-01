@@ -232,3 +232,10 @@ apoub*
 # directly; only the nested DevSpec/DocSpec checkouts themselves are ignored.
 /AgentSpec/DevSpec/
 /docs/DocSpec/
+/DevSpec/
+/docs/
+
+# Generated ComplexGitSync runtime state (.gts snapshots, .lgr hash-chained
+# registers, run logs, workspace-local master.toml) — not part of the
+# .cgs/.gts project spec, never meant to be committed.
+.cgitsync/
