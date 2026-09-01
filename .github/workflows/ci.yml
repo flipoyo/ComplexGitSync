@@ -18,6 +18,8 @@ jobs:
       - uses: prefix-dev/setup-pixi@v0.8.1
       - name: Install package
         run: pixi install
+      - name: Reconstitute docs/ (dogfood cgitsync)
+        run: pixi run cgitsync initialise examples/complexgitsync.cgs --output-path ..
       - name: Lint
         run: pixi run lint
       - name: Run tests

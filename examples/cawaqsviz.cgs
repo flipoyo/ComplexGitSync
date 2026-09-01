@@ -1,12 +1,5 @@
 # Real-world topology for https://gitlab.com/cawaqs/gviz/cawaqsviz.
-# Corrected 2026-08-24 (Onboarding_DevPlanTicket.md Phase 1) after
-# verifying the live repository: the previous root identifier
-# ("gitlab:gviz/cawaqsviz/CaWaQS-Viz") pointed at a nonexistent address,
-# "autoTest" is not a real branch on cawaqsviz (it has exactly one, main),
-# and "github:flipoyo/CWV_user_guide" 404s — the real GitHub repo is
-# user_guide_CaWaQS-Viz; CWV_user_guide is only its local directory name.
-# relative_path is explicit everywhere rather than relying on the
-# name-matching auto-mount convention (cgs_format.py:187-209). Neither
+# Corrected 2026-08-24 (Onboarding_DevPlanTicket.md Phase 1) Neither
 # HydrologicalTwinAlphaSeries nor user_guide_CaWaQS-Viz has a .cgs of its
 # own (verified against the live repos); the default "auto" nested
 # discovery resolves that to a normal leaf, so no override is needed.

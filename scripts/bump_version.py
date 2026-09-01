@@ -26,12 +26,18 @@ This script only rewrites sources. The tracked PDFs in ``docs/`` embed the
 version on their title pages, so rebuild them (``latexmk -pdf MASTER.tex``
 and each ``c_*.tex``, from within ``docs/``) and commit the result whenever
 a bump needs to be visible in the published PDFs.
+
+``docs/`` itself now lives in a separate repo (``DocComplexGitSync``); if
+either ``.tex`` file above is missing when this runs, :func:`apply_version`
+dogfoods ``cgitsync initialise`` against ``examples/complexgitsync.cgs`` to
+clone it into place first (see :func:`_reconstitute_docs`).
 """
 
 from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 import tomllib
 from collections.abc import Sequence
@@ -45,6 +51,7 @@ README_PATH = REPO_ROOT / "README.md"
 DOCS_SHORTCUTS_PATH = REPO_ROOT / "docs" / "Setup" / "Shortcuts.tex"
 DOCS_PREAMBLE_PATH = REPO_ROOT / "docs" / "preamble.tex"
 DOCS_TEX_PATHS = (DOCS_SHORTCUTS_PATH, DOCS_PREAMBLE_PATH)
+BOOTSTRAP_CGS_PATH = REPO_ROOT / "examples" / "complexgitsync.cgs"
 
 VERSION_RE = re.compile(r"^\d{4}\.\d{2}$")
 _TOML_VERSION_FIELD_RE = re.compile(r'(^version = ")(\d{4}\.\d{2})(")', re.MULTILINE)
@@ -85,6 +92,34 @@ def next_version(current: str) -> str:
     return f"{year:04d}.{sub:02d}"
 
 
+def _reconstitute_docs() -> None:
+    """Dogfood ``cgitsync`` to clone DocComplexGitSync's content into ``docs/``.
+
+    ``docs/`` now lives in a separate repo (``DocComplexGitSync``), declared
+    alongside this one in :data:`BOOTSTRAP_CGS_PATH`. ``--output-path ..``
+    only attaches the existing checkout as the tree root (rather than
+    cloning a fresh one) when this repo's own directory is named
+    ``ComplexGitSync`` — matching the ``.cgs``'s ``project_name`` — which
+    holds for a plain clone and for the default GitHub Actions checkout.
+    """
+    try:
+        subprocess.run(
+            ["cgitsync", "initialise", str(BOOTSTRAP_CGS_PATH), "--output-path", ".."],
+            cwd=REPO_ROOT,
+            check=True,
+        )
+    except FileNotFoundError as exc:
+        raise VersionSyncError(
+            "docs/ is missing its .tex sources and 'cgitsync' is not on PATH to "
+            "reconstitute them from DocComplexGitSync; run via 'pixi run "
+            "bump-version' or populate docs/ manually first."
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        raise VersionSyncError(
+            f"failed to reconstitute docs/ via 'cgitsync initialise' (exit {exc.returncode})."
+        ) from exc
+
+
 def _substitute_version(path: Path, pattern: re.Pattern[str], new_version: str) -> None:
     text = path.read_text(encoding="utf-8")
     new_text, count = pattern.subn(rf"\g<1>{new_version}\g<3>", text, count=1)
@@ -107,6 +142,8 @@ def apply_version(
     _substitute_version(pixi_toml_path, _TOML_VERSION_FIELD_RE, new_version)
     _substitute_version(init_path, _DUNDER_VERSION_FIELD_RE, new_version)
     _substitute_version(readme_path, _README_TITLE_VERSION_RE, new_version)
+    if any(not docs_path.exists() for docs_path in docs_tex_paths):
+        _reconstitute_docs()
     for docs_path in docs_tex_paths:
         _substitute_version(docs_path, _CGSVERSION_MACRO_RE, new_version)
 
