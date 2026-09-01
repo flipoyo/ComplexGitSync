@@ -10,6 +10,7 @@ import pytest
 from ComplexGitSync import MasterConfig
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import (
+    AccessProtocol,
     GitRepo,
     NodeType,
     RefKind,
@@ -3060,3 +3061,125 @@ def test_sync_gitignore_ignores_leaf_with_no_children(tmp_path):
 
     assert changed == ()
     assert not (leaf_path / ".gitignore").exists()
+
+
+# ---------------------------------------------------------------------------
+# _clone_registry_entry — --force-protocol and the SSH-auth-failure hint
+# ---------------------------------------------------------------------------
+
+
+def _make_clone_entry(tmp_path: Path, *, access_protocol=AccessProtocol.SSH) -> WorkingRepo:
+    """A minimal leaf WorkingRepo ready for _clone_registry_entry (no parent, branch ref)."""
+    return WorkingRepo(
+        repo_id="root:leaf",
+        name="leaf",
+        node_type=NodeType.LEAF,
+        parent_id=None,
+        absolute_path=tmp_path / "leaf",
+        relative_path=Path("leaf"),
+        target_ref_kind=RefKind.BRANCH,
+        target_ref_name="main",
+        default_branch="main",
+        access_protocol=access_protocol,
+        project_owner_name="owner",
+        project_name="leaf",
+    )
+
+
+def test_clone_registry_entry_appends_force_protocol_hint_on_ssh_auth_failure(monkeypatch, tmp_path):
+    client = ComplexGitSyncClient()
+    entry = _make_clone_entry(tmp_path, access_protocol=AccessProtocol.SSH)
+
+    monkeypatch.setattr(type(client.git_runner), "remote_branch_exists", lambda self, url, branch: True)
+
+    def _fail_clone(self, git_runner, remote_url, destination, *, branch):
+        raise GitSyncError(
+            f"Git command failed (git clone --branch {branch} --single-branch {remote_url} "
+            f"{destination}): Permission denied (publickey).\nfatal: Could not read from remote "
+            f"repository."
+        )
+
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "clone", _fail_clone)
+
+    with pytest.raises(GitSyncError) as excinfo:
+        client._clone_registry_entry(entry)
+
+    message = str(excinfo.value)
+    assert "Permission denied (publickey)" in message  # original git error preserved
+    assert "--force-protocol https" in message
+    assert "leaf" in message
+
+
+def test_clone_registry_entry_leaves_unrelated_failures_unchanged(monkeypatch, tmp_path):
+    client = ComplexGitSyncClient()
+    entry = _make_clone_entry(tmp_path, access_protocol=AccessProtocol.SSH)
+
+    monkeypatch.setattr(type(client.git_runner), "remote_branch_exists", lambda self, url, branch: True)
+
+    def _fail_clone(self, git_runner, remote_url, destination, *, branch):
+        raise GitSyncError(f"Git command failed (git clone ... {remote_url}): fatal: repository not found")
+
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "clone", _fail_clone)
+
+    with pytest.raises(GitSyncError) as excinfo:
+        client._clone_registry_entry(entry)
+
+    message = str(excinfo.value)
+    assert message == "Git command failed (git clone ... " + client._build_remote_url(entry) + "): fatal: repository not found"
+    assert "--force-protocol" not in message
+
+
+def test_clone_registry_entry_does_not_hint_when_protocol_is_https(monkeypatch, tmp_path):
+    client = ComplexGitSyncClient()
+    entry = _make_clone_entry(tmp_path, access_protocol=AccessProtocol.HTTPS)
+
+    monkeypatch.setattr(type(client.git_runner), "remote_branch_exists", lambda self, url, branch: True)
+
+    def _fail_clone(self, git_runner, remote_url, destination, *, branch):
+        # SSH-shaped message is an unrealistic case for an https clone, but the
+        # guard is on the protocol actually used for this run, not just the
+        # message text -- confirm it does not hint here regardless.
+        raise GitSyncError("Permission denied (publickey).")
+
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "clone", _fail_clone)
+
+    with pytest.raises(GitSyncError) as excinfo:
+        client._clone_registry_entry(entry)
+
+    assert "--force-protocol" not in str(excinfo.value)
+
+
+def test_clone_registry_entry_force_access_protocol_overrides_hint_check(monkeypatch, tmp_path):
+    # entry itself declares ssh, but this run forced https -- the hint must
+    # follow the protocol actually used (the override), not the entry's own
+    # declared value, so it correctly stays silent here.
+    client = ComplexGitSyncClient()
+    client._forced_access_protocol = AccessProtocol.HTTPS
+    entry = _make_clone_entry(tmp_path, access_protocol=AccessProtocol.SSH)
+
+    monkeypatch.setattr(type(client.git_runner), "remote_branch_exists", lambda self, url, branch: True)
+
+    def _fail_clone(self, git_runner, remote_url, destination, *, branch):
+        raise GitSyncError("Permission denied (publickey).")
+
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "clone", _fail_clone)
+
+    with pytest.raises(GitSyncError) as excinfo:
+        client._clone_registry_entry(entry)
+
+    assert "--force-protocol" not in str(excinfo.value)
+
+
+def test_build_remote_url_force_access_protocol_overrides_entry_declared_ssh(tmp_path):
+    # The same _build_remote_url call site serves both root-sibling entries
+    # (parsed from the top-level .cgs) and nested-discovered ones (parsed
+    # from a different repo's own .cgs, e.g. DocSpec inside DocCGS.cgs) --
+    # this proves the override reaches an entry regardless of which path
+    # constructed it, without needing a full multi-repo clone.
+    client = ComplexGitSyncClient()
+    entry = _make_clone_entry(tmp_path, access_protocol=AccessProtocol.SSH)
+
+    assert client._build_remote_url(entry).startswith("git@")
+
+    client._forced_access_protocol = AccessProtocol.HTTPS
+    assert client._build_remote_url(entry).startswith("https://")

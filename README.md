@@ -113,6 +113,24 @@ use the `--search-dir` flag:
 pixi run cgitsync status --search-dir /home/user/.cgs/CGS20260831131233/CGSil1
 ```
 
+### Forcing a clone protocol (CI)
+
+`initialise`, `bootstrap`, and `clean-init` accept an expert
+`--force-protocol {ssh,https}` flag. It overrides `access_protocol` in
+memory for every repo the run clones — including ones discovered later from
+a nested `.cgs` in a different, separately-cloned repo — without reading or
+writing any `.cgs` file differently. Meant for CI, where forcing `https`
+avoids depending on an SSH key/agent being present on the runner (a
+dependency that differs between `push` and `pull_request`, especially from
+forks, since those don't receive repository secrets):
+
+```bash
+pixi run cgitsync initialise examples/complexgitsync.cgs --output-path .. --force-protocol https
+```
+
+Leave it unset for normal use — each repo then follows whatever protocol
+its own `.cgs` entry actually declares, exactly as without the flag.
+
 ## Command reference
 
 | Group | Command | Description |

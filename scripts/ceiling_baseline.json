@@ -15,9 +15,9 @@
       "loc": 615,
       "public_symbols": 9
     },
-    "cli.py": {
-      "internal_imports": 15,
-      "loc": 1813,
+    "cli/__init__.py": {
+      "internal_imports": 6,
+      "loc": 66,
       "public_symbols": 2
     },
     "cli/_shared.py": {
@@ -37,7 +37,7 @@
     },
     "cli/minimalist.py": {
       "internal_imports": 13,
-      "loc": 613,
+      "loc": 675,
       "public_symbols": 1
     },
     "config_document.py": {
@@ -62,7 +62,7 @@
     },
     "git_repo.py": {
       "internal_imports": 0,
-      "loc": 267,
+      "loc": 266,
       "public_symbols": 12
     },
     "git_runner.py": {
@@ -106,8 +106,8 @@
       "public_symbols": 16
     },
     "orchestre.py": {
-      "internal_imports": 64,
-      "loc": 2865,
+      "internal_imports": 65,
+      "loc": 2919,
       "public_symbols": 12
     },
     "paths.py": {

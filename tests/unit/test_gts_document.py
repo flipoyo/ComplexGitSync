@@ -124,6 +124,26 @@ class TestGtsDocumentValid:
         doc_b = GtsDocument.from_dict(data_with_extra)
         assert doc_a.compute_snapshot_hash() == doc_b.compute_snapshot_hash()
 
+    def test_compute_snapshot_hash_ignores_access_protocol(self):
+        # A tree cloned entirely over ssh and the same tree cloned entirely
+        # over https (e.g. --force-protocol) must produce the identical
+        # .gts snapshot hash: access_protocol is a clone-transport detail,
+        # not part of what a .gts snapshot records about the tree's state.
+        # `_build_canonical_payload` never reads it, so this also guards
+        # against it (or gitprovider, another transport-only field) ever
+        # being added to the hashed payload without a deliberate decision.
+        data_ssh = copy.deepcopy(MINIMAL_GTS)
+        data_ssh["repo_state"][0]["access_protocol"] = "ssh"
+        data_ssh["repo_state"][0]["gitprovider"] = "github"
+        doc_ssh = GtsDocument.from_dict(data_ssh)
+
+        data_https = copy.deepcopy(MINIMAL_GTS)
+        data_https["repo_state"][0]["access_protocol"] = "https"
+        data_https["repo_state"][0]["gitprovider"] = "github"
+        doc_https = GtsDocument.from_dict(data_https)
+
+        assert doc_ssh.compute_snapshot_hash() == doc_https.compute_snapshot_hash()
+
     def test_compact_ref_field_is_accepted(self):
         # `_repo_ref_pair` falls back to the compact "ref" field when no
         # prefixed variant is present.

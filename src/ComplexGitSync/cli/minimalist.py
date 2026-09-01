@@ -92,6 +92,20 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                     "Defaults to ../.. relative to CWD ($CGSHOME/ComplexGitSync)."
                 ),
             )
+            subparser.add_argument(
+                "--force-protocol",
+                dest="force_access_protocol",
+                choices=("ssh", "https"),
+                default=None,
+                help=(
+                    "Override access_protocol in memory for every repo this run clones, "
+                    "including ones discovered later from a nested .cgs in a different "
+                    "repo. No .cgs file is read differently or written. Expert option "
+                    "meant for CI (e.g. forcing https so no SSH key/agent is required on "
+                    "the runner) — leave unset for normal use, which follows whatever "
+                    "each .cgs entry actually declares."
+                ),
+            )
             add_gitignore_sync_arguments(subparser)
             subparser.set_defaults(handler=_handle_initialise)
         elif command_name == "clean-init":
@@ -104,6 +118,18 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                     "CGSPATH/<project-name> after the project definition is normalized "
                     "(.cgs or direct CLI mode). "
                     "Defaults to ../.. relative to CWD ($CGSHOME/ComplexGitSync)."
+                ),
+            )
+            subparser.add_argument(
+                "--force-protocol",
+                dest="force_access_protocol",
+                choices=("ssh", "https"),
+                default=None,
+                help=(
+                    "Override access_protocol in memory for every repo this run clones, "
+                    "including ones discovered later from a nested .cgs in a different "
+                    "repo. No .cgs file is read differently or written. Expert option "
+                    "meant for CI — leave unset for normal use."
                 ),
             )
             add_gitignore_sync_arguments(subparser)
@@ -125,6 +151,19 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                     "to a fresh $HOME/.cgs/CGS<timestamp>/ directory (created if "
                     "missing), so the project never lands inside the ComplexGitSync "
                     "clone itself."
+                ),
+            )
+            subparser.add_argument(
+                "--force-protocol",
+                dest="force_access_protocol",
+                choices=("ssh", "https"),
+                default=None,
+                help=(
+                    "Override access_protocol in memory for every repo this run clones "
+                    "(including the root, which bootstrap clones from scratch) and any "
+                    "discovered later from a nested .cgs in a different repo. No .cgs "
+                    "file is read differently or written. Expert option meant for CI — "
+                    "leave unset for normal use."
                 ),
             )
             subparser.set_defaults(handler=_handle_bootstrap)
@@ -268,6 +307,7 @@ def _handle_initialise(args: argparse.Namespace) -> int:
     force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
     git_user_name = getattr(args, "git_user_name", None)
     git_user_email = getattr(args, "git_user_email", None)
+    force_access_protocol = getattr(args, "force_access_protocol", None)
     if args.source is None:
         client = ComplexGitSyncClient()
         document = client.configure(args.project, args.repo)
@@ -292,6 +332,7 @@ def _handle_initialise(args: argparse.Namespace) -> int:
                 force_gitignore_sync=force_gitignore_sync,
                 git_user_name=git_user_name,
                 git_user_email=git_user_email,
+                force_access_protocol=force_access_protocol,
             ),
         )
 
@@ -313,6 +354,7 @@ def _handle_initialise(args: argparse.Namespace) -> int:
                 force_gitignore_sync=force_gitignore_sync,
                 git_user_name=git_user_name,
                 git_user_email=git_user_email,
+                force_access_protocol=force_access_protocol,
             ),
         )
     return _run_with_logging(
@@ -329,6 +371,7 @@ def _handle_clean_init(args: argparse.Namespace) -> int:
     force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
     git_user_name = getattr(args, "git_user_name", None)
     git_user_email = getattr(args, "git_user_email", None)
+    force_access_protocol = getattr(args, "force_access_protocol", None)
     client = ComplexGitSyncClient()
     project_root = client.resolve_initialise_cgshome(source_path, output_path=output_path)
     return _run_with_logging(
@@ -344,6 +387,7 @@ def _handle_clean_init(args: argparse.Namespace) -> int:
             force_gitignore_sync=force_gitignore_sync,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
+            force_access_protocol=force_access_protocol,
         ),
     )
 
@@ -364,6 +408,7 @@ def _handle_bootstrap(args: argparse.Namespace) -> int:
             source,
             project_name=args.project_name,
             cgs_path=getattr(args, "cgs_path", None),
+            force_access_protocol=getattr(args, "force_access_protocol", None),
         ),
     )
 
@@ -442,6 +487,7 @@ def _execute_initialise_cgs(
     force_gitignore_sync: bool = False,
     git_user_name: str | None = None,
     git_user_email: str | None = None,
+    force_access_protocol: str | None = None,
 ) -> int:
     print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE->GT-GITIGNORE")
     print("workflow=load->expand->validate->clone->gitignore")
@@ -453,6 +499,7 @@ def _execute_initialise_cgs(
         force_gitignore_sync=force_gitignore_sync,
         git_user_name=git_user_name,
         git_user_email=git_user_email,
+        force_access_protocol=force_access_protocol,
     )
     tree_state = client.get_tree_state()
     print(
@@ -477,6 +524,7 @@ def _execute_initialise_cgs_document(
     force_gitignore_sync: bool = False,
     git_user_name: str | None = None,
     git_user_email: str | None = None,
+    force_access_protocol: str | None = None,
 ) -> int:
     print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->GT-CLONE->GT-GITIGNORE")
     print("workflow=load->expand->validate->clone->gitignore")
@@ -489,6 +537,7 @@ def _execute_initialise_cgs_document(
         force_gitignore_sync=force_gitignore_sync,
         git_user_name=git_user_name,
         git_user_email=git_user_email,
+        force_access_protocol=force_access_protocol,
     )
     tree_state = client.get_tree_state()
     print(
@@ -512,6 +561,7 @@ def _execute_clean_init_cgs(
     force_gitignore_sync: bool = False,
     git_user_name: str | None = None,
     git_user_email: str | None = None,
+    force_access_protocol: str | None = None,
 ) -> int:
     if source_path.suffix != ".cgs":
         raise ValueError("clean-init expects a .cgs source.")
@@ -525,6 +575,7 @@ def _execute_clean_init_cgs(
         force_gitignore_sync=force_gitignore_sync,
         git_user_name=git_user_name,
         git_user_email=git_user_email,
+        force_access_protocol=force_access_protocol,
     )
     tree_state = client.get_tree_state()
     print(
@@ -585,9 +636,15 @@ def _execute_bootstrap(
     *,
     project_name: str,
     cgs_path: str | None = None,
+    force_access_protocol: str | None = None,
 ) -> int:
     print("git_command=git clone (executed per repo)")
-    registry = client.bootstrap(source_path, project_name, cgs_path=cgs_path)
+    registry = client.bootstrap(
+        source_path,
+        project_name,
+        cgs_path=cgs_path,
+        force_access_protocol=force_access_protocol,
+    )
     tree_state = client.get_tree_state()
     root_path = registry.get('root').absolute_path
     print(

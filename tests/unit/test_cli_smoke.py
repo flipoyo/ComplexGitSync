@@ -908,7 +908,7 @@ def test_bootstrap_command_uses_client_method(monkeypatch, capsys, tmp_path):
             captured_call["resolve_cgs_path"] = cgs_path
             return tmp_path / "cgspath" / project_name
 
-        def bootstrap(self, source, project_name, *, cgs_path=None):
+        def bootstrap(self, source, project_name, *, cgs_path=None, force_access_protocol=None):
             captured_call["source"] = Path(source)
             captured_call["project_name"] = project_name
             captured_call["cgs_path"] = cgs_path
@@ -944,7 +944,7 @@ def test_bootstrap_command_forwards_cgs_path(monkeypatch, capsys, tmp_path):
             captured_call["resolve_cgs_path"] = cgs_path
             return Path(cgs_path) / project_name
 
-        def bootstrap(self, source, project_name, *, cgs_path=None):
+        def bootstrap(self, source, project_name, *, cgs_path=None, force_access_protocol=None):
             captured_call["cgs_path"] = cgs_path
             return SimpleNamespace(
                 get=lambda repo_id: SimpleNamespace(absolute_path=Path(cgs_path) / project_name)

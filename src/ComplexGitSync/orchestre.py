@@ -74,6 +74,7 @@ from .errors import (
     GitSyncError,
 )
 from .git_repo import (
+    AccessProtocol,
     DiscoveryState,
     GitRepo,
     RefKind,
@@ -900,6 +901,23 @@ class GitignoreSyncEntry:
     committed: bool = False
 
 
+_SSH_AUTH_FAILURE_MARKERS = (
+    "Permission denied (publickey)",
+    "Could not read from remote repository",
+    "Host key verification failed",
+)
+
+
+def _looks_like_ssh_auth_failure(git_error_message: str) -> bool:
+    """Heuristic match on ``git``'s own stderr for a likely SSH auth failure.
+
+    ``git``'s exact wording is not a stable API, so a missed match just
+    degrades to the plain :class:`~.errors.GitSyncError` from before this
+    hint existed — never a worse error than that.
+    """
+    return any(marker in git_error_message for marker in _SSH_AUTH_FAILURE_MARKERS)
+
+
 # ============================================================
 #  ComplexGitSyncClient — public API facade (Tier 3)
 # ============================================================
@@ -938,6 +956,7 @@ class ComplexGitSyncClient:
     loaded_snapshot_path: Path | None = None
     last_gitignore_sync: tuple[GitignoreSyncEntry, ...] = ()
     run_logger: CommandRunLogger | None = None
+    _forced_access_protocol: AccessProtocol | None = field(default=None, init=False, repr=False)
 
     def is_loaded(self) -> bool:
         return self.registry is not None or bool(self.orchestre.git_tree.repos)
@@ -1538,6 +1557,7 @@ class ComplexGitSyncClient:
         force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
+        force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Initialise a workspace using CGSPATH/CGSHOME semantics.
 
@@ -1573,6 +1593,14 @@ class ComplexGitSyncClient:
             so later invocations on this workspace pick it up without
             repeating the flag. ``None`` (the default) leaves whatever is
             already configured/persisted, or local git config, untouched.
+        force_access_protocol:
+            ``"ssh"`` or ``"https"`` (``--force-protocol``). Overrides every
+            cloned repo's ``access_protocol`` in memory only — nothing on
+            disk is read or written differently. Applies to every entry the
+            clone loop touches, including ones discovered later from a
+            nested ``.cgs`` in a different, separately-cloned repo. ``None``
+            (the default) leaves each entry's own ``.cgs``-declared protocol
+            untouched, exactly as today.
         """
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
@@ -1585,6 +1613,7 @@ class ComplexGitSyncClient:
             force_gitignore_sync=force_gitignore_sync,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
+            force_access_protocol=force_access_protocol,
         )
 
     def initialise_cgs_document(
@@ -1598,13 +1627,15 @@ class ComplexGitSyncClient:
         force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
+        force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Initialise from an already-normalized, validated ``CgsDocument``.
 
         ``source_path`` is the logical origin used for relative paths, state
         metadata, and logging. It need not exist for direct CLI authoring.
         See :meth:`initialise_cgs` for ``commit_gitignore``/
-        ``force_gitignore_sync``/``git_user_name``/``git_user_email``.
+        ``force_gitignore_sync``/``git_user_name``/``git_user_email``/
+        ``force_access_protocol``.
         """
         document.validate()
         previous_tree_state = (
@@ -1615,6 +1646,9 @@ class ComplexGitSyncClient:
         MasterConfig.load(cgshome)
         if git_user_name is not None or git_user_email is not None:
             MasterConfig.persist(cgshome, user_name=git_user_name, user_email=git_user_email)
+        self._forced_access_protocol = (
+            AccessProtocol(force_access_protocol) if force_access_protocol else None
+        )
         project_root = cgshome
 
         self.registry = build_registry_from_cgs_document(
@@ -1680,6 +1714,7 @@ class ComplexGitSyncClient:
         force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
+        force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Initialise a .cgs workspace after purging generated clone state."""
         return self.initialise_cgs(
@@ -1690,6 +1725,7 @@ class ComplexGitSyncClient:
             force_gitignore_sync=force_gitignore_sync,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
+            force_access_protocol=force_access_protocol,
         )
 
     def clean_init(
@@ -1701,6 +1737,7 @@ class ComplexGitSyncClient:
         force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
+        force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Initialise a .cgs workspace after purging generated clone state."""
         return self.clean_initialise_cgs(
@@ -1710,6 +1747,7 @@ class ComplexGitSyncClient:
             force_gitignore_sync=force_gitignore_sync,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
+            force_access_protocol=force_access_protocol,
         )
 
     def purge_cgs(
@@ -1980,11 +2018,15 @@ class ComplexGitSyncClient:
         *,
         target_dir: str | Path | None = None,
         output_path: str | Path | None = None,
+        force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
         project_root = _resolve_project_root(document, source_path, target_dir, output_path)
+        self._forced_access_protocol = (
+            AccessProtocol(force_access_protocol) if force_access_protocol else None
+        )
 
         self.registry = build_registry_from_cgs_document(
             document,
@@ -2062,6 +2104,7 @@ class ComplexGitSyncClient:
         project_name: str,
         *,
         cgs_path: str | Path | None = None,
+        force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Bootstrap a brand-new workspace tree from a standalone ComplexGitSync clone.
 
@@ -2083,6 +2126,11 @@ class ComplexGitSyncClient:
         cgs_path:
             CGSPATH override. When *None*, defaults to a fresh
             ``$HOME/.cgs/CGS<timestamp>/`` directory.
+        force_access_protocol:
+            ``"ssh"`` or ``"https"`` (``--force-protocol``). See
+            :meth:`initialise_cgs` for the full description — applies here
+            identically, including to the root repo this command (unlike
+            ``initialise``) also clones from scratch.
         """
         source_path = Path(config_path).resolve()
         if source_path.suffix != ".cgs":
@@ -2090,7 +2138,9 @@ class ComplexGitSyncClient:
                 f"bootstrap requires a .cgs source, got '{source_path.suffix}' for {source_path!s}."
             )
         target_dir = self.resolve_bootstrap_root(project_name, cgs_path=cgs_path)
-        return self.clone_cgs(source_path, target_dir=target_dir)
+        return self.clone_cgs(
+            source_path, target_dir=target_dir, force_access_protocol=force_access_protocol
+        )
 
     def restart(
         self,
@@ -3120,12 +3170,24 @@ class ComplexGitSyncClient:
                     f"Repository {entry.name} at {entry.absolute_path} is not under its parent path "
                     f"{parent.absolute_path}."
                 ) from exc
-        self.orchestre.git_tree.git.clone(
-            self.git_runner,
-            remote_url,
-            entry.absolute_path,
-            branch=selected_ref,
-        )
+        effective_protocol = self._forced_access_protocol or entry.access_protocol
+        try:
+            self.orchestre.git_tree.git.clone(
+                self.git_runner,
+                remote_url,
+                entry.absolute_path,
+                branch=selected_ref,
+            )
+        except GitSyncError as exc:
+            if effective_protocol == AccessProtocol.SSH and _looks_like_ssh_auth_failure(str(exc)):
+                raise GitSyncError(
+                    f"{exc}\n"
+                    f"hint: this clone used ssh and failed authentication — pass "
+                    f"--force-protocol https to 'initialise'/'bootstrap'/'clean-init' if "
+                    f"{entry.name} is a public repo, or configure an SSH key/agent for "
+                    f"this runner otherwise."
+                ) from exc
+            raise
         current_ref = self.git_runner.current_branch(entry.absolute_path) or selected_ref
         fallback_applied = current_ref != (entry.target_ref_name or selected_ref)
 
@@ -3197,7 +3259,7 @@ class ComplexGitSyncClient:
             group_name=entry.group_name,
             gitprovider_url=entry.gitprovider_url,
         )
-        return address.to_url(entry.access_protocol)
+        return address.to_url(self._forced_access_protocol or entry.access_protocol)
 
     def _determine_launch_ref(self, entry: WorkingRepo) -> str:
         """Return the most precise known ref for saved-state checkout."""
