@@ -879,11 +879,25 @@ def test_client_freeze_delegates_to_freeze_tag(monkeypatch):
     }
 
 
-def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path):
+def _client_with_root_registry(tmp_path) -> ComplexGitSyncClient:
+    """A client whose registry has just a root entry, for freeze_release tests
+    that need has_upstream() to have a real repo path to be called with,
+    without exercising the actual clone/registry-building machinery."""
     client = ComplexGitSyncClient()
+    root_path = tmp_path / "root"
+    root_path.mkdir()
+    registry = WorkingGitTree()
+    registry.add(_make_entry("root", root_path))
+    client.registry = registry
+    return client
+
+
+def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path):
+    client = _client_with_root_registry(tmp_path)
     client.source_path = tmp_path / "project.gts"
     calls: list[tuple[str, object]] = []
 
+    monkeypatch.setattr(type(client.git_runner), "has_upstream", lambda self, path: True)
     monkeypatch.setattr(client, "add", lambda: calls.append(("add", None)))
     monkeypatch.setattr(
         client,
@@ -917,10 +931,11 @@ def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path)
 
 
 def test_client_freeze_release_force_uses_pull_force(monkeypatch, tmp_path):
-    client = ComplexGitSyncClient()
+    client = _client_with_root_registry(tmp_path)
     client.source_path = tmp_path / "project.gts"
     calls: list[str] = []
 
+    monkeypatch.setattr(type(client.git_runner), "has_upstream", lambda self, path: True)
     monkeypatch.setattr(client, "add", lambda: calls.append("add"))
     monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
     monkeypatch.setattr(client, "pull", lambda source: calls.append("pull"))
@@ -930,6 +945,44 @@ def test_client_freeze_release_force_uses_pull_force(monkeypatch, tmp_path):
 
     assert client.freeze_release("v1.0", "release commit", force=True) == "ok"
     assert calls == ["add", "commit", "pull-force", "push", "freeze"]
+
+
+def test_client_freeze_release_skips_pull_when_branch_has_no_upstream(monkeypatch, tmp_path):
+    # Reproduces this ticket's exact scenario: a branch created and checked
+    # out this same session, never pushed. freeze-release must succeed by
+    # skipping the pull step (nothing to pull yet), not crash with git's
+    # "couldn't find remote ref" error.
+    client = _client_with_root_registry(tmp_path)
+    client.source_path = tmp_path / "project.gts"
+    calls: list[str] = []
+
+    monkeypatch.setattr(type(client.git_runner), "has_upstream", lambda self, path: False)
+    monkeypatch.setattr(client, "add", lambda: calls.append("add"))
+    monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
+    monkeypatch.setattr(client, "pull", lambda source: calls.append("pull"))
+    monkeypatch.setattr(client, "pull_force", lambda source: calls.append("pull-force"))
+    monkeypatch.setattr(client, "push", lambda: calls.append("push"))
+    monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
+
+    assert client.freeze_release("v1.0", "release commit") == "ok"
+    assert calls == ["add", "commit", "push", "freeze"]
+
+
+def test_client_freeze_release_force_also_skips_pull_when_no_upstream(monkeypatch, tmp_path):
+    client = _client_with_root_registry(tmp_path)
+    client.source_path = tmp_path / "project.gts"
+    calls: list[str] = []
+
+    monkeypatch.setattr(type(client.git_runner), "has_upstream", lambda self, path: False)
+    monkeypatch.setattr(client, "add", lambda: calls.append("add"))
+    monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
+    monkeypatch.setattr(client, "pull", lambda source: calls.append("pull"))
+    monkeypatch.setattr(client, "pull_force", lambda source: calls.append("pull-force"))
+    monkeypatch.setattr(client, "push", lambda: calls.append("push"))
+    monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
+
+    assert client.freeze_release("v1.0", "release commit", force=True) == "ok"
+    assert calls == ["add", "commit", "push", "freeze"]
 
 
 def test_client_pull_dispatches_to_restart_for_cgs(monkeypatch):
@@ -1906,6 +1959,103 @@ def test_sync_ledger_actor_auto_detected_when_none(tmp_path):
     events = ledger.history()
     assert isinstance(events[0]["actor"], str)
     assert events[0]["actor"] != ""
+
+
+def test_write_gts_snapshot_writes_stable_per_branch_cgs_copy(tmp_path):
+    # BootstrapGitignoreSync's sibling ticket, FirstBranchTestWorkflow §0.3:
+    # a .cgs snapshot per run already existed, but only inside an opaque
+    # state(<hash>)_n/ directory -- nothing named "the .cgs for branch X".
+    root_path = tmp_path / "root"
+    root_path.mkdir()
+    config_path = tmp_path / "project.cgs"
+    config_path.write_text(
+        '[project]\nname = "demo"\ndefault_branch = "main"\n\n'
+        'repos = [{ repository = "github:owner/demo", relative_path = "." }]\n',
+        encoding="utf-8",
+    )
+
+    client = ComplexGitSyncClient()
+    registry = WorkingGitTree()
+    root_entry = _make_entry("root", root_path)
+    root_entry.current_ref_kind = RefKind.BRANCH
+    root_entry.current_ref_name = "test-cgs"
+    registry.add(root_entry)
+    client.registry = registry
+    client.source_path = config_path
+
+    client.write_gts_snapshot(command_origin="branch")
+
+    stable_path = root_path / ".cgitsync" / ".cgs" / "root-test-cgs.cgs"
+    assert stable_path.is_file()
+    assert stable_path.read_text(encoding="utf-8") == config_path.read_text(encoding="utf-8")
+
+
+def test_write_gts_snapshot_stable_cgs_copy_sanitizes_branch_name(tmp_path):
+    root_path = tmp_path / "root"
+    root_path.mkdir()
+    config_path = tmp_path / "project.cgs"
+    config_path.write_text("[project]\nname = \"demo\"\n", encoding="utf-8")
+
+    client = ComplexGitSyncClient()
+    registry = WorkingGitTree()
+    root_entry = _make_entry("root", root_path)
+    root_entry.current_ref_kind = RefKind.BRANCH
+    root_entry.current_ref_name = "feature/my thing"
+    registry.add(root_entry)
+    client.registry = registry
+    client.source_path = config_path
+
+    client.write_gts_snapshot(command_origin="branch")
+
+    stable_dir = root_path / ".cgitsync" / ".cgs"
+    [stable_path] = list(stable_dir.iterdir())
+    assert stable_path.name == "root-feature-my-thing.cgs"
+
+
+def test_write_gts_snapshot_refreshes_stable_cgs_copy_on_each_run(tmp_path):
+    root_path = tmp_path / "root"
+    root_path.mkdir()
+    config_path = tmp_path / "project.cgs"
+    config_path.write_text("[project]\nname = \"demo\"\n", encoding="utf-8")
+
+    client = ComplexGitSyncClient()
+    registry = WorkingGitTree()
+    root_entry = _make_entry("root", root_path)
+    root_entry.current_ref_kind = RefKind.BRANCH
+    root_entry.current_ref_name = "test-cgs"
+    registry.add(root_entry)
+    client.registry = registry
+    client.source_path = config_path
+
+    client.write_gts_snapshot(command_origin="branch")
+    config_path.write_text("[project]\nname = \"demo-v2\"\n", encoding="utf-8")
+    client.write_gts_snapshot(command_origin="checkout")
+
+    stable_path = root_path / ".cgitsync" / ".cgs" / "root-test-cgs.cgs"
+    assert stable_path.read_text(encoding="utf-8") == config_path.read_text(encoding="utf-8")
+
+
+def test_write_gts_snapshot_skips_stable_cgs_copy_without_a_current_branch(tmp_path):
+    # No behaviour change to existing snapshotting when the root entry's
+    # branch isn't known (e.g. the lighter-weight `load` path, which never
+    # attaches a real git branch) -- purely additive, never a hard failure.
+    root_path = tmp_path / "root"
+    root_path.mkdir()
+    config_path = tmp_path / "project.cgs"
+    config_path.write_text("[project]\nname = \"demo\"\n", encoding="utf-8")
+
+    client = ComplexGitSyncClient()
+    registry = WorkingGitTree()
+    root_entry = _make_entry("root", root_path)
+    root_entry.target_ref_kind = RefKind.BRANCH
+    root_entry.target_ref_name = "main"
+    registry.add(root_entry)
+    client.registry = registry
+    client.source_path = config_path
+
+    client.write_gts_snapshot(command_origin="load")
+
+    assert not (root_path / ".cgitsync" / ".cgs").exists()
 
 
 def test_client_write_gts_snapshot_records_ledger_event(tmp_path, monkeypatch):

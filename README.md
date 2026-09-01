@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.20
+# ComplexGitSync v0002.21
 
 *Created: 2026-05-12*
 

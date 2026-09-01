@@ -251,6 +251,40 @@ repo, runs `import_submodules(..., apply=True)`, and asserts the gitlink is
 gone, the child's working tree is intact, `.gitignore` contains the child's
 path, and the emitted `.cgs` validates.
 
+### 4.5 Trying the output as a real, throwaway test tree
+
+Any of the three modes above ends in a `.cgs` file — Mode A's
+`examples/cawaqsviz.cgs`, Mode B's `cawaqsviz-discovered.cgs`, Mode C's
+`cawaqsviz_submodules.cgs`. This section walks through what to actually do
+with one of them next, using Mode C's output as the example: `initialise`
+it as a real tree, `branch`+`checkout` onto a disposable test branch, and
+run `freeze-release` on it.
+
+```bash
+pixi run cgitsync initialise cawaqsviz_submodules.cgs
+pixi run cgitsync branch test-cgs
+pixi run cgitsync checkout test-cgs
+pixi run cgitsync freeze-release test-state "first test on a throwaway branch"
+```
+
+`branch`+`checkout` create and switch to a purely local branch — nothing is
+pushed yet, so it has no upstream on the remote. `freeze-release` (`add ->
+commit -> pull -> push -> freeze`) handles that correctly: the `pull` step
+is skipped when the current branch has no upstream (there is nothing to
+pull for a branch that was never published), and `push` publishes it for
+the first time on its own, the same way `git push -u` would. No manual
+`push` before `freeze-release` is needed.
+
+> **Before this was fixed**, running this exact sequence crashed at
+> `freeze-release` with `fatal: couldn't find remote ref test-cgs` — `pull`
+> unconditionally tried to pull a branch that had never been pushed. If you
+> hit that error on an older `cgitsync`, run `pixi run cgitsync push`
+> once by hand before `freeze-release` as a workaround.
+
+`test-cgs`/`test-state` are disposable — this is meant for trying a mode's
+output on a real tree, not for a release. Delete the remote branch and tag
+afterwards if you don't want them to linger.
+
 ---
 
 ## 5. Which mode to reach for

@@ -2522,7 +2522,12 @@ class ComplexGitSyncClient:
         """Run the minimalist release workflow from a READY tree.
 
         The workflow is intentionally composed from public tree operations:
-        ``add -> commit -> pull/pull-force -> push -> freeze``.
+        ``add -> commit -> pull/pull-force -> push -> freeze``. The pull step
+        is skipped (not attempted) when the current branch has no upstream
+        yet — e.g. a branch just created and checked out this session, never
+        pushed — since there is nothing to pull; see
+        :meth:`GitRunner.has_upstream`, already used identically by
+        :func:`operations.push_tree` to auto-detect this same case.
         """
         resolved_message = commit_message or message or release_name
         if self.source_path is None:
@@ -2536,10 +2541,18 @@ class ComplexGitSyncClient:
         )
         self.add()
         self.commit(resolved_message, stage_all=False)
-        if force:
-            self.pull_force(self.source_path)
+        root_entry = self.get_dependency_registry().get(ROOT_REPO_ID)
+        if self.git_runner.has_upstream(root_entry.absolute_path):
+            if force:
+                self.pull_force(self.source_path)
+            else:
+                self.pull(self.source_path)
         else:
-            self.pull(self.source_path)
+            self._log_event(
+                "freeze_release_pull_skipped",
+                reason="current branch has no upstream yet — nothing to pull",
+                absolute_path=root_entry.absolute_path,
+            )
         self.push()
         registry = self.freeze(
             release_name,
@@ -2946,6 +2959,14 @@ class ComplexGitSyncClient:
 
         if self.source_path is not None and self.source_path.suffix == ".cgs" and self.source_path.is_file():
             shutil.copy2(self.source_path, memory_state.temporary_path / self.source_path.name)
+            if root_entry.current_ref_name:
+                branch_slug = _release_snapshot_slug(root_entry.current_ref_name)
+                stable_cgs_dir = cgitsync_dir / ".cgs"
+                stable_cgs_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(
+                    self.source_path,
+                    stable_cgs_dir / f"{root_entry.name}-{branch_slug}.cgs",
+                )
 
         self._log_event(
             "gts_write",
