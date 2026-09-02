@@ -10,9 +10,10 @@ checklist, and the architecture boundary.
 responsibility table, and the ring-import rules must be followed identically
 by every contributor; this file is the one place that states them.
 
-**What you will find.** The Pixi command set, a before-committing checklist,
-the module responsibility table and architecture boundary, file formats,
-repo layout, and document conventions.
+**What you will find.** The Pixi command set, how to bootstrap a
+live-editable checkout, a before-committing checklist, the module
+responsibility table and architecture boundary, file formats, repo layout,
+and document conventions.
 
 **Who it is for.** Anyone changing code or docs in this repo. End users only
 need [README.md](README.md); this file is for development, not usage.
@@ -51,6 +52,35 @@ pixi run bump-version  # bump YYYY.XX and sync every manifest and doc (see below
 
 CI (`.github/workflows/ci.yml`) runs both `lint` and `test` on push/PR to
 `main`/`lechat`. Run both locally before pushing.
+
+### Bootstrapping a working checkout
+
+ComplexGitSync manages itself as a multi-repo tree (`install.cgs`, this
+project's root file): a fresh `git clone` alone gets you the code but not
+`docs/` or `DevSpec/`. Use `bootstrap`, pointed at `install.cgs`, to get a
+fully populated, independently live-editable checkout:
+
+```bash
+git clone https://github.com/flipoyo/ComplexGitSync.git
+cd ComplexGitSync
+pixi install
+
+pixi run cgitsync bootstrap install.cgs ComplexGitSync
+# Copy the export command from bootstrap's own output, or use:
+export CGSHOME=/home/user/.cgs/CGS20260831131233/ComplexGitSync
+
+cd "$CGSHOME"       # this *is* the freshly cloned ComplexGitSync checkout —
+pixi install        # bootstrap clones a plain checkout, so it needs its own
+                     # pixi environment before you can run cgitsync from here
+```
+
+`$CGSHOME` now holds `ComplexGitSync` (mounted at its own root — the tree's
+project entry), `docs/` (`DocComplexGitSync`), and `DevSpec` cloned side by
+side. `pixi.toml`'s `complexgitsync = { path = ".", editable = true }` makes
+this checkout self-editable the moment that second `pixi install` finishes:
+edit any file under `src/ComplexGitSync/`, then `pixi run cgitsync ...` from
+inside `$CGSHOME` picks up the change immediately — no reinstall step, no
+separate `pip install -e .`.
 
 ## Before committing
 
