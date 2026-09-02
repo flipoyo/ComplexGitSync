@@ -77,17 +77,28 @@ paragraphs. A numbered finding with a severity beats three paragraphs of context
 
 Prefer deleting a sentence to adding a qualifier.
 
-## 5. No stale-by-design content
+## 5. Plain English, short sentences
+
+Write for a reader who has none of the author's context. Short sentences.
+Common words. Say what a thing does before saying why, so the reader is
+never stuck holding an unexplained term.
+
+A comment or a paragraph that only makes sense to the person who wrote it
+is a bug. If a sentence needs a second read to parse, split it in two. If a
+term needs the reader to already know the answer, define it on first use or
+cut it.
+
+## 6. No stale-by-design content
 
 Never write "Recent improvements (December 2024)" or any dated block that rots.
 Recency belongs in release notes and commit history, not in prose.
 
-## 6. One authoritative file per purpose
+## 7. One authoritative file per purpose
 
 No `README_prod.md` beside `README.md`. No `.docx` where a `.md` will do — binary
 files cannot be diffed, reviewed in a pull request, or linted.
 
-## 7. Enforcement
+## 8. Enforcement
 
 A consuming project may enforce this convention with a CI check that fails
 the build when a document lacks an abstract and a mermaid graph. The rule

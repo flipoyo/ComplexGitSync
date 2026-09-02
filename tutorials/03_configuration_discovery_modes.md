@@ -1,39 +1,38 @@
-# Tutorial 3 of 3 — Configuration Discovery Modes
+# Tutorial 3 of 4 — Configuration Discovery Modes
 
 *Created: 2026-08-25*
 
 ## Abstract — read this first
 
-**What this document is.** The third and most advanced of the three worked
-tutorials in [`docs/tutorials/`](README.md): a real project, `cawaqsviz`,
-that has no `.cgs` of its own anywhere upstream, reached three independent
-ways — hand-authored, `discover`, and `import-submodules`.
+**What this document is.** Two of the three ways to reach a working
+`.cgs` for a real project that has none of its own upstream: writing one
+by hand (Mode A), and deriving one from an existing checkout with
+`discover` (Mode B). Both use the same real project, `cawaqsviz`.
 
 **Why it exists.** Tutorials 1 and 2 both hand-author a `.cgs` from
-scratch. Most real projects instead already have a checkout on disk or
-already use git submodules — this tutorial covers both automated onboarding
-paths, and when to reach for each.
+scratch. Most real projects instead already have a checkout on disk —
+`discover` reads that checkout instead of asking you to type the topology
+by hand.
 
-**What you will find.** The `cawaqsviz` topology, Mode A (by hand), Mode B
-(`discover`), Mode C (`import-submodules`, including a before/after and the
-mechanics of the conversion), a throwaway-tree trial run, and a
-which-mode-to-reach-for summary.
+**What you will find.** The `cawaqsviz` topology, Mode A (by hand), and
+Mode B (`discover`), including a troubleshooting note for a GitHub
+anonymous-clone quirk you may hit along the way.
 
-**Who it is for.** Anyone onboarding a real project that has no `.cgs` yet.
-Read Mode A first regardless of which mode you'll actually use — it
-establishes the topology the other two are checked against.
+**Who it is for.** Anyone onboarding a real project that has no `.cgs`
+yet, either writing one by hand or starting from a checkout already on
+disk. If the project instead already uses git submodules, skip ahead to
+[Tutorial 4](04_submodules_to_ready.md).
 
-**What you need to do with it.** Read it after Tutorials 1 and 2, then pick
-the mode matching your own project's situation (the root README's
-Standalone section links back here per-case).
+**What you need to do with it.** Read it after Tutorials 1 and 2. Read
+Mode A first even if you plan to use Mode B — it defines the topology Mode
+B's output is checked against.
 
 ```mermaid
 graph LR
-    T2["02 — real build tree"] --> T3["03 — discovery modes<br/>YOU ARE HERE"]
-    T3 --> REF["docs/MASTER.pdf<br/>full reference"]
+    T2["02 — real build tree"] --> T3["03 — hand-authored & discover<br/>YOU ARE HERE"]
+    T3 --> T4["04 — submodules to READY"]
     T3 --> A["Mode A — hand-authored"]
     T3 --> B["Mode B — discover"]
-    T3 --> C["Mode C — import-submodules"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
     class T3 here;
@@ -41,25 +40,30 @@ graph LR
 
 ---
 
-**The most advanced of the three tutorials.** Tutorials
-[1](01_first_multi_repo_workspace.md) and
+Tutorials [1](01_first_multi_repo_workspace.md) and
 [2](02_onboarding_a_real_build_tree.md) both hand-author a `.cgs` from
-scratch. This one covers the opposite situation: a real project,
+scratch. This one covers the opposite case: a real project,
 **`cawaqsviz`** (<https://gitlab.com/cawaqs/gviz/cawaqsviz>), that has **no**
-`.cgs` of its own anywhere upstream — and all three independent ways
-`cgitsync` offers to arrive at a working one for it anyway:
+`.cgs` of its own anywhere upstream.
+
+There are three ways to reach a working `.cgs` for a project like this.
+This tutorial covers the first two:
 
 | Mode | Starting point | Command |
 |---|---|---|
 | A — hand-authored | Read the project's topology yourself, write the `.cgs` by hand | none (a text editor) |
 | B — `discover` | A checkout already exists on disk | `pixi run cgitsync discover` |
-| C — `import-submodules` | The project already uses git submodules | `pixi run cgitsync import-submodules` |
 
-These are not three different projects — they are three different *starting
-points* for the same one, so this tutorial can demonstrate every route
-without inventing a fourth toy topology. Read Mode A first regardless of
-which one you'll actually use: it establishes the topology every other mode
-is checked against.
+The third way, migrating from existing git submodules with
+`import-submodules`, is [Tutorial 4](04_submodules_to_ready.md) —
+along with what to do next with any of the three: taking the resulting
+`.cgs` to a real, `READY` tree.
+
+These are not different projects — they are different *starting points*
+for the same one, so this tutorial (and the next) can demonstrate every
+route without inventing a fourth toy topology. Read Mode A first
+regardless of which one you'll actually use: it establishes the topology
+every other mode is checked against.
 
 > **Every command below is a Pixi task.** Always run `pixi run cgitsync
 > ...`, never a bare `cgitsync ...` — see the note in
@@ -70,7 +74,7 @@ is checked against.
 > (`ssh-agent`, an HTTPS credential helper, etc.). If any repository's
 > upstream is private and the environment does not already have access, the
 > subsequent `pixi run cgitsync initialise`/`bootstrap`/`pull` will fail at
-> the clone step — this applies to all three modes below.
+> the clone step — this applies to both modes below, and to Tutorial 4.
 
 ---
 
@@ -247,149 +251,7 @@ reported. A repository with no `origin`, or whose remote is not a
 recognised `provider:owner/repository`, is listed as a warning rather than
 guessed at. Always review the draft before using it.
 
----
-
-## 4. Mode C — migrate it with `import-submodules`
-
-The historical route: before either `.cgs` above existed, `cawaqsviz`
-tracked both children as real git submodules
-(`external/HydrologicalTwinAlphaSeries` and `docs/CWV_user_guide`).
-`cgitsync`'s model is **plain independent clones** rather than gitlinks —
-`import-submodules` converts an existing submodule setup to that model.
-
-### 4.1 Before / after
-
-```
-cawaqsviz/          ← parent repo
-  .gitmodules       ← declares two submodules
-  external/
-    HydrologicalTwinAlphaSeries/   ← gitlink today
-  docs/
-    CWV_user_guide/                ← gitlink today
-```
-
-| File / object | Before | After |
-|---|---|---|
-| Parent index | `160000` gitlink entries for both paths | No gitlink entries |
-| `.gitmodules` | Declares two submodules | Deleted |
-| `.gitignore` | May not mention child paths | Both paths appended |
-| Child `.git` | Present (if already cloned) | Unchanged — no re-clone needed |
-
-### 4.2 Dry run first (safe, no changes)
-
-```bash
-pixi run cgitsync import-submodules /path/to/cawaqsviz
-```
-
-Output:
-
-```
-Dry run — 2 submodule(s) in /path/to/cawaqsviz/.gitmodules
-Pass --apply to perform the conversion.
-
-  submodule: external/HydrologicalTwinAlphaSeries
-    path:    external/HydrologicalTwinAlphaSeries
-    url:     https://github.com/flipoyo/HydrologicalTwinAlphaSeries.git
-    branch:  main
-
-  submodule: docs/CWV_user_guide
-    path:    docs/CWV_user_guide
-    url:     https://github.com/flipoyo/user_guide_CaWaQS-Viz
-    branch:  main
-```
-
-### 4.3 Apply the conversion
-
-```bash
-pixi run cgitsync import-submodules /path/to/cawaqsviz \
-    --apply --output cawaqsviz_submodules.cgs
-```
-
-What happens under the hood, per submodule:
-
-1. **Preflight** — `git status --porcelain` in the child directory must be
-   empty. Dirty working trees are rejected immediately.
-2. **`git rm --cached <path>`** — removes the gitlink from the parent's
-   index; the child's working tree and `.git` directory are untouched.
-3. **`.gitmodules` updated** — the submodule's stanza is removed. When all
-   submodules are converted, `.gitmodules` is deleted and its removal is
-   staged.
-4. **`.gitignore` updated** — `<path>` is appended to the parent's
-   `.gitignore`, using the same helper the `.gitignore` lifecycle sync
-   uses elsewhere in `cgitsync`.
-5. A `cawaqsviz_submodules.cgs` snippet is written with one `[[repos]]`
-   entry per converted submodule.
-
-After applying, review and commit the staged changes manually:
-
-```bash
-cd /path/to/cawaqsviz
-git status            # shows: deleted .gitmodules, modified .gitignore, removed gitlinks
-git commit -m "chore: retire git submodules in favour of ComplexGitSync"
-```
-
-> **Live migration note:** running `import-submodules --apply` against the
-> real `cawaqsviz` GitLab project is a visible, permanent change to a shared
-> repository. Build and test the tool against local fixtures first (see the
-> automated test below), then open a pull/merge request on `cawaqsviz`
-> itself for maintainer review before merging.
-
-### 4.4 Automated test
-
-`tests/integration/test_cgsi_topology.py::TestImportSubmodules::
-test_import_submodules_converts_gitlinks_to_plain_clones` creates a local
-bare "parent" repo with a real `git submodule add` of a local bare "child"
-repo, runs `import_submodules(..., apply=True)`, and asserts the gitlink is
-gone, the child's working tree is intact, `.gitignore` contains the child's
-path, and the emitted `.cgs` validates.
-
-### 4.5 Trying the output as a real, throwaway test tree
-
-Any of the three modes above ends in a `.cgs` file — Mode A's
-`examples/cawaqsviz.cgs`, Mode B's `cawaqsviz-discovered.cgs`, Mode C's
-`cawaqsviz_submodules.cgs`. This section walks through what to actually do
-with one of them next, using Mode C's output as the example: `initialise`
-it as a real tree, `branch`+`checkout` onto a disposable test branch, and
-run `freeze-release` on it.
-
-```bash
-pixi run cgitsync initialise cawaqsviz_submodules.cgs
-pixi run cgitsync branch test-cgs
-pixi run cgitsync checkout test-cgs
-pixi run cgitsync freeze-release test-state "first test on a throwaway branch"
-```
-
-`branch`+`checkout` create and switch to a purely local branch — nothing is
-pushed yet, so it has no upstream on the remote. `freeze-release` (`add ->
-commit -> pull -> push -> freeze`) handles that correctly: the `pull` step
-is skipped when the current branch has no upstream (there is nothing to
-pull for a branch that was never published), and `push` publishes it for
-the first time on its own, the same way `git push -u` would. No manual
-`push` before `freeze-release` is needed.
-
-> **Before this was fixed**, running this exact sequence crashed at
-> `freeze-release` with `fatal: couldn't find remote ref test-cgs` — `pull`
-> unconditionally tried to pull a branch that had never been pushed. If you
-> hit that error on an older `cgitsync`, run `pixi run cgitsync push`
-> once by hand before `freeze-release` as a workaround.
-
-`test-cgs`/`test-state` are disposable — this is meant for trying a mode's
-output on a real tree, not for a release. Delete the remote branch and tag
-afterwards if you don't want them to linger.
-
----
-
-## 5. Which mode to reach for
-
-- **`discover` (Mode B) and `import-submodules` (Mode C) answer different
-  questions about the same tree.** `discover` reports what is *checked
-  out*; `import-submodules` reads what git *declares* in `.gitmodules` and
-  acts on it — a submodule path that was never initialised is invisible to
-  Mode B but not to Mode C.
-- **They compose.** `discover` a checkout to get the topology for free,
-  cross-check it against `.gitmodules`, then `import-submodules --apply` to
-  retire the submodules once you're confident in the result.
-- **Mode A is the fallback** when neither a checkout nor `.gitmodules` is
-  available — the same situation Tutorial 2's `cawaqs` is permanently in,
-  since its 17 libraries never coexist in one directory tree until a `.cgs`
-  already lists them.
+**Next:** [Tutorial 4 — Migrating git Submodules to a READY Tree](04_submodules_to_ready.md)
+covers the third way to reach a `.cgs` (`import-submodules`, for a project
+that already tracks its children as git submodules), and takes any of the
+three resulting `.cgs` files the rest of the way to a working tree.

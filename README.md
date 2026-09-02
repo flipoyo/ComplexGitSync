@@ -121,7 +121,7 @@ pixi run cgitsync import-submodules ~/work/project --apply --output project.cgs 
 
 Composes with `discover`: run `discover` first to get the topology for free,
 then `import-submodules --apply` to retire the submodules it found. Full
-walkthrough: [tutorials/03_configuration_discovery_modes.md](tutorials/03_configuration_discovery_modes.md).
+walkthrough: [tutorials/04_submodules_to_ready.md](tutorials/04_submodules_to_ready.md).
 
 If the topology instead lives only in a build script or in developers'
 heads, use `configure` (interactive) or `create-cgs` (flags) to author a
@@ -182,11 +182,12 @@ pixi run cgitsync view-tree
 
 ## Further reading
 
-[tutorials/](tutorials/) — three tutorials, simplest to most advanced:
+[tutorials/](tutorials/) — four tutorials, simplest to most advanced:
 
 1. [01_first_multi_repo_workspace.md](tutorials/01_first_multi_repo_workspace.md) — full CLI lifecycle walkthrough on a synthetic sandbox tree.
 2. [02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md) — hand-author a `.cgs` for a real 19-repo project, then hand off to its existing `make` build.
-3. [03_configuration_discovery_modes.md](tutorials/03_configuration_discovery_modes.md) — a real project with no `.cgs` of its own, reached three ways: by hand, `discover`, `import-submodules`.
+3. [03_configuration_discovery_modes.md](tutorials/03_configuration_discovery_modes.md) — a real project with no `.cgs` of its own, reached two ways: by hand, `discover`.
+4. [04_submodules_to_ready.md](tutorials/04_submodules_to_ready.md) — the same project's third way (`import-submodules`), plus taking any of the three `.cgs` drafts to a `READY` tree.
 
 [docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference
 book: full command details, expert-mode primitives (`add`/`commit`/`push`/...),

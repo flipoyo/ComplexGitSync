@@ -4,7 +4,7 @@
 
 ## Abstract — read this first
 
-**What this document is.** The index of ComplexGitSync's three worked
+**What this document is.** The index of ComplexGitSync's four worked
 tutorials, ordered from simplest to most advanced.
 
 **Why it exists.** The root [README.md](../README.md) covers the CLI
@@ -12,11 +12,11 @@ command-by-command; these tutorials instead walk one topology end to end,
 so a first-time user sees the full lifecycle before hand-authoring their
 own `.cgs`.
 
-**What you will find.** Three tutorials, each building on the last, plus a
+**What you will find.** Four tutorials, each building on the last, plus a
 reminder that every command shown is a Pixi task.
 
 **Who it is for.** Anyone new to `cgitsync`. Start at Tutorial 1 regardless
-of your own project's shape — it establishes the vocabulary the other two
+of your own project's shape — it establishes the vocabulary the other three
 assume.
 
 **What you need to do with it.** Work the tutorials in order, or jump
@@ -27,16 +27,17 @@ README's "Adopting a project" table links back here per-situation).
 graph LR
     README["README.md<br/>quickstart"] --> T1["01<br/>first workspace"]
     T1 --> T2["02<br/>real build tree"]
-    T2 --> T3["03<br/>discovery modes"]
-    T3 --> REF["docs/MASTER.pdf<br/>full reference"]
+    T2 --> T3["03<br/>hand-authored & discover"]
+    T3 --> T4["04<br/>submodules to READY"]
+    T4 --> REF["docs/MASTER.pdf<br/>full reference"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
-    class T1,T2,T3 here;
+    class T1,T2,T3,T4 here;
 ```
 
 ---
 
-Three worked examples, ordered from the simplest to the most advanced. Do
+Four worked examples, ordered from the simplest to the most advanced. Do
 them in order — each one builds on the last:
 
 1. **[01 — Your First Multi-Repo Workspace](01_first_multi_repo_workspace.md)**
@@ -48,10 +49,12 @@ them in order — each one builds on the last:
    19-repository project (`cawaqs`) — and where `cgitsync` hands off to the
    project's own build.
 3. **[03 — Configuration Discovery Modes](03_configuration_discovery_modes.md)**
-   The most advanced tutorial: a real project with no `.cgs` of its own
-   (`cawaqsviz`), reached three different ways — hand-authored, `discover`
-   from a checkout, and migrated from git submodules with
-   `import-submodules`.
+   A real project with no `.cgs` of its own (`cawaqsviz`), reached two
+   ways — hand-authored, and `discover` from a checkout.
+4. **[04 — Migrating git Submodules to a READY Tree](04_submodules_to_ready.md)**
+   The same project's third way — migrated from git submodules with
+   `import-submodules` — plus how to take any of the three resulting
+   `.cgs` files to a working, `READY` tree.
 
 > **Every command in these tutorials is a Pixi task.** Run `pixi install`
 > once per checkout, then always invoke the CLI as `pixi run cgitsync ...`

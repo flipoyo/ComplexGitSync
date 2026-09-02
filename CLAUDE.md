@@ -194,7 +194,7 @@ plans), `AgentSpec/audit.md`, `README.md`, and `docs/tutorials/*.md` — opens w
 authoring time and never rewritten on later edits. It records when the
 document was written, not when it was last touched: a "last updated" claim
 rots the moment someone forgets to bump it, which `AgentSpec/DOCSTYLE.md`
-§5 already forbids ("no stale-by-design content"); a creation date is a
+§6 already forbids ("no stale-by-design content"); a creation date is a
 historical fact and cannot go stale the same way.
 
 Planning tickets additionally follow the archival lifecycle already in use:
