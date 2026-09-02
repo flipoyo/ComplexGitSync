@@ -2,6 +2,45 @@
 
 *Created: 2026-08-25*
 
+## Abstract — read this first
+
+**What this document is.** The third and most advanced of the three worked
+tutorials in [`docs/tutorials/`](README.md): a real project, `cawaqsviz`,
+that has no `.cgs` of its own anywhere upstream, reached three independent
+ways — hand-authored, `discover`, and `import-submodules`.
+
+**Why it exists.** Tutorials 1 and 2 both hand-author a `.cgs` from
+scratch. Most real projects instead already have a checkout on disk or
+already use git submodules — this tutorial covers both automated onboarding
+paths, and when to reach for each.
+
+**What you will find.** The `cawaqsviz` topology, Mode A (by hand), Mode B
+(`discover`), Mode C (`import-submodules`, including a before/after and the
+mechanics of the conversion), a throwaway-tree trial run, and a
+which-mode-to-reach-for summary.
+
+**Who it is for.** Anyone onboarding a real project that has no `.cgs` yet.
+Read Mode A first regardless of which mode you'll actually use — it
+establishes the topology the other two are checked against.
+
+**What you need to do with it.** Read it after Tutorials 1 and 2, then pick
+the mode matching your own project's situation (the root README's
+Standalone section links back here per-case).
+
+```mermaid
+graph LR
+    T2["02 — real build tree"] --> T3["03 — discovery modes<br/>YOU ARE HERE"]
+    T3 --> REF["docs/MASTER.pdf<br/>full reference"]
+    T3 --> A["Mode A — hand-authored"]
+    T3 --> B["Mode B — discover"]
+    T3 --> C["Mode C — import-submodules"]
+
+    classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
+    class T3 here;
+```
+
+---
+
 **The most advanced of the three tutorials.** Tutorials
 [1](01_first_multi_repo_workspace.md) and
 [2](02_onboarding_a_real_build_tree.md) both hand-author a `.cgs` from
@@ -116,22 +155,75 @@ directly instead of being typed.
 
 ```bash
 # A plain clone leaves submodule paths empty; initialise them first so
-# discover has something to find at those paths.
+# discover has something to find at those paths. --init only (not
+# --recursive): the two direct children are all Mode A's topology needs —
+# see the note below on why going deeper can pull in more than expected.
 git clone https://gitlab.com/cawaqs/gviz/cawaqsviz cawaqsviz-scan
 cd cawaqsviz-scan
-git submodule update --init --recursive
+git submodule update --init
 
 # Dry run: report what discover sees, write nothing.
 pixi run cgitsync discover . --max-depth 3
 ```
 
+> **If `git submodule update` prompts for a GitHub username/password and
+> then fails with `error: RPC failed; HTTP 401` / `expected flush after ref
+> listing`:** both submodules are genuinely public repositories (verified
+> via the GitHub API), but GitHub can still `401` the anonymous
+> object-fetch request that a real clone needs, independent of Git's
+> protocol version — only the lightweight ref-advertisement request is
+> guaranteed to work anonymously. The reliable fix is to authenticate the
+> request instead of relying on anonymous access. If you already have an
+> SSH key registered with GitHub (check with `ssh -T git@github.com`),
+> rewrite the submodule URLs to SSH for this clone only:
+> ```bash
+> git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init
+> ```
+> Otherwise, create a GitHub [personal access
+> token](https://github.com/settings/tokens) and use it as the password
+> when prompted — GitHub dropped account-password auth for git operations
+> in 2021, which is what the plain `git submodule update --init` above was
+> actually failing on. This is unrelated to `master.py`/
+> `.cgitsync/master.toml` — that file only sets the commit *author
+> identity* `cgitsync` uses for its own generated commits, never
+> clone/fetch authentication.
+
 Expected report (three repositories, no warnings):
 
 ```
-root:  gitlab:cawaqs/gviz/cawaqsviz          .
-child: github:flipoyo/HydrologicalTwinAlphaSeries   external/HydrologicalTwinAlphaSeries  nested: auto (no .cgs of its own)
-child: github:flipoyo/user_guide_CaWaQS-Viz         docs/CWV_user_guide                   nested: auto (no .cgs of its own)
+Found 3 git repository(ies) under <path>
+proposed project name: cawaqsviz
+
+  - .
+      remote: https://gitlab.com/cawaqs/gviz/cawaqsviz
+      id:     gitlab:cawaqs/gviz/cawaqsviz
+      branch: main
+      nested: auto (no .cgs of its own)
+
+  - docs/CWV_user_guide
+      remote: https://github.com/flipoyo/user_guide_CaWaQS-Viz
+      id:     github:flipoyo/user_guide_CaWaQS-Viz
+      branch: (detached)
+      nested: auto (no .cgs of its own)
+
+  - external/HydrologicalTwinAlphaSeries
+      remote: https://github.com/flipoyo/HydrologicalTwinAlphaSeries.git
+      id:     github:flipoyo/HydrologicalTwinAlphaSeries
+      branch: (detached)
+      nested: auto (no .cgs of its own)
+
+Dry run — pass --write FILE to save this draft as a .cgs.
 ```
+
+> **Why `--init` and not `--init --recursive`:** `HydrologicalTwinAlphaSeries`
+> has since grown its own nested submodule
+> (`docs/hydrological_twin`) upstream. `--recursive` pulls that in too, and
+> `discover` (which walks the filesystem for whatever is actually checked
+> out) then reports 4 repositories instead of the 3 above — harmless, but
+> it no longer matches Mode A's `examples/cawaqsviz.cgs`, which only knows
+> about the two direct children. `cgitsync` itself never has this
+> ambiguity: `initialise`/`bootstrap` follow `.cgs`-declared nesting only,
+> never git submodules, recursively or otherwise.
 
 Satisfied with the report, save the draft and check it:
 

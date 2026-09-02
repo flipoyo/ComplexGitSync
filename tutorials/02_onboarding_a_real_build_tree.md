@@ -2,6 +2,43 @@
 
 *Created: 2026-08-25*
 
+## Abstract — read this first
+
+**What this document is.** The second of three worked tutorials in
+[`docs/tutorials/`](README.md): the hand-authored `.cgs` style from
+[Tutorial 1](01_first_multi_repo_workspace.md) applied to a real,
+19-repository hydrological simulation platform (`cawaqs`), then handed off
+to that project's own build.
+
+**Why it exists.** To show that hand-authoring a `.cgs` scales to a real,
+much larger project without getting more complicated — and to draw the
+line between what `cgitsync` does (fetch repositories, select branches) and
+what it deliberately leaves to the project's own build system.
+
+**What you will find.** What `examples/cawaqs.cgs` covers and what it does
+not, the spec itself, a 5-step CLI walkthrough (`validate` → `bootstrap` →
+`view-tree` → `checkout` → hand off to `make`), and a command summary
+table.
+
+**Who it is for.** Anyone who has done Tutorial 1 and now wants to see the
+same habits applied to a real project of meaningful scale.
+
+**What you need to do with it.** Read it after Tutorial 1, then move on to
+[Tutorial 3](03_configuration_discovery_modes.md) for the case where no
+`.cgs` exists yet at all.
+
+```mermaid
+graph LR
+    T1["01 — first workspace"] --> T2["02 — real build tree<br/>YOU ARE HERE"]
+    T2 --> T3["03 — discovery modes"]
+    T2 -->|hands off to| BUILD["project's own build<br/>e.g. make -f Makefile"]
+
+    classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
+    class T2 here;
+```
+
+---
+
 **More advanced than Tutorial 1, same authoring style.** This tutorial takes
 the hand-authored `.cgs` habits from
 [Tutorial 1](01_first_multi_repo_workspace.md) and applies them to a real,

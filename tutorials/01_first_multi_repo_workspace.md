@@ -2,6 +2,41 @@
 
 *Created: 2026-06-30*
 
+## Abstract — read this first
+
+**What this document is.** The first of three worked tutorials in
+[`docs/tutorials/`](README.md): the complete `cgitsync` CLI lifecycle —
+validate, initialise, and the full git cycle (add → commit → push → tag →
+freeze) — on a small, synthetic, mixed-provider sandbox tree (`CGSil1`).
+
+**Why it exists.** Every other tutorial and the root README's Quickstart
+assume the vocabulary and lifecycle this one establishes first: `.cgs`
+authoring, the READY state, tree-wide git operations, freeze/release.
+
+**What you will find.** A topology overview, the `CGSil1.cgs` spec
+explained field by field, a 9-step CLI walkthrough from `validate` through
+`launch-release`, and a command summary table.
+
+**Who it is for.** Anyone new to `cgitsync`, regardless of their own
+project's shape. Nothing here requires a private repository, real
+credentials, or an existing project to adopt.
+
+**What you need to do with it.** Work it top to bottom once, then move on
+to [Tutorial 2](02_onboarding_a_real_build_tree.md) to see the same
+authoring style applied to a real project.
+
+```mermaid
+graph LR
+    IDX["tutorials/README.md<br/>index"] --> T1["01 — first workspace<br/>YOU ARE HERE"]
+    T1 --> T2["02 — real build tree"]
+    T1 -->|produces| READY["READY tree +<br/>.gts snapshot"]
+
+    classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
+    class T1 here;
+```
+
+---
+
 **Start here.** This is the easiest of the three tutorials in
 [`docs/tutorials/`](README.md): it walks through the complete `cgitsync` CLI
 lifecycle — validate, initialise, and the full git cycle
