@@ -7,7 +7,7 @@ __An alternative to submodule for complex multi git-repo project management and 
 
 ComplexGitSync is a CLI (command-line tool) for synchronising a multi git-repository 
 workspace — in the form of a GitTree — from one local `.cgs`
-specification (ASCII file) or one tracked `.gts` workspace Snapshot (ASCII file describing the GitTree State). It is a Python package for which the API is exposed through the CLI only.
+specification (ASCII file) or one tracked `.gts` workspace snapshot (ASCII file describing the GitTree State). It is a Python package for which the API is exposed through the CLI only.
 
 The CLI is used to operate the same git command on all repos that compose the project. It is a robust and convenient alternative to git submodules, offering a straightforward development experience.
 
@@ -106,7 +106,7 @@ Full walkthrough: [tutorials/03_configuration_discovery_modes.md](tutorials/03_c
 
 ### 2.1.3 The project uses git submodules
 
-A project may display submodule. ComplexGitSync converts all submodule artefacts using `import-submodules`, that reports on, or converts, git submodules into plain
+A project may already use git submodules. ComplexGitSync converts all submodules artefacts using `import-submodules`, that reports on, or converts, git submodules into plain
 ComplexGitSync nested repositories:
 
 ```bash
