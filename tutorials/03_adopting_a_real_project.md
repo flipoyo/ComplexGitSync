@@ -252,8 +252,25 @@ pixi run cgitsync push
 ```
 
 `branch`+`checkout` created a purely local branch with no upstream yet;
-`push` publishes it, the same way `git push -u` would. For a versioned
-snapshot instead of a plain push, use the minimalist cycle:
+`push` publishes it, the same way `git push -u` would.
+
+> **If `push` fails with `could not read Username` / `terminal prompts
+> disabled` (or, on an older `cgitsync` build, hangs until you `Ctrl+C`
+> it):** the root was cloned over HTTPS in step 1, and pushing needs
+> write credentials that plain HTTPS anonymous access doesn't have.
+> `cgitsync` stores no credentials of its own, so this is the same
+> ambient-authentication gap as step 2 — same fix, applied to the root's
+> `origin` instead of a submodule's:
+> ```bash
+> git -C "$WORK/cawaqsviz" remote set-url origin git@gitlab.com:cawaqs/gviz/cawaqsviz.git
+> ```
+> (only if you have an SSH key registered with GitLab — check with `ssh -T
+> git@gitlab.com`; otherwise, a GitLab [personal access
+> token](https://gitlab.com/-/user_settings/personal_access_tokens) used
+> as the HTTPS password works too.)
+
+For a versioned snapshot instead of a plain push, use the minimalist
+cycle:
 
 ```bash
 pixi run cgitsync freeze-release retire-submodules-v1 "retire git submodules"

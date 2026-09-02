@@ -12,6 +12,7 @@ Imports: errors, git_repo
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,24 @@ from urllib.parse import urlsplit
 
 from .errors import GitSyncError
 from .git_repo import SyncState
+
+
+def _non_interactive_git_env() -> dict[str, str]:
+    """Environment for a git subprocess that must never block on a prompt.
+
+    ComplexGitSync stores no credentials and has no private-repository
+    authentication story (see ``import-submodules``/``discover``'s own
+    docs) — every git operation is meant to succeed on ambient
+    credentials already cached by the environment, or fail. Without this,
+    a missing/expired credential makes ``git`` silently wait on a
+    terminal or GUI prompt that never arrives, hanging the whole CLI with
+    no visible error until the user notices and interrupts it.
+    ``GIT_TERMINAL_PROMPT=0`` disables the terminal prompt; ``GIT_ASKPASS``
+    pointed at ``echo`` makes any GUI/helper askpass return an empty
+    credential immediately instead of popping up a window. Either way,
+    git fails fast with a normal, catchable error instead of hanging.
+    """
+    return {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "echo"}
 
 # ============================================================
 #  GitRunnerProtocol — the boundary other rings type against
@@ -361,6 +380,7 @@ class GitRunner:
             capture_output=True,
             check=False,
             text=True,
+            env=_non_interactive_git_env(),
         )
         if completed.returncode == 0:
             return True
@@ -378,6 +398,7 @@ class GitRunner:
             capture_output=True,
             check=False,
             text=True,
+            env=_non_interactive_git_env(),
         )
         if completed.returncode == 0:
             return True
@@ -409,6 +430,7 @@ class GitRunner:
             capture_output=True,
             check=False,
             text=True,
+            env=_non_interactive_git_env(),
         )
         if upstream.returncode != 0:
             return None
@@ -430,6 +452,7 @@ class GitRunner:
             capture_output=True,
             check=False,
             text=True,
+            env=_non_interactive_git_env(),
         )
         return upstream.returncode == 0
 
@@ -444,6 +467,7 @@ class GitRunner:
             capture_output=True,
             check=False,
             text=True,
+            env=_non_interactive_git_env(),
         )
         if completed.returncode != 0:
             command = " ".join([self.executable, *args])

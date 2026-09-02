@@ -1,0 +1,7 @@
+The tuto3 is not operationnal yet. 
+First in the parent directory a .cgitsync is pushed, it should be ignored, so bad management of the parent .gitignore. 
+It is weird since I thought we fixed it for ComplexGitSync, but maybe for bootstrap alone not initialise.
+Second, import-submodules seems to be efficient for the root repo (except the .cgitsync) but not for parent. It has no sens for leaves. 
+Nevertheles, it should propagate from leave to parent to root. You can see that something is wrong with HydrologicalTwinAlphaSeries branch retire-submodules, where we still have link towards hydrological_twin and .gitmodules
+
+Write a DevPlanTicket on the matter

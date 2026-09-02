@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.26
+# ComplexGitSync v0002.28
 __An alternative to submodule for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
