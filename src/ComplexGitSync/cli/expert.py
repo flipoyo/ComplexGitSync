@@ -283,15 +283,6 @@ def _register_import_submodules(subparser: argparse.ArgumentParser) -> None:
             "what would change (dry-run)."
         ),
     )
-    subparser.add_argument(
-        "--output",
-        metavar="FILE",
-        default=None,
-        help=(
-            "Write a .cgs snippet for the imported submodules to FILE. "
-            "Only used when --apply is also set."
-        ),
-    )
     subparser.set_defaults(handler=_handle_import_submodules)
 
 
@@ -499,7 +490,6 @@ def _handle_freeze(args: argparse.Namespace) -> int:
 def _handle_import_submodules(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).resolve()
     apply = args.apply
-    output = getattr(args, "output", None)
     return _run_with_logging(
         command_name="import-submodules",
         source=repo_root,
@@ -507,7 +497,6 @@ def _handle_import_submodules(args: argparse.Namespace) -> int:
             client,
             source,
             apply=apply,
-            output=output,
         ),
     )
 
@@ -817,10 +806,9 @@ def _execute_import_submodules(
     source: Path,
     *,
     apply: bool = False,
-    output: str | None = None,
 ) -> int:
     """Execute the import-submodules command and print a human-readable report."""
-    report = client.import_submodules(source, apply=apply, output=output)
+    report = client.import_submodules(source, apply=apply)
 
     if not report.submodules:
         print(f"No .gitmodules found at {source} — nothing to import.")
@@ -841,6 +829,4 @@ def _execute_import_submodules(
     for name in report.converted:
         sub = next(s for s in report.submodules if s.name == name)
         print(f"  ✓ {name}  ({sub.path})")
-    if output:
-        print(f".cgs entries written to: {Path(output).resolve()}")
     return 0

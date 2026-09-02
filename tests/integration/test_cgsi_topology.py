@@ -801,13 +801,6 @@ class TestImportSubmodules:
             child_remote.as_posix(),
             submodule_path,
         )
-        # Rewrite the submodule URL in .gitmodules to a recognisable github form so
-        # _url_to_repo_identifier() can parse it when --output is requested.
-        gitmodules_path = seed / ".gitmodules"
-        original = gitmodules_path.read_text(encoding="utf-8")
-        rewritten = original.replace(child_remote.as_posix(), "https://github.com/owner/child.git")
-        gitmodules_path.write_text(rewritten, encoding="utf-8")
-        _run_git(seed, "add", ".gitmodules")
         _run_git(seed, "commit", "-m", "add submodule")
         _run_git(seed, "remote", "add", "origin", parent_remote.as_posix())
         _run_git(seed, "push", "-u", "origin", "main")
@@ -860,25 +853,6 @@ class TestImportSubmodules:
 
         # .gitmodules removed (all submodules converted)
         assert not (parent_wc / ".gitmodules").is_file()
-
-    def test_import_submodules_writes_cgs_output(self, tmp_path):
-        child_remote = self._make_child_repo(tmp_path, "child")
-        parent_wc = self._make_parent_with_submodule(
-            tmp_path, child_remote, "deps/child"
-        )
-        output_path = tmp_path / "imported.cgs"
-
-        client = ComplexGitSyncClient()
-        report = client.import_submodules(parent_wc, apply=True, output=output_path)
-
-        assert report.applied is True
-        assert output_path.is_file()
-
-        # The emitted .cgs must parse and validate
-        from ComplexGitSync.cgs_format import CgsDocument
-        doc = CgsDocument.from_toml(output_path)
-        assert len(doc.repos) == 1
-        assert doc.repos[0].get("relative_path") == "deps/child"
 
     def test_no_gitmodules_returns_empty_report(self, tmp_path):
         # Create a plain git repo with no .gitmodules

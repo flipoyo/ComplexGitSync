@@ -782,7 +782,7 @@ def test_import_submodules_dry_run_reports_without_apply(monkeypatch, capsys, tm
     sub = SimpleNamespace(name="child", path="deps/child", url="git@example.com:owner/child.git", branch="main")
 
     class StubClient:
-        def import_submodules(self, source, *, apply=False, output=None):
+        def import_submodules(self, source, *, apply=False):
             assert apply is False
             return SimpleNamespace(submodules=[sub], converted=[])
 
@@ -799,32 +799,29 @@ def test_import_submodules_dry_run_reports_without_apply(monkeypatch, capsys, tm
     assert "Pass --apply to perform the conversion." in captured.out
 
 
-def test_import_submodules_apply_converts_and_writes_output(monkeypatch, capsys, tmp_path):
+def test_import_submodules_apply_converts(monkeypatch, capsys, tmp_path):
     sub = SimpleNamespace(name="child", path="deps/child", url="git@example.com:owner/child.git", branch="main")
 
     class StubClient:
-        def import_submodules(self, source, *, apply=False, output=None):
+        def import_submodules(self, source, *, apply=False):
             assert apply is True
-            assert output == str(tmp_path / "snippet.cgs")
             return SimpleNamespace(submodules=[sub], converted=["child"])
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    output_path = str(tmp_path / "snippet.cgs")
-    exit_code = _run(["import-submodules", str(repo_root), "--apply", "--output", output_path])
+    exit_code = _run(["import-submodules", str(repo_root), "--apply"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
     assert "Converted 1 submodule(s)" in captured.out
     assert "child" in captured.out
-    assert ".cgs entries written to:" in captured.out
 
 
 def test_import_submodules_no_gitmodules_reports_nothing_to_import(monkeypatch, capsys, tmp_path):
     class StubClient:
-        def import_submodules(self, source, *, apply=False, output=None):
+        def import_submodules(self, source, *, apply=False):
             return SimpleNamespace(submodules=[], converted=[])
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)

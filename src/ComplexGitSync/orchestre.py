@@ -1005,16 +1005,15 @@ class ComplexGitSyncClient:
         repo_root: str | Path,
         *,
         apply: bool = False,
-        output: str | Path | None = None,
     ) -> ImportSubmodulesReport:
         """Report or convert git submodules in *repo_root* to plain nested clones.
 
         Parses ``<repo_root>/.gitmodules`` and, for each declared submodule:
 
         * **Dry-run** (``apply=False``, the default): returns an
-          :class:`ImportSubmodulesReport` describing what would change
-          — submodule names, paths, URLs, branches, and the ``.cgs`` entries
-          that would be generated — without touching the repository.
+          :class:`ImportSubmodulesReport` describing what would change —
+          submodule names, paths, URLs, branches — without touching the
+          repository.
         * **Apply** (``apply=True``): for each submodule in turn —
 
           1. Verifies the working tree at ``<repo_root>/<path>`` is clean
@@ -1034,11 +1033,12 @@ class ComplexGitSyncClient:
              ``<repo_root>/.gitignore`` — the same step the ``.gitignore``
              lifecycle sync performs for every parent-child relationship.
 
-        After applying, the converted submodule entries are available as
-        ``report.cgs_entries``.  When *output* is given, a validated
-        :class:`~ComplexGitSync.cgs_format.CgsDocument` containing those
-        entries is written to that path — suitable for manual integration
-        into the project's main ``.cgs`` file.
+        This is the whole job: turning gitlinks into plain clones on disk.
+        It does not author a ``.cgs`` — that would need the root's own
+        identity too, which ``.gitmodules`` never records, and a project
+        checkout worth importing already has one (:meth:`discover_repos`)
+        or is worth writing by hand. Run :meth:`discover_repos` on the same
+        checkout, before or after applying, to get one.
 
         Parameters
         ----------
@@ -1049,9 +1049,6 @@ class ComplexGitSyncClient:
             When ``False`` (default) the method is a pure read: it reports
             what would change without modifying anything. Set to ``True`` to
             perform the conversion.
-        output:
-            Optional path for the emitted ``.cgs`` document.  Only written
-            when *apply* is ``True``.  Ignored in dry-run mode.
 
         Returns
         -------
@@ -1071,7 +1068,6 @@ class ComplexGitSyncClient:
                 submodules=(),
                 applied=False,
                 converted=(),
-                cgs_entries=(),
             )
 
         content = gitmodules_path.read_text(encoding="utf-8")
@@ -1089,30 +1085,13 @@ class ComplexGitSyncClient:
                 submodules=(),
                 applied=False,
                 converted=(),
-                cgs_entries=(),
             )
-
-        # Build .cgs entries from submodule data (used for both dry-run report
-        # and the apply path).
-        cgs_entries: list[dict] = []
-        for sub in submodules:
-            try:
-                identifier = _url_to_repo_identifier(sub.url)
-            except Exception:
-                identifier = sub.url  # leave invalid; downstream validate() will catch it
-            entry: dict = {
-                "repository": identifier,
-                "relative_path": sub.path,
-                "fallback_branch": sub.branch,
-            }
-            cgs_entries.append(entry)
 
         if not apply:
             return ImportSubmodulesReport(
                 submodules=submodules,
                 applied=False,
                 converted=(),
-                cgs_entries=tuple(cgs_entries),
             )
 
         # --- apply=True: perform the conversion ---
@@ -1170,20 +1149,10 @@ class ComplexGitSyncClient:
             self.git_runner._run("rm", "--cached", ".gitmodules", cwd=root)
             gitmodules_path.unlink(missing_ok=True)
 
-        # 4. Emit .cgs document when an output path is specified.
-        if output is not None:
-            project_name = root.name
-            self.configure(
-                project_name,
-                cgs_entries,
-                output_path=output,
-            )
-
         return ImportSubmodulesReport(
             submodules=submodules,
             applied=True,
             converted=tuple(converted),
-            cgs_entries=tuple(cgs_entries),
         )
 
     # Pre-existing complexity debt from before C90 was enabled (P6,

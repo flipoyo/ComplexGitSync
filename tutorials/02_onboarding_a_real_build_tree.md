@@ -1,10 +1,10 @@
-# Tutorial 2 of 4 — Onboarding a Real Build Tree
+# Tutorial 2 of 3 — Onboarding a Real Build Tree
 
 *Created: 2026-08-25*
 
 ## Abstract — read this first
 
-**What this document is.** The second of four worked tutorials in
+**What this document is.** The second of three worked tutorials in
 [`docs/tutorials/`](README.md): the hand-authored `.cgs` style from
 [Tutorial 1](01_first_multi_repo_workspace.md) applied to a real,
 19-repository hydrological simulation platform (`cawaqs`), then handed off
@@ -24,13 +24,13 @@ table.
 same habits applied to a real project of meaningful scale.
 
 **What you need to do with it.** Read it after Tutorial 1, then move on to
-[Tutorial 3](03_configuration_discovery_modes.md) for the case where no
-`.cgs` exists yet at all.
+[Tutorial 3](03_adopting_a_real_project.md) for a real project with no
+`.cgs` of its own that still uses git submodules.
 
 ```mermaid
 graph LR
     T1["01 — first workspace"] --> T2["02 — real build tree<br/>YOU ARE HERE"]
-    T2 --> T3["03 — hand-authored & discover"]
+    T2 --> T3["03 — adopting a real project"]
     T2 -->|hands off to| BUILD["project's own build<br/>e.g. make -f Makefile"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
@@ -59,10 +59,9 @@ scanning a checkout.
 > ...`, never a bare `cgitsync ...` — see the note in
 > [Tutorial 1](01_first_multi_repo_workspace.md) if this is new to you.
 
-**Next:** [Tutorial 3 — Configuration Discovery Modes](03_configuration_discovery_modes.md)
-covers a real project with **no** `.cgs` of its own anywhere, reached two
-different ways. A third way, plus taking any of the three to a `READY`
-tree, is [Tutorial 4](04_submodules_to_ready.md).
+**Next:** [Tutorial 3 — Adopting a Real Project: CaWaQS-Viz](03_adopting_a_real_project.md)
+covers a real project with **no** `.cgs` of its own that still uses git
+submodules, end to end.
 
 ---
 

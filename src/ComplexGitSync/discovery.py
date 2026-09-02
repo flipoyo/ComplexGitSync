@@ -231,15 +231,11 @@ class ImportSubmodulesReport:
     converted:
         Names of submodules that were converted (same as ``submodules`` when
         ``applied`` is ``True``; empty tuple when dry-run).
-    cgs_entries:
-        Authoring-form ``repos`` tables for the converted submodules — ready
-        to pass to :meth:`ComplexGitSync.orchestre.ComplexGitSyncClient.configure`.
     """
 
     submodules: tuple[SubmoduleEntry, ...]
     applied: bool
     converted: tuple[str, ...]
-    cgs_entries: tuple[dict, ...]
 
 
 def _parse_gitmodules(content: str) -> list[SubmoduleEntry]:

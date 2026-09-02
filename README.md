@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.25
+# ComplexGitSync v0002.26
 __An alternative to submodule for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -102,21 +102,23 @@ pixi run cgitsync validate draft.cgs
 Read-only until `--write` is passed — always review the draft before using
 it. 
 
-Full walkthrough: [tutorials/03_configuration_discovery_modes.md](tutorials/03_configuration_discovery_modes.md).
+Full walkthrough: [tutorials/03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md).
 
 ### 2.1.3 The project uses git submodules
 
-A project may already use git submodules. ComplexGitSync converts all submodules artefacts using `import-submodules`, that reports on, or converts, git submodules into plain
-ComplexGitSync nested repositories:
+A project may already use git submodules. ComplexGitSync converts them to plain nested repositories using
+`import-submodules`, that reports on, or converts, each submodule's gitlink into a plain clone:
 
 ```bash
-pixi run cgitsync import-submodules ~/work/project                                   # dry run
-pixi run cgitsync import-submodules ~/work/project --apply --output project.cgs      # convert
+pixi run cgitsync import-submodules ~/work/project           # dry run
+pixi run cgitsync import-submodules ~/work/project --apply   # convert
 ```
 
-Composes with `discover`: run `discover` first to get the topology for free,
-then `import-submodules --apply` to retire the submodules it found. 
-Full walkthrough over `discover,import-submodules,initialise`: [tutorials/04_submodules_to_ready.md](tutorials/04_submodules_to_ready.md).
+That's the whole job — turning gitlinks into plain clones on disk. It does
+not also write a `.cgs`: `.gitmodules` never records the root's own
+identity, and a checkout worth converting already has a `.cgs` (hand-authored)
+or can get one from `discover`, run before or after `--apply`.
+Full walkthrough over `discover`, `import-submodules`, and `initialise`: [tutorials/03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md).
 
 ### 2.2 Nested Configuration
 
@@ -175,12 +177,11 @@ Full walkthrough: [tutorials/01_first_multi_repo_workspace.md](tutorials/01_firs
 
 ## 4. Further reading
 
-[tutorials/](tutorials/) — four tutorials, simplest to most advanced:
+[tutorials/](tutorials/) — three tutorials, simplest to most advanced:
 
 1. [01_first_multi_repo_workspace.md](tutorials/01_first_multi_repo_workspace.md) — full CLI lifecycle walkthrough on a synthetic sandbox tree.
 2. [02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md) — hand-author a `.cgs` for a real 19-repo project, then hand off to its existing `make` build.
-3. [03_configuration_discovery_modes.md](tutorials/03_configuration_discovery_modes.md) — a real project with no `.cgs` of its own, reached two ways: by hand, `discover`.
-4. [04_submodules_to_ready.md](tutorials/04_submodules_to_ready.md) — the same project's third way (`import-submodules`), plus taking any of the three `.cgs` drafts to a `READY` tree.
+3. [03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md) — a real project with no `.cgs` of its own that still uses git submodules: `discover`, `import-submodules`, `initialise`, and on to a pushed `READY` tree, one verified ten-step procedure.
 
 [docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference
 book: full command details, expert-mode primitives (`add`/`commit`/`push`/...),

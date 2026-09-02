@@ -146,7 +146,6 @@ class TestSubmoduleEntryDataclass:
             submodules=(),
             applied=False,
             converted=(),
-            cgs_entries=(),
         )
         assert not report.applied
         assert report.converted == ()
