@@ -2589,6 +2589,27 @@ def test_resolve_repo_for_path_accepts_a_relative_path(tmp_path, monkeypatch):
     assert relative == "some/file.txt"
 
 
+def test_resolve_repo_for_path_relative_path_anchors_at_tree_root_not_cwd(tmp_path, monkeypatch):
+    """A relative path resolves against CGSHOME (the tree root), regardless
+    of the process's CWD -- the standalone-mode invariant every other
+    command already honors (AgentSpec/AddRmCgshomeResolution_DevPlanTicket.md).
+    """
+    from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
+
+    root_path = tmp_path / "root"
+    root_path.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    registry = WorkingGitTree()
+    registry.add(_make_entry("root", root_path))
+    monkeypatch.chdir(elsewhere)
+
+    owner, relative = resolve_repo_for_path(registry, "some/file.txt")
+
+    assert owner.repo_id == "root"
+    assert relative == "some/file.txt"
+
+
 def test_resolve_repo_for_path_rejects_a_path_outside_every_repo(tmp_path):
     from ComplexGitSync.errors import GitSyncError
     from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path

@@ -1132,16 +1132,27 @@ def iter_tree_leaf_first(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
 def resolve_repo_for_path(tree: WorkingGitTree, path: Path | str) -> tuple[WorkingRepo, str]:
     """Return the repo in *tree* that owns *path*, and *path* relative to its root.
 
-    *path* is resolved (absolute, symlinks/`..` collapsed) first, so it may
-    be given relative to the current working directory or already absolute.
-    When it falls under more than one repo's ``absolute_path`` (a nested
-    child's directory is also under its parent's), the most specific
-    (deepest) owner wins — the child, not the parent.
+    A relative *path* is anchored at the tree's own root (``CGSHOME``, the
+    ``ROOT_REPO_ID`` entry's ``absolute_path``) — not the process's current
+    working directory — so this resolves the same way regardless of where
+    ``cgitsync`` happens to be invoked from, matching every other command's
+    CGSHOME-anchored addressing (see ``AgentSpec/AddRmCgshomeResolution_DevPlanTicket.md``).
+    An already-absolute *path* is used as-is. Symlinks/``..`` are collapsed
+    either way. When the result falls under more than one repo's
+    ``absolute_path`` (a nested child's directory is also under its
+    parent's), the most specific (deepest) owner wins — the child, not the
+    parent.
 
     Raises :class:`~.errors.GitSyncError` when *path* is outside every repo
     in *tree*, rather than silently picking one or no-op'ing.
     """
-    resolved = Path(path).resolve()
+    raw = Path(path)
+    if raw.is_absolute():
+        resolved = raw.resolve()
+    else:
+        root = tree.repos.get(ROOT_REPO_ID)
+        anchor = root.absolute_path if root is not None and root.absolute_path is not None else Path.cwd()
+        resolved = (anchor / raw).resolve()
     owners = [
         repo
         for repo in tree.values()

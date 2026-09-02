@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.22
+# ComplexGitSync v0002.24
 
 *Created: 2026-05-12*
 
@@ -257,8 +257,11 @@ Useful habits in expert mode:
 - **Targeting one file.** `add <path> [<path> ...]` stages only the given
   path(s), each in the one repo that owns it, instead of every repo in
   full. `rm <path> [<path> ...]` does the same for removing a tracked file.
-  Both resolve a path relative to the current directory (or absolute) and
-  error clearly if it falls outside every repo in the tree.
+  Both resolve a relative path against `CGSHOME` — not the shell's current
+  directory — so this works the same whether you're standing inside the
+  tree or invoking `cgitsync` from elsewhere per standalone mode above; an
+  absolute path is used as-is. Either way, a path outside every repo in
+  the tree errors clearly.
 
 ### Architecture boundary
 

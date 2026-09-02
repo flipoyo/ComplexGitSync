@@ -213,8 +213,8 @@ def _register_add(subparser: argparse.ArgumentParser) -> None:
         nargs="*",
         metavar="PATH",
         help=(
-            "Path(s) to stage, each resolved (relative to CWD, or absolute) to the one "
-            "repo in the tree that owns it and staged there individually. Omit to stage "
+            "Path(s) to stage, each resolved (relative to CGSHOME, or absolute) to the "
+            "one repo in the tree that owns it and staged there individually. Omit to stage "
             "every repo in full (git add --all), tree-wide, leaf-first -- today's default."
         ),
     )
@@ -230,8 +230,8 @@ def _register_rm(subparser: argparse.ArgumentParser) -> None:
         nargs="+",
         metavar="PATH",
         help=(
-            "Path(s) to remove, each resolved (relative to CWD, or absolute) to the one "
-            "repo in the tree that owns it, deleted from disk there, and staged. A plain "
+            "Path(s) to remove, each resolved (relative to CGSHOME, or absolute) to the "
+            "one repo in the tree that owns it, deleted from disk there, and staged. A plain "
             "tracked file only -- a directory or a nonexistent path errors clearly rather "
             "than partially applying."
         ),

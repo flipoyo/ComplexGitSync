@@ -69,10 +69,11 @@ graph TD
   exists under `CGSHOME/examples/cgitsync-ssh.cgs`, but the tool resolved
   the argument against CWD instead
   (`/home/flipoyo/Programmes/ComplexGitSync/examples/cgitsync-ssh.cgs`) and
-  raised `GitSyncError: ... is not inside any repository in this tree`,
-  plus an unhandled traceback (a separate, smaller issue — every other
-  command's `GitSyncError` is caught and printed cleanly by the CLI
-  entrypoint; worth a one-line check in the same work package, see §2).
+  raised `GitSyncError: ... is not inside any repository in this tree`.
+  (The raw traceback seen alongside it in the original report is *not*
+  specific to `add`/`rm` — `cli/_shared.py::_run_with_logging` logs then
+  `raise`s on every command's exception identically; reproduced the same
+  way with a bad `pull` target. Out of scope here.)
 - **Root cause.** `AgentSpec/archive/20260902_ExpertAddRemovePaths_DevPlanTicket.md`
   §1.1 picked "relative to CWD, most git-like" by analogy to bare `git
   add`/`git rm`, without checking it against the CGSHOME-standalone
@@ -112,7 +113,7 @@ by accident against the wrong repo. Fail with the existing clear
 
 | WP | Depends on | Touches | Deliverable |
 |---|---|---|---|
-| **WP-CGSFIX1** | §1.1, §1.2 | `git_tree.py` (`resolve_repo_for_path` gains an anchor — the tree root — instead of implicit CWD; the tree already carries its own root's `absolute_path`, so no new parameter should be needed beyond what's already passed in), `operations.py` (no interface change expected, verify), `cli/expert.py`/`orchestre.py` (only if the anchor needs threading beyond what `WorkingGitTree` already exposes), `README.md` (`add <path>`/`rm <path>` rows + prose currently say "relative to CWD"), `docs/Text/user_guide.tex`, `docs/Text/api_python.tex`, and every test written for `WP-PATH0`/`WP-PATH1`/`WP-PATH2` that currently asserts CWD-relative behaviour (`tests/unit/test_git_runner.py`, `test_operations.py`, `test_registry_client.py`, `test_cli_expert.py`) — flip fixtures to CGSHOME-relative. Also confirm (and fix if needed) that the CLI entrypoint catches `GitSyncError` from `add`/`rm` the same way it does for every other command, instead of the raw traceback seen in the repro. |
+| **WP-CGSFIX1** | §1.1, §1.2 | `git_tree.py` (`resolve_repo_for_path` gains an anchor — the tree root — instead of implicit CWD; the tree already carries its own root's `absolute_path` via `ROOT_REPO_ID`, so no new parameter needed beyond what's already passed in), `README.md` (`add <path>`/`rm <path>` prose), `docs/Text/user_guide.tex`, `docs/Text/api_python.tex`, `cli/expert.py` (`PATH` argument help text), and a new regression test in `tests/unit/test_registry_client.py` proving a relative path resolves against the tree root from a CWD outside the tree entirely. |
 
 ## 3. Acceptance criteria
 
@@ -122,9 +123,25 @@ by accident against the wrong repo. Fail with the existing clear
   standalone workflow) and still succeeds.
 - An absolute path continues to work exactly as today.
 - A path outside the tree (measured from CGSHOME) still raises the
-  existing clear `GitSyncError`, printed cleanly by the CLI entrypoint
-  (no raw traceback).
+  existing clear `GitSyncError`.
 - README / `docs/Text/user_guide.tex` / `docs/Text/api_python.tex` updated
   to say "relative to CGSHOME" rather than "relative to CWD".
 - `pixi run lint && pixi run test` pass.
-- No commit, no push — executed only after explicit go-ahead.
+
+## 4. Implemented (2026-09-02)
+
+- `resolve_repo_for_path` (`git_tree.py`) now anchors a relative `path` at
+  `tree.repos[ROOT_REPO_ID].absolute_path` instead of `Path.cwd()`; an
+  absolute path is unchanged.
+- New regression test:
+  `test_resolve_repo_for_path_relative_path_anchors_at_tree_root_not_cwd`
+  (`tests/unit/test_registry_client.py`) — chdirs away from the tree root
+  and confirms resolution still succeeds.
+- Docs updated: `README.md`, `docs/Text/user_guide.tex`,
+  `docs/Text/api_python.tex`, `cli/expert.py`'s `add`/`rm` `PATH` help text.
+- `scripts/ceiling_baseline.json` re-baselined (`git_tree.py` grew by the
+  new anchoring logic + docstring; `pixi run check-ceilings` ratchet).
+- Version bumped `0002.22 -> 0002.23` via `pixi run bump-version`; docs
+  PDF rebuilt (`docs/MASTER.pdf`).
+- `pixi run lint && pixi run test` pass (966 passed, 2 skipped).
+- Not committed, not pushed — awaiting explicit go-ahead.

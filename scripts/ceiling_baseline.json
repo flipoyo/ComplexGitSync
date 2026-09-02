@@ -72,7 +72,7 @@
     },
     "git_tree.py": {
       "internal_imports": 27,
-      "loc": 1049,
+      "loc": 1060,
       "public_symbols": 23
     },
     "gts_document.py": {
