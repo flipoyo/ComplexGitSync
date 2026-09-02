@@ -1,5 +1,39 @@
 # ComplexGitSync
 
+## Abstract — read this first
+
+**What this document is.** The instructions for anyone — human or coding
+agent — doing development work in this repo: commands, the before-committing
+checklist, and the architecture boundary.
+
+**Why it exists.** `pixi run lint`/`test`/`bump-version`, the module
+responsibility table, and the ring-import rules must be followed identically
+by every contributor; this file is the one place that states them.
+
+**What you will find.** The Pixi command set, a before-committing checklist,
+the module responsibility table and architecture boundary, file formats,
+repo layout, and document conventions.
+
+**Who it is for.** Anyone changing code or docs in this repo. End users only
+need [README.md](README.md); this file is for development, not usage.
+
+**What you need to do with it.** Follow it as written — it overrides default
+behavior — before making any change, and run its before-committing checklist
+before every commit.
+
+```mermaid
+graph TD
+    CLAUDE["CLAUDE.md<br/>YOU ARE HERE"] -->|users start at| README["README.md"]
+    CLAUDE -->|deeper spec| SPEC["AgentSpec/AdditionalSpecs.md"]
+    CLAUDE -->|doc rules| STYLE["AgentSpec/DOCSTYLE.md"]
+    CLAUDE -->|gate before commit| CI["pixi run lint && pixi run test"]
+
+    classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
+    class CLAUDE here;
+```
+
+---
+
 CLI (`cgitsync`) that synchronises a multi-repository Git workspace (a tree of
 nested repos) from a hand-written `.cgs` spec and a generated `.gts` state
 snapshot. See [README.md](README.md) for user-facing docs and CLI usage.
@@ -105,6 +139,11 @@ identifiers.
 - `src/ComplexGitSync/` — package source.
 - `tests/unit/`, `tests/integration/` — pytest suites (`pixi run test` runs both).
 - `examples/*.cgs`, `*.gts` — sample specs used in docs/tests.
+- `ComplexGitSync.cgs` (nested-mode) and `install.cgs` (standalone/bootstrap
+  mode, a plain copy of `examples/complexgitsync.cgs` — kept in sync by
+  `tests/unit/test_install_cgs.py`) — the two root-level `.cgs` files that
+  make ComplexGitSync manage itself as a multi-repo tree; see README.md's
+  Developer guide.
 - `docs/` — LaTeX-built reference docs; generated `.aux`/`.log`/etc. are gitignored, the built PDFs are tracked.
 - `AGENT.md` — a minimal root pointer stating the reading order (this file, then `AgentSpec/`); carries no rules of its own.
 - `AgentSpec/AdditionalSpecs.md`, `AgentSpec/DevSpec/DevSpecs.md` — deeper spec/authoring references beyond this file (`AgentSpec/DevSpec/` is a plain nested clone, gitignored, not tracked by this repo).

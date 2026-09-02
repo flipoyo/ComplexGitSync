@@ -27,7 +27,12 @@ flowchart LR
 
 ## Install & run
 
+Clone ComplexGitSync once — this one clone is reused across every project
+you point it at, standalone (below), never nested inside any of them:
+
 ```bash
+git clone https://github.com/flipoyo/ComplexGitSync.git
+cd ComplexGitSync
 pixi install
 pixi run cgitsync --help
 ```
@@ -35,38 +40,58 @@ pixi run cgitsync --help
 This project is developed with Pixi only; `pip install -e .` is not a
 supported development workflow.
 
+## How it works
+
+Two different folders are involved when you use ComplexGitSync standalone
+(the common case, below): the folder where you actually type commands, and
+the folder that actually gets synchronized. They are not the same place —
+ComplexGitSync, standing in its own clone, drives a separate project folder
+elsewhere on disk:
+
+```mermaid
+flowchart LR
+    subgraph HERE["Where you type commands<br/>your ComplexGitSync clone"]
+        CMD["pixi run cgitsync status<br/>pixi run cgitsync freeze-release ..."]
+    end
+
+    subgraph THERE["Where the work happens<br/>e.g. ~/.cgs/CGS20260902.../your-project"]
+        TREE["your project's<br/>synchronized repositories"]
+    end
+
+    CMD -->|"drives / synchronizes"| TREE
+
+    classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
+    class HERE here;
+```
+
+Concretely: you always run `pixi run cgitsync ...` from inside the
+ComplexGitSync clone (that's where `pixi.lock` lives, so `pixi run` needs
+it) — but the project folder those commands act on can be anywhere else,
+and only that second folder changes from one project to the next. The
+Quickstart below shows how to point a command at that other folder
+(`CGSHOME`, or `--search-dir` for a single command).
+
 ## Quickstart
 
-ComplexGitSync locates its workspace through two variables, `CGSPATH` and
-`CGSHOME` (`CGSHOME = CGSPATH/<project-name>`) — but you don't need to set
-either by hand for the common cases below; both have defaults baked into
-`orchestre.py`, so the `export` lines only matter if you want to override
-them.
-
-- **Nested mode** (`initialise`, below): ComplexGitSync is cloned *inside*
-  the project tree it manages. Run from `$CGSHOME/ComplexGitSync` and
-  `CGSPATH` defaults to `../..` relative to the current directory — i.e. the
-  parent of `$CGSHOME` — with no export needed. Set `CGSPATH`/`CGSHOME`
-  explicitly only to point at a different location.
-- **Standalone mode** (`bootstrap`, further down): ComplexGitSync is cloned
-  once, on its own, and reused across projects — never nested inside any of
-  them. `CGSPATH` defaults to a fresh `$HOME/.cgs/CGS<timestamp>/`
-  directory (created automatically) so project state never lands inside the
-  ComplexGitSync clone itself.
-
-The example below uses the CGSil1 reference topology
-(<https://gitlab.com/CGS_test/CGSil1>) in nested mode.
+The common case: you already have (or will hand-author) a `.cgs` spec for
+your own project — see ["Adopting a project"](#adopting-a-project-that-has-no-cgs-yet)
+below if you don't yet. `bootstrap` clones that project's full tree, root
+included, into its own isolated `CGSHOME` — separate from the ComplexGitSync
+clone above, so the same clone can bootstrap as many of your projects as you
+like, one at a time:
 
 ```bash
-git clone https://gitlab.com/CGS_test/CGSil1.git
-cd CGSil1
-git clone https://github.com/flipoyo/ComplexGitSync.git
-cd ComplexGitSync
+pixi run cgitsync bootstrap /path/to/your-project.cgs your-project-name
+```
 
-# Initialise: clone the tree from a .cgs spec, or restore it from a .gts snapshot
-pixi run cgitsync initialise ../CGSil1.cgs
+**Important:** `bootstrap` prints the workspace path and a `CGSHOME` setup
+line at the end of its output. Since `pixi run` must be executed from the
+ComplexGitSync directory (where `pixi.lock` is located), tell subsequent
+commands where to find your workspace by setting `CGSHOME`:
 
-# Inspect the synchronised tree
+```bash
+# Copy the export command from bootstrap output, or use:
+export CGSHOME=/home/user/.cgs/CGS20260831131233/your-project-name
 pixi run cgitsync status
 pixi run cgitsync view-tree
 
@@ -75,42 +100,37 @@ pixi run cgitsync freeze-release release-2026.05 "release 2026.05"
 pixi run cgitsync launch-release release-2026.05
 ```
 
+Pass `--cgs-path` to place `CGSHOME` somewhere else instead of the
+`$HOME/.cgs/CGS<timestamp>/` default. For a single command, you can also
+use the `--search-dir` flag instead of exporting `CGSHOME`:
+
+```bash
+pixi run cgitsync status --search-dir /home/user/.cgs/CGS20260831131233/your-project-name
+```
+
 Run any command with `--help` for its full option list (`--dry-run`, explicit
 `--gts` paths, `--project`/`--repo` direct authoring, etc.).
 
-### Standalone mode
+### Nested mode (alternative)
 
-To use ComplexGitSync without cloning it inside the project it manages —
-e.g. one ComplexGitSync clone reused across many projects — use `bootstrap`
-instead of `initialise`. It requires an explicit `project_name` and clones
-the full tree, root included, into an isolated `CGSHOME` under
-`$HOME/.cgs/` by default:
+If you'd rather have ComplexGitSync live *inside* the project tree it
+manages instead of standalone, use `initialise` in place of `bootstrap`, run
+from `$CGSHOME/ComplexGitSync`. `CGSPATH` (the parent of `CGSHOME =
+CGSPATH/<project-name>`) then defaults to `../..` relative to the current
+directory with no `export` needed. The example below uses the CGSil1
+reference topology (<https://gitlab.com/CGS_test/CGSil1>):
 
 ```bash
+git clone https://gitlab.com/CGS_test/CGSil1.git
+cd CGSil1
 git clone https://github.com/flipoyo/ComplexGitSync.git
 cd ComplexGitSync
-pixi run cgitsync bootstrap examples/CGSil1.cgs CGSil1
-```
+pixi install
 
-**Important:** The `bootstrap` command prints the workspace path and CGSHOME
-setup instructions at the end of its output. Since `pixi run` must be
-executed from the ComplexGitSync directory (where `pixi.lock` is located),
-you must tell subsequent commands where to find your workspace by setting
-the `CGSHOME` environment variable:
-
-```bash
-# Copy the export command from bootstrap output, or use:
-export CGSHOME=/home/user/.cgs/CGS20260831131233/CGSil1
+# Initialise: clone the tree from a .cgs spec, or restore it from a .gts snapshot
+pixi run cgitsync initialise ../CGSil1.cgs
 pixi run cgitsync status
 pixi run cgitsync view-tree
-```
-
-Pass `--cgs-path` to place `CGSHOME` somewhere else instead of the
-`$HOME/.cgs/CGS<timestamp>/` default. For a single command, you can also
-use the `--search-dir` flag:
-
-```bash
-pixi run cgitsync status --search-dir /home/user/.cgs/CGS20260831131233/CGSil1
 ```
 
 ### Forcing a clone protocol (CI)
@@ -169,9 +189,9 @@ matches the project:
 
 | Situation | Commands | Full walkthrough |
 |---|---|---|
-| Checked out on disk already | `pixi run cgitsync discover ~/work/project --write draft.cgs`<br>`pixi run cgitsync validate draft.cgs` | [03_configuration_discovery_modes.md](docs/tutorials/03_configuration_discovery_modes.md) |
-| Uses git submodules | `pixi run cgitsync import-submodules ~/work/project` (dry run)<br>`pixi run cgitsync import-submodules ~/work/project --apply --output project.cgs` | [03_configuration_discovery_modes.md](docs/tutorials/03_configuration_discovery_modes.md) |
-| Neither — topology lives in a build script or in developers' heads | `pixi run cgitsync configure` (interactive) or `create-cgs` (flags) | [02_onboarding_a_real_build_tree.md](docs/tutorials/02_onboarding_a_real_build_tree.md) |
+| Checked out on disk already | `pixi run cgitsync discover ~/work/project --write draft.cgs`<br>`pixi run cgitsync validate draft.cgs` | [03_configuration_discovery_modes.md](tutorials/03_configuration_discovery_modes.md) |
+| Uses git submodules | `pixi run cgitsync import-submodules ~/work/project` (dry run)<br>`pixi run cgitsync import-submodules ~/work/project --apply --output project.cgs` | [03_configuration_discovery_modes.md](tutorials/03_configuration_discovery_modes.md) |
+| Neither — topology lives in a build script or in developers' heads | `pixi run cgitsync configure` (interactive) or `create-cgs` (flags) | [02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md) |
 
 `discover` and `import-submodules` compose: `discover` a checkout to get the
 topology for free, then `import-submodules --apply` to retire any
@@ -211,12 +231,47 @@ workspace pick it up without repeating the flags.
 
 ## Developer guide
 
+This section is about developing ComplexGitSync itself, not about using it
+on your own project (that's the Quickstart above).
+
 This project uses Pixi exclusively — `pip install -e .`, `python -m pip`, and
 `python -m venv` are not supported workflows. See [CLAUDE.md](CLAUDE.md) for
 the full command list (`pixi install`, `pixi run test`, `pixi run lint`,
 `pixi run bump-version`) and its
 ["Before committing"](CLAUDE.md#before-committing) checklist — the same
 rules govern every change in this repo, so this README doesn't restate them.
+
+### Bootstrapping a working checkout
+
+ComplexGitSync manages itself as a multi-repo tree (`install.cgs`, this
+project's root file): a fresh `git clone` alone gets you the code but not
+`docs/` or `DevSpec/`. Use the same `bootstrap` command Quickstart uses,
+pointed at `install.cgs`, to get a fully populated, independently
+live-editable checkout:
+
+```bash
+git clone https://github.com/flipoyo/ComplexGitSync.git
+cd ComplexGitSync
+pixi install
+
+pixi run cgitsync bootstrap install.cgs ComplexGitSync
+# Copy the export command from bootstrap's own output, or use:
+export CGSHOME=/home/user/.cgs/CGS20260831131233/ComplexGitSync
+
+cd "$CGSHOME"       # this *is* the freshly cloned ComplexGitSync checkout —
+pixi install        # bootstrap clones a plain checkout, so it needs its own
+                     # pixi environment before you can run cgitsync from here
+```
+
+`$CGSHOME` now holds `ComplexGitSync` (mounted at its own root — the tree's
+project entry), `docs/` (`DocComplexGitSync`), and `DevSpec` cloned
+side by side. `pixi.toml`'s `complexgitsync = { path = ".", editable = true }`
+makes this checkout self-editable the moment that second `pixi install`
+finishes: edit any file under `src/ComplexGitSync/`, then
+`pixi run cgitsync ...` from inside `$CGSHOME` picks up the change
+immediately — no reinstall step, no separate `pip install -e .`. From here
+on, follow [CLAUDE.md](CLAUDE.md) for lint/test/bump-version and the
+before-committing checklist.
 
 ### Expert mode
 
@@ -276,11 +331,11 @@ graph, see [docs/DevGuide/architecture.md](docs/DevGuide/architecture.md).
 
 ## Further reading
 
-[docs/tutorials/](docs/tutorials/) — three tutorials, simplest to most advanced:
+[tutorials/](tutorials/) — three tutorials, simplest to most advanced:
 
-1. [01_first_multi_repo_workspace.md](docs/tutorials/01_first_multi_repo_workspace.md) — full CLI lifecycle walkthrough on a synthetic sandbox tree.
-2. [02_onboarding_a_real_build_tree.md](docs/tutorials/02_onboarding_a_real_build_tree.md) — hand-author a `.cgs` for a real 19-repo project, then hand off to its existing `make` build.
-3. [03_configuration_discovery_modes.md](docs/tutorials/03_configuration_discovery_modes.md) — a real project with no `.cgs` of its own, reached three ways: by hand, `discover`, `import-submodules`.
+1. [01_first_multi_repo_workspace.md](tutorials/01_first_multi_repo_workspace.md) — full CLI lifecycle walkthrough on a synthetic sandbox tree.
+2. [02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md) — hand-author a `.cgs` for a real 19-repo project, then hand off to its existing `make` build.
+3. [03_configuration_discovery_modes.md](tutorials/03_configuration_discovery_modes.md) — a real project with no `.cgs` of its own, reached three ways: by hand, `discover`, `import-submodules`.
 
 [docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference book, including the Python API (`ComplexGitSyncClient`) and complete command details.
 
