@@ -352,6 +352,9 @@ class _FakeGitRunner:
     def rm_cached(self, repo_path, path: str) -> None:
         return None
 
+    def remove(self, repo_path, path: str) -> None:
+        return None
+
     def create_tag(self, repo_path, tag_name: str) -> None:
         return None
 

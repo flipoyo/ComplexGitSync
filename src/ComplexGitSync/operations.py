@@ -18,6 +18,7 @@ Free functions exported here (Tier 2 — Actions):
     checkout_tree             propagate → create → git checkout, parent-first
     branch_tree               propagate → create branch refs, no checkout
     add_tree                  Stage changes across the tree, leaf-first
+    remove_paths              Remove one or more tracked files, each from its owning repo
     commit_tree               Stage and commit changes across the tree, leaf-first
     push_tree                 Push all repos to their remotes, leaf-first
     tag_tree                  Create and push a shared tag, leaf-first
@@ -32,6 +33,7 @@ Data classes exported here (Tier 2 — Actions):
 from __future__ import annotations
 
 import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -39,7 +41,7 @@ from typing import TYPE_CHECKING, Literal
 
 from .errors import GitSyncError, TreeNotReadyError
 from .git_repo import RefKind, RepoLifecycleState, SyncState, WorkingRepo
-from .git_tree import WorkingGitTree, iter_tree, iter_tree_leaf_first
+from .git_tree import WorkingGitTree, iter_tree, iter_tree_leaf_first, resolve_repo_for_path
 
 if TYPE_CHECKING:
     from .orchestre import GitRunner
@@ -270,16 +272,69 @@ def branch_tree(
 def add_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    paths: Sequence[str | Path] | None = None,
 ) -> None:
-    """Stage all changes across the tree, leaf-first.
+    """Stage changes across the tree, leaf-first.
 
     Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
     otherwise.  After a successful execution the tree remains ``READY``.
+
+    With *paths* omitted (the default), every repo is staged in full
+    (``git add --all``) — today's exact behaviour. With *paths* given, each
+    one is resolved via :func:`~.git_tree.resolve_repo_for_path` to its
+    owning repo and staged there individually (``git add -- <path>``),
+    leaving every other repo untouched; a path outside every repo in the
+    tree raises :exc:`~.errors.GitSyncError` immediately, before anything
+    is staged.
     """
     _assert_ready(tree)
 
-    for repo in iter_tree_leaf_first(tree):
-        git_runner.stage_all(repo.absolute_path)
+    if paths is None:
+        for repo in iter_tree_leaf_first(tree):
+            git_runner.stage_all(repo.absolute_path)
+    else:
+        resolved = [resolve_repo_for_path(tree, path) for path in paths]
+        for repo, relative_path in resolved:
+            git_runner.stage_path(repo.absolute_path, relative_path)
+
+    tree.recompute_tree_state()
+
+
+def remove_paths(
+    tree: WorkingGitTree,
+    git_runner: GitRunner,
+    paths: Sequence[str | Path],
+) -> None:
+    """Remove one or more tracked files, each from the repo that owns it.
+
+    Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
+    otherwise. Each path is resolved via
+    :func:`~.git_tree.resolve_repo_for_path`; a path outside every repo in
+    the tree raises :exc:`~.errors.GitSyncError` immediately, before
+    anything is removed.
+
+    A plain tracked file only (``git rm -- <path>``, removing it from disk
+    and staging the removal) — a path that resolves to a directory, or that
+    does not exist, also raises :exc:`~.errors.GitSyncError` rather than
+    failing silently or partially. Distinct from and unrelated to
+    ``rm_cached`` (index-only, built for the submodule-to-plain-clone
+    conversion): this does not replace it.
+    """
+    _assert_ready(tree)
+
+    resolved = [resolve_repo_for_path(tree, path) for path in paths]
+    for repo, relative_path in resolved:
+        target = repo.absolute_path / relative_path
+        if target.is_dir():
+            raise GitSyncError(
+                f"{target} is a directory; rm only removes a single tracked file today (no -r yet)."
+            )
+        if not target.exists():
+            raise GitSyncError(f"{target} does not exist.")
+
+    for repo, relative_path in resolved:
+        git_runner.remove(repo.absolute_path, relative_path)
 
     tree.recompute_tree_state()
 

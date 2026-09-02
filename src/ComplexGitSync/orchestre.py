@@ -2336,19 +2336,43 @@ class ComplexGitSyncClient:
         self._log_event("commit_end", message=message)
         return registry
 
-    def add(self) -> WorkingGitTree:
-        """Stage all changes across the full tree, leaf-first.
+    def add(self, paths: Sequence[str | Path] | None = None) -> WorkingGitTree:
+        """Stage changes across the full tree, leaf-first.
 
         Requires a ``READY`` registry; raises
         :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.  After a
         successful execution the registry remains ``READY``.
+
+        With *paths* omitted (the default), every repo is staged in full —
+        today's exact behaviour. With *paths* given, each one is resolved to
+        its owning repo (see :func:`~.git_tree.resolve_repo_for_path`) and
+        staged there individually, leaving every other repo untouched.
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        self._log_event("add_start")
-        self.orchestre.git_tree.git.add(self.git_runner)
+        self._log_event("add_start", paths=[str(p) for p in paths] if paths else None)
+        self.orchestre.git_tree.git.add(self.git_runner, paths=paths)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="add")
         self._log_event("add_end")
+        return registry
+
+    def remove(self, paths: Sequence[str | Path]) -> WorkingGitTree:
+        """Remove one or more tracked files, each from the repo that owns it.
+
+        Requires a ``READY`` registry; raises
+        :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise. Each path
+        is resolved to its owning repo (see
+        :func:`~.git_tree.resolve_repo_for_path`), removed from disk there,
+        and the removal staged — a plain ``git rm``, distinct from
+        :meth:`GitRunner.rm_cached` (index-only, built for the
+        submodule-to-plain-clone conversion; this does not replace it).
+        """
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        self._log_event("rm_start", paths=[str(p) for p in paths])
+        self.orchestre.git_tree.git.rm(self.git_runner, paths)
+        self._log_tree_transition(previous_state, registry.lifecycle_state, reason="rm")
+        self._log_event("rm_end")
         return registry
 
     def push(self) -> WorkingGitTree:

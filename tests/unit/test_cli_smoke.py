@@ -1405,7 +1405,7 @@ def test_add_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def add(self):
+        def add(self, paths=None):
             captured_call["added"] = True
 
         def get_tree_state(self):
@@ -1430,7 +1430,7 @@ def test_add_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def add(self):
+        def add(self, paths=None):
             raise AssertionError("add should not be called during --dry-run")
 
         def get_tree_state(self):
@@ -1526,7 +1526,7 @@ def test_gts_auto_discovery_from_parent_cgitsync(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def add(self):
+        def add(self, paths=None):
             captured_call["added"] = True
 
         def get_tree_state(self):
@@ -1564,7 +1564,7 @@ def test_gts_auto_discovery_walks_up_to_workspace_root(monkeypatch, capsys, tmp_
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def add(self):
+        def add(self, paths=None):
             captured_call["added"] = True
 
         def get_tree_state(self):

@@ -842,7 +842,7 @@ def test_client_git_binds_provided_registry(monkeypatch):
     registry = WorkingGitTree()
     captured: dict[str, object] = {}
 
-    def _spy_add(self, git_runner, *, tree=None):
+    def _spy_add(self, git_runner, *, tree=None, paths=None):
         captured["bound_tree"] = self.working_tree
         captured["tree_arg"] = tree
 
@@ -2517,6 +2517,90 @@ def _make_entry(repo_id: str, abs_path: Path, *, parent_id: str | None = None):
         absolute_path=abs_path,
         relative_path=Path(".") if repo_id == "root" else Path(abs_path.name),
     )
+
+
+# ---------------------------------------------------------------------------
+# resolve_repo_for_path tests
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_repo_for_path_finds_owning_leaf(tmp_path):
+    from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
+
+    root_path = tmp_path / "root"
+    leaf_path = root_path / "deps" / "leaf"
+    leaf_path.mkdir(parents=True)
+    registry = WorkingGitTree()
+    registry.add(_make_entry("root", root_path))
+    registry.add(_make_entry("root:leaf", leaf_path, parent_id="root"))
+
+    owner, relative = resolve_repo_for_path(registry, leaf_path / "sub" / "file.txt")
+
+    assert owner.repo_id == "root:leaf"
+    assert relative == "sub/file.txt"
+
+
+def test_resolve_repo_for_path_falls_back_to_root(tmp_path):
+    from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
+
+    root_path = tmp_path / "root"
+    leaf_path = root_path / "deps" / "leaf"
+    leaf_path.mkdir(parents=True)
+    registry = WorkingGitTree()
+    registry.add(_make_entry("root", root_path))
+    registry.add(_make_entry("root:leaf", leaf_path, parent_id="root"))
+
+    owner, relative = resolve_repo_for_path(registry, root_path / "top-level-file.txt")
+
+    assert owner.repo_id == "root"
+    assert relative == "top-level-file.txt"
+
+
+def test_resolve_repo_for_path_prefers_the_deepest_nested_owner(tmp_path):
+    # deps/leaf sits physically inside root's own directory tree -- the
+    # child, not the parent, must win.
+    from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
+
+    root_path = tmp_path / "root"
+    leaf_path = root_path / "deps" / "leaf"
+    leaf_path.mkdir(parents=True)
+    registry = WorkingGitTree()
+    registry.add(_make_entry("root", root_path))
+    registry.add(_make_entry("root:leaf", leaf_path, parent_id="root"))
+
+    owner, relative = resolve_repo_for_path(registry, leaf_path / "file.txt")
+
+    assert owner.repo_id == "root:leaf"
+    assert relative == "file.txt"
+
+
+def test_resolve_repo_for_path_accepts_a_relative_path(tmp_path, monkeypatch):
+    from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
+
+    root_path = tmp_path / "root"
+    root_path.mkdir()
+    registry = WorkingGitTree()
+    registry.add(_make_entry("root", root_path))
+    monkeypatch.chdir(root_path)
+
+    owner, relative = resolve_repo_for_path(registry, "some/file.txt")
+
+    assert owner.repo_id == "root"
+    assert relative == "some/file.txt"
+
+
+def test_resolve_repo_for_path_rejects_a_path_outside_every_repo(tmp_path):
+    from ComplexGitSync.errors import GitSyncError
+    from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
+
+    root_path = tmp_path / "root"
+    root_path.mkdir()
+    outside_path = tmp_path / "elsewhere" / "file.txt"
+    registry = WorkingGitTree()
+    registry.add(_make_entry("root", root_path))
+
+    with pytest.raises(GitSyncError, match="not inside any repository"):
+        resolve_repo_for_path(registry, outside_path)
 
 
 def test_fix_circularities_removes_duplicate_leaf_when_parent_exists(tmp_path):

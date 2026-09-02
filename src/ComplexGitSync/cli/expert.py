@@ -1,9 +1,9 @@
 """cli.expert — the "Expert" cgitsync command group.
 
 Ring: 4 (CLI adapter — the same ring cli.py itself occupies)
-Contract: register argparse subparsers for, and dispatch/execute, the 14
+Contract: register argparse subparsers for, and dispatch/execute, the 15
     Expert-tier commands (purge, validate, clone, pull, pull-force,
-    checkout, branch, add, commit, push, tag, freeze, import-submodules,
+    checkout, branch, add, rm, commit, push, tag, freeze, import-submodules,
     verify). Argument/prompt collection only — delegates all .cgs/.gts
     semantics to ComplexGitSyncClient; never touches subprocess/Git or
     parses repository identifiers itself.
@@ -41,6 +41,7 @@ COMMANDS: dict[str, str] = {
     "checkout": "Synchronize the tree to a branch or tag.",
     "branch": "Create a branch across the full READY tree without checkout.",
     "add": "Stage all changes across a READY tree.",
+    "rm": "Remove one or more tracked files, each from the repo that owns it.",
     "commit": "Commit dirty repositories from a READY tree.",
     "push": "Push repositories from a READY tree.",
     "tag": "Create and push a tag across a READY tree.",
@@ -51,13 +52,13 @@ COMMANDS: dict[str, str] = {
 
 
 def register_parsers(subparsers: argparse._SubParsersAction) -> None:
-    """Register this group's 14 subparsers.
+    """Register this group's 15 subparsers.
 
     Mirrors cli.py's build_parser() if/elif chain for exactly the Expert
     command group, but dispatches to one small ``_register_*`` builder per
     command (via ``_PARSER_BUILDERS``) instead of a single long if/elif
     chain, to stay under the C90 complexity ceiling enabled alongside this
-    split. None of these 14 commands' parser registrations use
+    split. None of these 15 commands' parser registrations use
     ``_non_negative_int`` (only ``view-tree``/``discover``, owned by other
     groups, do) so no shared numeric-argument helper needs to be threaded
     through here.
@@ -207,10 +208,38 @@ def _register_commit(subparser: argparse.ArgumentParser) -> None:
 
 
 def _register_add(subparser: argparse.ArgumentParser) -> None:
+    subparser.add_argument(
+        "paths",
+        nargs="*",
+        metavar="PATH",
+        help=(
+            "Path(s) to stage, each resolved (relative to CWD, or absolute) to the one "
+            "repo in the tree that owns it and staged there individually. Omit to stage "
+            "every repo in full (git add --all), tree-wide, leaf-first -- today's default."
+        ),
+    )
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
     _add_dry_run_argument(subparser, help_text="Preview the add execution plan without mutating repositories.")
     subparser.set_defaults(handler=_handle_add)
+
+
+def _register_rm(subparser: argparse.ArgumentParser) -> None:
+    subparser.add_argument(
+        "paths",
+        nargs="+",
+        metavar="PATH",
+        help=(
+            "Path(s) to remove, each resolved (relative to CWD, or absolute) to the one "
+            "repo in the tree that owns it, deleted from disk there, and staged. A plain "
+            "tracked file only -- a directory or a nonexistent path errors clearly rather "
+            "than partially applying."
+        ),
+    )
+    _add_gts_argument(subparser)
+    _add_search_dir_argument(subparser)
+    _add_dry_run_argument(subparser, help_text="Preview the rm execution plan without mutating repositories.")
+    subparser.set_defaults(handler=_handle_rm)
 
 
 def _register_push(subparser: argparse.ArgumentParser) -> None:
@@ -290,6 +319,7 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "branch": _register_branch,
     "commit": _register_commit,
     "add": _register_add,
+    "rm": _register_rm,
     "push": _register_push,
     "tag": _register_tag,
     "freeze": _register_freeze,
@@ -422,10 +452,20 @@ def _resolve_commit_message(args: argparse.Namespace) -> str | None:
 
 def _handle_add(args: argparse.Namespace) -> int:
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
+    paths = getattr(args, "paths", None) or None
     return _run_with_logging(
         command_name="add",
         source=gts_path,
-        runner=lambda client, source: _execute_add(client, source, dry_run=args.dry_run),
+        runner=lambda client, source: _execute_add(client, source, paths=paths, dry_run=args.dry_run),
+    )
+
+
+def _handle_rm(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="rm",
+        source=gts_path,
+        runner=lambda client, source: _execute_rm(client, source, paths=args.paths, dry_run=args.dry_run),
     )
 
 
@@ -663,14 +703,37 @@ def _execute_add(
     client: ComplexGitSyncClient,
     source_path: Path,
     *,
+    paths: list[str] | None = None,
     dry_run: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
-    print("git_command=git add --all")
+    action = f"git add -- {' '.join(paths)}" if paths else "git add --all"
+    print(f"git_command={action}")
     if dry_run:
-        _print_dry_run_plan(client, command_name="add", actions=("git add --all",))
+        _print_dry_run_plan(client, command_name="add", actions=(action,))
     else:
-        client.add()
+        client.add(paths=paths)
+    tree_state = client.get_tree_state()
+    print(_format_tree_state_line(tree_state))
+    if not dry_run:
+        _print_repo_tree_result(client)
+    return 0
+
+
+def _execute_rm(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    paths: list[str],
+    dry_run: bool = False,
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    action = f"git rm -- {' '.join(paths)}"
+    print(f"git_command={action}")
+    if dry_run:
+        _print_dry_run_plan(client, command_name="rm", actions=(action,))
+    else:
+        client.remove(paths)
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
     if not dry_run:

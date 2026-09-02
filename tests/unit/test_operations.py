@@ -190,6 +190,7 @@ class _FakeGitRunnerForOperations:
         self.created: list[tuple[Path, str]] = []
         self.checked_out: list[tuple[Path, str]] = []
         self.staged: list[Path] = []
+        self.staged_paths: list[tuple[Path, str]] = []
         self.committed: list[tuple[Path, str]] = []
         self.pushed: list[tuple[Path, str, str | None]] = []
         self.pushed_with_upstream: list[tuple[Path, str, str | None]] = []
@@ -239,6 +240,11 @@ class _FakeGitRunnerForOperations:
         path = Path(repo_path)
         self.staged.append(path)
         # Simulate: staging always marks the repo as having staged changes
+        self._staged_changes[path] = True
+
+    def stage_path(self, repo_path: Path | str, relative_path: str) -> None:
+        path = Path(repo_path)
+        self.staged_paths.append((path, relative_path))
         self._staged_changes[path] = True
 
     def has_staged_changes(self, repo_path: Path | str) -> bool:
@@ -405,6 +411,46 @@ def test_add_tree_stages_all_repos_leaf_first(tmp_path):
     ]
     assert runner.staged == expected_order
     assert registry.recompute_tree_state() == TreeLifecycleState.READY
+
+
+def test_add_tree_with_paths_stages_only_the_owning_repo(tmp_path):
+    registry = _make_deep_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    target = tmp_path / "deep" / "middle" / "sub" / "file.txt"
+
+    add_tree(registry, runner, paths=[target])
+
+    assert runner.staged == []
+    assert runner.staged_paths == [(tmp_path / "deep" / "middle" / "sub", "file.txt")]
+
+
+def test_add_tree_with_paths_resolves_each_independently(tmp_path):
+    registry = _make_deep_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    root_file = tmp_path / "deep" / "root-file.txt"
+    sub_file = tmp_path / "deep" / "middle" / "sub" / "file.txt"
+
+    add_tree(registry, runner, paths=[root_file, sub_file])
+
+    assert runner.staged == []
+    assert set(runner.staged_paths) == {
+        (tmp_path / "deep", "root-file.txt"),
+        (tmp_path / "deep" / "middle" / "sub", "file.txt"),
+    }
+
+
+def test_add_tree_with_paths_rejects_a_path_outside_every_repo(tmp_path):
+    registry = _make_deep_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    outside = tmp_path / "elsewhere" / "file.txt"
+
+    with pytest.raises(GitSyncError, match="not inside any repository"):
+        add_tree(registry, runner, paths=[outside])
+
+    # Nothing staged anywhere -- resolution (and its failure) happens
+    # before any git_runner call, not partway through.
+    assert runner.staged == []
+    assert runner.staged_paths == []
 
 
 def test_tree_iterators_include_root_parent_and_leaf_in_expected_directions(tmp_path):
@@ -1390,7 +1436,7 @@ def test_client_add_delegates_to_gittree_git_add(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_add(self, git_runner, *, tree=None):
+    def _spy_add(self, git_runner, *, tree=None, paths=None):
         captured_call["git_runner"] = git_runner
         captured_call["tree"] = tree
 
@@ -1400,6 +1446,20 @@ def test_client_add_delegates_to_gittree_git_add(tmp_path, monkeypatch):
 
     assert result is client.registry
     assert captured_call == {"git_runner": runner, "tree": None}
+
+
+def test_client_add_forwards_paths_to_gittree_git_add(tmp_path, monkeypatch):
+    client, runner = _make_client_with_ready_registry(tmp_path)
+    captured_call: dict[str, object] = {}
+
+    def _spy_add(self, git_runner, *, tree=None, paths=None):
+        captured_call["paths"] = paths
+
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "add", _spy_add)
+
+    client.add(paths=["a.txt", "sub/b.txt"])
+
+    assert captured_call == {"paths": ["a.txt", "sub/b.txt"]}
 
 
 def test_client_push_delegates_to_gittree_git_push(tmp_path, monkeypatch):

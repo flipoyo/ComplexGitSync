@@ -86,7 +86,7 @@ def test_commands_dict_matches_registered_parsers():
     subparsers = parser.add_subparsers(dest="command")
     expert.register_parsers(subparsers)
     assert set(subparsers.choices.keys()) == set(expert.COMMANDS.keys())
-    assert len(expert.COMMANDS) == 14
+    assert len(expert.COMMANDS) == 15
 
 
 def test_commands_dict_help_text_matches_source_of_truth():
@@ -561,7 +561,7 @@ def test_add_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def add(self):
+        def add(self, paths=None):
             captured_call["added"] = True
 
         def get_tree_state(self):
@@ -579,6 +579,33 @@ def test_add_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     assert "READY ready=true" in captured.out
 
 
+def test_add_command_forwards_paths_to_client(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            pass
+
+        def add(self, paths=None):
+            captured_call["paths"] = paths
+
+        def get_tree_state(self):
+            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
+
+    monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
+
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+    exit_code = _run(["add", "a.txt", "sub/b.txt", "--gts", str(gts_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["paths"] == ["a.txt", "sub/b.txt"]
+    assert "git_command=git add -- a.txt sub/b.txt" in captured.out
+
+
 def test_add_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
     class StubClient:
         run_logger = None
@@ -586,7 +613,7 @@ def test_add_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def add(self):
+        def add(self, paths=None):
             raise AssertionError("add should not be called during --dry-run")
 
         def get_tree_state(self):

@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.21
+# ComplexGitSync v0002.22
 
 *Created: 2026-05-12*
 
@@ -151,6 +151,7 @@ its own `.cgs` entry actually declares, exactly as without the flag.
 | Expert | `checkout` | Synchronize the tree to a branch or tag. |
 | Expert | `branch` | Create a branch across the full READY tree without checkout. |
 | Expert | `add` | Stage all changes across a READY tree. |
+| Expert | `rm` | Remove one or more tracked files, each from the repo that owns it. |
 | Expert | `commit` | Commit dirty repositories from a READY tree. |
 | Expert | `push` | Push repositories from a READY tree. |
 | Expert | `tag` | Create and push a tag across a READY tree. |
@@ -253,6 +254,11 @@ Useful habits in expert mode:
   and **discards uncommitted work**. `clean-init` purges generated clone
   state and re-initialises (it preserves `.cgitsync/master.toml`). Nothing
   in the tool ever force-*pushes*.
+- **Targeting one file.** `add <path> [<path> ...]` stages only the given
+  path(s), each in the one repo that owns it, instead of every repo in
+  full. `rm <path> [<path> ...]` does the same for removing a tracked file.
+  Both resolve a path relative to the current directory (or absolute) and
+  error clearly if it falls outside every repo in the tree.
 
 ### Architecture boundary
 

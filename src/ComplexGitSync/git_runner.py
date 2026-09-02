@@ -117,6 +117,8 @@ class GitRunnerProtocol(Protocol):
 
     def rm_cached(self, repo_path: Path | str, path: str) -> None: ...
 
+    def remove(self, repo_path: Path | str, path: str) -> None: ...
+
     def create_tag(self, repo_path: Path | str, tag_name: str) -> None: ...
 
     def remote_exists(self, repo_path: Path | str, remote: str = "origin") -> bool: ...
@@ -330,6 +332,14 @@ class GitRunner:
         its ``.git`` directory, preserving any local history inside the child.
         """
         self._run("rm", "--cached", path, cwd=repo_path)
+
+    def remove(self, repo_path: Path | str, path: str) -> None:
+        """Remove *path* from the working tree and stage the removal (``git rm -- <path>``).
+
+        A plain tracked-file deletion, distinct from :meth:`rm_cached`
+        (index-only, built for the submodule-to-plain-clone conversion).
+        """
+        self._run("rm", "--", path, cwd=repo_path)
 
     def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
         """Create *tag_name* in *repo_path*."""

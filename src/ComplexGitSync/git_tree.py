@@ -44,7 +44,7 @@ from enum import Enum, StrEnum
 from pathlib import Path, PurePath, PurePosixPath
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from .errors import ConfigValidationError
+from .errors import ConfigValidationError, GitSyncError
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
@@ -139,10 +139,22 @@ class GitTreeGitCommands:
         git_runner: GitRunner,
         *,
         tree: WorkingGitTree | None = None,
+        paths: Sequence[str | Path] | None = None,
     ) -> None:
         from .operations import add_tree
 
-        add_tree(self._resolve_tree(tree), git_runner)
+        add_tree(self._resolve_tree(tree), git_runner, paths=paths)
+
+    def rm(
+        self,
+        git_runner: GitRunner,
+        paths: Sequence[str | Path],
+        *,
+        tree: WorkingGitTree | None = None,
+    ) -> None:
+        from .operations import remove_paths
+
+        remove_paths(self._resolve_tree(tree), git_runner, paths)
 
     def commit(
         self,
@@ -1115,6 +1127,30 @@ def iter_tree(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
 def iter_tree_leaf_first(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
     """Yield every repo in *tree* in leaf-first (leaves → root) order."""
     yield from reversed(list(_iter_tree(tree)))
+
+
+def resolve_repo_for_path(tree: WorkingGitTree, path: Path | str) -> tuple[WorkingRepo, str]:
+    """Return the repo in *tree* that owns *path*, and *path* relative to its root.
+
+    *path* is resolved (absolute, symlinks/`..` collapsed) first, so it may
+    be given relative to the current working directory or already absolute.
+    When it falls under more than one repo's ``absolute_path`` (a nested
+    child's directory is also under its parent's), the most specific
+    (deepest) owner wins — the child, not the parent.
+
+    Raises :class:`~.errors.GitSyncError` when *path* is outside every repo
+    in *tree*, rather than silently picking one or no-op'ing.
+    """
+    resolved = Path(path).resolve()
+    owners = [
+        repo
+        for repo in tree.values()
+        if repo.absolute_path is not None and resolved.is_relative_to(repo.absolute_path)
+    ]
+    if not owners:
+        raise GitSyncError(f"{resolved} is not inside any repository in this tree.")
+    owner = max(owners, key=lambda repo: len(repo.absolute_path.parts))
+    return owner, resolved.relative_to(owner.absolute_path).as_posix()
 
 
 # ---------------------------------------------------------------------------
