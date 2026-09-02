@@ -186,7 +186,7 @@ packages:
 - pypi: ./
   name: complexgitsync
   version: '2.24'
-  sha256: 81f3160321f825001b5384a7500b8eec89b8f0d360aba129e62a415793fd89a4
+  sha256: e34ee23e4f51d7bc3c3f91cc7c2311e85da38158c308479797efd1eda86a71c0
   requires_dist:
   - tomli-w>=1.0,<2
   - pyyaml>=6,<7 ; extra == 'yaml'

@@ -1,15 +1,31 @@
 # ComplexGitSync v0002.24
+__An alternative to submodule for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
 
-ComplexGitSync is a command-line tool for synchronising a multi-repository Git
-workspace — a tree of nested repositories — from one local `.cgs`
-specification (file or CLI specs) or one tracked `.gts` workspace-state snapshot.
+## 1. What is ComplexGitSync for?
 
+ComplexGitSync is a CLI (command-line tool) for synchronising a multi git-repository 
+workspace — in the form of a GitTree — from one local `.cgs`
+specification (ASCII file) or one tracked `.gts` workspace Snapshot (ASCII file describing the GitTree State). It is a Python package for which the API is exposed through the CLI only.
+
+The CLI is used to operate the same git command on all repos that compose the project. It is a robust and convenient alternative to git submodules, offering a straightforward development experience.
+
+
+ComplexGitSync is developed and run with [Pixi](https://pixi.sh) only —
+`pip install -e .` is not a supported workflow. There is no global install:
+every invocation is `pixi run cgitsync ...`, run from inside the clone below.
+
+```bash
+git clone https://github.com/flipoyo/ComplexGitSync.git
+cd ComplexGitSync
+pixi install
+pixi run cgitsync --help
+```
 
 ```mermaid
 flowchart LR
-    CGS[".cgs spec"] --> CLI(("pixi run cgitsync"))
+    CGS[".cgs spec"] -->|initialise| CLI(("pixi run cgitsync"))
     GTS[".gts snapshot"] -.->|restore| CLI
 
     subgraph TREE["nested Git repo tree"]
@@ -23,25 +39,10 @@ flowchart LR
     TREE ==>|freeze| GTS
 ```
 
-## Install
 
-This project is developed and run with [Pixi](https://pixi.sh) only —
-`pip install -e .` is not a supported workflow. There is no global install:
-every invocation is `pixi run cgitsync ...`, run from inside the clone below.
+## 2. Standalone or nested configuration for project management and sync
 
-```bash
-git clone https://github.com/flipoyo/ComplexGitSync.git
-cd ComplexGitSync
-pixi install
-pixi run cgitsync --help
-```
-
-This one clone is reused across every project you point it at — you don't
-re-clone ComplexGitSync per project.
-
-## Standalone or nested
-
-ComplexGitSync drives a project tree two ways:
+ComplexGitSync manages a multi-repo project in two ways, among which the end user chooses:
 
 ```mermaid
 flowchart LR
@@ -49,22 +50,20 @@ flowchart LR
     CLONE -->|nested| NE["lives inside the<br/>tree it manages"]
 ```
 
-**Standalone (recommended):** you run `pixi run cgitsync ...` from the
+**Standalone (recommended):** user runs `pixi run cgitsync ...` from the
 ComplexGitSync clone, pointed at a project workspace (`CGSHOME`) elsewhere on
-disk. The same clone drives as many project workspaces as you like, one at a
-time. Three cases below, depending on what the target project already has.
+disk.
 
 **Nested:** ComplexGitSync clones itself as one node inside the tree it
 manages, instead of standing outside it. Covered after standalone.
 
-## Standalone
+### 2.1 Standalone configuration
 
-### The project already has a `.cgs`
+ComplexGitSync offers multiple possibilities for initiating the management of a project.
 
-`bootstrap` clones the project's full tree, root included, into its own
-isolated `CGSHOME`. The example below uses this repo's own `install.cgs` —
-the same file ComplexGitSync uses to check itself out as a multi-repo tree —
-so you can try it without any other project on hand:
+### 2.1.1 The project already has a `.cgs`
+
+Initialising the project sync uses `bootstrap`, that clones the project's full tree, root included, into its own isolated `CGSHOME`. ComplexGitSync can check itself out as a multi-repo tree:
 
 ```bash
 pixi run cgitsync bootstrap install.cgs ComplexGitSync
@@ -77,29 +76,23 @@ workspace by exporting it:
 
 ```bash
 # Copy the export command from bootstrap output, or use:
-export CGSHOME=/home/user/.cgs/CGS20260831131233/ComplexGitSync
+export CGSHOME=/home/user/.cgs/CGS<Timestamp>/ComplexGitSync
 pixi run cgitsync status
 pixi run cgitsync view-tree
 
-# Minimalist sync/release cycle
-pixi run cgitsync freeze-release release-2026.05 "release 2026.05"
-pixi run cgitsync launch-release release-2026.05
+# Minimalist changes propagation sequence
+pixi run cgitsync add
+pixi run cgitsync commit "<MESSAGE>"
+pixi run cgitsync push
 ```
-
-Pass `--cgs-path` to place `CGSHOME` somewhere else instead of the
-`$HOME/.cgs/CGS<timestamp>/` default. For a single command, use `--search-dir`
-instead of exporting `CGSHOME`:
-
-```bash
-pixi run cgitsync status --search-dir /home/user/.cgs/CGS20260831131233/ComplexGitSync
-```
-
 Run any command with `--help` for its full option list.
 
-### The project is checked out on disk, but has no `.cgs` yet
+Full walkthrough: [tutorials/02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md)
 
-`discover` scans a directory for git repositories and drafts a `.cgs` from
-what is already checked out:
+
+### 2.1.2 The project is checked out on disk, but has no `.cgs` yet
+
+Initialising the project sync requires `discover`, that scans a directory for git repositories and drafts a `.cgs` from what is already checked out:
 
 ```bash
 pixi run cgitsync discover ~/work/project --write draft.cgs
@@ -107,11 +100,13 @@ pixi run cgitsync validate draft.cgs
 ```
 
 Read-only until `--write` is passed — always review the draft before using
-it. Full walkthrough: [tutorials/03_configuration_discovery_modes.md](tutorials/03_configuration_discovery_modes.md).
+it. 
 
-### The project uses git submodules
+Full walkthrough: [tutorials/03_configuration_discovery_modes.md](tutorials/03_configuration_discovery_modes.md).
 
-`import-submodules` reports on, or converts, git submodules into plain
+### 2.1.3 The project uses git submodules
+
+A project may display submodule. ComplexGitSync converts all submodule artefacts using `import-submodules`, that reports on, or converts, git submodules into plain
 ComplexGitSync nested repositories:
 
 ```bash
@@ -120,14 +115,10 @@ pixi run cgitsync import-submodules ~/work/project --apply --output project.cgs 
 ```
 
 Composes with `discover`: run `discover` first to get the topology for free,
-then `import-submodules --apply` to retire the submodules it found. Full
-walkthrough: [tutorials/04_submodules_to_ready.md](tutorials/04_submodules_to_ready.md).
+then `import-submodules --apply` to retire the submodules it found. 
+Full walkthrough over `discover,import-submodules,initialise`: [tutorials/04_submodules_to_ready.md](tutorials/04_submodules_to_ready.md).
 
-If the topology instead lives only in a build script or in developers'
-heads, use `configure` (interactive) or `create-cgs` (flags) to author a
-`.cgs` from scratch — see [tutorials/02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md).
-
-## Nested
+### 2.2 Nested Configuration
 
 Run ComplexGitSync from *inside* the project tree it manages instead of
 standalone, using `initialise` in place of `bootstrap`, from
@@ -149,7 +140,9 @@ pixi run cgitsync status
 pixi run cgitsync view-tree
 ```
 
-## Command reference
+Full walkthrough: [tutorials/01_first_multi_repo_workspace.md](tutorials/01_first_multi_repo_workspace.md)
+
+## 3. `cgitsync` command list
 
 | Group | Command | Description |
 |---|---|---|
@@ -180,7 +173,7 @@ pixi run cgitsync view-tree
 | Configuration | `configure` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
 | Configuration | `create-cgs` | Create a validated .cgs specification from CLI project definitions. |
 
-## Further reading
+## 4. Further reading
 
 [tutorials/](tutorials/) — four tutorials, simplest to most advanced:
 
@@ -208,3 +201,7 @@ itself, and the before-committing checklist, for contributors.
 - Main Developer: Nicolas Flipo
 <!-- - Contributors (ongoing): Simone Mazzarelli, Tristan Bourgeois, Nicolas Gallois, Pierre Guillou, Fabien Ors -->
 - AI assistance: Claude, ChatGPT, Copilot@github, Mistral Vibe 
+
+## License
+
+Apache 2.0
