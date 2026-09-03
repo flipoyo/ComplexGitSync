@@ -53,9 +53,7 @@ graph LR
 > are stored; authentication relies entirely on the ambient environment
 > (`ssh-agent`, an HTTPS credential helper, etc.).
 
-`cawaqsviz` is a GitLab project nested three path segments deep
-(`cawaqs/gviz/cawaqsviz` — a subgroup, not a plain `owner/repository`
-pair), with two GitHub children still tracked as git submodules:
+`cawaqsviz` is a GitLab project composed of three nested git-repo: `cawaqs/gviz/cawaqsviz` and two GitHub children still tracked as git submodules:
 
 ```
 cawaqsviz  (GitLab: cawaqs/gviz/cawaqsviz, root)
