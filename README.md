@@ -51,7 +51,7 @@ flowchart LR
 ```
 
 **Standalone (recommended):** user runs `pixi run cgitsync ...` from the
-ComplexGitSync clone, pointed at a project workspace (`CGSHOME`) elsewhere on
+ComplexGitSync clone. `cgitsync`  affects the project workspace (`CGSHOME`) elsewhere on
 disk.
 
 **Nested:** ComplexGitSync clones itself as one node inside the tree it
