@@ -157,11 +157,12 @@ Two things to read here. Every path is counted from the directory you
 pointed the command at, and `declared in` names the `.gitmodules` file it
 came from — which matters, because the root also has a child at
 `docs/CWV_user_guide`, so two of the three submodules are called `docs/...`
-by their own repository. And `hydrological_twin` is found at all only
-because it is four directories down and the scan goes five deep by
-default: **do not pass `--max-depth 3`**, which stops just above it.
-Whenever a depth does cut the walk short, the command says so in a warning
-rather than presenting a partial answer as a complete one.
+by their own repository. And `hydrological_twin`, four directories down,
+is found without needing any flag: the scan has no depth limit unless you
+give it one with `--max-depth`. **Don't pass `--max-depth 3` here** — that
+would stop the scan just above `hydrological_twin` and miss it. Whenever a
+given `--max-depth` does cut the walk short, the command says so in a
+warning rather than presenting a partial answer as a complete one.
 
 The real run ends at a `READY` tree:
 

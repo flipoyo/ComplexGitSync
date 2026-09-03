@@ -18,7 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..git_repo import RefKind
-from ..orchestre import DEFAULT_DISCOVER_MAX_DEPTH, ComplexGitSyncClient
+from ..orchestre import ComplexGitSyncClient
 from ..snapshot_resolver import discover_cgshome
 from ._shared import (
     _add_gitignore_sync_arguments,
@@ -344,12 +344,12 @@ def _register_init_from_submodules(subparser: argparse.ArgumentParser) -> None:
         "--max-depth",
         dest="max_depth",
         type=_non_negative_int,
-        default=DEFAULT_DISCOVER_MAX_DEPTH,
+        default=None,
         metavar="N",
         help=(
-            "Maximum directory depth to descend below REPO_ROOT while "
-            f"discovering repositories (default: {DEFAULT_DISCOVER_MAX_DEPTH}; "
-            "REPO_ROOT itself is depth 0)."
+            "Bound discovery to N directory levels below REPO_ROOT "
+            "(REPO_ROOT itself is depth 0). Without this flag the scan "
+            "is unbounded."
         ),
     )
     subparser.add_argument(
@@ -985,7 +985,7 @@ def _execute_init_from_submodules(
     source: Path,
     *,
     cgs_path: str | None = None,
-    max_depth: int = DEFAULT_DISCOVER_MAX_DEPTH,
+    max_depth: int | None = None,
     dry_run: bool = False,
     force: bool = False,
     force_access_protocol: str | None = None,

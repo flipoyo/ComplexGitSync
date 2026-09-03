@@ -813,16 +813,17 @@ def _blocking_worktree_dirt(status_lines: Sequence[str]) -> list[str]:
     return blocking
 
 
-DEFAULT_DISCOVER_MAX_DEPTH = 5
-
-
-def _walk_git_repositories(root: Path, *, max_depth: int) -> tuple[list[Path], bool]:
+def _walk_git_repositories(
+    root: Path, *, max_depth: int | None = None
+) -> tuple[list[Path], bool]:
     """Return every directory under *root* that holds a ``.git``, root first.
 
-    Returns the repositories found and whether the walk stopped early. It
-    stopped early when *max_depth* was reached while directories were still
-    left to look into: there may be more repositories below, and the caller
-    should say so rather than present a partial answer as a complete one.
+    *max_depth* bounds the walk when given; ``None`` (the default) means
+    unbounded — the walk runs until there is nothing left to look into.
+    Returns the repositories found and whether a given *max_depth* stopped
+    the walk early: reached while directories were still left to look
+    into, meaning there may be more repositories below that were never
+    seen. Unbounded, this is always ``False``.
 
     Used by :meth:`ComplexGitSyncClient.discover_repos`. Two rules matter:
 
@@ -836,6 +837,11 @@ def _walk_git_repositories(root: Path, *, max_depth: int) -> tuple[list[Path], b
     Depth is counted from *root* (itself depth 0). Nested repositories are
     reported in addition to their parent, not instead of it: a parent and
     its children are exactly the tree ComplexGitSync manages.
+
+    Iterative, with an explicit stack rather than recursion: an unbounded
+    walk has no ceiling on how deep a real filesystem can go, and Python's
+    call stack does (~1000 frames) — a tree deeper than that would raise
+    ``RecursionError`` if this called itself once per level.
     """
     found: list[Path] = []
     stopped_early = False
@@ -851,18 +857,20 @@ def _walk_git_repositories(root: Path, *, max_depth: int) -> tuple[list[Path], b
             if child.is_dir() and not child.is_symlink() and child.name != ".git"
         ]
 
-    def _descend(directory: Path, depth: int) -> None:
-        nonlocal stopped_early
+    # A stack visits depth-first, matching the previous recursive walk's
+    # root-first, depth-first order; pushing each directory's children in
+    # reverse means popping them back off in the original sorted order.
+    stack: list[tuple[Path, int]] = [(root, 0)]
+    while stack:
+        directory, depth = stack.pop()
         if (directory / ".git").exists():
             found.append(directory)
         children = _subdirectories(directory)
-        if depth >= max_depth:
+        if max_depth is not None and depth >= max_depth:
             stopped_early = stopped_early or bool(children)
-            return
-        for child in children:
-            _descend(child, depth + 1)
+            continue
+        stack.extend((child, depth + 1) for child in reversed(children))
 
-    _descend(root, 0)
     return found, stopped_early
 
 
@@ -1395,7 +1403,7 @@ class ComplexGitSyncClient:
         repo_root: str | Path,
         *,
         cgs_path: str | Path | None = None,
-        max_depth: int = DEFAULT_DISCOVER_MAX_DEPTH,
+        max_depth: int | None = None,
         dry_run: bool = False,
         force: bool = False,
         force_access_protocol: str | None = None,
@@ -1447,7 +1455,8 @@ class ComplexGitSyncClient:
             exist, the draft is written there rather than to the default
             location.
         max_depth:
-            Passed to :meth:`discover_repos`.
+            Passed to :meth:`discover_repos`. ``None`` (the default) scans
+            with no depth bound.
         dry_run:
             Report the plan — the discovery and the submodules that would
             be converted — without writing, cloning, or converting
@@ -1606,7 +1615,7 @@ class ComplexGitSyncClient:
         self,
         root_dir: str | Path | None = None,
         *,
-        max_depth: int = DEFAULT_DISCOVER_MAX_DEPTH,
+        max_depth: int | None = None,
         output: str | Path | None = None,
     ) -> DiscoverReport:
         """Scan *root_dir* for git repositories and draft a ``.cgs`` from what is there.
@@ -1616,12 +1625,13 @@ class ComplexGitSyncClient:
         filesystem and of each repository's git config: nothing is cloned,
         fetched, staged, or modified, and no network call is made.
 
-        The walk descends from *root_dir* up to *max_depth* levels, treating
-        every directory that contains a ``.git`` entry as a repository. It
-        never descends *into* a ``.git`` directory — for a submodule the real
-        git directory lives at ``<parent>/.git/modules/<name>`` while the
-        child's own ``.git`` is a file, so walking into it would report the
-        same repository twice.
+        The walk descends from *root_dir* with no depth limit by default,
+        treating every directory that contains a ``.git`` entry as a
+        repository. Pass *max_depth* to bound it. It never descends *into*
+        a ``.git`` directory — for a submodule the real git directory
+        lives at ``<parent>/.git/modules/<name>`` while the child's own
+        ``.git`` is a file, so walking into it would report the same
+        repository twice.
 
         For each repository found, ``origin``'s URL is read and converted to
         the canonical ``provider:owner/repository`` shorthand through the
@@ -1647,9 +1657,8 @@ class ComplexGitSyncClient:
         root_dir:
             Directory to scan. Defaults to the current working directory.
         max_depth:
-            Maximum directory depth to descend below *root_dir*
-            (default :data:`DEFAULT_DISCOVER_MAX_DEPTH`). The root itself is
-            depth 0.
+            Maximum directory depth to descend below *root_dir*. The root
+            itself is depth 0. ``None`` (the default) scans with no bound.
         output:
             Optional path to write the drafted ``.cgs`` to. When omitted,
             the draft is only returned — matching the "report first, write

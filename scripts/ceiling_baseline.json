@@ -26,12 +26,12 @@
       "public_symbols": 0
     },
     "cli/configuration.py": {
-      "internal_imports": 8,
-      "loc": 309,
+      "internal_imports": 7,
+      "loc": 310,
       "public_symbols": 1
     },
     "cli/expert.py": {
-      "internal_imports": 14,
+      "internal_imports": 13,
       "loc": 904,
       "public_symbols": 1
     },
@@ -107,8 +107,8 @@
     },
     "orchestre.py": {
       "internal_imports": 68,
-      "loc": 3368,
-      "public_symbols": 13
+      "loc": 3375,
+      "public_symbols": 12
     },
     "paths.py": {
       "internal_imports": 2,

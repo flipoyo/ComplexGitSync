@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.33
+# ComplexGitSync v0002.35
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -105,9 +105,9 @@ it.
 A repository found *inside* another repository is drafted as that
 repository's child, not the project root's: the report marks it
 `inside: <path>` and prints the tree it will write. Only what is checked
-out can be found, and only down to `--max-depth` (default 5) — `discover`
-warns when that limit stopped the scan early, rather than presenting a
-partial answer as a complete one.
+out can be found. The scan has no depth limit by default; pass
+`--max-depth N` to bound it, and `discover` warns when that bound stopped
+the scan early, rather than presenting a partial answer as a complete one.
 
 Full walkthrough: [tutorials/03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md).
 

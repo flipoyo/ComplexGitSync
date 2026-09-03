@@ -17,7 +17,6 @@ from pathlib import Path
 from ..cgs_format import DEFAULT_ACCESS_PROTOCOL, DEFAULT_BRANCH
 from ..git_repo import GitProvider
 from ..orchestre import (
-    DEFAULT_DISCOVER_MAX_DEPTH,
     ComplexGitSyncClient,
     DiscoveredRepo,
     DiscoverReport,
@@ -72,11 +71,12 @@ def register_parsers(
                 "--max-depth",
                 dest="max_depth",
                 type=non_negative_int,
-                default=DEFAULT_DISCOVER_MAX_DEPTH,
+                default=None,
                 metavar="N",
                 help=(
-                    "Maximum directory depth to descend below ROOT "
-                    f"(default: {DEFAULT_DISCOVER_MAX_DEPTH}; ROOT itself is depth 0)."
+                    "Bound the scan to N directory levels below ROOT (ROOT "
+                    "itself is depth 0). Without this flag the scan is "
+                    "unbounded."
                 ),
             )
             subparser.set_defaults(handler=_handle_discover)
@@ -268,7 +268,7 @@ def _handle_create_cgs(args: argparse.Namespace) -> int:
 def _handle_discover(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve() if args.root else Path.cwd().resolve()
     write = getattr(args, "write", None)
-    max_depth = getattr(args, "max_depth", DEFAULT_DISCOVER_MAX_DEPTH)
+    max_depth = getattr(args, "max_depth", None)
     return _run_with_logging(
         command_name="discover",
         source=root,
@@ -314,13 +314,14 @@ def _execute_discover(
     source: Path,
     *,
     write: str | None = None,
-    max_depth: int = DEFAULT_DISCOVER_MAX_DEPTH,
+    max_depth: int | None = None,
 ) -> int:
     """Execute the discover command and print a human-readable report."""
     report = client.discover_repos(source, max_depth=max_depth, output=write)
 
     if not report.repos:
-        print(f"No git repository found under {report.root} (max depth {max_depth}).")
+        depth_note = f" (max depth {max_depth})" if max_depth is not None else ""
+        print(f"No git repository found under {report.root}{depth_note}.")
         return 0
 
     print(f"Found {len(report.repos)} git repository(ies) under {report.root}")
