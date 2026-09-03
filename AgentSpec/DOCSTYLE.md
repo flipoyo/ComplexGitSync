@@ -88,6 +88,37 @@ is a bug. If a sentence needs a second read to parse, split it in two. If a
 term needs the reader to already know the answer, define it on first use or
 cut it.
 
+**Example.** Not this:
+
+> initialise's own .gitignore sync writes an untracked .gitignore inside
+> each parent, which import-submodules' cleanliness check then rejects —
+> so the one working order deadlocked.
+
+This:
+
+> When you run initialise and then import-submodules, it should work. But
+> import-submodules checks that the working tree is clean before
+> converting. initialise had just written a .gitignore file, so the check
+> saw it as uncommitted work and refused to convert.
+
+Same facts. The second version needs no re-read, because each sentence
+carries one idea.
+
+**Expand every acronym on first use**, then it's free to use afterwards:
+"the current working directory (CWD)", not "the CWD" cold. If an acronym
+never gets expanded because it's used only once, spell it out instead and
+skip the acronym entirely.
+
+**Check by reading aloud.** If you stumble or have to re-read your own
+sentence, a first-time reader will too — rewrite it. This applies hardest
+to `tutorials/`, `README.md`, and `docs/Text/*.tex`: a reader here has no
+other context to fall back on. It applies more loosely to `CLAUDE.md` and
+`AgentSpec/AdditionalSpecs.md`, which may assume software engineering
+background but should still define a technical term on first use. It does
+not apply to inline code comments, commit messages, or planning tickets
+under `AgentSpec/` — those are written for someone already holding the
+code or the task in front of them.
+
 ## 6. No stale-by-design content
 
 Never write "Recent improvements (December 2024)" or any dated block that rots.

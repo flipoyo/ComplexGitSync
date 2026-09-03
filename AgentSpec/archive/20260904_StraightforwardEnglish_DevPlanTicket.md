@@ -1,4 +1,4 @@
-# StrateghtforwardEnglish — documentation must prioritize clarity over technical precision
+# StraightforwardEnglish — documentation must prioritize clarity over technical precision
 
 *Created: 2026-09-03*
 

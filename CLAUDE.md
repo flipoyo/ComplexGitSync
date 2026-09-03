@@ -188,6 +188,13 @@ document in this repo is written — abstract first, mermaid graph, audience
 separation, length, one authoritative file per purpose. It applies to every
 `README.md`, spec, and file under `docs/`.
 
+Write in straightforward English, not IT-entangled sentences — favour
+common words over jargon, expand acronyms on first use, and keep sentences
+short enough to read once. This bar is strictest for `tutorials/`,
+`README.md`, and `docs/Text/*.tex`, since their reader has no other
+context to lean on; see DOCSTYLE.md §5 for the full rule, worked examples,
+and where it loosens.
+
 Every created document — specs (`AgentSpec/DevSpec/DevSpecs.md`, `AgentSpec/AdditionalSpecs.md`),
 planning tickets (`DevPlan*.md`, `DevPlanTickets*.md`, `CorPlan.md`-style
 plans), `AgentSpec/audit.md`, `README.md`, and `docs/tutorials/*.md` — opens with a
