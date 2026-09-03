@@ -194,6 +194,19 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                 action="store_true",
                 help="Preview the release workflow without mutating repositories.",
             )
+            subparser.add_argument(
+                "--force-protocol",
+                dest="force_access_protocol",
+                choices=("ssh", "https"),
+                default=None,
+                help=(
+                    "Rewrite every repo's remote to this protocol before the "
+                    "workflow's pull/pull-force and push steps, persisting "
+                    "the change (git remote set-url) rather than a one-off "
+                    "override. Same meaning as initialise/bootstrap's "
+                    "--force-protocol, applied to an already-cloned tree."
+                ),
+            )
             subparser.set_defaults(
                 handler=(
                     _handle_freeze_release_force
@@ -425,6 +438,7 @@ def _handle_freeze_release(args: argparse.Namespace) -> int:
             message=args.message,
             force=False,
             dry_run=args.dry_run,
+            force_access_protocol=getattr(args, "force_access_protocol", None),
         ),
     )
 
@@ -441,6 +455,7 @@ def _handle_freeze_release_force(args: argparse.Namespace) -> int:
             message=args.message,
             force=True,
             dry_run=args.dry_run,
+            force_access_protocol=getattr(args, "force_access_protocol", None),
         ),
     )
 
@@ -667,6 +682,7 @@ def _execute_freeze_release(
     message: str,
     force: bool = False,
     dry_run: bool = False,
+    force_access_protocol: str | None = None,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     pull_action = "git fetch && git checkout -B <branch> FETCH_HEAD && git clean -fd" if force else "git pull --ff-only"
@@ -689,7 +705,9 @@ def _execute_freeze_release(
             ),
         )
     else:
-        client.freeze_release(name, message, force=force)
+        client.freeze_release(
+            name, message, force=force, force_access_protocol=force_access_protocol
+        )
     tree_state = client.get_tree_state()
     snapshot_path = getattr(client, "loaded_snapshot_path", None)
     snapshot_suffix = f" snapshot={snapshot_path}" if snapshot_path is not None else ""

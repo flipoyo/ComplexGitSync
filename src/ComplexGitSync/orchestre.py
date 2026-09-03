@@ -66,6 +66,7 @@ import tomli_w
 from .cgs_format import CgsDocument, parse_repo_id
 from .discovery import (
     ImportSubmodulesReport,
+    SubmoduleEntry,
     _parse_gitmodules,
     discover_nested_configs,
 )
@@ -81,6 +82,7 @@ from .git_repo import (
     RepoLifecycleState,
     SyncState,
     WorkingRepo,
+    repo_remote_url,
 )
 from .git_runner import GitRunner
 from .git_tree import (
@@ -92,6 +94,7 @@ from .git_tree import (
     _as_optional_str,
     _update_gitignore_file,
     build_tree_state,
+    cgitsync_managed_state_paths,
     format_project_tree,
     format_repo_tree_outline,
     format_view_operation,
@@ -918,6 +921,58 @@ def _looks_like_ssh_auth_failure(git_error_message: str) -> bool:
     return any(marker in git_error_message for marker in _SSH_AUTH_FAILURE_MARKERS)
 
 
+_HTTPS_AUTH_FAILURE_MARKERS = (
+    # GitLab, verified firsthand against the live cawaqsviz remote
+    # (ProtocolSwitchOnPush_DevPlanTicket §0.4) — a real captured response,
+    # not guessed wording.
+    "HTTP Basic: Access denied",
+    # cgitsync's own signature for "a credential was needed and the ambient
+    # environment had none to offer" (GIT_TERMINAL_PROMPT=0 / GIT_ASKPASS —
+    # see git_runner.py's _non_interactive_git_env) — provider-agnostic,
+    # fires for any HTTPS remote regardless of host.
+    "could not read Username",
+    "terminal prompts disabled",
+    # GitHub's and Codeberg's own HTTPS-auth-failure wording is unverified
+    # — ProtocolSwitchOnPush_DevPlanTicket §1.3: ship what's confirmed,
+    # never guess unverified wording. A missed match here just degrades to
+    # the plain GitSyncError, same as an unmatched SSH failure above.
+)
+
+
+def _looks_like_https_auth_failure(git_error_message: str) -> bool:
+    """Heuristic match on ``git``'s own stderr for a likely HTTPS auth
+    failure — same caveats as :func:`_looks_like_ssh_auth_failure`."""
+    return any(marker in git_error_message for marker in _HTTPS_AUTH_FAILURE_MARKERS)
+
+
+def _protocol_switch_hint(git_error_message: str, *, command: str) -> str | None:
+    """Return an actionable ``--force-protocol`` hint for *git_error_message*,
+    or ``None`` when it matches neither known failure shape.
+
+    Reads which failure shape matched rather than trusting any repo's
+    recorded ``access_protocol`` — that value can be stale or simply
+    unknown (an *adopted*, not cloned, root's remote is whatever the user
+    set it to outside cgitsync entirely; see
+    ProtocolSwitchOnPush_DevPlanTicket §0.2). Suggests the opposite of
+    whichever marker set matched, never both.
+    """
+    if _looks_like_ssh_auth_failure(git_error_message):
+        return (
+            f"hint: this looks like an SSH authentication failure — pass "
+            f"--force-protocol https to '{command}' if the repository is "
+            f"public, or configure an SSH key/agent for this runner "
+            f"otherwise."
+        )
+    if _looks_like_https_auth_failure(git_error_message):
+        return (
+            f"hint: this looks like an HTTPS authentication failure — pass "
+            f"--force-protocol ssh to '{command}' if you have an SSH key "
+            f"registered with the provider, or configure an HTTPS "
+            f"credential helper otherwise."
+        )
+    return None
+
+
 # ============================================================
 #  ComplexGitSyncClient — public API facade (Tier 3)
 # ============================================================
@@ -995,18 +1050,33 @@ class ComplexGitSyncClient:
             document.to_toml(Path(output_path))
         return document
 
-    # Pre-existing complexity debt from before C90 was enabled (P6,
-    # AgentSpec/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
-    # under this ticket, since a real refactor of the submodule-conversion
-    # flow risks behaviour change under time pressure. New code is enforced
-    # at 12.
-    def import_submodules(  # noqa: C901
+    def import_submodules(
         self,
         repo_root: str | Path,
         *,
         apply: bool = False,
+        recursive: bool = False,
     ) -> ImportSubmodulesReport:
         """Report or convert git submodules in *repo_root* to plain nested clones.
+
+        With *recursive* (default ``False``, matching ``git submodule
+        update``'s own flag name and meaning): also converts any submodule
+        that itself has its own checked-out ``.gitmodules``, at any depth,
+        root first — the opposite of this codebase's usual leaf-first
+        mutation order, and deliberately so: converting a submodule stages
+        changes in its own working tree, and if a deeper level converted
+        first, the parent level's own preflight (is the submodule's
+        working tree clean?) would then reject its own conversion over
+        dirt the deeper conversion itself just made. Converting parent
+        first has no such problem — ``git rm --cached <path>`` only
+        touches the parent's own index, never the submodule's working
+        tree — see :meth:`_gitmodules_levels_root_first` for the full
+        reasoning. A submodule path that was never checked out (``git
+        submodule update --init`` not run for it) has no ``.git`` to read
+        a nested ``.gitmodules`` from and is invisible either way — the
+        same ceiling :meth:`discover_repos` already documents for itself.
+        Without *recursive*, behavior is unchanged: exactly
+        ``<repo_root>/.gitmodules``, one level.
 
         Parses ``<repo_root>/.gitmodules`` and, for each declared submodule:
 
@@ -1053,9 +1123,76 @@ class ComplexGitSyncClient:
         Returns
         -------
         ImportSubmodulesReport
-            Always returned, whether or not *apply* was set.
+            Always returned, whether or not *apply* was set. With
+            *recursive*, one flat report combining every level — the same
+            shape :meth:`discover_repos` already uses for its own report,
+            regardless of how deep a repository was found.
         """
         root = Path(repo_root).resolve()
+        if not recursive:
+            return self._import_submodules_one_level(root, apply=apply)
+
+        submodules: list[SubmoduleEntry] = []
+        converted: list[str] = []
+        applied_any = False
+        for level_root in self._gitmodules_levels_root_first(root):
+            level_report = self._import_submodules_one_level(level_root, apply=apply)
+            submodules.extend(level_report.submodules)
+            converted.extend(level_report.converted)
+            applied_any = applied_any or level_report.applied
+        return ImportSubmodulesReport(
+            submodules=tuple(submodules),
+            applied=applied_any,
+            converted=tuple(converted),
+        )
+
+    def _gitmodules_levels_root_first(
+        self, level_root: Path, *, _visited: set[Path] | None = None
+    ) -> list[Path]:
+        """Every directory under *level_root* (itself included) with a
+        checked-out ``.gitmodules``, root first.
+
+        Root first, not leaf first, despite this codebase's usual
+        leaf-first mutation order (``push``/``commit``/…): converting a
+        submodule stages changes in *its own* working tree (the removed
+        ``.gitmodules`` stanza, the new ``.gitignore`` line) — if a deeper
+        level converted first, the *parent* level's own preflight (``is
+        <submodule path> clean?``) would then see that staged dirt and
+        reject its own conversion. Converting parent-first never has this
+        problem: ``git rm --cached <path>`` only touches the parent's own
+        index, never the submodule's working tree, so a still-unconverted
+        child submodule is exactly as clean immediately after its parent
+        converts as it was before.
+
+        A submodule path with no ``.git`` (never ``git submodule update
+        --init``'d) has nothing to recurse into and is skipped — matching
+        :meth:`discover_repos`'s own "only what is checked out" ceiling.
+        """
+        visited = _visited if _visited is not None else set()
+        resolved = level_root.resolve()
+        if resolved in visited or not (resolved / ".gitmodules").is_file():
+            return []
+        visited.add(resolved)
+
+        levels: list[Path] = [resolved]
+        content = (resolved / ".gitmodules").read_text(encoding="utf-8")
+        for sub in _parse_gitmodules(content):
+            child_path = resolved / sub.path
+            if not (child_path / ".git").exists():
+                continue
+            levels.extend(self._gitmodules_levels_root_first(child_path, _visited=visited))
+        return levels
+
+    # Pre-existing complexity debt from before C90 was enabled (P6,
+    # AgentSpec/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # under this ticket, since a real refactor of the submodule-conversion
+    # flow risks behaviour change under time pressure. New code is enforced
+    # at 12.
+    def _import_submodules_one_level(  # noqa: C901
+        self, root: Path, *, apply: bool
+    ) -> ImportSubmodulesReport:
+        """The single-level conversion :meth:`import_submodules` always did —
+        the unit it composes over per level when *recursive* is set."""
         gitmodules_path = root / ".gitmodules"
 
         if not gitmodules_path.is_file():
@@ -1382,17 +1519,21 @@ class ComplexGitSyncClient:
         pending_paths: dict[str, tuple[str, ...]] = {}
         for entry in iter_tree(registry):
             children = registry.children_of(entry.repo_id)
-            if not children:
+            relative_paths = {
+                child.absolute_path.relative_to(entry.absolute_path).as_posix() for child in children
+            }
+            if entry.parent_id is None:
+                for managed_path in cgitsync_managed_state_paths(entry):
+                    as_posix = managed_path.as_posix()
+                    relative_paths.add(f"{as_posix}/" if as_posix == ".cgitsync" else as_posix)
+            if not relative_paths:
                 continue
             gitignore_path = entry.absolute_path / ".gitignore"
             try:
                 existing_lines = gitignore_path.read_text(encoding="utf-8").splitlines()
             except FileNotFoundError:
                 existing_lines = []
-            relative_paths = sorted(
-                child.absolute_path.relative_to(entry.absolute_path).as_posix() for child in children
-            )
-            missing = tuple(path for path in relative_paths if path not in existing_lines)
+            missing = tuple(sorted(path for path in relative_paths if path not in existing_lines))
             if missing:
                 pending_paths[entry.repo_id] = missing
 
@@ -2127,6 +2268,7 @@ class ComplexGitSyncClient:
         force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
+        force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Resynchronize an already-cloned tree from a ``.cgs`` file.
 
@@ -2136,7 +2278,7 @@ class ComplexGitSyncClient:
         :exc:`~ComplexGitSync.errors.GitSyncError`. See
         :meth:`ComplexGitSyncClient.initialise_cgs` for
         ``commit_gitignore``/``force_gitignore_sync``/``git_user_name``/
-        ``git_user_email``.
+        ``git_user_email``, and :meth:`push` for ``force_access_protocol``.
         """
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         resolved_path = Path(config_path).resolve()
@@ -2146,7 +2288,14 @@ class ComplexGitSyncClient:
         if git_user_name is not None or git_user_email is not None:
             MasterConfig.persist(restart_cgshome, user_name=git_user_name, user_email=git_user_email)
         registry = self.load_cgs(resolved_path, discover_nested=True)
-        self.orchestre.git_tree.git.pull(self.git_runner)
+        protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
+        try:
+            self.orchestre.git_tree.git.pull(self.git_runner, force_access_protocol=protocol)
+        except GitSyncError as exc:
+            hint = _protocol_switch_hint(str(exc), command="pull")
+            if hint:
+                raise GitSyncError(f"{exc}\n{hint}") from exc
+            raise
         self._sync_gitignore_lifecycle(
             pre_pull=False,
             force_pull_fallback=force_gitignore_sync,
@@ -2168,6 +2317,7 @@ class ComplexGitSyncClient:
         force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
+        force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Resynchronize from a ``.cgs`` spec or restore from a ``.gts`` snapshot.
 
@@ -2175,6 +2325,7 @@ class ComplexGitSyncClient:
         ``git_user_email`` only apply to ``.cgs`` sources (dispatched to
         :meth:`restart`) — a ``.gts`` source runs no discovery, so there is
         nothing new for the ``.gitignore`` lifecycle sync to find.
+        ``force_access_protocol`` applies to both — see :meth:`push`.
         """
         resolved_source = Path(source_path).resolve()
         if resolved_source.suffix == ".cgs":
@@ -2184,6 +2335,7 @@ class ComplexGitSyncClient:
                 force_gitignore_sync=force_gitignore_sync,
                 git_user_name=git_user_name,
                 git_user_email=git_user_email,
+                force_access_protocol=force_access_protocol,
             )
         if resolved_source.suffix == ".gts":
             previous_tree_state = (
@@ -2195,7 +2347,14 @@ class ComplexGitSyncClient:
             if any(not entry.absolute_path.exists() for entry in registry_values):
                 registry = self._restore_gts_snapshot(resolved_source)
             else:
-                self.orchestre.git_tree.git.pull(self.git_runner)
+                protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
+                try:
+                    self.orchestre.git_tree.git.pull(self.git_runner, force_access_protocol=protocol)
+                except GitSyncError as exc:
+                    hint = _protocol_switch_hint(str(exc), command="pull")
+                    if hint:
+                        raise GitSyncError(f"{exc}\n{hint}") from exc
+                    raise
             if not registry.is_ready():
                 raise GitSyncError("pull did not produce a READY tree.")
             snapshot_path = self.write_gts_snapshot(command_origin="pull")
@@ -2207,8 +2366,13 @@ class ComplexGitSyncClient:
             f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
         )
 
-    def pull_force(self, source_path: str | Path) -> WorkingGitTree:
-        """Destructively resynchronize from a ``.cgs`` spec or ``.gts`` snapshot."""
+    def pull_force(
+        self, source_path: str | Path, *, force_access_protocol: str | None = None
+    ) -> WorkingGitTree:
+        """Destructively resynchronize from a ``.cgs`` spec or ``.gts`` snapshot.
+
+        ``force_access_protocol`` — see :meth:`push`.
+        """
         resolved_source = Path(source_path).resolve()
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         self._log_event("pull_force_start", source_path=resolved_source)
@@ -2220,7 +2384,14 @@ class ComplexGitSyncClient:
             raise ValueError(
                 f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
             )
-        self.orchestre.git_tree.git.pull_force(self.git_runner)
+        protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
+        try:
+            self.orchestre.git_tree.git.pull_force(self.git_runner, force_access_protocol=protocol)
+        except GitSyncError as exc:
+            hint = _protocol_switch_hint(str(exc), command="pull-force")
+            if hint:
+                raise GitSyncError(f"{exc}\n{hint}") from exc
+            raise
         if not registry.is_ready():
             raise GitSyncError("pull-force did not produce a READY tree.")
         snapshot_path = self.write_gts_snapshot(command_origin="pull-force")
@@ -2344,18 +2515,33 @@ class ComplexGitSyncClient:
         self._log_event("rm_end")
         return registry
 
-    def push(self) -> WorkingGitTree:
+    def push(self, *, force_access_protocol: str | None = None) -> WorkingGitTree:
         """Push all repos to their remotes, leaf-first.
 
         Requires a ``READY`` registry; raises
         :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.  After a
         successful execution the registry remains ``READY`` and refreshes the
         stored commit hashes in the runtime tree state.
+
+        ``force_access_protocol`` (``"ssh"`` or ``"https"``,
+        ``--force-protocol``), when given, rewrites each repo's remote to
+        that protocol before pushing, persisting the change (``git remote
+        set-url``) rather than a one-off override — see
+        ``AgentSpec/ProtocolSwitchOnPush_DevPlanTicket.md``. On a failure
+        that looks like an auth problem, the error gains an actionable
+        hint naming ``--force-protocol <the other one>``.
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("push_start")
-        self.orchestre.git_tree.git.push(self.git_runner)
+        protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
+        try:
+            self.orchestre.git_tree.git.push(self.git_runner, force_access_protocol=protocol)
+        except GitSyncError as exc:
+            hint = _protocol_switch_hint(str(exc), command="push")
+            if hint:
+                raise GitSyncError(f"{exc}\n{hint}") from exc
+            raise
         snapshot_path = self.write_gts_snapshot(command_origin="push")
         if self.source_path is not None:
             self.state_store.record_snapshot(self.source_path, snapshot_path)
@@ -2511,6 +2697,7 @@ class ComplexGitSyncClient:
         message: str | None = None,
         stage_all: bool = True,
         force: bool = False,
+        force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Run the minimalist release workflow from a READY tree.
 
@@ -2521,6 +2708,12 @@ class ComplexGitSyncClient:
         pushed — since there is nothing to pull; see
         :meth:`GitRunner.has_upstream`, already used identically by
         :func:`operations.push_tree` to auto-detect this same case.
+
+        ``force_access_protocol`` — see :meth:`push` — is forwarded to the
+        ``pull``/``pull-force`` and ``push`` steps above; the remote
+        rewrite it makes persists (``git remote set-url``), so the
+        ``freeze`` step's own tag push, further below, picks it up too
+        without needing the parameter itself.
         """
         resolved_message = commit_message or message or release_name
         if self.source_path is None:
@@ -2537,16 +2730,16 @@ class ComplexGitSyncClient:
         root_entry = self.get_dependency_registry().get(ROOT_REPO_ID)
         if self.git_runner.has_upstream(root_entry.absolute_path):
             if force:
-                self.pull_force(self.source_path)
+                self.pull_force(self.source_path, force_access_protocol=force_access_protocol)
             else:
-                self.pull(self.source_path)
+                self.pull(self.source_path, force_access_protocol=force_access_protocol)
         else:
             self._log_event(
                 "freeze_release_pull_skipped",
                 reason="current branch has no upstream yet — nothing to pull",
                 absolute_path=root_entry.absolute_path,
             )
-        self.push()
+        self.push(force_access_protocol=force_access_protocol)
         registry = self.freeze(
             release_name,
             output_gts=output_gts,
@@ -2863,9 +3056,7 @@ class ComplexGitSyncClient:
         registry: WorkingGitTree,
         entry: WorkingRepo,
     ) -> set[Path]:
-        managed_paths: set[Path] = {Path(".cgitsync")}
-        if entry.parent_id is None:
-            managed_paths.add(Path(f"{entry.name}.lgr"))
+        managed_paths: set[Path] = set(cgitsync_managed_state_paths(entry))
         for child in registry.children_of(entry.repo_id):
             try:
                 managed_paths.add(child.absolute_path.relative_to(entry.absolute_path))
@@ -3272,16 +3463,7 @@ class ComplexGitSyncClient:
         )
 
     def _build_remote_url(self, entry: WorkingRepo) -> str:
-        from .git_repo import RepoAddress
-        address = RepoAddress(
-            gitprovider=entry.gitprovider,
-            project_name=entry.project_name or entry.name,
-            repo_name=entry.repo_name or entry.project_name or entry.name,
-            project_owner_name=entry.project_owner_name,
-            group_name=entry.group_name,
-            gitprovider_url=entry.gitprovider_url,
-        )
-        return address.to_url(self._forced_access_protocol or entry.access_protocol)
+        return repo_remote_url(entry, self._forced_access_protocol or entry.access_protocol)
 
     def _determine_launch_ref(self, entry: WorkingRepo) -> str:
         """Return the most precise known ref for saved-state checkout."""

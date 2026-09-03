@@ -601,6 +601,55 @@ class TestGitCommandCycleIntegration:
             client.tag("v0.4.0")
 
 
+class TestForceProtocolOnPush:
+    """ProtocolSwitchOnPush_DevPlanTicket: --force-protocol on push/pull.
+
+    ``to_https``/``to_ssh`` always build a real provider URL
+    (``https://github.com/...``) — there is no way to make either resolve
+    to a reachable local ``file://`` remote, so a genuinely successful push
+    against the rewritten URL cannot be tested locally (the ticket's own
+    WP-PROTO4 anticipates exactly this limitation). What *is* tested here,
+    against real git: the remote is actually rewritten (``git remote
+    get-url``) before the push is attempted, and is left untouched when the
+    flag is omitted — the persisted, git-level part of the mechanism.
+    """
+
+    def test_push_force_protocol_rewrites_remote_before_pushing(
+        self, ready_single_repo_snapshot
+    ):
+        repo = ready_single_repo_snapshot["repo"]
+        snapshot = ready_single_repo_snapshot["snapshot"]
+
+        client = ComplexGitSyncClient()
+        client.load_gts(snapshot)
+        root_entry = client.registry.get("root")
+        root_entry.gitprovider = GitProvider.GITHUB
+        root_entry.project_owner_name = "flipoyo"
+        root_entry.repo_name = "demo"
+
+        original_remote = _run_git(repo, "remote", "get-url", "origin")
+        assert original_remote != "https://github.com/flipoyo/demo.git"
+
+        with pytest.raises(GitSyncError):
+            client.push(force_access_protocol="https")
+
+        assert _run_git(repo, "remote", "get-url", "origin") == "https://github.com/flipoyo/demo.git"
+
+    def test_push_without_force_protocol_leaves_remote_untouched(
+        self, ready_single_repo_snapshot
+    ):
+        repo = ready_single_repo_snapshot["repo"]
+        snapshot = ready_single_repo_snapshot["snapshot"]
+
+        client = ComplexGitSyncClient()
+        client.load_gts(snapshot)
+
+        original_remote = _run_git(repo, "remote", "get-url", "origin")
+        client.push()
+
+        assert _run_git(repo, "remote", "get-url", "origin") == original_remote
+
+
 class TestGtsSnapshotDeterminismIntegration:
     def test_canonical_hash_is_stable_across_metadata_changes(self, ready_single_repo_snapshot, tmp_path):
         snapshot = ready_single_repo_snapshot["snapshot"]
@@ -807,6 +856,39 @@ class TestImportSubmodules:
 
         return seed  # return the working copy, not the bare
 
+    def _make_child_repo_with_own_submodule(
+        self, tmp_path: Path, name: str, grandchild_remote: Path, grandchild_path: str
+    ) -> Path:
+        """Create a repo at tmp_path/{name}-remote.git that itself has
+        *grandchild_remote* as a submodule at *grandchild_path* — for
+        testing recursive import-submodules two levels deep."""
+        remote = tmp_path / f"{name}-remote.git"
+        _run_git(tmp_path, "init", "--bare", remote.as_posix())
+
+        seed = tmp_path / f"{name}-seed"
+        seed.mkdir()
+        _run_git(seed, "init", "-b", "main")
+        _run_git(seed, "config", "user.email", "integration@complexgitsync.test")
+        _run_git(seed, "config", "user.name", "ComplexGitSync Integration")
+        (seed / "README.md").write_text(f"{name}\n", encoding="utf-8")
+        _run_git(seed, "add", "README.md")
+        _run_git(seed, "commit", "-m", "initial")
+        _run_git(
+            seed,
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "--branch",
+            "main",
+            grandchild_remote.as_posix(),
+            grandchild_path,
+        )
+        _run_git(seed, "commit", "-m", "add submodule")
+        _run_git(seed, "remote", "add", "origin", remote.as_posix())
+        _run_git(seed, "push", "-u", "origin", "main")
+        return remote
+
     def test_dry_run_reports_submodules_without_changes(self, tmp_path):
         child_remote = self._make_child_repo(tmp_path, "child")
         parent_wc = self._make_parent_with_submodule(
@@ -853,6 +935,83 @@ class TestImportSubmodules:
 
         # .gitmodules removed (all submodules converted)
         assert not (parent_wc / ".gitmodules").is_file()
+
+    def test_without_recursive_leaves_nested_submodule_untouched(self, tmp_path):
+        """RecursiveImportSubmodules_DevPlanTicket regression lock: today's
+        behavior (no recursive flag) must stay exactly single-level, even
+        when the converted child itself has its own submodule — mirrors
+        cawaqsviz -> HydrologicalTwinAlphaSeries -> hydrological_twin."""
+        grandchild_remote = self._make_child_repo(tmp_path, "grandchild")
+        child_remote = self._make_child_repo_with_own_submodule(
+            tmp_path, "child", grandchild_remote, "vendor/grandchild"
+        )
+        parent_wc = self._make_parent_with_submodule(tmp_path, child_remote, "deps/child")
+        _run_git(parent_wc, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+        child_wc = parent_wc / "deps" / "child"
+        _run_git(child_wc, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+
+        client = ComplexGitSyncClient()
+        report = client.import_submodules(parent_wc, apply=True)
+
+        assert report.applied is True
+        assert {sub.path for sub in report.submodules} == {"deps/child"}
+
+        parent_stage = _run_git(parent_wc, "ls-files", "--stage", "--", "deps/child")
+        assert "160000" not in parent_stage
+        # The nested submodule inside "child" is untouched — never looked at.
+        child_stage = _run_git(child_wc, "ls-files", "--stage", "--", "vendor/grandchild")
+        assert "160000" in child_stage
+        assert (child_wc / ".gitmodules").is_file()
+
+    def test_recursive_converts_nested_submodule(self, tmp_path):
+        """RecursiveImportSubmodules_DevPlanTicket: --recursive converts
+        every level, leaf-first — the case --recursive exists for."""
+        grandchild_remote = self._make_child_repo(tmp_path, "grandchild")
+        child_remote = self._make_child_repo_with_own_submodule(
+            tmp_path, "child", grandchild_remote, "vendor/grandchild"
+        )
+        parent_wc = self._make_parent_with_submodule(tmp_path, child_remote, "deps/child")
+        _run_git(parent_wc, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+        child_wc = parent_wc / "deps" / "child"
+        _run_git(child_wc, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+
+        client = ComplexGitSyncClient()
+        report = client.import_submodules(parent_wc, apply=True, recursive=True)
+
+        assert report.applied is True
+        assert {sub.path for sub in report.submodules} == {"deps/child", "vendor/grandchild"}
+
+        # No gitlink remains anywhere in the tree, at either level.
+        parent_stage = _run_git(parent_wc, "ls-files", "--stage", "--", "deps/child")
+        assert "160000" not in parent_stage
+        child_stage = _run_git(child_wc, "ls-files", "--stage", "--", "vendor/grandchild")
+        assert "160000" not in child_stage
+        assert not (parent_wc / ".gitmodules").is_file()
+        assert not (child_wc / ".gitmodules").is_file()
+
+        # Working trees and history intact at both levels.
+        assert (child_wc / ".git").exists()
+        assert (child_wc / "vendor" / "grandchild" / ".git").exists()
+
+    def test_recursive_dry_run_reports_nested_submodule_too(self, tmp_path):
+        grandchild_remote = self._make_child_repo(tmp_path, "grandchild")
+        child_remote = self._make_child_repo_with_own_submodule(
+            tmp_path, "child", grandchild_remote, "vendor/grandchild"
+        )
+        parent_wc = self._make_parent_with_submodule(tmp_path, child_remote, "deps/child")
+        _run_git(parent_wc, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+        child_wc = parent_wc / "deps" / "child"
+        _run_git(child_wc, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+
+        client = ComplexGitSyncClient()
+        report = client.import_submodules(parent_wc, apply=False, recursive=True)
+
+        assert report.applied is False
+        assert report.converted == ()
+        assert {sub.path for sub in report.submodules} == {"deps/child", "vendor/grandchild"}
+        # Dry run — nothing on disk changed at either level.
+        assert (parent_wc / ".gitmodules").is_file()
+        assert (child_wc / ".gitmodules").is_file()
 
     def test_no_gitmodules_returns_empty_report(self, tmp_path):
         # Create a plain git repo with no .gitmodules

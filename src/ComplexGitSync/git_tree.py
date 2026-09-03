@@ -119,20 +119,26 @@ class GitTreeGitCommands:
         git_runner: GitRunner,
         *,
         tree: WorkingGitTree | None = None,
+        force_access_protocol: AccessProtocol | None = None,
     ) -> None:
         from .operations import restart_tree
 
-        restart_tree(self._resolve_tree(tree), git_runner)
+        restart_tree(
+            self._resolve_tree(tree), git_runner, force_access_protocol=force_access_protocol
+        )
 
     def pull_force(
         self,
         git_runner: GitRunner,
         *,
         tree: WorkingGitTree | None = None,
+        force_access_protocol: AccessProtocol | None = None,
     ) -> None:
         from .operations import restart_tree_force
 
-        restart_tree_force(self._resolve_tree(tree), git_runner)
+        restart_tree_force(
+            self._resolve_tree(tree), git_runner, force_access_protocol=force_access_protocol
+        )
 
     def add(
         self,
@@ -173,10 +179,13 @@ class GitTreeGitCommands:
         git_runner: GitRunner,
         *,
         tree: WorkingGitTree | None = None,
+        force_access_protocol: AccessProtocol | None = None,
     ) -> None:
         from .operations import push_tree
 
-        push_tree(self._resolve_tree(tree), git_runner)
+        push_tree(
+            self._resolve_tree(tree), git_runner, force_access_protocol=force_access_protocol
+        )
 
     def tag(
         self,
@@ -1169,14 +1178,39 @@ def resolve_repo_for_path(tree: WorkingGitTree, path: Path | str) -> tuple[Worki
 # ---------------------------------------------------------------------------
 
 
+def cgitsync_managed_state_paths(repo: WorkingRepo) -> set[Path]:
+    """Return paths ``cgitsync`` itself manages under *repo* — never real project content.
+
+    Every repo gets its generated ``.cgitsync/`` runtime-state directory
+    (snapshots, register, run logs — see ``orchestre.py``'s
+    ``write_gts_snapshot``) excluded. Only the tree's root additionally
+    gets its own ``<name>.lgr`` hash-chained register file excluded — that
+    loose file only ever exists at the root, never at a nested repo.
+
+    Shared by three call sites that each need this concept for a
+    different reason: worktree-dirty preflight (``operations.py``),
+    status-line filtering (``orchestre.py``), and ``.gitignore``
+    generation (this module, :func:`sync_gitignore`) — one definition,
+    reused, rather than three.
+    """
+    paths = {Path(".cgitsync")}
+    if repo.parent_id is None:
+        paths.add(Path(f"{repo.name}.lgr"))
+    return paths
+
+
 def sync_gitignore(tree: WorkingGitTree, *, skip: Collection[str] = ()) -> tuple[str, ...]:
-    """Update ``.gitignore`` for every repo in *tree* that has children.
+    """Update ``.gitignore`` for every repo in *tree* that needs it.
 
     Propagates parent-first (``ROOT -> PARENT -> LEAF``, via :func:`iter_tree`).
-    Repo_ids in *skip* are left untouched this run — this call performs no
-    Git operations of its own, so callers that need a repo to be pulled
-    before its ``.gitignore`` is written (see ``orchestre.py``) are
-    responsible for excluding any repo that couldn't be safely pulled.
+    Every repo with children gets each child's relative path added. The
+    tree's root additionally always gets its own `cgitsync`-managed state
+    paths (:func:`cgitsync_managed_state_paths`) added, whether or not it
+    has children — that state is written under the root regardless of
+    tree shape. Repo_ids in *skip* are left untouched this run — this call
+    performs no Git operations of its own, so callers that need a repo to
+    be pulled before its ``.gitignore`` is written (see ``orchestre.py``)
+    are responsible for excluding any repo that couldn't be safely pulled.
 
     Returns the repo_ids whose ``.gitignore`` was actually created or
     modified.
@@ -1186,12 +1220,16 @@ def sync_gitignore(tree: WorkingGitTree, *, skip: Collection[str] = ()) -> tuple
         if entry.repo_id in skip:
             continue
         children = tree.children_of(entry.repo_id)
-        if not children:
-            continue
-        relative_paths = sorted(
+        relative_paths = {
             child.absolute_path.relative_to(entry.absolute_path).as_posix() for child in children
-        )
-        if _update_gitignore_file(entry.absolute_path, relative_paths):
+        }
+        if entry.parent_id is None:
+            for managed_path in cgitsync_managed_state_paths(entry):
+                as_posix = managed_path.as_posix()
+                relative_paths.add(f"{as_posix}/" if as_posix == ".cgitsync" else as_posix)
+        if not relative_paths:
+            continue
+        if _update_gitignore_file(entry.absolute_path, sorted(relative_paths)):
             changed.append(entry.repo_id)
     return tuple(changed)
 

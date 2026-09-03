@@ -315,7 +315,7 @@ def test_pull_force_command_uses_client_handler(monkeypatch, tmp_path, capsys):
     class StubClient:
         run_logger = None
 
-        def pull_force(self, source):
+        def pull_force(self, source, **_kwargs):
             captured_call["source"] = Path(source)
             return SimpleNamespace(get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "project"))
 
@@ -640,7 +640,7 @@ def test_push_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def push(self):
+        def push(self, **_kwargs):
             captured_call["pushed"] = True
 
         def get_tree_state(self):
@@ -782,7 +782,7 @@ def test_import_submodules_dry_run_reports_without_apply(monkeypatch, capsys, tm
     sub = SimpleNamespace(name="child", path="deps/child", url="git@example.com:owner/child.git", branch="main")
 
     class StubClient:
-        def import_submodules(self, source, *, apply=False):
+        def import_submodules(self, source, *, apply=False, recursive=False):
             assert apply is False
             return SimpleNamespace(submodules=[sub], converted=[])
 
@@ -803,7 +803,7 @@ def test_import_submodules_apply_converts(monkeypatch, capsys, tmp_path):
     sub = SimpleNamespace(name="child", path="deps/child", url="git@example.com:owner/child.git", branch="main")
 
     class StubClient:
-        def import_submodules(self, source, *, apply=False):
+        def import_submodules(self, source, *, apply=False, recursive=False):
             assert apply is True
             return SimpleNamespace(submodules=[sub], converted=["child"])
 
@@ -821,7 +821,7 @@ def test_import_submodules_apply_converts(monkeypatch, capsys, tmp_path):
 
 def test_import_submodules_no_gitmodules_reports_nothing_to_import(monkeypatch, capsys, tmp_path):
     class StubClient:
-        def import_submodules(self, source, *, apply=False):
+        def import_submodules(self, source, *, apply=False, recursive=False):
             return SimpleNamespace(submodules=[], converted=[])
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)

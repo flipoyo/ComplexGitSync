@@ -172,6 +172,32 @@ class TestTutoCGSil1CLI:
         assert gts_path.is_file()
         assert gts_path.parent.name.startswith("state(")
 
+    def test_initialise_gitignores_its_own_state_directory(self, cgsi1_sandbox, monkeypatch, tmp_path):
+        """CgitsyncGitignoreLeak_DevPlanTicket regression: .cgitsync/ and the
+        root .lgr file must never show up as trackable content after a fresh
+        initialise — not just present in .gitignore text, actually excluded
+        from `git status --porcelain`."""
+        sandbox = cgsi1_sandbox
+        _patch_remote_urls(monkeypatch, sandbox)
+
+        output_path = tmp_path / "workspace"
+        project_root = output_path / "CGSil1"
+        _prepare_existing_root(output_path, sandbox)
+        exit_code = cli_main(
+            ["initialise", str(sandbox["cgs_path"]), "--output-path", str(output_path)]
+        )
+        assert exit_code == 0
+
+        assert (project_root / ".cgitsync").is_dir()
+        gitignore_lines = (project_root / ".gitignore").read_text(encoding="utf-8").splitlines()
+        assert ".cgitsync/" in gitignore_lines
+        assert "CGSil1.lgr" in gitignore_lines
+
+        status = _run_git(project_root, "status", "--porcelain")
+        assert ".cgitsync" not in status
+        status_all = _run_git(project_root, "status", "--porcelain", "--ignored")
+        assert any(".cgitsync" in line for line in status_all.splitlines())
+
     # ── Tutorial steps 4-8 (end-to-end git cycle) ──────────────────────────
 
     def test_complete_git_cycle(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):

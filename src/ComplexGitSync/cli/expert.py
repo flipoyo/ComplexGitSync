@@ -97,6 +97,22 @@ def _add_dry_run_argument(subparser: argparse.ArgumentParser, *, help_text: str)
     subparser.add_argument("--dry-run", action="store_true", help=help_text)
 
 
+def _add_force_protocol_argument(subparser: argparse.ArgumentParser, *, command_name: str) -> None:
+    subparser.add_argument(
+        "--force-protocol",
+        dest="force_access_protocol",
+        choices=("ssh", "https"),
+        default=None,
+        help=(
+            f"Rewrite every repo's remote to this protocol before running "
+            f"'{command_name}', persisting the change (git remote "
+            f"set-url) rather than a one-off override. Same meaning as "
+            f"initialise/bootstrap's --force-protocol, applied to an "
+            f"already-cloned tree instead of at clone time."
+        ),
+    )
+
+
 def _register_purge(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("source", help="Path to a .cgs spec")
     subparser.add_argument(
@@ -156,11 +172,13 @@ def _register_pull_source_and_search_dir(subparser: argparse.ArgumentParser) -> 
 def _register_pull(subparser: argparse.ArgumentParser) -> None:
     _register_pull_source_and_search_dir(subparser)
     _add_gitignore_sync_arguments(subparser)
+    _add_force_protocol_argument(subparser, command_name="pull")
     subparser.set_defaults(handler=_handle_pull)
 
 
 def _register_pull_force(subparser: argparse.ArgumentParser) -> None:
     _register_pull_source_and_search_dir(subparser)
+    _add_force_protocol_argument(subparser, command_name="pull-force")
     subparser.set_defaults(handler=_handle_pull_force)
 
 
@@ -246,6 +264,7 @@ def _register_push(subparser: argparse.ArgumentParser) -> None:
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
     _add_dry_run_argument(subparser, help_text="Preview the push execution plan without mutating repositories.")
+    _add_force_protocol_argument(subparser, command_name="push")
     subparser.set_defaults(handler=_handle_push)
 
 
@@ -281,6 +300,17 @@ def _register_import_submodules(subparser: argparse.ArgumentParser) -> None:
             "submodule, remove its .gitmodules stanza, and update "
             ".gitignore. Without this flag the command only prints "
             "what would change (dry-run)."
+        ),
+    )
+    subparser.add_argument(
+        "--recursive",
+        action="store_true",
+        default=False,
+        help=(
+            "Also convert any submodule that itself has its own "
+            "checked-out .gitmodules, at any depth (same meaning as "
+            "'git submodule update --recursive'). Without this flag, "
+            "only REPO_ROOT's own .gitmodules is converted."
         ),
     )
     subparser.set_defaults(handler=_handle_import_submodules)
@@ -372,6 +402,7 @@ def _handle_pull(args: argparse.Namespace) -> int:
     force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
     git_user_name = getattr(args, "git_user_name", None)
     git_user_email = getattr(args, "git_user_email", None)
+    force_access_protocol = getattr(args, "force_access_protocol", None)
     return _run_with_logging(
         command_name="pull",
         source=source,
@@ -382,16 +413,20 @@ def _handle_pull(args: argparse.Namespace) -> int:
             force_gitignore_sync=force_gitignore_sync,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
+            force_access_protocol=force_access_protocol,
         ),
     )
 
 
 def _handle_pull_force(args: argparse.Namespace) -> int:
     source = _resolve_workspace_source(args.source, getattr(args, "search_dir", None))
+    force_access_protocol = getattr(args, "force_access_protocol", None)
     return _run_with_logging(
         command_name="pull-force",
         source=source,
-        runner=lambda client, source: _execute_pull_force(client, source),
+        runner=lambda client, source: _execute_pull_force(
+            client, source, force_access_protocol=force_access_protocol
+        ),
     )
 
 
@@ -462,10 +497,13 @@ def _handle_rm(args: argparse.Namespace) -> int:
 
 def _handle_push(args: argparse.Namespace) -> int:
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
+    force_access_protocol = getattr(args, "force_access_protocol", None)
     return _run_with_logging(
         command_name="push",
         source=gts_path,
-        runner=lambda client, source: _execute_push(client, source, dry_run=args.dry_run),
+        runner=lambda client, source: _execute_push(
+            client, source, dry_run=args.dry_run, force_access_protocol=force_access_protocol
+        ),
     )
 
 
@@ -490,6 +528,7 @@ def _handle_freeze(args: argparse.Namespace) -> int:
 def _handle_import_submodules(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).resolve()
     apply = args.apply
+    recursive = args.recursive
     return _run_with_logging(
         command_name="import-submodules",
         source=repo_root,
@@ -497,6 +536,7 @@ def _handle_import_submodules(args: argparse.Namespace) -> int:
             client,
             source,
             apply=apply,
+            recursive=recursive,
         ),
     )
 
@@ -587,6 +627,7 @@ def _execute_pull(
     force_gitignore_sync: bool = False,
     git_user_name: str | None = None,
     git_user_email: str | None = None,
+    force_access_protocol: str | None = None,
 ) -> int:
     registry = client.pull(
         source_path,
@@ -594,6 +635,7 @@ def _execute_pull(
         force_gitignore_sync=force_gitignore_sync,
         git_user_name=git_user_name,
         git_user_email=git_user_email,
+        force_access_protocol=force_access_protocol,
     )
     tree_state = client.get_tree_state()
     print(
@@ -608,9 +650,11 @@ def _execute_pull(
 def _execute_pull_force(
     client: ComplexGitSyncClient,
     source_path: Path,
+    *,
+    force_access_protocol: str | None = None,
 ) -> int:
     print("git_command=git fetch && git checkout -B <branch> FETCH_HEAD && git clean -fd (executed per repo)")
-    registry = client.pull_force(source_path)
+    registry = client.pull_force(source_path, force_access_protocol=force_access_protocol)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -735,6 +779,7 @@ def _execute_push(
     source_path: Path,
     *,
     dry_run: bool = False,
+    force_access_protocol: str | None = None,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     print("git_command=git push (-u origin <branch> when upstream is missing)")
@@ -745,7 +790,7 @@ def _execute_push(
             actions=("git push", "git push -u origin <branch> when upstream is missing"),
         )
     else:
-        client.push()
+        client.push(force_access_protocol=force_access_protocol)
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
     if not dry_run:
@@ -806,9 +851,10 @@ def _execute_import_submodules(
     source: Path,
     *,
     apply: bool = False,
+    recursive: bool = False,
 ) -> int:
     """Execute the import-submodules command and print a human-readable report."""
-    report = client.import_submodules(source, apply=apply)
+    report = client.import_submodules(source, apply=apply, recursive=recursive)
 
     if not report.submodules:
         print(f"No .gitmodules found at {source} — nothing to import.")
@@ -826,7 +872,10 @@ def _execute_import_submodules(
         return 0
 
     print(f"Converted {len(report.converted)} submodule(s) in {source}:")
-    for name in report.converted:
-        sub = next(s for s in report.submodules if s.name == name)
-        print(f"  ✓ {name}  ({sub.path})")
+    # apply=True converts every submodule the report found (an all-or-raise
+    # preflight per level), so report.submodules and report.converted are
+    # always in 1:1 order — zip rather than look up by name, which could
+    # otherwise match the wrong entry if two levels share a submodule name.
+    for sub in report.submodules:
+        print(f"  ✓ {sub.name}  ({sub.path})")
     return 0

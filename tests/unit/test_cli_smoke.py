@@ -1085,7 +1085,7 @@ def test_pull_force_command_uses_client_handler(monkeypatch, tmp_path, capsys):
     class StubClient:
         run_logger = None
 
-        def pull_force(self, source):
+        def pull_force(self, source, **_kwargs):
             captured_call["source"] = Path(source)
             return SimpleNamespace(
                 get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "project")
@@ -1353,7 +1353,7 @@ def test_push_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def push(self):
+        def push(self, **_kwargs):
             captured_call["pushed"] = True
 
         def get_tree_state(self):
@@ -1378,7 +1378,7 @@ def test_push_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def push(self):
+        def push(self, **_kwargs):
             raise AssertionError("push should not be called during --dry-run")
 
         def get_tree_state(self):
@@ -1601,7 +1601,7 @@ def test_gts_auto_discovery_uses_cgshome_env(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def push(self):
+        def push(self, **_kwargs):
             captured_call["pushed"] = True
 
         def get_tree_state(self):
@@ -1640,7 +1640,7 @@ def test_gts_auto_discovery_search_dir_option(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def push(self):
+        def push(self, **_kwargs):
             captured_call["pushed"] = True
 
         def get_tree_state(self):

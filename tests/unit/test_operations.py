@@ -1466,7 +1466,7 @@ def test_client_push_delegates_to_gittree_git_push(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_push(self, git_runner, *, tree=None):
+    def _spy_push(self, git_runner, *, tree=None, force_access_protocol=None):
         captured_call["git_runner"] = git_runner
         captured_call["tree"] = tree
 

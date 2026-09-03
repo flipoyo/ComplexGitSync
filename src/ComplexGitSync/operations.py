@@ -40,8 +40,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from .errors import GitSyncError, TreeNotReadyError
-from .git_repo import RefKind, RepoLifecycleState, SyncState, WorkingRepo
-from .git_tree import WorkingGitTree, iter_tree, iter_tree_leaf_first, resolve_repo_for_path
+from .git_repo import (
+    AccessProtocol,
+    RefKind,
+    RepoLifecycleState,
+    SyncState,
+    WorkingRepo,
+    repo_remote_url,
+)
+from .git_tree import (
+    WorkingGitTree,
+    cgitsync_managed_state_paths,
+    iter_tree,
+    iter_tree_leaf_first,
+    resolve_repo_for_path,
+)
 
 if TYPE_CHECKING:
     from .orchestre import GitRunner
@@ -111,9 +124,32 @@ def create_global_branch(
 # ---------------------------------------------------------------------------
 
 
+def _rewrite_remote_if_forced(
+    git_runner: GitRunner,
+    repo: WorkingRepo,
+    remote: str,
+    force_access_protocol: AccessProtocol | None,
+) -> None:
+    """Persist a ``--force-protocol`` override onto *repo*'s remote, once.
+
+    ``git remote set-url`` (via :meth:`GitRunner.configure_remote`, a
+    no-op when the URL already matches) — not a per-invocation override —
+    so the switch sticks for every command after this one too, the same
+    way a repo's protocol at clone time sticks for everything downstream
+    of it. A no-op when *force_access_protocol* is ``None`` (the default,
+    unchanged behavior).
+    """
+    if force_access_protocol is None:
+        return
+    forced_url = repo_remote_url(repo, force_access_protocol)
+    git_runner.configure_remote(repo.absolute_path, remote, forced_url)
+
+
 def restart_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    force_access_protocol: AccessProtocol | None = None,
 ) -> None:
     """Resynchronize the full tree using the root repository's current branch.
 
@@ -124,6 +160,9 @@ def restart_tree(
     Does not require a ``READY`` tree; intended for use after loading a
     ``.cgs`` file (``DECLARED`` state).  Produces a ``READY`` tree or
     raises if any repository checkout fails.
+
+    *force_access_protocol*, when given, rewrites each repo's remote to
+    that protocol before pulling (``--force-protocol`` on ``pull``).
     """
     root_entry = tree.get("root")
     current_branch = git_runner.current_branch(root_entry.absolute_path)
@@ -150,7 +189,9 @@ def restart_tree(
                     "pull preflight failed: child repository cannot share the exact parent path "
                     f"({parent.name}->{repo.name})."
                 )
-        git_runner.pull(repo.absolute_path, ref_name=current_branch)
+        remote = repo.remote_name or "origin"
+        _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
+        git_runner.pull(repo.absolute_path, remote=remote, ref_name=current_branch)
 
         resolved_branch = git_runner.current_branch(repo.absolute_path) or current_branch
         _refresh_repo_after_checkout(repo, resolved_branch, RefKind.BRANCH, git_runner)
@@ -161,6 +202,8 @@ def restart_tree(
 def restart_tree_force(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    force_access_protocol: AccessProtocol | None = None,
 ) -> None:
     """Force-resynchronize the full tree using the root repository's branch.
 
@@ -168,6 +211,10 @@ def restart_tree_force(
     uncommitted changes and untracked files can be discarded by the underlying
     git commands. It exists as an explicit recovery command for worktrees that
     block a fast-forward pull.
+
+    *force_access_protocol*, when given, rewrites each repo's remote to
+    that protocol before force-pulling (``--force-protocol`` on
+    ``pull-force``).
     """
     root_entry = tree.get("root")
     current_branch = git_runner.current_branch(root_entry.absolute_path)
@@ -194,7 +241,9 @@ def restart_tree_force(
                     "pull-force preflight failed: child repository cannot share the exact parent path "
                     f"({parent.name}->{repo.name})."
                 )
-        git_runner.force_pull(repo.absolute_path, ref_name=current_branch)
+        remote = repo.remote_name or "origin"
+        _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
+        git_runner.force_pull(repo.absolute_path, remote=remote, ref_name=current_branch)
 
         resolved_branch = git_runner.current_branch(repo.absolute_path) or current_branch
         _refresh_repo_after_checkout(repo, resolved_branch, RefKind.BRANCH, git_runner)
@@ -390,6 +439,8 @@ def commit_tree(
 def push_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    force_access_protocol: AccessProtocol | None = None,
 ) -> None:
     """Push all repos to their remotes, leaf-first.
 
@@ -399,6 +450,9 @@ def push_tree(
     The remote and branch used for each push are taken from
     ``repo.remote_name`` (defaulting to ``"origin"``) and
     ``repo.resolved_ref_name``.
+
+    *force_access_protocol*, when given, rewrites each repo's remote to
+    that protocol before pushing (``--force-protocol`` on ``push``).
     """
     _assert_ready(tree)
     _run_preflight_checks(
@@ -410,6 +464,7 @@ def push_tree(
 
     for repo in iter_tree_leaf_first(tree):
         remote = repo.remote_name or "origin"
+        _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
         current_branch = git_runner.current_branch(repo.absolute_path)
         ref_name = repo.resolved_ref_name or current_branch
         set_upstream = False
@@ -981,7 +1036,7 @@ def _has_managed_uncommitted_changes(
         unmanaged_gitlinks = _unmanaged_gitlink_paths(tree, git_runner, repo)
     except (AttributeError, GitSyncError):
         return git_runner.has_uncommitted_changes(repo.absolute_path)
-    ignored_paths = unmanaged_gitlinks | _managed_state_paths(repo)
+    ignored_paths = unmanaged_gitlinks | cgitsync_managed_state_paths(repo)
     if not ignored_paths:
         return bool(status_lines)
     return any(
@@ -1007,11 +1062,6 @@ def _unmanaged_gitlink_paths(
         except ValueError:
             continue
     return {path for path in gitlinks if path not in managed_children}
-
-
-def _managed_state_paths(repo: WorkingRepo) -> set[Path]:
-    """Return ComplexGitSync-managed paths ignored by worktree preflight."""
-    return {Path(".cgitsync"), Path(f"{repo.name}.lgr")}
 
 
 def _status_line_targets_any(status_line: str, paths: set[Path]) -> bool:

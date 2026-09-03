@@ -338,3 +338,25 @@ class WorkingRepo(GitRepo):
     nested_config: str | None = None
     remote_name: str | None = None
     is_external_reference: bool = False
+
+
+def repo_remote_url(repo: WorkingRepo, protocol: AccessProtocol) -> str:
+    """Build *repo*'s remote URL for *protocol*.
+
+    The same :class:`RepoAddress` construction
+    :meth:`ComplexGitSyncClient._build_remote_url` uses for cloning,
+    exposed as a free function so ``operations.py`` (which has no client
+    to call a method on) can compute a repo's URL under a *different*
+    protocol than whatever its `origin` remote is currently configured
+    to — used by ``push``/``pull``/``pull-force``'s ``--force-protocol``
+    to rewrite an already-cloned repo's remote in place.
+    """
+    address = RepoAddress(
+        gitprovider=repo.gitprovider,
+        project_name=repo.project_name or repo.name,
+        repo_name=repo.repo_name or repo.project_name or repo.name,
+        project_owner_name=repo.project_owner_name,
+        group_name=repo.group_name,
+        gitprovider_url=repo.gitprovider_url,
+    )
+    return address.to_url(protocol)

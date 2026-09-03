@@ -31,7 +31,10 @@ from ComplexGitSync.orchestre import (
     GtsDocument,
     RuntimeStateStore,
     SystemClock,
+    _looks_like_https_auth_failure,
+    _looks_like_ssh_auth_failure,
     _path_to_environment_marker,
+    _protocol_switch_hint,
     build_registry_from_gts_document,
 )
 from ComplexGitSync.state_store import (
@@ -237,14 +240,16 @@ def test_initialise_cgs_writes_gitignore_for_every_parent_bearing_repo(tmp_path,
     child_entry = registry.get("root:deps/child-repo")
 
     assert (root_entry.absolute_path / ".gitignore").read_text(encoding="utf-8").splitlines() == [
-        "deps/child-repo"
+        ".cgitsync/",
+        "demo.lgr",
+        "deps/child-repo",
     ]
     assert (child_entry.absolute_path / ".gitignore").read_text(encoding="utf-8").splitlines() == ["docs"]
 
     synced_repo_ids = {entry.repo_id for entry in client.last_gitignore_sync}
     assert synced_repo_ids == {"root", "root:deps/child-repo"}
     added_by_repo = {entry.repo_id: entry.added_paths for entry in client.last_gitignore_sync}
-    assert added_by_repo["root"] == ("deps/child-repo",)
+    assert added_by_repo["root"] == (".cgitsync/", "demo.lgr", "deps/child-repo")
     assert added_by_repo["root:deps/child-repo"] == ("docs",)
 
 
@@ -367,7 +372,8 @@ def test_initialise_cgs_commit_gitignore_stages_commits_and_pushes(tmp_path, mon
 
     commit_by_path = dict(fake_runner.commits)
     assert commit_by_path[root_path] == (
-        "chore(cgitsync): sync .gitignore for nested repo tree\n\nAdded:\n  deps/child-repo"
+        "chore(cgitsync): sync .gitignore for nested repo tree\n\n"
+        "Added:\n  .cgitsync/\n  demo.lgr\n  deps/child-repo"
     )
     assert commit_by_path[child_path] == (
         "chore(cgitsync): sync .gitignore for nested repo tree\n\nAdded:\n  docs"
@@ -461,7 +467,11 @@ def test_initialise_cgs_force_gitignore_sync_recovers_from_blocked_pull(tmp_path
 
     root_path = registry.get("root").absolute_path.resolve()
     assert any(path == root_path for path, _, _ in fake_runner.force_pulled)
-    assert (root_path / ".gitignore").read_text(encoding="utf-8").splitlines() == ["deps/child-repo"]
+    assert (root_path / ".gitignore").read_text(encoding="utf-8").splitlines() == [
+        ".cgitsync/",
+        "demo.lgr",
+        "deps/child-repo",
+    ]
     # force_gitignore_sync only covers the pull step — it never implies
     # --commit-gitignore, so nothing is staged/committed/pushed here.
     assert fake_runner.staged_paths == []
@@ -904,8 +914,10 @@ def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path)
         "commit",
         lambda message, *, stage_all=True: calls.append(("commit", (message, stage_all))),
     )
-    monkeypatch.setattr(client, "pull", lambda source: calls.append(("pull", Path(source))))
-    monkeypatch.setattr(client, "push", lambda: calls.append(("push", None)))
+    monkeypatch.setattr(
+        client, "pull", lambda source, **_kwargs: calls.append(("pull", Path(source)))
+    )
+    monkeypatch.setattr(client, "push", lambda **_kwargs: calls.append(("push", None)))
     monkeypatch.setattr(
         client,
         "freeze",
@@ -938,9 +950,9 @@ def test_client_freeze_release_force_uses_pull_force(monkeypatch, tmp_path):
     monkeypatch.setattr(type(client.git_runner), "has_upstream", lambda self, path: True)
     monkeypatch.setattr(client, "add", lambda: calls.append("add"))
     monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
-    monkeypatch.setattr(client, "pull", lambda source: calls.append("pull"))
-    monkeypatch.setattr(client, "pull_force", lambda source: calls.append("pull-force"))
-    monkeypatch.setattr(client, "push", lambda: calls.append("push"))
+    monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))
+    monkeypatch.setattr(client, "pull_force", lambda source, **_kwargs: calls.append("pull-force"))
+    monkeypatch.setattr(client, "push", lambda **_kwargs: calls.append("push"))
     monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
 
     assert client.freeze_release("v1.0", "release commit", force=True) == "ok"
@@ -959,9 +971,9 @@ def test_client_freeze_release_skips_pull_when_branch_has_no_upstream(monkeypatc
     monkeypatch.setattr(type(client.git_runner), "has_upstream", lambda self, path: False)
     monkeypatch.setattr(client, "add", lambda: calls.append("add"))
     monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
-    monkeypatch.setattr(client, "pull", lambda source: calls.append("pull"))
-    monkeypatch.setattr(client, "pull_force", lambda source: calls.append("pull-force"))
-    monkeypatch.setattr(client, "push", lambda: calls.append("push"))
+    monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))
+    monkeypatch.setattr(client, "pull_force", lambda source, **_kwargs: calls.append("pull-force"))
+    monkeypatch.setattr(client, "push", lambda **_kwargs: calls.append("push"))
     monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
 
     assert client.freeze_release("v1.0", "release commit") == "ok"
@@ -976,13 +988,72 @@ def test_client_freeze_release_force_also_skips_pull_when_no_upstream(monkeypatc
     monkeypatch.setattr(type(client.git_runner), "has_upstream", lambda self, path: False)
     monkeypatch.setattr(client, "add", lambda: calls.append("add"))
     monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
-    monkeypatch.setattr(client, "pull", lambda source: calls.append("pull"))
-    monkeypatch.setattr(client, "pull_force", lambda source: calls.append("pull-force"))
-    monkeypatch.setattr(client, "push", lambda: calls.append("push"))
+    monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))
+    monkeypatch.setattr(client, "pull_force", lambda source, **_kwargs: calls.append("pull-force"))
+    monkeypatch.setattr(client, "push", lambda **_kwargs: calls.append("push"))
     monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
 
     assert client.freeze_release("v1.0", "release commit", force=True) == "ok"
     assert calls == ["add", "commit", "push", "freeze"]
+
+
+# ---------------------------------------------------------------------------
+# ProtocolSwitchOnPush_DevPlanTicket: the --force-protocol hint
+# ---------------------------------------------------------------------------
+
+
+def test_looks_like_ssh_auth_failure_matches_known_markers():
+    assert _looks_like_ssh_auth_failure("git@github.com: Permission denied (publickey).")
+    assert not _looks_like_ssh_auth_failure("fatal: repository 'x' does not exist")
+
+
+def test_looks_like_https_auth_failure_matches_known_markers():
+    assert _looks_like_https_auth_failure(
+        "remote: HTTP Basic: Access denied. If a password was provided..."
+    )
+    assert _looks_like_https_auth_failure("fatal: could not read Username for 'https://...'")
+    assert not _looks_like_https_auth_failure("fatal: repository 'x' does not exist")
+
+
+def test_protocol_switch_hint_suggests_the_opposite_protocol():
+    ssh_hint = _protocol_switch_hint("Permission denied (publickey).", command="push")
+    assert ssh_hint is not None
+    assert "--force-protocol https" in ssh_hint
+    assert "'push'" in ssh_hint
+
+    https_hint = _protocol_switch_hint("HTTP Basic: Access denied.", command="pull")
+    assert https_hint is not None
+    assert "--force-protocol ssh" in https_hint
+    assert "'pull'" in https_hint
+
+
+def test_protocol_switch_hint_is_none_for_an_unrelated_failure():
+    assert _protocol_switch_hint("fatal: repository 'x' does not exist", command="push") is None
+
+
+def test_push_wraps_matching_failure_with_protocol_hint(monkeypatch, tmp_path):
+    client = _client_with_root_registry(tmp_path)
+
+    def _raise(self, git_runner, *, tree=None, force_access_protocol=None):
+        raise GitSyncError("git push origin main: Permission denied (publickey).")
+
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "push", _raise)
+
+    with pytest.raises(GitSyncError, match=r"--force-protocol https to 'push'") as excinfo:
+        client.push()
+    assert "Permission denied (publickey)" in str(excinfo.value)
+
+
+def test_push_leaves_unrelated_failure_unwrapped(monkeypatch, tmp_path):
+    client = _client_with_root_registry(tmp_path)
+
+    def _raise(self, git_runner, *, tree=None, force_access_protocol=None):
+        raise GitSyncError("fatal: repository 'x' does not exist")
+
+    monkeypatch.setattr(type(client.orchestre.git_tree.git), "push", _raise)
+
+    with pytest.raises(GitSyncError, match=r"^fatal: repository 'x' does not exist$"):
+        client.push()
 
 
 def test_client_pull_dispatches_to_restart_for_cgs(monkeypatch):
@@ -1016,7 +1087,7 @@ def test_client_pull_gts_resynchronizes_loaded_snapshot(monkeypatch):
         return _ReadyRegistry()
 
     class _FakeGitCommands:
-        def pull(self, git_runner):
+        def pull(self, git_runner, **_kwargs):
             captured["git_pull_runner"] = git_runner
 
     def _fake_write_gts_snapshot(*, command_origin):
@@ -3229,7 +3300,9 @@ def test_sync_gitignore_writes_children_at_every_parent_bearing_level(tmp_path):
 
     assert set(changed) == {"root", "root:middle"}
     assert (root_path / ".gitignore").read_text(encoding="utf-8").splitlines() == [
+        ".cgitsync/",
         "middle",
+        "root.lgr",
         "sibling-leaf",
     ]
     assert (middle_path / ".gitignore").read_text(encoding="utf-8").splitlines() == ["sub"]
@@ -3260,7 +3333,9 @@ def test_sync_gitignore_preserves_existing_lines_and_only_appends_missing(tmp_pa
         "# custom comment",
         "build/",
         "child-repo",
+        ".cgitsync/",
         "other-child",
+        "root.lgr",
     ]
 
 
@@ -3303,7 +3378,11 @@ def test_sync_gitignore_skip_leaves_repo_untouched(tmp_path):
     assert not (root_path / ".gitignore").exists()
 
 
-def test_sync_gitignore_ignores_leaf_with_no_children(tmp_path):
+def test_sync_gitignore_writes_root_managed_state_even_without_children(tmp_path):
+    """A single-repo tree (root with no children) still gets its own
+    cgitsync-managed state (.cgitsync/, <name>.lgr) gitignored — that state
+    is written under the root regardless of whether the tree has any
+    nested repos at all."""
     from ComplexGitSync.git_tree import sync_gitignore
 
     leaf_path = tmp_path / "leaf"
@@ -3314,8 +3393,11 @@ def test_sync_gitignore_ignores_leaf_with_no_children(tmp_path):
 
     changed = sync_gitignore(registry)
 
-    assert changed == ()
-    assert not (leaf_path / ".gitignore").exists()
+    assert changed == ("root",)
+    assert (leaf_path / ".gitignore").read_text(encoding="utf-8").splitlines() == [
+        ".cgitsync/",
+        "root.lgr",
+    ]
 
 
 # ---------------------------------------------------------------------------
