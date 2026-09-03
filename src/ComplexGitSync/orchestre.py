@@ -787,6 +787,32 @@ def _url_to_repo_identifier(url: str) -> str:
     return url
 
 
+def _blocking_worktree_dirt(status_lines: Sequence[str]) -> list[str]:
+    """Filter ``git status --porcelain`` lines down to the ones that block a conversion.
+
+    Everything blocks except the repository's own ``.gitignore``. That one
+    file is written by ComplexGitSync itself, in every repository that
+    holds a child (:func:`~ComplexGitSync.git_tree.sync_gitignore`), so it
+    is routinely dirty in exactly the tree ``import-submodules`` is asked
+    to convert — ``initialise`` writes it moments before, and refusing over
+    it would deadlock the one working order (see
+    ``AgentSpec/archive/20260903_InitFromSubmodules_DevPlanTicket.md``). Exempting it is
+    safe: the conversion only runs ``git rm --cached`` in the *holding*
+    repository, which never touches the child's working tree at all. The
+    check exists to protect real, unsaved work in a child, and it still
+    catches every bit of that.
+    """
+    blocking: list[str] = []
+    for line in status_lines:
+        # "XY path", with the rename form "XY old -> new"; only the plain
+        # single-path form can name a top-level .gitignore.
+        path = line[3:].strip() if len(line) > 3 else ""
+        if path == ".gitignore":
+            continue
+        blocking.append(line)
+    return blocking
+
+
 DEFAULT_DISCOVER_MAX_DEPTH = 5
 
 
@@ -917,6 +943,42 @@ class DiscoverReport:
     cgs_entries: tuple[dict, ...]
     warnings: tuple[str, ...]
     project_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class InitFromSubmodulesReport:
+    """Result returned by :meth:`ComplexGitSyncClient.init_from_submodules`.
+
+    Attributes
+    ----------
+    root:
+        The checkout the command was pointed at, which is also CGSHOME
+        once the tree is initialised.
+    discover:
+        The :class:`DiscoverReport` from step 1, kept so a caller can show
+        the same tree and warnings ``discover`` itself would have printed.
+    cgs_path:
+        The ``.cgs`` used — the one written from the discovery, or the
+        pre-existing file passed in.
+    cgs_written:
+        ``True`` when *cgs_path* was authored by this call, ``False`` when
+        an existing file was reused.
+    import_report:
+        The :class:`~ComplexGitSync.discovery.ImportSubmodulesReport` from
+        the conversion step, or ``None`` on a dry run that never reached it.
+    tree:
+        The ``READY`` tree ``initialise`` produced, or ``None`` on a dry run.
+    dry_run:
+        ``True`` when nothing was written, cloned, or converted.
+    """
+
+    root: Path
+    discover: DiscoverReport
+    cgs_path: Path
+    cgs_written: bool
+    import_report: ImportSubmodulesReport | None = None
+    tree: WorkingGitTree | None = None
+    dry_run: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1273,7 +1335,7 @@ class ComplexGitSyncClient:
             child_path = root / sub.path
             if not child_path.exists():
                 continue
-            dirty_lines = self.git_runner.status_porcelain(child_path)
+            dirty_lines = _blocking_worktree_dirt(self.git_runner.status_porcelain(child_path))
             if dirty_lines:
                 raise GitSyncError(
                     f"import-submodules preflight failed: submodule '{sub.name}' "
@@ -1326,6 +1388,213 @@ class ComplexGitSyncClient:
             applied=True,
             converted=tuple(converted),
             scan_root=root,
+        )
+
+    def init_from_submodules(
+        self,
+        repo_root: str | Path,
+        *,
+        cgs_path: str | Path | None = None,
+        max_depth: int = DEFAULT_DISCOVER_MAX_DEPTH,
+        dry_run: bool = False,
+        force: bool = False,
+        force_access_protocol: str | None = None,
+    ) -> InitFromSubmodulesReport:
+        """Adopt a submodule-based checkout in one call: discover, initialise, convert.
+
+        This is the whole of Tutorial 3's steps 3-5, in the one order that
+        works. Point it at a checkout that was cloned and ``git submodule
+        update --init --recursive``'d by hand, and it produces a ``READY``
+        ComplexGitSync tree whose submodules have become plain nested
+        clones, staged but not committed.
+
+        The sequence, each step delegating to the method that already owns
+        it:
+
+        1. :meth:`discover_repos` on *repo_root* — a pure read that drafts
+           the ``.cgs`` from what is checked out.
+        2. Write that draft to ``<repo_root>/<project>.cgs``, unless
+           *cgs_path* names a file that already exists, which is used
+           as-is instead.
+        3. :meth:`initialise_cgs` with ``output_path = repo_root.parent``,
+           so CGSHOME resolves to *repo_root* itself.
+        4. :meth:`import_submodules` with ``apply=True, recursive=True``
+           on CGSHOME.
+
+        **Why the conversion comes last.** :meth:`initialise_cgs` adopts
+        the root in place but deletes and re-clones every *other*
+        repository straight from its remote, and those remotes still
+        declare submodules. Converting first would therefore be undone for
+        every non-root repository the moment step 3 ran. Nor can a second
+        conversion pass repair that: ``import_submodules(recursive=True)``
+        walks the submodule graph declared by the root's own
+        ``.gitmodules``, so once the root is converted, no deeper level is
+        reachable any more.
+
+        Committing is deliberately left to the caller. The conversion
+        touches every repository holding a submodule, and some of them
+        belong to other people — ``branch``/``checkout``/``add``/``commit``
+        stay explicit, separate steps.
+
+        Parameters
+        ----------
+        repo_root:
+            The checkout to adopt. Its directory name must match the
+            project name the discovery derives, since that is what makes
+            CGSHOME resolve back to this same directory.
+        cgs_path:
+            Use this ``.cgs`` instead of writing one. When it does not
+            exist, the draft is written there rather than to the default
+            location.
+        max_depth:
+            Passed to :meth:`discover_repos`.
+        dry_run:
+            Report the plan — the discovery and the submodules that would
+            be converted — without writing, cloning, or converting
+            anything.
+        force:
+            Proceed even when *repo_root* has no ``.gitmodules`` of its
+            own. Without it, that case is refused: there is nothing to
+            convert, while step 3 would still delete and re-clone every
+            non-root repository, destroying any uncommitted work in them.
+        force_access_protocol:
+            ``"ssh"`` or ``"https"``, forwarded to :meth:`initialise_cgs`
+            for the clone step. The discovery step reads each repository's
+            configured remote as it is and is unaffected.
+
+        Returns
+        -------
+        InitFromSubmodulesReport
+            The discovery, the ``.cgs`` used, the conversion report, and
+            the resulting tree.
+        """
+        root = Path(repo_root).resolve()
+        if not root.is_dir():
+            raise GitSyncError(f"init-from-submodules: not a directory: {root}")
+
+        report = self.discover_repos(root, max_depth=max_depth)
+        target_cgs = (
+            Path(cgs_path).resolve()
+            if cgs_path is not None
+            else root / f"{report.project_name}.cgs"
+        )
+        reuse_existing = cgs_path is not None and target_cgs.is_file()
+        # A supplied .cgs is the authority on the project name; the
+        # discovery is then only a report of what is on disk.
+        project_name = (
+            CgsDocument.from_toml(target_cgs).project_name or root.name
+            if reuse_existing
+            else report.project_name
+        )
+        self._assert_adoptable(
+            root,
+            report,
+            project_name=project_name,
+            reuse_existing=reuse_existing,
+            force=force,
+        )
+
+        self._log_event(
+            "init_from_submodules_start",
+            repo_root=str(root),
+            project_name=report.project_name,
+            repo_count=len(report.repos),
+            cgs_path=str(target_cgs),
+            reuse_existing_cgs=reuse_existing,
+            dry_run=dry_run,
+        )
+
+        if dry_run:
+            return InitFromSubmodulesReport(
+                root=root,
+                discover=report,
+                cgs_path=target_cgs,
+                cgs_written=False,
+                import_report=self.import_submodules(root, apply=False, recursive=True),
+                dry_run=True,
+            )
+
+        if not reuse_existing:
+            self.configure(report.project_name, list(report.cgs_entries), output_path=target_cgs)
+
+        tree = self.initialise_cgs(
+            target_cgs,
+            output_path=root.parent,
+            force_access_protocol=force_access_protocol,
+        )
+        try:
+            import_report = self.import_submodules(root, apply=True, recursive=True)
+        except GitSyncError as exc:
+            raise GitSyncError(
+                f"{exc}\n"
+                f"hint: the tree at {root} is initialised but its submodules are "
+                f"not converted yet — every repository is exactly as its remote "
+                f"declares it. Fix the cause above, then finish the job with "
+                f"'cgitsync import-submodules {root} --recursive --apply'."
+            ) from exc
+
+        self._log_event(
+            "init_from_submodules_done",
+            repo_root=str(root),
+            cgs_path=str(target_cgs),
+            converted_count=len(import_report.converted),
+        )
+        return InitFromSubmodulesReport(
+            root=root,
+            discover=report,
+            cgs_path=target_cgs,
+            cgs_written=not reuse_existing,
+            import_report=import_report,
+            tree=tree,
+            dry_run=False,
+        )
+
+    def _assert_adoptable(
+        self,
+        root: Path,
+        report: DiscoverReport,
+        *,
+        project_name: str,
+        reuse_existing: bool,
+        force: bool,
+    ) -> None:
+        """Refuse an adoption that cannot work, before anything is written.
+
+        Three ways :meth:`init_from_submodules` would otherwise fail
+        halfway through, each cheaper to detect here:
+
+        * The discovery resolved no repository at all, so there is no
+          ``.cgs`` to write. Skipped when the caller supplied one
+          (*reuse_existing*): the discovery is then only a report.
+        * *project_name* and the directory name disagree, so ``initialise``
+          would resolve CGSHOME to a sibling directory that does not exist
+          — Tutorial 3's easiest mistake.
+        * *root* has no ``.gitmodules``, meaning either an already-adopted
+          tree or one that never used submodules. There would be nothing
+          to convert, while the clone step would still re-clone (and so
+          discard) every non-root repository. ``force`` overrides this one.
+        """
+        if not reuse_existing and not report.cgs_entries:
+            raise GitSyncError(
+                f"init-from-submodules: no resolvable git repository found under "
+                f"{root} — nothing to adopt."
+            )
+        if project_name != root.name:
+            raise GitSyncError(
+                f"init-from-submodules: the project name is '{project_name}' but the "
+                f"directory is named '{root.name}'. CGSHOME is resolved as "
+                f"<parent>/<project name>, so these must match. Rename the directory "
+                f"to '{root.parent / project_name}' and run this again."
+            )
+        if force or (root / ".gitmodules").is_file():
+            return
+        raise GitSyncError(
+            f"init-from-submodules: no .gitmodules in {root}, so there is nothing to "
+            f"convert — this tree looks already adopted, or never used submodules. "
+            f"Running anyway would still delete and re-clone every non-root "
+            f"repository from its remote, losing any uncommitted work in them. "
+            f"Pass --force if that is really what you want, or use 'initialise' for "
+            f"a tree that already has a .cgs."
         )
 
     # Pre-existing complexity debt from before C90 was enabled (P6,

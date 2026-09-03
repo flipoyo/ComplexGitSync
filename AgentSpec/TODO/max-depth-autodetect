@@ -1,0 +1,1 @@
+For now discover works with a default value of max-depth that is 5. All minimalist and expert method work with that. One way to overcome it could be to use something as a grepn command on '.gitmodule' to detect max-depth from the root of the FS investigated. Then the argument would be passed to the methods that requires it. 

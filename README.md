@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.31
+# ComplexGitSync v0002.33
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -130,6 +130,32 @@ Add `--recursive` when a submodule has submodules of its own, so every
 level is converted rather than just the top one. The report prints each
 path from the directory you pointed the command at, and names the
 `.gitmodules` file that declared it.
+
+**Order matters: convert *after* `initialise`, never before.** `initialise`
+adopts the root in place but deletes and re-clones every other repository
+straight from its remote, and those remotes still declare submodules — so
+a conversion run first is undone for every repository except the root. A
+second `--recursive` pass cannot repair it either: that walk follows the
+submodule graph declared by the root's own `.gitmodules`, which the first
+pass removed.
+
+`init-from-submodules` does the whole adoption in that one working order —
+`discover`, write the `.cgs`, `initialise`, then convert — against a
+checkout you cloned and `git submodule update --init --recursive`'d
+yourself:
+
+```bash
+pixi run cgitsync init-from-submodules ~/work/project --dry-run  # show the plan
+pixi run cgitsync init-from-submodules ~/work/project            # adopt and convert
+```
+
+It ends at a `READY` tree with the conversion staged but **not** committed
+— the conversion touches every repository that held a submodule, and some
+of those may not be yours — then prints the `branch`/`checkout`/`add`/
+`commit` steps to run next. The directory must be named after the project
+(`discover` derives that from the root repository's own address), since
+`CGSHOME` is resolved as `<parent>/<project-name>`.
+
 Full walkthrough over `discover`, `import-submodules`, and `initialise`: [tutorials/03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md).
 
 ### 2.2 Nested Configuration
@@ -182,6 +208,7 @@ Full walkthrough: [tutorials/01_first_multi_repo_workspace.md](tutorials/01_firs
 | Expert | `tag` | Create and push a tag across a READY tree. |
 | Expert | `freeze` | Freeze a versioned state and emit a .gts snapshot. |
 | Expert | `import-submodules` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
+| Expert | `init-from-submodules` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
 | Expert | `verify` | Verify the hash-chained .cgitsync/lgr register for tamper-evidence. |
 | Configuration | `discover` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `configure` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
@@ -193,7 +220,7 @@ Full walkthrough: [tutorials/01_first_multi_repo_workspace.md](tutorials/01_firs
 
 1. [01_first_multi_repo_workspace.md](tutorials/01_first_multi_repo_workspace.md) — full CLI lifecycle walkthrough on a synthetic sandbox tree.
 2. [02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md) — hand-author a `.cgs` for a real 19-repo project, then hand off to its existing `make` build.
-3. [03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md) — a real project with no `.cgs` of its own that still uses git submodules: `discover`, `import-submodules`, `initialise`, and on to a pushed `READY` tree, one verified ten-step procedure.
+3. [03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md) — a real project with no `.cgs` of its own that still uses git submodules: one `init-from-submodules` command, what it runs underneath, and on to a pushed `READY` tree.
 
 [docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference
 book: full command details, expert-mode primitives (`add`/`commit`/`push`/...),

@@ -2,8 +2,9 @@
 
 Adapted from the end-to-end ``main([...])`` coverage already exercised in
 ``tests/unit/test_cli_smoke.py`` (purge/validate/clone/pull/pull-force/
-checkout/branch/add/commit/push/tag/freeze/import-submodules) and
-``tests/unit/test_verify_command.py::TestVerifyCli`` (verify), so these 14
+checkout/branch/add/commit/push/tag/freeze/import-submodules/
+init-from-submodules) and
+``tests/unit/test_verify_command.py::TestVerifyCli`` (verify), so these 16
 commands are covered directly against the new ``cli/expert.py`` module
 rather than only through the still-standalone ``cli.py``.
 
@@ -88,7 +89,7 @@ def test_commands_dict_matches_registered_parsers():
     subparsers = parser.add_subparsers(dest="command")
     expert.register_parsers(subparsers)
     assert set(subparsers.choices.keys()) == set(expert.COMMANDS.keys())
-    assert len(expert.COMMANDS) == 15
+    assert len(expert.COMMANDS) == 16
 
 
 def test_commands_dict_help_text_matches_source_of_truth():
@@ -839,6 +840,115 @@ def test_import_submodules_no_gitmodules_reports_nothing_to_import(monkeypatch, 
 
     assert exit_code == 0
     assert "nothing to import" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# init-from-submodules
+# ---------------------------------------------------------------------------
+
+
+def _stub_init_report(root: Path, *, dry_run: bool):
+    """The shape ``_execute_init_from_submodules`` prints from."""
+    sub = SubmoduleEntry(
+        name="child",
+        path="deps/child",
+        url="git@example.com:owner/child.git",
+        branch="main",
+        owner_root=root,
+    )
+    import_report = ImportSubmodulesReport(
+        submodules=(sub,),
+        applied=not dry_run,
+        converted=() if dry_run else ("child",),
+        scan_root=root,
+    )
+    return SimpleNamespace(
+        root=root,
+        discover=SimpleNamespace(repos=(1, 2), project_name=root.name, warnings=()),
+        cgs_path=root / f"{root.name}.cgs",
+        cgs_written=not dry_run,
+        import_report=import_report,
+        tree=None,
+        dry_run=dry_run,
+    )
+
+
+def test_init_from_submodules_dry_run_reports_the_plan(monkeypatch, capsys, tmp_path):
+    repo_root = tmp_path / "project"
+    repo_root.mkdir()
+
+    class StubClient:
+        def init_from_submodules(self, source, **kwargs):
+            assert kwargs["dry_run"] is True
+            return _stub_init_report(Path(source), dry_run=True)
+
+    monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
+
+    exit_code = _run(["init-from-submodules", str(repo_root), "--dry-run"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Dry run — nothing written, cloned, or converted." in captured.out
+    assert "would convert 1 submodule(s)" in captured.out
+    assert "deps/child" in captured.out
+
+
+def test_init_from_submodules_prints_next_steps_after_adopting(monkeypatch, capsys, tmp_path):
+    repo_root = tmp_path / "project"
+    repo_root.mkdir()
+
+    class StubClient:
+        def init_from_submodules(self, source, **kwargs):
+            assert kwargs["dry_run"] is False
+            return _stub_init_report(Path(source), dry_run=False)
+
+    monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
+
+    exit_code = _run(["init-from-submodules", str(repo_root)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Converted 1 submodule(s) to plain nested clones" in captured.out
+    # The conversion is staged only, so the commit sequence must be spelled out.
+    assert "staged but not committed" in captured.out
+    assert "cgitsync branch <name>" in captured.out
+
+
+def test_init_from_submodules_forwards_every_flag_to_the_client(monkeypatch, capsys, tmp_path):
+    repo_root = tmp_path / "project"
+    repo_root.mkdir()
+    seen: dict = {}
+
+    class StubClient:
+        def init_from_submodules(self, source, **kwargs):
+            seen.update(kwargs)
+            return _stub_init_report(Path(source), dry_run=False)
+
+    monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
+
+    exit_code = _run(
+        [
+            "init-from-submodules",
+            str(repo_root),
+            "--cgs",
+            str(tmp_path / "hand.cgs"),
+            "--max-depth",
+            "3",
+            "--force",
+            "--force-protocol",
+            "https",
+        ]
+    )
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert seen == {
+        "cgs_path": str(tmp_path / "hand.cgs"),
+        "max_depth": 3,
+        "dry_run": False,
+        "force": True,
+        "force_access_protocol": "https",
+    }
 
 
 # ---------------------------------------------------------------------------

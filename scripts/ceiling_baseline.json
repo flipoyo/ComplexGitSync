@@ -31,8 +31,8 @@
       "public_symbols": 1
     },
     "cli/expert.py": {
-      "internal_imports": 12,
-      "loc": 763,
+      "internal_imports": 14,
+      "loc": 904,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -107,8 +107,8 @@
     },
     "orchestre.py": {
       "internal_imports": 68,
-      "loc": 3127,
-      "public_symbols": 12
+      "loc": 3368,
+      "public_symbols": 13
     },
     "paths.py": {
       "internal_imports": 2,

@@ -1,12 +1,12 @@
 """cli.expert — the "Expert" cgitsync command group.
 
 Ring: 4 (CLI adapter — the same ring cli.py itself occupies)
-Contract: register argparse subparsers for, and dispatch/execute, the 15
+Contract: register argparse subparsers for, and dispatch/execute, the 16
     Expert-tier commands (purge, validate, clone, pull, pull-force,
     checkout, branch, add, rm, commit, push, tag, freeze, import-submodules,
-    verify). Argument/prompt collection only — delegates all .cgs/.gts
-    semantics to ComplexGitSyncClient; never touches subprocess/Git or
-    parses repository identifiers itself.
+    init-from-submodules, verify). Argument/prompt collection only —
+    delegates all .cgs/.gts semantics to ComplexGitSyncClient; never
+    touches subprocess/Git or parses repository identifiers itself.
 Imports: _shared, git_repo, orchestre, snapshot_resolver
 """
 
@@ -18,12 +18,13 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..git_repo import RefKind
-from ..orchestre import ComplexGitSyncClient
+from ..orchestre import DEFAULT_DISCOVER_MAX_DEPTH, ComplexGitSyncClient
 from ..snapshot_resolver import discover_cgshome
 from ._shared import (
     _add_gitignore_sync_arguments,
     _format_tree_state_line,
     _load_ready_registry_source,
+    _non_negative_int,
     _print_dry_run_plan,
     _print_gitignore_sync_report,
     _print_repo_tree_result,
@@ -47,21 +48,22 @@ COMMANDS: dict[str, str] = {
     "tag": "Create and push a tag across a READY tree.",
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
     "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
+    "init-from-submodules": "Adopt a submodule-based checkout: discover, initialise, then convert its submodules.",
     "verify": "Verify the hash-chained .cgitsync/lgr register for tamper-evidence.",
 }
 
 
 def register_parsers(subparsers: argparse._SubParsersAction) -> None:
-    """Register this group's 15 subparsers.
+    """Register this group's 16 subparsers.
 
     Mirrors cli.py's build_parser() if/elif chain for exactly the Expert
     command group, but dispatches to one small ``_register_*`` builder per
     command (via ``_PARSER_BUILDERS``) instead of a single long if/elif
     chain, to stay under the C90 complexity ceiling enabled alongside this
-    split. None of these 15 commands' parser registrations use
-    ``_non_negative_int`` (only ``view-tree``/``discover``, owned by other
-    groups, do) so no shared numeric-argument helper needs to be threaded
-    through here.
+    split. One command's parser registration needs a numeric argument type
+    (``init-from-submodules --max-depth``); it uses ``_shared``'s own
+    ``_non_negative_int`` directly, the same helper ``cli.configuration``
+    has threaded in for ``view-tree``/``discover``.
     """
     for command_name, help_text in COMMANDS.items():
         subparser = subparsers.add_parser(command_name, help=help_text, description=help_text)
@@ -316,6 +318,75 @@ def _register_import_submodules(subparser: argparse.ArgumentParser) -> None:
     subparser.set_defaults(handler=_handle_import_submodules)
 
 
+def _register_init_from_submodules(subparser: argparse.ArgumentParser) -> None:
+    subparser.add_argument(
+        "repo_root",
+        help=(
+            "Path to the checkout to adopt: a project cloned and "
+            "'git submodule update --init --recursive'd by hand, with no "
+            ".cgs of its own yet. Its directory name must match the "
+            "project name discovery derives from the root repository's "
+            "own address."
+        ),
+    )
+    subparser.add_argument(
+        "--cgs",
+        dest="cgs_path",
+        metavar="FILE",
+        default=None,
+        help=(
+            "Use this .cgs instead of writing one. When FILE does not "
+            "exist, the drafted .cgs is written there instead of to "
+            "REPO_ROOT/<project-name>.cgs."
+        ),
+    )
+    subparser.add_argument(
+        "--max-depth",
+        dest="max_depth",
+        type=_non_negative_int,
+        default=DEFAULT_DISCOVER_MAX_DEPTH,
+        metavar="N",
+        help=(
+            "Maximum directory depth to descend below REPO_ROOT while "
+            f"discovering repositories (default: {DEFAULT_DISCOVER_MAX_DEPTH}; "
+            "REPO_ROOT itself is depth 0)."
+        ),
+    )
+    subparser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help=(
+            "Print what would be discovered and converted without writing "
+            "a .cgs, cloning anything, or touching any repository."
+        ),
+    )
+    subparser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help=(
+            "Proceed even when REPO_ROOT has no .gitmodules. Refused by "
+            "default: there would be nothing to convert, while the clone "
+            "step would still delete and re-clone every non-root "
+            "repository from its remote."
+        ),
+    )
+    subparser.add_argument(
+        "--force-protocol",
+        dest="force_access_protocol",
+        choices=("ssh", "https"),
+        default=None,
+        help=(
+            "Override access_protocol in memory for every repo the clone step "
+            "fetches. No .cgs file is read differently or written. Discovery "
+            "reads each repository's configured remote as it is, so it is "
+            "unaffected."
+        ),
+    )
+    subparser.set_defaults(handler=_handle_init_from_submodules)
+
+
 def _register_verify(subparser: argparse.ArgumentParser) -> None:
     _add_search_dir_argument(subparser)
     subparser.add_argument(
@@ -345,6 +416,7 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "tag": _register_tag,
     "freeze": _register_freeze,
     "import-submodules": _register_import_submodules,
+    "init-from-submodules": _register_init_from_submodules,
     "verify": _register_verify,
 }
 
@@ -537,6 +609,28 @@ def _handle_import_submodules(args: argparse.Namespace) -> int:
             source,
             apply=apply,
             recursive=recursive,
+        ),
+    )
+
+
+def _handle_init_from_submodules(args: argparse.Namespace) -> int:
+    repo_root = Path(args.repo_root).resolve()
+    cgs_path = args.cgs_path
+    max_depth = args.max_depth
+    dry_run = args.dry_run
+    force = args.force
+    force_access_protocol = args.force_access_protocol
+    return _run_with_logging(
+        command_name="init-from-submodules",
+        source=repo_root,
+        runner=lambda client, source: _execute_init_from_submodules(
+            client,
+            source,
+            cgs_path=cgs_path,
+            max_depth=max_depth,
+            dry_run=dry_run,
+            force=force,
+            force_access_protocol=force_access_protocol,
         ),
     )
 
@@ -883,4 +977,63 @@ def _execute_import_submodules(
     # otherwise match the wrong entry if two levels share a submodule name.
     for sub in report.submodules:
         print(f"  ✓ {sub.name}  ({report.path_from_scan_root(sub)})")
+    return 0
+
+
+def _execute_init_from_submodules(
+    client: ComplexGitSyncClient,
+    source: Path,
+    *,
+    cgs_path: str | None = None,
+    max_depth: int = DEFAULT_DISCOVER_MAX_DEPTH,
+    dry_run: bool = False,
+    force: bool = False,
+    force_access_protocol: str | None = None,
+) -> int:
+    """Execute init-from-submodules and print a human-readable report."""
+    report = client.init_from_submodules(
+        source,
+        cgs_path=cgs_path,
+        max_depth=max_depth,
+        dry_run=dry_run,
+        force=force,
+        force_access_protocol=force_access_protocol,
+    )
+
+    print(
+        f"Found {len(report.discover.repos)} git repository(ies) under {report.root}\n"
+        f"project name: {report.discover.project_name}"
+    )
+    for warning in report.discover.warnings:
+        print(f"  ! {warning}")
+
+    submodules = report.import_report.submodules if report.import_report else ()
+    if dry_run:
+        print("\nDry run — nothing written, cloned, or converted.")
+        print(f"  would write:  {report.cgs_path}")
+        print(f"  would adopt:  {report.root} (CGSHOME)")
+        print(f"  would convert {len(submodules)} submodule(s):")
+        for sub in submodules:
+            print(
+                f"    - {report.import_report.path_from_scan_root(sub)}"
+                f"  (declared in {report.import_report.gitmodules_from_scan_root(sub)})"
+            )
+        print("\nRe-run without --dry-run to perform it.")
+        return 0
+
+    print(f"\n.cgs {'written to' if report.cgs_written else 'reused'}: {report.cgs_path}")
+    print(f"CGSHOME: {report.root}")
+    print(f"Converted {len(submodules)} submodule(s) to plain nested clones:")
+    for sub in submodules:
+        print(f"  ✓ {sub.name}  ({report.import_report.path_from_scan_root(sub)})")
+
+    _print_repo_tree_result(client)
+    # The conversion is staged, never committed: it touches every repository
+    # that held a submodule, and some of those belong to other people.
+    print(
+        "\nThe conversion is staged but not committed. Review it, then:\n"
+        f"  export CGSHOME={report.root}\n"
+        "  cgitsync branch <name> && cgitsync checkout <name>\n"
+        '  cgitsync add && cgitsync commit "<message>"'
+    )
     return 0

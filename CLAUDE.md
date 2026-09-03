@@ -178,6 +178,7 @@ identifiers.
 - `AGENT.md` — a minimal root pointer stating the reading order (this file, then `AgentSpec/`); carries no rules of its own.
 - `AgentSpec/AdditionalSpecs.md`, `AgentSpec/DevSpec/DevSpecs.md` — deeper spec/authoring references beyond this file (`AgentSpec/DevSpec/` is a plain nested clone, gitignored, not tracked by this repo).
 - `AgentSpec/` — active planning tickets and project-specific specs; `AgentSpec/archive/` — completed/superseded plans, kept as historical record.
+- `AgentSpec/TICKETLIFECYCLE.md` — how a planning ticket is named and filed: plain name while active, `YYYYMMDD_` stamp plus a move to `AgentSpec/archive/` once implemented.
 - `AgentSpec/AGENT.md` — the roster of specialized agent roles for parallel multi-agent work on this project (Dev, CI/CD, Editing, Orchestration, Maths, Scientific editing) and how they hand off work.
 
 ## Document conventions
@@ -197,12 +198,12 @@ rots the moment someone forgets to bump it, which `AgentSpec/DOCSTYLE.md`
 §6 already forbids ("no stale-by-design content"); a creation date is a
 historical fact and cannot go stale the same way.
 
-Planning tickets additionally follow the archival lifecycle already in use:
+Planning tickets additionally carry a filename lifecycle:
 active work lives as a plain-named file directly under `AgentSpec/`; once
-the ticket is complete, move it to `AgentSpec/archive/<YYYYMMDD>_<name>.md`.
-The filename prefix is the archive date and stands in for an in-body
-timestamp on an archived document — an already-archived ticket does not
-also carry a `Created:` line.
+the ticket's work is implemented, it is renamed with a `YYYYMMDD_` stamp
+and moved to `AgentSpec/archive/`, in the same commit that implements it.
+[AgentSpec/TICKETLIFECYCLE.md](AgentSpec/TICKETLIFECYCLE.md) is the
+authoritative statement of that rule — read it before finishing a ticket.
 
 Standalone LaTeX documents (`docs/*.tex` with their own `\documentclass`)
 already carry `\date{\today}` on the title page — keep this on any new one.

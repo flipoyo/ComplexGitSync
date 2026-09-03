@@ -29,7 +29,7 @@ graph TD
 
 | Agent | This project's scope |
 |---|---|
-| **Orchestration** | `AgentSpec/DevSpec/DevSpecs.md`, `AgentSpec/AdditionalSpecs.md`, `AgentSpec/audit.md`, and the planning tickets under `AgentSpec/`. |
+| **Orchestration** | `AgentSpec/DevSpec/DevSpecs.md`, `AgentSpec/AdditionalSpecs.md`, `AgentSpec/audit.md`, and the planning tickets under `AgentSpec/` — named and filed per `AgentSpec/TICKETLIFECYCLE.md`. |
 | **Dev** | Python only — `src/ComplexGitSync/` and `tests/`. The template's other listed languages (C, Rust, Flex/Bison, Fortran, C++, Make) are not part of this codebase. |
 | **CI/CD** | `pixi run lint` (ruff), `pixi run test` (pytest: `tests/unit` + `tests/integration`), and the Pixi environment itself. |
 | **Editing** | LaTeX under `docs/`, Markdown under `AgentSpec/` and the README, and Mermaid diagrams. This project has no Slidev decks, so that part of the template's scope is unused here. |
