@@ -113,6 +113,12 @@ has since grown its own nested submodule one level deeper
 (`docs/hydrological_twin`) that this tutorial has no use for — `discover`
 in the next step would report it as a fourth, unwanted repository.
 
+> **Want `hydrological_twin` converted too?** Use `git submodule update
+> --init --recursive` here instead, and `import-submodules --recursive
+> --apply` in step 4 — this tutorial's own scenario (a submodule with its
+> own nested submodule) is exactly the case `--recursive` exists for. The
+> rest of this tutorial assumes the non-recursive default.
+
 Back at the ComplexGitSync clone for every command from here on:
 
 ```bash
@@ -174,7 +180,9 @@ gone), and append `<path>` to `.gitignore`. It does **not** also write a
 `.cgs` built from it alone would be missing the root entry, and step 3
 already produced a complete one. Running `discover` again here would
 report the same three repositories, now with plain clones instead of
-submodules.
+submodules. (If step 2's `--recursive` aside applies to you, run this
+step with `--recursive` too, so `hydrological_twin` gets converted at
+the same time as the other two.)
 
 Review and commit later, once the tree is `READY` (step 9) — don't commit
 yet.
@@ -256,18 +264,21 @@ pixi run cgitsync push
 
 > **If `push` fails with `could not read Username` / `terminal prompts
 > disabled` (or, on an older `cgitsync` build, hangs until you `Ctrl+C`
-> it):** the root was cloned over HTTPS in step 1, and pushing needs
-> write credentials that plain HTTPS anonymous access doesn't have.
-> `cgitsync` stores no credentials of its own, so this is the same
-> ambient-authentication gap as step 2 — same fix, applied to the root's
-> `origin` instead of a submodule's:
+> it):** the root was cloned over HTTPS in step 1, and pushing needs write
+> credentials that plain HTTPS anonymous access doesn't have. `push` prints
+> this exact fix itself the moment it hits the failure — `hint: this looks
+> like an HTTPS authentication failure — pass --force-protocol ssh to
+> 'push' if you have an SSH key registered with the provider, or configure
+> an HTTPS credential helper otherwise.` Follow it:
 > ```bash
-> git -C "$WORK/cawaqsviz" remote set-url origin git@gitlab.com:cawaqs/gviz/cawaqsviz.git
+> pixi run cgitsync push --force-protocol ssh
 > ```
 > (only if you have an SSH key registered with GitLab — check with `ssh -T
 > git@gitlab.com`; otherwise, a GitLab [personal access
 > token](https://gitlab.com/-/user_settings/personal_access_tokens) used
-> as the HTTPS password works too.)
+> as the HTTPS password works too.) `--force-protocol` persists the
+> rewrite, so it applies to every command after this one too — no need to
+> repeat the flag on `freeze-release` below.
 
 For a versioned snapshot instead of a plain push, use the minimalist
 cycle:
