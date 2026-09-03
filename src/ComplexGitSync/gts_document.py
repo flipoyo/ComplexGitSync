@@ -325,6 +325,17 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
                     "project_owner_name": repo.get("project_owner_name"),
                     "project_name": repo.get("project_name"),
                     "repo_name": repo.get("repo_name"),
+                    "gitprovider": repo.get("gitprovider"),
+                    "group_name": repo.get("group_name"),
+                    "gitprovider_url": repo.get("gitprovider_url"),
+                    # access_protocol is deliberately NOT here: it is a
+                    # clone-transport preference (ssh vs https), not part
+                    # of what a snapshot says about the tree's state --
+                    # see test_compute_snapshot_hash_ignores_access_protocol.
+                    # gitprovider/group_name/gitprovider_url are the
+                    # opposite: they say *which* repository this is, which
+                    # is exactly why the round trip losing them was a bug
+                    # (AgentSpec/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
                     "fallback_branch": repo.get("fallback_branch", "main"),
                     "fallback_applied": bool(repo.get("fallback_applied", False)),
                     "fallback_reason": repo.get("fallback_reason"),

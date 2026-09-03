@@ -3790,6 +3790,15 @@ class ComplexGitSyncClient:
         )
 
     def _build_remote_url(self, entry: WorkingRepo) -> str:
+        if not entry.gitprovider_declared:
+            raise GitSyncError(
+                f"Cannot determine a remote URL for {entry.name}: it was loaded from a "
+                f".gts snapshot written before the provider was recorded there "
+                f"(AgentSpec/archive/20260904_GtsProviderLoss_DevPlanTicket.md). "
+                f"Regenerate the snapshot from its .cgs — e.g. 'cgitsync initialise "
+                f"<the .cgs>' followed by a fresh 'freeze' — rather than cloning "
+                f"from a guessed host."
+            )
         return repo_remote_url(entry, self._forced_access_protocol or entry.access_protocol)
 
     def _determine_launch_ref(self, entry: WorkingRepo) -> str:

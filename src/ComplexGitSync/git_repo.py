@@ -26,6 +26,7 @@ Classes / enums defined here (Tier 1 — Core State):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -292,6 +293,50 @@ class RepoAddress:
         return self.to_https()
 
 
+_SSH_REMOTE_RE = re.compile(r"^(?P<user>[^@\s]+)@(?P<host>[^:\s]+):(?P<path>.+)$")
+
+
+def convert_remote_url_protocol(url: str, protocol: AccessProtocol) -> str:
+    """Rewrite *url* to use *protocol*, preserving its host and path exactly.
+
+    Unlike :func:`repo_remote_url` below, which derives a URL from a
+    repository's stored identity fields, this reads an existing remote URL
+    and only swaps its scheme — ``ssh`` (``user@host:path``) to/from
+    ``https``/``http`` (``scheme://host/path``). Nothing about host or
+    path is inferred, so this cannot rebuild the wrong address the way
+    deriving one from identity can when that identity is stale, missing,
+    or was never fully known — see
+    ``AgentSpec/archive/20260904_GtsProviderLoss_DevPlanTicket.md``, where
+    a ``.gts`` snapshot with no recorded provider caused exactly that.
+
+    A URL already in the requested form is returned unchanged (idempotent
+    no-op) rather than reassembled, so an unusual but valid existing URL
+    (a non-``git`` SSH user, an unconventional path) survives untouched.
+    Raises :exc:`ValueError` for a URL in neither recognised form — this
+    function parses transport shape only, not provider identity; it is not
+    the repository-ID authoring grammar this module's contract reserves
+    for :func:`~ComplexGitSync.cgs_format.parse_repo_id`.
+    """
+    stripped = url.strip()
+    has_git_suffix = stripped.endswith(".git")
+    body = stripped[:-4] if has_git_suffix else stripped
+
+    ssh_match = _SSH_REMOTE_RE.match(body)
+    if ssh_match:
+        if protocol == AccessProtocol.SSH:
+            return stripped
+        return f"https://{ssh_match.group('host')}/{ssh_match.group('path')}.git"
+
+    parsed = urlsplit(body)
+    if parsed.scheme in ("http", "https") and parsed.netloc:
+        if protocol == AccessProtocol.HTTPS:
+            return stripped
+        path = parsed.path.strip("/")
+        return f"git@{parsed.netloc}:{path}.git"
+
+    raise ValueError(f"Unrecognised remote URL, cannot convert protocol: {url!r}")
+
+
 # ---------------------------------------------------------------------------
 # WorkingRepo — mutable runtime record per repo
 # ---------------------------------------------------------------------------
@@ -330,6 +375,10 @@ class WorkingRepo(GitRepo):
     worktree_state: str | None = None
     is_reachable: bool = True
     gitprovider: GitProvider = GitProvider.GITHUB
+    # False only for an entry read from a .gts written before the provider
+    # was recorded in the snapshot -- gitprovider above is then a filled-in
+    # default (GITHUB), not a known fact. See repo_remote_url's docstring.
+    gitprovider_declared: bool = True
     repo_name: str | None = None
     group_name: str | None = None
     gitprovider_url: str | None = None

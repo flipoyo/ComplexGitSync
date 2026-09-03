@@ -18,7 +18,7 @@ import pytest
 
 from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.errors import ConfigValidationError
-from ComplexGitSync.git_repo import RefKind
+from ComplexGitSync.git_repo import AccessProtocol, GitProvider, RefKind, repo_remote_url
 from ComplexGitSync.git_tree import GitTree, TreeLifecycleState, make_repo_id
 from ComplexGitSync.gts_document import GtsDocument
 from ComplexGitSync.registry import (
@@ -464,6 +464,150 @@ def test_build_gts_document_from_registry_round_trips_through_build_registry_fro
     assert rebuilt_registry.get("root:deps/child-repo").absolute_path == original_registry.get(
         "root:deps/child-repo"
     ).absolute_path
+
+
+# ---------------------------------------------------------------------------
+# GtsProviderLoss_DevPlanTicket: a .gts round trip must not forget which
+# provider a repository came from. _write_root_cgs above hard-codes every
+# entry to gitprovider = "github", which is also the fallback default a
+# missing field silently produces -- exactly why this bug went unnoticed.
+# These tests use non-default providers so a lost field cannot hide behind
+# a coincidentally-matching default.
+# ---------------------------------------------------------------------------
+
+
+def _write_provider_cgs(tmp_path, *, repo_toml: str) -> Path:
+    config_path = tmp_path / "project.cgs"
+    config_path.write_text(
+        f"""
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+{repo_toml}
+relative_path = "."
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def _round_trip_root(config_path: Path):
+    document = CgsDocument.from_toml(config_path)
+    original_registry = build_registry_from_cgs_document(document, config_path)
+    gts_document = build_gts_document_from_registry(
+        original_registry, command_origin="load", source_cgs_path=config_path
+    )
+    rebuilt_registry = build_registry_from_gts_document(gts_document)
+    return original_registry.get("root"), rebuilt_registry.get("root")
+
+
+def test_gitlab_provider_survives_a_gts_round_trip(tmp_path):
+    config_path = _write_provider_cgs(
+        tmp_path,
+        repo_toml=(
+            'gitprovider = "gitlab"\n'
+            'project_owner_name = "cawaqs/gviz"\n'
+            'project_name = "cawaqsviz"\n'
+        ),
+    )
+    before, after = _round_trip_root(config_path)
+
+    assert before.gitprovider == after.gitprovider == GitProvider.GITLAB
+    assert repo_remote_url(before, AccessProtocol.SSH) == repo_remote_url(after, AccessProtocol.SSH)
+    assert repo_remote_url(after, AccessProtocol.SSH) == "git@gitlab.com:cawaqs/gviz/cawaqsviz.git"
+
+
+def test_codeberg_provider_survives_a_gts_round_trip(tmp_path):
+    config_path = _write_provider_cgs(
+        tmp_path,
+        repo_toml=('gitprovider = "codeberg"\nproject_owner_name = "GX4G"\nproject_name = "GX4G"\n'),
+    )
+    before, after = _round_trip_root(config_path)
+
+    assert before.gitprovider == after.gitprovider == GitProvider.CODEBERG
+    assert repo_remote_url(after, AccessProtocol.SSH) == "git@codeberg.org:GX4G/GX4G.git"
+
+
+def test_custom_provider_and_its_url_survive_a_gts_round_trip(tmp_path):
+    config_path = _write_provider_cgs(
+        tmp_path,
+        repo_toml=(
+            'gitprovider = "custom"\n'
+            'gitprovider_url = "git.internal.example.com"\n'
+            'project_owner_name = "team"\n'
+            'project_name = "demo"\n'
+        ),
+    )
+    before, after = _round_trip_root(config_path)
+
+    assert before.gitprovider == after.gitprovider == GitProvider.CUSTOM
+    assert before.gitprovider_url == after.gitprovider_url == "git.internal.example.com"
+    assert repo_remote_url(after, AccessProtocol.SSH) == "git@git.internal.example.com:team/demo.git"
+
+
+def test_group_name_survives_a_gts_round_trip(tmp_path):
+    config_path = _write_provider_cgs(
+        tmp_path,
+        repo_toml=(
+            'gitprovider = "gitlab"\n'
+            'group_name = "a/nested/group"\n'
+            'project_owner_name = "owner"\n'
+            'project_name = "demo"\n'
+        ),
+    )
+    before, after = _round_trip_root(config_path)
+
+    assert before.group_name == after.group_name == "a/nested/group"
+    assert repo_remote_url(after, AccessProtocol.SSH) == "git@gitlab.com:a/nested/group/demo.git"
+
+
+def test_access_protocol_survives_a_gts_round_trip(tmp_path):
+    config_path = _write_provider_cgs(
+        tmp_path,
+        repo_toml=(
+            'gitprovider = "github"\n'
+            'access_protocol = "https"\n'
+            'project_owner_name = "owner"\n'
+            'project_name = "demo"\n'
+        ),
+    )
+    before, after = _round_trip_root(config_path)
+
+    assert before.access_protocol == after.access_protocol == AccessProtocol.HTTPS
+
+
+def test_a_snapshot_predating_this_fix_is_flagged_as_undeclared(tmp_path):
+    # A .gts written before gitprovider was recorded has no such key at
+    # all -- simulated here by building one, then deleting the key, the
+    # same shape an old snapshot on disk actually has.
+    config_path = _write_provider_cgs(
+        tmp_path,
+        repo_toml=('gitprovider = "gitlab"\nproject_owner_name = "owner"\nproject_name = "demo"\n'),
+    )
+    document = CgsDocument.from_toml(config_path)
+    registry = build_registry_from_cgs_document(document, config_path)
+    gts_document = build_gts_document_from_registry(
+        registry, command_origin="load", source_cgs_path=config_path
+    )
+    stale_data = gts_document.to_dict()
+    for repo in stale_data["repo_state"]:
+        repo.pop("gitprovider", None)
+    # Drop the now-stale hash too, matching what an old snapshot actually
+    # looks like -- one with neither the field nor a hash that expects it.
+    stale_data["document"].pop("snapshot_hash", None)
+    stale_document = GtsDocument.from_dict(stale_data)
+
+    rebuilt = build_registry_from_gts_document(stale_document).get("root")
+
+    assert rebuilt.gitprovider_declared is False
+    # The GITHUB fallback is a filled-in default here, not a recovered fact.
+    assert rebuilt.gitprovider == GitProvider.GITHUB
 
 
 def test_build_gts_document_from_registry_writes_freeze_manifest_for_freeze_origins(tmp_path):

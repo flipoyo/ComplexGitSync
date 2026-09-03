@@ -46,7 +46,7 @@ from .git_repo import (
     RepoLifecycleState,
     SyncState,
     WorkingRepo,
-    repo_remote_url,
+    convert_remote_url_protocol,
 )
 from .git_tree import (
     WorkingGitTree,
@@ -138,10 +138,30 @@ def _rewrite_remote_if_forced(
     way a repo's protocol at clone time sticks for everything downstream
     of it. A no-op when *force_access_protocol* is ``None`` (the default,
     unchanged behavior).
+
+    Reads *repo*'s current remote URL and only swaps its scheme
+    (:func:`~ComplexGitSync.git_repo.convert_remote_url_protocol`), rather
+    than rebuilding a URL from *repo*'s stored identity fields. Those
+    fields can be missing or stale for a repo loaded from an older
+    ``.gts`` snapshot (gitprovider was not always recorded there — see
+    ``AgentSpec/archive/20260904_GtsProviderLoss_DevPlanTicket.md``), and
+    rebuilding from a wrong or absent provider silently aims the push at
+    the wrong host. The URL actually configured on disk is never wrong in
+    that way, so converting it in place is what stays correct regardless
+    of the snapshot's age.
     """
     if force_access_protocol is None:
         return
-    forced_url = repo_remote_url(repo, force_access_protocol)
+    current_url = git_runner.remote_get_url(repo.absolute_path, remote)
+    if current_url is None:
+        raise GitSyncError(
+            f"--force-protocol: {repo.name} has no '{remote}' remote configured to "
+            f"convert the protocol of."
+        )
+    try:
+        forced_url = convert_remote_url_protocol(current_url, force_access_protocol)
+    except ValueError as exc:
+        raise GitSyncError(f"--force-protocol: {repo.name}'s '{remote}' remote: {exc}") from exc
     git_runner.configure_remote(repo.absolute_path, remote, forced_url)
 
 

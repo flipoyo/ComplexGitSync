@@ -7,6 +7,7 @@ from ComplexGitSync.git_repo import (
     GitProvider,
     GitRepo,
     RepoAddress,
+    convert_remote_url_protocol,
     validate_git_provider,
 )
 from ComplexGitSync.git_tree import GitTree
@@ -314,3 +315,61 @@ def test_repo_address_custom_missing_gitprovider_url_raises():
     )
     with pytest.raises(ValueError, match="gitprovider_url is required"):
         addr.to_ssh()
+
+
+# ---------------------------------------------------------------------------
+# convert_remote_url_protocol — GtsProviderLoss_DevPlanTicket
+#
+# Converts an *existing* remote URL's scheme in place (host and path
+# preserved exactly), rather than deriving one from a repository's stored
+# identity fields the way RepoAddress.to_url() does above. --force-protocol
+# on push/pull uses this precisely because it cannot risk rebuilding the
+# wrong address from identity that may be stale, missing, or (before this
+# ticket) never even recorded in a .gts snapshot.
+# ---------------------------------------------------------------------------
+
+
+def test_convert_remote_url_protocol_https_to_ssh_two_part_path():
+    url = "https://github.com/owner/repo.git"
+    assert convert_remote_url_protocol(url, AccessProtocol.SSH) == "git@github.com:owner/repo.git"
+
+
+def test_convert_remote_url_protocol_ssh_to_https_two_part_path():
+    url = "git@github.com:owner/repo.git"
+    assert convert_remote_url_protocol(url, AccessProtocol.HTTPS) == "https://github.com/owner/repo.git"
+
+
+def test_convert_remote_url_protocol_preserves_a_three_part_gitlab_path():
+    url = "https://gitlab.com/cawaqs/gviz/cawaqsviz.git"
+    assert (
+        convert_remote_url_protocol(url, AccessProtocol.SSH)
+        == "git@gitlab.com:cawaqs/gviz/cawaqsviz.git"
+    )
+
+
+def test_convert_remote_url_protocol_preserves_a_custom_host():
+    url = "git@git.internal.example.com:team/demo.git"
+    assert (
+        convert_remote_url_protocol(url, AccessProtocol.HTTPS)
+        == "https://git.internal.example.com/team/demo.git"
+    )
+
+
+def test_convert_remote_url_protocol_already_ssh_is_a_no_op():
+    url = "git@github.com:owner/repo.git"
+    assert convert_remote_url_protocol(url, AccessProtocol.SSH) == url
+
+
+def test_convert_remote_url_protocol_already_https_is_a_no_op():
+    url = "https://github.com/owner/repo.git"
+    assert convert_remote_url_protocol(url, AccessProtocol.HTTPS) == url
+
+
+def test_convert_remote_url_protocol_handles_missing_git_suffix():
+    url = "https://github.com/owner/repo"
+    assert convert_remote_url_protocol(url, AccessProtocol.SSH) == "git@github.com:owner/repo.git"
+
+
+def test_convert_remote_url_protocol_rejects_a_non_url_remote():
+    with pytest.raises(ValueError, match="Unrecognised remote URL"):
+        convert_remote_url_protocol("/local/bare/repo.git", AccessProtocol.SSH)

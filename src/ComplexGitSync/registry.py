@@ -400,6 +400,19 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
                 if repo_state.get("repo_name") is not None
                 else _as_optional_str(repo_state.get("project_name"))
             ),
+            # A snapshot written before this field existed has no
+            # "gitprovider" key at all -- GITHUB below is then a filled-in
+            # default, not a recorded fact, so gitprovider_declared says
+            # so (AgentSpec/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
+            gitprovider=_parse_enum(GitProvider, repo_state.get("gitprovider"), GitProvider.GITHUB),
+            gitprovider_declared=repo_state.get("gitprovider") is not None,
+            group_name=_as_optional_str(repo_state.get("group_name")),
+            gitprovider_url=_as_optional_str(repo_state.get("gitprovider_url")),
+            access_protocol=_parse_enum(
+                AccessProtocol,
+                repo_state.get("access_protocol"),
+                AccessProtocol.SSH,
+            ),
             default_branch=_repo_ref_name(repo_state, "target"),
         )
         registry.add(entry)
@@ -462,6 +475,10 @@ def build_gts_document_from_registry(
             "project_owner_name": entry.project_owner_name,
             "project_name": entry.project_name,
             "repo_name": entry.repo_name,
+            "gitprovider": entry.gitprovider.value,
+            "group_name": entry.group_name,
+            "gitprovider_url": entry.gitprovider_url,
+            "access_protocol": entry.access_protocol.value,
         }
         _write_compact_refs(repo_data, entry)
         if entry.discovery_state != DiscoveryState.RESOLVED:

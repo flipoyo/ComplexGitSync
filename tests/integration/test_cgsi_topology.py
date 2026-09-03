@@ -30,10 +30,13 @@ import tomli_w
 from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_repo import GitProvider, NodeType
+from ComplexGitSync.git_repo import GitProvider, NodeType, RefKind, RepoLifecycleState
 from ComplexGitSync.git_tree import TreeLifecycleState, sync_gitignore
 from ComplexGitSync.orchestre import ComplexGitSyncClient, GtsDocument
-from ComplexGitSync.registry import build_registry_from_cgs_document
+from ComplexGitSync.registry import (
+    build_gts_document_from_registry,
+    build_registry_from_cgs_document,
+)
 
 TEST_PLACEHOLDER_COMMIT_SHA = "f" * 40
 
@@ -604,38 +607,63 @@ class TestGitCommandCycleIntegration:
 
 
 class TestForceProtocolOnPush:
-    """ProtocolSwitchOnPush_DevPlanTicket: --force-protocol on push/pull.
+    """GtsProviderLoss_DevPlanTicket: --force-protocol on push/pull.
 
-    ``to_https``/``to_ssh`` always build a real provider URL
-    (``https://github.com/...``) — there is no way to make either resolve
-    to a reachable local ``file://`` remote, so a genuinely successful push
-    against the rewritten URL cannot be tested locally (the ticket's own
-    WP-PROTO4 anticipates exactly this limitation). What *is* tested here,
-    against real git: the remote is actually rewritten (``git remote
-    get-url``) before the push is attempted, and is left untouched when the
-    flag is omitted — the persisted, git-level part of the mechanism.
+    ``--force-protocol`` converts the repository's *actual current* remote
+    URL in place (ssh <-> https, same host and path) rather than rebuilding
+    one from the repo's stored identity fields (``gitprovider``,
+    ``project_owner_name``, ...). Rebuilding from identity is what caused
+    the bug this ticket fixes: those fields can be missing or wrong for a
+    repository loaded from a ``.gts`` snapshot (they were not even
+    recorded there before this ticket), and a rebuilt URL from a wrong or
+    default-GITHUB provider silently aimed the push at the wrong host.
+
+    A genuinely successful push against the *converted* URL cannot be
+    tested locally — it has to be a real, syntactically valid provider
+    address (``https://github.com/...``) for there to be anything to
+    convert, and no such address resolves to a reachable local remote
+    (the original ProtocolSwitchOnPush_DevPlanTicket's WP-PROTO4 already
+    anticipated this limitation). What *is* tested here, against real
+    git: the remote is actually rewritten (``git remote get-url``) before
+    the push is attempted — and, the point of this rewrite, with no
+    identity field set on the registry entry at all, proving the
+    conversion no longer depends on them.
     """
 
-    def test_push_force_protocol_rewrites_remote_before_pushing(
+    def test_push_force_protocol_converts_the_existing_remote_url(
         self, ready_single_repo_snapshot
     ):
         repo = ready_single_repo_snapshot["repo"]
         snapshot = ready_single_repo_snapshot["snapshot"]
 
+        # Stand in for what a real .cgs-driven clone would already have
+        # set as `origin` — an actual provider address, not the bare local
+        # filesystem path the fixture uses to make a real push possible.
+        _run_git(repo, "remote", "set-url", "origin", "https://github.com/flipoyo/demo.git")
+
         client = ComplexGitSyncClient()
         client.load_gts(snapshot)
-        root_entry = client.registry.get("root")
-        root_entry.gitprovider = GitProvider.GITHUB
-        root_entry.project_owner_name = "flipoyo"
-        root_entry.repo_name = "demo"
-
-        original_remote = _run_git(repo, "remote", "get-url", "origin")
-        assert original_remote != "https://github.com/flipoyo/demo.git"
+        # Deliberately no identity fields set on root_entry: the whole
+        # point of this fix is that the conversion no longer reads them.
 
         with pytest.raises(GitSyncError):
-            client.push(force_access_protocol="https")
+            client.push(force_access_protocol="ssh")
 
-        assert _run_git(repo, "remote", "get-url", "origin") == "https://github.com/flipoyo/demo.git"
+        assert _run_git(repo, "remote", "get-url", "origin") == "git@github.com:flipoyo/demo.git"
+
+    def test_push_force_protocol_on_a_non_url_remote_raises_a_clear_error(
+        self, ready_single_repo_snapshot
+    ):
+        # The fixture's own `origin` is a bare filesystem path (needed so
+        # the push itself can succeed locally) -- neither an ssh nor an
+        # https remote, so there is no protocol to convert it to/from.
+        snapshot = ready_single_repo_snapshot["snapshot"]
+
+        client = ComplexGitSyncClient()
+        client.load_gts(snapshot)
+
+        with pytest.raises(GitSyncError, match="force-protocol"):
+            client.push(force_access_protocol="ssh")
 
     def test_push_without_force_protocol_leaves_remote_untouched(
         self, ready_single_repo_snapshot
@@ -830,6 +858,75 @@ class TestCloneAndLaunchReleaseLifecycle:
         assert restore_leaf.exists()
         assert _run_git(restore_root, "rev-parse", "--abbrev-ref", "HEAD") == "main"
         assert _run_git(restore_leaf, "rev-parse", "--abbrev-ref", "HEAD") == "main"
+
+    def test_pull_gts_clones_a_missing_repo_from_its_recorded_provider_not_github(
+        self, tmp_path, monkeypatch
+    ):
+        """GtsProviderLoss_DevPlanTicket: the clone-missing-repo path (no
+        --force-protocol involved -- see the ticket's §1.2) must derive its
+        remote URL from the provider the .gts snapshot actually recorded,
+        not silently fall back to GitHub. Unlike the other fixtures in this
+        class, ``_build_remote_url`` is left entirely real here (not
+        monkeypatched): only the lower-level ``git clone`` call is
+        intercepted, so what reaches it is whatever the real identity ->
+        URL derivation produced from the snapshot's own gitprovider field.
+        """
+        gitlab_remote, _ = _seed_remote_repo(tmp_path, "gitlab-shaped")
+
+        config_path = tmp_path / "project.cgs"
+        config_path.write_text(
+            """
+[document]
+format_version = "1.0"
+
+[project]
+name = "demo"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "gitlab"
+project_owner_name = "cawaqs/gviz"
+project_name = "cawaqsviz"
+relative_path = "."
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+        document = CgsDocument.from_toml(config_path)
+        registry = build_registry_from_cgs_document(document, config_path)
+        root_entry = registry.get("root")
+        root_entry.repo_lifecycle_state = RepoLifecycleState.READY
+        root_entry.current_ref_kind = root_entry.target_ref_kind = root_entry.resolved_ref_kind = RefKind.BRANCH
+        root_entry.current_ref_name = root_entry.target_ref_name = root_entry.resolved_ref_name = "main"
+        root_entry.commit_sha = "a" * 40
+        # Not on disk yet -- forces _restore_gts_snapshot's clone branch.
+        restore_root = tmp_path / "does-not-exist-yet"
+        root_entry.absolute_path = restore_root
+        registry.recompute_tree_state()
+
+        gts_document = build_gts_document_from_registry(
+            registry, command_origin="freeze_release", source_cgs_path=config_path
+        )
+        snapshot_path = tmp_path / "demo.gts"
+        gts_document.to_toml(snapshot_path)
+
+        requested_urls: list[str] = []
+
+        def _fake_clone(self, git_runner, remote_url, destination, *, branch):
+            requested_urls.append(remote_url)
+            # The requested URL is a real gitlab.com address and cannot be
+            # reached here; perform the actual filesystem clone against
+            # the local seed instead, so checkout/rev-parse can proceed.
+            git_runner.clone(gitlab_remote.as_posix(), destination, branch=branch)
+
+        monkeypatch.setattr(type(ComplexGitSyncClient().orchestre.git_tree.git), "clone", _fake_clone)
+
+        client = ComplexGitSyncClient()
+        restored = client._restore_gts_snapshot(snapshot_path)  # noqa: SLF001
+
+        assert requested_urls == ["git@gitlab.com:cawaqs/gviz/cawaqsviz.git"]
+        assert restored.is_ready() is True
+        assert restore_root.exists()
 
 
 class TestImportSubmodules:
