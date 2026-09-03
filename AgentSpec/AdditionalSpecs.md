@@ -273,7 +273,7 @@ human-readable summary.
 | `snapshot_resolver.py` | 1 | Resolves which `.gts` snapshot the CLI defaults to when a command omits one explicitly. |
 | `ledger_store.py` | 1 | Atomic, one-file-per-entry persistence for the hash-chained register (`O_EXCL`-style writes, secret scrubbing, the untrusted-`HEAD`-cache pattern) — authored, not yet wired into `SyncLedger`'s actual write path. |
 | `discovery.py` | 1 | Nested `.cgs` auto-discovery and `.gitmodules` parsing. |
-| `git_tree.py` | 1 | `GitTree`/`WorkingGitTree` structures, traversal, lifecycle state; `to_cgs()` delegates to `cgs_format.py`; `.gitignore` maintenance across the tree (`sync_gitignore`) — the reason this is Ring 1, not 0. |
+| `git_tree.py` | 1 | `GitTree`/`WorkingGitTree` structures, traversal, lifecycle state; `to_cgs()` delegates to `cgs_format.py`; `.gitignore` maintenance across the tree (`sync_gitignore`) — the reason this is Ring 1, not 0. Also the single rule for "which repo sits inside which": `resolve_repo_for_path` for a live tree, `innermost_containing_path` for plain paths before one exists. |
 | `git_runner.py` | 2 | Git subprocess wrapper — the *only* module that imports `subprocess`. |
 | `operations.py` | 2 | Leaf/parent-first Git operations over a `WorkingGitTree` + `GitRunner` — `checkout_tree`, `branch_tree`, `add_tree`, `commit_tree`, `push_tree`, `tag_tree`, `freeze_release_tree`, branch-topology validation. Requires a `READY` tree; raises `TreeNotReadyError` otherwise. |
 | `registry.py` | 2 | Translates `.cgs`/`.gts` documents to/from `WorkingGitTree` (`build_registry_from_cgs_document`/`build_registry_from_gts_document`/`build_gts_document_from_registry`). |

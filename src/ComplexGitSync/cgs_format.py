@@ -302,12 +302,41 @@ def _root_tree_value(tree: GitTree, *attributes: str) -> Any:
     return None
 
 
+def _relative_path_from_root(tree: Any, repo: Any) -> str | None:
+    """Return *repo*'s path counted from the tree root, or ``None``.
+
+    A ``.cgs`` writes every path from the project root, but a repo nested
+    inside another repo stores its own ``relative_path`` from its parent.
+    Writing that shorter path back out would move the repo, so rebuild the
+    full one from the two absolute paths whenever both are known.
+    """
+    repo_path = getattr(repo, "absolute_path", None)
+    if repo_path is None:
+        return None
+    root = next(
+        (
+            candidate
+            for candidate in getattr(tree, "repos", {}).values()
+            if getattr(candidate, "parent_id", None) is None
+        ),
+        None,
+    )
+    root_path = getattr(root, "absolute_path", None) if root is not None else None
+    if root_path is None:
+        return None
+    try:
+        return Path(repo_path).relative_to(Path(root_path)).as_posix()
+    except ValueError:
+        return None
+
+
 def _repo_data_from_tree(
     repo: Any,
     metadata: Any,
     *,
     project_default_branch: str,
     project_default_remote: str,
+    relative_path_from_root: str | None = None,
 ) -> dict[str, Any]:
     """Map one normalized tree entry back to canonical repository data."""
     data = copy.deepcopy(metadata) if isinstance(metadata, dict) else {}
@@ -346,7 +375,7 @@ def _repo_data_from_tree(
         getattr(repo, "fallback_branch", None) or data.get("fallback_branch") or repo_default_branch
     )
 
-    relative_path = getattr(repo, "relative_path", None)
+    relative_path = relative_path_from_root or getattr(repo, "relative_path", None)
     if relative_path is not None:
         data["relative_path"] = str(relative_path)
     nested_config = getattr(repo, "nested_config", None)
@@ -465,6 +494,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                     metadata,
                     project_default_branch=str(default_branch),
                     project_default_remote=str(project_data.get("default_remote_name", "origin")),
+                    relative_path_from_root=_relative_path_from_root(tree, repo),
                 )
             )
 

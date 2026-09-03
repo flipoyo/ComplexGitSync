@@ -34,6 +34,7 @@ from types import SimpleNamespace
 import pytest
 
 from ComplexGitSync.cgs_format import CgsDocument
+from ComplexGitSync.orchestre import DiscoveredRepo
 
 _CLI_DIR = Path(__file__).resolve().parents[2] / "src" / "ComplexGitSync" / "cli"
 
@@ -306,7 +307,7 @@ def test_discover_command_uses_client_method(monkeypatch, capsys, tmp_path):
                 root=Path(root),
                 project_name="demo",
                 repos=(
-                    SimpleNamespace(
+                    DiscoveredRepo(
                         relative_path=".",
                         absolute_path=Path(root),
                         remote_url="https://github.com/owner/demo.git",
@@ -387,7 +388,7 @@ def test_discover_reports_warnings_and_unresolved_identifiers(capsys, tmp_path):
                 root=Path(root),
                 project_name="demo",
                 repos=(
-                    SimpleNamespace(
+                    DiscoveredRepo(
                         relative_path="sub",
                         absolute_path=Path(root) / "sub",
                         remote_url=None,
@@ -430,7 +431,7 @@ def test_discover_with_write_reports_written_path(capsys, tmp_path):
                 root=Path(root),
                 project_name="demo",
                 repos=(
-                    SimpleNamespace(
+                    DiscoveredRepo(
                         relative_path=".",
                         absolute_path=Path(root),
                         remote_url="https://github.com/owner/demo.git",

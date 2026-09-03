@@ -38,7 +38,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import deque
-from collections.abc import Collection, Iterator, Sequence
+from collections.abc import Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path, PurePath, PurePosixPath
@@ -1171,6 +1171,29 @@ def resolve_repo_for_path(tree: WorkingGitTree, path: Path | str) -> tuple[Worki
         raise GitSyncError(f"{resolved} is not inside any repository in this tree.")
     owner = max(owners, key=lambda repo: len(repo.absolute_path.parts))
     return owner, resolved.relative_to(owner.absolute_path).as_posix()
+
+
+def innermost_containing_path(candidates: Iterable[Path | str], path: Path | str) -> Path | None:
+    """Return the deepest of *candidates* that *path* sits inside, or ``None``.
+
+    All paths must be counted from the same place. This is the rule
+    :func:`resolve_repo_for_path` already applies to a live tree, on plain
+    paths instead: the repo declared in a ``.cgs`` and the repo found by a
+    filesystem scan both need it before any tree exists to search.
+    Comparison is per path segment, so ``a/bc`` is not inside ``a/b``. A
+    candidate equal to *path*, or equal to ``"."``, is never a container.
+    """
+    target = Path(path)
+    inside = [
+        Path(candidate)
+        for candidate in candidates
+        if Path(candidate) != Path(".")
+        and Path(candidate) != target
+        and target.is_relative_to(Path(candidate))
+    ]
+    if not inside:
+        return None
+    return max(inside, key=lambda candidate: len(candidate.parts))
 
 
 # ---------------------------------------------------------------------------

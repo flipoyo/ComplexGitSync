@@ -27,11 +27,13 @@ from pathlib import Path
 import pytest
 import tomli_w
 
+from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.git_repo import GitProvider, NodeType
-from ComplexGitSync.git_tree import TreeLifecycleState
+from ComplexGitSync.git_tree import TreeLifecycleState, sync_gitignore
 from ComplexGitSync.orchestre import ComplexGitSyncClient, GtsDocument
+from ComplexGitSync.registry import build_registry_from_cgs_document
 
 TEST_PLACEHOLDER_COMMIT_SHA = "f" * 40
 
@@ -710,17 +712,23 @@ class TestCloneAndLaunchReleaseLifecycle:
         """Onboarding_DevPlanTicket.md Phase 1 acceptance test.
 
         Loads the real shipped examples/cawaqsviz.cgs (not a synthetic
-        copy) and routes its three declared repos to local bare-repo
+        copy) and routes its four declared repos to local bare-repo
         fixtures, proving the corrected topology actually reaches READY
         with each child physically nested at the exact relative_path
         cawaqsviz's own code expects (external/... and docs/...), not the
         flat/wrong layout the file described before this phase's fix.
+
+        hydrological_twin sits inside HydrologicalTwinAlphaSeries, so this
+        also covers the order the clones must happen in: the holder is
+        cloned into an empty directory, and cloning it must not wipe a repo
+        already placed inside it.
         """
         examples_dir = Path(__file__).resolve().parents[2] / "examples"
         cawaqsviz_cgs = examples_dir / "cawaqsviz.cgs"
 
         root_remote, _ = _seed_remote_repo(tmp_path, "cawaqsviz-root")
         htas_remote, _ = _seed_remote_repo(tmp_path, "htas")
+        twin_remote, _ = _seed_remote_repo(tmp_path, "hydrological-twin")
         guide_remote, _ = _seed_remote_repo(tmp_path, "user-guide")
 
         clone_target = tmp_path / "workspace"
@@ -732,6 +740,7 @@ class TestCloneAndLaunchReleaseLifecycle:
             lambda entry: {
                 "cawaqsviz": str(root_remote),
                 "HydrologicalTwinAlphaSeries": str(htas_remote),
+                "hydrological_twin": str(twin_remote),
                 "user_guide_CaWaQS-Viz": str(guide_remote),
             }[entry.project_name],
         )
@@ -743,8 +752,18 @@ class TestCloneAndLaunchReleaseLifecycle:
         assert root_entry.absolute_path == clone_target
         htas_clone = clone_target / "external" / "HydrologicalTwinAlphaSeries"
         guide_clone = clone_target / "docs" / "CWV_user_guide"
+        twin_clone = htas_clone / "docs" / "hydrological_twin"
         assert (htas_clone / ".git").exists()
         assert (guide_clone / ".git").exists()
+        assert (twin_clone / ".git").exists()
+        # The repo inside another repo is that repo's child in the tree too.
+        assert registry.get(
+            "root:external/HydrologicalTwinAlphaSeries:docs/hydrological_twin"
+        ).parent_id == "root:external/HydrologicalTwinAlphaSeries"
+        assert (
+            registry.get("root:external/HydrologicalTwinAlphaSeries").node_type
+            is NodeType.PARENT
+        )
         # Plain independent clones, not gitlinks, per the project's own
         # nested-repo model (DevPlanTicket_gitignore.md).
         tracked_modes = _run_git(
@@ -1056,16 +1075,7 @@ class TestDiscoverRepos:
         checkout of the same shape must produce that same corrected topology
         without any of those judgement calls.
         """
-        root = tmp_path / "cawaqsviz"
-        self._init_repo_with_remote(root, "https://gitlab.com/cawaqs/gviz/cawaqsviz.git")
-        self._init_repo_with_remote(
-            root / "external" / "HydrologicalTwinAlphaSeries",
-            "https://github.com/flipoyo/HydrologicalTwinAlphaSeries.git",
-        )
-        self._init_repo_with_remote(
-            root / "docs" / "CWV_user_guide",
-            "https://github.com/flipoyo/user_guide_CaWaQS-Viz",
-        )
+        root = self._cawaqsviz_checkout(tmp_path)
 
         report = ComplexGitSyncClient().discover_repos(root)
 
@@ -1075,6 +1085,7 @@ class TestDiscoverRepos:
             ".",
             "docs/CWV_user_guide",
             "external/HydrologicalTwinAlphaSeries",
+            "external/HydrologicalTwinAlphaSeries/docs/hydrological_twin",
         ]
         by_path = {e["relative_path"]: e for e in report.cgs_entries}
         assert by_path["."]["repository"] == "gitlab:cawaqs/gviz/cawaqsviz"
@@ -1091,6 +1102,119 @@ class TestDiscoverRepos:
         # it finds zero nested *.cgs files, so no pin is needed anymore.
         for entry in report.cgs_entries:
             assert "nested_config" not in entry
+
+    def _cawaqsviz_checkout(self, tmp_path: Path) -> Path:
+        """The real cawaqsviz shape: HydrologicalTwinAlphaSeries holds a repo.
+
+        Its own ``docs/hydrological_twin`` makes it a parent, not a leaf —
+        the case ``NestedParentDiscovery_DevPlanTicket.md`` was written for.
+        """
+        root = tmp_path / "cawaqsviz"
+        self._init_repo_with_remote(root, "https://gitlab.com/cawaqs/gviz/cawaqsviz.git")
+        self._init_repo_with_remote(
+            root / "external" / "HydrologicalTwinAlphaSeries",
+            "https://github.com/flipoyo/HydrologicalTwinAlphaSeries.git",
+        )
+        self._init_repo_with_remote(
+            root / "external" / "HydrologicalTwinAlphaSeries" / "docs" / "hydrological_twin",
+            "https://github.com/flipoyo/hydrological_twin.git",
+        )
+        self._init_repo_with_remote(
+            root / "docs" / "CWV_user_guide",
+            "https://github.com/flipoyo/user_guide_CaWaQS-Viz",
+        )
+        return root
+
+    def test_repo_inside_another_repo_is_reported_as_its_child(self, tmp_path):
+        """A repo found inside another one belongs to it, not to the root."""
+        root = self._cawaqsviz_checkout(tmp_path)
+
+        report = ComplexGitSyncClient().discover_repos(root)
+
+        by_path = {r.relative_path: r for r in report.repos}
+        assert (
+            by_path["external/HydrologicalTwinAlphaSeries/docs/hydrological_twin"].parent_relative_path
+            == "external/HydrologicalTwinAlphaSeries"
+        )
+        # Everything else sits directly under the scanned root.
+        assert by_path["external/HydrologicalTwinAlphaSeries"].parent_relative_path is None
+        assert by_path["docs/CWV_user_guide"].parent_relative_path is None
+
+    def test_drafted_cgs_loads_with_the_holding_repo_as_a_parent(self, tmp_path):
+        """The .cgs discover writes must read back as the tree really is."""
+        root = self._cawaqsviz_checkout(tmp_path)
+        out = tmp_path / "drafted.cgs"
+
+        ComplexGitSyncClient().discover_repos(root, output=out)
+        registry = build_registry_from_cgs_document(
+            CgsDocument.from_toml(out), out, project_root=root
+        )
+
+        holder = registry.get("root:external/HydrologicalTwinAlphaSeries")
+        nested = registry.get(
+            "root:external/HydrologicalTwinAlphaSeries:docs/hydrological_twin"
+        )
+        assert holder.node_type is NodeType.PARENT
+        assert nested.parent_id == holder.repo_id
+        # Its own path is stored from its parent, like a nested .cgs child.
+        assert nested.relative_path == Path("docs/hydrological_twin")
+        assert nested.absolute_path == (
+            root / "external/HydrologicalTwinAlphaSeries/docs/hydrological_twin"
+        )
+        assert [child.repo_id for child in registry.children_of("root")] == [
+            "root:docs/CWV_user_guide",
+            "root:external/HydrologicalTwinAlphaSeries",
+        ]
+
+    def test_gitignore_sync_writes_into_the_holding_repo(self, tmp_path):
+        """The line that keeps the nested clone out of its holder's index.
+
+        Without it, 'cgitsync add' restages the nested repo as a submodule
+        (mode 160000) and silently undoes an import-submodules conversion —
+        see NestedParentDiscovery_DevPlanTicket.md S0.4.
+        """
+        root = self._cawaqsviz_checkout(tmp_path)
+        out = tmp_path / "drafted.cgs"
+        ComplexGitSyncClient().discover_repos(root, output=out)
+        registry = build_registry_from_cgs_document(
+            CgsDocument.from_toml(out), out, project_root=root
+        )
+
+        sync_gitignore(registry)
+
+        holder = root / "external" / "HydrologicalTwinAlphaSeries"
+        assert "docs/hydrological_twin" in (holder / ".gitignore").read_text(encoding="utf-8")
+        # And the root no longer collects a path that lies inside another repo.
+        root_ignore = (root / ".gitignore").read_text(encoding="utf-8").splitlines()
+        assert "external/HydrologicalTwinAlphaSeries" in root_ignore
+        assert "external/HydrologicalTwinAlphaSeries/docs/hydrological_twin" not in root_ignore
+
+    def test_that_gitignore_line_stops_git_add_restaging_a_gitlink(self, tmp_path):
+        """The failure S0.4 reproduces, as a test: no 160000 entry comes back."""
+        root = self._cawaqsviz_checkout(tmp_path)
+        out = tmp_path / "drafted.cgs"
+        ComplexGitSyncClient().discover_repos(root, output=out)
+        registry = build_registry_from_cgs_document(
+            CgsDocument.from_toml(out), out, project_root=root
+        )
+        sync_gitignore(registry)
+
+        holder = root / "external" / "HydrologicalTwinAlphaSeries"
+        _run_git(holder, "add", "--all")
+
+        staged = _run_git(holder, "ls-files", "--stage")
+        assert "160000" not in staged
+
+    def test_scan_stopped_by_max_depth_is_reported(self, tmp_path):
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
+        self._init_repo_with_remote(root / "a" / "b" / "deep", "https://github.com/owner/deep.git")
+
+        stopped = ComplexGitSyncClient().discover_repos(root, max_depth=2)
+        complete = ComplexGitSyncClient().discover_repos(root, max_depth=5)
+
+        assert any("stopped at --max-depth 2" in w for w in stopped.warnings)
+        assert not any("--max-depth" in w for w in complete.warnings)
 
     def test_discovered_draft_is_a_valid_cgs_document(self, tmp_path):
         root = tmp_path / "proj"

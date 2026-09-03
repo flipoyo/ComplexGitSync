@@ -1,13 +1,20 @@
 # Real-world topology for https://gitlab.com/cawaqs/gviz/cawaqsviz.
-# Corrected 2026-08-24 (Onboarding_DevPlanTicket.md Phase 1) Neither
-# HydrologicalTwinAlphaSeries nor user_guide_CaWaQS-Viz has a .cgs of its
-# own (verified against the live repos); the default "auto" nested
-# discovery resolves that to a normal leaf, so no override is needed.
+# Four repositories on two levels: HydrologicalTwinAlphaSeries is not a
+# leaf, it holds hydrological_twin at docs/hydrological_twin. Every path
+# below is written from the project root, as a .cgs always is, so that
+# nesting shows up as one path lying inside another. It is read back as a
+# real parent/child pair — see NestedParentDiscovery_DevPlanTicket.md.
+# examples/htas.cgs describes the same pair the other way round: as
+# HydrologicalTwinAlphaSeries' own .cgs, for a checkout that carries one.
+# No repository here has a .cgs of its own upstream, so nested_config is
+# left at its "auto" default, which resolves a repo with no .cgs to a
+# normal entry.
 
 project = { name = "CaWaQS-Viz", default_branch = "main" }
 
 repos = [
     { repository = "gitlab:cawaqs/gviz/cawaqsviz", relative_path = ".", fallback_branch = "main" },
     { repository = "github:flipoyo/HydrologicalTwinAlphaSeries", relative_path = "external/HydrologicalTwinAlphaSeries", fallback_branch = "main" },
+    { repository = "github:flipoyo/hydrological_twin", relative_path = "external/HydrologicalTwinAlphaSeries/docs/hydrological_twin", fallback_branch = "main" },
     { repository = "github:flipoyo/user_guide_CaWaQS-Viz", relative_path = "docs/CWV_user_guide", fallback_branch = "main" },
 ]

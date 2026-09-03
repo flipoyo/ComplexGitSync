@@ -12,7 +12,7 @@
     },
     "cgs_format.py": {
       "internal_imports": 9,
-      "loc": 615,
+      "loc": 642,
       "public_symbols": 9
     },
     "cli/__init__.py": {
@@ -26,13 +26,13 @@
       "public_symbols": 0
     },
     "cli/configuration.py": {
-      "internal_imports": 6,
-      "loc": 279,
+      "internal_imports": 8,
+      "loc": 309,
       "public_symbols": 1
     },
     "cli/expert.py": {
       "internal_imports": 12,
-      "loc": 762,
+      "loc": 763,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -52,7 +52,7 @@
     },
     "discovery.py": {
       "internal_imports": 20,
-      "loc": 203,
+      "loc": 230,
       "public_symbols": 3
     },
     "errors.py": {
@@ -72,8 +72,8 @@
     },
     "git_tree.py": {
       "internal_imports": 27,
-      "loc": 1094,
-      "public_symbols": 24
+      "loc": 1114,
+      "public_symbols": 25
     },
     "gts_document.py": {
       "internal_imports": 8,
@@ -106,8 +106,8 @@
       "public_symbols": 17
     },
     "orchestre.py": {
-      "internal_imports": 67,
-      "loc": 3090,
+      "internal_imports": 68,
+      "loc": 3127,
       "public_symbols": 12
     },
     "paths.py": {
@@ -116,8 +116,8 @@
       "public_symbols": 4
     },
     "registry.py": {
-      "internal_imports": 32,
-      "loc": 415,
+      "internal_imports": 33,
+      "loc": 436,
       "public_symbols": 3
     },
     "snapshot_resolver.py": {

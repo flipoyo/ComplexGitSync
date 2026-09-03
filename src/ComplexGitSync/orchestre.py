@@ -55,7 +55,7 @@ import shutil
 import time
 import tomllib
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -99,6 +99,7 @@ from .git_tree import (
     format_repo_tree_outline,
     format_view_operation,
     format_view_tree,
+    innermost_containing_path,
     iter_tree,
     iter_tree_leaf_first,
     normalize_node_types,
@@ -789,8 +790,13 @@ def _url_to_repo_identifier(url: str) -> str:
 DEFAULT_DISCOVER_MAX_DEPTH = 5
 
 
-def _walk_git_repositories(root: Path, *, max_depth: int) -> list[Path]:
+def _walk_git_repositories(root: Path, *, max_depth: int) -> tuple[list[Path], bool]:
     """Return every directory under *root* that holds a ``.git``, root first.
+
+    Returns the repositories found and whether the walk stopped early. It
+    stopped early when *max_depth* was reached while directories were still
+    left to look into: there may be more repositories below, and the caller
+    should say so rather than present a partial answer as a complete one.
 
     Used by :meth:`ComplexGitSyncClient.discover_repos`. Two rules matter:
 
@@ -806,25 +812,36 @@ def _walk_git_repositories(root: Path, *, max_depth: int) -> list[Path]:
     its children are exactly the tree ComplexGitSync manages.
     """
     found: list[Path] = []
+    stopped_early = False
 
-    def _descend(directory: Path, depth: int) -> None:
-        if (directory / ".git").exists():
-            found.append(directory)
-        if depth >= max_depth:
-            return
+    def _subdirectories(directory: Path) -> list[Path]:
         try:
             children = sorted(directory.iterdir())
         except (PermissionError, OSError):
+            return []
+        return [
+            child
+            for child in children
+            if child.is_dir() and not child.is_symlink() and child.name != ".git"
+        ]
+
+    def _descend(directory: Path, depth: int) -> None:
+        nonlocal stopped_early
+        if (directory / ".git").exists():
+            found.append(directory)
+        children = _subdirectories(directory)
+        if depth >= max_depth:
+            stopped_early = stopped_early or bool(children)
             return
         for child in children:
-            if not child.is_dir() or child.is_symlink():
-                continue
-            if child.name == ".git":
-                continue
             _descend(child, depth + 1)
 
     _descend(root, 0)
-    return found
+    return found, stopped_early
+
+
+def _as_posix_or_none(path: Path | None) -> str | None:
+    return None if path is None else path.as_posix()
 
 
 @dataclass(frozen=True, slots=True)
@@ -851,6 +868,12 @@ class DiscoveredRepo:
         Informational only: the generated draft leaves ``nested_config``
         unset either way, since the default ``"auto"`` already resolves
         cleanly whether or not a nested ``.cgs`` is present.
+    parent_relative_path:
+        The scanned repository this one sits *inside*, as its own
+        *relative_path*; ``None`` when it sits directly under the scanned
+        root. A repository holding another one is a parent, not a leaf, and
+        the drafted ``.cgs`` is read back that way — see
+        ``registry.build_registry_from_cgs_document``.
     """
 
     relative_path: str
@@ -859,6 +882,9 @@ class DiscoveredRepo:
     identifier: str | None
     branch: str | None
     has_cgs: bool
+    parent_relative_path: str | None = None
+
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -1144,6 +1170,7 @@ class ComplexGitSyncClient:
             submodules=tuple(submodules),
             applied=applied_any,
             converted=tuple(converted),
+            scan_root=root,
         )
 
     def _gitmodules_levels_root_first(
@@ -1205,10 +1232,16 @@ class ComplexGitSyncClient:
                 submodules=(),
                 applied=False,
                 converted=(),
+                scan_root=root,
             )
 
         content = gitmodules_path.read_text(encoding="utf-8")
-        submodules = tuple(_parse_gitmodules(content))
+        # Record which repository declared each submodule. Its ``path`` is
+        # written relative to that repository, so without this the entry
+        # cannot be placed once several levels are reported together.
+        submodules = tuple(
+            replace(entry, owner_root=root) for entry in _parse_gitmodules(content)
+        )
 
         self._log_event(
             "import_submodules_start",
@@ -1222,6 +1255,7 @@ class ComplexGitSyncClient:
                 submodules=(),
                 applied=False,
                 converted=(),
+                scan_root=root,
             )
 
         if not apply:
@@ -1229,6 +1263,7 @@ class ComplexGitSyncClient:
                 submodules=submodules,
                 applied=False,
                 converted=(),
+                scan_root=root,
             )
 
         # --- apply=True: perform the conversion ---
@@ -1290,6 +1325,7 @@ class ComplexGitSyncClient:
             submodules=submodules,
             applied=True,
             converted=tuple(converted),
+            scan_root=root,
         )
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
@@ -1364,7 +1400,15 @@ class ComplexGitSyncClient:
         repos: list[DiscoveredRepo] = []
         warnings: list[str] = []
 
-        for repo_path in _walk_git_repositories(root, max_depth=max_depth):
+        found_paths, stopped_early = _walk_git_repositories(root, max_depth=max_depth)
+        if stopped_early:
+            warnings.append(
+                f"the scan stopped at --max-depth {max_depth} with directories left "
+                f"to look into; any repository deeper than that was not seen. "
+                f"Re-run with a larger --max-depth to be sure."
+            )
+
+        for repo_path in found_paths:
             relative = repo_path.relative_to(root).as_posix() if repo_path != root else "."
             remote_url = self.git_runner.remote_get_url(repo_path)
             try:
@@ -1404,6 +1448,11 @@ class ComplexGitSyncClient:
                     identifier=identifier,
                     branch=branch,
                     has_cgs=has_cgs,
+                    # The walk is root-first, so anything holding this
+                    # repository has already been seen.
+                    parent_relative_path=_as_posix_or_none(
+                        innermost_containing_path((found.relative_path for found in repos), relative)
+                    ),
                 )
             )
 

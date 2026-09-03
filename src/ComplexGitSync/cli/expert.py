@@ -860,22 +860,27 @@ def _execute_import_submodules(
         print(f"No .gitmodules found at {source} — nothing to import.")
         return 0
 
+    # Every path is printed from *source*, and each submodule names the
+    # .gitmodules that declared it. With --recursive the report spans
+    # several repositories, and a bare .gitmodules path means nothing
+    # without saying which repository it was read from.
     if not apply:
-        print(f"Dry run — {len(report.submodules)} submodule(s) in {source}/.gitmodules")
+        print(f"Dry run — {len(report.submodules)} submodule(s) under {source}")
         print("Pass --apply to perform the conversion.\n")
         for sub in report.submodules:
             print(f"  submodule: {sub.name}")
-            print(f"    path:   {sub.path}")
-            print(f"    url:    {sub.url}")
-            print(f"    branch: {sub.branch}")
+            print(f"    path:        {report.path_from_scan_root(sub)}")
+            print(f"    declared in: {report.gitmodules_from_scan_root(sub)}")
+            print(f"    url:         {sub.url}")
+            print(f"    branch:      {sub.branch}")
             print()
         return 0
 
-    print(f"Converted {len(report.converted)} submodule(s) in {source}:")
+    print(f"Converted {len(report.converted)} submodule(s) under {source}:")
     # apply=True converts every submodule the report found (an all-or-raise
     # preflight per level), so report.submodules and report.converted are
     # always in 1:1 order — zip rather than look up by name, which could
     # otherwise match the wrong entry if two levels share a submodule name.
     for sub in report.submodules:
-        print(f"  ✓ {sub.name}  ({sub.path})")
+        print(f"  ✓ {sub.name}  ({report.path_from_scan_root(sub)})")
     return 0

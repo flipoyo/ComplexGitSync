@@ -16,7 +16,12 @@ from pathlib import Path
 
 from ..cgs_format import DEFAULT_ACCESS_PROTOCOL, DEFAULT_BRANCH
 from ..git_repo import GitProvider
-from ..orchestre import DEFAULT_DISCOVER_MAX_DEPTH, ComplexGitSyncClient
+from ..orchestre import (
+    DEFAULT_DISCOVER_MAX_DEPTH,
+    ComplexGitSyncClient,
+    DiscoveredRepo,
+    DiscoverReport,
+)
 from ._shared import _run_with_logging
 
 COMMANDS: dict[str, str] = {
@@ -276,6 +281,34 @@ def _handle_discover(args: argparse.Namespace) -> int:
     )
 
 
+def _print_discovered_tree(report: DiscoverReport) -> None:
+    """Print the scanned repositories as a tree, so nesting is visible.
+
+    A repository found inside another one is drawn under it, which is also
+    how the drafted ``.cgs`` is read back.
+    """
+    children: dict[str | None, list[DiscoveredRepo]] = {}
+    for repo in report.repos:
+        if repo.relative_path == ".":
+            continue
+        children.setdefault(repo.parent_relative_path, []).append(repo)
+    if not children:
+        return
+
+    print("tree:")
+    print(f"  {report.project_name} (project)")
+
+    def _print_level(parent: str | None, indent: str) -> None:
+        for repo in children.get(parent, []):
+            own_children = children.get(repo.relative_path, [])
+            kind = "parent" if own_children else "leaf"
+            print(f"{indent}{Path(repo.relative_path).name} ({kind})")
+            _print_level(repo.relative_path, indent + "  ")
+
+    _print_level(None, "    ")
+    print()
+
+
 def _execute_discover(
     client: ComplexGitSyncClient,
     source: Path,
@@ -299,10 +332,14 @@ def _execute_discover(
         print(f"      id:     {repo.identifier or '(unresolved)'}")
         print(f"      branch: {repo.branch or '(detached)'}")
         print(f"      nested: {'auto (has its own .cgs)' if repo.has_cgs else 'auto (no .cgs of its own)'}")
+        if repo.parent_relative_path is not None:
+            print(f"      inside: {repo.parent_relative_path}")
         print()
 
+    _print_discovered_tree(report)
+
     if report.warnings:
-        print(f"{len(report.warnings)} repository(ies) could not be drafted:")
+        print(f"{len(report.warnings)} warning(s):")
         for warning in report.warnings:
             print(f"  ! {warning}")
         print()

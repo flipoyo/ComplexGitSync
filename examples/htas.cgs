@@ -1,9 +1,14 @@
-# HydrologicalTwinAlphaSeries nested topology. hydrological_twin has no
-# .cgs of its own; all repositories use autoTest with main as fallback.
+# HydrologicalTwinAlphaSeries and the repository it holds, seen from
+# HydrologicalTwinAlphaSeries itself. This is the same pair that
+# examples/cawaqsviz.cgs describes from the project root; it is the file a
+# checkout would carry if HydrologicalTwinAlphaSeries described itself.
+# hydrological_twin sits at docs/hydrological_twin, the path its gitlink
+# uses, and has no .cgs of its own; all repositories use autoTest with
+# main as fallback.
 
 project = { name = "HydrologicalTwinAlphaSeries", default_branch = "autoTest" }
 
 repos = [
     { repository = "github:flipoyo/HydrologicalTwinAlphaSeries", fallback_branch = "main" },
-    { repository = "github:flipoyo/hydrological_twin", fallback_branch = "main" },
+    { repository = "github:flipoyo/hydrological_twin", relative_path = "docs/hydrological_twin", fallback_branch = "main" },
 ]

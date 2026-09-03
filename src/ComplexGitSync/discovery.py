@@ -210,12 +210,21 @@ def _resolve_repo_target_ref(
 
 @dataclass(frozen=True, slots=True)
 class SubmoduleEntry:
-    """One git submodule entry parsed from ``.gitmodules``."""
+    """One git submodule entry parsed from ``.gitmodules``.
+
+    *path* is written in ``.gitmodules`` relative to the repository that
+    declares it, so it means nothing on its own once more than one
+    repository is involved. *owner_root* records which repository that is,
+    so a caller can always say where the submodule really sits.
+    ``_parse_gitmodules`` leaves it unset, since parsing text alone cannot
+    know; the caller that read the file fills it in.
+    """
 
     name: str
     path: str
     url: str
     branch: str
+    owner_root: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,11 +240,33 @@ class ImportSubmodulesReport:
     converted:
         Names of submodules that were converted (same as ``submodules`` when
         ``applied`` is ``True``; empty tuple when dry-run).
+    scan_root:
+        The repository the command was pointed at. Every reported path can
+        be expressed from here, which is what makes a multi-level report
+        readable — see :attr:`SubmoduleEntry.owner_root`.
     """
 
     submodules: tuple[SubmoduleEntry, ...]
     applied: bool
     converted: tuple[str, ...]
+    scan_root: Path | None = None
+
+    def path_from_scan_root(self, entry: SubmoduleEntry) -> str:
+        """Return *entry*'s location counted from :attr:`scan_root`.
+
+        Falls back to the raw ``.gitmodules`` path when either root is
+        unknown, which is the best that can be said in that case.
+        """
+        if self.scan_root is None or entry.owner_root is None:
+            return entry.path
+        return ((entry.owner_root / entry.path).relative_to(self.scan_root)).as_posix()
+
+    def gitmodules_from_scan_root(self, entry: SubmoduleEntry) -> str:
+        """Return the ``.gitmodules`` file that declared *entry*, from :attr:`scan_root`."""
+        if self.scan_root is None or entry.owner_root is None:
+            return ".gitmodules"
+        owner = entry.owner_root.relative_to(self.scan_root).as_posix()
+        return ".gitmodules" if owner == "." else f"{owner}/.gitmodules"
 
 
 def _parse_gitmodules(content: str) -> list[SubmoduleEntry]:

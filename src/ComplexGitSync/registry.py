@@ -69,6 +69,7 @@ from .git_tree import (
     _validate_repo_shape,
     build_tree_state,
     format_view_tree,
+    innermost_containing_path,
     make_repo_id,
     normalize_node_types,
     register_relative_path,
@@ -244,6 +245,7 @@ def build_registry_from_cgs_document(
 
     seen_relative_paths: set[Path] = set()
     root_identity_assigned = False
+    declared: list[tuple[Path, dict[str, Any]]] = []
     for repo in document.repos:
         _validate_repo_shape(repo)
         if _is_root_repo_spec(repo, document.project_name, root_identity_assigned):
@@ -262,18 +264,37 @@ def build_registry_from_cgs_document(
             error_type=ConfigValidationError,
             context="root",
         )
+        declared.append((relative_path, repo))
+
+    # Every path in a ``.cgs`` is written from the project root, so a repo
+    # that sits *inside* another repo is only recognisable by comparing the
+    # two paths. Work that out first, shallowest path first so a container is
+    # always resolved before whatever it holds. A repo found inside another
+    # becomes that repo's child, and keeps its own path from that parent —
+    # the shape a nested ``.cgs`` already produces in ``discovery.py``.
+    # Entries are then added below in the order the document declares them,
+    # which is the order a re-serialised document must keep.
+    repo_ids: dict[Path, str] = {}
+    for relative_path, repo in sorted(declared, key=lambda item: len(item[0].parts)):
+        parent_id, path_from_parent = _placement(repo_ids, relative_path)
+        repo_ids[relative_path] = make_repo_id(
+            parent_id, path_from_parent, str(repo["project_name"])
+        )
+
+    for relative_path, repo in declared:
+        parent_id, path_from_parent = _placement(repo_ids, relative_path)
 
         target_kind, target_name = _resolve_repo_target_ref(
             repo,
             document_default_branch=document.default_branch,
         )
         entry = WorkingRepo(
-            repo_id=make_repo_id(ROOT_REPO_ID, relative_path, str(repo["project_name"])),
+            repo_id=repo_ids[relative_path],
             name=str(repo["project_name"]),
             node_type=NodeType.LEAF,
-            parent_id=ROOT_REPO_ID,
+            parent_id=parent_id,
             absolute_path=(root_path / relative_path).resolve(),
-            relative_path=relative_path,
+            relative_path=path_from_parent,
             source_cgs_path=source_path,
             target_ref_kind=target_kind,
             target_ref_name=target_name,
@@ -304,6 +325,19 @@ def build_registry_from_cgs_document(
     registry.recompute_tree_state()
     document.attach_serialization_context(registry)
     return registry
+
+
+def _placement(repo_ids: dict[Path, str], relative_path: Path) -> tuple[str, Path]:
+    """Return the parent id and own path for a repo declared at *relative_path*.
+
+    *repo_ids* maps each already-placed repo's path (counted from the project
+    root, as a ``.cgs`` writes it) to its repo id. A repo inside one of them
+    belongs to it; a repo inside none of them belongs to the project root.
+    """
+    container_path = innermost_containing_path(repo_ids, relative_path)
+    if container_path is None:
+        return ROOT_REPO_ID, relative_path
+    return repo_ids[container_path], relative_path.relative_to(container_path)
 
 
 def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:

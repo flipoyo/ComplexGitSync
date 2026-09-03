@@ -10,6 +10,7 @@ import pytest
 from ComplexGitSync import __version__
 from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.cli import main
+from ComplexGitSync.orchestre import DiscoveredRepo
 
 
 def test_main_without_command_prints_help(capsys):
@@ -2052,7 +2053,7 @@ def test_discover_command_uses_client_method(monkeypatch, capsys, tmp_path):
                 root=Path(root),
                 project_name="demo",
                 repos=(
-                    SimpleNamespace(
+                    DiscoveredRepo(
                         relative_path=".",
                         absolute_path=Path(root),
                         remote_url="https://github.com/owner/demo.git",

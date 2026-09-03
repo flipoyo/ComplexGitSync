@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.30
+# ComplexGitSync v0002.31
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -102,6 +102,13 @@ pixi run cgitsync validate draft.cgs
 Read-only until `--write` is passed — always review the draft before using
 it. 
 
+A repository found *inside* another repository is drafted as that
+repository's child, not the project root's: the report marks it
+`inside: <path>` and prints the tree it will write. Only what is checked
+out can be found, and only down to `--max-depth` (default 5) — `discover`
+warns when that limit stopped the scan early, rather than presenting a
+partial answer as a complete one.
+
 Full walkthrough: [tutorials/03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md).
 
 ### 2.1.3 The project uses git submodules
@@ -118,6 +125,11 @@ That's the whole job — turning gitlinks into plain clones on disk. It does
 not also write a `.cgs`: `.gitmodules` never records the root's own
 identity, and a checkout worth converting already has a `.cgs` (hand-authored)
 or can get one from `discover`, run before or after `--apply`.
+
+Add `--recursive` when a submodule has submodules of its own, so every
+level is converted rather than just the top one. The report prints each
+path from the directory you pointed the command at, and names the
+`.gitmodules` file that declared it.
 Full walkthrough over `discover`, `import-submodules`, and `initialise`: [tutorials/03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md).
 
 ### 2.2 Nested Configuration

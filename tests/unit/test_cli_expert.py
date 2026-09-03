@@ -33,6 +33,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from ComplexGitSync.discovery import ImportSubmodulesReport, SubmoduleEntry
+
 _SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "ComplexGitSync"
 
 
@@ -779,12 +781,14 @@ def test_freeze_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
 
 
 def test_import_submodules_dry_run_reports_without_apply(monkeypatch, capsys, tmp_path):
-    sub = SimpleNamespace(name="child", path="deps/child", url="git@example.com:owner/child.git", branch="main")
+    sub = SubmoduleEntry(name="child", path="deps/child", url="git@example.com:owner/child.git", branch="main")
 
     class StubClient:
         def import_submodules(self, source, *, apply=False, recursive=False):
             assert apply is False
-            return SimpleNamespace(submodules=[sub], converted=[])
+            return ImportSubmodulesReport(
+                submodules=(sub,), applied=False, converted=(), scan_root=Path(source)
+            )
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
@@ -800,12 +804,14 @@ def test_import_submodules_dry_run_reports_without_apply(monkeypatch, capsys, tm
 
 
 def test_import_submodules_apply_converts(monkeypatch, capsys, tmp_path):
-    sub = SimpleNamespace(name="child", path="deps/child", url="git@example.com:owner/child.git", branch="main")
+    sub = SubmoduleEntry(name="child", path="deps/child", url="git@example.com:owner/child.git", branch="main")
 
     class StubClient:
         def import_submodules(self, source, *, apply=False, recursive=False):
             assert apply is True
-            return SimpleNamespace(submodules=[sub], converted=["child"])
+            return ImportSubmodulesReport(
+                submodules=(sub,), applied=True, converted=("child",), scan_root=Path(source)
+            )
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
