@@ -181,7 +181,7 @@ def test_git_runner_file_transport_detection_handles_windows_paths():
 # ---------------------------------------------------------------------------
 
 
-def test_git_runner_run_raises_git_sync_error_on_nonzero_exit(monkeypatch):
+def test_git_runner_run_raises_git_sync_error_on_nonzero_exit(monkeypatch, tmp_path):
     runner = GitRunner()
 
     def _fake_subprocess_run(cmd, **kwargs):
@@ -189,8 +189,32 @@ def test_git_runner_run_raises_git_sync_error_on_nonzero_exit(monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", _fake_subprocess_run)
 
+    # tmp_path exists, so the missing-directory guard below lets this through
+    # to the exit-code branch this test is about.
     with pytest.raises(GitSyncError, match="fatal: not a git repository"):
-        runner.rev_parse_head("/tmp/not-a-repo")
+        runner.rev_parse_head(tmp_path)
+
+
+def test_git_runner_run_raises_git_sync_error_when_repo_directory_is_gone(tmp_path):
+    """A declared repository whose directory was deleted must not crash.
+
+    ``subprocess.run`` raises ``FileNotFoundError`` for a missing ``cwd``,
+    which is not a ``GitSyncError``, so callers that already degrade on
+    ``GitSyncError`` (``orchestre._repo_status_row``'s error row,
+    ``local_branch_exists``' ``False``) never saw it and the traceback
+    escaped to the user.
+    """
+    runner = GitRunner()
+    missing = tmp_path / "deleted-repo"
+
+    with pytest.raises(GitSyncError, match="no such directory"):
+        runner.current_branch(missing)
+
+
+def test_git_runner_local_branch_exists_is_false_when_repo_directory_is_gone(tmp_path):
+    runner = GitRunner()
+
+    assert runner.local_branch_exists(tmp_path / "deleted-repo", "main") is False
 
 
 def test_git_runner_remote_get_url_returns_none_when_remote_missing(monkeypatch):

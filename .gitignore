@@ -209,8 +209,6 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 
-# Claude Code local settings (machine-specific permissions)
-.claude/settings.local.json
 
 # Marimo
 marimo/_static/
@@ -228,17 +226,21 @@ apoub*
 # Nested repos declared in ComplexGitSync.cgs (plain clones, not submodules —
 # see README's "nested repos are plain clones" note). ComplexGitSync's own
 # project-specific files live alongside these, not inside them: AgentSpec/
-# keeps AdditionalSpecs.md/audit.md/AGENT.md/DOCSTYLE.md/archive/ tracked
-# directly; only the nested DevSpec/DocSpec checkouts themselves are ignored.
-/AgentSpec/DevSpec/
+# keeps active planning tickets and archive/ tracked directly; CLAUDE.md and
+# AGENT.md at the root are symbolic links into the .claude/ mount, tracked as
+# links, not as the files they point to.
 /docs/DocSpec/
-/DevSpec/
+/.agentSpec/
+/.localSpec/
+/.claude/
 /docs/
 
 # Generated ComplexGitSync runtime state (.gts snapshots, .lgr hash-chained
 # registers, run logs, workspace-local master.toml) — not part of the
 # .cgs/.gts project spec, never meant to be committed.
 .cgitsync/
-DevSpec
+.agentSpec
+.localSpec
+.claude
 docs
 ComplexGitSync.lgr

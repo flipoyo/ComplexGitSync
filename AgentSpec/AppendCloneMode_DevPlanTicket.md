@@ -95,7 +95,7 @@ graph TD
 
 Every other nested mount in this project's own `.cgs` files
 (`ComplexGitSync.cgs`, `examples/*.cgs`) targets a directory whose entire
-content is meant to come from the nested repo (`AgentSpec/DevSpec`, the
+content is meant to come from the nested repo (`.agentSpec`, the
 `DocSpec`/`DevSpec` examples). `docs/` mounting `DocComplexGitSync` is the
 one case in this project where the mount point directory is *also* used to
 hold content tracked by the parent repo itself (`docs/tutorials/`,
@@ -171,7 +171,7 @@ change; nothing else is buildable before that lands.
 | **WP-APP2** | `WP-APP1` | `git_runner.py` (new primitive: init+remote-add+fetch+checkout in an existing directory, distinct from `clone()`), `orchestre.py` (`_clone_registry_entry`: branch on `clone_mode` instead of unconditional `_is_populated_nested_destination` → `rmtree`) | Initial-clone path honours `clone_mode = "append"`: no rmtree, checkout-based population, conflicts surfaced per §1.2's chosen policy. |
 | **WP-APP3** | `WP-APP1` | `git_runner.py` (`force_pull`: make `clean_untracked()` conditional), `orchestre.py` (thread `clone_mode` through to the resync call site) | Resync path stops erasing colocated content for `"append"` entries — closes the §0.2 gap. |
 | **WP-APP4** | `WP-APP2`, `WP-APP3` | `tests/unit/test_registry_client.py` or equivalent, `tests/integration/` | New tests: append-mode clone into a populated-but-unrelated directory succeeds and preserves the unrelated files; a genuine path collision fails loud with every colliding path named; resync after append-mode clone still preserves colocated content added afterward. |
-| **WP-APP5** | `WP-APP1`–`WP-APP4` | `docs/Text/user_guide.tex`, `docs/Text/c_cgs.tex`, `AgentSpec/AdditionalSpecs.md` | Document the new field and its semantics; rebuild the touched PDFs per `CLAUDE.md`'s before-committing rule; update the architecture table if `git_runner.py`'s responsibility line changes. |
+| **WP-APP5** | `WP-APP1`–`WP-APP4` | `docs/Text/user_guide.tex`, `docs/Text/c_cgs.tex`, `.localSpec/AdditionalSpecs.md` | Document the new field and its semantics; rebuild the touched PDFs per `CLAUDE.md`'s before-committing rule; update the architecture table if `git_runner.py`'s responsibility line changes. |
 | **WP-APP6 (optional)** | `WP-APP1`–`WP-APP5` | `ComplexGitSync.cgs` | Once available, evaluate whether `docs/`'s own `DocComplexGitSync` entry should switch to `clone_mode = "append"` — not required, since `tutorials/` already moved out of `docs/`, but would restore the option of colocating other local-only content there later. |
 
 ## 3. Acceptance criteria
