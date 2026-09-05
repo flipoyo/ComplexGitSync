@@ -430,6 +430,12 @@ operation.
 
 ### D1. How do pinned mounts survive a tree-wide branch operation?
 
+**Moved out.** This is the only open item that stops `branch` and
+`checkout` being usable, so it now has its own ticket:
+`AgentSpec/BranchPinning_DevPlanTicket.md`. It carries the four call
+sites, the field, and the zero-headroom ceiling budget. What follows is
+kept as the reasoning that led there.
+
 | Option | Mechanism | Cost | Trade-off |
 |---|---|---|---|
 | **A (recommended)** | A new `.cgs` entry field — say `branch_policy = "pinned"` (default `"global"`) — that `propagate_global_branch` and `restart_tree` honour by leaving that repository on its declared `default_branch` | A grammar field with validation and authoring round-trip, plus the three operations and their tests; docs for the field | Explicit in the file: a reader sees which mounts follow the tree and which do not. The mechanism is reusable by any project vendoring a shared repository |
