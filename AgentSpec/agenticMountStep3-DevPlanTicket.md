@@ -4,15 +4,15 @@
 
 ## Abstract — read this first
 
-**The one-line version.** Finish step 2 (merge, archive, state), then make
-one round trip work and document it: clone ComplexGitSync on `main`, run
+**The one-line version.** Finish what step 2 left behind (two clean-ups,
+§1.7), then make one round trip work and document it: clone ComplexGitSync on `main`, run
 one command, get a `READY` tree at `$WORK/<project-name>` with every
 repository on the branch it should be on, work there, push, and pull the
 result back into the plain clone.
 
-**What this document is.** A plan. Step 2 is implemented on the branch
-`agentic-mounts` and pushed, but not merged; nothing in step 3 has been
-started.
+**What this document is.** A plan. Step 2 is merged: `main` is at
+`8923ee0` and its build passed, which means it cloned all five mounts.
+Nothing in step 3 has been started.
 
 **Why it exists.** The mounts work — a `bootstrap` from the real remotes
 produces a `READY` seven-repository tree. What does not work is *living*
@@ -53,11 +53,11 @@ graph LR
 
 | Repository | Branch | State |
 |---|---|---|
-| `flipoyo/ComplexGitSync` | `agentic-mounts` at `f9b8aa4` | Pushed, **not merged**. `main` is still at `4f0afde` and still declares a root-level `DevSpec` |
+| `flipoyo/ComplexGitSync` | `main` at `8923ee0` | Merged, and the build passed on that commit. `agentic-mounts` is fully contained in it |
 | `flipoyo/.agentSpec` | `main` at `56d492f` | The shell: `TICKETLIFECYCLE.md`, `README.md`, `install.cgs` |
-| `flipoyo/DevSpec` | `main` at `6b81343` | `DevSpecs.md`, `DOCSTYLE.md`, `AGENT.md` template |
+| `flipoyo/DevSpec` | `main` at `a5d3432` | `DevSpecs.md`, `DOCSTYLE.md`, `AGENT.md` template |
 | `flipoyo/.localSpec` | `ComplexGitSync` at `68836a7` | `AdditionalSpecs.md`, `AGENT.md`, `audit.md` |
-| `flipoyo/.claude` | `main` + `ComplexGitSync` at `18b8a7f` | `CLAUDE.md`, `AGENT.md`, `settings.json` |
+| `flipoyo/.claude` | `main` + `ComplexGitSync` at `df4221c` | `CLAUDE.md`, `AGENT.md`, `settings.json` |
 | `flipoyo/DocComplexGitSync` | `main` at `5f17d6e` | `\cgsversion` 0002.37, PDFs rebuilt |
 
 A `bootstrap` against these remotes was smoke-tested end to end and produced
@@ -70,10 +70,10 @@ mounts are not in question. The workflow around them is.
 
 | # | Item | Why it is still open |
 |---|---|---|
-| 1.1 | Merge `agentic-mounts` into `main`, confirm CI is green | Held for the owner: CI clones every repository the `.cgs` lists, so the merge is the first real test of the five-mount topology |
+| 1.1 | ~~Merge `agentic-mounts` into `main`~~ — **done**: `main` is at `8923ee0`, and the build for that commit finished with `success`, so it cloned all five repositories over HTTPS | Merged by the owner |
 | 1.2 | ~~Archive the first two tickets~~ — **done**, stamped and moved to `AgentSpec/archive/20260905_AgenticMounts_DevPlanTicket.md` and `AgentSpec/archive/20260905_agenticMountStep2-DevPlanTicket.md` | Archived on the owner's instruction, on the branch that carries the work, so the move lands with the merge |
-| 1.3 | Regenerate the CGSHOME workspace's runtime state | Its `.gts` still lists a root-level `DevSpec/`, so `status` reports an `error` row. `pull` cannot refresh it (§3), so this waits for a post-merge `initialise` |
-| 1.4 | Pull `main` into `~/Programmes/ComplexGitSync` | That checkout still declares a root-level `DevSpec` |
+| 1.3 | Regenerate the workspace's runtime state | Still open. Its `.gts` lists a root-level `DevSpec/`, so `status` reports one `error` row. `pull` cannot refresh it (§3). §1.7 step 2 is the exact command |
+| 1.4 | Pull `main` into `~/Programmes/ComplexGitSync` | Still open. That checkout still describes the old layout. §1.7 step 1 |
 | 1.5 | The audit finding logged in `.localSpec/audit.md` | Now §3 of this ticket: it blocks the protocol rather than merely lurking |
 
 ### 1.6 The merge, repository by repository
@@ -90,7 +90,7 @@ happens on a feature branch and merges into `main` in the normal way.
 
 | Repository | Branches | What to do now |
 |---|---|---|
-| `ComplexGitSync` | `agentic-mounts` → `main` | **Merge.** This is the only merge, and the one that starts the build |
+| `ComplexGitSync` | `agentic-mounts` → `main` | **The only merge.** Done: `main` at `8923ee0`, build green |
 | `.agentSpec` | `main` | Nothing. Pushed at `56d492f` |
 | `DevSpec` | `main` | Nothing. Pushed at `a5d3432` |
 | `.localSpec` | `main`, `ComplexGitSync` | Nothing. `main` has not changed, so there is nothing to merge forward |
@@ -118,10 +118,76 @@ git merge --no-ff agentic-mounts
 git push origin main          # this is what starts the build
 ```
 
-**Then, and only then, the two clean-ups.** Re-run `initialise` against the
-merged `install.cgs` so the workspace stops recording a `DevSpec/` folder
-at the top level, and run `git pull` in `~/Programmes/ComplexGitSync` so
-that checkout stops describing the old layout.
+### 1.7 The two clean-ups, exactly
+
+Two checkouts need attention afterwards. They share nothing on disk, so the
+order between them is free; do the plain clone first only so that commands
+run from it use the merged code.
+
+Names used below: **A** is the plain clone, `~/Programmes/ComplexGitSync`.
+**B** is the workspace, `/home/flipoyo/.cgs/CGS20260905095916/cgitsync`.
+
+**Step 0 — from the shell you are about to use.** An exported `$CGSHOME`
+silently redirects every command below (§2.4):
+
+```bash
+echo "${CGSHOME:-<unset>}"        # if it prints a path: unset CGSHOME
+```
+
+**Step 1 — from A. Update the plain clone.**
+
+```bash
+cd ~/Programmes/ComplexGitSync
+git pull --ff-only
+pixi install                      # the version moved to 0002.37, so the lock changed
+```
+
+`CLAUDE.md` in A becomes a symbolic link into `.claude/`, which A does not
+have, so it dangles. That is expected in a plain clone with no mounts, and
+is the accepted cost of D1 in the first ticket.
+
+**Step 2 — from B. Refresh the recorded state.**
+
+```bash
+cd /home/flipoyo/.cgs/CGS20260905095916/cgitsync
+git pull --ff-only
+CGSHOME=/home/flipoyo/.cgs/CGS20260905095916/cgitsync \
+  pixi run cgitsync initialise /home/flipoyo/.cgs/CGS20260905095916/cgitsync/install.cgs
+```
+
+**The `CGSHOME=` prefix is mandatory, and must stay a prefix rather than an
+export.** `initialise` does not use the walk-up search that `status` uses.
+It resolves the workspace as `--output-path/<project name>`, then
+`$CGSHOME` **used verbatim**, then `(current directory/../..)/<project
+name>`. B's directory is named `cgitsync` while the project is named
+`ComplexGitSync`, so every form that appends the project name points
+somewhere else. That mismatch is why an earlier attempt with
+`--output-path ..` created a stray
+`/home/flipoyo/.cgs/CGS20260905095916/ComplexGitSync/` instead of
+refreshing B.
+
+**Step 3 — from B. Verify.**
+
+```bash
+cd /home/flipoyo/.cgs/CGS20260905095916/cgitsync
+pixi run cgitsync status
+```
+
+Expect `repos=7`, `errors=0`, no `DevSpec` row at the top level, and one
+`DevSpec` row at `.agentSpec/DevSpec`.
+
+**What step 2 does and does not do**, rehearsed on a throwaway copy built
+with the same directory-name mismatch and the same stale state:
+
+- it attaches to the existing tree; it does not re-clone the mounts;
+- it does **not** move the root repository's branch;
+- it writes a new `state(<hash>)_0` directory. Older ones stay on disk and
+  go inert, because `discover_gts_path` consults the most recently modified
+  `.lgr` register first and uses the snapshot that register names;
+- the phantom row disappears: errors went from 1 to 0.
+
+Leave the older state directories alone. Each holds a hash-chained `.lgr`
+register that `cgitsync verify` reads.
 
 ## 2. The round trip this ticket has to make true
 
