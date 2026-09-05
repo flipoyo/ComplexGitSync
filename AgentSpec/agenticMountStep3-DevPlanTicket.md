@@ -253,6 +253,27 @@ tracks that same branch or takes it through a pull request into `main`.
 What must not happen is the two checkouts sitting on different branches
 while both believe they manage the same workspace.
 
+### 2.3b The operational split: A is the tool, B is the project
+
+You work in two checkouts. They have different jobs, and the separation
+keeps branches intuitive.
+
+| Checkout | Role | Branch | What runs there | Commands |
+|---|---|---|---|---|
+| A: `~/Programmes/ComplexGitSync` | The tool | `main`, or a feature branch for tool edits | The source code for `cgitsync` itself | Plain `git` work on the root. `bootstrap`, `initialise`, or `clone` when creating a new tree. Read docs |
+| B: `/home/flipoyo/.cgs/CGS20260905095916/cgitsync` | The project | Project branch (e.g. `main`); or a feature branch for project work | An editable copy of `cgitsync` from A via `pixi.toml` | Tree-wide commands: `status`, `branch`, `checkout`, `commit`, `push`, `add`, `freeze-release`. Run from inside the tree |
+
+**Separating them prevents confusion.** A holds tool changes. B holds project changes. A checkout lives on one branch at a time, so if you keep them in separate terminal windows, each window's branch is its job, and you never export `$CGSHOME` into the tool window.
+
+**Branch discipline from this split:**
+
+- Edit `src/ComplexGitSync/` in A, on a tool feature branch. Merge to A's `main` when it is tested.
+- Push the new tool version from A's `main`.
+- In B, work on the project branch. Run `cgitsync` commands there. They use the latest tool from A.
+- When you push from B, go back to A and pull `main` to see the changes. A is the "source of truth" for the tool; B reads from it.
+
+**The rule that matters:** Do not export `$CGSHOME` from a shell you also use for A. It overrides the walk-up mechanism that keeps B's commands finding B, and that is what caused the crash.
+
 ### 2.4 Which checkout runs the command, and how it finds the tree
 
 Two independent choices are made every time you type a command, and mixing

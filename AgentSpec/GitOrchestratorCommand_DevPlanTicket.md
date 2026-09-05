@@ -113,6 +113,36 @@ repository can carry its own `.goc` saying how its own subtree is driven,
 which is what makes the idea useful for the 19-repository build tree in
 `tutorials/02_onboarding_a_real_build_tree.md` and for CaWaQS-Viz.
 
+## 2b. The operational discipline `.goc` makes possible
+
+Step 3 establishes the rule: work in two separate checkouts, A (the tool)
+and B (the project). A holds `cgitsync` source code. B is a tree you manage
+with the tool. Separating them avoids the `export CGSHOME` trap.
+
+`.goc` makes this separation *visible* and *discoverable*.
+
+Without `.goc`, B is only known through the walk-up for `.cgitsync/`. That
+works, but a teammate (or a future you on a different machine) cannot know
+what B you are in without asking, asking a shell variable, or assuming from
+the directory name. With `.goc` in B, the file **declares** which tree it is
+and what it is for, readable and portable.
+
+The ideal discipline after step 3:
+
+1. **From A (tool),** edit source, commit, push to A's branch, pull `main`.
+   Never export `$CGSHOME` here.
+2. **From B (project),** run tree-wide commands. The walk-up finds
+   `.cgitsync/` because you are in B. Commands use the latest tool from A.
+   `.goc` (when built) records what B is, so `cat .goc` tells the story.
+3. **At a terminal prompt you move between.** No `$CGSHOME` exported, so
+   each directory's location discipline (walk-up for B, plain git for A)
+   just works.
+
+When `.goc` exists, the resolution order (§3) puts it second, ahead of the
+environment variable. A command can find B by reading `.goc` before checking
+`$CGSHOME`, so the old trap is behind the new file. That is why it is
+worth building.
+
 ## 3. What the file looks like
 
 A proposal, to be settled in §4:
