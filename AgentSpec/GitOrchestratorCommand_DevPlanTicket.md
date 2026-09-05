@@ -4,26 +4,29 @@
 
 ## Abstract — read this first
 
-**The one-line version.** Bring back `.goc`, but give it one job the other
-files cannot do: say which workspace the current directory drives, and on
-which branch, so that `$CGSHOME` stops being an invisible setting.
+**The one-line version.** Bring back `.goc` as configuration, not
+commands, with two jobs the other files cannot do: say which workspace the
+current directory drives, and interpret a request that creates a project's
+spec on its own branch.
 
 **What this document is.** A proposal. Nothing has been built. It answers
 the question "does this make sense?" with a qualified yes, and says which
 parts of the idea belong somewhere else.
 
-**Why it exists.** Three jobs were asked of `.goc`. Two of them belong in
-`.cgs` and should ship with the `pinned` work already planned. The third
-has no home today and is the reason to add a file: nothing on disk records
-which tree a directory belongs to. That is answered by the `$CGSHOME`
-environment variable, or by a silent guess two directories up. Running
-`cgitsync status` from a second checkout drove the wrong tree and crashed,
-and no file anywhere could have told you why.
+**Why it exists.** Four jobs were asked of `.goc`. Two belong in `.cgs` and
+should ship with the `pinned` work already planned. The other two have no
+home today. Nothing on disk records which tree a directory belongs to: that
+is answered by the `$CGSHOME` environment variable, or by a silent guess two
+directories up, and running `cgitsync status` from a second checkout drove
+the wrong tree and crashed with no file anywhere able to say why. And
+nothing turns a request for a new project into that project's spec on its
+own branch, which is the Operation step 3 §2.0 specifies.
 
 **What you will find.** §0 what `.goc` was and why it was deleted. §1 the
-three jobs, and where each one belongs. §2 the gap the file fills. §3 what
-the file looks like. §4 decisions. §5 how this fits with the AgenticMounts
-work in flight. §6 risks. §7 acceptance.
+four jobs, and where each one belongs, with §1b on the Orchestrator and the
+line it must not cross. §2 the gap the file fills, and §2b the discipline
+it makes visible. §3 what the file looks like. §4 decisions. §5 how this
+fits with the AgenticMounts work in flight. §6 risks. §7 acceptance.
 
 **Who it is for.** Whoever picks this up after AgenticMounts step 3, and
 the repository owner, who has to answer §4.
@@ -66,22 +69,55 @@ to replay. That flavour is what made it a second, parallel way to drive the
 tool, used by nobody. The file proposed here holds **configuration**, not
 commands, despite the name it keeps for continuity.
 
-## 1. The three jobs, and where each belongs
+## 1. The four jobs, and where each belongs
 
-The request bundles three things. They do not all need a new file.
+The request bundles several things. They do not all need a new file.
 
 | # | Job | Belongs in | Why |
 |---|---|---|---|
 | 1 | Set a repository's `default_branch` to the project's name, so the same three lines work for every project | `.cgs` | It describes the tree, and the tree's description is shared and committed. A token such as `default_branch = "@project"` resolved at normalization |
 | 2 | Set branch-management policy once for the project rather than per entry | `.cgs` | Same reason. A `[project]`-level default that each entry may override, alongside the `pinned` field from AgenticMounts step 3 |
 | 3 | Drive ComplexGitSync from the current directory, at each parent repository level | **`.goc`** | It differs per checkout and per machine, so it cannot live in `.cgs` — see §2 |
+| 4 | **Interpret a request and produce a project's `.cgs` on its own branch** — the Operation specified in step 3 §2.0 | **`.goc`**, as the Orchestrator | The request document is exactly what a `.goc` interpreter reads. See §1b |
 
 Jobs 1 and 2 should ship with the `pinned` work in AgenticMounts step 3,
 not here. Both are `.cgs` grammar. Shipping all the grammar in one pass
 means one round of validation, authoring round-trip tests, documentation
 and rebuilt PDFs instead of two.
 
-Job 3 is what this ticket is for.
+Jobs 3 and 4 are what this ticket is for.
+
+### 1b. Job 4 — the Orchestrator, and what it must not become
+
+Step 3 §2.0 specifies a chain: `GOC.toml` is read by an Orchestrator, which
+asks ComplexGitSync for a validated `<project-name>.cgs`, which is committed
+on `goc-sync@<project-name>` and merged into the `<project-name>` deployment
+branch of `flipoyo/ComplexGitSync`.
+
+That Orchestrator is this ticket's file, given a second job: not only "which
+tree does this directory drive" (job 3) but "make me a project" (job 4).
+Both are configuration read by an interpreter, which is why they belong
+together.
+
+**The line that must not be crossed.** The deleted `.goc` was a list of
+commands to replay, and that is what made it a parallel way to drive the
+tool that nobody used (§0). Job 4 brings back something that *looks* like
+that — a request that causes work to happen — so the distinction has to be
+sharp:
+
+| Allowed | Not allowed |
+|---|---|
+| A request that names a project, its repositories, and its policy | A list of `cgitsync` commands to run in order |
+| The Orchestrator calling `configure`, `create-cgs` or `discover` to author the spec | The Orchestrator authoring `.cgs` text itself, becoming a fourth author |
+| One CLI command that runs the Operation, from the first commit | A Python-only entry point, which is why the last one was deleted |
+
+The request describes *what is wanted*. It never describes *how to do it*.
+If a field would ever hold a command name, the design has gone wrong.
+
+**Open, and inherited from step 3 §2.0:** the `A@B` naming rule reads two
+ways in the request, and `_release_snapshot_slug` rewrites `@` to `-` when
+caching a spec under `.cgitsync/.cgs/`, so two branches differing only in
+that character collide. Both are listed as decisions there.
 
 ## 2. The gap `.goc` fills
 
