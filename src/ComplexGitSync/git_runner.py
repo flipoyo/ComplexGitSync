@@ -461,6 +461,13 @@ class GitRunner:
         *args: str,
         cwd: Path | str | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        command = " ".join([self.executable, *args])
+        # subprocess raises a bare FileNotFoundError when cwd is gone, which
+        # callers that degrade on GitSyncError never catch — a repository
+        # deleted from under the loaded .gts crashed status instead of
+        # showing an error row. Fail early, in this module's own error type.
+        if cwd is not None and not Path(cwd).is_dir():
+            raise GitSyncError(f"Git command failed ({command}): no such directory '{cwd}'.")
         completed = subprocess.run(
             [self.executable, *args],
             cwd=str(cwd) if cwd is not None else None,
@@ -470,7 +477,6 @@ class GitRunner:
             env=_non_interactive_git_env(),
         )
         if completed.returncode != 0:
-            command = " ".join([self.executable, *args])
             details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"
             raise GitSyncError(f"Git command failed ({command}): {details}")
         return completed
@@ -480,12 +486,8 @@ class GitRunner:
         parsed = urlsplit(remote_url)
         if parsed.scheme == "file":
             return True
-        if (
-            len(parsed.scheme) == 1
-            and len(remote_url) >= 2
-            and remote_url[1] == ":"
-            and parsed.scheme.isalpha()
-        ):
+        drive_letter = len(parsed.scheme) == 1 and parsed.scheme.isalpha()
+        if drive_letter and len(remote_url) >= 2 and remote_url[1] == ":":
             return True
         if parsed.scheme:
             return False
