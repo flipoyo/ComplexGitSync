@@ -117,6 +117,17 @@ class TestOrderingAndFiltering:
 
         assert found == [tmp_path / "a", tmp_path / "b", tmp_path / "c"]
 
+    def test_a_hidden_dot_named_directory_is_discovered(self, tmp_path):
+        # Guards the AgenticMounts split (.agentSpec/, .localSpec/, .claude/)
+        # against a future "skip hidden directories" change: only .git and
+        # symlinks are filtered today.
+        _make_git_dir(tmp_path)
+        _make_git_dir(tmp_path / ".agentSpec")
+
+        found, _ = _walk_git_repositories(tmp_path)
+
+        assert tmp_path / ".agentSpec" in found
+
     def test_a_git_file_counts_as_a_repository(self, tmp_path):
         # A submodule's working tree has a .git *file*, not a directory,
         # pointing at the real git dir under the parent's .git/modules/.

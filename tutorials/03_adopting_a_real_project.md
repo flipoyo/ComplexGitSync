@@ -363,3 +363,24 @@ hand than let step 3 draft it, pass it with `--cgs FILE` — the rest of the
 sequence is unchanged. See `examples/cawaqsviz.cgs` in this repository for
 a worked, hand-authored example of the same topology, and
 [Tutorial 2](02_onboarding_a_real_build_tree.md) for the habits behind it.
+
+## 9. Reusing this project owner's agent-facing documents
+
+A project adopted this way can also mount the same generic and
+project-specific agent-facing documents ComplexGitSync itself uses —
+`CLAUDE.md`, the `DevSpecs.md` philosophy, `DOCSTYLE.md`,
+`TICKETLIFECYCLE.md` — instead of writing its own from scratch. Add three
+entries to the project's `.cgs`:
+
+```toml
+{ repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main" },
+{ repository = "github:flipoyo/.localSpec", default_branch = "<ProjectName>", fallback_branch = "main" },
+{ repository = "github:flipoyo/claude", default_branch = "<ProjectName>", fallback_branch = "main", relative_path = ".claude" },
+```
+
+then create the `<ProjectName>` branch on `.localSpec` and on `claude`
+(from their shared `main`) and write that project's own
+`.localSpec/AdditionalSpecs.md`, `AGENT.md`, and `audit.md`. `.agentSpec`
+needs nothing — it is the same document for every project. Run
+`cgitsync initialise` and the three mounts land alongside the ones above;
+`.gitignore` is updated for you.

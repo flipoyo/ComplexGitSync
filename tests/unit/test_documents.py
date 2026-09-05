@@ -332,6 +332,66 @@ class TestCgsDocumentValid:
         authoring = parse_cgs(output)
         assert authoring == MINIMAL_AUTHORING_CGS
 
+    def test_dot_named_repository_mounts_at_hidden_relative_path(self, tmp_path: Path):
+        """A repo named e.g. ``.agentSpec`` mounts at that hidden path by
+        default — the AgenticMounts split relies on this (parse_repo_id
+        rejects only bare ``.``/``..``, per cgs_format's own docstring)."""
+        doc = CgsDocument.from_dict(
+            {
+                "project": {"name": "demo", "default_branch": "main"},
+                "repos": [
+                    "github:owner/demo",
+                    "github:flipoyo/.agentSpec",
+                ],
+            }
+        )
+
+        dotted = doc.repos[1]
+        assert dotted["project_name"] == ".agentSpec"
+        assert dotted["relative_path"] == ".agentSpec"
+
+        output = tmp_path / "dotted.cgs"
+        doc.to_toml(output)
+        authoring = parse_cgs(output)
+
+        # relative_path equals the deterministic default, so the minimal
+        # authoring form omits it rather than writing it back out.
+        assert authoring["repos"][1] == "github:flipoyo/.agentSpec"
+
+    def test_per_repository_default_branch_override_survives_toml_round_trip(
+        self, tmp_path: Path
+    ):
+        """A repository's own default_branch, distinct from the project's,
+        is the mechanism the AgenticMounts split uses to pin one project's
+        branch of a shared repository (e.g. .localSpec, claude)."""
+        doc = CgsDocument.from_dict(
+            {
+                "project": {"name": "demo", "default_branch": "autoTest"},
+                "repos": [
+                    "github:owner/demo",
+                    {
+                        "repository": "github:flipoyo/.localSpec",
+                        "default_branch": "ComplexGitSync",
+                        "fallback_branch": "main",
+                    },
+                ],
+            }
+        )
+
+        output = tmp_path / "override.cgs"
+        doc.to_toml(output)
+
+        reparsed = CgsDocument.from_toml(output)
+        child = reparsed.repos[1]
+        assert child["default_branch"] == "ComplexGitSync"
+        assert child["fallback_branch"] == "main"
+        assert reparsed.default_branch == "autoTest"
+
+        authoring = parse_cgs(output)
+        child_authoring = authoring["repos"][1]
+        assert child_authoring["default_branch"] == "ComplexGitSync"
+        assert child_authoring["fallback_branch"] == "main"
+
     def test_semantic_round_trip_through_reference_git_tree(self, tmp_path: Path):
         before = CgsDocument.from_dict(
             {
@@ -544,7 +604,7 @@ class TestCgsDocumentValid:
         assert doc.project_name == "ComplexGitSync"
         assert doc.default_branch == "autoTest"
         assert doc.repos[0]["fallback_branch"] == "main"
-        assert len(doc.repos) == 3
+        assert len(doc.repos) == 5
 
     def test_from_toml_parses_doccomplexgitsync_example(self):
         examples = Path(__file__).parent.parent.parent / "examples"

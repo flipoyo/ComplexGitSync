@@ -260,7 +260,7 @@ Ordered. 3.0 depends on nothing and can start today.
 
 - Repoint the ten `AgentSpec/IsolationPlan.md` citations. If that
   document's §2.2 schema is still binding, lift those sections into
-  `AgentSpec/AdditionalSpecs.md` and cite that: an archived ticket is a
+  `.localSpec/AdditionalSpecs.md` and cite that: an archived ticket is a
   historical record and is never edited, so a live schema must not live in
   one.
 - Delete `state_store.py`'s "not wired in yet" paragraph.
@@ -323,7 +323,7 @@ necessary.
 
 Out of scope here. Two `cgitsync` processes in one workspace race on the
 state directory and the register, and staged-then-`rename` means the loser
-silently wins. Its own ticket; record it in `AgentSpec/audit.md` now.
+silently wins. Its own ticket; record it in `.localSpec/audit.md` now.
 
 ## 4. Graduating `.cgitsync/` from scratch directory to register repository
 
@@ -482,7 +482,7 @@ there to protect.
    a file that exists.
 6. The state-directory grammar and the hash canonicalisation each appear
    once in `src/`.
-7. `AgentSpec/AdditionalSpecs.md` states, in one paragraph, that a State is
+7. `.localSpec/AdditionalSpecs.md` states, in one paragraph, that a State is
    named by its content and the register is ordered by time — and no
    docstring contradicts it.
 8. No test asserts that `.cgitsync/` is invisible to Git; the leak

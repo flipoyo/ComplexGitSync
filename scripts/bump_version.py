@@ -95,12 +95,15 @@ def next_version(current: str) -> str:
 def _reconstitute_docs() -> None:
     """Dogfood ``cgitsync`` to clone DocComplexGitSync's content into ``docs/``.
 
-    ``docs/`` now lives in a separate repo (``DocComplexGitSync``), declared
-    alongside this one in :data:`BOOTSTRAP_CGS_PATH`. ``--output-path ..``
-    only attaches the existing checkout as the tree root (rather than
-    cloning a fresh one) when this repo's own directory is named
-    ``ComplexGitSync`` — matching the ``.cgs``'s ``project_name`` — which
-    holds for a plain clone and for the default GitHub Actions checkout.
+    ``docs/`` lives in a separate repo (``DocComplexGitSync``), one of
+    several repos :data:`BOOTSTRAP_CGS_PATH` declares alongside this one
+    (``docs/``, ``.agentSpec/``, ``.localSpec/``, ``.claude/``) — this call
+    clones whichever of them are missing, not only ``docs/``.
+    ``--output-path ..`` only attaches the existing checkout as the tree
+    root (rather than cloning a fresh one) when this repo's own directory
+    is named ``ComplexGitSync`` — matching the ``.cgs``'s ``project_name`` —
+    which holds for a plain clone and for the default GitHub Actions
+    checkout.
     """
     try:
         subprocess.run(

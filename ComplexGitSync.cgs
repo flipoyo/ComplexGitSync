@@ -7,5 +7,7 @@ project = "ComplexGitSync"
 repos = [
     "github:flipoyo/ComplexGitSync",
     { repository = "github:flipoyo/DocComplexGitSync", relative_path = "docs"},
-    { repository = "github:flipoyo/DevSpec", relative_path = "AgentSpec/DevSpec" },
+    { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main" },
+    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main" },
+    { repository = "github:flipoyo/claude", default_branch = "ComplexGitSync", fallback_branch = "main", relative_path = ".claude" },
 ]
