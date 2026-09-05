@@ -373,14 +373,20 @@ project-specific agent-facing documents ComplexGitSync itself uses —
 entries to the project's `.cgs`:
 
 ```toml
-{ repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main" },
+{ repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto" },
 { repository = "github:flipoyo/.localSpec", default_branch = "<ProjectName>", fallback_branch = "main" },
-{ repository = "github:flipoyo/claude", default_branch = "<ProjectName>", fallback_branch = "main", relative_path = ".claude" },
+{ repository = "github:flipoyo/.claude", default_branch = "<ProjectName>", fallback_branch = "main" },
 ```
 
-then create the `<ProjectName>` branch on `.localSpec` and on `claude`
+Each repository mounts at its own name, so no `relative_path` is needed.
+`.agentSpec` carries its own `install.cgs`, which is why it declares
+`nested_config = "auto"`: discovery reads that file and clones
+`flipoyo/DevSpec` one level deeper, at `.agentSpec/DevSpec/`, where
+`DevSpecs.md`, `DOCSTYLE.md` and the generic `AGENT.md` template live.
+
+Then create the `<ProjectName>` branch on `.localSpec` and on `.claude`
 (from their shared `main`) and write that project's own
 `.localSpec/AdditionalSpecs.md`, `AGENT.md`, and `audit.md`. `.agentSpec`
 needs nothing — it is the same document for every project. Run
-`cgitsync initialise` and the three mounts land alongside the ones above;
+`cgitsync initialise` and the mounts land alongside the ones above;
 `.gitignore` is updated for you.
