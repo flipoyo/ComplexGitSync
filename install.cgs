@@ -1,5 +1,5 @@
-# Self-standing ComplexGitSync tree. autoTest is the project branch; repository
-# entries declare only fallback, path, and nested-discovery overrides.
+# Self-standing ComplexGitSync tree. main is the project branch; repository
+# entries declare only fallback, path, nested-discovery and pinning overrides.
 
 project = { name = "ComplexGitSync", default_branch = "main" }
 
