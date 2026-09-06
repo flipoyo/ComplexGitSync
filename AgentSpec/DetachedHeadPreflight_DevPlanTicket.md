@@ -144,7 +144,7 @@ after. If it does not fail there, the reproduction is still not faithful —
 find out why before changing code, because a fix that cannot be seen to fix
 anything is a guess.
 
-## 4. Decisions — your call
+## 4. Decisions — settled 2026-09-06 by the owner
 
 ### D1. What should the preflight do on a detached HEAD?
 
@@ -205,3 +205,37 @@ let it follow the merge.
 
 Everything above is queued behind a green `main`. That is the whole point
 of keeping this ticket small.
+
+## 8. What shipped, 2026-09-06
+
+**D1 option A**: `_sync_gitignore_lifecycle` skips the pre-pull for a repo
+whose HEAD is detached, and logs `gitignore_pre_pull_skipped` with the
+reason. The `.gitignore` is still written.
+
+**D2**: `project.default_branch` is `main` in `install.cgs`,
+`examples/complexgitsync.cgs` (kept byte-identical) and
+`ComplexGitSync.cgs`. `autoTest` is gone from the tree.
+
+**D3**: defect B is logged in `.localSpec/audit.md`, not fixed here.
+
+**Reproduced first, per §3.** A workspace bootstrapped into
+`$HOME/.cgs/CGS20260906211206/`, root detached, CI's exact command: it
+failed with the §1 error, and passed after the change. The root's HEAD was
+still `785d40c` afterwards — the fix does not move the commit under test,
+which is the property that mattered.
+
+**That reproduction also settled who caused it.** The workspace ran `main`'s
+code, at `785d40c`, and failed. The bug predates the pinning work; it had
+simply never been seen, because a push to `main` checks out a branch and
+only a pull request detaches HEAD.
+
+**Three existing tests had to change.** They asserted the root *is* pulled
+in the preflight, which was only true because their fake runner reported no
+branch for it — the very condition now skipped. Each now says the root is on
+a branch, which is what those tests actually mean to exercise.
+
+**The ceiling.** The owner raised the standing allowance (see
+`.localSpec/AdditionalSpecs.md`). `orchestre.py` went 3384 → 3394. Four
+other modules tightened in the same baseline write, so the recorded total is
+two lines smaller than before despite this fix and branch pinning both
+landing.
