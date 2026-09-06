@@ -237,8 +237,7 @@ itself, and the before-committing checklist, for contributors.
 ## Authorship
 
 - Contact: nicolas.flipo@minesparis.psl.eu
-- Project Manager: Nicolas Flipo
-- Main Developer: Nicolas Flipo
+- AUTH: Nicolas Flipo
 <!-- - Contributors (ongoing): Simone Mazzarelli, Tristan Bourgeois, Nicolas Gallois, Pierre Guillou, Fabien Ors -->
 - AI assistance: Claude, ChatGPT, Copilot@github, Mistral Vibe 
 
