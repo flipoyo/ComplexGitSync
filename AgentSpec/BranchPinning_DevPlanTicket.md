@@ -8,7 +8,7 @@
 onto every repository in the tree. Give a `.cgs` entry a way to say "leave
 me on my own branch", and make those four honour it.
 
-**What this document is.** The priority ticket. **Implemented on 2026-09-06** — see §8 for what shipped and the one thing the plan missed. Everything else in flight — the `@project` token, the `.goc` Orchestrator, the tutorial, the protocol documentation — waits behind this one.
+**What this document is.** Implemented on 2026-09-06 — see §8. The priority is now `DetachedHeadPreflight_DevPlanTicket.md`, which is what stands between this work and a green `main`. **Was implemented on 2026-09-06** — see §8 for what shipped and the one thing the plan missed. Everything else in flight — the `@project` token, the `.goc` Orchestrator, the tutorial, the protocol documentation — waits behind this one.
 
 **Why it exists.** This is the only open item that stops you using your own
 tool on your own repository. `cgitsync branch` and `cgitsync checkout`
