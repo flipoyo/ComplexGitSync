@@ -235,10 +235,7 @@ class RepoAddress:
 
     def _resolve_namespace(self) -> str:
         if self.gitprovider == GitProvider.GITLAB:
-            if not self.group_name:
-                namespace = self.project_owner_name
-            else:
-                namespace = self.group_name
+            namespace = self.group_name or self.project_owner_name
             if not namespace:
                 raise ValueError(
                     "group_name or project_owner_name is required for GitLab addresses."
@@ -385,6 +382,7 @@ class WorkingRepo(GitRepo):
     access_protocol: AccessProtocol = AccessProtocol.SSH
     default_branch: str | None = None
     nested_config: str | None = None
+    pinned: bool = False
     remote_name: str | None = None
     is_external_reference: bool = False
 

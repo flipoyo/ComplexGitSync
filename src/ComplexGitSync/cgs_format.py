@@ -192,9 +192,7 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
         parsed_repos.append(parsed)
 
     project_name = project.get("name")
-    matching_project_repos = sum(
-        1 for repo in parsed_repos if repo.get("project_name") == project_name
-    )
+    matching_project_repos = sum(1 for r in parsed_repos if r.get("project_name") == project_name)
     for repo in parsed_repos:
         repo.setdefault("gitprovider", GitProvider.GITHUB.value)
         if repo.get("repo_name") is None and repo.get("project_name") is not None:
@@ -204,6 +202,9 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
         repo["fallback_branch"] = str(repo.get("fallback_branch") or repo["default_branch"])
         repo["access_protocol"] = str(repo.get("access_protocol") or DEFAULT_ACCESS_PROTOCOL)
         repo["nested_config"] = str(repo.get("nested_config") or DEFAULT_NESTED_CONFIG)
+        # Defaulted, never coerced: bool("yes") is True, which would hide a
+        # typo from validate() below instead of reporting it.
+        repo["pinned"] = repo.get("pinned", False)
 
         relative_path = repo.get("relative_path")
         if relative_path is None:
@@ -242,9 +243,13 @@ def _optional_text(value: Any) -> str | None:
     return str(value)
 
 
-def _resolve_override(overrides: dict[str, Any], key: str, value: Any, default: str) -> str:
-    """Coalesce *value* with *default*, recording an override in *overrides* when they differ."""
-    resolved = str(value or default)
+def _resolve_override(overrides: dict[str, Any], key: str, value: Any, default: Any) -> Any:
+    """Coalesce *value* with *default*, recording an override in *overrides* when they differ.
+
+    A boolean passes through with its type intact, so ``pinned`` is written
+    as TOML ``true`` rather than the string ``"True"``.
+    """
+    resolved = value if isinstance(value, bool) else str(value or default)
     if resolved != default:
         overrides[key] = resolved
     return resolved
@@ -340,22 +345,18 @@ def _repo_data_from_tree(
 ) -> dict[str, Any]:
     """Map one normalized tree entry back to canonical repository data."""
     data = copy.deepcopy(metadata) if isinstance(metadata, dict) else {}
-    project_name = str(
-        getattr(repo, "project_name", None) or getattr(repo, "name", None) or ""
-    )
+    project_name = str(getattr(repo, "project_name", None) or getattr(repo, "name", None) or "")
     repository_name = str(getattr(repo, "repo_name", None) or project_name)
     data.update(
         {
             "gitprovider": _enum_text(
-                getattr(repo, "gitprovider", None),
-                GitProvider.GITHUB.value,
+                getattr(repo, "gitprovider", None), GitProvider.GITHUB.value
             ),
             "project_owner_name": str(getattr(repo, "project_owner_name", None) or ""),
             "project_name": project_name,
             "repo_name": repository_name,
             "access_protocol": _enum_text(
-                getattr(repo, "access_protocol", None),
-                DEFAULT_ACCESS_PROTOCOL,
+                getattr(repo, "access_protocol", None), DEFAULT_ACCESS_PROTOCOL
             ),
         }
     )
@@ -381,6 +382,8 @@ def _repo_data_from_tree(
     nested_config = getattr(repo, "nested_config", None)
     if nested_config is not None:
         data["nested_config"] = str(nested_config)
+    if getattr(repo, "pinned", False):
+        data["pinned"] = True
 
     if "branch" not in data and "tag" not in data:
         target_kind = _enum_text(getattr(repo, "target_ref_kind", None), "")
@@ -631,6 +634,10 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                             f"repos[{idx}].nested_config must be 'auto', 'disabled', "
                             f"or a .cgs relative path; got: {nested!r}"
                         )
+
+                pinned = repo.get("pinned")
+                if pinned is not None and not isinstance(pinned, bool):
+                    errors.append(f"repos[{idx}].pinned must be true or false; got: {pinned!r}")
         if errors:
             raise ConfigValidationError(
                 "Invalid .cgs document:\n" + "\n".join(f"  • {error}" for error in errors)
@@ -664,9 +671,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
         project_name = str(project.get("name", ""))
         project_default_branch = str(project.get("default_branch") or DEFAULT_BRANCH)
         project_extras = {
-            key: value
-            for key, value in project.items()
-            if key not in {"name", "default_branch"}
+            key: value for key, value in project.items() if key not in {"name", "default_branch"}
         }
         if project_default_branch == DEFAULT_BRANCH and not project_extras:
             result["project"] = project_name
@@ -678,9 +683,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
             result["project"] = authoring_project
 
         repos = self._data.get("repos", [])
-        matching_project_repos = sum(
-            1 for repo in repos if repo.get("project_name") == project_name
-        )
+        matching_project_repos = sum(1 for r in repos if r.get("project_name") == project_name)
         authoring_repos: list[Any] = []
         canonical_keys = {
             "gitprovider",
@@ -691,6 +694,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
             "fallback_branch",
             "access_protocol",
             "nested_config",
+            "pinned",
             "relative_path",
         }
         for repo in repos:
@@ -714,12 +718,12 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
             _resolve_override(
                 overrides, "nested_config", repo.get("nested_config"), DEFAULT_NESTED_CONFIG
             )
+            _resolve_override(overrides, "pinned", repo.get("pinned"), False)
 
-            expected_relative_path = (
-                "."
-                if matching_project_repos == 1 and repo.get("project_name") == project_name
-                else repository_name
+            is_sole_project_repo = (
+                matching_project_repos == 1 and repo.get("project_name") == project_name
             )
+            expected_relative_path = "." if is_sole_project_repo else repository_name
             _resolve_override(
                 overrides, "relative_path", repo.get("relative_path"), expected_relative_path
             )

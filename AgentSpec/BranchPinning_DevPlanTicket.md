@@ -8,9 +8,7 @@
 onto every repository in the tree. Give a `.cgs` entry a way to say "leave
 me on my own branch", and make those four honour it.
 
-**What this document is.** The priority ticket. Everything else in flight —
-the `@project` token, the `.goc` Orchestrator, the tutorial, the protocol
-documentation — waits behind this one.
+**What this document is.** The priority ticket. **Implemented on 2026-09-06** — see §8 for what shipped and the one thing the plan missed. Everything else in flight — the `@project` token, the `.goc` Orchestrator, the tutorial, the protocol documentation — waits behind this one.
 
 **Why it exists.** This is the only open item that stops you using your own
 tool on your own repository. `cgitsync branch` and `cgitsync checkout`
@@ -152,27 +150,37 @@ If no honest simplification can be found in a given module, that is itself
 worth reporting rather than working around. Raising a baseline is the
 owner's call, not the implementer's.
 
-## 4. Decisions — answer these first
+## 4. Decisions — settled 2026-09-06 by the owner
 
-### D1. `pinned = true`, or `branch_policy = "pinned"`?
+### D1. The field is `pinned = true`
 
-| Option | For | Against |
-|---|---|---|
-| **`pinned = true` (recommended)** | Your own word for it. One boolean, cheapest to validate, reads clearly in the file | No room for a third policy later without a second field |
-| `branch_policy = "pinned"` / `"global"` | Extensible, names the default explicitly | More grammar and more validation for a choice that today has two values |
+A boolean, defaulting to false. Chosen over `branch_policy = "pinned"`:
+`.cgs` grammar is expensive to change once other projects' specs use it, so
+the smallest honest thing wins. A third policy, if one is ever needed, will
+be a second field.
 
-Recommended: the boolean. `.cgs` grammar is expensive to change once other
-projects' specs use it, so prefer the smallest thing that is honest. A third
-policy, if it ever exists, can be a second field.
+```toml
+{ repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", pinned = true },
+```
 
-### D2. What happens to a pinned mount when a frozen release is restored?
+### D2. Restoring a frozen release ignores pinning
 
-`freeze` records every repository's exact commit; `launch-release` restores
-them. Pinning must **not** apply there — a release is a set of commits, not
-a branch, and a restored release has to be reproducible.
+`launch-release` puts every repository back on the commit recorded in the
+`.gts`, pinned or not. A release is a set of commits and has to stay
+reproducible. **Pinning governs branch propagation, never snapshot
+restoration.**
 
-Confirm that reading. Stated plainly: pinning governs branch *propagation*,
-never snapshot *restoration*.
+### D3. Five entries get pinned; `docs` and the root do not
+
+| Entry | Declared in | `pinned` | Why |
+|---|---|---|---|
+| `.localSpec` | `install.cgs`, `examples/complexgitsync.cgs`, `ComplexGitSync.cgs` | **true** | On a branch named after the project |
+| `.claude` | the same three | **true** | Same |
+| `.agentSpec` | the same three | **true** | Shared with every other project |
+| `DevSpec` | `.agentSpec/install.cgs` | **true** | Shared |
+| `DocSpec` | `docs/DocCGS.cgs` | **true** | Shared |
+| `DocComplexGitSync` (`docs/`) | the same three | false | Belongs to this project alone, so it follows the project branch and documentation can live on a feature branch beside the code it describes |
+| root | — | false | It *is* the project branch |
 
 ## 5. The work, in order
 
@@ -215,3 +223,44 @@ Deliberately excluded, so this stays small enough to finish:
 
 None of those are blocked by this ticket except in the sense that they are
 less urgent. This one is what stops `branch` and `checkout` being usable.
+
+## 8. What shipped, 2026-09-06
+
+Implemented, with all three acceptance checks run against a real tree
+bootstrapped from the live remotes, not only unit tests.
+
+| Check | Result |
+|---|---|
+| `cgitsync branch feature-x` | Created in the root and `docs` only. Absent from all five pinned mounts |
+| `cgitsync checkout feature-x` | Root and `docs` moved. `.localSpec` and `.claude` stayed on `ComplexGitSync`; `.agentSpec`, `DevSpec`, `DocSpec` stayed on `main` |
+| `cgitsync pull` | Completed with no error. Every pinned mount updated **on its own branch**, and `status` reported seven repositories clean and synced |
+
+**What the plan missed.** §2 said the flag travels through four modules.
+It travels through five, and the fifth is where the first real-tree run
+still leaked. Tree entries are built in three places, not one:
+`registry.build_registry_from_cgs_document` (from a `.cgs`),
+`registry.build_registry_from_gts_document` (from a `.gts` — **the path
+every tree-wide command actually uses**), and `discovery.py` (for repos
+declared in a nested `.cgs`). The flag also has to be written into the
+`.gts` snapshot, or it is lost the moment the tree is saved.
+
+A second surprise, worth remembering for any future `.cgs` field: a
+repository declared in a nested `.cgs` is pinned by *that* file, which lives
+in the repository owning it. Pinning `DevSpec` and `DocSpec` meant
+committing to `flipoyo/.agentSpec` and `flipoyo/DocComplexGitSync`, not
+here. Until those were pushed, the test tree kept cloning the unpinned
+specs and the branch kept leaking.
+
+**One defect found in review of my own change.** Normalization first read
+`repo["pinned"] = bool(repo.get("pinned", False))`, which turns `"yes"` into
+`True` and made the validation below it unreachable. It now defaults an
+absent value without coercing a wrong one, so a typo is reported.
+
+**The ceiling was paid, module by module**, ending below baseline
+everywhere: `cgs_format.py` 642/642, `registry.py` 447/449,
+`operations.py` 935/942, `git_repo.py` 320/322, `discovery.py` 229/230.
+The largest saving was real duplication: `restart_tree` and
+`restart_tree_force` were near-identical 50-line functions differing only in
+which pull they called and one word of an error message. They now share
+`_restart_tree`, which also means pinning is honoured in one place instead
+of two that could drift.

@@ -147,12 +147,11 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
                     if repo.get("gitprovider_url")
                     else None,
                     access_protocol=_parse_enum(
-                        AccessProtocol,
-                        repo.get("access_protocol"),
-                        AccessProtocol.SSH,
+                        AccessProtocol, repo.get("access_protocol"), AccessProtocol.SSH
                     ),
                     default_branch=str(repo.get("default_branch") or nested_document.default_branch),
                     nested_config=str(repo.get("nested_config")) if repo.get("nested_config") else None,
+                    pinned=bool(repo.get("pinned", False)),
                     remote_name=str(repo.get("remote_name") or entry.remote_name or "origin"),
                 )
             )
