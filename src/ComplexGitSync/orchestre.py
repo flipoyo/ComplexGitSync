@@ -1812,6 +1812,11 @@ class ComplexGitSyncClient:
         ``.gitignore`` was actually created or modified, and also records
         them on :attr:`last_gitignore_sync` for the CLI to report.
 
+        A repo whose HEAD is detached is skipped by the pre-pull: there is
+        no branch to fast-forward, and pulling a branch guessed from the
+        ``.cgs`` would move the checkout off the commit the caller asked
+        for. Its ``.gitignore`` is still written.
+
         *pre_pull* can be set to ``False`` when the caller already pulled
         every repo in the tree immediately beforehand (e.g. ``restart()``'s
         own tree-wide pull already satisfies this step; repeating it here
@@ -1832,7 +1837,20 @@ class ComplexGitSyncClient:
                     continue
                 current_branch = self.git_runner.current_branch(entry.absolute_path)
                 if current_branch is None:
-                    current_branch = entry.resolved_ref_name or entry.target_ref_name or "main"
+                    # Detached HEAD: no branch to fast-forward. Guessing one
+                    # from the .cgs would pull a branch the caller never asked
+                    # for, moving the checkout off the exact commit under test
+                    # — and a CI pull-request checkout is always detached, so
+                    # this is the common case, not an edge case. The
+                    # .gitignore is still written below; only the pull is
+                    # skipped, because there is nothing it could safely do.
+                    self._log_event(
+                        "gitignore_pre_pull_skipped",
+                        repo_name=entry.name,
+                        absolute_path=str(entry.absolute_path),
+                        reason="detached HEAD: no branch to fast-forward",
+                    )
+                    continue
                 try:
                     self.git_runner.pull(entry.absolute_path, ref_name=current_branch)
                 except GitSyncError as exc:

@@ -52,7 +52,7 @@
     },
     "discovery.py": {
       "internal_imports": 20,
-      "loc": 230,
+      "loc": 229,
       "public_symbols": 3
     },
     "errors.py": {
@@ -62,7 +62,7 @@
     },
     "git_repo.py": {
       "internal_imports": 0,
-      "loc": 322,
+      "loc": 320,
       "public_symbols": 14
     },
     "git_runner.py": {
@@ -102,12 +102,12 @@
     },
     "operations.py": {
       "internal_imports": 14,
-      "loc": 942,
+      "loc": 935,
       "public_symbols": 17
     },
     "orchestre.py": {
       "internal_imports": 68,
-      "loc": 3384,
+      "loc": 3394,
       "public_symbols": 12
     },
     "paths.py": {
@@ -117,7 +117,7 @@
     },
     "registry.py": {
       "internal_imports": 33,
-      "loc": 449,
+      "loc": 447,
       "public_symbols": 3
     },
     "snapshot_resolver.py": {

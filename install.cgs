@@ -1,12 +1,12 @@
-# Self-standing ComplexGitSync tree. autoTest is the project branch; repository
-# entries declare only fallback, path, and nested-discovery overrides.
+# Self-standing ComplexGitSync tree. main is the project branch; repository
+# entries declare only fallback, path, nested-discovery and pinning overrides.
 
-project = { name = "ComplexGitSync", default_branch = "autoTest" }
+project = { name = "ComplexGitSync", default_branch = "main" }
 
 repos = [
     { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
     { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "auto" },
-    { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto" },
-    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main" },
-    { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main" },
+    { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", pinned = true },
+    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", pinned = true },
+    { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", pinned = true },
 ]

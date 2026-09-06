@@ -672,6 +672,46 @@ def test_propagate_global_branch_accepts_custom_ref_kind(tmp_path):
         assert entry.target_ref_kind == RefKind.TAG
 
 
+def test_propagate_global_branch_leaves_a_pinned_repo_on_its_own_branch(tmp_path):
+    """A pinned mount is shared with other projects: the tree must not move it."""
+    registry = _make_ready_registry(tmp_path)
+    pinned = registry.get("root:deps/leaf")
+    pinned.pinned = True
+    pinned.default_branch = "ComplexGitSync"
+
+    propagate_global_branch(registry, "feature-x")
+
+    assert pinned.target_ref_name == "ComplexGitSync"
+    assert registry.get("root").target_ref_name == "feature-x"
+
+
+def test_propagate_global_branch_still_moves_a_pinned_repo_to_a_tag(tmp_path):
+    """Pinning governs branch propagation only, so a frozen release stays whole."""
+    registry = _make_ready_registry(tmp_path)
+    pinned = registry.get("root:deps/leaf")
+    pinned.pinned = True
+    pinned.default_branch = "ComplexGitSync"
+
+    propagate_global_branch(registry, "v1.2.3", ref_kind=RefKind.TAG)
+
+    assert pinned.target_ref_name == "v1.2.3"
+    assert pinned.target_ref_kind == RefKind.TAG
+
+
+def test_create_global_branch_never_creates_inside_a_pinned_repo(tmp_path):
+    """The incident of 2026-09-05: a branch appeared inside shared repositories."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    pinned = registry.get("root:deps/leaf")
+    pinned.pinned = True
+
+    create_global_branch(registry, runner, "feature-x")
+
+    created = [path for path, branch in runner.created if branch == "feature-x"]
+    assert pinned.absolute_path not in created
+    assert registry.get("root").absolute_path in created
+
+
 def test_propagate_global_branch_does_not_require_ready_tree(tmp_path):
     """propagate_global_branch is a pure data update — no state gate required."""
     registry = _make_ready_registry(tmp_path)

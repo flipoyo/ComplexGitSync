@@ -303,20 +303,17 @@ def build_registry_from_cgs_document(
             gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
             project_owner_name=_as_optional_str(repo.get("project_owner_name")),
             project_name=_as_optional_str(repo.get("project_name")),
-            repo_name=(
-                _as_optional_str(repo.get("repo_name"))
-                if repo.get("repo_name") is not None
-                else _as_optional_str(repo.get("project_name"))
+            repo_name=_as_optional_str(
+                repo["repo_name"] if repo.get("repo_name") is not None else repo.get("project_name")
             ),
             group_name=_as_optional_str(repo.get("group_name")),
             gitprovider_url=_as_optional_str(repo.get("gitprovider_url")),
             access_protocol=_parse_enum(
-                AccessProtocol,
-                repo.get("access_protocol"),
-                AccessProtocol.SSH,
+                AccessProtocol, repo.get("access_protocol"), AccessProtocol.SSH
             ),
             default_branch=str(repo.get("default_branch") or document.default_branch),
             nested_config=_as_optional_str(repo.get("nested_config")),
+            pinned=bool(repo.get("pinned", False)),
             remote_name=str(repo.get("remote_name") or document.read("project.default_remote_name", "origin")),
         )
         registry.add(entry)
@@ -409,11 +406,10 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
             group_name=_as_optional_str(repo_state.get("group_name")),
             gitprovider_url=_as_optional_str(repo_state.get("gitprovider_url")),
             access_protocol=_parse_enum(
-                AccessProtocol,
-                repo_state.get("access_protocol"),
-                AccessProtocol.SSH,
+                AccessProtocol, repo_state.get("access_protocol"), AccessProtocol.SSH
             ),
             default_branch=_repo_ref_name(repo_state, "target"),
+            pinned=bool(repo_state.get("pinned", False)),
         )
         registry.add(entry)
         path_to_repo_id[absolute_path] = repo_id
@@ -485,6 +481,8 @@ def build_gts_document_from_registry(
             repo_data["discovery_state"] = entry.discovery_state.value
         if entry.fallback_branch and entry.fallback_branch != "main":
             repo_data["fallback_branch"] = entry.fallback_branch
+        if entry.pinned:
+            repo_data["pinned"] = True
         if entry.fallback_applied:
             repo_data["fallback_applied"] = entry.fallback_applied
         if not entry.is_reachable:

@@ -267,6 +267,9 @@ def test_initialise_cgs_pulls_parent_bearing_repos_before_gitignore_write(tmp_pa
             "git@github.com:owner/docs.git": {"main"},
         }
     )
+    # The root is checked out on a branch. A detached root is skipped by the
+    # preflight instead (see the detached-HEAD test above).
+    fake_runner.branch_overrides[cgshome.resolve()] = "autoTest"
     client = ComplexGitSyncClient(git_runner=fake_runner, state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"))
 
     registry = client.initialise_cgs(config_path, output_path=cgspath)
@@ -304,6 +307,7 @@ def test_initialise_cgs_raises_and_blocks_readiness_when_gitignore_preflight_pul
             "git@github.com:owner/docs.git": {"main"},
         }
     )
+    fake_runner.branch_overrides[cgshome.resolve()] = "autoTest"
     client = ComplexGitSyncClient(git_runner=fake_runner, state_store=state_store)
 
     with pytest.raises(GitSyncError, match="gitignore sync preflight failed"):
@@ -439,6 +443,44 @@ def test_initialise_cgs_git_user_flags_persist_and_are_used_for_the_commit(tmp_p
     assert (root_path, "cgitsync-bot", "bot@example.com") in second_client.git_runner.commit_identities
 
 
+def test_initialise_cgs_skips_the_gitignore_pre_pull_on_a_detached_head(tmp_path, monkeypatch):
+    """A pull-request checkout is detached, so there is no branch to fast-forward.
+
+    The preflight used to guess one from the .cgs. When that branch did not
+    exist on the remote, initialise died and no pull request could pass CI.
+    Guessing is wrong even when the branch does exist, because the pull would
+    move the checkout off the exact commit under test. Reproduced from a real
+    bootstrapped workspace first — see
+    AgentSpec/DetachedHeadPreflight_DevPlanTicket.md.
+    """
+    cgspath = tmp_path / "workspace"
+    cgshome = cgspath / "demo"
+    wcd = cgshome / "ComplexGitSync"
+    wcd.mkdir(parents=True)
+    monkeypatch.chdir(wcd)
+
+    config_path = _write_clone_ready_cgs(tmp_path)
+    fake_runner = _FakeGitRunner(
+        {
+            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/docs.git": {"main"},
+        }
+    )
+    # The tree root reports no branch, exactly as a detached HEAD does.
+    fake_runner.branch_overrides[cgshome.resolve()] = None
+    client = ComplexGitSyncClient(
+        git_runner=fake_runner, state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state")
+    )
+
+    registry = client.initialise_cgs(config_path, output_path=cgspath)
+
+    root_path = registry.get("root").absolute_path.resolve()
+    assert root_path not in [path for path, _, _ in fake_runner.pulled]
+    assert root_path not in [path for path, _, _ in fake_runner.force_pulled]
+    # The .gitignore is still written; only the pull is skipped.
+    assert (root_path / ".gitignore").is_file()
+
+
 def test_initialise_cgs_force_gitignore_sync_recovers_from_blocked_pull(tmp_path, monkeypatch):
     """DevPlanTicket Milestone 2: pull-force fallback is opt-in only."""
     cgspath = tmp_path / "workspace"
@@ -461,6 +503,7 @@ def test_initialise_cgs_force_gitignore_sync_recovers_from_blocked_pull(tmp_path
             "git@github.com:owner/docs.git": {"main"},
         }
     )
+    fake_runner.branch_overrides[cgshome.resolve()] = "autoTest"
     client = ComplexGitSyncClient(git_runner=fake_runner, state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"))
 
     registry = client.initialise_cgs(config_path, output_path=cgspath, force_gitignore_sync=True)

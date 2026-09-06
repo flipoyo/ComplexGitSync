@@ -392,6 +392,53 @@ class TestCgsDocumentValid:
         assert child_authoring["default_branch"] == "ComplexGitSync"
         assert child_authoring["fallback_branch"] == "main"
 
+    def test_pinned_survives_toml_round_trip_as_a_boolean(self, tmp_path: Path):
+        """`pinned` keeps a shared mount off the tree's global branch.
+
+        It must come back as a TOML boolean, not the string "True": the
+        authoring helper stringifies every other override.
+        """
+        doc = CgsDocument.from_dict(
+            {
+                "project": {"name": "demo"},
+                "repos": [
+                    "github:owner/demo",
+                    {
+                        "repository": "github:flipoyo/.localSpec",
+                        "default_branch": "ComplexGitSync",
+                        "pinned": True,
+                    },
+                ],
+            }
+        )
+
+        output = tmp_path / "pinned.cgs"
+        doc.to_toml(output)
+
+        assert parse_cgs(output)["repos"][1]["pinned"] is True
+        assert CgsDocument.from_toml(output).repos[1]["pinned"] is True
+
+    def test_unpinned_repositories_never_mention_pinned(self, tmp_path: Path):
+        """The default is false, so an existing .cgs is untouched by the feature."""
+        doc = CgsDocument.from_dict(
+            {"project": {"name": "demo"}, "repos": ["github:owner/demo"]}
+        )
+
+        output = tmp_path / "plain.cgs"
+        doc.to_toml(output)
+
+        assert "pinned" not in output.read_text(encoding="utf-8")
+        assert doc.repos[0]["pinned"] is False
+
+    def test_pinned_must_be_a_boolean(self):
+        with pytest.raises(ConfigValidationError, match="pinned must be true or false"):
+            CgsDocument.from_dict(
+                {
+                    "project": {"name": "demo"},
+                    "repos": [{"repository": "github:owner/demo", "pinned": "yes"}],
+                }
+            ).validate()
+
     def test_semantic_round_trip_through_reference_git_tree(self, tmp_path: Path):
         before = CgsDocument.from_dict(
             {
@@ -602,7 +649,9 @@ class TestCgsDocumentValid:
         examples = Path(__file__).parent.parent.parent / "examples"
         doc = CgsDocument.from_toml(examples / "complexgitsync.cgs")
         assert doc.project_name == "ComplexGitSync"
-        assert doc.default_branch == "autoTest"
+        # main, not a branch that never existed on the remote: see
+        # AgentSpec/DetachedHeadPreflight_DevPlanTicket.md D2.
+        assert doc.default_branch == "main"
         assert doc.repos[0]["fallback_branch"] == "main"
         assert len(doc.repos) == 5
 

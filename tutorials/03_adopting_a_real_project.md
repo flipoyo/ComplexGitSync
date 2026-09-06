@@ -373,10 +373,15 @@ project-specific agent-facing documents ComplexGitSync itself uses —
 entries to the project's `.cgs`:
 
 ```toml
-{ repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto" },
-{ repository = "github:flipoyo/.localSpec", default_branch = "<ProjectName>", fallback_branch = "main" },
-{ repository = "github:flipoyo/.claude", default_branch = "<ProjectName>", fallback_branch = "main" },
+{ repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", pinned = true },
+{ repository = "github:flipoyo/.localSpec", default_branch = "<ProjectName>", fallback_branch = "main", pinned = true },
+{ repository = "github:flipoyo/.claude", default_branch = "<ProjectName>", fallback_branch = "main", pinned = true },
 ```
+
+`pinned = true` keeps each mount on its own branch when you run a tree-wide
+`branch`, `checkout` or `pull`. Without it, a feature branch you create for
+this project would also be created inside `.agentSpec`, which every other
+project mounts too.
 
 Each repository mounts at its own name, so no `relative_path` is needed.
 `.agentSpec` carries its own `install.cgs`, which is why it declares

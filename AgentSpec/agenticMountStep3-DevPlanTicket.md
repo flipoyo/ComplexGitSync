@@ -26,10 +26,12 @@ falls back to `main`. And `$CGSHOME` silently binds whatever directory you
 happen to be in to a workspace somewhere else, which is how a `status` run
 from a second checkout ended up walking a tree it did not belong to.
 
-**What you will find.** §0 the verified state. §1 what step 2 left open.
-§2 the round trip this ticket has to make true, in commands. §3 the one
-thing in the code that blocks it. §4 the decisions — D1 is the expensive
-one. §5 the work in order. §6 risks. §7 acceptance.
+**What you will find.** §0 the verified state. §1 what step 2 left open,
+including the exact merge and clean-up commands. §2 the round trip, in
+commands — §2.0 is the Operation that creates a project, specified on the
+owner's request and not built. §3 the one thing in the code that blocks
+it. §4 the decisions: D1 is the expensive one, and D2 and D4 are now
+settled by §2.0. §5 the work in order. §6 risks. §7 acceptance.
 
 **Who it is for.** Whoever picks this up next, and the repository owner,
 who has to answer §4.
@@ -191,8 +193,87 @@ register that `cgitsync verify` reads.
 
 ## 2. The round trip this ticket has to make true
 
-Three hops. Each one names the branch every repository is on when the hop
-ends — that is the part that has to be true, and the part §3 breaks.
+Four hops. Hop zero creates the project. Hops one to three are the daily
+cycle. Each one names the branch every repository is on when the hop ends —
+that is the part that has to be true, and the part §3 breaks.
+
+### 2.0 Hop zero — the Operation that creates a project
+
+Requested by the owner, 2026-09-05. Specified here; **not built**. The
+`.goc` interpreter it needs was deleted in August 2026 and is the subject
+of `GitOrchestratorCommand_DevPlanTicket.md`.
+
+**The chain, in one picture.**
+
+```
+GOC.toml                     the request: project name, repositories, policy
+   │ read by
+   ▼
+Orchestrator                 a GOC.toml interpreter. Reads a request.
+   │ asks                    Never runs arbitrary commands.
+   ▼
+ComplexGitSync               writes a validated <project-name>.cgs
+   │ committed on
+   ▼
+branch  goc-sync@<project-name>      the working branch: generated, reviewed
+   │ merges into
+   ▼
+branch  <project-name>               the deployment branch
+   on github.com:flipoyo/ComplexGitSync
+   │ known as
+   ▼
+<project-name>@ComplexGitSync        the output identity
+   │ bootstrap
+   ▼
+$WORK/<project-name>                 hop one takes over here
+```
+
+**Why this is the shape it already had.** Every shared repository in this
+design carries a branch named after the project it serves. `.localSpec` and
+`.claude` each carry a `ComplexGitSync` branch holding this project's
+specs. Hop zero applies the same rule to the tool itself: `flipoyo/Complex‐
+GitSync` carries a branch per project it manages, holding that project's
+`.cgs`. `main` stays the tool; `<project-name>` is the tool *deployed for*
+one project. A local `ComplexGitSync` branch already exists in this
+checkout, unpushed — the first instance of the pattern, created by hand.
+
+| Branch on `flipoyo/ComplexGitSync` | Holds | Lifetime |
+|---|---|---|
+| `main` | The tool: source, `install.cgs`, tests, docs | Permanent |
+| `<project-name>` | That project's `<project-name>.cgs` | Permanent, one per managed project |
+| `goc-sync@<project-name>` | The same file while it is being generated and reviewed | Transient, merged then deleted |
+
+**This settles D2.** D2 asked what the project branch is, and noted that
+`install.cgs` names an `autoTest` branch that does not exist. The answer is
+now forced by hop zero: the project branch **is the project's name**. That
+locks together with D1b's `@project` token, which resolves `default_branch`
+to the project name. One rule, three places: the token in the spec, the
+deployment branch in the tool's repository, and the branch each pinned
+mount already uses.
+
+**What must be decided before this is built** — the request is compressed,
+and these are guesses until confirmed:
+
+| # | Question | My reading |
+|---|---|---|
+| a | `A@B` is used with the project name on both sides — `goc-sync@<project>` and `<project>@ComplexGitSync`. Which way does it read? | `A@B` = "A, for B". So `goc-sync@CaWaQS-Viz` is the sync branch for that project, and `<project>@ComplexGitSync` breaks the rule and needs a different form |
+| b | Is `<project-name>@ComplexGitSync` a branch, or a label? | A label for the deliverable. The branch that lands is plain `<project-name>`, as the request's `branch/project-name` says |
+| c | Where does `GOC.toml` live? | Not settled. It is the request, so it belongs with whoever makes the request — not inside the tree it describes |
+| d | Does `<project-name>.cgs` sit at the branch root, beside `install.cgs`? | Yes, mirroring how `install.cgs` sits on `main` |
+| e | Is `goc-sync@<project>` recreated per run, or long-lived? | Recreated, then deleted after merge. A transient branch cannot drift |
+
+**Two constraints on whoever builds it.**
+
+`.cgs` files already have three authors: `configure`, `create-cgs`, and
+`discover`. The Orchestrator must call one of them, not become a fourth.
+`CLAUDE.md` keeps one parser for repository identifiers for the same
+reason; one author for specs is the same rule.
+
+`@` in a branch name is legal, and both forms above pass
+`git check-ref-format`. But `_release_snapshot_slug` in `orchestre.py`
+rewrites `@` to `-` when it names the cached spec under
+`.cgitsync/.cgs/`, so `goc-sync@X` and `goc-sync-X` collide there. Either
+accept that two such branches must not coexist, or widen the slug.
 
 ### 2.1 Hop one — from a plain clone to a managed tree
 
@@ -349,6 +430,12 @@ operation.
 
 ### D1. How do pinned mounts survive a tree-wide branch operation?
 
+**Moved out.** This is the only open item that stops `branch` and
+`checkout` being usable, so it now has its own ticket:
+`AgentSpec/BranchPinning_DevPlanTicket.md`. It carries the four call
+sites, the field, and the zero-headroom ceiling budget. What follows is
+kept as the reasoning that led there.
+
 | Option | Mechanism | Cost | Trade-off |
 |---|---|---|---|
 | **A (recommended)** | A new `.cgs` entry field — say `branch_policy = "pinned"` (default `"global"`) — that `propagate_global_branch` and `restart_tree` honour by leaving that repository on its declared `default_branch` | A grammar field with validation and authoring round-trip, plus the three operations and their tests; docs for the field | Explicit in the file: a reader sees which mounts follow the tree and which do not. The mechanism is reusable by any project vendoring a shared repository |
@@ -385,11 +472,29 @@ There is no `autoTest` on the remote (`main`, `alpha-tech`, two `copilot/*`
 branches, and `agentic-mounts`), so every bootstrap silently lands on
 `main`.
 
-| Option | Result |
-|---|---|
-| **A (recommended)** | Set the project branch to `main`. Hop three becomes "pull `main`", the plain clone never leaves `main`, and nothing is silent |
-| B | Create `autoTest` on the remote and keep it as the tree's working branch. Hop three then needs a pull request into `main` before the plain clone sees anything |
-| C | Leave it declared but absent, relying on the fallback | Rejected: a spec that names a branch nobody can see is exactly the stale-by-design content `DOCSTYLE.md` §6 forbids |
+**Settled by hop zero (§2.0): the project branch is the project's name.**
+`autoTest` goes. `install.cgs` declares `default_branch = "@project"`
+(D1b's token), which resolves to the project name, which is the branch hop
+zero lands on. One rule in three places: the token in the spec, the
+deployment branch on `flipoyo/ComplexGitSync`, and the branch each pinned
+mount already uses.
+
+For the tool managing itself, that branch is `ComplexGitSync` — and a local
+branch of that name already exists here, unpushed. Two consequences to
+carry into the work:
+
+- `main` keeps holding `install.cgs` as the tool's own spec. The
+  `ComplexGitSync` branch is what a *managed* checkout of this project
+  tracks. Which of the two a `bootstrap` should read is the one loose end;
+  §2.0 decision (d) covers where a project's `.cgs` sits.
+- Hop three (§2.3) is no longer "pull `main`". The plain clone tracks the
+  project branch, and `main` receives tool changes through a pull request.
+  That answers D4 below.
+
+The three options considered before hop zero arrived — keep `main`, create
+`autoTest`, or leave the dangling name — are all superseded. The third was
+rejected outright: a spec naming a branch nobody can see is the
+stale-by-design content `DOCSTYLE.md` §6 forbids.
 
 ### D3. `$CGSHOME` discipline
 
@@ -404,9 +509,16 @@ rather than habit:
 
 ### D4. Does the plain clone track the project branch, or merge through a PR?
 
-Follows from D2. If the project branch is `main` (D2 option A), this
-question disappears. State the answer in the documentation either way,
-because it is the one step a reader cannot guess.
+**Answered by D2 as hop zero settles it: both, for different things.** The
+plain clone tracks the project branch when it is being used to manage that
+project. Tool changes — anything under `src/`, `tests/`, `docs/` — go to
+`main` through a pull request, and each project branch merges `main`
+forward when it wants them. Same direction of flow as the shared mounts in
+§1.6: generic to `main` first, then forward into each project branch.
+
+Still to state in the documentation, because a reader cannot guess it:
+which branch a fresh `bootstrap` should check out when someone clones the
+tool for the first time and has not chosen a project yet.
 
 ### D5. Where the protocol is documented
 
@@ -430,7 +542,7 @@ A fourth tutorial means the docs PDFs need rebuilding (`latexmk`) and the
 | 2 | ~~Archive the first two tickets~~ — done ahead of the merge; they are in `AgentSpec/archive/` with a `20260905_` stamp | ComplexGitSync |
 | 3 | `git pull` in `~/Programmes/ComplexGitSync`; re-run `initialise` against the merged `install.cgs` so the workspace state stops listing a root-level `DevSpec/` | both checkouts |
 | 4 | Implement D1 and D1b: the `pinned` field, the project-name token, the project-level policy default — each with validation, authoring round-trip tests, and the three branch operations that must honour them | ComplexGitSync |
-| 5 | Apply them to `install.cgs`, `examples/complexgitsync.cgs`, `ComplexGitSync.cgs`, and to `.agentSpec/install.cgs`; apply D2's project branch | ComplexGitSync, `.agentSpec` |
+| 5 | Apply them to `install.cgs`, `examples/complexgitsync.cgs`, `ComplexGitSync.cgs`, and to `.agentSpec/install.cgs`. Replace `autoTest` with D1b's `@project` token, and push the `ComplexGitSync` deployment branch (§2.0) | ComplexGitSync, `.agentSpec` |
 | 6 | Prove the round trip on a clean clone: bootstrap, check every branch against §2.1's table, create a feature branch and confirm it appears in *no* shared mount, commit, push, pull it back into the plain clone | local |
 | 7 | Write the documentation per D5; rebuild the PDFs; commit and push `DocComplexGitSync` | ComplexGitSync, `docs/` |
 | 8 | `pixi run lint`, `pixi run test`, `pixi run bump-version`, rebuild PDFs again if the version moved | ComplexGitSync |
@@ -447,7 +559,7 @@ sets down — which has to be settled before it is worth automating.
 | Risk | Handling |
 |---|---|
 | D1 lands as option B and the pinning rule becomes invisible in the normalized `.cgs` | Prefer A; whichever wins, `cgitsync validate` must show the effective policy per repository |
-| A feature branch reaches `.agentSpec`, `DevSpec` or `DocSpec` before D1 is implemented, polluting repositories other projects share | Until D1 lands, do not run `branch`/`checkout` on a tree carrying pinned mounts — work on the root repository with plain `git` |
+| A feature branch reaches `.agentSpec`, `DevSpec` or `DocSpec` before D1 is implemented, polluting repositories other projects share | **This happened on 2026-09-05** — see `BranchPinning_DevPlanTicket.md` §1b. Until that ticket lands, do not run `branch`, `checkout`, `pull` or `pull-force` on a tree carrying pinned mounts. Use plain `git` in the one repository you mean to change |
 | Step 6's proof passes on one machine and the protocol still confuses a reader | The documentation in D5 is written from the transcript of step 6, not from memory |
 | The docs repository drifts from the code repository, since they merge separately | Push `DocComplexGitSync` in the same session as the ComplexGitSync merge, as step 2 did |
 | `autoTest` is resurrected later and the fallback goes silent again | D2 option A removes the fallback path entirely |
@@ -470,5 +582,10 @@ sets down — which has to be settled before it is worth automating.
 6. The protocol is in `README.md`, `docs/Text/`, and
    `tutorials/04_*.md`; the PDFs are rebuilt and `DocComplexGitSync` is
    pushed.
-7. No `.cgs` in the tree names a branch that does not exist on its remote.
-8. All three AgenticMounts tickets are stamped and archived.
+7. No `.cgs` in the tree names a branch that does not exist on its
+   remote. `autoTest` is gone.
+8. The `ComplexGitSync` deployment branch (§2.0) exists on the remote and
+   carries this project's spec. Hop zero itself stays specified, not
+   built: the Orchestrator belongs to
+   `GitOrchestratorCommand_DevPlanTicket.md`.
+9. All three AgenticMounts tickets are stamped and archived.

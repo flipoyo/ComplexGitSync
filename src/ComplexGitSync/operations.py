@@ -91,11 +91,17 @@ def propagate_global_branch(
 
     This is a pure in-memory operation: no git commands are issued.  It
     prepares the tree so that subsequent operations (create, checkout)
-    all target the same branch.
+    all target the same branch — except a repo declared ``pinned`` in the
+    ``.cgs``, which keeps its own ``default_branch`` because it is shared
+    with other projects. Pinning governs *branch* propagation only, so a
+    tag still reaches every repo and a frozen release stays reproducible.
     """
     for repo in tree.values():
-        repo.target_ref_name = branch_name
-        repo.target_ref_kind = ref_kind
+        if repo.pinned and ref_kind is RefKind.BRANCH:
+            repo.target_ref_name = repo.default_branch or repo.target_ref_name
+        else:
+            repo.target_ref_name = branch_name
+            repo.target_ref_kind = ref_kind
 
 
 # ---------------------------------------------------------------------------
@@ -115,8 +121,9 @@ def create_global_branch(
     a valid ``absolute_path`` on disk.
     """
     for repo in iter_tree(tree):
-        if not git_runner.local_branch_exists(repo.absolute_path, branch_name):
-            git_runner.create_branch(repo.absolute_path, branch_name)
+        if repo.pinned or git_runner.local_branch_exists(repo.absolute_path, branch_name):
+            continue
+        git_runner.create_branch(repo.absolute_path, branch_name)
 
 
 # ---------------------------------------------------------------------------
@@ -165,33 +172,24 @@ def _rewrite_remote_if_forced(
     git_runner.configure_remote(repo.absolute_path, remote, forced_url)
 
 
-def restart_tree(
+def _restart_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
     *,
-    force_access_protocol: AccessProtocol | None = None,
+    force: bool,
+    force_access_protocol: AccessProtocol | None,
 ) -> None:
-    """Resynchronize the full tree using the root repository's current branch.
+    """Shared body of :func:`restart_tree` and :func:`restart_tree_force`.
 
-    Reads the current branch from the root repository, propagates it across
-    all repos, then pulls every repository (parent-first) with
-    ``git pull --ff-only``.
-
-    Does not require a ``READY`` tree; intended for use after loading a
-    ``.cgs`` file (``DECLARED`` state).  Produces a ``READY`` tree or
-    raises if any repository checkout fails.
-
-    *force_access_protocol*, when given, rewrites each repo's remote to
-    that protocol before pulling (``--force-protocol`` on ``pull``).
+    *force* selects the destructive pull. Everything else — reading the
+    root's branch, propagating it, the parent/child path preflight, the
+    per-repo remote rewrite, and the refresh — is identical either way.
     """
+    label = "pull-force" if force else "pull"
     root_entry = tree.get("root")
-    current_branch = git_runner.current_branch(root_entry.absolute_path)
-    if current_branch is None:
-        current_branch = (
-            root_entry.resolved_ref_name
-            or root_entry.target_ref_name
-            or "main"
-        )
+    current_branch = git_runner.current_branch(root_entry.absolute_path) or (
+        root_entry.resolved_ref_name or root_entry.target_ref_name or "main"
+    )
 
     propagate_global_branch(tree, current_branch)
 
@@ -202,21 +200,46 @@ def restart_tree(
                 relative_path = repo.absolute_path.relative_to(parent.absolute_path)
             except ValueError as exc:
                 raise GitSyncError(
-                    f"pull preflight failed: {repo.name} is outside parent path {parent.absolute_path}."
+                    f"{label} preflight failed: {repo.name} is outside parent path "
+                    f"{parent.absolute_path}."
                 ) from exc
             if relative_path == Path("."):
                 raise GitSyncError(
-                    "pull preflight failed: child repository cannot share the exact parent path "
-                    f"({parent.name}->{repo.name})."
+                    f"{label} preflight failed: child repository cannot share the exact "
+                    f"parent path ({parent.name}->{repo.name})."
                 )
         remote = repo.remote_name or "origin"
         _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
-        git_runner.pull(repo.absolute_path, remote=remote, ref_name=current_branch)
+        pull = git_runner.force_pull if force else git_runner.pull
+        pull(repo.absolute_path, remote=remote, ref_name=repo.target_ref_name or current_branch)
 
         resolved_branch = git_runner.current_branch(repo.absolute_path) or current_branch
         _refresh_repo_after_checkout(repo, resolved_branch, RefKind.BRANCH, git_runner)
 
     tree.recompute_tree_state()
+
+
+def restart_tree(
+    tree: WorkingGitTree,
+    git_runner: GitRunner,
+    *,
+    force_access_protocol: AccessProtocol | None = None,
+) -> None:
+    """Resynchronize the full tree using the root repository's current branch.
+
+    Reads the current branch from the root repository, propagates it across
+    all repos except those declared ``pinned``, then pulls every repository
+    (parent-first) with ``git pull --ff-only`` on the branch that repo
+    actually targets.
+
+    Does not require a ``READY`` tree; intended for use after loading a
+    ``.cgs`` file (``DECLARED`` state).  Produces a ``READY`` tree or
+    raises if any repository checkout fails.
+
+    *force_access_protocol*, when given, rewrites each repo's remote to
+    that protocol before pulling (``--force-protocol`` on ``pull``).
+    """
+    _restart_tree(tree, git_runner, force=False, force_access_protocol=force_access_protocol)
 
 
 def restart_tree_force(
@@ -236,39 +259,7 @@ def restart_tree_force(
     that protocol before force-pulling (``--force-protocol`` on
     ``pull-force``).
     """
-    root_entry = tree.get("root")
-    current_branch = git_runner.current_branch(root_entry.absolute_path)
-    if current_branch is None:
-        current_branch = (
-            root_entry.resolved_ref_name
-            or root_entry.target_ref_name
-            or "main"
-        )
-
-    propagate_global_branch(tree, current_branch)
-
-    for repo in iter_tree(tree):
-        if repo.parent_id is not None:
-            parent = tree.get(repo.parent_id)
-            try:
-                relative_path = repo.absolute_path.relative_to(parent.absolute_path)
-            except ValueError as exc:
-                raise GitSyncError(
-                    f"pull-force preflight failed: {repo.name} is outside parent path {parent.absolute_path}."
-                ) from exc
-            if relative_path == Path("."):
-                raise GitSyncError(
-                    "pull-force preflight failed: child repository cannot share the exact parent path "
-                    f"({parent.name}->{repo.name})."
-                )
-        remote = repo.remote_name or "origin"
-        _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
-        git_runner.force_pull(repo.absolute_path, remote=remote, ref_name=current_branch)
-
-        resolved_branch = git_runner.current_branch(repo.absolute_path) or current_branch
-        _refresh_repo_after_checkout(repo, resolved_branch, RefKind.BRANCH, git_runner)
-
-    tree.recompute_tree_state()
+    _restart_tree(tree, git_runner, force=True, force_access_protocol=force_access_protocol)
 
 
 # ---------------------------------------------------------------------------
@@ -306,8 +297,9 @@ def checkout_tree(
 
     # Step 3: checkout and refresh each repo (parent-first)
     for repo in iter_tree(tree):
-        git_runner.checkout(repo.absolute_path, branch_name)
-        _refresh_repo_after_checkout(repo, branch_name, ref_kind, git_runner)
+        ref = repo.target_ref_name or branch_name
+        git_runner.checkout(repo.absolute_path, ref)
+        _refresh_repo_after_checkout(repo, ref, repo.target_ref_kind or ref_kind, git_runner)
 
     tree.recompute_tree_state()
 
