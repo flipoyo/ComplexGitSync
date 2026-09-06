@@ -69,6 +69,34 @@ Applied to the tree that step 2 shipped:
 `default_branch`, which is why a fresh tree comes out correct and only
 degrades once a tree-wide command runs.
 
+### 1b. It already happened, on 2026-09-05
+
+Not hypothetical. The owner ran `cgitsync checkout goc-operation-spec` on
+the real workspace to review a branch. It succeeded, and
+`create_global_branch` created that branch locally in **all six mounts** —
+`docs`, `docs/DocSpec`, `.agentSpec`, `.agentSpec/DevSpec` from `main`, and
+`.localSpec`, `.claude` from `ComplexGitSync` — each from its own HEAD. Four
+of those repositories are shared with every other project that mounts them.
+
+The next `cgitsync pull` then propagated the same name and stopped with
+`fatal: couldn't find remote ref goc-operation-spec`, because no mount has
+that branch on its remote.
+
+Two things kept this cheap, and neither is a design feature:
+
+- nothing was pushed, so the stray branches stayed local;
+- each branch was created from its own HEAD, so the commits matched and
+  `git branch -d` removed them without complaint.
+
+Repair, for reference, was one `git checkout <proper branch>` and one
+`git branch -d goc-operation-spec` per mount.
+
+**Until this ticket lands, `branch`, `checkout`, `pull` and `pull-force`
+must not be run on a tree carrying pinned mounts.** Use plain `git` in the
+repository you actually mean to change. This warning was previously buried
+in a risk table and named only two of the four commands; that is why the
+incident happened.
+
 ## 2. The fix
 
 A `.cgs` entry declares that it keeps its own branch:
