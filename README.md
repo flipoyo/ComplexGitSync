@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.38
+# ComplexGitSync v0002.40
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -216,11 +216,12 @@ Full walkthrough: [tutorials/01_first_multi_repo_workspace.md](tutorials/01_firs
 
 ## 4. Further reading
 
-[tutorials/](tutorials/) — three tutorials, simplest to most advanced:
+[tutorials/](tutorials/) — four tutorials, simplest to most advanced:
 
 1. [01_first_multi_repo_workspace.md](tutorials/01_first_multi_repo_workspace.md) — full CLI lifecycle walkthrough on a synthetic sandbox tree.
 2. [02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md) — hand-author a `.cgs` for a real 19-repo project, then hand off to its existing `make` build.
 3. [03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md) — a real project with no `.cgs` of its own that still uses git submodules: one `init-from-submodules` command, what it runs underneath, and on to a pushed `READY` tree.
+4. [04_configuration_repos_pinned_branches.md](tutorials/04_configuration_repos_pinned_branches.md) — configuration repos shared between projects: what `pinned = true` protects, what it does not, and the safe order for committing and pushing across a mixed tree.
 
 [docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference
 book: full command details, expert-mode primitives (`add`/`commit`/`push`/...),

@@ -4,7 +4,7 @@
 
 ## Abstract — read this first
 
-**What this document is.** The index of ComplexGitSync's three worked
+**What this document is.** The index of ComplexGitSync's four worked
 tutorials, ordered from simplest to most advanced.
 
 **Why it exists.** The root [README.md](../README.md) covers the CLI
@@ -12,11 +12,11 @@ command-by-command; these tutorials instead walk one topology end to end,
 so a first-time user sees the full lifecycle before hand-authoring their
 own `.cgs`.
 
-**What you will find.** Three tutorials, each building on the last, plus a
+**What you will find.** Four tutorials, each building on the last, plus a
 reminder that every command shown is a Pixi task.
 
 **Who it is for.** Anyone new to `cgitsync`. Start at Tutorial 1 regardless
-of your own project's shape — it establishes the vocabulary the other two
+of your own project's shape — it establishes the vocabulary the other three
 assume.
 
 **What you need to do with it.** Work the tutorials in order, or jump
@@ -27,15 +27,16 @@ graph LR
     README["README.md<br/>quickstart"] --> T1["01<br/>first workspace"]
     T1 --> T2["02<br/>real build tree"]
     T2 --> T3["03<br/>adopting a real project"]
-    T3 --> REF["docs/MASTER.pdf<br/>full reference"]
+    T3 --> T4["04<br/>configuration repos<br/>pinned branches"]
+    T4 --> REF["docs/MASTER.pdf<br/>full reference"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
-    class T1,T2,T3 here;
+    class T1,T2,T3,T4 here;
 ```
 
 ---
 
-Three worked examples, ordered from the simplest to the most advanced. Do
+Four worked examples, ordered from the simplest to the most advanced. Do
 them in order — each one builds on the last:
 
 1. **[01 — Your First Multi-Repo Workspace](01_first_multi_repo_workspace.md)**
@@ -47,9 +48,13 @@ them in order — each one builds on the last:
    19-repository project (`cawaqs`) — and where `cgitsync` hands off to the
    project's own build.
 3. **[03 — Adopting a Real Project: CaWaQS-Viz](03_adopting_a_real_project.md)**
-   The most advanced tutorial: a real project (`cawaqsviz`) with no `.cgs`
+   The messiest starting point: a real project (`cawaqsviz`) with no `.cgs`
    of its own that still uses git submodules — one real, verified, ten-step
    procedure from `git clone` to a pushed, `READY` tree.
+4. **[04 — Including Configuration Repos in `.cgs`: Pinned Branches](04_configuration_repos_pinned_branches.md)**
+   Repositories you share between projects: how `pinned = true` declares
+   one, why branch moves skip it but commit and push do not, and the safe
+   order for shipping a change — run against ComplexGitSync's own tree.
 
 > **Every command in these tutorials is a Pixi task.** Run `pixi install`
 > once per checkout, then always invoke the CLI as `pixi run cgitsync ...`

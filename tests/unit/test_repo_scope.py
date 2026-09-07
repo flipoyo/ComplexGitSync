@@ -1,0 +1,225 @@
+"""Configuration repos: read-only by default, writable only when declared.
+
+A tree mixes repositories this project owns with configuration repositories
+shared with other projects. The shared ones are ``pinned`` in the ``.cgs``,
+and pinned means **read-only** unless the entry also says
+``writable = true``.
+
+Before this, ``pinned`` governed branch propagation only: ``branch`` and
+``checkout`` skipped a pinned repo, but ``add``/``commit``/``push`` swept
+every repository in the tree, so the safe workflow was a hand-run ritual of
+per-path staging and ``--no-stage``. These tests pin the rule that replaced
+it, in both directions — what each command reaches, and what it refuses.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from ComplexGitSync.cgs_format import CgsDocument, normalize_cgs
+from ComplexGitSync.errors import ConfigValidationError, GitSyncError
+from ComplexGitSync.git_repo import RepoScope, WorkingRepo
+from ComplexGitSync.git_tree import WorkingGitTree, iter_tree_leaf_first
+from ComplexGitSync.orchestre import resolve_command_scope
+from ComplexGitSync.registry import build_registry_from_cgs_document
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _repo(name: str, *, pinned: bool = False, writable: bool = False) -> WorkingRepo:
+    return WorkingRepo(repo_id=name, name=name, pinned=pinned, writable=writable)
+
+
+_OWNED = _repo("app")
+_READ_ONLY = _repo("shared-spec", pinned=True)
+_WRITABLE = _repo("own-spec", pinned=True, writable=True)
+
+
+class TestScopeMembership:
+    @pytest.mark.parametrize(
+        ("scope", "expected"),
+        [
+            (RepoScope.PROJECT, {"app"}),
+            (RepoScope.PRIVATE, {"own-spec"}),
+            (RepoScope.WRITABLE, {"app", "own-spec"}),
+            (RepoScope.ALL, {"app", "shared-spec", "own-spec"}),
+        ],
+    )
+    def test_each_scope_selects_the_repositories_it_names(self, scope, expected):
+        selected = {r.name for r in (_OWNED, _READ_ONLY, _WRITABLE) if scope.includes(r)}
+
+        assert selected == expected
+
+    def test_project_and_private_never_overlap(self):
+        """The point of the split: a shared repo gets its own command.
+
+        If the two scopes overlapped, ``--private`` would re-introduce the
+        sweep it exists to prevent.
+        """
+        for repo in (_OWNED, _READ_ONLY, _WRITABLE):
+            assert not (RepoScope.PROJECT.includes(repo) and RepoScope.PRIVATE.includes(repo))
+
+    def test_a_read_only_config_repo_is_in_no_write_scope(self):
+        assert RepoScope.ALL.includes(_READ_ONLY)
+        for scope in (RepoScope.PROJECT, RepoScope.PRIVATE, RepoScope.WRITABLE):
+            assert not scope.includes(_READ_ONLY)
+
+
+class TestCgsDeclaration:
+    def test_writable_defaults_to_false_so_pinned_means_read_only(self):
+        normalized = normalize_cgs(
+            {
+                "project": "demo",
+                "repos": [{"repository": "github:acme/spec", "pinned": True}],
+            }
+        )
+
+        assert normalized["repos"][0]["writable"] is False
+
+    def test_writable_is_read_when_declared(self):
+        normalized = normalize_cgs(
+            {
+                "project": "demo",
+                "repos": [
+                    {"repository": "github:acme/spec", "pinned": True, "writable": True}
+                ],
+            }
+        )
+
+        assert normalized["repos"][0]["writable"] is True
+
+    def test_writable_without_pinned_is_rejected(self):
+        """An unpinned repository is this project's own — always writable.
+
+        Declaring ``writable`` there means the author misunderstood the
+        field, which is worth an error rather than a silent no-op.
+        """
+        document = CgsDocument(
+            normalize_cgs(
+                {
+                    "project": "demo",
+                    "repos": [{"repository": "github:acme/app", "writable": True}],
+                }
+            )
+        )
+
+        with pytest.raises(ConfigValidationError, match="only means something on a pinned"):
+            document.validate()
+
+    def test_a_non_boolean_writable_is_rejected_rather_than_coerced(self):
+        document = CgsDocument(
+            normalize_cgs(
+                {
+                    "project": "demo",
+                    "repos": [
+                        {"repository": "github:acme/spec", "pinned": True, "writable": "yes"}
+                    ],
+                }
+            )
+        )
+
+        with pytest.raises(ConfigValidationError, match="writable must be true or false"):
+            document.validate()
+
+    def test_writable_survives_the_cgs_round_trip(self, tmp_path):
+        source = tmp_path / "tree.cgs"
+        source.write_text(
+            'project = { name = "demo", default_branch = "main" }\n'
+            "repos = [\n"
+            '    "github:acme/demo",\n'
+            '    { repository = "github:acme/spec", pinned = true, writable = true },\n'
+            "]\n",
+            encoding="utf-8",
+        )
+
+        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+        by_name = {entry.name: entry for entry in tree.values()}
+
+        assert by_name["spec"].pinned is True
+        assert by_name["spec"].writable is True
+        assert by_name["demo"].writable is False
+
+        round_tripped = tmp_path / "out.cgs"
+        tree.to_cgs().to_toml(round_tripped)
+        reread = CgsDocument.from_toml(round_tripped)
+        spec = next(r for r in reread.repos if r["project_name"] == "spec")
+        assert spec["pinned"] is True
+        assert spec["writable"] is True
+
+
+class TestCommandScope:
+    @staticmethod
+    def _tree(*repos: WorkingRepo) -> WorkingGitTree:
+        tree = WorkingGitTree()
+        for repo in repos:
+            tree.add(repo)
+        return tree
+
+    def test_a_write_command_defaults_to_this_projects_own_repositories(self):
+        tree = self._tree(_OWNED, _READ_ONLY, _WRITABLE)
+
+        scope = resolve_command_scope(tree, private=False, command="commit")
+
+        assert scope is RepoScope.PROJECT
+        assert [r.name for r in iter_tree_leaf_first(tree, scope)] == ["app"]
+
+    def test_private_selects_only_the_writable_configuration_repositories(self):
+        tree = self._tree(_OWNED, _READ_ONLY, _WRITABLE)
+
+        scope = resolve_command_scope(tree, private=True, command="commit")
+
+        assert scope is RepoScope.PRIVATE
+        assert [r.name for r in iter_tree_leaf_first(tree, scope)] == ["own-spec"]
+
+    def test_private_refuses_rather_than_touching_nothing(self):
+        """A command that quietly did nothing is the failure being prevented."""
+        tree = self._tree(_OWNED, _READ_ONLY)
+
+        with pytest.raises(GitSyncError) as excinfo:
+            resolve_command_scope(tree, private=True, command="push")
+
+        message = str(excinfo.value)
+        assert "push --private" in message
+        assert "shared-spec" in message, "the message must name the read-only repos"
+        assert "writable = true" in message, "and say how to opt one in"
+
+    def test_the_refusal_says_so_when_the_tree_has_no_pinned_repos_at_all(self):
+        with pytest.raises(GitSyncError, match="no pinned repositories at all"):
+            resolve_command_scope(self._tree(_OWNED), private=True, command="add")
+
+
+class TestThisTreesOwnDeclaration:
+    """`install.cgs` is the worked example tutorial 4 is built on."""
+
+    def test_the_two_project_owned_config_repos_are_writable(self):
+        document = CgsDocument.from_toml(_REPO_ROOT / "install.cgs")
+        by_name = {r["project_name"]: r for r in document.repos}
+
+        assert by_name[".localSpec"]["writable"] is True
+        assert by_name[".claude"]["writable"] is True
+
+    def test_the_shared_config_repo_is_read_only(self):
+        """`.agentSpec` is pinned to main and read by every project.
+
+        It must not be writable here: that is the entry whose accidental
+        push publishes to everyone.
+        """
+        document = CgsDocument.from_toml(_REPO_ROOT / "install.cgs")
+        by_name = {r["project_name"]: r for r in document.repos}
+
+        assert by_name[".agentSpec"]["pinned"] is True
+        assert by_name[".agentSpec"]["writable"] is False
+
+    def test_each_scope_selects_what_the_documentation_promises(self):
+        source = _REPO_ROOT / "install.cgs"
+        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+
+        def names(scope: RepoScope) -> set[str]:
+            return {entry.name for entry in iter_tree_leaf_first(tree, scope)}
+
+        assert names(RepoScope.PROJECT) == {"ComplexGitSync", "DocComplexGitSync"}
+        assert names(RepoScope.PRIVATE) == {".localSpec", ".claude"}
+        assert ".agentSpec" not in names(RepoScope.WRITABLE)
+        assert ".agentSpec" in names(RepoScope.ALL)

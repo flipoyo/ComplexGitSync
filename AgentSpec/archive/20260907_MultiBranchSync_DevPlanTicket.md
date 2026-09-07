@@ -562,3 +562,70 @@ D5.
 8. `AgentSpec/` holds only this ticket, `archive/`, `openTickets/` and
    `Tickets/`.
 9. This ticket is stamped and archived.
+
+---
+
+## 11. Outcome — what was implemented, 2026-09-07
+
+Recorded at archiving time. The decisions in §6 were answered by the owner
+as follows, and every one took the recommended option:
+
+| Decision | Answer |
+|---|---|
+| D1 | **A** — every `.cgs` this tree reaches states `project.default_branch`, with a test |
+| D2 | **Document + better error** — the one-`.cgs`-at-a-root rule is in the user guide, and the ambiguity error now names the files it found and the two ways out |
+| D3 | Recommendation stands: `@project` is *not* implemented here. It stays its own ticket (`GitOrchestratorCommand`) |
+| D4 | Not settled here. `@` still has two proposed meanings; `ForkObject` owns it, and nothing in this ticket's code uses either |
+| D5 | **Always show it** — `view-tree` prints `br=<branch>` on every line |
+| D6 | **Taken** — `git_branch.py` written as a Ring-0 pure resolver |
+| D7a | **Taken** — `pinned` is defined by intent in the user guide before its mechanism |
+| D7b | **A** — `discover` still finds dot-named repositories, and drafts them `pinned = true` |
+
+### What changed
+
+`src/ComplexGitSync/git_branch.py` is new: Ring 0, 263 LOC, 7 public
+symbols, importing only `git_repo`. It owns the `.cgs` fallback chain and
+the pinning rule, and returns a `BranchResolution` carrying the branch, its
+`RefKind`, and the `BranchSource` that answered — so *why* a branch was
+chosen is recorded rather than recomputed.
+
+Six private copies of the chain were removed. `cgs_format.py`,
+`discovery.py`, `registry.py`, `operations.py`, `git_tree.py` and
+`orchestre.py` now call the resolver. Four sites still spell `"main"`, each
+a genuinely different decision and each carrying a comment saying so:
+`.gitmodules` reading and writing (Git's own default, not ours),
+`git_runner.force_pull`'s bare-path last resort, and `gts_document.py`'s
+canonical hash builder (a frozen wire-format input).
+`tests/unit/test_git_branch.py` counts those literals and fails if a fifth
+appears.
+
+`.agentSpec/install.cgs` and `docs/DocCGS.cgs` — the two files §2.2 named —
+now state their branch, as does `ComplexGitSync.cgs`.
+
+### Where the ratchet moved
+
+`--write-baseline` was run after the work, and it moved in both directions:
+
+| Module | LOC | Why |
+|---|---|---|
+| `registry.py` | 447 → 438 | private chain copy deleted |
+| `discovery.py` | 229 → 222 | private chain copy deleted |
+| `cgs_format.py` | 642 → 641 | `DEFAULT_BRANCH` moved out |
+| `git_tree.py` | 1114 → **1116** | D5's resolved branch, plus the import |
+| `orchestre.py` | 3394 → **3405** | D7b's `_is_dot_named_mount`, plus the import |
+
+The two increases are inside the owner's standing per-module allowance
+(`.localSpec/AdditionalSpecs.md`, *Ceilings*) and are reported here rather
+than raised quietly.
+
+### What was deliberately not done
+
+**The workspace state under `.cgitsync/` was not regenerated.** Both `.cgs`
+edits change the tree's content hash, so a new `state(<hash>)_0` is due —
+but `.cgitsync/` is under the one hard prohibition against hand-editing,
+and the workspace was dirty with this ticket's own work while it ran. The
+correct order is to let a normal lifecycle command allocate the new state
+directory *after* this change is committed, and to remove a stale one only
+if the tool then stops preferring it. `cgitsync status` reports
+`ready=true complete=true repos=7 errors=0` on the current state, so
+nothing is broken in the meantime.

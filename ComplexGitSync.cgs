@@ -1,13 +1,17 @@
-# CGS integration topology root. Defaults: main, ssh, nested auto, and each
+# CGS integration topology root. Defaults: ssh, nested auto, and each
 # repository name as its relative path. CGSil1 matches the project name, so
 # normalization mounts it at ".".
+#
+# default_branch is stated even though "main" is also the built-in default:
+# every repository below inherits it, so a reader must be able to see which
+# branch this tree lands on without knowing DEFAULT_BRANCH in the source.
 
-project = "ComplexGitSync"
+project = { name = "ComplexGitSync", default_branch = "main" }
 
 repos = [
     "github:flipoyo/ComplexGitSync",
     { repository = "github:flipoyo/DocComplexGitSync", relative_path = "docs"},
     { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", pinned = true },
-    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", pinned = true },
-    { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", pinned = true },
+    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", pinned = true, writable = true },
+    { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", pinned = true, writable = true },
 ]

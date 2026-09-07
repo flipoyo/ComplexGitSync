@@ -74,12 +74,14 @@ from .errors import (
     ConfigValidationError,
     GitSyncError,
 )
+from .git_branch import BranchResolution, resolve_entry_ref
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
     GitRepo,
     RefKind,
     RepoLifecycleState,
+    RepoScope,
     SyncState,
     WorkingRepo,
     repo_remote_url,
@@ -878,6 +880,53 @@ def _as_posix_or_none(path: Path | None) -> str | None:
     return None if path is None else path.as_posix()
 
 
+def resolve_command_scope(
+    tree: WorkingGitTree,
+    *,
+    private: bool,
+    command: str,
+) -> RepoScope:
+    """Pick the scope a write command runs at, and refuse an empty one.
+
+    Without ``--private`` a write command touches only the repositories this
+    project owns. With it, only the **writable** configuration repos — the
+    ones the ``.cgs`` declares ``pinned = true, writable = true``. The two
+    are disjoint on purpose: a shared repository gets its own command and
+    its own commit message, rather than being swept into this project's.
+
+    Raises rather than silently doing nothing when ``--private`` is asked
+    for and no repository qualifies, since a command that quietly touched
+    nothing is exactly the failure this whole mechanism exists to prevent.
+    """
+    if not private:
+        return RepoScope.PROJECT
+    if any(RepoScope.PRIVATE.includes(repo) for repo in tree.values()):
+        return RepoScope.PRIVATE
+    read_only = sorted(repo.name for repo in tree.values() if repo.pinned)
+    detail = (
+        f" The pinned repositories in this tree are read-only: {', '.join(read_only)}."
+        if read_only
+        else " This tree declares no pinned repositories at all."
+    )
+    raise GitSyncError(
+        f"{command} --private: no writable configuration repository in this tree.{detail}"
+        f" A pinned repository is read-only unless its .cgs entry also says"
+        f" writable = true."
+    )
+
+
+def _is_dot_named_mount(relative_path: str) -> bool:
+    """True when any segment of *relative_path* is a dot-named directory.
+
+    Used only to pick ``discover``'s default for ``pinned``. Being dot-named
+    is a habit, not the rule — ``pinned`` means "shared with other projects",
+    and ``docs/DocSpec`` is pinned without being hidden at any level. The
+    habit is reliable enough to make a *default* out of, which the author
+    then sees in the drafted ``.cgs`` and can delete.
+    """
+    return any(segment.startswith(".") for segment in relative_path.split("/") if segment != ".")
+
+
 @dataclass(frozen=True, slots=True)
 class DiscoveredRepo:
     """One git repository found on disk by :meth:`ComplexGitSyncClient.discover_repos`.
@@ -1379,6 +1428,9 @@ class ComplexGitSyncClient:
                 cfg.add_section(section)
                 cfg.set(section, "path", sub.path)
                 cfg.set(section, "url", sub.url)
+                # Git's own .gitmodules default, not git_branch.DEFAULT_BRANCH
+                # — this omits the key only when it would say what Git already
+                # assumes, and must not move when our .cgs default moves.
                 if sub.branch != "main":
                     cfg.set(section, "branch", sub.branch)
             import io
@@ -1752,6 +1804,16 @@ class ComplexGitSyncClient:
             # A repository with no .cgs of its own resolves cleanly on the
             # default "auto" (zero matches -> RESOLVED), so it is left
             # unset here rather than pinned to "disabled".
+            if _is_dot_named_mount(repo.relative_path):
+                # A dot-named mount (.agentSpec, .localSpec, .claude) is
+                # almost always a config repository shared with other
+                # projects, and "pinned" means exactly that: shared, so
+                # tree-wide branch moves must leave it alone. Drafting it
+                # pinned states the convention as a default the author can
+                # see and delete, rather than hiding these repositories from
+                # the scan — they are still found, still listed, and still
+                # written out.
+                entry["pinned"] = True
             cgs_entries.append(entry)
 
         self._log_event(
@@ -2801,6 +2863,7 @@ class ComplexGitSyncClient:
         message: str,
         *,
         stage_all: bool = True,
+        private: bool = False,
     ) -> WorkingGitTree:
         """Commit changes across the full tree, leaf-first.
 
@@ -2811,17 +2874,24 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        self._log_event("commit_start", message=message, stage_all=stage_all)
+        scope = resolve_command_scope(registry, private=private, command="commit")
+        self._log_event("commit_start", message=message, stage_all=stage_all, scope=scope.value)
         self.orchestre.git_tree.git.commit(
             self.git_runner,
             message,
             stage_all=stage_all,
+            scope=scope,
         )
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="commit")
         self._log_event("commit_end", message=message)
         return registry
 
-    def add(self, paths: Sequence[str | Path] | None = None) -> WorkingGitTree:
+    def add(
+        self,
+        paths: Sequence[str | Path] | None = None,
+        *,
+        private: bool = False,
+    ) -> WorkingGitTree:
         """Stage changes across the full tree, leaf-first.
 
         Requires a ``READY`` registry; raises
@@ -2835,8 +2905,13 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        self._log_event("add_start", paths=[str(p) for p in paths] if paths else None)
-        self.orchestre.git_tree.git.add(self.git_runner, paths=paths)
+        scope = resolve_command_scope(registry, private=private, command="add")
+        self._log_event(
+            "add_start",
+            paths=[str(p) for p in paths] if paths else None,
+            scope=scope.value,
+        )
+        self.orchestre.git_tree.git.add(self.git_runner, paths=paths, scope=scope)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="add")
         self._log_event("add_end")
         return registry
@@ -2860,7 +2935,12 @@ class ComplexGitSyncClient:
         self._log_event("rm_end")
         return registry
 
-    def push(self, *, force_access_protocol: str | None = None) -> WorkingGitTree:
+    def push(
+        self,
+        *,
+        force_access_protocol: str | None = None,
+        private: bool = False,
+    ) -> WorkingGitTree:
         """Push all repos to their remotes, leaf-first.
 
         Requires a ``READY`` registry; raises
@@ -2878,10 +2958,13 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        self._log_event("push_start")
+        scope = resolve_command_scope(registry, private=private, command="push")
+        self._log_event("push_start", scope=scope.value)
         protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
         try:
-            self.orchestre.git_tree.git.push(self.git_runner, force_access_protocol=protocol)
+            self.orchestre.git_tree.git.push(
+                self.git_runner, force_access_protocol=protocol, scope=scope
+            )
         except GitSyncError as exc:
             hint = _protocol_switch_hint(str(exc), command="push")
             if hint:
@@ -3696,7 +3779,7 @@ class ComplexGitSyncClient:
             current_branch = None
             commit_sha = ""
 
-        ref_name = current_branch or entry.target_ref_name or entry.default_branch or "main"
+        ref_name = resolve_entry_ref(entry, observed_branch=current_branch).name
         entry.current_ref_kind = RefKind.BRANCH
         entry.current_ref_name = ref_name
         entry.resolved_ref_kind = RefKind.BRANCH
@@ -3747,7 +3830,10 @@ class ComplexGitSyncClient:
                 ) from exc
             raise
         current_ref = self.git_runner.current_branch(entry.absolute_path) or selected_ref
-        fallback_applied = current_ref != (entry.target_ref_name or selected_ref)
+        landed = BranchResolution.from_landed_ref(
+            entry, current_ref, selected_ref_kind, requested_name=selected_ref
+        )
+        fallback_applied = landed.fallback_applied
 
         entry.current_ref_kind = selected_ref_kind
         entry.current_ref_name = current_ref if selected_ref_kind == RefKind.BRANCH else selected_ref
@@ -3755,11 +3841,7 @@ class ComplexGitSyncClient:
         entry.resolved_ref_name = current_ref if selected_ref_kind == RefKind.BRANCH else selected_ref
         entry.commit_sha = self.git_runner.rev_parse_head(entry.absolute_path)
         entry.fallback_applied = fallback_applied
-        entry.fallback_reason = (
-            f"branch '{entry.target_ref_name}' not found on remote; cloned '{current_ref}' instead"
-            if fallback_applied
-            else None
-        )
+        entry.fallback_reason = landed.fallback_detail(entry)
         entry.repo_lifecycle_state = (
             RepoLifecycleState.FALLBACK_READY if fallback_applied else RepoLifecycleState.READY
         )

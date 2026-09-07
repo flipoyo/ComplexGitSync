@@ -6,7 +6,7 @@ Ring: 1 (filesystem only, no subprocess — sync_gitignore writes .gitignore
 Contract: own the in-memory GitTree/WorkingGitTree structures, traversal,
     lifecycle state, and .gitignore maintenance; to_cgs() only delegates
     to cgs_format.py.
-Imports: cgs_format, errors, git_repo
+Imports: cgs_format, errors, git_branch, git_repo
 
 This module is the **GitTree anchor** — the authoritative source for the
 in-memory tree structure, lifecycle, registry, and tree-level utilities.
@@ -45,6 +45,7 @@ from pathlib import Path, PurePath, PurePosixPath
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from .errors import ConfigValidationError, GitSyncError
+from .git_branch import resolve_entry_ref
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
@@ -53,6 +54,7 @@ from .git_repo import (
     NodeType,
     RefKind,
     RepoLifecycleState,
+    RepoScope,
     SyncState,
     WorkingRepo,
 )
@@ -146,10 +148,11 @@ class GitTreeGitCommands:
         *,
         tree: WorkingGitTree | None = None,
         paths: Sequence[str | Path] | None = None,
+        scope: RepoScope = RepoScope.PROJECT,
     ) -> None:
         from .operations import add_tree
 
-        add_tree(self._resolve_tree(tree), git_runner, paths=paths)
+        add_tree(self._resolve_tree(tree), git_runner, paths=paths, scope=scope)
 
     def rm(
         self,
@@ -169,10 +172,13 @@ class GitTreeGitCommands:
         *,
         stage_all: bool = True,
         tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.PROJECT,
     ) -> None:
         from .operations import commit_tree
 
-        commit_tree(self._resolve_tree(tree), git_runner, message, stage_all=stage_all)
+        commit_tree(
+            self._resolve_tree(tree), git_runner, message, stage_all=stage_all, scope=scope
+        )
 
     def push(
         self,
@@ -180,11 +186,15 @@ class GitTreeGitCommands:
         *,
         tree: WorkingGitTree | None = None,
         force_access_protocol: AccessProtocol | None = None,
+        scope: RepoScope = RepoScope.PROJECT,
     ) -> None:
         from .operations import push_tree
 
         push_tree(
-            self._resolve_tree(tree), git_runner, force_access_protocol=force_access_protocol
+            self._resolve_tree(tree),
+            git_runner,
+            force_access_protocol=force_access_protocol,
+            scope=scope,
         )
 
     def tag(
@@ -1019,7 +1029,13 @@ def format_view_tree(
     depth: int | None = None,
     collapse: Sequence[str] = (),
 ) -> str:
-    """Render a terminal tree view with node type, sync state, commit SHA, and fallback branch."""
+    """Render a terminal tree view: node type, sync state, commit SHA, branch."""
+    # Every repository shows the branch it targets (br=), not only the ones
+    # whose branch is unusual. Printing it only when it differed from "main"
+    # hid exactly the common case: a reader could not tell a tree that had
+    # chosen main from one that had never been asked. The declared fallback
+    # (fb=) is still shown only when it differs from that target, since a
+    # fallback equal to the target says nothing.
     if depth is not None and depth < 0:
         raise ValueError("depth must be >= 0")
 
@@ -1038,9 +1054,10 @@ def format_view_tree(
         node_type = entry.node_type.value.lower()
         sync_state = entry.sync_state.value
         sha = entry.commit_sha[:7] if entry.commit_sha else "?"
+        branch = entry.target_ref_name or resolve_entry_ref(entry).name
         fb = entry.fallback_branch
-        fb_str = f" fb={fb}" if fb and fb != "main" else ""
-        return f"{entry.name} ({node_type}) [{sync_state}] @{sha}{fb_str}"
+        fb_str = f" fb={fb}" if fb and fb != branch else ""
+        return f"{entry.name} ({node_type}) [{sync_state}] @{sha} br={branch}{fb_str}"
 
     lines: list[str] = []
     lines.append(render_node(root_entry))
@@ -1128,14 +1145,32 @@ def format_registry_json(registry: WorkingGitTree) -> str:
 # ---------------------------------------------------------------------------
 
 
-def iter_tree(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
-    """Yield every repo in *tree* in parent-first (root → leaves) order."""
-    yield from _iter_tree(tree)
+def iter_tree(
+    tree: WorkingGitTree,
+    scope: RepoScope = RepoScope.ALL,
+) -> Iterator[WorkingRepo]:
+    """Yield repos of *tree* in parent-first (root → leaves) order.
+
+    *scope* selects which repositories an operation is allowed to touch —
+    see :class:`~ComplexGitSync.git_repo.RepoScope`. It defaults to
+    ``ALL``, so a caller that has not thought about configuration repos
+    gets today's behaviour; the commands that write history pass a
+    narrower scope deliberately.
+    """
+    for repo in _iter_tree(tree):
+        if scope.includes(repo):
+            yield repo
 
 
-def iter_tree_leaf_first(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
-    """Yield every repo in *tree* in leaf-first (leaves → root) order."""
-    yield from reversed(list(_iter_tree(tree)))
+def iter_tree_leaf_first(
+    tree: WorkingGitTree,
+    scope: RepoScope = RepoScope.ALL,
+) -> Iterator[WorkingRepo]:
+    """Yield repos of *tree* in leaf-first (leaves → root) order.
+
+    Same *scope* rule as :func:`iter_tree`.
+    """
+    yield from reversed(list(iter_tree(tree, scope)))
 
 
 def resolve_repo_for_path(tree: WorkingGitTree, path: Path | str) -> tuple[WorkingRepo, str]:

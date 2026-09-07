@@ -1,4 +1,4 @@
-# Tutorial 3 of 3 — Adopting a Real Project: CaWaQS-Viz
+# Tutorial 3 of 4 — Adopting a Real Project: CaWaQS-Viz
 
 *Created: 2026-09-02*
 
@@ -25,7 +25,7 @@ one; §3.1 opens it up and explains why their order cannot be changed.
 
 **Who it is for.** Anyone adopting a real project that both lacks a `.cgs`
 and still uses git submodules — the combination Tutorials 1 and 2 don't
-cover, and the messiest of the three tutorials' starting points.
+cover, and the messiest of the four tutorials' starting points.
 
 **What you need to do with it.** Read it after Tutorials 1 and 2. Follow
 the steps in order — the directory-naming detail in step 1 is easy to get
@@ -34,7 +34,8 @@ wrong and is the one thing worth reading twice.
 ```mermaid
 graph LR
     T2["02 — real build tree"] --> T3["03 — adopting a real project<br/>YOU ARE HERE"]
-    T3 --> REF["docs/MASTER.pdf<br/>full reference"]
+    T3 --> T4["04 — configuration repos<br/>pinned branches"]
+    T4 --> REF["docs/MASTER.pdf<br/>full reference"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
     class T3 here;
@@ -255,6 +256,13 @@ pixi run cgitsync branch retire-submodules
 
 Creates a purely local branch across the whole tree — nothing pushed yet.
 
+One repository can opt out. A repository marked `pinned = true` in the
+`.cgs` is one you **share with other projects**, so a tree-wide branch move
+skips it and leaves it on its own branch. A tag is different: `cgitsync tag`
+reaches every repository, pinned or not, so a frozen release stays complete.
+Section 9 below uses this, and the user guide's "Branches in a `.cgs`"
+section has the full rule.
+
 ## 5. Checkout
 
 ```bash
@@ -383,6 +391,41 @@ entries to the project's `.cgs`:
 this project would also be created inside `.agentSpec`, which every other
 project mounts too.
 
+### Seeing pinning work
+
+ComplexGitSync manages itself this way, so its own tree is the worked
+example. Here it is while a feature branch called `multi-branch` is
+checked out, printed by `cgitsync view-tree`:
+
+```text
+ComplexGitSync (root) [ALIGNED] @9c9298a br=multi-branch fb=main
+├── .agentSpec (parent) [ALIGNED] @117a9c5 br=main
+│   └── DevSpec (leaf) [ALIGNED] @a5d3432 br=main
+├── .claude (leaf) [ALIGNED] @df4221c br=ComplexGitSync fb=main
+├── .localSpec (leaf) [ALIGNED] @9f50519 br=ComplexGitSync fb=main
+└── DocComplexGitSync (parent) [ALIGNED] @ac1176e br=multi-branch fb=main
+    └── DocSpec (leaf) [ALIGNED] @e6f1b0b br=main
+```
+
+`br=` is the branch each repository is on. Read it top to bottom:
+
+- The two repositories this project actually owns — `ComplexGitSync` and
+  `DocComplexGitSync` — moved to `multi-branch`.
+- The five pinned mounts did not. `.localSpec` and `.claude` stayed on
+  `ComplexGitSync`, the branch named after this project. `.agentSpec`,
+  `DevSpec` and `DocSpec` stayed on `main`, which every project that mounts
+  them reads.
+- `fb=` is shown only where the declared fallback branch differs from the
+  branch targeted. It is what `cgitsync` would clone if the target branch
+  did not exist on the remote.
+
+**That last difference decides how carefully you commit.** A mount pinned to
+a branch named after your project (`.localSpec`, `.claude` above) is yours —
+push to it freely. A mount pinned to `main` (`.agentSpec` above) is read by
+every project that mounts it, so a push there is published immediately, with
+no branch and no pull request in between. Check which kind you are looking at
+before committing to a pinned mount.
+
 Each repository mounts at its own name, so no `relative_path` is needed.
 `.agentSpec` carries its own `install.cgs`, which is why it declares
 `nested_config = "auto"`: discovery reads that file and clones
@@ -395,3 +438,9 @@ Then create the `<ProjectName>` branch on `.localSpec` and on `.claude`
 needs nothing — it is the same document for every project. Run
 `cgitsync initialise` and the mounts land alongside the ones above;
 `.gitignore` is updated for you.
+
+**Next:** [Tutorial 4 — Including Configuration Repos in `.cgs`: Pinned
+Branches](04_configuration_repos_pinned_branches.md) picks up exactly where
+the three mounts above leave off: what `pinned = true` protects, what it
+does *not* protect, and the safe order for committing and pushing a change
+that touches a shared mount.

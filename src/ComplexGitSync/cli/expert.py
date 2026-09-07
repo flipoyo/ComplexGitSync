@@ -30,6 +30,7 @@ from ._shared import (
     _print_repo_tree_result,
     _resolve_gts_path,
     _resolve_workspace_source,
+    _resolve_write_scope,
     _run_with_logging,
 )
 
@@ -223,6 +224,13 @@ def _register_commit(subparser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Skip automatic 'git add --all' before committing.",
     )
+    subparser.add_argument(
+        "--private",
+        action="store_true",
+        help=(
+            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'pinned = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
+        ),
+    )
     _add_dry_run_argument(subparser, help_text="Preview the commit execution plan without mutating repositories.")
     subparser.set_defaults(handler=_handle_commit)
 
@@ -240,6 +248,13 @@ def _register_add(subparser: argparse.ArgumentParser) -> None:
     )
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
+    subparser.add_argument(
+        "--private",
+        action="store_true",
+        help=(
+            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'pinned = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
+        ),
+    )
     _add_dry_run_argument(subparser, help_text="Preview the add execution plan without mutating repositories.")
     subparser.set_defaults(handler=_handle_add)
 
@@ -265,6 +280,13 @@ def _register_rm(subparser: argparse.ArgumentParser) -> None:
 def _register_push(subparser: argparse.ArgumentParser) -> None:
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
+    subparser.add_argument(
+        "--private",
+        action="store_true",
+        help=(
+            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'pinned = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
+        ),
+    )
     _add_dry_run_argument(subparser, help_text="Preview the push execution plan without mutating repositories.")
     _add_force_protocol_argument(subparser, command_name="push")
     subparser.set_defaults(handler=_handle_push)
@@ -536,6 +558,7 @@ def _handle_commit(args: argparse.Namespace) -> int:
             message=message,
             stage_all=not args.no_stage,
             dry_run=args.dry_run,
+            private=args.private,
         ),
     )
 
@@ -554,7 +577,9 @@ def _handle_add(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="add",
         source=gts_path,
-        runner=lambda client, source: _execute_add(client, source, paths=paths, dry_run=args.dry_run),
+        runner=lambda client, source: _execute_add(
+            client, source, paths=paths, dry_run=args.dry_run, private=args.private
+        ),
     )
 
 
@@ -574,7 +599,11 @@ def _handle_push(args: argparse.Namespace) -> int:
         command_name="push",
         source=gts_path,
         runner=lambda client, source: _execute_push(
-            client, source, dry_run=args.dry_run, force_access_protocol=force_access_protocol
+            client,
+            source,
+            dry_run=args.dry_run,
+            force_access_protocol=force_access_protocol,
+            private=args.private,
         ),
     )
 
@@ -802,8 +831,10 @@ def _execute_commit(
     message: str,
     stage_all: bool,
     dry_run: bool = False,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    scope = _resolve_write_scope(client, private=private, command="commit")
     print(f"git_command=git commit -m {message!r}")
     if dry_run:
         _print_dry_run_plan(
@@ -813,9 +844,10 @@ def _execute_commit(
                 "git add --all" if stage_all else "skip git add --all (--no-stage)",
                 f"git commit -m {message!r}",
             ),
+            scope=scope,
         )
     else:
-        client.commit(message, stage_all=stage_all)
+        client.commit(message, stage_all=stage_all, private=private)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -832,14 +864,16 @@ def _execute_add(
     *,
     paths: list[str] | None = None,
     dry_run: bool = False,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    scope = _resolve_write_scope(client, private=private, command="add")
     action = f"git add -- {' '.join(paths)}" if paths else "git add --all"
     print(f"git_command={action}")
     if dry_run:
-        _print_dry_run_plan(client, command_name="add", actions=(action,))
+        _print_dry_run_plan(client, command_name="add", actions=(action,), scope=scope)
     else:
-        client.add(paths=paths)
+        client.add(paths=paths, private=private)
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
     if not dry_run:
@@ -874,17 +908,20 @@ def _execute_push(
     *,
     dry_run: bool = False,
     force_access_protocol: str | None = None,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    scope = _resolve_write_scope(client, private=private, command="push")
     print("git_command=git push (-u origin <branch> when upstream is missing)")
     if dry_run:
         _print_dry_run_plan(
             client,
             command_name="push",
             actions=("git push", "git push -u origin <branch> when upstream is missing"),
+            scope=scope,
         )
     else:
-        client.push(force_access_protocol=force_access_protocol)
+        client.push(force_access_protocol=force_access_protocol, private=private)
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
     if not dry_run:

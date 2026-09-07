@@ -395,13 +395,18 @@ repos = [
         lines = captured.out.splitlines()
         assert len(lines) == 3, f"expected root + 2 children, got: {lines!r}"
 
-        # Root line: "<name> (<node_type>) [<sync_state>] @<sha-or-?>".
-        assert lines[0] == "CGSil1 (root) [PENDING] @?"
+        # Root line: "<name> (<node_type>) [<sync_state>] @<sha-or-?> br=<branch>".
+        # br= is printed for every entry, including the common case where the
+        # branch is the default one, so that reading view-tree tells you the
+        # branch each repository targets without consulting the .cgs
+        # (MultiBranchSync ticket, D5). This .cgs names no branch anywhere, so
+        # every entry resolves to git_branch.DEFAULT_BRANCH.
+        assert lines[0] == "CGSil1 (root) [PENDING] @? br=main"
 
         # Children rendered with box-drawing branch prefixes, alphabetically
-        # ordered, each carrying the same "(node_type) [sync] @sha" shape.
-        assert lines[1] == "├── CGSih1 (leaf) [PENDING] @?"
-        assert lines[2] == "└── CGSil2 (leaf) [PENDING] @?"
+        # ordered, each carrying the same "(node_type) [sync] @sha br=" shape.
+        assert lines[1] == "├── CGSih1 (leaf) [PENDING] @? br=main"
+        assert lines[2] == "└── CGSil2 (leaf) [PENDING] @? br=main"
 
         # Presence/ordering checks that stay meaningful even if rendering
         # details (exact bracket punctuation) shift under refactor: both
@@ -417,7 +422,7 @@ repos = [
         captured = capsys.readouterr()
 
         assert exit_code == 0
-        assert captured.out.splitlines() == ["CGSil1 (root) [PENDING] @?"]
+        assert captured.out.splitlines() == ["CGSil1 (root) [PENDING] @? br=main"]
 
     def test_view_tree_collapse_hides_named_subtree(self, tmp_path, capsys):
         cgs_path = tmp_path / "CGSil1.cgs"

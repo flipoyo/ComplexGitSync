@@ -16,6 +16,7 @@ Classes / enums defined here (Tier 1 — Core State):
     GitProvider         Supported Git hosting providers
     NodeType            Position of a repo in the dependency tree (root/parent/leaf)
     RefKind             Kind of a Git reference (branch/tag/detached/…)
+    RepoScope           Which repos of a tree a command may touch
     RepoLifecycleState  Per-repo lifecycle progression
     SyncState           Synchronization status relative to the remote
     DiscoveryState      Nested .cgs discovery status
@@ -107,6 +108,53 @@ class RefKind(StrEnum):
     TAG = "tag"
     DETACHED = "detached"
     UNKNOWN = "unknown"
+
+
+class RepoScope(StrEnum):
+    """Which repositories of a tree an operation is allowed to touch.
+
+    A tree mixes repositories this project owns with **configuration
+    repositories** shared with other projects. The shared ones are declared
+    ``pinned`` in the ``.cgs``, and pinned means read-only unless the entry
+    also declares ``writable = true``. Three kinds result, and every
+    tree-wide command has to say which of them it means:
+
+    ``PROJECT``
+        The repositories this project owns outright — everything not
+        pinned. The default for commands that write this project's own
+        history (``add``, ``commit``, ``push``).
+    ``PRIVATE``
+        Pinned repositories this project may write: shared, but on a branch
+        of its own. What ``--private`` selects.
+    ``WRITABLE``
+        ``PROJECT`` and ``PRIVATE`` together — every repository ComplexGitSync
+        may write to at all. What ``tag`` and ``freeze-release`` reach.
+    ``ALL``
+        Every repository, read-only configuration repos included. What
+        ``clone``, ``pull``, ``status`` and ``view-tree`` reach, because
+        reading and updating a read-only repository is exactly what it is
+        for.
+
+    This is a **safety rail, not a permission system.** It stops a
+    tree-wide sweep from writing somewhere you did not mean; it cannot stop
+    anyone from running ``git`` in that directory by hand, and it is not a
+    substitute for branch protection on the remote.
+    """
+
+    PROJECT = "project"
+    PRIVATE = "private"
+    WRITABLE = "writable"
+    ALL = "all"
+
+    def includes(self, repo: WorkingRepo) -> bool:
+        """Whether *repo* falls inside this scope."""
+        if self is RepoScope.ALL:
+            return True
+        if self is RepoScope.PROJECT:
+            return not repo.pinned
+        if self is RepoScope.PRIVATE:
+            return repo.pinned and repo.writable
+        return not repo.pinned or repo.writable
 
 
 class RepoLifecycleState(StrEnum):
@@ -383,6 +431,7 @@ class WorkingRepo(GitRepo):
     default_branch: str | None = None
     nested_config: str | None = None
     pinned: bool = False
+    writable: bool = False
     remote_name: str | None = None
     is_external_reference: bool = False
 

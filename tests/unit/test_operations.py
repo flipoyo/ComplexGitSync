@@ -1453,7 +1453,7 @@ def test_client_commit_delegates_to_gittree_git_commit(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_commit(self, git_runner, message, *, stage_all=True, tree=None):
+    def _spy_commit(self, git_runner, message, *, stage_all=True, tree=None, scope=None):
         captured_call["git_runner"] = git_runner
         captured_call["message"] = message
         captured_call["stage_all"] = stage_all
@@ -1476,7 +1476,7 @@ def test_client_add_delegates_to_gittree_git_add(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_add(self, git_runner, *, tree=None, paths=None):
+    def _spy_add(self, git_runner, *, tree=None, paths=None, scope=None):
         captured_call["git_runner"] = git_runner
         captured_call["tree"] = tree
 
@@ -1492,7 +1492,7 @@ def test_client_add_forwards_paths_to_gittree_git_add(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_add(self, git_runner, *, tree=None, paths=None):
+    def _spy_add(self, git_runner, *, tree=None, paths=None, scope=None):
         captured_call["paths"] = paths
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "add", _spy_add)
@@ -1506,7 +1506,7 @@ def test_client_push_delegates_to_gittree_git_push(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_push(self, git_runner, *, tree=None, force_access_protocol=None):
+    def _spy_push(self, git_runner, *, tree=None, force_access_protocol=None, scope=None):
         captured_call["git_runner"] = git_runner
         captured_call["tree"] = tree
 

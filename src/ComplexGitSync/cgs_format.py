@@ -41,13 +41,13 @@ import tomli_w
 from .config_document import ConfigDocument
 from .config_document_io import ConfigDocumentIOMixin
 from .errors import ConfigValidationError
+from .git_branch import DEFAULT_BRANCH, apply_declared_defaults
 from .git_repo import AccessProtocol, GitProvider, GitRepo, validate_git_provider
 
 if TYPE_CHECKING:
     from .git_tree import GitTree
 
 DEFAULT_FORMAT_VERSION = "1.0"
-DEFAULT_BRANCH = "main"
 DEFAULT_ACCESS_PROTOCOL = "ssh"
 DEFAULT_NESTED_CONFIG = "auto"
 
@@ -198,13 +198,15 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
         if repo.get("repo_name") is None and repo.get("project_name") is not None:
             repo["repo_name"] = repo["project_name"]
 
-        repo["default_branch"] = str(repo.get("default_branch") or project["default_branch"])
-        repo["fallback_branch"] = str(repo.get("fallback_branch") or repo["default_branch"])
+        apply_declared_defaults(repo, project["default_branch"])
         repo["access_protocol"] = str(repo.get("access_protocol") or DEFAULT_ACCESS_PROTOCOL)
         repo["nested_config"] = str(repo.get("nested_config") or DEFAULT_NESTED_CONFIG)
         # Defaulted, never coerced: bool("yes") is True, which would hide a
         # typo from validate() below instead of reporting it.
         repo["pinned"] = repo.get("pinned", False)
+        # Pinned means read-only unless the entry opts in: a configuration
+        # repo shared with other projects is not ours to write by default.
+        repo["writable"] = repo.get("writable", False)
 
         relative_path = repo.get("relative_path")
         if relative_path is None:
@@ -384,6 +386,8 @@ def _repo_data_from_tree(
         data["nested_config"] = str(nested_config)
     if getattr(repo, "pinned", False):
         data["pinned"] = True
+    if getattr(repo, "writable", False):
+        data["writable"] = True
 
     if "branch" not in data and "tag" not in data:
         target_kind = _enum_text(getattr(repo, "target_ref_kind", None), "")
@@ -638,6 +642,16 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 pinned = repo.get("pinned")
                 if pinned is not None and not isinstance(pinned, bool):
                     errors.append(f"repos[{idx}].pinned must be true or false; got: {pinned!r}")
+
+                writable = repo.get("writable")
+                if writable is not None and not isinstance(writable, bool):
+                    errors.append(f"repos[{idx}].writable must be true or false; got: {writable!r}")
+                if writable and not repo.get("pinned"):
+                    errors.append(
+                        f"repos[{idx}].writable = true only means something on a pinned "
+                        f"repository: an unpinned repository is this project's own and is "
+                        f"always writable. Add pinned = true, or drop writable."
+                    )
         if errors:
             raise ConfigValidationError(
                 "Invalid .cgs document:\n" + "\n".join(f"  • {error}" for error in errors)
@@ -695,6 +709,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
             "access_protocol",
             "nested_config",
             "pinned",
+            "writable",
             "relative_path",
         }
         for repo in repos:
@@ -719,6 +734,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 overrides, "nested_config", repo.get("nested_config"), DEFAULT_NESTED_CONFIG
             )
             _resolve_override(overrides, "pinned", repo.get("pinned"), False)
+            _resolve_override(overrides, "writable", repo.get("writable"), False)
 
             is_sole_project_repo = (
                 matching_project_repos == 1 and repo.get("project_name") == project_name

@@ -445,7 +445,7 @@ def test_commit_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def commit(self, message, *, stage_all):
+        def commit(self, message, *, stage_all, private=False):
             captured_call["message"] = message
             captured_call["stage_all"] = stage_all
 
@@ -474,7 +474,7 @@ def test_commit_command_accepts_message_option(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def commit(self, message, *, stage_all):
+        def commit(self, message, *, stage_all, private=False):
             captured_call["message"] = message
             captured_call["stage_all"] = stage_all
 
@@ -510,7 +510,7 @@ def test_commit_command_no_stage_flag(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def commit(self, message, *, stage_all):
+        def commit(self, message, *, stage_all, private=False):
             captured_call["stage_all"] = stage_all
 
         def get_tree_state(self):
@@ -532,7 +532,7 @@ def test_commit_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def commit(self, message, *, stage_all):
+        def commit(self, message, *, stage_all, private=False):
             raise AssertionError("commit should not be called during --dry-run")
 
         def get_tree_state(self):
@@ -564,7 +564,7 @@ def test_add_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def add(self, paths=None):
+        def add(self, paths=None, *, private=False):
             captured_call["added"] = True
 
         def get_tree_state(self):
@@ -591,7 +591,7 @@ def test_add_command_forwards_paths_to_client(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def add(self, paths=None):
+        def add(self, paths=None, *, private=False):
             captured_call["paths"] = paths
 
         def get_tree_state(self):
@@ -616,7 +616,7 @@ def test_add_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def add(self, paths=None):
+        def add(self, paths=None, *, private=False):
             raise AssertionError("add should not be called during --dry-run")
 
         def get_tree_state(self):

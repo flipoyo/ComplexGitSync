@@ -4,7 +4,7 @@ Ring: 2 (no direct subprocess import; drives Git only through an injected
     GitRunner-shaped object, same ring as git_runner.py per IsolationPlan.md §1)
 Contract: leaf/parent-first Git operations over a WorkingGitTree + GitRunner;
     requires a READY tree for mutations, raises TreeNotReadyError otherwise.
-Imports: errors, git_repo, git_tree
+Imports: errors, git_branch, git_repo, git_tree
 
 Each function operates on a :class:`~ComplexGitSync.git_tree.WorkingGitTree`
 and a :class:`~ComplexGitSync.orchestre.GitRunner`.  Mutation operations require a
@@ -40,10 +40,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from .errors import GitSyncError, TreeNotReadyError
+from .git_branch import resolve_entry_ref, resolve_propagated_ref
 from .git_repo import (
     AccessProtocol,
     RefKind,
     RepoLifecycleState,
+    RepoScope,
     SyncState,
     WorkingRepo,
     convert_remote_url_protocol,
@@ -95,13 +97,14 @@ def propagate_global_branch(
     ``.cgs``, which keeps its own ``default_branch`` because it is shared
     with other projects. Pinning governs *branch* propagation only, so a
     tag still reaches every repo and a frozen release stays reproducible.
+
+    The pinning rule itself lives in
+    :func:`~ComplexGitSync.git_branch.resolve_propagated_ref`, so that the
+    reason each repo ended up on the branch it did is decided in one place
+    and recorded on the entry rather than re-derived by each reader.
     """
     for repo in tree.values():
-        if repo.pinned and ref_kind is RefKind.BRANCH:
-            repo.target_ref_name = repo.default_branch or repo.target_ref_name
-        else:
-            repo.target_ref_name = branch_name
-            repo.target_ref_kind = ref_kind
+        resolve_propagated_ref(repo, branch_name, ref_kind=ref_kind).apply_to(repo)
 
 
 # ---------------------------------------------------------------------------
@@ -187,10 +190,8 @@ def _restart_tree(
     """
     label = "pull-force" if force else "pull"
     root_entry = tree.get("root")
-    current_branch = git_runner.current_branch(root_entry.absolute_path) or (
-        root_entry.resolved_ref_name or root_entry.target_ref_name or "main"
-    )
-
+    observed = git_runner.current_branch(root_entry.absolute_path)
+    current_branch = resolve_entry_ref(root_entry, observed_branch=observed).name
     propagate_global_branch(tree, current_branch)
 
     for repo in iter_tree(tree):
@@ -335,6 +336,7 @@ def add_tree(
     git_runner: GitRunner,
     *,
     paths: Sequence[str | Path] | None = None,
+    scope: RepoScope = RepoScope.PROJECT,
 ) -> None:
     """Stage changes across the tree, leaf-first.
 
@@ -352,7 +354,7 @@ def add_tree(
     _assert_ready(tree)
 
     if paths is None:
-        for repo in iter_tree_leaf_first(tree):
+        for repo in iter_tree_leaf_first(tree, scope):
             git_runner.stage_all(repo.absolute_path)
     else:
         resolved = [resolve_repo_for_path(tree, path) for path in paths]
@@ -411,6 +413,7 @@ def commit_tree(
     message: str,
     *,
     stage_all: bool = True,
+    scope: RepoScope = RepoScope.PROJECT,
 ) -> None:
     """Commit changes across the tree, leaf-first.
 
@@ -432,7 +435,7 @@ def commit_tree(
         operation_name="commit",
     )
 
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         if stage_all:
             git_runner.stage_all(repo.absolute_path)
         if not git_runner.has_staged_changes(repo.absolute_path):
@@ -453,6 +456,7 @@ def push_tree(
     git_runner: GitRunner,
     *,
     force_access_protocol: AccessProtocol | None = None,
+    scope: RepoScope = RepoScope.PROJECT,
 ) -> None:
     """Push all repos to their remotes, leaf-first.
 
@@ -474,7 +478,7 @@ def push_tree(
         operation_name="push",
     )
 
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         remote = repo.remote_name or "origin"
         _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
         current_branch = git_runner.current_branch(repo.absolute_path)
@@ -509,7 +513,12 @@ def tag_tree(
     )
     _propagate_tag(tree, tag_name)
 
-    for repo in iter_tree_leaf_first(tree):
+    # WRITABLE, not ALL: a tag is created *and pushed* in the same step, and
+    # a read-only configuration repo is one this project may not push to.
+    # Reproducibility does not suffer -- the .gts snapshot records every
+    # repo's exact commit_sha, read-only ones included, so the tree is
+    # rebuilt from the snapshot rather than from tags.
+    for repo in iter_tree_leaf_first(tree, RepoScope.WRITABLE):
         git_runner.create_tag(repo.absolute_path, tag_name)
         remote = repo.remote_name or "origin"
         git_runner.push(repo.absolute_path, remote=remote, ref_name=tag_name)
@@ -546,7 +555,11 @@ def freeze_release_tree(
     _propagate_tag(tree, tag_name)
     commit_message = message or f"freeze release {tag_name}"
 
-    for repo in iter_tree_leaf_first(tree):
+    # WRITABLE for the same reason as tag_tree: this commits, tags *and*
+    # pushes, none of which this project may do to a read-only
+    # configuration repo. Their exact SHAs are still recorded in the
+    # snapshot this freeze writes.
+    for repo in iter_tree_leaf_first(tree, RepoScope.WRITABLE):
         if stage_all:
             git_runner.stage_all(repo.absolute_path)
         if git_runner.has_staged_changes(repo.absolute_path):

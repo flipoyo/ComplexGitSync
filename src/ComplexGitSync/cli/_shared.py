@@ -17,8 +17,9 @@ import sys
 from pathlib import Path
 
 from ..cgs_format import CgsDocument
+from ..git_repo import RepoScope
 from ..git_tree import ProjectTreeState, iter_tree_leaf_first
-from ..orchestre import ComplexGitSyncClient, create_run_logger
+from ..orchestre import ComplexGitSyncClient, create_run_logger, resolve_command_scope
 from ..snapshot_resolver import (
     resolve_gts_path,
     resolve_visualization_source,
@@ -217,19 +218,64 @@ def _print_dry_run_plan(
     *,
     command_name: str,
     actions: tuple[str, ...],
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     print(f"dry_run=true command={command_name}")
     print(f"plan_actions={' -> '.join(actions)}")
-    print(f"plan_order={_format_leaf_first_repo_order(client)}")
+    print(f"plan_order={_format_leaf_first_repo_order(client, scope)}")
+    _print_scope_note(client, scope)
 
 
-def _format_leaf_first_repo_order(client: ComplexGitSyncClient) -> str:
+def _format_leaf_first_repo_order(
+    client: ComplexGitSyncClient,
+    scope: RepoScope = RepoScope.ALL,
+) -> str:
     try:
         registry = client.get_dependency_registry()
     except (AttributeError, RuntimeError):
         return "leaf -> parent -> root"
-    repo_names = [entry.name for entry in iter_tree_leaf_first(registry)]
+    repo_names = [entry.name for entry in iter_tree_leaf_first(registry, scope)]
     return " -> ".join(repo_names) if repo_names else "leaf -> parent -> root"
+
+
+def _resolve_write_scope(client: ComplexGitSyncClient, *, private: bool, command: str) -> RepoScope:
+    """The scope a write command will run at, validated the same way a real run is.
+
+    Calls the one owner of that rule
+    (:func:`~ComplexGitSync.orchestre.resolve_command_scope`) rather than
+    re-deriving it, so ``--dry-run`` fails on an empty ``--private`` exactly
+    as the real command would instead of printing a plan that could never
+    execute.
+    """
+    try:
+        registry = client.get_dependency_registry()
+    except (AttributeError, RuntimeError):
+        # Same tolerance the other helpers here already have: a client with
+        # no loaded registry still gets a usable scope, and the real check
+        # runs inside the client call itself.
+        return RepoScope.PRIVATE if private else RepoScope.PROJECT
+    return resolve_command_scope(registry, private=private, command=command)
+
+
+def _print_scope_note(client: ComplexGitSyncClient, scope: RepoScope) -> None:
+    """Say which configuration repos a write command left alone, and why.
+
+    Silence here is what used to make a tree-wide sweep dangerous: the
+    command that wrote somewhere you did not mean looked exactly like the
+    one that did not. Every scoped command says what it skipped.
+    """
+    if scope is RepoScope.ALL:
+        return
+    try:
+        registry = client.get_dependency_registry()
+    except (AttributeError, RuntimeError):
+        return
+    skipped = [entry for entry in registry.values() if not scope.includes(entry)]
+    if not skipped:
+        return
+    writable = sorted(entry.name for entry in skipped if entry.pinned and entry.writable)
+    hint = f" ({', '.join(writable)} with --private)" if writable else ""
+    print(f"scope={scope.value} skipped={len(skipped)} configuration repo(s){hint}")
 
 
 def _format_tree_state_line(tree_state: ProjectTreeState) -> str:

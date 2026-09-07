@@ -331,6 +331,12 @@ class GitRunner:
         ref_name: str | None = None,
     ) -> None:
         """Force the local branch to match *remote/ref_name* and clean untracked files."""
+        # Deliberately not git_branch.DEFAULT_BRANCH: this module knows
+        # nothing about a .cgs and must stay usable on a bare repository
+        # path with no tree behind it. Reaching a literal here means both
+        # the caller's ref and the checkout's own branch were unreadable —
+        # a last resort before `git fetch`, not a link in the .cgs fallback
+        # chain that git_branch.py owns.
         selected_ref = ref_name or self.current_branch(repo_path) or "main"
         self._run("fetch", remote, selected_ref, cwd=repo_path)
         self._run("checkout", "-B", selected_ref, "FETCH_HEAD", cwd=repo_path)
