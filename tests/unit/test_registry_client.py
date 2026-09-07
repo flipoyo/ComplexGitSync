@@ -451,7 +451,7 @@ def test_initialise_cgs_skips_the_gitignore_pre_pull_on_a_detached_head(tmp_path
     Guessing is wrong even when the branch does exist, because the pull would
     move the checkout off the exact commit under test. Reproduced from a real
     bootstrapped workspace first — see
-    AgentSpec/DetachedHeadPreflight_DevPlanTicket.md.
+    AgentSpec/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md.
     """
     cgspath = tmp_path / "workspace"
     cgshome = cgspath / "demo"

@@ -2,6 +2,10 @@
 
 *Created: 2026-08-31*
 
+> **Queued behind `AgentSpec/MultiBranchSync_DevPlanTicket.md`**, the
+> priority ticket, which took from this one nothing — it is unrelated and simply waits.
+> This ticket is not cancelled and its content is unchanged.
+
 ## Abstract — read this first
 
 **The one-line version.** Not a bug fix — `import-submodules` already works

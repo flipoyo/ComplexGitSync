@@ -2,6 +2,10 @@
 
 *Created: 2026-09-04*
 
+> **Queued behind `AgentSpec/MultiBranchSync_DevPlanTicket.md`**, the
+> priority ticket, which took from this one the fact that any `.cgs` change strands the recorded state directory.
+> This ticket is not cancelled and its content is unchanged.
+
 > Finalised from the `DevPlanTicket_T36_memory.md` proto-draft. That draft
 > asked, in its Phase 0, that its premise be checked against the source
 > before any work started. §0 below is the result of that check: roughly

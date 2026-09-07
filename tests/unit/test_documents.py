@@ -650,7 +650,7 @@ class TestCgsDocumentValid:
         doc = CgsDocument.from_toml(examples / "complexgitsync.cgs")
         assert doc.project_name == "ComplexGitSync"
         # main, not a branch that never existed on the remote: see
-        # AgentSpec/DetachedHeadPreflight_DevPlanTicket.md D2.
+        # AgentSpec/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md D2.
         assert doc.default_branch == "main"
         assert doc.repos[0]["fallback_branch"] == "main"
         assert len(doc.repos) == 5

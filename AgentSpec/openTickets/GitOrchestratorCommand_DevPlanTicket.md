@@ -2,6 +2,10 @@
 
 *Created: 2026-09-05*
 
+> **Queued behind `AgentSpec/MultiBranchSync_DevPlanTicket.md`**, the
+> priority ticket, which took from this one the `@project` token, now decision D3 there.
+> This ticket is not cancelled and its content is unchanged.
+
 ## Abstract — read this first
 
 **The one-line version.** Bring back `.goc` as configuration, not

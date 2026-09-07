@@ -2,6 +2,10 @@
 
 *Created: 2026-09-01*
 
+> **Queued behind `AgentSpec/MultiBranchSync_DevPlanTicket.md`**, the
+> priority ticket, which took from this one the fact that `force_pull` runs `git clean -fd` on every resync.
+> This ticket is not cancelled and its content is unchanged.
+
 ## Abstract — read this first
 
 **The one-line version.** A nested-repo mount point (e.g. `DocComplexGitSync`

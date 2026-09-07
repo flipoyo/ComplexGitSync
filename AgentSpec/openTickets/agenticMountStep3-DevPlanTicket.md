@@ -2,6 +2,10 @@
 
 *Created: 2026-09-05*
 
+> **Queued behind `AgentSpec/MultiBranchSync_DevPlanTicket.md`**, the
+> priority ticket, which took from this one its round trip and its finding that tree-wide commands drag pinned mounts.
+> This ticket is not cancelled and its content is unchanged.
+
 ## Abstract — read this first
 
 **The one-line version.** Finish what step 2 left behind (two clean-ups,
@@ -432,7 +436,7 @@ operation.
 
 **Moved out.** This is the only open item that stops `branch` and
 `checkout` being usable, so it now has its own ticket:
-`AgentSpec/BranchPinning_DevPlanTicket.md`. It carries the four call
+`AgentSpec/archive/20260906_BranchPinning_DevPlanTicket.md`. It carries the four call
 sites, the field, and the zero-headroom ceiling budget. What follows is
 kept as the reasoning that led there.
 
@@ -559,7 +563,7 @@ sets down — which has to be settled before it is worth automating.
 | Risk | Handling |
 |---|---|
 | D1 lands as option B and the pinning rule becomes invisible in the normalized `.cgs` | Prefer A; whichever wins, `cgitsync validate` must show the effective policy per repository |
-| A feature branch reaches `.agentSpec`, `DevSpec` or `DocSpec` before D1 is implemented, polluting repositories other projects share | **This happened on 2026-09-05** — see `BranchPinning_DevPlanTicket.md` §1b. Until that ticket lands, do not run `branch`, `checkout`, `pull` or `pull-force` on a tree carrying pinned mounts. Use plain `git` in the one repository you mean to change |
+| A feature branch reaches `.agentSpec`, `DevSpec` or `DocSpec` before D1 is implemented, polluting repositories other projects share | **This happened on 2026-09-05** — see `AgentSpec/archive/20260906_BranchPinning_DevPlanTicket.md` §1b. Until that ticket lands, do not run `branch`, `checkout`, `pull` or `pull-force` on a tree carrying pinned mounts. Use plain `git` in the one repository you mean to change |
 | Step 6's proof passes on one machine and the protocol still confuses a reader | The documentation in D5 is written from the transcript of step 6, not from memory |
 | The docs repository drifts from the code repository, since they merge separately | Push `DocComplexGitSync` in the same session as the ComplexGitSync merge, as step 2 did |
 | `autoTest` is resurrected later and the fallback goes silent again | D2 option A removes the fallback path entirely |
