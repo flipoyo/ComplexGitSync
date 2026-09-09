@@ -91,12 +91,27 @@ locally or on the remote, resolution falls through the chain already in
 tree until somebody deliberately creates `P_B` with `cgitsync branch`. That
 is what makes this safe to ship: the default path is today's path.
 
-Why private/local is different from private/distant, in one sentence: a
-private/distant repository is somebody else's and moving it drags every
-other project onto your branch, whereas a private/local repository is
-**this project's own configuration**, filed in a shared repository but on a
-branch nobody else reads — so it should track this project's branches the
-way the project's own repositories do.
+### What the two words mean
+
+Both kinds are **private**: a repository shared between projects rather
+than owned by this one. What separates them is **who may commit**, not how
+far away anything is.
+
+**private/distant** — the repository is private *to its owner*. This
+project reads it and cannot commit to it; only that owner writes there.
+Nothing this project does may move it, which is why a branch move stops at
+it and why `commit`, `push` and `merge` never reach it. Its branch is
+whatever it declares, permanently.
+
+**private/local** — it holds **local settings that configure this
+project**, and those settings are a contribution to the project, recordable
+on the remote like any other. This project does commit to it. What it needs
+is somewhere to record them per project branch, which is what the `P_B`
+rule gives it: a branch derived from the project's own branch.
+
+That is the whole asymmetry. A private/distant repository is read; a
+private/local repository is written, so it needs the same branch structure
+as anything else this project writes.
 
 ### What goes wrong without it
 
@@ -203,7 +218,7 @@ it.
 
 | # | Question | Recommendation |
 |---|---|---|
-| **D1** | The status column says `private/distant`. The instruction that produced this ticket said `private/remote`. Rename? | **Keep `distant`.** "Remote" already means `origin` everywhere else in Git and in this tool; reusing it for "read-only" would make `remote` mean two things in one table. If the owner prefers `remote`, it is a one-line change in `status_render.py` plus the docs — say so and it is done. |
+| **D1** | ~~Rename `private/distant` to `private/remote`?~~ | **Answered by the owner, 2026-09-09: keep `distant`.** The word is not about network distance — it is about who may commit. A distant repository is private to its owner and this project can only read it; a local one carries this project's own settings and is written to. "Remote" would have clashed with `origin`, and would have said the wrong thing anyway. See §1. |
 | **D2** | Is the base of `P_B` the project name from the `.cgs`, or the entry's own `default_branch`? | **The entry's `default_branch`.** In every `.cgs` in this tree it already equals the project name, so both readings agree today; basing it on the declared field means nothing breaks if a project is ever renamed, or a private/local entry pinned to a differently-named branch. |
 | **D3** | Does `merge` push after merging? | **No, not by default.** `merge` merges; `push` pushes. A `--push` flag can compose them. Keeping them apart means a bad merge is still local. |
 | **D4** | Fast-forward only, or a merge commit? | **Allow both, default to Git's own behaviour**, with `--ff-only` for the strict case. `freeze-release` already assumes fast-forward and would keep doing so. |
