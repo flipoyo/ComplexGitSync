@@ -1,9 +1,0 @@
-# GitHub parent in the CGS integration topology. CGSih1 is inferred as this
-# nested project's root; CGSih2 is discovered automatically after cloning.
-
-project = "CGSih1"
-
-repos = [
-    "github:flipoyo/CGSih1",
-    "github:flipoyo/CGSih2",
-]
