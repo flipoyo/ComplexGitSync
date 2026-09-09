@@ -634,7 +634,7 @@ def propagate_privacy(tree: WorkingGitTree) -> None:
             if not parent_private:
                 answer = (entry.private, entry.writable)
             elif entry.private:
-                # Declares its own pin: its own writability, capped by the parent.
+                # Declares its own privacy: its own writability, capped by the parent.
                 answer = (True, entry.writable and parent_writable)
             else:
                 # Says nothing: it is whatever the repository holding it is.

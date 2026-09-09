@@ -391,7 +391,7 @@ entries to the project's `.cgs`:
 this project would also be created inside `.agentSpec`, which every other
 project mounts too.
 
-### Seeing pinning work
+### Seeing privacy work
 
 ComplexGitSync manages itself this way, so its own tree is the worked
 example. Here it is while a feature branch called `multi-branch` is

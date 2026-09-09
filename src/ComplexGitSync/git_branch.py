@@ -55,8 +55,7 @@ if TYPE_CHECKING:
 #: The branch a ``.cgs`` resolves to when neither the repository entry nor
 #: the ``[project]`` table names one. This is the *language* default, for
 #: other people's files; every ``.cgs`` this repository owns states its own
-#: ``project.default_branch`` explicitly instead (see the test in
-#: ``tests/unit/test_install_cgs.py``).
+#: ``project.default_branch`` explicitly instead (see ``install.cgs``).
 DEFAULT_BRANCH = "main"
 
 
@@ -318,8 +317,8 @@ def resolve_propagated_ref(
 
     Three answers, and which one applies is decided by the two privacy flags
     together. A **tag** reaches every repository whatever they say, private or
-    not, so a frozen release stays reproducible; branches stop at a pin and
-    tags do not, which is the whole meaning of the field.
+    not, so a frozen release stays reproducible; branches stop at a private
+    repository and tags do not, which is the whole meaning of the field.
 
     **Not private** — the repository is this project's own, and follows the
     move to *ref_name*.

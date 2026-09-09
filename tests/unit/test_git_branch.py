@@ -199,7 +199,7 @@ class TestLandedRef:
 
 
 # ---------------------------------------------------------------------------
-# Pinning: branches stop at a pin, tags do not
+# Privacy: branches stop at a private repository, tags do not
 # ---------------------------------------------------------------------------
 
 
@@ -358,7 +358,7 @@ class TestPrivateLocalBranchFollowsTheProject:
         )
 
     def test_a_private_distant_repo_never_moves(self):
-        """The regression guard. This is what the pin means."""
+        """The regression guard. This is what private/distant means."""
         entry = self._entry(private=True, writable=False, default_branch="main")
 
         resolution = resolve_propagated_ref(entry, "feature-x", project_name="MyProject")
@@ -375,7 +375,7 @@ class TestPrivateLocalBranchFollowsTheProject:
         )
 
     def test_a_tag_still_reaches_a_private_local_repo_unchanged(self):
-        """Branches stop at a pin; tags do not. Nothing here changes that."""
+        """Branches stop at a private repo; tags do not. Nothing here changes that."""
         entry = self._entry(private=True, writable=True, default_branch="MyProject")
 
         resolution = resolve_propagated_ref(

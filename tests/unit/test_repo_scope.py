@@ -76,16 +76,18 @@ class TestScopeMembership:
             assert not scope.includes(_READ_ONLY)
 
 
-class TestTheOldPinnedNameStillReads:
-    """`pinned` was renamed to `private`; a .cgs written before that still works.
+class TestTheRemovedPinnedKeyIsRejected:
+    """`pinned` was renamed to `private`, and the old name is now an error.
 
-    The field said what the tool did to a repository. `private` says what
-    the repository *is*, which is the thing an author actually knows.
-    Renaming a hand-written key without accepting the old one would break
-    every file already on disk.
+    The old field said what the tool did to a repository. `private` says what
+    the repository *is*, which is the thing an author actually knows. Reading
+    `pinned` silently would be worse than not reading it at all: an ignored
+    `pinned = true` leaves a shared repository in the project's own write
+    scope, which is the single mistake the field exists to prevent. So the
+    file is refused, and the error says which key to write instead.
     """
 
-    def test_pinned_is_read_as_private(self):
+    def test_pinned_is_not_translated_to_private(self):
         normalized = normalize_cgs(
             {
                 "project": "demo",
@@ -93,23 +95,24 @@ class TestTheOldPinnedNameStillReads:
             }
         )
 
-        assert normalized["repos"][0]["private"] is True
-        assert "pinned" not in normalized["repos"][0]
+        assert normalized["repos"][0]["private"] is False
 
-    def test_private_wins_when_a_file_somehow_has_both(self):
-        normalized = normalize_cgs(
+    def test_validation_rejects_pinned_and_names_the_replacement(self):
+        document = CgsDocument(
             {
                 "project": "demo",
-                "repos": [
-                    {"repository": "github:acme/spec", "pinned": False, "private": True}
-                ],
+                "repos": [{"repository": "github:acme/spec", "pinned": True}],
             }
         )
 
-        assert normalized["repos"][0]["private"] is True
+        with pytest.raises(ConfigValidationError) as failure:
+            document.validate()
 
-    def test_a_pinned_file_builds_a_private_repository(self, tmp_path):
-        """End to end: an old file on disk still produces a private repo."""
+        assert "pinned" in str(failure.value)
+        assert "private" in str(failure.value)
+
+    def test_a_pinned_file_on_disk_fails_validation(self, tmp_path):
+        """End to end: an old file is refused rather than quietly widened."""
         source = tmp_path / "old.cgs"
         source.write_text(
             'project = { name = "demo", default_branch = "main" }\n'
@@ -120,11 +123,10 @@ class TestTheOldPinnedNameStillReads:
             encoding="utf-8",
         )
 
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
-        spec = next(entry for entry in tree.values() if entry.name == "spec")
+        with pytest.raises(ConfigValidationError) as failure:
+            CgsDocument.from_toml(source).validate()
 
-        assert spec.private is True
-        assert not RepoScope.PROJECT.includes(spec)
+        assert "pinned" in str(failure.value)
 
 
 class TestCgsDeclaration:
@@ -250,15 +252,16 @@ class TestCommandScope:
             resolve_command_scope(self._tree(_OWNED), private=True, command="add")
 
 
-class TestPinningReachesNestedRepositories:
-    """A repository inside a configuration repository is shared too.
+class TestPrivacyReachesNestedRepositories:
+    """A repository inside a private repository is shared too.
 
     ``private`` used to be read off one entry alone, so a repository nested
-    inside a read-only configuration repo landed in ``PROJECT`` scope and
+    inside a read-only private repo landed in ``PROJECT`` scope and
     ``commit``/``push`` swept it — writing into someone else's repository,
-    which is exactly what the pin exists to stop. The tree it was found on
-    only escaped because every nested ``.cgs`` happened to declare its own
-    pin. ``propagate_privacy`` makes it the rule instead of the luck.
+    which is exactly what ``private`` exists to stop. The tree it was found
+    on only escaped because every nested ``.cgs`` happened to declare
+    ``private`` itself. ``propagate_privacy`` makes it the rule instead of
+    the luck.
     """
 
     @staticmethod

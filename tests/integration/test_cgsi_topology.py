@@ -1196,7 +1196,7 @@ class TestDiscoverRepos:
         )
         # None of these fixtures carries its own .cgs, so nested_config is
         # left unset: the default "auto" already resolves to RESOLVED when
-        # it finds zero nested *.cgs files, so no pin is needed anymore.
+        # it finds zero nested *.cgs files, so no explicit value is needed anymore.
         for entry in report.cgs_entries:
             assert "nested_config" not in entry
 

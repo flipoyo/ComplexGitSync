@@ -203,14 +203,9 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
         repo["nested_config"] = str(repo.get("nested_config") or DEFAULT_NESTED_CONFIG)
         # Defaulted, never coerced: bool("yes") is True, which would hide a
         # typo from validate() below instead of reporting it.
-        # "pinned" was this field's name until it was renamed to say what it
-        # means rather than what it does. A .cgs written before the rename
-        # still reads correctly; the canonical form is always "private".
-        if "pinned" in repo and "private" not in repo:
-            repo["private"] = repo.pop("pinned")
         repo["private"] = repo.get("private", False)
-        # Pinned means read-only unless the entry opts in: a configuration
-        # repo shared with other projects is not ours to write by default.
+        # Private means read-only unless the entry opts in: a repository
+        # shared with other projects is not ours to write by default.
         repo["writable"] = repo.get("writable", False)
 
         relative_path = repo.get("relative_path")
@@ -604,6 +599,13 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                     if not repo.get(key):
                         errors.append(f"repos[{idx}] missing required key: '{key}'")
 
+                # 'pinned' is the removed name for 'private'. Refuse it rather than
+                # ignore it: unread, a 'pinned = true' would leave a shared repository
+                # in this project's own write scope, which is what 'private' prevents.
+                # 'writable = true' beside it is what makes such a repo private/local.
+                if "pinned" in repo:
+                    errors.append(f"repos[{idx}] uses the removed key 'pinned'; use 'private'")
+
                 gitprovider = repo.get("gitprovider", GitProvider.GITHUB.value)
                 custom_url = repo.get("gitprovider_url")
                 try:
@@ -654,7 +656,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 if writable and not repo.get("private"):
                     errors.append(
                         f"repos[{idx}].writable = true only means something on a private "
-                        f"repository: an project repository is this project's own and is "
+                        f"repository: a non-private repository is this project's own and is "
                         f"always writable. Add private = true, or drop writable."
                     )
         if errors:

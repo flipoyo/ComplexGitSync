@@ -362,7 +362,7 @@ class TestCgsDocumentValid:
         self, tmp_path: Path
     ):
         """A repository's own default_branch, distinct from the project's,
-        is the mechanism the AgenticMounts split uses to pin one project's
+        is the mechanism the AgenticMounts split uses to hold one project's
         branch of a shared repository (e.g. .localSpec, claude)."""
         doc = CgsDocument.from_dict(
             {

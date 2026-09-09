@@ -2041,6 +2041,71 @@ def test_readme_command_reference_lists_only_real_commands():
     assert not phantom, f"README.md documents commands the CLI cannot build: {phantom}"
 
 
+def test_readme_command_options_exist_on_their_command():
+    """Every flag README's command table shows must be real on that command.
+
+    The table gained an "Arguments and key options" column so a reader can
+    see the shape of a call without running ``--help``. A column like that
+    is only worth having if it cannot drift: a flag documented on the wrong
+    command sends the reader to an "unrecognized arguments" error.
+    """
+    from ComplexGitSync.cli import build_parser
+
+    parser = build_parser()
+    subparsers = next(a for a in parser._actions if getattr(a, "choices", None))
+    real_options = {
+        name: {opt for action in sub._actions for opt in action.option_strings}
+        for name, sub in subparsers.choices.items()
+    }
+
+    readme_text = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
+    table = re.search(
+        r"## 3\. `cgitsync` command list\n\n(.*?)\n\n### Options that recur",
+        readme_text,
+        re.DOTALL,
+    )
+    assert table, "README.md's command list table was not found."
+
+    phantom = []
+    for row in table.group(1).splitlines():
+        match = re.match(r"^\| \S[^|]*\| `([a-z][a-z-]*)` \|([^|]*)\|", row)
+        if not match:
+            continue
+        command, arguments = match.group(1), match.group(2)
+        for flag in re.findall(r"`(--[a-z-]+)`", arguments):
+            if flag not in real_options[command]:
+                phantom.append(f"{command} {flag}")
+
+    assert not phantom, f"README documents options that do not exist: {phantom}"
+
+
+def test_readme_lists_exactly_the_commands_that_accept_private():
+    """``--private`` is a safety rail, so README must name its reach exactly.
+
+    Claiming it on a command that lacks it teaches the reader that a
+    tree-wide write can be narrowed when it cannot.
+    """
+    from ComplexGitSync.cli import build_parser
+
+    parser = build_parser()
+    subparsers = next(a for a in parser._actions if getattr(a, "choices", None))
+    accepts_private = {
+        name
+        for name, sub in subparsers.choices.items()
+        if any("--private" in action.option_strings for action in sub._actions)
+    }
+
+    readme_text = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
+    row = re.search(r"^\| `--private` \|([^|]*)\|", readme_text, re.MULTILINE)
+    assert row, "README.md's `--private` row in 'Options that recur' was not found."
+    documented = set(re.findall(r"`([a-z][a-z-]*)`", row.group(1)))
+
+    assert documented == accepts_private, (
+        f"README's --private list is wrong: missing {sorted(accepts_private - documented)}, "
+        f"claimed but absent {sorted(documented - accepts_private)}"
+    )
+
+
 def test_discover_command_uses_client_method(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
