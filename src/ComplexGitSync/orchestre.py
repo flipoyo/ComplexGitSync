@@ -118,6 +118,7 @@ from .ledger_store import read_all_entries, read_head, recompute_head, verify_an
 from .master import MasterConfig
 from .operations import (
     BranchTopologyReport,
+    RepoOutcome,
     tree_project_name,
 )
 from .operations import (
@@ -160,6 +161,19 @@ _FREEZE_COMMAND_ORIGINS = frozenset({"freeze", "freeze_release", "freeze_state"}
 
 def _collect_errors(checks: list[tuple[bool, str]]) -> list[str]:
     return [msg for ok, msg in checks if not ok]
+
+
+def _as_write_outcomes(result: object) -> tuple[RepoOutcome, ...]:
+    """Normalise a tree-write result into the outcome tuple the CLI reports.
+
+    Every real operation returns one. A caller-supplied stand-in for the
+    ``GitTree.git`` command facade — a test double, an embedder's own
+    implementation — may return nothing, and a missing report must not
+    become a crash *after* the write already happened.
+    """
+    if isinstance(result, tuple | list):
+        return tuple(result)
+    return ()
 
 
 def _local_status_from_porcelain(status_lines: list[str]) -> str:
@@ -1180,6 +1194,11 @@ class ComplexGitSyncClient:
     source_path: Path | None = None
     loaded_snapshot_path: Path | None = None
     last_gitignore_sync: tuple[GitignoreSyncEntry, ...] = ()
+    # What the last add/commit/push actually did, per repository. Kept here
+    # rather than returned, so these methods keep returning the tree the rest
+    # of the API expects; the CLI reads it to report the repositories a sweep
+    # skipped, the same way it reads last_gitignore_sync.
+    last_write_outcomes: tuple[RepoOutcome, ...] = ()
     run_logger: CommandRunLogger | None = None
     _forced_access_protocol: AccessProtocol | None = field(default=None, init=False, repr=False)
 
@@ -2907,14 +2926,20 @@ class ComplexGitSyncClient:
         previous_state = registry.lifecycle_state
         scope = resolve_command_scope(registry, private=private, command="commit")
         self._log_event("commit_start", message=message, stage_all=stage_all, scope=scope.value)
-        self.orchestre.git_tree.git.commit(
-            self.git_runner,
-            message,
-            stage_all=stage_all,
-            scope=scope,
+        self.last_write_outcomes = _as_write_outcomes(
+            self.orchestre.git_tree.git.commit(
+                self.git_runner,
+                message,
+                stage_all=stage_all,
+                scope=scope,
+            )
         )
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="commit")
-        self._log_event("commit_end", message=message)
+        self._log_event(
+            "commit_end",
+            message=message,
+            committed=sum(1 for o in self.last_write_outcomes if o.acted),
+        )
         return registry
 
     def merge(
@@ -3036,9 +3061,11 @@ class ComplexGitSyncClient:
             paths=[str(p) for p in paths] if paths else None,
             scope=scope.value,
         )
-        self.orchestre.git_tree.git.add(self.git_runner, paths=paths, scope=scope)
+        self.last_write_outcomes = _as_write_outcomes(
+            self.orchestre.git_tree.git.add(self.git_runner, paths=paths, scope=scope)
+        )
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="add")
-        self._log_event("add_end")
+        self._log_event("add_end", staged=sum(1 for o in self.last_write_outcomes if o.acted))
         return registry
 
     def remove(self, paths: Sequence[str | Path]) -> WorkingGitTree:
@@ -3087,8 +3114,10 @@ class ComplexGitSyncClient:
         self._log_event("push_start", scope=scope.value)
         protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
         try:
-            self.orchestre.git_tree.git.push(
-                self.git_runner, force_access_protocol=protocol, scope=scope
+            self.last_write_outcomes = _as_write_outcomes(
+                self.orchestre.git_tree.git.push(
+                    self.git_runner, force_access_protocol=protocol, scope=scope
+                )
             )
         except GitSyncError as exc:
             hint = _protocol_switch_hint(str(exc), command="push")
@@ -3099,7 +3128,7 @@ class ComplexGitSyncClient:
         if self.source_path is not None:
             self.state_store.record_snapshot(self.source_path, snapshot_path)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="push")
-        self._log_event("push_end")
+        self._log_event("push_end", pushed=sum(1 for o in self.last_write_outcomes if o.acted))
         return registry
 
     def tag(self, tag_name: str, *, private: bool = False) -> WorkingGitTree:

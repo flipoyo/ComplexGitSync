@@ -26,6 +26,7 @@ Free functions exported here (Tier 2 — Actions):
     validate_branch_topology  Inspect branch topology and return a topology report
 
 Data classes exported here (Tier 2 — Actions):
+    RepoOutcome               What one tree-wide write did to one repository
     BranchTopologyConflict    A single branch alignment conflict in the workspace
     BranchTopologyReport      Full workspace branch topology inspection report
 """
@@ -394,13 +395,33 @@ def branch_tree(
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class RepoOutcome:
+    """What one tree-wide write command did to one repository.
+
+    A sweep that writes nowhere and a sweep that writes everywhere used to
+    print the same thing, which is what makes "nothing happened" so hard to
+    diagnose: the user cannot tell a command that found no work from one
+    that never looked at their repository at all. Every repository the
+    command visited gets one of these, in the order it was visited.
+
+    ``acted`` answers "did anything change here?". ``detail`` says what
+    changed (a new commit's sha, the ref pushed, how many paths were
+    staged) or, when ``acted`` is ``False``, why nothing did.
+    """
+
+    name: str
+    acted: bool
+    detail: str
+
+
 def add_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
     *,
     paths: Sequence[str | Path] | None = None,
     scope: RepoScope = RepoScope.PROJECT,
-) -> None:
+) -> tuple[RepoOutcome, ...]:
     """Stage changes across the tree, leaf-first.
 
     Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
@@ -413,18 +434,40 @@ def add_tree(
     leaving every other repo untouched; a path outside every repo in the
     tree raises :exc:`~.errors.GitSyncError` immediately, before anything
     is staged.
+
+    Returns one :class:`RepoOutcome` per repository staged or visited, so a
+    caller can report which repositories had nothing to stage instead of
+    leaving the user to guess.
     """
     _assert_ready(tree)
 
+    outcomes: list[RepoOutcome] = []
     if paths is None:
         for repo in iter_tree_leaf_first(tree, scope):
+            pending = len(git_runner.status_porcelain(repo.absolute_path))
             git_runner.stage_all(repo.absolute_path)
+            outcomes.append(
+                RepoOutcome(
+                    name=repo.name,
+                    acted=pending > 0,
+                    detail=(
+                        f"staged {pending} change(s)" if pending else "nothing to stage"
+                    ),
+                )
+            )
     else:
         resolved = [resolve_repo_for_path(tree, path) for path in paths]
+        staged_by_repo: dict[str, list[str]] = {}
         for repo, relative_path in resolved:
             git_runner.stage_path(repo.absolute_path, relative_path)
+            staged_by_repo.setdefault(repo.name, []).append(relative_path)
+        outcomes.extend(
+            RepoOutcome(name=name, acted=True, detail=f"staged {' '.join(staged)}")
+            for name, staged in staged_by_repo.items()
+        )
 
     tree.recompute_tree_state()
+    return tuple(outcomes)
 
 
 def remove_paths(
@@ -477,7 +520,7 @@ def commit_tree(
     *,
     stage_all: bool = True,
     scope: RepoScope = RepoScope.PROJECT,
-) -> None:
+) -> tuple[RepoOutcome, ...]:
     """Commit changes across the tree, leaf-first.
 
     Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
@@ -487,8 +530,12 @@ def commit_tree(
 
     * When *stage_all* is ``True`` (the default), ``git add --all`` is run
       before committing.
-    * Repos with no staged changes after (optional) staging are silently skipped.
+    * Repos with no staged changes after (optional) staging are skipped —
+      and reported as skipped, rather than passed over in silence.
     * The ``commit_sha`` of each repo is refreshed after committing.
+
+    Returns one :class:`RepoOutcome` per repository in scope, in the order
+    they were visited.
     """
     _assert_ready(tree)
     _run_preflight_checks(
@@ -499,15 +546,31 @@ def commit_tree(
         scope=scope,
     )
 
+    outcomes: list[RepoOutcome] = []
     for repo in iter_tree_leaf_first(tree, scope):
         if stage_all:
             git_runner.stage_all(repo.absolute_path)
         if not git_runner.has_staged_changes(repo.absolute_path):
+            outcomes.append(
+                RepoOutcome(
+                    name=repo.name,
+                    acted=False,
+                    detail=(
+                        "nothing staged"
+                        if stage_all
+                        else "nothing staged (--no-stage: stage with 'cgitsync add')"
+                    ),
+                )
+            )
             continue
         git_runner.commit(repo.absolute_path, message)
         repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
+        outcomes.append(
+            RepoOutcome(name=repo.name, acted=True, detail=repo.commit_sha or "committed")
+        )
 
     tree.recompute_tree_state()
+    return tuple(outcomes)
 
 
 # ---------------------------------------------------------------------------
@@ -722,7 +785,7 @@ def push_tree(
     *,
     force_access_protocol: AccessProtocol | None = None,
     scope: RepoScope = RepoScope.PROJECT,
-) -> None:
+) -> tuple[RepoOutcome, ...]:
     """Push all repos to their remotes, leaf-first.
 
     Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
@@ -734,6 +797,11 @@ def push_tree(
 
     *force_access_protocol*, when given, rewrites each repo's remote to
     that protocol before pushing (``--force-protocol`` on ``push``).
+
+    Returns one :class:`RepoOutcome` per repository pushed. ``acted`` is
+    ``False`` for a repository that had nothing new to send — its branch
+    was already level with its upstream — which is the common reason a push
+    across a whole tree appears to do nothing.
     """
     _assert_ready(tree)
     _run_preflight_checks(
@@ -744,6 +812,7 @@ def push_tree(
         scope=scope,
     )
 
+    outcomes: list[RepoOutcome] = []
     for repo in iter_tree_leaf_first(tree, scope):
         remote = repo.remote_name or "origin"
         _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
@@ -752,6 +821,10 @@ def push_tree(
         set_upstream = False
         if ref_name is not None and current_branch == ref_name:
             set_upstream = not git_runner.has_upstream(repo.absolute_path)
+        # Read before pushing: afterwards the branch is level with its
+        # upstream either way, so the count that says whether this push
+        # carried anything only exists now.
+        ahead = _commits_ahead_of_upstream(git_runner, repo)
         git_runner.push(
             repo.absolute_path,
             remote=remote,
@@ -759,8 +832,40 @@ def push_tree(
             set_upstream=set_upstream,
         )
         repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
+        target = f"{remote}/{ref_name}" if ref_name else remote
+        if set_upstream:
+            outcomes.append(
+                RepoOutcome(name=repo.name, acted=True, detail=f"{target} (upstream set)")
+            )
+        elif ahead is None:
+            outcomes.append(RepoOutcome(name=repo.name, acted=True, detail=target))
+        elif ahead == 0:
+            outcomes.append(
+                RepoOutcome(
+                    name=repo.name, acted=False, detail=f"{target} already up to date"
+                )
+            )
+        else:
+            outcomes.append(
+                RepoOutcome(name=repo.name, acted=True, detail=f"{target} (+{ahead})")
+            )
 
     tree.recompute_tree_state()
+    return tuple(outcomes)
+
+
+def _commits_ahead_of_upstream(git_runner: GitRunner, repo: WorkingRepo) -> int | None:
+    """How many commits *repo* has that its upstream does not, or ``None``.
+
+    ``None`` means the question does not apply — no upstream is configured,
+    or the runner cannot answer — in which case a caller should not claim
+    the push carried nothing.
+    """
+    try:
+        counts = git_runner.branch_tracking_counts(repo.absolute_path)
+    except (AttributeError, GitSyncError, ValueError):
+        return None
+    return counts[0] if counts is not None else None
 
 
 def tag_tree(

@@ -66,6 +66,7 @@ ROOT_REPO_ID = "root"
 
 if TYPE_CHECKING:
     from .cgs_format import CgsDocument
+    from .operations import RepoOutcome
     from .orchestre import GitRunner, GtsDocument
 
 
@@ -172,10 +173,10 @@ class GitTreeGitCommands:
         tree: WorkingGitTree | None = None,
         paths: Sequence[str | Path] | None = None,
         scope: RepoScope = RepoScope.PROJECT,
-    ) -> None:
+    ) -> tuple[RepoOutcome, ...]:
         from .operations import add_tree
 
-        add_tree(self._resolve_tree(tree), git_runner, paths=paths, scope=scope)
+        return add_tree(self._resolve_tree(tree), git_runner, paths=paths, scope=scope)
 
     def rm(
         self,
@@ -196,10 +197,10 @@ class GitTreeGitCommands:
         stage_all: bool = True,
         tree: WorkingGitTree | None = None,
         scope: RepoScope = RepoScope.PROJECT,
-    ) -> None:
+    ) -> tuple[RepoOutcome, ...]:
         from .operations import commit_tree
 
-        commit_tree(
+        return commit_tree(
             self._resolve_tree(tree), git_runner, message, stage_all=stage_all, scope=scope
         )
 
@@ -231,10 +232,10 @@ class GitTreeGitCommands:
         tree: WorkingGitTree | None = None,
         force_access_protocol: AccessProtocol | None = None,
         scope: RepoScope = RepoScope.PROJECT,
-    ) -> None:
+    ) -> tuple[RepoOutcome, ...]:
         from .operations import push_tree
 
-        push_tree(
+        return push_tree(
             self._resolve_tree(tree),
             git_runner,
             force_access_protocol=force_access_protocol,

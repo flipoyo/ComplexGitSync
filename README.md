@@ -117,6 +117,20 @@ pixi run cgitsync push
 ```
 Run any command with `--help` for its full option list.
 
+`CGSHOME` outranks the directory you are standing in. If you bootstrap a
+second workspace later, the export from the first one is still in that shell
+and every command keeps acting on the old tree — which looks fine, because
+both trees hold the same repositories. Every command that discovers its own
+workspace now prints which one it picked and where that choice came from:
+
+```text
+cgshome=/home/user/.cgs/CGS<Timestamp>/ComplexGitSync (from $CGSHOME)
+source=/home/user/.cgs/.../install.gts (from register)
+```
+
+If that is not the workspace you meant, the command also warns and tells you
+the two ways out: `unset CGSHOME`, or `--search-dir <the directory you want>`.
+
 Full walkthrough: [tutorials/02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md)
 
 

@@ -515,3 +515,158 @@ def test_print_gitignore_sync_report_reports_committed_and_uncommitted_entries(c
     assert lines[1] == "  + build/"
     assert lines[2] == "  + *.log"
     assert lines[3] == ".gitignore updated (not committed): child-repo (/tmp/child-repo)"
+
+
+# ---------------------------------------------------------------------------
+# _announce_source_resolution / _cgshome_warnings — the silent-wrong-workspace
+# guard. Auto-discovery ranks $CGSHOME above the current directory, so a stale
+# export makes every command act on another tree while its output looks
+# exactly like this one's. These pin the lines that say so.
+# ---------------------------------------------------------------------------
+
+
+def _workspace_with_snapshot(root: Path) -> Path:
+    state_dir = root / ".cgitsync" / "state"
+    state_dir.mkdir(parents=True)
+    snapshot = state_dir / "project.gts"
+    snapshot.touch()
+    return snapshot
+
+
+def test_auto_discovered_source_is_announced_with_its_origin(monkeypatch, tmp_path, capsys):
+    snapshot = _workspace_with_snapshot(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    _shared._resolve_gts_path(None, None)
+
+    out = capsys.readouterr().out
+    assert f"cgshome={tmp_path.resolve()} (from current directory)" in out
+    assert f"source={snapshot.resolve()} (from most recent snapshot)" in out
+
+
+def test_explicit_source_is_not_announced(tmp_path, capsys):
+    _shared._resolve_gts_path(str(tmp_path / "explicit.gts"), None)
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_environment_cgshome_outside_cwd_warns_with_both_ways_out(
+    monkeypatch, tmp_path, capsys
+):
+    elsewhere = tmp_path / "other-workspace"
+    elsewhere.mkdir()
+    _workspace_with_snapshot(elsewhere)
+    cwd = tmp_path / "here"
+    cwd.mkdir()
+
+    monkeypatch.chdir(cwd)
+    monkeypatch.setenv("CGSHOME", str(elsewhere))
+
+    _shared._resolve_gts_path(None, None)
+
+    err = capsys.readouterr().err
+    assert f"CGSHOME ({elsewhere.resolve()}) does not contain the current directory" in err
+    assert str(cwd.resolve()) in err
+    assert "unset CGSHOME" in err
+    assert f"--search-dir {cwd.resolve()}" in err
+
+
+def test_cgshome_containing_cwd_warns_about_nothing(monkeypatch, tmp_path, capsys):
+    _workspace_with_snapshot(tmp_path)
+    nested = tmp_path / "nested"
+    nested.mkdir()
+
+    monkeypatch.chdir(nested)
+    monkeypatch.setenv("CGSHOME", str(tmp_path))
+
+    _shared._resolve_gts_path(None, None)
+
+    assert capsys.readouterr().err == ""
+
+
+def test_search_dir_outside_cwd_names_search_dir_not_the_environment(
+    monkeypatch, tmp_path, capsys
+):
+    elsewhere = tmp_path / "other-workspace"
+    elsewhere.mkdir()
+    _workspace_with_snapshot(elsewhere)
+    cwd = tmp_path / "here"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+
+    _shared._resolve_gts_path(None, str(elsewhere))
+
+    err = capsys.readouterr().err
+    assert "--search-dir points outside the current directory" in err
+    assert "unset CGSHOME" not in err
+
+
+def test_snapshot_outside_its_own_cgshome_is_called_out(monkeypatch, tmp_path, capsys):
+    workspace = tmp_path / "workspace"
+    state_dir = workspace / ".cgitsync" / f"state({'a' * 64})_0"
+    state_dir.mkdir(parents=True)
+    foreign = tmp_path / "foreign.gts"
+    foreign.touch()
+    register = state_dir / "project.lgr"
+    register.write_text(
+        f'[register]\ncurrent_snapshot_path = "{foreign}"\n', encoding="utf-8"
+    )
+
+    monkeypatch.chdir(workspace)
+    _shared._resolve_gts_path(None, None)
+
+    err = capsys.readouterr().err
+    assert "its register names a snapshot belonging to another workspace" in err
+
+
+# ---------------------------------------------------------------------------
+# _print_write_outcomes — a sweep that wrote nowhere must not look like one
+# that wrote everywhere.
+# ---------------------------------------------------------------------------
+
+
+def _client_with_outcomes(*outcomes):
+    return SimpleNamespace(last_write_outcomes=tuple(outcomes))
+
+
+def test_write_outcomes_name_each_repository_and_summarise(capsys):
+    from ComplexGitSync.operations import RepoOutcome
+
+    client = _client_with_outcomes(
+        RepoOutcome(name="leaf", acted=True, detail="abc1234"),
+        RepoOutcome(name="root", acted=False, detail="nothing staged"),
+    )
+
+    _shared._print_write_outcomes(client, verb="committed", nothing_note="unused here")
+
+    out = capsys.readouterr().out.splitlines()
+    assert "committed leaf: abc1234" in out
+    assert "skipped root: nothing staged" in out
+    assert "committed=1 skipped=1" in out
+    assert not any(line.startswith("note:") for line in out)
+
+
+def test_write_outcomes_explain_a_sweep_that_wrote_nothing(capsys):
+    from ComplexGitSync.operations import RepoOutcome
+
+    client = _client_with_outcomes(
+        RepoOutcome(name="leaf", acted=False, detail="nothing staged"),
+    )
+
+    _shared._print_write_outcomes(
+        client, verb="committed", nothing_note="no repository in scope had staged changes."
+    )
+
+    out = capsys.readouterr().out
+    assert "committed=0 skipped=1" in out
+    assert "note: no repository in scope had staged changes." in out
+
+
+def test_write_outcomes_report_an_empty_scope_in_words(capsys):
+    _shared._print_write_outcomes(
+        _client_with_outcomes(), verb="pushed", nothing_note="unused here"
+    )
+
+    assert "pushed nothing: no repository was in scope" in capsys.readouterr().out
