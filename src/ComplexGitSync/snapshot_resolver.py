@@ -5,8 +5,12 @@ Contract: given optional CLI arguments (an explicit path and/or a search
     directory), return the .gts snapshot path a command should use —
     resolving CGSHOME, preferring a register's recorded current snapshot,
     and otherwise falling back to the most recently modified snapshot on
-    disk — or raise FileNotFoundError with an actionable message.
-Imports: stdlib only (os, re, tomllib, pathlib)
+    disk — or raise FileNotFoundError with an actionable message. The
+    ``describe_*`` functions return the same answer wrapped in a
+    ``CgshomeResolution``/``SnapshotResolution`` record naming *which input
+    decided it*, so the CLI can report a workspace the user did not expect
+    instead of silently acting on it. This module never prints.
+Imports: stdlib only (os, re, tomllib, dataclasses, pathlib)
 
 Temporary duplication with ``state_store.py``
 -----------------------------------------------
@@ -34,6 +38,7 @@ from __future__ import annotations
 import os
 import re
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -118,10 +123,87 @@ def _expand_lgr_path(raw_path: str) -> Path:
     return Path(os.path.expandvars(expanded)).expanduser()
 
 
-def discover_cgshome(search_dir: str | Path | None = None) -> Path:
-    """Resolve and return CGSHOME.
 
-    Resolution order:
+
+# ---------------------------------------------------------------------------
+# Resolution provenance — what was chosen, and on whose say-so.
+#
+# Auto-discovery answers "which workspace?" from three possible sources, and
+# only one of them is visible in the command the user typed. When the answer
+# is not the workspace the user is standing in, every later line the command
+# prints describes a tree they cannot see. These records carry the *reason*
+# alongside the path so the CLI (Ring 4) can say it out loud; nothing in this
+# module prints.
+# ---------------------------------------------------------------------------
+
+CGSHOME_ORIGIN_SEARCH_DIR = "--search-dir"
+CGSHOME_ORIGIN_ENVIRONMENT = "$CGSHOME"
+CGSHOME_ORIGIN_CWD = "current directory"
+
+SNAPSHOT_ORIGIN_EXPLICIT = "explicit path"
+SNAPSHOT_ORIGIN_REGISTER = "register"
+SNAPSHOT_ORIGIN_MOST_RECENT = "most recent snapshot"
+
+
+@dataclass(frozen=True)
+class CgshomeResolution:
+    """Which CGSHOME a command resolved, from which starting point, and why.
+
+    ``origin`` is one of the ``CGSHOME_ORIGIN_*`` constants — the input that
+    decided the answer. ``start_dir`` is the directory the upward walk began
+    at, which is the *value* of that input, not necessarily the workspace
+    found (the walk climbs to the nearest ancestor holding ``.cgitsync``).
+    """
+
+    path: Path
+    origin: str
+    start_dir: Path
+
+    @property
+    def contains_cwd(self) -> bool:
+        """Whether the current directory lies inside the resolved workspace.
+
+        ``False`` is the one case a user cannot see coming: the command will
+        read and write a tree somewhere else on disk while reporting it in
+        terms that look exactly like the tree they are standing in.
+        """
+        cwd = Path.cwd().resolve()
+        return cwd == self.path or self.path in cwd.parents
+
+
+@dataclass(frozen=True)
+class SnapshotResolution:
+    """Which ``.gts`` snapshot a command resolved, and how it was chosen.
+
+    ``cgshome`` is ``None`` when the caller passed an explicit path — no
+    workspace discovery ran, so there is no provenance to report.
+    """
+
+    path: Path
+    origin: str
+    cgshome: CgshomeResolution | None = None
+    register_path: Path | None = None
+
+    @property
+    def inside_cgshome(self) -> bool:
+        """Whether the snapshot actually lives under the workspace it came from.
+
+        A register may name a ``current_snapshot_path`` pointing anywhere;
+        one pointing outside its own CGSHOME means the two disagree about
+        which tree is current, which is worth saying rather than following
+        in silence.
+        """
+        if self.cgshome is None:
+            return True
+        resolved = self.path.resolve()
+        return resolved == self.cgshome.path or self.cgshome.path in resolved.parents
+
+
+def describe_cgshome(search_dir: str | Path | None = None) -> CgshomeResolution:
+    """Resolve CGSHOME and report which input decided it.
+
+    Resolution order (unchanged, and deliberately so — the documented
+    bootstrap workflow tells users to export ``$CGSHOME``):
 
     1. Walk up from ``search_dir`` when provided.
     2. Walk up from ``$CGSHOME`` when defined.
@@ -133,35 +215,47 @@ def discover_cgshome(search_dir: str | Path | None = None) -> Path:
         If no ancestor contains a ``.cgitsync`` directory.
     """
     start_dir: Path
-    search_origin: str
+    origin: str
     if search_dir is not None:
         start_dir = Path(search_dir).expanduser().resolve()
-        search_origin = f"--search-dir ({start_dir})"
+        origin = CGSHOME_ORIGIN_SEARCH_DIR
     else:
         env_cgshome = os.environ.get("CGSHOME")
         if env_cgshome:
             start_dir = Path(env_cgshome).expanduser().resolve()
-            search_origin = f"$CGSHOME ({start_dir})"
+            origin = CGSHOME_ORIGIN_ENVIRONMENT
         else:
             start_dir = Path.cwd().resolve()
-            search_origin = f"current working directory ({start_dir})"
+            origin = CGSHOME_ORIGIN_CWD
 
     for candidate in (start_dir, *start_dir.parents):
         if (candidate / ".cgitsync").is_dir():
-            return candidate.resolve()
+            return CgshomeResolution(
+                path=candidate.resolve(), origin=origin, start_dir=start_dir
+            )
 
     raise FileNotFoundError(
         "Unable to locate CGSHOME. "
-        f"Checked {search_origin} and its parents for a .cgitsync directory."
+        f"Checked {origin} ({start_dir}) and its parents for a .cgitsync directory."
     )
 
 
-def discover_gts_path(search_dir: str | Path | None = None) -> Path:
-    """Return the ``.gts`` snapshot a command should default to.
+def discover_cgshome(search_dir: str | Path | None = None) -> Path:
+    """Resolve and return CGSHOME.
+
+    The path only. Callers that need to tell a user *why* this workspace was
+    chosen — every CLI command that auto-discovers one — should call
+    :func:`describe_cgshome` instead.
+    """
+    return describe_cgshome(search_dir).path
+
+
+def describe_gts_path(search_dir: str | Path | None = None) -> SnapshotResolution:
+    """Return the ``.gts`` snapshot a command should default to, with provenance.
 
     Resolution order:
 
-    1. Locate CGSHOME (see :func:`discover_cgshome`).
+    1. Locate CGSHOME (see :func:`describe_cgshome`).
     2. If a ``.lgr`` register can be found and it names a
        ``current_snapshot_path`` that still exists on disk, use it.
     3. Otherwise fall back to the most recently modified ``.gts`` file
@@ -180,35 +274,67 @@ def discover_gts_path(search_dir: str | Path | None = None) -> Path:
         If CGSHOME cannot be located, or if ``CGSHOME/.cgitsync``
         contains no ``.gts`` snapshots.
     """
-    cgshome = discover_cgshome(search_dir)
+    cgshome = describe_cgshome(search_dir)
     try:
-        register_path = _discover_lgr_path(cgshome)
+        register_path = _discover_lgr_path(cgshome.path)
         data = tomllib.loads(register_path.read_text(encoding="utf-8"))
         current_snapshot_path = data.get("register", {}).get("current_snapshot_path")
         if isinstance(current_snapshot_path, str) and current_snapshot_path:
             resolved_current = _expand_lgr_path(current_snapshot_path).resolve()
             if resolved_current.is_file():
-                return resolved_current
+                return SnapshotResolution(
+                    path=resolved_current,
+                    origin=SNAPSHOT_ORIGIN_REGISTER,
+                    cgshome=cgshome,
+                    register_path=register_path,
+                )
     except (FileNotFoundError, tomllib.TOMLDecodeError):
         pass
 
-    cgitsync_dir = cgshome / ".cgitsync"
+    cgitsync_dir = cgshome.path / ".cgitsync"
     gts_entries = [(path, path.stat().st_mtime) for path in _state_snapshot_candidates(cgitsync_dir)]
     if gts_entries:
         gts_entries.sort(key=lambda x: x[1], reverse=True)
-        return gts_entries[0][0].resolve()
+        return SnapshotResolution(
+            path=gts_entries[0][0].resolve(),
+            origin=SNAPSHOT_ORIGIN_MOST_RECENT,
+            cgshome=cgshome,
+        )
 
     raise FileNotFoundError(
-        f"No .gts snapshot found under CGSHOME/.cgitsync: {cgitsync_dir}. "
+        f"No .gts snapshot found under CGSHOME/.cgitsync: {cgitsync_dir} "
+        f"(CGSHOME came from {cgshome.origin}). "
         "Run 'cgitsync initialise' first, or pass --gts FILE explicitly."
     )
 
 
+def discover_gts_path(search_dir: str | Path | None = None) -> Path:
+    """Return the ``.gts`` snapshot a command should default to.
+
+    The path only; see :func:`describe_gts_path` for the same answer with
+    the provenance a CLI command needs in order to report it.
+    """
+    return describe_gts_path(search_dir).path
+
+
+def describe_workspace_source(
+    source: str | None, search_dir: str | None
+) -> SnapshotResolution:
+    """Resolve a command's source path, with provenance.
+
+    An explicit *source* is returned verbatim (never resolved, matching
+    :func:`resolve_workspace_source`) and carries no CGSHOME provenance —
+    nothing was discovered, so there is nothing to explain. Otherwise this
+    is :func:`describe_gts_path`.
+    """
+    if source is not None:
+        return SnapshotResolution(path=Path(source), origin=SNAPSHOT_ORIGIN_EXPLICIT)
+    return describe_gts_path(search_dir)
+
+
 def resolve_gts_path(gts: str | None, search_dir: str | None) -> Path:
     """Return the resolved .gts path, auto-discovering when *gts* is ``None``."""
-    if gts is not None:
-        return Path(gts)
-    return discover_gts_path(search_dir)
+    return describe_workspace_source(gts, search_dir).path
 
 
 def resolve_workspace_source(source: str | None, search_dir: str | None) -> Path:
@@ -234,9 +360,7 @@ def resolve_workspace_source(source: str | None, search_dir: str | None) -> Path
         If auto-discovery is required and CGSHOME or a workspace snapshot
         cannot be located.
     """
-    if source is not None:
-        return Path(source)
-    return discover_gts_path(search_dir)
+    return describe_workspace_source(source, search_dir).path
 
 
 def resolve_visualization_source(source: str | None, search_dir: str | None) -> Path:

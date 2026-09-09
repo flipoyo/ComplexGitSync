@@ -2501,3 +2501,95 @@ def test_client_validate_branch_topology_detects_misalignment(tmp_path):
 
     assert report.is_coherent is False
     assert any(c.conflict_kind == "misaligned_branch" for c in report.conflicts)
+
+
+# ---------------------------------------------------------------------------
+# RepoOutcome — a tree-wide write says what it did to each repository, so a
+# sweep that wrote nowhere is distinguishable from one that wrote everywhere.
+# ---------------------------------------------------------------------------
+
+
+def test_add_tree_reports_which_repos_had_nothing_to_stage(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+
+    runner = _FakeGitRunnerForOperations()
+    runner.set_unstaged(leaf_path, True)
+
+    outcomes = add_tree(registry, runner, scope=RepoScope.ALL)
+
+    by_name = {outcome.name: outcome for outcome in outcomes}
+    assert by_name["leaf"].acted is True
+    assert by_name["leaf"].detail == "staged 1 change(s)"
+    assert by_name["project"].acted is False
+    assert by_name["project"].detail == "nothing to stage"
+
+
+def test_add_tree_with_paths_reports_the_paths_it_staged(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    root_path = registry.get("root").absolute_path
+    target = root_path / "a.txt"
+    target.write_text("x", encoding="utf-8")
+
+    outcomes = add_tree(registry, _FakeGitRunnerForOperations(), paths=[target])
+
+    assert [(o.name, o.acted, o.detail) for o in outcomes] == [
+        ("project", True, "staged a.txt")
+    ]
+
+
+def test_commit_tree_reports_committed_and_skipped_repos(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+
+    runner = _FakeGitRunnerForOperations()
+    runner.set_staged(leaf_path, True)
+
+    outcomes = commit_tree(registry, runner, "partial commit", stage_all=False)
+
+    by_name = {outcome.name: outcome for outcome in outcomes}
+    assert by_name["leaf"].acted is True
+    assert by_name["leaf"].detail == registry.get("root:deps/leaf").commit_sha
+    assert by_name["project"].acted is False
+    assert "--no-stage" in by_name["project"].detail
+
+
+def test_commit_tree_skip_reason_omits_the_no_stage_hint_when_staging(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    # A clean tree: staging finds nothing to stage, so nothing is committed.
+    runner.stage_all = lambda repo_path: None
+
+    outcomes = commit_tree(registry, runner, "nothing here", stage_all=True)
+
+    assert outcomes
+    assert all(outcome.acted is False for outcome in outcomes)
+    assert all(outcome.detail == "nothing staged" for outcome in outcomes)
+
+
+def test_push_tree_reports_a_repo_already_level_with_its_upstream(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+    root_path = registry.get("root").absolute_path
+
+    runner = _FakeGitRunnerForOperations()
+    ahead = {leaf_path: (3, 0), root_path: (0, 0)}
+    runner.branch_tracking_counts = lambda repo_path: ahead[Path(repo_path)]
+
+    outcomes = push_tree(registry, runner, scope=RepoScope.ALL)
+
+    by_name = {outcome.name: outcome for outcome in outcomes}
+    assert by_name["leaf"].acted is True
+    assert by_name["leaf"].detail.endswith("(+3)")
+    assert by_name["project"].acted is False
+    assert by_name["project"].detail.endswith("already up to date")
+
+
+def test_push_tree_does_not_claim_nothing_moved_without_an_upstream(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    outcomes = push_tree(registry, runner, scope=RepoScope.ALL)
+
+    assert outcomes
+    assert all(outcome.acted is True for outcome in outcomes)

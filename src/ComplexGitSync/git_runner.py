@@ -22,6 +22,38 @@ from urllib.parse import urlsplit
 from .errors import GitSyncError
 from .git_repo import SyncState
 
+# Git output is bytes, not text. Most of it is UTF-8, but some of it is
+# whatever was in the files: ``git merge-tree``'s legacy form prints a diff of
+# the conflicting content itself, so a tracked PDF (docs/ keeps its built PDFs
+# tracked) puts raw Flate-compressed bytes on stdout. Paths are bytes too, and
+# need not be UTF-8 either. Decoding that strictly — which is what
+# ``subprocess(text=True)`` does — raises UnicodeDecodeError *before* the
+# caller can look at the exit code, turning "are these branches mergeable?"
+# into a traceback (AgentSpec/archive/20260910_MergeOutputDecoding_
+# DevPlanTicket.md). Replacement decoding keeps every byte sequence readable
+# enough for the things this module actually looks for, all of which are
+# ASCII: exit codes, object ids, ref names, porcelain status codes, and
+# conflict markers. Replacement can never swallow an ASCII byte — a UTF-8
+# continuation byte is 0x80-0xBF, so a "<" or a digit always survives intact.
+_GIT_OUTPUT_ENCODING = "utf-8"
+_GIT_OUTPUT_ERRORS = "replace"
+
+#: What ``git merge-tree``'s legacy form writes into the diff of a file it
+#: could not merge. Bytes, because the surrounding content is arbitrary.
+_MERGE_CONFLICT_MARKER = b"<<<<<<<"
+
+
+def _decode_git_output(raw: bytes | str) -> str:
+    """Decode one stream of git output under this module's decoding policy.
+
+    Accepts ``str`` unchanged so that a test double or embedder standing in
+    for ``subprocess.run`` may hand back already-decoded output without
+    having to know which mode this module runs the real one in.
+    """
+    if isinstance(raw, str):
+        return raw
+    return raw.decode(_GIT_OUTPUT_ENCODING, errors=_GIT_OUTPUT_ERRORS)
+
 
 def _non_interactive_git_env() -> dict[str, str]:
     """Environment for a git subprocess that must never block on a prompt.
@@ -433,12 +465,17 @@ class GitRunner:
         OID and exits 0 when the merge applies, or exits 1 and lists the
         conflicted paths. Older Git knows only the three-argument form, which
         needs an explicit merge base and reports conflicts as markers inside
-        a diff, exiting 0 either way.
+        a diff, exiting 0 either way — and that diff carries the *content* of
+        the conflicting files, which is why this branch reads raw bytes: a
+        repository holding a PDF, an image, or a latin-1 file must still get
+        an answer rather than a decoding error. ``<<<<<<<`` is ASCII, so
+        searching the bytes for it is exact regardless of what surrounds it.
 
         A repository that cannot name *ref_name*, or shares no history with
         it, is not "clean" — it is unmergeable, and the caller gets ``False``
         rather than an exception, because this is a question, not an
-        operation.
+        operation. The same applies to any unexpected failure of either
+        form: unmergeable, never assumed clean.
         """
         head = self.current_branch(repo_path) or "HEAD"
 
@@ -450,17 +487,39 @@ class GitRunner:
         if modern.returncode == 1 and modern.stdout.strip():
             return False
 
-        # Anything else from the modern form — a usage error on old Git, a
-        # bad ref — means fall through and ask the way old Git understands.
+        # Anything else from the modern form — a usage error on old Git
+        # (exit 129 before 2.38, where --write-tree does not exist), a bad
+        # ref — means fall through and ask the way old Git understands.
         base = self._query("merge-base", head, ref_name, cwd=repo_path)
         if base.returncode != 0 or not base.stdout.strip():
             return False
-        legacy = self._query(
+        legacy = self._query_bytes(
             "merge-tree", base.stdout.strip(), head, ref_name, cwd=repo_path
         )
         if legacy.returncode != 0:
             return False
-        return "<<<<<<<" not in legacy.stdout
+        return _MERGE_CONFLICT_MARKER not in legacy.stdout
+
+    def _query_bytes(
+        self,
+        *args: str,
+        cwd: Path | str | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        """Run a git command for its answer, undecoded; never raises.
+
+        The raw boundary. A caller that searches git's output for an ASCII
+        marker inside content it does not control — ``can_merge_cleanly``'s
+        legacy conflict check — wants the bytes exactly as git wrote them,
+        with no decoding step able to fail or to alter what it is searching
+        for. Everything else should use :meth:`_query`.
+        """
+        return subprocess.run(
+            [self.executable, *args],
+            cwd=str(cwd) if cwd is not None else None,
+            capture_output=True,
+            check=False,
+            env=_non_interactive_git_env(),
+        )
 
     def _query(
         self,
@@ -472,14 +531,17 @@ class GitRunner:
         :meth:`_run` raises on a non-zero exit because its callers are
         performing an operation. A caller asking a *question* needs the exit
         code itself, so this returns the completed process untouched.
+
+        Output is decoded under this module's replacement policy (see
+        :func:`_decode_git_output`), so undecodable bytes anywhere in the
+        answer can never turn a question into an exception.
         """
-        return subprocess.run(
-            [self.executable, *args],
-            cwd=str(cwd) if cwd is not None else None,
-            capture_output=True,
-            check=False,
-            text=True,
-            env=_non_interactive_git_env(),
+        completed = self._query_bytes(*args, cwd=cwd)
+        return subprocess.CompletedProcess(
+            completed.args,
+            completed.returncode,
+            _decode_git_output(completed.stdout),
+            _decode_git_output(completed.stderr),
         )
 
     def merge_abort(self, repo_path: Path | str) -> None:
@@ -633,13 +695,21 @@ class GitRunner:
         # showing an error row. Fail early, in this module's own error type.
         if cwd is not None and not Path(cwd).is_dir():
             raise GitSyncError(f"Git command failed ({command}): no such directory '{cwd}'.")
-        completed = subprocess.run(
+        raw = subprocess.run(
             [self.executable, *args],
             cwd=str(cwd) if cwd is not None else None,
             capture_output=True,
             check=False,
-            text=True,
             env=_non_interactive_git_env(),
+        )
+        # Same decoding policy as _query: an operation must fail with this
+        # module's own error naming the command, never with a decoding
+        # traceback from a non-UTF-8 path or a byte git echoed back.
+        completed = subprocess.CompletedProcess(
+            raw.args,
+            raw.returncode,
+            _decode_git_output(raw.stdout),
+            _decode_git_output(raw.stderr),
         )
         if completed.returncode != 0:
             details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"

@@ -7,7 +7,7 @@ Contract: register argparse subparsers for, and dispatch/execute, the 16
     init-from-submodules, verify). Argument/prompt collection only —
     delegates all .cgs/.gts semantics to ComplexGitSyncClient; never
     touches subprocess/Git or parses repository identifiers itself.
-Imports: _shared, git_repo, orchestre, snapshot_resolver
+Imports: _shared, git_repo, orchestre
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from pathlib import Path
 
 from ..git_repo import RefKind
 from ..orchestre import ComplexGitSyncClient
-from ..snapshot_resolver import discover_cgshome
 from ._shared import (
     _add_gitignore_sync_arguments,
     _format_tree_state_line,
@@ -28,6 +27,8 @@ from ._shared import (
     _print_dry_run_plan,
     _print_gitignore_sync_report,
     _print_repo_tree_result,
+    _print_write_outcomes,
+    _resolve_cgshome,
     _resolve_gts_path,
     _resolve_workspace_source,
     _resolve_write_scope,
@@ -775,7 +776,7 @@ def _handle_init_from_submodules(args: argparse.Namespace) -> int:
 
 
 def _handle_verify(args: argparse.Namespace) -> int:
-    cgshome = discover_cgshome(getattr(args, "search_dir", None))
+    cgshome = _resolve_cgshome(getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="verify",
         source=cgshome,
@@ -821,7 +822,8 @@ def _execute_verify(
     repair: bool,
 ) -> int:
     report = client.verify(cgshome, repair=repair)
-    print(f"cgshome={cgshome}")
+    # The workspace was already announced with the input that chose it, when
+    # _resolve_cgshome discovered it (see cli/_shared._announce_cgshome_resolution).
     if report.is_clean:
         print("status=clean")
         print("findings=0")
@@ -974,6 +976,15 @@ def _execute_commit(
         )
     else:
         client.commit(message, stage_all=stage_all, private=private)
+        _print_write_outcomes(
+            client,
+            verb="committed",
+            nothing_note=(
+                "no repository in scope had staged changes. Check "
+                "'cgitsync status' for where your changes actually live, and "
+                "add --private if they are in a private/local repository."
+            ),
+        )
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -1065,6 +1076,15 @@ def _execute_add(
         _print_dry_run_plan(client, command_name="add", actions=(action,), scope=scope)
     else:
         client.add(paths=paths, private=private)
+        _print_write_outcomes(
+            client,
+            verb="staged",
+            nothing_note=(
+                "no repository in scope had anything to stage. Check "
+                "'cgitsync status' for where your changes actually live, and "
+                "add --private if they are in a private/local repository."
+            ),
+        )
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
     if not dry_run:
@@ -1113,6 +1133,15 @@ def _execute_push(
         )
     else:
         client.push(force_access_protocol=force_access_protocol, private=private)
+        _print_write_outcomes(
+            client,
+            verb="pushed",
+            nothing_note=(
+                "every repository in scope was already level with its "
+                "upstream. Commit first, or add --private to reach the "
+                "private/local repositories."
+            ),
+        )
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
     if not dry_run:

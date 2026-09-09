@@ -2,10 +2,12 @@
 
 Ring: 4 (CLI adapter — the same ring cli.py itself occupies)
 Contract: dispatch a command handler under structured run-logging (with the
-    two hard-coded error hints), resolve/load a .cgs or .gts source, and
-    format/print the plan, tree-state, and .gitignore-sync reports every
-    command group's _execute_* functions reuse — no group-specific handler
-    logic.
+    two hard-coded error hints), resolve/load a .cgs or .gts source —
+    announcing which workspace and snapshot auto-discovery picked, and
+    warning on stderr when that workspace is not the one the user is
+    standing in — and format/print the plan, tree-state, and
+    .gitignore-sync reports every command group's _execute_* functions
+    reuse — no group-specific handler logic.
 Imports: cgs_format, git_tree, orchestre, snapshot_resolver
 """
 
@@ -21,9 +23,14 @@ from ..git_repo import RepoScope
 from ..git_tree import ProjectTreeState, iter_tree_leaf_first
 from ..orchestre import ComplexGitSyncClient, create_run_logger, resolve_command_scope
 from ..snapshot_resolver import (
-    resolve_gts_path,
-    resolve_visualization_source,
-    resolve_workspace_source,
+    CGSHOME_ORIGIN_CWD,
+    CGSHOME_ORIGIN_ENVIRONMENT,
+    CGSHOME_ORIGIN_SEARCH_DIR,
+    SNAPSHOT_ORIGIN_EXPLICIT,
+    CgshomeResolution,
+    SnapshotResolution,
+    describe_cgshome,
+    describe_workspace_source,
 )
 
 
@@ -181,9 +188,91 @@ def _load_visualization_source(
         client.load_runtime_or_cgs(source_path, discover_nested=discover_nested)
 
 
+def _cgshome_warnings(cgshome: CgshomeResolution) -> list[str]:
+    """Every reason the user might not have meant this workspace.
+
+    The loud case is a resolved CGSHOME that does not contain the current
+    directory: the command then reads and writes a tree elsewhere on disk
+    while its output — repository names, branches, clean/dirty — looks
+    exactly like the tree the user is standing in. Each returned string is
+    one warning line, already phrased for the input that caused it, and
+    includes the way out.
+    """
+    if cgshome.contains_cwd:
+        return []
+    cwd = Path.cwd().resolve()
+    warnings = [
+        f"CGSHOME ({cgshome.path}) does not contain the current directory ({cwd})."
+    ]
+    if cgshome.origin == CGSHOME_ORIGIN_ENVIRONMENT:
+        warnings.append(
+            "$CGSHOME is set and outranks the current directory, so this "
+            "command reads and writes that workspace, not this one. Run "
+            f"'unset CGSHOME', or pass --search-dir {cwd}, to work here instead."
+        )
+    elif cgshome.origin == CGSHOME_ORIGIN_SEARCH_DIR:
+        warnings.append(
+            "--search-dir points outside the current directory, so this "
+            "command reads and writes that workspace, not this one."
+        )
+    else:
+        warnings.append(
+            f"no workspace was found at or above {cwd}; CGSHOME was resolved "
+            f"from the {CGSHOME_ORIGIN_CWD} anyway."
+        )
+    return warnings
+
+
+def _print_warnings(warnings: list[str]) -> None:
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr, flush=True)
+
+
+def _announce_cgshome_resolution(cgshome: CgshomeResolution) -> None:
+    """Say which workspace was discovered, on whose say-so, and warn if surprising."""
+    print(f"cgshome={cgshome.path} (from {cgshome.origin})")
+    _print_warnings(_cgshome_warnings(cgshome))
+
+
+def _announce_source_resolution(resolution: SnapshotResolution) -> None:
+    """Say which workspace and snapshot an auto-discovered command will act on.
+
+    A command given an explicit path says nothing — the user already named
+    the file. Everything else was discovered, and discovery has three
+    possible inputs of which only ``--search-dir`` appears in the typed
+    command. Naming the workspace, the snapshot, and the input that chose
+    them turns "nothing happened" into a fact the user can check.
+    """
+    if resolution.origin == SNAPSHOT_ORIGIN_EXPLICIT:
+        return
+    cgshome = resolution.cgshome
+    if cgshome is not None:
+        print(f"cgshome={cgshome.path} (from {cgshome.origin})")
+    print(f"source={resolution.path} (from {resolution.origin})")
+    if cgshome is None:
+        return
+    warnings = []
+    if not resolution.inside_cgshome:
+        warnings.append(
+            f"this snapshot is not under {cgshome.path}; its register names "
+            "a snapshot belonging to another workspace."
+        )
+    warnings.extend(_cgshome_warnings(cgshome))
+    _print_warnings(warnings)
+
+
+def _resolve_cgshome(search_dir: str | None) -> Path:
+    """Return the CGSHOME a workspace-wide command acts on, announced first."""
+    resolution = describe_cgshome(search_dir)
+    _announce_cgshome_resolution(resolution)
+    return resolution.path
+
+
 def _resolve_gts_path(gts: str | None, search_dir: str | None) -> Path:
     """Return the resolved .gts path, auto-discovering when *gts* is ``None``."""
-    return resolve_gts_path(gts, search_dir)
+    resolution = describe_workspace_source(gts, search_dir)
+    _announce_source_resolution(resolution)
+    return resolution.path
 
 
 def _resolve_workspace_source(source: str | None, search_dir: str | None) -> Path:
@@ -191,9 +280,13 @@ def _resolve_workspace_source(source: str | None, search_dir: str | None) -> Pat
 
     The explicit source path, or the latest workspace snapshot under
     ``CGSHOME/.cgitsync`` when *source* is omitted (see
-    :func:`~ComplexGitSync.snapshot_resolver.resolve_workspace_source`).
+    :func:`~ComplexGitSync.snapshot_resolver.describe_workspace_source`).
+    An auto-discovered one is announced first (see
+    :func:`_announce_source_resolution`).
     """
-    return resolve_workspace_source(source, search_dir)
+    resolution = describe_workspace_source(source, search_dir)
+    _announce_source_resolution(resolution)
+    return resolution.path
 
 
 def _resolve_visualization_source(source: str | None, search_dir: str | None) -> Path:
@@ -201,9 +294,9 @@ def _resolve_visualization_source(source: str | None, search_dir: str | None) ->
 
     When *source* is provided it is returned as-is (may be .cgs or .gts).
     When *source* is ``None`` the latest .gts snapshot is discovered
-    automatically.
+    automatically, and announced.
     """
-    return resolve_visualization_source(source, search_dir)
+    return _resolve_workspace_source(source, search_dir)
 
 
 def _non_negative_int(raw: str) -> int:
@@ -308,6 +401,39 @@ def _print_repo_tree_result(client: ComplexGitSyncClient) -> None:
     if tree:
         print("repos:")
         print(tree)
+
+
+def _print_write_outcomes(
+    client: ComplexGitSyncClient, *, verb: str, nothing_note: str
+) -> None:
+    """Say what the write that just ran did to each repository, and to none.
+
+    A tree-wide write used to print only the tree's lifecycle state, which
+    is the same line whether every repository was written or none was. That
+    is what makes a no-op indistinguishable from a wrong workspace, a wrong
+    scope, or an empty diff. One line per repository, then a summary — and,
+    when nothing was written, *nothing_note* saying so in words rather than
+    leaving the user to infer it from silence.
+
+    *verb* is the past-tense word each acted-on line starts with
+    (``committed``, ``pushed``, ``staged``); repositories the command
+    visited without changing anything are marked ``skipped`` and carry the
+    reason the operation recorded.
+    """
+    try:
+        outcomes = client.last_write_outcomes
+    except AttributeError:
+        return
+    if not outcomes:
+        print(f"{verb} nothing: no repository was in scope")
+        return
+    for outcome in outcomes:
+        marker = verb if outcome.acted else "skipped"
+        print(f"{marker} {outcome.name}: {outcome.detail}")
+    acted = sum(1 for outcome in outcomes if outcome.acted)
+    print(f"{verb}={acted} skipped={len(outcomes) - acted}")
+    if not acted:
+        print(f"note: {nothing_note}")
 
 
 def _print_gitignore_sync_report(client: ComplexGitSyncClient) -> None:
