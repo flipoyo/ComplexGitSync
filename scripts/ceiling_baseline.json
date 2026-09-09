@@ -12,7 +12,7 @@
     },
     "cgs_format.py": {
       "internal_imports": 11,
-      "loc": 655,
+      "loc": 657,
       "public_symbols": 8
     },
     "cli/__init__.py": {

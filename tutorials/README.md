@@ -27,7 +27,7 @@ graph LR
     README["README.md<br/>quickstart"] --> T1["01<br/>first workspace"]
     T1 --> T2["02<br/>real build tree"]
     T2 --> T3["03<br/>adopting a real project"]
-    T3 --> T4["04<br/>configuration repos<br/>pinned branches"]
+    T3 --> T4["04<br/>private repos<br/>local and distant"]
     T4 --> REF["docs/MASTER.pdf<br/>full reference"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
@@ -51,8 +51,8 @@ them in order — each one builds on the last:
    The messiest starting point: a real project (`cawaqsviz`) with no `.cgs`
    of its own that still uses git submodules — one real, verified, ten-step
    procedure from `git clone` to a pushed, `READY` tree.
-4. **[04 — Including Configuration Repos in `.cgs`: Pinned Branches](04_configuration_repos_pinned_branches.md)**
-   Repositories you share between projects: how `pinned = true` declares
+4. **[04 — Private repos: the ones that configure your project](04_private_repos.md)**
+   Repositories you share between projects: how `private = true` declares
    one, why branch moves skip it but commit and push do not, and the safe
    order for shipping a change — run against ComplexGitSync's own tree.
 

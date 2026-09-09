@@ -86,9 +86,9 @@ PRIVATE_LOCAL_SCOPE_LABEL = "private/local"
 PRIVATE_DISTANT_SCOPE_LABEL = "private/distant"
 
 SCOPE_LEGEND = (
-    "legend: SCOPE — project = this project's own; "
-    "private = a configuration repository shared with other projects, "
-    "local = this project may write to it, distant = read-only"
+    "legend: SCOPE — project = the work itself; "
+    "private = a repository that configures the project, shared with your "
+    "other projects; local = yours to write, distant = read-only"
 )
 
 
@@ -96,7 +96,7 @@ def _status_scope_label(entry: WorkingRepo) -> str:
     """Name *entry*'s scope in the words the status table shows a reader.
 
     Two facts, one column. **private** is a configuration repository: shared
-    with other projects rather than owned by this one (``pinned`` in the
+    with other projects rather than owned by this one (``private`` in the
     ``.cgs``). **local** and **distant** then say whether this project may
     write to it (``writable``) or only read it. A repository this project
     owns outright is **project**, where the question does not arise.
@@ -104,7 +104,7 @@ def _status_scope_label(entry: WorkingRepo) -> str:
     Reads the effective flags, so a repository nested inside a private one
     is named the same way its parent is.
     """
-    if not entry.effective_pinned:
+    if not entry.effective_private:
         return PROJECT_SCOPE_LABEL
     if entry.effective_writable:
         return PRIVATE_LOCAL_SCOPE_LABEL
@@ -114,7 +114,7 @@ def _status_scope_label(entry: WorkingRepo) -> str:
 def _render_status_table(rows: list[tuple[str, str, str, str, str, str, str, str, str]]) -> str:
     """Render *rows* as a fixed-column, whitespace-aligned status table.
 
-    Column order (pinned by
+    Column order (private by
     ``tests/integration/test_golden_release_gaps.py::TestStatusGoldenOutput``):
     ``REPOSITORY PATH SCOPE LOCAL_BRANCH UPSTREAM_BRANCH LOCAL SYNC HEAD
     RECORDED``. Each column is left-justified to the widest value (header or

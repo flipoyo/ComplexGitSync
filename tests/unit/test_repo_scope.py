@@ -1,12 +1,12 @@
 """Configuration repos: read-only by default, writable only when declared.
 
 A tree mixes repositories this project owns with configuration repositories
-shared with other projects. The shared ones are ``pinned`` in the ``.cgs``,
-and pinned means **read-only** unless the entry also says
+shared with other projects. The shared ones are ``private`` in the ``.cgs``,
+and a private repository is **read-only** unless it also says
 ``writable = true``.
 
-Before this, ``pinned`` governed branch propagation only: ``branch`` and
-``checkout`` skipped a pinned repo, but ``add``/``commit``/``push`` swept
+Before this, ``private`` governed branch propagation only: ``branch`` and
+``checkout`` skipped a private repo, but ``add``/``commit``/``push`` swept
 every repository in the tree, so the safe workflow was a hand-run ritual of
 per-path staging and ``--no-stage``. These tests pin the rule that replaced
 it, in both directions — what each command reaches, and what it refuses.
@@ -22,7 +22,7 @@ from ComplexGitSync.cgs_format import CgsDocument, normalize_cgs
 from ComplexGitSync.discovery import discover_nested_configs
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError
 from ComplexGitSync.git_repo import RepoScope, WorkingRepo
-from ComplexGitSync.git_tree import WorkingGitTree, iter_tree_leaf_first, propagate_pinning
+from ComplexGitSync.git_tree import WorkingGitTree, iter_tree_leaf_first, propagate_privacy
 from ComplexGitSync.orchestre import resolve_command_scope
 from ComplexGitSync.registry import build_registry_from_cgs_document
 
@@ -32,18 +32,18 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 def _repo(
     name: str,
     *,
-    pinned: bool = False,
+    private: bool = False,
     writable: bool = False,
     parent: str | None = None,
 ) -> WorkingRepo:
     return WorkingRepo(
-        repo_id=name, name=name, pinned=pinned, writable=writable, parent_id=parent
+        repo_id=name, name=name, private=private, writable=writable, parent_id=parent
     )
 
 
 _OWNED = _repo("app")
-_READ_ONLY = _repo("shared-spec", pinned=True)
-_WRITABLE = _repo("own-spec", pinned=True, writable=True)
+_READ_ONLY = _repo("shared-spec", private=True)
+_WRITABLE = _repo("own-spec", private=True, writable=True)
 
 
 class TestScopeMembership:
@@ -76,12 +76,63 @@ class TestScopeMembership:
             assert not scope.includes(_READ_ONLY)
 
 
-class TestCgsDeclaration:
-    def test_writable_defaults_to_false_so_pinned_means_read_only(self):
+class TestTheOldPinnedNameStillReads:
+    """`pinned` was renamed to `private`; a .cgs written before that still works.
+
+    The field said what the tool did to a repository. `private` says what
+    the repository *is*, which is the thing an author actually knows.
+    Renaming a hand-written key without accepting the old one would break
+    every file already on disk.
+    """
+
+    def test_pinned_is_read_as_private(self):
         normalized = normalize_cgs(
             {
                 "project": "demo",
                 "repos": [{"repository": "github:acme/spec", "pinned": True}],
+            }
+        )
+
+        assert normalized["repos"][0]["private"] is True
+        assert "pinned" not in normalized["repos"][0]
+
+    def test_private_wins_when_a_file_somehow_has_both(self):
+        normalized = normalize_cgs(
+            {
+                "project": "demo",
+                "repos": [
+                    {"repository": "github:acme/spec", "pinned": False, "private": True}
+                ],
+            }
+        )
+
+        assert normalized["repos"][0]["private"] is True
+
+    def test_a_pinned_file_builds_a_private_repository(self, tmp_path):
+        """End to end: an old file on disk still produces a private repo."""
+        source = tmp_path / "old.cgs"
+        source.write_text(
+            'project = { name = "demo", default_branch = "main" }\n'
+            "repos = [\n"
+            '    "github:acme/demo",\n'
+            '    { repository = "github:acme/spec", pinned = true },\n'
+            "]\n",
+            encoding="utf-8",
+        )
+
+        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+        spec = next(entry for entry in tree.values() if entry.name == "spec")
+
+        assert spec.private is True
+        assert not RepoScope.PROJECT.includes(spec)
+
+
+class TestCgsDeclaration:
+    def test_writable_defaults_to_false_so_private_means_read_only(self):
+        normalized = normalize_cgs(
+            {
+                "project": "demo",
+                "repos": [{"repository": "github:acme/spec", "private": True}],
             }
         )
 
@@ -92,15 +143,15 @@ class TestCgsDeclaration:
             {
                 "project": "demo",
                 "repos": [
-                    {"repository": "github:acme/spec", "pinned": True, "writable": True}
+                    {"repository": "github:acme/spec", "private": True, "writable": True}
                 ],
             }
         )
 
         assert normalized["repos"][0]["writable"] is True
 
-    def test_writable_without_pinned_is_rejected(self):
-        """An unpinned repository is this project's own — always writable.
+    def test_writable_without_private_is_rejected(self):
+        """An project repository is this project's own — always writable.
 
         Declaring ``writable`` there means the author misunderstood the
         field, which is worth an error rather than a silent no-op.
@@ -114,7 +165,7 @@ class TestCgsDeclaration:
             )
         )
 
-        with pytest.raises(ConfigValidationError, match="only means something on a pinned"):
+        with pytest.raises(ConfigValidationError, match="only means something on a private"):
             document.validate()
 
     def test_a_non_boolean_writable_is_rejected_rather_than_coerced(self):
@@ -123,7 +174,7 @@ class TestCgsDeclaration:
                 {
                     "project": "demo",
                     "repos": [
-                        {"repository": "github:acme/spec", "pinned": True, "writable": "yes"}
+                        {"repository": "github:acme/spec", "private": True, "writable": "yes"}
                     ],
                 }
             )
@@ -138,7 +189,7 @@ class TestCgsDeclaration:
             'project = { name = "demo", default_branch = "main" }\n'
             "repos = [\n"
             '    "github:acme/demo",\n'
-            '    { repository = "github:acme/spec", pinned = true, writable = true },\n'
+            '    { repository = "github:acme/spec", private = true, writable = true },\n'
             "]\n",
             encoding="utf-8",
         )
@@ -146,7 +197,7 @@ class TestCgsDeclaration:
         tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
         by_name = {entry.name: entry for entry in tree.values()}
 
-        assert by_name["spec"].pinned is True
+        assert by_name["spec"].private is True
         assert by_name["spec"].writable is True
         assert by_name["demo"].writable is False
 
@@ -154,7 +205,7 @@ class TestCgsDeclaration:
         tree.to_cgs().to_toml(round_tripped)
         reread = CgsDocument.from_toml(round_tripped)
         spec = next(r for r in reread.repos if r["project_name"] == "spec")
-        assert spec["pinned"] is True
+        assert spec["private"] is True
         assert spec["writable"] is True
 
 
@@ -194,20 +245,20 @@ class TestCommandScope:
         assert "shared-spec" in message, "the message must name the read-only repos"
         assert "writable = true" in message, "and say how to opt one in"
 
-    def test_the_refusal_says_so_when_the_tree_has_no_pinned_repos_at_all(self):
-        with pytest.raises(GitSyncError, match="no pinned repositories at all"):
+    def test_the_refusal_says_so_when_the_tree_has_no_private_repos_at_all(self):
+        with pytest.raises(GitSyncError, match="no private repositories at all"):
             resolve_command_scope(self._tree(_OWNED), private=True, command="add")
 
 
 class TestPinningReachesNestedRepositories:
     """A repository inside a configuration repository is shared too.
 
-    ``pinned`` used to be read off one entry alone, so a repository nested
+    ``private`` used to be read off one entry alone, so a repository nested
     inside a read-only configuration repo landed in ``PROJECT`` scope and
     ``commit``/``push`` swept it — writing into someone else's repository,
     which is exactly what the pin exists to stop. The tree it was found on
     only escaped because every nested ``.cgs`` happened to declare its own
-    pin. ``propagate_pinning`` makes it the rule instead of the luck.
+    pin. ``propagate_privacy`` makes it the rule instead of the luck.
     """
 
     @staticmethod
@@ -215,18 +266,18 @@ class TestPinningReachesNestedRepositories:
         tree = WorkingGitTree()
         for repo in repos:
             tree.add(repo)
-        propagate_pinning(tree)
+        propagate_privacy(tree)
         return tree
 
     def test_a_leaf_that_declares_nothing_under_a_read_only_parent_is_read_only(self):
         """The bug this was written for."""
         tree = self._tree(
-            _repo("shared-spec", pinned=True),
+            _repo("shared-spec", private=True),
             _repo("nested-leaf", parent="shared-spec"),
         )
         leaf = tree.get("nested-leaf")
 
-        assert leaf.effective_pinned is True
+        assert leaf.effective_private is True
         assert leaf.effective_writable is False
         assert not RepoScope.PROJECT.includes(leaf)
         assert not RepoScope.WRITABLE.includes(leaf)
@@ -234,28 +285,28 @@ class TestPinningReachesNestedRepositories:
 
     def test_the_declared_flags_are_left_alone_for_serialization(self):
         tree = self._tree(
-            _repo("shared-spec", pinned=True),
+            _repo("shared-spec", private=True),
             _repo("nested-leaf", parent="shared-spec"),
         )
         leaf = tree.get("nested-leaf")
 
-        assert leaf.pinned is False, "what the .cgs says must survive a round trip"
+        assert leaf.private is False, "what the .cgs says must survive a round trip"
         assert leaf.writable is False
 
-    def test_pinning_reaches_the_whole_subtree_not_just_direct_children(self):
+    def test_privacy_reaches_the_whole_subtree_not_just_direct_children(self):
         tree = self._tree(
-            _repo("shared-spec", pinned=True),
+            _repo("shared-spec", private=True),
             _repo("middle", parent="shared-spec"),
             _repo("deep", parent="middle"),
         )
 
-        assert tree.get("deep").effective_pinned is True
+        assert tree.get("deep").effective_private is True
         assert tree.get("deep").effective_writable is False
 
     def test_a_leaf_under_a_writable_config_repo_is_writable_too(self):
         """``--private`` has to sweep the whole shared subtree, not its root."""
         tree = self._tree(
-            _repo("own-spec", pinned=True, writable=True),
+            _repo("own-spec", private=True, writable=True),
             _repo("nested-leaf", parent="own-spec"),
         )
         leaf = tree.get("nested-leaf")
@@ -265,8 +316,8 @@ class TestPinningReachesNestedRepositories:
 
     def test_a_leaf_may_restrict_itself_further_than_its_parent(self):
         tree = self._tree(
-            _repo("own-spec", pinned=True, writable=True),
-            _repo("nested-leaf", pinned=True, parent="own-spec"),
+            _repo("own-spec", private=True, writable=True),
+            _repo("nested-leaf", private=True, parent="own-spec"),
         )
 
         assert tree.get("nested-leaf").effective_writable is False
@@ -274,19 +325,19 @@ class TestPinningReachesNestedRepositories:
     def test_a_leaf_can_never_open_itself_wider_than_its_parent(self):
         """The direction that matters: the parent caps its leaves."""
         tree = self._tree(
-            _repo("shared-spec", pinned=True),
-            _repo("nested-leaf", pinned=True, writable=True, parent="shared-spec"),
+            _repo("shared-spec", private=True),
+            _repo("nested-leaf", private=True, writable=True, parent="shared-spec"),
         )
         leaf = tree.get("nested-leaf")
 
         assert leaf.effective_writable is False
         assert not RepoScope.PRIVATE.includes(leaf)
 
-    def test_an_unpinned_parent_leaves_its_children_alone(self):
+    def test_a_project_parent_leaves_its_children_alone(self):
         tree = self._tree(
             _repo("app"),
             _repo("app-leaf", parent="app"),
-            _repo("app-spec", pinned=True, parent="app"),
+            _repo("app-spec", private=True, parent="app"),
         )
 
         assert RepoScope.PROJECT.includes(tree.get("app-leaf"))
@@ -294,29 +345,29 @@ class TestPinningReachesNestedRepositories:
 
     def test_running_the_pass_twice_changes_nothing(self):
         tree = self._tree(
-            _repo("shared-spec", pinned=True),
+            _repo("shared-spec", private=True),
             _repo("nested-leaf", parent="shared-spec"),
         )
-        propagate_pinning(tree)
+        propagate_privacy(tree)
 
-        assert tree.get("nested-leaf").effective_pinned is True
-        assert tree.get("nested-leaf").pinned is False
+        assert tree.get("nested-leaf").effective_private is True
+        assert tree.get("nested-leaf").private is False
 
     def test_a_parent_cycle_falls_back_to_the_declared_flags(self):
         """Cycles are broken elsewhere; this pass must not hang on one."""
         tree = self._tree(
-            _repo("a", pinned=True, parent="b"),
+            _repo("a", private=True, parent="b"),
             _repo("b", parent="a"),
         )
 
-        assert tree.get("a").effective_pinned is True
-        assert tree.get("b").effective_pinned is True
+        assert tree.get("a").effective_private is True
+        assert tree.get("b").effective_private is True
 
 
 class TestNestedPinningThroughDiscovery:
     """The same rule, reached the way a real tree reaches it: a nested ``.cgs``."""
 
-    def test_a_repo_under_a_pinned_mount_is_read_only_without_saying_so(self, tmp_path):
+    def test_a_repo_under_a_private_mount_is_read_only_without_saying_so(self, tmp_path):
         shared = tmp_path / "shared-spec"
         shared.mkdir()
         (shared / "nested.cgs").write_text(
@@ -329,7 +380,7 @@ class TestNestedPinningThroughDiscovery:
             'project = { name = "demo", default_branch = "main" }\n'
             "repos = [\n"
             '    "github:acme/demo",\n'
-            "    { repository = \"github:acme/shared-spec\", pinned = true, "
+            "    { repository = \"github:acme/shared-spec\", private = true, "
             'nested_config = "nested.cgs" },\n'
             "]\n",
             encoding="utf-8",
@@ -339,8 +390,8 @@ class TestNestedPinningThroughDiscovery:
         discover_nested_configs(tree)
         by_name = {entry.name: entry for entry in tree.values()}
 
-        assert by_name["nested-leaf"].pinned is False, "its own .cgs declares nothing"
-        assert by_name["nested-leaf"].effective_pinned is True
+        assert by_name["nested-leaf"].private is False, "its own .cgs declares nothing"
+        assert by_name["nested-leaf"].effective_private is True
         assert not RepoScope.PROJECT.includes(by_name["nested-leaf"])
         assert RepoScope.PROJECT.includes(by_name["demo"])
 
@@ -356,7 +407,7 @@ class TestThisTreesOwnDeclaration:
         assert by_name[".claude"]["writable"] is True
 
     def test_the_shared_config_repo_is_read_only(self):
-        """`.agentSpec` is pinned to main and read by every project.
+        """`.agentSpec` is private to main and read by every project.
 
         It must not be writable here: that is the entry whose accidental
         push publishes to everyone.
@@ -364,7 +415,7 @@ class TestThisTreesOwnDeclaration:
         document = CgsDocument.from_toml(_REPO_ROOT / "install.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
-        assert by_name[".agentSpec"]["pinned"] is True
+        assert by_name[".agentSpec"]["private"] is True
         assert by_name[".agentSpec"]["writable"] is False
 
     def test_each_scope_selects_what_the_documentation_promises(self):

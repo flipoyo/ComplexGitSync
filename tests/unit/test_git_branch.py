@@ -1,4 +1,4 @@
-"""The branch model, pinned down so it cannot drift back into six copies.
+"""The branch model, private down so it cannot drift back into six copies.
 
 ``AgentSpec/archive/`` MultiBranchSync ticket §1 writes down which branch a
 repository lands on and why. A model documented without tests rots in one
@@ -7,7 +7,7 @@ release, so every rule stated there has an assertion here:
 * the three-deep fallback chain resolves in order;
 * a ``.cgs`` that names no branch anywhere still resolves to ``main``, and
   says so was the built-in default rather than someone's choice;
-* a pinned repository keeps its own branch under a tree-wide branch move,
+* a private repository keeps its own branch under a tree-wide branch move,
   but takes a tag;
 * the literal ``"main"`` does not spread back through ``src/``.
 """
@@ -34,7 +34,7 @@ from ComplexGitSync.git_branch import (
     resolve_propagated_ref,
 )
 from ComplexGitSync.git_repo import RefKind, WorkingRepo
-from ComplexGitSync.git_tree import WorkingGitTree, propagate_pinning
+from ComplexGitSync.git_tree import WorkingGitTree, propagate_privacy
 from ComplexGitSync.operations import propagate_global_branch
 from ComplexGitSync.orchestre import ComplexGitSyncClient, _is_dot_named_mount
 
@@ -211,42 +211,42 @@ def _tree(*entries: WorkingRepo) -> WorkingGitTree:
 
 
 class TestPinning:
-    def test_a_pinned_repo_keeps_its_own_branch_under_a_branch_move(self):
-        pinned = WorkingRepo(repo_id="spec", name="spec", pinned=True, default_branch="shared")
+    def test_a_private_repo_keeps_its_own_branch_under_a_branch_move(self):
+        private = WorkingRepo(repo_id="spec", name="spec", private=True, default_branch="shared")
 
-        resolution = resolve_propagated_ref(pinned, "feature")
+        resolution = resolve_propagated_ref(private, "feature")
 
         assert resolution.name == "shared"
-        assert resolution.source is BranchSource.PINNED
+        assert resolution.source is BranchSource.PRIVATE_DISTANT
         # kind stays None so a branch move never rewrites the kind of ref a
-        # pinned entry already carries.
+        # private entry already carries.
         assert resolution.kind is None
 
-    def test_a_pinned_repo_still_takes_a_tag(self):
-        pinned = WorkingRepo(repo_id="spec", name="spec", pinned=True, default_branch="shared")
+    def test_a_private_repo_still_takes_a_tag(self):
+        private = WorkingRepo(repo_id="spec", name="spec", private=True, default_branch="shared")
 
-        resolution = resolve_propagated_ref(pinned, "v1.0.0", ref_kind=RefKind.TAG)
+        resolution = resolve_propagated_ref(private, "v1.0.0", ref_kind=RefKind.TAG)
 
         assert resolution.name == "v1.0.0"
         assert resolution.kind is RefKind.TAG
 
-    def test_propagate_global_branch_moves_only_the_unpinned_repos(self):
+    def test_propagate_global_branch_moves_only_the_project_repos(self):
         free = WorkingRepo(repo_id="app", name="app", default_branch="main")
-        pinned = WorkingRepo(repo_id="spec", name="spec", pinned=True, default_branch="shared")
+        private = WorkingRepo(repo_id="spec", name="spec", private=True, default_branch="shared")
 
-        propagate_global_branch(_tree(free, pinned), "feature")
+        propagate_global_branch(_tree(free, private), "feature")
 
         assert free.target_ref_name == "feature"
-        assert pinned.target_ref_name == "shared"
+        assert private.target_ref_name == "shared"
 
-    def test_propagating_a_tag_reaches_every_repo_including_pinned_ones(self):
+    def test_propagating_a_tag_reaches_every_repo_including_private_ones(self):
         free = WorkingRepo(repo_id="app", name="app", default_branch="main")
-        pinned = WorkingRepo(repo_id="spec", name="spec", pinned=True, default_branch="shared")
+        private = WorkingRepo(repo_id="spec", name="spec", private=True, default_branch="shared")
 
-        propagate_global_branch(_tree(free, pinned), "v1.0.0", ref_kind=RefKind.TAG)
+        propagate_global_branch(_tree(free, private), "v1.0.0", ref_kind=RefKind.TAG)
 
-        assert free.target_ref_name == pinned.target_ref_name == "v1.0.0"
-        assert free.target_ref_kind is pinned.target_ref_kind is RefKind.TAG
+        assert free.target_ref_name == private.target_ref_name == "v1.0.0"
+        assert free.target_ref_kind is private.target_ref_kind is RefKind.TAG
 
     def test_the_reason_a_branch_was_chosen_is_recorded_on_the_entry(self):
         entry = WorkingRepo(repo_id="app", name="app", fallback_applied=True, fallback_reason="stale")
@@ -260,7 +260,7 @@ class TestPinning:
 
 
 # ---------------------------------------------------------------------------
-# discover drafts a shared mount pinned, rather than hiding it
+# discover drafts a shared mount private, rather than hiding it
 # ---------------------------------------------------------------------------
 
 
@@ -269,8 +269,8 @@ class TestDiscoverDraftsDotNamedMountsPinned:
 
     ``discover`` still finds dot-named repositories — the guard test in
     ``test_walk_git_repositories.py`` stays green — but it drafts them with
-    ``pinned = true``, because a dot-named mount is nearly always a config
-    repository shared with other projects, which is exactly what ``pinned``
+    ``private = true``, because a dot-named mount is nearly always a config
+    repository shared with other projects, which is exactly what ``private``
     means.
     """
 
@@ -280,7 +280,7 @@ class TestDiscoverDraftsDotNamedMountsPinned:
         assert _is_dot_named_mount("docs/DocSpec") is False
         assert _is_dot_named_mount(".") is False
 
-    def test_the_drafted_entry_carries_pinned_true(self, tmp_path):
+    def test_the_drafted_entry_carries_private_true(self, tmp_path):
         root = tmp_path / "workspace"
         self._make_repo(root, "git@github.com:acme/workspace.git")
         self._make_repo(root / ".agentSpec", "git@github.com:acme/.agentSpec.git")
@@ -291,9 +291,9 @@ class TestDiscoverDraftsDotNamedMountsPinned:
 
         # All three are still found — the scan hides nothing.
         assert set(by_path) == {".", ".agentSpec", "docs"}
-        assert by_path[".agentSpec"].get("pinned") is True
-        assert "pinned" not in by_path["docs"]
-        assert "pinned" not in by_path["."]
+        assert by_path[".agentSpec"].get("private") is True
+        assert "private" not in by_path["docs"]
+        assert "private" not in by_path["."]
 
     @staticmethod
     def _make_repo(path: Path, remote_url: str) -> None:
@@ -313,25 +313,25 @@ class TestDiscoverDraftsDotNamedMountsPinned:
 class TestPrivateLocalBranchFollowsTheProject:
     """A private/local repository gets a branch per project branch.
 
-    ``pinned`` alone means private/**distant**: the repository is private to
+    ``private`` alone means private/**distant**: the repository is private to
     its owner, this project can only read it, so nothing this project does
-    may move it. ``pinned, writable`` means private/**local**: it holds this
+    may move it. ``private, writable`` means private/**local**: it holds this
     project's own settings, this project commits to it, and it therefore
     needs somewhere to record them per project branch. That is ``P_B``.
     """
 
     @staticmethod
-    def _entry(*, pinned: bool, writable: bool, default_branch: str) -> WorkingRepo:
+    def _entry(*, private: bool, writable: bool, default_branch: str) -> WorkingRepo:
         return WorkingRepo(
             repo_id="r",
             name="r",
-            pinned=pinned,
+            private=private,
             writable=writable,
             default_branch=default_branch,
         )
 
     def test_a_private_local_repo_targets_project_underscore_branch(self):
-        entry = self._entry(pinned=True, writable=True, default_branch="MyProject")
+        entry = self._entry(private=True, writable=True, default_branch="MyProject")
 
         resolution = resolve_propagated_ref(entry, "feature-x", project_name="MyProject")
 
@@ -341,7 +341,7 @@ class TestPrivateLocalBranchFollowsTheProject:
     def test_main_takes_no_suffix(self):
         """The project's main line needs no qualifier: its settings branch is
         simply the project's name, which is what every tree already has."""
-        entry = self._entry(pinned=True, writable=True, default_branch="MyProject")
+        entry = self._entry(private=True, writable=True, default_branch="MyProject")
 
         resolution = resolve_propagated_ref(entry, "main", project_name="MyProject")
 
@@ -350,7 +350,7 @@ class TestPrivateLocalBranchFollowsTheProject:
 
     def test_the_base_is_the_project_name_not_what_the_entry_declares(self):
         """One project's settings, on a branch named after that project."""
-        entry = self._entry(pinned=True, writable=True, default_branch="something-else")
+        entry = self._entry(private=True, writable=True, default_branch="something-else")
 
         assert (
             resolve_propagated_ref(entry, "feature-x", project_name="MyProject").name
@@ -359,15 +359,15 @@ class TestPrivateLocalBranchFollowsTheProject:
 
     def test_a_private_distant_repo_never_moves(self):
         """The regression guard. This is what the pin means."""
-        entry = self._entry(pinned=True, writable=False, default_branch="main")
+        entry = self._entry(private=True, writable=False, default_branch="main")
 
         resolution = resolve_propagated_ref(entry, "feature-x", project_name="MyProject")
 
         assert resolution.name == "main"
-        assert resolution.source is BranchSource.PINNED
+        assert resolution.source is BranchSource.PRIVATE_DISTANT
 
     def test_a_project_owned_repo_follows_the_move(self):
-        entry = self._entry(pinned=False, writable=False, default_branch="main")
+        entry = self._entry(private=False, writable=False, default_branch="main")
 
         assert (
             resolve_propagated_ref(entry, "feature-x", project_name="P").name
@@ -376,7 +376,7 @@ class TestPrivateLocalBranchFollowsTheProject:
 
     def test_a_tag_still_reaches_a_private_local_repo_unchanged(self):
         """Branches stop at a pin; tags do not. Nothing here changes that."""
-        entry = self._entry(pinned=True, writable=True, default_branch="MyProject")
+        entry = self._entry(private=True, writable=True, default_branch="MyProject")
 
         resolution = resolve_propagated_ref(
             entry, "v1.0.0", ref_kind=RefKind.TAG, project_name="MyProject"
@@ -385,9 +385,9 @@ class TestPrivateLocalBranchFollowsTheProject:
         assert resolution.name == "v1.0.0"
         assert resolution.source is BranchSource.TAG
 
-    def test_the_kind_is_left_alone_for_any_pinned_entry(self):
+    def test_the_kind_is_left_alone_for_any_private_entry(self):
         for writable in (True, False):
-            entry = self._entry(pinned=True, writable=writable, default_branch="b")
+            entry = self._entry(private=True, writable=writable, default_branch="b")
             assert (
                 resolve_propagated_ref(entry, "feature-x", project_name="P").kind is None
             )
@@ -401,7 +401,7 @@ class TestPrivateLocalBranchFollowsTheProject:
         entry = WorkingRepo(
             repo_id="r",
             name="r",
-            pinned=True,
+            private=True,
             writable=True,
             default_branch="MyProject",
             resolved_ref_name="MyProject_feature-x",
@@ -420,14 +420,14 @@ class TestPrivateLocalBranchFollowsTheProject:
             "ComplexGitSync_multi-branch"
         )
 
-    def test_an_effective_flag_from_a_pinned_parent_is_enough(self):
+    def test_an_effective_flag_from_a_private_parent_is_enough(self):
         """The rule reads the effective flags, so nesting is respected."""
         tree = WorkingGitTree()
-        tree.add(WorkingRepo(repo_id="p", name="p", pinned=True, writable=True,
+        tree.add(WorkingRepo(repo_id="p", name="p", private=True, writable=True,
                              default_branch="MyProject"))
         leaf = WorkingRepo(repo_id="c", name="c", parent_id="p", default_branch="MyProject")
         tree.add(leaf)
-        propagate_pinning(tree)
+        propagate_privacy(tree)
 
         assert (
             resolve_propagated_ref(leaf, "feature-x", project_name="MyProject").name
@@ -605,8 +605,8 @@ def test_this_trees_own_cgs_pins_exactly_the_shared_mounts():
     document = CgsDocument.from_toml(_REPO_ROOT / "install.cgs")
     by_name = {repo["project_name"]: repo for repo in document.repos}
 
-    pinned = {name for name, repo in by_name.items() if repo.get("pinned")}
-    assert pinned == {".agentSpec", ".localSpec", ".claude"}
+    private = {name for name, repo in by_name.items() if repo.get("private")}
+    assert private == {".agentSpec", ".localSpec", ".claude"}
 
     tree = _tree(
         *(
@@ -614,7 +614,7 @@ def test_this_trees_own_cgs_pins_exactly_the_shared_mounts():
                 repo_id=name,
                 name=name,
                 default_branch=repo["default_branch"],
-                pinned=bool(repo.get("pinned")),
+                private=bool(repo.get("private")),
             )
             for name, repo in by_name.items()
         )

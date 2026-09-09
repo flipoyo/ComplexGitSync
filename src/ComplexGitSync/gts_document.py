@@ -342,7 +342,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
                     # wire format. Tying it to a constant that could move
                     # would silently rehash every snapshot ever written.
                     "fallback_branch": repo.get("fallback_branch", "main"),
-                    # pinned/writable are deliberately NOT here, for the same
+                    # private/writable are deliberately NOT here, for the same
                     # reason as access_protocol above: they say what commands
                     # are *allowed* to touch a repository, not what state the
                     # tree is in. They round-trip through repo_state either

@@ -35,7 +35,7 @@ from .git_tree import (
     make_repo_id,
     normalize_node_types,
     promote_to_parent,
-    propagate_pinning,
+    propagate_privacy,
     register_relative_path,
 )
 
@@ -150,7 +150,7 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
                     ),
                     default_branch=str(repo.get("default_branch") or nested_document.default_branch),
                     nested_config=str(repo.get("nested_config")) if repo.get("nested_config") else None,
-                    pinned=bool(repo.get("pinned", False)),
+                    private=bool(repo.get("private", False)),
                     writable=bool(repo.get("writable", False)),
                     remote_name=str(repo.get("remote_name") or entry.remote_name or "origin"),
                 )
@@ -159,7 +159,7 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
             changes.append(f"discovered:{child_id}")
 
     normalize_node_types(registry)
-    propagate_pinning(registry)
+    propagate_privacy(registry)
     registry.recompute_tree_state()
     return tuple(changes)
 

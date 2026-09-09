@@ -109,12 +109,12 @@ def propagate_global_branch(
 
     This is a pure in-memory operation: no git commands are issued.  It
     prepares the tree so that subsequent operations (create, checkout)
-    all target the same branch — except a repo declared ``pinned`` in the
+    all target the same branch — except a repo declared ``private`` in the
     ``.cgs``, which keeps its own ``default_branch`` because it is shared
     with other projects. Pinning governs *branch* propagation only, so a
     tag still reaches every repo and a frozen release stays reproducible.
 
-    The pinning rule itself lives in
+    The privacy rule itself lives in
     :func:`~ComplexGitSync.git_branch.resolve_propagated_ref`, so that the
     reason each repo ended up on the branch it did is decided in one place
     and recorded on the entry rather than re-derived by each reader.
@@ -165,7 +165,7 @@ def create_global_branch(
     """
     project_name = tree_project_name(tree)
     for repo in iter_tree(tree, scope):
-        if repo.effective_pinned and not repo.effective_writable:
+        if repo.effective_private and not repo.effective_writable:
             continue
         target = resolve_propagated_ref(
             repo, branch_name, project_name=project_name
@@ -280,7 +280,7 @@ def restart_tree(
     """Resynchronize the full tree using the root repository's current branch.
 
     Reads the current branch from the root repository, propagates it across
-    all repos except those declared ``pinned``, then pulls every repository
+    all repos except those declared ``private``, then pulls every repository
     (parent-first) with ``git pull --ff-only`` on the branch that repo
     actually targets.
 
@@ -1243,7 +1243,7 @@ def _collect_branch_alignment_diagnostics(
     mismatched: list[PreflightDiagnostic] = []
     project_name = tree_project_name(tree)
     for repo in iter_tree_leaf_first(tree, scope):
-        # A pinned repository is shared with other projects and stays on a
+        # A private repository is shared with other projects and stays on a
         # branch of its own, so the root's branch is not what it should be
         # on. resolve_propagated_ref is the one place that rule lives, and
         # resolve_existing_propagated_ref then applies the same fallback
@@ -1255,7 +1255,7 @@ def _collect_branch_alignment_diagnostics(
         ).name
         current = git_runner.current_branch(repo.absolute_path)
         if current is not None and current != expected_branch:
-            detail = " (pinned to its own branch)" if repo.effective_pinned else ""
+            detail = " (private to its own branch)" if repo.effective_private else ""
             mismatched.append(
                 PreflightDiagnostic(
                     PreflightSeverity.BLOCKING_ERROR,

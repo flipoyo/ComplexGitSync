@@ -105,7 +105,7 @@ from .git_tree import (
     iter_tree,
     iter_tree_leaf_first,
     normalize_node_types,
-    propagate_pinning,
+    propagate_privacy,
     sync_gitignore,
 )
 from .git_tree import (
@@ -915,7 +915,7 @@ def resolve_command_scope(
 
     Without ``--private`` a write command touches only the repositories this
     project owns. With it, only the **writable** configuration repos — the
-    ones the ``.cgs`` declares ``pinned = true, writable = true``. The two
+    ones the ``.cgs`` declares ``private = true, writable = true``. The two
     are disjoint on purpose: a shared repository gets its own command and
     its own commit message, rather than being swept into this project's.
 
@@ -927,15 +927,15 @@ def resolve_command_scope(
         return RepoScope.PROJECT
     if any(RepoScope.PRIVATE.includes(repo) for repo in tree.values()):
         return RepoScope.PRIVATE
-    read_only = sorted(repo.name for repo in tree.values() if repo.effective_pinned)
+    read_only = sorted(repo.name for repo in tree.values() if repo.effective_private)
     detail = (
-        f" The pinned repositories in this tree are read-only: {', '.join(read_only)}."
+        f" The private repositories in this tree are read-only: {', '.join(read_only)}."
         if read_only
-        else " This tree declares no pinned repositories at all."
+        else " This tree declares no private repositories at all."
     )
     raise GitSyncError(
         f"{command} --private: no writable configuration repository in this tree.{detail}"
-        f" A pinned repository is read-only unless its .cgs entry also says"
+        f" A private repository is read-only unless its .cgs entry also says"
         f" writable = true."
     )
 
@@ -943,9 +943,9 @@ def resolve_command_scope(
 def _is_dot_named_mount(relative_path: str) -> bool:
     """True when any segment of *relative_path* is a dot-named directory.
 
-    Used only to pick ``discover``'s default for ``pinned``. Being dot-named
-    is a habit, not the rule — ``pinned`` means "shared with other projects",
-    and ``docs/DocSpec`` is pinned without being hidden at any level. The
+    Used only to pick ``discover``'s default for ``private``. Being dot-named
+    is a habit, not the rule — ``private`` means "shared with other projects",
+    and ``docs/DocSpec`` is private without being hidden at any level. The
     habit is reliable enough to make a *default* out of, which the author
     then sees in the drafted ``.cgs`` and can delete.
     """
@@ -1828,17 +1828,17 @@ class ComplexGitSyncClient:
                 entry["fallback_branch"] = repo.branch
             # A repository with no .cgs of its own resolves cleanly on the
             # default "auto" (zero matches -> RESOLVED), so it is left
-            # unset here rather than pinned to "disabled".
+            # unset here rather than private to "disabled".
             if _is_dot_named_mount(repo.relative_path):
                 # A dot-named mount (.agentSpec, .localSpec, .claude) is
                 # almost always a config repository shared with other
-                # projects, and "pinned" means exactly that: shared, so
+                # projects, and "private" means exactly that: shared, so
                 # tree-wide branch moves must leave it alone. Drafting it
-                # pinned states the convention as a default the author can
+                # private states the convention as a default the author can
                 # see and delete, rather than hiding these repositories from
                 # the scan — they are still found, still listed, and still
                 # written out.
-                entry["pinned"] = True
+                entry["private"] = True
             cgs_entries.append(entry)
 
         self._log_event(
@@ -2461,7 +2461,7 @@ class ComplexGitSyncClient:
         registry = self.get_dependency_registry()
         fixed = _fix_circularities(registry)
         normalize_node_types(registry)
-        propagate_pinning(registry)
+        propagate_privacy(registry)
         registry.recompute_tree_state()
         return fixed
 

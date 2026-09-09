@@ -24,7 +24,7 @@ a second repository-identifier parser (``parse_repo_id`` is the only one);
 this module is that same rule applied to branches.
 
 It is a **resolver, not a registry**. It holds no tree, no root and no
-pinning state — ``git_tree.py`` owns those. Callers hand it the declared
+privacy state — ``git_tree.py`` owns those. Callers hand it the declared
 fields and it hands back a :class:`BranchResolution`.
 
 The public surface
@@ -36,7 +36,7 @@ The public surface
     resolve_declared_ref      Target ref of one repository entry in a document
     resolve_entry_ref         Target ref of a live WorkingRepo
     private_local_branch      <project>_<branch> for a private/local repo
-    resolve_propagated_ref    Target ref under a tree-wide branch move (pinning)
+    resolve_propagated_ref    Target ref under a tree-wide branch move (privacy)
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ class BranchSource(StrEnum):
     BUILTIN_DEFAULT = "builtin_default"
     """:data:`DEFAULT_BRANCH` — nothing in the document named a branch."""
 
-    PINNED = "pinned"
+    PRIVATE_DISTANT = "private_distant"
     """The repository is shared with other projects, so a tree-wide branch
     move left it on its own branch."""
 
@@ -110,9 +110,9 @@ _SOURCE_REASONS: dict[BranchSource, str] = {
         f"no branch declared anywhere; fell back to the built-in default "
         f"'{DEFAULT_BRANCH}'"
     ),
-    BranchSource.PINNED: "repository is pinned, so the tree-wide branch move skipped it",
+    BranchSource.PRIVATE_DISTANT: "repository is private and read-only, so the branch move left it alone",
     BranchSource.PRIVATE_LOCAL: (
-        "repository is pinned and writable, so it follows the project's branch "
+        "repository is private and writable, so it follows the project's branch "
         "on a branch derived from it"
     ),
     BranchSource.OBSERVED: "read from the repository on disk",
@@ -128,7 +128,7 @@ class BranchResolution:
 
     *kind* is ``None`` only when the caller asked to keep whatever kind the
     entry already carried — :func:`resolve_propagated_ref` does that for a
-    pinned repository, which must not have its tag/branch kind rewritten by
+    private repository, which must not have its tag/branch kind rewritten by
     a tree-wide branch move.
     """
 
@@ -316,19 +316,19 @@ def resolve_propagated_ref(
 ) -> BranchResolution:
     """Resolve what *entry* targets when the whole tree moves to *ref_name*.
 
-    Three answers, and which one applies is decided by the two pinning flags
-    together. A **tag** reaches every repository whatever they say, pinned or
+    Three answers, and which one applies is decided by the two privacy flags
+    together. A **tag** reaches every repository whatever they say, private or
     not, so a frozen release stays reproducible; branches stop at a pin and
     tags do not, which is the whole meaning of the field.
 
-    **Not pinned** — the repository is this project's own, and follows the
+    **Not private** — the repository is this project's own, and follows the
     move to *ref_name*.
 
-    **private/distant** (``pinned``) — the repository is private to its
+    **private/distant** (``private``) — the repository is private to its
     owner. This project reads it and cannot commit to it, so nothing this
     project does may move it: it stays on its declared ``default_branch``.
 
-    **private/local** (``pinned, writable``) — the repository holds this
+    **private/local** (``private, writable``) — the repository holds this
     project's own settings, filed in a shared repository but on a branch
     nobody else reads, and this project *does* commit to it. It therefore
     needs somewhere to record settings per project branch, so it targets
@@ -339,10 +339,10 @@ def resolve_propagated_ref(
     needs it. Without it that case cannot be resolved at all, so it falls
     back to behaving like private/distant rather than guessing a name.
 
-    For any pinned entry the returned ``kind`` is ``None``: the move must not
+    For any private entry the returned ``kind`` is ``None``: the move must not
     rewrite the kind of ref that entry already carries.
     """
-    if entry.effective_pinned and ref_kind is RefKind.BRANCH:
+    if entry.effective_private and ref_kind is RefKind.BRANCH:
         declared = _as_optional_str(entry.default_branch) or DEFAULT_BRANCH
         if entry.effective_writable and project_name:
             return BranchResolution(
@@ -350,7 +350,7 @@ def resolve_propagated_ref(
                 kind=None,
                 source=BranchSource.PRIVATE_LOCAL,
             )
-        return BranchResolution(name=declared, kind=None, source=BranchSource.PINNED)
+        return BranchResolution(name=declared, kind=None, source=BranchSource.PRIVATE_DISTANT)
     source = BranchSource.TAG if ref_kind is RefKind.TAG else BranchSource.REPO_BRANCH
     return BranchResolution(name=ref_name, kind=ref_kind, source=source)
 

@@ -203,7 +203,12 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
         repo["nested_config"] = str(repo.get("nested_config") or DEFAULT_NESTED_CONFIG)
         # Defaulted, never coerced: bool("yes") is True, which would hide a
         # typo from validate() below instead of reporting it.
-        repo["pinned"] = repo.get("pinned", False)
+        # "pinned" was this field's name until it was renamed to say what it
+        # means rather than what it does. A .cgs written before the rename
+        # still reads correctly; the canonical form is always "private".
+        if "pinned" in repo and "private" not in repo:
+            repo["private"] = repo.pop("pinned")
+        repo["private"] = repo.get("private", False)
         # Pinned means read-only unless the entry opts in: a configuration
         # repo shared with other projects is not ours to write by default.
         repo["writable"] = repo.get("writable", False)
@@ -248,7 +253,7 @@ def _optional_text(value: Any) -> str | None:
 def _resolve_override(overrides: dict[str, Any], key: str, value: Any, default: Any) -> Any:
     """Coalesce *value* with *default*, recording an override in *overrides* when they differ.
 
-    A boolean passes through with its type intact, so ``pinned`` is written
+    A boolean passes through with its type intact, so ``private`` is written
     as TOML ``true`` rather than the string ``"True"``.
     """
     resolved = value if isinstance(value, bool) else str(value or default)
@@ -384,8 +389,8 @@ def _repo_data_from_tree(
     nested_config = getattr(repo, "nested_config", None)
     if nested_config is not None:
         data["nested_config"] = str(nested_config)
-    if getattr(repo, "pinned", False):
-        data["pinned"] = True
+    if getattr(repo, "private", False):
+        data["private"] = True
     if getattr(repo, "writable", False):
         data["writable"] = True
 
@@ -639,18 +644,18 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                             f"or a .cgs relative path; got: {nested!r}"
                         )
 
-                pinned = repo.get("pinned")
-                if pinned is not None and not isinstance(pinned, bool):
-                    errors.append(f"repos[{idx}].pinned must be true or false; got: {pinned!r}")
+                private = repo.get("private")
+                if private is not None and not isinstance(private, bool):
+                    errors.append(f"repos[{idx}].private must be true or false; got: {private!r}")
 
                 writable = repo.get("writable")
                 if writable is not None and not isinstance(writable, bool):
                     errors.append(f"repos[{idx}].writable must be true or false; got: {writable!r}")
-                if writable and not repo.get("pinned"):
+                if writable and not repo.get("private"):
                     errors.append(
-                        f"repos[{idx}].writable = true only means something on a pinned "
-                        f"repository: an unpinned repository is this project's own and is "
-                        f"always writable. Add pinned = true, or drop writable."
+                        f"repos[{idx}].writable = true only means something on a private "
+                        f"repository: an project repository is this project's own and is "
+                        f"always writable. Add private = true, or drop writable."
                     )
         if errors:
             raise ConfigValidationError(
@@ -708,7 +713,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
             "fallback_branch",
             "access_protocol",
             "nested_config",
-            "pinned",
+            "private",
             "writable",
             "relative_path",
         }
@@ -733,7 +738,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
             _resolve_override(
                 overrides, "nested_config", repo.get("nested_config"), DEFAULT_NESTED_CONFIG
             )
-            _resolve_override(overrides, "pinned", repo.get("pinned"), False)
+            _resolve_override(overrides, "private", repo.get("private"), False)
             _resolve_override(overrides, "writable", repo.get("writable"), False)
 
             is_sole_project_repo = (

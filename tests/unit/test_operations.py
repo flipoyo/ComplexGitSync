@@ -28,7 +28,7 @@ from ComplexGitSync.git_tree import (
     WorkingGitTree,
     iter_tree,
     iter_tree_leaf_first,
-    propagate_pinning,
+    propagate_privacy,
 )
 from ComplexGitSync.operations import (
     BranchTopologyReport,
@@ -715,43 +715,43 @@ def test_propagate_global_branch_accepts_custom_ref_kind(tmp_path):
         assert entry.target_ref_kind == RefKind.TAG
 
 
-def test_propagate_global_branch_leaves_a_pinned_repo_on_its_own_branch(tmp_path):
-    """A pinned mount is shared with other projects: the tree must not move it."""
+def test_propagate_global_branch_leaves_a_private_repo_on_its_own_branch(tmp_path):
+    """A private mount is shared with other projects: the tree must not move it."""
     registry = _make_ready_registry(tmp_path)
-    pinned = registry.get("root:deps/leaf")
-    pinned.pinned = True
-    pinned.default_branch = "ComplexGitSync"
+    private = registry.get("root:deps/leaf")
+    private.private = True
+    private.default_branch = "ComplexGitSync"
 
     propagate_global_branch(registry, "feature-x")
 
-    assert pinned.target_ref_name == "ComplexGitSync"
+    assert private.target_ref_name == "ComplexGitSync"
     assert registry.get("root").target_ref_name == "feature-x"
 
 
-def test_propagate_global_branch_still_moves_a_pinned_repo_to_a_tag(tmp_path):
+def test_propagate_global_branch_still_moves_a_private_repo_to_a_tag(tmp_path):
     """Pinning governs branch propagation only, so a frozen release stays whole."""
     registry = _make_ready_registry(tmp_path)
-    pinned = registry.get("root:deps/leaf")
-    pinned.pinned = True
-    pinned.default_branch = "ComplexGitSync"
+    private = registry.get("root:deps/leaf")
+    private.private = True
+    private.default_branch = "ComplexGitSync"
 
     propagate_global_branch(registry, "v1.2.3", ref_kind=RefKind.TAG)
 
-    assert pinned.target_ref_name == "v1.2.3"
-    assert pinned.target_ref_kind == RefKind.TAG
+    assert private.target_ref_name == "v1.2.3"
+    assert private.target_ref_kind == RefKind.TAG
 
 
-def test_create_global_branch_never_creates_inside_a_pinned_repo(tmp_path):
+def test_create_global_branch_never_creates_inside_a_private_repo(tmp_path):
     """The incident of 2026-09-05: a branch appeared inside shared repositories."""
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    pinned = registry.get("root:deps/leaf")
-    pinned.pinned = True
+    private = registry.get("root:deps/leaf")
+    private.private = True
 
     create_global_branch(registry, runner, "feature-x")
 
     created = [path for path, branch in runner.created if branch == "feature-x"]
-    assert pinned.absolute_path not in created
+    assert private.absolute_path not in created
     assert registry.get("root").absolute_path in created
 
 
@@ -1330,7 +1330,7 @@ def _make_registry_with_config_repo(tmp_path: Path) -> WorkingGitTree:
     """A READY registry whose leaf is a writable configuration repository.
 
     Shaped like a real tree: the project's own root on a feature branch, and
-    a pinned mount sitting on a branch named after the project.
+    a private mount sitting on a branch named after the project.
     """
     from ComplexGitSync.git_repo import WorkingRepo
 
@@ -1339,13 +1339,13 @@ def _make_registry_with_config_repo(tmp_path: Path) -> WorkingGitTree:
     # private/local branch here is named after: "project" on main,
     # "project_<branch>" elsewhere.
     leaf = registry.get("root:deps/leaf")
-    leaf.pinned = True
+    leaf.private = True
     leaf.writable = True
     leaf.default_branch = "project"
     leaf.target_ref_name = "project"
     leaf.resolved_ref_name = "project"
     assert isinstance(leaf, WorkingRepo)
-    propagate_pinning(registry)
+    propagate_privacy(registry)
     return registry
 
 
@@ -1353,8 +1353,8 @@ class TestPreflightOnlyChecksWhatTheOperationTouches:
     """A commit must not be blocked by a repository it will never write to.
 
     The scope work made ``commit``/``push`` skip configuration repos, but
-    their preflight still swept the whole tree. A pinned mount sitting on
-    its own branch — the entire point of pinning — then read as a branch
+    their preflight still swept the whole tree. A private mount sitting on
+    its own branch — the entire point of privacy — then read as a branch
     misalignment and blocked every commit in the tree.
     """
 
@@ -1367,7 +1367,7 @@ class TestPreflightOnlyChecksWhatTheOperationTouches:
         )
         return runner
 
-    def test_a_pinned_mount_on_its_own_branch_does_not_block_a_commit(self, tmp_path):
+    def test_a_private_mount_on_its_own_branch_does_not_block_a_commit(self, tmp_path):
         """The bug reported from a live workspace."""
         registry = _make_registry_with_config_repo(tmp_path)
         runner = self._runner(registry)
@@ -1376,8 +1376,8 @@ class TestPreflightOnlyChecksWhatTheOperationTouches:
 
         assert [path for path, _ in runner.committed] == [registry.get("root").absolute_path]
 
-    def test_a_pinned_mount_is_measured_against_its_own_branch_not_the_roots(self, tmp_path):
-        """Under --private the pinned mount *is* in scope, and still passes."""
+    def test_a_private_mount_is_measured_against_its_own_branch_not_the_roots(self, tmp_path):
+        """Under --private the private mount *is* in scope, and still passes."""
         registry = _make_registry_with_config_repo(tmp_path)
         runner = self._runner(registry)
 
@@ -1387,7 +1387,7 @@ class TestPreflightOnlyChecksWhatTheOperationTouches:
             registry.get("root:deps/leaf").absolute_path
         ]
 
-    def test_a_pinned_mount_off_its_declared_branch_still_blocks(self, tmp_path):
+    def test_a_private_mount_off_its_declared_branch_still_blocks(self, tmp_path):
         """Scoping must not turn the check off, only point it at the right branch."""
         registry = _make_registry_with_config_repo(tmp_path)
         runner = self._runner(registry)
@@ -1517,7 +1517,7 @@ class TestMergeTree:
         registry = _make_registry_with_config_repo(tmp_path)
         leaf = registry.get("root:deps/leaf")
         leaf.writable = False
-        propagate_pinning(registry)
+        propagate_privacy(registry)
         runner = self._runner(registry)
 
         merge_tree(registry, runner, "multi-branch", scope=RepoScope.WRITABLE)
@@ -1581,7 +1581,7 @@ class TestCheckoutAndBranchBothUseTheProjectRule:
         registry, runner = self._tree_and_runner(tmp_path)
         leaf = registry.get("root:deps/leaf")
         leaf.writable = False
-        propagate_pinning(registry)
+        propagate_privacy(registry)
 
         branch_tree(registry, runner, "multi-branch")
 
@@ -1625,7 +1625,7 @@ class TestTheProjectNamesThePrivateLocalBranch:
         return WorkingRepo(
             repo_id="c",
             name=".claude",
-            pinned=True,
+            private=True,
             writable=True,
             default_branch="MyProject",
             resolved_ref_name="MyProject_multi-branch",

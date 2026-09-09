@@ -214,7 +214,7 @@ def _add_private_argument(subparser: argparse.ArgumentParser, *, verb: str) -> N
         action="store_true",
         help=(
             f"{verb} only the tree's writable configuration repositories -- the "
-            "entries a .cgs declares 'pinned = true, writable = true'. Read-only "
+            "entries a .cgs declares 'private = true, writable = true'. Read-only "
             "configuration repositories are never written to."
         ),
     )
@@ -265,7 +265,7 @@ def _register_commit(subparser: argparse.ArgumentParser) -> None:
         "--private",
         action="store_true",
         help=(
-            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'pinned = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
+            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'private = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
         ),
     )
     _add_dry_run_argument(subparser, help_text="Preview the commit execution plan without mutating repositories.")
@@ -289,7 +289,7 @@ def _register_merge(subparser: argparse.ArgumentParser) -> None:
         action="store_true",
         help=(
             "Merge into the tree's writable configuration repositories instead of "
-            "this project's own -- the entries a .cgs declares 'pinned = true, "
+            "this project's own -- the entries a .cgs declares 'private = true, "
             "writable = true'. Read-only configuration repositories are never merged."
         ),
     )
@@ -329,7 +329,7 @@ def _register_add(subparser: argparse.ArgumentParser) -> None:
         "--private",
         action="store_true",
         help=(
-            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'pinned = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
+            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'private = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
         ),
     )
     _add_dry_run_argument(subparser, help_text="Preview the add execution plan without mutating repositories.")
@@ -362,7 +362,7 @@ def _register_push(subparser: argparse.ArgumentParser) -> None:
         "--private",
         action="store_true",
         help=(
-            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'pinned = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
+            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'private = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
         ),
     )
     _add_dry_run_argument(subparser, help_text="Preview the push execution plan without mutating repositories.")

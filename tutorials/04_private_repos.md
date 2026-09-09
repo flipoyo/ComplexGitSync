@@ -1,12 +1,13 @@
-# Tutorial 4 of 4 — Including Configuration Repos in `.cgs`: Pinned Branches
+# Tutorial 4 of 4 — Private repos: the ones that configure your project
 
 *Created: 2026-09-07*
 
 ## Abstract — read this first
 
-**What this document is.** How to share a repository between several
-projects — house style, agent instructions, shared specs — without your
-work in one project leaking into the others.
+**What this document is.** How to keep the repositories that *configure*
+your project — pipelines, agent instructions, house rules — separate from
+the ones that *are* your project, so work in one project does not leak into
+the others.
 
 **Why it exists.** Most repositories in a tree are yours to change freely.
 A shared one is not. `cgitsync` needs to know which is which, and once it
@@ -42,44 +43,46 @@ graph LR
 
 ---
 
-## 1. What a configuration repo is
+## 1. Project repos and private repos
 
-Some things are the same across all your projects: how you write documents,
-how you brief a coding agent, your review checklist. You want **one copy**,
-shared, so that fixing it once fixes it everywhere.
+A tree holds two kinds of repository.
 
-A repository like that is a **configuration repo**. It sits in your tree
-like any other repository, but it belongs to all your projects at once —
-not to the one you happen to be working in.
+**Project repos** are the work itself — whatever the project is for. Code,
+documents, data. They follow your project's branch, because they *are* your
+project.
 
-That changes what should happen to it. When you start a feature branch in
-your project, your project's own repositories should follow you onto that
-branch. A configuration repo should stay exactly where it is. If it
-followed you, every other project sharing it would suddenly see your
-half-finished branch.
+**Private repos** are how the project is run: your pipelines, your
+instructions to a coding agent, your review rules. Some things are the same
+across all your projects, and you want **one copy** so that fixing it once
+fixes it everywhere. A private repo holds that copy.
 
-So you mark it **pinned** in the `.cgs`, and `cgitsync` leaves it alone.
+That changes what should happen to it. Start a feature branch, and your
+project repos should follow you onto it. A private repo should not — or
+every other project sharing it would suddenly see your half-finished work.
+
+So you mark it **private** in the `.cgs`, and `cgitsync` keeps it on a
+branch of its own.
 
 ## 2. The two kinds — this is the part that matters
 
-Not all configuration repos are the same, and confusing them is the one
-mistake worth designing against.
+Not all private repos are the same, and confusing them is the one mistake
+worth designing against. The difference is **who may write**.
 
-**Read-only.** Shared with other people or other projects. You read it, you
-do not write it from here. Someone else maintains it, or you maintain it
-deliberately and separately. Example: a house-style document a dozen
-projects mount.
+**private/distant.** Someone else's repository. You read it; only its owner
+writes to it. Nothing you do here can change it. Example: a house-style
+document a dozen projects mount.
 
-**Read and write.** Shared in the sense that it lives outside your project,
-but the part you use is yours — usually because it sits on a branch named
+**private/local.** It lives outside your project, but the part you use is
+yours, and you commit to it. It sits on a branch named
 after your project. Nobody else reads that branch, so writing to it is
 safe. Example: your project's own notes and agent instructions.
 
-**Pinned means read-only unless you say otherwise.** That is the default,
-and it is deliberate: the expensive mistake is writing to something shared
-by accident, never the reverse. If you cannot write where you expected to,
-`cgitsync` tells you exactly which repository and exactly what to add to
-the `.cgs`.
+**Private means distant unless you say otherwise.** `private = true` alone
+gives you private/distant; adding `writable = true` makes it
+private/local. That default is deliberate: the expensive mistake is writing
+to something shared by accident, never the reverse. If you cannot write
+where you expected to, `cgitsync` names the repository and says what to add
+to the `.cgs`.
 
 Here is this repository's own tree, which uses both kinds:
 
@@ -218,7 +221,7 @@ each repository works out what that means for itself.
 
 ## 3. Declaring them
 
-Two fields. `pinned = true` says "shared, leave it on its own branch".
+Two fields. `private = true` says "shared, leave it on its own branch".
 `writable = true` adds "…but this project may write to it".
 
 ```toml
@@ -227,32 +230,32 @@ project = { name = "ComplexGitSync", default_branch = "main" }
 repos = [
     { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
     { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "auto" },
-    { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", pinned = true },
-    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", pinned = true, writable = true },
-    { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", pinned = true, writable = true },
+    { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", private = true },
+    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
 ]
 ```
 
 That is [`install.cgs`](../install.cgs), this tree's own file. Reading it:
 
-- The first two entries have no `pinned`, so they are the project's own.
-- `.agentSpec` is `pinned` and nothing more — read-only.
-- `.localSpec` and `.claude` are `pinned, writable` — this project's, on
+- The first two entries have no `private`, so they are the project's own.
+- `.agentSpec` is `private` and nothing more — read-only.
+- `.localSpec` and `.claude` are `private, writable` — this project's, on
   its own branch.
 
 The other fields are ordinary `.cgs`. `default_branch` is the branch a
-pinned repository stays on, which is the field that decides §2's question,
+private repository stays on, which is the field that decides §2's question,
 so always write it. `fallback_branch = "main"` lets a fresh clone work
 before the project-named branch exists.
 
 **One entry covers everything inside it.** `.agentSpec` holds `DevSpec`,
 which reaches this tree through `.agentSpec`'s own nested `.cgs`. You never
-write a second `pinned = true` for it: `DevSpec` sits inside a read-only
+write a second `private = true` for it: `DevSpec` sits inside a read-only
 configuration repo, so it is read-only too. The same goes the other way —
 anything nested inside `.localSpec` is writable, and `--private` reaches
 it.
 
-A nested entry may lock itself down further than its parent: `pinned =
+A nested entry may lock itself down further than its parent: `private =
 true` on its own line, with no `writable`, makes it read-only inside a
 writable parent. It cannot open itself up. `writable = true` inside a
 read-only configuration repo does nothing, because no repository can be
@@ -307,8 +310,8 @@ read-only, the command stops and tells you why rather than doing nothing
 quietly:
 
 ```text
-commit --private: no writable configuration repository in this tree. The pinned
-repositories in this tree are read-only: .agentSpec, DevSpec, DocSpec. A pinned
+commit --private: no writable configuration repository in this tree. The private
+repositories in this tree are read-only: .agentSpec, DevSpec, DocSpec. A private
 repository is read-only unless its .cgs entry also says writable = true.
 ```
 
@@ -372,7 +375,7 @@ Three things to remember:
 
 ## 6. What is coming later
 
-`pinned` today means one thing: a **configuration repo** — documents and
+`private` today means one thing: a **configuration repo** — documents and
 settings shared between projects.
 
 **Data repos are not defined yet.** A repository holding datasets is also
@@ -382,7 +385,7 @@ rhythm rather than with your releases, and may want a tag policy of its
 own. Whether that becomes another field or another value of an existing one
 is still open.
 
-Until then, use `pinned` for configuration, and do not mount large datasets
+Until then, use `private` for configuration, and do not mount large datasets
 this way expecting these rules to fit unchanged.
 
 ---

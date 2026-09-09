@@ -34,7 +34,7 @@ wrong and is the one thing worth reading twice.
 ```mermaid
 graph LR
     T2["02 — real build tree"] --> T3["03 — adopting a real project<br/>YOU ARE HERE"]
-    T3 --> T4["04 — configuration repos<br/>pinned branches"]
+    T3 --> T4["04 — private repos<br/>local and distant"]
     T4 --> REF["docs/MASTER.pdf<br/>full reference"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
@@ -256,10 +256,10 @@ pixi run cgitsync branch retire-submodules
 
 Creates a purely local branch across the whole tree — nothing pushed yet.
 
-One repository can opt out. A repository marked `pinned = true` in the
+One repository can opt out. A repository marked `private = true` in the
 `.cgs` is one you **share with other projects**, so a tree-wide branch move
 skips it and leaves it on its own branch. A tag is different: `cgitsync tag`
-reaches every repository, pinned or not, so a frozen release stays complete.
+reaches every repository, private or not, so a frozen release stays complete.
 Section 9 below uses this, and the user guide's "Branches in a `.cgs`"
 section has the full rule.
 
@@ -381,12 +381,12 @@ project-specific agent-facing documents ComplexGitSync itself uses —
 entries to the project's `.cgs`:
 
 ```toml
-{ repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", pinned = true },
-{ repository = "github:flipoyo/.localSpec", default_branch = "<ProjectName>", fallback_branch = "main", pinned = true },
-{ repository = "github:flipoyo/.claude", default_branch = "<ProjectName>", fallback_branch = "main", pinned = true },
+{ repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", private = true },
+{ repository = "github:flipoyo/.localSpec", default_branch = "<ProjectName>", fallback_branch = "main", private = true },
+{ repository = "github:flipoyo/.claude", default_branch = "<ProjectName>", fallback_branch = "main", private = true },
 ```
 
-`pinned = true` keeps each mount on its own branch when you run a tree-wide
+`private = true` keeps each mount on its own branch when you run a tree-wide
 `branch`, `checkout` or `pull`. Without it, a feature branch you create for
 this project would also be created inside `.agentSpec`, which every other
 project mounts too.
@@ -411,7 +411,7 @@ ComplexGitSync (root) [ALIGNED] @9c9298a br=multi-branch fb=main
 
 - The two repositories this project actually owns — `ComplexGitSync` and
   `DocComplexGitSync` — moved to `multi-branch`.
-- The five pinned mounts did not. `.localSpec` and `.claude` stayed on
+- The five private mounts did not. `.localSpec` and `.claude` stayed on
   `ComplexGitSync`, the branch named after this project. `.agentSpec`,
   `DevSpec` and `DocSpec` stayed on `main`, which every project that mounts
   them reads.
@@ -419,12 +419,12 @@ ComplexGitSync (root) [ALIGNED] @9c9298a br=multi-branch fb=main
   branch targeted. It is what `cgitsync` would clone if the target branch
   did not exist on the remote.
 
-**That last difference decides how carefully you commit.** A mount pinned to
+**That last difference decides how carefully you commit.** A mount private to
 a branch named after your project (`.localSpec`, `.claude` above) is yours —
-push to it freely. A mount pinned to `main` (`.agentSpec` above) is read by
+push to it freely. A mount private to `main` (`.agentSpec` above) is read by
 every project that mounts it, so a push there is published immediately, with
 no branch and no pull request in between. Check which kind you are looking at
-before committing to a pinned mount.
+before committing to a private mount.
 
 Each repository mounts at its own name, so no `relative_path` is needed.
 `.agentSpec` carries its own `install.cgs`, which is why it declares
@@ -439,8 +439,8 @@ needs nothing — it is the same document for every project. Run
 `cgitsync initialise` and the mounts land alongside the ones above;
 `.gitignore` is updated for you.
 
-**Next:** [Tutorial 4 — Including Configuration Repos in `.cgs`: Pinned
-Branches](04_configuration_repos_pinned_branches.md) picks up exactly where
-the three mounts above leave off: what `pinned = true` protects, what it
+**Next:** [Tutorial 4 — Private repos: the ones that configure your
+project](04_private_repos.md) picks up exactly where
+the three mounts above leave off: what `private = true` protects, what it
 does *not* protect, and the safe order for committing and pushing a change
 that touches a shared mount.

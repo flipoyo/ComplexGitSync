@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.git_repo import WorkingRepo
-from ComplexGitSync.git_tree import WorkingGitTree, propagate_pinning
+from ComplexGitSync.git_tree import WorkingGitTree, propagate_privacy
 from ComplexGitSync.status_render import (
     SCOPE_LEGEND,
     _path_is_relative_to,
@@ -158,29 +158,29 @@ class TestScopeColumnNamesWhatARepositoryIs:
 
     A reader of the table should not have to know the `.cgs` field names.
     **private** says the repository is shared with other projects
-    (``pinned``); **local** and **distant** say whether this project may
+    (``private``); **local** and **distant** say whether this project may
     write to it (``writable``) or only read it.
     """
 
     @pytest.mark.parametrize(
-        ("pinned", "writable", "expected"),
+        ("private", "writable", "expected"),
         [
             (False, False, "project"),
             (True, True, "private/local"),
             (True, False, "private/distant"),
         ],
     )
-    def test_each_kind_of_repository_gets_its_own_word(self, pinned, writable, expected):
-        entry = WorkingRepo(repo_id="r", name="r", pinned=pinned, writable=writable)
+    def test_each_kind_of_repository_gets_its_own_word(self, private, writable, expected):
+        entry = WorkingRepo(repo_id="r", name="r", private=private, writable=writable)
 
         assert _status_scope_label(entry) == expected
 
     def test_a_repo_nested_in_a_private_one_is_named_the_same_way(self):
         """It inherits its parent's state, so it must read that way too."""
         tree = WorkingGitTree()
-        tree.add(WorkingRepo(repo_id="shared", name="shared", pinned=True))
+        tree.add(WorkingRepo(repo_id="shared", name="shared", private=True))
         tree.add(WorkingRepo(repo_id="leaf", name="leaf", parent_id="shared"))
-        propagate_pinning(tree)
+        propagate_privacy(tree)
 
         assert _status_scope_label(tree.get("leaf")) == "private/distant"
 
@@ -237,7 +237,7 @@ def test_render_status_table_widens_columns_to_fit_longest_value():
 
 
 def test_render_status_table_matches_golden_status_output_shape():
-    """Byte-for-byte agreement with the shape pinned by
+    """Byte-for-byte agreement with the shape private by
     ``tests/integration/test_golden_release_gaps.py::TestStatusGoldenOutput``
     (``test_status_prints_complete_field_set_for_clean_ready_tree``) — same
     synthetic row tuple, same header/separator/data-row structure.

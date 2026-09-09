@@ -18,7 +18,7 @@ split apart:
 2. ``status`` and ``view-tree`` are invoked in a couple of places
    (``test_tuto_cgsi1.py::test_view_tree_summary`` only asserts the project
    name appears; nothing invokes ``status`` at the CLI level at all), but
-   the *exact field set* each one prints is not pinned down anywhere. A
+   the *exact field set* each one prints is not private down anywhere. A
    later refactor could silently drop or rename a printed field and no test
    would catch it.
 

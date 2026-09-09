@@ -114,7 +114,7 @@ reach everything writable, `pull`/`status`/`clone` reach everything.
 
 Also: every `.cgs` in the tree states its branch explicitly; `view-tree`
 prints `br=` on every line; `discover` drafts dot-named repositories
-pinned; `tutorials/04_configuration_repos_pinned_branches.md` documents it
+pinned; `tutorials/04_private_repos.md` documents it
 for end users.
 
 The full plan and its decisions are in
@@ -219,7 +219,7 @@ the declared flags.
 asked for — a leaf declaring nothing under a pinned parent — plus the same
 rule reached through a real nested `.cgs` via `discover_nested_configs`.
 
-Documented for users in `tutorials/04_configuration_repos_pinned_branches.md`
+Documented for users in `tutorials/04_private_repos.md`
 §3 and `docs/Text/user_guide.tex`; the PDFs were rebuilt. The architecture
 tables in `CLAUDE.md` and `.localSpec/AdditionalSpecs.md` record that
 `git_tree.py` now owns pinning state.

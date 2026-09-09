@@ -75,7 +75,7 @@ from .git_tree import (
     innermost_containing_path,
     make_repo_id,
     normalize_node_types,
-    propagate_pinning,
+    propagate_privacy,
     register_relative_path,
 )
 from .gts_document import (
@@ -303,14 +303,14 @@ def build_registry_from_cgs_document(
             ),
             default_branch=str(repo.get("default_branch") or document.default_branch),
             nested_config=_as_optional_str(repo.get("nested_config")),
-            pinned=bool(repo.get("pinned", False)),
+            private=bool(repo.get("private", False)),
             writable=bool(repo.get("writable", False)),
             remote_name=str(repo.get("remote_name") or document.read("project.default_remote_name", "origin")),
         )
         registry.add(entry)
 
     normalize_node_types(registry)
-    propagate_pinning(registry)
+    propagate_privacy(registry)
     registry.recompute_tree_state()
     document.attach_serialization_context(registry)
     return registry
@@ -407,14 +407,16 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
                 _as_optional_str(repo_state.get("default_branch"))
                 or _repo_ref_name(repo_state, "target")
             ),
-            pinned=bool(repo_state.get("pinned", False)),
+            # "pinned" is the pre-rename name; a snapshot written before it
+            # still loads.
+            private=bool(repo_state.get("private", repo_state.get("pinned", False))),
             writable=bool(repo_state.get("writable", False)),
         )
         registry.add(entry)
         path_to_repo_id[absolute_path] = repo_id
 
     normalize_node_types(registry)
-    propagate_pinning(registry)
+    propagate_privacy(registry)
     registry.recompute_tree_state()
     return registry
 
@@ -481,8 +483,8 @@ def build_gts_document_from_registry(
             repo_data["discovery_state"] = entry.discovery_state.value
         if entry.fallback_branch and entry.fallback_branch != DEFAULT_BRANCH:
             repo_data["fallback_branch"] = entry.fallback_branch
-        if entry.pinned:
-            repo_data["pinned"] = True
+        if entry.private:
+            repo_data["private"] = True
         if entry.writable:
             repo_data["writable"] = True
         # The branch this entry *declares*, recorded separately from the ref
@@ -490,7 +492,7 @@ def build_gts_document_from_registry(
         # default_branch from the target ref -- which for a private/local
         # repository is already a derived branch, so the declared base is
         # lost and the next derivation compounds it. Not in the canonical
-        # hash, for the same reason pinned/writable are not: it says what
+        # hash, for the same reason private/writable are not: it says what
         # the document declared, not what state the tree is in.
         if entry.default_branch and entry.default_branch != entry.target_ref_name:
             repo_data["default_branch"] = entry.default_branch
