@@ -555,3 +555,193 @@ def test_object_missing_methods_does_not_satisfy_protocol():
             return False
 
     assert not isinstance(_Incomplete(), GitRunnerProtocol)
+
+
+# ---------------------------------------------------------------------------
+# Non-UTF-8 output at the subprocess boundary
+#
+# ``git merge-tree``'s legacy form prints the *content* of the files it could
+# not merge. That content is whatever the repository holds — a PDF, an image,
+# a latin-1 source file — and decoding it strictly turned a preflight question
+# into a UnicodeDecodeError before the caller could read the exit code. See
+# AgentSpec/archive/20260910_MergeOutputDecoding_DevPlanTicket.md.
+# ---------------------------------------------------------------------------
+
+
+# Invalid UTF-8: 0xdb starts a two-byte sequence, "!" is not a continuation
+# byte. 0xdb is the byte from the reported traceback.
+_INVALID_UTF8 = b"\xdb!\xfe\xff"
+
+
+def _git_that_lacks_merge_tree_write_tree(tmp_path) -> str:
+    """A ``git`` that does not understand ``merge-tree --write-tree``.
+
+    Forces :meth:`can_merge_cleanly` down its legacy branch on every machine,
+    whatever Git is installed, exactly as Git before 2.38 does (exit 129 with
+    a usage message). Without this the tests below would cover the legacy
+    path only on the developers who happen to have an old Git — and the path
+    that crashed in the field is precisely the legacy one.
+    """
+    shim = tmp_path / "git-shim"
+    shim.write_text(
+        "#!/bin/sh\n"
+        'for arg in "$@"; do\n'
+        '  if [ "$arg" = "--write-tree" ]; then\n'
+        '    echo "usage: git merge-tree <base-tree> <branch1> <branch2>" >&2\n'
+        "    exit 129\n"
+        "  fi\n"
+        "done\n"
+        'exec git "$@"\n',
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    return str(shim)
+
+
+def _repo_with_undecodable_file(tmp_path, *, diverge: bool, payload: bytes) -> Path:
+    """A repository whose merged file is not valid UTF-8.
+
+    Same shape as :func:`_repo_with_feature_branch`, but the file both
+    branches touch holds *payload*. With *diverge*, ``main`` and ``feat``
+    change the same line, so the legacy check has to report a conflict from
+    inside content it cannot decode.
+    """
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir(parents=True)
+    target = repo_path / "payload.bin"
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=repo_path, check=True, capture_output=True)
+
+    git("init", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Test")
+    target.write_bytes(b"base\n" + payload + b"\n")
+    git("add", "-A")
+    git("commit", "-m", "base")
+    git("checkout", "-b", "feat")
+    target.write_bytes(b"feature\n" + payload + b"\n")
+    git("add", "-A")
+    git("commit", "-m", "feature")
+    git("checkout", "main")
+    if diverge:
+        target.write_bytes(b"mainside\n" + payload + b"\n")
+        git("add", "-A")
+        git("commit", "-m", "main change")
+    return repo_path
+
+
+class TestLegacyMergeCheckOnUndecodableOutput:
+    """The reported crash, and the answers that must survive fixing it."""
+
+    def test_the_reported_crash_no_longer_happens(self, tmp_path):
+        repo_path = _repo_with_undecodable_file(
+            tmp_path, diverge=True, payload=_INVALID_UTF8
+        )
+        runner = GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path))
+
+        # The assertion is that this returns at all rather than raising
+        # UnicodeDecodeError; what it returns is the next test's business.
+        assert isinstance(runner.can_merge_cleanly(repo_path, "feat"), bool)
+
+    def test_a_conflict_inside_undecodable_content_is_still_a_conflict(self, tmp_path):
+        """The dangerous failure mode: never approve a merge that conflicts."""
+        repo_path = _repo_with_undecodable_file(
+            tmp_path, diverge=True, payload=_INVALID_UTF8
+        )
+        runner = GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path))
+
+        assert runner.can_merge_cleanly(repo_path, "feat") is False
+
+        with pytest.raises(GitSyncError):
+            runner.merge(repo_path, "feat")
+
+    def test_a_clean_merge_of_undecodable_content_is_still_clean(self, tmp_path):
+        repo_path = _repo_with_undecodable_file(
+            tmp_path, diverge=False, payload=_INVALID_UTF8
+        )
+        runner = GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path))
+
+        assert runner.can_merge_cleanly(repo_path, "feat") is True
+
+    def test_genuinely_binary_content_answers_instead_of_crashing(self, tmp_path):
+        """The shape of the real trigger: a tracked PDF, NUL bytes and all."""
+        pdf_like = b"%PDF-1.7\n\x00\x01\xdb\xff stream \x00\xfe"
+        repo_path = _repo_with_undecodable_file(tmp_path, diverge=True, payload=pdf_like)
+        runner = GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path))
+
+        assert isinstance(runner.can_merge_cleanly(repo_path, "feat"), bool)
+
+    def test_asking_leaves_head_index_and_worktree_untouched(self, tmp_path):
+        """A preflight must not be able to damage what it is inspecting."""
+        repo_path = _repo_with_undecodable_file(
+            tmp_path, diverge=True, payload=_INVALID_UTF8
+        )
+        runner = GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path))
+        head_before = runner.rev_parse_head(repo_path)
+        content_before = (repo_path / "payload.bin").read_bytes()
+
+        runner.can_merge_cleanly(repo_path, "feat")
+
+        assert runner.rev_parse_head(repo_path) == head_before
+        assert (repo_path / "payload.bin").read_bytes() == content_before
+        assert runner.has_unresolved_merge(repo_path) is False
+        assert runner.has_staged_changes(repo_path) is False
+        assert runner.has_uncommitted_changes(repo_path) is False
+
+    def test_the_legacy_branch_is_the_one_being_exercised(self, tmp_path):
+        """Guards the shim itself: without it these tests prove nothing."""
+        repo_path = _repo_with_undecodable_file(
+            tmp_path, diverge=False, payload=_INVALID_UTF8
+        )
+        runner = GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path))
+
+        modern = runner._query(
+            "merge-tree", "--write-tree", "--name-only", "main", "feat", cwd=repo_path
+        )
+
+        assert modern.returncode == 129
+        assert "usage:" in modern.stderr
+
+
+class TestGitOutputDecodingPolicy:
+    """Undecodable bytes on either stream, through both subprocess wrappers."""
+
+    @staticmethod
+    def _shim_emitting(tmp_path, *, stream: str, exit_code: int) -> str:
+        script = tmp_path / f"emit-{stream}-{exit_code}"
+        script.write_text(
+            "#!/bin/sh\n"
+            f"printf '\\333!\\376\\377' >&{1 if stream == 'stdout' else 2}\n"
+            f"exit {exit_code}\n",
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+        return str(script)
+
+    @pytest.mark.parametrize("stream", ["stdout", "stderr"])
+    def test_query_returns_replacement_text_instead_of_raising(self, tmp_path, stream):
+        runner = GitRunner(executable=self._shim_emitting(tmp_path, stream=stream, exit_code=0))
+
+        completed = runner._query("anything")
+
+        assert completed.returncode == 0
+        assert "�" in getattr(completed, stream)
+
+    @pytest.mark.parametrize("stream", ["stdout", "stderr"])
+    def test_query_bytes_hands_back_the_bytes_untouched(self, tmp_path, stream):
+        runner = GitRunner(executable=self._shim_emitting(tmp_path, stream=stream, exit_code=0))
+
+        completed = runner._query_bytes("anything")
+
+        assert getattr(completed, stream) == _INVALID_UTF8
+
+    @pytest.mark.parametrize("stream", ["stdout", "stderr"])
+    def test_a_failing_operation_raises_the_domain_error_not_a_decode_error(
+        self, tmp_path, stream
+    ):
+        """``_run``'s callers must see GitSyncError, never UnicodeDecodeError."""
+        runner = GitRunner(executable=self._shim_emitting(tmp_path, stream=stream, exit_code=3))
+
+        with pytest.raises(GitSyncError, match="Git command failed"):
+            runner._run("anything", cwd=tmp_path)

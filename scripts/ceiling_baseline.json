@@ -32,7 +32,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 15,
-      "loc": 1147,
+      "loc": 1146,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -72,7 +72,7 @@
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 532,
+      "loc": 575,
       "public_symbols": 2
     },
     "git_tree.py": {

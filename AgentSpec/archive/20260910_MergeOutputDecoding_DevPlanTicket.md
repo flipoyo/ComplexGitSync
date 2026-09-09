@@ -15,8 +15,10 @@ work packages, and acceptance criteria.
 **Who it is for.** The developer implementing the fix and its reviewer.
 Read [CLAUDE.md](../CLAUDE.md) and its referenced specs first.
 
-**What you need to do with it.** Implement and validate the work below.
-This ticket records planned work; the fix has not been implemented.
+**What you need to do with it.** Nothing — this ticket is closed. It landed
+on 2026-09-10. Sections 1-4 are kept as written, as the record of what was
+known when the work was planned; section 5 records what was found and what
+shipped, including the two diagnostic questions section 4 left open.
 
 ```mermaid
 graph LR
@@ -101,3 +103,74 @@ workspace as a test. Use temporary repositories for reproduction. No
 runtime fix, release bump, or archive transition is part of landing this
 planning document. The affected real file and reason for fallback remain
 open diagnostic questions for implementation.
+
+## 5. Resolution — implemented 2026-09-10
+
+### The two open diagnostic questions, answered
+
+**Which repository and which file.** `DocComplexGitSync`, mounted at `docs/`
+— not the root repository. The file is `MASTER.pdf`. `docs/` tracks its built
+PDFs, and the legacy `git merge-tree` prints a diff of the conflicting file's
+*content*, so raw Flate-compressed PDF bytes reached `subprocess.run(...,
+text=True)`. Byte `0xdb` at position 277 is inside that stream. Reproduced
+directly against the reporting workspace:
+
+```text
+.     -> True
+docs  -> RAISED UnicodeDecodeError 'utf-8' codec can't decode byte 0xdb ...
+```
+
+**Why the modern check fell back.** The installed Git is **2.34.1**;
+`merge-tree --write-tree` arrived in 2.38. The modern form exits **129** with
+`usage: git merge-tree <base-tree> <branch1> <branch2>` on stderr, which is
+one of the "anything else" cases that falls through. The fallback was correct;
+what followed it was not. No code change was needed here, and none was made:
+the version boundary is now named in `can_merge_cleanly`'s own comment.
+
+Neither answer implicates `CGSHOME`, as section 1 anticipated. Both streams
+were checked; the invalid bytes were on stdout.
+
+### What shipped
+
+`git_runner.py` now states one decoding policy for the whole module and
+applies it at both subprocess wrappers:
+
+- `_query_bytes()` is the new raw boundary — output exactly as Git wrote it.
+- `_query()` decodes with `errors="replace"`, so a question can never become
+  an exception.
+- `_run()` decodes the same way, so an *operation* fails with `GitSyncError`
+  naming the command rather than a decoding traceback. This goes beyond the
+  merge check on purpose: a path that is not valid UTF-8 would have crashed
+  `status_porcelain` in exactly the same way, and two policies at one
+  boundary would have drifted.
+- `can_merge_cleanly()`'s legacy branch reads bytes and searches them for
+  `b"<<<<<<<"`. The marker is ASCII, and replacement decoding can never
+  consume an ASCII byte (a UTF-8 continuation byte is `0x80`-`0xBF`), so the
+  answer is exact whatever surrounds it — but searching the bytes removes the
+  question entirely.
+
+Exit-code handling is unchanged, and an unexpected failure of either form
+still counts as unmergeable rather than clean.
+
+### Coverage
+
+`tests/unit/test_git_runner.py` forces the legacy branch on every machine
+with a `git` shim that rejects `--write-tree` (exit 129), so the covered path
+does not depend on the installed Git. Fixtures hold invalid UTF-8 both as
+text-with-conflict-markers — the case that must still report a conflict — and
+as genuinely binary content with NUL bytes, the shape of the real trigger.
+Both streams are covered through `_query`, `_query_bytes` and `_run`.
+`tests/integration/test_merge_conflict_preflight.py` builds real repositories
+and asserts the tree-level guarantee: one blocked repository merges nothing
+anywhere, and the check leaves `HEAD`, index and worktree byte-identical.
+
+Fourteen of these tests fail against the pre-fix `git_runner.py` and pass
+after it.
+
+### Not done here
+
+The reporter's own `merge apoub` was not run as a test, per section 4. That
+merge is still open, and `main` has moved since: the root repository now
+genuinely conflicts with `apoub` on `AgentSpec/` content, which is a merge
+decision for its author, not a bug.
+
