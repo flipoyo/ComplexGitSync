@@ -122,8 +122,8 @@
     },
     "registry.py": {
       "internal_imports": 36,
-      "loc": 450,
-      "public_symbols": 3
+      "loc": 522,
+      "public_symbols": 4
     },
     "snapshot_resolver.py": {
       "internal_imports": 0,

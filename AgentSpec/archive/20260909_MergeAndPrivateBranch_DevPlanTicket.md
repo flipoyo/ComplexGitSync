@@ -342,6 +342,28 @@ must never quietly create a branch in a repository shared with other
 projects. Without that split the feature is either unreachable or
 unavoidable.
 
+**A `.gts` written by an older build silently dropped `writable`, and
+nothing brought it back.** The worst of the three, because it made the rule
+look broken rather than absent. ComplexGitSync manages itself, so
+`cgitsync checkout main` puts the root on a branch whose code predates
+`writable`; the next command reads the snapshot, keeps the keys it knows,
+and writes it back without that one. `pull` with no argument reloads the
+`.gts`, not the `.cgs`, so the loss was permanent — a private/local
+repository read as private/distant, and the derived branch was never
+targeted.
+
+Fixed by settling where a declared fact lives. A `.cgs` is hand-written and
+says what a repository **is**; a `.gts` is generated and says what the
+tree's **state** is. `registry.reconcile_declared_fields` re-reads `pinned`,
+`writable` and `default_branch` from the `.cgs` every time a snapshot is
+loaded, so a lossy snapshot heals on the next command instead of poisoning
+every one after it.
+
+It reads the **declaring parent's** document, not the entry's own: a mount's
+pin is declared by whatever mounts it, and an entry's `source_cgs_path` can
+point at the document it *contains*. Reading from there found no declaration
+and unpinned `.agentSpec` — caught before the fix shipped, and now a test.
+
 **The derivation compounded, and the base was lost on every snapshot.**
 `resolve_propagated_ref` took its base from `default_branch` *or*
 `target_ref_name`, and the `.gts` reader rebuilt `default_branch` from the

@@ -40,6 +40,7 @@ import downward from it.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -413,10 +414,96 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
         registry.add(entry)
         path_to_repo_id[absolute_path] = repo_id
 
+    reconcile_declared_fields(registry)
     normalize_node_types(registry)
     propagate_pinning(registry)
     registry.recompute_tree_state()
     return registry
+
+
+_DECLARED_FIELDS = ("pinned", "writable", "default_branch")
+
+
+def reconcile_declared_fields(registry: WorkingGitTree) -> tuple[str, ...]:
+    """Re-read each entry's **declared** fields from the ``.cgs`` that declares it.
+
+    A ``.cgs`` is hand-written and says what a repository *is*: ``pinned``,
+    ``writable``, ``default_branch``. A ``.gts`` is generated and says what
+    the tree's *state* is. When the two disagree about a declared field, the
+    ``.cgs`` is right — it is the only place the fact was ever stated.
+
+    This exists because a snapshot can lose a field it does not know. A build
+    of ComplexGitSync older than ``writable`` reads a ``.gts``, keeps the keys
+    it recognises, and writes the snapshot back without that one; the next
+    command loads the lossy copy and a writable configuration repository
+    silently reads as read-only. Since ``pull`` with no argument reloads the
+    ``.gts`` rather than the ``.cgs``, nothing brought the field back and the
+    loss was permanent. Reconciling here makes it self-healing instead: one
+    command with a build that understands the field repairs the snapshot.
+
+    The document consulted is the **parent's** ``source_cgs_path``, not the
+    entry's own. A repository is declared by whatever document mounts it:
+    ``.agentSpec`` is declared by the project's ``.cgs``, while ``DevSpec``
+    is declared by ``.agentSpec``'s nested one. An entry's own
+    ``source_cgs_path`` can point at the document it *contains* rather than
+    the one that declares it, and reading a pin from there would find no
+    declaration and quietly unpin a shared repository — the opposite of the
+    fault this repairs.
+
+    Entries with no parent, or whose parent's ``.cgs`` is missing,
+    unreadable, or does not declare them, are left exactly as the snapshot
+    had them.
+
+    Returns one ``"<repo>.<field>: <old> -> <new>"`` string per correction,
+    so a caller can report what a snapshot had got wrong.
+    """
+    by_source: dict[Path, list[WorkingRepo]] = {}
+    for entry in registry.values():
+        if entry.parent_id is None:
+            continue
+        parent = registry.repos.get(entry.parent_id)
+        if parent is None or parent.source_cgs_path is None:
+            continue
+        by_source.setdefault(Path(parent.source_cgs_path), []).append(entry)
+
+    corrections: list[str] = []
+    for source_path, entries in by_source.items():
+        try:
+            declared_repos = CgsDocument.from_toml(source_path).repos
+        except (OSError, ValueError, ConfigValidationError):
+            # An unreadable or moved .cgs is not an error here: the snapshot
+            # still describes a real tree, and this pass is a repair, not a
+            # requirement.
+            continue
+        declared = {
+            str(repo["project_name"]): repo
+            for repo in declared_repos
+            if repo.get("project_name")
+        }
+        for entry in entries:
+            spec = declared.get(str(entry.project_name or entry.name))
+            if spec is not None:
+                corrections.extend(_apply_declared_fields(entry, spec))
+    return tuple(corrections)
+
+
+def _apply_declared_fields(entry: WorkingRepo, spec: Mapping[str, Any]) -> list[str]:
+    """Copy *spec*'s declared fields onto *entry*, reporting what changed."""
+    changed: list[str] = []
+    for field in _DECLARED_FIELDS:
+        if field not in spec:
+            continue
+        declared_value = spec[field]
+        if field == "default_branch":
+            if declared_value is None:
+                continue
+        else:
+            declared_value = bool(declared_value)
+        current = getattr(entry, field)
+        if current != declared_value:
+            changed.append(f"{entry.name}.{field}: {current!r} -> {declared_value!r}")
+            setattr(entry, field, declared_value)
+    return changed
 
 
 def build_gts_document_from_registry(
