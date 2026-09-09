@@ -175,12 +175,20 @@ rely on it. **This is fixed — see §7.**
    the rebuilt workspace holds one state directory, `.cgitsync` was never
    hand-edited, and `cgitsync status` reports `ready=true complete=true
    repos=7 errors=0` against it.
-5. Open the pull request for `ComplexGitSync` and for `DocComplexGitSync`;
-   both branches are named `multi-branch`. `maintainerClearance` requires a
-   pull request on the default branch. **Still to do — the owner's call.**
-6. After the merge, delete `examples/multibranch_wip.cgs` and archive this
-   ticket per `.agentSpec/TICKETLIFECYCLE.md`. Its whole purpose is to stop
-   being needed.
+5. ~~Open the pull request for `ComplexGitSync` and for
+   `DocComplexGitSync`.~~ **Dropped by the owner on 2026-09-09.** No pull
+   request will be opened for this work.
+6. After the work reaches `main`, delete `examples/multibranch_wip.cgs` and
+   archive this ticket per `.agentSpec/TICKETLIFECYCLE.md`. Its whole
+   purpose is to stop being needed.
+
+**Open question left by step 5.** Four repositories carry commits that are
+on `multi-branch` (or on `ComplexGitSync`, for `.claude` and `.localSpec`)
+and nowhere else. With no pull request, nothing yet moves them to the
+default branch, and nothing has pushed them to their remotes either. Until
+they are at least pushed, the only copy is this working tree. Whoever
+picks this up decides how the work lands; this ticket no longer prescribes
+a pull request.
 
 ## 7. What was done on 2026-09-09
 
