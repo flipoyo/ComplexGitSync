@@ -2,6 +2,13 @@
 
 *Created: 2026-09-09*
 
+> **Superseded on 2026-09-09 by
+> [`AgentSpec/MergeAndPrivateBranch_DevPlanTicket.md`](../MergeAndPrivateBranch_DevPlanTicket.md).**
+> The two tickets turned out to be one problem: implementing `merge` makes
+> the private/local branch question fall out of it as `merge --private`.
+> This document is a historical record of the separate design and is not
+> live work. Everything current is in the ticket above.
+
 ## Abstract — read this first
 
 **The one-line version.** ComplexGitSync can put a tree of repositories
@@ -53,7 +60,7 @@ it, nothing merges it, and nothing deletes it afterwards.
 
 The gap is not cosmetic. `maintainerClearance` — the ruleset on
 `flipoyo/ComplexGitSync`, recorded in
-[`AnonymousAgent_DevPlanTicket.md`](AnonymousAgent_DevPlanTicket.md) §1.3 —
+[`AnonymousAgent_DevPlanTicket.md`](../openTickets/AnonymousAgent_DevPlanTicket.md) §1.3 —
 requires a pull request to reach the default branch. A local
 `git merge` and `git push` is refused by the remote. So for this project
 the missing mechanism is not a convenience; it is the only legal route.
@@ -76,7 +83,7 @@ assumes success is not a design.
 pinned to `<ProjectName>`, not to the feature branch, so no pull request on
 the feature branch covers them, and their commits are already on the branch
 every other branch of the project reads. That is the subject of
-[`PrivateBranchFollowsCheckout_DevPlanTicket.md`](PrivateBranchFollowsCheckout_DevPlanTicket.md),
+[`PrivateBranchFollowsCheckout_DevPlanTicket.md`](20260909_PrivateBranchFollowsCheckout_DevPlanTicket.md),
 and the two tickets have to be designed together: if that ticket gives a
 private/local repo a per-feature branch, this one has to land it in the
 same operation, or documentation reaches the default branch describing code

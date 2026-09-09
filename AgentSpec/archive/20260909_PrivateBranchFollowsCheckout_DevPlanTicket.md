@@ -2,6 +2,13 @@
 
 *Created: 2026-09-09*
 
+> **Superseded on 2026-09-09 by
+> [`AgentSpec/MergeAndPrivateBranch_DevPlanTicket.md`](../MergeAndPrivateBranch_DevPlanTicket.md).**
+> The two tickets turned out to be one problem: implementing `merge` makes
+> the private/local branch question fall out of it as `merge --private`.
+> This document is a historical record of the separate design and is not
+> live work. Everything current is in the ticket above.
+
 ## Abstract — read this first
 
 **The one-line version.** `cgitsync checkout <branch>` moves the project's
@@ -131,7 +138,7 @@ branch, merging `multi-branch` into `main` must also merge that into
 `ComplexGitSync`, or the documentation lands on `main` describing code
 that arrived without it. That is a merge-mechanism question and it is
 owned by
-[`PullRequestAndMerge_DevPlanTicket.md`](PullRequestAndMerge_DevPlanTicket.md).
+[`PullRequestAndMerge_DevPlanTicket.md`](20260909_PullRequestAndMerge_DevPlanTicket.md).
 **These two tickets have to be designed together; neither works alone.**
 
 ## 4. Work packages
