@@ -13,12 +13,14 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError, TreeNotReadyError
+from ComplexGitSync.git_branch import resolve_propagated_ref
 from ComplexGitSync.git_repo import (
     NodeType,
     RefKind,
     RepoLifecycleState,
     RepoScope,
     SyncState,
+    WorkingRepo,
 )
 from ComplexGitSync.git_tree import (
     GitTree,
@@ -42,6 +44,7 @@ from ComplexGitSync.operations import (
     propagate_global_branch,
     push_tree,
     refresh_private_tree,
+    resolve_existing_propagated_ref,
     restart_tree,
     restart_tree_force,
     tag_tree,
@@ -1591,6 +1594,53 @@ class TestOnlyBranchCreatesTheDerivedBranch:
         checkout_tree(registry, runner, "multi-branch")
 
         assert (leaf.absolute_path, "MyProject") in runner.checked_out
+
+
+class TestTheFallbackGoesToTheDeclaredBase:
+    """Moving back to a branch with no settings branch of its own.
+
+    Going from `multi-branch` to `main` finds no `<base>_main`. The right
+    answer is the base itself — not `<base>_multi-branch`, which is the
+    settings branch of the branch you just left.
+    """
+
+    @staticmethod
+    def _entry() -> WorkingRepo:
+        return WorkingRepo(
+            repo_id="c",
+            name=".claude",
+            pinned=True,
+            writable=True,
+            default_branch="MyProject",
+            resolved_ref_name="MyProject_multi-branch",
+            target_ref_name="MyProject_multi-branch",
+        )
+
+    class _Runner:
+        """Only the base and one derived branch exist."""
+
+        known = {"MyProject", "MyProject_multi-branch"}
+
+        def branch_known(self, path, branch, *, remote="origin"):
+            return branch in self.known
+
+    def test_an_existing_derived_branch_is_used(self):
+        entry = self._entry()
+        raw = resolve_propagated_ref(entry, "multi-branch")
+
+        assert resolve_existing_propagated_ref(entry, raw, self._Runner()).name == (
+            "MyProject_multi-branch"
+        )
+
+    def test_a_missing_one_falls_back_to_the_base_not_the_previous_branch(self):
+        """The bug: it landed on the branch it was already on."""
+        entry = self._entry()
+        raw = resolve_propagated_ref(entry, "main")
+
+        landed = resolve_existing_propagated_ref(entry, raw, self._Runner()).name
+
+        assert landed == "MyProject"
+        assert landed != "MyProject_multi-branch"
 
 
 class TestMergeRefusesToMergeABranchIntoItself:

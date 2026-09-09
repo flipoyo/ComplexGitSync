@@ -62,8 +62,8 @@
     },
     "git_branch.py": {
       "internal_imports": 2,
-      "loc": 306,
-      "public_symbols": 9
+      "loc": 314,
+      "public_symbols": 10
     },
     "git_repo.py": {
       "internal_imports": 0,
@@ -106,8 +106,8 @@
       "public_symbols": 1
     },
     "operations.py": {
-      "internal_imports": 19,
-      "loc": 1180,
+      "internal_imports": 20,
+      "loc": 1185,
       "public_symbols": 22
     },
     "orchestre.py": {
@@ -122,7 +122,7 @@
     },
     "registry.py": {
       "internal_imports": 36,
-      "loc": 445,
+      "loc": 450,
       "public_symbols": 3
     },
     "snapshot_resolver.py": {

@@ -342,6 +342,26 @@ must never quietly create a branch in a repository shared with other
 projects. Without that split the feature is either unreachable or
 unavoidable.
 
+**The derivation compounded, and the base was lost on every snapshot.**
+`resolve_propagated_ref` took its base from `default_branch` *or*
+`target_ref_name`, and the `.gts` reader rebuilt `default_branch` from the
+recorded target ref. So once a repository moved to `<base>_multi-branch`,
+that became its base: the next derivation would have produced
+`<base>_multi-branch_main`, and the declared base was gone for good. The
+same fault made `checkout main` land a private/local repository back on
+`<base>_multi-branch` — the settings branch of the branch you just left —
+instead of on the base.
+
+Fixed in three places. `git_branch.private_local_base` reads
+`default_branch` and nothing else, with a docstring saying why: the base is
+a **declared fact**, and where a repository sits is not. The `.gts` now
+records `default_branch` when it differs from the ref, so it survives a
+round trip — an optional key outside the canonical hash, exactly like
+`pinned` and `writable`, so no snapshot ever written changes its hash. And
+`resolve_existing_propagated_ref` falls back to that declared base rather
+than to `resolve_entry_ref`, which preferred where the repository already
+was.
+
 **`merge <B>` while the tree was on `B` silently did nothing.** Git reports
 merging a branch into itself as success, so the command printed a plan, ran,
 and reported success having done nothing — which reads as "it worked" when

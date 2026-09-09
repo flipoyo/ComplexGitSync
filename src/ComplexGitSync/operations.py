@@ -43,6 +43,7 @@ from .errors import GitSyncError, TreeNotReadyError
 from .git_branch import (
     BranchResolution,
     BranchSource,
+    private_local_base,
     resolve_entry_ref,
     resolve_propagated_ref,
 )
@@ -135,8 +136,12 @@ def resolve_existing_propagated_ref(
     ``<base>_<branch>`` is derived, not declared, and creating it is a
     deliberate act (``cgitsync branch``), not something a checkout does
     behind your back. When it is missing both locally and on the remote,
-    this returns what the entry's own fallback chain says instead — which
-    for an untouched tree is exactly where that repository already sits.
+    this falls back to the repository's **declared base**.
+
+    Not to where the repository currently sits. Moving a tree from
+    ``multi-branch`` back to ``main`` finds no ``<base>_main``, and the right
+    answer then is the base itself — not ``<base>_multi-branch``, which is
+    the settings branch of the branch you just left.
 
     That is what lets this ship without a migration: until somebody creates
     the derived branch, every tree behaves as it does today.
@@ -146,8 +151,9 @@ def resolve_existing_propagated_ref(
     remote = repo.remote_name or "origin"
     if git_runner.branch_known(repo.absolute_path, resolution.name, remote=remote):
         return resolution
-    fallback = resolve_entry_ref(repo)
-    return BranchResolution(name=fallback.name, kind=None, source=BranchSource.FALLBACK)
+    return BranchResolution(
+        name=private_local_base(repo), kind=None, source=BranchSource.FALLBACK
+    )
 
 
 # ---------------------------------------------------------------------------

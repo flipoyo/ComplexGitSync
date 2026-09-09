@@ -35,6 +35,7 @@ The public surface
     apply_declared_defaults   Fill one entry's declared branch fields in place
     resolve_declared_ref      Target ref of one repository entry in a document
     resolve_entry_ref         Target ref of a live WorkingRepo
+    private_local_base        The branch a pinned repo declares as its own
     private_local_branch      Build <base>_<branch> for a private/local repo
     resolve_propagated_ref    Target ref under a tree-wide branch move (pinning)
 """
@@ -283,6 +284,20 @@ is not.
 """
 
 
+def private_local_base(entry: WorkingRepo) -> str:
+    """The branch a pinned repository calls its own, before any derivation.
+
+    Read from ``default_branch`` — what the ``.cgs`` **declares** — and
+    nothing else. Deliberately not ``resolved_ref_name`` or
+    ``target_ref_name``: those say where the repository currently sits, and
+    for a private/local repository that is already a derived branch. Basing
+    the next derivation on it would compound
+    (``ComplexGitSync_multi-branch_main``) and lose the declared base for
+    good. The base is a declared fact; where the repo sits is not.
+    """
+    return _as_optional_str(entry.default_branch) or DEFAULT_BRANCH
+
+
 def private_local_branch(base: str, project_branch: str) -> str:
     """Build a private/local repository's branch for *project_branch*.
 
@@ -330,11 +345,7 @@ def resolve_propagated_ref(
     rewrite the kind of ref that entry already carries.
     """
     if entry.effective_pinned and ref_kind is RefKind.BRANCH:
-        base = (
-            _as_optional_str(entry.default_branch)
-            or _as_optional_str(entry.target_ref_name)
-            or DEFAULT_BRANCH
-        )
+        base = private_local_base(entry)
         if entry.effective_writable:
             return BranchResolution(
                 name=private_local_branch(base, ref_name),

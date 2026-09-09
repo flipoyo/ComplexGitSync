@@ -400,7 +400,13 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
             access_protocol=_parse_enum(
                 AccessProtocol, repo_state.get("access_protocol"), AccessProtocol.SSH
             ),
-            default_branch=_repo_ref_name(repo_state, "target"),
+            # A snapshot written before default_branch was recorded has no
+            # such key; the target ref was the only thing to fall back to
+            # and stays the answer for those.
+            default_branch=(
+                _as_optional_str(repo_state.get("default_branch"))
+                or _repo_ref_name(repo_state, "target")
+            ),
             pinned=bool(repo_state.get("pinned", False)),
             writable=bool(repo_state.get("writable", False)),
         )
@@ -479,6 +485,15 @@ def build_gts_document_from_registry(
             repo_data["pinned"] = True
         if entry.writable:
             repo_data["writable"] = True
+        # The branch this entry *declares*, recorded separately from the ref
+        # it currently sits on. Without it, reloading a snapshot re-derives
+        # default_branch from the target ref -- which for a private/local
+        # repository is already a derived branch, so the declared base is
+        # lost and the next derivation compounds it. Not in the canonical
+        # hash, for the same reason pinned/writable are not: it says what
+        # the document declared, not what state the tree is in.
+        if entry.default_branch and entry.default_branch != entry.target_ref_name:
+            repo_data["default_branch"] = entry.default_branch
         if entry.fallback_applied:
             repo_data["fallback_applied"] = entry.fallback_applied
         if not entry.is_reachable:

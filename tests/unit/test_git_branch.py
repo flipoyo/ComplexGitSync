@@ -28,6 +28,7 @@ from ComplexGitSync.git_branch import (
     BranchResolution,
     BranchSource,
     apply_declared_defaults,
+    private_local_base,
     private_local_branch,
     resolve_declared_ref,
     resolve_entry_ref,
@@ -366,6 +367,27 @@ class TestPrivateLocalBranchFollowsTheProject:
             entry = self._entry(pinned=True, writable=writable, default_branch="b")
             assert resolve_propagated_ref(entry, "feature-x").kind is None
 
+    def test_the_base_is_the_declared_branch_not_where_the_repo_sits(self):
+        """The derivation must not compound.
+
+        After a checkout, a private/local repo sits on `<base>_<branch>`. If
+        the next derivation used that, it would build
+        `<base>_<branch>_<other>` and the declared base would be gone for
+        good.
+        """
+        entry = WorkingRepo(
+            repo_id="r",
+            name="r",
+            pinned=True,
+            writable=True,
+            default_branch="MyProject",
+            resolved_ref_name="MyProject_feature-x",
+            target_ref_name="MyProject_feature-x",
+        )
+
+        assert private_local_base(entry) == "MyProject"
+        assert resolve_propagated_ref(entry, "other").name == "MyProject_other"
+
     def test_the_separator_is_an_underscore_and_a_hyphen_would_be_ambiguous(self):
         """`multi-branch` is itself hyphenated — that is why `_` was chosen."""
         assert PRIVATE_LOCAL_SEPARATOR == "_"
@@ -582,24 +604,44 @@ def test_this_trees_own_cgs_pins_exactly_the_shared_mounts():
 def test_the_workspace_mounts_sit_on_the_branches_their_cgs_names():
     """Ticket §8.4, run against this workspace instead of a fresh clone.
 
+    A private/**distant** mount sits on exactly the branch its ``.cgs``
+    names; nothing this project does may move it. A private/**local** mount
+    sits on that branch *or* on one derived from it — ``<base>_<project
+    branch>`` — because it records this project's settings per project
+    branch. Both are checked; what is not allowed is a mount on a branch
+    unrelated to the one it declares.
+
     Skipped in a plain checkout, where the mounts are not on disk.
     """
-    expected = {
+    distant = {
         ".agentSpec": "main",
         ".agentSpec/DevSpec": "main",
-        ".localSpec": "ComplexGitSync",
-        ".claude": "ComplexGitSync",
         "docs/DocSpec": "main",
     }
-    present = {path: branch for path, branch in expected.items() if (_REPO_ROOT / path / ".git").exists()}
+    local = {
+        ".localSpec": "ComplexGitSync",
+        ".claude": "ComplexGitSync",
+    }
+    present = {
+        path: base
+        for path, base in {**distant, **local}.items()
+        if (_REPO_ROOT / path / ".git").exists()
+    }
     if not present:
         pytest.skip("mounted repositories are not present in this checkout")
 
-    for relative, branch in present.items():
+    for relative, base in present.items():
         head = subprocess.run(
             ["git", "-C", str(_REPO_ROOT / relative), "branch", "--show-current"],
             capture_output=True,
             text=True,
             check=True,
         ).stdout.strip()
-        assert head == branch, f"{relative} is on {head!r}, its .cgs names {branch!r}"
+        if relative in local:
+            allowed = head == base or head.startswith(base + PRIVATE_LOCAL_SEPARATOR)
+            assert allowed, (
+                f"{relative} is on {head!r}; a private/local mount belongs on "
+                f"{base!r} or a branch derived from it"
+            )
+        else:
+            assert head == base, f"{relative} is on {head!r}, its .cgs names {base!r}"
