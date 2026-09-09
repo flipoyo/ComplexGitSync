@@ -362,7 +362,7 @@ class TestCgsDocumentValid:
         self, tmp_path: Path
     ):
         """A repository's own default_branch, distinct from the project's,
-        is the mechanism the AgenticMounts split uses to pin one project's
+        is the mechanism the AgenticMounts split uses to hold one project's
         branch of a shared repository (e.g. .localSpec, claude)."""
         doc = CgsDocument.from_dict(
             {
@@ -646,8 +646,10 @@ class TestCgsDocumentValid:
         assert reloaded.repos[0]["tag"] == "tag-does-not-need-to-exist"
 
     def test_from_toml_parses_example_file(self):
-        examples = Path(__file__).parent.parent.parent / "examples"
-        doc = CgsDocument.from_toml(examples / "complexgitsync.cgs")
+        # install.cgs at the repo root is the only copy of ComplexGitSync's
+        # own spec; the examples/ duplicate was removed.
+        repo_root = Path(__file__).parent.parent.parent
+        doc = CgsDocument.from_toml(repo_root / "install.cgs")
         assert doc.project_name == "ComplexGitSync"
         # main, not a branch that never existed on the remote: see
         # AgentSpec/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md D2.
@@ -996,8 +998,8 @@ class TestRoundTrips:
         assert reloaded.is_ready is True
 
     def test_cgs_toml_round_trip(self, tmp_path: Path):
-        examples = Path(__file__).parent.parent.parent / "examples"
-        original = CgsDocument.from_toml(examples / "complexgitsync.cgs")
+        repo_root = Path(__file__).parent.parent.parent
+        original = CgsDocument.from_toml(repo_root / "install.cgs")
         out = tmp_path / "rewritten.cgs"
         original.to_toml(out)
         reloaded = CgsDocument.from_toml(out)

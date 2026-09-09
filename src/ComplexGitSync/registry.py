@@ -407,9 +407,7 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
                 _as_optional_str(repo_state.get("default_branch"))
                 or _repo_ref_name(repo_state, "target")
             ),
-            # "pinned" is the pre-rename name; a snapshot written before it
-            # still loads.
-            private=bool(repo_state.get("private", repo_state.get("pinned", False))),
+            private=bool(repo_state.get("private", False)),
             writable=bool(repo_state.get("writable", False)),
         )
         registry.add(entry)

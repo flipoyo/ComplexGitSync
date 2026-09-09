@@ -729,7 +729,7 @@ def test_propagate_global_branch_leaves_a_private_repo_on_its_own_branch(tmp_pat
 
 
 def test_propagate_global_branch_still_moves_a_private_repo_to_a_tag(tmp_path):
-    """Pinning governs branch propagation only, so a frozen release stays whole."""
+    """Privacy governs branch propagation only, so a frozen release stays whole."""
     registry = _make_ready_registry(tmp_path)
     private = registry.get("root:deps/leaf")
     private.private = True

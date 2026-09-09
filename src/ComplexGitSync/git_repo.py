@@ -124,8 +124,8 @@ class RepoScope(StrEnum):
         private. The default for commands that write this project's own
         history (``add``, ``commit``, ``push``).
     ``PRIVATE``
-        Pinned repositories this project may write: shared, but on a branch
-        of its own. What ``--private`` selects.
+        Private repositories this project may write: shared, but on a
+        branch of its own. What ``--private`` selects.
     ``WRITABLE``
         ``PROJECT`` and ``PRIVATE`` together — every repository ComplexGitSync
         may write to at all. What ``tag`` and ``freeze-release`` reach.

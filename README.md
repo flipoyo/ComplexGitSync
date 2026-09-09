@@ -3,7 +3,10 @@ __An alternative to git submodules for complex multi git-repo project management
 
 *Created: 2026-05-12*
 
-## 1. What is ComplexGitSync for?
+
+## 1. Must Know
+
+### 1.1 What is ComplexGitSync for?
 
 ComplexGitSync is a CLI (command-line tool) for synchronising a multi git-repository 
 workspace — in the form of a GitTree — from one local `.cgs`
@@ -11,26 +14,28 @@ specification (ASCII file) or one tracked `.gts` workspace snapshot (ASCII file 
 
 The CLI is used to operate the same git command on all repos that compose the project. It is a robust and convenient alternative to git submodules, offering a straightforward development experience.
 
-### The two kinds of repository
+### Two kinds of repository
 
-A tree holds two kinds, and telling them apart is most of what you need to
+A tree holds two kinds of Git repos, and telling them apart is most of what you need to
 know:
 
 - **Project repos** — the work itself. Whatever the project is for: the
-  code, the documents, the data. These follow the project's branch.
+  code, the documents, public data. These follow the project's branch.
 - **Private repos** — how the project is run: the pipelines, the agent
-  instructions, the rules. These are shared with your other projects, so
+  instructions, the rules, private data. These are shared with your other projects, so
   they stay on their own branch instead of following yours.
 
-Private repos come in two kinds, and the difference is who may write:
+ComplexGitSync considers Private repos as read-only by default. Private repos come in two kinds, and the difference is who may write:
 
 | | What it is | You may |
 |---|---|---|
 | **private/local** | your own settings, on a branch named after this project | read and write, with `--private` |
 | **private/distant** | someone else's repository | read only |
 
-Every command that touches Git takes `--private`, which points it at your
-private/local repos instead of the project's own. Nothing ever writes to a
+`--private` points a command at your private/local repos instead of the
+project's own. Eleven commands take it — `pull`, `pull-force`, `checkout`,
+`branch`, `add`, `rm`, `commit`, `merge`, `push`, `tag` and `freeze`; the
+table in section 3 marks each one. ComplexGitSync never writes to a
 private/distant repo.
 
 ```toml
@@ -41,6 +46,7 @@ repos = [
 ]
 ```
 
+### 1.2 How to run ComplexGitSync ?
 
 ComplexGitSync is developed and run with [Pixi](https://pixi.sh) only —
 `pip install -e .` is not a supported workflow. There is no global install:
@@ -214,36 +220,53 @@ Full walkthrough: [tutorials/01_first_multi_repo_workspace.md](tutorials/01_firs
 
 ## 3. `cgitsync` command list
 
-| Group | Command | Description |
-|---|---|---|
-| Minimalist | `initialise` | Initialise a project tree: clone(.cgs) or restore state(.gts). |
-| Minimalist | `bootstrap` | Clone a brand-new project tree into an isolated CGSHOME, for running ComplexGitSync standalone (not nested inside the project). |
-| Minimalist | `clean-init` | Purge generated clone state, then initialise from a .cgs spec. |
-| Minimalist | `freeze-release` | Run add, commit, pull, push, and freeze from a READY tree. |
-| Minimalist | `freeze-release-force` | Run add, commit, pull-force, push, and freeze from a READY tree. |
-| Minimalist | `status` | Summarize tree readiness and sync state. |
-| Minimalist | `view-tree` | Render a topology-focused tree view in terminal. |
-| Minimalist | `launch-release` | Check out a frozen release tag from a READY tree. |
-| Expert | `purge` | Remove generated clone state for a .cgs workspace. |
-| Expert | `validate` | Parse, normalize, and validate a .cgs or validate a .gts topology. |
-| Expert | `clone` | Clone a nested project tree from .cgs. |
-| Expert | `pull` | Resynchronise an existing project tree from .cgs or .gts. |
-| Expert | `pull-force` | Destructively resynchronise an existing project tree from .cgs or .gts. |
-| Expert | `checkout` | Synchronize the tree to a branch or tag. |
-| Expert | `branch` | Create a branch across the full READY tree without checkout. |
-| Expert | `add` | Stage all changes across a READY tree. |
-| Expert | `rm` | Remove one or more tracked files, each from the repo that owns it. |
-| Expert | `commit` | Commit dirty repositories from a READY tree. |
-| Expert | `merge` | Merge a project branch across a READY tree, leaf-first. |
-| Expert | `push` | Push repositories from a READY tree. |
-| Expert | `tag` | Create and push a tag across a READY tree. |
-| Expert | `freeze` | Freeze a versioned state and emit a .gts snapshot. |
-| Expert | `import-submodules` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
-| Expert | `init-from-submodules` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
-| Expert | `verify` | Verify the hash-chained .cgitsync/lgr register for tamper-evidence. |
-| Configuration | `discover` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
-| Configuration | `configure` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
-| Configuration | `create-cgs` | Create a validated .cgs specification from CLI project definitions. |
+Every command below is a real subcommand of `cgitsync`; the list is
+complete. "Arguments and key options" gives the shape of the call — angle
+brackets are required, square brackets optional — and the flags that change
+what the command does. Run `cgitsync <command> --help` for the full set.
+
+| Group | Command | Arguments and key options | Description |
+|---|---|---|---|
+| Minimalist | `initialise` | `[source]` `--output-path` `--force-protocol` `--commit-gitignore` | Initialise a project tree: clone(.cgs) or restore state(.gts). |
+| Minimalist | `bootstrap` | `<source> <project-name>` `--cgs-path` `--force-protocol` | Clone a brand-new project tree into an isolated CGSHOME, for running ComplexGitSync standalone (not nested inside the project). |
+| Minimalist | `clean-init` | `<source>` `--output-path` `--force-protocol` `--commit-gitignore` | Purge generated clone state, then initialise from a .cgs spec. |
+| Minimalist | `freeze-release` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull, push, and freeze from a READY tree. |
+| Minimalist | `freeze-release-force` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull-force, push, and freeze from a READY tree. |
+| Minimalist | `status` | `--gts` `--search-dir` | Summarize tree readiness and sync state. |
+| Minimalist | `view-tree` | `[source]` `--depth` `--collapse` `--discover-nested` | Render a topology-focused tree view in terminal. |
+| Minimalist | `launch-release` | `<release>` `--gts` `--search-dir` | Check out a frozen release tag from a READY tree. |
+| Expert | `purge` | `<source>` `--output-path` | Remove generated clone state for a .cgs workspace. |
+| Expert | `validate` | `<source>` `--discover-nested` | Parse, normalize, and validate a .cgs or validate a .gts topology. |
+| Expert | `clone` | `<source>` `--target-dir` `--output-path` | Clone a nested project tree from .cgs. |
+| Expert | `pull` | `[source]` `--private` `--force-protocol` `--commit-gitignore` | Resynchronise an existing project tree from .cgs or .gts. |
+| Expert | `pull-force` | `[source]` `--private` `--force-protocol` | Destructively resynchronise an existing project tree from .cgs or .gts. |
+| Expert | `checkout` | `<branch>` `--private` `--ref-kind` `--gts` | Synchronize the tree to a branch or tag. |
+| Expert | `branch` | `<branch>` `--private` `--gts` | Create a branch across the full READY tree without checkout. |
+| Expert | `add` | `[PATH ...]` `--private` `--dry-run` `--gts` | Stage all changes across a READY tree. |
+| Expert | `rm` | `<PATH ...>` `--private` `--dry-run` `--gts` | Remove one or more tracked files, each from the repo that owns it. |
+| Expert | `commit` | `[message]` `--message` `--private` `--no-stage` `--dry-run` | Commit dirty repositories from a READY tree. |
+| Expert | `merge` | `<branch>` `--private` `--ff-only` `--no-ff` `--dry-run` | Merge a project branch across a READY tree, leaf-first. |
+| Expert | `push` | `--private` `--dry-run` `--force-protocol` `--gts` | Push repositories from a READY tree. |
+| Expert | `tag` | `<name>` `--private` `--gts` | Create and push a tag across a READY tree. |
+| Expert | `freeze` | `<name>` `--private` `--dry-run` `--gts` | Freeze a versioned state and emit a .gts snapshot. |
+| Expert | `import-submodules` | `<repo-root>` `--apply` `--recursive` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
+| Expert | `init-from-submodules` | `<repo-root>` `--cgs` `--max-depth` `--dry-run` `--force` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
+| Expert | `verify` | `--repair` `--search-dir` | Verify the hash-chained .cgitsync/lgr register for tamper-evidence. |
+| Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
+| Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
+| Configuration | `create-cgs` | `--project` `--repo` `--output` | Create a validated .cgs specification from CLI project definitions. |
+
+### Options that recur
+
+A few flags mean the same thing wherever they appear:
+
+| Option | Meaning |
+|---|---|
+| `--private` | Run on your **private/local** repos instead of the project's own. Exclusive, not additive. Available on `pull`, `pull-force`, `checkout`, `branch`, `add`, `rm`, `commit`, `merge`, `push`, `tag` and `freeze` — and on nothing else. |
+| `--gts <snapshot.gts>` | Act on an explicit snapshot rather than the one found automatically. |
+| `--search-dir <dir>` | Where to start looking for the tree. Accepted by every command that finds a tree on its own. |
+| `--dry-run` | Print the plan and change nothing. |
+| `--force-protocol {ssh,https}` | Rewrite remotes to that protocol while cloning or pushing. Unrelated to `pull-force`, which is the destructive one. |
 
 ## 4. Further reading
 

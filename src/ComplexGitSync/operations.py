@@ -111,7 +111,7 @@ def propagate_global_branch(
     prepares the tree so that subsequent operations (create, checkout)
     all target the same branch — except a repo declared ``private`` in the
     ``.cgs``, which keeps its own ``default_branch`` because it is shared
-    with other projects. Pinning governs *branch* propagation only, so a
+    with other projects. Privacy governs *branch* propagation only, so a
     tag still reaches every repo and a frozen release stays reproducible.
 
     The privacy rule itself lives in

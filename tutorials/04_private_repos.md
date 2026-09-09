@@ -189,10 +189,13 @@ your own repositories on `multi-branch` and your settings repositories on
 command, one branch name, and `cgitsync` works out what each repository
 needs.
 
-**Every command that touches Git takes `--private`.** It narrows the
-command to your writable configuration repositories alone — so you can
-commit, push, tag or check them out on their own without reaching for
-plain `git`. Read-only ones are never written to, with or without it.
+**Eleven commands take `--private`:** `pull`, `pull-force`, `checkout`,
+`branch`, `add`, `rm`, `commit`, `merge`, `push`, `tag` and `freeze`. It
+narrows the command to your writable configuration repositories alone — so
+you can commit, push, tag or check them out on their own without reaching
+for plain `git`. Read-only ones are never written to, with or without it.
+The whole-tree commands — `clone`, `initialise`, `freeze-release`,
+`launch-release` — do not take it.
 
 ### The whole cycle
 
@@ -367,7 +370,7 @@ than from tags. `tag` also needs a clean tree, so commit first.
 
 Three things to remember:
 
-1. **Pinned means shared. Shared means read-only** unless the `.cgs` says
+1. **Private means shared. Shared means read-only** unless the `.cgs` says
    `writable = true`.
 2. **`--private` is for your own configuration repos**, and only those.
 3. **The branch name tells you the kind.** Named after your project → yours.
