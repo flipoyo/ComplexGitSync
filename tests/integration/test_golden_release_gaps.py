@@ -289,6 +289,7 @@ class TestStatusGoldenOutput:
         assert header_cells == [
             "REPOSITORY",
             "PATH",
+            "SCOPE",
             "LOCAL_BRANCH",
             "UPSTREAM_BRANCH",
             "LOCAL",
@@ -304,12 +305,16 @@ class TestStatusGoldenOutput:
         data_cells = lines[3].split()
         assert data_cells[0] == "demo"
         assert data_cells[1] == "."
-        assert data_cells[2] == "main"
-        assert data_cells[3] == "origin/main"
-        assert data_cells[4] == "clean"
-        assert data_cells[5] == "synced"
+        assert data_cells[2] == "project"
+        assert data_cells[3] == "main"
+        assert data_cells[4] == "origin/main"
+        assert data_cells[5] == "clean"
+        assert data_cells[6] == "synced"
         # HEAD and RECORDED are short SHAs and must match exactly (aligned, no mismatch marker).
-        assert data_cells[6] == data_cells[7]
+        assert data_cells[7] == data_cells[8]
+
+        # A tree of only project-owned repos needs no SCOPE legend.
+        assert not any(line.startswith("legend: SCOPE") for line in lines)
         assert not data_cells[6].endswith("*")
 
         # No mismatch legend when nothing is mismatched.
@@ -348,11 +353,11 @@ class TestStatusGoldenOutput:
         )
 
         data_cells = lines[3].split()
-        assert data_cells[4] == "dirty"
-        assert data_cells[5] == "ahead(+1)"
+        assert data_cells[5] == "dirty"
+        assert data_cells[6] == "ahead(+1)"
         # HEAD differs from the recorded .gts commit_sha, flagged with '*'.
-        assert data_cells[6].endswith("*")
-        assert data_cells[7] != data_cells[6].rstrip("*")
+        assert data_cells[7].endswith("*")
+        assert data_cells[8] != data_cells[7].rstrip("*")
 
         assert (
             "legend: HEAD ending with * differs from the commit recorded in the loaded .gts"

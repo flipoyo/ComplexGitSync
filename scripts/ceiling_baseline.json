@@ -111,8 +111,8 @@
       "public_symbols": 17
     },
     "orchestre.py": {
-      "internal_imports": 72,
-      "loc": 3460,
+      "internal_imports": 75,
+      "loc": 3468,
       "public_symbols": 13
     },
     "paths.py": {
@@ -137,8 +137,8 @@
     },
     "status_render.py": {
       "internal_imports": 1,
-      "loc": 92,
-      "public_symbols": 0
+      "loc": 116,
+      "public_symbols": 4
     }
   },
   "ring0_modules": [

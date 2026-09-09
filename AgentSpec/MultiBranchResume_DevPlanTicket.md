@@ -268,6 +268,36 @@ claimed: run `cgitsync initialise examples/multibranch_wip.cgs` from
 restored to this branch from `main` for that reason — §6 step 6 still
 deletes it after the merge.
 
+### `status` now names each repository's scope
+
+Asked for by the owner: the status table should say whether a repository is
+private, and whether it is local or distant. `cgitsync status` gained a
+`SCOPE` column between `PATH` and `LOCAL_BRANCH`:
+
+| Shown | Means | In the `.cgs` |
+|---|---|---|
+| `project` | this project's own | no `pinned` |
+| `private/local` | shared, and this project may write to it | `pinned, writable` |
+| `private/distant` | shared, read-only | `pinned` alone |
+
+**Two vocabularies, deliberately.** Anything an end user reads — the status
+table, its legend, `tutorials/04`, `docs/Text/user_guide.tex` — says
+*private*, *local* and *distant*. Code, docstrings, `.cgs` fields, and the
+architecture tables in `CLAUDE.md` and `.localSpec/AdditionalSpecs.md` keep
+saying `pinned`, `writable` and read-only. `_status_scope_label` in
+`status_render.py` is the one place the two meet; nothing else translates
+between them.
+
+It reads the effective flags, so a repository nested inside a private one
+is labelled like its parent — the same rule §7 put in `propagate_pinning`,
+now visible in the table. The legend prints only when the tree actually has
+a private repository.
+
+Five tests in `tests/unit/test_status_render.py`
+(`TestScopeColumnNamesWhatARepositoryIs`). Both golden tests in
+`tests/integration/test_golden_release_gaps.py::TestStatusGoldenOutput`
+were updated for the new column, which they pin by position.
+
 ### Warning: `initialise` re-clones the dependency repositories
 
 Running `cgitsync initialise examples/multibranch_wip.cgs` on this

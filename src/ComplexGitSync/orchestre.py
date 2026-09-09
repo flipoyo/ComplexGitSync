@@ -140,11 +140,14 @@ from .state_store import (
     _resolve_memory_state_directory,
 )
 from .status_render import (
+    PROJECT_SCOPE_LABEL,
+    SCOPE_LEGEND,
     _render_status_table,
     _status_display_path,
     _status_line_is_untracked,
     _status_line_path,
     _status_line_targets_any,
+    _status_scope_label,
 )
 
 # ============================================================
@@ -3370,7 +3373,7 @@ class ComplexGitSyncClient:
 
     def status(self) -> str:
         registry = self.get_dependency_registry()
-        rows: list[tuple[str, str, str, str, str, str, str, str]] = []
+        rows: list[tuple[str, str, str, str, str, str, str, str, str]] = []
         root_path = registry.get(ROOT_REPO_ID).absolute_path
         dirty_count = 0
         staged_count = 0
@@ -3382,8 +3385,8 @@ class ComplexGitSyncClient:
         for entry in iter_tree_leaf_first(registry):
             repo_status = self._repo_status_row(registry, entry, root_path)
             rows.append(repo_status)
-            local_state = repo_status[4]
-            upstream_state = repo_status[5]
+            local_state = repo_status[5]
+            upstream_state = repo_status[6]
             if local_state != "clean":
                 dirty_count += 1
             if "staged" in local_state:
@@ -3395,7 +3398,7 @@ class ComplexGitSyncClient:
             elif upstream_state.startswith("diverged"):
                 ahead_count += 1
                 behind_count += 1
-            if repo_status[6].endswith("*"):
+            if repo_status[7].endswith("*"):
                 recorded_mismatch_count += 1
             if upstream_state == "error" or local_state == "error":
                 error_count += 1
@@ -3416,6 +3419,8 @@ class ComplexGitSyncClient:
             )
         ]
         lines.append(_render_status_table(rows))
+        if any(row[2] != PROJECT_SCOPE_LABEL for row in rows):
+            lines.append(SCOPE_LEGEND)
         if recorded_mismatch_count:
             lines.append("legend: HEAD ending with * differs from the commit recorded in the loaded .gts")
         return "\n".join(lines)
@@ -3425,8 +3430,9 @@ class ComplexGitSyncClient:
         registry: WorkingGitTree,
         entry: WorkingRepo,
         root_path: Path,
-    ) -> tuple[str, str, str, str, str, str, str, str]:
+    ) -> tuple[str, str, str, str, str, str, str, str, str]:
         display_path = _status_display_path(entry, root_path)
+        scope_label = _status_scope_label(entry)
         try:
             branch = self.git_runner.current_branch(entry.absolute_path) or "detached"
             head = self.git_runner.rev_parse_head(entry.absolute_path)
@@ -3438,6 +3444,7 @@ class ComplexGitSyncClient:
             return (
                 entry.name,
                 display_path,
+                scope_label,
                 entry.current_ref_name or "-",
                 "-",
                 "error",
@@ -3455,6 +3462,7 @@ class ComplexGitSyncClient:
         return (
             entry.name,
             display_path,
+            scope_label,
             branch,
             upstream_ref or "-",
             local_state,

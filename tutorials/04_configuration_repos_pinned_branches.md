@@ -110,6 +110,40 @@ each one is:
 branch named after your project is yours. One sitting on `main` is
 everybody's.
 
+You do not have to read branch names to work this out. `cgitsync status`
+prints a `SCOPE` column that says it outright:
+
+```bash
+pixi run cgitsync status
+```
+
+```text
+REPOSITORY         PATH                SCOPE            LOCAL_BRANCH    ...
+DocSpec            docs/DocSpec        private/distant  main
+DocComplexGitSync  docs                project          multi-branch
+.localSpec         .localSpec          private/local    ComplexGitSync
+.claude            .claude             private/local    ComplexGitSync
+DevSpec            .agentSpec/DevSpec  private/distant  main
+.agentSpec         .agentSpec          private/distant  main
+ComplexGitSync     .                   project          multi-branch
+legend: SCOPE — project = this project's own; private = a configuration
+repository shared with other projects, local = this project may write to
+it, distant = read-only
+```
+
+Three words, and they map onto the three things you can do:
+
+| `SCOPE` | What it is | What writes to it |
+|---|---|---|
+| `project` | this project's own | `cgitsync commit`, `cgitsync push` |
+| `private/local` | shared, and yours to write | the same, with `--private` |
+| `private/distant` | shared, read-only | nothing |
+
+**private** means shared with other projects. **local** means you may write
+to it; **distant** means you may only read it. `DevSpec` and `DocSpec` are
+nested inside private repos and show as private too — a repository inside a
+shared one is just as shared.
+
 ## 3. Declaring them
 
 Two fields. `pinned = true` says "shared, leave it on its own branch".
