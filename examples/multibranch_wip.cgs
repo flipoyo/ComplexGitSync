@@ -2,7 +2,7 @@
 #
 # Rebuilds the exact tree the MultiBranchSync work was left in: the two
 # project repositories on the feature branch "multi-branch", and each
-# configuration repository on the branch it is pinned to. Run it from a
+# configuration repository on the branch it is private to. Run it from a
 # fresh clone of ComplexGitSync -- see
 # AgentSpec/MultiBranchResume_DevPlanTicket.md for the two commands.
 #
@@ -25,9 +25,9 @@ repos = [
     # Configuration repositories: shared with other projects, so they stay
     # on their own branch rather than following multi-branch.
     # Read-only -- every project that mounts .agentSpec reads this branch.
-    { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", pinned = true },
-    # Writable -- pinned to a branch named after this project, which nobody
+    { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", private = true },
+    # private/local -- on a branch named after this project, which nobody
     # else reads.
-    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", pinned = true, writable = true },
-    { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", pinned = true, writable = true },
+    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
 ]

@@ -16,6 +16,7 @@ Classes / enums defined here (Tier 1 — Core State):
     GitProvider         Supported Git hosting providers
     NodeType            Position of a repo in the dependency tree (root/parent/leaf)
     RefKind             Kind of a Git reference (branch/tag/detached/…)
+    RepoScope           Which repos of a tree a command may touch
     RepoLifecycleState  Per-repo lifecycle progression
     SyncState           Synchronization status relative to the remote
     DiscoveryState      Nested .cgs discovery status
@@ -107,6 +108,58 @@ class RefKind(StrEnum):
     TAG = "tag"
     DETACHED = "detached"
     UNKNOWN = "unknown"
+
+
+class RepoScope(StrEnum):
+    """Which repositories of a tree an operation is allowed to touch.
+
+    A tree mixes repositories this project owns with **configuration
+    repositories** shared with other projects. The shared ones are declared
+    ``private`` in the ``.cgs``, and a private repository is read-only unless it
+    also declares ``writable = true``. Three kinds result, and every
+    tree-wide command has to say which of them it means:
+
+    ``PROJECT``
+        The repositories this project owns outright — everything not
+        private. The default for commands that write this project's own
+        history (``add``, ``commit``, ``push``).
+    ``PRIVATE``
+        Pinned repositories this project may write: shared, but on a branch
+        of its own. What ``--private`` selects.
+    ``WRITABLE``
+        ``PROJECT`` and ``PRIVATE`` together — every repository ComplexGitSync
+        may write to at all. What ``tag`` and ``freeze-release`` reach.
+    ``ALL``
+        Every repository, read-only configuration repos included. What
+        ``clone``, ``pull``, ``status`` and ``view-tree`` reach, because
+        reading and updating a read-only repository is exactly what it is
+        for.
+
+    This is a **safety rail, not a permission system.** It stops a
+    tree-wide sweep from writing somewhere you did not mean; it cannot stop
+    anyone from running ``git`` in that directory by hand, and it is not a
+    substitute for branch protection on the remote.
+    """
+
+    PROJECT = "project"
+    PRIVATE = "private"
+    WRITABLE = "writable"
+    ALL = "all"
+
+    def includes(self, repo: WorkingRepo) -> bool:
+        """Whether *repo* falls inside this scope.
+
+        Reads the **effective** flags, not the declared ones: a repository
+        nested inside a private parent is private too, whatever its own entry
+        says. See :attr:`WorkingRepo.effective_private`.
+        """
+        if self is RepoScope.ALL:
+            return True
+        if self is RepoScope.PROJECT:
+            return not repo.effective_private
+        if self is RepoScope.PRIVATE:
+            return repo.effective_private and repo.effective_writable
+        return not repo.effective_private or repo.effective_writable
 
 
 class RepoLifecycleState(StrEnum):
@@ -382,9 +435,38 @@ class WorkingRepo(GitRepo):
     access_protocol: AccessProtocol = AccessProtocol.SSH
     default_branch: str | None = None
     nested_config: str | None = None
-    pinned: bool = False
+    # ``private``/``writable`` are what this repository's own entry declares,
+    # and are what gets serialized back out. They are not the whole answer:
+    # a repository sitting inside a private parent is private too, even when
+    # its own entry says nothing. ``git_tree.propagate_privacy`` walks the
+    # tree root-first and records that answer in the two fields below, which
+    # stay ``None`` until it has run. Read privacy through
+    # ``effective_private``/``effective_writable``; write and serialize
+    # ``private``/``writable``.
+    private: bool = False
+    writable: bool = False
+    propagated_private: bool | None = None
+    propagated_writable: bool | None = None
     remote_name: str | None = None
     is_external_reference: bool = False
+
+    @property
+    def effective_private(self) -> bool:
+        """Whether this repository is private once its parents are accounted for."""
+        if self.propagated_private is None:
+            return self.private
+        return self.propagated_private
+
+    @property
+    def effective_writable(self) -> bool:
+        """Whether ComplexGitSync may write here once its parents are accounted for.
+
+        Only meaningful together with :attr:`effective_private`: a project
+        repository belongs to the project and is writable regardless.
+        """
+        if self.propagated_writable is None:
+            return self.writable
+        return self.propagated_writable
 
 
 def repo_remote_url(repo: WorkingRepo, protocol: AccessProtocol) -> str:

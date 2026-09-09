@@ -392,8 +392,8 @@ class TestCgsDocumentValid:
         assert child_authoring["default_branch"] == "ComplexGitSync"
         assert child_authoring["fallback_branch"] == "main"
 
-    def test_pinned_survives_toml_round_trip_as_a_boolean(self, tmp_path: Path):
-        """`pinned` keeps a shared mount off the tree's global branch.
+    def test_private_survives_toml_round_trip_as_a_boolean(self, tmp_path: Path):
+        """`private` keeps a shared mount off the tree's global branch.
 
         It must come back as a TOML boolean, not the string "True": the
         authoring helper stringifies every other override.
@@ -406,19 +406,19 @@ class TestCgsDocumentValid:
                     {
                         "repository": "github:flipoyo/.localSpec",
                         "default_branch": "ComplexGitSync",
-                        "pinned": True,
+                        "private": True,
                     },
                 ],
             }
         )
 
-        output = tmp_path / "pinned.cgs"
+        output = tmp_path / "private.cgs"
         doc.to_toml(output)
 
-        assert parse_cgs(output)["repos"][1]["pinned"] is True
-        assert CgsDocument.from_toml(output).repos[1]["pinned"] is True
+        assert parse_cgs(output)["repos"][1]["private"] is True
+        assert CgsDocument.from_toml(output).repos[1]["private"] is True
 
-    def test_unpinned_repositories_never_mention_pinned(self, tmp_path: Path):
+    def test_project_repositories_never_mention_private(self, tmp_path: Path):
         """The default is false, so an existing .cgs is untouched by the feature."""
         doc = CgsDocument.from_dict(
             {"project": {"name": "demo"}, "repos": ["github:owner/demo"]}
@@ -427,15 +427,15 @@ class TestCgsDocumentValid:
         output = tmp_path / "plain.cgs"
         doc.to_toml(output)
 
-        assert "pinned" not in output.read_text(encoding="utf-8")
-        assert doc.repos[0]["pinned"] is False
+        assert "private" not in output.read_text(encoding="utf-8")
+        assert doc.repos[0]["private"] is False
 
-    def test_pinned_must_be_a_boolean(self):
-        with pytest.raises(ConfigValidationError, match="pinned must be true or false"):
+    def test_private_must_be_a_boolean(self):
+        with pytest.raises(ConfigValidationError, match="private must be true or false"):
             CgsDocument.from_dict(
                 {
                     "project": {"name": "demo"},
-                    "repos": [{"repository": "github:owner/demo", "pinned": "yes"}],
+                    "repos": [{"repository": "github:owner/demo", "private": "yes"}],
                 }
             ).validate()
 

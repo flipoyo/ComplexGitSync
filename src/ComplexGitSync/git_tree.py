@@ -6,7 +6,7 @@ Ring: 1 (filesystem only, no subprocess — sync_gitignore writes .gitignore
 Contract: own the in-memory GitTree/WorkingGitTree structures, traversal,
     lifecycle state, and .gitignore maintenance; to_cgs() only delegates
     to cgs_format.py.
-Imports: cgs_format, errors, git_repo
+Imports: cgs_format, errors, git_branch, git_repo
 
 This module is the **GitTree anchor** — the authoritative source for the
 in-memory tree structure, lifecycle, registry, and tree-level utilities.
@@ -21,6 +21,7 @@ Functions defined here (Tier 2 — Actions / tree utilities):
     make_repo_id                Build a colon-separated repo ID from path
     promote_to_parent           Upgrade a LEAF entry to PARENT
     normalize_node_types        Align node types with the current tree shape
+    propagate_privacy           Push each parent's privacy onto its nested repos
     register_relative_path      Guard against duplicate relative paths
     build_tree_state            Derive a ProjectTreeState from the registry
     find_strongly_connected_components  Tarjan's SCC algorithm on a path-based graph
@@ -45,6 +46,7 @@ from pathlib import Path, PurePath, PurePosixPath
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from .errors import ConfigValidationError, GitSyncError
+from .git_branch import resolve_entry_ref
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
@@ -53,6 +55,7 @@ from .git_repo import (
     NodeType,
     RefKind,
     RepoLifecycleState,
+    RepoScope,
     SyncState,
     WorkingRepo,
 )
@@ -97,11 +100,14 @@ class GitTreeGitCommands:
         branch_name: str,
         *,
         ref_kind: RefKind = RefKind.BRANCH,
+        scope: RepoScope = RepoScope.ALL,
         tree: WorkingGitTree | None = None,
     ) -> None:
         from .operations import checkout_tree
 
-        checkout_tree(self._resolve_tree(tree), git_runner, branch_name, ref_kind=ref_kind)
+        checkout_tree(
+            self._resolve_tree(tree), git_runner, branch_name, ref_kind=ref_kind, scope=scope
+        )
 
     def branch(
         self,
@@ -109,35 +115,54 @@ class GitTreeGitCommands:
         branch_name: str,
         *,
         tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.ALL,
     ) -> None:
         from .operations import branch_tree
 
-        branch_tree(self._resolve_tree(tree), git_runner, branch_name)
+        branch_tree(self._resolve_tree(tree), git_runner, branch_name, scope=scope)
 
     def pull(
         self,
         git_runner: GitRunner,
         *,
         tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.ALL,
         force_access_protocol: AccessProtocol | None = None,
     ) -> None:
         from .operations import restart_tree
 
         restart_tree(
-            self._resolve_tree(tree), git_runner, force_access_protocol=force_access_protocol
+            self._resolve_tree(tree),
+            git_runner,
+            force_access_protocol=force_access_protocol,
+            scope=scope,
         )
+
+    def refresh_private(
+        self,
+        git_runner: GitRunner,
+        *,
+        tree: WorkingGitTree | None = None,
+    ) -> tuple[tuple[str, str], ...]:
+        from .operations import refresh_private_tree
+
+        return refresh_private_tree(self._resolve_tree(tree), git_runner)
 
     def pull_force(
         self,
         git_runner: GitRunner,
         *,
         tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.ALL,
         force_access_protocol: AccessProtocol | None = None,
     ) -> None:
         from .operations import restart_tree_force
 
         restart_tree_force(
-            self._resolve_tree(tree), git_runner, force_access_protocol=force_access_protocol
+            self._resolve_tree(tree),
+            git_runner,
+            force_access_protocol=force_access_protocol,
+            scope=scope,
         )
 
     def add(
@@ -146,10 +171,11 @@ class GitTreeGitCommands:
         *,
         tree: WorkingGitTree | None = None,
         paths: Sequence[str | Path] | None = None,
+        scope: RepoScope = RepoScope.PROJECT,
     ) -> None:
         from .operations import add_tree
 
-        add_tree(self._resolve_tree(tree), git_runner, paths=paths)
+        add_tree(self._resolve_tree(tree), git_runner, paths=paths, scope=scope)
 
     def rm(
         self,
@@ -169,10 +195,34 @@ class GitTreeGitCommands:
         *,
         stage_all: bool = True,
         tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.PROJECT,
     ) -> None:
         from .operations import commit_tree
 
-        commit_tree(self._resolve_tree(tree), git_runner, message, stage_all=stage_all)
+        commit_tree(
+            self._resolve_tree(tree), git_runner, message, stage_all=stage_all, scope=scope
+        )
+
+    def merge(
+        self,
+        git_runner: GitRunner,
+        project_branch: str,
+        *,
+        tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.PROJECT,
+        ff_only: bool = False,
+        no_ff: bool = False,
+    ) -> tuple[tuple[str, str], ...]:
+        from .operations import merge_tree
+
+        return merge_tree(
+            self._resolve_tree(tree),
+            git_runner,
+            project_branch,
+            scope=scope,
+            ff_only=ff_only,
+            no_ff=no_ff,
+        )
 
     def push(
         self,
@@ -180,11 +230,15 @@ class GitTreeGitCommands:
         *,
         tree: WorkingGitTree | None = None,
         force_access_protocol: AccessProtocol | None = None,
+        scope: RepoScope = RepoScope.PROJECT,
     ) -> None:
         from .operations import push_tree
 
         push_tree(
-            self._resolve_tree(tree), git_runner, force_access_protocol=force_access_protocol
+            self._resolve_tree(tree),
+            git_runner,
+            force_access_protocol=force_access_protocol,
+            scope=scope,
         )
 
     def tag(
@@ -193,10 +247,11 @@ class GitTreeGitCommands:
         tag_name: str,
         *,
         tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.WRITABLE,
     ) -> None:
         from .operations import tag_tree
 
-        tag_tree(self._resolve_tree(tree), git_runner, tag_name)
+        tag_tree(self._resolve_tree(tree), git_runner, tag_name, scope=scope)
 
     def freeze(
         self,
@@ -531,6 +586,65 @@ def normalize_node_types(tree: WorkingGitTree) -> None:
             entry.node_type = NodeType.PARENT
         else:
             entry.node_type = NodeType.LEAF
+
+
+def propagate_privacy(tree: WorkingGitTree) -> None:
+    """Push each parent's privacy down onto everything nested inside it.
+
+    ``private = true`` marks a **configuration repository** — one shared with
+    other projects, read-only unless the entry also says ``writable = true``.
+    Each entry declares that for itself, but a repository nested inside a
+    configuration repository is just as shared: writing to it writes into
+    someone else's repository the same way. Before this pass existed, a
+    nested repository whose own entry said nothing landed in ``PROJECT``
+    scope, so ``commit`` and ``push`` swept it.
+
+    The rule, root-first: **the parent defines its leaves.**
+
+    * A repository under a private parent is private.
+    * One that declares nothing takes its parent's writability.
+    * One that declares its own ``private`` keeps its own ``writable``, but
+      capped by the parent — a child can restrict itself further, never
+      open itself up wider than the repository holding it.
+
+    The answers go to ``propagated_private``/``propagated_writable``; the
+    declared ``private``/``writable`` are left alone so serialization writes
+    a ``.cgs`` back out exactly as its author wrote it. Read the result
+    through :attr:`WorkingRepo.effective_private`.
+
+    Idempotent, and safe on a tree whose ``parent_id`` links form a cycle:
+    an entry already being resolved falls back to its declared flags.
+    """
+    resolving: set[str] = set()
+    resolved: dict[str, tuple[bool, bool]] = {}
+
+    def resolve(entry: WorkingRepo) -> tuple[bool, bool]:
+        if entry.repo_id in resolved:
+            return resolved[entry.repo_id]
+        if entry.repo_id in resolving:
+            return entry.private, entry.writable
+        resolving.add(entry.repo_id)
+
+        parent = tree.repos.get(entry.parent_id) if entry.parent_id else None
+        if parent is None or parent is entry:
+            answer = (entry.private, entry.writable)
+        else:
+            parent_private, parent_writable = resolve(parent)
+            if not parent_private:
+                answer = (entry.private, entry.writable)
+            elif entry.private:
+                # Declares its own pin: its own writability, capped by the parent.
+                answer = (True, entry.writable and parent_writable)
+            else:
+                # Says nothing: it is whatever the repository holding it is.
+                answer = (True, parent_writable)
+
+        resolving.discard(entry.repo_id)
+        resolved[entry.repo_id] = answer
+        return answer
+
+    for entry in tree.values():
+        entry.propagated_private, entry.propagated_writable = resolve(entry)
 
 
 def register_relative_path(
@@ -1019,7 +1133,13 @@ def format_view_tree(
     depth: int | None = None,
     collapse: Sequence[str] = (),
 ) -> str:
-    """Render a terminal tree view with node type, sync state, commit SHA, and fallback branch."""
+    """Render a terminal tree view: node type, sync state, commit SHA, branch."""
+    # Every repository shows the branch it targets (br=), not only the ones
+    # whose branch is unusual. Printing it only when it differed from "main"
+    # hid exactly the common case: a reader could not tell a tree that had
+    # chosen main from one that had never been asked. The declared fallback
+    # (fb=) is still shown only when it differs from that target, since a
+    # fallback equal to the target says nothing.
     if depth is not None and depth < 0:
         raise ValueError("depth must be >= 0")
 
@@ -1038,9 +1158,10 @@ def format_view_tree(
         node_type = entry.node_type.value.lower()
         sync_state = entry.sync_state.value
         sha = entry.commit_sha[:7] if entry.commit_sha else "?"
+        branch = entry.target_ref_name or resolve_entry_ref(entry).name
         fb = entry.fallback_branch
-        fb_str = f" fb={fb}" if fb and fb != "main" else ""
-        return f"{entry.name} ({node_type}) [{sync_state}] @{sha}{fb_str}"
+        fb_str = f" fb={fb}" if fb and fb != branch else ""
+        return f"{entry.name} ({node_type}) [{sync_state}] @{sha} br={branch}{fb_str}"
 
     lines: list[str] = []
     lines.append(render_node(root_entry))
@@ -1128,14 +1249,32 @@ def format_registry_json(registry: WorkingGitTree) -> str:
 # ---------------------------------------------------------------------------
 
 
-def iter_tree(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
-    """Yield every repo in *tree* in parent-first (root → leaves) order."""
-    yield from _iter_tree(tree)
+def iter_tree(
+    tree: WorkingGitTree,
+    scope: RepoScope = RepoScope.ALL,
+) -> Iterator[WorkingRepo]:
+    """Yield repos of *tree* in parent-first (root → leaves) order.
+
+    *scope* selects which repositories an operation is allowed to touch —
+    see :class:`~ComplexGitSync.git_repo.RepoScope`. It defaults to
+    ``ALL``, so a caller that has not thought about configuration repos
+    gets today's behaviour; the commands that write history pass a
+    narrower scope deliberately.
+    """
+    for repo in _iter_tree(tree):
+        if scope.includes(repo):
+            yield repo
 
 
-def iter_tree_leaf_first(tree: WorkingGitTree) -> Iterator[WorkingRepo]:
-    """Yield every repo in *tree* in leaf-first (leaves → root) order."""
-    yield from reversed(list(_iter_tree(tree)))
+def iter_tree_leaf_first(
+    tree: WorkingGitTree,
+    scope: RepoScope = RepoScope.ALL,
+) -> Iterator[WorkingRepo]:
+    """Yield repos of *tree* in leaf-first (leaves → root) order.
+
+    Same *scope* rule as :func:`iter_tree`.
+    """
+    yield from reversed(list(iter_tree(tree, scope)))
 
 
 def resolve_repo_for_path(tree: WorkingGitTree, path: Path | str) -> tuple[WorkingRepo, str]:

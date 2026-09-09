@@ -836,7 +836,7 @@ def test_client_branch_delegates_to_gittree_git_branch(monkeypatch):
     client.registry = WorkingGitTree()
     captured: dict[str, object] = {}
 
-    def _spy_branch(self, git_runner, branch_name, *, tree=None):
+    def _spy_branch(self, git_runner, branch_name, *, tree=None, scope=None):
         captured["git_runner"] = git_runner
         captured["branch_name"] = branch_name
         captured["tree"] = tree
@@ -895,7 +895,7 @@ def test_client_git_binds_provided_registry(monkeypatch):
     registry = WorkingGitTree()
     captured: dict[str, object] = {}
 
-    def _spy_add(self, git_runner, *, tree=None, paths=None):
+    def _spy_add(self, git_runner, *, tree=None, paths=None, scope=None):
         captured["bound_tree"] = self.working_tree
         captured["tree_arg"] = tree
 
@@ -1077,7 +1077,7 @@ def test_protocol_switch_hint_is_none_for_an_unrelated_failure():
 def test_push_wraps_matching_failure_with_protocol_hint(monkeypatch, tmp_path):
     client = _client_with_root_registry(tmp_path)
 
-    def _raise(self, git_runner, *, tree=None, force_access_protocol=None):
+    def _raise(self, git_runner, *, tree=None, force_access_protocol=None, scope=None):
         raise GitSyncError("git push origin main: Permission denied (publickey).")
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "push", _raise)
@@ -1090,7 +1090,7 @@ def test_push_wraps_matching_failure_with_protocol_hint(monkeypatch, tmp_path):
 def test_push_leaves_unrelated_failure_unwrapped(monkeypatch, tmp_path):
     client = _client_with_root_registry(tmp_path)
 
-    def _raise(self, git_runner, *, tree=None, force_access_protocol=None):
+    def _raise(self, git_runner, *, tree=None, force_access_protocol=None, scope=None):
         raise GitSyncError("fatal: repository 'x' does not exist")
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "push", _raise)

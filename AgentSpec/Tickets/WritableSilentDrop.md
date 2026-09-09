@@ -1,0 +1,1 @@
+Also worth its own ticket: the .gts silently drops writable when written by code that predates the field. It bit twice today and I had to rebuild the state both times.

@@ -18,7 +18,7 @@ split apart:
 2. ``status`` and ``view-tree`` are invoked in a couple of places
    (``test_tuto_cgsi1.py::test_view_tree_summary`` only asserts the project
    name appears; nothing invokes ``status`` at the CLI level at all), but
-   the *exact field set* each one prints is not pinned down anywhere. A
+   the *exact field set* each one prints is not private down anywhere. A
    later refactor could silently drop or rename a printed field and no test
    would catch it.
 
@@ -289,6 +289,7 @@ class TestStatusGoldenOutput:
         assert header_cells == [
             "REPOSITORY",
             "PATH",
+            "SCOPE",
             "LOCAL_BRANCH",
             "UPSTREAM_BRANCH",
             "LOCAL",
@@ -304,12 +305,16 @@ class TestStatusGoldenOutput:
         data_cells = lines[3].split()
         assert data_cells[0] == "demo"
         assert data_cells[1] == "."
-        assert data_cells[2] == "main"
-        assert data_cells[3] == "origin/main"
-        assert data_cells[4] == "clean"
-        assert data_cells[5] == "synced"
+        assert data_cells[2] == "project"
+        assert data_cells[3] == "main"
+        assert data_cells[4] == "origin/main"
+        assert data_cells[5] == "clean"
+        assert data_cells[6] == "synced"
         # HEAD and RECORDED are short SHAs and must match exactly (aligned, no mismatch marker).
-        assert data_cells[6] == data_cells[7]
+        assert data_cells[7] == data_cells[8]
+
+        # A tree of only project-owned repos needs no SCOPE legend.
+        assert not any(line.startswith("legend: SCOPE") for line in lines)
         assert not data_cells[6].endswith("*")
 
         # No mismatch legend when nothing is mismatched.
@@ -348,11 +353,11 @@ class TestStatusGoldenOutput:
         )
 
         data_cells = lines[3].split()
-        assert data_cells[4] == "dirty"
-        assert data_cells[5] == "ahead(+1)"
+        assert data_cells[5] == "dirty"
+        assert data_cells[6] == "ahead(+1)"
         # HEAD differs from the recorded .gts commit_sha, flagged with '*'.
-        assert data_cells[6].endswith("*")
-        assert data_cells[7] != data_cells[6].rstrip("*")
+        assert data_cells[7].endswith("*")
+        assert data_cells[8] != data_cells[7].rstrip("*")
 
         assert (
             "legend: HEAD ending with * differs from the commit recorded in the loaded .gts"
@@ -395,13 +400,18 @@ repos = [
         lines = captured.out.splitlines()
         assert len(lines) == 3, f"expected root + 2 children, got: {lines!r}"
 
-        # Root line: "<name> (<node_type>) [<sync_state>] @<sha-or-?>".
-        assert lines[0] == "CGSil1 (root) [PENDING] @?"
+        # Root line: "<name> (<node_type>) [<sync_state>] @<sha-or-?> br=<branch>".
+        # br= is printed for every entry, including the common case where the
+        # branch is the default one, so that reading view-tree tells you the
+        # branch each repository targets without consulting the .cgs
+        # (MultiBranchSync ticket, D5). This .cgs names no branch anywhere, so
+        # every entry resolves to git_branch.DEFAULT_BRANCH.
+        assert lines[0] == "CGSil1 (root) [PENDING] @? br=main"
 
         # Children rendered with box-drawing branch prefixes, alphabetically
-        # ordered, each carrying the same "(node_type) [sync] @sha" shape.
-        assert lines[1] == "├── CGSih1 (leaf) [PENDING] @?"
-        assert lines[2] == "└── CGSil2 (leaf) [PENDING] @?"
+        # ordered, each carrying the same "(node_type) [sync] @sha br=" shape.
+        assert lines[1] == "├── CGSih1 (leaf) [PENDING] @? br=main"
+        assert lines[2] == "└── CGSil2 (leaf) [PENDING] @? br=main"
 
         # Presence/ordering checks that stay meaningful even if rendering
         # details (exact bracket punctuation) shift under refactor: both
@@ -417,7 +427,7 @@ repos = [
         captured = capsys.readouterr()
 
         assert exit_code == 0
-        assert captured.out.splitlines() == ["CGSil1 (root) [PENDING] @?"]
+        assert captured.out.splitlines() == ["CGSil1 (root) [PENDING] @? br=main"]
 
     def test_view_tree_collapse_hides_named_subtree(self, tmp_path, capsys):
         cgs_path = tmp_path / "CGSil1.cgs"

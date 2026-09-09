@@ -18,14 +18,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from ComplexGitSync.git_repo import WorkingRepo
+from ComplexGitSync.git_tree import WorkingGitTree, propagate_privacy
 from ComplexGitSync.status_render import (
+    SCOPE_LEGEND,
     _path_is_relative_to,
     _render_status_table,
     _status_display_path,
     _status_line_is_untracked,
     _status_line_path,
     _status_line_targets_any,
+    _status_scope_label,
 )
 
 # ---------------------------------------------------------------------------
@@ -148,6 +153,42 @@ def test_status_line_targets_any_false_for_unparseable_line():
 # ---------------------------------------------------------------------------
 
 
+class TestScopeColumnNamesWhatARepositoryIs:
+    """The words `status` shows a reader, and what each one means.
+
+    A reader of the table should not have to know the `.cgs` field names.
+    **private** says the repository is shared with other projects
+    (``private``); **local** and **distant** say whether this project may
+    write to it (``writable``) or only read it.
+    """
+
+    @pytest.mark.parametrize(
+        ("private", "writable", "expected"),
+        [
+            (False, False, "project"),
+            (True, True, "private/local"),
+            (True, False, "private/distant"),
+        ],
+    )
+    def test_each_kind_of_repository_gets_its_own_word(self, private, writable, expected):
+        entry = WorkingRepo(repo_id="r", name="r", private=private, writable=writable)
+
+        assert _status_scope_label(entry) == expected
+
+    def test_a_repo_nested_in_a_private_one_is_named_the_same_way(self):
+        """It inherits its parent's state, so it must read that way too."""
+        tree = WorkingGitTree()
+        tree.add(WorkingRepo(repo_id="shared", name="shared", private=True))
+        tree.add(WorkingRepo(repo_id="leaf", name="leaf", parent_id="shared"))
+        propagate_privacy(tree)
+
+        assert _status_scope_label(tree.get("leaf")) == "private/distant"
+
+    def test_the_legend_explains_every_word_the_column_can_print(self):
+        for word in ("project", "private", "local", "distant"):
+            assert word in SCOPE_LEGEND
+
+
 def test_render_status_table_empty_rows_prints_header_and_separator_only():
     rendered = _render_status_table([])
     lines = rendered.splitlines()
@@ -155,6 +196,7 @@ def test_render_status_table_empty_rows_prints_header_and_separator_only():
     assert lines[0].split() == [
         "REPOSITORY",
         "PATH",
+        "SCOPE",
         "LOCAL_BRANCH",
         "UPSTREAM_BRANCH",
         "LOCAL",
@@ -170,6 +212,7 @@ def test_render_status_table_widens_columns_to_fit_longest_value():
     headers = (
         "REPOSITORY",
         "PATH",
+        "SCOPE",
         "LOCAL_BRANCH",
         "UPSTREAM_BRANCH",
         "LOCAL",
@@ -177,26 +220,31 @@ def test_render_status_table_widens_columns_to_fit_longest_value():
         "HEAD",
         "RECORDED",
     )
-    rows = [("demo", ".", "main", "origin/main", "clean", "synced", "abcd1234", "abcd1234")]
+    rows = [
+        ("demo", ".", "project", "main", "origin/main", "clean", "synced", "abcd1234", "abcd1234")
+    ]
     rendered = _render_status_table(rows)
     lines = rendered.splitlines()
 
     # Header, separator, one data row.
     assert len(lines) == 3
     assert lines[2].split() == list(rows[0])
-    # Separator width matches the documented `sum(widths) + 12` formula,
-    # where each column's width is the longer of its header and its data.
+    # Separator width matches the documented `sum(widths) + 2 * (columns - 1)`
+    # formula, where each column's width is the longer of its header and its
+    # data and the two counts the join.
     widths = [max(len(header), len(value)) for header, value in zip(headers, rows[0], strict=True)]
-    assert len(lines[1]) == sum(widths) + 12
+    assert len(lines[1]) == sum(widths) + 2 * (len(headers) - 1)
 
 
 def test_render_status_table_matches_golden_status_output_shape():
-    """Byte-for-byte agreement with the shape pinned by
+    """Byte-for-byte agreement with the shape private by
     ``tests/integration/test_golden_release_gaps.py::TestStatusGoldenOutput``
     (``test_status_prints_complete_field_set_for_clean_ready_tree``) — same
     synthetic row tuple, same header/separator/data-row structure.
     """
-    rows = [("demo", ".", "main", "origin/main", "clean", "synced", "abcd1234", "abcd1234")]
+    rows = [
+        ("demo", ".", "project", "main", "origin/main", "clean", "synced", "abcd1234", "abcd1234")
+    ]
 
     rendered = _render_status_table(rows)
     lines = rendered.splitlines()
@@ -205,6 +253,7 @@ def test_render_status_table_matches_golden_status_output_shape():
     assert header_cells == [
         "REPOSITORY",
         "PATH",
+        "SCOPE",
         "LOCAL_BRANCH",
         "UPSTREAM_BRANCH",
         "LOCAL",
@@ -217,9 +266,10 @@ def test_render_status_table_matches_golden_status_output_shape():
     data_cells = lines[2].split()
     assert data_cells[0] == "demo"
     assert data_cells[1] == "."
-    assert data_cells[2] == "main"
-    assert data_cells[3] == "origin/main"
-    assert data_cells[4] == "clean"
-    assert data_cells[5] == "synced"
-    assert data_cells[6] == data_cells[7]
-    assert not data_cells[6].endswith("*")
+    assert data_cells[2] == "project"
+    assert data_cells[3] == "main"
+    assert data_cells[4] == "origin/main"
+    assert data_cells[5] == "clean"
+    assert data_cells[6] == "synced"
+    assert data_cells[7] == data_cells[8]
+    assert not data_cells[7].endswith("*")

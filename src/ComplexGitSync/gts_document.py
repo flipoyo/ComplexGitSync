@@ -336,7 +336,19 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
                     # opposite: they say *which* repository this is, which
                     # is exactly why the round trip losing them was a bug
                     # (AgentSpec/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
+                    # A frozen literal, not git_branch.DEFAULT_BRANCH: this
+                    # dict is hashed into the canonical snapshot hash, so
+                    # every value in it must stay fixed for the life of the
+                    # wire format. Tying it to a constant that could move
+                    # would silently rehash every snapshot ever written.
                     "fallback_branch": repo.get("fallback_branch", "main"),
+                    # private/writable are deliberately NOT here, for the same
+                    # reason as access_protocol above: they say what commands
+                    # are *allowed* to touch a repository, not what state the
+                    # tree is in. They round-trip through repo_state either
+                    # way; hashing them would rewrite the hash of every
+                    # snapshot ever written, for no gain in what a snapshot
+                    # actually attests to.
                     "fallback_applied": bool(repo.get("fallback_applied", False)),
                     "fallback_reason": repo.get("fallback_reason"),
                     "discovery_state": repo.get("discovery_state", DiscoveryState.RESOLVED.value),

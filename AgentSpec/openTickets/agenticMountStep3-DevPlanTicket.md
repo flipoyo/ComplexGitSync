@@ -2,8 +2,9 @@
 
 *Created: 2026-09-05*
 
-> **Queued behind `AgentSpec/MultiBranchSync_DevPlanTicket.md`**, the
-> priority ticket, which took from this one its round trip and its finding that tree-wide commands drag pinned mounts.
+> **Unblocked.** MultiBranchSync shipped on 2026-09-07 and is archived at
+> `AgentSpec/archive/20260907_MultiBranchSync_DevPlanTicket.md`; it was the
+> priority ticket that took from this one its round trip and its finding that tree-wide commands drag pinned mounts.
 > This ticket is not cancelled and its content is unchanged.
 
 ## Abstract — read this first

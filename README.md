@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.38
+# ComplexGitSync v0002.44
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -10,6 +10,36 @@ workspace — in the form of a GitTree — from one local `.cgs`
 specification (ASCII file) or one tracked `.gts` workspace snapshot (ASCII file describing the GitTree State). It is a Python package for which the API is exposed through the CLI only.
 
 The CLI is used to operate the same git command on all repos that compose the project. It is a robust and convenient alternative to git submodules, offering a straightforward development experience.
+
+### The two kinds of repository
+
+A tree holds two kinds, and telling them apart is most of what you need to
+know:
+
+- **Project repos** — the work itself. Whatever the project is for: the
+  code, the documents, the data. These follow the project's branch.
+- **Private repos** — how the project is run: the pipelines, the agent
+  instructions, the rules. These are shared with your other projects, so
+  they stay on their own branch instead of following yours.
+
+Private repos come in two kinds, and the difference is who may write:
+
+| | What it is | You may |
+|---|---|---|
+| **private/local** | your own settings, on a branch named after this project | read and write, with `--private` |
+| **private/distant** | someone else's repository | read only |
+
+Every command that touches Git takes `--private`, which points it at your
+private/local repos instead of the project's own. Nothing ever writes to a
+private/distant repo.
+
+```toml
+repos = [
+    "github:you/my-app",                                                    # project
+    { repository = "github:you/.myRules",  private = true, writable = true },  # private/local
+    { repository = "github:them/.theirs",  private = true },                   # private/distant
+]
+```
 
 
 ComplexGitSync is developed and run with [Pixi](https://pixi.sh) only —
@@ -204,6 +234,7 @@ Full walkthrough: [tutorials/01_first_multi_repo_workspace.md](tutorials/01_firs
 | Expert | `add` | Stage all changes across a READY tree. |
 | Expert | `rm` | Remove one or more tracked files, each from the repo that owns it. |
 | Expert | `commit` | Commit dirty repositories from a READY tree. |
+| Expert | `merge` | Merge a project branch across a READY tree, leaf-first. |
 | Expert | `push` | Push repositories from a READY tree. |
 | Expert | `tag` | Create and push a tag across a READY tree. |
 | Expert | `freeze` | Freeze a versioned state and emit a .gts snapshot. |
@@ -216,11 +247,12 @@ Full walkthrough: [tutorials/01_first_multi_repo_workspace.md](tutorials/01_firs
 
 ## 4. Further reading
 
-[tutorials/](tutorials/) — three tutorials, simplest to most advanced:
+[tutorials/](tutorials/) — four tutorials, simplest to most advanced:
 
 1. [01_first_multi_repo_workspace.md](tutorials/01_first_multi_repo_workspace.md) — full CLI lifecycle walkthrough on a synthetic sandbox tree.
 2. [02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md) — hand-author a `.cgs` for a real 19-repo project, then hand off to its existing `make` build.
 3. [03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md) — a real project with no `.cgs` of its own that still uses git submodules: one `init-from-submodules` command, what it runs underneath, and on to a pushed `READY` tree.
+4. [04_private_repos.md](tutorials/04_private_repos.md) — the repos that configure your project rather than being it: what `private = true` protects, when to add `writable = true`, and how their branches follow yours.
 
 [docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference
 book: full command details, expert-mode primitives (`add`/`commit`/`push`/...),

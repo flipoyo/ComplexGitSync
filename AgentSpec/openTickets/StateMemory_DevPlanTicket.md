@@ -2,8 +2,9 @@
 
 *Created: 2026-09-04*
 
-> **Queued behind `AgentSpec/MultiBranchSync_DevPlanTicket.md`**, the
-> priority ticket, which took from this one the fact that any `.cgs` change strands the recorded state directory.
+> **Unblocked.** MultiBranchSync shipped on 2026-09-07 and is archived at
+> `AgentSpec/archive/20260907_MultiBranchSync_DevPlanTicket.md`; it was the
+> priority ticket that took from this one the fact that any `.cgs` change strands the recorded state directory.
 > This ticket is not cancelled and its content is unchanged.
 
 > Finalised from the `DevPlanTicket_T36_memory.md` proto-draft. That draft

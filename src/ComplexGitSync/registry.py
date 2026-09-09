@@ -10,7 +10,7 @@ Contract: given a parsed ``.cgs`` (``CgsDocument``) or ``.gts``
     env-marker path expansion inherited from the ``.gts``/``.cgs`` wire
     format itself (``$HOME``-style markers), which is why this module sits
     at Ring 2 rather than Ring 0/1.
-Imports: cgs_format, errors, git_repo, git_tree, gts_document
+Imports: cgs_format, errors, git_branch, git_repo, git_tree, gts_document
 
 Extracted from ``orchestre.py`` (Wave 2, P5-registry of
 ``AgentSpec/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
@@ -20,14 +20,16 @@ until the separate P5-registry-integrate step deletes them there and
 re-points callers — this module does not change that file.
 
 Duplicated-helper note (same shape as ``gts_document.py``'s own note on the
-ref-token helpers): ``_resolve_repo_target_ref`` and the env-marker path
-helpers (``_path_to_environment_marker`` and friends) are used in
-``orchestre.py`` by code outside this module's scope too (nested-config
-discovery, ``ComplexGitSyncClient.load_gts``, snapshot writing) — since this
-module must not import from ``orchestre.py`` (Ring 3, upward) and no Ring-1
-``paths.py`` exists yet to hold the env-marker logic, both are duplicated
-here as tiny, stable, pure/near-pure functions tied to a frozen wire format,
-not forked business logic. ``_repo_ref_kind``/``_write_compact_refs`` are
+ref-token helpers): the env-marker path helpers
+(``_path_to_environment_marker`` and friends) are used in ``orchestre.py``
+by code outside this module's scope too (``ComplexGitSyncClient.load_gts``,
+snapshot writing) — since this module must not import from ``orchestre.py``
+(Ring 3, upward) and no Ring-1 ``paths.py`` exists yet to hold the
+env-marker logic, they are duplicated here as tiny, stable, pure/near-pure
+functions tied to a frozen wire format, not forked business logic. The
+branch fallback chain used to be duplicated the same way, as a private
+``_resolve_repo_target_ref``; ``git_branch.resolve_declared_ref`` now owns
+it for every caller. ``_repo_ref_kind``/``_write_compact_refs`` are
 new thin wrappers built on top of ``gts_document.py``'s
 ``_repo_ref_pair``/``_ref_token`` — imported from there rather than
 duplicated, per this ticket's guidance to prefer importing the *same*
@@ -45,6 +47,7 @@ from typing import Any
 from . import __version__ as CGS_VERSION
 from .cgs_format import CgsDocument
 from .errors import ConfigValidationError
+from .git_branch import DEFAULT_BRANCH, resolve_declared_ref
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
@@ -72,6 +75,7 @@ from .git_tree import (
     innermost_containing_path,
     make_repo_id,
     normalize_node_types,
+    propagate_privacy,
     register_relative_path,
 )
 from .gts_document import (
@@ -195,20 +199,6 @@ def _write_compact_refs(repo_data: dict[str, Any], entry: WorkingRepo) -> None:
         repo_data["resolved_ref"] = resolved
 
 
-def _resolve_repo_target_ref(
-    repo: dict[str, Any],
-    *,
-    document_default_branch: str | None,
-) -> tuple[RefKind, str | None]:
-    tag = _as_optional_str(repo.get("tag"))
-    if tag:
-        return (RefKind.TAG, tag)
-    branch = _as_optional_str(repo.get("branch")) or _as_optional_str(repo.get("default_branch"))
-    if branch is None:
-        branch = document_default_branch or "main"
-    return (RefKind.BRANCH, branch)
-
-
 # ============================================================
 #  Registry builders — translate documents ↔ WorkingGitTree
 # ============================================================
@@ -284,7 +274,7 @@ def build_registry_from_cgs_document(
     for relative_path, repo in declared:
         parent_id, path_from_parent = _placement(repo_ids, relative_path)
 
-        target_kind, target_name = _resolve_repo_target_ref(
+        target = resolve_declared_ref(
             repo,
             document_default_branch=document.default_branch,
         )
@@ -296,8 +286,8 @@ def build_registry_from_cgs_document(
             absolute_path=(root_path / relative_path).resolve(),
             relative_path=path_from_parent,
             source_cgs_path=source_path,
-            target_ref_kind=target_kind,
-            target_ref_name=target_name,
+            target_ref_kind=target.kind,
+            target_ref_name=target.name,
             fallback_branch=_as_optional_str(repo.get("fallback_branch")),
             discovery_state=_initial_discovery_state(repo.get("nested_config")),
             gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
@@ -313,12 +303,14 @@ def build_registry_from_cgs_document(
             ),
             default_branch=str(repo.get("default_branch") or document.default_branch),
             nested_config=_as_optional_str(repo.get("nested_config")),
-            pinned=bool(repo.get("pinned", False)),
+            private=bool(repo.get("private", False)),
+            writable=bool(repo.get("writable", False)),
             remote_name=str(repo.get("remote_name") or document.read("project.default_remote_name", "origin")),
         )
         registry.add(entry)
 
     normalize_node_types(registry)
+    propagate_privacy(registry)
     registry.recompute_tree_state()
     document.attach_serialization_context(registry)
     return registry
@@ -385,7 +377,7 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
             repo_lifecycle_state=RepoLifecycleState(str(repo_state["repo_lifecycle_state"])),
             sync_state=SyncState(str(repo_state["sync_state"])),
             discovery_state=DiscoveryState(str(repo_state.get("discovery_state", DiscoveryState.RESOLVED.value))),
-            fallback_branch=_as_optional_str(repo_state.get("fallback_branch", "main")),
+            fallback_branch=_as_optional_str(repo_state.get("fallback_branch", DEFAULT_BRANCH)),
             fallback_applied=bool(repo_state.get("fallback_applied", False)),
             fallback_reason=_as_optional_str(repo_state.get("fallback_reason")),
             worktree_state=_as_optional_str(repo_state.get("worktree_state")),
@@ -408,13 +400,23 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
             access_protocol=_parse_enum(
                 AccessProtocol, repo_state.get("access_protocol"), AccessProtocol.SSH
             ),
-            default_branch=_repo_ref_name(repo_state, "target"),
-            pinned=bool(repo_state.get("pinned", False)),
+            # A snapshot written before default_branch was recorded has no
+            # such key; the target ref was the only thing to fall back to
+            # and stays the answer for those.
+            default_branch=(
+                _as_optional_str(repo_state.get("default_branch"))
+                or _repo_ref_name(repo_state, "target")
+            ),
+            # "pinned" is the pre-rename name; a snapshot written before it
+            # still loads.
+            private=bool(repo_state.get("private", repo_state.get("pinned", False))),
+            writable=bool(repo_state.get("writable", False)),
         )
         registry.add(entry)
         path_to_repo_id[absolute_path] = repo_id
 
     normalize_node_types(registry)
+    propagate_privacy(registry)
     registry.recompute_tree_state()
     return registry
 
@@ -479,10 +481,21 @@ def build_gts_document_from_registry(
         _write_compact_refs(repo_data, entry)
         if entry.discovery_state != DiscoveryState.RESOLVED:
             repo_data["discovery_state"] = entry.discovery_state.value
-        if entry.fallback_branch and entry.fallback_branch != "main":
+        if entry.fallback_branch and entry.fallback_branch != DEFAULT_BRANCH:
             repo_data["fallback_branch"] = entry.fallback_branch
-        if entry.pinned:
-            repo_data["pinned"] = True
+        if entry.private:
+            repo_data["private"] = True
+        if entry.writable:
+            repo_data["writable"] = True
+        # The branch this entry *declares*, recorded separately from the ref
+        # it currently sits on. Without it, reloading a snapshot re-derives
+        # default_branch from the target ref -- which for a private/local
+        # repository is already a derived branch, so the declared base is
+        # lost and the next derivation compounds it. Not in the canonical
+        # hash, for the same reason private/writable are not: it says what
+        # the document declared, not what state the tree is in.
+        if entry.default_branch and entry.default_branch != entry.target_ref_name:
+            repo_data["default_branch"] = entry.default_branch
         if entry.fallback_applied:
             repo_data["fallback_applied"] = entry.fallback_applied
         if not entry.is_reachable:

@@ -13,11 +13,14 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError, TreeNotReadyError
+from ComplexGitSync.git_branch import resolve_propagated_ref
 from ComplexGitSync.git_repo import (
     NodeType,
     RefKind,
     RepoLifecycleState,
+    RepoScope,
     SyncState,
+    WorkingRepo,
 )
 from ComplexGitSync.git_tree import (
     GitTree,
@@ -25,6 +28,7 @@ from ComplexGitSync.git_tree import (
     WorkingGitTree,
     iter_tree,
     iter_tree_leaf_first,
+    propagate_privacy,
 )
 from ComplexGitSync.operations import (
     BranchTopologyReport,
@@ -34,8 +38,12 @@ from ComplexGitSync.operations import (
     commit_tree,
     create_global_branch,
     freeze_release_tree,
+    merge_source_ref,
+    merge_status,
+    merge_tree,
     propagate_global_branch,
     push_tree,
+    refresh_private_tree,
     restart_tree,
     restart_tree_force,
     tag_tree,
@@ -212,12 +220,47 @@ class _FakeGitRunnerForOperations:
         self._tracking_states: dict[Path, SyncState | None] = {}
         self._has_upstream: dict[Path, bool] = {}
         self._merge_in_progress: dict[Path, bool] = {}
+        self._unmergeable: dict[Path, set[str]] = {}
+        self.merged: list[tuple[Path, str]] = []
+        self.merge_aborted: list[Path] = []
+        self.fetched: list[tuple[Path, str, str | None]] = []
 
     # --- branch / checkout ---
     def current_branch(self, repo_path: Path | str) -> str | None:
         return self._current_branches.get(Path(repo_path), "main")
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool:
         return branch in self._local_branches.get(Path(repo_path), set())
+
+    def branch_known(
+        self, repo_path: Path | str, branch: str, *, remote: str = "origin"
+    ) -> bool:
+        return self.local_branch_exists(repo_path, branch)
+
+    def merge(
+        self,
+        repo_path: Path | str,
+        ref_name: str,
+        *,
+        ff_only: bool = False,
+        no_ff: bool = False,
+        message: str | None = None,
+    ) -> None:
+        path = Path(repo_path)
+        if ref_name in self._unmergeable.get(path, set()):
+            raise GitSyncError(f"Git command failed (git merge {ref_name}): conflict")
+        self.merged.append((path, ref_name))
+        self.command_order.append(("merge", path))
+
+    def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> bool:
+        return ref_name not in self._unmergeable.get(Path(repo_path), set())
+
+    def merge_abort(self, repo_path: Path | str) -> None:
+        self.merge_aborted.append(Path(repo_path))
+
+    def fetch(
+        self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None
+    ) -> None:
+        self.fetched.append((Path(repo_path), remote, ref_name))
 
     def create_branch(self, repo_path: Path | str, branch: str) -> None:
         path = Path(repo_path)
@@ -672,43 +715,43 @@ def test_propagate_global_branch_accepts_custom_ref_kind(tmp_path):
         assert entry.target_ref_kind == RefKind.TAG
 
 
-def test_propagate_global_branch_leaves_a_pinned_repo_on_its_own_branch(tmp_path):
-    """A pinned mount is shared with other projects: the tree must not move it."""
+def test_propagate_global_branch_leaves_a_private_repo_on_its_own_branch(tmp_path):
+    """A private mount is shared with other projects: the tree must not move it."""
     registry = _make_ready_registry(tmp_path)
-    pinned = registry.get("root:deps/leaf")
-    pinned.pinned = True
-    pinned.default_branch = "ComplexGitSync"
+    private = registry.get("root:deps/leaf")
+    private.private = True
+    private.default_branch = "ComplexGitSync"
 
     propagate_global_branch(registry, "feature-x")
 
-    assert pinned.target_ref_name == "ComplexGitSync"
+    assert private.target_ref_name == "ComplexGitSync"
     assert registry.get("root").target_ref_name == "feature-x"
 
 
-def test_propagate_global_branch_still_moves_a_pinned_repo_to_a_tag(tmp_path):
+def test_propagate_global_branch_still_moves_a_private_repo_to_a_tag(tmp_path):
     """Pinning governs branch propagation only, so a frozen release stays whole."""
     registry = _make_ready_registry(tmp_path)
-    pinned = registry.get("root:deps/leaf")
-    pinned.pinned = True
-    pinned.default_branch = "ComplexGitSync"
+    private = registry.get("root:deps/leaf")
+    private.private = True
+    private.default_branch = "ComplexGitSync"
 
     propagate_global_branch(registry, "v1.2.3", ref_kind=RefKind.TAG)
 
-    assert pinned.target_ref_name == "v1.2.3"
-    assert pinned.target_ref_kind == RefKind.TAG
+    assert private.target_ref_name == "v1.2.3"
+    assert private.target_ref_kind == RefKind.TAG
 
 
-def test_create_global_branch_never_creates_inside_a_pinned_repo(tmp_path):
+def test_create_global_branch_never_creates_inside_a_private_repo(tmp_path):
     """The incident of 2026-09-05: a branch appeared inside shared repositories."""
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    pinned = registry.get("root:deps/leaf")
-    pinned.pinned = True
+    private = registry.get("root:deps/leaf")
+    private.private = True
 
     create_global_branch(registry, runner, "feature-x")
 
     created = [path for path, branch in runner.created if branch == "feature-x"]
-    assert pinned.absolute_path not in created
+    assert private.absolute_path not in created
     assert registry.get("root").absolute_path in created
 
 
@@ -1283,6 +1326,440 @@ def test_freeze_release_preflight_fails_when_branches_misalign(tmp_path):
         freeze_release_tree(registry, runner, "release-1")
 
 
+def _make_registry_with_config_repo(tmp_path: Path) -> WorkingGitTree:
+    """A READY registry whose leaf is a writable configuration repository.
+
+    Shaped like a real tree: the project's own root on a feature branch, and
+    a private mount sitting on a branch named after the project.
+    """
+    from ComplexGitSync.git_repo import WorkingRepo
+
+    registry = _make_ready_registry(tmp_path)
+    # The root of _make_ready_registry is named "project", so that is what a
+    # private/local branch here is named after: "project" on main,
+    # "project_<branch>" elsewhere.
+    leaf = registry.get("root:deps/leaf")
+    leaf.private = True
+    leaf.writable = True
+    leaf.default_branch = "project"
+    leaf.target_ref_name = "project"
+    leaf.resolved_ref_name = "project"
+    assert isinstance(leaf, WorkingRepo)
+    propagate_privacy(registry)
+    return registry
+
+
+class TestPreflightOnlyChecksWhatTheOperationTouches:
+    """A commit must not be blocked by a repository it will never write to.
+
+    The scope work made ``commit``/``push`` skip configuration repos, but
+    their preflight still swept the whole tree. A private mount sitting on
+    its own branch — the entire point of privacy — then read as a branch
+    misalignment and blocked every commit in the tree.
+    """
+
+    @staticmethod
+    def _runner(registry: WorkingGitTree) -> _FakeGitRunnerForOperations:
+        runner = _FakeGitRunnerForOperations()
+        runner._current_branches[registry.get("root").absolute_path] = "multi-branch"
+        runner._current_branches[registry.get("root:deps/leaf").absolute_path] = (
+            "project_multi-branch"
+        )
+        return runner
+
+    def test_a_private_mount_on_its_own_branch_does_not_block_a_commit(self, tmp_path):
+        """The bug reported from a live workspace."""
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = self._runner(registry)
+
+        commit_tree(registry, runner, "project work")
+
+        assert [path for path, _ in runner.committed] == [registry.get("root").absolute_path]
+
+    def test_a_private_mount_is_measured_against_its_own_branch_not_the_roots(self, tmp_path):
+        """Under --private the private mount *is* in scope, and still passes."""
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = self._runner(registry)
+
+        commit_tree(registry, runner, "config work", scope=RepoScope.PRIVATE)
+
+        assert [path for path, _ in runner.committed] == [
+            registry.get("root:deps/leaf").absolute_path
+        ]
+
+    def test_a_private_mount_off_its_declared_branch_still_blocks(self, tmp_path):
+        """Scoping must not turn the check off, only point it at the right branch."""
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = self._runner(registry)
+        runner._current_branches[registry.get("root:deps/leaf").absolute_path] = "somewhere-else"
+
+        with pytest.raises(GitSyncError, match="expected 'project_multi-branch'"):
+            commit_tree(registry, runner, "config work", scope=RepoScope.PRIVATE)
+
+    def test_an_owned_repo_off_the_roots_branch_still_blocks(self, tmp_path):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        runner._current_branches[registry.get("root").absolute_path] = "main"
+        runner._current_branches[registry.get("root:deps/leaf").absolute_path] = "feature-x"
+
+        with pytest.raises(GitSyncError, match="branch misalignment"):
+            commit_tree(registry, runner, "project work")
+
+    def test_a_config_repo_behind_its_upstream_does_not_block_a_project_commit(self, tmp_path):
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = self._runner(registry)
+        runner._tracking_states[registry.get("root:deps/leaf").absolute_path] = SyncState.BEHIND
+
+        commit_tree(registry, runner, "project work")
+
+        assert [path for path, _ in runner.committed] == [registry.get("root").absolute_path]
+
+    def test_worktree_state_is_refreshed_for_every_repo_whatever_the_scope(self, tmp_path):
+        """It is written into the .gts for every repo, so it must stay fresh."""
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = self._runner(registry)
+        leaf = registry.get("root:deps/leaf")
+        leaf.worktree_state = None
+
+        commit_tree(registry, runner, "project work")
+
+        assert leaf.worktree_state is not None
+
+
+class TestMergeTree:
+    """`merge` lands a project branch across the tree, or lands nothing.
+
+    The argument is always the *project's* branch. Each repository resolves
+    what that means for itself, which is why the private case needs no code
+    of its own — it is the same command with a different scope.
+    """
+
+    @staticmethod
+    def _tree(tmp_path: Path) -> WorkingGitTree:
+        registry = _make_registry_with_config_repo(tmp_path)
+        return registry
+
+    @staticmethod
+    def _runner(registry: WorkingGitTree) -> _FakeGitRunnerForOperations:
+        runner = _FakeGitRunnerForOperations()
+        root = registry.get("root").absolute_path
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._current_branches[root] = "main"
+        runner._current_branches[leaf] = "project"
+        # Every branch either side might merge exists.
+        runner._local_branches[root] = {"main", "multi-branch"}
+        runner._local_branches[leaf] = {"MyProject", "project_multi-branch"}
+        return runner
+
+    def test_a_project_repo_merges_the_branch_it_was_given(self, tmp_path):
+        registry = self._tree(tmp_path)
+        runner = self._runner(registry)
+
+        merge_tree(registry, runner, "multi-branch")
+
+        assert runner.merged == [(registry.get("root").absolute_path, "multi-branch")]
+
+    def test_a_private_local_repo_merges_the_derived_branch_instead(self, tmp_path):
+        """The whole design in one assertion: the name is translated."""
+        registry = self._tree(tmp_path)
+        runner = self._runner(registry)
+
+        merge_tree(registry, runner, "multi-branch", scope=RepoScope.PRIVATE)
+
+        assert runner.merged == [
+            (registry.get("root:deps/leaf").absolute_path, "project_multi-branch")
+        ]
+
+    def test_a_conflict_anywhere_leaves_nothing_merged(self, tmp_path):
+        """The guarantee that makes a tree-wide merge safe to run at all."""
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root = registry.get("root").absolute_path
+        leaf = registry.get("root:deps/leaf").absolute_path
+        for path in (root, leaf):
+            runner._current_branches[path] = "main"
+            runner._local_branches[path] = {"main", "multi-branch"}
+        # The root conflicts; the leaf is merged first, leaf-first order.
+        runner._unmergeable[root] = {"multi-branch"}
+
+        with pytest.raises(GitSyncError, match="no repository was merged"):
+            merge_tree(registry, runner, "multi-branch")
+
+        assert runner.merged == [], "the clean repo must not have been merged"
+
+    def test_the_error_names_every_blocked_repository(self, tmp_path):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            runner._current_branches[repo.absolute_path] = "main"
+            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+            runner._unmergeable[repo.absolute_path] = {"multi-branch"}
+
+        with pytest.raises(GitSyncError) as excinfo:
+            merge_tree(registry, runner, "multi-branch")
+
+        message = str(excinfo.value)
+        assert "leaf" in message and "project" in message
+
+    def test_a_repo_with_no_such_branch_is_skipped_not_failed(self, tmp_path):
+        """A private/local repo may simply have no branch for this one yet."""
+        registry = self._tree(tmp_path)
+        runner = self._runner(registry)
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._local_branches[leaf] = {"project"}
+
+        merged = merge_tree(registry, runner, "multi-branch", scope=RepoScope.PRIVATE)
+
+        assert merged == ()
+        assert runner.merged == []
+
+    def test_a_read_only_config_repo_is_never_merged(self, tmp_path):
+        registry = _make_registry_with_config_repo(tmp_path)
+        leaf = registry.get("root:deps/leaf")
+        leaf.writable = False
+        propagate_privacy(registry)
+        runner = self._runner(registry)
+
+        merge_tree(registry, runner, "multi-branch", scope=RepoScope.WRITABLE)
+
+        merged_paths = [path for path, _ in runner.merged]
+        assert leaf.absolute_path not in merged_paths
+
+    def test_merge_source_ref_translates_only_for_private_local(self, tmp_path):
+        registry = self._tree(tmp_path)
+
+        assert (
+            merge_source_ref(registry.get("root"), "multi-branch", project_name="project")
+            == "multi-branch"
+        )
+        assert (
+            merge_source_ref(
+                registry.get("root:deps/leaf"), "multi-branch", project_name="project"
+            )
+            == "project_multi-branch"
+        )
+
+
+class TestCheckoutAndBranchBothUseTheProjectRule:
+    """`branch` creates a private/local repo's derived branch; `checkout` never does.
+
+    Both halves matter. Without the first the feature is unreachable — no
+    command could ever bring `<base>_<branch>` into existence, so resolution
+    would fall back forever. Without the second, moving the tree would
+    silently create a branch in a repository shared with other projects.
+    """
+
+    @staticmethod
+    def _tree_and_runner(tmp_path: Path):
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            runner._current_branches[repo.absolute_path] = "main"
+            runner._local_branches[repo.absolute_path] = {"main"}
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._current_branches[leaf] = "project"
+        runner._local_branches[leaf] = {"project"}
+        return registry, runner
+
+    def test_branch_creates_the_derived_branch_for_a_private_local_repo(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf").absolute_path
+
+        branch_tree(registry, runner, "multi-branch")
+
+        assert (leaf, "project_multi-branch") in runner.created
+
+    def test_branch_still_creates_the_plain_branch_for_a_project_repo(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        root = registry.get("root").absolute_path
+
+        branch_tree(registry, runner, "multi-branch")
+
+        assert (root, "multi-branch") in runner.created
+
+    def test_branch_never_touches_a_private_distant_repo(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf")
+        leaf.writable = False
+        propagate_privacy(registry)
+
+        branch_tree(registry, runner, "multi-branch")
+
+        assert leaf.absolute_path not in [path for path, _ in runner.created]
+
+    def test_checkout_creates_and_moves_in_one_command(self, tmp_path):
+        """The user asks for a branch, not for two spellings of one.
+
+        `checkout <B>` puts the project's repos on `B` and its settings repo
+        on the branch named after the project for `B`, creating it when it is
+        not there. Nobody should have to know the second name.
+        """
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf").absolute_path
+
+        checkout_tree(registry, runner, "multi-branch")
+
+        assert (leaf, "project_multi-branch") in runner.created
+        assert (leaf, "project_multi-branch") in runner.checked_out
+        assert (registry.get("root").absolute_path, "multi-branch") in runner.checked_out
+
+    def test_checkout_main_puts_it_back_on_the_bare_project_name(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf").absolute_path
+
+        checkout_tree(registry, runner, "main")
+
+        assert (leaf, "project") in runner.checked_out
+
+
+class TestTheProjectNamesThePrivateLocalBranch:
+    """`X` for the project's repos; `<project>` or `<project>_X` for its settings.
+
+    `main` takes no suffix, because the project's main line's settings branch
+    is simply the project's name — which is what every existing tree already
+    has, so nothing has to migrate.
+    """
+
+    @staticmethod
+    def _entry() -> WorkingRepo:
+        return WorkingRepo(
+            repo_id="c",
+            name=".claude",
+            private=True,
+            writable=True,
+            default_branch="MyProject",
+            resolved_ref_name="MyProject_multi-branch",
+            target_ref_name="MyProject_multi-branch",
+        )
+
+    def test_a_feature_branch_gets_the_suffix(self):
+        assert (
+            resolve_propagated_ref(
+                self._entry(), "multi-branch", project_name="MyProject"
+            ).name
+            == "MyProject_multi-branch"
+        )
+
+    def test_main_gets_the_bare_project_name(self):
+        """Going back to main lands on the project's own settings branch."""
+        assert (
+            resolve_propagated_ref(self._entry(), "main", project_name="MyProject").name
+            == "MyProject"
+        )
+
+    def test_it_does_not_stay_on_the_branch_it_came_from(self):
+        landed = resolve_propagated_ref(
+            self._entry(), "main", project_name="MyProject"
+        ).name
+
+        assert landed != "MyProject_multi-branch"
+
+
+class TestMergeRefusesToMergeABranchIntoItself:
+    """Merging a branch into itself succeeds and does nothing, which reads as
+    "it worked" when the tree is simply still on the branch you meant to
+    merge *from*. That silence is the bug."""
+
+    @staticmethod
+    def _tree_and_runner(tmp_path: Path):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            runner._current_branches[repo.absolute_path] = "multi-branch"
+            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+        return registry, runner
+
+    def test_it_refuses_and_says_what_to_do(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+
+        with pytest.raises(GitSyncError) as excinfo:
+            merge_tree(registry, runner, "multi-branch")
+
+        message = str(excinfo.value)
+        assert "already on 'multi-branch'" in message
+        assert "cgitsync checkout" in message, "the message must say how to fix it"
+        assert runner.merged == []
+
+    def test_merging_a_different_branch_still_works(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+
+        merge_tree(registry, runner, "main")
+
+        assert [ref for _, ref in runner.merged] == ["main", "main"]
+
+    def test_the_plan_and_the_merge_agree(self, tmp_path):
+        """One function decides both, so a dry run cannot promise a refusal."""
+        registry, runner = self._tree_and_runner(tmp_path)
+        root = registry.get("root")
+
+        assert merge_status(root, runner, "multi-branch")[1] == "already-on-it"
+        assert merge_status(root, runner, "main")[1] == "merge"
+
+
+class TestRefreshPrivateTree:
+    """`pull --private` keeps a settings branch current with its base.
+
+    A private/local repository records this project's settings per project
+    branch. While a feature branch is open, work lands on the base branch and
+    the derived one does not see it. This is the command that closes that gap,
+    and it uses the same merge primitive `merge` does.
+    """
+
+    @staticmethod
+    def _tree_and_runner(tmp_path: Path, *, on_derived: bool = True):
+        # A coherent tree: the project is on multi-branch, so its settings
+        # repository is on the branch derived from it.
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root = registry.get("root").absolute_path
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._current_branches[root] = "multi-branch"
+        runner._current_branches[leaf] = (
+            "project_multi-branch" if on_derived else "project"
+        )
+        runner._local_branches[root] = {"multi-branch"}
+        runner._local_branches[leaf] = (
+            {"project", "project_multi-branch"} if on_derived else {"project"}
+        )
+        return registry, runner
+
+    def test_it_fetches_then_merges_the_base_branch(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf").absolute_path
+
+        refresh_private_tree(registry, runner)
+
+        assert runner.fetched == [(leaf, "origin", "project")]
+        assert runner.merged == [(leaf, "origin/project")]
+
+    def test_a_repo_already_on_its_base_has_nothing_to_take(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path, on_derived=False)
+        # Coherent for that case means the project is on main, where the
+        # settings branch is the bare project name.
+        runner._current_branches[registry.get("root").absolute_path] = "main"
+
+        assert refresh_private_tree(registry, runner) == ()
+        assert runner.merged == []
+
+    def test_a_project_owned_repo_is_never_touched(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        root = registry.get("root").absolute_path
+
+        refresh_private_tree(registry, runner)
+
+        assert root not in [path for path, _ in runner.merged]
+
+    def test_a_conflict_leaves_nothing_merged(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._unmergeable[leaf] = {"origin/project"}
+
+        with pytest.raises(GitSyncError, match="no repository was merged"):
+            refresh_private_tree(registry, runner)
+
+        assert runner.merged == []
+
+
 def test_tag_tree_preflight_fails_when_repo_is_detached(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
@@ -1413,7 +1890,9 @@ def test_client_checkout_delegates_to_gittree_git_checkout(tmp_path, monkeypatch
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_checkout(self, git_runner, branch_name, *, ref_kind=RefKind.BRANCH, tree=None):
+    def _spy_checkout(
+        self, git_runner, branch_name, *, ref_kind=RefKind.BRANCH, tree=None, scope=None
+    ):
         captured_call["tree"] = tree
         captured_call["git_runner"] = git_runner
         captured_call["branch_name"] = branch_name
@@ -1434,7 +1913,7 @@ def test_client_branch_delegates_to_gittree_git_branch(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_branch(self, git_runner, branch_name, *, tree=None):
+    def _spy_branch(self, git_runner, branch_name, *, tree=None, scope=None):
         captured_call["tree"] = tree
         captured_call["git_runner"] = git_runner
         captured_call["branch_name"] = branch_name
@@ -1453,7 +1932,7 @@ def test_client_commit_delegates_to_gittree_git_commit(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_commit(self, git_runner, message, *, stage_all=True, tree=None):
+    def _spy_commit(self, git_runner, message, *, stage_all=True, tree=None, scope=None):
         captured_call["git_runner"] = git_runner
         captured_call["message"] = message
         captured_call["stage_all"] = stage_all
@@ -1476,7 +1955,7 @@ def test_client_add_delegates_to_gittree_git_add(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_add(self, git_runner, *, tree=None, paths=None):
+    def _spy_add(self, git_runner, *, tree=None, paths=None, scope=None):
         captured_call["git_runner"] = git_runner
         captured_call["tree"] = tree
 
@@ -1492,7 +1971,7 @@ def test_client_add_forwards_paths_to_gittree_git_add(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_add(self, git_runner, *, tree=None, paths=None):
+    def _spy_add(self, git_runner, *, tree=None, paths=None, scope=None):
         captured_call["paths"] = paths
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "add", _spy_add)
@@ -1506,7 +1985,7 @@ def test_client_push_delegates_to_gittree_git_push(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_push(self, git_runner, *, tree=None, force_access_protocol=None):
+    def _spy_push(self, git_runner, *, tree=None, force_access_protocol=None, scope=None):
         captured_call["git_runner"] = git_runner
         captured_call["tree"] = tree
 
@@ -1522,7 +2001,7 @@ def test_client_tag_delegates_to_gittree_git_tag(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_tag(self, git_runner, tag_name, *, tree=None):
+    def _spy_tag(self, git_runner, tag_name, *, tree=None, scope=None):
         captured_call["git_runner"] = git_runner
         captured_call["tag_name"] = tag_name
         captured_call["tree"] = tree
@@ -1729,7 +2208,9 @@ def test_client_launch_release_checkouts_release_tag_and_writes_gts(tmp_path, mo
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_checkout(self, git_runner, branch_name, *, ref_kind=RefKind.BRANCH, tree=None):
+    def _spy_checkout(
+        self, git_runner, branch_name, *, ref_kind=RefKind.BRANCH, tree=None, scope=None
+    ):
         captured_call["git_runner"] = git_runner
         captured_call["branch_name"] = branch_name
         captured_call["ref_kind"] = ref_kind

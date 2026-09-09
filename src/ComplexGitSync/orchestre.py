@@ -74,12 +74,14 @@ from .errors import (
     ConfigValidationError,
     GitSyncError,
 )
+from .git_branch import BranchResolution, resolve_entry_ref, resolve_propagated_ref
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
     GitRepo,
     RefKind,
     RepoLifecycleState,
+    RepoScope,
     SyncState,
     WorkingRepo,
     repo_remote_url,
@@ -103,6 +105,7 @@ from .git_tree import (
     iter_tree,
     iter_tree_leaf_first,
     normalize_node_types,
+    propagate_privacy,
     sync_gitignore,
 )
 from .git_tree import (
@@ -115,6 +118,7 @@ from .ledger_store import read_all_entries, read_head, recompute_head, verify_an
 from .master import MasterConfig
 from .operations import (
     BranchTopologyReport,
+    tree_project_name,
 )
 from .operations import (
     validate_branch_topology as _validate_branch_topology,
@@ -137,11 +141,14 @@ from .state_store import (
     _resolve_memory_state_directory,
 )
 from .status_render import (
+    PROJECT_SCOPE_LABEL,
+    SCOPE_LEGEND,
     _render_status_table,
     _status_display_path,
     _status_line_is_untracked,
     _status_line_path,
     _status_line_targets_any,
+    _status_scope_label,
 )
 
 # ============================================================
@@ -878,6 +885,73 @@ def _as_posix_or_none(path: Path | None) -> str | None:
     return None if path is None else path.as_posix()
 
 
+def _scope_for(
+    tree: WorkingGitTree,
+    *,
+    private: bool,
+    command: str,
+    default: RepoScope = RepoScope.ALL,
+) -> RepoScope:
+    """``--private`` narrows a command to the writable configuration repos.
+
+    Without it, a command keeps whatever *default* it has always had — for
+    the tree-wide readers and movers that is every repository, because a
+    private/local one already resolves its own branch name. ``--private``
+    is how a user acts on the configuration repositories alone, and it is
+    refused rather than silently empty when the tree has none.
+    """
+    if not private:
+        return default
+    return resolve_command_scope(tree, private=True, command=command)
+
+
+def resolve_command_scope(
+    tree: WorkingGitTree,
+    *,
+    private: bool,
+    command: str,
+) -> RepoScope:
+    """Pick the scope a write command runs at, and refuse an empty one.
+
+    Without ``--private`` a write command touches only the repositories this
+    project owns. With it, only the **writable** configuration repos — the
+    ones the ``.cgs`` declares ``private = true, writable = true``. The two
+    are disjoint on purpose: a shared repository gets its own command and
+    its own commit message, rather than being swept into this project's.
+
+    Raises rather than silently doing nothing when ``--private`` is asked
+    for and no repository qualifies, since a command that quietly touched
+    nothing is exactly the failure this whole mechanism exists to prevent.
+    """
+    if not private:
+        return RepoScope.PROJECT
+    if any(RepoScope.PRIVATE.includes(repo) for repo in tree.values()):
+        return RepoScope.PRIVATE
+    read_only = sorted(repo.name for repo in tree.values() if repo.effective_private)
+    detail = (
+        f" The private repositories in this tree are read-only: {', '.join(read_only)}."
+        if read_only
+        else " This tree declares no private repositories at all."
+    )
+    raise GitSyncError(
+        f"{command} --private: no writable configuration repository in this tree.{detail}"
+        f" A private repository is read-only unless its .cgs entry also says"
+        f" writable = true."
+    )
+
+
+def _is_dot_named_mount(relative_path: str) -> bool:
+    """True when any segment of *relative_path* is a dot-named directory.
+
+    Used only to pick ``discover``'s default for ``private``. Being dot-named
+    is a habit, not the rule — ``private`` means "shared with other projects",
+    and ``docs/DocSpec`` is private without being hidden at any level. The
+    habit is reliable enough to make a *default* out of, which the author
+    then sees in the drafted ``.cgs`` and can delete.
+    """
+    return any(segment.startswith(".") for segment in relative_path.split("/") if segment != ".")
+
+
 @dataclass(frozen=True, slots=True)
 class DiscoveredRepo:
     """One git repository found on disk by :meth:`ComplexGitSyncClient.discover_repos`.
@@ -1379,6 +1453,9 @@ class ComplexGitSyncClient:
                 cfg.add_section(section)
                 cfg.set(section, "path", sub.path)
                 cfg.set(section, "url", sub.url)
+                # Git's own .gitmodules default, not git_branch.DEFAULT_BRANCH
+                # — this omits the key only when it would say what Git already
+                # assumes, and must not move when our .cgs default moves.
                 if sub.branch != "main":
                     cfg.set(section, "branch", sub.branch)
             import io
@@ -1751,7 +1828,17 @@ class ComplexGitSyncClient:
                 entry["fallback_branch"] = repo.branch
             # A repository with no .cgs of its own resolves cleanly on the
             # default "auto" (zero matches -> RESOLVED), so it is left
-            # unset here rather than pinned to "disabled".
+            # unset here rather than private to "disabled".
+            if _is_dot_named_mount(repo.relative_path):
+                # A dot-named mount (.agentSpec, .localSpec, .claude) is
+                # almost always a config repository shared with other
+                # projects, and "private" means exactly that: shared, so
+                # tree-wide branch moves must leave it alone. Drafting it
+                # private states the convention as a default the author can
+                # see and delete, rather than hiding these repositories from
+                # the scan — they are still found, still listed, and still
+                # written out.
+                entry["private"] = True
             cgs_entries.append(entry)
 
         self._log_event(
@@ -2374,6 +2461,7 @@ class ComplexGitSyncClient:
         registry = self.get_dependency_registry()
         fixed = _fix_circularities(registry)
         normalize_node_types(registry)
+        propagate_privacy(registry)
         registry.recompute_tree_state()
         return fixed
 
@@ -2750,6 +2838,7 @@ class ComplexGitSyncClient:
         branch_name: str,
         *,
         ref_kind: RefKind = RefKind.BRANCH,
+        private: bool = False,
     ) -> WorkingGitTree:
         """Check out *branch_name* across the full tree from a READY ``.gts`` state.
 
@@ -2771,6 +2860,7 @@ class ComplexGitSyncClient:
             self.git_runner,
             branch_name,
             ref_kind=ref_kind,
+            scope=_scope_for(registry, private=private, command="checkout"),
         )
         snapshot_path = self.write_gts_snapshot(command_origin="checkout")
         if self.source_path is not None:
@@ -2782,12 +2872,15 @@ class ComplexGitSyncClient:
     def branch(
         self,
         branch_name: str,
+        *,
+        private: bool = False,
     ) -> WorkingGitTree:
         """Create *branch_name* across the full tree without checkout."""
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("branch_start", branch_name=branch_name)
-        self.orchestre.git_tree.git.branch(self.git_runner, branch_name)
+        scope = _scope_for(registry, private=private, command="branch")
+        self.orchestre.git_tree.git.branch(self.git_runner, branch_name, scope=scope)
         if ROOT_REPO_ID in registry.repos:
             snapshot_path = self.write_gts_snapshot(command_origin="branch")
             if self.source_path is not None:
@@ -2801,6 +2894,7 @@ class ComplexGitSyncClient:
         message: str,
         *,
         stage_all: bool = True,
+        private: bool = False,
     ) -> WorkingGitTree:
         """Commit changes across the full tree, leaf-first.
 
@@ -2811,17 +2905,118 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        self._log_event("commit_start", message=message, stage_all=stage_all)
+        scope = resolve_command_scope(registry, private=private, command="commit")
+        self._log_event("commit_start", message=message, stage_all=stage_all, scope=scope.value)
         self.orchestre.git_tree.git.commit(
             self.git_runner,
             message,
             stage_all=stage_all,
+            scope=scope,
         )
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="commit")
         self._log_event("commit_end", message=message)
         return registry
 
-    def add(self, paths: Sequence[str | Path] | None = None) -> WorkingGitTree:
+    def merge(
+        self,
+        project_branch: str,
+        *,
+        private: bool = False,
+        ff_only: bool = False,
+        no_ff: bool = False,
+    ) -> tuple[tuple[str, str], ...]:
+        """Merge *project_branch* into the tree's current branch, leaf-first.
+
+        *project_branch* is always the **project's** branch name. Each
+        repository resolves what that means for itself: a project-owned repo
+        merges that branch, and a private/local repo merges the branch
+        derived from it (``<base>_<project_branch>``), because that is where
+        its settings for that project branch live. ``private=True`` selects
+        the writable configuration repositories instead of the project's own.
+
+        Every repository in scope is checked before any is merged, so a
+        conflict anywhere leaves the whole tree untouched. Returns one
+        ``(repo_name, merged_ref)`` pair per repository a merge moved.
+
+        Requires a ``READY`` registry; raises
+        :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.
+        """
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        scope = resolve_command_scope(registry, private=private, command="merge")
+        self._log_event("merge_start", project_branch=project_branch, scope=scope.value)
+        merged = self.orchestre.git_tree.git.merge(
+            self.git_runner,
+            project_branch,
+            scope=scope,
+            ff_only=ff_only,
+            no_ff=no_ff,
+        )
+        self._log_tree_transition(previous_state, registry.lifecycle_state, reason="merge")
+        self._log_event("merge_end", project_branch=project_branch, merged=len(merged))
+        return merged
+
+    def refresh_private(self) -> tuple[tuple[str, str], ...]:
+        """Bring each private/local repository up to date with its base branch.
+
+        What ``pull --private`` runs. A private/local repository records this
+        project's settings per project branch; those branches drift while a
+        feature branch is open. This fetches and merges the base branch into
+        each one, using the same merge primitive :meth:`merge` uses.
+
+        Returns one ``(repo_name, merged_ref)`` pair per repository a merge
+        moved. A repository already on its base branch has nothing to take
+        and is skipped.
+        """
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        self._log_event("refresh_private_start")
+        refreshed = self.orchestre.git_tree.git.refresh_private(self.git_runner)
+        self._log_tree_transition(
+            previous_state, registry.lifecycle_state, reason="pull --private"
+        )
+        self._log_event("refresh_private_end", refreshed=len(refreshed))
+        return refreshed
+
+    def merge_plan(
+        self,
+        project_branch: str,
+        *,
+        private: bool = False,
+    ) -> tuple[tuple[str, str, str], ...]:
+        """What :meth:`merge` would do, in order, without doing it.
+
+        One ``(repo_name, source_ref, status)`` triple per in-scope
+        repository, leaf-first. ``source_ref`` is the branch that repository
+        would actually merge, which for a private/local repository is derived
+        from *project_branch* rather than equal to it — seeing that
+        translation before it runs is the point of a merge dry run.
+
+        ``status`` is ``"merge"``, ``"already-on-it"`` or ``"no-branch"``,
+        decided by the same function :meth:`merge` uses, so a dry run cannot
+        promise something the merge then refuses.
+        """
+        from .operations import merge_status
+
+        registry = self.get_dependency_registry()
+        scope = resolve_command_scope(registry, private=private, command="merge")
+        project_name = tree_project_name(registry)
+        return tuple(
+            (
+                repo.name,
+                *merge_status(
+                    repo, self.git_runner, project_branch, project_name=project_name
+                ),
+            )
+            for repo in iter_tree_leaf_first(registry, scope)
+        )
+
+    def add(
+        self,
+        paths: Sequence[str | Path] | None = None,
+        *,
+        private: bool = False,
+    ) -> WorkingGitTree:
         """Stage changes across the full tree, leaf-first.
 
         Requires a ``READY`` registry; raises
@@ -2835,8 +3030,13 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        self._log_event("add_start", paths=[str(p) for p in paths] if paths else None)
-        self.orchestre.git_tree.git.add(self.git_runner, paths=paths)
+        scope = resolve_command_scope(registry, private=private, command="add")
+        self._log_event(
+            "add_start",
+            paths=[str(p) for p in paths] if paths else None,
+            scope=scope.value,
+        )
+        self.orchestre.git_tree.git.add(self.git_runner, paths=paths, scope=scope)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="add")
         self._log_event("add_end")
         return registry
@@ -2860,7 +3060,12 @@ class ComplexGitSyncClient:
         self._log_event("rm_end")
         return registry
 
-    def push(self, *, force_access_protocol: str | None = None) -> WorkingGitTree:
+    def push(
+        self,
+        *,
+        force_access_protocol: str | None = None,
+        private: bool = False,
+    ) -> WorkingGitTree:
         """Push all repos to their remotes, leaf-first.
 
         Requires a ``READY`` registry; raises
@@ -2878,10 +3083,13 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        self._log_event("push_start")
+        scope = resolve_command_scope(registry, private=private, command="push")
+        self._log_event("push_start", scope=scope.value)
         protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
         try:
-            self.orchestre.git_tree.git.push(self.git_runner, force_access_protocol=protocol)
+            self.orchestre.git_tree.git.push(
+                self.git_runner, force_access_protocol=protocol, scope=scope
+            )
         except GitSyncError as exc:
             hint = _protocol_switch_hint(str(exc), command="push")
             if hint:
@@ -2894,7 +3102,7 @@ class ComplexGitSyncClient:
         self._log_event("push_end")
         return registry
 
-    def tag(self, tag_name: str) -> WorkingGitTree:
+    def tag(self, tag_name: str, *, private: bool = False) -> WorkingGitTree:
         """Create and push *tag_name* across the full tree, leaf-first.
 
         The runtime tree state is refreshed so the recorded tag target remains
@@ -2903,7 +3111,12 @@ class ComplexGitSyncClient:
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("tag_start", tag_name=tag_name)
-        self.orchestre.git_tree.git.tag(self.git_runner, tag_name)
+        scope = (
+            RepoScope.PRIVATE
+            if private
+            else _scope_for(registry, private=False, command="tag", default=RepoScope.WRITABLE)
+        )
+        self.orchestre.git_tree.git.tag(self.git_runner, tag_name, scope=scope)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="tag")
         self._log_event("tag_end", tag_name=tag_name)
         return registry
@@ -3285,7 +3498,7 @@ class ComplexGitSyncClient:
 
     def status(self) -> str:
         registry = self.get_dependency_registry()
-        rows: list[tuple[str, str, str, str, str, str, str, str]] = []
+        rows: list[tuple[str, str, str, str, str, str, str, str, str]] = []
         root_path = registry.get(ROOT_REPO_ID).absolute_path
         dirty_count = 0
         staged_count = 0
@@ -3297,8 +3510,8 @@ class ComplexGitSyncClient:
         for entry in iter_tree_leaf_first(registry):
             repo_status = self._repo_status_row(registry, entry, root_path)
             rows.append(repo_status)
-            local_state = repo_status[4]
-            upstream_state = repo_status[5]
+            local_state = repo_status[5]
+            upstream_state = repo_status[6]
             if local_state != "clean":
                 dirty_count += 1
             if "staged" in local_state:
@@ -3310,7 +3523,7 @@ class ComplexGitSyncClient:
             elif upstream_state.startswith("diverged"):
                 ahead_count += 1
                 behind_count += 1
-            if repo_status[6].endswith("*"):
+            if repo_status[7].endswith("*"):
                 recorded_mismatch_count += 1
             if upstream_state == "error" or local_state == "error":
                 error_count += 1
@@ -3331,17 +3544,62 @@ class ComplexGitSyncClient:
             )
         ]
         lines.append(_render_status_table(rows))
+        incoherent = self._branch_incoherence(registry)
+        if incoherent:
+            lines.append(
+                "warning: tree is split across branches — "
+                + "; ".join(incoherent)
+                + ". Run 'cgitsync checkout <branch>' to put it back."
+            )
+        if any(row[2] != PROJECT_SCOPE_LABEL for row in rows):
+            lines.append(SCOPE_LEGEND)
         if recorded_mismatch_count:
             lines.append("legend: HEAD ending with * differs from the commit recorded in the loaded .gts")
         return "\n".join(lines)
+
+    def _branch_incoherence(self, registry: WorkingGitTree) -> list[str]:
+        """Repositories that are not on the branch the tree says they should be.
+
+        ``status`` is the one command a user runs to ask whether the tree is
+        all right, and until this existed it could not see the most basic way
+        for it to be wrong: a root checked out with plain ``git`` leaves every
+        other repository behind, and the tree still reported ``READY``.
+
+        The same rule ``checkout`` would apply — so a private/distant repo on
+        its own branch, and a private/local repo on a derived branch that
+        exists, are both coherent, not findings.
+        """
+        try:
+            root = registry.get(ROOT_REPO_ID)
+            root_branch = self.git_runner.current_branch(root.absolute_path)
+        except (KeyError, GitSyncError):
+            return []
+        if root_branch is None:
+            return []
+        findings: list[str] = []
+        project_name = tree_project_name(registry)
+        for entry in iter_tree_leaf_first(registry):
+            try:
+                current = self.git_runner.current_branch(entry.absolute_path)
+            except GitSyncError:
+                continue
+            if current is None:
+                continue
+            expected = resolve_propagated_ref(
+                entry, root_branch, project_name=project_name
+            ).name
+            if current != expected:
+                findings.append(f"{entry.name} is on {current!r}, expected {expected!r}")
+        return findings
 
     def _repo_status_row(
         self,
         registry: WorkingGitTree,
         entry: WorkingRepo,
         root_path: Path,
-    ) -> tuple[str, str, str, str, str, str, str, str]:
+    ) -> tuple[str, str, str, str, str, str, str, str, str]:
         display_path = _status_display_path(entry, root_path)
+        scope_label = _status_scope_label(entry)
         try:
             branch = self.git_runner.current_branch(entry.absolute_path) or "detached"
             head = self.git_runner.rev_parse_head(entry.absolute_path)
@@ -3353,6 +3611,7 @@ class ComplexGitSyncClient:
             return (
                 entry.name,
                 display_path,
+                scope_label,
                 entry.current_ref_name or "-",
                 "-",
                 "error",
@@ -3370,6 +3629,7 @@ class ComplexGitSyncClient:
         return (
             entry.name,
             display_path,
+            scope_label,
             branch,
             upstream_ref or "-",
             local_state,
@@ -3696,7 +3956,7 @@ class ComplexGitSyncClient:
             current_branch = None
             commit_sha = ""
 
-        ref_name = current_branch or entry.target_ref_name or entry.default_branch or "main"
+        ref_name = resolve_entry_ref(entry, observed_branch=current_branch).name
         entry.current_ref_kind = RefKind.BRANCH
         entry.current_ref_name = ref_name
         entry.resolved_ref_kind = RefKind.BRANCH
@@ -3747,7 +4007,10 @@ class ComplexGitSyncClient:
                 ) from exc
             raise
         current_ref = self.git_runner.current_branch(entry.absolute_path) or selected_ref
-        fallback_applied = current_ref != (entry.target_ref_name or selected_ref)
+        landed = BranchResolution.from_landed_ref(
+            entry, current_ref, selected_ref_kind, requested_name=selected_ref
+        )
+        fallback_applied = landed.fallback_applied
 
         entry.current_ref_kind = selected_ref_kind
         entry.current_ref_name = current_ref if selected_ref_kind == RefKind.BRANCH else selected_ref
@@ -3755,11 +4018,7 @@ class ComplexGitSyncClient:
         entry.resolved_ref_name = current_ref if selected_ref_kind == RefKind.BRANCH else selected_ref
         entry.commit_sha = self.git_runner.rev_parse_head(entry.absolute_path)
         entry.fallback_applied = fallback_applied
-        entry.fallback_reason = (
-            f"branch '{entry.target_ref_name}' not found on remote; cloned '{current_ref}' instead"
-            if fallback_applied
-            else None
-        )
+        entry.fallback_reason = landed.fallback_detail(entry)
         entry.repo_lifecycle_state = (
             RepoLifecycleState.FALLBACK_READY if fallback_applied else RepoLifecycleState.READY
         )

@@ -30,6 +30,7 @@ from ._shared import (
     _print_repo_tree_result,
     _resolve_gts_path,
     _resolve_workspace_source,
+    _resolve_write_scope,
     _run_with_logging,
 )
 
@@ -44,6 +45,7 @@ COMMANDS: dict[str, str] = {
     "add": "Stage all changes across a READY tree.",
     "rm": "Remove one or more tracked files, each from the repo that owns it.",
     "commit": "Commit dirty repositories from a READY tree.",
+    "merge": "Merge a project branch across a READY tree, leaf-first.",
     "push": "Push repositories from a READY tree.",
     "tag": "Create and push a tag across a READY tree.",
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
@@ -175,13 +177,47 @@ def _register_pull(subparser: argparse.ArgumentParser) -> None:
     _register_pull_source_and_search_dir(subparser)
     _add_gitignore_sync_arguments(subparser)
     _add_force_protocol_argument(subparser, command_name="pull")
+    subparser.add_argument(
+        "--private",
+        action="store_true",
+        help=(
+            "Instead of resynchronising the whole tree, bring each writable "
+            "configuration repository up to date with its base branch: fetch, then "
+            "merge '<its default_branch>' into the derived branch it is on. Use it "
+            "while a project feature branch is open, so its settings branch does not "
+            "drift behind the project's. Read-only configuration repositories are "
+            "never touched."
+        ),
+    )
     subparser.set_defaults(handler=_handle_pull)
 
 
 def _register_pull_force(subparser: argparse.ArgumentParser) -> None:
     _register_pull_source_and_search_dir(subparser)
     _add_force_protocol_argument(subparser, command_name="pull-force")
+    _add_private_argument(subparser, verb="Force-resynchronise")
     subparser.set_defaults(handler=_handle_pull_force)
+
+
+def _add_private_argument(subparser: argparse.ArgumentParser, *, verb: str) -> None:
+    """Add ``--private``: act on the writable configuration repositories alone.
+
+    Every command that touches Git takes it, so a user who wants to work on
+    their configuration repositories on their own never has to reach for
+    plain ``git``. Without it a command keeps its usual reach — which for
+    ``checkout`` and ``branch`` is the whole tree, because a private/local
+    repository already resolves its own branch name and needs no separate
+    invocation.
+    """
+    subparser.add_argument(
+        "--private",
+        action="store_true",
+        help=(
+            f"{verb} only the tree's writable configuration repositories -- the "
+            "entries a .cgs declares 'private = true, writable = true'. Read-only "
+            "configuration repositories are never written to."
+        ),
+    )
 
 
 def _register_checkout(subparser: argparse.ArgumentParser) -> None:
@@ -194,6 +230,7 @@ def _register_checkout(subparser: argparse.ArgumentParser) -> None:
         default="branch",
         help="Kind of ref to check out (default: branch).",
     )
+    _add_private_argument(subparser, verb="Check out")
     subparser.set_defaults(handler=_handle_checkout)
 
 
@@ -201,6 +238,7 @@ def _register_branch(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("branch", help="Branch name to create across the READY tree.")
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
+    _add_private_argument(subparser, verb="Create the branch in")
     subparser.set_defaults(handler=_handle_branch)
 
 
@@ -223,8 +261,55 @@ def _register_commit(subparser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Skip automatic 'git add --all' before committing.",
     )
+    subparser.add_argument(
+        "--private",
+        action="store_true",
+        help=(
+            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'private = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
+        ),
+    )
     _add_dry_run_argument(subparser, help_text="Preview the commit execution plan without mutating repositories.")
     subparser.set_defaults(handler=_handle_commit)
+
+
+def _register_merge(subparser: argparse.ArgumentParser) -> None:
+    subparser.add_argument(
+        "branch",
+        help=(
+            "The PROJECT branch to merge, always -- not the branch each repository "
+            "will actually merge. A private/local configuration repository merges "
+            "the branch derived from it, '<its default_branch>_<branch>', because "
+            "that is where its settings for this project branch live."
+        ),
+    )
+    _add_gts_argument(subparser)
+    _add_search_dir_argument(subparser)
+    subparser.add_argument(
+        "--private",
+        action="store_true",
+        help=(
+            "Merge into the tree's writable configuration repositories instead of "
+            "this project's own -- the entries a .cgs declares 'private = true, "
+            "writable = true'. Read-only configuration repositories are never merged."
+        ),
+    )
+    group = subparser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--ff-only",
+        action="store_true",
+        help="Refuse any merge that is not a fast-forward.",
+    )
+    group.add_argument(
+        "--no-ff",
+        action="store_true",
+        help="Always record a merge commit, even when a fast-forward is possible.",
+    )
+    subparser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be merged, in order, without merging anything.",
+    )
+    subparser.set_defaults(handler=_handle_merge)
 
 
 def _register_add(subparser: argparse.ArgumentParser) -> None:
@@ -240,6 +325,13 @@ def _register_add(subparser: argparse.ArgumentParser) -> None:
     )
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
+    subparser.add_argument(
+        "--private",
+        action="store_true",
+        help=(
+            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'private = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
+        ),
+    )
     _add_dry_run_argument(subparser, help_text="Preview the add execution plan without mutating repositories.")
     subparser.set_defaults(handler=_handle_add)
 
@@ -259,12 +351,20 @@ def _register_rm(subparser: argparse.ArgumentParser) -> None:
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
     _add_dry_run_argument(subparser, help_text="Preview the rm execution plan without mutating repositories.")
+    _add_private_argument(subparser, verb="Remove the paths from")
     subparser.set_defaults(handler=_handle_rm)
 
 
 def _register_push(subparser: argparse.ArgumentParser) -> None:
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
+    subparser.add_argument(
+        "--private",
+        action="store_true",
+        help=(
+            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'private = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
+        ),
+    )
     _add_dry_run_argument(subparser, help_text="Preview the push execution plan without mutating repositories.")
     _add_force_protocol_argument(subparser, command_name="push")
     subparser.set_defaults(handler=_handle_push)
@@ -274,6 +374,7 @@ def _register_tag(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("name", help="Tag name to create and push across the READY tree.")
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
+    _add_private_argument(subparser, verb="Tag")
     subparser.set_defaults(handler=_handle_tag)
 
 
@@ -282,6 +383,7 @@ def _register_freeze(subparser: argparse.ArgumentParser) -> None:
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
     _add_dry_run_argument(subparser, help_text="Preview the freeze execution plan without mutating repositories.")
+    _add_private_argument(subparser, verb="Freeze")
     subparser.set_defaults(handler=_handle_freeze)
 
 
@@ -410,6 +512,7 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "checkout": _register_checkout,
     "branch": _register_branch,
     "commit": _register_commit,
+    "merge": _register_merge,
     "add": _register_add,
     "rm": _register_rm,
     "push": _register_push,
@@ -470,6 +573,12 @@ def _handle_clone(args: argparse.Namespace) -> int:
 
 def _handle_pull(args: argparse.Namespace) -> int:
     source = _resolve_workspace_source(args.source, getattr(args, "search_dir", None))
+    if getattr(args, "private", False):
+        return _run_with_logging(
+            command_name="pull",
+            source=source,
+            runner=lambda client, source: _execute_pull_private(client, source),
+        )
     commit_gitignore = getattr(args, "commit_gitignore", False)
     force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
     git_user_name = getattr(args, "git_user_name", None)
@@ -508,7 +617,9 @@ def _handle_checkout(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="checkout",
         source=gts_path,
-        runner=lambda client, source: _execute_checkout(client, source, branch=args.branch, ref_kind=ref_kind),
+        runner=lambda client, source: _execute_checkout(
+            client, source, branch=args.branch, ref_kind=ref_kind, private=args.private
+        ),
     )
 
 
@@ -517,7 +628,9 @@ def _handle_branch(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="branch",
         source=gts_path,
-        runner=lambda client, source: _execute_branch(client, source, branch=args.branch),
+        runner=lambda client, source: _execute_branch(
+            client, source, branch=args.branch, private=args.private
+        ),
     )
 
 
@@ -536,6 +649,7 @@ def _handle_commit(args: argparse.Namespace) -> int:
             message=message,
             stage_all=not args.no_stage,
             dry_run=args.dry_run,
+            private=args.private,
         ),
     )
 
@@ -548,13 +662,32 @@ def _resolve_commit_message(args: argparse.Namespace) -> str | None:
     return option or positional
 
 
+def _handle_merge(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="merge",
+        source=gts_path,
+        runner=lambda client, source: _execute_merge(
+            client,
+            source,
+            project_branch=args.branch,
+            private=args.private,
+            ff_only=args.ff_only,
+            no_ff=args.no_ff,
+            dry_run=args.dry_run,
+        ),
+    )
+
+
 def _handle_add(args: argparse.Namespace) -> int:
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     paths = getattr(args, "paths", None) or None
     return _run_with_logging(
         command_name="add",
         source=gts_path,
-        runner=lambda client, source: _execute_add(client, source, paths=paths, dry_run=args.dry_run),
+        runner=lambda client, source: _execute_add(
+            client, source, paths=paths, dry_run=args.dry_run, private=args.private
+        ),
     )
 
 
@@ -574,7 +707,11 @@ def _handle_push(args: argparse.Namespace) -> int:
         command_name="push",
         source=gts_path,
         runner=lambda client, source: _execute_push(
-            client, source, dry_run=args.dry_run, force_access_protocol=force_access_protocol
+            client,
+            source,
+            dry_run=args.dry_run,
+            force_access_protocol=force_access_protocol,
+            private=args.private,
         ),
     )
 
@@ -584,7 +721,9 @@ def _handle_tag(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="tag",
         source=gts_path,
-        runner=lambda client, source: _execute_tag(client, source, name=args.name),
+        runner=lambda client, source: _execute_tag(
+            client, source, name=args.name, private=args.private
+        ),
     )
 
 
@@ -713,6 +852,20 @@ def _execute_clone(
     return 0
 
 
+def _execute_pull_private(client: ComplexGitSyncClient, source_path: Path) -> int:
+    _load_ready_registry_source(client, source_path)
+    scope = _resolve_write_scope(client, private=True, command="pull")
+    print(f"git_command=git fetch && git merge (scope={scope.value})")
+    refreshed = client.refresh_private()
+    for repo_name, source in refreshed:
+        print(f"merged {repo_name} <- {source}")
+    if not refreshed:
+        print("merged nothing: every writable configuration repo is already current")
+    print(_format_tree_state_line(client.get_tree_state()))
+    _print_repo_tree_result(client)
+    return 0
+
+
 def _execute_pull(
     client: ComplexGitSyncClient,
     source_path: Path,
@@ -764,10 +917,11 @@ def _execute_checkout(
     *,
     branch: str,
     ref_kind: RefKind,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git checkout {branch}")
-    client.checkout(branch, ref_kind=ref_kind)
+    client.checkout(branch, ref_kind=ref_kind, private=private)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -782,10 +936,11 @@ def _execute_branch(
     source_path: Path,
     *,
     branch: str,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git branch {branch}")
-    client.branch(branch)
+    client.branch(branch, private=private)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -802,8 +957,10 @@ def _execute_commit(
     message: str,
     stage_all: bool,
     dry_run: bool = False,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    scope = _resolve_write_scope(client, private=private, command="commit")
     print(f"git_command=git commit -m {message!r}")
     if dry_run:
         _print_dry_run_plan(
@@ -813,9 +970,10 @@ def _execute_commit(
                 "git add --all" if stage_all else "skip git add --all (--no-stage)",
                 f"git commit -m {message!r}",
             ),
+            scope=scope,
         )
     else:
-        client.commit(message, stage_all=stage_all)
+        client.commit(message, stage_all=stage_all, private=private)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -826,20 +984,87 @@ def _execute_commit(
     return 0
 
 
+def _execute_merge(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    project_branch: str,
+    private: bool = False,
+    ff_only: bool = False,
+    no_ff: bool = False,
+    dry_run: bool = False,
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    scope = _resolve_write_scope(client, private=private, command="merge")
+    flag = " --ff-only" if ff_only else (" --no-ff" if no_ff else "")
+    print(f"git_command=git merge{flag} {project_branch}")
+    if dry_run:
+        _print_merge_plan(
+            client,
+            scope_value=scope.value,
+            project_branch=project_branch,
+            private=private,
+        )
+        print(_format_tree_state_line(client.get_tree_state()))
+        return 0
+    merged = client.merge(
+        project_branch, private=private, ff_only=ff_only, no_ff=no_ff
+    )
+    for repo_name, source in merged:
+        print(f"merged {repo_name} <- {source}")
+    if not merged:
+        print(f"merged nothing: every repository in scope already has {project_branch!r}")
+    print(_format_tree_state_line(client.get_tree_state()))
+    _print_repo_tree_result(client)
+    return 0
+
+
+def _print_merge_plan(
+    client: ComplexGitSyncClient,
+    *,
+    scope_value: str,
+    project_branch: str,
+    private: bool,
+) -> None:
+    """Show which branch each repository would actually merge.
+
+    The whole point of the dry run: the argument names the project's branch,
+    and each repository translates it. Seeing that translation before it runs
+    is what stops somebody merging a configuration repository from the wrong
+    place.
+    """
+    plan = client.merge_plan(project_branch, private=private)
+    labels = {
+        "merge": "",
+        "already-on-it": " (already on it — nothing to merge into)",
+        "no-branch": " (no such branch here — skipped)",
+    }
+    rows = [f"{name} <- {source}{labels[status]}" for name, source, status in plan]
+    print(f"dry_run=true command=merge scope={scope_value}")
+    print("plan_order=" + (" -> ".join(rows) if rows else "(no repository in scope)"))
+    if plan and all(status != "merge" for _, _, status in plan):
+        print(
+            f"note: nothing would be merged. Check out the branch you want to merge "
+            f"*into* first — 'cgitsync checkout <target>' — then merge {project_branch}."
+        )
+
+
 def _execute_add(
     client: ComplexGitSyncClient,
     source_path: Path,
     *,
     paths: list[str] | None = None,
     dry_run: bool = False,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    scope = _resolve_write_scope(client, private=private, command="add")
     action = f"git add -- {' '.join(paths)}" if paths else "git add --all"
     print(f"git_command={action}")
     if dry_run:
-        _print_dry_run_plan(client, command_name="add", actions=(action,))
+        _print_dry_run_plan(client, command_name="add", actions=(action,), scope=scope)
     else:
-        client.add(paths=paths)
+        client.add(paths=paths, private=private)
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
     if not dry_run:
@@ -874,17 +1099,20 @@ def _execute_push(
     *,
     dry_run: bool = False,
     force_access_protocol: str | None = None,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    scope = _resolve_write_scope(client, private=private, command="push")
     print("git_command=git push (-u origin <branch> when upstream is missing)")
     if dry_run:
         _print_dry_run_plan(
             client,
             command_name="push",
             actions=("git push", "git push -u origin <branch> when upstream is missing"),
+            scope=scope,
         )
     else:
-        client.push(force_access_protocol=force_access_protocol)
+        client.push(force_access_protocol=force_access_protocol, private=private)
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
     if not dry_run:
@@ -897,10 +1125,11 @@ def _execute_tag(
     source_path: Path,
     *,
     name: str,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git tag {name} && git push origin {name}")
-    client.tag(name)
+    client.tag(name, private=private)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "

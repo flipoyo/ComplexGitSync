@@ -4,7 +4,7 @@ Ring: 1 (filesystem only, no subprocess)
 Contract: given a WorkingGitTree with pending nested_config entries, resolve
     and promote each one's nested .cgs into the parent registry in place; and,
     independently, parse .gitmodules file content into structured entries.
-Imports: cgs_format, errors, git_repo, git_tree
+Imports: cgs_format, errors, git_branch, git_repo, git_tree
 """
 
 from __future__ import annotations
@@ -13,23 +13,21 @@ import configparser
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from .cgs_format import CgsDocument
 from .errors import NestedConfigDiscoveryError
+from .git_branch import resolve_declared_ref
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
     GitProvider,
     NodeType,
-    RefKind,
     WorkingRepo,
 )
 from .git_tree import (
     ROOT_REPO_ID,
     WorkingGitTree,
     _apply_repo_identity,
-    _as_optional_str,
     _initial_discovery_state,
     _normalise_relative_path,
     _parse_enum,
@@ -37,6 +35,7 @@ from .git_tree import (
     make_repo_id,
     normalize_node_types,
     promote_to_parent,
+    propagate_privacy,
     register_relative_path,
 )
 
@@ -115,7 +114,7 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
             if child_absolute_path in registered_paths:
                 continue
 
-            target_kind, target_name = _resolve_repo_target_ref(
+            target = resolve_declared_ref(
                 repo,
                 document_default_branch=nested_document.default_branch,
             )
@@ -128,8 +127,8 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
                     absolute_path=child_absolute_path,
                     relative_path=relative_path,
                     source_cgs_path=nested_path,
-                    target_ref_kind=target_kind,
-                    target_ref_name=target_name,
+                    target_ref_kind=target.kind,
+                    target_ref_name=target.name,
                     fallback_branch=str(repo.get("fallback_branch")) if repo.get("fallback_branch") else None,
                     discovery_state=_initial_discovery_state(repo.get("nested_config")),
                     gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
@@ -151,7 +150,8 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
                     ),
                     default_branch=str(repo.get("default_branch") or nested_document.default_branch),
                     nested_config=str(repo.get("nested_config")) if repo.get("nested_config") else None,
-                    pinned=bool(repo.get("pinned", False)),
+                    private=bool(repo.get("private", False)),
+                    writable=bool(repo.get("writable", False)),
                     remote_name=str(repo.get("remote_name") or entry.remote_name or "origin"),
                 )
             )
@@ -159,6 +159,7 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
             changes.append(f"discovered:{child_id}")
 
     normalize_node_types(registry)
+    propagate_privacy(registry)
     registry.recompute_tree_state()
     return tuple(changes)
 
@@ -176,30 +177,20 @@ def _resolve_nested_config_path(repo_root: Path, nested_config: str) -> Path | N
     if not matches:
         return None
     if len(matches) > 1:
-        raise NestedConfigDiscoveryError(f"Ambiguous nested .cgs discovery in {repo_root}")
+        # A repository that may be mounted inside another tree must keep
+        # exactly one .cgs at its root: "auto" has no way to choose between
+        # two. Name both the files and the escape hatch, because the author
+        # hitting this is usually mounting someone else's repository and has
+        # no idea which file was meant.
+        names = ", ".join(path.name for path in matches)
+        raise NestedConfigDiscoveryError(
+            f"Ambiguous nested .cgs discovery in {repo_root}: found {names}. "
+            f"nested_config = \"auto\" needs exactly one .cgs at a repository "
+            f"root. Name the one you mean on this repository's entry — "
+            f"nested_config = \"<file>.cgs\" — or set nested_config = "
+            f"\"disabled\" to stop descending into it."
+        )
     return matches[0].resolve()
-
-
-def _resolve_repo_target_ref(
-    repo: dict[str, Any],
-    *,
-    document_default_branch: str | None,
-) -> tuple[RefKind, str | None]:
-    # NOTE: this helper is intentionally duplicated from orchestre.py rather
-    # than imported. It is pure (no I/O) and is also called from
-    # ``build_registry_from_cgs_document`` in orchestre.py, a function this
-    # work package does not own (it is Wave 2's P5-registry target). Moving
-    # it here and importing it back into orchestre.py would require editing
-    # orchestre.py, which is out of scope for this Lane-A work package; a
-    # later integration step should consolidate the two copies once
-    # registry.py lands.
-    tag = _as_optional_str(repo.get("tag"))
-    if tag:
-        return (RefKind.TAG, tag)
-    branch = _as_optional_str(repo.get("branch")) or _as_optional_str(repo.get("default_branch"))
-    if branch is None:
-        branch = document_default_branch or "main"
-    return (RefKind.BRANCH, branch)
 
 
 # ============================================================
@@ -289,6 +280,11 @@ def _parse_gitmodules(content: str) -> list[SubmoduleEntry]:
         name = name_match.group(1)
         path = parser.get(section, "path", fallback="").strip()
         url = parser.get(section, "url", fallback="").strip()
+        # Not git_branch.DEFAULT_BRANCH: this is Git's own .gitmodules
+        # default for a submodule that names no branch, not ComplexGitSync's
+        # .cgs fallback chain. The two happen to spell the same word today;
+        # they are not the same decision, and changing our default must not
+        # silently change how we read someone else's .gitmodules.
         branch = parser.get(section, "branch", fallback="main").strip() or "main"
         if path and url:
             result.append(SubmoduleEntry(name=name, path=path, url=url, branch=branch))

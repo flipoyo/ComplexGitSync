@@ -4,7 +4,7 @@ Ring: 2 (no direct subprocess import; drives Git only through an injected
     GitRunner-shaped object, same ring as git_runner.py per IsolationPlan.md §1)
 Contract: leaf/parent-first Git operations over a WorkingGitTree + GitRunner;
     requires a READY tree for mutations, raises TreeNotReadyError otherwise.
-Imports: errors, git_repo, git_tree
+Imports: errors, git_branch, git_repo, git_tree
 
 Each function operates on a :class:`~ComplexGitSync.git_tree.WorkingGitTree`
 and a :class:`~ComplexGitSync.orchestre.GitRunner`.  Mutation operations require a
@@ -40,16 +40,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from .errors import GitSyncError, TreeNotReadyError
+from .git_branch import DEFAULT_BRANCH, resolve_entry_ref, resolve_propagated_ref
 from .git_repo import (
     AccessProtocol,
     RefKind,
     RepoLifecycleState,
+    RepoScope,
     SyncState,
     WorkingRepo,
     convert_remote_url_protocol,
 )
 from .git_tree import (
+    ROOT_REPO_ID,
     WorkingGitTree,
+    _as_optional_str,
     cgitsync_managed_state_paths,
     iter_tree,
     iter_tree_leaf_first,
@@ -81,27 +85,54 @@ class PreflightDiagnostic:
 # ---------------------------------------------------------------------------
 
 
+def tree_project_name(tree: WorkingGitTree) -> str | None:
+    """The project's name, which is what a private/local branch is named after.
+
+    Read from the root entry, the one place a tree records what project it
+    is. Returns ``None`` for a tree with no root, where the private/local
+    rule cannot apply anyway.
+    """
+    root = tree.repos.get(ROOT_REPO_ID)
+    if root is None:
+        return None
+    return _as_optional_str(root.project_name) or _as_optional_str(root.name)
+
+
 def propagate_global_branch(
     tree: WorkingGitTree,
     branch_name: str,
     *,
     ref_kind: RefKind = RefKind.BRANCH,
+    git_runner: GitRunner | None = None,
 ) -> None:
     """Set *branch_name* as the target ref on every repo in *tree*.
 
     This is a pure in-memory operation: no git commands are issued.  It
     prepares the tree so that subsequent operations (create, checkout)
-    all target the same branch — except a repo declared ``pinned`` in the
+    all target the same branch — except a repo declared ``private`` in the
     ``.cgs``, which keeps its own ``default_branch`` because it is shared
     with other projects. Pinning governs *branch* propagation only, so a
     tag still reaches every repo and a frozen release stays reproducible.
+
+    The privacy rule itself lives in
+    :func:`~ComplexGitSync.git_branch.resolve_propagated_ref`, so that the
+    reason each repo ended up on the branch it did is decided in one place
+    and recorded on the entry rather than re-derived by each reader.
+
+    A **private/local** repo does not target *branch_name* itself but the
+    branch named after the project for it — ``<project>`` on ``main``,
+    ``<project>_<branch_name>`` elsewhere. The rule is deterministic, so no
+    repository is left to guess: whatever it names, ``create_global_branch``
+    makes and ``checkout`` moves to.
+
+    *git_runner* is accepted for call-site symmetry and is unused; nothing
+    here needs to look at a repository on disk.
     """
+    project_name = tree_project_name(tree)
     for repo in tree.values():
-        if repo.pinned and ref_kind is RefKind.BRANCH:
-            repo.target_ref_name = repo.default_branch or repo.target_ref_name
-        else:
-            repo.target_ref_name = branch_name
-            repo.target_ref_kind = ref_kind
+        resolve_propagated_ref(
+            repo, branch_name, ref_kind=ref_kind, project_name=project_name
+        ).apply_to(repo)
 
 
 # ---------------------------------------------------------------------------
@@ -113,17 +144,35 @@ def create_global_branch(
     tree: WorkingGitTree,
     git_runner: GitRunner,
     branch_name: str,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     """Create *branch_name* in every repo where it does not already exist locally.
 
     Iterates the tree parent-first so that parent repositories always have the
     branch before their children are processed.  Requires each repo to have
     a valid ``absolute_path`` on disk.
+
+    A private/**distant** repository is never given a branch: this project
+    cannot write to it at all.
+
+    A private/**local** repository is given the branch the project's own
+    rule names for it — ``<project>`` on ``main``,
+    ``<project>_<branch_name>`` elsewhere. Both ``branch`` and ``checkout``
+    do this, because a user asking for a branch should not have to know that
+    their configuration repository spells it differently; the point of the
+    rule is that they never have to think about it.
     """
-    for repo in iter_tree(tree):
-        if repo.pinned or git_runner.local_branch_exists(repo.absolute_path, branch_name):
+    project_name = tree_project_name(tree)
+    for repo in iter_tree(tree, scope):
+        if repo.effective_private and not repo.effective_writable:
             continue
-        git_runner.create_branch(repo.absolute_path, branch_name)
+        target = resolve_propagated_ref(
+            repo, branch_name, project_name=project_name
+        ).name
+        if git_runner.local_branch_exists(repo.absolute_path, target):
+            continue
+        git_runner.create_branch(repo.absolute_path, target)
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +227,7 @@ def _restart_tree(
     *,
     force: bool,
     force_access_protocol: AccessProtocol | None,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     """Shared body of :func:`restart_tree` and :func:`restart_tree_force`.
 
@@ -187,13 +237,14 @@ def _restart_tree(
     """
     label = "pull-force" if force else "pull"
     root_entry = tree.get("root")
-    current_branch = git_runner.current_branch(root_entry.absolute_path) or (
-        root_entry.resolved_ref_name or root_entry.target_ref_name or "main"
-    )
+    observed = git_runner.current_branch(root_entry.absolute_path)
+    current_branch = resolve_entry_ref(root_entry, observed_branch=observed).name
+    # The runner matters here for the same reason it does in checkout_tree:
+    # the loop below pulls whatever this decides, and a private/local repo's
+    # derived branch has to be one that exists.
+    propagate_global_branch(tree, current_branch, git_runner=git_runner)
 
-    propagate_global_branch(tree, current_branch)
-
-    for repo in iter_tree(tree):
+    for repo in iter_tree(tree, scope):
         if repo.parent_id is not None:
             parent = tree.get(repo.parent_id)
             try:
@@ -224,11 +275,12 @@ def restart_tree(
     git_runner: GitRunner,
     *,
     force_access_protocol: AccessProtocol | None = None,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     """Resynchronize the full tree using the root repository's current branch.
 
     Reads the current branch from the root repository, propagates it across
-    all repos except those declared ``pinned``, then pulls every repository
+    all repos except those declared ``private``, then pulls every repository
     (parent-first) with ``git pull --ff-only`` on the branch that repo
     actually targets.
 
@@ -239,7 +291,9 @@ def restart_tree(
     *force_access_protocol*, when given, rewrites each repo's remote to
     that protocol before pulling (``--force-protocol`` on ``pull``).
     """
-    _restart_tree(tree, git_runner, force=False, force_access_protocol=force_access_protocol)
+    _restart_tree(
+        tree, git_runner, force=False, force_access_protocol=force_access_protocol, scope=scope
+    )
 
 
 def restart_tree_force(
@@ -247,6 +301,7 @@ def restart_tree_force(
     git_runner: GitRunner,
     *,
     force_access_protocol: AccessProtocol | None = None,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     """Force-resynchronize the full tree using the root repository's branch.
 
@@ -259,7 +314,9 @@ def restart_tree_force(
     that protocol before force-pulling (``--force-protocol`` on
     ``pull-force``).
     """
-    _restart_tree(tree, git_runner, force=True, force_access_protocol=force_access_protocol)
+    _restart_tree(
+        tree, git_runner, force=True, force_access_protocol=force_access_protocol, scope=scope
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +330,7 @@ def checkout_tree(
     branch_name: str,
     *,
     ref_kind: RefKind = RefKind.BRANCH,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     """Check out *branch_name* across the whole tree.
 
@@ -289,14 +347,18 @@ def checkout_tree(
     """
     _assert_ready(tree)
 
-    # Step 1: propagate target ref across the whole tree
-    propagate_global_branch(tree, branch_name, ref_kind=ref_kind)
+    # Step 1: propagate target ref across the whole tree. The runner is
+    # passed because step 3 is about to `git checkout` what this decides:
+    # a private/local repo's derived branch has to be one that exists.
+    propagate_global_branch(tree, branch_name, ref_kind=ref_kind, git_runner=git_runner)
 
-    # Step 2: create the branch in each repo where it does not exist yet
-    create_global_branch(tree, git_runner, branch_name)
+    # Step 2: create the branch in each repo where it does not exist yet --
+    # including the private/local name, so `checkout <B>` alone puts the whole
+    # tree where it belongs and the user never has to spell the derived branch.
+    create_global_branch(tree, git_runner, branch_name, scope=scope)
 
     # Step 3: checkout and refresh each repo (parent-first)
-    for repo in iter_tree(tree):
+    for repo in iter_tree(tree, scope):
         ref = repo.target_ref_name or branch_name
         git_runner.checkout(repo.absolute_path, ref)
         _refresh_repo_after_checkout(repo, ref, repo.target_ref_kind or ref_kind, git_runner)
@@ -313,6 +375,8 @@ def branch_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
     branch_name: str,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     """Create *branch_name* across the whole tree without checkout.
 
@@ -321,7 +385,7 @@ def branch_tree(
     """
     _assert_ready(tree)
     propagate_global_branch(tree, branch_name, ref_kind=RefKind.BRANCH)
-    create_global_branch(tree, git_runner, branch_name)
+    create_global_branch(tree, git_runner, branch_name, scope=scope)
     tree.recompute_tree_state()
 
 
@@ -335,6 +399,7 @@ def add_tree(
     git_runner: GitRunner,
     *,
     paths: Sequence[str | Path] | None = None,
+    scope: RepoScope = RepoScope.PROJECT,
 ) -> None:
     """Stage changes across the tree, leaf-first.
 
@@ -352,7 +417,7 @@ def add_tree(
     _assert_ready(tree)
 
     if paths is None:
-        for repo in iter_tree_leaf_first(tree):
+        for repo in iter_tree_leaf_first(tree, scope):
             git_runner.stage_all(repo.absolute_path)
     else:
         resolved = [resolve_repo_for_path(tree, path) for path in paths]
@@ -411,6 +476,7 @@ def commit_tree(
     message: str,
     *,
     stage_all: bool = True,
+    scope: RepoScope = RepoScope.PROJECT,
 ) -> None:
     """Commit changes across the tree, leaf-first.
 
@@ -430,9 +496,10 @@ def commit_tree(
         git_runner,
         require_clean=False,
         operation_name="commit",
+        scope=scope,
     )
 
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         if stage_all:
             git_runner.stage_all(repo.absolute_path)
         if not git_runner.has_staged_changes(repo.absolute_path):
@@ -441,6 +508,207 @@ def commit_tree(
         repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
 
     tree.recompute_tree_state()
+
+
+# ---------------------------------------------------------------------------
+# merge_tree — Tier 2 action
+# ---------------------------------------------------------------------------
+
+
+def merge_source_ref(
+    repo: WorkingRepo, project_branch: str, *, project_name: str | None = None
+) -> str:
+    """The branch *repo* should merge when the project merges *project_branch*.
+
+    The argument a user types is always the **project's** branch. Each
+    repository then resolves its own source through the one rule that owns
+    branch propagation, so ``merge --private multi-branch`` merges
+    ``<project>_multi-branch`` into a private/local repository rather than
+    ``multi-branch``, which does not exist there.
+
+    This is the whole reason the private case needs no code of its own: it
+    is the same command with a different scope and this one translation.
+    """
+    return resolve_propagated_ref(
+        repo, project_branch, project_name=project_name
+    ).name
+
+
+def merge_status(
+    repo: WorkingRepo,
+    git_runner: GitRunner,
+    project_branch: str,
+    *,
+    project_name: str | None = None,
+) -> tuple[str, str]:
+    """What ``merge`` would do to *repo*, as ``(source_ref, status)``.
+
+    The one place a repository's fate is decided, so the dry run and the
+    merge itself cannot disagree. ``status`` is ``"merge"``,
+    ``"already-on-it"`` (the repository is sitting on the branch it would
+    merge, so there is nothing to merge it into) or ``"no-branch"`` (nothing
+    to merge from — normal for a private/local repository with no branch for
+    this project branch yet).
+    """
+    source = merge_source_ref(repo, project_branch, project_name=project_name)
+    if git_runner.current_branch(repo.absolute_path) == source:
+        return source, "already-on-it"
+    if not git_runner.branch_known(
+        repo.absolute_path, source, remote=repo.remote_name or "origin"
+    ):
+        return source, "no-branch"
+    return source, "merge"
+
+
+def merge_tree(
+    tree: WorkingGitTree,
+    git_runner: GitRunner,
+    project_branch: str,
+    *,
+    scope: RepoScope = RepoScope.PROJECT,
+    ff_only: bool = False,
+    no_ff: bool = False,
+) -> tuple[tuple[str, str], ...]:
+    """Merge *project_branch* into each in-scope repository, leaf-first.
+
+    Returns one ``(repo_name, merged_ref)`` pair per repository that a merge
+    actually moved; a repository already containing the branch is skipped and
+    not reported.
+
+    **Every repository is checked before any repository is merged.** A
+    tree-wide merge that stopped halfway would leave the workspace in a state
+    no ``.gts`` describes and no command undoes — which is the failure this
+    command exists to prevent, not one it may cause. So the whole scope is
+    asked first, with :meth:`GitRunner.can_merge_cleanly`, which touches
+    neither worktree nor index; only if all of them can does the first merge
+    run.
+
+    That is a guarantee about *conflicts*, not a transaction: a merge can
+    still fail for a reason no check anticipated, and the error then names
+    what had already landed.
+    """
+    _assert_ready(tree)
+    _run_preflight_checks(
+        tree,
+        git_runner,
+        require_clean=True,
+        operation_name="merge",
+        scope=scope,
+    )
+
+    planned: list[tuple[WorkingRepo, str]] = []
+    blocked: list[str] = []
+    on_source: list[str] = []
+    project_name = tree_project_name(tree)
+    for repo in iter_tree_leaf_first(tree, scope):
+        source, status = merge_status(
+            repo, git_runner, project_branch, project_name=project_name
+        )
+        if status == "already-on-it":
+            # Merging a branch into itself does nothing and reports success,
+            # which reads as "it worked" when the tree is simply still on the
+            # branch the user meant to merge *from*.
+            on_source.append(repo.name)
+            continue
+        if status == "no-branch":
+            continue
+        if not git_runner.can_merge_cleanly(repo.absolute_path, source):
+            blocked.append(f"{repo.name}: merging {source!r} conflicts")
+            continue
+        planned.append((repo, source))
+
+    if blocked:
+        raise GitSyncError(
+            "merge refused; no repository was merged: " + "; ".join(blocked)
+        )
+    if on_source and not planned:
+        raise GitSyncError(
+            f"merge {project_branch}: the tree is already on {project_branch!r} "
+            f"({', '.join(on_source)}), so there is nothing to merge it into. "
+            f"Check out the branch you want to merge *into* first — "
+            f"'cgitsync checkout <target>' — then run this again."
+        )
+
+    merged: list[tuple[str, str]] = []
+    for repo, source in planned:
+        before = git_runner.rev_parse_head(repo.absolute_path)
+        git_runner.merge(repo.absolute_path, source, ff_only=ff_only, no_ff=no_ff)
+        after = git_runner.rev_parse_head(repo.absolute_path)
+        repo.commit_sha = after
+        if before != after:
+            merged.append((repo.name, source))
+
+    tree.recompute_tree_state()
+    return tuple(merged)
+
+
+def refresh_private_tree(
+    tree: WorkingGitTree,
+    git_runner: GitRunner,
+) -> tuple[tuple[str, str], ...]:
+    """Bring every private/local repository up to date with its base branch.
+
+    A private/local repository records this project's settings per project
+    branch, on ``<base>_<branch>``. Those branches drift: work lands on the
+    base while a feature branch is open, and the feature branch does not see
+    it. This pulls each one from its own upstream, then merges its base
+    branch in — the same :meth:`GitRunner.merge` primitive ``merge`` uses,
+    not a second mechanism.
+
+    A repository already sitting on its base branch has nothing to merge and
+    is left alone. Returns one ``(repo_name, base_branch)`` pair per
+    repository a merge actually moved.
+    """
+    _run_preflight_checks(
+        tree,
+        git_runner,
+        require_clean=True,
+        operation_name="pull --private",
+        scope=RepoScope.PRIVATE,
+    )
+
+    planned: list[tuple[WorkingRepo, str]] = []
+    blocked: list[str] = []
+    project_name = tree_project_name(tree)
+    for repo in iter_tree_leaf_first(tree, RepoScope.PRIVATE):
+        # The base is the project's main-line settings branch -- the same rule
+        # applied to "main", which by definition takes no suffix.
+        base = resolve_propagated_ref(
+            repo, DEFAULT_BRANCH, project_name=project_name
+        ).name
+        current = git_runner.current_branch(repo.absolute_path)
+        if current is None or current == base:
+            continue
+        remote = repo.remote_name or "origin"
+        # Fetch, then merge the remote-tracking ref. Not `git pull <base>`:
+        # that would fast-forward the *current* branch onto the base and
+        # fail the moment the two have diverged, which is the normal state
+        # of a feature branch and the only case worth handling.
+        git_runner.fetch(repo.absolute_path, remote=remote, ref_name=base)
+        source = f"{remote}/{base}"
+        if not git_runner.branch_known(repo.absolute_path, base, remote=remote):
+            continue
+        if not git_runner.can_merge_cleanly(repo.absolute_path, source):
+            blocked.append(f"{repo.name}: merging {source!r} conflicts")
+            continue
+        planned.append((repo, source))
+
+    if blocked:
+        raise GitSyncError(
+            "pull --private refused; no repository was merged: " + "; ".join(blocked)
+        )
+
+    refreshed: list[tuple[str, str]] = []
+    for repo, source in planned:
+        before = git_runner.rev_parse_head(repo.absolute_path)
+        git_runner.merge(repo.absolute_path, source)
+        after = git_runner.rev_parse_head(repo.absolute_path)
+        repo.commit_sha = after
+        if before != after:
+            refreshed.append((repo.name, source))
+
+    tree.recompute_tree_state()
+    return tuple(refreshed)
 
 
 # ---------------------------------------------------------------------------
@@ -453,6 +721,7 @@ def push_tree(
     git_runner: GitRunner,
     *,
     force_access_protocol: AccessProtocol | None = None,
+    scope: RepoScope = RepoScope.PROJECT,
 ) -> None:
     """Push all repos to their remotes, leaf-first.
 
@@ -472,9 +741,10 @@ def push_tree(
         git_runner,
         require_clean=False,
         operation_name="push",
+        scope=scope,
     )
 
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         remote = repo.remote_name or "origin"
         _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
         current_branch = git_runner.current_branch(repo.absolute_path)
@@ -497,6 +767,8 @@ def tag_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
     tag_name: str,
+    *,
+    scope: RepoScope = RepoScope.WRITABLE,
 ) -> None:
     """Create and push *tag_name* across the tree, leaf-first."""
     _assert_ready(tree)
@@ -506,10 +778,18 @@ def tag_tree(
         tag_name=tag_name,
         require_clean=True,
         operation_name="tag",
+        # The same scope the loop below uses: a read-only configuration repo
+        # is not tagged, so its state cannot block this.
+        scope=scope,
     )
     _propagate_tag(tree, tag_name)
 
-    for repo in iter_tree_leaf_first(tree):
+    # WRITABLE, not ALL: a tag is created *and pushed* in the same step, and
+    # a read-only configuration repo is one this project may not push to.
+    # Reproducibility does not suffer -- the .gts snapshot records every
+    # repo's exact commit_sha, read-only ones included, so the tree is
+    # rebuilt from the snapshot rather than from tags.
+    for repo in iter_tree_leaf_first(tree, scope):
         git_runner.create_tag(repo.absolute_path, tag_name)
         remote = repo.remote_name or "origin"
         git_runner.push(repo.absolute_path, remote=remote, ref_name=tag_name)
@@ -542,11 +822,16 @@ def freeze_release_tree(
         tag_name=tag_name,
         require_clean=False,
         operation_name="freeze_release",
+        scope=RepoScope.WRITABLE,
     )
     _propagate_tag(tree, tag_name)
     commit_message = message or f"freeze release {tag_name}"
 
-    for repo in iter_tree_leaf_first(tree):
+    # WRITABLE for the same reason as tag_tree: this commits, tags *and*
+    # pushes, none of which this project may do to a read-only
+    # configuration repo. Their exact SHAs are still recorded in the
+    # snapshot this freeze writes.
+    for repo in iter_tree_leaf_first(tree, RepoScope.WRITABLE):
         if stage_all:
             git_runner.stage_all(repo.absolute_path)
         if git_runner.has_staged_changes(repo.absolute_path):
@@ -799,13 +1084,22 @@ def _run_preflight_checks(
     tag_name: str | None = None,
     require_clean: bool,
     operation_name: str,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
+    """Check the repositories *scope* selects, and only those.
+
+    An operation must not be blocked by the state of a repository it is
+    never going to touch. ``commit`` writes this project's own repos, so a
+    read-only configuration repo sitting on its own branch, or behind its
+    upstream, is none of its business.
+    """
     diagnostics = _collect_preflight_diagnostics(
         tree,
         git_runner,
         operation_name=operation_name,
         tag_name=tag_name,
         require_clean=require_clean,
+        scope=scope,
     )
     warnings_only = [item for item in diagnostics if item.severity == PreflightSeverity.WARNING]
     blocking = [
@@ -824,24 +1118,28 @@ def _collect_preflight_diagnostics(
     operation_name: str,
     tag_name: str | None,
     require_clean: bool,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     diagnostics: list[PreflightDiagnostic] = []
-    diagnostics.extend(_collect_remote_diagnostics(tree, git_runner))
+    diagnostics.extend(_collect_remote_diagnostics(tree, git_runner, scope=scope))
     if tag_name is not None:
-        diagnostics.extend(_collect_tag_conflict_diagnostics(tree, git_runner, tag_name=tag_name))
-    diagnostics.extend(_collect_detached_head_diagnostics(tree, git_runner))
-    diagnostics.extend(_collect_merge_diagnostics(tree, git_runner))
-    diagnostics.extend(_collect_branch_alignment_diagnostics(tree, git_runner))
-    diagnostics.extend(_collect_tracking_diagnostics(tree, git_runner))
+        diagnostics.extend(
+            _collect_tag_conflict_diagnostics(tree, git_runner, tag_name=tag_name, scope=scope)
+        )
+    diagnostics.extend(_collect_detached_head_diagnostics(tree, git_runner, scope=scope))
+    diagnostics.extend(_collect_merge_diagnostics(tree, git_runner, scope=scope))
+    diagnostics.extend(_collect_branch_alignment_diagnostics(tree, git_runner, scope=scope))
+    diagnostics.extend(_collect_tracking_diagnostics(tree, git_runner, scope=scope))
     diagnostics.extend(
         _collect_commit_sha_diagnostics(
             tree,
             git_runner,
             blocking=False,
+            scope=scope,
         )
     )
     diagnostics.extend(
-        _collect_worktree_diagnostics(tree, git_runner, require_clean=require_clean)
+        _collect_worktree_diagnostics(tree, git_runner, require_clean=require_clean, scope=scope)
     )
     return diagnostics
 
@@ -849,9 +1147,11 @@ def _collect_preflight_diagnostics(
 def _collect_remote_diagnostics(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     missing: list[PreflightDiagnostic] = []
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         remote = repo.remote_name or "origin"
         if not git_runner.remote_exists(repo.absolute_path, remote):
             missing.append(
@@ -869,9 +1169,10 @@ def _collect_tag_conflict_diagnostics(
     git_runner: GitRunner,
     *,
     tag_name: str,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     duplicates: list[PreflightDiagnostic] = []
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         if git_runner.tag_exists(repo.absolute_path, tag_name):
             duplicates.append(
                 PreflightDiagnostic(
@@ -886,9 +1187,11 @@ def _collect_tag_conflict_diagnostics(
 def _collect_detached_head_diagnostics(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     detached: list[PreflightDiagnostic] = []
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         if git_runner.current_branch(repo.absolute_path) is None:
             detached.append(
                 PreflightDiagnostic(
@@ -903,9 +1206,11 @@ def _collect_detached_head_diagnostics(
 def _collect_merge_diagnostics(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     merges: list[PreflightDiagnostic] = []
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         if git_runner.has_unresolved_merge(repo.absolute_path):
             merges.append(
                 PreflightDiagnostic(
@@ -920,6 +1225,8 @@ def _collect_merge_diagnostics(
 def _collect_branch_alignment_diagnostics(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     if "root" not in tree.repos:
         return [
@@ -930,18 +1237,31 @@ def _collect_branch_alignment_diagnostics(
             )
         ]
     root = tree.get("root")
-    expected_branch = git_runner.current_branch(root.absolute_path)
-    if expected_branch is None:
+    root_branch = git_runner.current_branch(root.absolute_path)
+    if root_branch is None:
         return []
     mismatched: list[PreflightDiagnostic] = []
-    for repo in iter_tree_leaf_first(tree):
+    project_name = tree_project_name(tree)
+    for repo in iter_tree_leaf_first(tree, scope):
+        # A private repository is shared with other projects and stays on a
+        # branch of its own, so the root's branch is not what it should be
+        # on. resolve_propagated_ref is the one place that rule lives, and
+        # resolve_existing_propagated_ref then applies the same fallback
+        # checkout would: a private/local repo whose derived branch has not
+        # been created is measured against where it actually belongs today,
+        # not against a branch nobody has made yet.
+        expected_branch = resolve_propagated_ref(
+            repo, root_branch, project_name=project_name
+        ).name
         current = git_runner.current_branch(repo.absolute_path)
         if current is not None and current != expected_branch:
+            detail = " (private to its own branch)" if repo.effective_private else ""
             mismatched.append(
                 PreflightDiagnostic(
                     PreflightSeverity.BLOCKING_ERROR,
                     repo.name,
-                    f"branch misalignment: expected {expected_branch!r}, found {current!r}.",
+                    f"branch misalignment: expected {expected_branch!r}{detail}, "
+                    f"found {current!r}.",
                 )
             )
     return mismatched
@@ -950,9 +1270,11 @@ def _collect_branch_alignment_diagnostics(
 def _collect_tracking_diagnostics(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     diagnostics: list[PreflightDiagnostic] = []
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         tracking_state = git_runner.branch_tracking_state(repo.absolute_path)
         if tracking_state in (None, SyncState.ALIGNED):
             continue
@@ -996,10 +1318,11 @@ def _collect_commit_sha_diagnostics(
     git_runner: GitRunner,
     *,
     blocking: bool,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     inconsistent: list[PreflightDiagnostic] = []
     severity = PreflightSeverity.BLOCKING_ERROR if blocking else PreflightSeverity.WARNING
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         if not repo.commit_sha:
             continue
         head_sha = git_runner.rev_parse_head(repo.absolute_path)
@@ -1019,15 +1342,19 @@ def _collect_worktree_diagnostics(
     git_runner: GitRunner,
     *,
     require_clean: bool,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     dirty: list[PreflightDiagnostic] = []
     severity = (
         PreflightSeverity.BLOCKING_ERROR if require_clean else PreflightSeverity.WARNING
     )
+    # Walks the whole tree even when the scope is narrower: worktree_state
+    # is written into the .gts snapshot for every repository, so it must
+    # stay fresh. Only the diagnostics are scoped.
     for repo in iter_tree_leaf_first(tree):
         is_dirty = _has_managed_uncommitted_changes(tree, git_runner, repo)
         repo.worktree_state = "DIRTY" if is_dirty else "CLEAN"
-        if is_dirty:
+        if is_dirty and scope.includes(repo):
             dirty.append(
                 PreflightDiagnostic(
                     severity,
