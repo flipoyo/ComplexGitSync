@@ -353,7 +353,7 @@ def test_checkout_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def checkout(self, branch, *, ref_kind):
+        def checkout(self, branch, *, ref_kind, private=False):
             captured_call["branch"] = branch
             captured_call["ref_kind"] = ref_kind
 
@@ -385,7 +385,7 @@ def test_checkout_command_with_tag_ref_kind(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def checkout(self, branch, *, ref_kind):
+        def checkout(self, branch, *, ref_kind, private=False):
             captured_call["ref_kind"] = ref_kind
 
         def get_tree_state(self):
@@ -409,7 +409,7 @@ def test_branch_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def branch(self, branch):
+        def branch(self, branch, *, private=False):
             captured_call["branch"] = branch
 
         def get_tree_state(self):
@@ -700,7 +700,7 @@ def test_tag_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def tag(self, name):
+        def tag(self, name, *, private=False):
             captured_call["name"] = name
 
         def get_tree_state(self):

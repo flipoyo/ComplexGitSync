@@ -28,7 +28,6 @@ from ComplexGitSync.git_branch import (
     BranchResolution,
     BranchSource,
     apply_declared_defaults,
-    private_local_base,
     private_local_branch,
     resolve_declared_ref,
     resolve_entry_ref,
@@ -331,19 +330,38 @@ class TestPrivateLocalBranchFollowsTheProject:
             default_branch=default_branch,
         )
 
-    def test_a_private_local_repo_targets_base_underscore_branch(self):
+    def test_a_private_local_repo_targets_project_underscore_branch(self):
         entry = self._entry(pinned=True, writable=True, default_branch="MyProject")
 
-        resolution = resolve_propagated_ref(entry, "feature-x")
+        resolution = resolve_propagated_ref(entry, "feature-x", project_name="MyProject")
 
         assert resolution.name == "MyProject_feature-x"
         assert resolution.source is BranchSource.PRIVATE_LOCAL
+
+    def test_main_takes_no_suffix(self):
+        """The project's main line needs no qualifier: its settings branch is
+        simply the project's name, which is what every tree already has."""
+        entry = self._entry(pinned=True, writable=True, default_branch="MyProject")
+
+        resolution = resolve_propagated_ref(entry, "main", project_name="MyProject")
+
+        assert resolution.name == "MyProject"
+        assert private_local_branch("MyProject", "main") == "MyProject"
+
+    def test_the_base_is_the_project_name_not_what_the_entry_declares(self):
+        """One project's settings, on a branch named after that project."""
+        entry = self._entry(pinned=True, writable=True, default_branch="something-else")
+
+        assert (
+            resolve_propagated_ref(entry, "feature-x", project_name="MyProject").name
+            == "MyProject_feature-x"
+        )
 
     def test_a_private_distant_repo_never_moves(self):
         """The regression guard. This is what the pin means."""
         entry = self._entry(pinned=True, writable=False, default_branch="main")
 
-        resolution = resolve_propagated_ref(entry, "feature-x")
+        resolution = resolve_propagated_ref(entry, "feature-x", project_name="MyProject")
 
         assert resolution.name == "main"
         assert resolution.source is BranchSource.PINNED
@@ -351,13 +369,18 @@ class TestPrivateLocalBranchFollowsTheProject:
     def test_a_project_owned_repo_follows_the_move(self):
         entry = self._entry(pinned=False, writable=False, default_branch="main")
 
-        assert resolve_propagated_ref(entry, "feature-x").name == "feature-x"
+        assert (
+            resolve_propagated_ref(entry, "feature-x", project_name="P").name
+            == "feature-x"
+        )
 
     def test_a_tag_still_reaches_a_private_local_repo_unchanged(self):
         """Branches stop at a pin; tags do not. Nothing here changes that."""
         entry = self._entry(pinned=True, writable=True, default_branch="MyProject")
 
-        resolution = resolve_propagated_ref(entry, "v1.0.0", ref_kind=RefKind.TAG)
+        resolution = resolve_propagated_ref(
+            entry, "v1.0.0", ref_kind=RefKind.TAG, project_name="MyProject"
+        )
 
         assert resolution.name == "v1.0.0"
         assert resolution.source is BranchSource.TAG
@@ -365,15 +388,15 @@ class TestPrivateLocalBranchFollowsTheProject:
     def test_the_kind_is_left_alone_for_any_pinned_entry(self):
         for writable in (True, False):
             entry = self._entry(pinned=True, writable=writable, default_branch="b")
-            assert resolve_propagated_ref(entry, "feature-x").kind is None
+            assert (
+                resolve_propagated_ref(entry, "feature-x", project_name="P").kind is None
+            )
 
-    def test_the_base_is_the_declared_branch_not_where_the_repo_sits(self):
-        """The derivation must not compound.
+    def test_the_derivation_never_compounds(self):
+        """After a checkout a private/local repo sits on `<project>_<branch>`.
 
-        After a checkout, a private/local repo sits on `<base>_<branch>`. If
-        the next derivation used that, it would build
-        `<base>_<branch>_<other>` and the declared base would be gone for
-        good.
+        Deriving from that would build `<project>_<branch>_<other>` and lose
+        the project's name for good. The base is the project, always.
         """
         entry = WorkingRepo(
             repo_id="r",
@@ -385,8 +408,10 @@ class TestPrivateLocalBranchFollowsTheProject:
             target_ref_name="MyProject_feature-x",
         )
 
-        assert private_local_base(entry) == "MyProject"
-        assert resolve_propagated_ref(entry, "other").name == "MyProject_other"
+        assert (
+            resolve_propagated_ref(entry, "other", project_name="MyProject").name
+            == "MyProject_other"
+        )
 
     def test_the_separator_is_an_underscore_and_a_hyphen_would_be_ambiguous(self):
         """`multi-branch` is itself hyphenated — that is why `_` was chosen."""
@@ -404,7 +429,10 @@ class TestPrivateLocalBranchFollowsTheProject:
         tree.add(leaf)
         propagate_pinning(tree)
 
-        assert resolve_propagated_ref(leaf, "feature-x").name == "MyProject_feature-x"
+        assert (
+            resolve_propagated_ref(leaf, "feature-x", project_name="MyProject").name
+            == "MyProject_feature-x"
+        )
 
 
 def test_the_private_local_naming_rule_has_exactly_one_owner():

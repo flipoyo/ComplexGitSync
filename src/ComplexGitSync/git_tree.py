@@ -100,11 +100,14 @@ class GitTreeGitCommands:
         branch_name: str,
         *,
         ref_kind: RefKind = RefKind.BRANCH,
+        scope: RepoScope = RepoScope.ALL,
         tree: WorkingGitTree | None = None,
     ) -> None:
         from .operations import checkout_tree
 
-        checkout_tree(self._resolve_tree(tree), git_runner, branch_name, ref_kind=ref_kind)
+        checkout_tree(
+            self._resolve_tree(tree), git_runner, branch_name, ref_kind=ref_kind, scope=scope
+        )
 
     def branch(
         self,
@@ -112,22 +115,27 @@ class GitTreeGitCommands:
         branch_name: str,
         *,
         tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.ALL,
     ) -> None:
         from .operations import branch_tree
 
-        branch_tree(self._resolve_tree(tree), git_runner, branch_name)
+        branch_tree(self._resolve_tree(tree), git_runner, branch_name, scope=scope)
 
     def pull(
         self,
         git_runner: GitRunner,
         *,
         tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.ALL,
         force_access_protocol: AccessProtocol | None = None,
     ) -> None:
         from .operations import restart_tree
 
         restart_tree(
-            self._resolve_tree(tree), git_runner, force_access_protocol=force_access_protocol
+            self._resolve_tree(tree),
+            git_runner,
+            force_access_protocol=force_access_protocol,
+            scope=scope,
         )
 
     def refresh_private(
@@ -145,12 +153,16 @@ class GitTreeGitCommands:
         git_runner: GitRunner,
         *,
         tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.ALL,
         force_access_protocol: AccessProtocol | None = None,
     ) -> None:
         from .operations import restart_tree_force
 
         restart_tree_force(
-            self._resolve_tree(tree), git_runner, force_access_protocol=force_access_protocol
+            self._resolve_tree(tree),
+            git_runner,
+            force_access_protocol=force_access_protocol,
+            scope=scope,
         )
 
     def add(
@@ -235,10 +247,11 @@ class GitTreeGitCommands:
         tag_name: str,
         *,
         tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.WRITABLE,
     ) -> None:
         from .operations import tag_tree
 
-        tag_tree(self._resolve_tree(tree), git_runner, tag_name)
+        tag_tree(self._resolve_tree(tree), git_runner, tag_name, scope=scope)
 
     def freeze(
         self,

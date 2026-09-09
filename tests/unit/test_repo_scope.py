@@ -24,10 +24,7 @@ from ComplexGitSync.errors import ConfigValidationError, GitSyncError
 from ComplexGitSync.git_repo import RepoScope, WorkingRepo
 from ComplexGitSync.git_tree import WorkingGitTree, iter_tree_leaf_first, propagate_pinning
 from ComplexGitSync.orchestre import resolve_command_scope
-from ComplexGitSync.registry import (
-    build_registry_from_cgs_document,
-    build_registry_from_gts_document,
-)
+from ComplexGitSync.registry import build_registry_from_cgs_document
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -346,102 +343,6 @@ class TestNestedPinningThroughDiscovery:
         assert by_name["nested-leaf"].effective_pinned is True
         assert not RepoScope.PROJECT.includes(by_name["nested-leaf"])
         assert RepoScope.PROJECT.includes(by_name["demo"])
-
-
-class TestTheCgsIsAuthoritativeForDeclaredFields:
-    """A snapshot cannot lose what only the `.cgs` declares.
-
-    A build older than a declared field reads a `.gts`, keeps the keys it
-    recognises, and writes the snapshot back without that one. Since `pull`
-    with no argument reloads the `.gts` rather than the `.cgs`, nothing
-    brought it back and a writable configuration repository silently read as
-    read-only — for good. Reconciling on load makes it self-healing.
-    """
-
-    @staticmethod
-    def _workspace(tmp_path):
-        source = tmp_path / "tree.cgs"
-        source.write_text(
-            'project = { name = "demo", default_branch = "main" }\n'
-            "repos = [\n"
-            '    "github:acme/demo",\n'
-            '    { repository = "github:acme/own-spec", default_branch = "demo", '
-            "pinned = true, writable = true },\n"
-            '    { repository = "github:acme/shared-spec", pinned = true },\n'
-            "]\n",
-            encoding="utf-8",
-        )
-        return source
-
-    def _reload_after_losing(self, tmp_path, *fields: str):
-        """Round-trip through a .gts with *fields* stripped, as an old build would."""
-        source = self._workspace(tmp_path)
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
-        document = tree.to_gts(source_cgs_path=source)
-        for repo_state in document.repo_states:
-            for field in fields:
-                repo_state.pop(field, None)
-        return build_registry_from_gts_document(document)
-
-    def test_a_lost_writable_comes_back_from_the_cgs(self, tmp_path):
-        reloaded = self._reload_after_losing(tmp_path, "writable")
-        by_name = {entry.name: entry for entry in reloaded.values()}
-
-        assert by_name["own-spec"].writable is True
-        assert RepoScope.PRIVATE.includes(by_name["own-spec"])
-
-    def test_a_lost_pinned_comes_back_too(self, tmp_path):
-        reloaded = self._reload_after_losing(tmp_path, "pinned", "writable")
-        by_name = {entry.name: entry for entry in reloaded.values()}
-
-        assert by_name["shared-spec"].pinned is True
-        assert not RepoScope.PROJECT.includes(by_name["shared-spec"])
-
-    def test_a_lost_default_branch_comes_back(self, tmp_path):
-        """Without it the private/local derivation compounds — see git_branch."""
-        reloaded = self._reload_after_losing(tmp_path, "default_branch")
-        by_name = {entry.name: entry for entry in reloaded.values()}
-
-        assert by_name["own-spec"].default_branch == "demo"
-
-    def test_a_repo_the_cgs_does_not_declare_is_left_alone(self, tmp_path):
-        """A repository found by nested discovery must not be second-guessed."""
-        source = self._workspace(tmp_path)
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
-        document = tree.to_gts(source_cgs_path=source)
-        for repo_state in document.repo_states:
-            if repo_state.get("name") == "own-spec":
-                repo_state["name"] = "found-by-discovery"
-                repo_state["project_name"] = "found-by-discovery"
-
-        reloaded = build_registry_from_gts_document(document)
-        by_name = {entry.name: entry for entry in reloaded.values()}
-
-        assert by_name["found-by-discovery"].writable is True, (
-            "the snapshot's own value must survive when the .cgs says nothing"
-        )
-
-    def test_the_declaring_document_is_the_parent_not_the_entry_itself(self, tmp_path):
-        """A mount's pin is declared by whatever mounts it.
-
-        Reading it from the entry's own nested `.cgs` finds no declaration
-        and would quietly unpin a repository shared with other projects.
-        """
-        source = self._workspace(tmp_path)
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
-        shared = next(e for e in tree.values() if e.name == "shared-spec")
-        nested = tmp_path / "shared-spec" / "nested.cgs"
-        nested.parent.mkdir(parents=True, exist_ok=True)
-        nested.write_text(
-            'project = { name = "shared-spec", default_branch = "main" }\nrepos = []\n',
-            encoding="utf-8",
-        )
-        shared.source_cgs_path = nested
-
-        reloaded = build_registry_from_gts_document(tree.to_gts(source_cgs_path=source))
-        by_name = {entry.name: entry for entry in reloaded.values()}
-
-        assert by_name["shared-spec"].pinned is True
 
 
 class TestThisTreesOwnDeclaration:

@@ -35,8 +35,7 @@ The public surface
     apply_declared_defaults   Fill one entry's declared branch fields in place
     resolve_declared_ref      Target ref of one repository entry in a document
     resolve_entry_ref         Target ref of a live WorkingRepo
-    private_local_base        The branch a pinned repo declares as its own
-    private_local_branch      Build <base>_<branch> for a private/local repo
+    private_local_branch      <project>_<branch> for a private/local repo
     resolve_propagated_ref    Target ref under a tree-wide branch move (pinning)
 """
 
@@ -284,29 +283,28 @@ is not.
 """
 
 
-def private_local_base(entry: WorkingRepo) -> str:
-    """The branch a pinned repository calls its own, before any derivation.
+def private_local_branch(project_name: str, project_branch: str) -> str:
+    """The branch a private/local repository uses for *project_branch*.
 
-    Read from ``default_branch`` — what the ``.cgs`` **declares** — and
-    nothing else. Deliberately not ``resolved_ref_name`` or
-    ``target_ref_name``: those say where the repository currently sits, and
-    for a private/local repository that is already a derived branch. Basing
-    the next derivation on it would compound
-    (``ComplexGitSync_multi-branch_main``) and lose the declared base for
-    good. The base is a declared fact; where the repo sits is not.
+    The one place the naming rule lives::
+
+        X == "main"   ->  <project_name>
+        otherwise     ->  <project_name>_<X>
+
+    The base is the **project's name**, not anything the entry declares:
+    a private/local repository holds one project's settings, filed on a
+    branch named after that project, and the suffix says which of the
+    project's branches the settings belong to. Deriving it from the entry's
+    current branch instead would compound — ``P_feature`` would become
+    ``P_feature_other`` — and lose the project's name for good.
+
+    ``main`` takes no suffix because it is the project's own main line: its
+    settings branch is simply ``<project_name>``, which is what every tree
+    already has. Nothing else in the codebase composes these two strings.
     """
-    return _as_optional_str(entry.default_branch) or DEFAULT_BRANCH
-
-
-def private_local_branch(base: str, project_branch: str) -> str:
-    """Build a private/local repository's branch for *project_branch*.
-
-    The one place the naming rule lives. ``base`` is what the entry declares
-    as its own branch (``default_branch``); *project_branch* is the branch
-    the tree is moving to. Nothing else in the codebase composes these two
-    strings — see :func:`resolve_propagated_ref` for why.
-    """
-    return f"{base}{PRIVATE_LOCAL_SEPARATOR}{project_branch}"
+    if project_branch == DEFAULT_BRANCH:
+        return project_name
+    return f"{project_name}{PRIVATE_LOCAL_SEPARATOR}{project_branch}"
 
 
 def resolve_propagated_ref(
@@ -314,6 +312,7 @@ def resolve_propagated_ref(
     ref_name: str,
     *,
     ref_kind: RefKind = RefKind.BRANCH,
+    project_name: str | None = None,
 ) -> BranchResolution:
     """Resolve what *entry* targets when the whole tree moves to *ref_name*.
 
@@ -333,26 +332,25 @@ def resolve_propagated_ref(
     project's own settings, filed in a shared repository but on a branch
     nobody else reads, and this project *does* commit to it. It therefore
     needs somewhere to record settings per project branch, so it targets
-    ``<default_branch>_<ref_name>`` — see :func:`private_local_branch`.
+    :func:`private_local_branch` of *project_name* and *ref_name*:
+    ``<project_name>`` on ``main``, ``<project_name>_<ref_name>`` elsewhere.
 
-    That derived branch is a **target, not a demand**. Whether it exists is
-    not a question this module can answer — it is pure and offline — so the
-    caller checks, and falls back to the entry's own chain
-    (:func:`resolve_entry_ref`) when the branch is not there. Nothing changes
-    for an existing tree until somebody creates it.
+    *project_name* is the tree's project, and only the private/local case
+    needs it. Without it that case cannot be resolved at all, so it falls
+    back to behaving like private/distant rather than guessing a name.
 
     For any pinned entry the returned ``kind`` is ``None``: the move must not
     rewrite the kind of ref that entry already carries.
     """
     if entry.effective_pinned and ref_kind is RefKind.BRANCH:
-        base = private_local_base(entry)
-        if entry.effective_writable:
+        declared = _as_optional_str(entry.default_branch) or DEFAULT_BRANCH
+        if entry.effective_writable and project_name:
             return BranchResolution(
-                name=private_local_branch(base, ref_name),
+                name=private_local_branch(project_name, ref_name),
                 kind=None,
                 source=BranchSource.PRIVATE_LOCAL,
             )
-        return BranchResolution(name=base, kind=None, source=BranchSource.PINNED)
+        return BranchResolution(name=declared, kind=None, source=BranchSource.PINNED)
     source = BranchSource.TAG if ref_kind is RefKind.TAG else BranchSource.REPO_BRANCH
     return BranchResolution(name=ref_name, kind=ref_kind, source=source)
 

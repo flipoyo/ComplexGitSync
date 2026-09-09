@@ -118,7 +118,7 @@ from .ledger_store import read_all_entries, read_head, recompute_head, verify_an
 from .master import MasterConfig
 from .operations import (
     BranchTopologyReport,
-    resolve_existing_propagated_ref,
+    tree_project_name,
 )
 from .operations import (
     validate_branch_topology as _validate_branch_topology,
@@ -883,6 +883,26 @@ def _walk_git_repositories(
 
 def _as_posix_or_none(path: Path | None) -> str | None:
     return None if path is None else path.as_posix()
+
+
+def _scope_for(
+    tree: WorkingGitTree,
+    *,
+    private: bool,
+    command: str,
+    default: RepoScope = RepoScope.ALL,
+) -> RepoScope:
+    """``--private`` narrows a command to the writable configuration repos.
+
+    Without it, a command keeps whatever *default* it has always had — for
+    the tree-wide readers and movers that is every repository, because a
+    private/local one already resolves its own branch name. ``--private``
+    is how a user acts on the configuration repositories alone, and it is
+    refused rather than silently empty when the tree has none.
+    """
+    if not private:
+        return default
+    return resolve_command_scope(tree, private=True, command=command)
 
 
 def resolve_command_scope(
@@ -2818,6 +2838,7 @@ class ComplexGitSyncClient:
         branch_name: str,
         *,
         ref_kind: RefKind = RefKind.BRANCH,
+        private: bool = False,
     ) -> WorkingGitTree:
         """Check out *branch_name* across the full tree from a READY ``.gts`` state.
 
@@ -2839,6 +2860,7 @@ class ComplexGitSyncClient:
             self.git_runner,
             branch_name,
             ref_kind=ref_kind,
+            scope=_scope_for(registry, private=private, command="checkout"),
         )
         snapshot_path = self.write_gts_snapshot(command_origin="checkout")
         if self.source_path is not None:
@@ -2850,12 +2872,15 @@ class ComplexGitSyncClient:
     def branch(
         self,
         branch_name: str,
+        *,
+        private: bool = False,
     ) -> WorkingGitTree:
         """Create *branch_name* across the full tree without checkout."""
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("branch_start", branch_name=branch_name)
-        self.orchestre.git_tree.git.branch(self.git_runner, branch_name)
+        scope = _scope_for(registry, private=private, command="branch")
+        self.orchestre.git_tree.git.branch(self.git_runner, branch_name, scope=scope)
         if ROOT_REPO_ID in registry.repos:
             snapshot_path = self.write_gts_snapshot(command_origin="branch")
             if self.source_path is not None:
@@ -2975,8 +3000,14 @@ class ComplexGitSyncClient:
 
         registry = self.get_dependency_registry()
         scope = resolve_command_scope(registry, private=private, command="merge")
+        project_name = tree_project_name(registry)
         return tuple(
-            (repo.name, *merge_status(repo, self.git_runner, project_branch))
+            (
+                repo.name,
+                *merge_status(
+                    repo, self.git_runner, project_branch, project_name=project_name
+                ),
+            )
             for repo in iter_tree_leaf_first(registry, scope)
         )
 
@@ -3071,7 +3102,7 @@ class ComplexGitSyncClient:
         self._log_event("push_end")
         return registry
 
-    def tag(self, tag_name: str) -> WorkingGitTree:
+    def tag(self, tag_name: str, *, private: bool = False) -> WorkingGitTree:
         """Create and push *tag_name* across the full tree, leaf-first.
 
         The runtime tree state is refreshed so the recorded tag target remains
@@ -3080,7 +3111,12 @@ class ComplexGitSyncClient:
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("tag_start", tag_name=tag_name)
-        self.orchestre.git_tree.git.tag(self.git_runner, tag_name)
+        scope = (
+            RepoScope.PRIVATE
+            if private
+            else _scope_for(registry, private=False, command="tag", default=RepoScope.WRITABLE)
+        )
+        self.orchestre.git_tree.git.tag(self.git_runner, tag_name, scope=scope)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="tag")
         self._log_event("tag_end", tag_name=tag_name)
         return registry
@@ -3541,6 +3577,7 @@ class ComplexGitSyncClient:
         if root_branch is None:
             return []
         findings: list[str] = []
+        project_name = tree_project_name(registry)
         for entry in iter_tree_leaf_first(registry):
             try:
                 current = self.git_runner.current_branch(entry.absolute_path)
@@ -3548,10 +3585,8 @@ class ComplexGitSyncClient:
                 continue
             if current is None:
                 continue
-            expected = resolve_existing_propagated_ref(
-                entry,
-                resolve_propagated_ref(entry, root_branch),
-                self.git_runner,
+            expected = resolve_propagated_ref(
+                entry, root_branch, project_name=project_name
             ).name
             if current != expected:
                 findings.append(f"{entry.name} is on {current!r}, expected {expected!r}")

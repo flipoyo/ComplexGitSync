@@ -40,13 +40,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from .errors import GitSyncError, TreeNotReadyError
-from .git_branch import (
-    BranchResolution,
-    BranchSource,
-    private_local_base,
-    resolve_entry_ref,
-    resolve_propagated_ref,
-)
+from .git_branch import DEFAULT_BRANCH, resolve_entry_ref, resolve_propagated_ref
 from .git_repo import (
     AccessProtocol,
     RefKind,
@@ -57,7 +51,9 @@ from .git_repo import (
     convert_remote_url_protocol,
 )
 from .git_tree import (
+    ROOT_REPO_ID,
     WorkingGitTree,
+    _as_optional_str,
     cgitsync_managed_state_paths,
     iter_tree,
     iter_tree_leaf_first,
@@ -89,6 +85,19 @@ class PreflightDiagnostic:
 # ---------------------------------------------------------------------------
 
 
+def tree_project_name(tree: WorkingGitTree) -> str | None:
+    """The project's name, which is what a private/local branch is named after.
+
+    Read from the root entry, the one place a tree records what project it
+    is. Returns ``None`` for a tree with no root, where the private/local
+    rule cannot apply anyway.
+    """
+    root = tree.repos.get(ROOT_REPO_ID)
+    if root is None:
+        return None
+    return _as_optional_str(root.project_name) or _as_optional_str(root.name)
+
+
 def propagate_global_branch(
     tree: WorkingGitTree,
     branch_name: str,
@@ -110,50 +119,20 @@ def propagate_global_branch(
     reason each repo ended up on the branch it did is decided in one place
     and recorded on the entry rather than re-derived by each reader.
 
-    *git_runner*, when given, resolves the one question that rule cannot
-    answer on its own: a **private/local** repo targets a branch derived
-    from the project's (``<base>_<branch>``), and whether that branch exists
-    is a fact about a repository on disk, not about the document. Without a
-    runner the derived name is set unchecked — fine for a caller that only
-    wants the intent, wrong for one about to run ``git checkout``. See
-    :func:`resolve_existing_propagated_ref`.
+    A **private/local** repo does not target *branch_name* itself but the
+    branch named after the project for it — ``<project>`` on ``main``,
+    ``<project>_<branch_name>`` elsewhere. The rule is deterministic, so no
+    repository is left to guess: whatever it names, ``create_global_branch``
+    makes and ``checkout`` moves to.
+
+    *git_runner* is accepted for call-site symmetry and is unused; nothing
+    here needs to look at a repository on disk.
     """
+    project_name = tree_project_name(tree)
     for repo in tree.values():
-        resolution = resolve_propagated_ref(repo, branch_name, ref_kind=ref_kind)
-        if git_runner is not None:
-            resolution = resolve_existing_propagated_ref(repo, resolution, git_runner)
-        resolution.apply_to(repo)
-
-
-def resolve_existing_propagated_ref(
-    repo: WorkingRepo,
-    resolution: BranchResolution,
-    git_runner: GitRunner,
-) -> BranchResolution:
-    """Fall back when a propagated branch does not exist in *repo*.
-
-    Only a private/local resolution can name a branch that is not there:
-    ``<base>_<branch>`` is derived, not declared, and creating it is a
-    deliberate act (``cgitsync branch``), not something a checkout does
-    behind your back. When it is missing both locally and on the remote,
-    this falls back to the repository's **declared base**.
-
-    Not to where the repository currently sits. Moving a tree from
-    ``multi-branch`` back to ``main`` finds no ``<base>_main``, and the right
-    answer then is the base itself — not ``<base>_multi-branch``, which is
-    the settings branch of the branch you just left.
-
-    That is what lets this ship without a migration: until somebody creates
-    the derived branch, every tree behaves as it does today.
-    """
-    if resolution.source is not BranchSource.PRIVATE_LOCAL:
-        return resolution
-    remote = repo.remote_name or "origin"
-    if git_runner.branch_known(repo.absolute_path, resolution.name, remote=remote):
-        return resolution
-    return BranchResolution(
-        name=private_local_base(repo), kind=None, source=BranchSource.FALLBACK
-    )
+        resolve_propagated_ref(
+            repo, branch_name, ref_kind=ref_kind, project_name=project_name
+        ).apply_to(repo)
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +145,7 @@ def create_global_branch(
     git_runner: GitRunner,
     branch_name: str,
     *,
-    include_private_local: bool = False,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     """Create *branch_name* in every repo where it does not already exist locally.
 
@@ -177,22 +156,20 @@ def create_global_branch(
     A private/**distant** repository is never given a branch: this project
     cannot write to it at all.
 
-    A private/**local** repository is given ``<base>_<branch_name>`` — but
-    only when *include_private_local* says so, and that is the difference
-    between the two commands that call this. ``cgitsync branch`` is a
-    deliberate act and passes ``True``: it is the only way the derived branch
-    ever comes into existence. ``cgitsync checkout`` passes ``False``, so a
-    move never quietly creates a branch in a repository shared with other
-    projects; it falls back to where that repository already is. Without that
-    split the feature would be either unreachable or unavoidable.
+    A private/**local** repository is given the branch the project's own
+    rule names for it — ``<project>`` on ``main``,
+    ``<project>_<branch_name>`` elsewhere. Both ``branch`` and ``checkout``
+    do this, because a user asking for a branch should not have to know that
+    their configuration repository spells it differently; the point of the
+    rule is that they never have to think about it.
     """
-    for repo in iter_tree(tree):
-        if repo.effective_pinned:
-            if not (include_private_local and repo.effective_writable):
-                continue
-            target = resolve_propagated_ref(repo, branch_name).name
-        else:
-            target = branch_name
+    project_name = tree_project_name(tree)
+    for repo in iter_tree(tree, scope):
+        if repo.effective_pinned and not repo.effective_writable:
+            continue
+        target = resolve_propagated_ref(
+            repo, branch_name, project_name=project_name
+        ).name
         if git_runner.local_branch_exists(repo.absolute_path, target):
             continue
         git_runner.create_branch(repo.absolute_path, target)
@@ -250,6 +227,7 @@ def _restart_tree(
     *,
     force: bool,
     force_access_protocol: AccessProtocol | None,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     """Shared body of :func:`restart_tree` and :func:`restart_tree_force`.
 
@@ -266,7 +244,7 @@ def _restart_tree(
     # derived branch has to be one that exists.
     propagate_global_branch(tree, current_branch, git_runner=git_runner)
 
-    for repo in iter_tree(tree):
+    for repo in iter_tree(tree, scope):
         if repo.parent_id is not None:
             parent = tree.get(repo.parent_id)
             try:
@@ -297,6 +275,7 @@ def restart_tree(
     git_runner: GitRunner,
     *,
     force_access_protocol: AccessProtocol | None = None,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     """Resynchronize the full tree using the root repository's current branch.
 
@@ -312,7 +291,9 @@ def restart_tree(
     *force_access_protocol*, when given, rewrites each repo's remote to
     that protocol before pulling (``--force-protocol`` on ``pull``).
     """
-    _restart_tree(tree, git_runner, force=False, force_access_protocol=force_access_protocol)
+    _restart_tree(
+        tree, git_runner, force=False, force_access_protocol=force_access_protocol, scope=scope
+    )
 
 
 def restart_tree_force(
@@ -320,6 +301,7 @@ def restart_tree_force(
     git_runner: GitRunner,
     *,
     force_access_protocol: AccessProtocol | None = None,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     """Force-resynchronize the full tree using the root repository's branch.
 
@@ -332,7 +314,9 @@ def restart_tree_force(
     that protocol before force-pulling (``--force-protocol`` on
     ``pull-force``).
     """
-    _restart_tree(tree, git_runner, force=True, force_access_protocol=force_access_protocol)
+    _restart_tree(
+        tree, git_runner, force=True, force_access_protocol=force_access_protocol, scope=scope
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +330,7 @@ def checkout_tree(
     branch_name: str,
     *,
     ref_kind: RefKind = RefKind.BRANCH,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     """Check out *branch_name* across the whole tree.
 
@@ -367,11 +352,13 @@ def checkout_tree(
     # a private/local repo's derived branch has to be one that exists.
     propagate_global_branch(tree, branch_name, ref_kind=ref_kind, git_runner=git_runner)
 
-    # Step 2: create the branch in each repo where it does not exist yet
-    create_global_branch(tree, git_runner, branch_name)
+    # Step 2: create the branch in each repo where it does not exist yet --
+    # including the private/local name, so `checkout <B>` alone puts the whole
+    # tree where it belongs and the user never has to spell the derived branch.
+    create_global_branch(tree, git_runner, branch_name, scope=scope)
 
     # Step 3: checkout and refresh each repo (parent-first)
-    for repo in iter_tree(tree):
+    for repo in iter_tree(tree, scope):
         ref = repo.target_ref_name or branch_name
         git_runner.checkout(repo.absolute_path, ref)
         _refresh_repo_after_checkout(repo, ref, repo.target_ref_kind or ref_kind, git_runner)
@@ -388,6 +375,8 @@ def branch_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
     branch_name: str,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
     """Create *branch_name* across the whole tree without checkout.
 
@@ -396,9 +385,7 @@ def branch_tree(
     """
     _assert_ready(tree)
     propagate_global_branch(tree, branch_name, ref_kind=RefKind.BRANCH)
-    # The deliberate act: this is the one command that creates a private/local
-    # repository's derived branch. A checkout must never do it silently.
-    create_global_branch(tree, git_runner, branch_name, include_private_local=True)
+    create_global_branch(tree, git_runner, branch_name, scope=scope)
     tree.recompute_tree_state()
 
 
@@ -528,25 +515,31 @@ def commit_tree(
 # ---------------------------------------------------------------------------
 
 
-def merge_source_ref(repo: WorkingRepo, project_branch: str) -> str:
+def merge_source_ref(
+    repo: WorkingRepo, project_branch: str, *, project_name: str | None = None
+) -> str:
     """The branch *repo* should merge when the project merges *project_branch*.
 
     The argument a user types is always the **project's** branch. Each
     repository then resolves its own source through the one rule that owns
     branch propagation, so ``merge --private multi-branch`` merges
-    ``<base>_multi-branch`` into a private/local repository rather than
+    ``<project>_multi-branch`` into a private/local repository rather than
     ``multi-branch``, which does not exist there.
 
     This is the whole reason the private case needs no code of its own: it
     is the same command with a different scope and this one translation.
     """
-    return resolve_propagated_ref(repo, project_branch).name
+    return resolve_propagated_ref(
+        repo, project_branch, project_name=project_name
+    ).name
 
 
 def merge_status(
     repo: WorkingRepo,
     git_runner: GitRunner,
     project_branch: str,
+    *,
+    project_name: str | None = None,
 ) -> tuple[str, str]:
     """What ``merge`` would do to *repo*, as ``(source_ref, status)``.
 
@@ -557,7 +550,7 @@ def merge_status(
     to merge from — normal for a private/local repository with no branch for
     this project branch yet).
     """
-    source = merge_source_ref(repo, project_branch)
+    source = merge_source_ref(repo, project_branch, project_name=project_name)
     if git_runner.current_branch(repo.absolute_path) == source:
         return source, "already-on-it"
     if not git_runner.branch_known(
@@ -606,8 +599,11 @@ def merge_tree(
     planned: list[tuple[WorkingRepo, str]] = []
     blocked: list[str] = []
     on_source: list[str] = []
+    project_name = tree_project_name(tree)
     for repo in iter_tree_leaf_first(tree, scope):
-        source, status = merge_status(repo, git_runner, project_branch)
+        source, status = merge_status(
+            repo, git_runner, project_branch, project_name=project_name
+        )
         if status == "already-on-it":
             # Merging a branch into itself does nothing and reports success,
             # which reads as "it worked" when the tree is simply still on the
@@ -673,8 +669,13 @@ def refresh_private_tree(
 
     planned: list[tuple[WorkingRepo, str]] = []
     blocked: list[str] = []
+    project_name = tree_project_name(tree)
     for repo in iter_tree_leaf_first(tree, RepoScope.PRIVATE):
-        base = resolve_entry_ref(repo).name
+        # The base is the project's main-line settings branch -- the same rule
+        # applied to "main", which by definition takes no suffix.
+        base = resolve_propagated_ref(
+            repo, DEFAULT_BRANCH, project_name=project_name
+        ).name
         current = git_runner.current_branch(repo.absolute_path)
         if current is None or current == base:
             continue
@@ -766,6 +767,8 @@ def tag_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
     tag_name: str,
+    *,
+    scope: RepoScope = RepoScope.WRITABLE,
 ) -> None:
     """Create and push *tag_name* across the tree, leaf-first."""
     _assert_ready(tree)
@@ -775,9 +778,9 @@ def tag_tree(
         tag_name=tag_name,
         require_clean=True,
         operation_name="tag",
-        # The same WRITABLE scope the loop below uses: a read-only
-        # configuration repo is not tagged, so its state cannot block this.
-        scope=RepoScope.WRITABLE,
+        # The same scope the loop below uses: a read-only configuration repo
+        # is not tagged, so its state cannot block this.
+        scope=scope,
     )
     _propagate_tag(tree, tag_name)
 
@@ -786,7 +789,7 @@ def tag_tree(
     # Reproducibility does not suffer -- the .gts snapshot records every
     # repo's exact commit_sha, read-only ones included, so the tree is
     # rebuilt from the snapshot rather than from tags.
-    for repo in iter_tree_leaf_first(tree, RepoScope.WRITABLE):
+    for repo in iter_tree_leaf_first(tree, scope):
         git_runner.create_tag(repo.absolute_path, tag_name)
         remote = repo.remote_name or "origin"
         git_runner.push(repo.absolute_path, remote=remote, ref_name=tag_name)
@@ -1238,6 +1241,7 @@ def _collect_branch_alignment_diagnostics(
     if root_branch is None:
         return []
     mismatched: list[PreflightDiagnostic] = []
+    project_name = tree_project_name(tree)
     for repo in iter_tree_leaf_first(tree, scope):
         # A pinned repository is shared with other projects and stays on a
         # branch of its own, so the root's branch is not what it should be
@@ -1246,8 +1250,8 @@ def _collect_branch_alignment_diagnostics(
         # checkout would: a private/local repo whose derived branch has not
         # been created is measured against where it actually belongs today,
         # not against a branch nobody has made yet.
-        expected_branch = resolve_existing_propagated_ref(
-            repo, resolve_propagated_ref(repo, root_branch), git_runner
+        expected_branch = resolve_propagated_ref(
+            repo, root_branch, project_name=project_name
         ).name
         current = git_runner.current_branch(repo.absolute_path)
         if current is not None and current != expected_branch:

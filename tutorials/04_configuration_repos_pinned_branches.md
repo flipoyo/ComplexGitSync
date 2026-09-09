@@ -160,8 +160,14 @@ because the project is on `multi-branch`.
 That is the rule, and it has one shape:
 
 ```text
-<the branch the entry declares>_<the branch your project is on>
+branch X  ->  project repos:   X
+              private/local:   <your project's name>          if X is main
+                               <your project's name>_X        otherwise
 ```
+
+The base is your **project's name**. `main` takes no suffix, because the
+project's main line's settings branch is simply the project's name — which
+is what every existing tree already has, so nothing has to move.
 
 The separator is an underscore. Hyphens already turn up inside branch names
 — `multi-branch` is one — so `ComplexGitSync-multi-branch` would leave you
@@ -173,27 +179,22 @@ then the moment you documented an unfinished feature, that documentation
 would be live on `main` too, describing something that is not there yet.
 A branch per project branch keeps unmerged notes unmerged.
 
-**Nothing happens until you create it.** The derived branch is a target,
-not a demand. Until `ComplexGitSync_multi-branch` exists, `cgitsync` falls
-back to `ComplexGitSync` exactly as before.
+**You never type the second name.** `cgitsync checkout multi-branch` puts
+your own repositories on `multi-branch` and your settings repositories on
+`ComplexGitSync_multi-branch`, creating that branch if it is not there.
+`cgitsync branch multi-branch` does the same without moving anything. One
+command, one branch name, and `cgitsync` works out what each repository
+needs.
 
-**`cgitsync branch` is what creates it**, and it is the only thing that
-does:
-
-```bash
-pixi run cgitsync branch multi-branch
-```
-
-That gives your own repositories a `multi-branch` branch and each
-private/local one a `ComplexGitSync_multi-branch`. `cgitsync checkout`
-deliberately does *not*: moving your tree should never quietly make a new
-branch in a repository you share with other projects.
+**Every command that touches Git takes `--private`.** It narrows the
+command to your writable configuration repositories alone — so you can
+commit, push, tag or check them out on their own without reaching for
+plain `git`. Read-only ones are never written to, with or without it.
 
 ### The whole cycle
 
 ```bash
-# start the feature: creates multi-branch, and ComplexGitSync_multi-branch
-pixi run cgitsync branch multi-branch
+# start the feature: one command, both kinds of branch
 pixi run cgitsync checkout multi-branch
 
 # while you work: take updates from ComplexGitSync into

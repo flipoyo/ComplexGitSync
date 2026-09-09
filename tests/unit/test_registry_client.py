@@ -836,7 +836,7 @@ def test_client_branch_delegates_to_gittree_git_branch(monkeypatch):
     client.registry = WorkingGitTree()
     captured: dict[str, object] = {}
 
-    def _spy_branch(self, git_runner, branch_name, *, tree=None):
+    def _spy_branch(self, git_runner, branch_name, *, tree=None, scope=None):
         captured["git_runner"] = git_runner
         captured["branch_name"] = branch_name
         captured["tree"] = tree

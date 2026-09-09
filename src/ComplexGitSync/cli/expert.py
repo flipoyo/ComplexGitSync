@@ -195,7 +195,29 @@ def _register_pull(subparser: argparse.ArgumentParser) -> None:
 def _register_pull_force(subparser: argparse.ArgumentParser) -> None:
     _register_pull_source_and_search_dir(subparser)
     _add_force_protocol_argument(subparser, command_name="pull-force")
+    _add_private_argument(subparser, verb="Force-resynchronise")
     subparser.set_defaults(handler=_handle_pull_force)
+
+
+def _add_private_argument(subparser: argparse.ArgumentParser, *, verb: str) -> None:
+    """Add ``--private``: act on the writable configuration repositories alone.
+
+    Every command that touches Git takes it, so a user who wants to work on
+    their configuration repositories on their own never has to reach for
+    plain ``git``. Without it a command keeps its usual reach — which for
+    ``checkout`` and ``branch`` is the whole tree, because a private/local
+    repository already resolves its own branch name and needs no separate
+    invocation.
+    """
+    subparser.add_argument(
+        "--private",
+        action="store_true",
+        help=(
+            f"{verb} only the tree's writable configuration repositories -- the "
+            "entries a .cgs declares 'pinned = true, writable = true'. Read-only "
+            "configuration repositories are never written to."
+        ),
+    )
 
 
 def _register_checkout(subparser: argparse.ArgumentParser) -> None:
@@ -208,6 +230,7 @@ def _register_checkout(subparser: argparse.ArgumentParser) -> None:
         default="branch",
         help="Kind of ref to check out (default: branch).",
     )
+    _add_private_argument(subparser, verb="Check out")
     subparser.set_defaults(handler=_handle_checkout)
 
 
@@ -215,6 +238,7 @@ def _register_branch(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("branch", help="Branch name to create across the READY tree.")
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
+    _add_private_argument(subparser, verb="Create the branch in")
     subparser.set_defaults(handler=_handle_branch)
 
 
@@ -327,6 +351,7 @@ def _register_rm(subparser: argparse.ArgumentParser) -> None:
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
     _add_dry_run_argument(subparser, help_text="Preview the rm execution plan without mutating repositories.")
+    _add_private_argument(subparser, verb="Remove the paths from")
     subparser.set_defaults(handler=_handle_rm)
 
 
@@ -349,6 +374,7 @@ def _register_tag(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("name", help="Tag name to create and push across the READY tree.")
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
+    _add_private_argument(subparser, verb="Tag")
     subparser.set_defaults(handler=_handle_tag)
 
 
@@ -357,6 +383,7 @@ def _register_freeze(subparser: argparse.ArgumentParser) -> None:
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
     _add_dry_run_argument(subparser, help_text="Preview the freeze execution plan without mutating repositories.")
+    _add_private_argument(subparser, verb="Freeze")
     subparser.set_defaults(handler=_handle_freeze)
 
 
@@ -590,7 +617,9 @@ def _handle_checkout(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="checkout",
         source=gts_path,
-        runner=lambda client, source: _execute_checkout(client, source, branch=args.branch, ref_kind=ref_kind),
+        runner=lambda client, source: _execute_checkout(
+            client, source, branch=args.branch, ref_kind=ref_kind, private=args.private
+        ),
     )
 
 
@@ -599,7 +628,9 @@ def _handle_branch(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="branch",
         source=gts_path,
-        runner=lambda client, source: _execute_branch(client, source, branch=args.branch),
+        runner=lambda client, source: _execute_branch(
+            client, source, branch=args.branch, private=args.private
+        ),
     )
 
 
@@ -690,7 +721,9 @@ def _handle_tag(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="tag",
         source=gts_path,
-        runner=lambda client, source: _execute_tag(client, source, name=args.name),
+        runner=lambda client, source: _execute_tag(
+            client, source, name=args.name, private=args.private
+        ),
     )
 
 
@@ -884,10 +917,11 @@ def _execute_checkout(
     *,
     branch: str,
     ref_kind: RefKind,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git checkout {branch}")
-    client.checkout(branch, ref_kind=ref_kind)
+    client.checkout(branch, ref_kind=ref_kind, private=private)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -902,10 +936,11 @@ def _execute_branch(
     source_path: Path,
     *,
     branch: str,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git branch {branch}")
-    client.branch(branch)
+    client.branch(branch, private=private)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -1090,10 +1125,11 @@ def _execute_tag(
     source_path: Path,
     *,
     name: str,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git tag {name} && git push origin {name}")
-    client.tag(name)
+    client.tag(name, private=private)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
