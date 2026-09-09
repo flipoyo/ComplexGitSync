@@ -2,10 +2,22 @@
 
 *Created: 2026-09-01*
 
-> **Unblocked.** MultiBranchSync shipped on 2026-09-07 and is archived at
-> `AgentSpec/archive/20260907_MultiBranchSync_DevPlanTicket.md`; it was the
-> priority ticket that took from this one the fact that `force_pull` runs `git clean -fd` on every resync.
-> This ticket is not cancelled and its content is unchanged.
+> **Reassessed on 2026-09-09. Still live, and it now shares a site with a
+> bug ticket.** Both erasure mechanisms are still in the code exactly as
+> §0 describes them, and both have moved: `_clone_registry_entry`'s
+> `shutil.rmtree` is at `orchestre.py:3976`, and `clean_untracked`'s
+> `git clean -fd` is at `git_runner.py:508-510`, reached from `force_pull`
+> at `git_runner.py:377-387`. Every line number below §0 is from
+> 2026-09-01 and has drifted; the mechanisms have not.
+>
+> **Read `InitialiseDestroysExistingClones_DevPlanTicket.md` before
+> starting.** It is a data-loss bug ticket opened on 2026-09-09 for the
+> same `rmtree`, from an incident that destroyed unpushed work, and it
+> proposes changing that call's behaviour. This ticket asks a wider
+> question about the same line — whether a mount point is owned outright.
+> Whichever is built first constrains the other, and the answers must not
+> contradict: a "clean mount, guaranteed" promise and a "never delete what
+> you did not clone" promise cannot both be the default.
 
 ## Abstract — read this first
 

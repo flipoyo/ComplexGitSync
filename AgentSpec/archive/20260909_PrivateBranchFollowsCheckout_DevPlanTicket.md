@@ -3,7 +3,7 @@
 *Created: 2026-09-09*
 
 > **Superseded on 2026-09-09 by
-> [`AgentSpec/MergeAndPrivateBranch_DevPlanTicket.md`](../MergeAndPrivateBranch_DevPlanTicket.md).**
+> [`AgentSpec/archive/20260909_MergeAndPrivateBranch_DevPlanTicket.md`](20260909_MergeAndPrivateBranch_DevPlanTicket.md).**
 > The two tickets turned out to be one problem: implementing `merge` makes
 > the private/local branch question fall out of it as `merge --private`.
 > This document is a historical record of the separate design and is not

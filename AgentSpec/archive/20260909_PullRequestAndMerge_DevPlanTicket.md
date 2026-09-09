@@ -3,7 +3,7 @@
 *Created: 2026-09-09*
 
 > **Superseded on 2026-09-09 by
-> [`AgentSpec/MergeAndPrivateBranch_DevPlanTicket.md`](../MergeAndPrivateBranch_DevPlanTicket.md).**
+> [`AgentSpec/archive/20260909_MergeAndPrivateBranch_DevPlanTicket.md`](20260909_MergeAndPrivateBranch_DevPlanTicket.md).**
 > The two tickets turned out to be one problem: implementing `merge` makes
 > the private/local branch question fall out of it as `merge --private`.
 > This document is a historical record of the separate design and is not
@@ -176,7 +176,7 @@ CLI-mirrors-the-API rule. `cli/` must not touch `subprocess` or Git.
 
 ## 7. Where this came from
 
-`AgentSpec/MultiBranchResume_DevPlanTicket.md` §6 step 5, dropped by the
-owner on 2026-09-09. Dropping it is what made the absence obvious: there
-was never a mechanism to drop, only two manual pull requests that nobody
-had written a command for.
+`AgentSpec/archive/20260909_MultiBranchResume_DevPlanTicket.md`
+§6 step 5, dropped by the owner on 2026-09-09. Dropping it is what made
+the absence obvious: there was never a mechanism to drop, only two manual
+pull requests that nobody had written a command for.

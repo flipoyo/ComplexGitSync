@@ -2,10 +2,10 @@
 
 *Created: 2026-09-06*
 
-> **Unblocked.** MultiBranchSync shipped on 2026-09-07 and is archived at
-> `AgentSpec/archive/20260907_MultiBranchSync_DevPlanTicket.md`; it was the
-> priority ticket that took from this one its warning that `@` already means two different things, now decision D4 there.
-> This ticket is not cancelled and its content is unchanged.
+> **Closed on 2026-09-09 without being built.** D1 — the question §5 says
+> to answer before anything else — is answered by the code: the problem this
+> object was proposed to solve no longer exists, so what is left is `freeze`
+> plus `clone` wearing a name. See §9.
 
 ## Abstract — read this first
 
@@ -253,3 +253,45 @@ Conditional on D1 answering "new object".
 6. `.localSpec/AdditionalSpecs.md`'s responsibility table names every
    module whose responsibility moved.
 7. This ticket is stamped and archived.
+
+## 9. Why this was closed
+
+**The premise died.** §1 is built on one fault: tree-wide `branch`,
+`checkout` and `pull` propagate a single branch name across every mount,
+dragging the shared repositories off the branch they belong on. That was
+true when this was written. It is not true now.
+
+`git_branch.resolve_propagated_ref` decides each repository's branch
+separately, and answers three cases rather than one: a repository this
+project owns follows the tree, a *private/distant* one never moves, and a
+*private/local* one takes `<its own base>_<the project's branch>`. A
+project's feature branch can no longer appear inside a repository another
+project shares — which is exactly the failure §1 describes, and the whole
+reason a different kind of object was wanted. The rule shipped in
+`AgentSpec/archive/20260909_MergeAndPrivateBranch_DevPlanTicket.md`; the
+vocabulary it settled on is in `tutorials/04_private_repos.md`.
+
+**So D1 answers itself.** §2 already said a fork is reachable today as
+`freeze` a state, then `clone` or `bootstrap` from the resulting `.gts`,
+and that the case for a new object rests on three things composition does
+not record: an origin, a lifecycle, and *a rule that its ref names never
+travel back into the mounts*. The third one is now a property of every
+branch operation, for free. The remaining two — origin and lifecycle — are
+bookkeeping around a snapshot, not a reason to add an object with its own
+grammar, its own commands, and its own place in the architecture.
+
+**What is worth keeping.** Two findings outlive the ticket, and are why it
+is archived rather than deleted:
+
+- `@` is legal in a git reference and illegal in a GitHub repository name,
+  both verified against the live remotes (§2). Anyone choosing an
+  identifier format later needs that pair of facts.
+- The vocabulary collision in §2 and D5 is still open: `@` as a *separator*
+  in `fork<ID>@<project>` versus `@` as a *variable marker* in
+  `default_branch = "@project"`. Only the second one is still planned —
+  `GitOrchestratorCommand_DevPlanTicket.md` job 1 — so whoever builds that
+  token now has the symbol to themselves. That is a simplification this
+  closure hands them.
+
+**If a fork object is wanted again**, it will be for a reason this ticket
+does not contain, and it should be a new ticket that links back here.

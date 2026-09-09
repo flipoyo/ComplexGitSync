@@ -2,10 +2,26 @@
 
 *Created: 2026-09-05*
 
-> **Unblocked.** MultiBranchSync shipped on 2026-09-07 and is archived at
-> `AgentSpec/archive/20260907_MultiBranchSync_DevPlanTicket.md`; it was the
-> priority ticket that took from this one its round trip and its finding that tree-wide commands drag pinned mounts.
-> This ticket is not cancelled and its content is unchanged.
+> **Reassessed on 2026-09-09. Half of this ticket has shipped; the round
+> trip has not.** Read this block before §1, because three of the things
+> below say "open" and are not.
+>
+> | Item | State on 2026-09-09 |
+> |---|---|
+> | §3, the blocker — tree-wide `branch`/`checkout`/`pull` drag the shared mounts off their branch | **Fixed.** See the note in §3 |
+> | D1, how pinned mounts survive a tree-wide operation | **Answered and shipped.** Option A, and further than A went: `20260906_BranchPinning`, then `20260907_MultiBranchSync`, then `20260909_MergeAndPrivateBranch` |
+> | D2, does `autoTest` exist | **Gone.** `install.cgs` now reads `project = { name = "ComplexGitSync", default_branch = "main" }`. No dangling name is left to fall back from |
+> | §1.3, §1.4, §1.7 — the two clean-ups | **Historical.** They name a workspace and a plain clone under `/home/flipoyo/` that this checkout is not. Read §1.7 for its `initialise` warning, not as a to-do list |
+> | D1b jobs 1 and 2 — the `@project` token and a project-level branch-policy default | **Still unbuilt**, and they no longer ride along with anything: the privacy grammar shipped without them. `GitOrchestratorCommand_DevPlanTicket.md` §5 records the same fact |
+> | §2, the round trip, and §2.0, the Operation that creates a project | **Untouched.** This is what the ticket is now for |
+> | D3, `$CGSHOME` discipline | **Open**, and still the live complaint: a command run from the wrong directory still drives whichever tree `$CGSHOME` names |
+> | D5, where the protocol is documented | **Open** |
+>
+> One vocabulary change: `pinned` was renamed `private` on 2026-09-09, with
+> `writable = true` opting a private repository back into being written to.
+> `pinned` is still accepted when read, so nothing in this document is
+> wrong — it is simply the older word. `tutorials/04_private_repos.md` has
+> the current one.
 
 ## Abstract — read this first
 
@@ -410,6 +426,17 @@ whether the "two levels up" fallback in the first row should say out loud
 that it is guessing.
 
 ## 3. What blocks it: one global branch versus pinned mounts
+
+> **Fixed on 2026-09-09 — kept as the reasoning that produced the fix.**
+> Everything below was true when it was written and is no longer.
+> `git_branch.resolve_propagated_ref` now decides each repository's branch
+> on its own: a repository the project owns follows the tree, a
+> *private/distant* one stays on its declared branch, and a *private/local*
+> one moves to `<its own base>_<the project's branch>`. `checkout_tree`
+> refuses to create a branch inside a shared repository at all; only
+> `branch_tree` may, and only for private/local ones. `cgitsync merge` and
+> `merge --private` bring the work back. The table below is therefore a
+> record of the fault, not a description of the tool.
 
 Not a suspicion — it is what the code says it does.
 `operations.restart_tree`'s own docstring: *"Reads the current branch from

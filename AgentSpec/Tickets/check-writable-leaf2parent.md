@@ -1,1 +1,0 @@
-does the pinned read-only or pinned writable of a parent properly propagates in GitTree. It is very important for the leaf->parent->root sequence. The rule is the parent defines the leaves even though they do contain other parents. It is a bottom up approach. It is a property of GitRepo 

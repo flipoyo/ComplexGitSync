@@ -30,6 +30,18 @@ This is not a feature — it is a hole.
 
 **What you need to do with it.** Read §1, pick an option in §3, then §4.
 
+> **Read `AppendCloneMode_DevPlanTicket.md` alongside §3.** It asks a wider
+> question about the same `shutil.rmtree`: whether a mount point is owned
+> outright by the repository mounted there. Its §0 already audits this call
+> and the second erasure site this ticket does not cover — `force_pull`
+> running `git clean -fd` on every resync. The two answers have to agree.
+>
+> One correction of record: the incident below was reproduced with
+> `examples/multibranch_wip.cgs`, which was deleted on 2026-09-09 when the
+> multi-branch work landed. The path in §1 no longer exists. Nothing about
+> the fault depends on that file — any `.cgs` run through `initialise` on a
+> populated workspace does the same thing.
+
 ```mermaid
 graph TD
     RUN["cgitsync initialise x.cgs<br/>on a populated CGSHOME"] --> BUILD["tree built from the .cgs<br/>every dependency = DECLARED"]
@@ -171,7 +183,7 @@ on the bigger change.
 
 ## 6. Where this came from
 
-`AgentSpec/MultiBranchResume_DevPlanTicket.md` on the `multi-branch`
-branch, section *Warning: `initialise` re-clones the dependency
+`AgentSpec/archive/20260909_MultiBranchResume_DevPlanTicket.md`,
+section *Warning: `initialise` re-clones the dependency
 repositories*, which records the incident as it happened. This ticket is
 the fix that record asked for.

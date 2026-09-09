@@ -2,10 +2,22 @@
 
 *Created: 2026-09-05*
 
-> **Unblocked.** MultiBranchSync shipped on 2026-09-07 and is archived at
-> `AgentSpec/archive/20260907_MultiBranchSync_DevPlanTicket.md`; it was the
-> priority ticket that took from this one the `@project` token, now decision D3 there.
-> This ticket is not cancelled and its content is unchanged.
+> **Reassessed on 2026-09-09. Still live, and jobs 1 and 2 came back.**
+> §1 hands jobs 1 and 2 — the `@project` token and a project-level
+> branch-policy default — to AgenticMounts step 3, to ship alongside the
+> `pinned` grammar. That grammar shipped on 2026-09-09 (renamed `private`,
+> with `writable`) and **neither job went with it**. Nothing in the code
+> resolves `@project`, and there is no project-level branch-policy default.
+> So the "ship them together" argument in §1 and §5 has expired: they are
+> now separate work, and this ticket is the only document still asking for
+> them. Jobs 3 and 4 — `.goc` itself — are untouched and unbuilt.
+>
+> Two further changes since this was written. `@` is now free as a variable
+> marker: the competing use, `fork<ID>@<project>`, was closed unbuilt in
+> `AgentSpec/archive/20260909_ForkObject_DevPlanTicket.md`, so job 1 no
+> longer has a collision to settle. And the `pinned` this document names is
+> spelled `private` in the grammar today; `pinned` is still read, so the
+> text below is old wording rather than wrong wording.
 
 ## Abstract — read this first
 
@@ -259,15 +271,23 @@ it now holds. Changing it costs nothing today, since nothing depends on it.
 Order matters, and the reason is simple: you cannot automate a protocol you
 have not settled, and `.goc` names a branch policy that must exist first.
 
-| Stage | What happens | Ticket |
-|---|---|---|
-| 1 | Merge AgenticMounts step 2, confirm the build is green, archive the first two tickets | `agenticMountStep2` |
-| 2 | Add `pinned` to `.cgs`, **plus job 1 and job 2 from §1**, and prove and document the three-hop protocol | `agenticMountStep3` |
-| 3 | Add `.goc` as described here; update tutorial 2 and the CaWaQS-Viz onboarding to use it | this ticket |
+| Stage | What happens | Ticket | State on 2026-09-09 |
+|---|---|---|---|
+| 1 | Merge AgenticMounts step 2, confirm the build is green, archive the first two tickets | `agenticMountStep2` | Done, archived |
+| 2 | Add `pinned` to `.cgs`, **plus job 1 and job 2 from §1**, and prove and document the three-hop protocol | `agenticMountStep3` | Half done. The grammar shipped as `private`/`writable`; jobs 1 and 2 did not; the protocol is still unproven and undocumented |
+| 3 | Add `.goc` as described here; update tutorial 2 and the CaWaQS-Viz onboarding to use it | this ticket | Not started |
 
-Two things move into step 3 because of this ticket: the `@project` token
-for `default_branch`, and the project-level branch-policy default. Nothing
-moves out of it.
+**The staging argument no longer holds for jobs 1 and 2.** They were put
+into step 3 to save a second round of validation, round-trip tests,
+documentation and PDF rebuilds. That round has already been spent on the
+privacy grammar without them, so the saving is gone and they are ordinary
+separate work. They can be done here, or in step 3, or on their own —
+whichever comes first — but nothing is waiting for them and nothing bundles
+them any more.
+
+**Stage 3 is still correctly last.** `.goc` names a branch policy, and job
+4's Operation produces a project's spec on its own branch; both need the
+protocol in step 3 §2 settled, and that part of step 3 has not moved.
 
 One implementation warning for step 3, from reading `cgs_format.py`: the
 `@project` token has to survive being written back out. Normalization fills

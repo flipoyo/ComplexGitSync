@@ -2,10 +2,22 @@
 
 *Created: 2026-09-06*
 
-> **Unblocked.** MultiBranchSync shipped on 2026-09-07 and is archived at
-> `AgentSpec/archive/20260907_MultiBranchSync_DevPlanTicket.md`; it was the
-> priority ticket that took from this one the mount topology its `.agent` mount depends on.
-> This ticket is not cancelled and its content is unchanged.
+> **Reassessed on 2026-09-09. Live and unchanged in substance; the mount
+> topology it waited for has arrived.** `flipoyo/.claude` is still mounted
+> at `.claude/` under its own name, so every line of the exposure audit in
+> §3 still holds. Two things to carry into the work:
+>
+> - The `.cgs` field is now `private`, not `pinned`, and `writable = true`
+>   opts a private repository back into being written to. The `.agent`
+>   mount replacing `.claude` inherits that entry verbatim:
+>   `private = true, writable = true`, which is what `install.cgs` declares
+>   for `.claude` today.
+> - A private/local repository's branch is now derived from the project's
+>   rather than shared with it, so the rename must move whatever branches
+>   exist, not just `ComplexGitSync`. D2 already plans to move both the
+>   `ComplexGitSync` branch and the `main` baseline; that plan is still
+>   right, and now has to survive a repository that may carry
+>   `<base>_<feature>` branches as well.
 
 ## Abstract — read this first
 
@@ -273,12 +285,12 @@ fork has no such failure mode.
 | Return path | a pull request from the fork to `flipoyo/ComplexGitSync` |
 
 Making `fork` an object the tool itself understands — the larger and more
-general idea in the owner's message — is split out as
-[ForkObject_DevPlanTicket.md](ForkObject_DevPlanTicket.md). The two are
-independent by construction: this ticket does not wait for it. That ticket
-opens by asking whether such an object is genuinely new or is `freeze` plus
-`clone` under a name, which is a question worth answering before any code
-is written.
+general idea in the owner's message — was split out as
+[ForkObject_DevPlanTicket.md](../archive/20260909_ForkObject_DevPlanTicket.md)
+and **closed unbuilt on 2026-09-09**: the branch-propagation fault it
+existed to route around is fixed, so a fork is `freeze` plus `clone` under
+a name. That changes nothing here. This ticket never waited for it, and the
+fork it uses is a plain GitHub fork, which is still exactly what D1 chose.
 
 ### D2. What happens to `flipoyo/.claude`, and to `.agent`'s stale content?
 

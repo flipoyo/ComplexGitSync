@@ -357,3 +357,16 @@ rather than raised quietly:
 | `cli/_shared.py`, `discovery.py`, `operations.py`, `orchestre.py` | +2 each | call site or reader, plus the import |
 
 The version was bumped `0002.40` → `0002.41` and the docs PDFs rebuilt.
+
+## 8. Closed on 2026-09-09
+
+The `multi-branch` work reached `main` (merge commit `1abf237`), so §6 step
+6 was carried out: `examples/multibranch_wip.cgs` is deleted and this
+ticket is archived. The restore point it described no longer has anything
+to restore — `main` now carries the code, the tests and the documentation
+that lived only on the branch.
+
+Two records this ticket raised outlived it and are open tickets of their
+own: `AgentSpec/openTickets/InitialiseDestroysExistingClones_DevPlanTicket.md`
+(§7's warning about `initialise` re-cloning dependencies) and the `.gts`
+dropping `writable` when written by an older build.

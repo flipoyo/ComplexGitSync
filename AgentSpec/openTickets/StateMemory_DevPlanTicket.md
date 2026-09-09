@@ -2,10 +2,22 @@
 
 *Created: 2026-09-04*
 
-> **Unblocked.** MultiBranchSync shipped on 2026-09-07 and is archived at
-> `AgentSpec/archive/20260907_MultiBranchSync_DevPlanTicket.md`; it was the
-> priority ticket that took from this one the fact that any `.cgs` change strands the recorded state directory.
-> This ticket is not cancelled and its content is unchanged.
+> **Reassessed on 2026-09-09. Every finding still stands, F1 included.**
+> Re-checked against the code today: nothing outside `ledger_store.py` and
+> its own tests calls `append_entry` or `write_entry`, so `cgitsync verify`
+> still verifies a directory that is never written — F1, the worst of them,
+> untouched. `CLAUDE.md`'s module table says the same thing in one line:
+> the hash-chained register is "not yet wired into `SyncLedger`'s actual
+> write path". F2, F3 and F4 were spot-checked and are unchanged.
+>
+> One nearby thing did move, and it is not a fix. On 2026-09-09
+> `registry.reconcile_declared_fields` began re-reading `private`,
+> `writable` and `default_branch` from the `.cgs` every time a `.gts` is
+> loaded, because a snapshot written by an older build was silently losing
+> them. That settles which document owns a *declared fact*. It says nothing
+> about what a State is or where it is recorded, which is this ticket.
+> `AgentSpec/archive/20260909_MergeAndPrivateBranch_DevPlanTicket.md` has
+> the story.
 
 > Finalised from the `DevPlanTicket_T36_memory.md` proto-draft. That draft
 > asked, in its Phase 0, that its premise be checked against the source

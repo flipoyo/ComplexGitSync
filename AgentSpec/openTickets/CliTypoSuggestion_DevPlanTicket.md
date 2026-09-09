@@ -2,10 +2,12 @@
 
 *Created: 2026-08-31*
 
-> **Unblocked.** MultiBranchSync shipped on 2026-09-07 and is archived at
-> `AgentSpec/archive/20260907_MultiBranchSync_DevPlanTicket.md`; it was the
-> priority ticket that took from this one nothing — it is unrelated and simply waits.
-> This ticket is not cancelled and its content is unchanged.
+> **Reassessed on 2026-09-09. Live, unchanged, and still the cheapest
+> ticket here.** Re-checked today: nothing in `src/` imports `difflib` or
+> prints "Did you mean", `_PLANNED_COMMANDS` is still where WP-TYPO1 says
+> it is (`cli/__init__.py:37`), and `import-submodules` is still spelled
+> with the "s" that caused the original typo. Nothing else has to happen
+> before this can be picked up.
 
 ## Abstract — read this first
 
