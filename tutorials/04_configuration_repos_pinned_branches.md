@@ -173,24 +173,45 @@ then the moment you documented an unfinished feature, that documentation
 would be live on `main` too, describing something that is not there yet.
 A branch per project branch keeps unmerged notes unmerged.
 
-**Nothing happens until you create it.** The derived branch is a target, not
-a demand. Until `ComplexGitSync_multi-branch` exists, `cgitsync` falls back
-to `ComplexGitSync` exactly as before. `cgitsync branch` is what creates it,
-deliberately.
+**Nothing happens until you create it.** The derived branch is a target,
+not a demand. Until `ComplexGitSync_multi-branch` exists, `cgitsync` falls
+back to `ComplexGitSync` exactly as before.
 
-Two commands go with it:
+**`cgitsync branch` is what creates it**, and it is the only thing that
+does:
 
 ```bash
-# take updates from ComplexGitSync into ComplexGitSync_multi-branch,
-# so your settings branch does not drift behind the project's
+pixi run cgitsync branch multi-branch
+```
+
+That gives your own repositories a `multi-branch` branch and each
+private/local one a `ComplexGitSync_multi-branch`. `cgitsync checkout`
+deliberately does *not*: moving your tree should never quietly make a new
+branch in a repository you share with other projects.
+
+### The whole cycle
+
+```bash
+# start the feature: creates multi-branch, and ComplexGitSync_multi-branch
+pixi run cgitsync branch multi-branch
+pixi run cgitsync checkout multi-branch
+
+# while you work: take updates from ComplexGitSync into
+# ComplexGitSync_multi-branch, so your settings do not drift behind
 pixi run cgitsync pull --private
 
-# when multi-branch is done: land it, then land its settings
+# when it is done, go to the branch you are merging INTO first
+pixi run cgitsync checkout main
 pixi run cgitsync merge multi-branch
 pixi run cgitsync merge --private multi-branch
 ```
 
-The second `merge` does **not** merge a branch called `multi-branch` — no
+**Check out the target before you merge.** `merge` brings a branch *into*
+the one you are on, exactly like `git merge`. Running
+`cgitsync merge multi-branch` while still on `multi-branch` merges it into
+itself, so `cgitsync` refuses and tells you to check out the target first.
+
+The last `merge` does **not** merge a branch called `multi-branch` — no
 configuration repo has one. You always name your *project's* branch, and
 each repository works out what that means for itself.
 

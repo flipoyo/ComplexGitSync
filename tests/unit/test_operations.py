@@ -37,6 +37,7 @@ from ComplexGitSync.operations import (
     create_global_branch,
     freeze_release_tree,
     merge_source_ref,
+    merge_status,
     merge_tree,
     propagate_global_branch,
     push_tree,
@@ -1525,6 +1526,112 @@ class TestMergeTree:
             merge_source_ref(registry.get("root:deps/leaf"), "multi-branch")
             == "MyProject_multi-branch"
         )
+
+
+class TestOnlyBranchCreatesTheDerivedBranch:
+    """`branch` creates a private/local repo's derived branch; `checkout` never does.
+
+    Both halves matter. Without the first the feature is unreachable — no
+    command could ever bring `<base>_<branch>` into existence, so resolution
+    would fall back forever. Without the second, moving the tree would
+    silently create a branch in a repository shared with other projects.
+    """
+
+    @staticmethod
+    def _tree_and_runner(tmp_path: Path):
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            runner._current_branches[repo.absolute_path] = "main"
+            runner._local_branches[repo.absolute_path] = {"main"}
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._current_branches[leaf] = "MyProject"
+        runner._local_branches[leaf] = {"MyProject"}
+        return registry, runner
+
+    def test_branch_creates_the_derived_branch_for_a_private_local_repo(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf").absolute_path
+
+        branch_tree(registry, runner, "multi-branch")
+
+        assert (leaf, "MyProject_multi-branch") in runner.created
+
+    def test_branch_still_creates_the_plain_branch_for_a_project_repo(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        root = registry.get("root").absolute_path
+
+        branch_tree(registry, runner, "multi-branch")
+
+        assert (root, "multi-branch") in runner.created
+
+    def test_branch_never_touches_a_private_distant_repo(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf")
+        leaf.writable = False
+        propagate_pinning(registry)
+
+        branch_tree(registry, runner, "multi-branch")
+
+        assert leaf.absolute_path not in [path for path, _ in runner.created]
+
+    def test_checkout_does_not_create_a_derived_branch(self, tmp_path):
+        """A move must not quietly branch a repository shared with others."""
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf").absolute_path
+
+        checkout_tree(registry, runner, "multi-branch")
+
+        assert leaf not in [path for path, _ in runner.created]
+
+    def test_checkout_falls_back_to_where_the_repo_already_is(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf")
+
+        checkout_tree(registry, runner, "multi-branch")
+
+        assert (leaf.absolute_path, "MyProject") in runner.checked_out
+
+
+class TestMergeRefusesToMergeABranchIntoItself:
+    """Merging a branch into itself succeeds and does nothing, which reads as
+    "it worked" when the tree is simply still on the branch you meant to
+    merge *from*. That silence is the bug."""
+
+    @staticmethod
+    def _tree_and_runner(tmp_path: Path):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            runner._current_branches[repo.absolute_path] = "multi-branch"
+            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+        return registry, runner
+
+    def test_it_refuses_and_says_what_to_do(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+
+        with pytest.raises(GitSyncError) as excinfo:
+            merge_tree(registry, runner, "multi-branch")
+
+        message = str(excinfo.value)
+        assert "already on 'multi-branch'" in message
+        assert "cgitsync checkout" in message, "the message must say how to fix it"
+        assert runner.merged == []
+
+    def test_merging_a_different_branch_still_works(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+
+        merge_tree(registry, runner, "main")
+
+        assert [ref for _, ref in runner.merged] == ["main", "main"]
+
+    def test_the_plan_and_the_merge_agree(self, tmp_path):
+        """One function decides both, so a dry run cannot promise a refusal."""
+        registry, runner = self._tree_and_runner(tmp_path)
+        root = registry.get("root")
+
+        assert merge_status(root, runner, "multi-branch")[1] == "already-on-it"
+        assert merge_status(root, runner, "main")[1] == "merge"
 
 
 class TestRefreshPrivateTree:

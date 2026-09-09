@@ -998,9 +998,20 @@ def _print_merge_plan(
     is what stops somebody merging a configuration repository from the wrong
     place.
     """
-    rows = [f"{name} <- {source}" for name, source in client.merge_plan(project_branch, private=private)]
+    plan = client.merge_plan(project_branch, private=private)
+    labels = {
+        "merge": "",
+        "already-on-it": " (already on it — nothing to merge into)",
+        "no-branch": " (no such branch here — skipped)",
+    }
+    rows = [f"{name} <- {source}{labels[status]}" for name, source, status in plan]
     print(f"dry_run=true command=merge scope={scope_value}")
     print("plan_order=" + (" -> ".join(rows) if rows else "(no repository in scope)"))
+    if plan and all(status != "merge" for _, _, status in plan):
+        print(
+            f"note: nothing would be merged. Check out the branch you want to merge "
+            f"*into* first — 'cgitsync checkout <target>' — then merge {project_branch}."
+        )
 
 
 def _execute_add(

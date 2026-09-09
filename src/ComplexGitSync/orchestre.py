@@ -2958,21 +2958,25 @@ class ComplexGitSyncClient:
         project_branch: str,
         *,
         private: bool = False,
-    ) -> tuple[tuple[str, str], ...]:
-        """What :meth:`merge` would merge, in order, without merging it.
+    ) -> tuple[tuple[str, str, str], ...]:
+        """What :meth:`merge` would do, in order, without doing it.
 
-        One ``(repo_name, source_ref)`` pair per in-scope repository,
-        leaf-first. The second element is the branch that repository would
-        actually merge, which for a private/local repository is derived from
-        *project_branch* rather than equal to it — seeing that translation
-        before it runs is the point of a merge dry run.
+        One ``(repo_name, source_ref, status)`` triple per in-scope
+        repository, leaf-first. ``source_ref`` is the branch that repository
+        would actually merge, which for a private/local repository is derived
+        from *project_branch* rather than equal to it — seeing that
+        translation before it runs is the point of a merge dry run.
+
+        ``status`` is ``"merge"``, ``"already-on-it"`` or ``"no-branch"``,
+        decided by the same function :meth:`merge` uses, so a dry run cannot
+        promise something the merge then refuses.
         """
-        from .operations import merge_source_ref
+        from .operations import merge_status
 
         registry = self.get_dependency_registry()
         scope = resolve_command_scope(registry, private=private, command="merge")
         return tuple(
-            (repo.name, merge_source_ref(repo, project_branch))
+            (repo.name, *merge_status(repo, self.git_runner, project_branch))
             for repo in iter_tree_leaf_first(registry, scope)
         )
 

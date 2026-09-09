@@ -326,8 +326,29 @@ raised quietly. The version moved `0002.42` → `0002.43`.
 fallback, the commands and their tests are in place, but
 `ComplexGitSync_multi-branch` does not exist in `.claude` or `.localSpec`,
 so no tree has yet been checked out onto a derived branch. Creating it is
-`cgitsync branch`, a deliberate act — and §2's migration note applies the
-moment it happens.
+`cgitsync branch multi-branch`, a deliberate act — and §2's migration note
+applies the moment it happens.
+
+### Two bugs found by the owner on the same day, and fixed
+
+**`branch` never created the derived branch, so the feature was
+unreachable.** `create_global_branch` skipped every pinned repository,
+private/local included, which was correct before this ticket and wrong
+after it: nothing could bring `<base>_<branch>` into existence, so
+resolution would have fallen back forever and the rule would have been
+invisible. It now creates the derived branch — and only from
+`branch_tree`. `checkout_tree` still skips, deliberately: moving a tree
+must never quietly create a branch in a repository shared with other
+projects. Without that split the feature is either unreachable or
+unavoidable.
+
+**`merge <B>` while the tree was on `B` silently did nothing.** Git reports
+merging a branch into itself as success, so the command printed a plan, ran,
+and reported success having done nothing — which reads as "it worked" when
+the tree is simply still on the branch the user meant to merge *from*.
+`merge_status` now decides each repository's fate once, for both the dry run
+and the merge, so the two cannot disagree; when nothing in scope can merge,
+the command refuses and names the fix (`cgitsync checkout <target>` first).
 
 **`pull --private`'s semantics were inferred.** The instruction said it
 should be "based on merge and merge --private". It was built as: fetch the

@@ -159,19 +159,37 @@ def create_global_branch(
     tree: WorkingGitTree,
     git_runner: GitRunner,
     branch_name: str,
+    *,
+    include_private_local: bool = False,
 ) -> None:
     """Create *branch_name* in every repo where it does not already exist locally.
 
     Iterates the tree parent-first so that parent repositories always have the
     branch before their children are processed.  Requires each repo to have
     a valid ``absolute_path`` on disk.
+
+    A private/**distant** repository is never given a branch: this project
+    cannot write to it at all.
+
+    A private/**local** repository is given ``<base>_<branch_name>`` — but
+    only when *include_private_local* says so, and that is the difference
+    between the two commands that call this. ``cgitsync branch`` is a
+    deliberate act and passes ``True``: it is the only way the derived branch
+    ever comes into existence. ``cgitsync checkout`` passes ``False``, so a
+    move never quietly creates a branch in a repository shared with other
+    projects; it falls back to where that repository already is. Without that
+    split the feature would be either unreachable or unavoidable.
     """
     for repo in iter_tree(tree):
-        if repo.effective_pinned or git_runner.local_branch_exists(
-            repo.absolute_path, branch_name
-        ):
+        if repo.effective_pinned:
+            if not (include_private_local and repo.effective_writable):
+                continue
+            target = resolve_propagated_ref(repo, branch_name).name
+        else:
+            target = branch_name
+        if git_runner.local_branch_exists(repo.absolute_path, target):
             continue
-        git_runner.create_branch(repo.absolute_path, branch_name)
+        git_runner.create_branch(repo.absolute_path, target)
 
 
 # ---------------------------------------------------------------------------
@@ -372,7 +390,9 @@ def branch_tree(
     """
     _assert_ready(tree)
     propagate_global_branch(tree, branch_name, ref_kind=RefKind.BRANCH)
-    create_global_branch(tree, git_runner, branch_name)
+    # The deliberate act: this is the one command that creates a private/local
+    # repository's derived branch. A checkout must never do it silently.
+    create_global_branch(tree, git_runner, branch_name, include_private_local=True)
     tree.recompute_tree_state()
 
 
@@ -517,6 +537,30 @@ def merge_source_ref(repo: WorkingRepo, project_branch: str) -> str:
     return resolve_propagated_ref(repo, project_branch).name
 
 
+def merge_status(
+    repo: WorkingRepo,
+    git_runner: GitRunner,
+    project_branch: str,
+) -> tuple[str, str]:
+    """What ``merge`` would do to *repo*, as ``(source_ref, status)``.
+
+    The one place a repository's fate is decided, so the dry run and the
+    merge itself cannot disagree. ``status`` is ``"merge"``,
+    ``"already-on-it"`` (the repository is sitting on the branch it would
+    merge, so there is nothing to merge it into) or ``"no-branch"`` (nothing
+    to merge from — normal for a private/local repository with no branch for
+    this project branch yet).
+    """
+    source = merge_source_ref(repo, project_branch)
+    if git_runner.current_branch(repo.absolute_path) == source:
+        return source, "already-on-it"
+    if not git_runner.branch_known(
+        repo.absolute_path, source, remote=repo.remote_name or "origin"
+    ):
+        return source, "no-branch"
+    return source, "merge"
+
+
 def merge_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
@@ -555,13 +599,16 @@ def merge_tree(
 
     planned: list[tuple[WorkingRepo, str]] = []
     blocked: list[str] = []
+    on_source: list[str] = []
     for repo in iter_tree_leaf_first(tree, scope):
-        source = merge_source_ref(repo, project_branch)
-        if not git_runner.branch_known(
-            repo.absolute_path, source, remote=repo.remote_name or "origin"
-        ):
-            # Nothing to merge from is not a failure: a private/local repo
-            # simply may not have a branch for this project branch.
+        source, status = merge_status(repo, git_runner, project_branch)
+        if status == "already-on-it":
+            # Merging a branch into itself does nothing and reports success,
+            # which reads as "it worked" when the tree is simply still on the
+            # branch the user meant to merge *from*.
+            on_source.append(repo.name)
+            continue
+        if status == "no-branch":
             continue
         if not git_runner.can_merge_cleanly(repo.absolute_path, source):
             blocked.append(f"{repo.name}: merging {source!r} conflicts")
@@ -571,6 +618,13 @@ def merge_tree(
     if blocked:
         raise GitSyncError(
             "merge refused; no repository was merged: " + "; ".join(blocked)
+        )
+    if on_source and not planned:
+        raise GitSyncError(
+            f"merge {project_branch}: the tree is already on {project_branch!r} "
+            f"({', '.join(on_source)}), so there is nothing to merge it into. "
+            f"Check out the branch you want to merge *into* first — "
+            f"'cgitsync checkout <target>' — then run this again."
         )
 
     merged: list[tuple[str, str]] = []
