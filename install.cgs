@@ -1,5 +1,5 @@
 # Self-standing ComplexGitSync tree. main is the project branch; repository
-# entries declare only fallback, path, nested-discovery and pinning overrides.
+# entries declare only fallback, path, nested-discovery and private overrides.
 
 project = { name = "ComplexGitSync", default_branch = "main" }
 
