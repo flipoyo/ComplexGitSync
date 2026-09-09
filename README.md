@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.42
+# ComplexGitSync v0002.43
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -204,6 +204,7 @@ Full walkthrough: [tutorials/01_first_multi_repo_workspace.md](tutorials/01_firs
 | Expert | `add` | Stage all changes across a READY tree. |
 | Expert | `rm` | Remove one or more tracked files, each from the repo that owns it. |
 | Expert | `commit` | Commit dirty repositories from a READY tree. |
+| Expert | `merge` | Merge a project branch across a READY tree, leaf-first. |
 | Expert | `push` | Push repositories from a READY tree. |
 | Expert | `tag` | Create and push a tag across a READY tree. |
 | Expert | `freeze` | Freeze a versioned state and emit a .gts snapshot. |

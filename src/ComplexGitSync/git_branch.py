@@ -35,6 +35,7 @@ The public surface
     apply_declared_defaults   Fill one entry's declared branch fields in place
     resolve_declared_ref      Target ref of one repository entry in a document
     resolve_entry_ref         Target ref of a live WorkingRepo
+    private_local_branch      Build <base>_<branch> for a private/local repo
     resolve_propagated_ref    Target ref under a tree-wide branch move (pinning)
 """
 
@@ -81,6 +82,11 @@ class BranchSource(StrEnum):
     """The repository is shared with other projects, so a tree-wide branch
     move left it on its own branch."""
 
+    PRIVATE_LOCAL = "private_local"
+    """The repository holds this project's own settings in a shared
+    repository, so a tree-wide branch move gave it a branch derived from the
+    project's: ``<base>_<branch>``."""
+
     OBSERVED = "observed"
     """Read from the repository as it currently sits on disk."""
 
@@ -105,6 +111,10 @@ _SOURCE_REASONS: dict[BranchSource, str] = {
         f"'{DEFAULT_BRANCH}'"
     ),
     BranchSource.PINNED: "repository is pinned, so the tree-wide branch move skipped it",
+    BranchSource.PRIVATE_LOCAL: (
+        "repository is pinned and writable, so it follows the project's branch "
+        "on a branch derived from it"
+    ),
     BranchSource.OBSERVED: "read from the repository on disk",
     BranchSource.ENTRY_RESOLVED: "the ref this repository last landed on",
     BranchSource.ENTRY_TARGET: "the ref this repository targets",
@@ -263,6 +273,27 @@ def resolve_entry_ref(
     return _first_named(candidates, kind=RefKind.BRANCH)
 
 
+PRIVATE_LOCAL_SEPARATOR = "_"
+"""Separates a private/local repository's base branch from the project's.
+
+An underscore, not a hyphen: hyphens already occur inside branch names —
+``multi-branch`` is itself hyphenated — so ``ComplexGitSync-multi-branch``
+is ambiguous about where the base stops and ``ComplexGitSync_multi-branch``
+is not.
+"""
+
+
+def private_local_branch(base: str, project_branch: str) -> str:
+    """Build a private/local repository's branch for *project_branch*.
+
+    The one place the naming rule lives. ``base`` is what the entry declares
+    as its own branch (``default_branch``); *project_branch* is the branch
+    the tree is moving to. Nothing else in the codebase composes these two
+    strings — see :func:`resolve_propagated_ref` for why.
+    """
+    return f"{base}{PRIVATE_LOCAL_SEPARATOR}{project_branch}"
+
+
 def resolve_propagated_ref(
     entry: WorkingRepo,
     ref_name: str,
@@ -271,23 +302,46 @@ def resolve_propagated_ref(
 ) -> BranchResolution:
     """Resolve what *entry* targets when the whole tree moves to *ref_name*.
 
-    A repository declared ``pinned`` in its ``.cgs`` is **shared with other
-    projects and must stay on its own branch**, so a tree-wide *branch* move
-    leaves it on its declared ``default_branch``. A **tag** reaches every
-    repository, pinned or not, so a frozen release stays reproducible. That
-    asymmetry — branches stop at a pin, tags do not — is the whole meaning of
-    the field.
+    Three answers, and which one applies is decided by the two pinning flags
+    together. A **tag** reaches every repository whatever they say, pinned or
+    not, so a frozen release stays reproducible; branches stop at a pin and
+    tags do not, which is the whole meaning of the field.
 
-    For a pinned entry the returned ``kind`` is ``None``: the move must not
+    **Not pinned** — the repository is this project's own, and follows the
+    move to *ref_name*.
+
+    **private/distant** (``pinned``) — the repository is private to its
+    owner. This project reads it and cannot commit to it, so nothing this
+    project does may move it: it stays on its declared ``default_branch``.
+
+    **private/local** (``pinned, writable``) — the repository holds this
+    project's own settings, filed in a shared repository but on a branch
+    nobody else reads, and this project *does* commit to it. It therefore
+    needs somewhere to record settings per project branch, so it targets
+    ``<default_branch>_<ref_name>`` — see :func:`private_local_branch`.
+
+    That derived branch is a **target, not a demand**. Whether it exists is
+    not a question this module can answer — it is pure and offline — so the
+    caller checks, and falls back to the entry's own chain
+    (:func:`resolve_entry_ref`) when the branch is not there. Nothing changes
+    for an existing tree until somebody creates it.
+
+    For any pinned entry the returned ``kind`` is ``None``: the move must not
     rewrite the kind of ref that entry already carries.
     """
     if entry.effective_pinned and ref_kind is RefKind.BRANCH:
-        pinned_name = (
+        base = (
             _as_optional_str(entry.default_branch)
             or _as_optional_str(entry.target_ref_name)
             or DEFAULT_BRANCH
         )
-        return BranchResolution(name=pinned_name, kind=None, source=BranchSource.PINNED)
+        if entry.effective_writable:
+            return BranchResolution(
+                name=private_local_branch(base, ref_name),
+                kind=None,
+                source=BranchSource.PRIVATE_LOCAL,
+            )
+        return BranchResolution(name=base, kind=None, source=BranchSource.PINNED)
     source = BranchSource.TAG if ref_kind is RefKind.TAG else BranchSource.REPO_BRANCH
     return BranchResolution(name=ref_name, kind=ref_kind, source=source)
 

@@ -24,15 +24,17 @@ import pytest
 from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.git_branch import (
     DEFAULT_BRANCH,
+    PRIVATE_LOCAL_SEPARATOR,
     BranchResolution,
     BranchSource,
     apply_declared_defaults,
+    private_local_branch,
     resolve_declared_ref,
     resolve_entry_ref,
     resolve_propagated_ref,
 )
 from ComplexGitSync.git_repo import RefKind, WorkingRepo
-from ComplexGitSync.git_tree import WorkingGitTree
+from ComplexGitSync.git_tree import WorkingGitTree, propagate_pinning
 from ComplexGitSync.operations import propagate_global_branch
 from ComplexGitSync.orchestre import ComplexGitSyncClient, _is_dot_named_mount
 
@@ -306,6 +308,116 @@ class TestDiscoverDraftsDotNamedMountsPinned:
         run("add", "README.md")
         run("commit", "-qm", "initial")
         run("remote", "add", "origin", remote_url)
+
+
+class TestPrivateLocalBranchFollowsTheProject:
+    """A private/local repository gets a branch per project branch.
+
+    ``pinned`` alone means private/**distant**: the repository is private to
+    its owner, this project can only read it, so nothing this project does
+    may move it. ``pinned, writable`` means private/**local**: it holds this
+    project's own settings, this project commits to it, and it therefore
+    needs somewhere to record them per project branch. That is ``P_B``.
+    """
+
+    @staticmethod
+    def _entry(*, pinned: bool, writable: bool, default_branch: str) -> WorkingRepo:
+        return WorkingRepo(
+            repo_id="r",
+            name="r",
+            pinned=pinned,
+            writable=writable,
+            default_branch=default_branch,
+        )
+
+    def test_a_private_local_repo_targets_base_underscore_branch(self):
+        entry = self._entry(pinned=True, writable=True, default_branch="MyProject")
+
+        resolution = resolve_propagated_ref(entry, "feature-x")
+
+        assert resolution.name == "MyProject_feature-x"
+        assert resolution.source is BranchSource.PRIVATE_LOCAL
+
+    def test_a_private_distant_repo_never_moves(self):
+        """The regression guard. This is what the pin means."""
+        entry = self._entry(pinned=True, writable=False, default_branch="main")
+
+        resolution = resolve_propagated_ref(entry, "feature-x")
+
+        assert resolution.name == "main"
+        assert resolution.source is BranchSource.PINNED
+
+    def test_a_project_owned_repo_follows_the_move(self):
+        entry = self._entry(pinned=False, writable=False, default_branch="main")
+
+        assert resolve_propagated_ref(entry, "feature-x").name == "feature-x"
+
+    def test_a_tag_still_reaches_a_private_local_repo_unchanged(self):
+        """Branches stop at a pin; tags do not. Nothing here changes that."""
+        entry = self._entry(pinned=True, writable=True, default_branch="MyProject")
+
+        resolution = resolve_propagated_ref(entry, "v1.0.0", ref_kind=RefKind.TAG)
+
+        assert resolution.name == "v1.0.0"
+        assert resolution.source is BranchSource.TAG
+
+    def test_the_kind_is_left_alone_for_any_pinned_entry(self):
+        for writable in (True, False):
+            entry = self._entry(pinned=True, writable=writable, default_branch="b")
+            assert resolve_propagated_ref(entry, "feature-x").kind is None
+
+    def test_the_separator_is_an_underscore_and_a_hyphen_would_be_ambiguous(self):
+        """`multi-branch` is itself hyphenated — that is why `_` was chosen."""
+        assert PRIVATE_LOCAL_SEPARATOR == "_"
+        assert private_local_branch("ComplexGitSync", "multi-branch") == (
+            "ComplexGitSync_multi-branch"
+        )
+
+    def test_an_effective_flag_from_a_pinned_parent_is_enough(self):
+        """The rule reads the effective flags, so nesting is respected."""
+        tree = WorkingGitTree()
+        tree.add(WorkingRepo(repo_id="p", name="p", pinned=True, writable=True,
+                             default_branch="MyProject"))
+        leaf = WorkingRepo(repo_id="c", name="c", parent_id="p", default_branch="MyProject")
+        tree.add(leaf)
+        propagate_pinning(tree)
+
+        assert resolve_propagated_ref(leaf, "feature-x").name == "MyProject_feature-x"
+
+
+def test_the_private_local_naming_rule_has_exactly_one_owner():
+    """Nothing outside ``git_branch.py`` composes ``<base>_<branch>``.
+
+    Two ways it could spread, both checked. A module could import the
+    separator constant, or it could inline the underscore in an f-string
+    joining two names. The branch fallback chain was six private copies
+    across five modules before ``git_branch.py`` existed; this stops the
+    naming rule going the same way.
+    """
+    allowed = {
+        # Not a branch name: the state directory's "state(<hash>)_<n>"
+        # suffix, which numbers a workspace state, not a project branch.
+        "state_store.py": 1,
+    }
+    inline = {
+        path.relative_to(_SRC_ROOT).as_posix(): hits
+        for path in sorted(_SRC_ROOT.rglob("*.py"))
+        if (hits := len(re.findall(r"\}_\{", path.read_text(encoding="utf-8"))))
+    }
+    assert inline == allowed, (
+        "an f-string joins two names with a literal underscore. If that is the "
+        "private/local branch rule, call git_branch.private_local_branch instead."
+    )
+
+    users = {
+        path.relative_to(_SRC_ROOT).as_posix()
+        for path in sorted(_SRC_ROOT.rglob("*.py"))
+        if "PRIVATE_LOCAL_SEPARATOR" in path.read_text(encoding="utf-8")
+    }
+    assert users == {"git_branch.py"}, (
+        "the private/local separator escaped its module. "
+        "git_branch.private_local_branch is its only owner."
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -40,7 +40,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from .errors import GitSyncError, TreeNotReadyError
-from .git_branch import resolve_entry_ref, resolve_propagated_ref
+from .git_branch import (
+    BranchResolution,
+    BranchSource,
+    resolve_entry_ref,
+    resolve_propagated_ref,
+)
 from .git_repo import (
     AccessProtocol,
     RefKind,
@@ -88,6 +93,7 @@ def propagate_global_branch(
     branch_name: str,
     *,
     ref_kind: RefKind = RefKind.BRANCH,
+    git_runner: GitRunner | None = None,
 ) -> None:
     """Set *branch_name* as the target ref on every repo in *tree*.
 
@@ -102,9 +108,46 @@ def propagate_global_branch(
     :func:`~ComplexGitSync.git_branch.resolve_propagated_ref`, so that the
     reason each repo ended up on the branch it did is decided in one place
     and recorded on the entry rather than re-derived by each reader.
+
+    *git_runner*, when given, resolves the one question that rule cannot
+    answer on its own: a **private/local** repo targets a branch derived
+    from the project's (``<base>_<branch>``), and whether that branch exists
+    is a fact about a repository on disk, not about the document. Without a
+    runner the derived name is set unchecked — fine for a caller that only
+    wants the intent, wrong for one about to run ``git checkout``. See
+    :func:`resolve_existing_propagated_ref`.
     """
     for repo in tree.values():
-        resolve_propagated_ref(repo, branch_name, ref_kind=ref_kind).apply_to(repo)
+        resolution = resolve_propagated_ref(repo, branch_name, ref_kind=ref_kind)
+        if git_runner is not None:
+            resolution = resolve_existing_propagated_ref(repo, resolution, git_runner)
+        resolution.apply_to(repo)
+
+
+def resolve_existing_propagated_ref(
+    repo: WorkingRepo,
+    resolution: BranchResolution,
+    git_runner: GitRunner,
+) -> BranchResolution:
+    """Fall back when a propagated branch does not exist in *repo*.
+
+    Only a private/local resolution can name a branch that is not there:
+    ``<base>_<branch>`` is derived, not declared, and creating it is a
+    deliberate act (``cgitsync branch``), not something a checkout does
+    behind your back. When it is missing both locally and on the remote,
+    this returns what the entry's own fallback chain says instead — which
+    for an untouched tree is exactly where that repository already sits.
+
+    That is what lets this ship without a migration: until somebody creates
+    the derived branch, every tree behaves as it does today.
+    """
+    if resolution.source is not BranchSource.PRIVATE_LOCAL:
+        return resolution
+    remote = repo.remote_name or "origin"
+    if git_runner.branch_known(repo.absolute_path, resolution.name, remote=remote):
+        return resolution
+    fallback = resolve_entry_ref(repo)
+    return BranchResolution(name=fallback.name, kind=None, source=BranchSource.FALLBACK)
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +237,10 @@ def _restart_tree(
     root_entry = tree.get("root")
     observed = git_runner.current_branch(root_entry.absolute_path)
     current_branch = resolve_entry_ref(root_entry, observed_branch=observed).name
-    propagate_global_branch(tree, current_branch)
+    # The runner matters here for the same reason it does in checkout_tree:
+    # the loop below pulls whatever this decides, and a private/local repo's
+    # derived branch has to be one that exists.
+    propagate_global_branch(tree, current_branch, git_runner=git_runner)
 
     for repo in iter_tree(tree):
         if repo.parent_id is not None:
@@ -292,8 +338,10 @@ def checkout_tree(
     """
     _assert_ready(tree)
 
-    # Step 1: propagate target ref across the whole tree
-    propagate_global_branch(tree, branch_name, ref_kind=ref_kind)
+    # Step 1: propagate target ref across the whole tree. The runner is
+    # passed because step 3 is about to `git checkout` what this decides:
+    # a private/local repo's derived branch has to be one that exists.
+    propagate_global_branch(tree, branch_name, ref_kind=ref_kind, git_runner=git_runner)
 
     # Step 2: create the branch in each repo where it does not exist yet
     create_global_branch(tree, git_runner, branch_name)
@@ -447,6 +495,159 @@ def commit_tree(
         repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
 
     tree.recompute_tree_state()
+
+
+# ---------------------------------------------------------------------------
+# merge_tree — Tier 2 action
+# ---------------------------------------------------------------------------
+
+
+def merge_source_ref(repo: WorkingRepo, project_branch: str) -> str:
+    """The branch *repo* should merge when the project merges *project_branch*.
+
+    The argument a user types is always the **project's** branch. Each
+    repository then resolves its own source through the one rule that owns
+    branch propagation, so ``merge --private multi-branch`` merges
+    ``<base>_multi-branch`` into a private/local repository rather than
+    ``multi-branch``, which does not exist there.
+
+    This is the whole reason the private case needs no code of its own: it
+    is the same command with a different scope and this one translation.
+    """
+    return resolve_propagated_ref(repo, project_branch).name
+
+
+def merge_tree(
+    tree: WorkingGitTree,
+    git_runner: GitRunner,
+    project_branch: str,
+    *,
+    scope: RepoScope = RepoScope.PROJECT,
+    ff_only: bool = False,
+    no_ff: bool = False,
+) -> tuple[tuple[str, str], ...]:
+    """Merge *project_branch* into each in-scope repository, leaf-first.
+
+    Returns one ``(repo_name, merged_ref)`` pair per repository that a merge
+    actually moved; a repository already containing the branch is skipped and
+    not reported.
+
+    **Every repository is checked before any repository is merged.** A
+    tree-wide merge that stopped halfway would leave the workspace in a state
+    no ``.gts`` describes and no command undoes — which is the failure this
+    command exists to prevent, not one it may cause. So the whole scope is
+    asked first, with :meth:`GitRunner.can_merge_cleanly`, which touches
+    neither worktree nor index; only if all of them can does the first merge
+    run.
+
+    That is a guarantee about *conflicts*, not a transaction: a merge can
+    still fail for a reason no check anticipated, and the error then names
+    what had already landed.
+    """
+    _assert_ready(tree)
+    _run_preflight_checks(
+        tree,
+        git_runner,
+        require_clean=True,
+        operation_name="merge",
+        scope=scope,
+    )
+
+    planned: list[tuple[WorkingRepo, str]] = []
+    blocked: list[str] = []
+    for repo in iter_tree_leaf_first(tree, scope):
+        source = merge_source_ref(repo, project_branch)
+        if not git_runner.branch_known(
+            repo.absolute_path, source, remote=repo.remote_name or "origin"
+        ):
+            # Nothing to merge from is not a failure: a private/local repo
+            # simply may not have a branch for this project branch.
+            continue
+        if not git_runner.can_merge_cleanly(repo.absolute_path, source):
+            blocked.append(f"{repo.name}: merging {source!r} conflicts")
+            continue
+        planned.append((repo, source))
+
+    if blocked:
+        raise GitSyncError(
+            "merge refused; no repository was merged: " + "; ".join(blocked)
+        )
+
+    merged: list[tuple[str, str]] = []
+    for repo, source in planned:
+        before = git_runner.rev_parse_head(repo.absolute_path)
+        git_runner.merge(repo.absolute_path, source, ff_only=ff_only, no_ff=no_ff)
+        after = git_runner.rev_parse_head(repo.absolute_path)
+        repo.commit_sha = after
+        if before != after:
+            merged.append((repo.name, source))
+
+    tree.recompute_tree_state()
+    return tuple(merged)
+
+
+def refresh_private_tree(
+    tree: WorkingGitTree,
+    git_runner: GitRunner,
+) -> tuple[tuple[str, str], ...]:
+    """Bring every private/local repository up to date with its base branch.
+
+    A private/local repository records this project's settings per project
+    branch, on ``<base>_<branch>``. Those branches drift: work lands on the
+    base while a feature branch is open, and the feature branch does not see
+    it. This pulls each one from its own upstream, then merges its base
+    branch in — the same :meth:`GitRunner.merge` primitive ``merge`` uses,
+    not a second mechanism.
+
+    A repository already sitting on its base branch has nothing to merge and
+    is left alone. Returns one ``(repo_name, base_branch)`` pair per
+    repository a merge actually moved.
+    """
+    _run_preflight_checks(
+        tree,
+        git_runner,
+        require_clean=True,
+        operation_name="pull --private",
+        scope=RepoScope.PRIVATE,
+    )
+
+    planned: list[tuple[WorkingRepo, str]] = []
+    blocked: list[str] = []
+    for repo in iter_tree_leaf_first(tree, RepoScope.PRIVATE):
+        base = resolve_entry_ref(repo).name
+        current = git_runner.current_branch(repo.absolute_path)
+        if current is None or current == base:
+            continue
+        remote = repo.remote_name or "origin"
+        # Fetch, then merge the remote-tracking ref. Not `git pull <base>`:
+        # that would fast-forward the *current* branch onto the base and
+        # fail the moment the two have diverged, which is the normal state
+        # of a feature branch and the only case worth handling.
+        git_runner.fetch(repo.absolute_path, remote=remote, ref_name=base)
+        source = f"{remote}/{base}"
+        if not git_runner.branch_known(repo.absolute_path, base, remote=remote):
+            continue
+        if not git_runner.can_merge_cleanly(repo.absolute_path, source):
+            blocked.append(f"{repo.name}: merging {source!r} conflicts")
+            continue
+        planned.append((repo, source))
+
+    if blocked:
+        raise GitSyncError(
+            "pull --private refused; no repository was merged: " + "; ".join(blocked)
+        )
+
+    refreshed: list[tuple[str, str]] = []
+    for repo, source in planned:
+        before = git_runner.rev_parse_head(repo.absolute_path)
+        git_runner.merge(repo.absolute_path, source)
+        after = git_runner.rev_parse_head(repo.absolute_path)
+        repo.commit_sha = after
+        if before != after:
+            refreshed.append((repo.name, source))
+
+    tree.recompute_tree_state()
+    return tuple(refreshed)
 
 
 # ---------------------------------------------------------------------------
@@ -978,12 +1179,16 @@ def _collect_branch_alignment_diagnostics(
         return []
     mismatched: list[PreflightDiagnostic] = []
     for repo in iter_tree_leaf_first(tree, scope):
-        # A pinned repository is shared with other projects and stays on its
-        # own branch, so the root's branch is not what it should be on.
-        # resolve_propagated_ref is the one place that rule lives: it hands
-        # back the root's branch for a repo this project owns, and the
-        # pinned repo's own declared branch otherwise.
-        expected_branch = resolve_propagated_ref(repo, root_branch).name
+        # A pinned repository is shared with other projects and stays on a
+        # branch of its own, so the root's branch is not what it should be
+        # on. resolve_propagated_ref is the one place that rule lives, and
+        # resolve_existing_propagated_ref then applies the same fallback
+        # checkout would: a private/local repo whose derived branch has not
+        # been created is measured against where it actually belongs today,
+        # not against a branch nobody has made yet.
+        expected_branch = resolve_existing_propagated_ref(
+            repo, resolve_propagated_ref(repo, root_branch), git_runner
+        ).name
         current = git_runner.current_branch(repo.absolute_path)
         if current is not None and current != expected_branch:
             detail = " (pinned to its own branch)" if repo.effective_pinned else ""

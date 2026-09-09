@@ -36,8 +36,11 @@ from ComplexGitSync.operations import (
     commit_tree,
     create_global_branch,
     freeze_release_tree,
+    merge_source_ref,
+    merge_tree,
     propagate_global_branch,
     push_tree,
+    refresh_private_tree,
     restart_tree,
     restart_tree_force,
     tag_tree,
@@ -214,12 +217,47 @@ class _FakeGitRunnerForOperations:
         self._tracking_states: dict[Path, SyncState | None] = {}
         self._has_upstream: dict[Path, bool] = {}
         self._merge_in_progress: dict[Path, bool] = {}
+        self._unmergeable: dict[Path, set[str]] = {}
+        self.merged: list[tuple[Path, str]] = []
+        self.merge_aborted: list[Path] = []
+        self.fetched: list[tuple[Path, str, str | None]] = []
 
     # --- branch / checkout ---
     def current_branch(self, repo_path: Path | str) -> str | None:
         return self._current_branches.get(Path(repo_path), "main")
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool:
         return branch in self._local_branches.get(Path(repo_path), set())
+
+    def branch_known(
+        self, repo_path: Path | str, branch: str, *, remote: str = "origin"
+    ) -> bool:
+        return self.local_branch_exists(repo_path, branch)
+
+    def merge(
+        self,
+        repo_path: Path | str,
+        ref_name: str,
+        *,
+        ff_only: bool = False,
+        no_ff: bool = False,
+        message: str | None = None,
+    ) -> None:
+        path = Path(repo_path)
+        if ref_name in self._unmergeable.get(path, set()):
+            raise GitSyncError(f"Git command failed (git merge {ref_name}): conflict")
+        self.merged.append((path, ref_name))
+        self.command_order.append(("merge", path))
+
+    def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> bool:
+        return ref_name not in self._unmergeable.get(Path(repo_path), set())
+
+    def merge_abort(self, repo_path: Path | str) -> None:
+        self.merge_aborted.append(Path(repo_path))
+
+    def fetch(
+        self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None
+    ) -> None:
+        self.fetched.append((Path(repo_path), remote, ref_name))
 
     def create_branch(self, repo_path: Path | str, branch: str) -> None:
         path = Path(repo_path)
@@ -1378,6 +1416,176 @@ class TestPreflightOnlyChecksWhatTheOperationTouches:
         commit_tree(registry, runner, "project work")
 
         assert leaf.worktree_state is not None
+
+
+class TestMergeTree:
+    """`merge` lands a project branch across the tree, or lands nothing.
+
+    The argument is always the *project's* branch. Each repository resolves
+    what that means for itself, which is why the private case needs no code
+    of its own — it is the same command with a different scope.
+    """
+
+    @staticmethod
+    def _tree(tmp_path: Path) -> WorkingGitTree:
+        registry = _make_registry_with_config_repo(tmp_path)
+        return registry
+
+    @staticmethod
+    def _runner(registry: WorkingGitTree) -> _FakeGitRunnerForOperations:
+        runner = _FakeGitRunnerForOperations()
+        root = registry.get("root").absolute_path
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._current_branches[root] = "main"
+        runner._current_branches[leaf] = "MyProject"
+        # Every branch either side might merge exists.
+        runner._local_branches[root] = {"main", "multi-branch"}
+        runner._local_branches[leaf] = {"MyProject", "MyProject_multi-branch"}
+        return runner
+
+    def test_a_project_repo_merges_the_branch_it_was_given(self, tmp_path):
+        registry = self._tree(tmp_path)
+        runner = self._runner(registry)
+
+        merge_tree(registry, runner, "multi-branch")
+
+        assert runner.merged == [(registry.get("root").absolute_path, "multi-branch")]
+
+    def test_a_private_local_repo_merges_the_derived_branch_instead(self, tmp_path):
+        """The whole design in one assertion: the name is translated."""
+        registry = self._tree(tmp_path)
+        runner = self._runner(registry)
+
+        merge_tree(registry, runner, "multi-branch", scope=RepoScope.PRIVATE)
+
+        assert runner.merged == [
+            (registry.get("root:deps/leaf").absolute_path, "MyProject_multi-branch")
+        ]
+
+    def test_a_conflict_anywhere_leaves_nothing_merged(self, tmp_path):
+        """The guarantee that makes a tree-wide merge safe to run at all."""
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root = registry.get("root").absolute_path
+        leaf = registry.get("root:deps/leaf").absolute_path
+        for path in (root, leaf):
+            runner._current_branches[path] = "main"
+            runner._local_branches[path] = {"main", "multi-branch"}
+        # The root conflicts; the leaf is merged first, leaf-first order.
+        runner._unmergeable[root] = {"multi-branch"}
+
+        with pytest.raises(GitSyncError, match="no repository was merged"):
+            merge_tree(registry, runner, "multi-branch")
+
+        assert runner.merged == [], "the clean repo must not have been merged"
+
+    def test_the_error_names_every_blocked_repository(self, tmp_path):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            runner._current_branches[repo.absolute_path] = "main"
+            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+            runner._unmergeable[repo.absolute_path] = {"multi-branch"}
+
+        with pytest.raises(GitSyncError) as excinfo:
+            merge_tree(registry, runner, "multi-branch")
+
+        message = str(excinfo.value)
+        assert "leaf" in message and "project" in message
+
+    def test_a_repo_with_no_such_branch_is_skipped_not_failed(self, tmp_path):
+        """A private/local repo may simply have no branch for this one yet."""
+        registry = self._tree(tmp_path)
+        runner = self._runner(registry)
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._local_branches[leaf] = {"MyProject"}
+
+        merged = merge_tree(registry, runner, "multi-branch", scope=RepoScope.PRIVATE)
+
+        assert merged == ()
+        assert runner.merged == []
+
+    def test_a_read_only_config_repo_is_never_merged(self, tmp_path):
+        registry = _make_registry_with_config_repo(tmp_path)
+        leaf = registry.get("root:deps/leaf")
+        leaf.writable = False
+        propagate_pinning(registry)
+        runner = self._runner(registry)
+
+        merge_tree(registry, runner, "multi-branch", scope=RepoScope.WRITABLE)
+
+        merged_paths = [path for path, _ in runner.merged]
+        assert leaf.absolute_path not in merged_paths
+
+    def test_merge_source_ref_translates_only_for_private_local(self, tmp_path):
+        registry = self._tree(tmp_path)
+
+        assert merge_source_ref(registry.get("root"), "multi-branch") == "multi-branch"
+        assert (
+            merge_source_ref(registry.get("root:deps/leaf"), "multi-branch")
+            == "MyProject_multi-branch"
+        )
+
+
+class TestRefreshPrivateTree:
+    """`pull --private` keeps a settings branch current with its base.
+
+    A private/local repository records this project's settings per project
+    branch. While a feature branch is open, work lands on the base branch and
+    the derived one does not see it. This is the command that closes that gap,
+    and it uses the same merge primitive `merge` does.
+    """
+
+    @staticmethod
+    def _tree_and_runner(tmp_path: Path, *, on_derived: bool = True):
+        # A coherent tree: the project is on multi-branch, so its settings
+        # repository is on the branch derived from it.
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root = registry.get("root").absolute_path
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._current_branches[root] = "multi-branch"
+        runner._current_branches[leaf] = (
+            "MyProject_multi-branch" if on_derived else "MyProject"
+        )
+        runner._local_branches[root] = {"multi-branch"}
+        runner._local_branches[leaf] = (
+            {"MyProject", "MyProject_multi-branch"} if on_derived else {"MyProject"}
+        )
+        return registry, runner
+
+    def test_it_fetches_then_merges_the_base_branch(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf").absolute_path
+
+        refresh_private_tree(registry, runner)
+
+        assert runner.fetched == [(leaf, "origin", "MyProject")]
+        assert runner.merged == [(leaf, "origin/MyProject")]
+
+    def test_a_repo_already_on_its_base_has_nothing_to_take(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path, on_derived=False)
+
+        assert refresh_private_tree(registry, runner) == ()
+        assert runner.merged == []
+
+    def test_a_project_owned_repo_is_never_touched(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        root = registry.get("root").absolute_path
+
+        refresh_private_tree(registry, runner)
+
+        assert root not in [path for path, _ in runner.merged]
+
+    def test_a_conflict_leaves_nothing_merged(self, tmp_path):
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._unmergeable[leaf] = {"origin/MyProject"}
+
+        with pytest.raises(GitSyncError, match="no repository was merged"):
+            refresh_private_tree(registry, runner)
+
+        assert runner.merged == []
 
 
 def test_tag_tree_preflight_fails_when_repo_is_detached(tmp_path):

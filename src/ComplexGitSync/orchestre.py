@@ -74,7 +74,7 @@ from .errors import (
     ConfigValidationError,
     GitSyncError,
 )
-from .git_branch import BranchResolution, resolve_entry_ref
+from .git_branch import BranchResolution, resolve_entry_ref, resolve_propagated_ref
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
@@ -118,6 +118,7 @@ from .ledger_store import read_all_entries, read_head, recompute_head, verify_an
 from .master import MasterConfig
 from .operations import (
     BranchTopologyReport,
+    resolve_existing_propagated_ref,
 )
 from .operations import (
     validate_branch_topology as _validate_branch_topology,
@@ -2891,6 +2892,90 @@ class ComplexGitSyncClient:
         self._log_event("commit_end", message=message)
         return registry
 
+    def merge(
+        self,
+        project_branch: str,
+        *,
+        private: bool = False,
+        ff_only: bool = False,
+        no_ff: bool = False,
+    ) -> tuple[tuple[str, str], ...]:
+        """Merge *project_branch* into the tree's current branch, leaf-first.
+
+        *project_branch* is always the **project's** branch name. Each
+        repository resolves what that means for itself: a project-owned repo
+        merges that branch, and a private/local repo merges the branch
+        derived from it (``<base>_<project_branch>``), because that is where
+        its settings for that project branch live. ``private=True`` selects
+        the writable configuration repositories instead of the project's own.
+
+        Every repository in scope is checked before any is merged, so a
+        conflict anywhere leaves the whole tree untouched. Returns one
+        ``(repo_name, merged_ref)`` pair per repository a merge moved.
+
+        Requires a ``READY`` registry; raises
+        :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.
+        """
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        scope = resolve_command_scope(registry, private=private, command="merge")
+        self._log_event("merge_start", project_branch=project_branch, scope=scope.value)
+        merged = self.orchestre.git_tree.git.merge(
+            self.git_runner,
+            project_branch,
+            scope=scope,
+            ff_only=ff_only,
+            no_ff=no_ff,
+        )
+        self._log_tree_transition(previous_state, registry.lifecycle_state, reason="merge")
+        self._log_event("merge_end", project_branch=project_branch, merged=len(merged))
+        return merged
+
+    def refresh_private(self) -> tuple[tuple[str, str], ...]:
+        """Bring each private/local repository up to date with its base branch.
+
+        What ``pull --private`` runs. A private/local repository records this
+        project's settings per project branch; those branches drift while a
+        feature branch is open. This fetches and merges the base branch into
+        each one, using the same merge primitive :meth:`merge` uses.
+
+        Returns one ``(repo_name, merged_ref)`` pair per repository a merge
+        moved. A repository already on its base branch has nothing to take
+        and is skipped.
+        """
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        self._log_event("refresh_private_start")
+        refreshed = self.orchestre.git_tree.git.refresh_private(self.git_runner)
+        self._log_tree_transition(
+            previous_state, registry.lifecycle_state, reason="pull --private"
+        )
+        self._log_event("refresh_private_end", refreshed=len(refreshed))
+        return refreshed
+
+    def merge_plan(
+        self,
+        project_branch: str,
+        *,
+        private: bool = False,
+    ) -> tuple[tuple[str, str], ...]:
+        """What :meth:`merge` would merge, in order, without merging it.
+
+        One ``(repo_name, source_ref)`` pair per in-scope repository,
+        leaf-first. The second element is the branch that repository would
+        actually merge, which for a private/local repository is derived from
+        *project_branch* rather than equal to it — seeing that translation
+        before it runs is the point of a merge dry run.
+        """
+        from .operations import merge_source_ref
+
+        registry = self.get_dependency_registry()
+        scope = resolve_command_scope(registry, private=private, command="merge")
+        return tuple(
+            (repo.name, merge_source_ref(repo, project_branch))
+            for repo in iter_tree_leaf_first(registry, scope)
+        )
+
     def add(
         self,
         paths: Sequence[str | Path] | None = None,
@@ -3419,11 +3504,54 @@ class ComplexGitSyncClient:
             )
         ]
         lines.append(_render_status_table(rows))
+        incoherent = self._branch_incoherence(registry)
+        if incoherent:
+            lines.append(
+                "warning: tree is split across branches — "
+                + "; ".join(incoherent)
+                + ". Run 'cgitsync checkout <branch>' to put it back."
+            )
         if any(row[2] != PROJECT_SCOPE_LABEL for row in rows):
             lines.append(SCOPE_LEGEND)
         if recorded_mismatch_count:
             lines.append("legend: HEAD ending with * differs from the commit recorded in the loaded .gts")
         return "\n".join(lines)
+
+    def _branch_incoherence(self, registry: WorkingGitTree) -> list[str]:
+        """Repositories that are not on the branch the tree says they should be.
+
+        ``status`` is the one command a user runs to ask whether the tree is
+        all right, and until this existed it could not see the most basic way
+        for it to be wrong: a root checked out with plain ``git`` leaves every
+        other repository behind, and the tree still reported ``READY``.
+
+        The same rule ``checkout`` would apply — so a private/distant repo on
+        its own branch, and a private/local repo on a derived branch that
+        exists, are both coherent, not findings.
+        """
+        try:
+            root = registry.get(ROOT_REPO_ID)
+            root_branch = self.git_runner.current_branch(root.absolute_path)
+        except (KeyError, GitSyncError):
+            return []
+        if root_branch is None:
+            return []
+        findings: list[str] = []
+        for entry in iter_tree_leaf_first(registry):
+            try:
+                current = self.git_runner.current_branch(entry.absolute_path)
+            except GitSyncError:
+                continue
+            if current is None:
+                continue
+            expected = resolve_existing_propagated_ref(
+                entry,
+                resolve_propagated_ref(entry, root_branch),
+                self.git_runner,
+            ).name
+            if current != expected:
+                findings.append(f"{entry.name} is on {current!r}, expected {expected!r}")
+        return findings
 
     def _repo_status_row(
         self,

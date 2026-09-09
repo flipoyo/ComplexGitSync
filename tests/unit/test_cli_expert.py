@@ -89,7 +89,7 @@ def test_commands_dict_matches_registered_parsers():
     subparsers = parser.add_subparsers(dest="command")
     expert.register_parsers(subparsers)
     assert set(subparsers.choices.keys()) == set(expert.COMMANDS.keys())
-    assert len(expert.COMMANDS) == 16
+    assert len(expert.COMMANDS) == 17
 
 
 def test_commands_dict_help_text_matches_source_of_truth():

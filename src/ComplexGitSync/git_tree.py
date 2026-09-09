@@ -130,6 +130,16 @@ class GitTreeGitCommands:
             self._resolve_tree(tree), git_runner, force_access_protocol=force_access_protocol
         )
 
+    def refresh_private(
+        self,
+        git_runner: GitRunner,
+        *,
+        tree: WorkingGitTree | None = None,
+    ) -> tuple[tuple[str, str], ...]:
+        from .operations import refresh_private_tree
+
+        return refresh_private_tree(self._resolve_tree(tree), git_runner)
+
     def pull_force(
         self,
         git_runner: GitRunner,
@@ -179,6 +189,27 @@ class GitTreeGitCommands:
 
         commit_tree(
             self._resolve_tree(tree), git_runner, message, stage_all=stage_all, scope=scope
+        )
+
+    def merge(
+        self,
+        git_runner: GitRunner,
+        project_branch: str,
+        *,
+        tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.PROJECT,
+        ff_only: bool = False,
+        no_ff: bool = False,
+    ) -> tuple[tuple[str, str], ...]:
+        from .operations import merge_tree
+
+        return merge_tree(
+            self._resolve_tree(tree),
+            git_runner,
+            project_branch,
+            scope=scope,
+            ff_only=ff_only,
+            no_ff=no_ff,
         )
 
     def push(

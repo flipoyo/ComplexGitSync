@@ -80,6 +80,10 @@ class GitRunnerProtocol(Protocol):
 
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool: ...
 
+    def branch_known(
+        self, repo_path: Path | str, branch: str, *, remote: str = "origin"
+    ) -> bool: ...
+
     def create_branch(self, repo_path: Path | str, branch: str) -> None: ...
 
     def checkout(self, repo_path: Path | str, branch: str) -> None: ...
@@ -128,6 +132,24 @@ class GitRunnerProtocol(Protocol):
         *,
         remote: str = "origin",
         ref_name: str | None = None,
+    ) -> None: ...
+
+    def merge(
+        self,
+        repo_path: Path | str,
+        ref_name: str,
+        *,
+        ff_only: bool = False,
+        no_ff: bool = False,
+        message: str | None = None,
+    ) -> None: ...
+
+    def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> bool: ...
+
+    def merge_abort(self, repo_path: Path | str) -> None: ...
+
+    def fetch(
+        self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None
     ) -> None: ...
 
     def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None: ...
@@ -230,6 +252,28 @@ class GitRunner:
             return True
         except GitSyncError:
             return False
+
+    def branch_known(
+        self, repo_path: Path | str, branch: str, *, remote: str = "origin"
+    ) -> bool:
+        """Whether *branch* exists locally **or** as a remote-tracking ref.
+
+        Offline: reads the refs this clone already has, and never contacts
+        the remote. :meth:`remote_branch_exists` is the one that asks the
+        network, and takes a URL rather than a path because it can run
+        before a clone exists.
+
+        Used to decide whether a derived branch is real, on a code path —
+        ``checkout`` — that must keep working with no network.
+        """
+        if self.local_branch_exists(repo_path, branch):
+            return True
+        return (
+            self._query(
+                "rev-parse", "--verify", f"refs/remotes/{remote}/{branch}", cwd=repo_path
+            ).returncode
+            == 0
+        )
 
     def create_branch(self, repo_path: Path | str, branch: str) -> None:
         """Create *branch* in *repo_path* without switching to it (``git branch``)."""
@@ -341,6 +385,121 @@ class GitRunner:
         self._run("fetch", remote, selected_ref, cwd=repo_path)
         self._run("checkout", "-B", selected_ref, "FETCH_HEAD", cwd=repo_path)
         self.clean_untracked(repo_path)
+
+    def merge(
+        self,
+        repo_path: Path | str,
+        ref_name: str,
+        *,
+        ff_only: bool = False,
+        no_ff: bool = False,
+        message: str | None = None,
+    ) -> None:
+        """Merge *ref_name* into the current branch of *repo_path* (``git merge``).
+
+        ``ff_only`` and ``no_ff`` map to Git's own flags and are mutually
+        exclusive. With neither, Git's default applies: fast-forward when it
+        can, a merge commit when it cannot.
+
+        Raises :exc:`~.errors.GitSyncError` on a conflict, leaving the merge
+        in progress exactly as ``git`` does — the caller decides whether to
+        :meth:`merge_abort`. Ask :meth:`can_merge_cleanly` first to avoid
+        getting there at all.
+        """
+        if ff_only and no_ff:
+            raise ValueError("merge: ff_only and no_ff are mutually exclusive")
+        args = ["merge"]
+        if ff_only:
+            args.append("--ff-only")
+        if no_ff:
+            args.append("--no-ff")
+        if message is not None:
+            args.extend(["-m", message])
+        args.append(ref_name)
+        self._run(*args, cwd=repo_path)
+
+    def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> bool:
+        """Whether merging *ref_name* would apply without a conflict.
+
+        **Read-only.** Neither branch below touches the worktree, the index,
+        or ``HEAD`` — which is what makes it safe to ask about every
+        repository in a tree before merging any of them. A trial
+        ``git merge`` would answer the same question but would leave a
+        repository mid-merge if the process died between the merge and the
+        abort, and a preflight must not be able to break what it is checking.
+
+        Two ways to ask, because the answer depends on the Git in front of
+        us. ``merge-tree --write-tree`` (Git 2.38+) prints the merged tree's
+        OID and exits 0 when the merge applies, or exits 1 and lists the
+        conflicted paths. Older Git knows only the three-argument form, which
+        needs an explicit merge base and reports conflicts as markers inside
+        a diff, exiting 0 either way.
+
+        A repository that cannot name *ref_name*, or shares no history with
+        it, is not "clean" — it is unmergeable, and the caller gets ``False``
+        rather than an exception, because this is a question, not an
+        operation.
+        """
+        head = self.current_branch(repo_path) or "HEAD"
+
+        modern = self._query(
+            "merge-tree", "--write-tree", "--name-only", head, ref_name, cwd=repo_path
+        )
+        if modern.returncode == 0:
+            return True
+        if modern.returncode == 1 and modern.stdout.strip():
+            return False
+
+        # Anything else from the modern form — a usage error on old Git, a
+        # bad ref — means fall through and ask the way old Git understands.
+        base = self._query("merge-base", head, ref_name, cwd=repo_path)
+        if base.returncode != 0 or not base.stdout.strip():
+            return False
+        legacy = self._query(
+            "merge-tree", base.stdout.strip(), head, ref_name, cwd=repo_path
+        )
+        if legacy.returncode != 0:
+            return False
+        return "<<<<<<<" not in legacy.stdout
+
+    def _query(
+        self,
+        *args: str,
+        cwd: Path | str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run a git command for its answer, not its effect; never raises.
+
+        :meth:`_run` raises on a non-zero exit because its callers are
+        performing an operation. A caller asking a *question* needs the exit
+        code itself, so this returns the completed process untouched.
+        """
+        return subprocess.run(
+            [self.executable, *args],
+            cwd=str(cwd) if cwd is not None else None,
+            capture_output=True,
+            check=False,
+            text=True,
+            env=_non_interactive_git_env(),
+        )
+
+    def merge_abort(self, repo_path: Path | str) -> None:
+        """Abort a merge left in progress (``git merge --abort``)."""
+        self._run("merge", "--abort", cwd=repo_path)
+
+    def fetch(
+        self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None
+    ) -> None:
+        """Update remote-tracking refs from *remote* (``git fetch``).
+
+        Touches no branch and no worktree — only ``refs/remotes``. Separate
+        from :meth:`pull`, which fetches *and* merges into the current
+        branch; a caller that wants to decide what to merge for itself needs
+        the two halves apart.
+        """
+        args = ["fetch", remote]
+        if ref_name:
+            args.append(ref_name)
+        self._run(*args, cwd=repo_path)
 
     def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None:
         """Discard local tracked changes in *repo_path*."""

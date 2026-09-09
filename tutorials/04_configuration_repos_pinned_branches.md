@@ -91,8 +91,8 @@ pixi run cgitsync view-tree
 ComplexGitSync (root) [ALIGNED] @9c9298a br=multi-branch fb=main
 ├── .agentSpec (parent) [ALIGNED] @117a9c5 br=main
 │   └── DevSpec (leaf) [ALIGNED] @a5d3432 br=main
-├── .claude (leaf) [ALIGNED] @df4221c br=ComplexGitSync fb=main
-├── .localSpec (leaf) [ALIGNED] @9f50519 br=ComplexGitSync fb=main
+├── .claude (leaf) [ALIGNED] @df4221c br=ComplexGitSync_multi-branch fb=main
+├── .localSpec (leaf) [ALIGNED] @9f50519 br=ComplexGitSync_multi-branch fb=main
 └── DocComplexGitSync (parent) [ALIGNED] @ac1176e br=multi-branch fb=main
     └── DocSpec (leaf) [ALIGNED] @e6f1b0b br=main
 ```
@@ -103,7 +103,7 @@ each one is:
 | Repository | Branch | Kind |
 |---|---|---|
 | `ComplexGitSync`, `DocComplexGitSync` | `multi-branch` | the project's own — they followed the feature branch |
-| `.localSpec`, `.claude` | `ComplexGitSync` | config, **read and write** — the branch is named after this project, so nobody else reads it |
+| `.localSpec`, `.claude` | `ComplexGitSync_multi-branch` | config, **read and write** — the branch is named after this project *and* the branch it is on |
 | `.agentSpec`, `DevSpec`, `DocSpec` | `main` | config, **read-only** — `main` is what every other project reads |
 
 **The branch name is the whole tell.** A configuration repo sitting on a
@@ -118,11 +118,11 @@ pixi run cgitsync status
 ```
 
 ```text
-REPOSITORY         PATH                SCOPE            LOCAL_BRANCH    ...
+REPOSITORY         PATH                SCOPE            LOCAL_BRANCH
 DocSpec            docs/DocSpec        private/distant  main
 DocComplexGitSync  docs                project          multi-branch
-.localSpec         .localSpec          private/local    ComplexGitSync
-.claude            .claude             private/local    ComplexGitSync
+.localSpec         .localSpec          private/local    ComplexGitSync_multi-branch
+.claude            .claude             private/local    ComplexGitSync_multi-branch
 DevSpec            .agentSpec/DevSpec  private/distant  main
 .agentSpec         .agentSpec          private/distant  main
 ComplexGitSync     .                   project          multi-branch
@@ -139,10 +139,60 @@ Three words, and they map onto the three things you can do:
 | `private/local` | shared, and yours to write | the same, with `--private` |
 | `private/distant` | shared, read-only | nothing |
 
-**private** means shared with other projects. **local** means you may write
-to it; **distant** means you may only read it. `DevSpec` and `DocSpec` are
-nested inside private repos and show as private too — a repository inside a
-shared one is just as shared.
+**private** means shared with other projects. What separates the other two
+words is **who may commit**, not how far away anything is:
+
+- **distant** — the repository is private *to its owner*. You read it; only
+  that owner writes to it. Nothing you do moves it.
+- **local** — it holds settings that configure *your* project, and those
+  settings are a contribution to your project, recorded on your own branch.
+  You do commit to it.
+
+`DevSpec` and `DocSpec` are nested inside private repos and show as private
+too — a repository inside a shared one is just as shared.
+
+### A branch per project branch
+
+Look again at the `LOCAL_BRANCH` column above. `.localSpec` and `.claude`
+are not on `ComplexGitSync`; they are on `ComplexGitSync_multi-branch`,
+because the project is on `multi-branch`.
+
+That is the rule, and it has one shape:
+
+```text
+<the branch the entry declares>_<the branch your project is on>
+```
+
+The separator is an underscore. Hyphens already turn up inside branch names
+— `multi-branch` is one — so `ComplexGitSync-multi-branch` would leave you
+guessing where the project name stops.
+
+**Why it has to work this way.** A private/local repo is where your notes
+and settings live. If it had one branch for every branch of your project,
+then the moment you documented an unfinished feature, that documentation
+would be live on `main` too, describing something that is not there yet.
+A branch per project branch keeps unmerged notes unmerged.
+
+**Nothing happens until you create it.** The derived branch is a target, not
+a demand. Until `ComplexGitSync_multi-branch` exists, `cgitsync` falls back
+to `ComplexGitSync` exactly as before. `cgitsync branch` is what creates it,
+deliberately.
+
+Two commands go with it:
+
+```bash
+# take updates from ComplexGitSync into ComplexGitSync_multi-branch,
+# so your settings branch does not drift behind the project's
+pixi run cgitsync pull --private
+
+# when multi-branch is done: land it, then land its settings
+pixi run cgitsync merge multi-branch
+pixi run cgitsync merge --private multi-branch
+```
+
+The second `merge` does **not** merge a branch called `multi-branch` — no
+configuration repo has one. You always name your *project's* branch, and
+each repository works out what that means for itself.
 
 ## 3. Declaring them
 

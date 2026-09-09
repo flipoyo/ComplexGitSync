@@ -48,6 +48,105 @@ def test_git_runner_stage_all_respects_local_gitignore(tmp_path):
     assert "ignored.txt" not in staged
 
 
+def _repo_with_feature_branch(tmp_path, *, diverge: bool) -> Path:
+    """A real repository on ``main`` with a ``feat`` branch to merge.
+
+    With *diverge*, ``main`` edits the same line ``feat`` did, so the merge
+    conflicts. Without it, ``main`` is an ancestor and the merge applies.
+    """
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir(parents=True)
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=repo_path, check=True, capture_output=True)
+
+    git("init", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Test")
+    (repo_path / "a.txt").write_text("base\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "base")
+    git("checkout", "-b", "feat")
+    (repo_path / "a.txt").write_text("feature\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "feature")
+    git("checkout", "main")
+    if diverge:
+        (repo_path / "a.txt").write_text("mainside\n", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-m", "main change")
+    return repo_path
+
+
+class TestMergePrimitives:
+    """``merge`` and the read-only question asked before it.
+
+    Exercised against real repositories rather than a fake, because the
+    whole value of ``can_merge_cleanly`` is that it agrees with what
+    ``git merge`` would actually do — a fake could only agree with itself.
+    """
+
+    def test_a_clean_merge_applies(self, tmp_path):
+        repo_path = _repo_with_feature_branch(tmp_path, diverge=False)
+        runner = GitRunner()
+
+        assert runner.can_merge_cleanly(repo_path, "feat") is True
+        runner.merge(repo_path, "feat")
+
+        assert (repo_path / "a.txt").read_text(encoding="utf-8") == "feature\n"
+
+    def test_a_conflicting_merge_is_predicted_and_then_raises(self, tmp_path):
+        repo_path = _repo_with_feature_branch(tmp_path, diverge=True)
+        runner = GitRunner()
+
+        assert runner.can_merge_cleanly(repo_path, "feat") is False
+
+        with pytest.raises(GitSyncError):
+            runner.merge(repo_path, "feat")
+        assert runner.has_unresolved_merge(repo_path) is True
+
+        runner.merge_abort(repo_path)
+        assert runner.has_unresolved_merge(repo_path) is False
+        assert (repo_path / "a.txt").read_text(encoding="utf-8") == "mainside\n"
+
+    def test_an_unknown_ref_is_not_clean_and_does_not_raise(self, tmp_path):
+        """A question, not an operation: the caller gets False, not an error."""
+        repo_path = _repo_with_feature_branch(tmp_path, diverge=False)
+
+        assert GitRunner().can_merge_cleanly(repo_path, "no-such-branch") is False
+
+    def test_asking_leaves_the_repository_untouched(self, tmp_path):
+        """The property that lets a preflight ask about every repo safely."""
+        repo_path = _repo_with_feature_branch(tmp_path, diverge=True)
+        runner = GitRunner()
+        before = runner.rev_parse_head(repo_path)
+
+        runner.can_merge_cleanly(repo_path, "feat")
+
+        assert runner.rev_parse_head(repo_path) == before
+        assert runner.has_unresolved_merge(repo_path) is False
+        assert runner.has_uncommitted_changes(repo_path) is False
+
+    def test_ff_only_refuses_a_merge_that_is_not_a_fast_forward(self, tmp_path):
+        repo_path = _repo_with_feature_branch(tmp_path, diverge=True)
+
+        with pytest.raises(GitSyncError):
+            GitRunner().merge(repo_path, "feat", ff_only=True)
+
+    def test_ff_only_and_no_ff_together_are_rejected_outright(self, tmp_path):
+        repo_path = _repo_with_feature_branch(tmp_path, diverge=False)
+
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            GitRunner().merge(repo_path, "feat", ff_only=True, no_ff=True)
+
+    def test_branch_known_sees_local_branches_and_answers_offline(self, tmp_path):
+        repo_path = _repo_with_feature_branch(tmp_path, diverge=False)
+        runner = GitRunner()
+
+        assert runner.branch_known(repo_path, "feat") is True
+        assert runner.branch_known(repo_path, "no-such-branch") is False
+
+
 def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch, tmp_path):
     runner = GitRunner()
     calls: list[tuple[tuple[str, ...], Path | None]] = []
@@ -330,6 +429,29 @@ class _FakeGitRunner:
 
     def local_branch_exists(self, repo_path, branch: str) -> bool:
         return True
+
+    def branch_known(self, repo_path, branch: str, *, remote: str = "origin") -> bool:
+        return True
+
+    def merge(
+        self,
+        repo_path,
+        ref_name: str,
+        *,
+        ff_only: bool = False,
+        no_ff: bool = False,
+        message: str | None = None,
+    ) -> None:
+        return None
+
+    def can_merge_cleanly(self, repo_path, ref_name: str) -> bool:
+        return True
+
+    def merge_abort(self, repo_path) -> None:
+        return None
+
+    def fetch(self, repo_path, *, remote: str = "origin", ref_name: str | None = None) -> None:
+        return None
 
     def create_branch(self, repo_path, branch: str) -> None:
         return None
