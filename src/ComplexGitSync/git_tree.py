@@ -21,6 +21,7 @@ Functions defined here (Tier 2 — Actions / tree utilities):
     make_repo_id                Build a colon-separated repo ID from path
     promote_to_parent           Upgrade a LEAF entry to PARENT
     normalize_node_types        Align node types with the current tree shape
+    propagate_pinning           Push each parent's pinning onto its nested repos
     register_relative_path      Guard against duplicate relative paths
     build_tree_state            Derive a ProjectTreeState from the registry
     find_strongly_connected_components  Tarjan's SCC algorithm on a path-based graph
@@ -541,6 +542,65 @@ def normalize_node_types(tree: WorkingGitTree) -> None:
             entry.node_type = NodeType.PARENT
         else:
             entry.node_type = NodeType.LEAF
+
+
+def propagate_pinning(tree: WorkingGitTree) -> None:
+    """Push each parent's pinning down onto everything nested inside it.
+
+    ``pinned = true`` marks a **configuration repository** — one shared with
+    other projects, read-only unless the entry also says ``writable = true``.
+    Each entry declares that for itself, but a repository nested inside a
+    configuration repository is just as shared: writing to it writes into
+    someone else's repository the same way. Before this pass existed, a
+    nested repository whose own entry said nothing landed in ``PROJECT``
+    scope, so ``commit`` and ``push`` swept it.
+
+    The rule, root-first: **the parent defines its leaves.**
+
+    * A repository under a pinned parent is pinned.
+    * One that declares nothing takes its parent's writability.
+    * One that declares its own ``pinned`` keeps its own ``writable``, but
+      capped by the parent — a child can restrict itself further, never
+      open itself up wider than the repository holding it.
+
+    The answers go to ``propagated_pinned``/``propagated_writable``; the
+    declared ``pinned``/``writable`` are left alone so serialization writes
+    a ``.cgs`` back out exactly as its author wrote it. Read the result
+    through :attr:`WorkingRepo.effective_pinned`.
+
+    Idempotent, and safe on a tree whose ``parent_id`` links form a cycle:
+    an entry already being resolved falls back to its declared flags.
+    """
+    resolving: set[str] = set()
+    resolved: dict[str, tuple[bool, bool]] = {}
+
+    def resolve(entry: WorkingRepo) -> tuple[bool, bool]:
+        if entry.repo_id in resolved:
+            return resolved[entry.repo_id]
+        if entry.repo_id in resolving:
+            return entry.pinned, entry.writable
+        resolving.add(entry.repo_id)
+
+        parent = tree.repos.get(entry.parent_id) if entry.parent_id else None
+        if parent is None or parent is entry:
+            answer = (entry.pinned, entry.writable)
+        else:
+            parent_pinned, parent_writable = resolve(parent)
+            if not parent_pinned:
+                answer = (entry.pinned, entry.writable)
+            elif entry.pinned:
+                # Declares its own pin: its own writability, capped by the parent.
+                answer = (True, entry.writable and parent_writable)
+            else:
+                # Says nothing: it is whatever the repository holding it is.
+                answer = (True, parent_writable)
+
+        resolving.discard(entry.repo_id)
+        resolved[entry.repo_id] = answer
+        return answer
+
+    for entry in tree.values():
+        entry.propagated_pinned, entry.propagated_writable = resolve(entry)
 
 
 def register_relative_path(

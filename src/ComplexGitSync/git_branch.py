@@ -281,7 +281,7 @@ def resolve_propagated_ref(
     For a pinned entry the returned ``kind`` is ``None``: the move must not
     rewrite the kind of ref that entry already carries.
     """
-    if entry.pinned and ref_kind is RefKind.BRANCH:
+    if entry.effective_pinned and ref_kind is RefKind.BRANCH:
         pinned_name = (
             _as_optional_str(entry.default_branch)
             or _as_optional_str(entry.target_ref_name)

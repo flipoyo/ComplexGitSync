@@ -17,6 +17,7 @@ from ComplexGitSync.git_repo import (
     NodeType,
     RefKind,
     RepoLifecycleState,
+    RepoScope,
     SyncState,
 )
 from ComplexGitSync.git_tree import (
@@ -25,6 +26,7 @@ from ComplexGitSync.git_tree import (
     WorkingGitTree,
     iter_tree,
     iter_tree_leaf_first,
+    propagate_pinning,
 )
 from ComplexGitSync.operations import (
     BranchTopologyReport,
@@ -1281,6 +1283,101 @@ def test_freeze_release_preflight_fails_when_branches_misalign(tmp_path):
 
     with pytest.raises(GitSyncError, match="branch misalignment"):
         freeze_release_tree(registry, runner, "release-1")
+
+
+def _make_registry_with_config_repo(tmp_path: Path) -> WorkingGitTree:
+    """A READY registry whose leaf is a writable configuration repository.
+
+    Shaped like a real tree: the project's own root on a feature branch, and
+    a pinned mount sitting on a branch named after the project.
+    """
+    from ComplexGitSync.git_repo import WorkingRepo
+
+    registry = _make_ready_registry(tmp_path)
+    leaf = registry.get("root:deps/leaf")
+    leaf.pinned = True
+    leaf.writable = True
+    leaf.default_branch = "MyProject"
+    leaf.target_ref_name = "MyProject"
+    leaf.resolved_ref_name = "MyProject"
+    assert isinstance(leaf, WorkingRepo)
+    propagate_pinning(registry)
+    return registry
+
+
+class TestPreflightOnlyChecksWhatTheOperationTouches:
+    """A commit must not be blocked by a repository it will never write to.
+
+    The scope work made ``commit``/``push`` skip configuration repos, but
+    their preflight still swept the whole tree. A pinned mount sitting on
+    its own branch — the entire point of pinning — then read as a branch
+    misalignment and blocked every commit in the tree.
+    """
+
+    @staticmethod
+    def _runner(registry: WorkingGitTree) -> _FakeGitRunnerForOperations:
+        runner = _FakeGitRunnerForOperations()
+        runner._current_branches[registry.get("root").absolute_path] = "multi-branch"
+        runner._current_branches[registry.get("root:deps/leaf").absolute_path] = "MyProject"
+        return runner
+
+    def test_a_pinned_mount_on_its_own_branch_does_not_block_a_commit(self, tmp_path):
+        """The bug reported from a live workspace."""
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = self._runner(registry)
+
+        commit_tree(registry, runner, "project work")
+
+        assert [path for path, _ in runner.committed] == [registry.get("root").absolute_path]
+
+    def test_a_pinned_mount_is_measured_against_its_own_branch_not_the_roots(self, tmp_path):
+        """Under --private the pinned mount *is* in scope, and still passes."""
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = self._runner(registry)
+
+        commit_tree(registry, runner, "config work", scope=RepoScope.PRIVATE)
+
+        assert [path for path, _ in runner.committed] == [
+            registry.get("root:deps/leaf").absolute_path
+        ]
+
+    def test_a_pinned_mount_off_its_declared_branch_still_blocks(self, tmp_path):
+        """Scoping must not turn the check off, only point it at the right branch."""
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = self._runner(registry)
+        runner._current_branches[registry.get("root:deps/leaf").absolute_path] = "somewhere-else"
+
+        with pytest.raises(GitSyncError, match="expected 'MyProject'"):
+            commit_tree(registry, runner, "config work", scope=RepoScope.PRIVATE)
+
+    def test_an_owned_repo_off_the_roots_branch_still_blocks(self, tmp_path):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        runner._current_branches[registry.get("root").absolute_path] = "main"
+        runner._current_branches[registry.get("root:deps/leaf").absolute_path] = "feature-x"
+
+        with pytest.raises(GitSyncError, match="branch misalignment"):
+            commit_tree(registry, runner, "project work")
+
+    def test_a_config_repo_behind_its_upstream_does_not_block_a_project_commit(self, tmp_path):
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = self._runner(registry)
+        runner._tracking_states[registry.get("root:deps/leaf").absolute_path] = SyncState.BEHIND
+
+        commit_tree(registry, runner, "project work")
+
+        assert [path for path, _ in runner.committed] == [registry.get("root").absolute_path]
+
+    def test_worktree_state_is_refreshed_for_every_repo_whatever_the_scope(self, tmp_path):
+        """It is written into the .gts for every repo, so it must stay fresh."""
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = self._runner(registry)
+        leaf = registry.get("root:deps/leaf")
+        leaf.worktree_state = None
+
+        commit_tree(registry, runner, "project work")
+
+        assert leaf.worktree_state is not None
 
 
 def test_tag_tree_preflight_fails_when_repo_is_detached(tmp_path):

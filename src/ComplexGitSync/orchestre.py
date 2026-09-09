@@ -105,6 +105,7 @@ from .git_tree import (
     iter_tree,
     iter_tree_leaf_first,
     normalize_node_types,
+    propagate_pinning,
     sync_gitignore,
 )
 from .git_tree import (
@@ -902,7 +903,7 @@ def resolve_command_scope(
         return RepoScope.PROJECT
     if any(RepoScope.PRIVATE.includes(repo) for repo in tree.values()):
         return RepoScope.PRIVATE
-    read_only = sorted(repo.name for repo in tree.values() if repo.pinned)
+    read_only = sorted(repo.name for repo in tree.values() if repo.effective_pinned)
     detail = (
         f" The pinned repositories in this tree are read-only: {', '.join(read_only)}."
         if read_only
@@ -2436,6 +2437,7 @@ class ComplexGitSyncClient:
         registry = self.get_dependency_registry()
         fixed = _fix_circularities(registry)
         normalize_node_types(registry)
+        propagate_pinning(registry)
         registry.recompute_tree_state()
         return fixed
 

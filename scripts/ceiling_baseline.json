@@ -22,7 +22,7 @@
     },
     "cli/_shared.py": {
       "internal_imports": 10,
-      "loc": 280,
+      "loc": 282,
       "public_symbols": 0
     },
     "cli/configuration.py": {
@@ -51,8 +51,8 @@
       "public_symbols": 1
     },
     "discovery.py": {
-      "internal_imports": 19,
-      "loc": 223,
+      "internal_imports": 20,
+      "loc": 225,
       "public_symbols": 3
     },
     "errors.py": {
@@ -67,7 +67,7 @@
     },
     "git_repo.py": {
       "internal_imports": 0,
-      "loc": 362,
+      "loc": 383,
       "public_symbols": 15
     },
     "git_runner.py": {
@@ -77,8 +77,8 @@
     },
     "git_tree.py": {
       "internal_imports": 29,
-      "loc": 1141,
-      "public_symbols": 25
+      "loc": 1188,
+      "public_symbols": 26
     },
     "gts_document.py": {
       "internal_imports": 8,
@@ -107,12 +107,12 @@
     },
     "operations.py": {
       "internal_imports": 17,
-      "loc": 939,
+      "loc": 973,
       "public_symbols": 17
     },
     "orchestre.py": {
-      "internal_imports": 71,
-      "loc": 3458,
+      "internal_imports": 72,
+      "loc": 3460,
       "public_symbols": 13
     },
     "paths.py": {
@@ -121,8 +121,8 @@
       "public_symbols": 4
     },
     "registry.py": {
-      "internal_imports": 35,
-      "loc": 442,
+      "internal_imports": 36,
+      "loc": 445,
       "public_symbols": 3
     },
     "snapshot_resolver.py": {

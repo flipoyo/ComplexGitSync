@@ -75,6 +75,7 @@ from .git_tree import (
     innermost_containing_path,
     make_repo_id,
     normalize_node_types,
+    propagate_pinning,
     register_relative_path,
 )
 from .gts_document import (
@@ -309,6 +310,7 @@ def build_registry_from_cgs_document(
         registry.add(entry)
 
     normalize_node_types(registry)
+    propagate_pinning(registry)
     registry.recompute_tree_state()
     document.attach_serialization_context(registry)
     return registry
@@ -406,6 +408,7 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
         path_to_repo_id[absolute_path] = repo_id
 
     normalize_node_types(registry)
+    propagate_pinning(registry)
     registry.recompute_tree_state()
     return registry
 

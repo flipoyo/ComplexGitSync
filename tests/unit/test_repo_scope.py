@@ -19,17 +19,26 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.cgs_format import CgsDocument, normalize_cgs
+from ComplexGitSync.discovery import discover_nested_configs
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError
 from ComplexGitSync.git_repo import RepoScope, WorkingRepo
-from ComplexGitSync.git_tree import WorkingGitTree, iter_tree_leaf_first
+from ComplexGitSync.git_tree import WorkingGitTree, iter_tree_leaf_first, propagate_pinning
 from ComplexGitSync.orchestre import resolve_command_scope
 from ComplexGitSync.registry import build_registry_from_cgs_document
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _repo(name: str, *, pinned: bool = False, writable: bool = False) -> WorkingRepo:
-    return WorkingRepo(repo_id=name, name=name, pinned=pinned, writable=writable)
+def _repo(
+    name: str,
+    *,
+    pinned: bool = False,
+    writable: bool = False,
+    parent: str | None = None,
+) -> WorkingRepo:
+    return WorkingRepo(
+        repo_id=name, name=name, pinned=pinned, writable=writable, parent_id=parent
+    )
 
 
 _OWNED = _repo("app")
@@ -188,6 +197,152 @@ class TestCommandScope:
     def test_the_refusal_says_so_when_the_tree_has_no_pinned_repos_at_all(self):
         with pytest.raises(GitSyncError, match="no pinned repositories at all"):
             resolve_command_scope(self._tree(_OWNED), private=True, command="add")
+
+
+class TestPinningReachesNestedRepositories:
+    """A repository inside a configuration repository is shared too.
+
+    ``pinned`` used to be read off one entry alone, so a repository nested
+    inside a read-only configuration repo landed in ``PROJECT`` scope and
+    ``commit``/``push`` swept it — writing into someone else's repository,
+    which is exactly what the pin exists to stop. The tree it was found on
+    only escaped because every nested ``.cgs`` happened to declare its own
+    pin. ``propagate_pinning`` makes it the rule instead of the luck.
+    """
+
+    @staticmethod
+    def _tree(*repos: WorkingRepo) -> WorkingGitTree:
+        tree = WorkingGitTree()
+        for repo in repos:
+            tree.add(repo)
+        propagate_pinning(tree)
+        return tree
+
+    def test_a_leaf_that_declares_nothing_under_a_read_only_parent_is_read_only(self):
+        """The bug this was written for."""
+        tree = self._tree(
+            _repo("shared-spec", pinned=True),
+            _repo("nested-leaf", parent="shared-spec"),
+        )
+        leaf = tree.get("nested-leaf")
+
+        assert leaf.effective_pinned is True
+        assert leaf.effective_writable is False
+        assert not RepoScope.PROJECT.includes(leaf)
+        assert not RepoScope.WRITABLE.includes(leaf)
+        assert RepoScope.ALL.includes(leaf)
+
+    def test_the_declared_flags_are_left_alone_for_serialization(self):
+        tree = self._tree(
+            _repo("shared-spec", pinned=True),
+            _repo("nested-leaf", parent="shared-spec"),
+        )
+        leaf = tree.get("nested-leaf")
+
+        assert leaf.pinned is False, "what the .cgs says must survive a round trip"
+        assert leaf.writable is False
+
+    def test_pinning_reaches_the_whole_subtree_not_just_direct_children(self):
+        tree = self._tree(
+            _repo("shared-spec", pinned=True),
+            _repo("middle", parent="shared-spec"),
+            _repo("deep", parent="middle"),
+        )
+
+        assert tree.get("deep").effective_pinned is True
+        assert tree.get("deep").effective_writable is False
+
+    def test_a_leaf_under_a_writable_config_repo_is_writable_too(self):
+        """``--private`` has to sweep the whole shared subtree, not its root."""
+        tree = self._tree(
+            _repo("own-spec", pinned=True, writable=True),
+            _repo("nested-leaf", parent="own-spec"),
+        )
+        leaf = tree.get("nested-leaf")
+
+        assert RepoScope.PRIVATE.includes(leaf)
+        assert not RepoScope.PROJECT.includes(leaf)
+
+    def test_a_leaf_may_restrict_itself_further_than_its_parent(self):
+        tree = self._tree(
+            _repo("own-spec", pinned=True, writable=True),
+            _repo("nested-leaf", pinned=True, parent="own-spec"),
+        )
+
+        assert tree.get("nested-leaf").effective_writable is False
+
+    def test_a_leaf_can_never_open_itself_wider_than_its_parent(self):
+        """The direction that matters: the parent caps its leaves."""
+        tree = self._tree(
+            _repo("shared-spec", pinned=True),
+            _repo("nested-leaf", pinned=True, writable=True, parent="shared-spec"),
+        )
+        leaf = tree.get("nested-leaf")
+
+        assert leaf.effective_writable is False
+        assert not RepoScope.PRIVATE.includes(leaf)
+
+    def test_an_unpinned_parent_leaves_its_children_alone(self):
+        tree = self._tree(
+            _repo("app"),
+            _repo("app-leaf", parent="app"),
+            _repo("app-spec", pinned=True, parent="app"),
+        )
+
+        assert RepoScope.PROJECT.includes(tree.get("app-leaf"))
+        assert not RepoScope.PROJECT.includes(tree.get("app-spec"))
+
+    def test_running_the_pass_twice_changes_nothing(self):
+        tree = self._tree(
+            _repo("shared-spec", pinned=True),
+            _repo("nested-leaf", parent="shared-spec"),
+        )
+        propagate_pinning(tree)
+
+        assert tree.get("nested-leaf").effective_pinned is True
+        assert tree.get("nested-leaf").pinned is False
+
+    def test_a_parent_cycle_falls_back_to_the_declared_flags(self):
+        """Cycles are broken elsewhere; this pass must not hang on one."""
+        tree = self._tree(
+            _repo("a", pinned=True, parent="b"),
+            _repo("b", parent="a"),
+        )
+
+        assert tree.get("a").effective_pinned is True
+        assert tree.get("b").effective_pinned is True
+
+
+class TestNestedPinningThroughDiscovery:
+    """The same rule, reached the way a real tree reaches it: a nested ``.cgs``."""
+
+    def test_a_repo_under_a_pinned_mount_is_read_only_without_saying_so(self, tmp_path):
+        shared = tmp_path / "shared-spec"
+        shared.mkdir()
+        (shared / "nested.cgs").write_text(
+            'project = { name = "shared-spec", default_branch = "main" }\n'
+            'repos = [ "github:acme/nested-leaf" ]\n',
+            encoding="utf-8",
+        )
+        source = tmp_path / "tree.cgs"
+        source.write_text(
+            'project = { name = "demo", default_branch = "main" }\n'
+            "repos = [\n"
+            '    "github:acme/demo",\n'
+            "    { repository = \"github:acme/shared-spec\", pinned = true, "
+            'nested_config = "nested.cgs" },\n'
+            "]\n",
+            encoding="utf-8",
+        )
+
+        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+        discover_nested_configs(tree)
+        by_name = {entry.name: entry for entry in tree.values()}
+
+        assert by_name["nested-leaf"].pinned is False, "its own .cgs declares nothing"
+        assert by_name["nested-leaf"].effective_pinned is True
+        assert not RepoScope.PROJECT.includes(by_name["nested-leaf"])
+        assert RepoScope.PROJECT.includes(by_name["demo"])
 
 
 class TestThisTreesOwnDeclaration:

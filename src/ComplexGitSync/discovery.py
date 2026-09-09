@@ -35,6 +35,7 @@ from .git_tree import (
     make_repo_id,
     normalize_node_types,
     promote_to_parent,
+    propagate_pinning,
     register_relative_path,
 )
 
@@ -158,6 +159,7 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
             changes.append(f"discovered:{child_id}")
 
     normalize_node_types(registry)
+    propagate_pinning(registry)
     registry.recompute_tree_state()
     return tuple(changes)
 

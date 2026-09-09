@@ -139,6 +139,19 @@ pinned repository stays on, which is the field that decides §2's question,
 so always write it. `fallback_branch = "main"` lets a fresh clone work
 before the project-named branch exists.
 
+**One entry covers everything inside it.** `.agentSpec` holds `DevSpec`,
+which reaches this tree through `.agentSpec`'s own nested `.cgs`. You never
+write a second `pinned = true` for it: `DevSpec` sits inside a read-only
+configuration repo, so it is read-only too. The same goes the other way —
+anything nested inside `.localSpec` is writable, and `--private` reaches
+it.
+
+A nested entry may lock itself down further than its parent: `pinned =
+true` on its own line, with no `writable`, makes it read-only inside a
+writable parent. It cannot open itself up. `writable = true` inside a
+read-only configuration repo does nothing, because no repository can be
+more open than the one holding it.
+
 **Adding one to your own project:** copy an entry, pick `default_branch`
 using §2, and run `pixi run cgitsync initialise <your.cgs>`.
 

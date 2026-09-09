@@ -273,7 +273,9 @@ def _print_scope_note(client: ComplexGitSyncClient, scope: RepoScope) -> None:
     skipped = [entry for entry in registry.values() if not scope.includes(entry)]
     if not skipped:
         return
-    writable = sorted(entry.name for entry in skipped if entry.pinned and entry.writable)
+    writable = sorted(
+        entry.name for entry in skipped if entry.effective_pinned and entry.effective_writable
+    )
     hint = f" ({', '.join(writable)} with --private)" if writable else ""
     print(f"scope={scope.value} skipped={len(skipped)} configuration repo(s){hint}")
 

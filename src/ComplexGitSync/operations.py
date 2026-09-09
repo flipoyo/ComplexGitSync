@@ -124,7 +124,9 @@ def create_global_branch(
     a valid ``absolute_path`` on disk.
     """
     for repo in iter_tree(tree):
-        if repo.pinned or git_runner.local_branch_exists(repo.absolute_path, branch_name):
+        if repo.effective_pinned or git_runner.local_branch_exists(
+            repo.absolute_path, branch_name
+        ):
             continue
         git_runner.create_branch(repo.absolute_path, branch_name)
 
@@ -433,6 +435,7 @@ def commit_tree(
         git_runner,
         require_clean=False,
         operation_name="commit",
+        scope=scope,
     )
 
     for repo in iter_tree_leaf_first(tree, scope):
@@ -476,6 +479,7 @@ def push_tree(
         git_runner,
         require_clean=False,
         operation_name="push",
+        scope=scope,
     )
 
     for repo in iter_tree_leaf_first(tree, scope):
@@ -510,6 +514,9 @@ def tag_tree(
         tag_name=tag_name,
         require_clean=True,
         operation_name="tag",
+        # The same WRITABLE scope the loop below uses: a read-only
+        # configuration repo is not tagged, so its state cannot block this.
+        scope=RepoScope.WRITABLE,
     )
     _propagate_tag(tree, tag_name)
 
@@ -551,6 +558,7 @@ def freeze_release_tree(
         tag_name=tag_name,
         require_clean=False,
         operation_name="freeze_release",
+        scope=RepoScope.WRITABLE,
     )
     _propagate_tag(tree, tag_name)
     commit_message = message or f"freeze release {tag_name}"
@@ -812,13 +820,22 @@ def _run_preflight_checks(
     tag_name: str | None = None,
     require_clean: bool,
     operation_name: str,
+    scope: RepoScope = RepoScope.ALL,
 ) -> None:
+    """Check the repositories *scope* selects, and only those.
+
+    An operation must not be blocked by the state of a repository it is
+    never going to touch. ``commit`` writes this project's own repos, so a
+    read-only configuration repo sitting on its own branch, or behind its
+    upstream, is none of its business.
+    """
     diagnostics = _collect_preflight_diagnostics(
         tree,
         git_runner,
         operation_name=operation_name,
         tag_name=tag_name,
         require_clean=require_clean,
+        scope=scope,
     )
     warnings_only = [item for item in diagnostics if item.severity == PreflightSeverity.WARNING]
     blocking = [
@@ -837,24 +854,28 @@ def _collect_preflight_diagnostics(
     operation_name: str,
     tag_name: str | None,
     require_clean: bool,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     diagnostics: list[PreflightDiagnostic] = []
-    diagnostics.extend(_collect_remote_diagnostics(tree, git_runner))
+    diagnostics.extend(_collect_remote_diagnostics(tree, git_runner, scope=scope))
     if tag_name is not None:
-        diagnostics.extend(_collect_tag_conflict_diagnostics(tree, git_runner, tag_name=tag_name))
-    diagnostics.extend(_collect_detached_head_diagnostics(tree, git_runner))
-    diagnostics.extend(_collect_merge_diagnostics(tree, git_runner))
-    diagnostics.extend(_collect_branch_alignment_diagnostics(tree, git_runner))
-    diagnostics.extend(_collect_tracking_diagnostics(tree, git_runner))
+        diagnostics.extend(
+            _collect_tag_conflict_diagnostics(tree, git_runner, tag_name=tag_name, scope=scope)
+        )
+    diagnostics.extend(_collect_detached_head_diagnostics(tree, git_runner, scope=scope))
+    diagnostics.extend(_collect_merge_diagnostics(tree, git_runner, scope=scope))
+    diagnostics.extend(_collect_branch_alignment_diagnostics(tree, git_runner, scope=scope))
+    diagnostics.extend(_collect_tracking_diagnostics(tree, git_runner, scope=scope))
     diagnostics.extend(
         _collect_commit_sha_diagnostics(
             tree,
             git_runner,
             blocking=False,
+            scope=scope,
         )
     )
     diagnostics.extend(
-        _collect_worktree_diagnostics(tree, git_runner, require_clean=require_clean)
+        _collect_worktree_diagnostics(tree, git_runner, require_clean=require_clean, scope=scope)
     )
     return diagnostics
 
@@ -862,9 +883,11 @@ def _collect_preflight_diagnostics(
 def _collect_remote_diagnostics(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     missing: list[PreflightDiagnostic] = []
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         remote = repo.remote_name or "origin"
         if not git_runner.remote_exists(repo.absolute_path, remote):
             missing.append(
@@ -882,9 +905,10 @@ def _collect_tag_conflict_diagnostics(
     git_runner: GitRunner,
     *,
     tag_name: str,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     duplicates: list[PreflightDiagnostic] = []
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         if git_runner.tag_exists(repo.absolute_path, tag_name):
             duplicates.append(
                 PreflightDiagnostic(
@@ -899,9 +923,11 @@ def _collect_tag_conflict_diagnostics(
 def _collect_detached_head_diagnostics(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     detached: list[PreflightDiagnostic] = []
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         if git_runner.current_branch(repo.absolute_path) is None:
             detached.append(
                 PreflightDiagnostic(
@@ -916,9 +942,11 @@ def _collect_detached_head_diagnostics(
 def _collect_merge_diagnostics(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     merges: list[PreflightDiagnostic] = []
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         if git_runner.has_unresolved_merge(repo.absolute_path):
             merges.append(
                 PreflightDiagnostic(
@@ -933,6 +961,8 @@ def _collect_merge_diagnostics(
 def _collect_branch_alignment_diagnostics(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     if "root" not in tree.repos:
         return [
@@ -943,18 +973,26 @@ def _collect_branch_alignment_diagnostics(
             )
         ]
     root = tree.get("root")
-    expected_branch = git_runner.current_branch(root.absolute_path)
-    if expected_branch is None:
+    root_branch = git_runner.current_branch(root.absolute_path)
+    if root_branch is None:
         return []
     mismatched: list[PreflightDiagnostic] = []
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
+        # A pinned repository is shared with other projects and stays on its
+        # own branch, so the root's branch is not what it should be on.
+        # resolve_propagated_ref is the one place that rule lives: it hands
+        # back the root's branch for a repo this project owns, and the
+        # pinned repo's own declared branch otherwise.
+        expected_branch = resolve_propagated_ref(repo, root_branch).name
         current = git_runner.current_branch(repo.absolute_path)
         if current is not None and current != expected_branch:
+            detail = " (pinned to its own branch)" if repo.effective_pinned else ""
             mismatched.append(
                 PreflightDiagnostic(
                     PreflightSeverity.BLOCKING_ERROR,
                     repo.name,
-                    f"branch misalignment: expected {expected_branch!r}, found {current!r}.",
+                    f"branch misalignment: expected {expected_branch!r}{detail}, "
+                    f"found {current!r}.",
                 )
             )
     return mismatched
@@ -963,9 +1001,11 @@ def _collect_branch_alignment_diagnostics(
 def _collect_tracking_diagnostics(
     tree: WorkingGitTree,
     git_runner: GitRunner,
+    *,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     diagnostics: list[PreflightDiagnostic] = []
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         tracking_state = git_runner.branch_tracking_state(repo.absolute_path)
         if tracking_state in (None, SyncState.ALIGNED):
             continue
@@ -1009,10 +1049,11 @@ def _collect_commit_sha_diagnostics(
     git_runner: GitRunner,
     *,
     blocking: bool,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     inconsistent: list[PreflightDiagnostic] = []
     severity = PreflightSeverity.BLOCKING_ERROR if blocking else PreflightSeverity.WARNING
-    for repo in iter_tree_leaf_first(tree):
+    for repo in iter_tree_leaf_first(tree, scope):
         if not repo.commit_sha:
             continue
         head_sha = git_runner.rev_parse_head(repo.absolute_path)
@@ -1032,15 +1073,19 @@ def _collect_worktree_diagnostics(
     git_runner: GitRunner,
     *,
     require_clean: bool,
+    scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
     dirty: list[PreflightDiagnostic] = []
     severity = (
         PreflightSeverity.BLOCKING_ERROR if require_clean else PreflightSeverity.WARNING
     )
+    # Walks the whole tree even when the scope is narrower: worktree_state
+    # is written into the .gts snapshot for every repository, so it must
+    # stay fresh. Only the diagnostics are scoped.
     for repo in iter_tree_leaf_first(tree):
         is_dirty = _has_managed_uncommitted_changes(tree, git_runner, repo)
         repo.worktree_state = "DIRTY" if is_dirty else "CLEAN"
-        if is_dirty:
+        if is_dirty and scope.includes(repo):
             dirty.append(
                 PreflightDiagnostic(
                     severity,

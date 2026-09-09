@@ -147,14 +147,19 @@ class RepoScope(StrEnum):
     ALL = "all"
 
     def includes(self, repo: WorkingRepo) -> bool:
-        """Whether *repo* falls inside this scope."""
+        """Whether *repo* falls inside this scope.
+
+        Reads the **effective** flags, not the declared ones: a repository
+        nested inside a pinned parent is pinned too, whatever its own entry
+        says. See :attr:`WorkingRepo.effective_pinned`.
+        """
         if self is RepoScope.ALL:
             return True
         if self is RepoScope.PROJECT:
-            return not repo.pinned
+            return not repo.effective_pinned
         if self is RepoScope.PRIVATE:
-            return repo.pinned and repo.writable
-        return not repo.pinned or repo.writable
+            return repo.effective_pinned and repo.effective_writable
+        return not repo.effective_pinned or repo.effective_writable
 
 
 class RepoLifecycleState(StrEnum):
@@ -430,10 +435,38 @@ class WorkingRepo(GitRepo):
     access_protocol: AccessProtocol = AccessProtocol.SSH
     default_branch: str | None = None
     nested_config: str | None = None
+    # ``pinned``/``writable`` are what this repository's own entry declares,
+    # and are what gets serialized back out. They are not the whole answer:
+    # a repository sitting inside a pinned parent is pinned too, even when
+    # its own entry says nothing. ``git_tree.propagate_pinning`` walks the
+    # tree root-first and records that answer in the two fields below, which
+    # stay ``None`` until it has run. Read pinning through
+    # ``effective_pinned``/``effective_writable``; write and serialize
+    # ``pinned``/``writable``.
     pinned: bool = False
     writable: bool = False
+    propagated_pinned: bool | None = None
+    propagated_writable: bool | None = None
     remote_name: str | None = None
     is_external_reference: bool = False
+
+    @property
+    def effective_pinned(self) -> bool:
+        """Whether this repository is pinned once its parents are accounted for."""
+        if self.propagated_pinned is None:
+            return self.pinned
+        return self.propagated_pinned
+
+    @property
+    def effective_writable(self) -> bool:
+        """Whether ComplexGitSync may write here once its parents are accounted for.
+
+        Only meaningful together with :attr:`effective_pinned`: an unpinned
+        repository belongs to the project and is writable regardless.
+        """
+        if self.propagated_writable is None:
+            return self.writable
+        return self.propagated_writable
 
 
 def repo_remote_url(repo: WorkingRepo, protocol: AccessProtocol) -> str:
