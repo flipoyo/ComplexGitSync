@@ -268,6 +268,26 @@ claimed: run `cgitsync initialise examples/multibranch_wip.cgs` from
 restored to this branch from `main` for that reason — §6 step 6 still
 deletes it after the merge.
 
+### Warning: `initialise` re-clones the dependency repositories
+
+Running `cgitsync initialise examples/multibranch_wip.cgs` on this
+workspace **re-cloned `docs`, `.claude` and `.localSpec` from their
+remotes**, discarding everything in them that was not pushed: one local
+commit in `docs` and uncommitted edits in the two configuration repos. The
+reflog in each shows a single `clone:` entry — the old `.git` is gone, so
+nothing was recoverable.
+
+This matches the docstring (`initialise_cgs`: the root at CGSHOME "is
+treated as already existing and is never recloned. The clone sequence runs
+only for the dependencies"), but the docstring says nothing about the cost,
+and the command prints no warning. Only the root is safe.
+
+**Before running `initialise` on a populated workspace, commit and push
+every dependency repository.** Losing an unpushed commit to a command whose
+name reads like a no-op on an existing tree is worth its own ticket: at
+minimum a preflight that refuses when a dependency is dirty or ahead of its
+upstream. Not fixed here.
+
 ### Gate
 
 `pixi run lint` and `pixi run check-ceilings` pass. `pixi run test` is
