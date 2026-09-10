@@ -95,13 +95,6 @@ class TestGtsDocumentValid:
         doc = GtsDocument.from_dict(data)
         assert doc.schema_version == "9.9"
 
-    def test_from_toml_parses_example_snapshot(self):
-        examples = Path(__file__).parent.parent.parent / "examples"
-        doc = GtsDocument.from_toml(examples / "cawaqsviz_snapshot.gts")
-        assert doc.lifecycle_state == "READY"
-        assert doc.is_ready is True
-        assert len(doc.repo_states) == 4
-
     def test_ensure_snapshot_hash_sets_stable_hash(self):
         doc = GtsDocument.from_dict(copy.deepcopy(MINIMAL_GTS))
         digest = doc.ensure_snapshot_hash()

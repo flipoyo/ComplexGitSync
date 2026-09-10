@@ -445,7 +445,7 @@ each and use `cgitsync` only for `push`.
 **A clean `verify` is not evidence.** It reports `status=clean findings=0`,
 but [orchestre.py:25](../src/ComplexGitSync/orchestre.py#L25) records that
 `ledger_store.py` is "not yet wired into SyncLedger's actual write path".
-The chain it verifies is not being written. `2-1_StateMemory_DevPlanTicket.md`
+The chain it verifies is not being written. `StateMemory`
 covers this; do not read a clean verify as proof anything was recorded.
 
 ### 8.2 The pinning asymmetry, which decides the order

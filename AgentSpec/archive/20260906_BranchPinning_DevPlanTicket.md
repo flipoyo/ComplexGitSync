@@ -216,7 +216,7 @@ restoration.**
 Deliberately excluded, so this stays small enough to finish:
 
 - the `@project` token and the project-level policy default — step 3, D1b;
-- the `.goc` file and the Orchestrator — `2-4_GitOrchestratorCommand_DevPlanTicket.md`;
+- the `.goc` file and the Orchestrator — `GitOrchestratorCommand`;
 - the three-hop protocol documentation and tutorial 4 — step 3, D5;
 - replacing the dangling `autoTest` branch name — step 3, D2;
 - the two workspace clean-ups — step 3, §1.7.

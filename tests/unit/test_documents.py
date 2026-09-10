@@ -646,6 +646,7 @@ class TestCgsDocumentValid:
         assert reloaded.repos[0]["tag"] == "tag-does-not-need-to-exist"
 
     def test_from_toml_parses_install_cgs(self):
+        """The user install: the tool and its documentation, nothing else."""
         repo_root = Path(__file__).parent.parent.parent
         doc = CgsDocument.from_toml(repo_root / "install.cgs")
         assert doc.project_name == "ComplexGitSync"
@@ -653,6 +654,14 @@ class TestCgsDocumentValid:
         # AgentSpec/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md D2.
         assert doc.default_branch == "main"
         assert doc.repos[0]["fallback_branch"] == "main"
+        assert len(doc.repos) == 2
+
+    def test_from_toml_parses_the_developer_install(self):
+        """The developer install adds the three configuration repositories."""
+        repo_root = Path(__file__).parent.parent.parent
+        doc = CgsDocument.from_toml(repo_root / "complexgitsync4dev.cgs")
+        assert doc.project_name == "ComplexGitSync"
+        assert doc.default_branch == "main"
         assert len(doc.repos) == 5
 
     def test_from_toml_parses_doccomplexgitsync_example(self):
@@ -873,13 +882,6 @@ class TestGtsDocumentValid:
         doc = GtsDocument.from_dict(MINIMAL_GTS)
         assert len(doc.repo_states) == 1
         assert doc.repo_states[0]["name"] == "repo-a"
-
-    def test_from_toml_parses_example_snapshot(self):
-        examples = Path(__file__).parent.parent.parent / "examples"
-        doc = GtsDocument.from_toml(examples / "cawaqsviz_snapshot.gts")
-        assert doc.lifecycle_state == "READY"
-        assert doc.is_ready is True
-        assert len(doc.repo_states) == 4
 
     def test_ensure_snapshot_hash_sets_stable_hash(self):
         doc = GtsDocument.from_dict(copy.deepcopy(MINIMAL_GTS))

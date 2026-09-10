@@ -239,7 +239,10 @@ repos = [
 ]
 ```
 
-That is [`install.cgs`](../install.cgs), this tree's own file. Reading it:
+That is [`complexgitsync4dev.cgs`](../complexgitsync4dev.cgs),
+the spec this tree's own developer checkout is built from. (The root
+`install.cgs` is the user install and stops after the first two entries —
+it mounts no private repository at all.) Reading it:
 
 - The first two entries have no `private`, so they are the project's own.
 - `.agentSpec` is `private` and nothing more — read-only.

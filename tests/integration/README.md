@@ -50,16 +50,12 @@ the back-edge entry `root:CGSih1:CGSih2:CGSih1` from being inserted.
 `fix_circularities()` removes any residual back-edge entries that may reach
 the registry (e.g. when loading an older `.gts` snapshot).
 
-### Example .cgs files
+### Where the .cgs content comes from
 
-The canonical `.cgs` files for each repository live in `examples/`:
-
-| File                | Lives in repo | Purpose                                         |
-|---------------------|---------------|-------------------------------------------------|
-| `CGSil1.cgs`        | CGSil1        | Root project config (uses real SSH addresses)   |
-| `CGSil2.cgs`        | CGSil2        | Nested config (introduces duplication)          |
-| `CGSih1.cgs`        | CGSih1        | Nested config (declares CGSih2 as child)        |
-| `CGSih2.cgs`        | CGSih2        | Nested config (introduces cycle back to CGSih1) |
+`conftest.py` writes the four CGSi `.cgs` files into `tmp_path` for each
+run, so the topology needs nothing checked in. There are no CGSi files
+under `examples/`; the copies that used to live there were deleted, and
+nothing reads them.
 
 ### Test file
 
@@ -72,7 +68,7 @@ populated with the appropriate `.cgs` content (no network or git required):
 | `TestCgsiDuplicationPrevention`  | CGSih1 appears exactly once at root level   |
 | `TestCgsiCyclePrevention`        | No back-edge entry; fix_circularities() nop |
 | `TestCgsiLifecycleState`         | DECLARED state after expand (repos uncloned) |
-| `TestCgsiExampleFiles`           | examples/*.cgs parse and have correct shape |
+| `TestExampleFiles`               | every checked-in examples/*.cgs round-trips |
 | `TestGitCommandCycleIntegration` | READY `.gts` git cycle via Python API + CLI (`add->commit->push->freeze->launch_release`) with deterministic freeze snapshots |
 | `TestGtsSnapshotDeterminismIntegration` | Canonical `.gts` SHA-256 hash is stable across metadata changes and changes on workspace mutation |
 

@@ -1,0 +1,33 @@
+# The DEVELOPER tree for ComplexGitSync: the tool, its documentation, and
+# every repository that configures how the project is developed.
+#
+# Use this file to bootstrap a working checkout you can change:
+#
+#     pixi run cgitsync bootstrap complexgitsync4dev.cgs ComplexGitSync
+#
+# It sits at the repository root, not under examples/: relative_path is
+# resolved from the directory holding the .cgs, so only a root-level file
+# describes THIS tree. A copy under examples/ would root the tree at
+# examples/ and drive nothing.
+#
+# install.cgs, beside it, is the USER install and mounts only the first two
+# entries. This file adds the three configuration repositories, and is also
+# tutorials/04_private_repos.md's worked example, because it is the only
+# checked-in spec using every kind of private entry:
+#
+#   .agentSpec            private, read-only  -> SCOPE private/distant
+#   .localSpec, .claude   private, writable   -> SCOPE private/local
+#   ComplexGitSync, docs  the project's own   -> SCOPE project
+#
+# main is the project branch; repository entries declare only fallback, path,
+# nested-discovery and private overrides.
+
+project = { name = "ComplexGitSync", default_branch = "main" }
+
+repos = [
+    { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
+    { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "auto" },
+    { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", private = true },
+    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+]

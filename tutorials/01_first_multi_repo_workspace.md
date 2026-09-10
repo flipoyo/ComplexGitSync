@@ -5,7 +5,7 @@
 ## Abstract — read this first
 
 **What this document is.** The first of four worked tutorials in
-[`docs/tutorials/`](README.md): the complete `cgitsync` CLI lifecycle —
+[`tutorials/`](README.md): the complete `cgitsync` CLI lifecycle —
 validate, initialise, and the full git cycle (add → commit → push → tag →
 freeze) — on a small, synthetic, mixed-provider sandbox tree (`CGSil1`).
 
@@ -38,7 +38,7 @@ graph LR
 ---
 
 **Start here.** This is the easiest of the four tutorials in
-[`docs/tutorials/`](README.md): it walks through the complete `cgitsync` CLI
+[`tutorials/`](README.md): it walks through the complete `cgitsync` CLI
 lifecycle — validate, initialise, and the full git cycle
 (add → commit → push → tag → freeze) — on a small, synthetic, mixed-provider
 tree with every field left at its default. Nothing here requires a private

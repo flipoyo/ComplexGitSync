@@ -10,7 +10,7 @@
 > at `git_runner.py:377-387`. Every line number below §0 is from
 > 2026-09-01 and has drifted; the mechanisms have not.
 >
-> **Read `1-2_InitialiseDestroysExistingClones_DevPlanTicket.md` before
+> **Read `InitialiseDestroysExistingClones` before
 > starting.** It is a data-loss bug ticket opened on 2026-09-09 for the
 > same `rmtree`, from an incident that destroyed unpushed work, and it
 > proposes changing that call's behaviour. This ticket asks a wider

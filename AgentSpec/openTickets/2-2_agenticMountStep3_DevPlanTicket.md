@@ -12,7 +12,7 @@
 > | D1, how pinned mounts survive a tree-wide operation | **Answered and shipped.** Option A, and further than A went: `20260906_BranchPinning`, then `20260907_MultiBranchSync`, then `20260909_MergeAndPrivateBranch` |
 > | D2, does `autoTest` exist | **Gone.** `install.cgs` now reads `project = { name = "ComplexGitSync", default_branch = "main" }`. No dangling name is left to fall back from |
 > | §1.3, §1.4, §1.7 — the two clean-ups | **Historical.** They name a workspace and a plain clone under `/home/flipoyo/` that this checkout is not. Read §1.7 for its `initialise` warning, not as a to-do list |
-> | D1b jobs 1 and 2 — the `@project` token and a project-level branch-policy default | **Still unbuilt**, and they no longer ride along with anything: the privacy grammar shipped without them. `2-4_GitOrchestratorCommand_DevPlanTicket.md` §5 records the same fact |
+> | D1b jobs 1 and 2 — the `@project` token and a project-level branch-policy default | **Still unbuilt**, and they no longer ride along with anything: the privacy grammar shipped without them. `GitOrchestratorCommand` §5 records the same fact |
 > | §2, the round trip, and §2.0, the Operation that creates a project | **Untouched.** This is what the ticket is now for |
 > | D3, `$CGSHOME` discipline | **Open**, and still the live complaint: a command run from the wrong directory still drives whichever tree `$CGSHOME` names |
 > | D5, where the protocol is documented | **Open** |
@@ -222,7 +222,7 @@ that is the part that has to be true, and the part §3 breaks.
 
 Requested by the owner, 2026-09-05. Specified here; **not built**. The
 `.goc` interpreter it needs was deleted in August 2026 and is the subject
-of `2-4_GitOrchestratorCommand_DevPlanTicket.md`.
+of `GitOrchestratorCommand`.
 
 **The chain, in one picture.**
 
@@ -480,7 +480,7 @@ already do the right thing.
 
 ### D1b. Two more `.cgs` features ship with `pinned` — **settled**
 
-From `2-4_GitOrchestratorCommand_DevPlanTicket.md` §1. Both are `.cgs` grammar,
+From `GitOrchestratorCommand` §1. Both are `.cgs` grammar,
 so they ship in the same pass as `pinned`: one round of validation,
 authoring round-trip tests, documentation and rebuilt PDFs instead of two.
 
@@ -580,7 +580,7 @@ A fourth tutorial means the docs PDFs need rebuilding (`latexmk`) and the
 | 8 | `pixi run lint`, `pixi run test`, `pixi run bump-version`, rebuild PDFs again if the version moved | ComplexGitSync |
 | 9 | Merge, confirm CI, archive this ticket | GitHub |
 
-**What comes after.** `2-4_GitOrchestratorCommand_DevPlanTicket.md` adds a
+**What comes after.** `GitOrchestratorCommand` adds a
 `.goc` file that records which tree a directory drives, replacing the
 invisible `$CGSHOME`. It waits for this ticket, because it names a branch
 policy that has to exist first, and because it automates the protocol §2
@@ -619,5 +619,5 @@ sets down — which has to be settled before it is worth automating.
 8. The `ComplexGitSync` deployment branch (§2.0) exists on the remote and
    carries this project's spec. Hop zero itself stays specified, not
    built: the Orchestrator belongs to
-   `2-4_GitOrchestratorCommand_DevPlanTicket.md`.
+   `GitOrchestratorCommand`.
 9. All three AgenticMounts tickets are stamped and archived.

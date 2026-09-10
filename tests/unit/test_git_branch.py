@@ -597,12 +597,12 @@ def tomllib_loads(path: Path) -> dict:
 
 
 def test_this_trees_own_cgs_pins_exactly_the_shared_mounts():
-    """``install.cgs`` §3: branch moves reach two repos, tags reach all five.
+    """The dev spec §3: branch moves reach two repos, tags reach all five.
 
     The ticket's acceptance criterion 5 asks for this to be proved by a
     test rather than by inspection.
     """
-    document = CgsDocument.from_toml(_REPO_ROOT / "install.cgs")
+    document = CgsDocument.from_toml(_REPO_ROOT / "complexgitsync4dev.cgs")
     by_name = {repo["project_name"]: repo for repo in document.repos}
 
     private = {name for name, repo in by_name.items() if repo.get("private")}

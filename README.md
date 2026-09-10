@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.45
+# ComplexGitSync v0002.46
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -308,7 +308,21 @@ itself, and the before-committing checklist, for contributors.
 - Contact: nicolas.flipo@minesparis.psl.eu
 - AUTH: Nicolas Flipo
 <!-- - Contributors (ongoing): Simone Mazzarelli, Tristan Bourgeois, Nicolas Gallois, Pierre Guillou, Fabien Ors -->
-- AI assistance: Claude, ChatGPT, Copilot@github, Mistral Vibe 
+
+## LLM assistance
+
+Parts of this project were written with the help of large language models,
+used as a paid service under the author's direction. They are acknowledged
+here rather than credited as co-authors on commits, merges or pull
+requests, following the convention that paid assistance is acknowledged
+and not co-signed.
+
+- **Claude** (Anthropic) — including Claude Code with Claude Opus 5
+- **ChatGPT** (OpenAI)
+- **GitHub Copilot**
+- **Mistral Vibe**
+
+Responsibility for everything in this repository rests with the author.
 
 ## License
 

@@ -27,7 +27,7 @@ that other projects share. Tree-wide `branch`, `checkout` and `pull`
 propagate one name across every mount, which drags `.localSpec` and the
 agent mount off the branch they are pinned to and creates one project's
 feature branches inside repositories other projects read. That is already
-recorded in `2-2_agenticMountStep3_DevPlanTicket.md`, unfixed. A fork has no
+recorded in `agenticMountStep3`, unfixed. A fork has no
 such failure mode: it is a different kind of object, and the boundary is
 visible in its name.
 
@@ -234,7 +234,7 @@ Conditional on D1 answering "new object".
 | The isolation rule is implemented in `cli/` where the arguments are collected, breaking the CLI-mirrors-API boundary | §4's rule 1, and `cli/` must never touch subprocess/Git or parse repository identifiers |
 | A fork's ledger and the origin's diverge, and `verify` cannot reconcile them | D2: freeze-based origins keep both chains anchored to one tagged state |
 | The `@` in the workspace name breaks a shell script, a path handler, or a CI step that does not quote it | It is legal in a path and in a ref (§2) but it is not inert. Quote every use, and add a test with an `@` in the workspace name |
-| This ticket and the anonymisation work collide | They are independent by construction: `2-5_AnonymousAgent_DevPlanTicket.md` takes a plain GitHub fork and does not wait for this |
+| This ticket and the anonymisation work collide | They are independent by construction: `AnonymousAgent` takes a plain GitHub fork and does not wait for this |
 
 ## 8. Acceptance
 
@@ -289,7 +289,7 @@ is archived rather than deleted:
 - The vocabulary collision in §2 and D5 is still open: `@` as a *separator*
   in `fork<ID>@<project>` versus `@` as a *variable marker* in
   `default_branch = "@project"`. Only the second one is still planned —
-  `2-4_GitOrchestratorCommand_DevPlanTicket.md` job 1 — so whoever builds that
+  `GitOrchestratorCommand` job 1 — so whoever builds that
   token now has the symbol to themselves. That is a simplification this
   closure hands them.
 

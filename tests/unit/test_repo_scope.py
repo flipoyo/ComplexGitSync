@@ -400,10 +400,15 @@ class TestNestedPinningThroughDiscovery:
 
 
 class TestThisTreesOwnDeclaration:
-    """`install.cgs` is the worked example tutorial 4 is built on."""
+    """`complexgitsync4dev.cgs` is tutorial 4's worked example.
+
+    The developer spec, not the root `install.cgs`: the user install
+    deliberately mounts no private repository at all, which
+    `TestUserInstallDeclaration` below pins down.
+    """
 
     def test_the_two_project_owned_config_repos_are_writable(self):
-        document = CgsDocument.from_toml(_REPO_ROOT / "install.cgs")
+        document = CgsDocument.from_toml(_REPO_ROOT / "complexgitsync4dev.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
         assert by_name[".localSpec"]["writable"] is True
@@ -415,14 +420,14 @@ class TestThisTreesOwnDeclaration:
         It must not be writable here: that is the entry whose accidental
         push publishes to everyone.
         """
-        document = CgsDocument.from_toml(_REPO_ROOT / "install.cgs")
+        document = CgsDocument.from_toml(_REPO_ROOT / "complexgitsync4dev.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
         assert by_name[".agentSpec"]["private"] is True
         assert by_name[".agentSpec"]["writable"] is False
 
     def test_each_scope_selects_what_the_documentation_promises(self):
-        source = _REPO_ROOT / "install.cgs"
+        source = _REPO_ROOT / "complexgitsync4dev.cgs"
         tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
 
         def names(scope: RepoScope) -> set[str]:
@@ -432,3 +437,34 @@ class TestThisTreesOwnDeclaration:
         assert names(RepoScope.PRIVATE) == {".localSpec", ".claude"}
         assert ".agentSpec" not in names(RepoScope.WRITABLE)
         assert ".agentSpec" in names(RepoScope.ALL)
+
+
+class TestUserInstallDeclaration:
+    """`install.cgs` installs the tool for USE, and nothing more.
+
+    A user install must never mount a repository that configures how
+    ComplexGitSync is developed. That is the whole difference between this
+    file and `complexgitsync4dev.cgs`, so it is worth a test: the
+    two files are easy to edit in step by accident.
+    """
+
+    def test_no_repository_is_private(self):
+        document = CgsDocument.from_toml(_REPO_ROOT / "install.cgs")
+        assert [r["project_name"] for r in document.repos if r.get("private")] == []
+
+    def test_it_mounts_only_the_tool_and_its_documentation(self):
+        source = _REPO_ROOT / "install.cgs"
+        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+        names = {entry.name for entry in iter_tree_leaf_first(tree, RepoScope.ALL)}
+        assert names == {"ComplexGitSync", "DocComplexGitSync"}
+
+    def test_docs_does_not_discover_its_authoring_spec(self):
+        """`nested_config = "disabled"` on docs keeps DocSpec out.
+
+        `docs/DocCGS.cgs` mounts flipoyo/DocSpec, a convention for people
+        writing the documentation. Leaving discovery on would drag it into
+        every user install.
+        """
+        document = CgsDocument.from_toml(_REPO_ROOT / "install.cgs")
+        docs = next(r for r in document.repos if r["project_name"] == "DocComplexGitSync")
+        assert docs["nested_config"] == "disabled"

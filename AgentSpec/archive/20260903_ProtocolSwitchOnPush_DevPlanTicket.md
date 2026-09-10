@@ -168,7 +168,7 @@ Three shapes, needs a decision:
   exists so a user who already knows what's wrong can just pass it, and
   the hint teaches a user who doesn't. No silent auto-retry — consistent
   with this project's established "fail loud, no silent action"
-  preference (`1-3_AppendCloneMode_DevPlanTicket.md` §1.2 made the same call
+  preference (`AppendCloneMode` §1.2 made the same call
   for a different mechanism, for the same reason: a protocol switch some
   users may not want happening on their behalf is exactly the kind of
   thing that should require the user to ask for it, especially since a

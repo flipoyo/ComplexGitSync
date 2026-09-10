@@ -1,12 +1,20 @@
-# Self-standing ComplexGitSync tree. main is the project branch; repository
-# entries declare only fallback, path, nested-discovery and private overrides.
+# Installs ComplexGitSync for USE: the tool and its documentation, nothing
+# else.
+#
+#     pixi run cgitsync bootstrap install.cgs ComplexGitSync
+#
+# To work ON ComplexGitSync rather than with it, use
+# complexgitsync4dev.cgs instead — it adds the repositories that
+# configure how the project is developed (.agentSpec, .localSpec, .claude).
+#
+# nested_config on docs is "disabled" on purpose. Leaving it "auto" would
+# load docs/DocCGS.cgs, which mounts flipoyo/DocSpec — a convention for
+# people *writing* the documentation, not for people reading it. A user
+# install mounts no private repository at all.
 
 project = { name = "ComplexGitSync", default_branch = "main" }
 
 repos = [
     { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
-    { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "auto" },
-    { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", private = true },
-    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
-    { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "disabled" },
 ]

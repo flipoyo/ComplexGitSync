@@ -458,73 +458,18 @@ class TestCgsiLifecycleState:
 # ---------------------------------------------------------------------------
 
 
-class TestCgsiExampleFiles:
-    """The canonical example .cgs files in examples/ are valid and parse correctly."""
+class TestExampleFiles:
+    """Every checked-in example .cgs parses and survives a TOML round trip.
+
+    The per-file CGSi assertions that used to live here read four CGSi
+    specs from examples/; those files were deleted. conftest.py writes its
+    own copies into tmp_path, so the CGSi topology itself is still covered
+    by the classes above.
+    """
 
     @pytest.fixture(autouse=True)
     def _examples_dir(self):
         self.examples = Path(__file__).parent.parent.parent / "examples"
-
-    def test_cgsi1_example_parses(self):
-        from ComplexGitSync.cgs_format import CgsDocument
-        doc = CgsDocument.from_toml(self.examples / "CGSil1.cgs")
-        assert doc.project_name == "CGSil1"
-        assert doc.default_branch == "main"
-        assert len(doc.repos) == 3
-
-    def test_cgsi2_example_parses(self):
-        from ComplexGitSync.cgs_format import CgsDocument
-        doc = CgsDocument.from_toml(self.examples / "CGSil2.cgs")
-        assert doc.project_name == "CGSil2"
-        assert len(doc.repos) == 2
-
-    def test_cgsih1_example_parses(self):
-        from ComplexGitSync.cgs_format import CgsDocument
-        doc = CgsDocument.from_toml(self.examples / "CGSih1.cgs")
-        assert doc.project_name == "CGSih1"
-        assert len(doc.repos) == 2
-
-    def test_cgsih2_example_parses(self):
-        from ComplexGitSync.cgs_format import CgsDocument
-        doc = CgsDocument.from_toml(self.examples / "CGSih2.cgs")
-        assert doc.project_name == "CGSih2"
-        assert len(doc.repos) == 2
-
-    def test_cgsi1_example_references_cgsi2_and_cgsih1(self):
-        from ComplexGitSync.cgs_format import CgsDocument
-        doc = CgsDocument.from_toml(self.examples / "CGSil1.cgs")
-        repo_names = [r["project_name"] for r in doc.repos]
-        assert "CGSil2" in repo_names
-        assert "CGSih1" in repo_names
-
-    def test_cgsi2_example_references_cgsih1_without_disabled_nested_config(self):
-        """CGSil2.cgs references CGSih1 (duplication scenario); the absolute-path
-        dedup guard alone prevents re-registration, so no nested_config override
-        is needed here."""
-        from ComplexGitSync.cgs_format import CgsDocument
-        doc = CgsDocument.from_toml(self.examples / "CGSil2.cgs")
-        cgsih1_refs = [r for r in doc.repos if r["project_name"] == "CGSih1"]
-        assert len(cgsih1_refs) == 1
-        assert cgsih1_refs[0].get("nested_config") == "auto"
-
-    def test_cgsi2_example_cgsih1_relative_path_is_parent_sibling(self):
-        """CGSil2.cgs must reference CGSih1 at ../CGSih1 (sibling in root)."""
-        from ComplexGitSync.cgs_format import CgsDocument
-        doc = CgsDocument.from_toml(self.examples / "CGSil2.cgs")
-        cgsih1_refs = [r for r in doc.repos if r["project_name"] == "CGSih1"]
-        assert len(cgsih1_refs) == 1
-        assert cgsih1_refs[0].get("relative_path") == "../CGSih1"
-
-    def test_cgsih2_example_references_cgsih1_at_dotdot(self):
-        """CGSih2.cgs must reference CGSih1 at '..' (the cycle back-reference);
-        the absolute-path dedup guard alone prevents re-registration, so no
-        nested_config override is needed here."""
-        from ComplexGitSync.cgs_format import CgsDocument
-        doc = CgsDocument.from_toml(self.examples / "CGSih2.cgs")
-        cgsih1_refs = [r for r in doc.repos if r["project_name"] == "CGSih1"]
-        assert len(cgsih1_refs) == 1
-        assert cgsih1_refs[0].get("relative_path") == ".."
-        assert cgsih1_refs[0].get("nested_config") == "auto"
 
     def test_every_example_has_a_semantic_tree_and_toml_round_trip(self, tmp_path):
         from ComplexGitSync.cgs_format import CgsDocument, parse_cgs
