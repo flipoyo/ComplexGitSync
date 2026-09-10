@@ -22,6 +22,7 @@ from ComplexGitSync.git_repo import (
     SyncState,
     WorkingRepo,
 )
+from ComplexGitSync.git_runner import MergeCheckResult
 from ComplexGitSync.git_tree import (
     GitTree,
     TreeLifecycleState,
@@ -41,6 +42,7 @@ from ComplexGitSync.operations import (
     merge_source_ref,
     merge_status,
     merge_tree,
+    merge_tree_one_at_a_time,
     propagate_global_branch,
     push_tree,
     refresh_private_tree,
@@ -221,6 +223,8 @@ class _FakeGitRunnerForOperations:
         self._has_upstream: dict[Path, bool] = {}
         self._merge_in_progress: dict[Path, bool] = {}
         self._unmergeable: dict[Path, set[str]] = {}
+        self._conflicting_paths: dict[Path, list[Path]] = {}
+        self.mergetool_opened: list[Path] = []
         self.merged: list[tuple[Path, str]] = []
         self.merge_aborted: list[Path] = []
         self.fetched: list[tuple[Path, str, str | None]] = []
@@ -251,11 +255,29 @@ class _FakeGitRunnerForOperations:
         self.merged.append((path, ref_name))
         self.command_order.append(("merge", path))
 
-    def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> bool:
-        return ref_name not in self._unmergeable.get(Path(repo_path), set())
+    def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> MergeCheckResult:
+        path = Path(repo_path)
+        if ref_name in self._unmergeable.get(path, set()):
+            return MergeCheckResult(
+                is_clean=False,
+                conflicting_paths=list(self._conflicting_paths.get(path, ())),
+            )
+        return MergeCheckResult(is_clean=True, conflicting_paths=[])
 
     def merge_abort(self, repo_path: Path | str) -> None:
         self.merge_aborted.append(Path(repo_path))
+
+    def configured_merge_tool(self, repo_path: Path | str) -> str | None:
+        return None
+
+    def mergetool(
+        self,
+        repo_path: Path | str,
+        *,
+        tool: str | None = None,
+        tool_command: str | None = None,
+    ) -> None:
+        self.mergetool_opened.append(Path(repo_path))
 
     def fetch(
         self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None
@@ -1500,6 +1522,93 @@ class TestMergeTree:
 
         message = str(excinfo.value)
         assert "leaf" in message and "project" in message
+
+    def test_the_error_names_every_conflicting_file_under_its_repository(self, tmp_path):
+        """The reporting case: 'ComplexGitSync: tests/unit/test_documents.py'."""
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root = registry.get("root").absolute_path
+        for repo in registry.values():
+            runner._current_branches[repo.absolute_path] = "main"
+            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+        runner._unmergeable[root] = {"multi-branch"}
+        runner._conflicting_paths[root] = [
+            Path("tests/unit/test_documents.py"),
+            Path("docs/MASTER.pdf"),
+        ]
+
+        with pytest.raises(GitSyncError) as excinfo:
+            merge_tree(registry, runner, "multi-branch")
+
+        message = str(excinfo.value)
+        assert "project: tests/unit/test_documents.py, docs/MASTER.pdf" in message
+
+    def test_resolve_keeps_what_it_merged_and_names_where_it_stopped(self, tmp_path):
+        """The trade --resolve makes: partial progress, reported exactly."""
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root = registry.get("root").absolute_path
+        for repo in registry.values():
+            runner._current_branches[repo.absolute_path] = "main"
+            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+        # Leaf-first order, so the leaf merges before the root conflicts.
+        runner._unmergeable[root] = {"multi-branch"}
+        runner._conflicting_paths[root] = [Path("a.txt")]
+
+        outcome = merge_tree_one_at_a_time(registry, runner, "multi-branch")
+
+        leaf = registry.get("root:deps/leaf").absolute_path
+        assert (leaf, "multi-branch") in runner.merged, "the clean leaf must merge"
+        assert outcome.stopped_at == "project"
+        assert outcome.stopped_paths == (Path("a.txt"),)
+
+    def test_resolve_leaves_the_conflicted_repo_mid_merge(self, tmp_path):
+        """A merge tool needs the conflict written to the worktree."""
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root = registry.get("root").absolute_path
+        for repo in registry.values():
+            runner._current_branches[repo.absolute_path] = "main"
+            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+        runner._unmergeable[root] = {"multi-branch"}
+
+        outcome = merge_tree_one_at_a_time(registry, runner, "multi-branch")
+
+        assert outcome.stopped_at == "project"
+        assert runner.merge_aborted == [], "the conflict must be left to resolve"
+
+    def test_plain_merge_still_writes_nothing_when_resolve_would_progress(self, tmp_path):
+        """--resolve must not weaken the default."""
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root = registry.get("root").absolute_path
+        for repo in registry.values():
+            runner._current_branches[repo.absolute_path] = "main"
+            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+        runner._unmergeable[root] = {"multi-branch"}
+
+        with pytest.raises(GitSyncError):
+            merge_tree(registry, runner, "multi-branch")
+
+        assert runner.merged == [], "the clean leaf must not have been merged"
+
+    def test_a_conflicting_repo_is_reported_by_the_dry_run_too(self, tmp_path):
+        """The dry run must not promise a merge that merge_tree then refuses."""
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root = registry.get("root").absolute_path
+        for repo in registry.values():
+            runner._current_branches[repo.absolute_path] = "main"
+            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+        runner._unmergeable[root] = {"multi-branch"}
+        runner._conflicting_paths[root] = [Path("a.txt")]
+
+        root_repo = registry.get("root")
+        source, status, paths = merge_status(root_repo, runner, "multi-branch")
+
+        assert status == "conflicts"
+        assert paths == (Path("a.txt"),)
+        assert runner.merged == [], "asking must not merge anything"
 
     def test_a_repo_with_no_such_branch_is_skipped_not_failed(self, tmp_path):
         """A private/local repo may simply have no branch for this one yet."""

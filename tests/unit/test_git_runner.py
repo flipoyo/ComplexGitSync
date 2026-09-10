@@ -17,7 +17,7 @@ import pytest
 
 from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.git_repo import SyncState
-from ComplexGitSync.git_runner import GitRunner, GitRunnerProtocol
+from ComplexGitSync.git_runner import GitRunner, GitRunnerProtocol, MergeCheckResult
 
 # ---------------------------------------------------------------------------
 # stage_all / force_pull — real subprocess behaviour
@@ -90,7 +90,9 @@ class TestMergePrimitives:
         repo_path = _repo_with_feature_branch(tmp_path, diverge=False)
         runner = GitRunner()
 
-        assert runner.can_merge_cleanly(repo_path, "feat") is True
+        result = runner.can_merge_cleanly(repo_path, "feat")
+        assert result.is_clean is True
+        assert result.conflicting_paths == []
         runner.merge(repo_path, "feat")
 
         assert (repo_path / "a.txt").read_text(encoding="utf-8") == "feature\n"
@@ -99,7 +101,9 @@ class TestMergePrimitives:
         repo_path = _repo_with_feature_branch(tmp_path, diverge=True)
         runner = GitRunner()
 
-        assert runner.can_merge_cleanly(repo_path, "feat") is False
+        result = runner.can_merge_cleanly(repo_path, "feat")
+        assert result.is_clean is False
+        assert len(result.conflicting_paths) > 0
 
         with pytest.raises(GitSyncError):
             runner.merge(repo_path, "feat")
@@ -110,10 +114,11 @@ class TestMergePrimitives:
         assert (repo_path / "a.txt").read_text(encoding="utf-8") == "mainside\n"
 
     def test_an_unknown_ref_is_not_clean_and_does_not_raise(self, tmp_path):
-        """A question, not an operation: the caller gets False, not an error."""
+        """A question, not an operation: the caller gets is_clean=False, not an error."""
         repo_path = _repo_with_feature_branch(tmp_path, diverge=False)
 
-        assert GitRunner().can_merge_cleanly(repo_path, "no-such-branch") is False
+        result = GitRunner().can_merge_cleanly(repo_path, "no-such-branch")
+        assert result.is_clean is False
 
     def test_asking_leaves_the_repository_untouched(self, tmp_path):
         """The property that lets a preflight ask about every repo safely."""
@@ -121,7 +126,8 @@ class TestMergePrimitives:
         runner = GitRunner()
         before = runner.rev_parse_head(repo_path)
 
-        runner.can_merge_cleanly(repo_path, "feat")
+        result = runner.can_merge_cleanly(repo_path, "feat")
+        assert result.is_clean is False
 
         assert runner.rev_parse_head(repo_path) == before
         assert runner.has_unresolved_merge(repo_path) is False
@@ -145,6 +151,209 @@ class TestMergePrimitives:
 
         assert runner.branch_known(repo_path, "feat") is True
         assert runner.branch_known(repo_path, "no-such-branch") is False
+
+    def test_a_binary_conflict_is_predicted_as_conflict_not_clean(self, tmp_path):
+        """Binary files changed on both sides are conflicts, even without markers."""
+        repo_path = _repo_with_binary_conflict(tmp_path)
+        runner = GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path))
+
+        result = runner.can_merge_cleanly(repo_path, "feat")
+        assert result.is_clean is False
+        assert len(result.conflicting_paths) > 0
+
+        with pytest.raises(GitSyncError):
+            runner.merge(repo_path, "feat")
+
+    def test_changed_in_both_without_conflict_is_clean(self, tmp_path):
+        """A file changed on both sides but with no conflict is not a conflict."""
+        repo_path = _repo_with_clean_change_on_both_sides(tmp_path)
+        runner = GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path))
+
+        result = runner.can_merge_cleanly(repo_path, "feat")
+        assert result.is_clean is True
+        assert result.conflicting_paths == []
+        runner.merge(repo_path, "feat")
+
+    def test_only_the_conflicting_file_is_named_not_every_changed_one(self, tmp_path):
+        """`changed in both` is not a conflict: naming it would misreport."""
+        repo_path = _repo_with_one_clean_and_one_conflicting_file(tmp_path)
+
+        for runner in (
+            GitRunner(),
+            GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path)),
+        ):
+            result = runner.can_merge_cleanly(repo_path, "feat")
+
+            assert result.is_clean is False
+            assert result.conflicting_paths == [Path("conflict.txt")]
+
+
+def _repo_with_binary_conflict(tmp_path) -> Path:
+    """A real repository with a binary file conflicted on main and feat."""
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir(parents=True)
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=repo_path, check=True, capture_output=True)
+
+    git("init", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Test")
+
+    (repo_path / "f.bin").write_bytes(b"\x00\x01\x02\x03")
+    git("add", "-A")
+    git("commit", "-m", "base")
+
+    git("checkout", "-b", "feat")
+    (repo_path / "f.bin").write_bytes(b"\x00\x01\x02\x04")
+    git("add", "-A")
+    git("commit", "-m", "feature change")
+
+    git("checkout", "main")
+    (repo_path / "f.bin").write_bytes(b"\x00\x01\x02\x05")
+    git("add", "-A")
+    git("commit", "-m", "main change")
+
+    return repo_path
+
+
+class TestMergeTool:
+    """``git mergetool``, driven against a real conflicted repository.
+
+    A stub stands in for the editor, which is what makes the contract
+    testable: the arguments it receives, and the state git leaves behind.
+    """
+
+    def _conflicted(self, tmp_path) -> Path:
+        repo_path = _repo_with_feature_branch(tmp_path, diverge=True)
+        subprocess.run(["git", "merge", "feat"], cwd=repo_path, capture_output=True)
+        return repo_path
+
+    def _stub_tool(self, tmp_path) -> str:
+        """An editor stand-in that resolves by taking 'theirs'."""
+        stub = tmp_path / "stub-editor"
+        stub.write_text(
+            '#!/bin/sh\ncp "$1" "$4"\n',
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        return f"{stub} $REMOTE $LOCAL $BASE $MERGED"
+
+    def test_it_resolves_and_git_stages_the_file_itself(self, tmp_path):
+        repo_path = self._conflicted(tmp_path)
+
+        GitRunner().mergetool(
+            repo_path, tool="stub", tool_command=self._stub_tool(tmp_path)
+        )
+
+        unresolved = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=U"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+
+        assert unresolved == []
+        assert "a.txt" in staged, "git stages what the tool resolved; do not re-stage"
+
+    def test_it_leaves_no_orig_backup_behind(self, tmp_path):
+        """`.orig` files are untracked, so status would call the repo dirty."""
+        repo_path = self._conflicted(tmp_path)
+
+        GitRunner().mergetool(
+            repo_path, tool="stub", tool_command=self._stub_tool(tmp_path)
+        )
+
+        assert list(repo_path.glob("*.orig")) == []
+
+    def test_a_tool_the_user_configured_is_reported(self, tmp_path):
+        """Whatever they chose wins over anything this project suggests."""
+        repo_path = _repo_with_feature_branch(tmp_path, diverge=False)
+        runner = GitRunner()
+
+        assert runner.configured_merge_tool(repo_path) is None
+
+        subprocess.run(
+            ["git", "config", "merge.tool", "theirs-favourite"],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+        )
+        assert runner.configured_merge_tool(repo_path) == "theirs-favourite"
+
+
+def _repo_with_one_clean_and_one_conflicting_file(tmp_path) -> Path:
+    """Both branches touch two files; only one of them actually conflicts.
+
+    The shape that separates "changed in both" from a real conflict, and the
+    one both Git forms have to answer identically.
+    """
+    repo_path = tmp_path / "mixed"
+    repo_path.mkdir(parents=True)
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=repo_path, check=True, capture_output=True)
+
+    def write(clean: str, conflict: str) -> None:
+        (repo_path / "clean.txt").write_text(clean, encoding="utf-8")
+        (repo_path / "conflict.txt").write_text(conflict, encoding="utf-8")
+
+    git("init", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Test")
+    write("l1\nl2\nl3\nl4\n", "x1\nx2\nx3\n")
+    git("add", "-A")
+    git("commit", "-m", "base")
+
+    git("checkout", "-b", "feat")
+    write("l1\nFEAT\nl3\nl4\n", "x1\nFEATSIDE\nx3\n")
+    git("add", "-A")
+    git("commit", "-m", "feature")
+
+    git("checkout", "main")
+    write("l1\nl2\nl3\nMAIN\n", "x1\nMAINSIDE\nx3\n")
+    git("add", "-A")
+    git("commit", "-m", "main change")
+    return repo_path
+
+
+def _repo_with_clean_change_on_both_sides(tmp_path) -> Path:
+    """Repository where both branches change the same file but without conflict.
+
+    Both branches change different lines, so the merge applies cleanly.
+    This tests that "changed in both" without markers is not a conflict.
+    """
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir(parents=True)
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=repo_path, check=True, capture_output=True)
+
+    git("init", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Test")
+
+    (repo_path / "file.txt").write_text("line1\nline2\nline3\nline4\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "base")
+
+    git("checkout", "-b", "feat")
+    (repo_path / "file.txt").write_text("line1\nFEAT\nline3\nline4\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "feature change line 2")
+
+    git("checkout", "main")
+    (repo_path / "file.txt").write_text("line1\nline2\nline3\nMAIN\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "main change line 4")
+
+    return repo_path
 
 
 def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch, tmp_path):
@@ -444,10 +653,18 @@ class _FakeGitRunner:
     ) -> None:
         return None
 
-    def can_merge_cleanly(self, repo_path, ref_name: str) -> bool:
-        return True
+    def can_merge_cleanly(self, repo_path, ref_name: str) -> MergeCheckResult:
+        return MergeCheckResult(is_clean=True, conflicting_paths=[])
 
     def merge_abort(self, repo_path) -> None:
+        return None
+
+    def configured_merge_tool(self, repo_path) -> str | None:
+        return None
+
+    def mergetool(
+        self, repo_path, *, tool: str | None = None, tool_command: str | None = None
+    ) -> None:
         return None
 
     def fetch(self, repo_path, *, remote: str = "origin", ref_name: str | None = None) -> None:
@@ -643,9 +860,8 @@ class TestLegacyMergeCheckOnUndecodableOutput:
         )
         runner = GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path))
 
-        # The assertion is that this returns at all rather than raising
-        # UnicodeDecodeError; what it returns is the next test's business.
-        assert isinstance(runner.can_merge_cleanly(repo_path, "feat"), bool)
+        result = runner.can_merge_cleanly(repo_path, "feat")
+        assert isinstance(result, MergeCheckResult)
 
     def test_a_conflict_inside_undecodable_content_is_still_a_conflict(self, tmp_path):
         """The dangerous failure mode: never approve a merge that conflicts."""
@@ -654,7 +870,8 @@ class TestLegacyMergeCheckOnUndecodableOutput:
         )
         runner = GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path))
 
-        assert runner.can_merge_cleanly(repo_path, "feat") is False
+        result = runner.can_merge_cleanly(repo_path, "feat")
+        assert result.is_clean is False
 
         with pytest.raises(GitSyncError):
             runner.merge(repo_path, "feat")
@@ -665,7 +882,9 @@ class TestLegacyMergeCheckOnUndecodableOutput:
         )
         runner = GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path))
 
-        assert runner.can_merge_cleanly(repo_path, "feat") is True
+        result = runner.can_merge_cleanly(repo_path, "feat")
+        assert result.is_clean is True
+        assert result.conflicting_paths == []
 
     def test_genuinely_binary_content_answers_instead_of_crashing(self, tmp_path):
         """The shape of the real trigger: a tracked PDF, NUL bytes and all."""
@@ -673,7 +892,8 @@ class TestLegacyMergeCheckOnUndecodableOutput:
         repo_path = _repo_with_undecodable_file(tmp_path, diverge=True, payload=pdf_like)
         runner = GitRunner(executable=_git_that_lacks_merge_tree_write_tree(tmp_path))
 
-        assert isinstance(runner.can_merge_cleanly(repo_path, "feat"), bool)
+        result = runner.can_merge_cleanly(repo_path, "feat")
+        assert isinstance(result, MergeCheckResult)
 
     def test_asking_leaves_head_index_and_worktree_untouched(self, tmp_path):
         """A preflight must not be able to damage what it is inspecting."""

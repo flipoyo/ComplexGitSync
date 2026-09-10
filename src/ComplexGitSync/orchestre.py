@@ -124,6 +124,7 @@ from .master import MasterConfig
 from .operations import (
     BranchTopologyReport,
     RepoOutcome,
+    ResolveOutcome,
     tree_project_name,
 )
 from .operations import (
@@ -3019,6 +3020,76 @@ class ComplexGitSyncClient:
         self._log_event("merge_end", project_branch=project_branch, merged=len(merged))
         return merged
 
+    def merge_resolve(
+        self,
+        project_branch: str,
+        *,
+        private: bool = False,
+        ff_only: bool = False,
+        no_ff: bool = False,
+    ) -> ResolveOutcome:
+        """Merge one repository at a time, stopping at the first conflict.
+
+        Decision recorded: :meth:`merge` stays the default. It merges nothing
+        when any repository conflicts, so it can never leave the conflicted
+        worktree a merge tool needs. This gives that guarantee up on purpose,
+        which is why it is opt-in. Requires a ``READY`` registry.
+        """
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        scope = resolve_command_scope(registry, private=private, command="merge")
+        self._log_event(
+            "merge_resolve_start", project_branch=project_branch, scope=scope.value
+        )
+        outcome = self.orchestre.git_tree.git.merge_one_at_a_time(
+            self.git_runner,
+            project_branch,
+            scope=scope,
+            ff_only=ff_only,
+            no_ff=no_ff,
+        )
+        self._log_tree_transition(
+            previous_state, registry.lifecycle_state, reason="merge --resolve"
+        )
+        self._log_event(
+            "merge_resolve_end",
+            project_branch=project_branch,
+            merged=len(outcome.merged),
+            stopped_at=outcome.stopped_at,
+        )
+        return outcome
+
+    def open_merge_tool(self, repo_name: str) -> str | None:
+        """Open one repository's conflicts in a merge tool.
+
+        Returns ``None`` once the tool has run, or the command to run by hand
+        when there is no tool to open — a missing editor is a normal outcome
+        here, not an error.
+        """
+        registry = self.get_dependency_registry()
+        repo = registry.get(repo_name)
+        tool, command = self._resolve_merge_tool(repo.absolute_path)
+        if tool is None:
+            return (
+                f"cd {repo.absolute_path} && git mergetool  "
+                f"# then: cgitsync add && cgitsync commit"
+            )
+        self.git_runner.mergetool(
+            repo.absolute_path, tool=tool, tool_command=command
+        )
+        return None
+
+    def _resolve_merge_tool(self, repo_path: Path) -> tuple[str | None, str | None]:
+        # The user's own merge.tool always wins; VS Code is only a suggestion
+        # when they configured nothing. Argument order is git's, not VS Code's
+        # docs': $REMOTE is theirs and $LOCAL ours.
+        configured = self.git_runner.configured_merge_tool(repo_path)
+        if configured:
+            return configured, None
+        if shutil.which("code") and os.environ.get("DISPLAY"):
+            return "vscode", "code --wait --merge $REMOTE $LOCAL $BASE $MERGED"
+        return None, None
+
     def refresh_private(self) -> tuple[tuple[str, str], ...]:
         """Bring each private/local repository up to date with its base branch.
 
@@ -3046,18 +3117,18 @@ class ComplexGitSyncClient:
         project_branch: str,
         *,
         private: bool = False,
-    ) -> tuple[tuple[str, str, str], ...]:
+    ) -> tuple[tuple[str, str, str, tuple[Path, ...]], ...]:
         """What :meth:`merge` would do, in order, without doing it.
 
-        One ``(repo_name, source_ref, status)`` triple per in-scope
-        repository, leaf-first. ``source_ref`` is the branch that repository
-        would actually merge, which for a private/local repository is derived
-        from *project_branch* rather than equal to it — seeing that
+        One ``(repo_name, source_ref, status, conflicting_paths)`` row per
+        in-scope repository, leaf-first. ``source_ref`` is the branch that
+        repository would actually merge, which for a private/local repository
+        is derived from *project_branch* rather than equal to it — seeing that
         translation before it runs is the point of a merge dry run.
 
-        ``status`` is ``"merge"``, ``"already-on-it"`` or ``"no-branch"``,
-        decided by the same function :meth:`merge` uses, so a dry run cannot
-        promise something the merge then refuses.
+        ``status`` is ``"merge"``, ``"already-on-it"``, ``"no-branch"`` or
+        ``"conflicts"``, decided by the same function :meth:`merge` uses, so a
+        dry run cannot promise something the merge then refuses.
         """
         from .operations import merge_status
 

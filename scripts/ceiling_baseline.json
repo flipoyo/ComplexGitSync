@@ -32,7 +32,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 15,
-      "loc": 1146,
+      "loc": 1215,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -77,12 +77,12 @@
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 598,
-      "public_symbols": 2
+      "loc": 673,
+      "public_symbols": 3
     },
     "git_tree.py": {
-      "internal_imports": 32,
-      "loc": 1229,
+      "internal_imports": 33,
+      "loc": 1248,
       "public_symbols": 26
     },
     "gts_document.py": {
@@ -112,12 +112,12 @@
     },
     "operations.py": {
       "internal_imports": 20,
-      "loc": 1279,
-      "public_symbols": 23
+      "loc": 1348,
+      "public_symbols": 25
     },
     "orchestre.py": {
-      "internal_imports": 82,
-      "loc": 3683,
+      "internal_imports": 83,
+      "loc": 3746,
       "public_symbols": 13
     },
     "paths.py": {

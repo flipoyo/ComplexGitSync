@@ -310,6 +310,15 @@ def _register_merge(subparser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Print what would be merged, in order, without merging anything.",
     )
+    subparser.add_argument(
+        "--resolve",
+        action="store_true",
+        help=(
+            "Merge one repository at a time and stop at the first conflict, "
+            "then open it in a merge tool. Gives up the guarantee that a "
+            "conflict anywhere leaves the tree untouched."
+        ),
+    )
     subparser.set_defaults(handler=_handle_merge)
 
 
@@ -676,6 +685,7 @@ def _handle_merge(args: argparse.Namespace) -> int:
             ff_only=args.ff_only,
             no_ff=args.no_ff,
             dry_run=args.dry_run,
+            resolve=args.resolve,
         ),
     )
 
@@ -1004,6 +1014,7 @@ def _execute_merge(
     ff_only: bool = False,
     no_ff: bool = False,
     dry_run: bool = False,
+    resolve: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     scope = _resolve_write_scope(client, private=private, command="merge")
@@ -1018,6 +1029,14 @@ def _execute_merge(
         )
         print(_format_tree_state_line(client.get_tree_state()))
         return 0
+    if resolve:
+        return _execute_merge_resolve(
+            client,
+            project_branch=project_branch,
+            private=private,
+            ff_only=ff_only,
+            no_ff=no_ff,
+        )
     merged = client.merge(
         project_branch, private=private, ff_only=ff_only, no_ff=no_ff
     )
@@ -1028,6 +1047,52 @@ def _execute_merge(
     print(_format_tree_state_line(client.get_tree_state()))
     _print_repo_tree_result(client)
     return 0
+
+
+def _execute_merge_resolve(
+    client: ComplexGitSyncClient,
+    *,
+    project_branch: str,
+    private: bool,
+    ff_only: bool,
+    no_ff: bool,
+) -> int:
+    # The warning prints before the writes, not after: this is the one merge
+    # mode that can leave the tree half-merged.
+    print(
+        "note: --resolve merges one repository at a time and stops at the "
+        "first conflict. Repositories merged before it stay merged, so the "
+        "tree can be left partly merged. Plain 'cgitsync merge' merges "
+        "nothing when any repository conflicts."
+    )
+    outcome = client.merge_resolve(
+        project_branch, private=private, ff_only=ff_only, no_ff=no_ff
+    )
+    for repo_name, source in outcome.merged:
+        print(f"merged {repo_name} <- {source}")
+
+    if outcome.stopped_at is None:
+        if not outcome.merged:
+            print(
+                f"merged nothing: every repository in scope already has "
+                f"{project_branch!r}"
+            )
+        print(_format_tree_state_line(client.get_tree_state()))
+        _print_repo_tree_result(client)
+        return 0
+
+    listed = ", ".join(str(path) for path in outcome.stopped_paths)
+    print(f"stopped at {outcome.stopped_at}: {listed or '(no file named)'}")
+    if outcome.not_reached:
+        print(f"not reached: {', '.join(outcome.not_reached)}")
+
+    manual = client.open_merge_tool(outcome.stopped_at)
+    if manual is None:
+        print(f"merge tool closed. Review {outcome.stopped_at}, then commit.")
+    else:
+        print(f"no merge tool available. Resolve by hand:\n  {manual}")
+    print(_format_tree_state_line(client.get_tree_state()))
+    return 1
 
 
 def _print_merge_plan(
@@ -1049,11 +1114,23 @@ def _print_merge_plan(
         "merge": "",
         "already-on-it": " (already on it — nothing to merge into)",
         "no-branch": " (no such branch here — skipped)",
+        "conflicts": " (conflicts — would block the merge)",
     }
-    rows = [f"{name} <- {source}{labels[status]}" for name, source, status in plan]
+    rows = [f"{name} <- {source}{labels[status]}" for name, source, status, _ in plan]
     print(f"dry_run=true command=merge scope={scope_value}")
     print("plan_order=" + (" -> ".join(rows) if rows else "(no repository in scope)"))
-    if plan and all(status != "merge" for _, _, status in plan):
+
+    blocked = [(name, paths) for name, _, status, paths in plan if status == "conflicts"]
+    if blocked:
+        print("conflicts=true")
+        for name, paths in blocked:
+            listed = ", ".join(str(path) for path in paths) or "(no file named)"
+            print(f"  {name}: {listed}")
+        print(
+            "note: merge would refuse and merge nothing. Resolve these files, "
+            "or run 'cgitsync merge --resolve' to merge one repository at a time."
+        )
+    elif plan and all(status != "merge" for _, _, status, _ in plan):
         print(
             f"note: nothing would be merged. Check out the branch you want to merge "
             f"*into* first — 'cgitsync checkout <target>' — then merge {project_branch}."

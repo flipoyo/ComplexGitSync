@@ -603,24 +603,36 @@ def merge_status(
     project_branch: str,
     *,
     project_name: str | None = None,
-) -> tuple[str, str]:
-    """What ``merge`` would do to *repo*, as ``(source_ref, status)``.
+) -> tuple[str, str, tuple[Path, ...]]:
+    """What ``merge`` would do to *repo*, as ``(source_ref, status, paths)``.
 
     The one place a repository's fate is decided, so the dry run and the
     merge itself cannot disagree. ``status`` is ``"merge"``,
-    ``"already-on-it"`` (the repository is sitting on the branch it would
-    merge, so there is nothing to merge it into) or ``"no-branch"`` (nothing
-    to merge from — normal for a private/local repository with no branch for
-    this project branch yet).
+    ``"already-on-it"`` (nothing to merge into), ``"no-branch"`` (nothing to
+    merge from) or ``"conflicts"``. ``paths`` is empty for every status but
+    the last, and empty for that one too when git blamed no file.
     """
     source = merge_source_ref(repo, project_branch, project_name=project_name)
     if git_runner.current_branch(repo.absolute_path) == source:
-        return source, "already-on-it"
+        return source, "already-on-it", ()
     if not git_runner.branch_known(
         repo.absolute_path, source, remote=repo.remote_name or "origin"
     ):
-        return source, "no-branch"
-    return source, "merge"
+        return source, "no-branch", ()
+    check = git_runner.can_merge_cleanly(repo.absolute_path, source)
+    if not check.is_clean:
+        return source, "conflicts", tuple(check.conflicting_paths)
+    return source, "merge", ()
+
+
+def _describe_merge_conflict(
+    repo_name: str, source: str, paths: Sequence[Path]
+) -> str:
+    # Falls back to the branch when git named no file: an unmergeable
+    # repository conflicts without blaming one.
+    if paths:
+        return f"{repo_name}: {', '.join(str(path) for path in paths)}"
+    return f"{repo_name}: merging {source!r} conflicts"
 
 
 def merge_tree(
@@ -664,7 +676,7 @@ def merge_tree(
     on_source: list[str] = []
     project_name = tree_project_name(tree)
     for repo in iter_tree_leaf_first(tree, scope):
-        source, status = merge_status(
+        source, status, conflicts = merge_status(
             repo, git_runner, project_branch, project_name=project_name
         )
         if status == "already-on-it":
@@ -675,8 +687,8 @@ def merge_tree(
             continue
         if status == "no-branch":
             continue
-        if not git_runner.can_merge_cleanly(repo.absolute_path, source):
-            blocked.append(f"{repo.name}: merging {source!r} conflicts")
+        if status == "conflicts":
+            blocked.append(_describe_merge_conflict(repo.name, source, conflicts))
             continue
         planned.append((repo, source))
 
@@ -703,6 +715,78 @@ def merge_tree(
 
     tree.recompute_tree_state()
     return tuple(merged)
+
+
+@dataclass
+class ResolveOutcome:
+    """Where ``merge --resolve`` got to: merged, then stopped, then untouched.
+
+    A resolve run can leave the tree partly merged, so the caller has to be
+    able to say exactly where it stopped.
+    """
+
+    merged: tuple[tuple[str, str], ...]
+    stopped_at: str | None
+    stopped_paths: tuple[Path, ...]
+    not_reached: tuple[str, ...]
+
+
+def merge_tree_one_at_a_time(
+    tree: WorkingGitTree,
+    git_runner: GitRunner,
+    project_branch: str,
+    *,
+    scope: RepoScope = RepoScope.PROJECT,
+    ff_only: bool = False,
+    no_ff: bool = False,
+) -> ResolveOutcome:
+    """Merge leaf-first, stopping at the first repository that conflicts.
+
+    The opposite trade from :func:`merge_tree`: repositories ahead of the
+    conflict stay merged, and the conflict is left in the worktree for a
+    merge tool to open.
+    """
+    _assert_ready(tree)
+
+    project_name = tree_project_name(tree)
+    repos = list(iter_tree_leaf_first(tree, scope))
+    merged: list[tuple[str, str]] = []
+
+    for position, repo in enumerate(repos):
+        source, status, conflicts = merge_status(
+            repo, git_runner, project_branch, project_name=project_name
+        )
+        if status in ("already-on-it", "no-branch"):
+            continue
+        if status == "conflicts":
+            # Let the merge run and fail: that is what writes the conflict
+            # markers a merge tool needs. The error is swallowed on purpose —
+            # the caller is told where the run stopped instead, because it
+            # also has to be told what was merged before that.
+            try:
+                git_runner.merge(
+                    repo.absolute_path, source, ff_only=ff_only, no_ff=no_ff
+                )
+            except GitSyncError:
+                pass
+            tree.recompute_tree_state()
+            return ResolveOutcome(
+                merged=tuple(merged),
+                stopped_at=repo.name,
+                stopped_paths=conflicts,
+                not_reached=tuple(r.name for r in repos[position + 1 :]),
+            )
+        before = git_runner.rev_parse_head(repo.absolute_path)
+        git_runner.merge(repo.absolute_path, source, ff_only=ff_only, no_ff=no_ff)
+        after = git_runner.rev_parse_head(repo.absolute_path)
+        repo.commit_sha = after
+        if before != after:
+            merged.append((repo.name, source))
+
+    tree.recompute_tree_state()
+    return ResolveOutcome(
+        merged=tuple(merged), stopped_at=None, stopped_paths=(), not_reached=()
+    )
 
 
 def refresh_private_tree(
@@ -751,8 +835,11 @@ def refresh_private_tree(
         source = f"{remote}/{base}"
         if not git_runner.branch_known(repo.absolute_path, base, remote=remote):
             continue
-        if not git_runner.can_merge_cleanly(repo.absolute_path, source):
-            blocked.append(f"{repo.name}: merging {source!r} conflicts")
+        merge_check = git_runner.can_merge_cleanly(repo.absolute_path, source)
+        if not merge_check.is_clean:
+            blocked.append(
+                _describe_merge_conflict(repo.name, source, merge_check.conflicting_paths)
+            )
             continue
         planned.append((repo, source))
 

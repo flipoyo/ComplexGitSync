@@ -33,7 +33,7 @@ from ComplexGitSync.git_repo import (
 )
 from ComplexGitSync.git_runner import GitRunner
 from ComplexGitSync.git_tree import WorkingGitTree
-from ComplexGitSync.operations import merge_tree
+from ComplexGitSync.operations import merge_tree, merge_tree_one_at_a_time
 
 # Invalid UTF-8, starting with the byte from the reported traceback.
 _INVALID_UTF8 = b"\xdb!\xfe\xff"
@@ -172,6 +172,35 @@ def test_the_error_names_the_repository_that_blocked_it(tree_with_one_blocked_re
         merge_tree(tree_with_one_blocked_repo, GitRunner(), _MERGE_BRANCH)
 
     assert "project" in str(excinfo.value)
+
+
+def test_the_error_names_the_file_that_blocked_it(tree_with_one_blocked_repo):
+    """Naming the repository is not enough: say which file, on a real tree."""
+    with pytest.raises(GitSyncError) as excinfo:
+        merge_tree(tree_with_one_blocked_repo, GitRunner(), _MERGE_BRANCH)
+
+    assert "payload.bin" in str(excinfo.value)
+
+
+def test_resolve_merges_the_clean_leaf_and_stops_at_the_conflict(
+    tree_with_one_blocked_repo,
+):
+    """--resolve trades the all-or-nothing guarantee for real progress."""
+    tree = tree_with_one_blocked_repo
+    runner = GitRunner()
+    leaf = tree.get("root:deps/leaf")
+    leaf_before = runner.rev_parse_head(leaf.absolute_path)
+
+    outcome = merge_tree_one_at_a_time(tree, runner, _MERGE_BRANCH)
+
+    assert outcome.stopped_at == "project"
+    assert Path("payload.bin") in outcome.stopped_paths
+    assert runner.rev_parse_head(leaf.absolute_path) != leaf_before, (
+        "the clean leaf must actually have merged"
+    )
+    assert runner.has_unresolved_merge(tree.get("root").absolute_path), (
+        "the conflict must be left in the worktree for a merge tool"
+    )
 
 
 def test_the_check_is_read_only_even_when_it_cannot_decode(tree_with_one_blocked_repo):

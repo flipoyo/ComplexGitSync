@@ -225,6 +225,27 @@ class GitTreeGitCommands:
             no_ff=no_ff,
         )
 
+    def merge_one_at_a_time(
+        self,
+        git_runner: GitRunner,
+        project_branch: str,
+        *,
+        tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.PROJECT,
+        ff_only: bool = False,
+        no_ff: bool = False,
+    ):
+        from .operations import merge_tree_one_at_a_time
+
+        return merge_tree_one_at_a_time(
+            self._resolve_tree(tree),
+            git_runner,
+            project_branch,
+            scope=scope,
+            ff_only=ff_only,
+            no_ff=no_ff,
+        )
+
     def push(
         self,
         git_runner: GitRunner,

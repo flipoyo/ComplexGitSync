@@ -42,6 +42,10 @@ _GIT_OUTPUT_ERRORS = "replace"
 #: could not merge. Bytes, because the surrounding content is arbitrary.
 _MERGE_CONFLICT_MARKER = b"<<<<<<<"
 
+#: What the legacy form writes to stderr for a binary file it could not
+#: merge. A binary conflict prints no marker, so this is the only sign of it.
+_BINARY_CONFLICT_WARNING = b"Cannot merge binary files"
+
 
 def _decode_git_output(raw: bytes | str) -> str:
     """Decode one stream of git output under this module's decoding policy.
@@ -71,6 +75,56 @@ def _non_interactive_git_env() -> dict[str, str]:
     git fails fast with a normal, catchable error instead of hanging.
     """
     return {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "echo"}
+
+
+@dataclass
+class MergeCheckResult:
+    """Would this merge conflict, and in which files? Paths are repo-relative."""
+
+    is_clean: bool
+    conflicting_paths: list[Path]
+
+
+def _extract_paths_from_modern_merge_tree(output: str) -> list[Path]:
+    # Git prints three blocks, split by a blank line: the merged tree's id,
+    # one conflicting path per line, then notes. The notes also name files
+    # that merged fine ("Auto-merging clean.txt"), so stop at the blank line.
+    lines = output.split("\n")[1:]
+    paths: list[Path] = []
+    for line in lines:
+        if not line.strip():
+            break
+        paths.append(Path(line))
+    return paths
+
+
+def _extract_paths_from_legacy_merge_tree(stdout: bytes, stderr: bytes) -> list[Path]:
+    # Old git prints a block for every file both branches changed, whether or
+    # not it conflicts: a header, the base/our/their lines naming the file,
+    # then its diff. Only a block whose diff holds a conflict marker is a real
+    # conflict, so track which file each block is about and keep it only once
+    # a marker shows up. Binary files get no marker; git names those on stderr.
+    conflicting: set[str] = set()
+    current: str | None = None
+
+    for line in stdout.split(b"\n"):
+        if line[:1] in (b" ", b"\t"):
+            parts = _decode_git_output(line).split()
+            if len(parts) >= 4 and parts[0] in ("base", "our", "their") and len(parts[2]) == 40:
+                current = " ".join(parts[3:])
+                continue
+        if current and _MERGE_CONFLICT_MARKER in line:
+            conflicting.add(current)
+
+    for line in _decode_git_output(stderr).split("\n"):
+        marker = _BINARY_CONFLICT_WARNING.decode()
+        if marker in line:
+            named = line.split(marker, 1)[1].lstrip(": ")
+            # git appends " (.our vs. .their)"; a path may itself contain " (".
+            cut = named.rfind(" (")
+            conflicting.add(named[:cut] if cut > 0 else named)
+
+    return [Path(p) for p in sorted(conflicting)]
 
 # ============================================================
 #  GitRunnerProtocol — the boundary other rings type against
@@ -176,9 +230,19 @@ class GitRunnerProtocol(Protocol):
         message: str | None = None,
     ) -> None: ...
 
-    def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> bool: ...
+    def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> MergeCheckResult: ...
 
     def merge_abort(self, repo_path: Path | str) -> None: ...
+
+    def configured_merge_tool(self, repo_path: Path | str) -> str | None: ...
+
+    def mergetool(
+        self,
+        repo_path: Path | str,
+        *,
+        tool: str | None = None,
+        tool_command: str | None = None,
+    ) -> None: ...
 
     def fetch(
         self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None
@@ -452,7 +516,7 @@ class GitRunner:
         args.append(ref_name)
         self._run(*args, cwd=repo_path)
 
-    def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> bool:
+    def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> MergeCheckResult:
         """Whether merging *ref_name* would apply without a conflict.
 
         **Read-only.** Neither branch below touches the worktree, the index,
@@ -474,10 +538,11 @@ class GitRunner:
         searching the bytes for it is exact regardless of what surrounds it.
 
         A repository that cannot name *ref_name*, or shares no history with
-        it, is not "clean" — it is unmergeable, and the caller gets ``False``
-        rather than an exception, because this is a question, not an
-        operation. The same applies to any unexpected failure of either
-        form: unmergeable, never assumed clean.
+        it, is not "clean" — it is unmergeable, and the caller gets
+        ``is_clean=False`` rather than an exception, because this is a
+        question, not an operation. The same applies to any unexpected failure
+        of either form: unmergeable, never assumed clean. Such a repository
+        conflicts without naming a file, so the path list comes back empty.
         """
         head = self.current_branch(repo_path) or "HEAD"
 
@@ -485,22 +550,32 @@ class GitRunner:
             "merge-tree", "--write-tree", "--name-only", head, ref_name, cwd=repo_path
         )
         if modern.returncode == 0:
-            return True
+            return MergeCheckResult(is_clean=True, conflicting_paths=[])
         if modern.returncode == 1 and modern.stdout.strip():
-            return False
+            paths = _extract_paths_from_modern_merge_tree(modern.stdout)
+            return MergeCheckResult(is_clean=False, conflicting_paths=paths)
 
         # Anything else from the modern form — a usage error on old Git
         # (exit 129 before 2.38, where --write-tree does not exist), a bad
         # ref — means fall through and ask the way old Git understands.
         base = self._query("merge-base", head, ref_name, cwd=repo_path)
         if base.returncode != 0 or not base.stdout.strip():
-            return False
+            return MergeCheckResult(is_clean=False, conflicting_paths=[])
         legacy = self._query_bytes(
             "merge-tree", base.stdout.strip(), head, ref_name, cwd=repo_path
         )
         if legacy.returncode != 0:
-            return False
-        return _MERGE_CONFLICT_MARKER not in legacy.stdout
+            return MergeCheckResult(is_clean=False, conflicting_paths=[])
+
+        has_conflict_marker = _MERGE_CONFLICT_MARKER in legacy.stdout
+        has_binary_conflict = _BINARY_CONFLICT_WARNING in legacy.stderr
+        is_clean = not (has_conflict_marker or has_binary_conflict)
+
+        if is_clean:
+            return MergeCheckResult(is_clean=True, conflicting_paths=[])
+        else:
+            paths = _extract_paths_from_legacy_merge_tree(legacy.stdout, legacy.stderr)
+            return MergeCheckResult(is_clean=False, conflicting_paths=paths)
 
     def _query_bytes(
         self,
@@ -549,6 +624,38 @@ class GitRunner:
     def merge_abort(self, repo_path: Path | str) -> None:
         """Abort a merge left in progress (``git merge --abort``)."""
         self._run("merge", "--abort", cwd=repo_path)
+
+    def configured_merge_tool(self, repo_path: Path | str) -> str | None:
+        """The merge tool the user already configured, if any."""
+        answer = self._query("config", "--get", "merge.tool", cwd=repo_path)
+        if answer.returncode != 0:
+            return None
+        return answer.stdout.strip() or None
+
+    def mergetool(
+        self,
+        repo_path: Path | str,
+        *,
+        tool: str | None = None,
+        tool_command: str | None = None,
+    ) -> None:
+        """Open the conflicted files in a merge tool (``git mergetool``).
+
+        Git stages each file the user resolves, so callers must not stage
+        again. *tool_command* is passed for this one call: the user's own git
+        config is never written.
+        """
+        # keepBackup=false: the .orig files git leaves otherwise are
+        # untracked, so the next `cgitsync status` would call the repository
+        # dirty and the next `cgitsync add` would stage them.
+        args: list[str] = []
+        if tool is not None:
+            if tool_command is not None:
+                args += ["-c", f"mergetool.{tool}.cmd={tool_command}"]
+                args += ["-c", f"mergetool.{tool}.trustExitCode=true"]
+            args += ["-c", f"merge.tool={tool}"]
+        args += ["-c", "mergetool.keepBackup=false"]
+        self._run(*args, "mergetool", "--no-prompt", cwd=repo_path)
 
     def fetch(
         self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None

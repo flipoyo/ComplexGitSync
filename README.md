@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.47
+# ComplexGitSync v0002.48
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -259,7 +259,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `add` | `[PATH ...]` `--private` `--dry-run` `--gts` | Stage all changes across a READY tree. |
 | Expert | `rm` | `<PATH ...>` `--private` `--dry-run` `--gts` | Remove one or more tracked files, each from the repo that owns it. |
 | Expert | `commit` | `[message]` `--message` `--private` `--no-stage` `--dry-run` | Commit dirty repositories from a READY tree. |
-| Expert | `merge` | `<branch>` `--private` `--ff-only` `--no-ff` `--dry-run` | Merge a project branch across a READY tree, leaf-first. |
+| Expert | `merge` | `<branch>` `--private` `--ff-only` `--no-ff` `--dry-run` `--resolve` | Merge a project branch across a READY tree, leaf-first. Names every conflicting file when it refuses. |
 | Expert | `push` | `--private` `--dry-run` `--force-protocol` `--gts` | Push repositories from a READY tree. |
 | Expert | `tag` | `<name>` `--private` `--gts` | Create and push a tag across a READY tree. |
 | Expert | `freeze` | `<name>` `--private` `--dry-run` `--gts` | Freeze a versioned state and emit a .gts snapshot. |
@@ -283,6 +283,30 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 >
 > A directory that is not a Git checkout — what a clone interrupted halfway
 > leaves behind — is still cleared with no flag needed.
+
+> **`merge` names the files that block it.** `merge` checks every repository
+> before it merges any, so a conflict anywhere leaves the whole tree
+> untouched. When it refuses, it now names each blocked repository and every
+> conflicting file under it, so you do not have to go looking:
+>
+> ```text
+> merge refused; no repository was merged: ComplexGitSync: tests/unit/test_documents.py
+> ```
+>
+> `merge --dry-run` shows the same list without merging anything.
+>
+> `merge --resolve` is the way out when you want to fix the conflict rather
+> than read about it. It merges one repository at a time and stops at the
+> first that conflicts, then opens that repository in your merge tool. This
+> gives up the all-or-nothing guarantee: repositories merged before the
+> conflict stay merged, so the tree can be left partly merged. The command
+> says so before it writes anything, and names what it merged, where it
+> stopped, and what it never reached.
+>
+> Your own `merge.tool` is used if you configured one. Otherwise VS Code is
+> suggested when it is available, for that one call only — your Git
+> configuration is never written. With no tool available, the command prints
+> what to run by hand instead of failing.
 
 ### Options that recur
 
