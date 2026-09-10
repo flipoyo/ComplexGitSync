@@ -10,7 +10,7 @@ still use, give `.agentSpec` its own `install.cgs` so `DevSpec` stays mounted
 inside it exactly as it was before, and only then merge to `main`.
 
 **What this document is.** A plan that starts from the state left by
-[AgenticMounts_DevPlanTicket.md](AgenticMounts_DevPlanTicket.md), which is
+[AgenticMounts_DevPlanTicket.md](20260905_AgenticMounts_DevPlanTicket.md), which is
 implemented on the branch `agentic-mounts` but not merged. Nothing in step 2
 has been done yet.
 

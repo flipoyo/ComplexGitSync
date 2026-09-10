@@ -367,6 +367,6 @@ to restore — `main` now carries the code, the tests and the documentation
 that lived only on the branch.
 
 Two records this ticket raised outlived it and are open tickets of their
-own: `AgentSpec/openTickets/InitialiseDestroysExistingClones_DevPlanTicket.md`
+own: `AgentSpec/openTickets/1-2_InitialiseDestroysExistingClones_DevPlanTicket.md`
 (§7's warning about `initialise` re-cloning dependencies) and the `.gts`
 dropping `writable` when written by an older build.

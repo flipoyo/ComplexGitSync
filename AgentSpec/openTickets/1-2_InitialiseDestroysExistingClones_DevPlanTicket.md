@@ -30,7 +30,7 @@ This is not a feature — it is a hole.
 
 **What you need to do with it.** Read §1, pick an option in §3, then §4.
 
-> **Read `AppendCloneMode_DevPlanTicket.md` alongside §3.** It asks a wider
+> **Read `1-3_AppendCloneMode_DevPlanTicket.md` alongside §3.** It asks a wider
 > question about the same `shutil.rmtree`: whether a mount point is owned
 > outright by the repository mounted there. Its §0 already audits this call
 > and the second erasure site this ticket does not cover — `force_pull`

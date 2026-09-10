@@ -270,7 +270,7 @@ bien plus nette. `fork<ID>@ComplexGitSync`"*.
 
 The reason holds and is already recorded elsewhere: tree-wide `branch`,
 `checkout` and `pull` propagate one name across every mount, which
-`agenticMountStep3-DevPlanTicket.md` says "would drag the shared
+`2-2_agenticMountStep3_DevPlanTicket.md` says "would drag the shared
 `.localSpec` and `.claude` mounts off the branch they are pinned to". A
 fork has no such failure mode.
 
@@ -407,7 +407,7 @@ clones five repositories.
 | Adopting `.agent` drags in its stale duplicate specs, and the tree ends with two `AdditionalSpecs.md` | D2 and §8's check |
 | Every existing tree's recorded state still names `.claude`; a GitHub redirect covers a fetch URL, never a directory name | Step 11, plus a re-run of `initialise` in every other checkout after the merge |
 | D3 is skipped and the exclusion goes into the tracked `.gitignore`, re-exposing the name in the file being cleaned | §8's grep catches it mechanically |
-| `agenticMountStep3-DevPlanTicket.md` is still active and names `.claude` 13 times, including its branch-pinning design | Decide the order before starting. Step 3 first means one grep pass at the end; this ticket first means rewriting step 3's text mid-flight |
+| `2-2_agenticMountStep3_DevPlanTicket.md` is still active and names `.claude` 13 times, including its branch-pinning design | Decide the order before starting. Step 3 first means one grep pass at the end; this ticket first means rewriting step 3's text mid-flight |
 
 ## 8. Acceptance
 

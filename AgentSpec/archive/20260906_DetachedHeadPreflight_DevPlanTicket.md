@@ -200,7 +200,7 @@ let it follow the merge.
 - defect B, the attached root's unrecorded resolved branch — D3 sends it to
   `audit.md`;
 - the `@project` token and the project-level branch policy — step 3, D1b;
-- `.goc` and the Orchestrator — `GitOrchestratorCommand_DevPlanTicket.md`;
+- `.goc` and the Orchestrator — `2-4_GitOrchestratorCommand_DevPlanTicket.md`;
 - tutorial 4 and the protocol documentation — step 3, D5.
 
 Everything above is queued behind a green `main`. That is the whole point

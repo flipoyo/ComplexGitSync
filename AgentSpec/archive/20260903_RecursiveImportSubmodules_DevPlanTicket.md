@@ -123,7 +123,7 @@ single-level behavior is documented, tested, and exactly what Tutorial 3
 itself now relies on staying single-level by default — silently changing
 what `import-submodules --apply` touches, for every existing caller,
 without them asking for it, is the same category of risk this project
-already declined for `clone_mode` in `AppendCloneMode_DevPlanTicket.md`
+already declined for `clone_mode` in `1-3_AppendCloneMode_DevPlanTicket.md`
 §1.1 ("flipping the default silently changes what existing callers get").
 
 ### 1.2 Does the dry-run report show nested submodules before `--apply` needs `--recursive` too?
