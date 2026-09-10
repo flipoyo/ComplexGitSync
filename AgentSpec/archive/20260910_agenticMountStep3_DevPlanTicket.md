@@ -2,6 +2,38 @@
 
 *Created: 2026-09-05*
 
+## Closure note (2026-09-10) — archived, work redistributed
+
+**Archived without finishing. Three quarters of this ticket had already
+been overtaken; what was left moved to `GitOrchestratorCommand`.**
+
+Dead on arrival at this date, verified against the tree:
+
+| Part | Why it is dead |
+|---|---|
+| §0's state table | `main` was at `8923ee0` here; it is at `d11971d`, eleven releases later |
+| §1.3, §1.4, §1.6, §1.7 | Workspace **B**, `/home/flipoyo/.cgs/CGS20260905095916/cgitsync`, no longer exists on disk. Clone **A** exists but every command in §1.7 pins version 0002.37 |
+| §3, the blocker | Fixed. `git_branch.resolve_propagated_ref` decides each repository's branch on its own |
+| D1, branch pinning | Shipped as `private`/`writable`; archived as `20260906_BranchPinning_DevPlanTicket.md` |
+| D2, `autoTest` | Gone from `install.cgs`. Only `examples/htas.cgs` still names it, and that spec is unrelated |
+| §2.4 and most of D3 | Shipped. Every command that finds its own workspace now prints which one it picked and where that choice came from, and warns with both escapes when that is not the current directory |
+| §5 steps 1 to 3 | Done |
+
+Moved to `GitOrchestratorCommand`, which already held a
+row for each:
+
+- **The `@project` token and a project-level branch-policy default** (D1b
+  jobs 1 and 2). Neither exists in the code. That ticket's §1 named them
+  and handed them here; they now go back, as its own work.
+- **The three-hop round trip** (§2.1 to §2.3), **D4**, and **D5's
+  documentation plan**. This was the only part still unstarted, and it is
+  the protocol `.goc` automates.
+
+Hop zero (§2.0) needed no move: that ticket's §1b already carries the whole
+`GOC.toml` chain, including the two open `@`-naming problems.
+
+---
+
 > **Reassessed on 2026-09-09. Half of this ticket has shipped; the round
 > trip has not.** Read this block before §1, because three of the things
 > below say "open" and are not.

@@ -268,11 +268,12 @@ The owner's words: *"et s'il s'agissait d'un fork de l'état de main
 @timestamp ? non pas d'une branch ! Un autre type introduit une frontière
 bien plus nette. `fork<ID>@ComplexGitSync`"*.
 
-The reason holds and is already recorded elsewhere: tree-wide `branch`,
-`checkout` and `pull` propagate one name across every mount, which
-`agenticMountStep3` says "would drag the shared
-`.localSpec` and `.claude` mounts off the branch they are pinned to". A
-fork has no such failure mode.
+The reason held when it was written: tree-wide `branch`, `checkout` and
+`pull` propagated one name across every mount, dragging the shared
+`.localSpec` and `.claude` mounts off the branch they were pinned to.
+`git_branch.resolve_propagated_ref` has since fixed that — each repository
+decides its own branch — so the argument for a fork now rests on the
+boundary itself, not on that failure.
 
 **This ticket takes a plain GitHub fork.** Concretely:
 
@@ -407,7 +408,7 @@ clones five repositories.
 | Adopting `.agent` drags in its stale duplicate specs, and the tree ends with two `AdditionalSpecs.md` | D2 and §8's check |
 | Every existing tree's recorded state still names `.claude`; a GitHub redirect covers a fetch URL, never a directory name | Step 11, plus a re-run of `initialise` in every other checkout after the merge |
 | D3 is skipped and the exclusion goes into the tracked `.gitignore`, re-exposing the name in the file being cleaned | §8's grep catches it mechanically |
-| `agenticMountStep3` is still active and names `.claude` 13 times, including its branch-pinning design | Decide the order before starting. Step 3 first means one grep pass at the end; this ticket first means rewriting step 3's text mid-flight |
+| Open tickets still name `.claude` and would need rewriting mid-flight | `agenticMountStep3`, the worst of them, was archived on 2026-09-10, and an archived ticket is a historical record that must **not** be rewritten. §8's grep must therefore exclude `AgentSpec/archive/` |
 
 ## 8. Acceptance
 

@@ -2,15 +2,24 @@
 
 *Created: 2026-09-05*
 
-> **Reassessed on 2026-09-09. Still live, and jobs 1 and 2 came back.**
-> §1 hands jobs 1 and 2 — the `@project` token and a project-level
-> branch-policy default — to AgenticMounts step 3, to ship alongside the
-> `pinned` grammar. That grammar shipped on 2026-09-09 (renamed `private`,
-> with `writable`) and **neither job went with it**. Nothing in the code
-> resolves `@project`, and there is no project-level branch-policy default.
-> So the "ship them together" argument in §1 and §5 has expired: they are
-> now separate work, and this ticket is the only document still asking for
-> them. Jobs 3 and 4 — `.goc` itself — are untouched and unbuilt.
+> **Reassessed on 2026-09-10. AgenticMounts step 3 was archived, and what
+> was left of it came here.** This ticket now carries four things, not two.
+>
+> Jobs 1 and 2 — the `@project` token and a project-level branch-policy
+> default — were handed to step 3 to ship alongside the `pinned` grammar.
+> That grammar shipped on 2026-09-09 (renamed `private`, with `writable`)
+> and **neither job went with it**. Nothing in the code resolves
+> `@project`, and there is no project-level branch-policy default. They
+> come back here as ordinary work, with nothing bundling them.
+>
+> The **three-hop round trip** arrived at the same time, as §2c. Step 3
+> existed to prove and document it and never did. It is the protocol
+> `.goc` automates, so holding it here removes the dependency instead of
+> orphaning it. Step 3 is
+> `AgentSpec/archive/20260910_agenticMountStep3_DevPlanTicket.md`; its
+> closure note lists what died with it.
+>
+> Jobs 3 and 4 — `.goc` itself — are untouched and unbuilt.
 >
 > Two further changes since this was written. `@` is now free as a variable
 > marker: the competing use, `fork<ID>@<project>`, was closed unbuilt in
@@ -41,15 +50,16 @@ own branch, which is the Operation step 3 §2.0 specifies.
 
 **What you will find.** §0 what `.goc` was and why it was deleted. §1 the
 four jobs, and where each one belongs, with §1b on the Orchestrator and the
-line it must not cross. §2 the gap the file fills, and §2b the discipline
-it makes visible. §3 what the file looks like. §4 decisions. §5 how this
-fits with the AgenticMounts work in flight. §6 risks. §7 acceptance.
+line it must not cross. §2 the gap the file fills, §2b the discipline it
+makes visible, and §2c the round trip that discipline serves — inherited
+from step 3, unproven and undocumented. §3 what the file looks like. §4
+decisions. §5 the work in order. §6 risks. §7 acceptance.
 
-**Who it is for.** Whoever picks this up after AgenticMounts step 3, and
-the repository owner, who has to answer §4.
+**Who it is for.** Whoever picks this up next, and the repository owner,
+who has to answer §4.
 
-**What you need to do with it.** Answer §4. Do not start before step 3 is
-merged — §5 says why.
+**What you need to do with it.** Answer §4, then work §5 in order. §2c
+comes before `.goc`: you cannot automate a protocol nobody has run.
 
 ```mermaid
 graph TD
@@ -92,17 +102,20 @@ The request bundles several things. They do not all need a new file.
 
 | # | Job | Belongs in | Why |
 |---|---|---|---|
-| 1 | Set a repository's `default_branch` to the project's name, so the same three lines work for every project | `.cgs` | It describes the tree, and the tree's description is shared and committed. A token such as `default_branch = "@project"` resolved at normalization |
-| 2 | Set branch-management policy once for the project rather than per entry | `.cgs` | Same reason. A `[project]`-level default that each entry may override, alongside the `pinned` field from AgenticMounts step 3 |
+| 1 | Set a repository's `default_branch` to the project's name, so the same three lines work for every project | `.cgs`, **built here** | It describes the tree, and the tree's description is shared and committed. A token such as `default_branch = "@project"` resolved at normalization |
+| 2 | Set branch-management policy once for the project rather than per entry | `.cgs`, **built here** | Same reason. A `[project]`-level default that each entry may override, alongside the `private`/`writable` fields already in the grammar |
 | 3 | Drive ComplexGitSync from the current directory, at each parent repository level | **`.goc`** | It differs per checkout and per machine, so it cannot live in `.cgs` — see §2 |
 | 4 | **Interpret a request and produce a project's `.cgs` on its own branch** — the Operation specified in step 3 §2.0 | **`.goc`**, as the Orchestrator | The request document is exactly what a `.goc` interpreter reads. See §1b |
 
-Jobs 1 and 2 should ship with the `pinned` work in AgenticMounts step 3,
-not here. Both are `.cgs` grammar. Shipping all the grammar in one pass
-means one round of validation, authoring round-trip tests, documentation
-and rebuilt PDFs instead of two.
+**All four jobs are this ticket's now.** Jobs 1 and 2 were sent to
+AgenticMounts step 3 to ride along with the `pinned` grammar and save a
+second round of validation, round-trip tests, documentation and PDF
+rebuilds. That round was spent on the privacy grammar without them, so the
+saving is gone and step 3 is archived. They are ordinary separate work,
+and this is the only document still asking for them.
 
-Jobs 3 and 4 are what this ticket is for.
+They still come first. Jobs 1 and 2 are `.cgs` grammar that §2c's round
+trip and job 4's Operation both name, so build them before either.
 
 ### 1b. Job 4 — the Orchestrator, and what it must not become
 
@@ -196,6 +209,99 @@ environment variable. A command can find B by reading `.goc` before checking
 `$CGSHOME`, so the old trap is behind the new file. That is why it is
 worth building.
 
+## 2c. The round trip `.goc` automates — inherited, still unproven
+
+From AgenticMounts step 3 §2.1 to §2.3, archived on 2026-09-10. **Nothing
+here has been run end to end or written down.** It is the protocol job 3
+replaces `$CGSHOME` for, so it has to be settled before `.goc` is worth
+building.
+
+Three hops. Hop zero — the Operation that creates a project — is §1b's
+job 4, and comes after these.
+
+### Hop one — from a plain clone to a managed tree
+
+```bash
+git clone git@github.com:flipoyo/ComplexGitSync.git
+cd ComplexGitSync            # on main — this checkout is the *tool*
+pixi install
+
+pixi run cgitsync bootstrap complexgitsync4dev.cgs <project-name> --cgs-path "$WORK"
+export CGSHOME="$WORK/<project-name>"
+cd "$CGSHOME" && pixi install
+```
+
+`bootstrap`'s second argument always forms the final path segment
+(`paths.resolve_bootstrap_root`), so the tree lands at
+`$WORK/<project-name>` whatever the `.cgs` calls the project. Without
+`--cgs-path` it lands in a fresh `$HOME/.cgs/CGS<timestamp>/` instead.
+
+Which spec to hand it decides what you get. `install.cgs` is the user
+install — the tool and its documentation, no private repository. The tree
+below is `complexgitsync4dev.cgs`, the developer install, which is the only
+checked-in spec mounting every kind of private entry.
+
+| Repository | Path | Branch | Why |
+|---|---|---|---|
+| ComplexGitSync | `.` | the project branch | `project.default_branch`, falling back to `main` |
+| DocComplexGitSync | `docs/` | follows the project branch | no branch of its own declared |
+| `.agentSpec` | `.agentSpec/` | `main` | **private/distant** — shared by every project, read-only |
+| DevSpec | `.agentSpec/DevSpec/` | `main` | nested under `.agentSpec`, inherits its privacy |
+| `.localSpec` | `.localSpec/` | `ComplexGitSync` | **private/local** — this project's branch |
+| `.claude` | `.claude/` | `ComplexGitSync` | **private/local** — this project's branch |
+
+### Hop two — working inside the tree
+
+`$CGSHOME` is live-editable (`pixi.toml`'s editable install), so edits to
+`src/ComplexGitSync/` take effect immediately. Tree-wide commands run from
+there.
+
+The rule this hop rests on now holds in the code:
+`git_branch.resolve_propagated_ref` decides each repository's branch on its
+own, and `checkout_tree` refuses to create a branch inside a shared
+repository at all. What is missing is the proof — a feature branch created
+for this project, then checked for in every private mount — and the
+write-up.
+
+### Hop three — back to the plain clone
+
+The tree root and the plain clone are two clones of one GitHub repository.
+After `cgitsync push` or `freeze-release` from the tree:
+
+```bash
+cd ~/Programmes/ComplexGitSync
+git fetch origin
+git checkout <the tree's project branch>
+git pull --ff-only
+```
+
+**Which branch the plain clone sits on** — step 3's D4, answered there and
+never documented: both, for different things. The plain clone tracks the
+project branch when it is managing that project. Tool changes — anything
+under `src/`, `tests/`, `docs/` — go to `main` through a pull request, and
+each project branch merges `main` forward when it wants them. Generic to
+`main` first, then forward into each project branch, the same direction the
+private mounts already use.
+
+Still unstated anywhere a reader would find it: which branch a fresh
+`bootstrap` checks out when someone clones the tool and has not chosen a
+project yet.
+
+### Where this gets documented — step 3's D5, renumbered
+
+| Where | What |
+|---|---|
+| `README.md` | A subsection under §2 — the three hops, in commands, beside the existing standalone/nested split |
+| `docs/Text/user_guide.tex` | The `$CGSHOME` resolution order and the branch rules per command |
+| `tutorials/05_managing_a_project_tree.md` | The full walk-through, written from the transcript of the proof run, not from memory |
+
+**The number moved.** D5 proposed `tutorials/04_*`; `04_private_repos.md`
+holds that slot, so it becomes `05_`. `tutorials/README.md` and README §4's
+list both name every tutorial and need the new row.
+
+A fifth tutorial means the PDFs need rebuilding with `latexmk` and
+`DocComplexGitSync` needs its own commit and push.
+
 ## 3. What the file looks like
 
 A proposal, to be settled in §4:
@@ -266,30 +372,31 @@ which describes what it no longer does: it holds configuration, not
 commands. Keeping the name is fine if the documentation says plainly what
 it now holds. Changing it costs nothing today, since nothing depends on it.
 
-## 5. How this fits with the work in flight
+## 5. The work, in order
 
-Order matters, and the reason is simple: you cannot automate a protocol you
-have not settled, and `.goc` names a branch policy that must exist first.
+Order matters, and the reason is simple: you cannot automate a protocol
+nobody has run, and `.goc` names a branch policy that must exist first.
 
-| Stage | What happens | Ticket | State on 2026-09-09 |
+| # | Step | Job | Where |
 |---|---|---|---|
-| 1 | Merge AgenticMounts step 2, confirm the build is green, archive the first two tickets | `agenticMountStep2` | Done, archived |
-| 2 | Add `pinned` to `.cgs`, **plus job 1 and job 2 from §1**, and prove and document the three-hop protocol | `agenticMountStep3` | Half done. The grammar shipped as `private`/`writable`; jobs 1 and 2 did not; the protocol is still unproven and undocumented |
-| 3 | Add `.goc` as described here; update tutorial 2 and the CaWaQS-Viz onboarding to use it | this ticket | Not started |
+| 1 | Build the `@project` token and the `[project]`-level branch-policy default: grammar, validation, authoring round-trip tests, docs | 1 and 2 | `cgs_format.py` |
+| 2 | Apply them to `install.cgs`, `complexgitsync4dev.cgs` and `.agentSpec/install.cgs` | 1 and 2 | those specs |
+| 3 | Prove §2c's round trip on a clean clone: bootstrap, check every branch against §2c's table, create a feature branch and confirm it reaches **no** private mount, commit, push, pull it back into the plain clone. Keep the transcript | — | local |
+| 4 | Write §2c up from that transcript: `README.md`, `docs/Text/user_guide.tex`, `tutorials/05_managing_a_project_tree.md`. Rebuild the PDFs; commit and push `DocComplexGitSync` | — | ComplexGitSync, `docs/` |
+| 5 | Add `.goc` as described here; update tutorial 2 and the CaWaQS-Viz onboarding to use it | 3 | ComplexGitSync |
+| 6 | Build the Orchestrator per §1b | 4 | ComplexGitSync |
+| 7 | `pixi run lint`, `pixi run test`, `pixi run bump-version`, rebuild the PDFs if the version moved | — | ComplexGitSync |
 
-**The staging argument no longer holds for jobs 1 and 2.** They were put
-into step 3 to save a second round of validation, round-trip tests,
-documentation and PDF rebuilds. That round has already been spent on the
-privacy grammar without them, so the saving is gone and they are ordinary
-separate work. They can be done here, or in step 3, or on their own —
-whichever comes first — but nothing is waiting for them and nothing bundles
-them any more.
+**Steps 5 and 6 stay last.** `.goc` names a branch policy that step 1
+creates, and job 4's Operation produces a project's spec on its own branch
+— both need §2c settled, and §2c has never been run.
 
-**Stage 3 is still correctly last.** `.goc` names a branch policy, and job
-4's Operation produces a project's spec on its own branch; both need the
-protocol in step 3 §2 settled, and that part of step 3 has not moved.
+**Steps 3 and 4 arrived from AgenticMounts step 3**, archived on
+2026-09-10 as
+`AgentSpec/archive/20260910_agenticMountStep3_DevPlanTicket.md`. That
+ticket existed to do them and did not.
 
-One implementation warning for step 3, from reading `cgs_format.py`: the
+One implementation warning for step 1, from reading `cgs_format.py`: the
 `@project` token has to survive being written back out. Normalization fills
 `default_branch` in on every entry, and `to_authoring_dict` decides what
 gets written to the file. If the token is expanded to a literal name during
@@ -307,17 +414,44 @@ hard-coded branch. The authoring round-trip test has to cover it.
 
 ## 7. Acceptance
 
-1. A `.goc` in a directory decides which tree a `cgitsync` command drives,
+**Jobs 1 and 2 — the grammar.**
+
+1. `default_branch = "@project"` resolves to the project's own name, and
+   survives an authoring round trip: a document read and written back still
+   holds the token, not the name it resolved to.
+2. A `[project]`-level branch-policy default applies to every entry that
+   does not override it, and `cgitsync validate` shows the effective policy
+   per repository.
+3. No `.cgs` in the tree names a branch that does not exist on its remote.
+
+**§2c — the round trip.**
+
+4. From a clean clone on `main`, one `bootstrap complexgitsync4dev.cgs`
+   produces a `READY` tree whose branches match §2c's table exactly.
+5. `cgitsync branch <name>` on that tree creates the branch in the
+   project's own repositories and in **none** of `.agentSpec`, `DevSpec`,
+   `.localSpec`, `.claude`; `checkout` and `pull` leave every private mount
+   on its declared branch.
+6. A change made in the tree, pushed from it, reaches the plain clone with
+   the documented commands and no manual repair.
+7. The protocol is in `README.md`, `docs/Text/user_guide.tex` and
+   `tutorials/05_managing_a_project_tree.md`, written from the transcript
+   of criterion 4's run. `tutorials/README.md` and README §4 list it. The
+   PDFs are rebuilt and `DocComplexGitSync` is pushed.
+
+**Jobs 3 and 4 — `.goc`.**
+
+8. A `.goc` in a directory decides which tree a `cgitsync` command drives,
    ahead of `$CGSHOME` and ahead of the two-levels-up guess.
-2. One command writes the file; one command reports which tree resolved and
+9. One command writes the file; one command reports which tree resolved and
    from which source. Both are in the README command table and the user
    guide, as `CLAUDE.md` requires of every command.
-3. Running a tree command from a checkout with no `.goc` and no `$CGSHOME`
+10. Running a tree command from a checkout with no `.goc` and no `$CGSHOME`
    either does nothing or says plainly what it would have driven. It never
    silently drives a tree two directories up.
-4. `.cgs` still decides topology and pinning. No `.goc` changes what the
+11. `.cgs` still decides topology and pinning. No `.goc` changes what the
    tree contains.
-5. Tutorial 2 uses `.goc` to drive its build tree, and the CaWaQS-Viz
+12. Tutorial 2 uses `.goc` to drive its build tree, and the CaWaQS-Viz
    recipe uses it.
-6. `pixi run lint` and `pixi run test` pass, and the documentation and PDFs
+13. `pixi run lint` and `pixi run test` pass, and the documentation and PDFs
    are rebuilt.
