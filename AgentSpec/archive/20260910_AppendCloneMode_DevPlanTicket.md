@@ -2,6 +2,12 @@
 
 *Created: 2026-09-01*
 
+## Closure note (2026-09-10)
+
+**Archived without implementation.** The system already distinguishes `initialise` (first-time setup, wipes nested repos) from `pull` (resync on deployed projects, preserves content). The one-time incident that triggered this ticket (wiping `docs/tutorials/`) was already addressed by moving tutorials to the workspace root (commit `9ef1f23`). The limitation is architectural by design—`initialise` is not meant to be called repeatedly on the same project for ongoing sync; `pull` is the correct command for that, and it does not wipe. Append mode is unnecessary given this distinction.
+
+---
+
 > **Reassessed on 2026-09-09. Still live, and it now shares a site with a
 > bug ticket.** Both erasure mechanisms are still in the code exactly as
 > §0 describes them, and both have moved: `_clone_registry_entry`'s
