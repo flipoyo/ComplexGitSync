@@ -602,7 +602,7 @@ def test_this_trees_own_cgs_pins_exactly_the_shared_mounts():
     The ticket's acceptance criterion 5 asks for this to be proved by a
     test rather than by inspection.
     """
-    document = CgsDocument.from_toml(_REPO_ROOT / "complexgitsync4dev.cgs")
+    document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync4dev.cgs")
     by_name = {repo["project_name"]: repo for repo in document.repos}
 
     private = {name for name, repo in by_name.items() if repo.get("private")}

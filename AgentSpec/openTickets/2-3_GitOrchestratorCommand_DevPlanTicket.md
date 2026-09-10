@@ -226,7 +226,7 @@ git clone git@github.com:flipoyo/ComplexGitSync.git
 cd ComplexGitSync            # on main — this checkout is the *tool*
 pixi install
 
-pixi run cgitsync bootstrap complexgitsync4dev.cgs <project-name> --cgs-path "$WORK"
+pixi run cgitsync bootstrap examples/complexgitsync4dev.cgs <project-name> --cgs-path "$WORK"
 export CGSHOME="$WORK/<project-name>"
 cd "$CGSHOME" && pixi install
 ```
@@ -238,7 +238,7 @@ cd "$CGSHOME" && pixi install
 
 Which spec to hand it decides what you get. `install.cgs` is the user
 install — the tool and its documentation, no private repository. The tree
-below is `complexgitsync4dev.cgs`, the developer install, which is the only
+below is `examples/complexgitsync4dev.cgs`, the developer install, which is the only
 checked-in spec mounting every kind of private entry.
 
 | Repository | Path | Branch | Why |
@@ -380,7 +380,7 @@ nobody has run, and `.goc` names a branch policy that must exist first.
 | # | Step | Job | Where |
 |---|---|---|---|
 | 1 | Build the `@project` token and the `[project]`-level branch-policy default: grammar, validation, authoring round-trip tests, docs | 1 and 2 | `cgs_format.py` |
-| 2 | Apply them to `install.cgs`, `complexgitsync4dev.cgs` and `.agentSpec/install.cgs` | 1 and 2 | those specs |
+| 2 | Apply them to `install.cgs`, `examples/complexgitsync4dev.cgs` and `.agentSpec/install.cgs` | 1 and 2 | those specs |
 | 3 | Prove §2c's round trip on a clean clone: bootstrap, check every branch against §2c's table, create a feature branch and confirm it reaches **no** private mount, commit, push, pull it back into the plain clone. Keep the transcript | — | local |
 | 4 | Write §2c up from that transcript: `README.md`, `docs/Text/user_guide.tex`, `tutorials/05_managing_a_project_tree.md`. Rebuild the PDFs; commit and push `DocComplexGitSync` | — | ComplexGitSync, `docs/` |
 | 5 | Add `.goc` as described here; update tutorial 2 and the CaWaQS-Viz onboarding to use it | 3 | ComplexGitSync |
@@ -426,7 +426,7 @@ hard-coded branch. The authoring round-trip test has to cover it.
 
 **§2c — the round trip.**
 
-4. From a clean clone on `main`, one `bootstrap complexgitsync4dev.cgs`
+4. From a clean clone on `main`, one `bootstrap examples/complexgitsync4dev.cgs`
    produces a `READY` tree whose branches match §2c's table exactly.
 5. `cgitsync branch <name>` on that tree creates the branch in the
    project's own repositories and in **none** of `.agentSpec`, `DevSpec`,

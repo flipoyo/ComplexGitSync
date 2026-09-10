@@ -4,7 +4,7 @@
 #     pixi run cgitsync bootstrap install.cgs ComplexGitSync
 #
 # To work ON ComplexGitSync rather than with it, use
-# complexgitsync4dev.cgs instead — it adds the repositories that
+# examples/complexgitsync4dev.cgs instead — it adds the repositories that
 # configure how the project is developed (.agentSpec, .localSpec, .claude).
 #
 # nested_config on docs is "disabled" on purpose. Leaving it "auto" would

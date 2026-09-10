@@ -3,12 +3,12 @@
 #
 # Use this file to bootstrap a working checkout you can change:
 #
-#     pixi run cgitsync bootstrap complexgitsync4dev.cgs ComplexGitSync
+#     pixi run cgitsync bootstrap examples/complexgitsync4dev.cgs ComplexGitSync
 #
-# It sits at the repository root, not under examples/: relative_path is
-# resolved from the directory holding the .cgs, so only a root-level file
-# describes THIS tree. A copy under examples/ would root the tree at
-# examples/ and drive nothing.
+# Where this file sits does not affect the tree it describes. The root is
+# CGSHOME, resolved from --output-path (or $CGSHOME, or the working
+# directory) plus project.name -- never from the directory holding the
+# .cgs. Only install.cgs, the user install, stays at the repository root.
 #
 # install.cgs, beside it, is the USER install and mounts only the first two
 # entries. This file adds the three configuration repositories, and is also

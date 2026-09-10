@@ -659,7 +659,7 @@ class TestCgsDocumentValid:
     def test_from_toml_parses_the_developer_install(self):
         """The developer install adds the three configuration repositories."""
         repo_root = Path(__file__).parent.parent.parent
-        doc = CgsDocument.from_toml(repo_root / "complexgitsync4dev.cgs")
+        doc = CgsDocument.from_toml(repo_root / "examples" / "complexgitsync4dev.cgs")
         assert doc.project_name == "ComplexGitSync"
         assert doc.default_branch == "main"
         assert len(doc.repos) == 5

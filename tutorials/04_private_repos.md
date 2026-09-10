@@ -239,7 +239,7 @@ repos = [
 ]
 ```
 
-That is [`complexgitsync4dev.cgs`](../complexgitsync4dev.cgs),
+That is [`examples/complexgitsync4dev.cgs`](../examples/complexgitsync4dev.cgs),
 the spec this tree's own developer checkout is built from. (The root
 `install.cgs` is the user install and stops after the first two entries —
 it mounts no private repository at all.) Reading it:

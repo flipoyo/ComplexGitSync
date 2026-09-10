@@ -408,7 +408,7 @@ class TestThisTreesOwnDeclaration:
     """
 
     def test_the_two_project_owned_config_repos_are_writable(self):
-        document = CgsDocument.from_toml(_REPO_ROOT / "complexgitsync4dev.cgs")
+        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync4dev.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
         assert by_name[".localSpec"]["writable"] is True
@@ -420,14 +420,14 @@ class TestThisTreesOwnDeclaration:
         It must not be writable here: that is the entry whose accidental
         push publishes to everyone.
         """
-        document = CgsDocument.from_toml(_REPO_ROOT / "complexgitsync4dev.cgs")
+        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync4dev.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
         assert by_name[".agentSpec"]["private"] is True
         assert by_name[".agentSpec"]["writable"] is False
 
     def test_each_scope_selects_what_the_documentation_promises(self):
-        source = _REPO_ROOT / "complexgitsync4dev.cgs"
+        source = _REPO_ROOT / "examples" / "complexgitsync4dev.cgs"
         tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
 
         def names(scope: RepoScope) -> set[str]:
