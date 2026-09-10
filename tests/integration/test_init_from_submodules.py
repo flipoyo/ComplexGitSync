@@ -243,8 +243,13 @@ class TestOrderingRegression:
         assert _gitmodules_under(root) == []
 
         # ...then initialise, which re-clones every non-root repository.
+        # force_reclone is required now: the conversion above is a local
+        # commit no remote has, so the clone guard
+        # (AgentSpec/ InitialiseDestroysExistingClones) refuses to delete it
+        # unless the caller says so. This test exists to characterise the
+        # destruction, so it opts in deliberately.
         client.discover_repos(root, max_depth=5, output=root / "root.cgs")
-        client.initialise_cgs(root / "root.cgs", output_path=root.parent)
+        client.initialise_cgs(root / "root.cgs", output_path=root.parent, force_reclone=True)
 
         # HTA came back from its remote with its submodule wiring intact.
         assert (hta / ".gitmodules").is_file()
@@ -258,7 +263,8 @@ class TestOrderingRegression:
 
         client.import_submodules(root, apply=True, recursive=True)
         client.discover_repos(root, max_depth=5, output=root / "root.cgs")
-        client.initialise_cgs(root / "root.cgs", output_path=root.parent)
+        # force_reclone: see the sibling test above.
+        client.initialise_cgs(root / "root.cgs", output_path=root.parent, force_reclone=True)
 
         # The root has no .gitmodules any more, so the recursive walk has
         # no submodule graph to follow and never descends into HTA.
@@ -266,4 +272,34 @@ class TestOrderingRegression:
 
         assert repair.submodules == ()
         assert (hta / ".gitmodules").is_file()
+
+    def test_without_force_reclone_the_conversion_commit_is_protected(
+        self, submodule_tree, client
+    ):
+        """The other half: the guard refuses, and undoes nothing.
+
+        Same setup as the two tests above, minus the opt-in. The conversion
+        commit exists on no remote, so initialise must refuse the whole run
+        and leave HTA exactly as the conversion left it.
+        """
+        from ComplexGitSync.errors import GitSyncError
+
+        root = submodule_tree["root"]
+        hta = root / "external/HTA"
+
+        client.import_submodules(root, apply=True, recursive=True)
+        assert _gitmodules_under(root) == []
+
+        client.discover_repos(root, max_depth=5, output=root / "root.cgs")
+        with pytest.raises(GitSyncError) as excinfo:
+            client.initialise_cgs(root / "root.cgs", output_path=root.parent)
+
+        message = str(excinfo.value)
+        assert "hta" in message
+        assert "holds work that exists nowhere else" in message
+        assert "--force-reclone" in message
+
+        # Nothing was undone: the conversion survives untouched.
+        assert _gitmodules_under(root) == []
+        assert not (hta / ".gitmodules").is_file()
 

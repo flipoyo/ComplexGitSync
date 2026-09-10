@@ -525,6 +525,9 @@ class _FakeGitRunner:
     def has_upstream(self, repo_path) -> bool:
         return True
 
+    def local_only_commit_count(self, repo_path) -> int:
+        return 0
+
 
 def test_fake_git_runner_satisfies_git_runner_protocol():
     """A hand-written fake — not a `GitRunner` instance, not a mock — is

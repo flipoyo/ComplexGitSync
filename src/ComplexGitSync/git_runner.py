@@ -206,6 +206,8 @@ class GitRunnerProtocol(Protocol):
 
     def branch_tracking_counts(self, repo_path: Path | str) -> tuple[int, int] | None: ...
 
+    def local_only_commit_count(self, repo_path: Path | str) -> int: ...
+
     def has_upstream(self, repo_path: Path | str) -> bool: ...
 
 
@@ -670,6 +672,31 @@ class GitRunner:
         counts = self._run("rev-list", "--left-right", "--count", "HEAD...@{upstream}", cwd=repo_path)
         ahead_raw, behind_raw = counts.stdout.strip().split()
         return (int(ahead_raw), int(behind_raw))
+
+    def local_only_commit_count(self, repo_path: Path | str) -> int:
+        """Count commits reachable from HEAD that no remote-tracking ref holds.
+
+        Read-only, and a sharper question than "is the branch ahead of its
+        upstream": it is true of a branch with no upstream at all, and false
+        of a detached HEAD parked on a commit the remote already has -- which
+        is exactly what a submodule checkout looks like. ``0`` means every
+        commit here can be fetched again.
+
+        Returns ``0`` for a repository with no commits yet, since an unborn
+        HEAD holds nothing to lose.
+        """
+        counted = subprocess.run(
+            [self.executable, "rev-list", "--count", "HEAD", "--not", "--remotes"],
+            cwd=str(repo_path),
+            capture_output=True,
+            check=False,
+            text=True,
+            env=_non_interactive_git_env(),
+        )
+        if counted.returncode != 0:
+            return 0
+        raw = counted.stdout.strip()
+        return int(raw) if raw.isdigit() else 0
 
     def has_upstream(self, repo_path: Path | str) -> bool:
         """Return ``True`` when the current branch has an upstream configured."""

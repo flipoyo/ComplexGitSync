@@ -64,6 +64,11 @@ from urllib.parse import urlsplit
 import tomli_w
 
 from .cgs_format import CgsDocument, parse_repo_id
+from .clone_guard import (
+    blocked_destinations,
+    format_block_error,
+    is_populated_destination,
+)
 from .discovery import (
     ImportSubmodulesReport,
     SubmoduleEntry,
@@ -1201,6 +1206,7 @@ class ComplexGitSyncClient:
     last_write_outcomes: tuple[RepoOutcome, ...] = ()
     run_logger: CommandRunLogger | None = None
     _forced_access_protocol: AccessProtocol | None = field(default=None, init=False, repr=False)
+    _force_reclone: bool = field(default=False, init=False, repr=False)
 
     def is_loaded(self) -> bool:
         return self.registry is not None or bool(self.orchestre.git_tree.repos)
@@ -2080,7 +2086,9 @@ class ComplexGitSyncClient:
           semantics (calls :meth:`initialise_cgs`).  The output path is
           CGSPATH, and CGSHOME is derived as ``CGSPATH/<project_name>`` after
           reading the ``.cgs``.  The root repository at CGSHOME is treated as
-          already existing and is never recloned.  All ComplexGitSync state is
+          already existing and is never recloned; **every dependency below it
+          is deleted and cloned again**, which is not the same promise. See
+          :meth:`initialise_cgs`.  All ComplexGitSync state is
           written under ``CGSHOME/.cgitsync/state(<hash>)_n/``.
         - ``.gts`` source: restores from a saved snapshot (calls
           :meth:`load_gts`).  Use this for existing projects that already have
@@ -2114,6 +2122,7 @@ class ComplexGitSyncClient:
         *,
         output_path: str | Path | None = None,
         clean_before_clone: bool = False,
+        force_reclone: bool = False,
         commit_gitignore: bool = False,
         force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
@@ -2127,6 +2136,17 @@ class ComplexGitSyncClient:
         treated as already existing.  The clone sequence runs only for the
         dependencies declared in the ``.cgs`` document.
 
+        **Dependencies are re-cloned, not adopted.** Only the root survives a
+        second run: every dependency whose destination already holds files is
+        deleted and cloned again. Before deleting anything, this checks each
+        destination and refuses the whole run -- naming every repository, and
+        deleting none -- when one holds work that exists nowhere else:
+        uncommitted changes, commits not pushed to its upstream, or a branch
+        with no upstream at all. A destination that is not a Git checkout (a
+        clone interrupted mid-run) is still cleared without a flag.
+        *force_reclone* (``--force-reclone``) skips that check and destroys
+        the work.
+
         All ComplexGitSync state is stored under
         ``CGSHOME/.cgitsync/state(<hash>)_n/``.
 
@@ -2134,6 +2154,12 @@ class ComplexGitSyncClient:
         ----------
         config_path:
             Path to the ``.cgs`` authoring spec.
+        force_reclone:
+            Skip the unpushed-work check described above and clear every
+            populated destination, reproducing the pre-guard behaviour.
+            Destructive and unrecoverable: the old ``.git`` goes with the
+            directory. ``clean_before_clone`` implies it, since ``clean-init``
+            purges the workspace itself.
         output_path:
             CGSPATH — parent directory used to derive CGSHOME as
             ``CGSPATH/<project_name>``.  When *None*, defaults to ``../..``
@@ -2170,6 +2196,7 @@ class ComplexGitSyncClient:
             source_path=source_path,
             output_path=output_path,
             clean_before_clone=clean_before_clone,
+            force_reclone=force_reclone,
             commit_gitignore=commit_gitignore,
             force_gitignore_sync=force_gitignore_sync,
             git_user_name=git_user_name,
@@ -2184,6 +2211,7 @@ class ComplexGitSyncClient:
         source_path: str | Path,
         output_path: str | Path | None = None,
         clean_before_clone: bool = False,
+        force_reclone: bool = False,
         commit_gitignore: bool = False,
         force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
@@ -2210,6 +2238,10 @@ class ComplexGitSyncClient:
         self._forced_access_protocol = (
             AccessProtocol(force_access_protocol) if force_access_protocol else None
         )
+        # clean-init purges the workspace itself, so its destinations are
+        # already gone by the time the guard would look: it means
+        # --force-reclone and says so in its own name.
+        self._force_reclone = force_reclone or clean_before_clone
         project_root = cgshome
 
         self.registry = build_registry_from_cgs_document(
@@ -2232,7 +2264,9 @@ class ComplexGitSyncClient:
 
         while True:
             cloned_any = False
-            for entry in self._pending_clone_entries(sync_stack):
+            pending = self._pending_clone_entries(sync_stack)
+            self._guard_clone_destinations(pending)
+            for entry in pending:
                 sync_stack.add(entry.absolute_path)
                 self._clone_registry_entry(entry)
                 cloned_any = True
@@ -2578,6 +2612,7 @@ class ComplexGitSyncClient:
         self,
         config_path: str | Path,
         *,
+        force_reclone: bool = False,
         target_dir: str | Path | None = None,
         output_path: str | Path | None = None,
         force_access_protocol: str | None = None,
@@ -2589,6 +2624,7 @@ class ComplexGitSyncClient:
         self._forced_access_protocol = (
             AccessProtocol(force_access_protocol) if force_access_protocol else None
         )
+        self._force_reclone = force_reclone
 
         self.registry = build_registry_from_cgs_document(
             document,
@@ -2609,7 +2645,9 @@ class ComplexGitSyncClient:
 
         while True:
             cloned_any = False
-            for entry in self._pending_clone_entries(sync_stack):
+            pending = self._pending_clone_entries(sync_stack)
+            self._guard_clone_destinations(pending)
+            for entry in pending:
                 sync_stack.add(entry.absolute_path)
                 self._clone_registry_entry(entry)
                 cloned_any = True
@@ -4068,11 +4106,22 @@ class ComplexGitSyncClient:
         self._log_repo_transition(entry, previous_state, previous_sync_state)
 
     def _is_populated_nested_destination(self, entry: WorkingRepo) -> bool:
-        return (
-            entry.parent_id is not None
-            and entry.absolute_path.is_dir()
-            and next(entry.absolute_path.iterdir(), None) is not None
+        return entry.parent_id is not None and is_populated_destination(entry.absolute_path)
+
+    def _guard_clone_destinations(self, entries: Sequence[WorkingRepo]) -> None:
+        """Refuse the whole run when any destination holds unpushed work.
+
+        Runs before the first clone of each batch, so a refusal leaves every
+        repository on disk untouched. ``--force-reclone`` skips it.
+        """
+        if self._force_reclone:
+            return
+        blocked = blocked_destinations(
+            [entry for entry in entries if entry.parent_id is not None],
+            self.git_runner,
         )
+        if blocked:
+            raise GitSyncError(format_block_error(blocked))
 
     def _select_clone_ref(self, entry: WorkingRepo, remote_url: str) -> tuple[str, RefKind]:
         if entry.target_ref_kind == RefKind.TAG and entry.target_ref_name:

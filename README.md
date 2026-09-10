@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.46
+# ComplexGitSync v0002.47
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -241,7 +241,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 
 | Group | Command | Arguments and key options | Description |
 |---|---|---|---|
-| Minimalist | `initialise` | `[source]` `--output-path` `--force-protocol` `--commit-gitignore` | Initialise a project tree: clone(.cgs) or restore state(.gts). |
+| Minimalist | `initialise` | `[source]` `--output-path` `--force-protocol` `--force-reclone` `--commit-gitignore` | Initialise a project tree: clone(.cgs) or restore state(.gts). Re-clones every dependency; refuses when one holds unpushed work. |
 | Minimalist | `bootstrap` | `<source> <project-name>` `--cgs-path` `--force-protocol` | Clone a brand-new project tree into an isolated CGSHOME, for running ComplexGitSync standalone (not nested inside the project). |
 | Minimalist | `clean-init` | `<source>` `--output-path` `--force-protocol` `--commit-gitignore` | Purge generated clone state, then initialise from a .cgs spec. |
 | Minimalist | `freeze-release` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull, push, and freeze from a READY tree. |
@@ -269,6 +269,20 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
 | Configuration | `create-cgs` | `--project` `--repo` `--output` | Create a validated .cgs specification from CLI project definitions. |
+
+> **`initialise` re-clones your dependencies.** Only the root repository at
+> CGSHOME is kept as it is. Every repository below it whose directory already
+> holds files is **deleted and cloned again** — the old `.git` goes too, so
+> nothing in it can be recovered afterwards.
+>
+> Before deleting anything, `initialise` checks each destination and stops the
+> whole run if one holds work that exists nowhere else: uncommitted changes,
+> commits you have not pushed, or a branch with no upstream. It names every
+> repository that blocked it and deletes none of them. Commit and push, or
+> pass `--force-reclone` to delete the work on purpose.
+>
+> A directory that is not a Git checkout — what a clone interrupted halfway
+> leaves behind — is still cleared with no flag needed.
 
 ### Options that recur
 

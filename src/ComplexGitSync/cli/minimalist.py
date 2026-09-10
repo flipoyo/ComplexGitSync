@@ -106,6 +106,19 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                     "each .cgs entry actually declares."
                 ),
             )
+            subparser.add_argument(
+                "--force-reclone",
+                dest="force_reclone",
+                action="store_true",
+                help=(
+                    "Delete and re-clone a dependency even when its checkout holds "
+                    "work that exists nowhere else. Without this flag, initialise "
+                    "refuses and names every repository with uncommitted changes, "
+                    "with unpushed commits, or on a branch that has no upstream — "
+                    "and deletes nothing. Destructive: the deleted work is not "
+                    "recoverable, since the old .git goes with it."
+                ),
+            )
             add_gitignore_sync_arguments(subparser)
             subparser.set_defaults(handler=_handle_initialise)
         elif command_name == "clean-init":
@@ -321,6 +334,7 @@ def _handle_initialise(args: argparse.Namespace) -> int:
     git_user_name = getattr(args, "git_user_name", None)
     git_user_email = getattr(args, "git_user_email", None)
     force_access_protocol = getattr(args, "force_access_protocol", None)
+    force_reclone = getattr(args, "force_reclone", False)
     if args.source is None:
         client = ComplexGitSyncClient()
         document = client.configure(args.project, args.repo)
@@ -363,6 +377,7 @@ def _handle_initialise(args: argparse.Namespace) -> int:
                 active_client,
                 source,
                 output_path=output_path,
+                force_reclone=force_reclone,
                 commit_gitignore=commit_gitignore,
                 force_gitignore_sync=force_gitignore_sync,
                 git_user_name=git_user_name,
@@ -498,6 +513,7 @@ def _execute_initialise_cgs(
     source_path: Path,
     *,
     output_path: str | None = None,
+    force_reclone: bool = False,
     commit_gitignore: bool = False,
     force_gitignore_sync: bool = False,
     git_user_name: str | None = None,
@@ -510,6 +526,7 @@ def _execute_initialise_cgs(
     registry = client.initialise_cgs(
         source_path,
         output_path=output_path,
+        force_reclone=force_reclone,
         commit_gitignore=commit_gitignore,
         force_gitignore_sync=force_gitignore_sync,
         git_user_name=git_user_name,

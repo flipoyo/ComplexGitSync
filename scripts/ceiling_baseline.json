@@ -37,8 +37,13 @@
     },
     "cli/minimalist.py": {
       "internal_imports": 13,
-      "loc": 693,
+      "loc": 710,
       "public_symbols": 1
+    },
+    "clone_guard.py": {
+      "internal_imports": 2,
+      "loc": 116,
+      "public_symbols": 6
     },
     "config_document.py": {
       "internal_imports": 0,
@@ -72,7 +77,7 @@
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 575,
+      "loc": 598,
       "public_symbols": 2
     },
     "git_tree.py": {
@@ -111,8 +116,8 @@
       "public_symbols": 23
     },
     "orchestre.py": {
-      "internal_imports": 79,
-      "loc": 3640,
+      "internal_imports": 82,
+      "loc": 3683,
       "public_symbols": 13
     },
     "paths.py": {
