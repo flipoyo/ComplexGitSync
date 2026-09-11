@@ -2,6 +2,8 @@
 
 *Created: 2026-09-04*
 
+> **Release review — 2026-09-11. Priority 1-3.** Promoted from 2-1 for the first public release. Deliver reliable local history, meaningful verification, portable state identity, and legacy compatibility. Register publication is deferred; §4 is a later milestone, not a release gate.
+
 > **Reassessed on 2026-09-09. Every finding still stands, F1 included.**
 > Re-checked against the code today: nothing outside `ledger_store.py` and
 > its own tests calls `append_entry` or `write_entry`, so `cgitsync verify`
@@ -80,31 +82,31 @@ graph TD
 
 | The draft said | Reality |
 |---|---|
-| `state(<hash>)_<i>` naming is a hypothesis, "no public evidence it exists" | It exists and is *the* layout. `.cgitsync/state(<64 hex>)_<n>/` holding `<name>.gts`, `<name>.log`, `<name>.cgs`, `<project>.lgr`. Grammar in [state_store.py:37-39](src/ComplexGitSync/state_store.py#L37-L39). |
-| `.cgitsync/state/<project>.gts` is the live pointer, used by every `--gts` | No such path. `.gts` files live inside state directories only. The one `state/` mention is a legacy fallback in [snapshot_resolver.py:64-66](src/ComplexGitSync/snapshot_resolver.py#L64-L66). |
+| `state(<hash>)_<i>` naming is a hypothesis, "no public evidence it exists" | It exists and is *the* layout. `.cgitsync/state(<64 hex>)_<n>/` holding `<name>.gts`, `<name>.log`, `<name>.cgs`, `<project>.lgr`. Grammar in [state_store.py:37-39](../../src/ComplexGitSync/state_store.py#L37-L39). |
+| `.cgitsync/state/<project>.gts` is the live pointer, used by every `--gts` | No such path. `.gts` files live inside state directories only. The one `state/` mention is a legacy fallback in [snapshot_resolver.py:64-66](../../src/ComplexGitSync/snapshot_resolver.py#L64-L66). |
 | `.cgitsync/releases/<label>.gts` holds freeze snapshots | No such path — zero occurrences of `releases/` in `src/`. `freeze` writes an ordinary state directory like every other command. |
-| `freeze` has "`++id`" semantics on a label | No counter on labels. `freeze`/`freeze_state` ([orchestre.py:3182](src/ComplexGitSync/orchestre.py#L3182), [:3079](src/ComplexGitSync/orchestre.py#L3079)) tag the tree and call `write_gts_snapshot`. |
+| `freeze` has "`++id`" semantics on a label | No counter on labels. `freeze`/`freeze_state` ([orchestre.py:3182](../../src/ComplexGitSync/orchestre.py#L3182), [:3079](../../src/ComplexGitSync/orchestre.py#L3079)) tag the tree and call `write_gts_snapshot`. |
 | `.gts` identity is `document.snapshot_hash` | The field exists and is canonical, but it identifies nothing — see §0.2. |
 | `client.orchestrate(".goc")` must not be regressed | `orchestrate` and `.goc` do not exist anywhere in `src/`. Removed from the non-goals. |
 | `client.load/print/pull/initialise/freeze` are the public surface to pin | `load`, `pull`, `initialise`, `freeze` exist. `print` is a document method, not a client method. The client surface is far wider (~50 public methods). |
 | `docs/MEMORY.md` must reconcile with `README.md` §1.5/§1.6 | `README.md` has no §1.5 or §1.6, and never mentions `snapshot_hash` or determinism. There is nothing to contradict. |
-| `validate_branch_topology`, preflight, Tarjan/SCC, `plan_actions`/`plan_order` exist and are out of scope | Correct on all four. `plan_actions`/`plan_order` are printed at [cli/_shared.py:222-223](src/ComplexGitSync/cli/_shared.py#L222-L223). |
+| `validate_branch_topology`, preflight, Tarjan/SCC, `plan_actions`/`plan_order` exist and are out of scope | Correct on all four. `plan_actions`/`plan_order` are printed at [cli/_shared.py:222-223](../../src/ComplexGitSync/cli/_shared.py#L222-L223). |
 
 ### 0.2 The four Phase 0 questions, answered
 
 **Q1 — does an occurrence counter exist?** Yes, `_n` in
 `state(<hash>)_<n>`, allocated by `_next_state_directory_order`
-([state_store.py:70](src/ComplexGitSync/state_store.py#L70)) as a
+([state_store.py:70](../../src/ComplexGitSync/state_store.py#L70)) as a
 collision-avoiding suffix for a *repeated* state hash. Given Q2 it is dead
 code: the live tree holds two state directories, both `_0`.
 
 **Q2 — is `snapshot_hash` computed by one canonical serializer?** The
 content hash is: `GtsDocument.compute_snapshot_hash`
-([gts_document.py:287](src/ComplexGitSync/gts_document.py#L287)), and
+([gts_document.py:287](../../src/ComplexGitSync/gts_document.py#L287)), and
 validation refuses a `.gts` whose recorded hash disagrees
-([gts_document.py:223](src/ComplexGitSync/gts_document.py#L223)). But it is
+([gts_document.py:223](../../src/ComplexGitSync/gts_document.py#L223)). But it is
 not what names the State. `write_gts_snapshot`
-([orchestre.py:3460](src/ComplexGitSync/orchestre.py#L3460)) calls
+([orchestre.py:3460](../../src/ComplexGitSync/orchestre.py#L3460)) calls
 `new_time_l0_anchor(SystemClock())` on every write:
 
 ```python
@@ -114,10 +116,10 @@ canonical_state_hash = state_anchor.state_hash
 
 where the anchor is
 `sha256("TIME-L0:<iso>:<time_ns>:<pid>:<random 16 bytes>")`
-([ledger_entry.py:76-99](src/ComplexGitSync/ledger_entry.py#L76-L99)). So
+([ledger_entry.py:76-99](../../src/ComplexGitSync/ledger_entry.py#L76-L99)). So
 the directory called `state(<hash>)` is named after a timestamp, and
 `LocalGitRegister`'s docstring says so plainly
-([orchestre.py:438](src/ComplexGitSync/orchestre.py#L438)):
+([orchestre.py:438](../../src/ComplexGitSync/orchestre.py#L438)):
 
 > `snapshot_hash` remains the canonical hash of the `.gts` payload, but it
 > does not participate in State identity.
@@ -140,10 +142,10 @@ does not exist. What exists in its place is F3.
 The draft's Phase 5 (atomic transactions) is substantially delivered.
 `write_gts_snapshot` stages into `.tmp-state(<hash>)_<n>/` and publishes
 with one `rename`
-([orchestre.py:3544](src/ComplexGitSync/orchestre.py#L3544));
+([orchestre.py:3544](../../src/ComplexGitSync/orchestre.py#L3544));
 `ledger_store.write_entry` and `write_head` do the same per entry
-([ledger_store.py:264](src/ComplexGitSync/ledger_store.py#L264),
-[:344](src/ComplexGitSync/ledger_store.py#L344)). Do not rebuild this.
+([ledger_store.py:264](../../src/ComplexGitSync/ledger_store.py#L264),
+[:344](../../src/ComplexGitSync/ledger_store.py#L344)). Do not rebuild this.
 Locking is genuinely absent — no `locks/`, no advisory lock anywhere.
 
 ---
@@ -152,7 +154,7 @@ Locking is genuinely absent — no `locks/`, no advisory lock anywhere.
 
 ### F1 — `cgitsync verify` verifies an empty directory (severity: high)
 
-`verify` ([orchestre.py:3204](src/ComplexGitSync/orchestre.py#L3204)) reads
+`verify` ([orchestre.py:3204](../../src/ComplexGitSync/orchestre.py#L3204)) reads
 `<cgshome>/.cgitsync/lgr/` through `read_all_entries`. Nothing in `src/`
 ever calls `ledger_store.write_entry` or `append_entry` — the only callers
 are `tests/unit/test_ledger_store.py`. On any real workspace the directory
@@ -182,22 +184,22 @@ point.
 
 Before writing, `write_gts_snapshot` finds the previous register and copies
 it into the new state directory
-([orchestre.py:3492-3497](src/ComplexGitSync/orchestre.py#L3492-L3497)).
+([orchestre.py:3492-3497](../../src/ComplexGitSync/orchestre.py#L3492-L3497)).
 
 - **Growth.** Every operation duplicates the whole history. After *n*
   operations `.cgitsync/` holds *n* copies of a register of length *n* —
   quadratic in bytes, for a file that only grows.
 - **The parent is chosen by modification time.** `_latest_state_artifact`
   takes `max(..., key=st_mtime)`
-  ([state_store.py:144-148](src/ComplexGitSync/state_store.py#L144-L148)).
+  ([state_store.py:144-148](../../src/ComplexGitSync/state_store.py#L144-L148)).
   Restore a backup, copy a tree with `cp -p`, or run twice inside one
   filesystem timestamp tick, and the new register forks from the wrong
   parent, silently.
 
 `snapshot_resolver` orders the same directories by *name* for `.gts` files
-([snapshot_resolver.py:60](src/ComplexGitSync/snapshot_resolver.py#L60))
+([snapshot_resolver.py:60](../../src/ComplexGitSync/snapshot_resolver.py#L60))
 and by mtime for the register
-([:99](src/ComplexGitSync/snapshot_resolver.py#L99)). Two orderings over
+([:99](../../src/ComplexGitSync/snapshot_resolver.py#L99)). Two orderings over
 one directory set is one too many. Under §2 the ordering question
 disappears: the chain's parent is `HEAD`, and `HEAD` is a fact in the
 register, not a property of the filesystem.
@@ -206,12 +208,12 @@ register, not a property of the filesystem.
 
 `_STATE_DIR_RE` and its helpers live in `state_store.py`, are copied into
 `snapshot_resolver.py` (which says so at
-[:11-30](src/ComplexGitSync/snapshot_resolver.py#L11-L30)), and are
+[:11-30](../../src/ComplexGitSync/snapshot_resolver.py#L11-L30)), and are
 imported from `state_store` by `orchestre.py`
-([:131-138](src/ComplexGitSync/orchestre.py#L131-L138)). The hash
+([:131-138](../../src/ComplexGitSync/orchestre.py#L131-L138)). The hash
 canonicalisation is implemented twice, in `ledger_entry.py` and
 `integrity.py`, the latter documenting the duplication as deliberate
-([integrity.py:9-15](src/ComplexGitSync/integrity.py#L9-L15)). Each copy
+([integrity.py:9-15](../../src/ComplexGitSync/integrity.py#L9-L15)). Each copy
 was justified as temporary by a work package that has since landed. The
 reconciliation those comments promise is this ticket.
 
@@ -239,10 +241,10 @@ State was seen.** One hash per question, and neither borrows the other's:
 | | State — `.gts` | Register — `.lgr` |
 |---|---|---|
 | Question answered | *what* is this workspace | *when*, in what order, by whom |
-| Identity | `sha256(canonical .gts)` — today's `document.snapshot_hash` | TIME-L0 anchor, per recorded entry |
+| Identity | `sha256(portable canonical .gts)` — versioned content identity (§3.1) | TIME-L0 anchor, per recorded entry |
 | Naming | `state(<content hash>)_<n>/` | `seq` / `prev` / `entry_hash` chain |
 | Determinism | same content ⇒ same name, on any machine | never repeats; time and entropy are the point |
-| Mutability | immutable — the name is a checksum of the bytes | append-only, tamper-evident |
+| Mutability | immutable — the name checksums the canonical state payload, not every serialized byte | append-only, tamper-evident |
 
 Two consequences worth stating outright, because they are what the swap
 buys:
@@ -271,7 +273,20 @@ buys:
 
 ## 3. The work
 
-Ordered. 3.0 depends on nothing and can start today.
+Ordered. Start with §3.0a so verification stops making a misleading claim
+before the larger storage migration is complete. Coordinate the result states
+with [1-4 CliContract](1-4_CliContract_DevPlanTicket.md).
+
+### 3.0a Make verification honest first (F1)
+
+Distinguish a verified non-empty chain, no recorded history, legacy history
+without a chain, and corrupt history. Missing or legacy evidence must not be
+presented as successfully verified history. Preserve access to legacy
+workspaces and explain the limitation rather than crashing. Add regression
+cases for all four states; define their CLI codes with CliContract.
+
+The existing no-output-change rule in §5 has this deliberate exception:
+verification messages must change to state what was actually checked.
 
 ### 3.0 Stop the documentation from lying (F5, half of F4)
 
@@ -285,16 +300,30 @@ Ordered. 3.0 depends on nothing and can start today.
 
 ### 3.1 Swap the two hashes (F2)
 
-In `write_gts_snapshot`: build the `GtsDocument` first, call
-`ensure_snapshot_hash()`, and pass **that digest** as `state_hash` to
-`_resolve_memory_state_directory`. The allocator already increments `_n` on
-a repeated hash, so it needs no change — it simply starts being reached.
+First define a versioned portable canonical payload. The current
+`GtsDocument._build_canonical_payload()` includes `absolute_path`,
+`parent_absolute_path`, project `root_absolute_path`, and `source_cgs_path`;
+using its digest unchanged cannot provide cross-machine identity. Specify
+stable tree-relative identifiers for those fields and canonical ordering
+independent of installation paths. Audit the other fields for machine-local
+observations and specify which are state identity and which are metadata.
+
+Keep the legacy hash validator for existing snapshots. New snapshots must
+identify the new canonicalization version unambiguously; old snapshots and
+register entries remain readable without being silently rewritten or checked
+against the new hash algorithm. Test fixtures for both formats and relocated
+workspaces are required.
+
+Then, in `write_gts_snapshot`, build the document and use the version-appropriate
+portable content digest as `state_hash` for `_resolve_memory_state_directory`.
+The existing allocator increments `_n` for repeated content. Test it under the
+new format rather than assuming the naming change alone delivers portability.
 
 `new_time_l0_anchor` keeps its caller, moved: the anchor is generated when
 an entry is appended to the register, not when a directory is named. Under
 D2 it becomes part of entry construction in `ledger_entry.py`, alongside
 `recorded_at`, where the injectable clock it was written for
-([ledger_entry.py:85](src/ComplexGitSync/ledger_entry.py#L85)) finally has
+([ledger_entry.py:85](../../src/ComplexGitSync/ledger_entry.py#L85)) finally has
 a reason to exist: a fake clock makes register tests deterministic without
 making State names non-deterministic.
 
@@ -315,7 +344,7 @@ that is a `gts_document.py` bug to fix before this phase closes.
   `.cgitsync/lgr/` is actually written, and `verify` has something to
   verify. `record_snapshot`/`record_event` become thin callers.
 - Delete the copy-forward at
-  [orchestre.py:3492-3497](src/ComplexGitSync/orchestre.py#L3492-L3497) and
+  [orchestre.py:3492-3497](../../src/ComplexGitSync/orchestre.py#L3492-L3497) and
   the `_latest_state_artifact` mtime lookup with it. The chain's parent is
   `HEAD`, read from the register.
 - Keep reading the old single-file `<project>.lgr` where it exists, so
@@ -331,8 +360,8 @@ private copy of either.
 
 ### 3.4 Finish `verify`
 
-Implement the three store-level findings the docstring promises and the
-`Finding` enum lacks: `MISSING_STATE`, `ORPHAN_STATE`,
+Implement the checks for the three store-level findings already declared in
+the `Finding` enum: `MISSING_STATE`, `ORPHAN_STATE`,
 `STATE_DIGEST_MISMATCH`. §2 makes all three meaningful; §4 makes them
 necessary.
 
@@ -342,13 +371,19 @@ Out of scope here. Two `cgitsync` processes in one workspace race on the
 state directory and the register, and staged-then-`rename` means the loser
 silently wins. Its own ticket; record it in `.localSpec/audit.md` now.
 
-## 4. Graduating `.cgitsync/` from scratch directory to register repository
+## 4. Deferred milestone: a register repository
+
+**Not required for the first release.** Keep the design and future gates below
+as recorded follow-up work. Remote publication, account setup, push cadence,
+and shared-chain merge rules are not part of this ticket's local implementation.
+The local storage tests in §4.4 remain useful release checks; waiting for two
+released versions and collecting cross-provider evidence does not block closure.
 
 ### 4.1 Why it is ignored today, and what that decision actually was
 
 `.gitignore` excludes `.cgitsync/` and the root `<name>.lgr`, written into
 every tree root by `sync_gitignore` via `cgitsync_managed_state_paths`
-([git_tree.py:1204](src/ComplexGitSync/git_tree.py#L1204)). This came from
+([git_tree.py:1204](../../src/ComplexGitSync/git_tree.py#L1204)). This came from
 `archive/20260903_CgitsyncGitignoreLeak_DevPlanTicket.md`, which reproduced
 a real leak: running Tutorial 3 against `cawaqsviz` committed
 `.cgitsync/state(366ca0a3…)_0/…` into the project as ordinary content.
@@ -383,10 +418,10 @@ released versions** before §4.3 begins:
 G5 is the one most likely to be underestimated. Today's live register
 records `snapshot_path = "$HOME/.cgs/CGS20260904134150/ComplexGitSync/…"`
 and `actor = "flipoyo"` — the `$HOME` prefix is substituted
-([paths.py:73](src/ComplexGitSync/paths.py#L73), `_path_to_environment_marker`)
+([paths.py:73](../../src/ComplexGitSync/paths.py#L73), `_path_to_environment_marker`)
 but the rest of the path and the user name are verbatim. `ledger_store`
 already scrubs credentials from argv and URLs
-([ledger_store.py:172](src/ComplexGitSync/ledger_store.py#L172)), while
+([ledger_store.py:172](../../src/ComplexGitSync/ledger_store.py#L172)), while
 `LocalGitRegister`/`SyncLedger` scrub nothing at all. Publishing today's
 register would publish one developer's home-directory layout and login
 name. Paths must become relative to the tree root, and `actor` must become
@@ -458,7 +493,7 @@ Do not touch and do not regress: the cycle-breaking engine (Tarjan SCC,
 anchor selection, `is_external_reference`), `topological_sort`,
 `validate_branch_topology` / `BranchTopologyReport`, preflight validation,
 `.gitignore` sync beyond §4.4's test change, `import-submodules` /
-`init-from-submodules`, and the CLI's printed contract (`log_file=`,
+`init-from-submodules`, and the CLI's printed contract except the explicit verification correction in §3.0a (`log_file=`,
 `workflow=`, `plan_actions=`, `plan_order=`, the status table). No public
 client method signature and no CLI flag changes — `--gts`, `--cgshome` and
 friends resolve exactly what they resolve today, whatever happens
@@ -483,7 +518,7 @@ there to protect.
 | unit | `snapshot_resolver` and `state_store` agree on every directory name, by construction (one imports the other). |
 | unit | G5: a written register contains no absolute path outside the tree root, and no OS user name unless explicitly configured. |
 | integration | The `.cgitsync`-as-a-git-repository mode of §4.4: entries commit and read back cleanly. |
-| integration | A pre-change workspace (single-file `<project>.lgr`, no `.cgitsync/lgr/`) still loads, resolves its default `.gts`, and `verify` explains rather than crashes. |
+| integration | Legacy fixtures still load and validate under their original hash format; a new-format snapshot is portable across two roots. Missing, legacy, corrupt, and verified history produce distinct verification results. |
 | integration | Rewritten leak regression: `git ls-files .cgitsync` is empty after `initialise` (§4.4). |
 
 ## 7. Acceptance
@@ -504,7 +539,9 @@ there to protect.
    docstring contradicts it.
 8. No test asserts that `.cgitsync/` is invisible to Git; the leak
    regression asserts it is not tracked in the project's index.
-9. §4.2's gates G1–G7 are written down with their evidence, so that
-   graduating `.cgitsync/` to a repository becomes a decision someone can
-   take on facts rather than on confidence.
-10. No CLI flag, printed line, or public client signature changed.
+9. §4's publication design and gates remain documented as deferred work;
+   no remote register or two-release waiting period is required for closure.
+10. No CLI flag or public client signature changes. Existing printed output
+    stays stable except verification messages required by §3.0a.
+11. Missing and legacy history are not reported as verified history; legacy
+    snapshots remain readable and validate with their original hash algorithm.

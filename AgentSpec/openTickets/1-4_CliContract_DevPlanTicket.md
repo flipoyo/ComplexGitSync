@@ -2,6 +2,8 @@
 
 *Created: 2026-09-11*
 
+> **Release review — 2026-09-11. Priority 1-4.** Promoted from 2-5. First-release scope is exit codes, expected-error handling, status/verification JSON, and compatibility promises. Validation and dry-run JSON are deferred.
+
 ## Abstract — read this first
 
 **The one-line version.** The CLI is the product, so write down what it
@@ -14,10 +16,9 @@ on 2026-09-10. Nothing here has been built.
 **Why it exists.** Early adopters wire a tool into CI, Make and IDE tasks
 before they trust it. That needs two things this tool does not yet state:
 a stable exit code, and output a script can read without parsing a table
-meant for a human. The codes already exist by accident — `cli/*.py` holds
-37 `return 0`, two `return 1` and one `return 2`, and `main` hands that
-straight back — but nothing says what they mean, so nothing may rely on
-them.
+meant for a human. Handlers already return `0`, `1` or `2`, but counting those returns misses
+exceptions: the logging wrapper re-raises failures and `main` has no common
+expected-error boundary. The public contract must cover those paths too.
 
 **What you will find.** §1 what is already there. §2 the three pieces of
 the contract. §3 the decisions. §4 work packages. §5 acceptance.
@@ -43,7 +44,7 @@ graph LR
 
 | Piece | State |
 |---|---|
-| Exit codes | Accidental. `main` (`cli/__init__.py:76`) returns `handler(args)`, and handlers return `0`, `1` or `2`. Undocumented, so no user may depend on them |
+| Exit codes | Handlers return `0`, `1` or `2`, but expected exceptions can escape as tracebacks. Normalize expected failure paths as well as explicit returns. |
 | Machine-readable output | None. No `--json` anywhere in `cli/` |
 | A clean seam for it | `status_render.py` is already pure rendering, with no I/O of its own. A second renderer belongs beside the table, not inside the command |
 | Command list | `README.md` §3 lists every command, and `tests/unit/test_cli_smoke.py::test_readme_documents_every_cli_command` keeps it complete |
@@ -65,20 +66,29 @@ codes in the tree today suggest the shape already:
 The distinction that matters to a script is between "I asked and the
 answer is no" and "I could not ask". A CI job treats those differently.
 
+Expected operational, validation, filesystem, and argument errors must be
+mapped to the documented codes with concise diagnostics instead of tracebacks.
+Do not silently disguise programming defects as successful execution. Define
+missing/legacy-history results with [1-3 StateMemory](1-3_StateMemory_DevPlanTicket.md).
+
 ### 2.2 JSON output
 
-`--json` on the read-only commands, printing one object on stdout and
-nothing else. Candidates, all of which already answer a question rather
-than performing an operation:
+First release: `--json` on `status` and `verify`, printing one object on
+stdout and nothing else. JSON selects rendering; it does not authorize repair
+or change the command's underlying side effects.
 
 - `status` — the tree, per repository: name, path, branch, scope, sync state
 - `verify` — the register's chain result
-- `validate` — the parsed and normalized document, and what failed
-- any command run with `--dry-run` — the plan it would have carried out
+Deferred follow-up: `validate` JSON (normalized document and failures) and
+JSON for all `--dry-run` plans. These do not gate this ticket's closure.
 
 **What `--json` must guarantee.** Nothing but JSON on stdout, so a pipe
 never has to strip a banner; every human-facing line to stderr instead; the
 same exit code as the human form, so a caller may use either signal.
+For JSON-capable commands this includes expected failures and argument errors
+when JSON mode is requested: one parseable error object, no banners, log-path
+lines, or tracebacks mixed into stdout. Define and test the parser-error policy
+explicitly, including help/version behavior.
 
 ### 2.3 A statement of what is stable
 
@@ -110,9 +120,8 @@ carry the detail.
 
 ### D2. Which commands get `--json` first?
 
-§2.2 lists four. `status` and `verify` are the two a CI job actually calls,
-and `verify` already exists to be asked. Recommendation: those two first,
-`validate` and the `--dry-run` plans second, as a follow-on.
+Settled for this release: `status` and `verify` only. `validate` and all
+`--dry-run` JSON remain deferred follow-up work (§2.2).
 
 ### D3. Where does the JSON shape live?
 
@@ -131,11 +140,11 @@ marked today.
 
 | WP | Depends on | Touches | Deliverable |
 |---|---|---|---|
-| **WP-C1** | D1 | `cli/*.py`, `README.md`, `docs/Text/user_guide.tex` | Every handler returns a documented code. One table in the README and the user guide. A test asserts the code for a refused merge, an unfound workspace and a clean run |
-| **WP-C2** | D2, D3 | `status_render.py`, `cli/minimalist.py`, `cli/expert.py` | `--json` on `status` and `verify`. Stdout carries only JSON; everything else goes to stderr. A test parses the output with `json.loads` and asserts nothing else was printed |
-| **WP-C3** | WP-C2 | same, plus `cli/expert.py` | `--json` on `validate` and on `--dry-run` plans |
+| **WP-C1** | D1 | `cli/*.py`, `README.md`, `docs/Text/user_guide.tex` | Cover explicit returns and expected exceptions at the CLI boundary. Document codes and test clean execution, refused merge, missing workspace/file, invalid arguments, and invalid input without expected-error tracebacks |
+| **WP-C2** | D2, D3 | `status_render.py`, `cli/minimalist.py`, `cli/expert.py` | `--json` on `status` and `verify`. Stdout carries only JSON; everything else goes to stderr. Tests parse success and expected-error output with `json.loads`, cover parser failures, and assert no log/banner/traceback contaminates stdout |
+| **WP-C3 — deferred** | future follow-up | `cli/expert.py` and renderers | `validate` and dry-run JSON; not implemented or required for this ticket |
 | **WP-C4** | D4 | `README.md` | The stability section from §2.3, with any experimental command marked in the §3 command table |
-| **WP-C5** | WP-C1 to WP-C4 | tests, docs, this ticket | `pixi run lint` and `pixi run test`; the before-committing checklist in `CLAUDE.md`; archive this ticket in the implementing commit |
+| **WP-C5** | WP-C1, WP-C2, WP-C4 | tests, docs, this ticket | `pixi run lint` and `pixi run test`; the before-committing checklist in `CLAUDE.md`; archive this ticket in the implementing commit |
 
 ## 5. Acceptance
 
@@ -144,9 +153,20 @@ marked today.
 - `cgitsync status --json` and `cgitsync verify --json` print one JSON
   object on stdout and nothing else. `json.loads` on the captured stdout
   succeeds in a test.
+- Expected failures produce documented codes and clean diagnostics. For
+  JSON-capable commands, both success and expected failures produce valid JSON;
+  tests include parser errors, missing files/workspaces, and verification failures.
 - The exit code is the same whether `--json` is passed or not.
 - `README.md` and `docs/Text/user_guide.tex` carry the exit-code table and
   the stability statement, and the statement says that Python modules are
   not a public interface.
 - `--json` output is documented field by field, not only shown by example.
 - `pixi run lint` and `pixi run test` pass.
+
+## 6. Release coordination and deferred work
+
+Use [1-3 StateMemory](1-3_StateMemory_DevPlanTicket.md)'s verification results;
+JSON must not label missing or legacy evidence as successfully verified history.
+Settle the meaning of a major version and compatibility promises together with
+[1-5 UserInstallPath](1-5_UserInstallPath_DevPlanTicket.md)'s version scheme.
+WP-C3 is explicitly deferred and does not block first-release acceptance.

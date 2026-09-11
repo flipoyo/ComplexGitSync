@@ -2,6 +2,8 @@
 
 *Created: 2026-09-11*
 
+> **Release review — 2026-09-11. Priority 1-5.** Promoted from 2-6 for a tested installation outside the source checkout and a repeatable public release. Support only validated platforms; broader coverage is deferred.
+
 ## Abstract — read this first
 
 **The one-line version.** A person evaluating this tool should type one
@@ -52,14 +54,18 @@ Most of the work is done. `pyproject.toml` today:
 | `requires-python` | `>=3.11` | Declared |
 | `license`, `readme`, `authors` | present | Enough for a package page |
 
-A wheel built from this would install and put `cgitsync` on `PATH`. The
-gap is publication and the promises around it, not the build.
+The console entry point and wheel configuration are present. Prove the
+built artifact installs and runs outside the checkout in a clean environment;
+metadata inspection alone does not prove installation works. Document Git on
+PATH, the supported Python version, and how to obtain the chosen installer
+(such as pipx). User installation must not depend on Pixi or mounted developer
+repositories.
 
 ## 2. What is missing
 
 | # | Missing | Why it matters |
 |---|---|---|
-| 2.1 | Nothing is published | There is no name on PyPI to install |
+| 2.1 | Publication status must be checked before release | Package-name ownership/availability was not checked in this local planning review |
 | 2.2 | No `classifiers`, no `[project.urls]` | The package page would carry no link to the repository, no issue tracker, no supported-Python badge |
 | 2.3 | No publish workflow | Releasing by hand from a laptop is how a wrong artefact gets uploaded once and can never be replaced |
 | 2.4 | No `CHANGELOG.md` | A user upgrading has no way to learn what changed |
@@ -75,21 +81,22 @@ the CLI and the `.cgs` grammar have settled, and not before.
 
 ### D1. The version scheme, which publishing forces
 
-`pyproject.toml` reads `version = "0002.48"`. `CLAUDE.md` calls this
+`pyproject.toml` reads `version = "0002.49"` at this review. Recheck the
+current value when implementing the release. `CLAUDE.md` calls this
 `YYYY.XX`, but `0002` is not a year — it is a counter. Publishing makes
 this a user-visible problem for two reasons:
 
-- PEP 440 normalises `0002.48` to `2.48`, so the package page and
+- PEP 440 normalises `0002.49` to `2.49`, so the package page and
   `pipx install complexgitsync==...` would show a version the repository
   never writes.
-- Ordering is then by number, so `2.48` sorts after `2.9`. That is fine
+- Ordering is then by number, so `2.49` sorts after `2.9`. That is fine
   going forward and surprising to read.
 
 Three ways out, all needing a decision before anything is uploaded:
 
 | Option | What happens |
 |---|---|
-| **Publish `2.48` and adopt it** (recommended) | Accept the normalised form, change the release to write `2.48`, and update `bump-version` and `CLAUDE.md`'s `YYYY.XX` wording to match what the file actually holds |
+| **Publish `2.49` and adopt it** (recommended) | Accept the normalised form, change the release to write `2.49`, and update `bump-version` and `CLAUDE.md`'s `YYYY.XX` wording to match what the file actually holds |
 | Re-base on a real calendar version | `2026.9` and onward. Honest about what the number is, and a discontinuity in the sequence |
 | Move to semantic versioning | Fits the stability promises in `CliContract`, and is the largest change |
 
@@ -101,14 +108,16 @@ the version, per `CLAUDE.md`. It has to keep being so.
 `name = "ComplexGitSync"` normalises to `complexgitsync` on PyPI, so
 `pipx install complexgitsync` is what a user types while the repository
 says `ComplexGitSync`. Confirm that is acceptable, and check the name is
-free before anything else in §4 starts.
+available or under the owner's control before publication. This gates publishing,
+not artifact testing, metadata, documentation drafts, or other preparation.
 
 ### D3. Which operating systems are supported?
 
-A claim is only worth making if CI proves it. Recommendation: add macOS
-and Windows to the matrix, and support what passes. Windows is the one to
-watch — this tool shells out to `git` constantly, and path handling and
-`git`'s own behaviour differ there.
+First-release decision: claim support only for platforms actually validated,
+including the installed artifact. The existing Linux CI is the starting point;
+macOS and Windows expansion may follow later and must not block release.
+Select compatible runners for the Pixi platforms when extending CI, and test
+Git invocation and path handling on each newly claimed platform.
 
 ### D4. Does publishing happen on a tag, and by whom?
 
@@ -120,20 +129,22 @@ releases cut from a tag rather than manually.
 
 | WP | Depends on | Touches | Deliverable |
 |---|---|---|---|
-| **WP-U1** | D2 | — | Check `complexgitsync` is free on PyPI and claim it. Nothing else can start until the name is settled |
+| **WP-U1** | D2 | — | Check publication status and name ownership/availability before publishing. Arrange the chosen name with the owner; unrelated preparation can proceed |
 | **WP-U2** | D1 | `pyproject.toml`, `scripts/bump_version.py`, `CLAUDE.md` | The version scheme decided in D1, written by `bump-version` alone, with `CLAUDE.md`'s wording matching what the file holds |
 | **WP-U3** | — | `pyproject.toml` | `classifiers` and `[project.urls]`: repository, issues, documentation |
-| **WP-U4** | D3 | `.github/workflows/ci.yml` | An OS matrix. **Fix the broken step first**: CI runs `cgitsync initialise examples/complexgitsync.cgs`, and that file was deleted in commit `12c2332` |
+| **WP-U4** | D3 | `.github/workflows/ci.yml` | Validate the installed artifact on each claimed platform. CI already uses the existing `examples/complexgitsync4dev.cgs`; the former filename bug is fixed. Additional platforms are optional follow-up work |
 | **WP-U5** | D4, WP-U1 to WP-U3 | `.github/workflows/` | A release workflow on a tag: build, check the artefact, publish through trusted publishing. Test it against TestPyPI first |
 | **WP-U6** | WP-U2 | `CHANGELOG.md` | A changelog, starting at the first published version. State whether `bump-version` touches it or a person does |
-| **WP-U7** | WP-U5 | `README.md`, `docs/Text/` | Split the two audiences. A user section opening with `pipx install complexgitsync` and `cgitsync --help`; the Pixi instructions kept and moved under a contributor heading. §1.2's "no global install" sentence goes |
+| **WP-U7** | WP-U5 | `README.md`, `docs/Text/` | Document Git, supported Python, installer prerequisites, and a clean-environment installation. Split the two audiences. A user section opening with `pipx install complexgitsync` and `cgitsync --help`; the Pixi instructions kept and moved under a contributor heading. §1.2's "no global install" sentence goes |
 | **WP-U8** | WP-U7 | tests, docs, this ticket | `pixi run lint` and `pixi run test`; the before-committing checklist; archive this ticket in the implementing commit |
 
 ## 5. Acceptance
 
 - On a machine with no clone of this repository and no Pixi,
   `pipx install complexgitsync` followed by `cgitsync --help` works, and
-  `cgitsync --version` prints the published version.
+  `cgitsync --version` prints the published version. The installed artifact
+  also runs a local workspace smoke check outside the source checkout with
+  the documented Git/Python/installer prerequisites and no developer mounts.
 - The PyPI page links to the repository and the issue tracker and states
   the supported Python versions.
 - CI passes on every operating system the README claims, and its
@@ -144,3 +155,11 @@ releases cut from a tag rather than manually.
 - `README.md` reaches the user install command before it mentions Pixi,
   and the Pixi instructions are still there, under a contributor heading.
 - `pixi run lint` and `pixi run test` pass.
+
+## 6. Coordination and deferred work
+
+Coordinate the version scheme with [1-4 CliContract](1-4_CliContract_DevPlanTicket.md)
+before committing to major-version compatibility promises. Broadening operating
+system coverage and standalone binaries remain follow-up work, not release gates.
+Publication, package-name/account changes, tags, and remote workflow execution
+are future release actions; this planning review authorizes none of them.

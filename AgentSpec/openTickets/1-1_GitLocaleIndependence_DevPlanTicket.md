@@ -2,6 +2,8 @@
 
 *Created: 2026-09-10*
 
+> **Release review — 2026-09-11. Priority 1-1.** UpstreamBranchDisplay is already closed. This plan was rechecked against the resulting code; no locale fix has been implemented by this review.
+
 ## Abstract — read this first
 
 **What this document is.** A ticket for making ComplexGitSync behave the
@@ -71,7 +73,7 @@ which markers are worth keeping (§2, option C).
 
 ### 1.2 Which environment variable actually works
 
-All four measured against the same failing command on the same machine:
+The following settings were measured against the same failing command on the same machine:
 
 | Setting | Result |
 |---|---|
@@ -92,11 +94,11 @@ locale. `git status --porcelain` produced the identical escaped output under
 the inherited locale, `LC_ALL=C`, and `LC_MESSAGES=C`. Pinning messages
 costs nothing in how paths come back.
 
-### 1.3 Four methods that bypass the subprocess wrappers
+### 1.3 Five methods that bypass the subprocess wrappers
 
 `git_runner.py` has `_run` and `_query`, which
 [20260910_MergeOutputDecoding](../archive/20260910_MergeOutputDecoding_DevPlanTicket.md)
-gave a single decoding policy. Four methods call `subprocess.run` directly
+gave a single decoding policy. Five methods call `subprocess.run` directly
 with `text=True`, so they get neither that policy nor any environment change
 made in the wrappers:
 
@@ -106,16 +108,26 @@ made in the wrappers:
 | `has_upstream` | exit code only | inconsistent, and will miss the locale pin |
 | `has_unresolved_merge` | exit code only | same |
 | `tag_exists` | exit code only | same |
+| `local_only_commit_count` | a commit count | also uses direct `subprocess.run` with strict `text=True` |
 
 They all already call `_non_interactive_git_env()`, so a fix applied *there*
 reaches them — but their strict `text=True` decoding does not. Fold them
 into `_query`/`_query_bytes` rather than patching each one.
 
+**Inherited `LC_ALL` must be handled.** Setting `LC_MESSAGES=C` and
+clearing `LANGUAGE` is insufficient when a non-English `LC_ALL` is inherited:
+`LC_ALL` overrides the category setting. The original measurements did not
+cover that case. The implementation must either preserve the effective
+non-message categories while removing that override, or deliberately force
+`LC_ALL=C` for Git subprocesses and document the broader effect. Do not claim
+encoding and collation are preserved without testing that property. Only the
+child environment changes; the parent environment must remain untouched.
+
 ## 2. Options
 
 | Option | What it is | Verdict |
 |---|---|---|
-| **A. Pin the message locale** | `_non_interactive_git_env()` sets `LC_MESSAGES=C` and `LANGUAGE=""` | **Recommended.** One place, already the home of `GIT_TERMINAL_PROMPT`/`GIT_ASKPASS`, and §1.2 measured it working. Narrower than `LC_ALL=C`: encoding and collation stay as the user has them. |
+| **A. Pin the message locale** | `_non_interactive_git_env()` pins English messages and explicitly handles inherited `LC_ALL` (§1.3) | **Recommended with the precedence correction.** Document whether the chosen approach preserves other locale categories or deliberately overrides them. |
 | **B. Stop reading prose** | use exit codes and plumbing only | Right in principle, impossible here: no Git exit code distinguishes an authentication failure from any other fetch failure. Use it where it *does* apply. |
 | **C. Match only untranslated fragments** | keep `remote: …` (server-sent) and drop Git's own wording | A useful supplement to A, not a replacement — GitHub's and GitLab's wording is theirs to change. |
 
@@ -136,8 +148,8 @@ in a later diff.
 | Work package | Files | Deliverable |
 |---|---|---|
 | WP1: pin the locale | `git_runner.py` | §2 option A in `_non_interactive_git_env()`, with the §1.2 measurement recorded in the docstring — especially why `C.UTF-8` is wrong, so nobody "simplifies" it later. |
-| WP2: one boundary | `git_runner.py` | Fold `upstream_ref`, `has_upstream`, `has_unresolved_merge`, `tag_exists` into `_query`/`_query_bytes` (§1.3). No `subprocess.run` outside the wrappers. |
-| WP3: prove it | `tests/unit/test_git_runner.py` | A test that runs a failing Git command under a forced non-English environment and asserts the marker still matches. It must fail if WP1 is reverted. |
+| WP2: one boundary | `git_runner.py` | Fold `upstream_ref`, `has_upstream`, `has_unresolved_merge`, `tag_exists`, `local_only_commit_count` into `_query`/`_query_bytes` (§1.3). No `subprocess.run` outside the wrappers. |
+| WP3: prove it | `tests/unit/test_git_runner.py` | Regression cases with non-English `LANG`/`LANGUAGE`, with and without inherited non-English `LC_ALL`, run a failing Git command and assert the marker still matches. They must fail if WP1 is reverted. Test child-environment isolation and the documented category behavior. |
 | WP4: the golden test | `tests/integration/test_golden_release_gaps.py` | Passes on a non-English machine without a locale override in the test itself — the product pins the locale, the test does not have to. |
 | WP5: trim the prose matching | `orchestre.py` | §2 option C. Keep markers whose source is the server; mark each remaining Git-worded marker with what it was verified against, as the existing comments already do. |
 | WP6: verify and land | tests, this ticket | `pixi run lint` and `pixi run test` pass **under a non-English locale**; apply CLAUDE.md's before-committing checklist; archive under [TICKETLIFECYCLE.md](../../.agentSpec/TICKETLIFECYCLE.md). |
@@ -145,11 +157,13 @@ in a later diff.
 ## 4. Acceptance criteria
 
 - `LANG=fr_FR.UTF-8 LANGUAGE=fr_FR pixi run test` passes, with no locale
-  override inside any test.
+  override that forces English inside a test. Also run with inherited
+  `LC_ALL=fr_FR.UTF-8`; regression tests explicitly supply non-English environments.
 - An HTTPS authentication failure produces the `--force-protocol` hint under
   a non-English locale. A test proves it and fails if WP1 is reverted.
 - `grep -n "subprocess.run" src/ComplexGitSync/git_runner.py` shows calls
   only inside `_run`, `_query_bytes`.
+- Both inherited-locale cases produce the recovery hint without changing the parent environment.
 - No `text=True` remains in `git_runner.py`; every stream goes through the
   module's decoding policy.
 - `_non_interactive_git_env()`'s docstring states the choice, the

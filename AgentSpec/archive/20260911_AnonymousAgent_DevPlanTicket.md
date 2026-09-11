@@ -2,6 +2,12 @@
 
 *Created: 2026-09-06*
 
+> **Closed on 2026-09-11 without implementation.** Previously 2-4.
+> Not planned. This development-environment migration adds complexity without improving the released tool's core behavior. Revisit only if a concrete need emerges. The installation-layout assumptions are outdated: developer mounts now belong in examples/complexgitsync4dev.cgs, while install.cgs contains the user installation. Any revival requires a fresh assessment.
+> The proposal below is preserved as historical context, not an execution instruction.
+> No proposed migration, remote operation, freeze, fork, branch change, or project-creation workflow was performed.
+> See the [release backlog](../shortTickets/ticketPriorityUpdate.md) for the active plan.
+
 > **Reassessed on 2026-09-09. Live and unchanged in substance; the mount
 > topology it waited for has arrived.** `flipoyo/.claude` is still mounted
 > at `.claude/` under its own name, so every line of the exposure audit in

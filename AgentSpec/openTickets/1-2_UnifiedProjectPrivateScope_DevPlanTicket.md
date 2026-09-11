@@ -2,6 +2,8 @@
 
 *Created: 2026-09-10*
 
+> **Release review — 2026-09-11. Priority 1-2.** The additive `--all` feature remains independent of the dead-flag cleanup. One commit message is shared across both writable scopes.
+
 ## Abstract — read this first
 
 **What this document is.** A ticket for adding `--all` to the commands that
@@ -117,27 +119,31 @@ already the layer where the internal words get rephrased.
 ## 4. Traps
 
 1. **`rm --private` and `freeze --private` are dead flags today.** Both are
-   accepted and silently ignored. Fix that first: it is a real bug of the
-   exact kind `resolve_command_scope` exists to prevent, and it shrinks the
-   surface the rest of this work reasons about.
+   accepted and silently ignored. Record their repair as deferred follow-up
+   work, not a prerequisite or acceptance gate for this additive feature.
+   They remain outside this ticket's implementation scope.
 2. **`merge --all` must be a single `WRITABLE` pass, never two.**
    `merge_tree()` checks the whole scope before merging any of it, so a
    conflict anywhere leaves nothing merged. Two sequential passes means two
    preflights: the project half merges, the private half then refuses, and
    the result is exactly the half-merged tree that guarantee exists to
    prevent. `merge_source_ref()` already translates the branch per
-   repository, so one pass is correct as it stands.
+   repository, so one pass is correct as it stands. This is conflict
+   preflight, not a transaction covering every possible runtime failure.
+   `merge --all --dry-run` must preview the same combined scope through
+   `merge_plan`. `merge --all --resolve` must pass that scope to
+   `merge_resolve`, preserving its existing warning and intentional partial
+   progress when it stops at a conflict. Previewing either mode writes
+   nothing; preview output must explain the selected mode's behavior.
 3. **`--all` on a tree with no writable configuration repository must not
    fail.** `resolve_command_scope` raises today when `--private` selects
    nothing, deliberately. Most trees have none — `examples/cawaqs.cgs`,
    `htas.cgs`, `template.cgs`. `--all` must do the project half and report
    the private half as empty; an explicit `--private` must still raise. One
    function, two callers, two behaviours.
-4. **`commit --all` needs one decision.** `resolve_command_scope`'s docstring
-   says a shared repository "gets its own commit message", but
-   `freeze-release` already commits both halves with one. Those contradict.
-   Either accept one message for both (simplest, matches the precedent) or
-   add `--private-message`. Do not leave it implicit.
+4. **`commit --all` uses one shared commit message.** This matches
+   `freeze-release`. Update `resolve_command_scope`'s separate-message
+   wording accordingly. A `--private-message` option is not part of this ticket.
 5. **The output must keep the halves apart.** The `RepoOutcome` lines
    (`staged .localSpec: …` / `skipped …`) and `_print_scope_note` already
    exist. A user giving up *typing* the distinction should not also lose
@@ -150,10 +156,10 @@ already the layer where the internal words get rephrased.
 
 | Work package | Files | Deliverable |
 |---|---|---|
-| WP1: fix the dead flags | `cli/expert.py`, `orchestre.py` | `rm` and `freeze` either honour `--private` or stop accepting it (§4.1). Add a parser-wide test that no command registers a flag no handler reads. |
+| WP1: document deferred cleanup | this ticket | Keep `rm --private` and `freeze --private` repairs, and any parser-wide ignored-flag audit, as follow-up work (§4.1). No implementation dependency. |
 | WP2: `--all` | `cli/expert.py`, `cli/_shared.py`, `orchestre.py` | Register `--all` on `add`, `commit`, `push`, `merge`, mutually exclusive with `--private`, mapping to `RepoScope.WRITABLE` (§3). Help text states the mapping and that read-only repos are never written. |
 | WP3: the empty private half | `orchestre.py` | §4.3. `--all` reports; `--private` still raises. |
-| WP4: `merge --all` | `operations.py`, `orchestre.py` | §4.2 in one pass. A test must show a conflict in a private repository leaves the project repositories unmerged. |
+| WP4: `merge --all` | `operations.py`, `orchestre.py` | §4.2 in one pass for ordinary merge. Thread the combined scope through the client and CLI preview and resolution paths. Test ordinary conflict refusal, preview without writes, and intentional partial progress with `--resolve`. |
 | WP5: reporting | `cli/_shared.py`, `cli/expert.py` | §4.5 and §4.6. |
 | WP6: docs | `README.md`, `docs/Text/user_guide.tex`, `tutorials/04_private_repos.md` | Tutorial 4 §4 teaches the two-command habit; it becomes "or do both with `--all`". No release note needed — the default does not move. |
 | WP7: verify and land | tests, this ticket | `pixi run lint` and `pixi run test` pass; apply CLAUDE.md's before-committing checklist; archive under [TICKETLIFECYCLE.md](../../.agentSpec/TICKETLIFECYCLE.md). |
@@ -169,8 +175,11 @@ already the layer where the internal words get rephrased.
   that same tree still fails with today's message.
 - `merge --all` with a conflict in a private repository leaves **no**
   project repository merged. A test proves it.
-- No command accepts a flag no handler reads. A parser-wide test asserts it,
-  so the next one cannot be added silently.
+- `merge --all --dry-run` previews both writable groups without writes;
+  `merge --all --resolve` includes both groups and retains its partial-progress warning.
+- `commit --all` applies the supplied message to both groups.
+- All newly registered flags affect their intended execution and preview paths.
+  The existing `rm`/`freeze` ignored flags are recorded follow-up work.
 - Output names both halves; a user can tell which repositories were written
   as project and which as private without re-running anything.
 - `--help` states the reach of all three forms in one sentence each, and says

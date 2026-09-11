@@ -2,6 +2,8 @@
 
 *Created: 2026-08-31*
 
+> **Release review — 2026-09-11. Priority 2-1.** Optional polish, independent of the first-release requirements. No implementation was performed during reordering.
+
 > **Reassessed on 2026-09-09. Live, unchanged, and still the cheapest
 > ticket here.** Re-checked today: nothing in `src/` imports `difflib` or
 > prints "Did you mean", `_PLANNED_COMMANDS` is still where WP-TYPO1 says
@@ -42,7 +44,13 @@ graph TD
 
 | WP | Touches | Deliverable |
 |---|---|---|
-| **WP-TYPO1** | `src/ComplexGitSync/cli/__init__.py` | When the top-level `command` positional gets a value not in `_PLANNED_COMMANDS`, use `difflib.get_close_matches(value, _PLANNED_COMMANDS.keys(), n=1, cutoff=0.6)` and, if there's a match, print `Did you mean '<match>'?` alongside argparse's normal error — without swallowing or reformatting argparse's own usage/choices output. Investigate the cleanest hook point before writing code: a small pre-check in `main()` before `parser.parse_args(argv)` (simplest, stays in Ring 4, no argparse internals touched) vs. subclassing `ArgumentParser.error()` (more "native" but couples to argparse's private error-formatting behavior) — state the choice made and why. |
+| **WP-TYPO1** | `src/ComplexGitSync/cli/__init__.py` | When the top-level `command` positional gets a value not in `_PLANNED_COMMANDS`, use `difflib.get_close_matches(value, _PLANNED_COMMANDS.keys(), n=1, cutoff=0.6)` and, if there's a match, print `Did you mean '<match>'?` to stderr alongside argparse's normal error — without swallowing or reformatting argparse's own usage/choices output. Investigate the cleanest hook point before writing code: a small pre-check in `main()` before `parser.parse_args(argv)` (simplest, stays in Ring 4, no argparse internals touched) vs. subclassing `ArgumentParser.error()` (more "native" but couples to argparse's private error-formatting behavior) — state the choice made and why. |
+
+Identify the command using the CLI argument structure, not a blind scan for
+unknown tokens: option names, option values, and command operands are not
+candidate commands. Never execute or auto-correct to the suggested command.
+Keep the parser's invalid-command exit code (`2`), consistent with
+[1-4 CliContract](1-4_CliContract_DevPlanTicket.md).
 
 ## 2. Acceptance criteria
 
@@ -53,5 +61,8 @@ graph TD
   suggestion — `cutoff=0.6` (or whatever value is chosen) must not produce
   noisy false-positive suggestions; a unit test should cover both the
   close-match and no-match cases.
+- Suggestions appear only on stderr; the invalid-command exit code remains `2`.
+- Suggested commands are never executed automatically. Tests cover option
+  names/values and operands that resemble misspelled commands.
 - `pixi run lint && pixi run test` pass.
 - No commit, no push — executed only after explicit go-ahead.

@@ -2,6 +2,12 @@
 
 *Created: 2026-09-05*
 
+> **Closed on 2026-09-11 without implementation.** Previously 2-3.
+> Not planned for the first release. The proposal combines workspace selection, configuration defaults, and project creation into an unsettled additional format. Preserve the requirement that users understand which workspace a command affects; concrete remaining failures may be handled separately. Its old requirement that every private repository remain on its declared branch conflicts with the current behavior of writable private repositories. Reassess that requirement before reusing this historical proposal.
+> The proposal below is preserved as historical context, not an execution instruction.
+> No proposed migration, remote operation, freeze, fork, branch change, or project-creation workflow was performed.
+> See the [release backlog](../shortTickets/ticketPriorityUpdate.md) for the active plan.
+
 > **Reassessed on 2026-09-10. AgenticMounts step 3 was archived, and what
 > was left of it came here.** This ticket now carries four things, not two.
 >
