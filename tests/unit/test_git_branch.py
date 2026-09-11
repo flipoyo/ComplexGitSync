@@ -551,7 +551,7 @@ def _tree_cgs_paths() -> list[Path]:
     candidates = [
         _REPO_ROOT / "install.cgs",
         _REPO_ROOT / "ComplexGitSync.cgs",
-        _REPO_ROOT / "examples" / "complexgitsync.cgs",
+        _REPO_ROOT / "examples" / "complexgitsync4dev.cgs",
         _REPO_ROOT / "examples" / "doccomplexgitsync.cgs",
         _REPO_ROOT / ".agentSpec" / "install.cgs",
         _REPO_ROOT / "docs" / "DocCGS.cgs",

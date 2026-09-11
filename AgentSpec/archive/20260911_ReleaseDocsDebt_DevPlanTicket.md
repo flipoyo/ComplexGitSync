@@ -264,3 +264,65 @@ every standalone checkout and says nothing about whether they are current.
 * **The dangling `AGENT.md` / `CLAUDE.md` symlinks.** They resolve correctly
   in a full workspace. Nothing is broken except working from the wrong one,
   which is what §1 is a record of rather than a bug to fix.
+
+---
+
+## 8. Closing note — the §2.5 audit, and what was done
+
+**The audit (WP-D8). `2.49` was an accident, not a process failure.**
+`2.46`, `2.47` and `2.48` each have their own documentation commit in
+`DocComplexGitSync`, and each of those commits bumped both `\cgsversion`
+macros along with the prose:
+
+| Release | This repository | `DocComplexGitSync` |
+|---|---|---|
+| `2.46` | `6b94646` | `d7ad3eb` — `getting_started`, `user_guide`, `worked_examples` |
+| `2.47` | `854029a` | `f85f1e3` — `user_guide` |
+| `2.48` | `d11971d` | `014135f` — `user_guide`, `api_python` |
+| `2.49` | `55171ac` | **missing — this ticket** |
+
+So the three releases before this one were documented in step, and §4/D2's
+"refuse to run when `docs/` is absent" is a guard against a one-off, not a
+repair of a habit.
+
+**What landed.** WP-D1 through WP-D7, plus two things the work turned up.
+
+* `scripts/bump_version.py` points at `examples/complexgitsync4dev.cgs`, and
+  `apply_version()` is all-or-nothing: it reconstitutes `docs/` first if
+  needed, then reads and rewrites all six targets in memory, and writes only
+  a complete set.
+* `tests/unit/test_bump_version.py` asserts each `\cgsversion` equals
+  `pyproject.toml`'s version, and that a failed bump writes nothing. Both
+  docs tests skip — naming this file — when `docs/` is not mounted.
+* `0002.49` reached both `.tex` macros by calling the repaired
+  `apply_version()` at the released version, so the fix is proven by use
+  rather than by hand-editing (D4).
+* `docs/Text/user_guide.tex` gained the six-value `SYNC` legend and the
+  `unmeasured` summary field (§2.1), the `checkout`-joins-a-known-branch
+  paragraph and `pull`'s fetch-every-branch sentence (§2.2), and the
+  fetch-refspec paragraph under `clone` (§2.3). All five tracked PDFs are
+  rebuilt; `MASTER.pdf`'s title page reads `0002.49`.
+
+**Two deviations from the work packages, both deliberate.**
+
+* **WP-D6 is struck, as §2.4 allowed.** `docs/Text/api_python.tex`
+  documents `ComplexGitSyncClient`, not `GitRunner` — its only mention of
+  the runner is one aside about `rm_cached`. The three new runner methods
+  therefore have no home there. What did go in is a three-line comment on
+  the `client.checkout(...)` call in that file's worked example, because the
+  joins-a-known-branch change is a client-level semantic a Python caller
+  needs.
+* **Two things outside the WPs were fixed, both the same rename miss as
+  WP-D1.** `tests/unit/test_git_branch.py`'s `_tree_cgs_paths()` still
+  listed `examples/complexgitsync.cgs`; because that list is filtered by
+  `is_file()`, the dead name silently dropped the developer spec from the
+  branch-explicitness check rather than failing. And
+  `.localSpec/AdditionalSpecs.md`'s *Versioning* section described
+  `bump-version` as syncing four files, never mentioning the two `.tex`
+  macros at all — the same documentation gap this ticket exists to close,
+  in the spec for the very script it changed.
+
+**Still open, and not this ticket's:** the French-locale failure in
+`tests/integration/test_golden_release_gaps.py`
+(`1-1_GitLocaleIndependence`), and the bare traceback on a missing `.cgs`
+(§7).

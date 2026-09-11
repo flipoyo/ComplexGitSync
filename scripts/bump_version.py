@@ -29,13 +29,21 @@ a bump needs to be visible in the published PDFs.
 
 ``docs/`` itself now lives in a separate repo (``DocComplexGitSync``); if
 either ``.tex`` file above is missing when this runs, :func:`apply_version`
-dogfoods ``cgitsync initialise`` against ``examples/complexgitsync.cgs`` to
-clone it into place first (see :func:`_reconstitute_docs`).
+dogfoods ``cgitsync initialise`` against ``examples/complexgitsync4dev.cgs``
+--- the developer spec, the one that declares ``docs/`` --- to clone it into
+place first (see :func:`_reconstitute_docs`).
+
+A bump is one fact recorded in six files, so :func:`apply_version` reads and
+rewrites all six in memory before writing any of them. A missing file, an
+unwritable one, or a version field the patterns cannot find stops the bump
+with nothing on disk changed, rather than leaving the manifests a release
+ahead of the docs.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -51,7 +59,7 @@ README_PATH = REPO_ROOT / "README.md"
 DOCS_SHORTCUTS_PATH = REPO_ROOT / "docs" / "Setup" / "Shortcuts.tex"
 DOCS_PREAMBLE_PATH = REPO_ROOT / "docs" / "preamble.tex"
 DOCS_TEX_PATHS = (DOCS_SHORTCUTS_PATH, DOCS_PREAMBLE_PATH)
-BOOTSTRAP_CGS_PATH = REPO_ROOT / "examples" / "complexgitsync.cgs"
+BOOTSTRAP_CGS_PATH = REPO_ROOT / "examples" / "complexgitsync4dev.cgs"
 
 VERSION_RE = re.compile(r"^\d{4}\.\d{2}$")
 _TOML_VERSION_FIELD_RE = re.compile(r'(^version = ")(\d{4}\.\d{2})(")', re.MULTILINE)
@@ -123,12 +131,22 @@ def _reconstitute_docs() -> None:
         ) from exc
 
 
-def _substitute_version(path: Path, pattern: re.Pattern[str], new_version: str) -> None:
-    text = path.read_text(encoding="utf-8")
+def _rendered_version(path: Path, pattern: re.Pattern[str], new_version: str) -> str:
+    """Return *path*'s text with its version field set to *new_version*.
+
+    Reads and checks only --- nothing is written here, so every target can
+    be proven updatable before the first one is touched.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise VersionSyncError(f"{path}: missing; cannot update its version field.") from exc
+    if not os.access(path, os.W_OK):
+        raise VersionSyncError(f"{path}: not writable; cannot update its version field.")
     new_text, count = pattern.subn(rf"\g<1>{new_version}\g<3>", text, count=1)
     if count != 1:
         raise VersionSyncError(f"{path}: could not find a version field to update.")
-    path.write_text(new_text, encoding="utf-8")
+    return new_text
 
 
 def apply_version(
@@ -140,15 +158,30 @@ def apply_version(
     readme_path: Path = README_PATH,
     docs_tex_paths: Sequence[Path] = DOCS_TEX_PATHS,
 ) -> None:
-    """Write *new_version* into every synced manifest and docs source."""
-    _substitute_version(pyproject_path, _TOML_VERSION_FIELD_RE, new_version)
-    _substitute_version(pixi_toml_path, _TOML_VERSION_FIELD_RE, new_version)
-    _substitute_version(init_path, _DUNDER_VERSION_FIELD_RE, new_version)
-    _substitute_version(readme_path, _README_TITLE_VERSION_RE, new_version)
+    """Write *new_version* into every synced manifest and docs source.
+
+    All of them or none of them. The version is one fact; recording it in
+    four files and failing on the fifth leaves the package claiming a
+    release its documentation has never heard of, which is both wrong and
+    quiet. So the docs are reconstituted first if they are missing, every
+    target is then read and rewritten in memory, and only a complete set of
+    new texts reaches the disk.
+    """
     if any(not docs_path.exists() for docs_path in docs_tex_paths):
         _reconstitute_docs()
-    for docs_path in docs_tex_paths:
-        _substitute_version(docs_path, _CGSVERSION_MACRO_RE, new_version)
+
+    targets: list[tuple[Path, re.Pattern[str]]] = [
+        (pyproject_path, _TOML_VERSION_FIELD_RE),
+        (pixi_toml_path, _TOML_VERSION_FIELD_RE),
+        (init_path, _DUNDER_VERSION_FIELD_RE),
+        (readme_path, _README_TITLE_VERSION_RE),
+        *((docs_path, _CGSVERSION_MACRO_RE) for docs_path in docs_tex_paths),
+    ]
+
+    rewritten = [(path, _rendered_version(path, pattern, new_version)) for path, pattern in targets]
+
+    for path, new_text in rewritten:
+        path.write_text(new_text, encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
