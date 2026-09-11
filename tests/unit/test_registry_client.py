@@ -950,7 +950,9 @@ def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path)
     client.source_path = tmp_path / "project.gts"
     calls: list[tuple[str, object]] = []
 
-    monkeypatch.setattr(type(client.git_runner), "has_upstream", lambda self, path: True)
+    monkeypatch.setattr(
+        type(client.git_runner), "upstream_configured", lambda self, path: True
+    )
     monkeypatch.setattr(client, "add", lambda: calls.append(("add", None)))
     monkeypatch.setattr(
         client,
@@ -990,7 +992,9 @@ def test_client_freeze_release_force_uses_pull_force(monkeypatch, tmp_path):
     client.source_path = tmp_path / "project.gts"
     calls: list[str] = []
 
-    monkeypatch.setattr(type(client.git_runner), "has_upstream", lambda self, path: True)
+    monkeypatch.setattr(
+        type(client.git_runner), "upstream_configured", lambda self, path: True
+    )
     monkeypatch.setattr(client, "add", lambda: calls.append("add"))
     monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
     monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))
@@ -1011,7 +1015,9 @@ def test_client_freeze_release_skips_pull_when_branch_has_no_upstream(monkeypatc
     client.source_path = tmp_path / "project.gts"
     calls: list[str] = []
 
-    monkeypatch.setattr(type(client.git_runner), "has_upstream", lambda self, path: False)
+    monkeypatch.setattr(
+        type(client.git_runner), "upstream_configured", lambda self, path: False
+    )
     monkeypatch.setattr(client, "add", lambda: calls.append("add"))
     monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
     monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))
@@ -1023,12 +1029,44 @@ def test_client_freeze_release_skips_pull_when_branch_has_no_upstream(monkeypatc
     assert calls == ["add", "commit", "push", "freeze"]
 
 
+def test_client_freeze_release_pulls_a_branch_whose_upstream_does_not_resolve(
+    monkeypatch, tmp_path
+):
+    """Named but unresolvable is still pullable — ``git pull`` reads the config.
+
+    A branch pushed into a repository whose fetch refspec did not map it has
+    ``branch.X.merge`` set and no ``refs/remotes/origin/X``. Asking
+    ``has_upstream`` there skipped the pull and called it "nothing to pull",
+    which was wrong twice over: there was something to pull, and the branch
+    had been pushed. See
+    ``AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` D4.
+    """
+    client = _client_with_root_registry(tmp_path)
+    client.source_path = tmp_path / "project.gts"
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        type(client.git_runner), "upstream_configured", lambda self, path: True
+    )
+    monkeypatch.setattr(type(client.git_runner), "has_upstream", lambda self, path: False)
+    monkeypatch.setattr(client, "add", lambda: calls.append("add"))
+    monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
+    monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))
+    monkeypatch.setattr(client, "push", lambda **_kwargs: calls.append("push"))
+    monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
+
+    assert client.freeze_release("v1.0", "release commit") == "ok"
+    assert calls == ["add", "commit", "pull", "push", "freeze"]
+
+
 def test_client_freeze_release_force_also_skips_pull_when_no_upstream(monkeypatch, tmp_path):
     client = _client_with_root_registry(tmp_path)
     client.source_path = tmp_path / "project.gts"
     calls: list[str] = []
 
-    monkeypatch.setattr(type(client.git_runner), "has_upstream", lambda self, path: False)
+    monkeypatch.setattr(
+        type(client.git_runner), "upstream_configured", lambda self, path: False
+    )
     monkeypatch.setattr(client, "add", lambda: calls.append("add"))
     monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
     monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))

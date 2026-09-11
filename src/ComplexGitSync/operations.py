@@ -163,6 +163,11 @@ def create_global_branch(
     do this, because a user asking for a branch should not have to know that
     their configuration repository spells it differently; the point of the
     rule is that they never have to think about it.
+
+    A branch this clone already has a remote-tracking ref for is created
+    *from* that ref, with tracking set. Offline either way: it reads refs
+    already on disk and never contacts the remote, so what a fresh clone can
+    join is what the last fetch brought.
     """
     project_name = tree_project_name(tree)
     for repo in iter_tree(tree, scope):
@@ -172,6 +177,18 @@ def create_global_branch(
             repo, branch_name, project_name=project_name
         ).name
         if git_runner.local_branch_exists(repo.absolute_path, target):
+            continue
+        # A branch this clone already knows from the remote is that branch,
+        # not a new one that happens to share its name. Starting it at HEAD
+        # instead forked a second history under a name the user believed they
+        # were joining, and `checkout` then reported success on the wrong
+        # commits — a colleague's work simply was not there
+        # (AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md §3).
+        remote = repo.remote_name or "origin"
+        if git_runner.remote_tracking_branch_exists(repo.absolute_path, target, remote=remote):
+            git_runner.create_branch(
+                repo.absolute_path, target, start_point=f"{remote}/{target}"
+            )
             continue
         git_runner.create_branch(repo.absolute_path, target)
 
@@ -222,6 +239,53 @@ def _rewrite_remote_if_forced(
     git_runner.configure_remote(repo.absolute_path, remote, forced_url)
 
 
+def _repair_fetch_refspec(git_runner: GitRunner, repo: WorkingRepo, remote: str) -> None:
+    """Widen *repo*'s fetch refspec if a ``--single-branch`` clone narrowed it.
+
+    Every workspace cloned before that narrowing was fixed
+    (``AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``)
+    carries a refspec mapping one branch only, and no re-clone should be
+    needed to recover from it. Modelled on :func:`_rewrite_remote_if_forced`,
+    beside which it is called: a config fix persisted once, idempotently, by
+    the commands that are already writing to the repository.
+
+    Deliberately *not* called from ``status``. A read-only command that
+    silently rewrites ``.git/config`` is a worse surprise than a column that
+    says ``unknown`` for one more invocation, and ``push`` — the command the
+    missing refspec actually breaks — repairs it before it matters.
+
+    Failure is not fatal: a repository with no such remote, or one whose
+    config is not writable, still has a pull and a push to attempt.
+    """
+    try:
+        git_runner.ensure_fetch_refspec(repo.absolute_path, remote=remote)
+    except GitSyncError:
+        return
+
+
+def _fetch_all_refs(git_runner: GitRunner, repo: WorkingRepo, remote: str) -> None:
+    """Bring every branch of *remote* into ``refs/remotes/`` before pulling.
+
+    ``git pull --ff-only origin <branch>`` fetches that one branch, so a
+    workspace could pull for months and still hold no ref for any branch but
+    its own. ``checkout`` reads those refs and never contacts the network —
+    deliberately, so it keeps working offline — which left it unable to join
+    a branch a colleague had pushed, no matter how often the user pulled.
+    Pull is the command that means "bring this workspace up to date with the
+    remote", and a branch that exists is part of what is up to date.
+
+    Costs one extra round trip per repository on a command that is already
+    talking to the same remote. Best-effort: the refs are a convenience and
+    the pull is the command, so a fetch that fails must not take the pull
+    down with it — if the remote is genuinely unreachable, the pull says so
+    a moment later, in its own words.
+    """
+    try:
+        git_runner.fetch(repo.absolute_path, remote=remote)
+    except GitSyncError:
+        return
+
+
 def _restart_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
@@ -262,6 +326,8 @@ def _restart_tree(
                 )
         remote = repo.remote_name or "origin"
         _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
+        _repair_fetch_refspec(git_runner, repo, remote)
+        _fetch_all_refs(git_runner, repo, remote)
         pull = git_runner.force_pull if force else git_runner.pull
         pull(repo.absolute_path, remote=remote, ref_name=repo.target_ref_name or current_branch)
 
@@ -903,6 +969,10 @@ def push_tree(
     for repo in iter_tree_leaf_first(tree, scope):
         remote = repo.remote_name or "origin"
         _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
+        # Before the push, not after: ``push -u`` can only write the
+        # remote-tracking ref the upstream resolves through if the refspec
+        # already maps the branch being pushed.
+        _repair_fetch_refspec(git_runner, repo, remote)
         current_branch = git_runner.current_branch(repo.absolute_path)
         ref_name = repo.resolved_ref_name or current_branch
         set_upstream = False

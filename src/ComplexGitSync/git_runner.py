@@ -13,6 +13,7 @@ Imports: errors, git_repo
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,29 @@ _MERGE_CONFLICT_MARKER = b"<<<<<<<"
 #: What the legacy form writes to stderr for a binary file it could not
 #: merge. A binary conflict prints no marker, so this is the only sign of it.
 _BINARY_CONFLICT_WARNING = b"Cannot merge binary files"
+
+
+#: The fetch refspec a repository needs in order to map every branch of its
+#: remote into ``refs/remotes/<remote>/``. ``git clone --single-branch`` writes
+#: a branch-specific one instead and leaves it there forever, so a branch made
+#: afterwards can never resolve ``@{upstream}`` even straight after a
+#: successful ``push -u`` — see
+#: ``AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``.
+_WIDE_FETCH_REFSPEC = "+refs/heads/*:refs/remotes/{remote}/*"
+
+#: What ``--single-branch`` writes in its place: one branch, mapped by name.
+_NARROW_FETCH_REFSPEC = re.compile(r"^\+?refs/heads/(?P<branch>[^*:]+):refs/remotes/(?P<remote>[^*:]+)/(?P=branch)$")
+
+
+def _is_clone_written_refspec(value: str, remote: str) -> bool:
+    """True if *value* is the branch-specific refspec ``--single-branch`` wrote.
+
+    Narrow in both senses: it must map a single named branch, and it must map
+    it into *remote*'s own tracking namespace. A refspec pointing anywhere
+    else was written by hand and is not this function's business.
+    """
+    matched = _NARROW_FETCH_REFSPEC.match(value)
+    return matched is not None and matched.group("remote") == remote
 
 
 def _decode_git_output(raw: bytes | str) -> str:
@@ -160,6 +184,8 @@ class GitRunnerProtocol(Protocol):
 
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None: ...
 
+    def ensure_fetch_refspec(self, repo_path: Path | str, *, remote: str = "origin") -> bool: ...
+
     def rev_parse_head(self, repo_path: Path | str) -> str: ...
 
     def current_branch(self, repo_path: Path | str) -> str | None: ...
@@ -170,7 +196,13 @@ class GitRunnerProtocol(Protocol):
         self, repo_path: Path | str, branch: str, *, remote: str = "origin"
     ) -> bool: ...
 
-    def create_branch(self, repo_path: Path | str, branch: str) -> None: ...
+    def remote_tracking_branch_exists(
+        self, repo_path: Path | str, branch: str, *, remote: str = "origin"
+    ) -> bool: ...
+
+    def create_branch(
+        self, repo_path: Path | str, branch: str, *, start_point: str | None = None
+    ) -> None: ...
 
     def checkout(self, repo_path: Path | str, branch: str) -> None: ...
 
@@ -274,6 +306,8 @@ class GitRunnerProtocol(Protocol):
 
     def has_upstream(self, repo_path: Path | str) -> bool: ...
 
+    def upstream_configured(self, repo_path: Path | str) -> bool: ...
+
 
 # ============================================================
 #  GitRunner — the concrete Ring-2 implementation
@@ -335,6 +369,50 @@ class GitRunner:
             ["clone", "--branch", branch, "--single-branch", remote_url, str(destination_path)]
         )
         self._run(*args)
+        # --single-branch limits the download *and* narrows the stored fetch
+        # refspec. Keep the cheap download; widen what the clone remembers.
+        self.ensure_fetch_refspec(destination_path)
+
+    def ensure_fetch_refspec(self, repo_path: Path | str, *, remote: str = "origin") -> bool:
+        """Make *remote*'s fetch refspec map every branch. Idempotent.
+
+        Returns ``True`` when it changed the configuration, ``False`` when the
+        repository already mapped every branch — so a caller may repair a
+        workspace on every invocation without writing anything after the
+        first.
+
+        Why this exists: ``git clone --single-branch`` writes
+        ``+refs/heads/B:refs/remotes/origin/B`` into ``remote.origin.fetch``
+        and leaves it there. ``git push -u origin X`` then does half its job —
+        it writes ``branch.X.remote`` and ``branch.X.merge``, but it can only
+        create ``refs/remotes/origin/X`` if the fetch refspec maps that
+        branch. ``@{upstream}`` needs the *remote-tracking ref*, not the
+        config, so it fails on every branch made after the clone. Widening the
+        refspec is enough on its own: no extra fetch is needed, because
+        ``push -u`` writes the tracking ref itself once the mapping exists.
+
+        A repository whose refspec was configured by hand keeps what it has —
+        the wide one is *added* rather than substituted. Only the
+        branch-specific form that ``--single-branch`` writes is replaced,
+        since it is exactly the thing being repaired and is redundant once the
+        wildcard covers it.
+        """
+        wanted = _WIDE_FETCH_REFSPEC.format(remote=remote)
+        configured = [
+            line.strip()
+            for line in self._query(
+                "config", "--get-all", f"remote.{remote}.fetch", cwd=repo_path
+            ).stdout.splitlines()
+            if line.strip()
+        ]
+        if wanted in configured:
+            return False
+        clone_written = configured and all(
+            _is_clone_written_refspec(value, remote) for value in configured
+        )
+        flag = "--replace-all" if clone_written else "--add"
+        self._run("config", flag, f"remote.{remote}.fetch", wanted, cwd=repo_path)
+        return True
 
     def rev_parse_head(self, repo_path: Path | str) -> str:
         return self._run("rev-parse", "HEAD", cwd=repo_path).stdout.strip()
@@ -366,6 +444,23 @@ class GitRunner:
         """
         if self.local_branch_exists(repo_path, branch):
             return True
+        return self.remote_tracking_branch_exists(repo_path, branch, remote=remote)
+
+    def remote_tracking_branch_exists(
+        self, repo_path: Path | str, branch: str, *, remote: str = "origin"
+    ) -> bool:
+        """Whether ``refs/remotes/<remote>/<branch>`` exists in *repo_path*.
+
+        The half of :meth:`branch_known` that says the branch came from
+        somebody else. A caller about to *create* a local branch needs that
+        distinction: starting it at ``HEAD`` when the remote already has a
+        branch of that name forks a second, unrelated history under a name
+        the user believes they are joining.
+
+        Offline, like :meth:`branch_known`: it reads the refs this clone
+        already holds. Whether they are current is the business of whatever
+        last fetched.
+        """
         return (
             self._query(
                 "rev-parse", "--verify", f"refs/remotes/{remote}/{branch}", cwd=repo_path
@@ -373,9 +468,20 @@ class GitRunner:
             == 0
         )
 
-    def create_branch(self, repo_path: Path | str, branch: str) -> None:
-        """Create *branch* in *repo_path* without switching to it (``git branch``)."""
-        self._run("branch", branch, cwd=repo_path)
+    def create_branch(
+        self, repo_path: Path | str, branch: str, *, start_point: str | None = None
+    ) -> None:
+        """Create *branch* in *repo_path* without switching to it (``git branch``).
+
+        *start_point* is where the branch begins, defaulting to ``HEAD``.
+        Given a remote-tracking ref it is passed with ``--track``, so the new
+        branch both starts from that history and records it as its upstream —
+        which is what makes ``status`` measure it from the first command.
+        """
+        if start_point is None:
+            self._run("branch", branch, cwd=repo_path)
+            return
+        self._run("branch", "--track", branch, start_point, cwd=repo_path)
 
     def checkout(self, repo_path: Path | str, branch: str) -> None:
         """Switch *repo_path* to *branch* (``git checkout``)."""
@@ -805,8 +911,36 @@ class GitRunner:
         raw = counted.stdout.strip()
         return int(raw) if raw.isdigit() else 0
 
+    def upstream_configured(self, repo_path: Path | str) -> bool:
+        """Return ``True`` when the current branch *names* an upstream.
+
+        The other half of :meth:`has_upstream`, which asks whether the
+        upstream **resolves**. The two answers differ exactly when a branch
+        was pushed with ``-u`` into a repository whose fetch refspec does not
+        map it: the configuration is written, the remote-tracking ref is not
+        (see :meth:`ensure_fetch_refspec`). Telling them apart is what lets
+        ``status`` say "never pushed" and "pushed, but unmeasurable" in
+        different words instead of calling both ``unknown``.
+
+        Reads ``branch.<current>.merge``, which is what ``git push -u`` and
+        ``git branch --set-upstream-to`` write. A detached HEAD names no
+        branch, so it names no upstream either: ``False``.
+        """
+        branch = self.current_branch(repo_path)
+        if branch is None:
+            return False
+        return (
+            self._query("config", "--get", f"branch.{branch}.merge", cwd=repo_path).returncode == 0
+        )
+
     def has_upstream(self, repo_path: Path | str) -> bool:
-        """Return ``True`` when the current branch has an upstream configured."""
+        """Return ``True`` when the current branch has a *resolvable* upstream.
+
+        True only when the remote-tracking ref exists, which is the question
+        ``git rev-parse @{upstream}`` answers and the one a caller about to
+        measure ahead/behind counts needs. :meth:`upstream_configured` asks
+        the weaker question — whether the branch names one at all.
+        """
         upstream = subprocess.run(
             [self.executable, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
             cwd=str(repo_path),

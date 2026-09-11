@@ -568,6 +568,218 @@ def test_git_runner_branch_tracking_state_none_without_upstream(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# ensure_fetch_refspec / upstream_configured — real repositories
+# ---------------------------------------------------------------------------
+
+
+def _bare_remote_with_main(tmp_path: Path) -> Path:
+    """A bare remote holding one commit on ``main``."""
+    remote = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "--bare", "-b", "main", str(remote)], check=True, capture_output=True
+    )
+    seed = tmp_path / "seed"
+    subprocess.run(["git", "clone", str(remote), str(seed)], check=True, capture_output=True)
+    for key, value in (("user.email", "unit@complexgitsync.test"), ("user.name", "Unit")):
+        subprocess.run(["git", "config", key, value], cwd=seed, check=True, capture_output=True)
+    (seed / "README.md").write_text("initial\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=seed, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=seed, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "push", "origin", "HEAD:main"], cwd=seed, check=True, capture_output=True
+    )
+    return remote
+
+
+def _fetch_refspecs(repo_path: Path) -> list[str]:
+    completed = subprocess.run(
+        ["git", "config", "--get-all", "remote.origin.fetch"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.split()
+
+
+def test_git_runner_clone_leaves_a_refspec_mapping_every_branch(tmp_path):
+    """``--single-branch`` narrows the stored refspec; clone must widen it back.
+
+    Without this, ``push -u`` writes ``branch.X.merge`` but no
+    ``refs/remotes/origin/X``, and ``@{upstream}`` — which needs the
+    remote-tracking ref — fails on every branch made after the clone.
+    """
+    remote = _bare_remote_with_main(tmp_path)
+    clone = tmp_path / "clone"
+
+    GitRunner().clone(str(remote), clone, branch="main")
+
+    assert _fetch_refspecs(clone) == ["+refs/heads/*:refs/remotes/origin/*"]
+
+
+def test_git_runner_ensure_fetch_refspec_is_a_no_op_the_second_time(tmp_path):
+    remote = _bare_remote_with_main(tmp_path)
+    clone = tmp_path / "clone"
+    runner = GitRunner()
+    runner.clone(str(remote), clone, branch="main")
+
+    # The clone already called it once, so even the first call here is a no-op.
+    assert runner.ensure_fetch_refspec(clone) is False
+    assert runner.ensure_fetch_refspec(clone) is False
+    assert _fetch_refspecs(clone) == ["+refs/heads/*:refs/remotes/origin/*"]
+
+
+def test_git_runner_ensure_fetch_refspec_replaces_only_the_clone_written_one(tmp_path):
+    remote = _bare_remote_with_main(tmp_path)
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "--branch", "main", "--single-branch", str(remote), str(clone)],
+        check=True,
+        capture_output=True,
+    )
+
+    assert GitRunner().ensure_fetch_refspec(clone) is True
+
+    assert _fetch_refspecs(clone) == ["+refs/heads/*:refs/remotes/origin/*"]
+
+
+def test_git_runner_ensure_fetch_refspec_keeps_a_hand_written_refspec(tmp_path):
+    """A refspec aimed somewhere else was configured deliberately; widening
+    the remote must add to it rather than throw it away."""
+    remote = _bare_remote_with_main(tmp_path)
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "--branch", "main", "--single-branch", str(remote), str(clone)],
+        check=True,
+        capture_output=True,
+    )
+    bespoke = "+refs/heads/main:refs/remotes/mirror/main"
+    subprocess.run(
+        ["git", "config", "--add", "remote.origin.fetch", bespoke],
+        cwd=clone,
+        check=True,
+        capture_output=True,
+    )
+
+    assert GitRunner().ensure_fetch_refspec(clone) is True
+
+    refspecs = _fetch_refspecs(clone)
+    assert bespoke in refspecs
+    assert "+refs/heads/*:refs/remotes/origin/*" in refspecs
+    assert GitRunner().ensure_fetch_refspec(clone) is False
+
+
+def test_git_runner_create_branch_from_a_remote_ref_tracks_it(tmp_path):
+    """``--track`` is what makes the new branch measurable from the first command."""
+    remote = _bare_remote_with_main(tmp_path)
+    clone = tmp_path / "clone"
+    runner = GitRunner()
+    runner.clone(str(remote), clone, branch="main")
+    subprocess.run(["git", "fetch", "origin"], cwd=clone, check=True, capture_output=True)
+
+    runner.create_branch(clone, "main-copy", start_point="origin/main")
+
+    subprocess.run(["git", "checkout", "main-copy"], cwd=clone, check=True, capture_output=True)
+    assert runner.upstream_ref(clone) == "origin/main"
+    assert runner.branch_tracking_counts(clone) == (0, 0)
+
+
+def test_git_runner_create_branch_without_a_start_point_stays_at_head(tmp_path):
+    remote = _bare_remote_with_main(tmp_path)
+    clone = tmp_path / "clone"
+    runner = GitRunner()
+    runner.clone(str(remote), clone, branch="main")
+    head = runner.rev_parse_head(clone)
+
+    runner.create_branch(clone, "mine")
+
+    subprocess.run(["git", "checkout", "mine"], cwd=clone, check=True, capture_output=True)
+    assert runner.rev_parse_head(clone) == head
+    assert runner.upstream_configured(clone) is False
+
+
+def test_git_runner_remote_tracking_branch_exists_reads_only_local_refs(tmp_path):
+    """Offline by contract: it answers from the refs this clone already holds."""
+    remote = _bare_remote_with_main(tmp_path)
+    clone = tmp_path / "clone"
+    runner = GitRunner()
+    runner.clone(str(remote), clone, branch="main")
+
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", str(remote), str(other)], check=True, capture_output=True)
+    for key, value in (("user.email", "unit@complexgitsync.test"), ("user.name", "Unit")):
+        subprocess.run(["git", "config", key, value], cwd=other, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-b", "theirs"], cwd=other, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "theirs"],
+        cwd=other,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "push", "origin", "theirs"], cwd=other, check=True, capture_output=True
+    )
+
+    assert runner.remote_tracking_branch_exists(clone, "theirs") is False
+    assert runner.branch_known(clone, "theirs") is False
+
+    subprocess.run(["git", "fetch", "origin"], cwd=clone, check=True, capture_output=True)
+
+    assert runner.remote_tracking_branch_exists(clone, "theirs") is True
+    assert runner.branch_known(clone, "theirs") is True
+    # A local branch of that name is not a remote-tracking ref, and vice versa.
+    assert runner.remote_tracking_branch_exists(clone, "main-only-here") is False
+
+
+def test_git_runner_upstream_configured_separates_naming_from_resolving(tmp_path):
+    """The two questions ``status`` must not confuse.
+
+    A branch pushed into a repository whose refspec does not map it names an
+    upstream that does not resolve: ``upstream_configured`` is ``True`` while
+    ``has_upstream`` is ``False``. A branch never pushed answers ``False`` to
+    both.
+    """
+    remote = _bare_remote_with_main(tmp_path)
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "--branch", "main", "--single-branch", str(remote), str(clone)],
+        check=True,
+        capture_output=True,
+    )
+    for key, value in (("user.email", "unit@complexgitsync.test"), ("user.name", "Unit")):
+        subprocess.run(["git", "config", key, value], cwd=clone, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-b", "feature"], cwd=clone, check=True, capture_output=True)
+    runner = GitRunner()
+
+    assert runner.upstream_configured(clone) is False
+    assert runner.has_upstream(clone) is False
+
+    subprocess.run(
+        ["git", "push", "-u", "origin", "feature"], cwd=clone, check=True, capture_output=True
+    )
+
+    assert runner.upstream_configured(clone) is True
+    assert runner.has_upstream(clone) is False  # the narrow refspec wrote no ref
+
+    assert runner.ensure_fetch_refspec(clone) is True
+    subprocess.run(
+        ["git", "push", "-u", "origin", "feature"], cwd=clone, check=True, capture_output=True
+    )
+
+    assert runner.upstream_configured(clone) is True
+    assert runner.has_upstream(clone) is True
+    assert runner.upstream_ref(clone) == "origin/feature"
+
+
+def test_git_runner_upstream_configured_is_false_on_a_detached_head(tmp_path):
+    remote = _bare_remote_with_main(tmp_path)
+    clone = tmp_path / "clone"
+    GitRunner().clone(str(remote), clone, branch="main")
+    subprocess.run(["git", "checkout", "--detach"], cwd=clone, check=True, capture_output=True)
+
+    assert GitRunner().upstream_configured(clone) is False
+
+
+# ---------------------------------------------------------------------------
 # Ring-2 confinement — GitRunner is the only subprocess importer
 # ---------------------------------------------------------------------------
 
@@ -630,6 +842,9 @@ class _FakeGitRunner:
     def clone(self, remote_url: str, destination, *, branch: str) -> None:
         return None
 
+    def ensure_fetch_refspec(self, repo_path, *, remote: str = "origin") -> bool:
+        return False
+
     def rev_parse_head(self, repo_path) -> str:
         return "0" * 40
 
@@ -638,6 +853,11 @@ class _FakeGitRunner:
 
     def local_branch_exists(self, repo_path, branch: str) -> bool:
         return True
+
+    def remote_tracking_branch_exists(
+        self, repo_path, branch: str, *, remote: str = "origin"
+    ) -> bool:
+        return False
 
     def branch_known(self, repo_path, branch: str, *, remote: str = "origin") -> bool:
         return True
@@ -670,7 +890,7 @@ class _FakeGitRunner:
     def fetch(self, repo_path, *, remote: str = "origin", ref_name: str | None = None) -> None:
         return None
 
-    def create_branch(self, repo_path, branch: str) -> None:
+    def create_branch(self, repo_path, branch: str, *, start_point: str | None = None) -> None:
         return None
 
     def checkout(self, repo_path, branch: str) -> None:
@@ -740,6 +960,9 @@ class _FakeGitRunner:
         return (0, 0)
 
     def has_upstream(self, repo_path) -> bool:
+        return True
+
+    def upstream_configured(self, repo_path) -> bool:
         return True
 
     def local_only_commit_count(self, repo_path) -> int:

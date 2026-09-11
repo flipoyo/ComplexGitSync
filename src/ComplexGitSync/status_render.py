@@ -23,9 +23,10 @@ functions there, it calls ``git_runner.tracked_gitlink_paths(...)``.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
-from .git_repo import WorkingRepo
+from .git_repo import SyncState, WorkingRepo
 
 
 def _status_display_path(entry: WorkingRepo, root_path: Path) -> str:
@@ -81,6 +82,25 @@ def _path_is_relative_to(path: Path, parent: Path) -> bool:
     return True
 
 
+#: SYNC when the branch names an upstream that cannot be resolved — a real
+#: error, and the only case worth investigating.
+SYNC_UNKNOWN = "unknown"
+
+#: SYNC when the branch names no upstream at all. Not an error: a private/local
+#: repository that was never pushed is in exactly this state, and so is a branch
+#: created this session. Kept distinct from :data:`SYNC_UNKNOWN` because
+#: "nothing to compare against" and "the comparison failed" are different
+#: answers, and printing both as ``unknown`` taught readers to ignore the column
+#: (``AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` §3).
+SYNC_NO_UPSTREAM = "no-upstream"
+
+SYNC_LEGEND = (
+    "legend: SYNC — synced/ahead/behind/diverged are measured against the "
+    f"upstream branch; {SYNC_NO_UPSTREAM} = this branch was never pushed, so "
+    f"there is nothing to measure; {SYNC_UNKNOWN} = it names an upstream that "
+    "does not resolve, which 'cgitsync pull' or 'cgitsync push' repairs"
+)
+
 PROJECT_SCOPE_LABEL = "project"
 PRIVATE_LOCAL_SCOPE_LABEL = "private/local"
 PRIVATE_DISTANT_SCOPE_LABEL = "private/distant"
@@ -90,6 +110,99 @@ SCOPE_LEGEND = (
     "private = a repository that configures the project, shared with your "
     "other projects; local = yours to write, distant = read-only"
 )
+
+
+def _status_tracking_label(
+    sync_state: SyncState | None,
+    tracking_counts: tuple[int, int] | None = None,
+    *,
+    upstream_configured: bool = True,
+) -> str:
+    """Name a repository's upstream relationship for the SYNC column.
+
+    *sync_state* is ``None`` whenever the counts could not be taken, which
+    covers two unrelated situations. *upstream_configured* separates them:
+    ``False`` means the branch names no upstream, and there is nothing to
+    measure; ``True`` means it names one that did not resolve, which is a
+    fault. Defaults to ``True`` so that a caller who cannot tell keeps the
+    louder of the two answers rather than quietly reporting "never pushed".
+    """
+    if sync_state is None:
+        return SYNC_UNKNOWN if upstream_configured else SYNC_NO_UPSTREAM
+    if sync_state == SyncState.ALIGNED:
+        return "synced"
+    if sync_state == SyncState.AHEAD:
+        if tracking_counts is not None:
+            return f"ahead(+{tracking_counts[0]})"
+        return "ahead"
+    if sync_state == SyncState.BEHIND:
+        if tracking_counts is not None:
+            return f"behind(-{tracking_counts[1]})"
+        return "behind"
+    if sync_state == SyncState.DIVERGED:
+        if tracking_counts is not None:
+            return f"diverged(+{tracking_counts[0]}/-{tracking_counts[1]})"
+        return "diverged"
+    return sync_state.value.lower()
+
+
+@dataclass(frozen=True, slots=True)
+class StatusCounts:
+    """The tallies the ``summary`` line reports, counted over rendered rows.
+
+    Counted from the table's own text rather than from the values behind it,
+    so the summary can never disagree with the rows printed under it.
+    """
+
+    dirty: int = 0
+    staged: int = 0
+    ahead: int = 0
+    behind: int = 0
+    unmeasured: int = 0
+    recorded_mismatch: int = 0
+    errors: int = 0
+
+
+def _status_summary_counts(
+    rows: Sequence[tuple[str, str, str, str, str, str, str, str, str]],
+) -> StatusCounts:
+    """Tally *rows* for the ``summary`` line.
+
+    ``unmeasured`` is the one that needs saying out loud: a repository whose
+    SYNC is :data:`SYNC_NO_UPSTREAM` or :data:`SYNC_UNKNOWN` was never
+    compared to a remote, and folding it into ``ahead=0 behind=0`` reports a
+    measurement nobody took. Four repositories once read as "level with their
+    upstream" when the truth was that none of them had been looked at.
+    """
+    dirty = staged = ahead = behind = unmeasured = mismatch = errors = 0
+    for row in rows:
+        local_state, upstream_state, head = row[5], row[6], row[7]
+        if local_state != "clean":
+            dirty += 1
+        if "staged" in local_state:
+            staged += 1
+        if upstream_state.startswith("ahead"):
+            ahead += 1
+        elif upstream_state.startswith("behind"):
+            behind += 1
+        elif upstream_state.startswith("diverged"):
+            ahead += 1
+            behind += 1
+        elif upstream_state in (SYNC_NO_UPSTREAM, SYNC_UNKNOWN):
+            unmeasured += 1
+        if head.endswith("*"):
+            mismatch += 1
+        if upstream_state == "error" or local_state == "error":
+            errors += 1
+    return StatusCounts(
+        dirty=dirty,
+        staged=staged,
+        ahead=ahead,
+        behind=behind,
+        unmeasured=unmeasured,
+        recorded_mismatch=mismatch,
+        errors=errors,
+    )
 
 
 def _status_scope_label(entry: WorkingRepo) -> str:

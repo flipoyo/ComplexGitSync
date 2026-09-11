@@ -20,10 +20,13 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.git_repo import WorkingRepo
+from ComplexGitSync.git_repo import SyncState, WorkingRepo
 from ComplexGitSync.git_tree import WorkingGitTree, propagate_privacy
 from ComplexGitSync.status_render import (
     SCOPE_LEGEND,
+    SYNC_LEGEND,
+    SYNC_NO_UPSTREAM,
+    SYNC_UNKNOWN,
     _path_is_relative_to,
     _render_status_table,
     _status_display_path,
@@ -31,6 +34,8 @@ from ComplexGitSync.status_render import (
     _status_line_path,
     _status_line_targets_any,
     _status_scope_label,
+    _status_summary_counts,
+    _status_tracking_label,
 )
 
 # ---------------------------------------------------------------------------
@@ -146,6 +151,83 @@ def test_status_line_targets_any_false_when_outside_every_managed_path():
 def test_status_line_targets_any_false_for_unparseable_line():
     managed = {Path(".cgitsync")}
     assert _status_line_targets_any(" M", managed) is False
+
+
+class TestSyncColumnSeparatesNeverPushedFromUnmeasurable:
+    """``unknown`` used to mean two unrelated things, so it meant nothing.
+
+    A private/local repository that was never pushed genuinely has no
+    upstream. A branch that was pushed but whose remote-tracking ref is
+    missing is a fault. Printing both as ``unknown`` is what taught readers
+    to stop trusting the column
+    (``AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``).
+    """
+
+    def test_a_branch_that_names_no_upstream_says_so(self):
+        assert _status_tracking_label(None, None, upstream_configured=False) == SYNC_NO_UPSTREAM
+
+    def test_a_named_upstream_that_does_not_resolve_stays_unknown(self):
+        assert _status_tracking_label(None, None, upstream_configured=True) == SYNC_UNKNOWN
+
+    def test_a_caller_that_cannot_tell_keeps_the_louder_answer(self):
+        """The default must not quietly report "never pushed" for a fault."""
+        assert _status_tracking_label(None) == SYNC_UNKNOWN
+
+    @pytest.mark.parametrize(
+        ("state", "counts", "expected"),
+        [
+            (SyncState.ALIGNED, (0, 0), "synced"),
+            (SyncState.AHEAD, (2, 0), "ahead(+2)"),
+            (SyncState.BEHIND, (0, 3), "behind(-3)"),
+            (SyncState.DIVERGED, (1, 4), "diverged(+1/-4)"),
+        ],
+    )
+    def test_a_measured_state_is_unaffected_by_the_new_question(self, state, counts, expected):
+        assert _status_tracking_label(state, counts, upstream_configured=False) == expected
+
+    def test_the_legend_explains_both_unmeasured_words(self):
+        assert SYNC_NO_UPSTREAM in SYNC_LEGEND
+        assert SYNC_UNKNOWN in SYNC_LEGEND
+
+
+class TestSummaryCountsNeverInventAMeasurement:
+    """``ahead=0 behind=0`` is a measurement, and must be earned."""
+
+    @staticmethod
+    def _row(sync: str, *, local: str = "clean", head: str = "abc12345") -> tuple[str, ...]:
+        return ("repo", ".", "project", "main", "origin/main", local, sync, head, "abc12345")
+
+    def test_an_unmeasured_repository_is_counted_apart_from_a_level_one(self):
+        counts = _status_summary_counts(
+            [self._row("synced"), self._row(SYNC_NO_UPSTREAM), self._row(SYNC_UNKNOWN)]
+        )
+
+        assert counts.unmeasured == 2
+        assert counts.ahead == 0
+        assert counts.behind == 0
+
+    def test_a_diverged_repository_counts_on_both_sides_and_is_measured(self):
+        counts = _status_summary_counts([self._row("diverged(+1/-2)")])
+
+        assert (counts.ahead, counts.behind, counts.unmeasured) == (1, 1, 0)
+
+    def test_local_state_and_recorded_mismatch_are_counted_from_the_same_rows(self):
+        counts = _status_summary_counts(
+            [
+                self._row("ahead(+1)", local="staged+dirty", head="abc12345*"),
+                self._row("error", local="error"),
+            ]
+        )
+
+        assert counts.dirty == 2
+        assert counts.staged == 1
+        assert counts.recorded_mismatch == 1
+        assert counts.errors == 1
+
+    def test_no_rows_counts_nothing(self):
+        counts = _status_summary_counts([])
+
+        assert (counts.dirty, counts.ahead, counts.behind, counts.unmeasured) == (0, 0, 0, 0)
 
 
 # ---------------------------------------------------------------------------

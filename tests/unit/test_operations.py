@@ -197,7 +197,10 @@ class _FakeGitRunnerForOperations:
     def __init__(self, *, existing_local_branches: dict[Path, set[str]] | None = None):
         # {path: set of branch names that exist locally}
         self._local_branches: dict[Path, set[str]] = existing_local_branches or {}
+        # {path: set of branches this clone knows as refs/remotes/<remote>/…}
+        self._remote_tracking_branches: dict[Path, set[str]] = {}
         self.created: list[tuple[Path, str]] = []
+        self.created_from: list[tuple[Path, str, str | None]] = []
         self.checked_out: list[tuple[Path, str]] = []
         self.staged: list[Path] = []
         self.staged_paths: list[tuple[Path, str]] = []
@@ -228,6 +231,10 @@ class _FakeGitRunnerForOperations:
         self.merged: list[tuple[Path, str]] = []
         self.merge_aborted: list[Path] = []
         self.fetched: list[tuple[Path, str, str | None]] = []
+        self.refspecs_ensured: list[tuple[Path, str]] = []
+        # Ordered log of the two calls whose *relative* order matters: a
+        # refspec must be widened before the push that depends on it.
+        self.write_order: list[tuple[str, Path]] = []
 
     # --- branch / checkout ---
     def current_branch(self, repo_path: Path | str) -> str | None:
@@ -238,7 +245,14 @@ class _FakeGitRunnerForOperations:
     def branch_known(
         self, repo_path: Path | str, branch: str, *, remote: str = "origin"
     ) -> bool:
-        return self.local_branch_exists(repo_path, branch)
+        return self.local_branch_exists(repo_path, branch) or (
+            self.remote_tracking_branch_exists(repo_path, branch, remote=remote)
+        )
+
+    def remote_tracking_branch_exists(
+        self, repo_path: Path | str, branch: str, *, remote: str = "origin"
+    ) -> bool:
+        return branch in self._remote_tracking_branches.get(Path(repo_path), set())
 
     def merge(
         self,
@@ -284,10 +298,13 @@ class _FakeGitRunnerForOperations:
     ) -> None:
         self.fetched.append((Path(repo_path), remote, ref_name))
 
-    def create_branch(self, repo_path: Path | str, branch: str) -> None:
+    def create_branch(
+        self, repo_path: Path | str, branch: str, *, start_point: str | None = None
+    ) -> None:
         path = Path(repo_path)
         self._local_branches.setdefault(path, set()).add(branch)
         self.created.append((path, branch))
+        self.created_from.append((path, branch, start_point))
 
     def checkout(self, repo_path: Path | str, branch: str) -> None:
         self.checked_out.append((Path(repo_path), branch))
@@ -348,9 +365,18 @@ class _FakeGitRunnerForOperations:
         self.pushed.append((path, remote, ref_name))
         if set_upstream:
             self.pushed_with_upstream.append((path, remote, ref_name))
+        self.write_order.append(("push", path))
 
     def has_upstream(self, repo_path: Path | str) -> bool:
         return self._has_upstream.get(Path(repo_path), True)
+
+    def upstream_configured(self, repo_path: Path | str) -> bool:
+        return self._has_upstream.get(Path(repo_path), True)
+
+    def ensure_fetch_refspec(self, repo_path: Path | str, *, remote: str = "origin") -> bool:
+        self.refspecs_ensured.append((Path(repo_path), remote))
+        self.write_order.append(("ensure_fetch_refspec", Path(repo_path)))
+        return False
 
     def pull(
         self,
@@ -650,6 +676,147 @@ def test_restart_tree_runs_pull_parent_first(tmp_path):
     middle_idx = executed_paths.index(tmp_path / "deep" / "middle")
     sub_idx = executed_paths.index(tmp_path / "deep" / "middle" / "sub")
     assert root_idx < middle_idx < sub_idx
+
+
+class TestABranchSomebodyElsePushedIsThatBranch:
+    """Creating a branch at HEAD when the remote already has one forks a name.
+
+    ``checkout`` then reported ``READY``/``ALIGNED`` on commits that shared
+    nothing with the colleague's branch but its name — worse than failing to
+    find it (``AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` §3).
+    """
+
+    def test_a_known_remote_branch_is_the_start_point(self, tmp_path):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            runner._remote_tracking_branches[repo.absolute_path] = {"colleague"}
+
+        create_global_branch(registry, runner, "colleague")
+
+        for _, branch, start_point in runner.created_from:
+            assert (branch, start_point) == ("colleague", "origin/colleague")
+
+    def test_an_unknown_branch_still_starts_where_we_stand(self, tmp_path):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+
+        create_global_branch(registry, runner, "mine-alone")
+
+        assert [start_point for _, _, start_point in runner.created_from] == [None, None]
+
+    def test_the_start_point_names_the_repository_s_own_remote(self, tmp_path):
+        registry = _make_ready_registry(tmp_path)
+        root = registry.get("root")
+        root.remote_name = "upstream"
+        runner = _FakeGitRunnerForOperations()
+        runner._remote_tracking_branches[root.absolute_path] = {"shared"}
+
+        create_global_branch(registry, runner, "shared")
+
+        assert (root.absolute_path, "shared", "upstream/shared") in runner.created_from
+
+    def test_a_branch_that_already_exists_locally_is_left_alone(self, tmp_path):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            runner._local_branches[repo.absolute_path] = {"colleague"}
+            runner._remote_tracking_branches[repo.absolute_path] = {"colleague"}
+
+        create_global_branch(registry, runner, "colleague")
+
+        assert runner.created_from == []
+
+
+class TestPullBringsEveryBranchSRef:
+    """``git pull origin <branch>`` fetches one branch; ``checkout`` reads all of them."""
+
+    def test_pull_fetches_the_whole_remote_before_pulling_one_branch(self, tmp_path):
+        registry = _make_deep_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        runner._current_branches[tmp_path / "deep"] = "main"
+
+        restart_tree(registry, runner)
+
+        for repo in registry.values():
+            assert (repo.absolute_path, "origin", None) in runner.fetched
+
+    def test_a_failed_fetch_does_not_stop_the_pull(self, tmp_path):
+        """The refs are a convenience; the pull is the command."""
+
+        class _RefusingFetch(_FakeGitRunnerForOperations):
+            def fetch(self, repo_path, *, remote="origin", ref_name=None):
+                raise GitSyncError("network is down")
+
+        registry = _make_ready_registry(tmp_path)
+        runner = _RefusingFetch()
+        runner._current_branches[registry.get("root").absolute_path] = "main"
+
+        restart_tree(registry, runner)
+
+        assert [path for path, _, _ in runner.pulled]
+
+
+class TestEveryWorkspaceRepairsItsOwnFetchRefspec:
+    """A workspace cloned before the refspec fix must not need a re-clone.
+
+    ``git clone --single-branch`` narrowed ``remote.origin.fetch`` to one
+    branch and left it there, so ``push -u`` could never write the
+    remote-tracking ref that ``@{upstream}`` resolves through. Pull and push
+    are the commands that write to a repository anyway, so they are where the
+    config is repaired — once, idempotently
+    (``AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``).
+    """
+
+    def test_pull_widens_the_refspec_of_every_repository(self, tmp_path):
+        registry = _make_deep_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        runner._current_branches[tmp_path / "deep"] = "main"
+
+        restart_tree(registry, runner)
+
+        repaired = [path for path, _ in runner.refspecs_ensured]
+        assert repaired == [repo.absolute_path for repo in registry.values()]
+
+    def test_push_widens_the_refspec_before_pushing_that_repository(self, tmp_path):
+        """Order matters: ``push -u`` can only write the tracking ref if the
+        refspec already maps the branch being pushed."""
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+
+        push_tree(registry, runner)
+
+        for path, _, _ in runner.pushed:
+            assert runner.write_order.index(("ensure_fetch_refspec", path)) < (
+                runner.write_order.index(("push", path))
+            )
+
+    def test_the_repair_uses_the_repository_s_own_remote_name(self, tmp_path):
+        registry = _make_ready_registry(tmp_path)
+        root = registry.get("root")
+        root.remote_name = "upstream"
+        runner = _FakeGitRunnerForOperations()
+        runner._existing_remotes[root.absolute_path] = {"upstream"}
+
+        push_tree(registry, runner)
+
+        root_path = registry.get("root").absolute_path
+        assert (root_path, "upstream") in runner.refspecs_ensured
+
+    def test_a_repository_that_cannot_be_repaired_is_still_pushed(self, tmp_path):
+        """The refspec is a convenience; refusing to push over it would turn a
+        display bug into a lost command."""
+
+        class _RefusingRunner(_FakeGitRunnerForOperations):
+            def ensure_fetch_refspec(self, repo_path, *, remote="origin"):
+                raise GitSyncError("config is read-only")
+
+        registry = _make_ready_registry(tmp_path)
+        runner = _RefusingRunner()
+
+        push_tree(registry, runner)
+
+        assert [path for path, _, _ in runner.pushed]
 
 
 def test_restart_tree_force_pulls_parent_first(tmp_path):

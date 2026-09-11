@@ -150,12 +150,15 @@ from .state_store import (
 from .status_render import (
     PROJECT_SCOPE_LABEL,
     SCOPE_LEGEND,
+    SYNC_LEGEND,
     _render_status_table,
     _status_display_path,
     _status_line_is_untracked,
     _status_line_path,
     _status_line_targets_any,
     _status_scope_label,
+    _status_summary_counts,
+    _status_tracking_label,
 )
 
 # ============================================================
@@ -192,29 +195,6 @@ def _local_status_from_porcelain(status_lines: list[str]) -> str:
     if staged:
         return "staged"
     return "dirty"
-
-
-def _status_tracking_label(
-    sync_state: SyncState | None,
-    tracking_counts: tuple[int, int] | None = None,
-) -> str:
-    if sync_state is None:
-        return "unknown"
-    if sync_state == SyncState.ALIGNED:
-        return "synced"
-    if sync_state == SyncState.AHEAD:
-        if tracking_counts is not None:
-            return f"ahead(+{tracking_counts[0]})"
-        return "ahead"
-    if sync_state == SyncState.BEHIND:
-        if tracking_counts is not None:
-            return f"behind(-{tracking_counts[1]})"
-        return "behind"
-    if sync_state == SyncState.DIVERGED:
-        if tracking_counts is not None:
-            return f"diverged(+{tracking_counts[0]}/-{tracking_counts[1]})"
-        return "diverged"
-    return sync_state.value.lower()
 
 
 def _short_sha(value: str | None) -> str:
@@ -3401,9 +3381,15 @@ class ComplexGitSyncClient:
         ``add -> commit -> pull/pull-force -> push -> freeze``. The pull step
         is skipped (not attempted) when the current branch has no upstream
         yet — e.g. a branch just created and checked out this session, never
-        pushed — since there is nothing to pull; see
-        :meth:`GitRunner.has_upstream`, already used identically by
-        :func:`operations.push_tree` to auto-detect this same case.
+        pushed — since there is nothing to pull.
+
+        The question asked is :meth:`GitRunner.upstream_configured`, not
+        :meth:`GitRunner.has_upstream`: ``git pull`` follows
+        ``branch.<name>.merge``, so a branch that names an upstream is
+        pullable whether or not its remote-tracking ref resolves. Asking the
+        stronger question skipped the pull for every branch whose ref was
+        missing — and before the fetch refspec was widened, that was every
+        branch made after the clone.
 
         ``force_access_protocol`` — see :meth:`push` — is forwarded to the
         ``pull``/``pull-force`` and ``push`` steps above; the remote
@@ -3424,7 +3410,7 @@ class ComplexGitSyncClient:
         self.add()
         self.commit(resolved_message, stage_all=False)
         root_entry = self.get_dependency_registry().get(ROOT_REPO_ID)
-        if self.git_runner.has_upstream(root_entry.absolute_path):
+        if self.git_runner.upstream_configured(root_entry.absolute_path):
             if force:
                 self.pull_force(self.source_path, force_access_protocol=force_access_protocol)
             else:
@@ -3636,35 +3622,12 @@ class ComplexGitSyncClient:
 
     def status(self) -> str:
         registry = self.get_dependency_registry()
-        rows: list[tuple[str, str, str, str, str, str, str, str, str]] = []
         root_path = registry.get(ROOT_REPO_ID).absolute_path
-        dirty_count = 0
-        staged_count = 0
-        ahead_count = 0
-        behind_count = 0
-        error_count = 0
-        recorded_mismatch_count = 0
-
-        for entry in iter_tree_leaf_first(registry):
-            repo_status = self._repo_status_row(registry, entry, root_path)
-            rows.append(repo_status)
-            local_state = repo_status[5]
-            upstream_state = repo_status[6]
-            if local_state != "clean":
-                dirty_count += 1
-            if "staged" in local_state:
-                staged_count += 1
-            if upstream_state.startswith("ahead"):
-                ahead_count += 1
-            elif upstream_state.startswith("behind"):
-                behind_count += 1
-            elif upstream_state.startswith("diverged"):
-                ahead_count += 1
-                behind_count += 1
-            if repo_status[7].endswith("*"):
-                recorded_mismatch_count += 1
-            if upstream_state == "error" or local_state == "error":
-                error_count += 1
+        rows = [
+            self._repo_status_row(registry, entry, root_path)
+            for entry in iter_tree_leaf_first(registry)
+        ]
+        counts = _status_summary_counts(rows)
 
         tree_state = build_tree_state(registry)
         lines = [
@@ -3673,12 +3636,13 @@ class ComplexGitSyncClient:
                 f"ready={str(tree_state.is_ready).lower()} "
                 f"complete={str(tree_state.registry_complete).lower()} "
                 f"repos={len(rows)} "
-                f"dirty={dirty_count} "
-                f"staged={staged_count} "
-                f"ahead={ahead_count} "
-                f"behind={behind_count} "
-                f"recorded_mismatch={recorded_mismatch_count} "
-                f"errors={error_count}"
+                f"dirty={counts.dirty} "
+                f"staged={counts.staged} "
+                f"ahead={counts.ahead} "
+                f"behind={counts.behind} "
+                f"unmeasured={counts.unmeasured} "
+                f"recorded_mismatch={counts.recorded_mismatch} "
+                f"errors={counts.errors}"
             )
         ]
         lines.append(_render_status_table(rows))
@@ -3691,7 +3655,9 @@ class ComplexGitSyncClient:
             )
         if any(row[2] != PROJECT_SCOPE_LABEL for row in rows):
             lines.append(SCOPE_LEGEND)
-        if recorded_mismatch_count:
+        if counts.unmeasured:
+            lines.append(SYNC_LEGEND)
+        if counts.recorded_mismatch:
             lines.append("legend: HEAD ending with * differs from the commit recorded in the loaded .gts")
         return "\n".join(lines)
 
@@ -3745,6 +3711,12 @@ class ComplexGitSyncClient:
             upstream_ref = self.git_runner.upstream_ref(entry.absolute_path)
             tracking_counts = self.git_runner.branch_tracking_counts(entry.absolute_path)
             tracking_state = self.git_runner.branch_tracking_state(entry.absolute_path)
+            # Only asked when there is nothing to measure, since that is the
+            # only case where the two answers differ — and it costs a git
+            # subprocess per repository to ask.
+            upstream_configured = tracking_state is not None or self.git_runner.upstream_configured(
+                entry.absolute_path
+            )
         except GitSyncError:
             return (
                 entry.name,
@@ -3759,7 +3731,9 @@ class ComplexGitSyncClient:
             )
 
         local_state = _local_status_from_porcelain(status_lines)
-        upstream_state = _status_tracking_label(tracking_state, tracking_counts)
+        upstream_state = _status_tracking_label(
+            tracking_state, tracking_counts, upstream_configured=upstream_configured
+        )
         recorded = _short_sha(entry.commit_sha)
         head_short = _short_sha(head)
         if entry.commit_sha and head and entry.commit_sha != head:

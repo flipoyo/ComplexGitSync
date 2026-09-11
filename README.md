@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.48
+# ComplexGitSync v0002.49
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -254,7 +254,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `clone` | `<source>` `--target-dir` `--output-path` | Clone a nested project tree from .cgs. |
 | Expert | `pull` | `[source]` `--private` `--force-protocol` `--commit-gitignore` | Resynchronise an existing project tree from .cgs or .gts. |
 | Expert | `pull-force` | `[source]` `--private` `--force-protocol` | Destructively resynchronise an existing project tree from .cgs or .gts. |
-| Expert | `checkout` | `<branch>` `--private` `--ref-kind` `--gts` | Synchronize the tree to a branch or tag. |
+| Expert | `checkout` | `<branch>` `--private` `--ref-kind` `--gts` | Synchronize the tree to a branch or tag. A branch this workspace already knows from the remote is joined, not recreated; `pull` is what brings those branches here. |
 | Expert | `branch` | `<branch>` `--private` `--gts` | Create a branch across the full READY tree without checkout. |
 | Expert | `add` | `[PATH ...]` `--private` `--dry-run` `--gts` | Stage all changes across a READY tree. |
 | Expert | `rm` | `<PATH ...>` `--private` `--dry-run` `--gts` | Remove one or more tracked files, each from the repo that owns it. |
@@ -307,6 +307,40 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 > suggested when it is available, for that one call only — your Git
 > configuration is never written. With no tool available, the command prints
 > what to run by hand instead of failing.
+
+### What `status` tells you
+
+`cgitsync status` prints one row per repository. Two columns answer "is this
+repository up to date?", and they answer it against the branch each
+repository is actually on:
+
+| Column | Meaning |
+|---|---|
+| `UPSTREAM_BRANCH` | The remote branch this one tracks, e.g. `origin/main`. `-` means the branch tracks nothing. |
+| `LOCAL` | `clean`, `dirty`, `staged`, or `staged+dirty` — your working tree, independent of any remote. |
+| `SYNC` | How this branch stands against its upstream. |
+
+`SYNC` has six values:
+
+| Value | Meaning |
+|---|---|
+| `synced` | Level with the upstream. |
+| `ahead(+N)` | `N` commits here that the remote does not have. `push` sends them. |
+| `behind(-N)` | `N` commits on the remote that are not here. `pull` fetches them. |
+| `diverged(+N/-M)` | Both, from a common ancestor. `merge` or `pull-force` resolves it. |
+| `no-upstream` | This branch was never pushed, so there is nothing to compare it to. Normal for a branch you just made, and for a **private/local** repository that only `push --private` ever sends. |
+| `unknown` | The branch names an upstream that does not resolve. `pull` or `push` repairs it; if it persists, the remote is unreachable or the ref was deleted. |
+
+`pull` fetches every branch of each remote before pulling your own, so
+`checkout <a branch a colleague pushed>` finds their work rather than
+starting a new branch of the same name where you happen to stand. `checkout`
+itself never touches the network — it reads what the last `pull` brought, and
+keeps working offline.
+
+The `summary` line counts `no-upstream` and `unknown` rows as `unmeasured`,
+separately from `ahead` and `behind`. A repository nobody could measure is
+not the same as one that is level, and the summary never reports the second
+when it means the first.
 
 ### Options that recur
 
