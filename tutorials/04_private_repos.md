@@ -190,7 +190,9 @@ command, one branch name, and `cgitsync` works out what each repository
 needs.
 
 **Eleven commands take `--private`:** `pull`, `pull-force`, `checkout`,
-`branch`, `add`, `rm`, `commit`, `merge`, `push`, `tag` and `freeze`. It
+`branch`, `add`, `rm`, `commit`, `merge`, `push`, `tag` and `freeze`.
+Four of them — `add`, `commit`, `push` and `merge` — also take `--all`,
+which does both halves at once (see *Or do both at once* below). It
 narrows the command to your writable configuration repositories alone — so
 you can commit, push, tag or check them out on their own without reaching
 for plain `git`. Read-only ones are never written to, with or without it.
@@ -211,6 +213,9 @@ pixi run cgitsync pull --private
 pixi run cgitsync checkout main
 pixi run cgitsync merge multi-branch
 pixi run cgitsync merge --private multi-branch
+
+# ...or both at once, which also checks both before merging either:
+pixi run cgitsync merge --all multi-branch
 ```
 
 **Check out the target before you merge.** `merge` brings a branch *into*
@@ -310,6 +315,49 @@ pixi run cgitsync push --private
 Two separate commits, two separate messages, which is usually what you
 wanted anyway: your project's change and your notes change are different
 changes.
+
+### Or do both at once, with `--all`
+
+When the change really is one change — you edited some code and the setting
+that goes with it — running everything twice is busywork. `--all` does both
+halves in one command, with one message:
+
+```bash
+pixi run cgitsync add --all
+pixi run cgitsync commit --all -m "add the retry setting and the code that reads it"
+pixi run cgitsync push --all
+```
+
+Three forms, and the plain one has not changed:
+
+| You type | It reaches |
+|---|---|
+| `cgitsync add` | your own repositories |
+| `cgitsync add --private` | your writable configuration repositories |
+| `cgitsync add --all` | both, in one pass |
+
+Read-only configuration repositories are never written to by any of the
+three. `--all` and `--private` cannot be used together — `--all` already
+includes everything `--private` would reach.
+
+You still see the two halves separately, so giving up the typing does not
+mean giving up knowing:
+
+```text
+scope=all project=ComplexGitSync, DocComplexGitSync private=.claude, .localSpec
+scope=all never_written=3 read-only repo(s) (.agentSpec, DevSpec, DocSpec)
+```
+
+If your tree has no writable configuration repository at all, `--all` simply
+does your own repositories and says the other half was empty. That is not an
+error — most trees are like that. Asking for `--private` on such a tree still
+stops, because there you asked for something that is not there.
+
+`merge --all` is worth one extra word. It checks **every** repository before
+merging **any** of them, so a conflict in a configuration repository leaves
+your project repositories untouched too. Two separate `merge` commands could
+not promise that: the first would already have merged before the second
+found the conflict.
 
 If you ask for `--private` in a tree whose configuration repos are all
 read-only, the command stops and tells you why rather than doing nothing

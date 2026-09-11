@@ -69,7 +69,7 @@ answer is no" and "I could not ask". A CI job treats those differently.
 Expected operational, validation, filesystem, and argument errors must be
 mapped to the documented codes with concise diagnostics instead of tracebacks.
 Do not silently disguise programming defects as successful execution. Define
-missing/legacy-history results with [1-2 StateMemory](1-2_StateMemory_DevPlanTicket.md).
+missing/legacy-history results with [1-1 StateMemory](1-1_StateMemory_DevPlanTicket.md).
 
 ### 2.2 JSON output
 
@@ -165,8 +165,8 @@ marked today.
 
 ## 6. Release coordination and deferred work
 
-Use [1-2 StateMemory](1-2_StateMemory_DevPlanTicket.md)'s verification results;
+Use [1-1 StateMemory](1-1_StateMemory_DevPlanTicket.md)'s verification results;
 JSON must not label missing or legacy evidence as successfully verified history.
 Settle the meaning of a major version and compatibility promises together with
-[1-4 UserInstallPath](1-4_UserInstallPath_DevPlanTicket.md)'s version scheme.
+[1-3 UserInstallPath](1-3_UserInstallPath_DevPlanTicket.md)'s version scheme.
 WP-C3 is explicitly deferred and does not block first-release acceptance.

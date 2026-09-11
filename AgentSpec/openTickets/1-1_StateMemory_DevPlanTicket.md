@@ -275,7 +275,7 @@ buys:
 
 Ordered. Start with §3.0a so verification stops making a misleading claim
 before the larger storage migration is complete. Coordinate the result states
-with [1-3 CliContract](1-3_CliContract_DevPlanTicket.md).
+with [1-2 CliContract](1-2_CliContract_DevPlanTicket.md).
 
 ### 3.0a Make verification honest first (F1)
 

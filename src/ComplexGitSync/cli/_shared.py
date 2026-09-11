@@ -331,7 +331,13 @@ def _format_leaf_first_repo_order(
     return " -> ".join(repo_names) if repo_names else "leaf -> parent -> root"
 
 
-def _resolve_write_scope(client: ComplexGitSyncClient, *, private: bool, command: str) -> RepoScope:
+def _resolve_write_scope(
+    client: ComplexGitSyncClient,
+    *,
+    private: bool,
+    command: str,
+    all_writable: bool = False,
+) -> RepoScope:
     """The scope a write command will run at, validated the same way a real run is.
 
     Calls the one owner of that rule
@@ -346,8 +352,12 @@ def _resolve_write_scope(client: ComplexGitSyncClient, *, private: bool, command
         # Same tolerance the other helpers here already have: a client with
         # no loaded registry still gets a usable scope, and the real check
         # runs inside the client call itself.
+        if all_writable:
+            return RepoScope.WRITABLE
         return RepoScope.PRIVATE if private else RepoScope.PROJECT
-    return resolve_command_scope(registry, private=private, command=command)
+    return resolve_command_scope(
+        registry, private=private, command=command, all_writable=all_writable
+    )
 
 
 def _print_scope_note(client: ComplexGitSyncClient, scope: RepoScope) -> None:
@@ -356,12 +366,20 @@ def _print_scope_note(client: ComplexGitSyncClient, scope: RepoScope) -> None:
     Silence here is what used to make a tree-wide sweep dangerous: the
     command that wrote somewhere you did not mean looked exactly like the
     one that did not. Every scoped command says what it skipped.
+
+    ``--all`` skips nothing writable, so the usual "run it again with
+    --private" hint would be wrong there. It gets its own line instead,
+    which also answers the question a user of ``--all`` actually has: was
+    there a second half, and did it have anything in it?
     """
     if scope is RepoScope.ALL:
         return
     try:
         registry = client.get_dependency_registry()
     except (AttributeError, RuntimeError):
+        return
+    if scope is RepoScope.WRITABLE:
+        _print_all_scope_note(registry)
         return
     skipped = [entry for entry in registry.values() if not scope.includes(entry)]
     if not skipped:
@@ -371,6 +389,32 @@ def _print_scope_note(client: ComplexGitSyncClient, scope: RepoScope) -> None:
     )
     hint = f" ({', '.join(writable)} with --private)" if writable else ""
     print(f"scope={scope.value} skipped={len(skipped)} configuration repo(s){hint}")
+
+
+def _print_all_scope_note(registry) -> None:
+    """What ``--all`` reached, named in both halves.
+
+    A user who stops typing the project/private distinction should not also
+    stop seeing it, so the two groups are always named separately even
+    though one command wrote both. A tree with no writable configuration
+    repository is the common case, not an error: say the half was empty and
+    carry on.
+    """
+    private = sorted(
+        entry.name for entry in registry.values() if RepoScope.PRIVATE.includes(entry)
+    )
+    project = sorted(
+        entry.name for entry in registry.values() if RepoScope.PROJECT.includes(entry)
+    )
+    read_only = sorted(
+        entry.name
+        for entry in registry.values()
+        if entry.effective_private and not entry.effective_writable
+    )
+    half = ", ".join(private) if private else "(none in this tree)"
+    print(f"scope=all project={', '.join(project) or '(none)'} private={half}")
+    if read_only:
+        print(f"scope=all never_written={len(read_only)} read-only repo(s) ({', '.join(read_only)})")
 
 
 def _format_tree_state_line(tree_state: ProjectTreeState) -> str:

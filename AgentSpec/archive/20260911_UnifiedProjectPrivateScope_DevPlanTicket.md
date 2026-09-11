@@ -198,3 +198,71 @@ behaviour and deserves its own ticket.
 `pull --all` (§2, last row) is a sequencing feature, not a scope flag. Decide
 it separately — including "not now" — rather than letting the wording of
 "every command that takes `--private`" pull it in.
+
+---
+
+## 8. Closing note — what landed
+
+**All seven work packages.** `--all` is on `add`, `commit`, `push` and
+`merge`, mutually exclusive with `--private`, mapping to
+`RepoScope.WRITABLE`. The bare form and `--private` are untouched, which
+the existing tests prove by still passing.
+
+**WP3, the asymmetry §4.3 asked for.** `resolve_command_scope` now answers
+the same emptiness two ways: `--private` still raises, because a user who
+asked for the configuration repositories and got none has hit the silent
+no-op the rule exists to prevent; `--all` returns the project half, because
+most trees declare no writable configuration repository at all and "there
+was no second half" is a complete answer there.
+
+**WP4, proven in both directions.** `merge --all` is one `WRITABLE` pass. A
+conflict in the private half leaves the project half unmerged, and a
+conflict in the project half leaves the private half unmerged — two tests,
+because the guarantee is symmetric and a one-sided test would not have
+caught a sequential implementation.
+
+**WP5.** `--all` gets its own scope note rather than the `--private` hint,
+which would be wrong under it:
+
+```text
+scope=all project=ComplexGitSync, DocComplexGitSync private=.claude, .localSpec
+scope=all never_written=3 read-only repo(s) (.agentSpec, DevSpec, DocSpec)
+```
+
+The read-only line is not in §4.6's list. It was added because "all" is a
+word a user may reasonably read literally, and the one place to answer that
+is where they see what `--all` just did.
+
+**§3's naming trap, handled at both ends.** `merge --dry-run` printed
+`scope=writable` — the internal word, leaking through `RepoScope.value`. It
+now prints `scope=all`, the word the user typed. The mapping is stated in
+the flag's help text and at the registration site.
+
+**Three things beyond the work packages.**
+
+* **The ratchet.** `orchestre.py`, `cli/expert.py` and `cli/_shared.py` were
+  all exactly at their baselines. Part was paid for honestly — the six
+  identical `resolve_command_scope` calls folded into one `_write_scope`
+  method, and three verbatim copies of the `--private` help text replaced by
+  the shared `_add_scope_arguments` registration. The rest needed room, so
+  per `.localSpec/AdditionalSpecs.md` §Ceilings it was **put to the owner
+  rather than squeezed**, and granted: 3719→3750, 1215→1258, 392→432, all
+  well inside the standing ~1000/module allowance.
+* **Test stubs.** The CLI tests stub the client, so their `commit`/`add`
+  doubles had to grow the keyword the real client grew. The behaviour
+  assertions are unchanged.
+* **`api_python.tex`.** Not in WP6's list, but the client methods gained a
+  parameter and CLAUDE.md's mirror rule makes that a documented API change.
+
+**WP1 is now its own ticket.** `rm --private` and `freeze --private` are
+confirmed dead — both registered, neither read by its handler, and
+`client.remove()` has no `private` parameter at all. Filed as
+`2-2_DeadScopeFlags_DevPlanTicket.md`, which also records the question this
+ticket could not answer in passing: whether bare `rm` already deletes from a
+configuration repository with no flag and no refusal. That decides whether
+it is a missing feature or a live hole.
+
+**Verified:** `pixi run lint` clean, 1288 passed, 2 skipped. Both PDFs
+rebuilt. Not done, and deliberately: `pull --all` (§2's last row, a
+sequencing feature), and narrowing the bare form for `checkout`/`branch`/`tag`
+(§7).

@@ -349,6 +349,7 @@ A few flags mean the same thing wherever they appear:
 | Option | Meaning |
 |---|---|
 | `--private` | Run on your **private/local** repos instead of the project's own. Exclusive, not additive. Available on `pull`, `pull-force`, `checkout`, `branch`, `add`, `rm`, `commit`, `merge`, `push`, `tag` and `freeze` — and on nothing else. |
+| `--all` | Run on both halves at once — your own repos **and** your **private/local** ones, sharing one commit message. Available on `add`, `commit`, `push` and `merge`. Cannot be combined with `--private`. Read-only configuration repos are never written to. |
 | `--gts <snapshot.gts>` | Act on an explicit snapshot rather than the one found automatically. |
 | `--search-dir <dir>` | Where to start looking for the tree. Accepted by every command that finds a tree on its own. |
 | `--dry-run` | Print the plan and change nothing. |

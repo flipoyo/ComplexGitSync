@@ -12,10 +12,10 @@ title to avoid confusing old and reused numbers.
 | Final ID | Active ticket | Actual previous ID | Disposition |
 |---|---|---|---|
 | 1-1 | [GitLocaleIndependence](../archive/20260911_GitLocaleIndependence_DevPlanTicket.md) | 1-1 (originally 1-3) | Retained; plan corrected |
-| 1-2 | [UnifiedProjectPrivateScope](../openTickets/1-1_UnifiedProjectPrivateScope_DevPlanTicket.md) | 1-2 | Retained; plan corrected |
-| 1-3 | [StateMemory](../openTickets/1-2_StateMemory_DevPlanTicket.md) | 2-1 | Promoted to Priority 1 |
-| 1-4 | [CliContract](../openTickets/1-3_CliContract_DevPlanTicket.md) | 2-5 | Promoted to Priority 1 |
-| 1-5 | [UserInstallPath](../openTickets/1-4_UserInstallPath_DevPlanTicket.md) | 2-6 | Promoted to Priority 1 |
+| 1-2 | [UnifiedProjectPrivateScope](../archive/20260911_UnifiedProjectPrivateScope_DevPlanTicket.md) | 1-2 | Retained; plan corrected |
+| 1-3 | [StateMemory](../openTickets/1-1_StateMemory_DevPlanTicket.md) | 2-1 | Promoted to Priority 1 |
+| 1-4 | [CliContract](../openTickets/1-2_CliContract_DevPlanTicket.md) | 2-5 | Promoted to Priority 1 |
+| 1-5 | [UserInstallPath](../openTickets/1-3_UserInstallPath_DevPlanTicket.md) | 2-6 | Promoted to Priority 1 |
 | 2-1 | [CliTypoSuggestion](../openTickets/2-1_CliTypoSuggestion_DevPlanTicket.md) | 2-2 | Renumbered; optional improvement |
 
 During discussion, CliContract and UserInstallPath were provisionally called
@@ -133,12 +133,13 @@ have been repointed to where each file is now.
 |---|---|---|
 | ReleaseDocsDebt | 2-2 | [archived](../archive/20260911_ReleaseDocsDebt_DevPlanTicket.md) |
 | GitLocaleIndependence | 1-1 | [archived](../archive/20260911_GitLocaleIndependence_DevPlanTicket.md) |
-| UnifiedProjectPrivateScope | 1-2 | **1-1** |
-| StateMemory | 1-3 | **1-2** |
-| CliContract | 1-4 | **1-3** |
-| UserInstallPath | 1-5 | **1-4** |
+| UnifiedProjectPrivateScope | 1-2 | [archived](../archive/20260911_UnifiedProjectPrivateScope_DevPlanTicket.md) |
+| StateMemory | 1-3 | **1-1** |
+| CliContract | 1-4 | **1-2** |
+| UserInstallPath | 1-5 | **1-3** |
 | CliTypoSuggestion | 2-1 | 2-1, unchanged |
+| DeadScopeFlags | — | **2-2**, filed by UnifiedProjectPrivateScope |
 
-Priority 1 was compacted to run 1..4 with no gaps; priority 2 already ran
-1..1 and did not move. The order within each pile is unchanged — this was
+Priority 1 was compacted each time a ticket shipped and now runs 1..3;
+priority 2 runs 1..2 since DeadScopeFlags was appended to it. The order within each pile is unchanged — this was
 closing a gap, not a re-ranking, which is what a Ticket review does.

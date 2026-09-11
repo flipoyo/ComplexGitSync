@@ -910,19 +910,38 @@ def resolve_command_scope(
     *,
     private: bool,
     command: str,
+    all_writable: bool = False,
 ) -> RepoScope:
     """Pick the scope a write command runs at, and refuse an empty one.
 
-    Without ``--private`` a write command touches only the repositories this
-    project owns. With it, only the **writable** configuration repos — the
-    ones the ``.cgs`` declares ``private = true, writable = true``. The two
-    are disjoint on purpose: a shared repository gets its own command and
-    its own commit message, rather than being swept into this project's.
+    Three forms, and the bare one has not moved. Without a flag a write
+    command touches only the repositories this project owns. With
+    ``--private``, only the **writable** configuration repos — the ones the
+    ``.cgs`` declares ``private = true, writable = true``. With ``--all``,
+    both in a single pass, sharing one commit message the way
+    ``freeze-release`` already does.
 
-    Raises rather than silently doing nothing when ``--private`` is asked
-    for and no repository qualifies, since a command that quietly touched
-    nothing is exactly the failure this whole mechanism exists to prevent.
+    ``--private`` raises rather than silently doing nothing when no
+    repository qualifies, since a command that quietly touched nothing is
+    exactly the failure this whole mechanism exists to prevent. ``--all``
+    does **not**: most trees declare no writable configuration repository at
+    all, and "do the project half, there was no other half" is a complete
+    and correct answer there rather than a mistake to report. Same rule,
+    two callers, two right answers — see the CLI's scope note, which says
+    when the private half was empty.
+
+    ``--all`` maps to :attr:`RepoScope.WRITABLE`, not :attr:`RepoScope.ALL`.
+    The enum's ``ALL`` is wider: it includes the read-only configuration
+    repositories, which no form of this flag ever writes to.
     """
+    if private and all_writable:
+        raise GitSyncError(
+            f"{command}: --all and --private are mutually exclusive. --all already"
+            f" reaches the writable configuration repositories alongside this"
+            f" project's own; --private reaches them instead of it."
+        )
+    if all_writable:
+        return RepoScope.WRITABLE
     if not private:
         return RepoScope.PROJECT
     if any(RepoScope.PRIVATE.includes(repo) for repo in tree.values()):
@@ -2945,12 +2964,21 @@ class ComplexGitSyncClient:
         self._log_event("branch_end", branch_name=branch_name)
         return registry
 
+    def _write_scope(
+        self, registry: WorkingGitTree, command: str, private: bool, all_writable: bool
+    ) -> RepoScope:
+        """Which repositories this write command may touch. One rule, six callers."""
+        return resolve_command_scope(
+            registry, private=private, command=command, all_writable=all_writable
+        )
+
     def commit(
         self,
         message: str,
         *,
         stage_all: bool = True,
         private: bool = False,
+        all_writable: bool = False,
     ) -> WorkingGitTree:
         """Commit changes across the full tree, leaf-first.
 
@@ -2961,7 +2989,7 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        scope = resolve_command_scope(registry, private=private, command="commit")
+        scope = self._write_scope(registry, "commit", private, all_writable)
         self._log_event("commit_start", message=message, stage_all=stage_all, scope=scope.value)
         self.last_write_outcomes = _as_write_outcomes(
             self.orchestre.git_tree.git.commit(
@@ -2984,6 +3012,7 @@ class ComplexGitSyncClient:
         project_branch: str,
         *,
         private: bool = False,
+        all_writable: bool = False,
         ff_only: bool = False,
         no_ff: bool = False,
     ) -> tuple[tuple[str, str], ...]:
@@ -3005,7 +3034,7 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        scope = resolve_command_scope(registry, private=private, command="merge")
+        scope = self._write_scope(registry, "merge", private, all_writable)
         self._log_event("merge_start", project_branch=project_branch, scope=scope.value)
         merged = self.orchestre.git_tree.git.merge(
             self.git_runner,
@@ -3023,6 +3052,7 @@ class ComplexGitSyncClient:
         project_branch: str,
         *,
         private: bool = False,
+        all_writable: bool = False,
         ff_only: bool = False,
         no_ff: bool = False,
     ) -> ResolveOutcome:
@@ -3035,7 +3065,7 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        scope = resolve_command_scope(registry, private=private, command="merge")
+        scope = self._write_scope(registry, "merge", private, all_writable)
         self._log_event(
             "merge_resolve_start", project_branch=project_branch, scope=scope.value
         )
@@ -3115,6 +3145,7 @@ class ComplexGitSyncClient:
         project_branch: str,
         *,
         private: bool = False,
+        all_writable: bool = False,
     ) -> tuple[tuple[str, str, str, tuple[Path, ...]], ...]:
         """What :meth:`merge` would do, in order, without doing it.
 
@@ -3131,7 +3162,7 @@ class ComplexGitSyncClient:
         from .operations import merge_status
 
         registry = self.get_dependency_registry()
-        scope = resolve_command_scope(registry, private=private, command="merge")
+        scope = self._write_scope(registry, "merge", private, all_writable)
         project_name = tree_project_name(registry)
         return tuple(
             (
@@ -3148,6 +3179,7 @@ class ComplexGitSyncClient:
         paths: Sequence[str | Path] | None = None,
         *,
         private: bool = False,
+        all_writable: bool = False,
     ) -> WorkingGitTree:
         """Stage changes across the full tree, leaf-first.
 
@@ -3162,7 +3194,7 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        scope = resolve_command_scope(registry, private=private, command="add")
+        scope = self._write_scope(registry, "add", private, all_writable)
         self._log_event(
             "add_start",
             paths=[str(p) for p in paths] if paths else None,
@@ -3199,6 +3231,7 @@ class ComplexGitSyncClient:
         *,
         force_access_protocol: str | None = None,
         private: bool = False,
+        all_writable: bool = False,
     ) -> WorkingGitTree:
         """Push all repos to their remotes, leaf-first.
 
@@ -3217,7 +3250,7 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        scope = resolve_command_scope(registry, private=private, command="push")
+        scope = self._write_scope(registry, "push", private, all_writable)
         self._log_event("push_start", scope=scope.value)
         protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
         try:

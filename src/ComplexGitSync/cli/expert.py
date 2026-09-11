@@ -221,6 +221,46 @@ def _add_private_argument(subparser: argparse.ArgumentParser, *, verb: str) -> N
     )
 
 
+def _add_scope_arguments(subparser: argparse.ArgumentParser) -> None:
+    """Add ``--private`` and ``--all``: the two ways to move off the default.
+
+    For the commands that write this project's own history --- ``add``,
+    ``commit``, ``push``, ``merge`` --- the bare form has always meant "the
+    repositories this project owns" and still does. ``--private`` swaps that
+    for the writable configuration repositories; ``--all`` takes both in one
+    pass. They are mutually exclusive because ``--all`` already includes what
+    ``--private`` selects.
+
+    ``--all`` is the user's word, not the code's: internally it maps to
+    ``RepoScope.WRITABLE``, which is narrower than ``RepoScope.ALL``. No form
+    of either flag ever writes to a read-only configuration repository, which
+    is why the help text says so rather than leaving "all" to be read
+    literally.
+    """
+    group = subparser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--private",
+        action="store_true",
+        help=(
+            "Act on the tree's writable configuration repositories instead of "
+            "this project's own -- the entries a .cgs declares 'private = true, "
+            "writable = true'. Without it the command touches only the "
+            "repositories this project owns, and leaves every shared one alone."
+        ),
+    )
+    group.add_argument(
+        "--all",
+        dest="all_writable",
+        action="store_true",
+        help=(
+            "Act on both halves in one pass: this project's own repositories "
+            "and its writable configuration ones, sharing a single commit "
+            "message. Read-only configuration repositories are never written "
+            "to by this or any other form. Cannot be combined with --private."
+        ),
+    )
+
+
 def _register_checkout(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("branch", help="Branch or tag name to check out across the tree.")
     _add_gts_argument(subparser)
@@ -262,13 +302,7 @@ def _register_commit(subparser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Skip automatic 'git add --all' before committing.",
     )
-    subparser.add_argument(
-        "--private",
-        action="store_true",
-        help=(
-            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'private = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
-        ),
-    )
+    _add_scope_arguments(subparser)
     _add_dry_run_argument(subparser, help_text="Preview the commit execution plan without mutating repositories.")
     subparser.set_defaults(handler=_handle_commit)
 
@@ -285,15 +319,7 @@ def _register_merge(subparser: argparse.ArgumentParser) -> None:
     )
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
-    subparser.add_argument(
-        "--private",
-        action="store_true",
-        help=(
-            "Merge into the tree's writable configuration repositories instead of "
-            "this project's own -- the entries a .cgs declares 'private = true, "
-            "writable = true'. Read-only configuration repositories are never merged."
-        ),
-    )
+    _add_scope_arguments(subparser)
     group = subparser.add_mutually_exclusive_group()
     group.add_argument(
         "--ff-only",
@@ -335,13 +361,7 @@ def _register_add(subparser: argparse.ArgumentParser) -> None:
     )
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
-    subparser.add_argument(
-        "--private",
-        action="store_true",
-        help=(
-            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'private = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
-        ),
-    )
+    _add_scope_arguments(subparser)
     _add_dry_run_argument(subparser, help_text="Preview the add execution plan without mutating repositories.")
     subparser.set_defaults(handler=_handle_add)
 
@@ -368,13 +388,7 @@ def _register_rm(subparser: argparse.ArgumentParser) -> None:
 def _register_push(subparser: argparse.ArgumentParser) -> None:
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
-    subparser.add_argument(
-        "--private",
-        action="store_true",
-        help=(
-            "Act on the tree's writable configuration repositories instead of this project's own -- the entries a .cgs declares 'private = true, writable = true'. Without it the command touches only the repositories this project owns, and leaves every shared one alone. The two sets are disjoint, so a shared repository gets its own command and its own commit message."
-        ),
-    )
+    _add_scope_arguments(subparser)
     _add_dry_run_argument(subparser, help_text="Preview the push execution plan without mutating repositories.")
     _add_force_protocol_argument(subparser, command_name="push")
     subparser.set_defaults(handler=_handle_push)
@@ -660,6 +674,7 @@ def _handle_commit(args: argparse.Namespace) -> int:
             stage_all=not args.no_stage,
             dry_run=args.dry_run,
             private=args.private,
+            all_writable=args.all_writable,
         ),
     )
 
@@ -682,6 +697,7 @@ def _handle_merge(args: argparse.Namespace) -> int:
             source,
             project_branch=args.branch,
             private=args.private,
+            all_writable=args.all_writable,
             ff_only=args.ff_only,
             no_ff=args.no_ff,
             dry_run=args.dry_run,
@@ -697,7 +713,12 @@ def _handle_add(args: argparse.Namespace) -> int:
         command_name="add",
         source=gts_path,
         runner=lambda client, source: _execute_add(
-            client, source, paths=paths, dry_run=args.dry_run, private=args.private
+            client,
+            source,
+            paths=paths,
+            dry_run=args.dry_run,
+            private=args.private,
+            all_writable=args.all_writable,
         ),
     )
 
@@ -723,6 +744,7 @@ def _handle_push(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             force_access_protocol=force_access_protocol,
             private=args.private,
+            all_writable=args.all_writable,
         ),
     )
 
@@ -970,9 +992,12 @@ def _execute_commit(
     stage_all: bool,
     dry_run: bool = False,
     private: bool = False,
+    all_writable: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
-    scope = _resolve_write_scope(client, private=private, command="commit")
+    scope = _resolve_write_scope(
+        client, private=private, command="commit", all_writable=all_writable
+    )
     print(f"git_command=git commit -m {message!r}")
     if dry_run:
         _print_dry_run_plan(
@@ -985,7 +1010,7 @@ def _execute_commit(
             scope=scope,
         )
     else:
-        client.commit(message, stage_all=stage_all, private=private)
+        client.commit(message, stage_all=stage_all, private=private, all_writable=all_writable)
         _print_write_outcomes(
             client,
             verb="committed",
@@ -1011,13 +1036,16 @@ def _execute_merge(
     *,
     project_branch: str,
     private: bool = False,
+    all_writable: bool = False,
     ff_only: bool = False,
     no_ff: bool = False,
     dry_run: bool = False,
     resolve: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
-    scope = _resolve_write_scope(client, private=private, command="merge")
+    scope = _resolve_write_scope(
+        client, private=private, command="merge", all_writable=all_writable
+    )
     flag = " --ff-only" if ff_only else (" --no-ff" if no_ff else "")
     print(f"git_command=git merge{flag} {project_branch}")
     if dry_run:
@@ -1026,6 +1054,7 @@ def _execute_merge(
             scope_value=scope.value,
             project_branch=project_branch,
             private=private,
+            all_writable=all_writable,
         )
         print(_format_tree_state_line(client.get_tree_state()))
         return 0
@@ -1034,11 +1063,16 @@ def _execute_merge(
             client,
             project_branch=project_branch,
             private=private,
+            all_writable=all_writable,
             ff_only=ff_only,
             no_ff=no_ff,
         )
     merged = client.merge(
-        project_branch, private=private, ff_only=ff_only, no_ff=no_ff
+        project_branch,
+        private=private,
+        all_writable=all_writable,
+        ff_only=ff_only,
+        no_ff=no_ff,
     )
     for repo_name, source in merged:
         print(f"merged {repo_name} <- {source}")
@@ -1054,6 +1088,7 @@ def _execute_merge_resolve(
     *,
     project_branch: str,
     private: bool,
+    all_writable: bool,
     ff_only: bool,
     no_ff: bool,
 ) -> int:
@@ -1066,7 +1101,11 @@ def _execute_merge_resolve(
         "nothing when any repository conflicts."
     )
     outcome = client.merge_resolve(
-        project_branch, private=private, ff_only=ff_only, no_ff=no_ff
+        project_branch,
+        private=private,
+        all_writable=all_writable,
+        ff_only=ff_only,
+        no_ff=no_ff,
     )
     for repo_name, source in outcome.merged:
         print(f"merged {repo_name} <- {source}")
@@ -1101,6 +1140,7 @@ def _print_merge_plan(
     scope_value: str,
     project_branch: str,
     private: bool,
+    all_writable: bool = False,
 ) -> None:
     """Show which branch each repository would actually merge.
 
@@ -1109,7 +1149,9 @@ def _print_merge_plan(
     is what stops somebody merging a configuration repository from the wrong
     place.
     """
-    plan = client.merge_plan(project_branch, private=private)
+    plan = client.merge_plan(project_branch, private=private, all_writable=all_writable)
+    # RepoScope.WRITABLE is the internal name; --all is the word the user typed.
+    scope_value = "all" if all_writable else scope_value
     labels = {
         "merge": "",
         "already-on-it": " (already on it — nothing to merge into)",
@@ -1144,15 +1186,16 @@ def _execute_add(
     paths: list[str] | None = None,
     dry_run: bool = False,
     private: bool = False,
+    all_writable: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
-    scope = _resolve_write_scope(client, private=private, command="add")
+    scope = _resolve_write_scope(client, private=private, command="add", all_writable=all_writable)
     action = f"git add -- {' '.join(paths)}" if paths else "git add --all"
     print(f"git_command={action}")
     if dry_run:
         _print_dry_run_plan(client, command_name="add", actions=(action,), scope=scope)
     else:
-        client.add(paths=paths, private=private)
+        client.add(paths=paths, private=private, all_writable=all_writable)
         _print_write_outcomes(
             client,
             verb="staged",
@@ -1197,9 +1240,10 @@ def _execute_push(
     dry_run: bool = False,
     force_access_protocol: str | None = None,
     private: bool = False,
+    all_writable: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
-    scope = _resolve_write_scope(client, private=private, command="push")
+    scope = _resolve_write_scope(client, private=private, command="push", all_writable=all_writable)
     print("git_command=git push (-u origin <branch> when upstream is missing)")
     if dry_run:
         _print_dry_run_plan(
@@ -1209,7 +1253,11 @@ def _execute_push(
             scope=scope,
         )
     else:
-        client.push(force_access_protocol=force_access_protocol, private=private)
+        client.push(
+            force_access_protocol=force_access_protocol,
+            private=private,
+            all_writable=all_writable,
+        )
         _print_write_outcomes(
             client,
             verb="pushed",

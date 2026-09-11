@@ -251,6 +251,63 @@ class TestCommandScope:
         with pytest.raises(GitSyncError, match="no private repositories at all"):
             resolve_command_scope(self._tree(_OWNED), private=True, command="add")
 
+    def test_all_reaches_both_halves_in_one_pass(self):
+        """--all is the two commands people run today, run once."""
+        tree = self._tree(_OWNED, _READ_ONLY, _WRITABLE)
+
+        scope = resolve_command_scope(tree, private=False, command="commit", all_writable=True)
+
+        assert scope is RepoScope.WRITABLE
+        # Leaf-first, exactly as each half is ordered on its own today.
+        assert [r.name for r in iter_tree_leaf_first(tree, scope)] == ["own-spec", "app"]
+
+    def test_all_never_reaches_a_read_only_configuration_repository(self):
+        """"All" is the user's word for "everything you may write to"."""
+        tree = self._tree(_OWNED, _READ_ONLY, _WRITABLE)
+
+        scope = resolve_command_scope(tree, private=False, command="push", all_writable=True)
+
+        assert "shared-spec" not in [r.name for r in iter_tree_leaf_first(tree, scope)]
+
+    def test_all_accepts_an_empty_private_half_where_private_refuses_it(self):
+        """The same emptiness is an error for one flag and a fact for the other.
+
+        ``--private`` asked for the configuration repositories and got none,
+        which is the silent no-op the scope rule exists to prevent. ``--all``
+        asked for everything writable and got the project half; most trees
+        declare no writable configuration repository at all, so that is a
+        complete answer rather than a mistake.
+        """
+        tree = self._tree(_OWNED, _READ_ONLY)
+
+        scope = resolve_command_scope(tree, private=False, command="add", all_writable=True)
+
+        assert scope is RepoScope.WRITABLE
+        assert [r.name for r in iter_tree_leaf_first(tree, scope)] == ["app"]
+        with pytest.raises(GitSyncError):
+            resolve_command_scope(tree, private=True, command="add")
+
+    def test_all_and_private_together_are_refused(self):
+        """Refused in the API too, not only by the parser."""
+        tree = self._tree(_OWNED, _WRITABLE)
+
+        with pytest.raises(GitSyncError, match="mutually exclusive"):
+            resolve_command_scope(tree, private=True, command="commit", all_writable=True)
+
+    def test_all_matches_what_freeze_release_already_did(self):
+        """The precedent: the minimalist flagship has always spanned both halves.
+
+        ``freeze_release_tree()`` runs at ``WRITABLE`` with one commit
+        message. ``--all`` is that same reach, offered to the commands that
+        needed two invocations to get it.
+        """
+        tree = self._tree(_OWNED, _READ_ONLY, _WRITABLE)
+
+        assert (
+            resolve_command_scope(tree, private=False, command="commit", all_writable=True)
+            is RepoScope.WRITABLE
+        )
+
 
 class TestPrivacyReachesNestedRepositories:
     """A repository inside a private repository is shared too.

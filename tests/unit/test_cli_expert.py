@@ -445,7 +445,7 @@ def test_commit_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def commit(self, message, *, stage_all, private=False):
+        def commit(self, message, *, stage_all, private=False, all_writable=False):
             captured_call["message"] = message
             captured_call["stage_all"] = stage_all
 
@@ -474,7 +474,7 @@ def test_commit_command_accepts_message_option(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def commit(self, message, *, stage_all, private=False):
+        def commit(self, message, *, stage_all, private=False, all_writable=False):
             captured_call["message"] = message
             captured_call["stage_all"] = stage_all
 
@@ -510,7 +510,7 @@ def test_commit_command_no_stage_flag(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def commit(self, message, *, stage_all, private=False):
+        def commit(self, message, *, stage_all, private=False, all_writable=False):
             captured_call["stage_all"] = stage_all
 
         def get_tree_state(self):
@@ -532,7 +532,7 @@ def test_commit_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def commit(self, message, *, stage_all, private=False):
+        def commit(self, message, *, stage_all, private=False, all_writable=False):
             raise AssertionError("commit should not be called during --dry-run")
 
         def get_tree_state(self):
@@ -564,7 +564,7 @@ def test_add_command_uses_client_handler(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def add(self, paths=None, *, private=False):
+        def add(self, paths=None, *, private=False, all_writable=False):
             captured_call["added"] = True
 
         def get_tree_state(self):
@@ -591,7 +591,7 @@ def test_add_command_forwards_paths_to_client(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def add(self, paths=None, *, private=False):
+        def add(self, paths=None, *, private=False, all_writable=False):
             captured_call["paths"] = paths
 
         def get_tree_state(self):
@@ -616,7 +616,7 @@ def test_add_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def add(self, paths=None, *, private=False):
+        def add(self, paths=None, *, private=False, all_writable=False):
             raise AssertionError("add should not be called during --dry-run")
 
         def get_tree_state(self):
@@ -1072,3 +1072,113 @@ relative_path = "deps/child-repo"
         encoding="utf-8",
     )
     return config_path
+
+
+# ---------------------------------------------------------------------------
+# --all — AgentSpec/archive/20260911_UnifiedProjectPrivateScope_DevPlanTicket.md
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("command", ["add", "commit", "push", "merge"])
+def test_all_and_private_are_refused_together(capsys, command):
+    """--all already includes what --private selects, so both is a mistake."""
+    argv = [command, "--all", "--private"]
+    if command in ("commit", "merge"):
+        argv.insert(1, "x")
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run(argv)
+
+    assert excinfo.value.code == 2
+    assert "not allowed with argument --all" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("command", ["add", "commit", "push", "merge"])
+def test_all_is_offered_on_every_command_that_writes_this_projects_history(command):
+    """The four commands §2 identified as the real win, and no others.
+
+    ``tag``, ``checkout`` and ``branch`` already reach both halves, so a
+    ``--all`` there would be a flag that does nothing — which is the bug the
+    ticket's §4.1 is about, not a feature.
+    """
+    parser = _build_parser()
+    args = parser.parse_args([command, "x"] if command in ("commit", "merge") else [command])
+
+    assert hasattr(args, "all_writable")
+    assert args.all_writable is False, "the default must not move"
+
+
+@pytest.mark.parametrize("command", ["tag", "checkout", "branch"])
+def test_all_is_not_offered_where_it_would_mean_nothing(capsys, command):
+    with pytest.raises(SystemExit) as excinfo:
+        _run([command, "x", "--all"])
+
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments: --all" in capsys.readouterr().err
+
+
+def test_commit_all_sends_one_message_to_both_halves(monkeypatch, capsys, tmp_path):
+    """One change, one message — the same choice freeze-release already makes."""
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def commit(self, message, *, stage_all, private=False, all_writable=False):
+            captured_call["message"] = message
+            captured_call["private"] = private
+            captured_call["all_writable"] = all_writable
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+
+    exit_code = _run(["commit", "shared message", "--all", "--gts", str(gts_path)])
+
+    assert exit_code == 0
+    assert captured_call["message"] == "shared message"
+    assert captured_call["all_writable"] is True
+    assert captured_call["private"] is False
+    assert "READY ready=true" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("flags", "expected"),
+    [([], {"private": False, "all_writable": False}), (["--private"], {"private": True, "all_writable": False})],
+)
+def test_the_existing_two_forms_reach_the_client_exactly_as_before(
+    monkeypatch, tmp_path, flags, expected
+):
+    """--all is additive: neither existing form may change what it sends."""
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def add(self, paths=None, *, private=False, all_writable=False):
+            captured_call["private"] = private
+            captured_call["all_writable"] = all_writable
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
+    gts_path = tmp_path / "project.gts"
+    gts_path.touch()
+
+    assert _run(["add", *flags, "--gts", str(gts_path)]) == 0
+    assert captured_call["private"] is expected["private"]
+    assert captured_call["all_writable"] is expected["all_writable"]

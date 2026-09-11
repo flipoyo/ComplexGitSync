@@ -1801,6 +1801,47 @@ class TestMergeTree:
         merged_paths = [path for path, _ in runner.merged]
         assert leaf.absolute_path not in merged_paths
 
+    def test_one_writable_pass_merges_both_halves(self, tmp_path):
+        """What ``merge --all`` runs: one pass, both halves, names translated."""
+        registry = self._tree(tmp_path)
+        runner = self._runner(registry)
+
+        merge_tree(registry, runner, "multi-branch", scope=RepoScope.WRITABLE)
+
+        assert runner.merged == [
+            (registry.get("root:deps/leaf").absolute_path, "project_multi-branch"),
+            (registry.get("root").absolute_path, "multi-branch"),
+        ]
+
+    def test_a_conflict_in_the_private_half_leaves_the_project_half_unmerged(self, tmp_path):
+        """Why ``--all`` must be one pass and never two sequential ones.
+
+        Two passes means two preflights: the project half would merge, the
+        private half would then refuse, and the tree would be left exactly
+        half-merged — the state the whole-scope preflight exists to prevent.
+        One ``WRITABLE`` pass checks both halves before touching either.
+        """
+        registry = self._tree(tmp_path)
+        runner = self._runner(registry)
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._unmergeable[leaf] = {"project_multi-branch"}
+
+        with pytest.raises(GitSyncError, match="no repository was merged"):
+            merge_tree(registry, runner, "multi-branch", scope=RepoScope.WRITABLE)
+
+        assert runner.merged == [], "the project repository must not have been merged"
+
+    def test_a_conflict_in_the_project_half_leaves_the_private_half_unmerged(self, tmp_path):
+        """The same guarantee in the other direction."""
+        registry = self._tree(tmp_path)
+        runner = self._runner(registry)
+        runner._unmergeable[registry.get("root").absolute_path] = {"multi-branch"}
+
+        with pytest.raises(GitSyncError, match="no repository was merged"):
+            merge_tree(registry, runner, "multi-branch", scope=RepoScope.WRITABLE)
+
+        assert runner.merged == []
+
     def test_merge_source_ref_translates_only_for_private_local(self, tmp_path):
         registry = self._tree(tmp_path)
 
