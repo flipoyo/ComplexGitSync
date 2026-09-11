@@ -251,7 +251,7 @@ every standalone checkout and says nothing about whether they are current.
 
 * **The French-locale test failure.** `test_plain_freeze_release_fails_on_this_divergence`
   matches English git output. That is ticket
-  [`1-1 GitLocaleIndependence`](1-1_GitLocaleIndependence_DevPlanTicket.md).
+  [`GitLocaleIndependence`](20260911_GitLocaleIndependence_DevPlanTicket.md).
 * **The raw traceback on a missing or invalid `.cgs`.**
   `cgitsync initialise examples/nonexistent.cgs` prints a bare
   `FileNotFoundError` traceback instead of a message. Real, and already
@@ -324,5 +324,5 @@ repair of a habit.
 
 **Still open, and not this ticket's:** the French-locale failure in
 `tests/integration/test_golden_release_gaps.py`
-(`1-1_GitLocaleIndependence`), and the bare traceback on a missing `.cgs`
+(`GitLocaleIndependence`), and the bare traceback on a missing `.cgs`
 (§7).

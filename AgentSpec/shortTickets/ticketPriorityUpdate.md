@@ -11,11 +11,11 @@ title to avoid confusing old and reused numbers.
 
 | Final ID | Active ticket | Actual previous ID | Disposition |
 |---|---|---|---|
-| 1-1 | [GitLocaleIndependence](../openTickets/1-1_GitLocaleIndependence_DevPlanTicket.md) | 1-1 (originally 1-3) | Retained; plan corrected |
-| 1-2 | [UnifiedProjectPrivateScope](../openTickets/1-2_UnifiedProjectPrivateScope_DevPlanTicket.md) | 1-2 | Retained; plan corrected |
-| 1-3 | [StateMemory](../openTickets/1-3_StateMemory_DevPlanTicket.md) | 2-1 | Promoted to Priority 1 |
-| 1-4 | [CliContract](../openTickets/1-4_CliContract_DevPlanTicket.md) | 2-5 | Promoted to Priority 1 |
-| 1-5 | [UserInstallPath](../openTickets/1-5_UserInstallPath_DevPlanTicket.md) | 2-6 | Promoted to Priority 1 |
+| 1-1 | [GitLocaleIndependence](../archive/20260911_GitLocaleIndependence_DevPlanTicket.md) | 1-1 (originally 1-3) | Retained; plan corrected |
+| 1-2 | [UnifiedProjectPrivateScope](../openTickets/1-1_UnifiedProjectPrivateScope_DevPlanTicket.md) | 1-2 | Retained; plan corrected |
+| 1-3 | [StateMemory](../openTickets/1-2_StateMemory_DevPlanTicket.md) | 2-1 | Promoted to Priority 1 |
+| 1-4 | [CliContract](../openTickets/1-3_CliContract_DevPlanTicket.md) | 2-5 | Promoted to Priority 1 |
+| 1-5 | [UserInstallPath](../openTickets/1-4_UserInstallPath_DevPlanTicket.md) | 2-6 | Promoted to Priority 1 |
 | 2-1 | [CliTypoSuggestion](../openTickets/2-1_CliTypoSuggestion_DevPlanTicket.md) | 2-2 | Renumbered; optional improvement |
 
 During discussion, CliContract and UserInstallPath were provisionally called
@@ -122,3 +122,23 @@ Deferred work remains documented: ignored `rm`/`freeze` private flags and their
 parser audit (1-2), register publication and its future gates (1-3), validation
 and dry-run JSON (1-4), and additional platforms/standalone binaries (1-5).
 These deferred items do not gate closure of their respective release tickets.
+
+## 2. What has happened since — 2026-09-11
+
+Two of the tickets above have shipped, so the table's *Final ID* column is
+the record of what this review decided, not the current ranks. The links
+have been repointed to where each file is now.
+
+| Ticket | Then | Now |
+|---|---|---|
+| ReleaseDocsDebt | 2-2 | [archived](../archive/20260911_ReleaseDocsDebt_DevPlanTicket.md) |
+| GitLocaleIndependence | 1-1 | [archived](../archive/20260911_GitLocaleIndependence_DevPlanTicket.md) |
+| UnifiedProjectPrivateScope | 1-2 | **1-1** |
+| StateMemory | 1-3 | **1-2** |
+| CliContract | 1-4 | **1-3** |
+| UserInstallPath | 1-5 | **1-4** |
+| CliTypoSuggestion | 2-1 | 2-1, unchanged |
+
+Priority 1 was compacted to run 1..4 with no gaps; priority 2 already ran
+1..1 and did not move. The order within each pile is unchanged — this was
+closing a gap, not a re-ranking, which is what a Ticket review does.

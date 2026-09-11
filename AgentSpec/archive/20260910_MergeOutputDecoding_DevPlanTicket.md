@@ -13,7 +13,7 @@ decoding exception before any repository was merged.
 work packages, and acceptance criteria.
 
 **Who it is for.** The developer implementing the fix and its reviewer.
-Read [CLAUDE.md](../CLAUDE.md) and its referenced specs first.
+Read [CLAUDE.md](../../CLAUDE.md) and its referenced specs first.
 
 **What you need to do with it.** Nothing — this ticket is closed. It landed
 on 2026-09-10. Sections 1-4 are kept as written, as the record of what was
@@ -94,7 +94,7 @@ reproducer shows they are necessary.
 - In the implementing commit, move this file to
   `AgentSpec/archive/<YYYYMMDD>_MergeOutputDecoding_DevPlanTicket.md`, using
   the implementation date, retaining the creation date, and updating links
-  as required by [TICKETLIFECYCLE.md](../.agentSpec/TICKETLIFECYCLE.md).
+  as required by [TICKETLIFECYCLE.md](../../.agentSpec/TICKETLIFECYCLE.md).
 
 ## 4. Scope and handoff
 

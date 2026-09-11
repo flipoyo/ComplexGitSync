@@ -60,7 +60,7 @@ it, nothing merges it, and nothing deletes it afterwards.
 
 The gap is not cosmetic. `maintainerClearance` — the ruleset on
 `flipoyo/ComplexGitSync`, recorded in
-[`AnonymousAgent`](../openTickets/2-5_AnonymousAgent_DevPlanTicket.md) §1.3 —
+[`AnonymousAgent`](20260911_AnonymousAgent_DevPlanTicket.md) §1.3 —
 requires a pull request to reach the default branch. A local
 `git merge` and `git push` is refused by the remote. So for this project
 the missing mechanism is not a convenience; it is the only legal route.

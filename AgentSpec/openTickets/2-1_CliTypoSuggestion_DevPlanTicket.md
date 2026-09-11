@@ -50,7 +50,7 @@ Identify the command using the CLI argument structure, not a blind scan for
 unknown tokens: option names, option values, and command operands are not
 candidate commands. Never execute or auto-correct to the suggested command.
 Keep the parser's invalid-command exit code (`2`), consistent with
-[1-4 CliContract](1-4_CliContract_DevPlanTicket.md).
+[1-3 CliContract](1-3_CliContract_DevPlanTicket.md).
 
 ## 2. Acceptance criteria
 

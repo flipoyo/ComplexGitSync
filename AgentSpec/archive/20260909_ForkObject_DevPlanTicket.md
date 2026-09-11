@@ -16,7 +16,7 @@ mounts — and answer first whether that object is genuinely new or is
 `freeze` plus `clone` wearing a name.
 
 **What this document is.** A plan for a feature, split out of
-[2-5_AnonymousAgent_DevPlanTicket.md](../openTickets/2-5_AnonymousAgent_DevPlanTicket.md) at the
+[2-5_AnonymousAgent_DevPlanTicket.md](20260911_AnonymousAgent_DevPlanTicket.md) at the
 owner's request. That ticket needed a delivery boundary and takes a plain
 GitHub fork; this one asks whether the boundary should be a concept the
 tool itself understands. Nothing here has been started, and nothing here
