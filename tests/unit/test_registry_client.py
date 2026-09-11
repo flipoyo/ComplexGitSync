@@ -1096,6 +1096,48 @@ def test_looks_like_https_auth_failure_matches_known_markers():
     assert not _looks_like_https_auth_failure("fatal: repository 'x' does not exist")
 
 
+# Both lines below are verbatim from one real `git fetch` of a GitHub
+# repository the ambient credentials could not read, run twice on the same
+# machine under the two locales
+# (AgentSpec/archive/20260911_GitLocaleIndependence_DevPlanTicket.md).
+_GITHUB_AUTH_FAILURE_SERVER_LINE = (
+    "remote: Invalid username or token. Password authentication is not "
+    "supported for Git operations."
+)
+_GITHUB_AUTH_FAILURE_GIT_LINE_EN = "fatal: Authentication failed for 'https://github.com/o/r.git/'"
+_GITHUB_AUTH_FAILURE_GIT_LINE_FR = (
+    "fatal: Échec d'authentification pour 'https://github.com/o/r.git/'"
+)
+
+
+def test_github_https_auth_failure_is_recognised_from_either_line():
+    """Neither line matched before; a GitHub HTTPS failure produced no hint.
+
+    The two are not redundant. GitHub writes the first, so it reads the same
+    on every machine. Git writes the second, so it matches only because
+    ``git_runner`` pins the message locale — and a provider that sends no
+    line of its own leaves it as the only thing to match.
+    """
+    assert _looks_like_https_auth_failure(_GITHUB_AUTH_FAILURE_SERVER_LINE)
+    assert _looks_like_https_auth_failure(_GITHUB_AUTH_FAILURE_GIT_LINE_EN)
+
+
+def test_the_french_wording_is_why_the_message_locale_is_pinned():
+    """The failure this ticket was written about, kept as a record.
+
+    Git's translated line matches nothing and cannot be made to without
+    shipping a phrasebook, which is why the fix is to stop git translating
+    rather than to add French markers here. The server-sent line rescues
+    this particular provider; a provider that sends none would leave the
+    user with no hint at all.
+    """
+    assert not _looks_like_https_auth_failure(_GITHUB_AUTH_FAILURE_GIT_LINE_FR)
+    assert (
+        _protocol_switch_hint(_GITHUB_AUTH_FAILURE_GIT_LINE_FR, command="pull") is None
+    )
+    assert _protocol_switch_hint(_GITHUB_AUTH_FAILURE_GIT_LINE_EN, command="pull") is not None
+
+
 def test_protocol_switch_hint_suggests_the_opposite_protocol():
     ssh_hint = _protocol_switch_hint("Permission denied (publickey).", command="push")
     assert ssh_hint is not None

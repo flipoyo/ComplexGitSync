@@ -1074,19 +1074,27 @@ class GitignoreSyncEntry:
     committed: bool = False
 
 
+# Each marker records who writes it, because that decides whether it survives
+# a non-English machine. OpenSSH ships no translations, so anything ssh prints
+# is English everywhere; git translates its own prose, so a git-worded marker
+# matches only because git_runner.py pins the message locale
+# (AgentSpec/archive/20260911_GitLocaleIndependence_DevPlanTicket.md).
 _SSH_AUTH_FAILURE_MARKERS = (
+    # OpenSSH's own wording — locale-proof.
     "Permission denied (publickey)",
-    "Could not read from remote repository",
     "Host key verification failed",
+    # Git's own wording. Verified 2026-09-11 against an unreachable ssh remote:
+    # French renders it "Impossible de lire le depot distant." and matched
+    # nothing until the locale pin landed.
+    "Could not read from remote repository",
 )
 
 
 def _looks_like_ssh_auth_failure(git_error_message: str) -> bool:
-    """Heuristic match on ``git``'s own stderr for a likely SSH auth failure.
+    """Heuristic match on stderr for a likely SSH auth failure.
 
-    ``git``'s exact wording is not a stable API, so a missed match just
-    degrades to the plain :class:`~.errors.GitSyncError` from before this
-    hint existed — never a worse error than that.
+    No wording here is a stable API, so a missed match just degrades to the
+    plain :class:`~.errors.GitSyncError` from before this hint existed.
     """
     return any(marker in git_error_message for marker in _SSH_AUTH_FAILURE_MARKERS)
 
@@ -1102,16 +1110,26 @@ _HTTPS_AUTH_FAILURE_MARKERS = (
     # fires for any HTTPS remote regardless of host.
     "could not read Username",
     "terminal prompts disabled",
-    # GitHub's and Codeberg's own HTTPS-auth-failure wording is unverified
-    # — ProtocolSwitchOnPush_DevPlanTicket §1.3: ship what's confirmed,
-    # never guess unverified wording. A missed match here just degrades to
-    # the plain GitSyncError, same as an unmatched SSH failure above.
+    # GitHub, verified firsthand 2026-09-11 against a real HTTPS fetch of a
+    # repository the ambient credentials cannot read. Server-sent, so GitHub
+    # writes it in English whatever the machine's locale is — the sturdiest
+    # kind of marker there is, and the reason to prefer these where a
+    # provider offers one.
+    "Invalid username or token",
+    # Git's own wording for the same failure, measured in the same run:
+    # French renders it "Echec d'authentification pour '...'". Neither this
+    # line nor the one above matched before, so a GitHub HTTPS auth failure
+    # produced no hint at all, in any language. This one now matches because
+    # the message locale is pinned; the one above would match regardless.
+    "Authentication failed for",
+    # Codeberg's own wording is still unverified — ProtocolSwitchOnPush
+    # §1.3: ship what's confirmed, never guess. A missed match here just
+    # degrades to the plain GitSyncError, same as an unmatched SSH failure.
 )
 
 
 def _looks_like_https_auth_failure(git_error_message: str) -> bool:
-    """Heuristic match on ``git``'s own stderr for a likely HTTPS auth
-    failure — same caveats as :func:`_looks_like_ssh_auth_failure`."""
+    """The same, for HTTPS; see :func:`_looks_like_ssh_auth_failure`."""
     return any(marker in git_error_message for marker in _HTTPS_AUTH_FAILURE_MARKERS)
 
 

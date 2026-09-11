@@ -83,6 +83,49 @@ def _decode_git_output(raw: bytes | str) -> str:
     return raw.decode(_GIT_OUTPUT_ENCODING, errors=_GIT_OUTPUT_ERRORS)
 
 
+#: Every locale category except ``LC_MESSAGES``. An inherited ``LC_ALL``
+#: overrides all of them at once, so :func:`_english_message_locale` must write
+#: its value into each of these before dropping it.
+_PRESERVED_LOCALE_CATEGORIES = ("LC_CTYPE", "LC_COLLATE", "LC_NUMERIC", "LC_TIME", "LC_MONETARY")
+
+
+def _english_message_locale(env: dict[str, str]) -> None:
+    """Pin *env* so git writes its own messages in English. Mutates in place.
+
+    Git translates its messages and this module reads them: no exit code says
+    whether a fetch failed for want of credentials, so ``orchestre.py`` matches
+    English fragments of git's prose to decide whether to offer the
+    ``--force-protocol`` recovery. On a French machine nothing matched, so the
+    hint never fired for anyone whose shell was not English (see
+    ``AgentSpec/archive/20260911_GitLocaleIndependence_DevPlanTicket.md``). The
+    deliberate trade-off: a French user's git errors, quoted inside
+    ``GitSyncError``, now read in English — the alternative was a French
+    sentence inside an English one *and* a hint nobody ever saw.
+
+    **Do not "simplify" this to ``LC_ALL=C.UTF-8``.** Measured on a
+    ``LANG=fr_FR.UTF-8 LANGUAGE=fr_FR`` machine, one failing command: inherited
+    gives French; ``LC_ALL=C.UTF-8`` **French too**; ``LC_ALL=C`` and
+    ``LC_MESSAGES=C`` English; ``LC_MESSAGES=C`` with ``LC_ALL=fr_FR.UTF-8``
+    inherited **French again**. ``C.UTF-8`` fails because gettext consults
+    ``$LANGUAGE`` for any locale but ``C``/``POSIX`` — so it works for whoever
+    writes it and breaks wherever ``LANGUAGE`` is set. That last row is why
+    this is not a one-liner: ``LC_ALL`` outranks ``LC_MESSAGES``, so an
+    inherited one defeats the pin. Dropping it after copying its value into
+    every other category changes only the prose — verified: ``LC_CTYPE`` still
+    reports ``fr_FR.UTF-8`` in the child. ``os.environ`` is never written.
+    """
+    override = env.pop("LC_ALL", None)
+    if override is not None:
+        # LC_ALL outranked any explicit per-category value, so restoring the
+        # effective locale means overwriting them, not filling in the blanks.
+        for category in _PRESERVED_LOCALE_CATEGORIES:
+            env[category] = override
+    # Redundant once LC_MESSAGES is C, but it removes the one variable whose
+    # precedence rules are least obvious to whoever reads this next.
+    env.pop("LANGUAGE", None)
+    env["LC_MESSAGES"] = "C"
+
+
 def _non_interactive_git_env() -> dict[str, str]:
     """Environment for a git subprocess that must never block on a prompt.
 
@@ -97,8 +140,12 @@ def _non_interactive_git_env() -> dict[str, str]:
     pointed at ``echo`` makes any GUI/helper askpass return an empty
     credential immediately instead of popping up a window. Either way,
     git fails fast with a normal, catchable error instead of hanging.
+
+    Also pins the message locale; :func:`_english_message_locale` says why.
     """
-    return {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "echo"}
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "echo"}
+    _english_message_locale(env)
+    return env
 
 
 @dataclass
@@ -814,41 +861,30 @@ class GitRunner:
         except GitSyncError:
             return False
 
-    def tag_exists(self, repo_path: Path | str, tag_name: str) -> bool:
-        """Return ``True`` when *tag_name* already exists in *repo_path*."""
-        completed = subprocess.run(
-            [self.executable, "show-ref", "--verify", "--quiet", f"refs/tags/{tag_name}"],
-            cwd=str(repo_path),
-            capture_output=True,
-            check=False,
-            text=True,
-            env=_non_interactive_git_env(),
-        )
-        if completed.returncode == 0:
-            return True
-        if completed.returncode == 1:
-            return False
-        command = f"{self.executable} show-ref --verify refs/tags/{tag_name}"
+    def _ref_query(self, *args: str, cwd: Path | str) -> bool:
+        """Ask git a yes/no question that answers ``1`` for no. Never guesses.
+
+        ``show-ref`` and ``rev-parse --verify`` report a missing ref as exit
+        ``1`` and a real failure as anything else. Collapsing the two into
+        ``False`` would report a damaged repository as a tag that is merely
+        absent, so only ``1`` becomes ``False``; the rest raises.
+        """
+        completed = self._query(*args, cwd=cwd)
+        if completed.returncode in (0, 1):
+            return completed.returncode == 0
+        command = " ".join([self.executable, *args])
         details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"
         raise GitSyncError(f"Git command failed ({command}): {details}")
 
+    def tag_exists(self, repo_path: Path | str, tag_name: str) -> bool:
+        """Return ``True`` when *tag_name* already exists in *repo_path*."""
+        return self._ref_query(
+            "show-ref", "--verify", "--quiet", f"refs/tags/{tag_name}", cwd=repo_path
+        )
+
     def has_unresolved_merge(self, repo_path: Path | str) -> bool:
         """Return ``True`` when *repo_path* has an in-progress merge conflict."""
-        completed = subprocess.run(
-            [self.executable, "rev-parse", "--verify", "--quiet", "MERGE_HEAD"],
-            cwd=str(repo_path),
-            capture_output=True,
-            check=False,
-            text=True,
-            env=_non_interactive_git_env(),
-        )
-        if completed.returncode == 0:
-            return True
-        if completed.returncode == 1:
-            return False
-        command = f"{self.executable} rev-parse --verify --quiet MERGE_HEAD"
-        details = completed.stderr.strip() or completed.stdout.strip() or "unknown git error"
-        raise GitSyncError(f"Git command failed ({command}): {details}")
+        return self._ref_query("rev-parse", "--verify", "--quiet", "MERGE_HEAD", cwd=repo_path)
 
     def branch_tracking_state(self, repo_path: Path | str) -> SyncState | None:
         """Return upstream tracking state for the current branch in *repo_path*."""
@@ -866,13 +902,8 @@ class GitRunner:
 
     def upstream_ref(self, repo_path: Path | str) -> str | None:
         """Return the upstream ref for the current branch, e.g. ``origin/main``."""
-        upstream = subprocess.run(
-            [self.executable, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
-            cwd=str(repo_path),
-            capture_output=True,
-            check=False,
-            text=True,
-            env=_non_interactive_git_env(),
+        upstream = self._query(
+            "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}", cwd=repo_path
         )
         if upstream.returncode != 0:
             return None
@@ -898,14 +929,7 @@ class GitRunner:
         Returns ``0`` for a repository with no commits yet, since an unborn
         HEAD holds nothing to lose.
         """
-        counted = subprocess.run(
-            [self.executable, "rev-list", "--count", "HEAD", "--not", "--remotes"],
-            cwd=str(repo_path),
-            capture_output=True,
-            check=False,
-            text=True,
-            env=_non_interactive_git_env(),
-        )
+        counted = self._query("rev-list", "--count", "HEAD", "--not", "--remotes", cwd=repo_path)
         if counted.returncode != 0:
             return 0
         raw = counted.stdout.strip()
@@ -941,15 +965,7 @@ class GitRunner:
         measure ahead/behind counts needs. :meth:`upstream_configured` asks
         the weaker question — whether the branch names one at all.
         """
-        upstream = subprocess.run(
-            [self.executable, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
-            cwd=str(repo_path),
-            capture_output=True,
-            check=False,
-            text=True,
-            env=_non_interactive_git_env(),
-        )
-        return upstream.returncode == 0
+        return self.upstream_ref(repo_path) is not None
 
     def _run(
         self,

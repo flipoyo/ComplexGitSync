@@ -10,6 +10,7 @@ check for `GitRunnerProtocol`.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -17,7 +18,13 @@ import pytest
 
 from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.git_repo import SyncState
-from ComplexGitSync.git_runner import GitRunner, GitRunnerProtocol, MergeCheckResult
+from ComplexGitSync.git_runner import (
+    _PRESERVED_LOCALE_CATEGORIES,
+    GitRunner,
+    GitRunnerProtocol,
+    MergeCheckResult,
+    _non_interactive_git_env,
+)
 
 # ---------------------------------------------------------------------------
 # stage_all / force_pull — real subprocess behaviour
@@ -1191,3 +1198,108 @@ class TestGitOutputDecodingPolicy:
 
         with pytest.raises(GitSyncError, match="Git command failed"):
             runner._run("anything", cwd=tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Message locale — AgentSpec/archive/20260911_GitLocaleIndependence_DevPlanTicket.md
+# ---------------------------------------------------------------------------
+
+_FRENCH = "fr_FR.UTF-8"
+
+#: The two ways a machine ends up speaking French to git. The second is the
+#: one that defeats a naive ``LC_MESSAGES=C`` pin, because ``LC_ALL``
+#: outranks it.
+_FRENCH_ENVIRONMENTS = {
+    "lang_and_language": {"LANG": _FRENCH, "LANGUAGE": "fr_FR"},
+    "inherited_lc_all": {"LANG": _FRENCH, "LANGUAGE": "fr_FR", "LC_ALL": _FRENCH},
+}
+
+
+def _apply_environment(monkeypatch, variables: dict[str, str]) -> None:
+    """Put *variables* in os.environ and clear every other locale variable."""
+    for name in ("LANG", "LANGUAGE", "LC_ALL", "LC_MESSAGES", *_PRESERVED_LOCALE_CATEGORIES):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in variables.items():
+        monkeypatch.setenv(name, value)
+
+
+@pytest.mark.parametrize("inherited", _FRENCH_ENVIRONMENTS.values(), ids=_FRENCH_ENVIRONMENTS)
+def test_git_env_pins_english_messages_under_a_french_locale(monkeypatch, inherited):
+    """The child environment asks git for English however French arrived."""
+    _apply_environment(monkeypatch, inherited)
+
+    env = _non_interactive_git_env()
+
+    assert env["LC_MESSAGES"] == "C"
+    assert "LANGUAGE" not in env
+    # LC_ALL outranks LC_MESSAGES, so leaving it in place would undo the pin.
+    assert "LC_ALL" not in env
+
+
+def test_git_env_preserves_every_other_category_of_an_inherited_lc_all(monkeypatch):
+    """Pinning the messages must not quietly re-encode everything else.
+
+    ``LC_ALL`` was standing in for every category, so dropping it without
+    writing its value into each one would change the child's encoding,
+    collation and number formatting as a side effect of translating prose.
+    """
+    _apply_environment(monkeypatch, _FRENCH_ENVIRONMENTS["inherited_lc_all"])
+
+    env = _non_interactive_git_env()
+
+    for category in _PRESERVED_LOCALE_CATEGORIES:
+        assert env[category] == _FRENCH, f"{category} lost its inherited locale"
+
+
+def test_git_env_leaves_the_parent_environment_untouched(monkeypatch):
+    """Only the child is re-configured; this process keeps its own locale."""
+    _apply_environment(monkeypatch, _FRENCH_ENVIRONMENTS["inherited_lc_all"])
+    before = dict(os.environ)
+
+    _non_interactive_git_env()
+
+    assert os.environ["LC_ALL"] == _FRENCH
+    assert os.environ["LANGUAGE"] == "fr_FR"
+    assert dict(os.environ) == before
+
+
+def _speaks_french(repo_path: Path, environment: dict[str, str]) -> bool:
+    """Does a raw git — no GitRunner — actually answer in French here?
+
+    A machine without the French locale installed answers in English
+    whatever the environment says, and would pass the test below without
+    proving anything. Asking first turns that into an honest skip.
+    """
+    completed = subprocess.run(
+        ["git", "merge", "--ff-only", "feat"],
+        cwd=repo_path,
+        capture_output=True,
+        check=False,
+        env={**os.environ, **environment},
+    )
+    return b"avancer rapidement" in completed.stderr
+
+
+@pytest.mark.parametrize("inherited", _FRENCH_ENVIRONMENTS.values(), ids=_FRENCH_ENVIRONMENTS)
+def test_git_errors_reach_callers_in_english_under_a_french_locale(
+    monkeypatch, tmp_path, inherited
+):
+    """The end-to-end guarantee: a real failing git command, read in English.
+
+    ComplexGitSync decides whether to offer the ``--force-protocol``
+    recovery by matching English fragments of git's prose, so a French
+    machine silently lost the hint. This fails if the locale pin is
+    reverted.
+    """
+    repo_path = _repo_with_feature_branch(tmp_path, diverge=True)
+    if not _speaks_french(repo_path, inherited):
+        pytest.skip(f"git does not speak French here; cannot prove the pin ({inherited})")
+
+    _apply_environment(monkeypatch, inherited)
+    runner = GitRunner()
+
+    with pytest.raises(GitSyncError) as excinfo:
+        runner.merge(repo_path, "feat", ff_only=True)
+
+    assert "fast-forward" in str(excinfo.value)
+    assert "avancer rapidement" not in str(excinfo.value)

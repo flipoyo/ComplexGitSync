@@ -354,6 +354,22 @@ A few flags mean the same thing wherever they appear:
 | `--dry-run` | Print the plan and change nothing. |
 | `--force-protocol {ssh,https}` | Rewrite remotes to that protocol while cloning or pushing. Unrelated to `pull-force`, which is the destructive one. |
 
+### Git speaks English here
+
+If your machine runs in another language, you will notice one thing: when a
+Git command fails, the message `cgitsync` shows you is in English, even
+though running the same command yourself would show it in your own language.
+
+That is deliberate. `cgitsync` reads those messages to work out what went
+wrong and what to suggest — whether a failed `push` was an authentication
+problem, for instance, and whether switching to `--force-protocol ssh` would
+help. Git translates its messages, so on a French machine `cgitsync` could
+not recognise its own errors and the suggestion never appeared.
+
+Only the messages change language. Your file names, sorting and number
+formats are untouched, and nothing about your own shell changes — only what
+`cgitsync` asks Git for while it runs.
+
 ## 4. Further reading
 
 [tutorials/](tutorials/) — four tutorials, simplest to most advanced:

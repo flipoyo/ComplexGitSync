@@ -185,3 +185,68 @@ so the path it returns is wrong. That is a real bug in the same family —
 Git output that is not machine-readable by default — and its fix is probably
 `-c core.quotePath=false`. It deserves its own ticket rather than riding
 along with this one; measured, not speculated, while testing §1.2.
+
+---
+
+## 6. Closing note — what landed
+
+**All six work packages.** Every measurement in §1.2 was reproduced on this
+machine before anything was written, and each one came out exactly as the
+ticket recorded — including the `C.UTF-8` trap.
+
+**WP1.** `_english_message_locale()` in `git_runner.py`. It removes an
+inherited `LC_ALL` *after* copying its value into `LC_CTYPE`, `LC_COLLATE`,
+`LC_NUMERIC`, `LC_TIME` and `LC_MONETARY`, then clears `LANGUAGE` and sets
+`LC_MESSAGES=C`. That is §2 option A with the precedence correction: only
+the language of the prose changes, and the child's encoding and collation
+are left as they were — verified, `LC_CTYPE` still reports `fr_FR.UTF-8`
+inside the child. `os.environ` is never written.
+
+**WP2.** `upstream_ref`, `has_upstream`, `has_unresolved_merge`,
+`tag_exists` and `local_only_commit_count` now go through `_query`.
+`subprocess.run` appears only inside `_query_bytes` and `_run`, and no
+`text=True` remains anywhere in the module.
+
+**WP3/WP4.** Six tests in `tests/unit/test_git_runner.py`, three of them
+parametrised over both ways a machine speaks French — `LANG`/`LANGUAGE`,
+and the same plus an inherited `LC_ALL`. They cover the pinned child
+environment, the preserved categories, parent isolation, and a real failing
+`git merge --ff-only` read back in English. Reverting WP1 fails five of
+them. `test_plain_freeze_release_fails_on_this_divergence` now passes with
+no locale override of its own.
+
+**WP5, and a bug it exposed.** Every marker now records who writes it,
+because that is what decides whether it survives a non-English machine.
+OpenSSH ships no translations, so `Permission denied (publickey)` and
+`Host key verification failed` are locale-proof; `Could not read from
+remote repository` is Git's own and matches only because of WP1 — French
+renders it `Impossible de lire le dépôt distant.`
+
+Measuring a real GitHub HTTPS failure turned up something §1.1 implies but
+does not state: **no marker matched it in any language.** GitHub sends
+`remote: Invalid username or token…` and Git adds `fatal: Authentication
+failed for '…'`, and neither was in the list. Both are now, with the
+server-sent one preferred exactly as §2 option C recommends — GitHub writes
+it in English on every machine, while Git's line depends on WP1.
+
+**Two things the ticket did not list.** `git_runner.py` and `orchestre.py`
+are both on the LOC ratchet, so the new code was paid for rather than
+added: `tag_exists` and `has_unresolved_merge` now share one `_ref_query`
+helper, `has_upstream` is `upstream_ref(...) is not None` (the same command
+run twice before), and duplicated caveat prose came out of two docstrings.
+Both modules end exactly at their recorded baselines, 777 and 3719.
+
+**The user-visible consequence** is stated in `README.md` under *Git speaks
+English here*, in §3's "options that recur" — the audience for it is a user
+wondering why one message is not in their language, not a developer reading
+a docstring. The docstring carries the engineering half: the decision, the
+measurement table, and why `C.UTF-8` is the wrong fix.
+
+**Verified under three locales**, whole suite, no override inside any test:
+inherited `fr_FR.UTF-8`/`LANGUAGE=fr_FR` (1266 passed), inherited
+`LC_ALL=fr_FR.UTF-8` (1266 passed), and `LC_ALL=C` (1265 passed, 1 extra
+skip — the guard that refuses to claim it proved the pin on a machine where
+Git cannot speak French).
+
+**Left for its own ticket, as §5 asked:** `core.quotePath` mangling
+non-ASCII paths in `status_render._status_line_path()`. Not touched here.
