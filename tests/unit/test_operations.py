@@ -43,9 +43,11 @@ from ComplexGitSync.operations import (
     merge_status,
     merge_tree,
     merge_tree_one_at_a_time,
+    paths_outside_scope,
     propagate_global_branch,
     push_tree,
     refresh_private_tree,
+    remove_paths,
     restart_tree,
     restart_tree_force,
     tag_tree,
@@ -204,6 +206,7 @@ class _FakeGitRunnerForOperations:
         self.checked_out: list[tuple[Path, str]] = []
         self.staged: list[Path] = []
         self.staged_paths: list[tuple[Path, str]] = []
+        self.removed_paths: list[tuple[Path, str]] = []
         self.committed: list[tuple[Path, str]] = []
         self.pushed: list[tuple[Path, str, str | None]] = []
         self.pushed_with_upstream: list[tuple[Path, str, str | None]] = []
@@ -327,6 +330,11 @@ class _FakeGitRunnerForOperations:
     def stage_path(self, repo_path: Path | str, relative_path: str) -> None:
         path = Path(repo_path)
         self.staged_paths.append((path, relative_path))
+        self._staged_changes[path] = True
+
+    def remove(self, repo_path: Path | str, relative_path: str) -> None:
+        path = Path(repo_path)
+        self.removed_paths.append((path, relative_path))
         self._staged_changes[path] = True
 
     def has_staged_changes(self, repo_path: Path | str) -> bool:
@@ -2339,12 +2347,15 @@ def test_client_freeze_release_delegates_to_gittree_git_freeze(tmp_path, monkeyp
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
-    def _spy_freeze(self, git_runner, tag_name, *, message=None, stage_all=True, tree=None):
+    def _spy_freeze(
+        self, git_runner, tag_name, *, message=None, stage_all=True, tree=None, scope=None
+    ):
         captured_call["git_runner"] = git_runner
         captured_call["tag_name"] = tag_name
         captured_call["message"] = message
         captured_call["stage_all"] = stage_all
         captured_call["tree"] = tree
+        captured_call["scope"] = scope
 
     monkeypatch.setattr(type(client.orchestre.git_tree.git), "freeze", _spy_freeze)
 
@@ -2357,6 +2368,8 @@ def test_client_freeze_release_delegates_to_gittree_git_freeze(tmp_path, monkeyp
         "message": "msg",
         "stage_all": False,
         "tree": None,
+        # Bare freeze still reaches every repository this project may write.
+        "scope": RepoScope.WRITABLE,
     }
 
 
@@ -2910,3 +2923,126 @@ def test_push_tree_does_not_claim_nothing_moved_without_an_upstream(tmp_path):
 
     assert outcomes
     assert all(outcome.acted is True for outcome in outcomes)
+
+
+# ---------------------------------------------------------------------------
+# remove_paths / freeze_release_tree — the scope flags DeadScopeFlags wired up
+# ---------------------------------------------------------------------------
+
+
+class TestRemovePathsHonoursItsScope:
+    """``rm --private`` has to change what is removed, not just be accepted.
+
+    ``rm`` is handed its paths rather than sweeping for them, so its scope
+    is a filter on the repository each path resolves to — see
+    ``AgentSpec/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
+    """
+
+    @staticmethod
+    def _tracked_file(registry: WorkingGitTree, repo_id: str, name: str) -> Path:
+        target = registry.get(repo_id).absolute_path / name
+        target.write_text("content\n", encoding="utf-8")
+        return target
+
+    def test_the_default_scope_still_reaches_a_configuration_repository(self, tmp_path):
+        """Bare rm behaves exactly as it did before the flag was wired."""
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        target = self._tracked_file(registry, "root:deps/leaf", "notes.md")
+
+        outcomes = remove_paths(registry, runner, [target])
+
+        assert [path for path, _ in runner.removed_paths] == [
+            registry.get("root:deps/leaf").absolute_path
+        ]
+        assert [(o.name, o.acted, o.detail) for o in outcomes] == [
+            ("leaf", True, "removed notes.md")
+        ]
+
+    def test_private_refuses_a_path_owned_by_the_project(self, tmp_path):
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        target = self._tracked_file(registry, "root", "src.py")
+
+        with pytest.raises(GitSyncError, match="outside this command's scope"):
+            remove_paths(registry, runner, [target], scope=RepoScope.PRIVATE)
+
+        assert runner.removed_paths == []
+
+    def test_private_removes_from_the_configuration_repository(self, tmp_path):
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        target = self._tracked_file(registry, "root:deps/leaf", "notes.md")
+
+        remove_paths(registry, runner, [target], scope=RepoScope.PRIVATE)
+
+        assert [path for path, _ in runner.removed_paths] == [
+            registry.get("root:deps/leaf").absolute_path
+        ]
+
+    def test_one_path_outside_the_scope_removes_nothing_anywhere(self, tmp_path):
+        """The scope check runs over every path before the first removal."""
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        allowed = self._tracked_file(registry, "root:deps/leaf", "notes.md")
+        refused = self._tracked_file(registry, "root", "src.py")
+
+        with pytest.raises(GitSyncError, match="outside this command's scope"):
+            remove_paths(registry, runner, [allowed, refused], scope=RepoScope.PRIVATE)
+
+        assert runner.removed_paths == []
+        assert allowed.exists()
+
+
+class TestFreezeHonoursItsScope:
+    def test_the_default_scope_freezes_every_writable_repository(self, tmp_path):
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        runner._current_branches[registry.get("root").absolute_path] = "main"
+        runner._current_branches[registry.get("root:deps/leaf").absolute_path] = "project"
+
+        freeze_release_tree(registry, runner, "release-1")
+
+        assert {path for path, _ in runner.tagged} == {
+            registry.get("root").absolute_path,
+            registry.get("root:deps/leaf").absolute_path,
+        }
+
+    def test_private_freezes_the_configuration_repository_alone(self, tmp_path):
+        registry = _make_registry_with_config_repo(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        runner._current_branches[registry.get("root").absolute_path] = "main"
+        runner._current_branches[registry.get("root:deps/leaf").absolute_path] = "project"
+
+        freeze_release_tree(registry, runner, "release-1", scope=RepoScope.PRIVATE)
+
+        assert [path for path, _ in runner.tagged] == [
+            registry.get("root:deps/leaf").absolute_path
+        ]
+
+
+class TestPathsOutsideScopeIsAReadOnlyQuestion:
+    """``rm --dry-run`` has to ask what the real run will answer."""
+
+    def test_it_names_every_path_the_scope_excludes(self, tmp_path):
+        registry = _make_registry_with_config_repo(tmp_path)
+        owned = registry.get("root").absolute_path / "src.py"
+        owned.write_text("x\n", encoding="utf-8")
+
+        refusals = paths_outside_scope(registry, [owned], scope=RepoScope.PRIVATE)
+
+        assert len(refusals) == 1
+        assert "outside this command's scope (private)" in refusals[0]
+        assert "--private" in refusals[0]
+
+    def test_it_says_nothing_when_every_path_is_in_scope(self, tmp_path):
+        registry = _make_registry_with_config_repo(tmp_path)
+        config_file = registry.get("root:deps/leaf").absolute_path / "notes.md"
+        config_file.write_text("x\n", encoding="utf-8")
+
+        assert paths_outside_scope(registry, [config_file], scope=RepoScope.PRIVATE) == ()
+
+    def test_a_path_outside_the_tree_is_left_to_the_resolver_to_report(self, tmp_path):
+        registry = _make_registry_with_config_repo(tmp_path)
+
+        assert paths_outside_scope(registry, ["/nowhere/at/all"], scope=RepoScope.PRIVATE) == ()

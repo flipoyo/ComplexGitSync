@@ -2,6 +2,27 @@
 
 *Created: 2026-09-11*
 
+> **Implemented — 2026-09-12.** Three flags, not two: WP-6's sweep found
+> `pull-force --private` dead in the same way (§1.2). All three now reach a
+> scope, with every bare form unchanged — `ALL` for `rm` and `pull-force`,
+> `WRITABLE` for `freeze`. `client.remove()` and `client.freeze()` take
+> `private`, `client.pull_force()` too, so the Python API mirrors the CLI.
+> `remove_paths` returns one `RepoOutcome` per repository, like the other
+> writes. Bare `rm` into a configuration repository is unchanged and now
+> warns, naming the repository and `--private` (§2.1). Tests:
+> `tests/unit/test_scope_flags.py` (wiring per flag, plus the general
+> sweep that fails on *any* unread argument) and
+> `tests/unit/test_operations.py::TestRemovePathsHonoursItsScope` /
+> `TestFreezeHonoursItsScope` (what is actually written). `rm` had no test
+> of any kind before this ticket, which is how the flag stayed dead.
+>
+> One thing the ticket did not ask for and the work needed anyway:
+> `rm --private --dry-run` was printing a plan the real run would then
+> refuse. `operations.paths_outside_scope` answers that as a read-only
+> question and `ComplexGitSyncClient.removals_outside_scope` exposes it, so
+> the preview and the run give the same answer — the rule `_resolve_write
+> _scope` already stated for an empty `--private`.
+
 ## Abstract — read this first
 
 **The one-line version.** Two commands advertise `--private` in their help,
@@ -60,6 +81,44 @@ other command that registers the flag threads it through to
 wiring oversight alone — the capability is missing from the Python API
 as well, which the CLI is supposed to mirror.
 
+### 1.1 WP-1 — what bare `rm` does today, answered
+
+**It removes from a configuration repository, with no flag and no
+refusal.** `remove_paths` (`operations.py`) resolves each path with
+`resolve_repo_for_path` (`git_tree.py`), which searches `tree.values()` —
+every repository in the tree, with no scope filter anywhere in the call.
+So `cgitsync rm .localSpec/notes.md` deletes the file from the
+configuration repository and stages the removal there.
+
+`add` has the same shape: `add_tree` applies its `scope` only to the sweep
+branch (`paths is None`). Given explicit paths it resolves them the same
+unfiltered way, so `--private` and `--all` do not constrain `add <path>`
+either — the flag is read, which makes it look honoured.
+
+So this is a live hole, not only a missing feature. It is a narrow one:
+the user names the exact file, which is not the danger the scope
+mechanism was built for — a sweep writing where the user never looked.
+
+### 1.2 A third dead flag, found by WP-6's sweep
+
+**`pull-force --private`** is dead in exactly the same way: registered
+through `_add_private_argument`, never read by `_handle_pull_force`, and
+`_execute_pull_force` takes no scope. It is the worst of the three: a user
+who asks to force-resynchronise their configuration repositories alone
+gets a destructive `checkout -B FETCH_HEAD` plus `clean -fd` across the
+whole tree instead.
+
+It is pure wiring — `git_tree.pull_force` already takes a `scope` and
+`restart_tree_force` already honours it. Note that `pull --private` is
+**not** the same flag: it selects a different operation entirely
+(`_execute_pull_private`, fetch-then-merge the base branch), and is read
+correctly today.
+
+The sweep's only other hit, `commit`'s `message`/`message_option`, is a
+false positive: `_handle_commit` reads them through
+`_resolve_commit_message(args)`. WP-6's test has to follow that one step
+of delegation.
+
 ## 2. Why this is not just wiring
 
 **`rm` takes explicit paths, and the other scoped commands do not.** `add`
@@ -84,6 +143,34 @@ live hole in the safety rail.
 
 **`freeze` is the simpler half** — it sweeps like the others, so it likely
 is just wiring. Confirm that rather than assuming it.
+
+Confirmed: `freeze_release_tree` hardcodes `RepoScope.WRITABLE` and takes
+no scope parameter. Threading one through, defaulting to `WRITABLE`,
+leaves the bare command exactly as it is.
+
+### 2.1 WP-2 — the decision, made before the code
+
+**`--private` on `rm` is a scope, enforced as a filter.** The two readings
+in the table above are not rivals; each is half of one rule:
+
+1. The scope comes from `_scope_for`, the same helper `tag` already uses.
+   So `rm --private` on a tree with no writable configuration repository
+   is refused, in the same words as `add --private`, instead of quietly
+   removing nothing — the failure the whole mechanism exists to prevent.
+2. Each path is then resolved exactly as today, and refused if the
+   repository that owns it falls outside that scope. The message names the
+   repository and the flag that would have reached it.
+
+**Bare `rm` keeps today's reach, and stops being silent about it.** When a
+path resolves into a configuration repository, the removal happens as it
+does today and a warning says so, naming the repository and `--private`.
+Refusing instead would have been the safer-looking choice and the wrong
+one here: §4 requires bare `rm` to behave as it does today, and a path the
+user typed in full is not a sweep. The warning closes the half of the hole
+that matters — that the user could not tell.
+
+`freeze --private` and `pull-force --private` are wiring, with their bare
+defaults preserved: `WRITABLE` for `freeze`, `ALL` for `pull-force`.
 
 ## 3. Work packages
 

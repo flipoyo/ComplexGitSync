@@ -536,11 +536,47 @@ def add_tree(
     return tuple(outcomes)
 
 
+def paths_outside_scope(
+    tree: WorkingGitTree,
+    paths: Sequence[str | Path],
+    *,
+    scope: RepoScope,
+) -> tuple[str, ...]:
+    """Which of *paths* belong to a repository *scope* does not cover.
+
+    A read-only question, worktree-free and Git-free, so a dry run can ask
+    it about every path before anything is removed — the same reason
+    ``clone_guard`` and ``merge_status`` are questions rather than actions.
+    Returns one finished refusal sentence per offending path, in the order
+    given; an empty tuple means every path is in scope.
+
+    A path outside every repository in the tree is not this function's
+    business: :func:`~.git_tree.resolve_repo_for_path` reports that one in
+    full, and reporting it twice in two voices helps nobody.
+    """
+    refusals: list[str] = []
+    for path in paths:
+        try:
+            repo, relative_path = resolve_repo_for_path(tree, path)
+        except GitSyncError:
+            continue
+        if not scope.includes(repo):
+            refusals.append(
+                f"{repo.absolute_path / relative_path} is inside '{repo.name}', "
+                f"which is outside this command's scope ({scope.value}). "
+                f"A configuration repository is reached with --private, and a "
+                f"repository this project owns by leaving --private off."
+            )
+    return tuple(refusals)
+
+
 def remove_paths(
     tree: WorkingGitTree,
     git_runner: GitRunner,
     paths: Sequence[str | Path],
-) -> None:
+    *,
+    scope: RepoScope = RepoScope.ALL,
+) -> tuple[RepoOutcome, ...]:
     """Remove one or more tracked files, each from the repo that owns it.
 
     Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
@@ -549,16 +585,32 @@ def remove_paths(
     the tree raises :exc:`~.errors.GitSyncError` immediately, before
     anything is removed.
 
+    *scope* is the set of repositories this call may remove from, and it is
+    checked against the repository each path resolves to — a filter, not a
+    sweep, because ``rm`` is given its paths rather than finding them. A
+    path owned by a repository outside *scope* raises
+    :exc:`~.errors.GitSyncError` naming that repository, and nothing is
+    removed anywhere: the check runs over every path before the first
+    removal. The default reaches every repository, which is what the bare
+    command has always done.
+
     A plain tracked file only (``git rm -- <path>``, removing it from disk
     and staging the removal) — a path that resolves to a directory, or that
     does not exist, also raises :exc:`~.errors.GitSyncError` rather than
     failing silently or partially. Distinct from and unrelated to
     ``rm_cached`` (index-only, built for the submodule-to-plain-clone
     conversion): this does not replace it.
+
+    Returns one :class:`RepoOutcome` per repository removed from, so the
+    caller can say which repositories a removal actually reached instead of
+    leaving the user to infer it.
     """
     _assert_ready(tree)
 
     resolved = [resolve_repo_for_path(tree, path) for path in paths]
+    refusals = paths_outside_scope(tree, paths, scope=scope)
+    if refusals:
+        raise GitSyncError(refusals[0])
     for repo, relative_path in resolved:
         target = repo.absolute_path / relative_path
         if target.is_dir():
@@ -568,10 +620,16 @@ def remove_paths(
         if not target.exists():
             raise GitSyncError(f"{target} does not exist.")
 
+    removed_by_repo: dict[str, list[str]] = {}
     for repo, relative_path in resolved:
         git_runner.remove(repo.absolute_path, relative_path)
+        removed_by_repo.setdefault(repo.name, []).append(relative_path)
 
     tree.recompute_tree_state()
+    return tuple(
+        RepoOutcome(name=name, acted=True, detail=f"removed {' '.join(removed)}")
+        for name, removed in removed_by_repo.items()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1075,8 +1133,15 @@ def freeze_release_tree(
     *,
     message: str | None = None,
     stage_all: bool = True,
+    scope: RepoScope = RepoScope.WRITABLE,
 ) -> None:
-    """Freeze a release by committing, tagging, and pushing leaf-first."""
+    """Freeze a release by committing, tagging, and pushing leaf-first.
+
+    *scope* defaults to every repository this project may write, which is
+    what the bare command has always frozen. ``--private`` narrows it to
+    the writable configuration repositories, so a settings branch can be
+    frozen on its own without freezing the project with it.
+    """
     _assert_ready(tree)
     _run_preflight_checks(
         tree,
@@ -1084,16 +1149,16 @@ def freeze_release_tree(
         tag_name=tag_name,
         require_clean=False,
         operation_name="freeze_release",
-        scope=RepoScope.WRITABLE,
+        scope=scope,
     )
     _propagate_tag(tree, tag_name)
     commit_message = message or f"freeze release {tag_name}"
 
-    # WRITABLE for the same reason as tag_tree: this commits, tags *and*
-    # pushes, none of which this project may do to a read-only
+    # The default is WRITABLE for the same reason as tag_tree: this commits,
+    # tags *and* pushes, none of which this project may do to a read-only
     # configuration repo. Their exact SHAs are still recorded in the
     # snapshot this freeze writes.
-    for repo in iter_tree_leaf_first(tree, RepoScope.WRITABLE):
+    for repo in iter_tree_leaf_first(tree, scope):
         if stage_all:
             git_runner.stage_all(repo.absolute_path)
         if git_runner.has_staged_changes(repo.absolute_path):

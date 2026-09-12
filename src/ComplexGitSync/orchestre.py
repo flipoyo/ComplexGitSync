@@ -125,6 +125,7 @@ from .operations import (
     BranchTopologyReport,
     RepoOutcome,
     ResolveOutcome,
+    paths_outside_scope,
     tree_project_name,
 )
 from .operations import (
@@ -2875,11 +2876,21 @@ class ComplexGitSyncClient:
         )
 
     def pull_force(
-        self, source_path: str | Path, *, force_access_protocol: str | None = None
+        self,
+        source_path: str | Path,
+        *,
+        force_access_protocol: str | None = None,
+        private: bool = False,
     ) -> WorkingGitTree:
         """Destructively resynchronize from a ``.cgs`` spec or ``.gts`` snapshot.
 
         ``force_access_protocol`` — see :meth:`push`.
+
+        ``private`` limits the resynchronisation to the writable
+        configuration repositories. It matters more here than anywhere
+        else: this discards local work (``checkout -B FETCH_HEAD``, then
+        ``clean -fd``), so a user asking for their configuration
+        repositories alone must not get the whole tree.
         """
         resolved_source = Path(source_path).resolve()
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
@@ -2893,14 +2904,27 @@ class ComplexGitSyncClient:
                 f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
             )
         protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
+        scope = _scope_for(
+            registry, private=private, command="pull-force", default=RepoScope.ALL
+        )
         try:
-            self.orchestre.git_tree.git.pull_force(self.git_runner, force_access_protocol=protocol)
+            self.orchestre.git_tree.git.pull_force(
+                self.git_runner, force_access_protocol=protocol, scope=scope
+            )
         except GitSyncError as exc:
             hint = _protocol_switch_hint(str(exc), command="pull-force")
             if hint:
                 raise GitSyncError(f"{exc}\n{hint}") from exc
             raise
         if not registry.is_ready():
+            if scope is not RepoScope.ALL:
+                raise GitSyncError(
+                    f"pull-force --private did not produce a READY tree: the "
+                    f"repositories outside the {scope.value} scope were not "
+                    f"resynchronised, and {resolved_source.name} describes them "
+                    f"too. Resynchronise from a .gts snapshot of a tree that is "
+                    f"already checked out, or drop --private to do the whole tree."
+                )
             raise GitSyncError("pull-force did not produce a READY tree.")
         snapshot_path = self.write_gts_snapshot(command_origin="pull-force")
         self.state_store.record_snapshot(resolved_source, snapshot_path)
@@ -3207,7 +3231,23 @@ class ComplexGitSyncClient:
         self._log_event("add_end", staged=sum(1 for o in self.last_write_outcomes if o.acted))
         return registry
 
-    def remove(self, paths: Sequence[str | Path]) -> WorkingGitTree:
+    def removals_outside_scope(
+        self, paths: Sequence[str | Path], *, private: bool = False
+    ) -> tuple[str, ...]:
+        """Why :meth:`remove` would refuse these paths, without removing any.
+
+        One finished sentence per path whose owning repository falls outside
+        the scope ``private`` selects; empty when the removal would go ahead.
+        Read-only, so ``rm --dry-run`` can ask the same question the real
+        run answers and never print a plan that could not execute.
+        """
+        registry = self.get_dependency_registry()
+        scope = _scope_for(registry, private=private, command="rm", default=RepoScope.ALL)
+        return paths_outside_scope(registry, paths, scope=scope)
+
+    def remove(
+        self, paths: Sequence[str | Path], *, private: bool = False
+    ) -> WorkingGitTree:
         """Remove one or more tracked files, each from the repo that owns it.
 
         Requires a ``READY`` registry; raises
@@ -3217,11 +3257,26 @@ class ComplexGitSyncClient:
         and the removal staged — a plain ``git rm``, distinct from
         :meth:`GitRunner.rm_cached` (index-only, built for the
         submodule-to-plain-clone conversion; this does not replace it).
+
+        ``private`` narrows the removal to the writable configuration
+        repositories, and is a **filter** here rather than a sweep: this
+        command is handed its paths instead of finding them, so the scope
+        is checked against the repository each path resolves to, and a path
+        owned by a repository outside it is refused by name before anything
+        is removed. Without it the reach is every repository, which is what
+        this command has always done — see
+        ``AgentSpec/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
+
+        Each repository actually removed from is reported in
+        :attr:`last_write_outcomes`.
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        self._log_event("rm_start", paths=[str(p) for p in paths])
-        self.orchestre.git_tree.git.rm(self.git_runner, paths)
+        scope = _scope_for(registry, private=private, command="rm", default=RepoScope.ALL)
+        self._log_event("rm_start", paths=[str(p) for p in paths], scope=scope.value)
+        self.last_write_outcomes = _as_write_outcomes(
+            self.orchestre.git_tree.git.rm(self.git_runner, paths, scope=scope)
+        )
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="rm")
         self._log_event("rm_end")
         return registry
@@ -3380,6 +3435,7 @@ class ComplexGitSyncClient:
         output_gts: str | Path | None = None,
         message: str | None = None,
         stage_all: bool = True,
+        private: bool = False,
     ) -> WorkingGitTree:
         """Freeze a release by committing, tagging, and pushing leaf-first.
 
@@ -3388,17 +3444,22 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
+        scope = _scope_for(
+            registry, private=private, command="freeze", default=RepoScope.WRITABLE
+        )
         self._log_event(
             "freeze_release_start",
             tag_name=tag_name,
             output_gts=output_gts,
             stage_all=stage_all,
+            scope=scope.value,
         )
         self.orchestre.git_tree.git.freeze(
             self.git_runner,
             tag_name,
             message=message,
             stage_all=stage_all,
+            scope=scope,
         )
         snapshot_path = self.write_gts_snapshot(
             command_origin="freeze_release",
@@ -3592,13 +3653,20 @@ class ComplexGitSyncClient:
         output_gts: str | Path | None = None,
         message: str | None = None,
         stage_all: bool = True,
+        private: bool = False,
     ) -> WorkingGitTree:
-        """Freeze a tree state and emit the next ``.gts`` snapshot id."""
+        """Freeze a tree state and emit the next ``.gts`` snapshot id.
+
+        ``private`` freezes the writable configuration repositories alone.
+        Without it every repository this project may write is frozen, which
+        is what this command has always done.
+        """
         return self._freeze_tag(
             name,
             output_gts=output_gts,
             message=message,
             stage_all=stage_all,
+            private=private,
         )
 
     def get_dependency_registry(self) -> WorkingGitTree:

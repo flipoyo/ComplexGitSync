@@ -8,7 +8,7 @@ Contract: dispatch a command handler under structured run-logging (with the
     standing in — and format/print the plan, tree-state, and
     .gitignore-sync reports every command group's _execute_* functions
     reuse — no group-specific handler logic.
-Imports: cgs_format, git_tree, orchestre, snapshot_resolver
+Imports: cgs_format, errors, git_repo, git_tree, orchestre, snapshot_resolver
 """
 
 from __future__ import annotations
@@ -16,12 +16,19 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from ..cgs_format import CgsDocument
+from ..errors import GitSyncError
 from ..git_repo import RepoScope
-from ..git_tree import ProjectTreeState, iter_tree_leaf_first
-from ..orchestre import ComplexGitSyncClient, create_run_logger, resolve_command_scope
+from ..git_tree import ProjectTreeState, iter_tree_leaf_first, resolve_repo_for_path
+from ..orchestre import (
+    ComplexGitSyncClient,
+    _scope_for,
+    create_run_logger,
+    resolve_command_scope,
+)
 from ..snapshot_resolver import (
     CGSHOME_ORIGIN_CWD,
     CGSHOME_ORIGIN_ENVIRONMENT,
@@ -337,6 +344,7 @@ def _resolve_write_scope(
     private: bool,
     command: str,
     all_writable: bool = False,
+    default: RepoScope | None = None,
 ) -> RepoScope:
     """The scope a write command will run at, validated the same way a real run is.
 
@@ -345,6 +353,13 @@ def _resolve_write_scope(
     re-deriving it, so ``--dry-run`` fails on an empty ``--private`` exactly
     as the real command would instead of printing a plan that could never
     execute.
+
+    *default* is for the commands whose bare form is not ``PROJECT`` —
+    ``rm`` reaches every repository and ``freeze`` every writable one. It
+    picks the other owner of the same rule
+    (:func:`~ComplexGitSync.orchestre._scope_for`), which the client method
+    behind those commands calls too, so the printed plan and the real run
+    cannot disagree about what the bare command means.
     """
     try:
         registry = client.get_dependency_registry()
@@ -352,9 +367,13 @@ def _resolve_write_scope(
         # Same tolerance the other helpers here already have: a client with
         # no loaded registry still gets a usable scope, and the real check
         # runs inside the client call itself.
+        if private:
+            return RepoScope.PRIVATE
         if all_writable:
             return RepoScope.WRITABLE
-        return RepoScope.PRIVATE if private else RepoScope.PROJECT
+        return default if default is not None else RepoScope.PROJECT
+    if default is not None:
+        return _scope_for(registry, private=private, command=command, default=default)
     return resolve_command_scope(
         registry, private=private, command=command, all_writable=all_writable
     )
@@ -389,6 +408,46 @@ def _print_scope_note(client: ComplexGitSyncClient, scope: RepoScope) -> None:
     )
     hint = f" ({', '.join(writable)} with --private)" if writable else ""
     print(f"scope={scope.value} skipped={len(skipped)} configuration repo(s){hint}")
+
+
+def _warn_paths_reaching_configuration_repos(
+    client: ComplexGitSyncClient, paths: Sequence[str], *, private: bool
+) -> None:
+    """Warn when a path-addressed command is about to write to a shared repo.
+
+    ``rm`` is handed its paths, so it has never been scoped: a path inside
+    a configuration repository is removed from there, no flag needed. That
+    stays true — a path typed in full is not the tree-wide sweep the scope
+    rail was built for — but it stops being silent. The warning names the
+    repository, so a user who meant a file of their own can see they hit a
+    repository shared with other projects, and names ``--private``, which
+    turns the same reach into a rule the command enforces.
+
+    Says nothing when ``--private`` was passed (the scope is already doing
+    this job), when no path lands in a configuration repository, or when
+    the tree cannot be read — a warning is never worth an exception.
+    """
+    if private:
+        return
+    try:
+        registry = client.get_dependency_registry()
+    except (AttributeError, RuntimeError):
+        return
+    reached: dict[str, list[str]] = {}
+    for path in paths:
+        try:
+            repo, relative = resolve_repo_for_path(registry, path)
+        except GitSyncError:
+            continue  # The command itself reports an unusable path, in full.
+        if repo.effective_private:
+            reached.setdefault(repo.name, []).append(relative)
+    for name in sorted(reached):
+        _print_warnings([
+            f"{' '.join(sorted(reached[name]))} belongs to '{name}', a "
+            f"configuration repository shared with other projects. It is being "
+            f"written to without --private; pass --private to act on the "
+            f"configuration repositories alone, and to be refused anywhere else."
+        ])
 
 
 def _print_all_scope_note(registry) -> None:

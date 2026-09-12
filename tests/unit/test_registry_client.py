@@ -912,11 +912,12 @@ def test_client_freeze_delegates_to_freeze_tag(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_freeze_tag(name, *, output_gts=None, message=None, stage_all=True):
+    def _fake_freeze_tag(name, *, output_gts=None, message=None, stage_all=True, private=False):
         captured["name"] = name
         captured["output_gts"] = output_gts
         captured["message"] = message
         captured["stage_all"] = stage_all
+        captured["private"] = private
         return "ok"
 
     monkeypatch.setattr(client, "_freeze_tag", _fake_freeze_tag)
@@ -929,6 +930,7 @@ def test_client_freeze_delegates_to_freeze_tag(monkeypatch):
         "output_gts": "release.gts",
         "message": "msg",
         "stage_all": False,
+        "private": False,
     }
 
 

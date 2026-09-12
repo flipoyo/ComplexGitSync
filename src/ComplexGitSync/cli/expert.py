@@ -7,7 +7,7 @@ Contract: register argparse subparsers for, and dispatch/execute, the 16
     init-from-submodules, verify). Argument/prompt collection only —
     delegates all .cgs/.gts semantics to ComplexGitSyncClient; never
     touches subprocess/Git or parses repository identifiers itself.
-Imports: _shared, git_repo, orchestre
+Imports: _shared, errors, git_repo, orchestre
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from ..git_repo import RefKind
+from ..errors import GitSyncError
+from ..git_repo import RefKind, RepoScope
 from ..orchestre import ComplexGitSyncClient
 from ._shared import (
     _add_gitignore_sync_arguments,
@@ -33,6 +34,7 @@ from ._shared import (
     _resolve_workspace_source,
     _resolve_write_scope,
     _run_with_logging,
+    _warn_paths_reaching_configuration_repos,
 )
 
 COMMANDS: dict[str, str] = {
@@ -630,7 +632,10 @@ def _handle_pull_force(args: argparse.Namespace) -> int:
         command_name="pull-force",
         source=source,
         runner=lambda client, source: _execute_pull_force(
-            client, source, force_access_protocol=force_access_protocol
+            client,
+            source,
+            force_access_protocol=force_access_protocol,
+            private=args.private,
         ),
     )
 
@@ -728,7 +733,9 @@ def _handle_rm(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="rm",
         source=gts_path,
-        runner=lambda client, source: _execute_rm(client, source, paths=args.paths, dry_run=args.dry_run),
+        runner=lambda client, source: _execute_rm(
+            client, source, paths=args.paths, dry_run=args.dry_run, private=args.private
+        ),
     )
 
 
@@ -765,7 +772,9 @@ def _handle_freeze(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="freeze",
         source=gts_path,
-        runner=lambda client, source: _execute_freeze(client, source, name=args.name, dry_run=args.dry_run),
+        runner=lambda client, source: _execute_freeze(
+            client, source, name=args.name, dry_run=args.dry_run, private=args.private
+        ),
     )
 
 
@@ -933,9 +942,12 @@ def _execute_pull_force(
     source_path: Path,
     *,
     force_access_protocol: str | None = None,
+    private: bool = False,
 ) -> int:
     print("git_command=git fetch && git checkout -B <branch> FETCH_HEAD && git clean -fd (executed per repo)")
-    registry = client.pull_force(source_path, force_access_protocol=force_access_protocol)
+    registry = client.pull_force(
+        source_path, force_access_protocol=force_access_protocol, private=private
+    )
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -1218,14 +1230,30 @@ def _execute_rm(
     *,
     paths: list[str],
     dry_run: bool = False,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    scope = _resolve_write_scope(
+        client, private=private, command="rm", default=RepoScope.ALL
+    )
     action = f"git rm -- {' '.join(paths)}"
     print(f"git_command={action}")
+    _warn_paths_reaching_configuration_repos(client, paths, private=private)
     if dry_run:
-        _print_dry_run_plan(client, command_name="rm", actions=(action,))
+        # The real run refuses an out-of-scope path inside client.remove(),
+        # which a dry run never reaches. Ask the same question here, so the
+        # preview cannot show a plan the command would then decline to run.
+        refusals = client.removals_outside_scope(paths, private=private)
+        if refusals:
+            raise GitSyncError(refusals[0])
+        _print_dry_run_plan(client, command_name="rm", actions=(action,), scope=scope)
     else:
-        client.remove(paths)
+        client.remove(paths, private=private)
+        _print_write_outcomes(
+            client,
+            verb="removed",
+            nothing_note="no path resolved to a repository in scope.",
+        )
     tree_state = client.get_tree_state()
     print(_format_tree_state_line(tree_state))
     if not dry_run:
@@ -1299,17 +1327,22 @@ def _execute_freeze(
     *,
     name: str,
     dry_run: bool = False,
+    private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    scope = _resolve_write_scope(
+        client, private=private, command="freeze", default=RepoScope.WRITABLE
+    )
     print(f"git_command=git add --all && git commit -m {name!r} && git tag {name} && git push")
     if dry_run:
         _print_dry_run_plan(
             client,
             command_name="freeze",
             actions=("git add --all", f"git commit -m {name!r}", f"git tag {name}", "git push"),
+            scope=scope,
         )
     else:
-        client.freeze(name)
+        client.freeze(name, private=private)
     tree_state = client.get_tree_state()
     snapshot_path = getattr(client, "loaded_snapshot_path", None)
     snapshot_suffix = f" snapshot={snapshot_path}" if snapshot_path is not None else ""

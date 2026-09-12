@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.50
+# ComplexGitSync v0002.51
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -354,6 +354,13 @@ A few flags mean the same thing wherever they appear:
 | `--search-dir <dir>` | Where to start looking for the tree. Accepted by every command that finds a tree on its own. |
 | `--dry-run` | Print the plan and change nothing. |
 | `--force-protocol {ssh,https}` | Rewrite remotes to that protocol while cloning or pushing. Unrelated to `pull-force`, which is the destructive one. |
+
+`rm` is the one command you hand a path to rather than a scope, so
+`--private` works as a filter there: it refuses a path that belongs to one
+of your own repos, and removes only from your **private/local** ones.
+Without the flag, `rm` still reaches whatever repo owns the path — a
+configuration repo included — and now says so when it does, naming the repo
+so you can see that the file you removed is shared with other projects.
 
 ### Git speaks English here
 

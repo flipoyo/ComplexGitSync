@@ -2,7 +2,9 @@
 
 *Created: 2026-09-12*
 
-> **Owner direction — 2026-09-12. Priority 2-3.** Stand-by, not
+> **Owner direction — 2026-09-12. Priority 2-1** (was 2-3; the pile
+> compacted when CliTypoSuggestion and DeadScopeFlags were implemented and
+> archived the same day). Stand-by, not
 > prioritary. The approach is settled: when nothing else resolves,
 > `CGSHOME` defaults to a real, empty workspace under `$HOME/.cgs`,
 > holding an empty `.gts`, so `status` answers *"no living project yet"*

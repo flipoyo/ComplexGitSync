@@ -184,10 +184,11 @@ class GitTreeGitCommands:
         paths: Sequence[str | Path],
         *,
         tree: WorkingGitTree | None = None,
-    ) -> None:
+        scope: RepoScope = RepoScope.ALL,
+    ) -> tuple[RepoOutcome, ...]:
         from .operations import remove_paths
 
-        remove_paths(self._resolve_tree(tree), git_runner, paths)
+        return remove_paths(self._resolve_tree(tree), git_runner, paths, scope=scope)
 
     def commit(
         self,
@@ -283,6 +284,7 @@ class GitTreeGitCommands:
         message: str | None = None,
         stage_all: bool = True,
         tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.WRITABLE,
     ) -> None:
         from .operations import freeze_release_tree
 
@@ -292,6 +294,7 @@ class GitTreeGitCommands:
             tag_name,
             message=message,
             stage_all=stage_all,
+            scope=scope,
         )
 
     def clone(
