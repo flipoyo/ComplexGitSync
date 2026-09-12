@@ -16,7 +16,7 @@ title to avoid confusing old and reused numbers.
 | 1-3 | [StateMemory](../openTickets/1-1_StateMemory_DevPlanTicket.md) | 2-1 | Promoted to Priority 1 |
 | 1-4 | [CliContract](../openTickets/1-2_CliContract_DevPlanTicket.md) | 2-5 | Promoted to Priority 1 |
 | 1-5 | [UserInstallPath](../openTickets/1-3_UserInstallPath_DevPlanTicket.md) | 2-6 | Promoted to Priority 1 |
-| 2-1 | [CliTypoSuggestion](../openTickets/2-1_CliTypoSuggestion_DevPlanTicket.md) | 2-2 | Renumbered; optional improvement |
+| 2-1 | [CliTypoSuggestion](../archive/20260912_CliTypoSuggestion_DevPlanTicket.md) | 2-2 | Renumbered; optional improvement — implemented and archived on 2026-09-12 |
 
 During discussion, CliContract and UserInstallPath were provisionally called
 2-2 and 2-3. Those intermediate filenames were not present when this update

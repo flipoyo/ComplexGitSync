@@ -8,10 +8,10 @@ Contract: build the top-level argparse parser from each command group's
     expose main()/build_parser()/_PLANNED_COMMANDS at the package root so
     external callers (pyproject.toml's console-script entry point,
     __main__.py, every test) see the same surface cli.py used to.
-Imports: _shared, configuration, expert, minimalist
+Imports: _shared, configuration, expert, minimalist, suggest
 
 Replaces the single 1,991-line cli.py (AgentSpec/20260828_Isolation_
-DevPlanTicket.md, Wave 3, P6-cli-integrate) with a package of five modules,
+DevPlanTicket.md, Wave 3, P6-cli-integrate) with a package of six modules,
 each under the ~400 LOC target except the two largest command groups
 (cli/expert.py, cli/minimalist.py — 14 and 8 commands respectively; kept
 whole rather than split further, since a command's parser registration,
@@ -22,7 +22,7 @@ cli.minimalist (initialise/bootstrap/clean-init/freeze-release(-force)/
 status/view-tree/launch-release), cli.expert (purge/validate/clone/
 pull(-force)/checkout/branch/add/commit/push/tag/freeze/
 import-submodules/verify), cli.configuration (discover/configure/
-create-cgs).
+create-cgs), cli.suggest (the "did you mean ...?" hint on a typo).
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ import argparse
 from collections.abc import Sequence
 
 from .. import __version__
-from . import _shared, configuration, expert, minimalist
+from . import _shared, configuration, expert, minimalist, suggest
 from .minimalist import _validate_initialise_definition
 
 _PLANNED_COMMANDS: dict[str, str] = {
@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = suggest.parse_args_with_hint(parser, argv, _PLANNED_COMMANDS)
     if args.command == "initialise":
         _validate_initialise_definition(parser, args)
     handler = getattr(args, "handler", None)

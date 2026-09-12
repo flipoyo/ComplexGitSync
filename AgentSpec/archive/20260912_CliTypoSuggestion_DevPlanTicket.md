@@ -2,6 +2,20 @@
 
 *Created: 2026-08-31*
 
+> **Implemented — 2026-09-12.** The hint lives in its own module,
+> `src/ComplexGitSync/cli/suggest.py`, with `cli/__init__.py` calling it in
+> place of `parser.parse_args`. **Hook point chosen (WP-TYPO1 asked for the
+> choice and the reason):** neither of the two options the ticket lists, but
+> the third that falls out of them — `parse_args_with_hint` lets argparse
+> parse untouched and reacts to the `SystemExit(2)` it raises, then re-raises
+> it. A pre-check before `parse_args` would have printed the hint *above*
+> argparse's usage block, where the reader has already stopped looking;
+> subclassing `ArgumentParser.error` would have tied the project to
+> argparse's private wording, since spotting an invalid choice means matching
+> the text argparse happens to produce. Reacting to the exit code needs
+> neither, leaves argparse's output byte-for-byte as it was, and keeps exit
+> code `2`. Tests: `tests/unit/test_cli_suggest.py`.
+
 > **Release review — 2026-09-11. Priority 2-1.** Optional polish, independent of the first-release requirements. No implementation was performed during reordering.
 
 > **Reassessed on 2026-09-09. Live, unchanged, and still the cheapest
