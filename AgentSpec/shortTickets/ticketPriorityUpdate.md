@@ -13,9 +13,9 @@ title to avoid confusing old and reused numbers.
 |---|---|---|---|
 | 1-1 | [GitLocaleIndependence](../archive/20260911_GitLocaleIndependence_DevPlanTicket.md) | 1-1 (originally 1-3) | Retained; plan corrected |
 | 1-2 | [UnifiedProjectPrivateScope](../archive/20260911_UnifiedProjectPrivateScope_DevPlanTicket.md) | 1-2 | Retained; plan corrected |
-| 1-3 | [StateMemory](../openTickets/1-1_StateMemory_DevPlanTicket.md) | 2-1 | Promoted to Priority 1 |
-| 1-4 | [CliContract](../openTickets/1-2_CliContract_DevPlanTicket.md) | 2-5 | Promoted to Priority 1 |
-| 1-5 | [UserInstallPath](../openTickets/1-3_UserInstallPath_DevPlanTicket.md) | 2-6 | Promoted to Priority 1 |
+| 1-3 | [StateMemory](../archive/20260912_StateMemory_DevPlanTicket.md) | 2-1 | Promoted to Priority 1 |
+| 1-4 | [CliContract](../openTickets/2-1_CliContract_DevPlanTicket.md) | 2-5 | Promoted to Priority 1 |
+| 1-5 | [UserInstallPath](../openTickets/2-2_UserInstallPath_DevPlanTicket.md) | 2-6 | Promoted to Priority 1 |
 | 2-1 | [CliTypoSuggestion](../archive/20260912_CliTypoSuggestion_DevPlanTicket.md) | 2-2 | Renumbered; optional improvement — implemented and archived on 2026-09-12 |
 
 During discussion, CliContract and UserInstallPath were provisionally called

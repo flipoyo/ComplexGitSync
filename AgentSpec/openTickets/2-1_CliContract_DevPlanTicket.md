@@ -2,6 +2,25 @@
 
 *Created: 2026-09-11*
 
+> **Memory review — 2026-09-12. Priority 2-1** (was 1-2). Moved to
+> stand-by because the priority-1 pile is now the distributed memory path
+> of [MemoryArchitecture](1-1_MemoryArchitecture_DevPlanTicket.md), not
+> because this got less true. Two memory milestones need answers from
+> here, so expect to be asked for them out of order:
+>
+> - **[VerifyHonesty](1-2_VerifyHonesty_DevPlanTicket.md) needs exit
+>   codes** for its four verification answers — verified, no history,
+>   legacy, corrupt. "No history" is not a failure and must not exit like
+>   one; "legacy" is not success. §2.1's `0` / `1` / `2` split covers it,
+>   and this is the first command that actually exercises the distinction.
+> - **The memory commands are machine-read by design.** `memory status`,
+>   `discover` and `verify` are what a script or another machine asks, so
+>   §2.2's `--json` should cover them alongside `status` and `verify`, and
+>   a memory record's schema version belongs in that output.
+>
+> Answering only those two parts early is a reasonable way to run this
+> ticket; the compatibility promises can follow.
+
 > **Release review — 2026-09-11. Priority 1-4.** Promoted from 2-5. First-release scope is exit codes, expected-error handling, status/verification JSON, and compatibility promises. Validation and dry-run JSON are deferred.
 
 ## Abstract — read this first
@@ -69,7 +88,7 @@ answer is no" and "I could not ask". A CI job treats those differently.
 Expected operational, validation, filesystem, and argument errors must be
 mapped to the documented codes with concise diagnostics instead of tracebacks.
 Do not silently disguise programming defects as successful execution. Define
-missing/legacy-history results with [1-1 StateMemory](1-1_StateMemory_DevPlanTicket.md).
+missing/legacy-history results with [1-2 VerifyHonesty](1-2_VerifyHonesty_DevPlanTicket.md).
 
 ### 2.2 JSON output
 
@@ -165,8 +184,8 @@ marked today.
 
 ## 6. Release coordination and deferred work
 
-Use [1-1 StateMemory](1-1_StateMemory_DevPlanTicket.md)'s verification results;
+Use [1-2 VerifyHonesty](1-2_VerifyHonesty_DevPlanTicket.md)'s verification results;
 JSON must not label missing or legacy evidence as successfully verified history.
 Settle the meaning of a major version and compatibility promises together with
-[1-3 UserInstallPath](1-3_UserInstallPath_DevPlanTicket.md)'s version scheme.
+[2-2 UserInstallPath](2-2_UserInstallPath_DevPlanTicket.md)'s version scheme.
 WP-C3 is explicitly deferred and does not block first-release acceptance.

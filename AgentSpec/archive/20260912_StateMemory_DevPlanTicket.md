@@ -2,6 +2,18 @@
 
 *Created: 2026-09-04*
 
+> **Superseded and split — 2026-09-12.** Not implemented, and not wrong:
+> §0's audit is still the evidence every replacement rests on, which is why
+> this file is archived rather than deleted. `AgentSpec/shortTickets/
+> memorySpecs.md` turned local state storage into the first stage of a
+> distributed memory infrastructure, and a 547-line ticket spanning four
+> milestones could not carry that. It became five tickets, each one
+> milestone: **MemoryArchitecture** (the design this now serves),
+> **VerifyHonesty** (§3.0a, §3.0), **StateIdentity** (§2, §3.1, F2),
+> **OneRegister** (§3.2, §3.3, §3.4, F1, F3, F4) and **MemoryRepoLocal**
+> (§4). §3.5's locking became **StateLocking**. Cite this file for the
+> audit; cite those tickets for the work.
+
 > **Release review — 2026-09-11. Priority 1-3.** Promoted from 2-1 for the first public release. Deliver reliable local history, meaningful verification, portable state identity, and legacy compatibility. Register publication is deferred; §4 is a later milestone, not a release gate.
 
 > **Reassessed on 2026-09-09. Every finding still stands, F1 included.**
@@ -275,7 +287,7 @@ buys:
 
 Ordered. Start with §3.0a so verification stops making a misleading claim
 before the larger storage migration is complete. Coordinate the result states
-with [1-2 CliContract](1-2_CliContract_DevPlanTicket.md).
+with [1-2 CliContract](../openTickets/2-1_CliContract_DevPlanTicket.md).
 
 ### 3.0a Make verification honest first (F1)
 
