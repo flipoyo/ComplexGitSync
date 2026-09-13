@@ -2,7 +2,9 @@
 
 *Created: 2026-09-12*
 
-> **Milestone M1** of [MemoryArchitecture](1-1_MemoryArchitecture_DevPlanTicket.md).
+*Branch: memory-dev*
+
+> **Milestone M1** of [MemoryArchitecture](1-1_memDev-MemoryArchitecture_DevPlanTicket.md).
 > Split from the audit in
 > `AgentSpec/archive/20260912_StateMemory_DevPlanTicket.md` (§3.0a, §3.0,
 > finding F1). Smallest ticket on the memory path and the first one:
@@ -17,8 +19,8 @@ every workspace in existence, including a tampered one.
 
 **What this document is.** A bug ticket with the cause located and the
 evidence already gathered. No storage format changes here; that is
-[StateIdentity](1-3_StateIdentity_DevPlanTicket.md) and
-[OneRegister](1-4_OneRegister_DevPlanTicket.md).
+[StateIdentity](1-3_memDev-StateIdentity_DevPlanTicket.md) and
+[OneRegister](1-4_memDev-OneRegister_DevPlanTicket.md).
 
 **Why it exists.** A distributed memory is worth exactly what its
 verification is worth. Before a memory is pushed anywhere, the command
@@ -94,7 +96,7 @@ Cheap to fix, in the same pass, all from the same audit:
   yet".** It has been wired in for weeks; `orchestre.py` imports five names
   from it.
 - **`LocalGitRegister`'s docstring** states the identity rule that
-  [StateIdentity](1-3_StateIdentity_DevPlanTicket.md) is about to reverse.
+  [StateIdentity](1-3_memDev-StateIdentity_DevPlanTicket.md) is about to reverse.
   Leave the sentence accurate for today and let M2 rewrite it; do not
   pre-announce a design that has not landed.
 

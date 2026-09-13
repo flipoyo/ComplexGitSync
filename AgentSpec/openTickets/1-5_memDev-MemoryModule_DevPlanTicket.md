@@ -2,7 +2,9 @@
 
 *Created: 2026-09-12*
 
-> **Milestone M4** of [MemoryArchitecture](1-1_MemoryArchitecture_DevPlanTicket.md).
+*Branch: memory-dev*
+
+> **Milestone M4** of [MemoryArchitecture](1-1_memDev-MemoryArchitecture_DevPlanTicket.md).
 > From the owner's `AgentSpec/shortTickets/memorySpecs.md`: *"As cli has
 > its one src folder, i would suggest memory too"*.
 
@@ -27,7 +29,7 @@ outgrew one file. Memory is a larger subject than the CLI.
 structure. §3 the command surface. §4 the work. §5 acceptance.
 
 **Who it is for.** Whoever takes M4, after
-[OneRegister](1-4_OneRegister_DevPlanTicket.md). Doing it earlier means
+[OneRegister](1-4_memDev-OneRegister_DevPlanTicket.md). Doing it earlier means
 moving code that is about to change shape.
 
 **What you need to do with it.** §1 is a move, not a rewrite. Resist
@@ -101,7 +103,7 @@ Read-only to start with, because M4 ships before there is anywhere to push:
 
 | Command | Answers |
 |---|---|
-| `cgitsync memory status` | How many States, how long the chain is, when it was last written, and which of [VerifyHonesty](1-2_VerifyHonesty_DevPlanTicket.md)'s four answers this memory is in |
+| `cgitsync memory status` | How many States, how long the chain is, when it was last written, and which of [VerifyHonesty](1-2_memDev-VerifyHonesty_DevPlanTicket.md)'s four answers this memory is in |
 | `cgitsync memory list` | The States this workspace holds, by name, with the ledger's timestamp for each |
 | `cgitsync memory show <hash>` | One State: what it recorded, and every ledger entry that names it |
 

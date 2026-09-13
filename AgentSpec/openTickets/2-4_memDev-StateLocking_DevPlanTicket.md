@@ -2,10 +2,12 @@
 
 *Created: 2026-09-12*
 
+*Branch: memory-dev*
+
 > Split out of `AgentSpec/archive/20260912_StateMemory_DevPlanTicket.md`
 > §3.5, which declared it out of scope and asked for a ticket of its own.
 > Stand-by, and it gets more important with every memory milestone — see
-> [MemoryArchitecture](1-1_MemoryArchitecture_DevPlanTicket.md).
+> [MemoryArchitecture](1-1_memDev-MemoryArchitecture_DevPlanTicket.md).
 
 ## Abstract — read this first
 
@@ -54,7 +56,7 @@ Two things, both under `.cgitsync/`:
   `src/`.
 - **The ledger.** Two runs append. Under today's single-file register that
   is a whole-file rewrite, so one run's entries simply vanish. Under a
-  hash chain ([OneRegister](1-4_OneRegister_DevPlanTicket.md)) it is worse
+  hash chain ([OneRegister](1-4_memDev-OneRegister_DevPlanTicket.md)) it is worse
   in a more useful way: two entries claim the same parent, and the chain
   forks. A fork is at least *detectable*, which is an argument for doing
   the chain first and the locking after.
@@ -78,7 +80,7 @@ commands and one result.
 - **A stale lock must be recoverable.** A machine that lost power holds a
   lock forever unless the lock records enough to be judged dead — and the
   judgement has to work without an OS user name or a machine identity,
-  which [MemoryRepoLocal](1-6_MemoryRepoLocal_DevPlanTicket.md)'s G5
+  which [MemoryRepoLocal](1-6_memDev-MemoryRepoLocal_DevPlanTicket.md)'s G5
   forbids in anything that gets pushed. A lock file is local-only and never
   pushed; state that in the design rather than discovering it later.
 - **Read-only commands must not block.** `status`, `view-tree` and

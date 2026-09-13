@@ -2,6 +2,8 @@
 
 *Created: 2026-09-12*
 
+*Branch: memory-dev*
+
 > **Owner direction — 2026-09-12.** From
 > `AgentSpec/shortTickets/memorySpecs.md`. This ticket is the design the
 > six that follow implement; it is priority 1-1 because every one of them
@@ -197,6 +199,27 @@ owner's own suggestion and the right one: `cli/` earned its own package
 when it outgrew one file, and memory is a larger subject than the CLI. M4
 places it, and `.localSpec/AdditionalSpecs.md`'s ring table gains its row
 in that ticket, not this one.
+
+### 4.1 Where the work lands
+
+**Every one of the seven is developed on the `memory-dev` branch of
+ComplexGitSync**, not on `main`. Six milestones that each change the state
+area, the ledger, or both would otherwise interleave on `main` with
+unrelated releases, and a half-migrated memory format is the one thing
+this architecture cannot afford to ship by accident. `memory-dev` merges
+back when a milestone is finished and the suite is green.
+
+Their filenames say so: an open memory ticket is
+`<priority>-<rank>_memDev-<Name>_DevPlanTicket.md`, and each one carries a
+`*Branch: memory-dev*` line under its `*Created:*` line. A ticket without
+the `memDev-` prefix is `main` work — including
+[CliContract](2-1_CliContract_DevPlanTicket.md),
+[UserInstallPath](2-2_UserInstallPath_DevPlanTicket.md) and
+[CgshomeDefault](2-3_CgshomeDefault_DevPlanTicket.md), which the
+milestones ask questions of without being memory work themselves. The
+convention is stated in
+[TICKETLIFECYCLE.md](../../.agentSpec/TICKETLIFECYCLE.md) §3 and named for
+this project in `.localSpec/AdditionalSpecs.md`.
 
 ## 5. What this architecture refuses to do
 

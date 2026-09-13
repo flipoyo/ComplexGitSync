@@ -2,7 +2,9 @@
 
 *Created: 2026-09-12*
 
-> **Milestone M3** of [MemoryArchitecture](1-1_MemoryArchitecture_DevPlanTicket.md).
+*Branch: memory-dev*
+
+> **Milestone M3** of [MemoryArchitecture](1-1_memDev-MemoryArchitecture_DevPlanTicket.md).
 > Split from `AgentSpec/archive/20260912_StateMemory_DevPlanTicket.md`
 > (§3.2, §3.3, §3.4, findings F1, F3, F4, decisions D2 and D3).
 
@@ -28,7 +30,7 @@ size one. §3 the checks that become possible here. §4 the work. §5
 acceptance.
 
 **Who it is for.** Whoever takes M3, after
-[StateIdentity](1-3_StateIdentity_DevPlanTicket.md) has landed. Not
+[StateIdentity](1-3_memDev-StateIdentity_DevPlanTicket.md) has landed. Not
 before: a chain whose entries name timestamp-derived directories records
 nothing a second machine can use.
 
@@ -106,7 +108,7 @@ implemented nowhere, because until M2 none of them was checkable:
 | `MISSING_STATE` | Entries name States, so an entry pointing at a State that is not on disk is detectable |
 | `ORPHAN_STATE` | A State on disk that no entry ever recorded is detectable |
 
-[VerifyHonesty](1-2_VerifyHonesty_DevPlanTicket.md) made `verify` honest
+[VerifyHonesty](1-2_memDev-VerifyHonesty_DevPlanTicket.md) made `verify` honest
 about what it could see. This milestone gives it something to see, and
 these three are how you prove it.
 
@@ -124,7 +126,7 @@ these three are how you prove it.
 | **WP-R8** | all | tests, docs, this ticket | Checklist, then archive under [TICKETLIFECYCLE.md](../../.agentSpec/TICKETLIFECYCLE.md) |
 
 **Explicitly not here.** Locking — two processes in one workspace still
-race, and that is [StateLocking](2-4_StateLocking_DevPlanTicket.md).
+race, and that is [StateLocking](2-4_memDev-StateLocking_DevPlanTicket.md).
 Pushing a ledger anywhere — that is M5. Changing any CLI flag or public
 client signature: `--gts`, `--search-dir` and friends resolve exactly what
 they resolve today, whatever happens underneath.

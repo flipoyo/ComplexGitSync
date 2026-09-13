@@ -2,20 +2,22 @@
 
 *Created: 2026-09-12*
 
+*Branch: main*
+
 > **Memory review — 2026-09-12. Priority 2-3.** Ranked behind
 > [CliContract](2-1_CliContract_DevPlanTicket.md) and
 > [UserInstallPath](2-2_UserInstallPath_DevPlanTicket.md) after the
 > priority-1 pile became the memory path of
-> [MemoryArchitecture](1-1_MemoryArchitecture_DevPlanTicket.md). Two
+> [MemoryArchitecture](1-1_memDev-MemoryArchitecture_DevPlanTicket.md). Two
 > points of contact, and they pull in the same direction:
 >
 > - **"No living project yet" is the empty-memory answer.** D2 here asks
 >   what `status` says in a workspace with nothing in it. That is the same
->   question [VerifyHonesty](1-2_VerifyHonesty_DevPlanTicket.md) answers
+>   question [VerifyHonesty](1-2_memDev-VerifyHonesty_DevPlanTicket.md) answers
 >   for a ledger with no entries. One wording, decided once: a new
 >   workspace is not a broken one.
 > - **`$HOME/.cgs` is where an adopted project lands.**
->   [MemorySyncDistant](1-7_MemorySyncDistant_DevPlanTicket.md)'s `memory
+>   [MemorySyncDistant](1-7_memDev-MemorySyncDistant_DevPlanTicket.md)'s `memory
 >   adopt` builds a workspace from a memory on a machine that has none —
 >   which is exactly the default-root question D1 asks here, arriving from
 >   the other end. Settle D1 before adopt is built, or adopt will settle it
@@ -261,7 +263,7 @@ no clone to stand in at all. The default workspace is what lets an
 installed `cgitsync status` answer anything on a machine that has never
 run the tool — worth having before that ticket claims installation works.
 
-[1-4 OneRegister](1-4_OneRegister_DevPlanTicket.md) covers what happens
+[1-4 OneRegister](1-4_memDev-OneRegister_DevPlanTicket.md) covers what happens
 *after* a workspace is found — the register, the snapshot, missing
 history. The empty default workspace is a new starting point for all of
 it, and the two should agree on what an empty register means.

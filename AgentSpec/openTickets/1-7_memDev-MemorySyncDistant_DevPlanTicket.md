@@ -2,7 +2,9 @@
 
 *Created: 2026-09-12*
 
-> **Milestone M6** of [MemoryArchitecture](1-1_MemoryArchitecture_DevPlanTicket.md),
+*Branch: memory-dev*
+
+> **Milestone M6** of [MemoryArchitecture](1-1_memDev-MemoryArchitecture_DevPlanTicket.md),
 > and the last of them. From the owner's
 > `AgentSpec/shortTickets/memorySpecs.md`: *"cgitsync should be capable of
 > synchronizing local memory repos with its own private/distant global
@@ -31,7 +33,7 @@ must never hold. §3 the protocol. §4 the decisions. §5 the work. §6
 acceptance.
 
 **Who it is for.** Whoever takes M6, after
-[MemoryRepoLocal](1-6_MemoryRepoLocal_DevPlanTicket.md). Nothing here is
+[MemoryRepoLocal](1-6_memDev-MemoryRepoLocal_DevPlanTicket.md). Nothing here is
 safe to build on a memory that has not passed M5's gates.
 
 **What you need to do with it.** Settle §4, then §5. §2 is not negotiable.
@@ -158,7 +160,7 @@ everything here is Git repositories and commands.
 - Everything still works with no network except the three commands that
   are explicitly about the network.
 - `pixi run lint` and `pixi run test` pass.
-- [MemoryArchitecture](1-1_MemoryArchitecture_DevPlanTicket.md) is archived
+- [MemoryArchitecture](1-1_memDev-MemoryArchitecture_DevPlanTicket.md) is archived
   in the same commit: with M6 landed, the design it describes is the system
   that exists, and its content belongs in
   `.localSpec/AdditionalSpecs.md` rather than in an open ticket.
