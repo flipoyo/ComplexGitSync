@@ -89,7 +89,7 @@ class _ConfigDocumentWithIO(ConfigDocument, ConfigDocumentIOMixin):
     """Test-only stand-in for a concrete subclass with file I/O mixed in.
 
     ``ConfigDocument`` itself is Ring 0 (pure, no I/O) since WP-CFG
-    (AgentSpec/20260828_Isolation_DevPlanTicket.md §0); every real subclass
+    (.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md §0); every real subclass
     (``CgsDocument``, ``GtsDocument``) picks up ``ConfigDocumentIOMixin``
     directly, but the base class round-trip tests below need a concrete
     combined class of their own rather than depending on either.
@@ -651,7 +651,7 @@ class TestCgsDocumentValid:
         doc = CgsDocument.from_toml(repo_root / "install.cgs")
         assert doc.project_name == "ComplexGitSync"
         # main, not a branch that never existed on the remote: see
-        # AgentSpec/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md D2.
+        # .localSpec/DevTickets/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md D2.
         assert doc.default_branch == "main"
         assert doc.repos[0]["fallback_branch"] == "main"
         assert len(doc.repos) == 2

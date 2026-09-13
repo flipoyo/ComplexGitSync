@@ -19,6 +19,11 @@
 #   .localSpec, .claude   private, writable   -> SCOPE private/local
 #   ComplexGitSync, docs  the project's own   -> SCOPE project
 #
+# .localSpec also carries DevTickets/ — the whole planning surface: the
+# owner's short tickets, the ranked open planning tickets, and the archive.
+# Mounting this file is therefore what gives you the tickets; install.cgs,
+# the user install, deliberately does not. See .localSpec/DevTickets/README.md.
+#
 # main is the project branch; repository entries declare only fallback, path,
 # nested-discovery and private overrides.
 

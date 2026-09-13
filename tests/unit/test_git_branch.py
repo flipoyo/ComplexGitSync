@@ -1,6 +1,6 @@
 """The branch model, private down so it cannot drift back into six copies.
 
-``AgentSpec/archive/`` MultiBranchSync ticket §1 writes down which branch a
+``.localSpec/DevTickets/archive/`` MultiBranchSync ticket §1 writes down which branch a
 repository lands on and why. A model documented without tests rots in one
 release, so every rule stated there has an assertion here:
 

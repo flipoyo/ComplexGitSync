@@ -434,7 +434,10 @@ Each repository mounts at its own name, so no `relative_path` is needed.
 
 Then create the `<ProjectName>` branch on `.localSpec` and on `.claude`
 (from their shared `main`) and write that project's own
-`.localSpec/AdditionalSpecs.md`, `AGENT.md`, and `audit.md`. `.agentSpec`
+`.localSpec/AdditionalSpecs.md`, `AGENT.md`, and `audit.md`. Planning goes
+in the same private mount, at `.localSpec/DevTickets/` — keeping the
+project's own repository free of tickets, so what you publish is the
+product and not the workshop. `.agentSpec`
 needs nothing — it is the same document for every project. Run
 `cgitsync initialise` and the mounts land alongside the ones above;
 `.gitignore` is updated for you.

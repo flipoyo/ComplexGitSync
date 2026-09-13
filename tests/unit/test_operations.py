@@ -691,7 +691,7 @@ class TestABranchSomebodyElsePushedIsThatBranch:
 
     ``checkout`` then reported ``READY``/``ALIGNED`` on commits that shared
     nothing with the colleague's branch but its name — worse than failing to
-    find it (``AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` §3).
+    find it (``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` §3).
     """
 
     def test_a_known_remote_branch_is_the_start_point(self, tmp_path):
@@ -773,7 +773,7 @@ class TestEveryWorkspaceRepairsItsOwnFetchRefspec:
     remote-tracking ref that ``@{upstream}`` resolves through. Pull and push
     are the commands that write to a repository anyway, so they are where the
     config is repaired — once, idempotently
-    (``AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``).
+    (``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``).
     """
 
     def test_pull_widens_the_refspec_of_every_repository(self, tmp_path):
@@ -2935,7 +2935,7 @@ class TestRemovePathsHonoursItsScope:
 
     ``rm`` is handed its paths rather than sweeping for them, so its scope
     is a filter on the repository each path resolves to — see
-    ``AgentSpec/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
+    ``.localSpec/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
     """
 
     @staticmethod

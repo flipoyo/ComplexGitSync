@@ -190,7 +190,7 @@ class TestRecursiveWalkNeedsTheRootGitmodules:
 
     This is why a whole tree must be converted in one pass, and why a
     repair pass after ``initialise`` cannot reach a deeper level — see
-    AgentSpec/archive/20260903_InitFromSubmodules_DevPlanTicket.md §0.3.
+    .localSpec/DevTickets/archive/20260903_InitFromSubmodules_DevPlanTicket.md §0.3.
     """
 
     def test_no_root_gitmodules_yields_an_empty_report_even_with_a_deeper_one(self, tmp_path):

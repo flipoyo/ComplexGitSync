@@ -1,6 +1,6 @@
 """Integration coverage: discovery has no default depth bound.
 
-See ``AgentSpec/archive/20260904_MaxDepthAutodetect_DevPlanTicket.md``.
+See ``.localSpec/DevTickets/archive/20260904_MaxDepthAutodetect_DevPlanTicket.md``.
 ``_walk_git_repositories`` is exhaustively unit-tested for the unbounded
 walk itself (``tests/unit/test_walk_git_repositories.py``); this file
 proves the same holds through the real client methods end to end, against

@@ -839,7 +839,7 @@ def _select_scc_anchor(
 # ---------------------------------------------------------------------------
 
 
-# Pre-existing complexity debt from before C90 was enabled (P6, AgentSpec/
+# Pre-existing complexity debt from before C90 was enabled (P6, .localSpec/DevTickets/
 # 20260828_Isolation_DevPlanTicket.md) — flagged, not fixed under this
 # ticket, since a real refactor of cycle-breaking logic risks behaviour
 # change under time pressure. New code is enforced at 12.
@@ -1309,7 +1309,7 @@ def resolve_repo_for_path(tree: WorkingGitTree, path: Path | str) -> tuple[Worki
     ``ROOT_REPO_ID`` entry's ``absolute_path``) — not the process's current
     working directory — so this resolves the same way regardless of where
     ``cgitsync`` happens to be invoked from, matching every other command's
-    CGSHOME-anchored addressing (see ``AgentSpec/AddRmCgshomeResolution_DevPlanTicket.md``).
+    CGSHOME-anchored addressing (see ``.localSpec/DevTickets/archive/20260902_AddRmCgshomeResolution_DevPlanTicket.md``).
     An already-absolute *path* is used as-is. Symlinks/``..`` are collapsed
     either way. When the result falls under more than one repo's
     ``absolute_path`` (a nested child's directory is also under its

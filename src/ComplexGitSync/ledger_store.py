@@ -7,8 +7,8 @@ Contract: persist and load ``LedgerEntry`` records as one file per ``seq``
     ``HEAD`` cache.
 Imports: ledger_entry
 
-Design reference: ``AgentSpec/IsolationPlan.md`` §2.3 (one file per entry),
-§2.5 (secret scrubbing), and ``AgentSpec/20260828_Isolation_DevPlanTicket.md``
+Design reference: ``.localSpec/DevTickets/IsolationPlan.md`` §2.3 (one file per entry),
+§2.5 (secret scrubbing), and ``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``
 work package P4.2-store.
 
 File layout

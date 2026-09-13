@@ -10,7 +10,7 @@ the clone. ``status`` then printed ``-`` and ``unknown`` for a branch that had
 just been pushed successfully, and ``checkout`` could not see a branch a
 colleague had pushed.
 
-See ``AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``.
+See ``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``.
 """
 
 from __future__ import annotations

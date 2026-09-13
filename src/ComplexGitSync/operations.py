@@ -183,7 +183,7 @@ def create_global_branch(
         # instead forked a second history under a name the user believed they
         # were joining, and `checkout` then reported success on the wrong
         # commits — a colleague's work simply was not there
-        # (AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md §3).
+        # (.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md §3).
         remote = repo.remote_name or "origin"
         if git_runner.remote_tracking_branch_exists(repo.absolute_path, target, remote=remote):
             git_runner.create_branch(
@@ -218,7 +218,7 @@ def _rewrite_remote_if_forced(
     than rebuilding a URL from *repo*'s stored identity fields. Those
     fields can be missing or stale for a repo loaded from an older
     ``.gts`` snapshot (gitprovider was not always recorded there — see
-    ``AgentSpec/archive/20260904_GtsProviderLoss_DevPlanTicket.md``), and
+    ``.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md``), and
     rebuilding from a wrong or absent provider silently aims the push at
     the wrong host. The URL actually configured on disk is never wrong in
     that way, so converting it in place is what stays correct regardless
@@ -243,7 +243,7 @@ def _repair_fetch_refspec(git_runner: GitRunner, repo: WorkingRepo, remote: str)
     """Widen *repo*'s fetch refspec if a ``--single-branch`` clone narrowed it.
 
     Every workspace cloned before that narrowing was fixed
-    (``AgentSpec/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``)
+    (``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``)
     carries a refspec mapping one branch only, and no re-clone should be
     needed to recover from it. Modelled on :func:`_rewrite_remote_if_forced`,
     beside which it is called: a config fix persisted once, idempotently, by

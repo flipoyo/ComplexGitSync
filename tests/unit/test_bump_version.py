@@ -207,7 +207,7 @@ _DOCS_ABSENT_REASON = (
     "docs/ is a separate repository (DocComplexGitSync) and is not mounted in "
     "this checkout. Working on ComplexGitSync alone is legitimate; releasing "
     "from there is not -- bootstrap examples/complexgitsync4dev.cgs to run "
-    "these. See AgentSpec/archive/20260911_ReleaseDocsDebt_DevPlanTicket.md."
+    "these. See .localSpec/DevTickets/archive/20260911_ReleaseDocsDebt_DevPlanTicket.md."
 )
 _DOCS_TEX_PRESENT = all(path.is_file() for path in bump_version.DOCS_TEX_PATHS)
 _requires_docs = pytest.mark.skipif(not _DOCS_TEX_PRESENT, reason=_DOCS_ABSENT_REASON)

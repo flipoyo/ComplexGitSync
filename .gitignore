@@ -224,11 +224,11 @@ __marimo__/
 apoub*
 
 # Nested repos declared in ComplexGitSync.cgs (plain clones, not submodules —
-# see README's "nested repos are plain clones" note). ComplexGitSync's own
-# project-specific files live alongside these, not inside them: AgentSpec/
-# keeps active planning tickets and archive/ tracked directly; CLAUDE.md and
-# AGENT.md at the root are symbolic links into the .claude/ mount, tracked as
-# links, not as the files they point to.
+# see README's "nested repos are plain clones" note). This repository tracks
+# no planning material at all: the tickets live in the private .localSpec
+# mount, at .localSpec/DevTickets/, so a user install ships the tool and not
+# the workshop. CLAUDE.md and AGENT.md at the root are symbolic links into
+# the .claude/ mount, tracked as links, not as the files they point to.
 /docs/DocSpec/
 /.agentSpec/
 /.localSpec/

@@ -1,7 +1,7 @@
 """orchestre — orchestration hub for ComplexGitSync.
 
 Ring: 3 (imports downward from every Ring 0–2 module; owns the public
-    ComplexGitSyncClient facade — see AgentSpec/IsolationPlan.md §1)
+    ComplexGitSyncClient facade — see .localSpec/DevTickets/IsolationPlan.md §1)
 Contract: coordinate one GitTree's lifecycle end to end — load/validate/
     clone/sync/freeze — gating every mutating action on TreeLifecycleState;
     delegate document parsing, path resolution, state-directory allocation,
@@ -15,7 +15,7 @@ This module is the **Orchestre anchor** — the authoritative source for the
 public client API and the infrastructure services (structured run logging,
 the local .lgr register/sync ledger) too small or too entangled with
 ComplexGitSyncClient's own state to extract on their own. Wave 1/2 of the
-isolation plan (AgentSpec/20260828_Isolation_DevPlanTicket.md) moved
+isolation plan (.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) moved
 everything else out: GtsDocument → gts_document.py, GitRunner → git_runner.py,
 the registry builders → registry.py, nested-config/.gitmodules discovery →
 discovery.py, the state-directory allocator → state_store.py, path/CGSHOME
@@ -804,7 +804,7 @@ def _blocking_worktree_dirt(status_lines: Sequence[str]) -> list[str]:
     is routinely dirty in exactly the tree ``import-submodules`` is asked
     to convert — ``initialise`` writes it moments before, and refusing over
     it would deadlock the one working order (see
-    ``AgentSpec/archive/20260903_InitFromSubmodules_DevPlanTicket.md``). Exempting it is
+    ``.localSpec/DevTickets/archive/20260903_InitFromSubmodules_DevPlanTicket.md``). Exempting it is
     safe: the conversion only runs ``git rm --cached`` in the *holding*
     repository, which never touches the child's working tree at all. The
     check exists to protect real, unsaved work in a child, and it still
@@ -1098,7 +1098,7 @@ class GitignoreSyncEntry:
 # a non-English machine. OpenSSH ships no translations, so anything ssh prints
 # is English everywhere; git translates its own prose, so a git-worded marker
 # matches only because git_runner.py pins the message locale
-# (AgentSpec/archive/20260911_GitLocaleIndependence_DevPlanTicket.md).
+# (.localSpec/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md).
 _SSH_AUTH_FAILURE_MARKERS = (
     # OpenSSH's own wording — locale-proof.
     "Permission denied (publickey)",
@@ -1399,7 +1399,7 @@ class ComplexGitSyncClient:
         return levels
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # AgentSpec/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of the submodule-conversion
     # flow risks behaviour change under time pressure. New code is enforced
     # at 12.
@@ -1728,7 +1728,7 @@ class ComplexGitSyncClient:
         )
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # AgentSpec/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of the filesystem-walking
     # discovery flow risks behaviour change under time pressure. New code
     # is enforced at 12.
@@ -1912,7 +1912,7 @@ class ComplexGitSyncClient:
         )
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # AgentSpec/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of the .gitignore sync flow
     # risks behaviour change under time pressure. New code is enforced at
     # 12.
@@ -3265,7 +3265,7 @@ class ComplexGitSyncClient:
         owned by a repository outside it is refused by name before anything
         is removed. Without it the reach is every repository, which is what
         this command has always done — see
-        ``AgentSpec/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
+        ``.localSpec/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
 
         Each repository actually removed from is reported in
         :attr:`last_write_outcomes`.
@@ -3299,7 +3299,7 @@ class ComplexGitSyncClient:
         ``--force-protocol``), when given, rewrites each repo's remote to
         that protocol before pushing, persisting the change (``git remote
         set-url``) rather than a one-off override — see
-        ``AgentSpec/ProtocolSwitchOnPush_DevPlanTicket.md``. On a failure
+        ``.localSpec/DevTickets/archive/20260903_ProtocolSwitchOnPush_DevPlanTicket.md``. On a failure
         that looks like an auth problem, the error gains an actionable
         hint naming ``--force-protocol <the other one>``.
         """
@@ -4313,7 +4313,7 @@ class ComplexGitSyncClient:
             raise GitSyncError(
                 f"Cannot determine a remote URL for {entry.name}: it was loaded from a "
                 f".gts snapshot written before the provider was recorded there "
-                f"(AgentSpec/archive/20260904_GtsProviderLoss_DevPlanTicket.md). "
+                f"(.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md). "
                 f"Regenerate the snapshot from its .cgs — e.g. 'cgitsync initialise "
                 f"<the .cgs>' followed by a fresh 'freeze' — rather than cloning "
                 f"from a guessed host."

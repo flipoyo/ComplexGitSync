@@ -1075,7 +1075,7 @@ relative_path = "deps/child-repo"
 
 
 # ---------------------------------------------------------------------------
-# --all — AgentSpec/archive/20260911_UnifiedProjectPrivateScope_DevPlanTicket.md
+# --all — .localSpec/DevTickets/archive/20260911_UnifiedProjectPrivateScope_DevPlanTicket.md
 # ---------------------------------------------------------------------------
 
 

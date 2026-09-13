@@ -254,6 +254,11 @@ it mounts no private repository at all.) Reading it:
 - `.localSpec` and `.claude` are `private, writable` — this project's, on
   its own branch.
 
+This is where ComplexGitSync's own planning lives: `.localSpec/DevTickets/`
+holds every ticket for the project, so cloning the public repository gets
+you the tool and none of the paperwork. Privacy here is not only about
+secrets — it is about which half of the work you are publishing.
+
 The other fields are ordinary `.cgs`. `default_branch` is the branch a
 private repository stays on, which is the field that decides §2's question,
 so always write it. `fallback_branch = "main"` lets a fresh clone work
