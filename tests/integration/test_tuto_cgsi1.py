@@ -170,7 +170,7 @@ class TestTutoCGSil1CLI:
         assert (project_root / "CGSih1").exists()
         gts_path = _current_lgr_snapshot_path(project_root, "CGSil1.lgr")
         assert gts_path.is_file()
-        assert gts_path.parent.name.startswith("state(")
+        assert gts_path.parent.name == "state"
 
     def test_initialise_gitignores_its_own_state_directory(self, cgsi1_sandbox, monkeypatch, tmp_path):
         """CgitsyncGitignoreLeak_DevPlanTicket regression: .cgitsync/ and the
@@ -294,6 +294,9 @@ def _current_lgr_snapshot_path(project_root: Path, register_name: str) -> Path:
 
 
 def _current_lgr_path(project_root: Path, register_name: str) -> Path:
+    fixed = project_root / ".cgitsync" / register_name
+    if fixed.is_file():
+        return fixed
     candidates = sorted((project_root / ".cgitsync").glob(f"state(*)_*/{register_name}"))
     if candidates:
         return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))

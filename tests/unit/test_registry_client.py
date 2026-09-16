@@ -1613,12 +1613,10 @@ def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
 
     snapshot_path = state_store.latest_snapshot_for(config_path)
     assert snapshot_path is not None
-    assert re.fullmatch(
-        r"state\([0-9a-f]{64}\)_0",
-        snapshot_path.parent.name,
-    )
+    assert snapshot_path.parent.name == "state"
+    assert re.fullmatch(r"[0-9a-f]{64}\.gts", snapshot_path.name)
     assert snapshot_path == (
-        tmp_path / "workspace" / "demo" / ".cgitsync" / snapshot_path.parent.name / "project.gts"
+        tmp_path / "workspace" / "demo" / ".cgitsync" / "state" / snapshot_path.name
     ).resolve()
 
     reloaded_client = ComplexGitSyncClient(state_store=state_store)
@@ -1929,6 +1927,9 @@ def _current_lgr_snapshot_path(workspace: Path, register_name: str = "demo.lgr")
 
 
 def _current_lgr_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
+    fixed = workspace / ".cgitsync" / register_name
+    if fixed.is_file():
+        return fixed
     candidates = sorted((workspace / ".cgitsync").glob(f"state(*)_*/{register_name}"))
     if candidates:
         return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
@@ -1936,18 +1937,39 @@ def _current_lgr_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
 
 
 def test_client_load_cgs_writes_gts_snapshot(tmp_path):
+    """A State is one file, named by what it contains."""
     config_path = _write_root_cgs(tmp_path)
 
     client = ComplexGitSyncClient()
     client.load(config_path)
 
-    state_dirs = sorted((tmp_path / ".cgitsync").glob("state(*)_*"))
-    assert len(state_dirs) == 1
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", state_dirs[0].name)
-    assert (state_dirs[0] / "project.gts").is_file()
-    assert (state_dirs[0] / "project.cgs").is_file()
-    assert (state_dirs[0] / "demo.lgr").is_file()
+    states = sorted((tmp_path / ".cgitsync" / "state").glob("*.gts"))
+    assert len(states) == 1
+    assert re.fullmatch(r"[0-9a-f]{64}\.gts", states[0].name)
+    # The .cgs it was built from sits beside it, under the same name: it is
+    # part of what that State was.
+    assert states[0].with_suffix(".cgs").is_file()
+    # One register, at one path — not a copy inside every state directory.
+    assert (tmp_path / ".cgitsync" / "demo.lgr").is_file()
     assert not (tmp_path / "demo.lgr").exists()
+
+
+def test_writing_an_unchanged_workspace_twice_produces_one_state(tmp_path):
+    """The counter this deletes: the same content is the same file.
+
+    Before, every write minted a fresh timestamp-named directory, so a
+    workspace that had not changed by a byte collected one state directory
+    per command.
+    """
+    config_path = _write_root_cgs(tmp_path)
+
+    client = ComplexGitSyncClient()
+    client.load(config_path)
+    client.load(config_path)
+    client.load(config_path)
+
+    states = sorted((tmp_path / ".cgitsync" / "state").glob("*.gts"))
+    assert len(states) == 1
 
 
 def test_client_load_cgs_updates_project_local_lgr(tmp_path):
@@ -1962,7 +1984,7 @@ def test_client_load_cgs_updates_project_local_lgr(tmp_path):
     data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
     state_id = data["register"]["current_snapshot_id"]
     state_hash = data["register"]["current_state_hash"]
-    expected_snapshot = (tmp_path / ".cgitsync" / f"{state_id}_0" / "project.gts").resolve()
+    expected_snapshot = (tmp_path / ".cgitsync" / "state" / f"{state_hash}.gts").resolve()
     expected_path_marker = _path_to_environment_marker(expected_snapshot)
     assert re.fullmatch(r"state\([0-9a-f]{64}\)", state_id)
     assert state_id == f"state({state_hash})"
@@ -1970,9 +1992,12 @@ def test_client_load_cgs_updates_project_local_lgr(tmp_path):
     assert len(data["snapshots"]) == 1
     assert data["snapshots"][0]["id"] == state_id
     assert data["snapshots"][0]["state_hash"] == state_hash
-    assert data["snapshots"][0]["state_order"] == 0
     assert data["snapshots"][0]["snapshot_path"] == expected_path_marker
     assert expected_snapshot.is_file()
+    # The State's name is the document's own content hash, so the register
+    # and the file on disk cannot drift apart.
+    recorded = GtsDocument.from_toml(expected_snapshot)
+    assert recorded.snapshot_hash == state_hash
 
 
 def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path):
@@ -1993,11 +2018,12 @@ def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path
     lgr_data = tomllib.loads(_current_lgr_path(workspace).read_text(encoding="utf-8"))
     state_id = lgr_data["register"]["current_snapshot_id"]
     assert re.fullmatch(r"state\([0-9a-f]{64}\)", state_id)
+    state_hash = lgr_data["register"]["current_state_hash"]
     assert lgr_data["register"]["current_snapshot_path"] == (
-        f"$HOME/workspace/demo/.cgitsync/{state_id}_0/project.gts"
+        f"$HOME/workspace/demo/.cgitsync/state/{state_hash}.gts"
     )
     assert lgr_data["snapshots"][0]["snapshot_path"] == (
-        f"$HOME/workspace/demo/.cgitsync/{state_id}_0/project.gts"
+        f"$HOME/workspace/demo/.cgitsync/state/{state_hash}.gts"
     )
     assert snapshot_path.is_file()
 
@@ -2344,14 +2370,16 @@ def test_client_write_gts_snapshot_records_ledger_event(tmp_path, monkeypatch):
     assert len(event["workspace_hash"]) == 64
     assert "demo" in event["affected_repos"]
     assert event["parent_sync_ids"] == []
-    [log_path] = sorted(expected_lgr.parent.glob("*.log"))
+    # The run log is named for the run, beside the state area rather than
+    # inside it: two runs leaving the tree identical share one State and
+    # keep their own logs.
+    [log_path] = sorted((expected_lgr.parent / "logs").glob("*.log"))
     assert log_path.is_file()
     log_text = log_path.read_text(encoding="utf-8")
     log_data = json.loads(log_text)
     assert log_data["event"] == "memory_state_finalized"
     assert log_data["command_origin"] == "load"
     assert log_data["state_id"] == data["register"]["current_snapshot_id"]
-    assert log_data["state_order"] == 0
     assert "@" not in log_text
 
 
@@ -2375,14 +2403,16 @@ def test_client_multiple_operations_create_linked_ledger_events(tmp_path):
     assert events[0]["parent_sync_ids"] == []
     assert events[1]["parent_sync_ids"] == ["lgr-000001"]
     assert events[2]["parent_sync_ids"] == ["lgr-000002"]
-    snapshot_paths = [Path(entry["snapshot_path"]) for entry in data["snapshots"]]
-    assert len(snapshot_paths) == len(set(snapshot_paths))
+    # Three events, and as many States as there were distinct trees. Two
+    # operations that left the workspace identical record two events
+    # pointing at one State — being seen twice is a ledger fact, not a
+    # second copy of the same content.
     for snapshot in data["snapshots"]:
         snapshot_path = Path(snapshot["snapshot_path"])
         assert snapshot_path.is_file()
-        assert re.fullmatch(r"state\([0-9a-f]{64}\)_\d+", snapshot_path.parent.name)
-        assert snapshot_path.name == "project.gts"
-        assert snapshot_path.parent.name.startswith(f"{snapshot['id']}_")
+        assert snapshot_path.parent.name == "state"
+        assert snapshot_path.name == f"{snapshot['state_hash']}.gts"
+        assert snapshot["id"] == f"state({snapshot['state_hash']})"
 
 
 def test_client_get_ledger_history_via_public_api(tmp_path):

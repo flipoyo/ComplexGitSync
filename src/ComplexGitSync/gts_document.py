@@ -133,6 +133,26 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     DOCUMENT_KIND = "gts"
     CURRENT_SCHEMA_VERSION = "1.1"
     HASH_ALGORITHM = "sha256"
+
+    #: Which canonicalisation a new snapshot's hash is computed with.
+    #:
+    #: **1** hashed absolute paths — the workspace's own directory, each
+    #: repository's, and the ``.cgs`` it came from — so the same tree in two
+    #: directories produced two different hashes. That is a location, not an
+    #: identity, and it made the digest useless as a name two machines could
+    #: agree on.
+    #:
+    #: **2** hashes only what the workspace *is*: tree-relative paths, refs,
+    #: commits, and who each repository is. See
+    #: ``.localSpec/AdditionalSpecs.md``, *What a State's name is computed
+    #: from*, for the field-by-field decision.
+    #:
+    #: A document declares its own version in ``document.hash_canonicalisation``
+    #: and is always checked with the one it declares. A snapshot written
+    #: before this field existed is a version-1 document: it keeps validating
+    #: under version 1 for ever, and is never silently rewritten.
+    CURRENT_HASH_CANONICALISATION = 2
+    LEGACY_HASH_CANONICALISATION = 1
     _SUPPORTED_HASH_ALGORITHMS = frozenset((HASH_ALGORITHM,))
 
     _REQUIRED_DOCUMENT_KEYS = ("generated_at", "command_origin")
@@ -284,9 +304,31 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         value = self.read("document.snapshot_hash")
         return value if isinstance(value, str) and value else None
 
-    def compute_snapshot_hash(self) -> str:
+    @property
+    def hash_canonicalisation(self) -> int:
+        """Which canonicalisation this document's hash was computed with.
+
+        A document that does not say is a version-1 document — every
+        snapshot written before the field existed — and is checked with
+        version 1 for ever. Upgrading it silently would make its recorded
+        hash wrong and its file fail validation.
+        """
+        declared = self.read("document.hash_canonicalisation")
+        if isinstance(declared, int) and declared > 0:
+            return declared
+        return self.LEGACY_HASH_CANONICALISATION
+
+    def compute_snapshot_hash(self, *, canonicalisation: int | None = None) -> str:
+        """The content hash of this document, under its own canonicalisation.
+
+        Pass *canonicalisation* only to ask what a document's hash would be
+        under a version it does not declare — the migration path uses it;
+        ordinary callers must not, or an old snapshot gets measured with an
+        algorithm it was never written under.
+        """
+        version = canonicalisation or self.hash_canonicalisation
         canonical_json = json.dumps(
-            self._build_canonical_payload(),
+            self._build_canonical_payload(version),
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,
@@ -294,13 +336,33 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
     def ensure_snapshot_hash(self) -> str:
+        """Stamp this document with its canonicalisation and its hash.
+
+        Called on the way to disk, so **every new snapshot is version 2**:
+        its name is a fact about the tree, not about the directory the tree
+        happens to sit in.
+        """
         document = self._data.setdefault("document", {})
         document["CGS_VERSION"] = str(document.get("CGS_VERSION") or CGS_VERSION)
+        document["hash_canonicalisation"] = self.CURRENT_HASH_CANONICALISATION
         digest = self.compute_snapshot_hash()
         document["snapshot_hash"] = digest
         return digest
 
-    def _build_canonical_payload(self) -> dict[str, Any]:
+    def _build_canonical_payload(self, version: int) -> dict[str, Any]:
+        """The fields a State's name is computed from, under *version*.
+
+        Version 2 drops every absolute path — the workspace's, each
+        repository's, its parent's, and the ``.cgs`` the snapshot came from
+        — and orders repositories by their tree-relative path instead. Those
+        values say where a tree was materialised on one machine, which is
+        not what the tree *is*: hashing them meant the same tree cloned into
+        two directories carried two names, and a distributed memory is a set
+        of names two parties can agree on.
+
+        Version 1 is kept, unchanged, for documents that declare it. It is
+        never applied to a new snapshot and never "corrected" on an old one.
+        """
         project = self._data.get("project", {})
         tree_state = self._data.get("tree_state", {})
         repo_states = self._data.get("repo_state", [])
@@ -309,70 +371,79 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         for repo in repo_states if isinstance(repo_states, list) else []:
             if not isinstance(repo, dict):
                 continue
-            canonical_repo_states.append(
-                {
-                    "name": repo.get("name"),
-                    "node_type": repo.get("node_type"),
-                    "absolute_path": repo.get("absolute_path"),
-                    "relative_path": repo.get("relative_path"),
-                    "parent_absolute_path": repo.get("parent_absolute_path"),
-                    "repo_lifecycle_state": repo.get("repo_lifecycle_state"),
-                    "sync_state": repo.get("sync_state"),
-                    "current_ref": _repo_ref_token(repo, "current"),
-                    "target_ref": _repo_ref_token(repo, "target"),
-                    "resolved_ref": _repo_ref_token(repo, "resolved"),
-                    "commit_sha": repo.get("commit_sha"),
-                    "project_owner_name": repo.get("project_owner_name"),
-                    "project_name": repo.get("project_name"),
-                    "repo_name": repo.get("repo_name"),
-                    "gitprovider": repo.get("gitprovider"),
-                    "group_name": repo.get("group_name"),
-                    "gitprovider_url": repo.get("gitprovider_url"),
-                    # access_protocol is deliberately NOT here: it is a
-                    # clone-transport preference (ssh vs https), not part
-                    # of what a snapshot says about the tree's state --
-                    # see test_compute_snapshot_hash_ignores_access_protocol.
-                    # gitprovider/group_name/gitprovider_url are the
-                    # opposite: they say *which* repository this is, which
-                    # is exactly why the round trip losing them was a bug
-                    # (.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
-                    # A frozen literal, not git_branch.DEFAULT_BRANCH: this
-                    # dict is hashed into the canonical snapshot hash, so
-                    # every value in it must stay fixed for the life of the
-                    # wire format. Tying it to a constant that could move
-                    # would silently rehash every snapshot ever written.
-                    "fallback_branch": repo.get("fallback_branch", "main"),
-                    # private/writable are deliberately NOT here, for the same
-                    # reason as access_protocol above: they say what commands
-                    # are *allowed* to touch a repository, not what state the
-                    # tree is in. They round-trip through repo_state either
-                    # way; hashing them would rewrite the hash of every
-                    # snapshot ever written, for no gain in what a snapshot
-                    # actually attests to.
-                    "fallback_applied": bool(repo.get("fallback_applied", False)),
-                    "fallback_reason": repo.get("fallback_reason"),
-                    "discovery_state": repo.get("discovery_state", DiscoveryState.RESOLVED.value),
-                    "worktree_state": repo.get("worktree_state"),
-                    "is_reachable": bool(repo.get("is_reachable", True)),
-                    "source_cgs_path": repo.get("source_cgs_path"),
-                }
-            )
-        # Canonical ordering: lexicographic sort on (absolute_path, name).
+            canonical_repo = {
+                "name": repo.get("name"),
+                "node_type": repo.get("node_type"),
+                "relative_path": repo.get("relative_path"),
+                "repo_lifecycle_state": repo.get("repo_lifecycle_state"),
+                "sync_state": repo.get("sync_state"),
+                "current_ref": _repo_ref_token(repo, "current"),
+                "target_ref": _repo_ref_token(repo, "target"),
+                "resolved_ref": _repo_ref_token(repo, "resolved"),
+                "commit_sha": repo.get("commit_sha"),
+                "project_owner_name": repo.get("project_owner_name"),
+                "project_name": repo.get("project_name"),
+                "repo_name": repo.get("repo_name"),
+                "gitprovider": repo.get("gitprovider"),
+                "group_name": repo.get("group_name"),
+                "gitprovider_url": repo.get("gitprovider_url"),
+                # access_protocol is deliberately NOT here: it is a
+                # clone-transport preference (ssh vs https), not part
+                # of what a snapshot says about the tree's state --
+                # see test_compute_snapshot_hash_ignores_access_protocol.
+                # gitprovider/group_name/gitprovider_url are the
+                # opposite: they say *which* repository this is, which
+                # is exactly why the round trip losing them was a bug
+                # (.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
+                # A frozen literal, not git_branch.DEFAULT_BRANCH: this
+                # dict is hashed into the canonical snapshot hash, so
+                # every value in it must stay fixed for the life of the
+                # wire format. Tying it to a constant that could move
+                # would silently rehash every snapshot ever written.
+                "fallback_branch": repo.get("fallback_branch", "main"),
+                # private/writable are deliberately NOT here, for the same
+                # reason as access_protocol above: they say what commands
+                # are *allowed* to touch a repository, not what state the
+                # tree is in. They round-trip through repo_state either
+                # way; hashing them would rewrite the hash of every
+                # snapshot ever written, for no gain in what a snapshot
+                # actually attests to.
+                "fallback_applied": bool(repo.get("fallback_applied", False)),
+                "fallback_reason": repo.get("fallback_reason"),
+                "discovery_state": repo.get("discovery_state", DiscoveryState.RESOLVED.value),
+                "worktree_state": repo.get("worktree_state"),
+                "is_reachable": bool(repo.get("is_reachable", True)),
+            }
+            if version == self.LEGACY_HASH_CANONICALISATION:
+                # Where this tree sat on one machine, hashed into its name.
+                # Kept exactly as it was so a version-1 snapshot keeps
+                # validating; never added to a new one.
+                canonical_repo["absolute_path"] = repo.get("absolute_path")
+                canonical_repo["parent_absolute_path"] = repo.get("parent_absolute_path")
+                canonical_repo["source_cgs_path"] = repo.get("source_cgs_path")
+            canonical_repo_states.append(canonical_repo)
+
+        if version == self.LEGACY_HASH_CANONICALISATION:
+            # Ordering by absolute path is ordering by where the tree was
+            # materialised; version 2 orders by the tree's own shape.
+            sort_key = "absolute_path"
+        else:
+            sort_key = "relative_path"
         canonical_repo_states.sort(
             key=lambda repo: (
-                str(repo.get("absolute_path", "")),
+                str(repo.get(sort_key, "")),
                 str(repo.get("name", "")),
             )
         )
+        canonical_project = {"name": project.get("name")}
+        if version == self.LEGACY_HASH_CANONICALISATION:
+            canonical_project["root_absolute_path"] = project.get("root_absolute_path")
+            canonical_project["source_cgs_path"] = project.get("source_cgs_path")
         payload = {
             "document": {
                 "CGS_VERSION": self.schema_version,
             },
-            "project": {
-                "name": project.get("name"),
-                "root_absolute_path": project.get("root_absolute_path"),
-                "source_cgs_path": project.get("source_cgs_path"),
-            },
+            "project": canonical_project,
             "tree_state": {
                 "lifecycle_state": tree_state.get("lifecycle_state"),
                 "is_ready": tree_state.get("is_ready"),

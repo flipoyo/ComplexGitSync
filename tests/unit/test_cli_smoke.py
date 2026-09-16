@@ -13,6 +13,16 @@ from ComplexGitSync.cli import main
 from ComplexGitSync.orchestre import DiscoveredRepo
 
 
+def _is_state_file(path: Path) -> bool:
+    """A State is ``.cgitsync/state/<content hash>.gts``.
+
+    Named by what it contains, so the same tree yields the same name on any
+    machine — which is why there is no ``_n`` occurrence counter any more.
+    """
+    return path.parent.name == "state" and re.fullmatch(r"[0-9a-f]{64}\.gts", path.name) is not None
+
+
+
 def test_main_without_command_prints_help(capsys):
     exit_code = main([])
     captured = capsys.readouterr()
@@ -570,7 +580,10 @@ def test_validate_command_creates_state_local_log_file(monkeypatch, tmp_path, ca
     assert "DECLARED" in captured.out
     assert not log_dir.exists()
     assert log_file.is_file()
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", log_file.parent.name)
+    # A log records a run, not a State: it is named for the command and the
+    # moment, and it lives beside the state area rather than inside it.
+    assert log_file.parent.name == "logs"
+    assert re.fullmatch(r"[a-z-]+-\d{8}T\d{6}\d*Z\.log", log_file.name)
     assert log_file.parent.parent == tmp_path / ".cgitsync"
     log_content = log_file.read_text(encoding="utf-8")
     assert log_content.splitlines()[0].startswith('{"operation": "GT-VALIDATE", "event": "command_start"')
@@ -1026,11 +1039,7 @@ def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
         def pull(self, source, **_kwargs):
             captured_call["source"] = Path(source)
             self.run_logger.bind_log_file(
-                tmp_path
-                / "project"
-                / ".cgitsync"
-                / f"state({'a' * 64})_0"
-                / "project.log"
+                tmp_path / "project" / ".cgitsync" / "logs" / "pull-20260101T000000Z.log"
             )
             return SimpleNamespace(
                 get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "project")
@@ -1055,7 +1064,10 @@ def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
     assert exit_code == 0
     assert not log_dir.exists()
     assert log_file.is_file()
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", log_file.parent.name)
+    # A log records a run, not a State: it is named for the command and the
+    # moment, and it lives beside the state area rather than inside it.
+    assert log_file.parent.name == "logs"
+    assert re.fullmatch(r"[a-z-]+-\d{8}T\d{6}\d*Z\.log", log_file.name)
     log_content = log_file.read_text(encoding="utf-8")
     assert '"event": "command_start"' in log_content
     assert '"event": "command_end"' in log_content

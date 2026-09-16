@@ -10,73 +10,27 @@ Contract: given optional CLI arguments (an explicit path and/or a search
     ``CgshomeResolution``/``SnapshotResolution`` record naming *which input
     decided it*, so the CLI can report a workspace the user did not expect
     instead of silently acting on it. This module never prints.
-Imports: settings
+Imports: settings, state_store
 
-Temporary duplication with ``state_store.py``
------------------------------------------------
-``_STATE_DIR_RE``, ``_state_order_from_directory_name``, and
-``_state_snapshot_candidates`` below are self-contained copies of logic that
-also lives in ``orchestre.py`` today and is, at the time this module was
-authored, being extracted *in parallel* by a different work package
-(P5-state, Wave 2 of ``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``) into
-its own ``state_store.py`` module — a general "content-addressed state
-directory" abstraction this module does not need in full. This module only
-needs the narrow slice of that family required to answer "which snapshot
-does the CLI default to": recognising a canonical ``state(<hash>)_<n>``
-directory name and listing the ``.gts`` files under such directories. Rather
-than import a module that may not exist yet (or may land with an
-incompatible shape), this module carries its own minimal copy, matching the
-precedent already used successfully between ``ledger_entry.py`` and
-``integrity.py`` in Wave 1. A later integration step should reconcile this
-duplication — e.g. by having this module depend on ``state_store.py`` for
-the directory-name parsing once both have landed — rather than each module
-silently drifting apart.
+One state-path grammar, imported
+-------------------------------
+``_STATE_DIR_RE`` and the state-directory helpers used to be copied into
+this module, because ``state_store.py`` was authored in parallel and might
+have landed with an incompatible shape. Both have existed side by side for
+weeks, so this module now imports them: one grammar, one place, and a
+workspace laid out either way resolves the same.
+
 """
 
 from __future__ import annotations
 
 import os
-import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
 from .settings import default_workspace
-
-# ---------------------------------------------------------------------------
-# Minimal, self-contained copy of the canonical state-directory naming
-# scheme (see module docstring: duplicated from orchestre.py / state_store.py
-# on purpose, pending a later reconciliation pass).
-# ---------------------------------------------------------------------------
-
-_STATE_DIR_RE = re.compile(r"^state\(([0-9a-f]{64})\)_(\d+)$")
-
-
-def _state_order_from_directory_name(name: str) -> int | None:
-    """Return the trailing order suffix of a canonical ``state(<hash>)_<n>``
-    directory name, or ``None`` if *name* does not match that shape."""
-    match = _STATE_DIR_RE.fullmatch(name)
-    return int(match.group(2)) if match else None
-
-
-def _state_snapshot_candidates(cgitsync_dir: Path) -> list[Path]:
-    """Return every ``*.gts`` file under canonical state directories and the
-    legacy ``state/`` directory beneath *cgitsync_dir*."""
-    candidates: list[Path] = []
-    if cgitsync_dir.is_dir():
-        for state_dir in sorted(cgitsync_dir.iterdir(), key=lambda path: path.name):
-            if not state_dir.is_dir() or _STATE_DIR_RE.fullmatch(state_dir.name) is None:
-                continue
-            candidates.extend(sorted(state_dir.glob("*.gts")))
-    legacy_state_dir = cgitsync_dir / "state"
-    if legacy_state_dir.is_dir():
-        candidates.extend(sorted(legacy_state_dir.glob("*.gts")))
-    return candidates
-
-
-# ---------------------------------------------------------------------------
-# CLI-facing default-snapshot resolution.
-# ---------------------------------------------------------------------------
+from .state_store import _state_order_from_directory_name, _state_snapshot_candidates
 
 
 def _state_lgr_candidates(cgshome: Path) -> list[Path]:

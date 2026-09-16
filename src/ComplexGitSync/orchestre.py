@@ -122,7 +122,6 @@ from .gts_document import GtsDocument
 from .integrity import Finding, HistoryState, VerificationReport, verify_chain
 from .json_render import dumps as json_dumps
 from .json_render import empty_status_payload, status_payload, verify_payload
-from .ledger_entry import new_time_l0_anchor
 from .ledger_store import read_all_entries, read_head, recompute_head, verify_and_repair_head
 from .master import MasterConfig
 from .operations import (
@@ -150,7 +149,7 @@ from .state_store import (
     _latest_state_artifact,
     _next_state_directory_order,
     _parse_state_hash,
-    _resolve_memory_state_directory,
+    state_path,
 )
 from .status_render import (
     PROJECT_SCOPE_LABEL,
@@ -477,7 +476,6 @@ class LocalGitRegister:
         recorded_snapshot_path: Path | str | None = None,
     ) -> str:
         resolved_snapshot_path = Path(snapshot_path).resolve()
-        snapshot_hash = self._hash_snapshot_file(resolved_snapshot_path)
         public_snapshot_path = (
             Path(recorded_snapshot_path).resolve()
             if recorded_snapshot_path is not None
@@ -487,8 +485,16 @@ class LocalGitRegister:
 
         data = self._load()
         snapshots = data.setdefault("snapshots", [])
-        state_anchor = new_time_l0_anchor(SystemClock()) if state_hash is None else None
-        public_state_hash = state_hash if state_hash is not None else state_anchor.state_hash
+        # A caller that does not name the State is asking this register to
+        # invent a name, which is what the timestamp anchor used to do for
+        # every write. The content hash of the snapshot being recorded is
+        # the State's name; falling back to the file's own digest keeps a
+        # hand-rolled call working without minting a clock reading.
+        public_state_hash = (
+            state_hash
+            if state_hash is not None
+            else self._hash_snapshot_file(resolved_snapshot_path)
+        )
         snapshot_id = _format_state_id(public_state_hash)
         if state_order is None:
             state_order = self._next_state_order(snapshots, public_state_hash)
@@ -497,12 +503,16 @@ class LocalGitRegister:
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         )
+        # One hash, one meaning. ``state_hash`` and ``snapshot_hash`` were
+        # two fields that never agreed — one a clock reading that named the
+        # directory, the other the content digest that named nothing. Now a
+        # State *is* its content, so there is one value and it is called
+        # what it is. Old registers keep both; nothing rewrites them.
         snapshots.append(
             {
                 "id": snapshot_id,
                 "state_hash": public_state_hash,
                 "state_order": state_order,
-                "snapshot_hash": snapshot_hash,
                 "snapshot_path": snapshot_path_marker,
                 "recorded_at": recorded_at,
             }
@@ -511,7 +521,6 @@ class LocalGitRegister:
         register = data.setdefault("register", {})
         register["current_snapshot_id"] = snapshot_id
         register["current_state_hash"] = public_state_hash
-        register["current_snapshot_hash"] = snapshot_hash
         register["current_snapshot_path"] = snapshot_path_marker
 
         self.register_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1201,6 +1210,24 @@ def _protocol_switch_hint(git_error_message: str, *, command: str) -> str | None
 # ============================================================
 #  ComplexGitSyncClient — public API facade (Tier 3)
 # ============================================================
+
+
+def _write_file_atomically(destination: Path, write: Any) -> None:
+    """Write *destination* through a temporary file in the same directory.
+
+    The old layout got atomicity from building a whole state directory and
+    renaming it into place. A State is one file now, so the same guarantee
+    costs one rename: a reader never sees a half-written snapshot, and a
+    crash leaves either the previous State or none, never a truncated one.
+
+    *write* is called with the temporary path and must write the file.
+    """
+    temporary = destination.with_name(f".{destination.name}.tmp")
+    try:
+        write(temporary)
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _legacy_register_exists(workspace: Path) -> bool:
@@ -4147,24 +4174,26 @@ class ComplexGitSyncClient:
             source_cgs_path=self.source_path,
             freeze_name=freeze_name,
         )
-        if self.source_path is not None and self.source_path.suffix == ".cgs":
-            snapshot_stem = self.source_path.stem
-        else:
-            snapshot_stem = root_entry.name
-        snapshot_name = f"{snapshot_stem}.gts"
-        state_anchor = new_time_l0_anchor(SystemClock())
-        canonical_state_hash = state_anchor.state_hash
+        # The State's name is its content. Two machines holding the same
+        # tree write the same file name, which is the whole point of a
+        # memory that can travel; and writing the same workspace twice
+        # produces one State, not two. The TIME-L0 anchor that used to name
+        # this is a clock reading with entropy in it, and belongs to the
+        # ledger, where *when* is the subject.
+        canonical_state_hash = document.ensure_snapshot_hash()
         cgitsync_dir = root_entry.absolute_path / ".cgitsync"
         cgitsync_dir.mkdir(parents=True, exist_ok=True)
-        memory_state = _resolve_memory_state_directory(cgitsync_dir, canonical_state_hash)
-        memory_state.temporary_path.mkdir(parents=True, exist_ok=False)
-
-        final_output_path = memory_state.final_path / snapshot_name
-        staged_output_path = memory_state.temporary_path / snapshot_name
-        document.to_toml(staged_output_path)
+        final_output_path = state_path(cgitsync_dir, canonical_state_hash)
+        final_output_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_file_atomically(final_output_path, document.to_toml)
 
         if self.source_path is not None and self.source_path.suffix == ".cgs" and self.source_path.is_file():
-            shutil.copy2(self.source_path, memory_state.temporary_path / self.source_path.name)
+            # Beside the State, under its name: the spec it was built from
+            # is part of what that State was.
+            shutil.copy2(
+                self.source_path,
+                state_path(cgitsync_dir, canonical_state_hash, ".cgs"),
+            )
             if root_entry.current_ref_name:
                 branch_slug = _release_snapshot_slug(root_entry.current_ref_name)
                 stable_cgs_dir = cgitsync_dir / ".cgs"
@@ -4181,20 +4210,26 @@ class ComplexGitSyncClient:
             tree_lifecycle_state=registry.lifecycle_state,
         )
 
+        # One register, at one path. It used to be copied into every state
+        # directory before each write, so a workspace held one copy per
+        # operation and the parent was picked by modification time. With a
+        # flat state area there is nowhere to copy it to, and nothing to
+        # gain: the register is a single growing file.
         register_filename = f"{root_entry.name}.lgr"
-        staged_register_path = memory_state.temporary_path / register_filename
-        final_register_path = memory_state.final_path / register_filename
-        previous_register_path = _latest_state_artifact(cgitsync_dir, register_filename)
+        final_register_path = cgitsync_dir / register_filename
+        if not final_register_path.is_file():
+            previous_register_path = _latest_state_artifact(cgitsync_dir, register_filename)
+            legacy_register_path = root_entry.absolute_path / register_filename
+            if previous_register_path is None and legacy_register_path.is_file():
+                previous_register_path = legacy_register_path
+            if previous_register_path is not None:
+                shutil.copy2(previous_register_path, final_register_path)
         legacy_register_path = root_entry.absolute_path / register_filename
-        if previous_register_path is None and legacy_register_path.is_file():
-            previous_register_path = legacy_register_path
-        if previous_register_path is not None:
-            shutil.copy2(previous_register_path, staged_register_path)
 
-        register_id = LocalGitRegister(staged_register_path).record_snapshot(
-            staged_output_path,
+        register_id = LocalGitRegister(final_register_path).record_snapshot(
+            final_output_path,
             state_hash=canonical_state_hash,
-            state_order=memory_state.state_order,
+            state_order=0,
             recorded_snapshot_path=final_output_path,
         )
         self._log_event(
@@ -4205,7 +4240,7 @@ class ComplexGitSyncClient:
         )
         workspace_hash = document.snapshot_hash or document.compute_snapshot_hash()
         affected_repos = sorted(entry.name for entry in registry.values())
-        ledger_id = SyncLedger(staged_register_path).record_event(
+        ledger_id = SyncLedger(final_register_path).record_event(
             operation=command_origin,
             workspace_hash=workspace_hash,
             gts_snapshot_id=register_id,
@@ -4219,16 +4254,20 @@ class ComplexGitSyncClient:
             workspace_hash=workspace_hash,
             gts_snapshot_id=register_id,
         )
-        staged_log_path = memory_state.temporary_path / f"{snapshot_stem}.log"
-        final_log_path = memory_state.final_path / f"{snapshot_stem}.log"
+        # The log is a record of a run, not of a State: two runs that leave
+        # the tree identical produce one State and two logs, so it is named
+        # for the run and kept out of the state area entirely.
+        final_log_path = cgitsync_dir / "logs" / (
+            f"{command_origin}-{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}.log"
+        )
+        final_log_path.parent.mkdir(parents=True, exist_ok=True)
         if self.run_logger is None:
-            staged_log_path.write_text(
+            final_log_path.write_text(
                 json.dumps(
                     {
                         "event": "memory_state_finalized",
                         "command_origin": command_origin,
                         "state_id": _format_state_id(canonical_state_hash),
-                        "state_order": memory_state.state_order,
                     },
                     sort_keys=True,
                 )
@@ -4236,8 +4275,7 @@ class ComplexGitSyncClient:
                 encoding="utf-8",
             )
 
-        memory_state.temporary_path.rename(memory_state.final_path)
-        if legacy_register_path.is_file():
+        if legacy_register_path.is_file() and final_register_path.is_file():
             legacy_register_path.unlink()
         self.loaded_snapshot_path = final_output_path
         if self.run_logger is not None:

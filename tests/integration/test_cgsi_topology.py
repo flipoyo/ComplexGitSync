@@ -66,6 +66,9 @@ def _run_git(repo_path: Path, *args: str) -> str:
 
 
 def _current_lgr_path(repo_path: Path, register_name: str = "demo.lgr") -> Path:
+    fixed = repo_path / ".cgitsync" / register_name
+    if fixed.is_file():
+        return fixed
     candidates = sorted((repo_path / ".cgitsync").glob(f"state(*)_*/{register_name}"))
     if candidates:
         return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
@@ -534,8 +537,9 @@ class TestGitCommandCycleIntegration:
         assert re.fullmatch(r"state\([0-9a-f]{64}\)", lgr_data["register"]["current_snapshot_id"])
         snapshot_path_parts = Path(lgr_data["register"]["current_snapshot_path"]).parts
         assert snapshot_path_parts[-3] == ".cgitsync"
-        assert re.fullmatch(r"state\([0-9a-f]{64}\)_\d+", snapshot_path_parts[-2])
-        assert snapshot_path_parts[-1] == "demo.gts"
+        assert snapshot_path_parts[-2] == "state"
+        # The file is named by the tree's content, not by the project.
+        assert re.fullmatch(r"[0-9a-f]{64}\.gts", snapshot_path_parts[-1])
         assert len(lgr_data["snapshots"]) >= 1
 
     def test_tag_preflight_blocks_detached_head(self, ready_single_repo_snapshot):

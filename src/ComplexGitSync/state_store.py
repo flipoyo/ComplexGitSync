@@ -34,6 +34,14 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+#: The directory every State is written into, flat: ``state/<hash>.gts``.
+#:
+#: The hash is the document's own content digest, so the same tree yields
+#: the same file name on any machine. Nothing counts occurrences any more —
+#: the same content is the same file, and being seen twice is two ledger
+#: entries pointing at one name.
+STATE_DIR_NAME = "state"
+
 _SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 _STATE_ID_RE = re.compile(r"^state\(([0-9a-f]{64})\)$")
 _STATE_DIR_RE = re.compile(r"^state\(([0-9a-f]{64})\)_(\d+)$")
@@ -104,16 +112,33 @@ def _resolve_memory_state_directory(cgitsync_dir: Path, state_hash: str) -> Memo
         state_order += 1
 
 
+def state_path(cgitsync_dir: Path, state_hash: str, suffix: str = ".gts") -> Path:
+    """Where a State of *state_hash* is written: ``state/<hash><suffix>``.
+
+    The one place that composes a State's path. ``.gts`` is the State
+    itself; ``.cgs`` beside it is the spec it was built from, which is part
+    of what the State *was*.
+    """
+    return cgitsync_dir / STATE_DIR_NAME / f"{state_hash}{suffix}"
+
+
 def _state_snapshot_candidates(cgitsync_dir: Path) -> list[Path]:
+    """Every ``.gts`` under *cgitsync_dir*, in both layouts.
+
+    The flat ``state/<hash>.gts`` written today, and the older
+    ``state(<hash>)_<n>/`` directories. A workspace that predates the flat
+    layout keeps resolving without being rewritten: nothing here migrates
+    anything, it only reads.
+    """
     candidates: list[Path] = []
     if cgitsync_dir.is_dir():
         for state_dir in sorted(cgitsync_dir.iterdir(), key=lambda path: path.name):
             if not state_dir.is_dir() or _STATE_DIR_RE.fullmatch(state_dir.name) is None:
                 continue
             candidates.extend(sorted(state_dir.glob("*.gts")))
-    legacy_state_dir = cgitsync_dir / "state"
-    if legacy_state_dir.is_dir():
-        candidates.extend(sorted(legacy_state_dir.glob("*.gts")))
+    flat_state_dir = cgitsync_dir / STATE_DIR_NAME
+    if flat_state_dir.is_dir():
+        candidates.extend(sorted(flat_state_dir.glob("*.gts")))
     return candidates
 
 

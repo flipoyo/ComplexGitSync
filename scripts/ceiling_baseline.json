@@ -102,7 +102,7 @@
     },
     "gts_document.py": {
       "internal_imports": 8,
-      "loc": 313,
+      "loc": 355,
       "public_symbols": 1
     },
     "integrity.py": {
@@ -136,8 +136,8 @@
       "public_symbols": 25
     },
     "orchestre.py": {
-      "internal_imports": 98,
-      "loc": 3962,
+      "internal_imports": 97,
+      "loc": 3971,
       "public_symbols": 13
     },
     "paths.py": {
@@ -156,14 +156,14 @@
       "public_symbols": 11
     },
     "snapshot_resolver.py": {
-      "internal_imports": 1,
-      "loc": 305,
+      "internal_imports": 3,
+      "loc": 274,
       "public_symbols": 17
     },
     "state_store.py": {
       "internal_imports": 0,
-      "loc": 118,
-      "public_symbols": 1
+      "loc": 132,
+      "public_symbols": 3
     },
     "status_render.py": {
       "internal_imports": 2,

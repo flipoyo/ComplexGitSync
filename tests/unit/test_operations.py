@@ -59,6 +59,16 @@ from ComplexGitSync.orchestre import (
     RuntimeStateStore,
 )
 
+
+def _is_state_file(path: Path) -> bool:
+    """A State is ``.cgitsync/state/<content hash>.gts``.
+
+    Named by what it contains, so the same tree yields the same name on any
+    machine — which is why there is no ``_n`` occurrence counter any more.
+    """
+    return path.parent.name == "state" and re.fullmatch(r"[0-9a-f]{64}\.gts", path.name) is not None
+
+
 # ---------------------------------------------------------------------------
 # Shared helpers / fixtures
 # ---------------------------------------------------------------------------
@@ -71,6 +81,9 @@ def _current_lgr_snapshot_path(root_path: Path, register_name: str = "project.lg
 
 
 def _current_lgr_path(root_path: Path, register_name: str = "project.lgr") -> Path:
+    fixed = root_path / ".cgitsync" / register_name
+    if fixed.is_file():
+        return fixed
     candidates = sorted((root_path / ".cgitsync").glob(f"state(*)_*/{register_name}"))
     if candidates:
         return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
@@ -2208,7 +2221,7 @@ def test_client_checkout_updates_registry_and_writes_gts(tmp_path):
 
     snapshot_path = _current_lgr_snapshot_path(root_path)
     assert snapshot_path.exists()
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", snapshot_path.parent.name)
+    assert _is_state_file(snapshot_path)
 
 
 def test_client_checkout_delegates_to_gittree_git_checkout(tmp_path, monkeypatch):
@@ -2467,16 +2480,16 @@ def test_client_freeze_release_writes_release_name_and_named_immutable_gts(tmp_p
 
     immutable_snapshot = _current_lgr_snapshot_path(root_path)
     assert immutable_snapshot.exists()
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", immutable_snapshot.parent.name)
+    assert _is_state_file(immutable_snapshot)
     snapshot_data = tomllib.loads(immutable_snapshot.read_text(encoding="utf-8"))
     assert snapshot_data["freeze_manifest"]["release-name"] == "release-1"
     lgr_data = tomllib.loads(_current_lgr_path(root_path).read_text(encoding="utf-8"))
     assert re.fullmatch(r"state\([0-9a-f]{64}\)", lgr_data["register"]["current_snapshot_id"])
     assert lgr_data["register"]["current_snapshot_path"].endswith(
-        f"{immutable_snapshot.parent.name}/project.gts"
+        f"state/{immutable_snapshot.name}"
     )
     assert lgr_data["snapshots"][0]["snapshot_path"].endswith(
-        f"{immutable_snapshot.parent.name}/project.gts"
+        f"state/{immutable_snapshot.name}"
     )
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
@@ -2499,7 +2512,7 @@ def test_write_freeze_snapshot_uses_explicit_freeze_name_over_stale_registry_tag
     )
 
     assert result.exists()
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", result.parent.name)
+    assert _is_state_file(result)
     snapshot_data = tomllib.loads(result.read_text(encoding="utf-8"))
     assert snapshot_data["freeze_manifest"]["release-name"] == "20260708-v3"
     assert snapshot_data["freeze_manifest"]["synchronized_ref_name"] == "20260708-v3"
@@ -2523,12 +2536,12 @@ def test_freeze_snapshot_loaded_from_gts_creates_new_named_immutable_gts(tmp_pat
     assert result.recompute_tree_state() == TreeLifecycleState.READY
     assert source_snapshot.read_text(encoding="utf-8") == original_source_content
     assert immutable_snapshot.exists()
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", immutable_snapshot.parent.name)
+    assert _is_state_file(immutable_snapshot)
 
     lgr_data = tomllib.loads(_current_lgr_path(root.absolute_path).read_text(encoding="utf-8"))
     assert re.fullmatch(r"state\([0-9a-f]{64}\)", lgr_data["register"]["current_snapshot_id"])
     assert lgr_data["register"]["current_snapshot_path"].endswith(
-        f"{immutable_snapshot.parent.name}/project.gts"
+        f"state/{immutable_snapshot.name}"
     )
     snapshot_data = tomllib.loads(immutable_snapshot.read_text(encoding="utf-8"))
     assert snapshot_data["freeze_manifest"]["release-name"] == "20260708-v4"
@@ -2559,7 +2572,7 @@ def test_client_launch_release_checkouts_release_tag_and_writes_gts(tmp_path, mo
     }
     snapshot_path = _current_lgr_snapshot_path(client.registry.get("root").absolute_path)
     assert snapshot_path.exists()
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)_0", snapshot_path.parent.name)
+    assert _is_state_file(snapshot_path)
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
 

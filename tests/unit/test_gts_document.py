@@ -160,7 +160,7 @@ class TestGtsDocumentValid:
         repo["current_ref"] = "branch:main"
         doc = GtsDocument.from_dict(data)
         assert doc is not None
-        payload = doc._build_canonical_payload()
+        payload = doc._build_canonical_payload(doc.hash_canonicalisation)
         assert payload["repo_state"][0]["current_ref"] == "branch:main"
 
 
