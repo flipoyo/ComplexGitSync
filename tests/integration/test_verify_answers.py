@@ -22,8 +22,8 @@ from pathlib import Path
 import tomli_w
 
 from ComplexGitSync.cli import main as cli_main
-from ComplexGitSync.integrity import HistoryState
-from ComplexGitSync.ledger_store import append_entry
+from ComplexGitSync.memory.integrity import HistoryState
+from ComplexGitSync.memory.ledger_store import append_entry
 from ComplexGitSync.orchestre import ComplexGitSyncClient, SystemClock
 
 

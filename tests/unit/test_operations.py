@@ -81,8 +81,8 @@ def _current_state_path(root_path: Path) -> Path:
     last wrote. It replaced the single-file register these tests used to
     read, which nothing writes any more.
     """
-    from ComplexGitSync.ledger_store import read_all_entries
-    from ComplexGitSync.state_store import _parse_state_hash, state_path
+    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.states import _parse_state_hash, state_path
 
     entries = read_all_entries(root_path / ".cgitsync" / "lgr")
     assert entries, "no ledger entry was written"
@@ -91,7 +91,7 @@ def _current_state_path(root_path: Path) -> Path:
 
 def _ledger_entries(root_path: Path):
     """Every entry in the root_path's chain, oldest first."""
-    from ComplexGitSync.ledger_store import read_all_entries
+    from ComplexGitSync.memory.ledger_store import read_all_entries
 
     return read_all_entries(root_path / ".cgitsync" / "lgr")
 

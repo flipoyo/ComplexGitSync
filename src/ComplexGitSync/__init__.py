@@ -1,6 +1,6 @@
 """ComplexGitSync package: deterministic distributed workspace synchronization over Git trees."""
 
-__version__ = "0002.64"
+__version__ = "0002.65"
 
 # --- Tier 1 — Public Errors (errors.py) ---
 # --- Cross-cutting document definitions ---
@@ -52,8 +52,11 @@ from .git_tree import (
     topological_sort,
 )
 from .gts_document import GtsDocument
-from .integrity import Finding, VerificationReport
 from .master import MasterConfig
+
+# --- Tier 2/3 — Actions + Client (orchestre.py) ---
+from .memory import LocalGitRegister, SyncLedger
+from .memory.integrity import Finding, VerificationReport
 
 # --- Tier 2 — Actions (operations.py) ---
 from .operations import (
@@ -70,13 +73,9 @@ from .operations import (
     tag_tree,
     validate_branch_topology,
 )
-
-# --- Tier 2/3 — Actions + Client (orchestre.py) ---
 from .orchestre import (
     ComplexGitSyncClient,
-    LocalGitRegister,
     Orchestre,
-    SyncLedger,
 )
 
 __all__ = [

@@ -237,7 +237,7 @@ def test_verify_json_reports_findings_and_exits_one(tmp_path, capsys):
 
     import tomli_w
 
-    from ComplexGitSync.ledger_store import append_entry
+    from ComplexGitSync.memory.ledger_store import append_entry
     from ComplexGitSync.orchestre import SystemClock
 
     (tmp_path / ".cgitsync").mkdir()

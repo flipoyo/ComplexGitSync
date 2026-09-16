@@ -15,8 +15,8 @@ from pathlib import Path
 
 import tomli_w
 
-from ComplexGitSync.integrity import Finding, HistoryState
-from ComplexGitSync.ledger_store import read_all_entries, read_head
+from ComplexGitSync.memory.integrity import Finding, HistoryState
+from ComplexGitSync.memory.ledger_store import read_all_entries, read_head
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 _CGS = """
@@ -201,7 +201,13 @@ def test_an_edited_state_no_longer_hashes_to_its_name(tmp_path):
     )
 
 
-def test_a_state_no_entry_recorded_is_reported(tmp_path):
+def test_a_state_no_entry_recorded_is_reported_but_is_not_corruption(tmp_path):
+    """An orphan is reported, and the chain still verifies.
+
+    Every workspace used before the ledger existed holds States that no
+    entry records. They are history, not damage — calling that "corrupt"
+    would teach exactly the shrug this command was rebuilt to stop.
+    """
     config = _workspace(tmp_path / "demo")
     ComplexGitSyncClient().load(config)
     (tmp_path / "demo" / ".cgitsync" / "state" / f"{'b' * 64}.gts").write_text(
@@ -210,8 +216,12 @@ def test_a_state_no_entry_recorded_is_reported(tmp_path):
 
     report = ComplexGitSyncClient().verify(tmp_path / "demo")
 
-    assert report.state is HistoryState.CORRUPT
     assert any(finding is Finding.ORPHAN_STATE for _s, finding, _d in report.findings)
+    assert report.state is HistoryState.VERIFIED
+
+    # …and a real problem alongside it still reads as corrupt.
+    _states(tmp_path / "demo")[0].unlink()
+    assert ComplexGitSyncClient().verify(tmp_path / "demo").state is HistoryState.CORRUPT
 
 
 # ---------------------------------------------------------------------------

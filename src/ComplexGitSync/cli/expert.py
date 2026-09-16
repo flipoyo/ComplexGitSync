@@ -19,7 +19,7 @@ from pathlib import Path
 
 from ..errors import GitSyncError
 from ..git_repo import RefKind, RepoScope
-from ..integrity import HistoryState
+from ..memory.integrity import HistoryState
 from ..orchestre import ComplexGitSyncClient
 from ._shared import (
     _add_gitignore_sync_arguments,
@@ -59,6 +59,7 @@ COMMANDS: dict[str, str] = {
     "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
     "init-from-submodules": "Adopt a submodule-based checkout: discover, initialise, then convert its submodules.",
     "verify": "Verify the hash-chained .cgitsync/lgr register for tamper-evidence.",
+    "memory": "Look at what this workspace remembers: status, list, show <state>.",
 }
 
 
@@ -519,6 +520,37 @@ def _register_init_from_submodules(subparser: argparse.ArgumentParser) -> None:
     subparser.set_defaults(handler=_handle_init_from_submodules)
 
 
+def _register_memory(subparser: argparse.ArgumentParser) -> None:
+    """``memory status|list|show`` — read-only, for now.
+
+    A group rather than three flat commands: they answer one subject, and
+    the next milestones add more of them (a push, an adopt). Read-only
+    because there is nowhere to push a memory to yet.
+    """
+    memory_commands = subparser.add_subparsers(dest="memory_command", required=True)
+
+    status = memory_commands.add_parser(
+        "status", help="How much this workspace remembers, and whether it verifies."
+    )
+    _add_search_dir_argument(status)
+
+    listing = memory_commands.add_parser(
+        "list", help="Every State this workspace holds, newest recording first."
+    )
+    _add_search_dir_argument(listing)
+
+    show = memory_commands.add_parser(
+        "show", help="One State: what it recorded, and every entry that names it."
+    )
+    show.add_argument(
+        "state",
+        help="The State's content hash, or any unambiguous prefix of it.",
+    )
+    _add_search_dir_argument(show)
+
+    subparser.set_defaults(handler=_handle_memory)
+
+
 def _register_verify(subparser: argparse.ArgumentParser) -> None:
     _add_search_dir_argument(subparser)
     subparser.add_argument(
@@ -552,6 +584,7 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "import-submodules": _register_import_submodules,
     "init-from-submodules": _register_init_from_submodules,
     "verify": _register_verify,
+    "memory": _register_memory,
 }
 
 
@@ -819,6 +852,80 @@ def _handle_init_from_submodules(args: argparse.Namespace) -> int:
             force_access_protocol=force_access_protocol,
         ),
     )
+
+
+def _handle_memory(args: argparse.Namespace) -> int:
+    cgshome = _resolve_cgshome(getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name=f"memory-{args.memory_command}",
+        source=cgshome,
+        runner=lambda client, source: _execute_memory(
+            client, source, subcommand=args.memory_command, state=getattr(args, "state", None)
+        ),
+    )
+
+
+def _execute_memory(
+    client: ComplexGitSyncClient,
+    cgshome: Path,
+    *,
+    subcommand: str,
+    state: str | None,
+) -> int:
+    if subcommand == "status":
+        return _print_memory_status(client.memory_status(cgshome))
+    if subcommand == "list":
+        return _print_memory_list(client.memory_list(cgshome))
+    return _print_memory_show(client.memory_show(cgshome, state or ""))
+
+
+def _print_memory_status(status: dict) -> int:
+    print(
+        f"states={status['states']} entries={status['entries']} "
+        f"verification={status['verification']} findings={status['findings']}"
+    )
+    print(f"last_recorded_at={status['last_recorded_at'] or '(never)'}")
+    if not status["entries"]:
+        print("nothing has been recorded here yet; the next command that writes a State starts the chain.")
+        return EXIT_OK
+    genesis, latest = status["genesis_toolchain"], status["latest_toolchain"]
+    # Both ends, because the interesting question is whether they differ:
+    # a chain spanning an upgrade should say where the upgrade fell.
+    for tool in sorted(set(genesis) | set(latest)):
+        first, last = genesis.get(tool, "none"), latest.get(tool, "none")
+        suffix = "" if first == last else f"  (genesis: {first})"
+        print(f"  {tool:<9} {last}{suffix}")
+    return EXIT_OK
+
+
+def _print_memory_list(rows: list[dict]) -> int:
+    if not rows:
+        print("no States recorded in this workspace.")
+        return EXIT_OK
+    print(f"{'STATE':<16}  {'RECORDED':<21}  COMMANDS")
+    for row in rows:
+        commands = ", ".join(row["commands"]) if row["commands"] else "(no entry records it)"
+        recorded = row["recorded_at"] or "-"
+        missing = "" if row["path"] else "  [not on disk]"
+        print(f"{row['state'][:16]:<16}  {recorded:<21}  {commands}{missing}")
+    return EXIT_OK
+
+
+def _print_memory_show(state: dict) -> int:
+    print(f"state={state['state']}")
+    print(f"path={state['path']}")
+    print(
+        f"project={state['project']} lifecycle_state={state['lifecycle_state']} "
+        f"repos={state['repos']} hash_canonicalisation={state['hash_canonicalisation']}"
+    )
+    if not state["entries"]:
+        print("no ledger entry records this State.")
+        return EXIT_OK
+    for entry in state["entries"]:
+        print(f"seq={entry['seq']} {entry['recorded_at']} {entry['command']} {entry['outcome']}")
+        for tool, version in sorted(entry["toolchain"].items()):
+            print(f"  {tool:<9} {version}")
+    return EXIT_OK
 
 
 def _handle_verify(args: argparse.Namespace) -> int:

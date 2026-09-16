@@ -447,7 +447,7 @@ def test_the_private_local_naming_rule_has_exactly_one_owner():
     allowed = {
         # Not a branch name: the state directory's "state(<hash>)_<n>"
         # suffix, which numbers a workspace state, not a project branch.
-        "state_store.py": 1,
+        "memory/states.py": 1,
     }
     inline = {
         path.relative_to(_SRC_ROOT).as_posix(): hits

@@ -35,7 +35,7 @@ from types import SimpleNamespace
 import pytest
 
 from ComplexGitSync.discovery import ImportSubmodulesReport, SubmoduleEntry
-from ComplexGitSync.integrity import HistoryState
+from ComplexGitSync.memory.integrity import HistoryState
 
 _SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "ComplexGitSync"
 
@@ -90,7 +90,7 @@ def test_commands_dict_matches_registered_parsers():
     subparsers = parser.add_subparsers(dest="command")
     expert.register_parsers(subparsers)
     assert set(subparsers.choices.keys()) == set(expert.COMMANDS.keys())
-    assert len(expert.COMMANDS) == 17
+    assert len(expert.COMMANDS) == 18
 
 
 def test_commands_dict_help_text_matches_source_of_truth():

@@ -294,8 +294,8 @@ def _current_lgr_snapshot_path(project_root: Path, register_name: str) -> Path:
     named is no longer written, and the hash-chained ledger answers the same
     question with better evidence.
     """
-    from ComplexGitSync.ledger_store import read_all_entries
-    from ComplexGitSync.state_store import _parse_state_hash, state_path
+    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.states import _parse_state_hash, state_path
 
     cgitsync_dir = project_root / ".cgitsync"
     entries = read_all_entries(cgitsync_dir / "lgr")

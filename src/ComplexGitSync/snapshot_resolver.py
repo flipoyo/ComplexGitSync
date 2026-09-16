@@ -10,7 +10,7 @@ Contract: given optional CLI arguments (an explicit path and/or a search
     ``CgshomeResolution``/``SnapshotResolution`` record naming *which input
     decided it*, so the CLI can report a workspace the user did not expect
     instead of silently acting on it. This module never prints.
-Imports: ledger_store, settings, state_store
+Imports: memory, settings
 
 One state-path grammar, imported
 -------------------------------
@@ -29,14 +29,14 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .ledger_store import LedgerStoreError, read_all_entries
-from .settings import default_workspace
-from .state_store import (
+from .memory.ledger_store import LedgerStoreError, read_all_entries
+from .memory.states import (
     _parse_state_hash,
     _state_order_from_directory_name,
     _state_snapshot_candidates,
     state_path,
 )
+from .settings import default_workspace
 
 
 def _state_lgr_candidates(cgshome: Path) -> list[Path]:

@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.integrity import verify_chain
-from ComplexGitSync.ledger_entry import build_next_entry
-from ComplexGitSync.ledger_store import (
+from ComplexGitSync.memory.integrity import verify_chain
+from ComplexGitSync.memory.ledger_entry import build_next_entry
+from ComplexGitSync.memory.ledger_store import (
     HeadPointer,
     LedgerSeqCollisionError,
     LedgerStoreCorruptionError,

@@ -2,7 +2,7 @@
   "modules": {
     "__init__.py": {
       "internal_imports": 55,
-      "loc": 126,
+      "loc": 125,
       "public_symbols": 0
     },
     "__main__.py": {
@@ -37,7 +37,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 23,
-      "loc": 1353,
+      "loc": 1441,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -105,30 +105,45 @@
       "loc": 355,
       "public_symbols": 1
     },
-    "integrity.py": {
-      "internal_imports": 1,
-      "loc": 205,
-      "public_symbols": 8
-    },
     "json_render.py": {
       "internal_imports": 0,
       "loc": 192,
       "public_symbols": 6
     },
-    "ledger_entry.py": {
-      "internal_imports": 0,
-      "loc": 204,
-      "public_symbols": 7
-    },
-    "ledger_store.py": {
-      "internal_imports": 3,
-      "loc": 363,
-      "public_symbols": 16
-    },
     "master.py": {
       "internal_imports": 1,
       "loc": 89,
       "public_symbols": 1
+    },
+    "memory/__init__.py": {
+      "internal_imports": 30,
+      "loc": 108,
+      "public_symbols": 0
+    },
+    "memory/integrity.py": {
+      "internal_imports": 1,
+      "loc": 205,
+      "public_symbols": 8
+    },
+    "memory/ledger_entry.py": {
+      "internal_imports": 0,
+      "loc": 204,
+      "public_symbols": 7
+    },
+    "memory/ledger_store.py": {
+      "internal_imports": 3,
+      "loc": 363,
+      "public_symbols": 16
+    },
+    "memory/states.py": {
+      "internal_imports": 0,
+      "loc": 132,
+      "public_symbols": 3
+    },
+    "memory/store.py": {
+      "internal_imports": 8,
+      "loc": 319,
+      "public_symbols": 4
     },
     "operations.py": {
       "internal_imports": 21,
@@ -136,9 +151,9 @@
       "public_symbols": 25
     },
     "orchestre.py": {
-      "internal_imports": 101,
-      "loc": 4070,
-      "public_symbols": 13
+      "internal_imports": 99,
+      "loc": 3933,
+      "public_symbols": 11
     },
     "paths.py": {
       "internal_imports": 2,
@@ -159,11 +174,6 @@
       "internal_imports": 7,
       "loc": 311,
       "public_symbols": 18
-    },
-    "state_store.py": {
-      "internal_imports": 0,
-      "loc": 132,
-      "public_symbols": 3
     },
     "status_render.py": {
       "internal_imports": 2,

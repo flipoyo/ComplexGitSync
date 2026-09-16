@@ -63,8 +63,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-import tomli_w
-
 from .cgs_format import CgsDocument, parse_repo_id
 from .clone_guard import (
     blocked_destinations,
@@ -120,18 +118,29 @@ from .git_tree import (
 )
 from .git_tree_branch import GitTreeBranches, tree_project_name
 from .gts_document import GtsDocument
-from .integrity import Finding, HistoryState, VerificationReport, verify_chain
 from .json_render import dumps as json_dumps
 from .json_render import empty_status_payload, status_payload, verify_payload
-from .ledger_store import (
-    LedgerStoreError,
+from .master import MasterConfig
+from .memory import (
+    Finding,
+    HistoryState,
+    SyncLedger,
+    VerificationReport,
     append_entry,
     read_all_entries,
     read_head,
     recompute_head,
     verify_and_repair_head,
+    verify_chain,
 )
-from .master import MasterConfig
+from .memory.ledger_store import LedgerStoreError
+from .memory.states import (
+    STATE_DIR_NAME,
+    _format_state_id,
+    _latest_state_artifact,
+    _parse_state_hash,
+    state_path,
+)
 from .operations import (
     BranchTopologyReport,
     RepoOutcome,
@@ -141,7 +150,7 @@ from .operations import (
 from .operations import (
     validate_branch_topology as _validate_branch_topology,
 )
-from .paths import _path_to_environment_marker, _resolve_document_path, _resolve_project_root
+from .paths import _resolve_document_path, _resolve_project_root
 from .paths import resolve_bootstrap_root as _resolve_bootstrap_root
 from .paths import resolve_cgshome as _resolve_cgshome
 from .paths import resolve_initialise_cgshome as _resolve_initialise_cgshome
@@ -151,15 +160,6 @@ from .registry import (
     build_registry_from_gts_document,
 )
 from .settings import resolve_use_case
-from .state_store import (
-    _STATE_DIR_RE,
-    STATE_DIR_NAME,
-    _format_state_id,
-    _latest_state_artifact,
-    _next_state_directory_order,
-    _parse_state_hash,
-    state_path,
-)
 from .status_render import (
     PROJECT_SCOPE_LABEL,
     SCOPE_LEGEND,
@@ -458,306 +458,6 @@ class SystemClock:
 
     def token_hex(self, nbytes: int) -> str:
         return secrets.token_hex(nbytes)
-
-
-class LocalGitRegister:
-    """Project-local ``.lgr`` register for generated ``.gts`` snapshots.
-
-    The TOML structure keeps:
-    - a ``[register]`` section for the current snapshot pointer, and
-    - a ``[[snapshots]]`` list for public ``state(HASH(.@))`` identifiers.
-
-    The private TIME-L0 anchor never leaves the local execution context.
-    ``snapshot_hash`` remains the canonical hash of the ``.gts`` payload, but it
-    does not participate in State identity.
-    """
-
-    _HASH_CHUNK_SIZE = 65536
-
-    def __init__(self, register_path: Path | str) -> None:
-        self.register_path = Path(register_path)
-
-    def record_snapshot(
-        self,
-        snapshot_path: Path | str,
-        *,
-        state_hash: str | None = None,
-        state_order: int | None = None,
-        recorded_snapshot_path: Path | str | None = None,
-    ) -> str:
-        resolved_snapshot_path = Path(snapshot_path).resolve()
-        public_snapshot_path = (
-            Path(recorded_snapshot_path).resolve()
-            if recorded_snapshot_path is not None
-            else resolved_snapshot_path
-        )
-        snapshot_path_marker = _path_to_environment_marker(public_snapshot_path)
-
-        data = self._load()
-        snapshots = data.setdefault("snapshots", [])
-        # A caller that does not name the State is asking this register to
-        # invent a name, which is what the timestamp anchor used to do for
-        # every write. The content hash of the snapshot being recorded is
-        # the State's name; falling back to the file's own digest keeps a
-        # hand-rolled call working without minting a clock reading.
-        public_state_hash = (
-            state_hash
-            if state_hash is not None
-            else self._hash_snapshot_file(resolved_snapshot_path)
-        )
-        snapshot_id = _format_state_id(public_state_hash)
-        if state_order is None:
-            state_order = self._next_state_order(snapshots, public_state_hash)
-        recorded_at = (
-            datetime.now(UTC)
-            .isoformat(timespec="milliseconds")
-            .replace("+00:00", "Z")
-        )
-        # One hash, one meaning. ``state_hash`` and ``snapshot_hash`` were
-        # two fields that never agreed — one a clock reading that named the
-        # directory, the other the content digest that named nothing. Now a
-        # State *is* its content, so there is one value and it is called
-        # what it is. Old registers keep both; nothing rewrites them.
-        snapshots.append(
-            {
-                "id": snapshot_id,
-                "state_hash": public_state_hash,
-                "state_order": state_order,
-                "snapshot_path": snapshot_path_marker,
-                "recorded_at": recorded_at,
-            }
-        )
-
-        register = data.setdefault("register", {})
-        register["current_snapshot_id"] = snapshot_id
-        register["current_state_hash"] = public_state_hash
-        register["current_snapshot_path"] = snapshot_path_marker
-
-        self.register_path.parent.mkdir(parents=True, exist_ok=True)
-        self.register_path.write_text(tomli_w.dumps(data), encoding="utf-8")
-        return snapshot_id
-
-    def _load(self) -> dict[str, Any]:
-        if not self.register_path.is_file():
-            return {"register": {}, "snapshots": []}
-        return tomllib.loads(self.register_path.read_text(encoding="utf-8"))
-
-    def _next_state_order(self, snapshots: list[dict[str, Any]], state_hash: str) -> int:
-        """Return the next local ordering suffix for State directories."""
-        max_order = -1
-        for entry in snapshots:
-            if not isinstance(entry, dict):
-                continue
-            entry_state_hash = entry.get("state_hash")
-            if not isinstance(entry_state_hash, str):
-                entry_state_hash = _parse_state_hash(str(entry.get("id", "")))
-            if entry_state_hash != state_hash:
-                continue
-            raw_order = entry.get("state_order")
-            if isinstance(raw_order, int):
-                max_order = max(max_order, raw_order)
-                continue
-            raw_id = str(entry.get("id", ""))
-            if raw_id.startswith("gts-"):
-                try:
-                    max_order = max(max_order, int(raw_id.removeprefix("gts-")) - 1)
-                except ValueError:
-                    continue
-        register_parent = self.register_path.parent
-        cgitsync_dir = (
-            register_parent.parent
-            if _STATE_DIR_RE.fullmatch(register_parent.name) is not None
-            else register_parent / ".cgitsync"
-        )
-        return max(max_order + 1, _next_state_directory_order(cgitsync_dir, state_hash))
-
-    def _hash_snapshot_file(self, snapshot_path: Path) -> str:
-        """Compute a canonical snapshot hash for ``snapshot_path``."""
-        try:
-            document = GtsDocument.from_toml(snapshot_path)
-        except (OSError, tomllib.TOMLDecodeError, ConfigValidationError):
-            digest = hashlib.sha256()
-            with snapshot_path.open("rb") as handle:
-                for chunk in iter(lambda: handle.read(self._HASH_CHUNK_SIZE), b""):
-                    digest.update(chunk)
-            return digest.hexdigest()
-        if document.snapshot_hash:
-            return document.snapshot_hash
-        return document.compute_snapshot_hash()
-
-
-def _get_actor() -> str:
-    """Return the current system user name, or ``'unknown'`` on failure."""
-    try:
-        import getpass
-
-        return getpass.getuser()
-    except Exception:  # pragma: no cover
-        return "unknown"
-
-
-def _topological_sort_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return *events* in topological order (parents before children).
-
-    Uses Kahn's BFS algorithm on the ``parent_sync_ids`` graph.
-    Events without a valid ``sync_id`` are appended last, preserving their
-    original relative order.
-    """
-    by_id: dict[str, dict[str, Any]] = {}
-    for event in events:
-        if isinstance(event, dict):
-            sid = str(event.get("sync_id", ""))
-            if sid:
-                by_id[sid] = event
-
-    in_degree: dict[str, int] = {sid: 0 for sid in by_id}
-    children: dict[str, list[str]] = {sid: [] for sid in by_id}
-
-    for sid, event in by_id.items():
-        for parent_id in event.get("parent_sync_ids", []):
-            parent_str = str(parent_id)
-            if parent_str in by_id:
-                in_degree[sid] += 1
-                children[parent_str].append(sid)
-
-    queue: list[str] = sorted(sid for sid, deg in in_degree.items() if deg == 0)
-    result: list[dict[str, Any]] = []
-    while queue:
-        current = queue.pop(0)
-        result.append(by_id[current])
-        for child in sorted(children.get(current, [])):
-            in_degree[child] -= 1
-            if in_degree[child] == 0:
-                queue.append(child)
-
-    # Append any events not reachable via the DAG (malformed entries)
-    seen: set[str] = {str(e.get("sync_id", "")) for e in result}
-    for event in events:
-        if not isinstance(event, dict) or str(event.get("sync_id", "")) not in seen:
-            result.append(event)
-
-    return result
-
-
-class SyncLedger:
-    """Append-only DAG ledger for synchronisation operations in the ``.lgr`` file.
-
-    Extends the :class:`LocalGitRegister` format with a ``[[ledger]]``
-    section that records each synchronisation operation as an immutable
-    DAG event.  Events are linked via ``parent_sync_ids`` to form a
-    directed acyclic graph that reconstructs workspace evolution history.
-
-    Schema for each ledger event:
-
-    .. code-block:: toml
-
-        [[ledger]]
-        sync_id         = "lgr-000001"
-        parent_sync_ids = []              # empty list for the first event
-        operation       = "clone"
-        timestamp       = "2026-05-20T19:48:50.159Z"
-        actor           = "user"
-        workspace_hash  = "<sha256>"      # document.snapshot_hash from .gts
-        gts_snapshot_id = "state(<hash>)" # links to [[snapshots]] entry
-        affected_repos  = ["demo", "dep"]
-
-    ``workspace_hash`` is the canonical SHA-256 digest of the ``.gts``
-    snapshot (``GtsDocument.snapshot_hash``), linking each event directly
-    to the immutable workspace state it records.
-    """
-
-    def __init__(self, register_path: Path | str) -> None:
-        self.register_path = Path(register_path)
-
-    def record_event(
-        self,
-        *,
-        operation: str,
-        workspace_hash: str,
-        gts_snapshot_id: str,
-        affected_repos: list[str],
-        actor: str | None = None,
-    ) -> str:
-        """Append an immutable event to the ledger and return the new ``sync_id``.
-
-        Parameters
-        ----------
-        operation:
-            The synchronisation operation that produced this event (e.g.
-            ``"clone"``, ``"freeze_release"``, ``"checkout"``).
-        workspace_hash:
-            The canonical SHA-256 snapshot hash (``GtsDocument.snapshot_hash``)
-            that identifies the workspace state after the operation.
-        gts_snapshot_id:
-            The public State id (``state(HASH(.@))``) assigned by the
-            :class:`LocalGitRegister` for the same ``.gts`` file.
-        affected_repos:
-            Ordered list of repository names involved in the operation.
-        actor:
-            The system user or process that triggered the operation.  When
-            ``None``, the current OS user name is detected automatically.
-        """
-        data = self._load()
-        events: list[dict[str, Any]] = data.setdefault("ledger", [])
-
-        sync_id = self._next_event_id(events)
-        parent_ids: list[str] = (
-            [str(events[-1]["sync_id"])] if events and isinstance(events[-1], dict) and events[-1].get("sync_id") else []
-        )
-
-        timestamp = (
-            datetime.now(UTC)
-            .isoformat(timespec="milliseconds")
-            .replace("+00:00", "Z")
-        )
-        resolved_actor = actor if actor is not None else _get_actor()
-
-        events.append(
-            {
-                "sync_id": sync_id,
-                "parent_sync_ids": parent_ids,
-                "operation": operation,
-                "timestamp": timestamp,
-                "actor": resolved_actor,
-                "workspace_hash": workspace_hash,
-                "gts_snapshot_id": gts_snapshot_id,
-                "affected_repos": affected_repos,
-            }
-        )
-
-        self.register_path.parent.mkdir(parents=True, exist_ok=True)
-        self.register_path.write_text(tomli_w.dumps(data), encoding="utf-8")
-        return sync_id
-
-    def history(self) -> list[dict[str, Any]]:
-        """Return all ledger events in topological DAG order (parents first)."""
-        data = self._load()
-        return _topological_sort_events(list(data.get("ledger", [])))
-
-    def replay(self) -> list[dict[str, Any]]:
-        """Return events in topological order for deterministic replay.
-
-        Alias for :meth:`history`.  Iterating the result in sequence
-        reconstructs the workspace evolution from first operation to last.
-        """
-        return self.history()
-
-    def _load(self) -> dict[str, Any]:
-        if not self.register_path.is_file():
-            return {"register": {}, "snapshots": [], "ledger": []}
-        return tomllib.loads(self.register_path.read_text(encoding="utf-8"))
-
-    def _next_event_id(self, events: list[dict[str, Any]]) -> str:
-        """Return the next sequential event id in ``lgr-XXXXXX`` format."""
-        max_id = 0
-        for entry in events:
-            raw_id = str(entry.get("sync_id", ""))
-            if raw_id.startswith("lgr-"):
-                try:
-                    max_id = max(max_id, int(raw_id.removeprefix("lgr-")))
-                except ValueError:
-                    continue
-        return f"lgr-{max_id + 1:06d}"
 
 
 def _release_snapshot_slug(release_name: str) -> str:
@@ -3845,6 +3545,122 @@ class ComplexGitSyncClient:
         self.orchestre.git_tree.git.bind_tree(self.registry)
         return self.registry
 
+    def memory_status(self, cgshome: str | Path) -> dict[str, Any]:
+        """What this workspace remembers, in one answer.
+
+        How many States it holds, how long its chain is, when it was last
+        written, which of the four verification answers it is in, and the
+        toolchain its first and last entries record — the interesting
+        question being whether those two differ.
+        """
+        workspace = Path(cgshome)
+        entries = read_all_entries(workspace / ".cgitsync" / "lgr")
+        report = self.verify(workspace)
+        states = sorted((workspace / ".cgitsync" / STATE_DIR_NAME).glob("*.gts"))
+        return {
+            "cgshome": str(workspace.resolve()),
+            "verification": report.state.name.lower().replace("_", "-"),
+            "findings": len(report.findings),
+            "states": len(states),
+            "entries": len(entries),
+            "last_recorded_at": entries[-1].recorded_at if entries else None,
+            "genesis_toolchain": dict(entries[0].toolchain) if entries else {},
+            "latest_toolchain": dict(entries[-1].toolchain) if entries else {},
+        }
+
+    def memory_list(self, cgshome: str | Path) -> list[dict[str, Any]]:
+        """Every State this workspace holds, with what the ledger says about it.
+
+        One row per State on disk, newest recording first. ``recorded_at``
+        and ``commands`` come from the entries that name it: a State seen
+        three times has one row and three commands, because being seen twice
+        is two ledger entries pointing at one name.
+
+        A State no entry records still appears, with no timestamp. It is
+        there, and saying so is more useful than hiding it — ``verify``
+        reports it as an orphan.
+        """
+        workspace = Path(cgshome)
+        cgitsync_dir = workspace / ".cgitsync"
+        entries = read_all_entries(cgitsync_dir / "lgr")
+        seen: dict[str, list[Any]] = {}
+        for entry in entries:
+            state_hash = _parse_state_hash(entry.state_id)
+            if state_hash is not None:
+                seen.setdefault(state_hash, []).append(entry)
+
+        rows: list[dict[str, Any]] = []
+        for snapshot in sorted((cgitsync_dir / STATE_DIR_NAME).glob("*.gts")):
+            recorded = seen.pop(snapshot.stem, [])
+            rows.append(
+                {
+                    "state": snapshot.stem,
+                    "path": str(snapshot),
+                    "recorded_at": recorded[-1].recorded_at if recorded else None,
+                    "commands": [entry.command for entry in recorded],
+                }
+            )
+        for state_hash, recorded in seen.items():
+            # Recorded, and not on disk. `verify` calls this MISSING_STATE;
+            # listing it is how a reader finds out which one.
+            rows.append(
+                {
+                    "state": state_hash,
+                    "path": None,
+                    "recorded_at": recorded[-1].recorded_at,
+                    "commands": [entry.command for entry in recorded],
+                }
+            )
+        rows.sort(key=lambda row: (row["recorded_at"] or "", row["state"]), reverse=True)
+        return rows
+
+    def memory_show(self, cgshome: str | Path, state: str) -> dict[str, Any]:
+        """One State: what it recorded, and every entry that names it.
+
+        *state* may be the full content hash or any unambiguous prefix of
+        one — a 64-character name is not something anybody retypes.
+        """
+        workspace = Path(cgshome)
+        cgitsync_dir = workspace / ".cgitsync"
+        matches = sorted(
+            snapshot
+            for snapshot in (cgitsync_dir / STATE_DIR_NAME).glob("*.gts")
+            if snapshot.stem.startswith(state)
+        )
+        if not matches:
+            raise GitSyncError(
+                f"no State in {cgitsync_dir / STATE_DIR_NAME} begins with {state!r}."
+            )
+        if len(matches) > 1:
+            names = ", ".join(snapshot.stem[:12] for snapshot in matches)
+            raise GitSyncError(f"{state!r} matches more than one State: {names}.")
+
+        snapshot = matches[0]
+        document = GtsDocument.from_toml(snapshot)
+        recorded = [
+            entry
+            for entry in read_all_entries(cgitsync_dir / "lgr")
+            if _parse_state_hash(entry.state_id) == snapshot.stem
+        ]
+        return {
+            "state": snapshot.stem,
+            "path": str(snapshot),
+            "project": document.read("project.name"),
+            "lifecycle_state": document.read("tree_state.lifecycle_state"),
+            "repos": len(document.repo_states),
+            "hash_canonicalisation": document.hash_canonicalisation,
+            "entries": [
+                {
+                    "seq": entry.seq,
+                    "recorded_at": entry.recorded_at,
+                    "command": entry.command,
+                    "outcome": entry.outcome,
+                    "toolchain": dict(entry.toolchain),
+                }
+                for entry in recorded
+            ],
+        }
+
     def verify(self, cgshome: str | Path, *, repair: bool = False) -> VerificationReport:
         """Say which of the four answers this workspace's history deserves.
 
@@ -3892,9 +3708,18 @@ class ComplexGitSyncClient:
                     f"cached HEAD={cached_head}, recomputed HEAD={true_head}",
                 ))
             report.findings.extend(_verify_states_on_disk(workspace, entries))
-            if report.findings:
-                # The store checks run after verify_chain, so the verdict is
-                # recomputed here rather than left at the chain's own.
+            # The store checks run after verify_chain, so the verdict is
+            # recomputed here rather than left at the chain's own.
+            #
+            # An orphan is deliberately not evidence of corruption. Every
+            # workspace used before the ledger was written holds States that
+            # no entry records, and they are history, not damage: calling
+            # that "corrupt" would teach exactly the shrug this command was
+            # rebuilt to stop. It is still reported — the reader decides.
+            if any(
+                finding is not Finding.ORPHAN_STATE
+                for _seq, finding, _detail in report.findings
+            ):
                 report.state = HistoryState.CORRUPT
             if repair:
                 verify_and_repair_head(lgr_dir)

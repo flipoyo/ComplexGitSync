@@ -25,7 +25,11 @@ from ComplexGitSync.git_tree import (
     make_repo_id,
     normalize_node_types,
 )
-from ComplexGitSync.ledger_entry import hash_time_l0_anchor, new_time_l0_anchor
+from ComplexGitSync.memory.ledger_entry import hash_time_l0_anchor, new_time_l0_anchor
+from ComplexGitSync.memory.states import (
+    _resolve_memory_state_directory,
+    _state_directory_name,
+)
 from ComplexGitSync.orchestre import (
     ComplexGitSyncClient,
     GtsDocument,
@@ -35,10 +39,6 @@ from ComplexGitSync.orchestre import (
     _looks_like_ssh_auth_failure,
     _protocol_switch_hint,
     build_registry_from_gts_document,
-)
-from ComplexGitSync.state_store import (
-    _resolve_memory_state_directory,
-    _state_directory_name,
 )
 
 
@@ -1924,8 +1924,8 @@ def _current_state_path(workspace: Path) -> Path:
     last wrote. It replaced the single-file register these tests used to
     read, which nothing writes any more.
     """
-    from ComplexGitSync.ledger_store import read_all_entries
-    from ComplexGitSync.state_store import _parse_state_hash, state_path
+    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.states import _parse_state_hash, state_path
 
     entries = read_all_entries(workspace / ".cgitsync" / "lgr")
     assert entries, "no ledger entry was written"
@@ -1934,7 +1934,7 @@ def _current_state_path(workspace: Path) -> Path:
 
 def _ledger_entries(workspace: Path):
     """Every entry in the workspace's chain, oldest first."""
-    from ComplexGitSync.ledger_store import read_all_entries
+    from ComplexGitSync.memory.ledger_store import read_all_entries
 
     return read_all_entries(workspace / ".cgitsync" / "lgr")
 

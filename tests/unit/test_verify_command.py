@@ -15,8 +15,8 @@ from pathlib import Path
 import tomli_w
 
 from ComplexGitSync.cli import main as cli_main
-from ComplexGitSync.integrity import Finding, HistoryState
-from ComplexGitSync.ledger_store import (
+from ComplexGitSync.memory.integrity import Finding, HistoryState
+from ComplexGitSync.memory.ledger_store import (
     HeadPointer,
     append_entry,
     read_head,

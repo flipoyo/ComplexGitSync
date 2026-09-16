@@ -67,7 +67,7 @@ def _run_git(repo_path: Path, *args: str) -> str:
 
 def _ledger_entries(repo_path: Path):
     """Every entry in the workspace's hash-chained ledger, oldest first."""
-    from ComplexGitSync.ledger_store import read_all_entries
+    from ComplexGitSync.memory.ledger_store import read_all_entries
 
     return read_all_entries(repo_path / ".cgitsync" / "lgr")
 

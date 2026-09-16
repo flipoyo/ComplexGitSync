@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.64
+# ComplexGitSync v0002.65
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -308,6 +308,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `import-submodules` | `<repo-root>` `--apply` `--recursive` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
 | Expert | `init-from-submodules` | `<repo-root>` `--cgs` `--max-depth` `--dry-run` `--force` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
 | Expert | `verify` | `--repair` `--search-dir` `--json` | Say whether this workspace's recorded history is verified, absent, legacy or corrupt. |
+| Expert | `memory` | `status` `list` `show <state>` | Look at what this workspace remembers: how much, when, and what produced it. Each subcommand takes `--search-dir`. |
 | Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
 | Configuration | `create-cgs` | `--project` `--repo` `--output` | Create a validated .cgs specification from CLI project definitions. |
@@ -442,6 +443,27 @@ not recognise its own errors and the suggestion never appeared.
 Only the messages change language. Your file names, sorting and number
 formats are untouched, and nothing about your own shell changes — only what
 `cgitsync` asks Git for while it runs.
+
+### What the workspace remembers
+
+`cgitsync` keeps a record of what it synchronised: a **State** per distinct
+tree it saw, and a **ledger** with one entry per operation. `memory` is how
+you look at it.
+
+```bash
+cgitsync memory status          # how much is remembered, and does it verify
+cgitsync memory list            # every State, newest recording first
+cgitsync memory show 2acdc98b   # one State, and every entry that names it
+```
+
+`memory status` prints the tool versions the records carry — cgitsync, git,
+pixi, and dvc or git-lfs where they were used. It shows the latest entry's,
+and the first entry's beside it when the two differ, so a chain that spans
+an upgrade says where the upgrade fell.
+
+A State named by `list` with no timestamp is one nobody recorded: history
+from before the ledger existed, or a file that arrived some other way.
+`verify` reports those, and does not call them corruption.
 
 ## 3.1 What `cgitsync` promises a script
 

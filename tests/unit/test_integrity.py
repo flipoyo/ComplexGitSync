@@ -1,4 +1,4 @@
-"""Tests for `ComplexGitSync.integrity` — the pure chain-verification module.
+"""Tests for `ComplexGitSync.memory.integrity` — the pure chain-verification module.
 
 `FakeEntry` here is a plain dataclass satisfying the `LedgerEntryLike`
 protocol structurally; it has no relationship to whatever concrete class
@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, replace
 from hypothesis import given
 from hypothesis import strategies as st
 
-from ComplexGitSync.integrity import (
+from ComplexGitSync.memory.integrity import (
     GENESIS_PREV,
     Finding,
     VerificationReport,

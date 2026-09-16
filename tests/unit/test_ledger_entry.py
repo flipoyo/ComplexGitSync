@@ -12,7 +12,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ComplexGitSync.ledger_entry import (
+from ComplexGitSync.memory.ledger_entry import (
     ClockProtocol,
     LedgerEntry,
     TimeL0State,
