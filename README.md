@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.67
+# ComplexGitSync v0002.68
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -308,10 +308,11 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `import-submodules` | `<repo-root>` `--apply` `--recursive` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
 | Expert | `init-from-submodules` | `<repo-root>` `--cgs` `--max-depth` `--dry-run` `--force` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
 | Expert | `verify` | `--repair` `--search-dir` `--json` | Say whether this workspace's recorded history is verified, absent, legacy or corrupt. |
-| Expert | `memory` | `status` `list` `show <state>` `init` `clone` `push` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. |
+| Expert | `memory` | `status` `list` `show <state>` `init` `mount` `adopt` `branch` `clone` `push` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. |
 | Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
 | Configuration | `create-cgs` | `--project` `--repo` `--output` | Create a validated .cgs specification from CLI project definitions. |
+| Configuration | `repo` | `create <provider:owner/name>` | Create a repository on its provider, without leaving cgitsync. `create` takes `--public` and `--description`; repositories are private otherwise. |
 
 > **`initialise` re-clones your dependencies.** Only the root repository at
 > CGSHOME is kept as it is. Every repository below it whose directory already
@@ -587,12 +588,13 @@ promise to anyone importing the package. The CLI is the product.
 
 ## 4. Further reading
 
-[tutorials/](tutorials/) — four tutorials, simplest to most advanced:
+[tutorials/](tutorials/) — five tutorials, simplest to most advanced:
 
 1. [01_first_multi_repo_workspace.md](tutorials/01_first_multi_repo_workspace.md) — full CLI lifecycle walkthrough on a synthetic sandbox tree.
 2. [02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md) — hand-author a `.cgs` for a real 19-repo project, then hand off to its existing `make` build.
 3. [03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md) — a real project with no `.cgs` of its own that still uses git submodules: one `init-from-submodules` command, what it runs underneath, and on to a pushed `READY` tree.
 4. [04_private_repos.md](tutorials/04_private_repos.md) — the repos that configure your project rather than being it: what `private = true` protects, when to add `writable = true`, and how their branches follow yours.
+5. [05_memory.md](tutorials/05_memory.md) — your project's memory: the five commands, run once per project, that turn what `cgitsync` remembers into a repository of its own, so it outlives the disk it was made on.
 
 [docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference
 book: full command details, expert-mode primitives (`add`/`commit`/`push`/...),

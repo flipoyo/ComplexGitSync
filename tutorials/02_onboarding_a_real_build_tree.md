@@ -1,4 +1,4 @@
-# Tutorial 2 of 4 — Onboarding a Real Build Tree
+# Tutorial 2 of 5 — Onboarding a Real Build Tree
 
 *Created: 2026-08-25*
 

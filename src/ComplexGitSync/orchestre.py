@@ -83,6 +83,7 @@ from .git_branch import DEFAULT_BRANCH, BranchResolution, resolve_entry_ref
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
+    GitProvider,
     GitRepo,
     RefKind,
     RepoLifecycleState,
@@ -153,11 +154,15 @@ from .memory.ledger_store import LedgerStoreError
 from .memory.repository import (
     commit_message,
     creation_command,
+    entry_already_present,
     format_mount_entry,
-    memory_branch,
+    insert_repo_entry,
     memory_mount_path,
     mount_entry,
     uncommitted_memory_paths,
+)
+from .memory.repository import (
+    memory_branch as memory_branch_name,
 )
 from .memory.states import (
     STATE_DIR_NAME,
@@ -179,6 +184,11 @@ from .paths import _resolve_project_root
 from .paths import resolve_bootstrap_root as _resolve_bootstrap_root
 from .paths import resolve_cgshome as _resolve_cgshome
 from .paths import resolve_initialise_cgshome as _resolve_initialise_cgshome
+from .provider import (
+    creation_plan,
+    looks_like_already_exists,
+    looks_like_not_signed_in,
+)
 from .registry import (
     _path_from_tree,
     build_gts_document_from_registry,
@@ -1008,6 +1018,45 @@ def _verify_states_on_disk(
                     f"{snapshot.name} is on disk and no entry records it",
                 ))
     return findings
+
+
+def _identifier_of(remote_url: str) -> str:
+    """The `.cgs` spelling of a remote URL, for a message that names a command.
+
+    Best effort and used only in prose: a URL this cannot read back is
+    printed as itself, which is still the thing the reader has to act on.
+    """
+    trimmed = remote_url.removesuffix(".git")
+    if ":" in trimmed and "@" in trimmed:
+        host, _, path = trimmed.partition(":")
+        host = host.rpartition("@")[2]
+    else:
+        parts = trimmed.split("/")
+        host, path = (parts[2], "/".join(parts[3:])) if len(parts) > 3 else ("", trimmed)
+    provider = {"github.com": "github", "gitlab.com": "gitlab", "codeberg.org": "codeberg"}.get(
+        host, ""
+    )
+    return f"{provider}:{path}" if provider and path else remote_url
+
+
+def _remote_url_for_identifier(identifier: str) -> str:
+    """The SSH remote URL a `.cgs` identifier points at.
+
+    `repo_remote_url` builds a URL from a repository *object*; this is the
+    same answer starting from the written form, which is what a command
+    given ``github:flipoyo/.memory`` on a command line has. The identifier
+    is parsed by `parse_repo_id` and by nothing else, as everywhere.
+    """
+    identity = parse_repo_id(identifier)
+    return repo_remote_url(
+        WorkingRepo(
+            project_owner_name=identity["project_owner_name"],
+            project_name=identity["project_name"],
+            repo_name=identity["repo_name"],
+            gitprovider=GitProvider(identity["gitprovider"]),
+        ),
+        AccessProtocol.SSH,
+    )
 
 
 def _verify_commit_logs(
@@ -3763,15 +3812,86 @@ class ComplexGitSyncClient:
         self.orchestre.git_tree.git.bind_tree(self.registry)
         return self.registry
 
+    def repo_create(
+        self,
+        identifier: str,
+        *,
+        private: bool = True,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a repository on its provider, using the provider's own tool.
+
+        *identifier* is the ordinary `.cgs` spelling —
+        ``github:flipoyo/.memory``, ``gitlab:some/group/project`` — parsed by
+        `parse_repo_id` and by nothing else, so the owner or the group comes
+        from the same place here as in every spec.
+
+        **No credential is read, stored or sent by this project.** It runs
+        `gh`, `glab` or `tea`, which the user has already signed in to. When
+        that tool is missing or signed out, this returns the command to run
+        rather than pretending it could have done it.
+
+        ``created`` says what happened, in one word:
+
+        - ``created`` — the repository did not exist and now does.
+        - ``exists`` — it was already there. That is the normal answer for
+          anybody who created it by hand before running this, so it is an
+          ordinary success and not a failure.
+        - ``unavailable`` — the tool is absent or signed out. The answer
+          carries the command and, when it applies, the sign-in command.
+        """
+        identity = parse_repo_id(identifier)
+        plan = creation_plan(identity, private=private, description=description)
+        if plan is None:
+            # Asked before the URL is built: a provider this project cannot
+            # create for may not be one it can spell a remote for either.
+            raise GitSyncError(
+                f"no repository-creation tool is known for provider "
+                f"{identity.get('gitprovider', '?')!r}. Create {identifier} on its "
+                "host, then carry on — every other command speaks plain Git."
+            )
+        remote_url = _remote_url_for_identifier(identifier)
+        answer: dict[str, Any] = {
+            "repository": identifier,
+            "remote_url": remote_url,
+            "private": private,
+            "command": plan.command,
+            "sign_in": plan.sign_in,
+        }
+        # Asked before running anything: a tool that refuses because the
+        # repository is already there says so in prose, and prose is a worse
+        # thing to decide on than a ref listing.
+        if self.git_runner.remote_reachable(remote_url):
+            self._log_event("repo_create", repository=identifier, outcome="exists")
+            return {**answer, "created": "exists"}
+
+        run = self.git_runner.run_tool(plan.tool, *plan.argv)
+        if not run.ran:
+            self._log_event("repo_create", repository=identifier, outcome="no-tool")
+            return {**answer, "created": "unavailable", "reason": f"{plan.tool} is not installed"}
+        if run.ok:
+            self._log_event("repo_create", repository=identifier, outcome="created")
+            return {**answer, "created": "created"}
+        if looks_like_already_exists(run.message):
+            self._log_event("repo_create", repository=identifier, outcome="exists")
+            return {**answer, "created": "exists"}
+        if looks_like_not_signed_in(run.message):
+            self._log_event("repo_create", repository=identifier, outcome="signed-out")
+            return {**answer, "created": "unavailable", "reason": f"{plan.tool} is not signed in"}
+        raise GitSyncError(f"{plan.command} failed: {run.message}")
+
     def memory_init(self, cgshome: str | Path, *, owner: str | None = None) -> dict[str, Any]:
         """Propose the `.cgs` entry that mounts this workspace's memory.
 
-        It proposes and stops. **Nothing here creates a repository**:
-        ComplexGitSync speaks Git and nothing else, and teaching it a
-        provider's API would mean a network call and a stored credential
-        where there is neither today. So it returns the entry to paste, the
-        branch the memory will live on, and the one command that creates the
-        repository — and waits for the user to run it.
+        It proposes and stops. **Nothing here creates or changes anything**:
+        it returns the entry to add, the branch the memory will live on, and
+        the command that creates the repository, and waits.
+
+        The three commands that act on what it proposes are
+        :meth:`repo_create`, :meth:`add_memory_repo_cgs` and
+        :meth:`memory_adopt`. None of them holds a credential: creating a
+        repository runs the provider's own tool, and everything else is
+        plain Git.
         """
         workspace = Path(cgshome)
         registry = self.registry
@@ -3792,11 +3912,64 @@ class ComplexGitSyncClient:
         return {
             "entry": entry,
             "line": format_mount_entry(entry),
-            "branch": memory_branch(root.name, branches.tree_branch or DEFAULT_BRANCH),
+            "branch": memory_branch_name(root.name, branches.tree_branch or DEFAULT_BRANCH),
             "mount_path": str(memory_mount_path(workspace)),
             "create_with": creation_command(entry),
             "mounted": memory_mount_path(workspace).joinpath(".git").exists(),
         }
+
+    def add_memory_repo_cgs(
+        self,
+        cgs_path: str | Path,
+        *,
+        cgshome: str | Path | None = None,
+        owner: str | None = None,
+    ) -> dict[str, Any]:
+        """Add this project's memory to a `.cgs` that already exists.
+
+        `create-cgs` writes a whole file from arguments and `configure`
+        builds one from scratch; both replace, and neither appends. This
+        appends — one entry, in the file's own layout, with every comment
+        left where it was. §4 of the MemoryOnboarding ticket says why that
+        matters more here than anywhere else.
+
+        The file is parsed and validated before it replaces anything, so a
+        `.cgs` is never left in a state that will not load.
+
+        Adding an entry that is already there changes nothing and says so:
+        running this twice is what a person does when they are not sure
+        whether they ran it once.
+        """
+        target = Path(cgs_path).resolve()
+        if not target.is_file():
+            raise GitSyncError(f"{target} is not a file.")
+        proposal = self.memory_init(cgshome or target.parent, owner=owner)
+        entry = dict(proposal["entry"])
+        line = str(proposal["line"])
+        original = target.read_text(encoding="utf-8")
+
+        if entry_already_present(original, str(entry["repository"]), str(entry["relative_path"])):
+            return {"cgs": str(target), "line": line, "added": False, "entry": entry}
+
+        try:
+            updated = insert_repo_entry(original, line)
+        except ValueError as exc:
+            raise GitSyncError(f"{target} cannot take a repository entry: {exc}.") from exc
+
+        # Validated before it replaces anything: a spec that will not load
+        # is worse than one that lacks an entry.
+        temporary = target.with_name(f".{target.name}.tmp")
+        temporary.write_text(updated, encoding="utf-8")
+        try:
+            CgsDocument.from_toml(temporary)
+        except (ConfigValidationError, tomllib.TOMLDecodeError) as exc:
+            temporary.unlink(missing_ok=True)
+            raise GitSyncError(
+                f"adding the memory entry would make {target.name} invalid: {exc}"
+            ) from exc
+        temporary.replace(target)
+        self._log_event("memory_mount", cgs=target, repository=entry["repository"])
+        return {"cgs": str(target), "line": line, "added": True, "entry": entry}
 
     def memory_clone(
         self,
@@ -3856,11 +4029,123 @@ class ComplexGitSyncClient:
         if branch is None or remote is None:
             proposal = self.memory_init(workspace, owner=owner)
             branch = branch or str(proposal["branch"])
-            remote = remote or repo_remote_url(
-                parse_repo_id(str(proposal["entry"]["repository"])),
-                AccessProtocol.SSH,
+            remote = remote or _remote_url_for_identifier(
+                str(proposal["entry"]["repository"])
             )
         return branch, remote
+
+    def memory_adopt(
+        self,
+        cgshome: str | Path,
+        *,
+        owner: str | None = None,
+        branch: str | None = None,
+        remote: str | None = None,
+    ) -> dict[str, Any]:
+        """Make the memory already on this disk *be* the memory repository.
+
+        The step that had no name. By the time anybody mounts a memory,
+        `.cgitsync` is full — States, a ledger, commit logs, logs — and none
+        of it may be lost, which is why `memory clone` refuses to run here
+        and is right to. This does what a person would otherwise do by hand:
+        the directory becomes a repository, gains the remote, and gets this
+        project branch's memory branch, with every file already there left
+        untracked and untouched.
+
+        Nothing is committed and nothing is pushed: `memory push` does both
+        and already knows how. This only ends the state where there is
+        nowhere to push *from*.
+        """
+        workspace = Path(cgshome)
+        mount = memory_mount_path(workspace)
+        if (mount / ".git").exists():
+            raise GitSyncError(
+                f"{mount} is already a repository. 'cgitsync memory push' sends what "
+                "it has gained."
+            )
+        if not mount.is_dir():
+            raise GitSyncError(
+                f"{mount} does not exist yet, so there is no memory to adopt. Run any "
+                "cgitsync command in this workspace first."
+            )
+
+        target_branch, remote_url = self._memory_remote(
+            workspace, owner=owner, branch=branch, remote=remote
+        )
+        if not self.git_runner.remote_reachable(remote_url):
+            raise GitSyncError(
+                f"{remote_url} is not there, or these credentials cannot see it. "
+                f"Create it with 'cgitsync repo create {_identifier_of(remote_url)}'."
+            )
+
+        base = self._memory_base_branch(workspace, owner=owner)
+        self.git_runner.init_repository(mount, branch=target_branch)
+        self.git_runner.configure_remote(mount, "origin", remote_url)
+        self.git_runner.fetch(mount)
+        started_from = ""
+        if base and self.git_runner.remote_branch_exists(remote_url, base):
+            # Started from the repository's own default branch so the branch
+            # shares its history, which is what makes `fallback_branch` in
+            # the mount entry mean something.
+            self.git_runner.create_branch(mount, target_branch, start_point=f"origin/{base}")
+            self.git_runner.checkout(mount, target_branch)
+            started_from = base
+        self._log_event(
+            "memory_adopt", mount=mount, branch=target_branch, started_from=started_from
+        )
+        return {
+            "mount": str(mount),
+            "branch": target_branch,
+            "remote": remote_url,
+            "started_from": started_from,
+            "pending": len(uncommitted_memory_paths(self.git_runner.status_porcelain(mount))),
+        }
+
+    def memory_branch(
+        self,
+        cgshome: str | Path,
+        project_branch: str,
+        *,
+        push: bool = True,
+    ) -> dict[str, Any]:
+        """Create the memory branch another project branch will need.
+
+        A memory born on a feature branch has never had a branch for the
+        branch it is about to merge into: merging ``memory-dev`` into
+        ``main`` asks for ``<project>`` where only ``<project>_memory-dev``
+        has ever existed. `merge` reports that and names this command rather
+        than creating the branch itself — a merge that makes its own target
+        cannot tell a new project branch from a mistyped one.
+
+        The new branch starts at the memory's current head and is pushed, so
+        the merge has something to merge into on both sides.
+        """
+        workspace = Path(cgshome)
+        mount = memory_mount_path(workspace)
+        if not (mount / ".git").exists():
+            raise GitSyncError(
+                f"{mount} is not a repository yet. Run 'cgitsync memory adopt' first."
+            )
+        registry = self.get_dependency_registry()
+        target = memory_branch_name(registry.get(ROOT_REPO_ID).name, project_branch)
+        existed = self.git_runner.local_branch_exists(mount, target)
+        if not existed:
+            self.git_runner.create_branch(mount, target)
+        if push:
+            self.git_runner.push(mount, ref_name=target)
+        self._log_event("memory_branch", mount=mount, branch=target, created=not existed)
+        return {
+            "mount": str(mount),
+            "project_branch": project_branch,
+            "branch": target,
+            "created": not existed,
+            "pushed": push,
+        }
+
+    def _memory_base_branch(self, workspace: Path, *, owner: str | None) -> str:
+        """The branch a new memory branch starts from — the entry's fallback."""
+        proposal = self.memory_init(workspace, owner=owner)
+        return str(proposal["entry"].get("fallback_branch") or DEFAULT_BRANCH)
 
     def memory_push(self, cgshome: str | Path, *, message: str | None = None) -> dict[str, Any]:
         """Commit what the memory gained and push it.

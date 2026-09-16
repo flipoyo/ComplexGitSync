@@ -19,6 +19,7 @@ is the module that would have broken it first.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -84,13 +85,98 @@ def format_mount_entry(entry: dict[str, Any]) -> str:
     return f"    {{ {rendered} }},"
 
 
+#: Where the `repos` array begins in a hand-written `.cgs`.
+_REPOS_ARRAY = re.compile(r"^[ \t]*repos[ \t]*=[ \t]*\[", re.MULTILINE)
+
+
+def entry_already_present(text: str, repository: str, relative_path: str) -> bool:
+    """Whether this `.cgs` already mounts *repository* at *relative_path*.
+
+    Read off the written text rather than a parsed document, because the
+    text is what is about to be edited: a file that already says this must
+    not be rewritten at all, not even into an equivalent form.
+    """
+    for line in text.splitlines():
+        if repository in line and relative_path in line and not line.lstrip().startswith("#"):
+            return True
+    return False
+
+
+def insert_repo_entry(text: str, line: str) -> str:
+    """Append *line* to this `.cgs`'s ``repos`` array, as text.
+
+    **The file is edited, not regenerated.** A `.cgs` is hand-written and
+    its comments are the half a person reads —
+    ``examples/complexgitsync4dev.cgs`` is thirty lines of explanation and
+    five of ``repos``. Re-serialising it through ``cgs_format.to_cgs()``
+    would produce a valid file that had lost every one of them. So the entry
+    is spliced in before the array's closing bracket and everything else is
+    left byte for byte as it was.
+
+    Raises :class:`ValueError` when there is no ``repos`` array to add to —
+    the caller turns that into a message naming the file.
+    """
+    opening = _REPOS_ARRAY.search(text)
+    if opening is None:
+        raise ValueError("no 'repos' array")
+    closing = _matching_bracket(text, opening.end() - 1)
+    if closing is None:
+        raise ValueError("the 'repos' array is never closed")
+
+    before = text[:closing]
+    # A last entry with no trailing comma is legal TOML and common in
+    # hand-written files; the new line needs one in front of it either way.
+    trimmed = before.rstrip()
+    if trimmed and trimmed[-1] not in "[,":
+        before = f"{trimmed},\n"
+    elif not before.endswith("\n"):
+        before = f"{before}\n"
+    return f"{before}{line}\n{text[closing:]}"
+
+
+def _matching_bracket(text: str, opening_index: int) -> int | None:
+    """The index of the ``]`` closing the ``[`` at *opening_index*.
+
+    Counts nesting and skips anything inside a quote or a comment, so
+    neither a bracket in a string nor an apostrophe in a comment — "the
+    project's own repository" — can end the array early. That apostrophe is
+    not a hypothetical: it is in the first `.cgs` this was tried on.
+    """
+    depth = 0
+    quote = ""
+    index = opening_index
+    while index < len(text):
+        character = text[index]
+        if quote:
+            if character == "\\":
+                index += 2
+                continue
+            if character == quote:
+                quote = ""
+        elif character == "#":
+            newline = text.find("\n", index)
+            index = len(text) if newline == -1 else newline
+            continue
+        elif character in "\"'":
+            quote = character
+        elif character == "[":
+            depth += 1
+        elif character == "]":
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    return None
+
+
 def creation_command(entry: dict[str, Any]) -> str:
     """The one command that creates the repository, for the user to run.
 
-    ComplexGitSync never creates a repository on a host: it speaks Git and
-    nothing else, and teaching it a provider's API would mean a network call
-    and a stored credential where there is neither. So `init` proposes, says
-    this, and waits.
+    `init` proposes and waits; `cgitsync repo create` is what runs this for
+    you, by handing it to the provider's own tool. Either way **no
+    credential is read, stored or sent by this project** — that was always
+    the reason it refused to create repositories, and it is the half of the
+    rule that stayed. See `provider.py`.
     """
     repository = str(entry["repository"])
     _, _, path = repository.partition(":")
@@ -132,6 +218,8 @@ __all__ = [
     "MOUNT_PATH",
     "commit_message",
     "creation_command",
+    "entry_already_present",
+    "insert_repo_entry",
     "format_mount_entry",
     "memory_branch",
     "memory_mount_path",

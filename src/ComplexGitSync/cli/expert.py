@@ -574,6 +574,44 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     )
     _add_search_dir_argument(clone)
 
+    mount = memory_commands.add_parser(
+        "mount",
+        help="Add this project's memory to a .cgs that already exists.",
+    )
+    mount.add_argument(
+        "--cgs",
+        metavar="FILE",
+        help="The .cgs to add the entry to. Defaults to the one this tree was built from.",
+    )
+    mount.add_argument("--owner", help="Account the memory repository belongs to.")
+    _add_search_dir_argument(mount)
+
+    adopt = memory_commands.add_parser(
+        "adopt",
+        help="Make the memory already on this disk be the memory repository.",
+    )
+    adopt.add_argument("--owner", help="Account the memory repository belongs to.")
+    adopt.add_argument("--branch", help="Branch to adopt. Defaults to this project's.")
+    adopt.add_argument(
+        "--remote", help="Adopt this address instead of the one the project's owner implies."
+    )
+    _add_search_dir_argument(adopt)
+
+    branch = memory_commands.add_parser(
+        "branch",
+        help="Create the memory branch another project branch needs, and push it.",
+    )
+    branch.add_argument(
+        "--project-branch",
+        required=True,
+        metavar="NAME",
+        help="The project branch whose memory branch to create, such as main.",
+    )
+    branch.add_argument(
+        "--no-push", action="store_true", help="Create it locally and do not push."
+    )
+    _add_search_dir_argument(branch)
+
     push = memory_commands.add_parser(
         "push", help="Commit what the memory gained and push it."
     )
@@ -901,6 +939,9 @@ def _handle_memory(args: argparse.Namespace) -> int:
             message=getattr(args, "message", None),
             remote=getattr(args, "remote", None),
             full=getattr(args, "full", False),
+            cgs=getattr(args, "cgs", None),
+            project_branch=getattr(args, "project_branch", None),
+            no_push=getattr(args, "no_push", False),
         ),
     )
 
@@ -916,6 +957,9 @@ def _execute_memory(
     message: str | None = None,
     remote: str | None = None,
     full: bool = False,
+    cgs: str | None = None,
+    project_branch: str | None = None,
+    no_push: bool = False,
 ) -> int:
     if subcommand == "status":
         return _print_memory_status(client.memory_status(cgshome))
@@ -931,9 +975,76 @@ def _execute_memory(
         )
         print(f"cloned={destination}")
         return EXIT_OK
+    if subcommand == "mount":
+        _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+        return _print_memory_mount(
+            client.add_memory_repo_cgs(
+                _cgs_to_edit(client, cgs, cgshome), cgshome=cgshome, owner=owner
+            )
+        )
+    if subcommand == "adopt":
+        _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+        return _print_memory_adopt(
+            client.memory_adopt(cgshome, owner=owner, branch=branch, remote=remote)
+        )
+    if subcommand == "branch":
+        _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+        return _print_memory_branch(
+            client.memory_branch(cgshome, project_branch or "", push=not no_push)
+        )
     if subcommand == "push":
         return _print_memory_push(client.memory_push(cgshome, message=message))
     return _print_memory_show(client.memory_show(cgshome, state or ""), full=full)
+
+
+def _cgs_to_edit(client: ComplexGitSyncClient, cgs: str | None, cgshome: Path) -> Path:
+    """Which `.cgs` `memory mount` edits.
+
+    The one the user named, or the one this tree was built from. The second
+    is asked of the loaded project rather than guessed from the directory,
+    because a workspace holds a *copy* of its spec under `.cgitsync/.cgs/`
+    and editing the copy would change nothing anybody reads.
+    """
+    if cgs:
+        return Path(cgs)
+    registry = client.get_dependency_registry()
+    source = registry.get("root").source_cgs_path
+    if source is not None and Path(source).is_file():
+        return Path(source)
+    raise GitSyncError(
+        f"this tree does not say which .cgs it was built from, so there is nothing "
+        f"to edit in {cgshome}. Name one with --cgs."
+    )
+
+
+def _print_memory_mount(answer: dict) -> int:
+    print(f"cgs={answer['cgs']}")
+    print(f"entry={answer['line'].strip()}")
+    if answer["added"]:
+        print("added=yes")
+        print("next: cgitsync memory adopt, then cgitsync memory push")
+    else:
+        print("added=already-there")
+    return EXIT_OK
+
+
+def _print_memory_adopt(answer: dict) -> int:
+    print(f"mount={answer['mount']}")
+    print(f"branch={answer['branch']}")
+    print(f"remote={answer['remote']}")
+    if answer["started_from"]:
+        print(f"started_from=origin/{answer['started_from']}")
+    print(f"waiting_to_be_committed={answer['pending']}")
+    print("next: cgitsync memory push")
+    return EXIT_OK
+
+
+def _print_memory_branch(answer: dict) -> int:
+    print(f"branch={answer['branch']}")
+    print(f"for_project_branch={answer['project_branch']}")
+    print(f"created={'yes' if answer['created'] else 'already-there'}")
+    print(f"pushed={'yes' if answer['pushed'] else 'no'}")
+    return EXIT_OK
 
 
 def _print_memory_init(proposal: dict) -> int:

@@ -733,6 +733,30 @@ def merge_status(
     return source, "merge", ()
 
 
+def _warn_branch_missing(repo: WorkingRepo, source: str, project_branch: str) -> None:
+    """Say that a repository was skipped because its branch does not exist.
+
+    A merge used to skip these in silence. For most repositories that is
+    harmless — there is nothing of that project branch in them. For a
+    private/local repository it is the opposite: its branch is *derived*
+    from the project's, so a missing one means the half of the change that
+    configures the project was quietly left behind. A memory born on a
+    feature branch is the first repository where that happens on the very
+    first merge, because the branch it merges *into* has never existed.
+    """
+    remedy = (
+        f" For this project's memory, 'cgitsync memory branch --project-branch "
+        f"{project_branch}' creates it."
+        if repo.effective_private
+        else ""
+    )
+    warnings.warn(
+        f"merge skipped {repo.name}: it has no branch {source!r}, here or on its "
+        f"remote, so nothing was merged into it.{remedy}",
+        stacklevel=3,
+    )
+
+
 def _describe_merge_conflict(
     repo_name: str, source: str, paths: Sequence[Path]
 ) -> str:
@@ -794,6 +818,7 @@ def merge_tree(
             on_source.append(repo.name)
             continue
         if status == "no-branch":
+            _warn_branch_missing(repo, source, project_branch)
             continue
         if status == "conflicts":
             blocked.append(_describe_merge_conflict(repo.name, source, conflicts))
@@ -865,6 +890,8 @@ def merge_tree_one_at_a_time(
             repo, git_runner, project_branch, project_name=project_name
         )
         if status in ("already-on-it", "no-branch"):
+            if status == "no-branch":
+                _warn_branch_missing(repo, source, project_branch)
             continue
         if status == "conflicts":
             # Let the merge run and fail: that is what writes the conflict

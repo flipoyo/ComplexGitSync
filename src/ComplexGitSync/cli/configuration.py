@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..cgs_format import DEFAULT_ACCESS_PROTOCOL, DEFAULT_BRANCH
+from ..errors import GitSyncError
 from ..git_repo import GitProvider
 from ..orchestre import (
     ComplexGitSyncClient,
@@ -22,6 +23,7 @@ from ..orchestre import (
     DiscoverReport,
 )
 from ._shared import _run_with_logging
+from .exit_codes import EXIT_OK, EXIT_UNUSABLE
 
 COMMANDS: dict[str, str] = {
     "discover": "Scan a directory for git repositories and draft a .cgs from what is checked out.",
@@ -30,6 +32,7 @@ COMMANDS: dict[str, str] = {
         "or a custom provider."
     ),
     "create-cgs": "Create a validated .cgs specification from CLI project definitions.",
+    "repo": "Create a repository on its provider, without leaving cgitsync.",
 }
 
 
@@ -107,6 +110,65 @@ def register_parsers(
                 help="Path to write the validated .cgs file.",
             )
             subparser.set_defaults(handler=_handle_create_cgs)
+        elif command_name == "repo":
+            _register_repo(subparser)
+
+
+def _register_repo(subparser: argparse.ArgumentParser) -> None:
+    """``repo create`` — a group, because creating is its first verb only.
+
+    Creating a repository is not a memory operation, even though the memory
+    is what needed it first. Putting it under ``memory`` would mean moving
+    it the day anything else needs a repository made.
+    """
+    repo_commands = subparser.add_subparsers(dest="repo_command", required=True)
+    create = repo_commands.add_parser(
+        "create",
+        help="Create a repository on GitHub, GitLab or Codeberg.",
+        description=(
+            "Runs the provider's own tool (gh, glab, tea), which you have already "
+            "signed in to. ComplexGitSync stores no credential and sends none."
+        ),
+    )
+    create.add_argument(
+        "repository",
+        metavar="PROVIDER:OWNER/REPOSITORY",
+        help="The repository to create, written as a .cgs writes it.",
+    )
+    create.add_argument(
+        "--public",
+        action="store_true",
+        help="Create it public. Repositories are created private by default.",
+    )
+    create.add_argument("--description", help="One line describing the repository.")
+    subparser.set_defaults(handler=_handle_repo)
+
+
+def _handle_repo(args: argparse.Namespace) -> int:
+    if args.repo_command != "create":  # pragma: no cover - argparse rejects any other
+        raise GitSyncError(f"unknown repo command {args.repo_command!r}.")
+    client = ComplexGitSyncClient()
+    answer = client.repo_create(
+        args.repository,
+        private=not getattr(args, "public", False),
+        description=getattr(args, "description", None),
+    )
+    print(f"repository={answer['repository']}")
+    print(f"remote_url={answer['remote_url']}")
+    if answer["created"] == "created":
+        print("created=yes")
+        return EXIT_OK
+    if answer["created"] == "exists":
+        print("created=already-there")
+        return EXIT_OK
+    # Not installed, or installed and signed out. The command to run is the
+    # whole answer, and it is the answer this tool gave before it could do
+    # any of this itself.
+    print(f"created=no ({answer.get('reason', 'tool unavailable')})")
+    print(f"run this instead:\n  {answer['command']}")
+    if answer["sign_in"]:
+        print(f"or sign in first:\n  {answer['sign_in']}")
+    return EXIT_UNUSABLE
 
 
 def _handle_configure(args: argparse.Namespace) -> int:

@@ -202,6 +202,31 @@ def _extract_paths_from_legacy_merge_tree(stdout: bytes, stderr: bytes) -> list[
 # ============================================================
 
 
+@dataclass(frozen=True, slots=True)
+class ToolRun:
+    """What a non-Git command-line tool answered.
+
+    ``ran`` is ``False`` when the tool is not installed at all, which is an
+    ordinary answer rather than a failure: a caller decides whether to print
+    the command for the user to run, or to give up. When it did run,
+    ``returncode``, ``stdout`` and ``stderr`` are exactly what it produced.
+    """
+
+    ran: bool
+    returncode: int = -1
+    stdout: str = ""
+    stderr: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.ran and self.returncode == 0
+
+    @property
+    def message(self) -> str:
+        """Whatever the tool said, wherever it said it."""
+        return self.stderr.strip() or self.stdout.strip()
+
+
 @runtime_checkable
 class GitRunnerProtocol(Protocol):
     """Structural contract for anything that can stand in for :class:`GitRunner`.
@@ -230,6 +255,12 @@ class GitRunnerProtocol(Protocol):
     def configure_remote(self, repo_path: Path | str, remote_name: str, remote_url: str) -> None: ...
 
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None: ...
+
+    def remote_reachable(self, remote_url: str) -> bool: ...
+
+    def init_repository(self, repo_path: Path | str, *, branch: str) -> None: ...
+
+    def run_tool(self, executable: str, *args: str) -> ToolRun: ...
 
     def ensure_fetch_refspec(self, repo_path: Path | str, *, remote: str = "origin") -> bool: ...
 
@@ -769,6 +800,56 @@ class GitRunner:
             return None
         reported = _decode_git_output(completed.stdout).strip()
         return reported.splitlines()[0].strip() if reported else None
+
+    def run_tool(self, executable: str, *args: str) -> ToolRun:
+        """Run a command-line tool that is not Git, and report what it said.
+
+        Here for the same reason :meth:`tool_version` is: this module is the
+        project's only ``import subprocess``, and a second importer would
+        break the rule that makes the decoding and environment policies
+        inescapable. What to run is decided in ``provider.py``, which knows
+        about providers and nothing about processes.
+
+        The tool inherits :func:`_non_interactive_git_env`, so a provider's
+        CLI cannot stop and wait for a password on a terminal nobody is
+        watching. Its credentials are its own business — this project stores
+        none and passes none.
+        """
+        try:
+            completed = subprocess.run(
+                [executable, *args],
+                capture_output=True,
+                check=False,
+                env=_non_interactive_git_env(),
+            )
+        except (OSError, ValueError):
+            return ToolRun(ran=False)
+        return ToolRun(
+            ran=True,
+            returncode=completed.returncode,
+            stdout=_decode_git_output(completed.stdout),
+            stderr=_decode_git_output(completed.stderr),
+        )
+
+    def remote_reachable(self, remote_url: str) -> bool:
+        """Whether a repository exists at *remote_url* and can be read.
+
+        Asked with ``ls-remote``, which answers for a repository that exists
+        but holds no refs at all — the state a freshly created one is in, and
+        the state this question is mostly asked about. A repository that is
+        not there, and one the credentials on this machine cannot see, both
+        answer ``False``: from here they are the same situation.
+        """
+        return self._query("ls-remote", remote_url).returncode == 0
+
+    def init_repository(self, repo_path: Path | str, *, branch: str) -> None:
+        """Make *repo_path* a repository whose first branch is *branch*.
+
+        ``git init`` leaves every file already in the directory exactly where
+        it is and untracked, which is the whole reason a memory can be
+        adopted rather than cloned over.
+        """
+        self._run("init", "-b", branch, cwd=repo_path)
 
     def _query_bytes(
         self,

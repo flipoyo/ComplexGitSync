@@ -4,7 +4,7 @@
 
 ## Abstract — read this first
 
-**What this document is.** The index of ComplexGitSync's four worked
+**What this document is.** The index of ComplexGitSync's five worked
 tutorials, ordered from simplest to most advanced.
 
 **Why it exists.** The root [README.md](../README.md) covers the CLI
@@ -12,11 +12,11 @@ command-by-command; these tutorials instead walk one topology end to end,
 so a first-time user sees the full lifecycle before hand-authoring their
 own `.cgs`.
 
-**What you will find.** Four tutorials, each building on the last, plus a
+**What you will find.** Five tutorials, each building on the last, plus a
 reminder that every command shown is a Pixi task.
 
 **Who it is for.** Anyone new to `cgitsync`. Start at Tutorial 1 regardless
-of your own project's shape — it establishes the vocabulary the other three
+of your own project's shape — it establishes the vocabulary the other four
 assume.
 
 **What you need to do with it.** Work the tutorials in order, or jump
@@ -28,15 +28,16 @@ graph LR
     T1 --> T2["02<br/>real build tree"]
     T2 --> T3["03<br/>adopting a real project"]
     T3 --> T4["04<br/>private repos<br/>local and distant"]
-    T4 --> REF["docs/MASTER.pdf<br/>full reference"]
+    T4 --> T5["05<br/>your project's memory"]
+    T5 --> REF["docs/MASTER.pdf<br/>full reference"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
-    class T1,T2,T3,T4 here;
+    class T1,T2,T3,T4,T5 here;
 ```
 
 ---
 
-Four worked examples, ordered from the simplest to the most advanced. Do
+Five worked examples, ordered from the simplest to the most advanced. Do
 them in order — each one builds on the last:
 
 1. **[01 — Your First Multi-Repo Workspace](01_first_multi_repo_workspace.md)**
@@ -55,6 +56,11 @@ them in order — each one builds on the last:
    Repositories you share between projects: how `private = true` declares
    one, why branch moves skip it but commit and push do not, and the safe
    order for shipping a change — run against ComplexGitSync's own tree.
+5. **[05 — Your project's memory](05_memory.md)**
+   What `cgitsync` remembers about your tree, and the five commands — run
+   once per project — that turn that memory into a repository of its own, so
+   it survives the disk it was made on and follows your project across
+   branches and machines.
 
 > **Every command in these tutorials is a Pixi task.** Run `pixi install`
 > once per checkout, then always invoke the CLI as `pixi run cgitsync ...`

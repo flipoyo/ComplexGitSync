@@ -930,6 +930,17 @@ class _FakeGitRunner:
     def commit_authored_at(self, repo_path, sha) -> str:
         return ""
 
+    def remote_reachable(self, remote_url) -> bool:
+        return True
+
+    def init_repository(self, repo_path, *, branch) -> None:
+        return None
+
+    def run_tool(self, executable, *args):
+        from ComplexGitSync.git_runner import ToolRun
+
+        return ToolRun(ran=False)
+
     def pull(self, repo_path, *, remote="origin", ref_name=None) -> None:
         return None
 

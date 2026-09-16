@@ -1,4 +1,4 @@
-# Tutorial 4 of 4 — Private repos: the ones that configure your project
+# Tutorial 4 of 5 — Private repos: the ones that configure your project
 
 *Created: 2026-09-07*
 

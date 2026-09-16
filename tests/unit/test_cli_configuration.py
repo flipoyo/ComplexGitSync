@@ -1,7 +1,7 @@
 """Unit tests for ``ComplexGitSync.cli.configuration``.
 
 Adapted from the end-to-end ``main([...])`` coverage of the "Configuration"
-command group (``discover``, ``configure``, ``create-cgs``) already
+command group (``discover``, ``configure``, ``create-cgs``, ``repo``) already
 exercised in ``tests/unit/test_cli_smoke.py``, so the ``_handle_*``/
 ``_execute_*`` pairs are covered directly against the new module rather
 than only through a full CLI invocation.
@@ -65,10 +65,10 @@ def _build_parser():
     return parser
 
 
-def test_register_parsers_registers_exactly_three_commands():
+def test_register_parsers_registers_exactly_four_commands():
     parser = _build_parser()
     registered = set(parser._subparsers._group_actions[0].choices.keys())
-    assert registered == {"discover", "configure", "create-cgs"}
+    assert registered == {"discover", "configure", "create-cgs", "repo"}
 
 
 def test_commands_dict_matches_registered_help_text():

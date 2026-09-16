@@ -26,8 +26,8 @@
       "public_symbols": 0
     },
     "cli/configuration.py": {
-      "internal_imports": 7,
-      "loc": 310,
+      "internal_imports": 10,
+      "loc": 364,
       "public_symbols": 1
     },
     "cli/exit_codes.py": {
@@ -37,7 +37,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 23,
-      "loc": 1541,
+      "loc": 1640,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -87,8 +87,8 @@
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 811,
-      "public_symbols": 3
+      "loc": 876,
+      "public_symbols": 4
     },
     "git_tree.py": {
       "internal_imports": 33,
@@ -142,8 +142,8 @@
     },
     "memory/repository.py": {
       "internal_imports": 2,
-      "loc": 107,
-      "public_symbols": 10
+      "loc": 179,
+      "public_symbols": 12
     },
     "memory/states.py": {
       "internal_imports": 0,
@@ -157,18 +157,23 @@
     },
     "operations.py": {
       "internal_imports": 21,
-      "loc": 1430,
+      "loc": 1454,
       "public_symbols": 25
     },
     "orchestre.py": {
-      "internal_imports": 122,
-      "loc": 4305,
+      "internal_imports": 128,
+      "loc": 4551,
       "public_symbols": 11
     },
     "paths.py": {
       "internal_imports": 3,
       "loc": 206,
       "public_symbols": 5
+    },
+    "provider.py": {
+      "internal_imports": 1,
+      "loc": 118,
+      "public_symbols": 4
     },
     "registry.py": {
       "internal_imports": 39,
