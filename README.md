@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.53
+# ComplexGitSync v0002.54
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -309,6 +309,29 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 > what to run by hand instead of failing.
 
 ### What `status` tells you
+
+#### Which branch you are on: `cgitsync_branch`
+
+The `summary` line starts with `cgitsync_branch=<branch>` — the branch your
+project is on, which is the branch its root repository is on. It is the one
+`cgitsync branch` and `cgitsync checkout` set, and the one every other
+repository follows.
+
+The table below it shows a branch per repository, and they are not all the
+same on purpose: a **private/local** repository keeps your settings on a
+branch named after your project, so with the project on `apoub` you will see
+`ComplexGitSync_apoub` there. That is the rule working, not a repository out
+of step. `cgitsync_branch` is the one line that answers "which branch am I
+on?" without you having to know which row to read.
+
+Two values are not branch names:
+
+| Value | Meaning |
+|---|---|
+| `detached` | The root repository is parked on a commit rather than a branch. `cgitsync checkout <branch>` puts the tree back. |
+| `unknown` | There is no branch to report — no project has been loaded, or Git could not be asked. |
+
+#### One row per repository
 
 `cgitsync status` prints one row per repository. Two columns answer "is this
 repository up to date?", and they answer it against the branch each

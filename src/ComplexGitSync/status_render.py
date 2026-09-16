@@ -101,6 +101,32 @@ SYNC_LEGEND = (
     "does not resolve, which 'cgitsync pull' or 'cgitsync push' repairs"
 )
 
+#: ``cgitsync_branch`` when the root repository is on no branch at all.
+#: The same word the ``LOCAL_BRANCH`` column already uses for that state, so
+#: one output never names it two ways.
+TREE_BRANCH_DETACHED = "detached"
+
+#: ``cgitsync_branch`` when there is no branch to report: the tree has no
+#: root, or Git could not be asked. Kept distinct from
+#: :data:`TREE_BRANCH_DETACHED` because "parked on a commit" and "nobody
+#: could tell" are different answers. The field is printed either way — a
+#: field that disappears is harder to read, by eye or by script, than one
+#: that says it does not know.
+TREE_BRANCH_UNKNOWN = "unknown"
+
+
+def _tree_branch_label(tree_branch: str | None, *, detached: bool) -> str:
+    """Name the branch the whole tree is on, for the ``summary`` line.
+
+    *tree_branch* is the root repository's branch, which is the tree's:
+    every other repository either follows it or derives its own name from
+    it. *detached* separates the two ways it can be missing.
+    """
+    if tree_branch:
+        return tree_branch
+    return TREE_BRANCH_DETACHED if detached else TREE_BRANCH_UNKNOWN
+
+
 PROJECT_SCOPE_LABEL = "project"
 PRIVATE_LOCAL_SCOPE_LABEL = "private/local"
 PRIVATE_DISTANT_SCOPE_LABEL = "private/distant"

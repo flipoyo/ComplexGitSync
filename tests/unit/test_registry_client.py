@@ -1473,7 +1473,10 @@ def test_status_rendering_contains_live_git_summary(tmp_path):
 
     rendered_status = client.status()
 
-    assert "summary ready=true complete=true repos=1 dirty=1 staged=1 ahead=1" in rendered_status
+    assert (
+        "summary ready=true complete=true cgitsync_branch=main repos=1 "
+        "dirty=1 staged=1 ahead=1" in rendered_status
+    )
     assert "REPOSITORY" in rendered_status
     assert "LOCAL_BRANCH" in rendered_status
     assert "UPSTREAM_BRANCH" in rendered_status
@@ -1500,9 +1503,75 @@ def test_status_ignores_cgitsync_managed_generated_files(tmp_path):
 
     rendered_status = client.status()
 
-    assert "summary ready=true complete=true repos=1 dirty=0 staged=0" in rendered_status
+    assert (
+        "summary ready=true complete=true cgitsync_branch=main repos=1 "
+        "dirty=0 staged=0" in rendered_status
+    )
     assert "demo" in rendered_status
     assert "clean" in rendered_status
+
+
+def test_status_names_the_trees_branch_not_the_derived_private_one(tmp_path):
+    """`cgitsync_branch` is the project's branch; a private/local repo derives its own.
+
+    The reason the field exists: with the tree on 'apoub', the status table
+    shows two different branches and only one of them is the answer to
+    "which branch am I on?".
+    """
+    root_path = tmp_path / "workspace" / "demo"
+    private_path = root_path / ".localSpec"
+    snapshot_path = _write_ready_private_gts(
+        tmp_path / "snapshot.gts", root_path=root_path, private_path=private_path
+    )
+    fake_runner = _FakeGitRunner({})
+    fake_runner.branch_overrides[root_path.resolve()] = "apoub"
+    fake_runner.branch_overrides[private_path.resolve()] = "demo_apoub"
+
+    client = ComplexGitSyncClient(git_runner=fake_runner)
+    client.load_gts(snapshot_path)
+
+    rendered_status = client.status()
+
+    assert "cgitsync_branch=apoub" in rendered_status
+    assert "demo_apoub" in rendered_status
+    # The private/local repository is where it belongs, so the tree is not
+    # split — the derived name is the rule working, not a deviation.
+    assert "tree is split across branches" not in rendered_status
+
+
+def test_status_reports_a_detached_root_as_detached(tmp_path):
+    root_path = tmp_path / "workspace" / "demo"
+    snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=root_path)
+    fake_runner = _FakeGitRunner({})
+    fake_runner.branch_overrides[root_path.resolve()] = None
+
+    client = ComplexGitSyncClient(git_runner=fake_runner)
+    client.load_gts(snapshot_path)
+
+    rendered_status = client.status()
+
+    assert "cgitsync_branch=detached" in rendered_status
+
+
+def test_status_reports_a_split_tree_against_the_trees_own_branch(tmp_path):
+    root_path = tmp_path / "workspace" / "demo"
+    private_path = root_path / ".localSpec"
+    snapshot_path = _write_ready_private_gts(
+        tmp_path / "snapshot.gts", root_path=root_path, private_path=private_path
+    )
+    fake_runner = _FakeGitRunner({})
+    fake_runner.branch_overrides[root_path.resolve()] = "apoub"
+    # Left behind: the settings repo should have followed to 'demo_apoub'.
+    fake_runner.branch_overrides[private_path.resolve()] = "demo"
+
+    client = ComplexGitSyncClient(git_runner=fake_runner)
+    client.load_gts(snapshot_path)
+
+    rendered_status = client.status()
+
+    assert "cgitsync_branch=apoub" in rendered_status
+    assert "tree is split across branches" in rendered_status
+    assert ".localSpec is on 'demo', expected 'demo_apoub'" in rendered_status
 
 
 def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
@@ -2521,6 +2590,75 @@ resolved_ref_name = "main"
 commit_sha = "sha-demo"
 project_owner_name = "owner"
 project_name = "{project_name}"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return snapshot_path
+
+
+def _write_ready_private_gts(
+    snapshot_path: Path,
+    *,
+    root_path: Path,
+    private_path: Path,
+    project_name: str = "demo",
+) -> Path:
+    """A READY snapshot of a project plus one private/local settings repo."""
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path.write_text(
+        f"""
+[document]
+format_version = "1.0"
+generated_at = "2026-01-01T00:00:00Z"
+command_origin = "clone"
+
+[project]
+name = "{project_name}"
+root_absolute_path = "{root_path.as_posix()}"
+
+[tree_state]
+lifecycle_state = "READY"
+is_ready = true
+registry_complete = true
+
+[[repo_state]]
+name = "{project_name}"
+node_type = "root"
+absolute_path = "{root_path.as_posix()}"
+relative_path = "."
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "main"
+target_ref_kind = "branch"
+target_ref_name = "main"
+resolved_ref_kind = "branch"
+resolved_ref_name = "main"
+commit_sha = "sha-demo"
+project_owner_name = "owner"
+project_name = "{project_name}"
+
+[[repo_state]]
+name = ".localSpec"
+node_type = "leaf"
+parent_name = "{project_name}"
+parent_absolute_path = "{root_path.as_posix()}"
+absolute_path = "{private_path.as_posix()}"
+relative_path = ".localSpec"
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "{project_name}"
+target_ref_kind = "branch"
+target_ref_name = "{project_name}"
+resolved_ref_kind = "branch"
+resolved_ref_name = "{project_name}"
+commit_sha = "sha-private"
+project_owner_name = "owner"
+project_name = ".localSpec"
+private = true
+writable = true
 """.strip()
         + "\n",
         encoding="utf-8",

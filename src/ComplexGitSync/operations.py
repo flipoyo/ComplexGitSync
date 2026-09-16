@@ -54,12 +54,12 @@ from .git_repo import (
 from .git_tree import (
     ROOT_REPO_ID,
     WorkingGitTree,
-    _as_optional_str,
     cgitsync_managed_state_paths,
     iter_tree,
     iter_tree_leaf_first,
     resolve_repo_for_path,
 )
+from .git_tree_branch import GitTreeBranches, tree_project_name
 
 if TYPE_CHECKING:
     from .orchestre import GitRunner
@@ -84,19 +84,6 @@ class PreflightDiagnostic:
 # ---------------------------------------------------------------------------
 # propagate_global_branch — Tier 2 helper
 # ---------------------------------------------------------------------------
-
-
-def tree_project_name(tree: WorkingGitTree) -> str | None:
-    """The project's name, which is what a private/local branch is named after.
-
-    Read from the root entry, the one place a tree records what project it
-    is. Returns ``None`` for a tree with no root, where the private/local
-    rule cannot apply anyway.
-    """
-    root = tree.repos.get(ROOT_REPO_ID)
-    if root is None:
-        return None
-    return _as_optional_str(root.project_name) or _as_optional_str(root.name)
 
 
 def propagate_global_branch(
@@ -129,11 +116,9 @@ def propagate_global_branch(
     *git_runner* is accepted for call-site symmetry and is unused; nothing
     here needs to look at a repository on disk.
     """
-    project_name = tree_project_name(tree)
+    branches = GitTreeBranches(tree)
     for repo in tree.values():
-        resolve_propagated_ref(
-            repo, branch_name, ref_kind=ref_kind, project_name=project_name
-        ).apply_to(repo)
+        branches.target(repo, branch_name, ref_kind=ref_kind).apply_to(repo)
 
 
 # ---------------------------------------------------------------------------
@@ -169,13 +154,11 @@ def create_global_branch(
     already on disk and never contacts the remote, so what a fresh clone can
     join is what the last fetch brought.
     """
-    project_name = tree_project_name(tree)
+    branches = GitTreeBranches(tree)
     for repo in iter_tree(tree, scope):
         if repo.effective_private and not repo.effective_writable:
             continue
-        target = resolve_propagated_ref(
-            repo, branch_name, project_name=project_name
-        ).name
+        target = branches.target(repo, branch_name).name
         if git_runner.local_branch_exists(repo.absolute_path, target):
             continue
         # A branch this clone already knows from the remote is that branch,
@@ -301,8 +284,8 @@ def _restart_tree(
     per-repo remote rewrite, and the refresh — is identical either way.
     """
     label = "pull-force" if force else "pull"
-    root_entry = tree.get("root")
-    observed = git_runner.current_branch(root_entry.absolute_path)
+    root_entry = tree.get(ROOT_REPO_ID)
+    observed = GitTreeBranches(tree, git_runner).observed(root_entry)
     current_branch = resolve_entry_ref(root_entry, observed_branch=observed).name
     # The runner matters here for the same reason it does in checkout_tree:
     # the loop below pulls whatever this decides, and a private/local repo's
@@ -940,13 +923,11 @@ def refresh_private_tree(
 
     planned: list[tuple[WorkingRepo, str]] = []
     blocked: list[str] = []
-    project_name = tree_project_name(tree)
+    branches = GitTreeBranches(tree, git_runner)
     for repo in iter_tree_leaf_first(tree, RepoScope.PRIVATE):
         # The base is the project's main-line settings branch -- the same rule
         # applied to "main", which by definition takes no suffix.
-        base = resolve_propagated_ref(
-            repo, DEFAULT_BRANCH, project_name=project_name
-        ).name
+        base = branches.target(repo, DEFAULT_BRANCH).name
         current = git_runner.current_branch(repo.absolute_path)
         if current is None or current == base:
             continue
@@ -1325,7 +1306,7 @@ def validate_branch_topology(
     BranchTopologyReport
         A deterministic, inspectable snapshot of the workspace branch topology.
     """
-    if "root" not in tree.repos:
+    if ROOT_REPO_ID not in tree.repos:
         return BranchTopologyReport(
             reference_branch=None,
             is_coherent=False,
@@ -1340,14 +1321,19 @@ def validate_branch_topology(
             repo_branches={},
         )
 
-    root = tree.get("root")
-    reference_branch = git_runner.current_branch(root.absolute_path)
+    # This report measures every repository against the root's branch
+    # itself, privacy included — a private repository sitting on its own
+    # branch is reported here as a divergence and is *not* one to the
+    # preflight below, which measures against `GitTreeBranches.expected`.
+    # The two questions differ on purpose, so only the reading is shared.
+    branches = GitTreeBranches(tree, git_runner)
+    reference_branch = branches.tree_branch
 
     conflicts: list[BranchTopologyConflict] = []
     repo_branches: dict[str, str | None] = {}
 
     for repo in iter_tree(tree):
-        current = git_runner.current_branch(repo.absolute_path)
+        current = branches.observed(repo)
         repo_branches[repo.name] = current
 
         if current is None:
@@ -1555,7 +1541,7 @@ def _collect_branch_alignment_diagnostics(
     *,
     scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
-    if "root" not in tree.repos:
+    if ROOT_REPO_ID not in tree.repos:
         return [
             PreflightDiagnostic(
                 PreflightSeverity.BLOCKING_ERROR,
@@ -1563,35 +1549,20 @@ def _collect_branch_alignment_diagnostics(
                 "tree has no root repository.",
             )
         ]
-    root = tree.get("root")
-    root_branch = git_runner.current_branch(root.absolute_path)
-    if root_branch is None:
-        return []
-    mismatched: list[PreflightDiagnostic] = []
-    project_name = tree_project_name(tree)
-    for repo in iter_tree_leaf_first(tree, scope):
-        # A private repository is shared with other projects and stays on a
-        # branch of its own, so the root's branch is not what it should be
-        # on. resolve_propagated_ref is the one place that rule lives, and
-        # resolve_existing_propagated_ref then applies the same fallback
-        # checkout would: a private/local repo whose derived branch has not
-        # been created is measured against where it actually belongs today,
-        # not against a branch nobody has made yet.
-        expected_branch = resolve_propagated_ref(
-            repo, root_branch, project_name=project_name
-        ).name
-        current = git_runner.current_branch(repo.absolute_path)
-        if current is not None and current != expected_branch:
-            detail = " (private to its own branch)" if repo.effective_private else ""
-            mismatched.append(
-                PreflightDiagnostic(
-                    PreflightSeverity.BLOCKING_ERROR,
-                    repo.name,
-                    f"branch misalignment: expected {expected_branch!r}{detail}, "
-                    f"found {current!r}.",
-                )
-            )
-    return mismatched
+    # A private repository is shared with other projects and stays on a
+    # branch of its own, so the root's branch is not what it should be on.
+    # GitTreeBranches asks git_branch.resolve_propagated_ref for each
+    # repository's own answer, which is where that rule lives.
+    return [
+        PreflightDiagnostic(
+            PreflightSeverity.BLOCKING_ERROR,
+            deviation.repo.name,
+            f"branch misalignment: expected {deviation.expected!r}"
+            f"{' (private to its own branch)' if deviation.repo.effective_private else ''}, "
+            f"found {deviation.observed!r}.",
+        )
+        for deviation in GitTreeBranches(tree, git_runner).deviations(scope=scope)
+    ]
 
 
 def _collect_tracking_diagnostics(

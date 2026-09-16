@@ -90,6 +90,11 @@
       "loc": 1251,
       "public_symbols": 26
     },
+    "git_tree_branch.py": {
+      "internal_imports": 11,
+      "loc": 220,
+      "public_symbols": 3
+    },
     "gts_document.py": {
       "internal_imports": 8,
       "loc": 313,
@@ -116,13 +121,13 @@
       "public_symbols": 1
     },
     "operations.py": {
-      "internal_imports": 20,
-      "loc": 1457,
-      "public_symbols": 26
+      "internal_imports": 21,
+      "loc": 1429,
+      "public_symbols": 25
     },
     "orchestre.py": {
-      "internal_imports": 87,
-      "loc": 3812,
+      "internal_imports": 89,
+      "loc": 3809,
       "public_symbols": 13
     },
     "paths.py": {
@@ -147,8 +152,8 @@
     },
     "status_render.py": {
       "internal_imports": 2,
-      "loc": 208,
-      "public_symbols": 8
+      "loc": 219,
+      "public_symbols": 10
     }
   },
   "ring0_modules": [

@@ -79,7 +79,7 @@ from .errors import (
     ConfigValidationError,
     GitSyncError,
 )
-from .git_branch import BranchResolution, resolve_entry_ref, resolve_propagated_ref
+from .git_branch import BranchResolution, resolve_entry_ref
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
@@ -116,6 +116,7 @@ from .git_tree import (
 from .git_tree import (
     fix_circularities as _fix_circularities,
 )
+from .git_tree_branch import GitTreeBranches, tree_project_name
 from .gts_document import GtsDocument
 from .integrity import Finding, VerificationReport, verify_chain
 from .ledger_entry import new_time_l0_anchor
@@ -126,7 +127,6 @@ from .operations import (
     RepoOutcome,
     ResolveOutcome,
     paths_outside_scope,
-    tree_project_name,
 )
 from .operations import (
     validate_branch_topology as _validate_branch_topology,
@@ -152,6 +152,7 @@ from .status_render import (
     PROJECT_SCOPE_LABEL,
     SCOPE_LEGEND,
     SYNC_LEGEND,
+    TREE_BRANCH_DETACHED,
     _render_status_table,
     _status_display_path,
     _status_line_is_untracked,
@@ -160,6 +161,7 @@ from .status_render import (
     _status_scope_label,
     _status_summary_counts,
     _status_tracking_label,
+    _tree_branch_label,
 )
 
 # ============================================================
@@ -3742,8 +3744,12 @@ class ComplexGitSyncClient:
     def status(self) -> str:
         registry = self.get_dependency_registry()
         root_path = registry.get(ROOT_REPO_ID).absolute_path
+        # One instance for the whole command: it reads each repository's
+        # branch once and answers both the table and the split-tree warning
+        # from that single read.
+        branches = GitTreeBranches(registry, self.git_runner)
         rows = [
-            self._repo_status_row(registry, entry, root_path)
+            self._repo_status_row(registry, entry, root_path, branches)
             for entry in iter_tree_leaf_first(registry)
         ]
         counts = _status_summary_counts(rows)
@@ -3754,6 +3760,8 @@ class ComplexGitSyncClient:
                 "summary "
                 f"ready={str(tree_state.is_ready).lower()} "
                 f"complete={str(tree_state.registry_complete).lower()} "
+                f"cgitsync_branch="
+                f"{_tree_branch_label(branches.tree_branch, detached=branches.is_detached)} "
                 f"repos={len(rows)} "
                 f"dirty={counts.dirty} "
                 f"staged={counts.staged} "
@@ -3765,7 +3773,7 @@ class ComplexGitSyncClient:
             )
         ]
         lines.append(_render_status_table(rows))
-        incoherent = self._branch_incoherence(registry)
+        incoherent = self._branch_incoherence(registry, branches)
         if incoherent:
             lines.append(
                 "warning: tree is split across branches — "
@@ -3780,7 +3788,11 @@ class ComplexGitSyncClient:
             lines.append("legend: HEAD ending with * differs from the commit recorded in the loaded .gts")
         return "\n".join(lines)
 
-    def _branch_incoherence(self, registry: WorkingGitTree) -> list[str]:
+    def _branch_incoherence(
+        self,
+        registry: WorkingGitTree,
+        branches: GitTreeBranches | None = None,
+    ) -> list[str]:
         """Repositories that are not on the branch the tree says they should be.
 
         ``status`` is the one command a user runs to ask whether the tree is
@@ -3788,43 +3800,31 @@ class ComplexGitSyncClient:
         for it to be wrong: a root checked out with plain ``git`` leaves every
         other repository behind, and the tree still reported ``READY``.
 
-        The same rule ``checkout`` would apply — so a private/distant repo on
-        its own branch, and a private/local repo on a derived branch that
-        exists, are both coherent, not findings.
+        The rule itself is ``GitTreeBranches``', so a private/distant repo on
+        its own branch, and a private/local repo on its derived branch, are
+        both coherent rather than findings — the same answer ``checkout``
+        would give. A repository Git cannot answer for is skipped: this is a
+        report, and one unreadable repository must not cost the reader the
+        other six.
         """
-        try:
-            root = registry.get(ROOT_REPO_ID)
-            root_branch = self.git_runner.current_branch(root.absolute_path)
-        except (KeyError, GitSyncError):
-            return []
-        if root_branch is None:
-            return []
-        findings: list[str] = []
-        project_name = tree_project_name(registry)
-        for entry in iter_tree_leaf_first(registry):
-            try:
-                current = self.git_runner.current_branch(entry.absolute_path)
-            except GitSyncError:
-                continue
-            if current is None:
-                continue
-            expected = resolve_propagated_ref(
-                entry, root_branch, project_name=project_name
-            ).name
-            if current != expected:
-                findings.append(f"{entry.name} is on {current!r}, expected {expected!r}")
-        return findings
+        branches = branches or GitTreeBranches(registry, self.git_runner)
+        return [
+            f"{deviation.repo.name} is on {deviation.observed!r}, "
+            f"expected {deviation.expected!r}"
+            for deviation in branches.deviations(ignore_unreadable=True)
+        ]
 
     def _repo_status_row(
         self,
         registry: WorkingGitTree,
         entry: WorkingRepo,
         root_path: Path,
+        branches: GitTreeBranches,
     ) -> tuple[str, str, str, str, str, str, str, str, str]:
         display_path = _status_display_path(entry, root_path)
         scope_label = _status_scope_label(entry)
         try:
-            branch = self.git_runner.current_branch(entry.absolute_path) or "detached"
+            branch = branches.observed(entry) or TREE_BRANCH_DETACHED
             head = self.git_runner.rev_parse_head(entry.absolute_path)
             status_lines = self._managed_status_lines(registry, entry)
             upstream_ref = self.git_runner.upstream_ref(entry.absolute_path)
