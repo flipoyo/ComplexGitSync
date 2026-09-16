@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.59
+# ComplexGitSync v0002.61
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -307,7 +307,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `freeze` | `<name>` `--private` `--dry-run` `--gts` | Freeze a versioned state and emit a .gts snapshot. |
 | Expert | `import-submodules` | `<repo-root>` `--apply` `--recursive` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
 | Expert | `init-from-submodules` | `<repo-root>` `--cgs` `--max-depth` `--dry-run` `--force` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
-| Expert | `verify` | `--repair` `--search-dir` `--json` | Verify the hash-chained .cgitsync/lgr register for tamper-evidence. |
+| Expert | `verify` | `--repair` `--search-dir` `--json` | Say whether this workspace's recorded history is verified, absent, legacy or corrupt. |
 | Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
 | Configuration | `create-cgs` | `--project` `--repo` `--output` | Create a validated .cgs specification from CLI project definitions. |
@@ -501,6 +501,21 @@ never parsed, since the flag itself may be what failed.
 | `.cgs` and `.gts` grammar | Versioned in the file, and the version is read on load. |
 | Python modules under `src/ComplexGitSync/` | **Not a public interface.** `ComplexGitSyncClient` is the CLI's own implementation. Import it and a refactor may break you; no deprecation is owed. |
 | `verify` | **Experimental.** The register it reads is being rewritten, so its output and its findings may change. Everything else in the command table is covered by the promises above. |
+
+`cgitsync verify` answers one of four things, and the difference matters if
+you gate a build on it:
+
+| Answer | Exit | Means |
+|---|---|---|
+| `verified` | `0` | A chain was read and every link held. |
+| `no-history` | `0` | Nothing recorded here yet. A new workspace is not a broken one. |
+| `legacy` | `1` | History exists, in the old single-file register, which carries no chain. Readable, not verifiable. |
+| `corrupt` | `1` | A chain was read and it does not hold. |
+
+`legacy` exits non-zero on purpose: "I cannot tell" is not a yes. Until the
+hash-chained register is the one being written, most workspaces answer
+`legacy` or `no-history` — which is the honest answer, and the reason this
+command no longer reports a clean chain over a directory nothing writes.
 
 The Python row is worth stating plainly: this project requires every
 capability to exist as a `ComplexGitSyncClient` method with a thin CLI pair,

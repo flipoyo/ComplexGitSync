@@ -15,7 +15,7 @@ from pathlib import Path
 import tomli_w
 
 from ComplexGitSync.cli import main as cli_main
-from ComplexGitSync.integrity import Finding
+from ComplexGitSync.integrity import Finding, HistoryState
 from ComplexGitSync.ledger_store import (
     HeadPointer,
     append_entry,
@@ -62,20 +62,51 @@ def _append(lgr_dir: Path, clock: _FixedClock, *, command: str, state_id: str):
 
 
 class TestClientVerify:
-    def test_empty_register_is_clean(self, tmp_path: Path):
+    def test_an_empty_register_is_no_history_not_a_verified_chain(self, tmp_path: Path):
+        """The bug this milestone exists for.
+
+        Nothing writes ``.cgitsync/lgr`` yet, so reading it empty and
+        reporting a clean chain answered "yes" for every workspace on earth,
+        a tampered one included.
+        """
         client = ComplexGitSyncClient()
 
         report = client.verify(tmp_path)
 
-        assert report.is_clean
+        assert report.state is HistoryState.NO_HISTORY
+        assert report.is_verified is False
         assert report.findings == []
 
-    def test_missing_cgitsync_dir_is_clean(self, tmp_path: Path):
+    def test_a_missing_workspace_is_no_history(self, tmp_path: Path):
         client = ComplexGitSyncClient()
 
         report = client.verify(tmp_path / "no-such-workspace")
 
-        assert report.is_clean
+        assert report.state is HistoryState.NO_HISTORY
+        assert report.is_verified is False
+
+    def test_a_legacy_single_file_register_is_readable_but_not_verifiable(
+        self, tmp_path: Path
+    ):
+        """Every workspace created before the chain is written is in this state."""
+        (tmp_path / ".cgitsync").mkdir()
+        (tmp_path / "demo.lgr").write_text("[register]\n", encoding="utf-8")
+
+        report = ComplexGitSyncClient().verify(tmp_path)
+
+        assert report.state is HistoryState.LEGACY
+        assert report.is_verified is False
+        # Legacy is not corruption: there is nothing to report against it.
+        assert report.findings == []
+
+    def test_a_legacy_register_inside_a_state_directory_is_found_too(
+        self, tmp_path: Path
+    ):
+        state_dir = tmp_path / ".cgitsync" / f"state({'a' * 64})_0"
+        state_dir.mkdir(parents=True)
+        (state_dir / "demo.lgr").write_text("[register]\n", encoding="utf-8")
+
+        assert ComplexGitSyncClient().verify(tmp_path).state is HistoryState.LEGACY
 
     def test_valid_chain_is_clean(self, tmp_path: Path):
         lgr_dir = _lgr_dir(tmp_path)
@@ -87,6 +118,8 @@ class TestClientVerify:
         report = client.verify(tmp_path)
 
         assert report.is_clean, report.findings
+        assert report.state is HistoryState.VERIFIED
+        assert report.is_verified is True
 
     def test_mutated_entry_is_reported_not_healed(self, tmp_path: Path):
         lgr_dir = _lgr_dir(tmp_path)
@@ -105,6 +138,7 @@ class TestClientVerify:
         report = client.verify(tmp_path)
 
         assert not report.is_clean
+        assert report.state is HistoryState.CORRUPT
         findings_by_kind = {finding for _seq, finding, _detail in report.findings}
         assert Finding.BAD_ENTRY_HASH in findings_by_kind
 
@@ -126,6 +160,9 @@ class TestClientVerify:
         report = client.verify(tmp_path)
 
         assert not report.is_clean
+        # A stale HEAD is found after the chain walk; the verdict still ends
+        # up corrupt rather than at the chain's own optimistic answer.
+        assert report.state is HistoryState.CORRUPT
         assert any(finding is Finding.HEAD_STALE for _seq, finding, _detail in report.findings)
         # Without --repair, the corrupt cache file must be left exactly as-is.
         assert read_head(lgr_dir) == HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64)
@@ -149,15 +186,17 @@ class TestClientVerify:
 
 
 class TestVerifyCli:
-    def test_verify_command_reports_clean_for_unstarted_register(self, tmp_path: Path, capsys):
+    def test_verify_command_says_no_history_for_an_unstarted_register(
+        self, tmp_path: Path, capsys
+    ):
         (tmp_path / ".cgitsync").mkdir()
 
         exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
         captured = capsys.readouterr()
 
         assert exit_code == 0
-        assert "status=clean" in captured.out
-        assert "findings=0" in captured.out
+        assert "status=no-history" in captured.out
+        assert "nothing has been recorded" in captured.out
 
     def test_verify_command_exits_nonzero_and_lists_findings_on_tamper(self, tmp_path: Path, capsys):
         (tmp_path / ".cgitsync").mkdir()
@@ -173,7 +212,7 @@ class TestVerifyCli:
         captured = capsys.readouterr()
 
         assert exit_code == 1
-        assert "status=findings" in captured.out
+        assert "status=corrupt" in captured.out
         assert "BAD_ENTRY_HASH" in captured.out
 
     def test_verify_command_requires_locatable_cgshome(self, tmp_path: Path, capsys):

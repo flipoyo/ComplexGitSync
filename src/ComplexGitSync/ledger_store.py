@@ -7,7 +7,8 @@ Contract: persist and load ``LedgerEntry`` records as one file per ``seq``
     ``HEAD`` cache.
 Imports: ledger_entry
 
-Design reference: ``.localSpec/DevTickets/IsolationPlan.md`` §2.3 (one file per entry),
+Design reference: ``.localSpec/AdditionalSpecs.md``, *The hash-chained
+register* (one file per entry),
 §2.5 (secret scrubbing), and ``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``
 work package P4.2-store.
 
@@ -114,7 +115,8 @@ def entry_path(lgr_dir: Path, seq: int) -> Path:
 def _best_effort_chmod(path: Path, mode: int) -> None:
     """Set ``mode`` on ``path``, never raising.
 
-    Permission bits are best-effort per ``IsolationPlan.md`` §2.5: on
+    Permission bits are best-effort per AdditionalSpecs.md's register
+    section: on
     platforms where ``os.chmod`` semantics don't map onto POSIX bits (chiefly
     Windows), this call either succeeds without fully applying the requested
     bits or fails outright — either way, storage must not break because of
@@ -138,7 +140,8 @@ def ensure_lgr_dir(lgr_dir: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Secret scrubbing (IsolationPlan.md §2.5) — applied before hashing/writing
+# Secret scrubbing (AdditionalSpecs.md, *The hash-chained register*) —
+# applied before hashing/writing
 # ---------------------------------------------------------------------------
 
 #: ``scheme://userinfo@host/...`` — captures the scheme, the userinfo (the
@@ -172,7 +175,7 @@ def _scrub_url_userinfo(value: str) -> str:
 def scrub_argv(argv: Sequence[str]) -> list[str]:
     """Return a copy of ``argv`` with credentials redacted.
 
-    Two independent rules, per ``IsolationPlan.md`` §2.5:
+    Two independent rules, per AdditionalSpecs.md's register section:
 
     - Any URL-shaped element (``scheme://user:token@host/...``) has its
       userinfo replaced with ``***``, keeping the scheme and host visible.
@@ -323,7 +326,8 @@ def read_all_entries(lgr_dir: Path) -> list[LedgerEntry]:
 
 
 # ---------------------------------------------------------------------------
-# HEAD cache — always treated as untrusted (IsolationPlan.md §2.3)
+# HEAD cache — always treated as untrusted (AdditionalSpecs.md, *The
+# hash-chained register*)
 # ---------------------------------------------------------------------------
 
 

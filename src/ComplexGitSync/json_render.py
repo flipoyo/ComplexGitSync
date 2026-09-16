@@ -150,11 +150,17 @@ def empty_status_payload(
 def verify_payload(
     *,
     cgshome: str,
-    is_clean: bool,
+    state: str,
+    entries: int,
     findings: Sequence[tuple[Any, Any, str]],
     repair: bool,
 ) -> dict[str, Any]:
     """What ``cgitsync verify --json`` prints.
+
+    ``status`` is one of the four answers — ``verified``, ``no-history``,
+    ``legacy``, ``corrupt`` — never a blur of two. An empty register reads
+    as ``no-history`` rather than as a clean chain, because a check that
+    cannot fail is not a check.
 
     ``findings`` carries each finding's name as a string rather than an enum
     member, so the object survives serialisation without a custom encoder
@@ -164,7 +170,8 @@ def verify_payload(
         "schema_version": SCHEMA_VERSION,
         "command": "verify",
         "cgshome": cgshome,
-        "status": "clean" if is_clean else "findings",
+        "status": state,
+        "entries": entries,
         "repair_attempted": repair,
         "findings": [
             {

@@ -8,10 +8,12 @@ Contract: given the previous chain entry (or none, for genesis) and the
     this module's.
 Imports: none
 
-Design reference: ``.localSpec/DevTickets/IsolationPlan.md`` §2.2 (hash-chained
+Design reference: ``.localSpec/AdditionalSpecs.md``, *The hash-chained
+register* (hash-chained
 register schema) and §3.3 (``ClockProtocol``). This module also absorbs the
 responsibility of ``L0.py``'s ``new_time_l0_anchor()``/``hash_time_l0_anchor()``
-(see ``.localSpec/DevTickets/IsolationPlan.md``'s feasibility review, and §3.3): the
+(see ``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``'s
+feasibility review): the
 same private TIME-L0 anchor generation, but driven through an injectable
 :class:`ClockProtocol` instead of reading ``datetime.now(UTC)``,
 ``time.time_ns()``, ``os.getpid()``, and ``secrets.token_hex()`` directly,
@@ -29,7 +31,8 @@ from datetime import UTC, datetime
 from typing import Any, Protocol, Sequence
 
 # Genesis predecessor hash — the fixed all-zero sentinel a chain's first
-# entry points at, per IsolationPlan.md §2.2 ("Genesis entry: prev =
+# entry points at, per AdditionalSpecs.md's register schema ("the genesis
+# entry carries prev =
 # 'sha256:' + '0' * 64").
 _GENESIS_PREV = "sha256:" + "0" * 64
 
@@ -102,8 +105,10 @@ def new_time_l0_anchor(clock: ClockProtocol) -> TimeL0State:
 class LedgerEntry:
     """One hash-chained ``.lgr`` register entry.
 
-    Schema fixed by ``.localSpec/DevTickets/IsolationPlan.md`` §2.2 — do not add or
-    rename fields without updating that document first.
+    Schema fixed by ``.localSpec/AdditionalSpecs.md``'s *The hash-chained
+    register* section — do not add or rename a field without changing that
+    section first. The entry is hash-chained, so a field added later means
+    migrating every chain already written.
     """
 
     seq: int
@@ -148,7 +153,7 @@ def _canonical_json(payload: dict[str, Any]) -> str:
     """Same canonicalisation discipline ``GtsDocument.compute_snapshot_hash``
     already uses in ``orchestre.py`` — stable key ordering, compact
     separators, no ASCII escaping. One canonicalisation idea, two users
-    (``IsolationPlan.md`` §2.2); reimplemented here rather than imported,
+    (AdditionalSpecs.md's register schema); reimplemented here rather than imported,
     since Ring 0 cannot depend on Ring 3.
     """
 

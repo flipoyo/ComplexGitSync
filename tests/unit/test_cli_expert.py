@@ -35,6 +35,7 @@ from types import SimpleNamespace
 import pytest
 
 from ComplexGitSync.discovery import ImportSubmodulesReport, SubmoduleEntry
+from ComplexGitSync.integrity import HistoryState
 
 _SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "ComplexGitSync"
 
@@ -956,15 +957,20 @@ def test_init_from_submodules_forwards_every_flag_to_the_client(monkeypatch, cap
 # ---------------------------------------------------------------------------
 
 
-def test_verify_command_reports_clean_for_unstarted_register(tmp_path, capsys):
+def test_verify_command_says_no_history_for_an_unstarted_register(tmp_path, capsys):
+    """An empty register is "nothing recorded", never "chain clean".
+
+    Exit 0 all the same: a new workspace is not a broken one.
+    """
     (tmp_path / ".cgitsync").mkdir()
 
     exit_code = _run(["verify", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "status=clean" in captured.out
+    assert "status=no-history" in captured.out
     assert "findings=0" in captured.out
+    assert "clean" not in captured.out
 
 
 def test_verify_command_exits_nonzero_and_lists_findings_on_tamper(monkeypatch, tmp_path, capsys):
@@ -973,7 +979,11 @@ def test_verify_command_exits_nonzero_and_lists_findings_on_tamper(monkeypatch, 
     class StubClient:
         def verify(self, cgshome, *, repair=False):
             finding = SimpleNamespace(name="BAD_ENTRY_HASH")
-            return SimpleNamespace(is_clean=False, findings=[(1, finding, "hash mismatch")])
+            return SimpleNamespace(
+                is_clean=False,
+                state=HistoryState.CORRUPT,
+                findings=[(1, finding, "hash mismatch")],
+            )
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
@@ -981,7 +991,7 @@ def test_verify_command_exits_nonzero_and_lists_findings_on_tamper(monkeypatch, 
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "status=findings" in captured.out
+    assert "status=corrupt" in captured.out
     assert "findings=1" in captured.out
     assert "BAD_ENTRY_HASH" in captured.out
 
@@ -993,7 +1003,11 @@ def test_verify_command_repair_flag_is_forwarded(monkeypatch, tmp_path, capsys):
     class StubClient:
         def verify(self, cgshome, *, repair=False):
             captured_call["repair"] = repair
-            return SimpleNamespace(is_clean=False, findings=[(1, SimpleNamespace(name="HEAD_STALE"), "stale")])
+            return SimpleNamespace(
+                is_clean=False,
+                state=HistoryState.CORRUPT,
+                findings=[(1, SimpleNamespace(name="HEAD_STALE"), "stale")],
+            )
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 

@@ -1,7 +1,8 @@
 """orchestre — orchestration hub for ComplexGitSync.
 
 Ring: 3 (imports downward from every Ring 0–2 module; owns the public
-    ComplexGitSyncClient facade — see .localSpec/DevTickets/IsolationPlan.md §1)
+    ComplexGitSyncClient facade — see
+    .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md §1)
 Contract: coordinate one GitTree's lifecycle end to end — load/validate/
     clone/sync/freeze — gating every mutating action on TreeLifecycleState;
     delegate document parsing, path resolution, state-directory allocation,
@@ -118,7 +119,7 @@ from .git_tree import (
 )
 from .git_tree_branch import GitTreeBranches, tree_project_name
 from .gts_document import GtsDocument
-from .integrity import Finding, VerificationReport, verify_chain
+from .integrity import Finding, HistoryState, VerificationReport, verify_chain
 from .json_render import dumps as json_dumps
 from .json_render import empty_status_payload, status_payload, verify_payload
 from .ledger_entry import new_time_l0_anchor
@@ -1200,6 +1201,24 @@ def _protocol_switch_hint(git_error_message: str, *, command: str) -> str | None
 # ============================================================
 #  ComplexGitSyncClient — public API facade (Tier 3)
 # ============================================================
+
+
+def _legacy_register_exists(workspace: Path) -> bool:
+    """Whether *workspace* holds history in the single-file ``.lgr`` format.
+
+    That format is what ``LocalGitRegister`` writes: one TOML file,
+    rewritten whole on every operation, with a sequential id and no chain.
+    It is readable and it is not verifiable — an edit to it leaves no trace
+    — so a workspace that has one has history that ``verify`` must report as
+    *legacy* rather than as nothing at all.
+
+    Every workspace created before the hash-chained register is written is
+    in exactly this state, which is why the answer matters more than it
+    looks.
+    """
+    if any((workspace / ".cgitsync").glob("state(*)_*/*.lgr")):
+        return True
+    return any(workspace.glob("*.lgr"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -3717,25 +3736,39 @@ class ComplexGitSyncClient:
         return self.registry
 
     def verify(self, cgshome: str | Path, *, repair: bool = False) -> VerificationReport:
-        """Verify the hash-chained ``.cgitsync/lgr`` register for tamper-evidence.
+        """Say which of the four answers this workspace's history deserves.
 
-        Checks chain linkage (``BROKEN_LINK``), entry-hash integrity
-        (``BAD_ENTRY_HASH``), sequence gaps/duplicates (``SEQ_GAP``/
-        ``SEQ_DUPLICATE``), and whether the cached ``HEAD`` pointer agrees
-        with the recomputed true head (``HEAD_STALE``). A register with no
-        entries yet is reported clean — nothing has been recorded, which is
-        not itself a problem.
+        ``report.state`` is the answer — **verified**, **no history**,
+        **legacy** or **corrupt** — and ``report.findings`` says why when it
+        is the last one. The four are fixed by
+        ``.localSpec/AdditionalSpecs.md``, *The hash-chained register*.
+
+        The distinction this method exists to make: an empty
+        ``.cgitsync/lgr`` used to be reported as a clean chain, so the
+        command answered "yes" for every workspace on earth, a tampered one
+        included. Nothing writes that directory yet, which made the answer
+        worthless everywhere. Now "I read a chain and it held" and "there was
+        no chain to read" are different answers, and a workspace whose only
+        history is the single-file ``.lgr`` register is told that its
+        history is readable but not verifiable.
+
+        What is checked when there *is* a chain: linkage (``BROKEN_LINK``),
+        entry-hash integrity (``BAD_ENTRY_HASH``), sequence gaps and
+        duplicates (``SEQ_GAP``/``SEQ_DUPLICATE``), and whether the cached
+        ``HEAD`` agrees with the recomputed head (``HEAD_STALE``).
 
         Store-level checks (``MISSING_STATE``, ``ORPHAN_STATE``,
         ``STATE_DIGEST_MISMATCH`` — cross-referencing entries against the
-        actual ``state(<hash>)_n/`` directories on disk) are not
-        implemented yet; this is chain-and-HEAD verification only.
+        state directories on disk) become possible only once a State is
+        named by its content, so they belong to that milestone, not here.
 
         With ``repair=True``, a stale ``HEAD`` cache is corrected in place.
         Entries themselves are never rewritten or deleted — a broken chain
-        is reported, not silently healed (``IsolationPlan.md`` §2.6).
+        is reported, not silently healed. A register that can be edited back
+        into looking clean is evidence of nothing.
         """
-        lgr_dir = Path(cgshome) / ".cgitsync" / "lgr"
+        workspace = Path(cgshome)
+        lgr_dir = workspace / ".cgitsync" / "lgr"
         entries = read_all_entries(lgr_dir)
         report = verify_chain(entries)
 
@@ -3748,8 +3781,13 @@ class ComplexGitSyncClient:
                     Finding.HEAD_STALE,
                     f"cached HEAD={cached_head}, recomputed HEAD={true_head}",
                 ))
+                # The HEAD check runs after verify_chain, so the verdict is
+                # recomputed here rather than left at the chain's own.
+                report.state = HistoryState.CORRUPT
             if repair:
                 verify_and_repair_head(lgr_dir)
+        elif _legacy_register_exists(workspace):
+            report.state = HistoryState.LEGACY
 
         return report
 
@@ -3864,10 +3902,12 @@ class ComplexGitSyncClient:
         """
         report = self.verify(cgshome, repair=repair)
         self.last_verify_report = report
+        lgr_dir = Path(cgshome) / ".cgitsync" / "lgr"
         return json_dumps(
             verify_payload(
                 cgshome=str(Path(cgshome).resolve()),
-                is_clean=report.is_clean,
+                state=report.state.name.lower().replace("_", "-"),
+                entries=len(read_all_entries(lgr_dir)),
                 findings=report.findings,
                 repair=repair,
             )

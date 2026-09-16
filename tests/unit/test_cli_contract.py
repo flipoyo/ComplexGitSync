@@ -225,7 +225,9 @@ def test_verify_json_matches_the_human_exit_code(tmp_path, capsys):
     assert human == machine == EXIT_OK
     payload = _one_json_object(captured.out)
     assert payload["command"] == "verify"
-    assert payload["status"] == "clean"
+    # Not "clean": nothing was recorded here, and saying so is the point.
+    assert payload["status"] == "no-history"
+    assert payload["entries"] == 0
     assert payload["findings"] == []
     assert payload["repair_attempted"] is False
 
@@ -259,7 +261,8 @@ def test_verify_json_reports_findings_and_exits_one(tmp_path, capsys):
 
     assert exit_code == EXIT_REFUSED
     payload = _one_json_object(captured.out)
-    assert payload["status"] == "findings"
+    assert payload["status"] == "corrupt"
+    assert payload["entries"] == 1
     assert payload["findings"][0]["finding"] == "BAD_ENTRY_HASH"
     assert isinstance(payload["findings"][0]["seq"], int)
 

@@ -9,11 +9,11 @@ the same canonicalisation routine (stable key ordering + deterministic JSON
 serialisation, sha256, ``"sha256:"`` prefix) that ``ledger_entry.py`` — authored
 concurrently as a separate, isolated work package, see
 ``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md`` WP P4.1 / P4.1-integrity —
-also implements. Both follow the "reuse ``GtsDocument``'s canonical-payload
-discipline" idea from ``.localSpec/DevTickets/IsolationPlan.md`` §2.2
-(``orchestre.py``'s ``GtsDocument._build_canonical_payload`` /
-``compute_snapshot_hash``, around line 483). This module is deliberately
-decoupled from ``ledger_entry.py`` — it depends only on the structural
+also implements. Both follow the canonical-payload discipline
+``.localSpec/AdditionalSpecs.md``'s *The hash-chained register* section
+fixes, itself modelled on ``GtsDocument._build_canonical_payload``.
+
+This module is deliberately decoupled from ``ledger_entry.py`` — it depends only on the structural
 ``LedgerEntryLike`` protocol below, never on that module's concrete class —
 so the few lines of canonicalisation logic are duplicated here on purpose,
 not by oversight. A later integration work package (P4.1-integrate) collapses
@@ -33,12 +33,17 @@ from typing import Protocol, Sequence
 HASH_ALGORITHM = "sha256"
 
 #: The `prev` value carried by the genesis (first) entry of a register —
-#: an all-zero digest, per `IsolationPlan.md` §2.2.
+#: an all-zero digest. Schema: `.localSpec/AdditionalSpecs.md`, *The
+#: hash-chained register*.
 GENESIS_PREV = f"{HASH_ALGORITHM}:" + "0" * 64
 
 
 class LedgerEntryLike(Protocol):
-    """Structural shape of one register entry, per `IsolationPlan.md` §2.2.
+    """Structural shape of one register entry.
+
+    The nine fields are fixed by `.localSpec/AdditionalSpecs.md`'s *The
+    hash-chained register* section; adding or renaming one is a change to
+    that section first.
 
     Any object with these attributes satisfies this protocol — including,
     once it exists, `ledger_entry.py`'s concrete entry class. Nothing in
@@ -58,7 +63,9 @@ class LedgerEntryLike(Protocol):
 
 
 class Finding(Enum):
-    """Taxonomy of register-integrity problems, per `IsolationPlan.md` §2.4.
+    """Taxonomy of register-integrity problems.
+
+    Listed in `.localSpec/AdditionalSpecs.md`, *The hash-chained register*.
 
     All eight members are defined here because the type is shared with the
     later `verify_store()` work (Ring 1, filesystem-backed, out of scope for
@@ -76,16 +83,47 @@ class Finding(Enum):
     HEAD_STALE = auto()  # cached HEAD disagrees with recomputed chain
 
 
+class HistoryState(Enum):
+    """What a verification pass actually found, in one word.
+
+    A check that cannot fail is not a check. Reading an empty directory and
+    calling the chain clean answered "yes" for every workspace in
+    existence, including a tampered one — so "I verified a chain" and "there
+    was nothing to verify" are now different answers, and so is "there is
+    history here that this format cannot verify".
+
+    The four are fixed by `.localSpec/AdditionalSpecs.md`, *The hash-chained
+    register*.
+    """
+
+    VERIFIED = auto()  # a non-empty chain was read and every link held
+    NO_HISTORY = auto()  # nothing recorded here yet — not a failure
+    LEGACY = auto()  # single-file register: readable, not verifiable
+    CORRUPT = auto()  # a chain was read and it does not hold
+
+
 @dataclass
 class VerificationReport:
     """The result of a verification pass: what was found, and where."""
 
     findings: list[tuple[int, Finding, str]] = field(default_factory=list)
+    state: HistoryState = HistoryState.NO_HISTORY
 
     @property
     def is_clean(self) -> bool:
-        """True when no findings were recorded — nothing wrong was detected."""
+        """True when no findings were recorded — nothing wrong was detected.
+
+        Deliberately **not** the same question as "is this history
+        verified". An empty register has no findings and is not evidence of
+        anything; :attr:`state` is what says which of the four answers this
+        pass reached.
+        """
         return not self.findings
+
+    @property
+    def is_verified(self) -> bool:
+        """True only when a real chain was read and it held."""
+        return self.state is HistoryState.VERIFIED
 
 
 def _canonical_payload(entry: LedgerEntryLike) -> dict[str, object]:
@@ -132,7 +170,9 @@ def verify_chain(entries: Sequence[LedgerEntryLike]) -> VerificationReport:
 
     `entries` must be given in chain (append) order — the order entries were
     originally recorded in, e.g. ascending by `seq` for an uncorrupted
-    register. An empty sequence is trivially valid (`is_clean` is True).
+    register. An empty sequence produces no findings and
+    `HistoryState.NO_HISTORY`: there was nothing to check, which is not the
+    same answer as "checked, and it holds".
 
     Checks performed, each independent of the others:
 
@@ -149,7 +189,8 @@ def verify_chain(entries: Sequence[LedgerEntryLike]) -> VerificationReport:
       *also* reported `BROKEN_LINK`, without re-attempting to resynchronise
       against a later entry's own hash. This is a deliberate, conservative
       choice matching the threat model's tamper-*evidence* goal
-      (`IsolationPlan.md` §2.1): a single rewritten or deleted entry means
+      (`.localSpec/AdditionalSpecs.md`, *The hash-chained register* —
+      tamper-evidence): a single rewritten or deleted entry means
       nothing downstream of it can be trusted to still describe the real
       history, even if the raw bytes of later entries happen to still be
       self-consistent among themselves — so `verify` should say so, loudly,
@@ -157,12 +198,19 @@ def verify_chain(entries: Sequence[LedgerEntryLike]) -> VerificationReport:
     """
     findings: list[tuple[int, Finding, str]] = []
     if not entries:
-        return VerificationReport(findings=findings)
+        # No chain was read. Whether that means "nothing recorded yet" or
+        # "history exists in the old format" is a filesystem question this
+        # pure module cannot answer; the caller upgrades NO_HISTORY to
+        # LEGACY when it finds a single-file register.
+        return VerificationReport(findings=findings, state=HistoryState.NO_HISTORY)
 
     _check_seq_integrity(entries, findings)
     _check_hash_chain(entries, findings)
 
-    return VerificationReport(findings=findings)
+    return VerificationReport(
+        findings=findings,
+        state=HistoryState.CORRUPT if findings else HistoryState.VERIFIED,
+    )
 
 
 def _check_seq_integrity(

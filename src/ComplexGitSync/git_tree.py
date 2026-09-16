@@ -1,7 +1,7 @@
 """git_tree — core dependency-tree model for ComplexGitSync.
 
 Ring: 1 (filesystem only, no subprocess — sync_gitignore writes .gitignore
-    across the tree; confirmed by IsolationPlan.md's feasibility review,
+    across the tree; confirmed by the isolation work's feasibility review,
     which reclassified this module out of Ring 0 for exactly that reason)
 Contract: own the in-memory GitTree/WorkingGitTree structures, traversal,
     lifecycle state, and .gitignore maintenance; to_cgs() only delegates

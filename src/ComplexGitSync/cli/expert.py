@@ -19,6 +19,7 @@ from pathlib import Path
 
 from ..errors import GitSyncError
 from ..git_repo import RefKind, RepoScope
+from ..integrity import HistoryState
 from ..orchestre import ComplexGitSyncClient
 from ._shared import (
     _add_gitignore_sync_arguments,
@@ -38,6 +39,7 @@ from ._shared import (
     _run_with_logging,
     _warn_paths_reaching_configuration_repos,
 )
+from .exit_codes import EXIT_OK, EXIT_REFUSED
 
 COMMANDS: dict[str, str] = {
     "purge": "Remove generated clone state for a .cgs workspace.",
@@ -890,7 +892,36 @@ def _execute_verify_json(
 ) -> int:
     rendered["payload"] = client.verify_json(cgshome, repair=repair)
     report = client.last_verify_report
-    return 0 if report is not None and report.is_clean else 1
+    if report is None:  # pragma: no cover - verify_json always records one
+        return EXIT_REFUSED
+    return _verify_exit_code(report.state)
+
+
+#: What each of the four answers prints, and what it means for a reader who
+#: has just been told it. The wording says what was actually checked: a
+#: command that answered "clean" over a directory nothing writes taught its
+#: users to ignore it.
+_VERIFY_ANSWERS: dict[HistoryState, tuple[str, str]] = {
+    HistoryState.VERIFIED: (
+        "verified",
+        "every link in the recorded chain checked out.",
+    ),
+    HistoryState.NO_HISTORY: (
+        "no-history",
+        "nothing has been recorded in this workspace yet. "
+        "That is not a failure: a new workspace is not a broken one.",
+    ),
+    HistoryState.LEGACY: (
+        "legacy",
+        "history exists here, in the single-file .lgr register, which carries "
+        "no chain. It can be read; it cannot be verified, and an edit to it "
+        "leaves no trace.",
+    ),
+    HistoryState.CORRUPT: (
+        "corrupt",
+        "a chain was read and it does not hold.",
+    ),
+}
 
 
 def _execute_verify(
@@ -902,17 +933,28 @@ def _execute_verify(
     report = client.verify(cgshome, repair=repair)
     # The workspace was already announced with the input that chose it, when
     # _resolve_cgshome discovered it (see cli/_shared._announce_cgshome_resolution).
-    if report.is_clean:
-        print("status=clean")
-        print("findings=0")
-        return 0
-    print("status=findings")
+    label, explanation = _VERIFY_ANSWERS[report.state]
+    print(f"status={label}")
     print(f"findings={len(report.findings)}")
+    print(explanation)
     for seq, finding, detail in report.findings:
         print(f"seq={seq} finding={finding.name} detail={detail}")
-    if repair:
+    if repair and report.state is not HistoryState.NO_HISTORY:
         print("repair=attempted (HEAD cache only; entries are never rewritten or deleted)")
-    return 1
+    return _verify_exit_code(report.state)
+
+
+def _verify_exit_code(state: HistoryState) -> int:
+    """``0`` only when the answer is yes, or when there was nothing to ask.
+
+    ``legacy`` exits non-zero on purpose. The question is "is this history
+    intact?", and "I cannot tell" is not a yes — a build gating on
+    ``verify`` must not pass because the evidence is in a format that cannot
+    be checked.
+    """
+    if state in (HistoryState.VERIFIED, HistoryState.NO_HISTORY):
+        return EXIT_OK
+    return EXIT_REFUSED
 
 
 def _execute_clone(
