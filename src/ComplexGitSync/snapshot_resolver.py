@@ -10,7 +10,7 @@ Contract: given optional CLI arguments (an explicit path and/or a search
     ``CgshomeResolution``/``SnapshotResolution`` record naming *which input
     decided it*, so the CLI can report a workspace the user did not expect
     instead of silently acting on it. This module never prints.
-Imports: stdlib only (os, re, tomllib, dataclasses, pathlib)
+Imports: settings
 
 Temporary duplication with ``state_store.py``
 -----------------------------------------------
@@ -40,6 +40,8 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+
+from .settings import default_workspace
 
 # ---------------------------------------------------------------------------
 # Minimal, self-contained copy of the canonical state-directory naming
@@ -140,6 +142,12 @@ CGSHOME_ORIGIN_SEARCH_DIR = "--search-dir"
 CGSHOME_ORIGIN_ENVIRONMENT = "$CGSHOME"
 CGSHOME_ORIGIN_CWD = "current directory"
 
+#: The fourth and last answer: no input found a workspace, so the default one
+#: was used. Named separately from the three inputs above because it is not an
+#: input at all — nobody asked for it, and the CLI says so rather than letting
+#: a user believe the tool found something of theirs.
+CGSHOME_ORIGIN_DEFAULT = "default workspace"
+
 SNAPSHOT_ORIGIN_EXPLICIT = "explicit path"
 SNAPSHOT_ORIGIN_REGISTER = "register"
 SNAPSHOT_ORIGIN_MOST_RECENT = "most recent snapshot"
@@ -202,17 +210,31 @@ class SnapshotResolution:
 def describe_cgshome(search_dir: str | Path | None = None) -> CgshomeResolution:
     """Resolve CGSHOME and report which input decided it.
 
-    Resolution order (unchanged, and deliberately so — the documented
-    bootstrap workflow tells users to export ``$CGSHOME``):
+    Resolution order (the first three unchanged, and deliberately so — the
+    documented bootstrap workflow tells users to export ``$CGSHOME``):
 
     1. Walk up from ``search_dir`` when provided.
     2. Walk up from ``$CGSHOME`` when defined.
     3. Walk up from the current working directory.
+    4. Fall back to the default workspace, creating it once if it does not
+       exist yet (``settings.default_workspace``).
+
+    Step 4 is why this no longer raises for an ordinary run: a workspace
+    that holds nothing is a valid answer, and the alternative was a
+    traceback the first time anyone typed a command outside a tree. It is
+    reported as :data:`CGSHOME_ORIGIN_DEFAULT` so the answer never
+    masquerades as something the user pointed at.
+
+    An explicit *search_dir* is never overridden by the default: the user
+    named a directory, and silently working somewhere else would be the
+    sharpest edge this project has.
 
     Raises
     ------
     FileNotFoundError
-        If no ancestor contains a ``.cgitsync`` directory.
+        If *search_dir* was given and no ancestor of it contains a
+        ``.cgitsync`` directory, or if the default workspace cannot be
+        created.
     """
     start_dir: Path
     origin: str
@@ -232,6 +254,15 @@ def describe_cgshome(search_dir: str | Path | None = None) -> CgshomeResolution:
         if (candidate / ".cgitsync").is_dir():
             return CgshomeResolution(
                 path=candidate.resolve(), origin=origin, start_dir=start_dir
+            )
+
+    if origin != CGSHOME_ORIGIN_SEARCH_DIR:
+        fallback = default_workspace()
+        if fallback is not None:
+            return CgshomeResolution(
+                path=fallback.resolve(),
+                origin=CGSHOME_ORIGIN_DEFAULT,
+                start_dir=start_dir,
             )
 
     raise FileNotFoundError(

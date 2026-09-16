@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.55
+# ComplexGitSync v0002.57
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -130,15 +130,20 @@ both trees hold the same repositories. Every command that discovers its own
 workspace now prints which one it picked and where that choice came from:
 
 ```text
-cgshome=/home/user/.cgs/CGS<Timestamp>/ComplexGitSync (from $CGSHOME)
+cgshome=/home/user/.cgs/CGS<Timestamp>/ComplexGitSync (from $CGSHOME) use_case=nested
 source=/home/user/.cgs/.../install.gts (from register)
 ```
 
 If that is not the workspace you meant, the command also warns and tells you
 the two ways out: `unset CGSHOME`, or `--search-dir <the directory you want>`.
 
-Full walkthrough: [tutorials/02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md)
+`use_case` says which of the two ways of running (§2) is in force:
+`nested` when the ComplexGitSync you are running lives inside the workspace
+it is managing, `standalone` otherwise. It is reported, never obeyed —
+nothing behaves differently because of it. It is there so that believing
+you are in one case while standing in the other does not go unnoticed.
 
+Full walkthrough: [tutorials/02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md)
 
 ### 2.1.2 The project is checked out on disk, but has no `.cgs` yet
 
@@ -207,6 +212,43 @@ of those may not be yours — then prints the `branch`/`checkout`/`add`/
 `CGSHOME` is resolved as `<parent>/<project-name>`.
 
 Full walkthrough over `discover`, `import-submodules`, and `initialise`: [tutorials/03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md).
+
+
+
+### 2.1.4 When nothing has been set up yet
+
+`cgitsync status` typed on a machine that has never run the tool used to end
+in a Python traceback: no `.cgs`, no `.cgitsync` anywhere above you, nothing
+exported, and therefore nothing to stand on.
+
+There is now always somewhere to stand. When none of the three inputs finds a
+workspace, commands fall back to an empty one of their own under
+`$HOME/.cgs`, and `status` says so:
+
+```text
+cgshome=/home/user/.cgs/CGS<Timestamp>/cgitsync (from default workspace) use_case=standalone
+no living project yet use_case=standalone cgshome=/home/user/.cgs/CGS<Timestamp>/cgitsync
+nothing has been cloned into this workspace. To start a project:
+  cgitsync bootstrap <project.cgs> <ProjectName>  — clone a tree into a workspace of its own
+  cgitsync initialise <project.cgs>               — build the tree a .cgs describes, here
+  cgitsync discover <directory> --write           — draft a .cgs from repositories already on disk
+```
+
+An empty workspace is a project that has not started, not a failure: the
+command exits `0`.
+
+Three things about it are worth knowing:
+
+- **It is created once and reused.** The path is recorded in
+  `$HOME/.cgs/default`, so running `status` from the wrong directory four
+  times leaves you with one empty workspace, not four.
+- **It never guesses.** If you already have workspaces under `$HOME/.cgs`,
+  they are listed with the `export CGSHOME=...` line for each — and none of
+  them is selected for you.
+- **It never overrides `--search-dir`.** If you name a directory and it holds
+  no workspace, that is an error, not an invitation to work somewhere else.
+
+Set `CGSPATH` to keep workspaces somewhere other than `$HOME/.cgs`.
 
 ### 2.2 Nested Configuration
 

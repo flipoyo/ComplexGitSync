@@ -82,6 +82,35 @@ def _path_is_relative_to(path: Path, parent: Path) -> bool:
     return True
 
 
+#: What ``status`` says about a workspace that holds no repositories.
+#: An empty tree is not a broken one: it is where every user starts, and
+#: before this existed the tool's first answer to its first user was a
+#: traceback.
+EMPTY_WORKSPACE_LINE = "no living project yet"
+
+
+def _render_empty_workspace(workspace: Path, use_case: str) -> str:
+    """The whole of ``status`` for a workspace with nothing in it.
+
+    No table, because there is nothing to put in one, and no summary
+    counting seven kinds of zero. One line saying where you are, then the
+    three commands that start a project — the question was answered, and the
+    answer is "nothing here yet".
+    """
+    return "\n".join(
+        [
+            f"{EMPTY_WORKSPACE_LINE} use_case={use_case} cgshome={workspace}",
+            "nothing has been cloned into this workspace. To start a project:",
+            "  cgitsync bootstrap <project.cgs> <ProjectName>  "
+            "— clone a tree into a workspace of its own",
+            "  cgitsync initialise <project.cgs>               "
+            "— build the tree a .cgs describes, here",
+            "  cgitsync discover <directory> --write           "
+            "— draft a .cgs from repositories already on disk",
+        ]
+    )
+
+
 #: SYNC when the branch names an upstream that cannot be resolved — a real
 #: error, and the only case worth investigating.
 SYNC_UNKNOWN = "unknown"

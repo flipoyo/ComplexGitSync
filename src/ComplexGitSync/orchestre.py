@@ -140,6 +140,7 @@ from .registry import (
     build_registry_from_cgs_document,
     build_registry_from_gts_document,
 )
+from .settings import resolve_use_case
 from .state_store import (
     _STATE_DIR_RE,
     _format_state_id,
@@ -153,6 +154,7 @@ from .status_render import (
     SCOPE_LEGEND,
     SYNC_LEGEND,
     TREE_BRANCH_DETACHED,
+    _render_empty_workspace,
     _render_status_table,
     _status_display_path,
     _status_line_is_untracked,
@@ -3743,6 +3745,14 @@ class ComplexGitSyncClient:
 
     def status(self) -> str:
         registry = self.get_dependency_registry()
+        workspace = self._workspace_root()
+        use_case = resolve_use_case(workspace).value
+        if ROOT_REPO_ID not in registry.repos:
+            # A workspace with no repositories is a valid state, not a
+            # failure: it is where every user starts. Answering it here is
+            # what keeps `registry.get` below from raising KeyError on the
+            # default workspace.
+            return _render_empty_workspace(workspace, use_case)
         root_path = registry.get(ROOT_REPO_ID).absolute_path
         # One instance for the whole command: it reads each repository's
         # branch once and answers both the table and the split-tree warning
@@ -3760,6 +3770,7 @@ class ComplexGitSyncClient:
                 "summary "
                 f"ready={str(tree_state.is_ready).lower()} "
                 f"complete={str(tree_state.registry_complete).lower()} "
+                f"use_case={use_case} "
                 f"cgitsync_branch="
                 f"{_tree_branch_label(branches.tree_branch, detached=branches.is_detached)} "
                 f"repos={len(rows)} "
@@ -3787,6 +3798,26 @@ class ComplexGitSyncClient:
         if counts.recorded_mismatch:
             lines.append("legend: HEAD ending with * differs from the commit recorded in the loaded .gts")
         return "\n".join(lines)
+
+    def _workspace_root(self) -> Path:
+        """The workspace this client is answering about.
+
+        The root repository's path when there is one. Otherwise the
+        directory the loaded snapshot belongs to, found the same way
+        discovery finds a workspace: the nearest ancestor holding a
+        ``.cgitsync``. An empty workspace has no root entry to ask, and it
+        is exactly the case that has to answer.
+        """
+        registry = self.registry
+        if registry is not None and ROOT_REPO_ID in registry.repos:
+            return registry.get(ROOT_REPO_ID).absolute_path
+        snapshot = self.loaded_snapshot_path or self.source_path
+        if snapshot is None:
+            return Path.cwd()
+        for candidate in (snapshot.parent, *snapshot.parents):
+            if (candidate / ".cgitsync").is_dir():
+                return candidate
+        return snapshot.parent
 
     def _branch_incoherence(
         self,

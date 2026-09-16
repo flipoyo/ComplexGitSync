@@ -29,8 +29,10 @@ from ..orchestre import (
     create_run_logger,
     resolve_command_scope,
 )
+from ..settings import other_workspaces, resolve_use_case
 from ..snapshot_resolver import (
     CGSHOME_ORIGIN_CWD,
+    CGSHOME_ORIGIN_DEFAULT,
     CGSHOME_ORIGIN_ENVIRONMENT,
     CGSHOME_ORIGIN_SEARCH_DIR,
     SNAPSHOT_ORIGIN_EXPLICIT,
@@ -207,6 +209,12 @@ def _cgshome_warnings(cgshome: CgshomeResolution) -> list[str]:
     """
     if cgshome.contains_cwd:
         return []
+    if cgshome.origin == CGSHOME_ORIGIN_DEFAULT:
+        # Not a surprise: nothing was found, the default was used, and the
+        # line above already said so. Warning here would tell the user their
+        # workspace is somewhere unexpected when the truth is that they have
+        # no workspace yet.
+        return []
     cwd = Path.cwd().resolve()
     warnings = [
         f"CGSHOME ({cgshome.path}) does not contain the current directory ({cwd})."
@@ -237,8 +245,42 @@ def _print_warnings(warnings: list[str]) -> None:
 
 def _announce_cgshome_resolution(cgshome: CgshomeResolution) -> None:
     """Say which workspace was discovered, on whose say-so, and warn if surprising."""
-    print(f"cgshome={cgshome.path} (from {cgshome.origin})")
+    _print_cgshome_line(cgshome)
+    _print_workspace_hint(cgshome)
     _print_warnings(_cgshome_warnings(cgshome))
+
+
+def _print_cgshome_line(cgshome: CgshomeResolution) -> None:
+    """The ``cgshome=`` line, with the use case that workspace puts us in.
+
+    README §2 names two ways to run — standalone and nested — and the choice
+    decides how the tree is laid out. Until this line carried it, no command
+    ever said which one was in force, so a user who believed they were in
+    one and were in the other had nothing to correct them.
+    """
+    print(
+        f"cgshome={cgshome.path} (from {cgshome.origin}) "
+        f"use_case={resolve_use_case(cgshome.path).value}"
+    )
+
+
+def _print_workspace_hint(cgshome: CgshomeResolution) -> None:
+    """List the workspaces the user may have meant — never pick one.
+
+    Only when the default workspace was used, because that is the one case
+    where nothing the user typed chose a workspace. "The tool never fails"
+    and "the user probably meant one of these seven" are different problems,
+    and merging them is how a command acts on the wrong tree. So: printed,
+    with the line that would select each one, and never selected here.
+    """
+    if cgshome.origin != CGSHOME_ORIGIN_DEFAULT:
+        return
+    existing = other_workspaces(exclude=cgshome.path)
+    if not existing:
+        return
+    print(f"{len(existing)} other workspace(s) exist. To use one, export it:")
+    for workspace in existing:
+        print(f"  export CGSHOME={workspace}")
 
 
 def _announce_source_resolution(resolution: SnapshotResolution) -> None:
@@ -254,7 +296,8 @@ def _announce_source_resolution(resolution: SnapshotResolution) -> None:
         return
     cgshome = resolution.cgshome
     if cgshome is not None:
-        print(f"cgshome={cgshome.path} (from {cgshome.origin})")
+        _print_cgshome_line(cgshome)
+        _print_workspace_hint(cgshome)
     print(f"source={resolution.path} (from {resolution.origin})")
     if cgshome is None:
         return

@@ -21,8 +21,8 @@
       "public_symbols": 2
     },
     "cli/_shared.py": {
-      "internal_imports": 18,
-      "loc": 486,
+      "internal_imports": 21,
+      "loc": 519,
       "public_symbols": 0
     },
     "cli/configuration.py": {
@@ -126,8 +126,8 @@
       "public_symbols": 25
     },
     "orchestre.py": {
-      "internal_imports": 89,
-      "loc": 3809,
+      "internal_imports": 91,
+      "loc": 3834,
       "public_symbols": 13
     },
     "paths.py": {
@@ -140,10 +140,15 @@
       "loc": 450,
       "public_symbols": 3
     },
+    "settings.py": {
+      "internal_imports": 1,
+      "loc": 184,
+      "public_symbols": 11
+    },
     "snapshot_resolver.py": {
-      "internal_imports": 0,
-      "loc": 283,
-      "public_symbols": 16
+      "internal_imports": 1,
+      "loc": 305,
+      "public_symbols": 17
     },
     "state_store.py": {
       "internal_imports": 0,
@@ -152,8 +157,8 @@
     },
     "status_render.py": {
       "internal_imports": 2,
-      "loc": 219,
-      "public_symbols": 10
+      "loc": 239,
+      "public_symbols": 11
     }
   },
   "ring0_modules": [
