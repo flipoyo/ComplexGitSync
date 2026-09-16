@@ -14,6 +14,7 @@ Imports: cgs_format, errors, git_repo, git_tree, orchestre, snapshot_resolver
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import sys
 from collections.abc import Sequence
@@ -41,6 +42,33 @@ from ..snapshot_resolver import (
     describe_cgshome,
     describe_workspace_source,
 )
+
+
+def _add_json_argument(subparser: argparse.ArgumentParser) -> None:
+    """Register ``--json`` on a command that can answer a machine."""
+    subparser.add_argument(
+        "--json",
+        action="store_true",
+        help=(
+            "Print one JSON object on stdout and nothing else; every "
+            "human-facing line goes to stderr instead. The exit code is the "
+            "same as without it."
+        ),
+    )
+
+
+@contextlib.contextmanager
+def _json_stdout():
+    """Keep stdout clear for the one JSON object a caller is parsing.
+
+    Everything the command would have printed for a person — the workspace
+    it resolved, the log file it wrote, any warning — goes to stderr for the
+    duration. That is what makes ``cgitsync status --json | jq`` work
+    without a caller having to strip a banner first, and it costs nothing:
+    the same lines are still there, on the stream meant for them.
+    """
+    with contextlib.redirect_stdout(sys.stderr):
+        yield
 
 
 def _add_gitignore_sync_arguments(subparser: argparse.ArgumentParser) -> None:

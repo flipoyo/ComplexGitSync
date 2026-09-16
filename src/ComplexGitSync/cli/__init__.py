@@ -8,7 +8,8 @@ Contract: build the top-level argparse parser from each command group's
     expose main()/build_parser()/_PLANNED_COMMANDS at the package root so
     external callers (pyproject.toml's console-script entry point,
     __main__.py, every test) see the same surface cli.py used to.
-Imports: _shared, configuration, expert, minimalist, suggest
+Imports: _shared, configuration, exit_codes, expert, json_render, minimalist,
+    suggest
 
 Replaces the single 1,991-line cli.py (.localSpec/DevTickets/archive/20260828_Isolation_
 DevPlanTicket.md, Wave 3, P6-cli-integrate) with a package of six modules,
@@ -28,10 +29,14 @@ create-cgs), cli.suggest (the "did you mean ...?" hint on a typo).
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Sequence
 
 from .. import __version__
+from ..json_render import dumps as json_dumps
+from ..json_render import error_payload
 from . import _shared, configuration, expert, minimalist, suggest
+from .exit_codes import EXIT_OK, diagnostic, exit_code_for
 from .minimalist import _validate_initialise_definition
 
 _PLANNED_COMMANDS: dict[str, str] = {
@@ -72,8 +77,44 @@ def main(argv: Sequence[str] | None = None) -> int:
     handler = getattr(args, "handler", None)
     if handler is None:
         parser.print_help()
-        return 0
-    return handler(args)
+        return EXIT_OK
+    try:
+        return handler(args)
+    except Exception as exc:  # noqa: BLE001 — re-raised unless recognised
+        return _report_expected_failure(exc, args)
+
+
+def _report_expected_failure(exc: Exception, args: argparse.Namespace) -> int:
+    """Turn a failure this tool expects into a documented exit code.
+
+    The boundary every command's expected errors pass through: a missing
+    workspace, an invalid document, a refused operation. They are the
+    program working correctly on input it cannot use, and a stack trace
+    tells the user the opposite.
+
+    **Anything unrecognised is re-raised.** Catching every exception and
+    returning a tidy ``2`` would dress every defect in this codebase as bad
+    input, and a defect that looks like bad input is one nobody reports.
+    """
+    code = exit_code_for(exc, command=args.command)
+    if code is None:
+        raise exc
+    if getattr(args, "json", False):
+        # A caller parsing stdout must get an object whether the command
+        # succeeded or not, rather than telling the two apart by whether
+        # the parse failed.
+        print(
+            json_dumps(
+                error_payload(
+                    command=args.command,
+                    exit_code=code,
+                    message=str(exc),
+                    error_type=type(exc).__name__,
+                )
+            )
+        )
+    print(diagnostic(exc, command=args.command), file=sys.stderr, flush=True)
+    return code
 
 
 __all__ = ["_PLANNED_COMMANDS", "build_parser", "main"]

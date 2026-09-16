@@ -42,7 +42,6 @@ import pytest
 
 from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.cli import main as cli_main
-from ComplexGitSync.errors import ConfigValidationError
 
 
 def _validate(path: Path, capsys) -> None:
@@ -97,25 +96,33 @@ def test_create_cgs_cli_each_provider_then_validate_accepts(
     _validate(output, capsys)
 
 
-def test_create_cgs_cli_rejects_unknown_provider(tmp_path):
-    """A real (unstubbed) CLI invocation propagates the same validation error
-    the Python API raises, rather than silently writing a broken .cgs."""
+def test_create_cgs_cli_rejects_unknown_provider(tmp_path, capsys):
+    """A real (unstubbed) CLI invocation refuses the same input the Python API
+    refuses, rather than silently writing a broken .cgs.
+
+    It exits ``2`` — the command could not run on what it was given — with a
+    one-line diagnostic and no traceback, which is the contract
+    ``.localSpec/DevTickets/archive/20260916_CliContract_DevPlanTicket.md`` fixed.
+    """
     output = tmp_path / "rejected.cgs"
 
-    with pytest.raises(ConfigValidationError):
-        cli_main(
-            [
-                "create-cgs",
-                "--project",
-                "Rejected",
-                "--repo",
-                "notaprovider:acme/repo",
-                "--output",
-                str(output),
-            ]
-        )
+    exit_code = cli_main(
+        [
+            "create-cgs",
+            "--project",
+            "Rejected",
+            "--repo",
+            "notaprovider:acme/repo",
+            "--output",
+            str(output),
+        ]
+    )
+    captured = capsys.readouterr()
 
+    assert exit_code == 2
     assert not output.exists()
+    assert "cgitsync create-cgs:" in captured.err
+    assert "Traceback" not in captured.err
 
 
 # ---------------------------------------------------------------------------

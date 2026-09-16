@@ -189,21 +189,28 @@ class TestFreezeReleaseForceGoldenCoverage:
 
         return {"repo": repo, "remote": remote, "snapshot": snapshot}
 
-    def test_plain_freeze_release_fails_on_this_divergence(self, tmp_path):
-        """Evidence that the fixture is a genuine divergence, not a fast-forward."""
-        workspace = self._diverged_workspace(tmp_path)
-        from ComplexGitSync.errors import GitSyncError
+    def test_plain_freeze_release_fails_on_this_divergence(self, tmp_path, capsys):
+        """Evidence that the fixture is a genuine divergence, not a fast-forward.
 
-        with pytest.raises(GitSyncError, match="Not possible to fast-forward|fast-forward"):
-            cli_main(
-                [
-                    "freeze-release",
-                    "v0.9.0",
-                    "release commit",
-                    "--gts",
-                    str(workspace["snapshot"]),
-                ]
-            )
+        Exit ``1``: the command ran and the answer is no. The message says
+        why, on stderr, without a traceback.
+        """
+        workspace = self._diverged_workspace(tmp_path)
+
+        exit_code = cli_main(
+            [
+                "freeze-release",
+                "v0.9.0",
+                "release commit",
+                "--gts",
+                str(workspace["snapshot"]),
+            ]
+        )
+        captured = capsys.readouterr()
+
+        assert exit_code == 1
+        assert "fast-forward" in captured.err
+        assert "Traceback" not in captured.err
 
     def test_freeze_release_force_resolves_genuine_divergence(self, tmp_path, capsys):
         workspace = self._diverged_workspace(tmp_path)

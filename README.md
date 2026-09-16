@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.57
+# ComplexGitSync v0002.59
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -288,7 +288,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Minimalist | `clean-init` | `<source>` `--output-path` `--force-protocol` `--commit-gitignore` | Purge generated clone state, then initialise from a .cgs spec. |
 | Minimalist | `freeze-release` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull, push, and freeze from a READY tree. |
 | Minimalist | `freeze-release-force` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull-force, push, and freeze from a READY tree. |
-| Minimalist | `status` | `--gts` `--search-dir` | Summarize tree readiness and sync state. |
+| Minimalist | `status` | `--gts` `--search-dir` `--json` | Summarize tree readiness and sync state. |
 | Minimalist | `view-tree` | `[source]` `--depth` `--collapse` `--discover-nested` | Render a topology-focused tree view in terminal. |
 | Minimalist | `launch-release` | `<release>` `--gts` `--search-dir` | Check out a frozen release tag from a READY tree. |
 | Expert | `purge` | `<source>` `--output-path` | Remove generated clone state for a .cgs workspace. |
@@ -307,7 +307,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `freeze` | `<name>` `--private` `--dry-run` `--gts` | Freeze a versioned state and emit a .gts snapshot. |
 | Expert | `import-submodules` | `<repo-root>` `--apply` `--recursive` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
 | Expert | `init-from-submodules` | `<repo-root>` `--cgs` `--max-depth` `--dry-run` `--force` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
-| Expert | `verify` | `--repair` `--search-dir` | Verify the hash-chained .cgitsync/lgr register for tamper-evidence. |
+| Expert | `verify` | `--repair` `--search-dir` `--json` | Verify the hash-chained .cgitsync/lgr register for tamper-evidence. |
 | Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
 | Configuration | `create-cgs` | `--project` `--repo` `--output` | Create a validated .cgs specification from CLI project definitions. |
@@ -442,6 +442,70 @@ not recognise its own errors and the suggestion never appeared.
 Only the messages change language. Your file names, sorting and number
 formats are untouched, and nothing about your own shell changes — only what
 `cgitsync` asks Git for while it runs.
+
+## 3.1 What `cgitsync` promises a script
+
+### Exit codes
+
+Every command uses the same three, and they mean the same thing everywhere:
+
+| Code | Meaning |
+|---|---|
+| `0` | The command did what was asked. |
+| `1` | It ran, and the answer is no — a merge conflict, a tree that is not `READY`, a verification that found something. |
+| `2` | It could not run — bad arguments, no workspace, a missing or unreadable file. |
+
+The distinction that matters is between "I asked and the answer is no" and
+"I could not ask". A CI job treats those differently: the first is a result
+to act on, the second is an invocation to fix.
+
+One command reads a document rather than acting on one. `cgitsync validate`
+exits `1` when the document is invalid, because saying so is its job; every
+other command exits `2` on the same document, because it could not run at
+all.
+
+A failure prints one line on stderr — `cgitsync status: Unable to locate
+CGSHOME` — and no traceback. **If you ever see a traceback, it is a bug in
+this tool, not a problem with your input.** That is deliberate: the errors
+the tool expects are reported as messages, so the ones it does not expect
+stay visible.
+
+### `--json`
+
+`status` and `verify` accept `--json`. Each prints **one JSON object on
+stdout and nothing else**, so a pipe never has to strip a banner:
+
+```bash
+cgitsync status --json | jq -r '.cgitsync_branch'
+cgitsync verify --json | jq -e '.status == "clean"'
+```
+
+Everything a person would read — the workspace that was resolved, the log
+file, any warning — goes to stderr instead. The exit code is the same as
+without the flag, so either signal may be used. A failure also prints one
+object, with `"status": "error"` and the exit code in it, rather than
+leaving your pipe with nothing to parse.
+
+Two exceptions, both deliberate: `--help` and `--version` print text, and a
+command line that does not parse is argparse's answer (usage on stderr, exit
+`2`, nothing on stdout) — `--json` cannot be honoured for an invocation that
+never parsed, since the flag itself may be what failed.
+
+### What is stable, and what is not
+
+| Surface | Promise |
+|---|---|
+| Command names and their documented flags | Stable within a major version. |
+| Exit codes | Stable within a major version. |
+| `--json` output | **Additive only** — new fields may appear; existing ones do not change meaning and do not vanish. `schema_version` says which generation you are reading. |
+| `.cgs` and `.gts` grammar | Versioned in the file, and the version is read on load. |
+| Python modules under `src/ComplexGitSync/` | **Not a public interface.** `ComplexGitSyncClient` is the CLI's own implementation. Import it and a refactor may break you; no deprecation is owed. |
+| `verify` | **Experimental.** The register it reads is being rewritten, so its output and its findings may change. Everything else in the command table is covered by the promises above. |
+
+The Python row is worth stating plainly: this project requires every
+capability to exist as a `ComplexGitSyncClient` method with a thin CLI pair,
+but that is a rule about where logic lives inside the project — not a
+promise to anyone importing the package. The CLI is the product.
 
 ## 4. Further reading
 

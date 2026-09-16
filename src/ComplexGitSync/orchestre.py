@@ -119,6 +119,8 @@ from .git_tree import (
 from .git_tree_branch import GitTreeBranches, tree_project_name
 from .gts_document import GtsDocument
 from .integrity import Finding, VerificationReport, verify_chain
+from .json_render import dumps as json_dumps
+from .json_render import empty_status_payload, status_payload, verify_payload
 from .ledger_entry import new_time_l0_anchor
 from .ledger_store import read_all_entries, read_head, recompute_head, verify_and_repair_head
 from .master import MasterConfig
@@ -154,6 +156,8 @@ from .status_render import (
     SCOPE_LEGEND,
     SYNC_LEGEND,
     TREE_BRANCH_DETACHED,
+    TREE_BRANCH_UNKNOWN,
+    StatusCounts,
     _render_empty_workspace,
     _render_status_table,
     _status_display_path,
@@ -357,6 +361,14 @@ def create_run_logger(
 
     logger_name = f"ComplexGitSync.run.{command_name}.{timestamp}"
     logger = logging.getLogger(logger_name)
+    # Two runs of one command inside the same second share this name, and
+    # `logging` caches loggers globally — so without this the second run
+    # keeps the first run's handler, writes to a stream that may already be
+    # closed, and `logging` prints its own traceback to stderr. Handlers
+    # would also accumulate, one per invocation, in any process that runs
+    # more than one command.
+    for stale in list(logger.handlers):
+        logger.removeHandler(stale)
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
 
@@ -1190,6 +1202,26 @@ def _protocol_switch_hint(git_error_message: str, *, command: str) -> str | None
 # ============================================================
 
 
+@dataclass(frozen=True, slots=True)
+class _StatusView:
+    """What one ``status`` run observed, before anybody renders it.
+
+    ``is_empty`` is the workspace with no repositories in it — a project
+    that has not started. It is carried as its own fact rather than inferred
+    from ``rows`` being empty, because the two renderings answer it in very
+    different ways and neither should have to guess.
+    """
+
+    workspace: Path
+    use_case: str
+    branch_label: str
+    rows: list[tuple[str, str, str, str, str, str, str, str, str]]
+    counts: StatusCounts
+    tree_state: ProjectTreeState
+    incoherent: list[str]
+    is_empty: bool
+
+
 @dataclass
 class ComplexGitSyncClient:
     """Client facade exposing the documented lifecycle surface.
@@ -1227,6 +1259,11 @@ class ComplexGitSyncClient:
     # of the API expects; the CLI reads it to report the repositories a sweep
     # skipped, the same way it reads last_gitignore_sync.
     last_write_outcomes: tuple[RepoOutcome, ...] = ()
+
+    #: The report the last ``verify_json`` produced, so a caller that needs
+    #: both the rendered object and the verdict does not have to verify the
+    #: chain twice — which with ``--repair`` would mean repairing twice.
+    last_verify_report: VerificationReport | None = None
     run_logger: CommandRunLogger | None = None
     _forced_access_protocol: AccessProtocol | None = field(default=None, init=False, repr=False)
     _force_reclone: bool = field(default=False, init=False, repr=False)
@@ -3743,7 +3780,13 @@ class ComplexGitSyncClient:
     def view_operation(self) -> str:
         return format_view_operation(self.get_dependency_registry())
 
-    def status(self) -> str:
+    def _collect_status(self) -> _StatusView:
+        """Everything both renderings of ``status`` are built from.
+
+        One collection, two renderings: the table a person reads and the
+        object a script reads cannot disagree about the tree, because
+        neither works the answer out for itself.
+        """
         registry = self.get_dependency_registry()
         workspace = self._workspace_root()
         use_case = resolve_use_case(workspace).value
@@ -3752,7 +3795,16 @@ class ComplexGitSyncClient:
             # failure: it is where every user starts. Answering it here is
             # what keeps `registry.get` below from raising KeyError on the
             # default workspace.
-            return _render_empty_workspace(workspace, use_case)
+            return _StatusView(
+                workspace=workspace,
+                use_case=use_case,
+                branch_label=TREE_BRANCH_UNKNOWN,
+                rows=[],
+                counts=_status_summary_counts([]),
+                tree_state=build_tree_state(registry),
+                incoherent=[],
+                is_empty=True,
+            )
         root_path = registry.get(ROOT_REPO_ID).absolute_path
         # One instance for the whole command: it reads each repository's
         # branch once and answers both the table and the split-tree warning
@@ -3762,17 +3814,80 @@ class ComplexGitSyncClient:
             self._repo_status_row(registry, entry, root_path, branches)
             for entry in iter_tree_leaf_first(registry)
         ]
-        counts = _status_summary_counts(rows)
+        return _StatusView(
+            workspace=workspace,
+            use_case=use_case,
+            branch_label=_tree_branch_label(
+                branches.tree_branch, detached=branches.is_detached
+            ),
+            rows=rows,
+            counts=_status_summary_counts(rows),
+            tree_state=build_tree_state(registry),
+            incoherent=self._branch_incoherence(registry, branches),
+            is_empty=False,
+        )
 
-        tree_state = build_tree_state(registry)
+    def status_json(self) -> str:
+        """``status`` as one JSON object — the same answer, for a script.
+
+        The shape lives in ``json_render.py``, not here and not in ``cli/``,
+        so every command's machine-readable output is decided in one place.
+        """
+        view = self._collect_status()
+        if view.is_empty:
+            payload = empty_status_payload(
+                cgshome=str(view.workspace),
+                use_case=view.use_case,
+                cgitsync_branch=view.branch_label,
+                lifecycle_state=view.tree_state.lifecycle_state.value,
+            )
+        else:
+            payload = status_payload(
+                cgshome=str(view.workspace),
+                use_case=view.use_case,
+                cgitsync_branch=view.branch_label,
+                lifecycle_state=view.tree_state.lifecycle_state.value,
+                is_ready=view.tree_state.is_ready,
+                registry_complete=view.tree_state.registry_complete,
+                rows=view.rows,
+                counts=view.counts,
+                warnings=view.incoherent,
+            )
+        return json_dumps(payload)
+
+    def verify_json(self, cgshome: str | Path, *, repair: bool = False) -> str:
+        """``verify`` as one JSON object, from the same report ``verify`` returns.
+
+        The report is kept on :attr:`last_verify_report` so the caller can
+        read the verdict — clean or not — without asking for a second
+        verification, which under ``--repair`` would be a second repair.
+        """
+        report = self.verify(cgshome, repair=repair)
+        self.last_verify_report = report
+        return json_dumps(
+            verify_payload(
+                cgshome=str(Path(cgshome).resolve()),
+                is_clean=report.is_clean,
+                findings=report.findings,
+                repair=repair,
+            )
+        )
+
+    def status(self) -> str:
+        view = self._collect_status()
+        if view.is_empty:
+            return _render_empty_workspace(view.workspace, view.use_case)
+        rows = view.rows
+        counts = view.counts
+        use_case = view.use_case
+        tree_state = view.tree_state
         lines = [
             (
                 "summary "
                 f"ready={str(tree_state.is_ready).lower()} "
                 f"complete={str(tree_state.registry_complete).lower()} "
                 f"use_case={use_case} "
-                f"cgitsync_branch="
-                f"{_tree_branch_label(branches.tree_branch, detached=branches.is_detached)} "
+                f"cgitsync_branch={view.branch_label} "
                 f"repos={len(rows)} "
                 f"dirty={counts.dirty} "
                 f"staged={counts.staged} "
@@ -3784,7 +3899,7 @@ class ComplexGitSyncClient:
             )
         ]
         lines.append(_render_status_table(rows))
-        incoherent = self._branch_incoherence(registry, branches)
+        incoherent = view.incoherent
         if incoherent:
             lines.append(
                 "warning: tree is split across branches — "

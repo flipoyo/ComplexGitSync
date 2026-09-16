@@ -22,7 +22,9 @@ from ..git_repo import RefKind, RepoScope
 from ..orchestre import ComplexGitSyncClient
 from ._shared import (
     _add_gitignore_sync_arguments,
+    _add_json_argument,
     _format_tree_state_line,
+    _json_stdout,
     _load_ready_registry_source,
     _non_negative_int,
     _print_dry_run_plan,
@@ -526,6 +528,7 @@ def _register_verify(subparser: argparse.ArgumentParser) -> None:
             "broken chain is reported, not healed."
         ),
     )
+    _add_json_argument(subparser)
     subparser.set_defaults(handler=_handle_verify)
 
 
@@ -817,12 +820,34 @@ def _handle_init_from_submodules(args: argparse.Namespace) -> int:
 
 
 def _handle_verify(args: argparse.Namespace) -> int:
+    if getattr(args, "json", False):
+        return _handle_verify_json(args)
     cgshome = _resolve_cgshome(getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="verify",
         source=cgshome,
         runner=lambda client, source: _execute_verify(client, source, repair=args.repair),
     )
+
+
+def _handle_verify_json(args: argparse.Namespace) -> int:
+    """``verify --json``: the same chain check, rendered for a script.
+
+    Same exit code as the human form — ``0`` clean, ``1`` when the chain has
+    findings — so a caller may read either signal.
+    """
+    rendered: dict[str, str] = {}
+    with _json_stdout():
+        cgshome = _resolve_cgshome(getattr(args, "search_dir", None))
+        exit_code = _run_with_logging(
+            command_name="verify",
+            source=cgshome,
+            runner=lambda client, source: _execute_verify_json(
+                client, source, repair=args.repair, rendered=rendered
+            ),
+        )
+    print(rendered["payload"])
+    return exit_code
 
 
 def _execute_purge_cgs(
@@ -854,6 +879,18 @@ def _execute_validate(
     tree_state = client.validate(source_path, discover_nested=discover_nested)
     print(_format_tree_state_line(tree_state))
     return 0
+
+
+def _execute_verify_json(
+    client: ComplexGitSyncClient,
+    cgshome: Path,
+    *,
+    repair: bool,
+    rendered: dict[str, str],
+) -> int:
+    rendered["payload"] = client.verify_json(cgshome, repair=repair)
+    report = client.last_verify_report
+    return 0 if report is not None and report.is_clean else 1
 
 
 def _execute_verify(

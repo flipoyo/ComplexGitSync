@@ -12,7 +12,6 @@ import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
 import tomli_w
 
 from ComplexGitSync.cli import main as cli_main
@@ -177,6 +176,16 @@ class TestVerifyCli:
         assert "status=findings" in captured.out
         assert "BAD_ENTRY_HASH" in captured.out
 
-    def test_verify_command_requires_locatable_cgshome(self, tmp_path: Path):
-        with pytest.raises(FileNotFoundError, match=r"Unable to locate CGSHOME"):
-            cli_main(["verify", "--search-dir", str(tmp_path)])
+    def test_verify_command_requires_locatable_cgshome(self, tmp_path: Path, capsys):
+        """A named directory holding no workspace: the command could not run.
+
+        Exit ``2``, with the message on stderr and no traceback. The default
+        workspace deliberately does not step in here — a directory the user
+        named is never silently replaced.
+        """
+        exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+        captured = capsys.readouterr()
+
+        assert exit_code == 2
+        assert "Unable to locate CGSHOME" in captured.err
+        assert "Traceback" not in captured.err

@@ -50,7 +50,6 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.cli import main as cli_main
-from ComplexGitSync.errors import ConfigValidationError
 
 # ---------------------------------------------------------------------------
 # Helpers (same pattern as test_cgsi_topology.py / test_tuto_cgsi1.py)
@@ -338,8 +337,13 @@ def test_purge_removes_generated_clone_state(direct_child_cgs_workspace, monkeyp
 # ---------------------------------------------------------------------------
 
 
-def test_validate_raises_for_invalid_cgs(tmp_path):
+def test_validate_reports_an_invalid_cgs_as_its_answer(tmp_path, capsys):
     """``cgitsync validate`` surfaces a real validation error for a malformed .cgs.
+
+    It exits ``1``, not ``2``: answering "this document is not valid" is
+    ``validate`` doing its job, and a script gating on it needs that to read
+    as a result rather than as a broken invocation. Every other command
+    exits ``2`` on the same document, because it could not run at all.
 
     The valid-.cgs path is already covered end-to-end elsewhere
     (``test_tuto_cgsi1.py::test_validate_topology``,
@@ -349,5 +353,9 @@ def test_validate_raises_for_invalid_cgs(tmp_path):
     invalid_cgs = tmp_path / "invalid.cgs"
     invalid_cgs.write_text('project = "Invalid"\nrepos = []\n', encoding="utf-8")
 
-    with pytest.raises(ConfigValidationError, match="repos"):
-        cli_main(["validate", str(invalid_cgs)])
+    exit_code = cli_main(["validate", str(invalid_cgs)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "repos" in captured.err
+    assert "Traceback" not in captured.err

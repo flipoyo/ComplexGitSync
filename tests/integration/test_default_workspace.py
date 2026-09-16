@@ -17,8 +17,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from ComplexGitSync import settings
 from ComplexGitSync.cli import main as cli_main
 
@@ -124,18 +122,19 @@ def test_the_use_case_is_printed_with_the_workspace(tmp_path, monkeypatch, capsy
     assert captured.out.count("use_case=") >= 2
 
 
-def test_an_explicit_search_dir_is_never_silently_replaced(tmp_path, monkeypatch):
+def test_an_explicit_search_dir_is_never_silently_replaced(tmp_path, monkeypatch, capsys):
     """The default must not override a directory the user named.
 
-    It still raises, and that is deliberate: turning the raise into a clean
-    exit code is CliContract's exception boundary, not this ticket's. What
-    matters here is that a named directory is never quietly swapped for a
-    workspace somewhere else, and that nothing is created behind the user's
+    It exits ``2`` — the command could not run — since CliContract turned
+    that raise into a documented code. Nothing is created behind the user's
     back when the answer is "that directory holds no workspace".
     """
     monkeypatch.chdir(tmp_path)
 
-    with pytest.raises(FileNotFoundError, match="--search-dir"):
-        cli_main(["status", "--search-dir", str(tmp_path / "nowhere")])
+    exit_code = cli_main(["status", "--search-dir", str(tmp_path / "nowhere")])
+    captured = capsys.readouterr()
 
+    assert exit_code == 2
+    assert "--search-dir" in captured.err
+    assert "no living project yet" not in captured.out
     assert list(_cgs_root().glob("CGS*")) == []

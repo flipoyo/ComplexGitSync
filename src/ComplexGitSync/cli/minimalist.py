@@ -19,8 +19,10 @@ from pathlib import Path
 from ..cgs_format import CgsDocument
 from ..orchestre import ComplexGitSyncClient
 from ._shared import (
+    _add_json_argument,
     _format_repo_tree_outline,
     _format_tree_state_line,
+    _json_stdout,
     _load_ready_registry_source,
     _load_visualization_source,
     _non_negative_int,
@@ -247,6 +249,7 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                     "or walks up from the current working directory."
                 ),
             )
+            _add_json_argument(subparser)
             subparser.set_defaults(handler=_handle_status)
         elif command_name == "view-tree":
             subparser.add_argument(
@@ -476,12 +479,34 @@ def _handle_freeze_release_force(args: argparse.Namespace) -> int:
 
 
 def _handle_status(args: argparse.Namespace) -> int:
+    if getattr(args, "json", False):
+        return _handle_status_json(args)
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
         command_name="status",
         source=gts_path,
         runner=lambda client, source: _execute_status(client, source),
     )
+
+
+def _handle_status_json(args: argparse.Namespace) -> int:
+    """``status --json``: the same run, rendered for a script.
+
+    The whole run happens with stdout redirected to stderr, so the object
+    printed at the end is the only thing on stdout — including when
+    discovery announces a workspace or the logger names its file. The exit
+    code is whatever the human form would have returned.
+    """
+    rendered: dict[str, str] = {}
+    with _json_stdout():
+        gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
+        exit_code = _run_with_logging(
+            command_name="status",
+            source=gts_path,
+            runner=lambda client, source: _execute_status_json(client, source, rendered),
+        )
+    print(rendered["payload"])
+    return exit_code
 
 
 def _handle_view_tree(args: argparse.Namespace) -> int:
@@ -648,6 +673,16 @@ def _execute_view_tree(
 ) -> int:
     _load_visualization_source(client, source_path, discover_nested=discover_nested)
     print(client.view_tree(depth=depth, collapse=collapse))
+    return 0
+
+
+def _execute_status_json(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    rendered: dict[str, str],
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    rendered["payload"] = client.status_json()
     return 0
 
 
