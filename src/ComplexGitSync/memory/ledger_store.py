@@ -260,6 +260,7 @@ def _entry_to_toml_payload(entry: LedgerEntry) -> dict[str, Any]:
             "state_dir": entry.state_dir,
             "outcome": entry.outcome,
             "toolchain": dict(entry.toolchain),
+            "commit_log": entry.commit_log,
             "entry_hash": entry.entry_hash,
         }
     }
@@ -280,6 +281,9 @@ def _entry_from_toml_payload(data: dict[str, Any]) -> LedgerEntry:
         # is read exactly as it was written: its hash covers the fields it
         # had, so nothing here may invent a value for it.
         toolchain=tuple(sorted(raw.get("toolchain", {}).items())),
+        # An entry written before commit logs existed carries none, and is
+        # read exactly as it was written.
+        commit_log=raw.get("commit_log", ""),
         entry_hash=raw["entry_hash"],
     )
 
@@ -458,6 +462,23 @@ def verify_and_repair_head(lgr_dir: Path) -> HeadPointer | None:
 # ---------------------------------------------------------------------------
 
 
+def next_seq(lgr_dir: Path) -> int:
+    """The sequence number the next entry will carry.
+
+    Asked by a caller that must write something *naming* that entry before
+    the entry itself exists — a commit log, whose rows say which entry wrote
+    them, and whose digest the entry then carries. The two point at each
+    other, so one of them has to be written first.
+
+    Two processes racing here compute the same answer and the loser's
+    :func:`write_entry` raises :class:`LedgerSeqCollisionError`, which is
+    the same protection the chain already had. Making that race impossible
+    is locking, and locking is its own ticket.
+    """
+    entries = read_all_entries(lgr_dir)
+    return entries[-1].seq + 1 if entries else 1
+
+
 def append_entry(
     lgr_dir: Path,
     *,
@@ -469,6 +490,7 @@ def append_entry(
     clock: ClockProtocol,
     toolchain: Sequence[tuple[str, str]] = (),
     tree_root: Path | None = None,
+    commit_log: str = "",
 ) -> LedgerEntry:
     """Scrub ``argv``, build the next chain entry, and persist it.
 
@@ -494,6 +516,7 @@ def append_entry(
         outcome=outcome,
         clock=clock,
         toolchain=toolchain,
+        commit_log=commit_log,
     )
     write_entry(lgr_dir, entry)
     return entry

@@ -546,6 +546,11 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
         "state",
         help="The State's content hash, or any unambiguous prefix of it.",
     )
+    show.add_argument(
+        "--full",
+        action="store_true",
+        help="Print whole commit messages instead of their first line.",
+    )
     _add_search_dir_argument(show)
 
     initialise = memory_commands.add_parser(
@@ -895,6 +900,7 @@ def _handle_memory(args: argparse.Namespace) -> int:
             branch=getattr(args, "branch", None),
             message=getattr(args, "message", None),
             remote=getattr(args, "remote", None),
+            full=getattr(args, "full", False),
         ),
     )
 
@@ -909,6 +915,7 @@ def _execute_memory(
     branch: str | None = None,
     message: str | None = None,
     remote: str | None = None,
+    full: bool = False,
 ) -> int:
     if subcommand == "status":
         return _print_memory_status(client.memory_status(cgshome))
@@ -926,7 +933,7 @@ def _execute_memory(
         return EXIT_OK
     if subcommand == "push":
         return _print_memory_push(client.memory_push(cgshome, message=message))
-    return _print_memory_show(client.memory_show(cgshome, state or ""))
+    return _print_memory_show(client.memory_show(cgshome, state or ""), full=full)
 
 
 def _print_memory_init(proposal: dict) -> int:
@@ -991,7 +998,22 @@ def _print_memory_list(rows: list[dict]) -> int:
     return EXIT_OK
 
 
-def _print_memory_show(state: dict) -> int:
+#: How much of a commit message one line shows. A subject line is the
+#: common case and fits; a body is the uncommon one and `--full` is for it.
+_MESSAGE_WIDTH = 56
+
+
+def _shorten(message: str, *, full: bool) -> str:
+    """The message as one line, unless the reader asked for all of it."""
+    if full:
+        return message
+    first_line = message.strip().splitlines()[0] if message.strip() else ""
+    if len(first_line) <= _MESSAGE_WIDTH:
+        return first_line
+    return f"{first_line[: _MESSAGE_WIDTH - 1]}…"
+
+
+def _print_memory_show(state: dict, *, full: bool = False) -> int:
     print(f"state={state['state']}")
     print(f"path={state['path']}")
     print(
@@ -1005,6 +1027,22 @@ def _print_memory_show(state: dict) -> int:
         print(f"seq={entry['seq']} {entry['recorded_at']} {entry['command']} {entry['outcome']}")
         for tool, version in sorted(entry["toolchain"].items()):
             print(f"  {tool:<9} {version}")
+        for commit in entry.get("commits", []):
+            # One line per repository: what was committed, where, and
+            # whether anybody but this machine has ever seen it.
+            seen = "published" if commit["published"] else "unpushed "
+            print(
+                f"  {commit['repository']:<18} {commit['scope']:<8} "
+                f"{commit['sha'][:8]} {seen} {_shorten(commit['message'], full=full)}"
+            )
+            if full:
+                print(f"    branch={commit['branch']} authored={commit['authored_at']}")
+    if full:
+        for row in state.get("published", []):
+            print(
+                f"published {row['sha'][:8]} -> {row['remote']} {row['ref']} "
+                f"(seq={row['entry']}, {row['at']})"
+            )
     return EXIT_OK
 
 

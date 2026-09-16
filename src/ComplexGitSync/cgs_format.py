@@ -278,6 +278,21 @@ def _tree_repo_identity(repo: Any) -> tuple[str, str, str]:
     )
 
 
+def repo_identifier(repo: Any) -> str:
+    """The ``provider:owner/repository`` a repository is written as.
+
+    :func:`parse_repo_id`'s counterpart: that one reads the authoring
+    shorthand, this one writes it. Kept here for the same reason the parser
+    is — one module decides what a repository is called, so a memory, a
+    status table and a `.cgs` cannot disagree about the name of the same
+    repository.
+    """
+    provider, owner, repository_name = _tree_repo_identity(repo)
+    if not owner or not repository_name:
+        return ""
+    return f"{provider}:{owner}/{repository_name}"
+
+
 def _unique_tree_key(tree: GitTree, repo: GitRepo) -> str:
     """Choose a deterministic internal key without parsing authoring syntax."""
     base = repo.project_name

@@ -2843,6 +2843,10 @@ nested_config = "disabled"
         """Versions the ledger records; a fake reports a fixed one."""
         return f"{executable} 0.0-test"
 
+    def commit_authored_at(self, repo_path: Path | str, sha: str) -> str:
+        """When a commit was authored; a fake answers a fixed moment."""
+        return "2026-01-01T00:00:00+00:00"
+
     def current_branch(self, repo_path: Path | str) -> str | None:
         resolved = Path(repo_path).resolve()
         if resolved in self.branch_overrides:

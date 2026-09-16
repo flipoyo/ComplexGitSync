@@ -63,7 +63,7 @@ class Finding(Enum):
 
     Listed in `.localSpec/AdditionalSpecs.md`, *The hash-chained register*.
 
-    All eight members are defined here because the type is shared with the
+    All ten members are defined here because the type is shared with the
     later `verify_store()` work (Ring 1, filesystem-backed, out of scope for
     this module). `verify_chain()` below — pure arithmetic over the entry
     sequence — only ever produces the first four.
@@ -77,6 +77,8 @@ class Finding(Enum):
     ORPHAN_STATE = auto()  # state directory with no register entry
     STATE_DIGEST_MISMATCH = auto()  # directory contents no longer hash to its name
     HEAD_STALE = auto()  # cached HEAD disagrees with recomputed chain
+    ORPHAN_COMMIT_LOG = auto()  # commit messages kept for a State that is gone
+    COMMIT_LOG_MISMATCH = auto()  # commit rows edited since the entry vouched for them
 
 
 class HistoryState(Enum):
@@ -143,6 +145,12 @@ def recompute_entry_hash(entry: LedgerEntryLike) -> str:
         state_dir=entry.state_dir,
         outcome=entry.outcome,
         toolchain=getattr(entry, "toolchain", ()),
+        # Both of these are read through getattr because this module's
+        # contract is the Protocol above, not a concrete class — and an
+        # entry written before either field existed has neither. The
+        # defaults are the same ones the writer uses, so an old entry
+        # recomputes to the hash it was written with.
+        commit_log=getattr(entry, "commit_log", ""),
     )
 
 

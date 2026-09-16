@@ -56,14 +56,14 @@ import shutil
 import sys
 import time
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from .cgs_format import CgsDocument, parse_repo_id
+from .cgs_format import CgsDocument, parse_repo_id, repo_identifier
 from .clone_guard import (
     blocked_destinations,
     format_block_error,
@@ -127,11 +127,27 @@ from .memory import (
     SyncLedger,
     VerificationReport,
     append_entry,
+    next_seq,
     read_all_entries,
     read_head,
     recompute_head,
     verify_and_repair_head,
     verify_chain,
+)
+from .memory.commit_log import (
+    COMMIT_LOG_DIR_NAME,
+    SCOPE_PRIVATE,
+    SCOPE_PROJECT,
+    CommitRecord,
+    PublicationRecord,
+    append_commits,
+    append_publications,
+    digest_of,
+    digest_of_rows,
+    read_commit_log,
+    rows_by_entry,
+    state_hashes_with_logs,
+    unpublished_commits,
 )
 from .memory.ledger_store import LedgerStoreError
 from .memory.repository import (
@@ -991,6 +1007,83 @@ def _verify_states_on_disk(
                     Finding.ORPHAN_STATE,
                     f"{snapshot.name} is on disk and no entry records it",
                 ))
+    return findings
+
+
+def _verify_commit_logs(
+    workspace: Path,
+    entries: Sequence[Any],
+) -> list[tuple[int, Finding, str]]:
+    """Check the commit messages against the chain that vouched for them.
+
+    Two questions. **Is the log still what the entry signed?** — an entry
+    records the digest of the rows it wrote, so a row edited, added or
+    removed afterwards no longer matches and is reported
+    (``COMMIT_LOG_MISMATCH``). **Is there a log for a State nobody holds?**
+    — messages kept under a State that is not on disk
+    (``ORPHAN_COMMIT_LOG``).
+
+    The second is reported and never repaired. Deleting a record because the
+    thing beside it went missing is how a record stops being one — the same
+    rule the ledger itself follows.
+    """
+    cgitsync_dir = workspace / ".cgitsync"
+    if not (cgitsync_dir / COMMIT_LOG_DIR_NAME).is_dir():
+        return []
+    findings: list[tuple[int, Finding, str]] = []
+
+    known = {entry.seq: entry for entry in entries}
+    grouped = rows_by_entry(cgitsync_dir)
+    for entry in entries:
+        committed, published = grouped.get(entry.seq, ([], []))
+        if not committed and not published:
+            if entry.commit_log:
+                findings.append((
+                    entry.seq,
+                    Finding.COMMIT_LOG_MISMATCH,
+                    "entry records a commit log whose rows are gone",
+                ))
+            continue
+        if not entry.commit_log:
+            findings.append((
+                entry.seq,
+                Finding.COMMIT_LOG_MISMATCH,
+                f"{len(committed) + len(published)} row(s) name an entry "
+                "that recorded no commit log",
+            ))
+            continue
+        try:
+            digest = digest_of_rows(committed, published)
+        except TypeError as exc:
+            findings.append((
+                entry.seq,
+                Finding.COMMIT_LOG_MISMATCH,
+                f"a commit row could not be read back: {exc}",
+            ))
+            continue
+        if digest != entry.commit_log:
+            findings.append((
+                entry.seq,
+                Finding.COMMIT_LOG_MISMATCH,
+                f"rows now digest to {digest}, entry recorded {entry.commit_log}",
+            ))
+
+    for seq in sorted(set(grouped) - set(known)):
+        committed, published = grouped[seq]
+        findings.append((
+            seq,
+            Finding.COMMIT_LOG_MISMATCH,
+            f"{len(committed) + len(published)} row(s) name entry {seq}, "
+            "which the chain does not have",
+        ))
+
+    for state_hash in state_hashes_with_logs(cgitsync_dir):
+        if not state_path(cgitsync_dir, state_hash).is_file():
+            findings.append((
+                0,
+                Finding.ORPHAN_COMMIT_LOG,
+                f"{state_hash[:12]} has commit messages and no State",
+            ))
     return findings
 
 
@@ -2931,12 +3024,97 @@ class ComplexGitSyncClient:
             )
         )
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="commit")
+        committed = self._collect_commit_records(registry, scope, message)
+        if committed:
+            # A commit changes every repository's HEAD, so the tree is in a
+            # state nobody has recorded yet. Writing it here is what gives
+            # the messages a State to be filed under — and what stops the
+            # memory skipping every commit until the next push.
+            self.write_gts_snapshot(command_origin="commit", commits=committed)
         self._log_event(
             "commit_end",
             message=message,
             committed=sum(1 for o in self.last_write_outcomes if o.acted),
         )
         return registry
+
+    def _collect_commit_records(
+        self,
+        registry: WorkingGitTree,
+        scope: RepoScope,
+        message: str,
+    ) -> list[CommitRecord]:
+        """What the commit just made, one row per repository that committed.
+
+        The outcomes come back in the order the repositories were visited,
+        so they are zipped against the same walk rather than matched by
+        name: two repositories may share a name, and a row attributed to the
+        wrong one is worse than no row at all.
+        """
+        records: list[CommitRecord] = []
+        visited = list(iter_tree_leaf_first(registry, scope))
+        branches = GitTreeBranches(registry, self.git_runner)
+        for entry, outcome in zip(visited, self.last_write_outcomes, strict=False):
+            if not outcome.acted or not entry.commit_sha:
+                continue
+            records.append(
+                CommitRecord(
+                    entry=0,  # replaced with the real seq in write_gts_snapshot
+                    repository=entry.name,
+                    repo_id=entry.repo_id,
+                    scope=SCOPE_PRIVATE if entry.effective_private else SCOPE_PROJECT,
+                    branch=branches.observed(entry) or "",
+                    sha=entry.commit_sha,
+                    message=message,
+                    authored_at=self.git_runner.commit_authored_at(
+                        entry.absolute_path, entry.commit_sha
+                    ),
+                )
+            )
+        return records
+
+    def _collect_publication_records(
+        self,
+        registry: WorkingGitTree,
+        scope: RepoScope,
+    ) -> dict[str, list[PublicationRecord]]:
+        """What the push just made public, grouped by the State that holds it.
+
+        A push publishes everything a repository has committed since the
+        last one, not only the commit at its HEAD, so every remembered
+        commit of that repository that carries no publication row yet gets
+        one. A commit the memory never saw — made by hand, or before any of
+        this existed — gets nothing: the memory speaks for what it watched.
+
+        Repositories are matched by their `.cgs` identifier rather than by
+        name, because two repositories in one tree may share a name and a
+        publication filed against the wrong one is worse than none.
+        """
+        root_entry = registry.get("root")
+        cgitsync_dir = root_entry.absolute_path / ".cgitsync"
+        if not (cgitsync_dir / COMMIT_LOG_DIR_NAME).is_dir():
+            return {}
+        moment = datetime.now(UTC).isoformat(timespec="seconds")
+        branches = GitTreeBranches(registry, self.git_runner)
+        published: dict[str, list[PublicationRecord]] = {}
+        for entry, outcome in zip(
+            iter_tree_leaf_first(registry, scope), self.last_write_outcomes, strict=False
+        ):
+            if not outcome.acted or not entry.repo_id:
+                continue
+            branch = branches.observed(entry)
+            for state_hash, sha in unpublished_commits(cgitsync_dir, entry.repo_id):
+                published.setdefault(state_hash, []).append(
+                    PublicationRecord(
+                        entry=0,  # replaced with the real seq in write_gts_snapshot
+                        repository=entry.name,
+                        sha=sha,
+                        remote=repo_identifier(entry),
+                        ref=f"refs/heads/{branch}" if branch else "",
+                        at=moment,
+                    )
+                )
+        return published
 
     def merge(
         self,
@@ -3226,7 +3404,10 @@ class ComplexGitSyncClient:
             if hint:
                 raise GitSyncError(f"{exc}\n{hint}") from exc
             raise
-        snapshot_path = self.write_gts_snapshot(command_origin="push")
+        snapshot_path = self.write_gts_snapshot(
+            command_origin="push",
+            publications=self._collect_publication_records(registry, scope),
+        )
         if self.source_path is not None:
             self.state_store.record_snapshot(self.source_path, snapshot_path)
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="push")
@@ -3797,10 +3978,16 @@ class ComplexGitSyncClient:
         return rows
 
     def memory_show(self, cgshome: str | Path, state: str) -> dict[str, Any]:
-        """One State: what it recorded, and every entry that names it.
+        """One State: what it recorded, every entry that names it, and what
+        was committed.
 
         *state* may be the full content hash or any unambiguous prefix of
         one — a 64-character name is not something anybody retypes.
+
+        The commit messages come back whole. Deciding that a long one should
+        be shown as a single line is the printer's business, not this
+        method's: a caller reading the memory from Python wants the message
+        that was written, not the one that fitted.
         """
         workspace = Path(cgshome)
         cgitsync_dir = workspace / ".cgitsync"
@@ -3824,6 +4011,11 @@ class ComplexGitSyncClient:
             for entry in read_all_entries(cgitsync_dir / "lgr")
             if _parse_state_hash(entry.state_id) == snapshot.stem
         ]
+        log = read_commit_log(cgitsync_dir, snapshot.stem)
+        committed: dict[int, list[dict[str, Any]]] = {}
+        for row in log["commit"]:
+            committed.setdefault(int(row.get("entry", 0)), []).append(row)
+        published_shas = {str(row.get("sha", "")) for row in log["published"]}
         return {
             "state": snapshot.stem,
             "path": str(snapshot),
@@ -3838,9 +4030,14 @@ class ComplexGitSyncClient:
                     "command": entry.command,
                     "outcome": entry.outcome,
                     "toolchain": dict(entry.toolchain),
+                    "commits": [
+                        {**row, "published": str(row.get("sha", "")) in published_shas}
+                        for row in committed.get(entry.seq, [])
+                    ],
                 }
                 for entry in recorded
             ],
+            "published": list(log["published"]),
         }
 
     def verify(self, cgshome: str | Path, *, repair: bool = False) -> VerificationReport:
@@ -3867,8 +4064,11 @@ class ComplexGitSyncClient:
 
         Store-level checks (``MISSING_STATE``, ``ORPHAN_STATE``,
         ``STATE_DIGEST_MISMATCH`` — cross-referencing entries against the
-        state directories on disk) become possible only once a State is
-        named by its content, so they belong to that milestone, not here.
+        state directories on disk) became possible once a State was named by
+        its content. ``COMMIT_LOG_MISMATCH`` and ``ORPHAN_COMMIT_LOG`` check
+        the commit messages the same way: an entry carries the digest of the
+        rows it wrote, so an edited log is caught by arithmetic rather than
+        by trust.
 
         With ``repair=True``, a stale ``HEAD`` cache is corrected in place.
         Entries themselves are never rewritten or deleted — a broken chain
@@ -3890,6 +4090,7 @@ class ComplexGitSyncClient:
                     f"cached HEAD={cached_head}, recomputed HEAD={true_head}",
                 ))
             report.findings.extend(_verify_states_on_disk(workspace, entries))
+            report.findings.extend(_verify_commit_logs(workspace, entries))
             # The store checks run after verify_chain, so the verdict is
             # recomputed here rather than left at the chain's own.
             #
@@ -4081,6 +4282,7 @@ class ComplexGitSyncClient:
         state_hash: str,
         state_path: Path,
         tree_root: Path,
+        commit_log: str = "",
     ) -> None:
         """Record in the chain that this State was seen, now, by these tools.
 
@@ -4108,6 +4310,7 @@ class ComplexGitSyncClient:
                 clock=SystemClock(),
                 toolchain=tuple(sorted(toolchain(self.git_runner).items())),
                 tree_root=tree_root,
+                commit_log=commit_log,
             )
         except (LedgerStoreError, OSError) as exc:
             self._log_event(
@@ -4309,6 +4512,8 @@ class ComplexGitSyncClient:
         command_origin: str,
         output_path: str | Path | None = None,
         freeze_name: str | None = None,
+        commits: Sequence[Any] = (),
+        publications: Mapping[str, Sequence[Any]] | None = None,
     ) -> Path:
         registry = self.get_dependency_registry()
         root_entry = registry.get("root")
@@ -4375,12 +4580,39 @@ class ComplexGitSyncClient:
         # and replays exactly as it did — but nothing writes it any more.
         # Three records of the same events, one of them tamper-evident, was
         # two too many.
+        # The commit log is written before the entry that vouches for it,
+        # because the entry carries its digest: an entry can only commit to
+        # rows that already exist.
+        commit_log_digest = ""
+        if commits or publications:
+            # The rows name the entry that wrote them and the entry carries
+            # their digest, so one of the two has to go first. The rows do,
+            # asking the ledger which sequence number is next.
+            pending_seq = next_seq(cgitsync_dir / "lgr")
+            written: list[Any] = []
+            if commits:
+                rows = [replace(record, entry=pending_seq) for record in commits]
+                append_commits(cgitsync_dir, canonical_state_hash, rows)
+                written.extend(rows)
+            # Publications go into the logs of the States whose commits they
+            # publish, which are older States than this one — a push
+            # publishes work that earlier commits recorded. Written in State
+            # order so the digest can be recomputed from the files later.
+            for state_hash in sorted(publications or {}):
+                rows = [
+                    replace(record, entry=pending_seq)
+                    for record in (publications or {})[state_hash]
+                ]
+                append_publications(cgitsync_dir, state_hash, rows)
+                written.extend(rows)
+            commit_log_digest = digest_of(written)
         self._append_ledger_entry(
             cgitsync_dir,
             command_origin=command_origin,
             state_hash=canonical_state_hash,
             state_path=final_output_path,
             tree_root=root_entry.absolute_path,
+            commit_log=commit_log_digest,
         )
         # The log is a record of a run, not of a State: two runs that leave
         # the tree identical produce one State and two logs, so it is named

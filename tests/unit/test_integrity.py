@@ -108,7 +108,7 @@ def test_verification_report_is_clean_reflects_findings():
     assert not populated.is_clean
 
 
-def test_finding_has_exactly_eight_members():
+def test_finding_has_exactly_ten_members():
     assert [f.name for f in Finding] == [
         "BROKEN_LINK",
         "BAD_ENTRY_HASH",
@@ -118,6 +118,8 @@ def test_finding_has_exactly_eight_members():
         "ORPHAN_STATE",
         "STATE_DIGEST_MISMATCH",
         "HEAD_STALE",
+        "ORPHAN_COMMIT_LOG",
+        "COMMIT_LOG_MISMATCH",
     ]
 
 

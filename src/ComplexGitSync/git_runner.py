@@ -235,6 +235,8 @@ class GitRunnerProtocol(Protocol):
 
     def rev_parse_head(self, repo_path: Path | str) -> str: ...
 
+    def commit_authored_at(self, repo_path: Path | str, sha: str) -> str: ...
+
     def current_branch(self, repo_path: Path | str) -> str | None: ...
 
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool: ...
@@ -463,6 +465,17 @@ class GitRunner:
 
     def rev_parse_head(self, repo_path: Path | str) -> str:
         return self._run("rev-parse", "HEAD", cwd=repo_path).stdout.strip()
+
+    def commit_authored_at(self, repo_path: Path | str, sha: str) -> str:
+        """When a commit was authored, as the memory records it.
+
+        A question, not an operation: a commit that cannot be read — one
+        rewritten away between the write and the recording — answers with an
+        empty string rather than raising, because a missing date is not a
+        reason to lose the message it belongs to.
+        """
+        completed = self._query("show", "-s", "--format=%aI", sha, cwd=repo_path)
+        return completed.stdout.strip() if completed.returncode == 0 else ""
 
     def current_branch(self, repo_path: Path | str) -> str | None:
         branch = self._run("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_path).stdout.strip()

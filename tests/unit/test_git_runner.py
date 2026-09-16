@@ -927,6 +927,9 @@ class _FakeGitRunner:
     def push(self, repo_path, *, remote="origin", ref_name=None, set_upstream=False) -> None:
         return None
 
+    def commit_authored_at(self, repo_path, sha) -> str:
+        return ""
+
     def pull(self, repo_path, *, remote="origin", ref_name=None) -> None:
         return None
 

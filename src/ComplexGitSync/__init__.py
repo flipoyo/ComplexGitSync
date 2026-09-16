@@ -1,6 +1,6 @@
 """ComplexGitSync package: deterministic distributed workspace synchronization over Git trees."""
 
-__version__ = "0002.66"
+__version__ = "0002.67"
 
 # --- Tier 1 — Public Errors (errors.py) ---
 # --- Cross-cutting document definitions ---
@@ -10,6 +10,7 @@ from .cgs_format import (
     parse_cgs,
     parse_repo_id,
     parse_repository_identifier,
+    repo_identifier,
 )
 from .config_document import ConfigDocument
 from .errors import (
@@ -131,6 +132,7 @@ __all__ = [
     "normalize_cgs",
     "parse_cgs",
     "parse_repo_id",
+    "repo_identifier",
     "parse_repository_identifier",
     # integrity.py
     "Finding",

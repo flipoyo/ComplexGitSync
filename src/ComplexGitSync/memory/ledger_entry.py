@@ -120,6 +120,7 @@ class LedgerEntry:
     state_dir: str
     outcome: str
     toolchain: tuple[tuple[str, str], ...]
+    commit_log: str
     entry_hash: str
 
 
@@ -134,6 +135,7 @@ def _canonical_payload(
     state_dir: str,
     outcome: str,
     toolchain: Sequence[tuple[str, str]] = (),
+    commit_log: str = "",
 ) -> dict[str, Any]:
     """Every ``LedgerEntry`` field except ``entry_hash`` itself, as a plain
     dict ready for canonical serialisation.
@@ -160,6 +162,11 @@ def _canonical_payload(
         # means "an older writer", not "a tool was missing" — that is
         # recorded as the word `none`.
         payload["toolchain"] = {name: version for name, version in toolchain}
+    if commit_log:
+        # The digest of the commit-log rows this entry wrote. Absent for an
+        # entry that wrote none — most of them — so the common case hashes
+        # exactly as it did before this field existed.
+        payload["commit_log"] = commit_log
     return payload
 
 
@@ -185,6 +192,7 @@ def compute_entry_hash(
     state_dir: str,
     outcome: str,
     toolchain: Sequence[tuple[str, str]] = (),
+    commit_log: str = "",
 ) -> str:
     """Compute ``entry_hash`` over the canonical serialisation of every
     other field, including ``prev`` — so editing any field, or splicing in
@@ -201,6 +209,7 @@ def compute_entry_hash(
         state_dir=state_dir,
         outcome=outcome,
         toolchain=toolchain,
+        commit_log=commit_log,
     )
     digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
     return f"sha256:{digest}"
@@ -216,6 +225,7 @@ def build_next_entry(
     outcome: str,
     clock: ClockProtocol,
     toolchain: Sequence[tuple[str, str]] = (),
+    commit_log: str = "",
 ) -> LedgerEntry:
     """Build the next entry in the chain following ``prev``.
 
@@ -242,6 +252,7 @@ def build_next_entry(
         state_dir=state_dir,
         outcome=outcome,
         toolchain=toolchain_tuple,
+        commit_log=commit_log,
     )
 
     return LedgerEntry(
@@ -254,5 +265,6 @@ def build_next_entry(
         state_dir=state_dir,
         outcome=outcome,
         toolchain=toolchain_tuple,
+        commit_log=commit_log,
         entry_hash=entry_hash,
     )

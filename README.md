@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.66
+# ComplexGitSync v0002.67
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -453,7 +453,8 @@ you look at it.
 ```bash
 cgitsync memory status          # how much is remembered, and does it verify
 cgitsync memory list            # every State, newest recording first
-cgitsync memory show 2acdc98b   # one State, and every entry that names it
+cgitsync memory show 2acdc98b   # one State, what was committed, who published it
+cgitsync memory show 2acdc98b --full   # whole commit messages, not first lines
 ```
 
 `memory status` prints the tool versions the records carry — cgitsync, git,
@@ -464,6 +465,14 @@ an upgrade says where the upgrade fell.
 A State named by `list` with no timestamp is one nobody recorded: history
 from before the ledger existed, or a file that arrived some other way.
 `verify` reports those, and does not call them corruption.
+
+`memory show` also prints what each `commit` wrote — the message, the
+repository, and whether anybody but this machine has ever seen it. A commit
+marked `unpushed` exists only here. That answer survives the repository
+itself: a deleted branch or an archived project takes `git log` with it, and
+this record stays. Editing one of these messages afterwards is something
+`verify` reports, because the ledger entry that recorded them carries their
+fingerprint.
 
 ### Keeping a memory when the disk does not
 
