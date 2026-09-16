@@ -37,7 +37,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 23,
-      "loc": 1441,
+      "loc": 1511,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -131,9 +131,14 @@
       "public_symbols": 7
     },
     "memory/ledger_store.py": {
-      "internal_imports": 3,
-      "loc": 363,
+      "internal_imports": 4,
+      "loc": 391,
       "public_symbols": 16
+    },
+    "memory/repository.py": {
+      "internal_imports": 2,
+      "loc": 107,
+      "public_symbols": 10
     },
     "memory/states.py": {
       "internal_imports": 0,
@@ -151,18 +156,18 @@
       "public_symbols": 25
     },
     "orchestre.py": {
-      "internal_imports": 99,
-      "loc": 3933,
+      "internal_imports": 107,
+      "loc": 4100,
       "public_symbols": 11
     },
     "paths.py": {
-      "internal_imports": 2,
-      "loc": 176,
-      "public_symbols": 4
+      "internal_imports": 3,
+      "loc": 206,
+      "public_symbols": 5
     },
     "registry.py": {
-      "internal_imports": 36,
-      "loc": 450,
+      "internal_imports": 39,
+      "loc": 498,
       "public_symbols": 3
     },
     "settings.py": {

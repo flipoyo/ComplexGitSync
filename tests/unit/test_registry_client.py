@@ -2001,7 +2001,14 @@ def test_client_load_cgs_records_the_state_in_the_chain(tmp_path):
     assert all(value for value in recorded.values())
 
 
-def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path):
+def test_a_memory_records_no_machine_path_anywhere(monkeypatch, tmp_path):
+    """Gate G5 of MemoryRepoLocal, on the two files a memory is made of.
+
+    A snapshot used to record `$HOME/workspace/demo` — the `$HOME` was
+    substituted and the rest of one developer's directory layout was not.
+    A memory gets pushed, so every path it holds is written against the tree
+    it describes and nothing about the disk under it survives.
+    """
     fake_home = (tmp_path / "home" / "user").resolve()
     workspace = fake_home / "workspace" / "demo"
     workspace.mkdir(parents=True)
@@ -2012,9 +2019,20 @@ def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path
     client.load(config_path)
 
     snapshot_path = _current_state_path(workspace)
-    snapshot_data = tomllib.loads(snapshot_path.read_text(encoding="utf-8"))
+    snapshot_text = snapshot_path.read_text(encoding="utf-8")
+    snapshot_data = tomllib.loads(snapshot_text)
+
+    # Exactly one path survives, and it is the tree root itself — the one
+    # G5 allows, and the one a loose snapshot needs to say where its tree
+    # goes. It carries no user name: `$HOME` is substituted.
     assert snapshot_data["project"]["root_absolute_path"] == "$HOME/workspace/demo"
-    assert snapshot_data["project"]["source_cgs_path"] == "$HOME/workspace/demo/project.cgs"
+    assert str(fake_home) not in snapshot_text
+
+    # Everything else is written against the tree, so no second path, no
+    # duplication, and nothing that means anything on another machine.
+    assert snapshot_data["project"]["source_cgs_path"] == "$CGSTREE/project.cgs"
+    assert snapshot_data["repo_state"][0]["absolute_path"] == "$CGSTREE"
+    assert snapshot_text.count("$HOME") == 1
 
     [entry] = _ledger_entries(workspace)
     assert re.fullmatch(r"state\([0-9a-f]{64}\)", entry.state_id)

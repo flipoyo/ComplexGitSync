@@ -5,7 +5,7 @@ Contract: persist and load ``LedgerEntry`` records as one file per ``seq``
     under ``.cgitsync/lgr/``, atomically and with secrets scrubbed before
     they are ever hashed or written, plus a best-effort, self-repairing
     ``HEAD`` cache.
-Imports: ledger_entry
+Imports: ledger_entry, paths
 
 Design reference: ``.localSpec/AdditionalSpecs.md``, *The hash-chained
 register* (one file per entry),
@@ -62,6 +62,7 @@ from typing import Any, Sequence
 
 import tomli_w
 
+from ..paths import _path_against_tree
 from .ledger_entry import ClockProtocol, LedgerEntry, build_next_entry
 
 #: Filename of the HEAD cache, sibling to the numbered entry files.
@@ -172,16 +173,44 @@ def _scrub_url_userinfo(value: str) -> str:
     return f"{match.group('scheme')}{_REDACTED}@{match.group('rest')}"
 
 
-def scrub_argv(argv: Sequence[str]) -> list[str]:
-    """Return a copy of ``argv`` with credentials redacted.
+def _scrub_path(argument: str, tree_root: Path | None) -> str:
+    """Write an absolute path in *argument* against the tree, or cut it down.
 
-    Two independent rules, per AdditionalSpecs.md's register section:
+    A memory gets pushed, so what it records about a command must say what
+    was done to *this tree* and nothing about the disk it sat on. An
+    absolute path inside the tree becomes ``$CGSTREE/...``; one outside it
+    keeps only its file name, because the directories above are exactly what
+    MemoryRepoLocal's gate G5 keeps out — and a path outside the tree means
+    nothing on the machine that reads the memory next.
+    """
+    prefix = ""
+    value = argument
+    if argument.startswith("--") and "=" in argument:
+        flag, _, value = argument.partition("=")
+        prefix = f"{flag}="
+    if not value.startswith("/") and not (len(value) > 2 and value[1] == ":"):
+        return argument
+    candidate = Path(value)
+    if tree_root is not None:
+        against_tree = _path_against_tree(candidate, tree_root)
+        if against_tree is not None:
+            return f"{prefix}{against_tree}"
+    return f"{prefix}{candidate.name}"
+
+
+def scrub_argv(argv: Sequence[str], *, tree_root: Path | None = None) -> list[str]:
+    """Return a copy of ``argv`` with credentials redacted and paths tamed.
+
+    Three independent rules, per AdditionalSpecs.md's register section:
 
     - Any URL-shaped element (``scheme://user:token@host/...``) has its
       userinfo replaced with ``***``, keeping the scheme and host visible.
     - The value following a ``--token``/``--password``/``--service`` flag
       (either as the next argv element, or joined with ``=``) is replaced
       with ``***`` wholesale.
+    - An absolute path is written against the tree (``$CGSTREE/...``) when
+      it is inside *tree_root*, and cut to its file name when it is not.
+      See :func:`_scrub_path`.
 
     Must be called before the argv ever reaches
     :func:`~ComplexGitSync.ledger_entry.build_next_entry` — the entry hash
@@ -197,6 +226,8 @@ def scrub_argv(argv: Sequence[str]) -> list[str]:
             scrubbed.append(_REDACTED)
             redact_next = False
             continue
+
+        arg = _scrub_path(arg, tree_root)
 
         flag_match = _SECRET_FLAG_RE.match(arg)
         if flag_match is not None:
@@ -437,6 +468,7 @@ def append_entry(
     outcome: str,
     clock: ClockProtocol,
     toolchain: Sequence[tuple[str, str]] = (),
+    tree_root: Path | None = None,
 ) -> LedgerEntry:
     """Scrub ``argv``, build the next chain entry, and persist it.
 
@@ -449,7 +481,7 @@ def append_entry(
     already in ``lgr_dir`` (§2.3's files are the source of truth, not the
     ``HEAD`` cache).
     """
-    scrubbed_argv = scrub_argv(argv)
+    scrubbed_argv = scrub_argv(argv, tree_root=tree_root)
     existing_entries = read_all_entries(lgr_dir)
     prev_entry = existing_entries[-1] if existing_entries else None
 

@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.65
+# ComplexGitSync v0002.66
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -308,7 +308,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `import-submodules` | `<repo-root>` `--apply` `--recursive` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
 | Expert | `init-from-submodules` | `<repo-root>` `--cgs` `--max-depth` `--dry-run` `--force` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
 | Expert | `verify` | `--repair` `--search-dir` `--json` | Say whether this workspace's recorded history is verified, absent, legacy or corrupt. |
-| Expert | `memory` | `status` `list` `show <state>` | Look at what this workspace remembers: how much, when, and what produced it. Each subcommand takes `--search-dir`. |
+| Expert | `memory` | `status` `list` `show <state>` `init` `clone` `push` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. |
 | Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
 | Configuration | `create-cgs` | `--project` `--repo` `--output` | Create a validated .cgs specification from CLI project definitions. |
@@ -464,6 +464,33 @@ an upgrade says where the upgrade fell.
 A State named by `list` with no timestamp is one nobody recorded: history
 from before the ledger existed, or a file that arrived some other way.
 `verify` reports those, and does not call them corruption.
+
+### Keeping a memory when the disk does not
+
+A memory lives in `.cgitsync/`, which can be a repository of its own — the
+same kind of private mount `.localSpec` is. One repository holds every
+project's memory, on a branch per project, so nothing new has to be learned
+to use it:
+
+```bash
+cgitsync memory init     # the .cgs entry to add, and the branch it uses
+cgitsync memory clone    # bring this project's memory onto a new machine
+cgitsync memory push     # commit what the memory gained, and push it
+```
+
+`init` proposes and stops. **It never creates the repository for you**:
+`cgitsync` speaks Git and nothing else, so it prints the one command that
+creates it and waits.
+
+Nothing is pushed automatically. A machine with no network keeps a
+complete, verifiable memory and sends it later — offline is the normal
+case, not a failure.
+
+**What a memory carries off your machine.** One path: the tree's own root,
+with `$HOME` substituted. Everything else it records — every repository
+path, every path in a command line it logged — is written against the tree
+as `$CGSTREE/...`, so nothing about your directory layout, and no user
+name, travels with it.
 
 ## 3.1 What `cgitsync` promises a script
 

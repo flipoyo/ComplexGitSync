@@ -40,7 +40,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .cgs_format import CgsDocument
-from .errors import GitSyncError
+from .errors import ConfigValidationError, GitSyncError
 
 # ============================================================
 #  Environment-marker path portability
@@ -110,6 +110,57 @@ def _expand_environment_markers(raw_path: str) -> str:
             f"{homedrive}{homepath}",
         )
     return expanded
+
+
+#: What a State calls the tree it describes.
+#:
+#: Every path a State records sits inside the workspace, so every one of
+#: them is written against this token and never against the machine. A
+#: snapshot that said ``$HOME/work/demo/docs`` published one developer's
+#: directory layout to everyone who could read the memory; ``$CGSTREE/docs``
+#: says the same thing about the tree and nothing at all about the disk.
+#:
+#: It is deliberately **not** ``$CGSHOME``: that names an environment
+#: variable which may be set, unset, or pointing at a different workspace
+#: entirely, and a path that resolves differently depending on a shell is
+#: exactly the trap this token exists to avoid. It is resolved against the
+#: workspace the snapshot was found in, by the reader, always.
+TREE_MARKER = "$CGSTREE"
+
+
+def _path_against_tree(path: Path | str, tree_root: Path) -> str | None:
+    """Write *path* as ``$CGSTREE/...``, or ``None`` if it is outside the tree.
+
+    ``None`` is the honest answer for a path outside the workspace — a
+    ``.cgs`` kept in a home directory, say. It cannot be expressed against
+    the tree, it means nothing on another machine, and recording it would
+    publish exactly the layout this function exists to keep out of a memory
+    that gets pushed (MemoryRepoLocal's gate G5).
+    """
+    resolved = Path(path).expanduser().resolve()
+    try:
+        relative = resolved.relative_to(tree_root)
+    except ValueError:
+        return None
+    return TREE_MARKER if relative == Path(".") else f"{TREE_MARKER}/{relative.as_posix()}"
+
+
+def _path_from_tree(raw_path: str, tree_root: Path | None) -> Path:
+    """Resolve a recorded path, expanding :data:`TREE_MARKER` against *tree_root*.
+
+    Falls through to the older environment-marker handling for every
+    snapshot written before the tree marker existed, which keeps reading
+    them exactly as it always did.
+    """
+    if raw_path == TREE_MARKER or raw_path.startswith(f"{TREE_MARKER}/"):
+        if tree_root is None:
+            raise ConfigValidationError(
+                f"this snapshot records paths against {TREE_MARKER} but no workspace "
+                "was given to resolve them against."
+            )
+        suffix = raw_path[len(TREE_MARKER) :].lstrip("/")
+        return (tree_root / suffix).resolve() if suffix else tree_root
+    return _resolve_document_path(raw_path)
 
 
 def _resolve_document_path(raw_path: str) -> Path:

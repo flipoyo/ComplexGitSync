@@ -458,7 +458,9 @@ def test_build_gts_document_from_registry_round_trips_through_build_registry_fro
         command_origin="load",
         source_cgs_path=config_path,
     )
-    rebuilt_registry = build_registry_from_gts_document(gts_document)
+    rebuilt_registry = build_registry_from_gts_document(
+        gts_document, tree_root=original_registry.get('root').absolute_path
+    )
 
     assert rebuilt_registry.get("root").name == original_registry.get("root").name
     assert rebuilt_registry.get("root:deps/child-repo").absolute_path == original_registry.get(
@@ -503,7 +505,9 @@ def _round_trip_root(config_path: Path):
     gts_document = build_gts_document_from_registry(
         original_registry, command_origin="load", source_cgs_path=config_path
     )
-    rebuilt_registry = build_registry_from_gts_document(gts_document)
+    rebuilt_registry = build_registry_from_gts_document(
+        gts_document, tree_root=original_registry.get('root').absolute_path
+    )
     return original_registry.get("root"), rebuilt_registry.get("root")
 
 
@@ -603,7 +607,9 @@ def test_a_snapshot_predating_this_fix_is_flagged_as_undeclared(tmp_path):
     stale_data["document"].pop("snapshot_hash", None)
     stale_document = GtsDocument.from_dict(stale_data)
 
-    rebuilt = build_registry_from_gts_document(stale_document).get("root")
+    rebuilt = build_registry_from_gts_document(
+        stale_document, tree_root=registry.get("root").absolute_path
+    ).get("root")
 
     assert rebuilt.gitprovider_declared is False
     # The GITHUB fallback is a filled-in default here, not a recovered fact.

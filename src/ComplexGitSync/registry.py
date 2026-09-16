@@ -85,6 +85,7 @@ from .gts_document import (
     _repo_ref_name,
     _repo_ref_pair,
 )
+from .paths import TREE_MARKER, _path_against_tree, _path_from_tree
 
 # ============================================================
 #  Environment-marker path helpers
@@ -329,11 +330,43 @@ def _placement(repo_ids: dict[Path, str], relative_path: Path) -> tuple[str, Pat
     return repo_ids[container_path], relative_path.relative_to(container_path)
 
 
-def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
-    """Build a :class:`WorkingGitTree` from a ``.gts`` snapshot document."""
+def _tree_root_of(document: GtsDocument, tree_root: Path | None) -> Path | None:
+    """Which workspace this document's paths are written against.
+
+    An explicit *tree_root* wins: the caller found the snapshot and knows
+    the workspace it was in, which is the answer that stays right when a
+    memory is cloned onto another machine. Otherwise the document's own
+    ``project.root_absolute_path`` answers, which is what lets a loose
+    snapshot — one handed to ``pull`` from outside any workspace — still
+    say where its tree belongs.
+    """
+    if tree_root is not None:
+        return tree_root
+    recorded_root = document.read("project.root_absolute_path")
+    if isinstance(recorded_root, str) and recorded_root and recorded_root != TREE_MARKER:
+        return _resolve_document_path(recorded_root)
+    return None
+
+
+def build_registry_from_gts_document(
+    document: GtsDocument,
+    *,
+    tree_root: Path | None = None,
+) -> WorkingGitTree:
+    """Build a :class:`WorkingGitTree` from a ``.gts`` snapshot document.
+
+    *tree_root* is the workspace the snapshot describes. A document written
+    against :data:`TREE_MARKER` — every one written since a memory became
+    something that gets pushed — records no machine paths at all, so the
+    reader supplies the tree and the same snapshot rebuilds correctly in
+    whatever directory it was restored into. Older documents carry their
+    own absolute paths and are read exactly as before, so *tree_root* is
+    optional and unused for them.
+    """
     registry = WorkingGitTree()
     path_to_repo_id: dict[Path, str] = {}
     project_source_cgs_path = document.read("project.source_cgs_path")
+    tree_root = _tree_root_of(document, tree_root)
 
     repo_states = sorted(
         document.repo_states,
@@ -341,9 +374,9 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
     )
 
     for repo_state in repo_states:
-        absolute_path = _resolve_document_path(str(repo_state["absolute_path"]))
+        absolute_path = _path_from_tree(str(repo_state["absolute_path"]), tree_root)
         parent_absolute_path = (
-            _resolve_document_path(str(repo_state["parent_absolute_path"]))
+            _path_from_tree(str(repo_state["parent_absolute_path"]), tree_root)
             if repo_state.get("parent_absolute_path")
             else None
         )
@@ -363,9 +396,13 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
             absolute_path=absolute_path,
             relative_path=(Path(str(repo_state["relative_path"])) if repo_state.get("relative_path") is not None else None),
             source_cgs_path=(
-                _resolve_document_path(str(repo_state["source_cgs_path"]))
+                _path_from_tree(str(repo_state["source_cgs_path"]), tree_root)
                 if repo_state.get("source_cgs_path")
-                else (_resolve_document_path(str(project_source_cgs_path)) if project_source_cgs_path else None)
+                else (
+                    _path_from_tree(str(project_source_cgs_path), tree_root)
+                    if project_source_cgs_path
+                    else None
+                )
             ),
             current_ref_kind=_parse_optional_enum(RefKind, _repo_ref_kind(repo_state, "current")),
             current_ref_name=_repo_ref_name(repo_state, "current"),
@@ -419,6 +456,30 @@ def build_registry_from_gts_document(document: GtsDocument) -> WorkingGitTree:
     return registry
 
 
+def _project_block(root_entry: WorkingRepo, source_cgs_path: Path | None) -> dict[str, Any]:
+    """The ``[project]`` table of a snapshot, carrying no machine path.
+
+    The tree names itself, never its place on a disk — see
+    :data:`TREE_MARKER`. A ``.cgs`` that lives outside the tree is left out
+    rather than recorded: it cannot be expressed against the tree, it means
+    nothing on another machine, and it is exactly the directory layout a
+    pushed memory must not publish.
+    """
+    block: dict[str, Any] = {
+        "name": root_entry.name,
+        # The one path a snapshot keeps, and the only one G5 allows: the
+        # tree root itself, so a snapshot handed to `pull` from outside any
+        # workspace can still say where its tree goes. Every *other* path is
+        # written against it, so nothing else about the disk survives.
+        "root_absolute_path": _path_to_environment_marker(root_entry.absolute_path),
+    }
+    if source_cgs_path is not None:
+        recorded = _path_against_tree(source_cgs_path, root_entry.absolute_path)
+        if recorded is not None:
+            block["source_cgs_path"] = recorded
+    return block
+
+
 def build_gts_document_from_registry(
     registry: WorkingGitTree,
     *,
@@ -435,10 +496,7 @@ def build_gts_document_from_registry(
             "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "command_origin": command_origin,
         },
-        "project": {
-            "name": root_entry.name,
-            "root_absolute_path": _path_to_environment_marker(root_entry.absolute_path),
-        },
+        "project": _project_block(root_entry, source_cgs_path),
         "tree_state": {
             "lifecycle_state": tree_state.lifecycle_state.value,
             "is_ready": tree_state.is_ready,
@@ -449,8 +507,7 @@ def build_gts_document_from_registry(
         },
         "repo_state": [],
     }
-    if source_cgs_path is not None:
-        data["project"]["source_cgs_path"] = _path_to_environment_marker(source_cgs_path)
+    tree_root = root_entry.absolute_path
     if command_origin in _FREEZE_COMMAND_ORIGINS:
         data["freeze_manifest"] = _build_freeze_manifest(registry, freeze_name=freeze_name)
 
@@ -458,7 +515,7 @@ def build_gts_document_from_registry(
         repo_data: dict[str, Any] = {
             "name": entry.name,
             "node_type": entry.node_type.value,
-            "absolute_path": _path_to_environment_marker(entry.absolute_path),
+            "absolute_path": _path_against_tree(entry.absolute_path, tree_root),
             "relative_path": str(entry.relative_path) if entry.relative_path is not None else None,
             "repo_lifecycle_state": entry.repo_lifecycle_state.value,
             "sync_state": entry.sync_state.value,
@@ -466,7 +523,9 @@ def build_gts_document_from_registry(
             "fallback_reason": entry.fallback_reason,
             "worktree_state": entry.worktree_state,
             "source_cgs_path": (
-                _path_to_environment_marker(entry.source_cgs_path) if entry.source_cgs_path else None
+                _path_against_tree(entry.source_cgs_path, tree_root)
+                if entry.source_cgs_path
+                else None
             ),
             "project_owner_name": entry.project_owner_name,
             "project_name": entry.project_name,
@@ -499,8 +558,8 @@ def build_gts_document_from_registry(
         if not entry.is_reachable:
             repo_data["is_reachable"] = entry.is_reachable
         if entry.parent_id is not None:
-            repo_data["parent_absolute_path"] = _path_to_environment_marker(
-                registry.get(entry.parent_id).absolute_path
+            repo_data["parent_absolute_path"] = _path_against_tree(
+                registry.get(entry.parent_id).absolute_path, tree_root
             )
         data["repo_state"].append({key: value for key, value in repo_data.items() if value is not None})
 

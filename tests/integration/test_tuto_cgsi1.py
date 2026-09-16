@@ -188,14 +188,21 @@ class TestTutoCGSil1CLI:
         assert exit_code == 0
 
         assert (project_root / ".cgitsync").is_dir()
+
+        # **The invariant that survives.** The leak this regression exists
+        # for was memory content committed into the project repository as
+        # ordinary files. What must never happen is that the project
+        # *tracks* it — not that Git cannot see it. Under MemoryRepoLocal a
+        # memory is a mounted repository of its own, so "invisible" stops
+        # being the mechanism while "never tracked here" stays the rule.
+        assert _run_git(project_root, "ls-files", ".cgitsync") == ""
+        assert _run_git(project_root, "ls-files", "CGSil1.lgr") == ""
+
+        # Today that is achieved by ignoring it, the same line that keeps
+        # every other child mount out of its parent's index.
         gitignore_lines = (project_root / ".gitignore").read_text(encoding="utf-8").splitlines()
         assert ".cgitsync/" in gitignore_lines
         assert "CGSil1.lgr" in gitignore_lines
-
-        status = _run_git(project_root, "status", "--porcelain")
-        assert ".cgitsync" not in status
-        status_all = _run_git(project_root, "status", "--porcelain", "--ignored")
-        assert any(".cgitsync" in line for line in status_all.splitlines())
 
     # ── Tutorial steps 4-8 (end-to-end git cycle) ──────────────────────────
 

@@ -79,7 +79,7 @@ from .errors import (
     ConfigValidationError,
     GitSyncError,
 )
-from .git_branch import BranchResolution, resolve_entry_ref
+from .git_branch import DEFAULT_BRANCH, BranchResolution, resolve_entry_ref
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
@@ -134,6 +134,15 @@ from .memory import (
     verify_chain,
 )
 from .memory.ledger_store import LedgerStoreError
+from .memory.repository import (
+    commit_message,
+    creation_command,
+    format_mount_entry,
+    memory_branch,
+    memory_mount_path,
+    mount_entry,
+    uncommitted_memory_paths,
+)
 from .memory.states import (
     STATE_DIR_NAME,
     _format_state_id,
@@ -150,11 +159,12 @@ from .operations import (
 from .operations import (
     validate_branch_topology as _validate_branch_topology,
 )
-from .paths import _resolve_document_path, _resolve_project_root
+from .paths import _resolve_project_root
 from .paths import resolve_bootstrap_root as _resolve_bootstrap_root
 from .paths import resolve_cgshome as _resolve_cgshome
 from .paths import resolve_initialise_cgshome as _resolve_initialise_cgshome
 from .registry import (
+    _path_from_tree,
     build_gts_document_from_registry,
     build_registry_from_cgs_document,
     build_registry_from_gts_document,
@@ -982,6 +992,27 @@ def _verify_states_on_disk(
                     f"{snapshot.name} is on disk and no entry records it",
                 ))
     return findings
+
+
+def _workspace_of_snapshot(snapshot_path: Path) -> Path | None:
+    """The workspace a snapshot belongs to: the directory holding its `.cgitsync`.
+
+    A State lives at ``<workspace>/.cgitsync/state/<hash>.gts``, so the
+    workspace is found by walking up — the same rule discovery uses, and the
+    one answer that does not depend on an environment variable or a working
+    directory. **Cloned onto another machine, this is what makes the memory
+    resolve to the new tree rather than the old one's paths.**
+
+    ``None`` for a snapshot that is not inside a workspace — a loose file
+    somebody passed to ``--gts``. Guessing its own directory would be worse
+    than saying nothing: the document then answers from its own recorded
+    root, which is right, where a guess would silently rebuild the tree in
+    the wrong place.
+    """
+    for candidate in (snapshot_path.parent, *snapshot_path.parents):
+        if (candidate / ".cgitsync").is_dir():
+            return candidate
+    return None
 
 
 def _write_file_atomically(destination: Path, write: Any) -> None:
@@ -2440,11 +2471,17 @@ class ComplexGitSyncClient:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         resolved_snapshot_path = Path(snapshot_path).resolve()
         document = GtsDocument.from_toml(resolved_snapshot_path)
-        self.registry = build_registry_from_gts_document(document)
+        # A snapshot records its paths against the tree, not against a
+        # machine, so the reader supplies the tree: the workspace this
+        # snapshot was found in. That is what lets a memory be cloned onto
+        # another machine and still rebuild the right directories.
+        tree_root = _workspace_of_snapshot(resolved_snapshot_path)
+        self.registry = build_registry_from_gts_document(document, tree_root=tree_root)
         self.orchestre.git_tree.git.bind_tree(self.registry)
+        recorded_source = document.read("project.source_cgs_path")
         self.source_path = (
-            _resolve_document_path(str(document.read("project.source_cgs_path")))
-            if document.read("project.source_cgs_path")
+            _path_from_tree(str(recorded_source), tree_root)
+            if recorded_source
             else resolved_snapshot_path
         )
         self.loaded_snapshot_path = resolved_snapshot_path
@@ -3545,6 +3582,151 @@ class ComplexGitSyncClient:
         self.orchestre.git_tree.git.bind_tree(self.registry)
         return self.registry
 
+    def memory_init(self, cgshome: str | Path, *, owner: str | None = None) -> dict[str, Any]:
+        """Propose the `.cgs` entry that mounts this workspace's memory.
+
+        It proposes and stops. **Nothing here creates a repository**:
+        ComplexGitSync speaks Git and nothing else, and teaching it a
+        provider's API would mean a network call and a stored credential
+        where there is neither today. So it returns the entry to paste, the
+        branch the memory will live on, and the one command that creates the
+        repository — and waits for the user to run it.
+        """
+        workspace = Path(cgshome)
+        registry = self.registry
+        if registry is None or ROOT_REPO_ID not in registry.repos:
+            raise GitSyncError(
+                "cgitsync memory init needs a loaded project: run it in a workspace "
+                "with a .gts, or pass --gts."
+            )
+        root = registry.get(ROOT_REPO_ID)
+        repository_owner = owner or root.project_owner_name
+        if not repository_owner:
+            raise GitSyncError(
+                "the project's root repository declares no owner, so no memory "
+                "repository name can be proposed. Pass one explicitly."
+            )
+        entry = mount_entry(repository_owner, root.name)
+        branches = GitTreeBranches(registry, self.git_runner)
+        return {
+            "entry": entry,
+            "line": format_mount_entry(entry),
+            "branch": memory_branch(root.name, branches.tree_branch or DEFAULT_BRANCH),
+            "mount_path": str(memory_mount_path(workspace)),
+            "create_with": creation_command(entry),
+            "mounted": memory_mount_path(workspace).joinpath(".git").exists(),
+        }
+
+    def memory_clone(
+        self,
+        cgshome: str | Path,
+        *,
+        owner: str | None = None,
+        branch: str | None = None,
+        remote: str | None = None,
+    ) -> Path:
+        """Bring this project's memory onto a machine that does not have it.
+
+        The case this exists for is a machine with **no memory at all**, so
+        it asks nothing of a loaded project: give it an owner and a branch
+        and it works on a bare clone. When a project *is* loaded it fills
+        both in from it, which is the case that needs no arguments.
+
+        It refuses rather than overwrites. A local memory nobody has pushed
+        is the only copy of itself, and cloning another one over it would
+        destroy exactly the thing this milestone exists to preserve.
+        """
+        workspace = Path(cgshome)
+        destination = memory_mount_path(workspace)
+        if (destination / ".git").exists():
+            raise GitSyncError(f"{destination} is already a repository; nothing to clone.")
+        if destination.is_dir() and any(destination.iterdir()):
+            raise GitSyncError(
+                f"{destination} already holds a memory. Move it aside before cloning "
+                "one over it — this command never overwrites a local memory."
+            )
+
+        target_branch, remote_url = self._memory_remote(
+            workspace, owner=owner, branch=branch, remote=remote
+        )
+        if not self.git_runner.remote_branch_exists(remote_url, target_branch):
+            raise GitSyncError(
+                f"{remote_url} has no branch {target_branch!r}: this project's memory "
+                "has never been pushed, so there is nothing to clone."
+            )
+        self.git_runner.clone(remote_url, destination, branch=target_branch)
+        self._log_event("memory_clone", destination=destination, branch=target_branch)
+        return destination
+
+    def _memory_remote(
+        self,
+        workspace: Path,
+        *,
+        owner: str | None,
+        branch: str | None,
+        remote: str | None,
+    ) -> tuple[str, str]:
+        """Which branch of which repository this workspace's memory is.
+
+        Answers from a loaded project when there is one, and from the
+        arguments when there is not — which is the fresh-machine case, where
+        by definition nothing is loaded yet.
+        """
+        if branch is None or remote is None:
+            proposal = self.memory_init(workspace, owner=owner)
+            branch = branch or str(proposal["branch"])
+            remote = remote or repo_remote_url(
+                parse_repo_id(str(proposal["entry"]["repository"])),
+                AccessProtocol.SSH,
+            )
+        return branch, remote
+
+    def memory_push(self, cgshome: str | Path, *, message: str | None = None) -> dict[str, Any]:
+        """Commit what the memory gained and push it.
+
+        Offline is not a failure mode, it is the normal case: everything a
+        memory records is written locally first and pushed when somebody
+        asks. So this is a command, never automatic, and a machine with no
+        network keeps a complete, valid, verifiable memory without it.
+        """
+        workspace = Path(cgshome)
+        mount = memory_mount_path(workspace)
+        if not (mount / ".git").exists():
+            raise GitSyncError(
+                f"{mount} is not a repository yet. Run 'cgitsync memory init' for the "
+                "entry that mounts one, then 'cgitsync memory clone'."
+            )
+        status = self.memory_status(workspace)
+        pending = uncommitted_memory_paths(self.git_runner.status_porcelain(mount))
+        committed = False
+        if pending:
+            self.git_runner.stage_all(mount)
+            MasterConfig.load(workspace)
+            user_name, user_email = MasterConfig.resolve_identity(mount, self.git_runner)
+            self.git_runner.commit(
+                mount,
+                message
+                or commit_message(
+                    Path(str(status["cgshome"])).name,
+                    int(status["states"]),
+                    int(status["entries"]),
+                ),
+                user_name=user_name,
+                user_email=user_email,
+            )
+            committed = True
+        branch = self.git_runner.current_branch(mount)
+        self.git_runner.push(mount, ref_name=branch, set_upstream=True)
+        self._log_event("memory_push", mount=mount, branch=branch, committed=committed)
+        return {
+            "mount": str(mount),
+            "branch": branch,
+            "committed": committed,
+            "recorded": len(pending),
+            "states": status["states"],
+            "entries": status["entries"],
+        }
+
     def memory_status(self, cgshome: str | Path) -> dict[str, Any]:
         """What this workspace remembers, in one answer.
 
@@ -3898,6 +4080,7 @@ class ComplexGitSyncClient:
         command_origin: str,
         state_hash: str,
         state_path: Path,
+        tree_root: Path,
     ) -> None:
         """Record in the chain that this State was seen, now, by these tools.
 
@@ -3924,6 +4107,7 @@ class ComplexGitSyncClient:
                 outcome="ok",
                 clock=SystemClock(),
                 toolchain=tuple(sorted(toolchain(self.git_runner).items())),
+                tree_root=tree_root,
             )
         except (LedgerStoreError, OSError) as exc:
             self._log_event(
@@ -4196,6 +4380,7 @@ class ComplexGitSyncClient:
             command_origin=command_origin,
             state_hash=canonical_state_hash,
             state_path=final_output_path,
+            tree_root=root_entry.absolute_path,
         )
         # The log is a record of a run, not of a State: two runs that leave
         # the tree identical produce one State and two logs, so it is named

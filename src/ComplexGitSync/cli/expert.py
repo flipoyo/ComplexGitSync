@@ -548,6 +548,33 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     )
     _add_search_dir_argument(show)
 
+    initialise = memory_commands.add_parser(
+        "init",
+        help="Propose the .cgs entry that mounts this project's memory.",
+    )
+    initialise.add_argument(
+        "--owner",
+        help="Account the memory repository belongs to. Defaults to the project's own.",
+    )
+    _add_search_dir_argument(initialise)
+
+    clone = memory_commands.add_parser(
+        "clone", help="Bring this project's memory onto a machine that lacks it."
+    )
+    clone.add_argument("--owner", help="Account the memory repository belongs to.")
+    clone.add_argument("--branch", help="Branch to clone. Defaults to this project's.")
+    clone.add_argument(
+        "--remote",
+        help="Clone from this address instead of the one the project's owner implies.",
+    )
+    _add_search_dir_argument(clone)
+
+    push = memory_commands.add_parser(
+        "push", help="Commit what the memory gained and push it."
+    )
+    push.add_argument("-m", "--message", help="Commit message. One is generated otherwise.")
+    _add_search_dir_argument(push)
+
     subparser.set_defaults(handler=_handle_memory)
 
 
@@ -860,7 +887,14 @@ def _handle_memory(args: argparse.Namespace) -> int:
         command_name=f"memory-{args.memory_command}",
         source=cgshome,
         runner=lambda client, source: _execute_memory(
-            client, source, subcommand=args.memory_command, state=getattr(args, "state", None)
+            client,
+            source,
+            subcommand=args.memory_command,
+            state=getattr(args, "state", None),
+            owner=getattr(args, "owner", None),
+            branch=getattr(args, "branch", None),
+            message=getattr(args, "message", None),
+            remote=getattr(args, "remote", None),
         ),
     )
 
@@ -871,12 +905,58 @@ def _execute_memory(
     *,
     subcommand: str,
     state: str | None,
+    owner: str | None = None,
+    branch: str | None = None,
+    message: str | None = None,
+    remote: str | None = None,
 ) -> int:
     if subcommand == "status":
         return _print_memory_status(client.memory_status(cgshome))
     if subcommand == "list":
         return _print_memory_list(client.memory_list(cgshome))
+    if subcommand == "init":
+        _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+        return _print_memory_init(client.memory_init(cgshome, owner=owner))
+    if subcommand == "clone":
+        _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+        destination = client.memory_clone(
+            cgshome, owner=owner, branch=branch, remote=remote
+        )
+        print(f"cloned={destination}")
+        return EXIT_OK
+    if subcommand == "push":
+        return _print_memory_push(client.memory_push(cgshome, message=message))
     return _print_memory_show(client.memory_show(cgshome, state or ""))
+
+
+def _print_memory_init(proposal: dict) -> int:
+    """Print the entry to paste, the branch, and the command that creates it."""
+    print(f"repository={proposal['entry']['repository']}")
+    print(f"branch={proposal['branch']}")
+    print(f"mount_path={proposal['mount_path']}")
+    print(f"mounted={str(proposal['mounted']).lower()}")
+    print("add this entry to your .cgs, under repos:")
+    print(proposal["line"])
+    if not proposal["mounted"]:
+        # Never created for you: this tool speaks Git and nothing else, so
+        # a repository on a host is somebody's deliberate act, not a side
+        # effect of asking what the entry should look like.
+        print("the repository itself is yours to create, with:")
+        print(f"  {proposal['create_with']}")
+        print("then: cgitsync memory clone")
+    return EXIT_OK
+
+
+def _print_memory_push(result: dict) -> int:
+    if result["committed"]:
+        print(f"committed={result['recorded']} path(s)")
+    else:
+        print("committed=0 (nothing new to record)")
+    print(
+        f"pushed branch={result['branch']} states={result['states']} "
+        f"entries={result['entries']}"
+    )
+    return EXIT_OK
 
 
 def _print_memory_status(status: dict) -> int:
