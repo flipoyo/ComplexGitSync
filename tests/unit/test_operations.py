@@ -74,20 +74,26 @@ def _is_state_file(path: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _current_lgr_snapshot_path(root_path: Path, register_name: str = "project.lgr") -> Path:
-    register_path = _current_lgr_path(root_path, register_name)
-    data = tomllib.loads(register_path.read_text(encoding="utf-8"))
-    return Path(data["register"]["current_snapshot_path"]).resolve()
+def _current_state_path(root_path: Path) -> Path:
+    """The State the newest ledger entry names.
+
+    The chain at ``.cgitsync/lgr/`` is the root_path's own record of what it
+    last wrote. It replaced the single-file register these tests used to
+    read, which nothing writes any more.
+    """
+    from ComplexGitSync.ledger_store import read_all_entries
+    from ComplexGitSync.state_store import _parse_state_hash, state_path
+
+    entries = read_all_entries(root_path / ".cgitsync" / "lgr")
+    assert entries, "no ledger entry was written"
+    return state_path(root_path / ".cgitsync", _parse_state_hash(entries[-1].state_id)).resolve()
 
 
-def _current_lgr_path(root_path: Path, register_name: str = "project.lgr") -> Path:
-    fixed = root_path / ".cgitsync" / register_name
-    if fixed.is_file():
-        return fixed
-    candidates = sorted((root_path / ".cgitsync").glob(f"state(*)_*/{register_name}"))
-    if candidates:
-        return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
-    return root_path / register_name
+def _ledger_entries(root_path: Path):
+    """Every entry in the root_path's chain, oldest first."""
+    from ComplexGitSync.ledger_store import read_all_entries
+
+    return read_all_entries(root_path / ".cgitsync" / "lgr")
 
 
 def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:
@@ -251,6 +257,10 @@ class _FakeGitRunnerForOperations:
         # Ordered log of the two calls whose *relative* order matters: a
         # refspec must be widened before the push that depends on it.
         self.write_order: list[tuple[str, Path]] = []
+
+    def tool_version(self, executable: str) -> str | None:
+        """Versions the ledger records; a fake reports a fixed one."""
+        return f"{executable} 0.0-test"
 
     # --- branch / checkout ---
     def current_branch(self, repo_path: Path | str) -> str | None:
@@ -2219,7 +2229,7 @@ def test_client_checkout_updates_registry_and_writes_gts(tmp_path):
         assert entry.current_ref_name == "feature-x"
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
-    snapshot_path = _current_lgr_snapshot_path(root_path)
+    snapshot_path = _current_state_path(root_path)
     assert snapshot_path.exists()
     assert _is_state_file(snapshot_path)
 
@@ -2447,7 +2457,6 @@ def test_client_tag_delegates_to_tag_tree(tmp_path):
 
 
 def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
-    import tomllib
 
     client, runner = _make_client_with_ready_registry(tmp_path)
     output_gts = tmp_path / "release.gts"
@@ -2457,7 +2466,7 @@ def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
     assert runner.committed, "Expected commit calls during freeze_release"
     assert runner.tagged, "Expected tag calls during freeze_release"
     assert not output_gts.exists()
-    snapshot_path = _current_lgr_snapshot_path(client.registry.get("root").absolute_path)
+    snapshot_path = _current_state_path(client.registry.get("root").absolute_path)
     snapshot_data = tomllib.loads(snapshot_path.read_text(encoding="utf-8"))
     assert snapshot_data["freeze_manifest"]["schema_version"] == "1.0"
     assert snapshot_data["freeze_manifest"]["synchronized_ref_kind"] == "tag"
@@ -2471,31 +2480,24 @@ def test_client_freeze_release_delegates_and_writes_named_gts(tmp_path):
 
 
 def test_client_freeze_release_writes_release_name_and_named_immutable_gts(tmp_path):
-    import tomllib
 
     client, runner = _make_client_with_ready_registry(tmp_path)
     root_path = client.registry.get("root").absolute_path
 
     result = client.freeze("release-1")
 
-    immutable_snapshot = _current_lgr_snapshot_path(root_path)
+    immutable_snapshot = _current_state_path(root_path)
     assert immutable_snapshot.exists()
     assert _is_state_file(immutable_snapshot)
     snapshot_data = tomllib.loads(immutable_snapshot.read_text(encoding="utf-8"))
     assert snapshot_data["freeze_manifest"]["release-name"] == "release-1"
-    lgr_data = tomllib.loads(_current_lgr_path(root_path).read_text(encoding="utf-8"))
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)", lgr_data["register"]["current_snapshot_id"])
-    assert lgr_data["register"]["current_snapshot_path"].endswith(
-        f"state/{immutable_snapshot.name}"
-    )
-    assert lgr_data["snapshots"][0]["snapshot_path"].endswith(
-        f"state/{immutable_snapshot.name}"
-    )
+    [entry] = _ledger_entries(root_path)
+    assert entry.state_id == f"state({immutable_snapshot.stem})"
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)", entry.state_id)
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
 
 def test_write_freeze_snapshot_uses_explicit_freeze_name_over_stale_registry_tag(tmp_path):
-    import tomllib
 
     client, _runner = _make_client_with_ready_registry(tmp_path)
     root = client.registry.get("root")
@@ -2519,7 +2521,6 @@ def test_write_freeze_snapshot_uses_explicit_freeze_name_over_stale_registry_tag
 
 
 def test_freeze_snapshot_loaded_from_gts_creates_new_named_immutable_gts(tmp_path):
-    import tomllib
 
     client, runner = _make_client_with_ready_registry(tmp_path)
     root = client.registry.get("root")
@@ -2532,16 +2533,14 @@ def test_freeze_snapshot_loaded_from_gts_creates_new_named_immutable_gts(tmp_pat
 
     result = client.freeze("20260708-v4")
 
-    immutable_snapshot = _current_lgr_snapshot_path(root.absolute_path)
+    immutable_snapshot = _current_state_path(root.absolute_path)
     assert result.recompute_tree_state() == TreeLifecycleState.READY
     assert source_snapshot.read_text(encoding="utf-8") == original_source_content
     assert immutable_snapshot.exists()
     assert _is_state_file(immutable_snapshot)
 
-    lgr_data = tomllib.loads(_current_lgr_path(root.absolute_path).read_text(encoding="utf-8"))
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)", lgr_data["register"]["current_snapshot_id"])
-    assert lgr_data["register"]["current_snapshot_path"].endswith(
-        f"state/{immutable_snapshot.name}"
+    assert _ledger_entries(root.absolute_path)[-1].state_id == (
+        f"state({immutable_snapshot.stem})"
     )
     snapshot_data = tomllib.loads(immutable_snapshot.read_text(encoding="utf-8"))
     assert snapshot_data["freeze_manifest"]["release-name"] == "20260708-v4"
@@ -2570,7 +2569,7 @@ def test_client_launch_release_checkouts_release_tag_and_writes_gts(tmp_path, mo
         "ref_kind": RefKind.TAG,
         "tree": None,
     }
-    snapshot_path = _current_lgr_snapshot_path(client.registry.get("root").absolute_path)
+    snapshot_path = _current_state_path(client.registry.get("root").absolute_path)
     assert snapshot_path.exists()
     assert _is_state_file(snapshot_path)
     assert result.recompute_tree_state() == TreeLifecycleState.READY
@@ -2636,7 +2635,7 @@ def test_client_freeze_state_delegates_and_writes_named_gts(tmp_path):
     assert runner.committed, "Expected commit calls during freeze_state"
     assert runner.tagged, "Expected tag calls during freeze_state"
     assert not output_gts.exists()
-    assert _current_lgr_snapshot_path(client.registry.get("root").absolute_path).exists()
+    assert _current_state_path(client.registry.get("root").absolute_path).exists()
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
 

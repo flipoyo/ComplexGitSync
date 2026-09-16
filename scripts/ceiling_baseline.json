@@ -87,7 +87,7 @@
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 777,
+      "loc": 801,
       "public_symbols": 3
     },
     "git_tree.py": {
@@ -106,8 +106,8 @@
       "public_symbols": 1
     },
     "integrity.py": {
-      "internal_imports": 0,
-      "loc": 223,
+      "internal_imports": 1,
+      "loc": 205,
       "public_symbols": 8
     },
     "json_render.py": {
@@ -117,12 +117,12 @@
     },
     "ledger_entry.py": {
       "internal_imports": 0,
-      "loc": 190,
+      "loc": 204,
       "public_symbols": 7
     },
     "ledger_store.py": {
       "internal_imports": 3,
-      "loc": 359,
+      "loc": 363,
       "public_symbols": 16
     },
     "master.py": {
@@ -136,8 +136,8 @@
       "public_symbols": 25
     },
     "orchestre.py": {
-      "internal_imports": 97,
-      "loc": 3971,
+      "internal_imports": 101,
+      "loc": 4070,
       "public_symbols": 13
     },
     "paths.py": {
@@ -156,9 +156,9 @@
       "public_symbols": 11
     },
     "snapshot_resolver.py": {
-      "internal_imports": 3,
-      "loc": 274,
-      "public_symbols": 17
+      "internal_imports": 7,
+      "loc": 311,
+      "public_symbols": 18
     },
     "state_store.py": {
       "internal_imports": 0,
@@ -169,6 +169,11 @@
       "internal_imports": 2,
       "loc": 240,
       "public_symbols": 11
+    },
+    "toolchain.py": {
+      "internal_imports": 2,
+      "loc": 83,
+      "public_symbols": 5
     }
   },
   "ring0_modules": [

@@ -33,7 +33,6 @@ from ComplexGitSync.orchestre import (
     SystemClock,
     _looks_like_https_auth_failure,
     _looks_like_ssh_auth_failure,
-    _path_to_environment_marker,
     _protocol_switch_hint,
     build_registry_from_gts_document,
 )
@@ -1918,22 +1917,26 @@ def test_state_directory_suffix_is_scoped_to_exact_state_hash(tmp_path):
     assert other_hash_state.final_path.name == _state_directory_name(other_hash, 0)
 
 
-def _current_lgr_snapshot_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
-    data = tomllib.loads(_current_lgr_path(workspace, register_name).read_text(encoding="utf-8"))
-    raw_path = data["register"]["current_snapshot_path"]
-    if raw_path.startswith("$HOME/"):
-        return Path(raw_path.replace("$HOME", str(Path.home()), 1)).resolve()
-    return Path(raw_path).resolve()
+def _current_state_path(workspace: Path) -> Path:
+    """The State the newest ledger entry names.
+
+    The chain at ``.cgitsync/lgr/`` is the workspace's own record of what it
+    last wrote. It replaced the single-file register these tests used to
+    read, which nothing writes any more.
+    """
+    from ComplexGitSync.ledger_store import read_all_entries
+    from ComplexGitSync.state_store import _parse_state_hash, state_path
+
+    entries = read_all_entries(workspace / ".cgitsync" / "lgr")
+    assert entries, "no ledger entry was written"
+    return state_path(workspace / ".cgitsync", _parse_state_hash(entries[-1].state_id)).resolve()
 
 
-def _current_lgr_path(workspace: Path, register_name: str = "demo.lgr") -> Path:
-    fixed = workspace / ".cgitsync" / register_name
-    if fixed.is_file():
-        return fixed
-    candidates = sorted((workspace / ".cgitsync").glob(f"state(*)_*/{register_name}"))
-    if candidates:
-        return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
-    return workspace / register_name
+def _ledger_entries(workspace: Path):
+    """Every entry in the workspace's chain, oldest first."""
+    from ComplexGitSync.ledger_store import read_all_entries
+
+    return read_all_entries(workspace / ".cgitsync" / "lgr")
 
 
 def test_client_load_cgs_writes_gts_snapshot(tmp_path):
@@ -1949,8 +1952,10 @@ def test_client_load_cgs_writes_gts_snapshot(tmp_path):
     # The .cgs it was built from sits beside it, under the same name: it is
     # part of what that State was.
     assert states[0].with_suffix(".cgs").is_file()
-    # One register, at one path — not a copy inside every state directory.
-    assert (tmp_path / ".cgitsync" / "demo.lgr").is_file()
+    # One ledger, hash-chained, one file per entry. The single-file
+    # register this used to write is no longer written at all.
+    assert (tmp_path / ".cgitsync" / "lgr" / "000001.toml").is_file()
+    assert not (tmp_path / ".cgitsync" / "demo.lgr").exists()
     assert not (tmp_path / "demo.lgr").exists()
 
 
@@ -1972,32 +1977,28 @@ def test_writing_an_unchanged_workspace_twice_produces_one_state(tmp_path):
     assert len(states) == 1
 
 
-def test_client_load_cgs_updates_project_local_lgr(tmp_path):
-    import tomllib
-
+def test_client_load_cgs_records_the_state_in_the_chain(tmp_path):
     config_path = _write_root_cgs(tmp_path)
 
     client = ComplexGitSyncClient()
     client.load(config_path)
 
-    expected_lgr = _current_lgr_path(tmp_path)
-    data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
-    state_id = data["register"]["current_snapshot_id"]
-    state_hash = data["register"]["current_state_hash"]
-    expected_snapshot = (tmp_path / ".cgitsync" / "state" / f"{state_hash}.gts").resolve()
-    expected_path_marker = _path_to_environment_marker(expected_snapshot)
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)", state_id)
-    assert state_id == f"state({state_hash})"
-    assert data["register"]["current_snapshot_path"] == expected_path_marker
-    assert len(data["snapshots"]) == 1
-    assert data["snapshots"][0]["id"] == state_id
-    assert data["snapshots"][0]["state_hash"] == state_hash
-    assert data["snapshots"][0]["snapshot_path"] == expected_path_marker
-    assert expected_snapshot.is_file()
-    # The State's name is the document's own content hash, so the register
-    # and the file on disk cannot drift apart.
-    recorded = GtsDocument.from_toml(expected_snapshot)
-    assert recorded.snapshot_hash == state_hash
+    [entry] = _ledger_entries(tmp_path)
+    assert entry.seq == 1
+    assert entry.command == "load"
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)", entry.state_id)
+    assert entry.prev == "sha256:" + "0" * 64  # genesis
+
+    # The entry names a State that is on disk, under its own content hash.
+    snapshot = _current_state_path(tmp_path)
+    assert snapshot.is_file()
+    assert entry.state_id == f"state({snapshot.stem})"
+    assert GtsDocument.from_toml(snapshot).snapshot_hash == snapshot.stem
+
+    # And it says which tools produced it — all five, every entry.
+    recorded = dict(entry.toolchain)
+    assert set(recorded) == {"cgitsync", "git", "pixi", "dvc", "git-lfs"}
+    assert all(value for value in recorded.values())
 
 
 def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path):
@@ -2010,41 +2011,41 @@ def test_client_load_cgs_uses_home_variable_in_gts_and_lgr(monkeypatch, tmp_path
     client = ComplexGitSyncClient()
     client.load(config_path)
 
-    snapshot_path = _current_lgr_snapshot_path(workspace)
+    snapshot_path = _current_state_path(workspace)
     snapshot_data = tomllib.loads(snapshot_path.read_text(encoding="utf-8"))
     assert snapshot_data["project"]["root_absolute_path"] == "$HOME/workspace/demo"
     assert snapshot_data["project"]["source_cgs_path"] == "$HOME/workspace/demo/project.cgs"
 
-    lgr_data = tomllib.loads(_current_lgr_path(workspace).read_text(encoding="utf-8"))
-    state_id = lgr_data["register"]["current_snapshot_id"]
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)", state_id)
-    state_hash = lgr_data["register"]["current_state_hash"]
-    assert lgr_data["register"]["current_snapshot_path"] == (
-        f"$HOME/workspace/demo/.cgitsync/state/{state_hash}.gts"
-    )
-    assert lgr_data["snapshots"][0]["snapshot_path"] == (
-        f"$HOME/workspace/demo/.cgitsync/state/{state_hash}.gts"
-    )
+    [entry] = _ledger_entries(workspace)
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)", entry.state_id)
+    # The chain needs no `$HOME` marker, because it holds no absolute path
+    # at all: a State is named by its content and lives at a known place
+    # inside the workspace.
+    entry_text = (workspace / ".cgitsync" / "lgr" / "000001.toml").read_text(encoding="utf-8")
+    assert str(fake_home) not in entry_text
+    assert "$HOME" not in entry_text
     assert snapshot_path.is_file()
 
 
-def test_client_snapshot_generation_assigns_time_l0_state_for_each_write(tmp_path):
-    import tomllib
+def test_every_write_appends_an_entry_naming_the_state_it_wrote(tmp_path):
+    """Two operations, two entries — and the States they name are the facts.
 
+    A State's name used to be a fresh clock reading per write, so two
+    operations always produced two names whether or not anything changed.
+    Now the entries count the operations and the States count the distinct
+    trees.
+    """
     config_path = _write_root_cgs(tmp_path)
 
     client = ComplexGitSyncClient()
     client.load(config_path)
     client.expand(config_path)
 
-    expected_lgr = _current_lgr_path(tmp_path)
-    data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
-    state_ids = [entry["id"] for entry in data["snapshots"]]
-    assert len(state_ids) == 2
-    assert len(set(state_ids)) == 2
-    assert all(re.fullmatch(r"state\([0-9a-f]{64}\)", state_id) for state_id in state_ids)
-    assert [entry["state_order"] for entry in data["snapshots"]] == [0, 0]
-    assert data["register"]["current_snapshot_id"] == state_ids[-1]
+    entries = _ledger_entries(tmp_path)
+    assert [entry.seq for entry in entries] == [1, 2]
+    assert [entry.command for entry in entries] == ["load", "expand"]
+    assert all(re.fullmatch(r"state\([0-9a-f]{64}\)", e.state_id) for e in entries)
+    assert entries[-1].state_id == f"state({_current_state_path(tmp_path).stem})"
 
 
 def test_client_expand_cgs_writes_gts_snapshot(tmp_path):
@@ -2053,7 +2054,7 @@ def test_client_expand_cgs_writes_gts_snapshot(tmp_path):
     client = ComplexGitSyncClient()
     client.expand(config_path)
 
-    assert _current_lgr_snapshot_path(tmp_path).is_file()
+    assert _current_state_path(tmp_path).is_file()
 
 
 def test_client_validate_cgs_writes_gts_snapshot(tmp_path):
@@ -2062,7 +2063,7 @@ def test_client_validate_cgs_writes_gts_snapshot(tmp_path):
     client = ComplexGitSyncClient()
     client.validate(config_path)
 
-    assert _current_lgr_snapshot_path(tmp_path).is_file()
+    assert _current_state_path(tmp_path).is_file()
 
 
 def test_client_load_gts_snapshot_has_correct_command_origin(tmp_path):
@@ -2072,7 +2073,7 @@ def test_client_load_gts_snapshot_has_correct_command_origin(tmp_path):
 
     ComplexGitSyncClient().load(config_path)
 
-    expected_snapshot = _current_lgr_snapshot_path(tmp_path)
+    expected_snapshot = _current_state_path(tmp_path)
     data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
     assert data["document"]["command_origin"] == "load"
     assert data["document"]["CGS_VERSION"]
@@ -2094,7 +2095,7 @@ def test_client_expand_gts_snapshot_has_correct_command_origin(tmp_path):
 
     ComplexGitSyncClient().expand(config_path)
 
-    expected_snapshot = _current_lgr_snapshot_path(tmp_path)
+    expected_snapshot = _current_state_path(tmp_path)
     data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
     assert data["document"]["command_origin"] == "expand"
     assert data["document"]["CGS_VERSION"]
@@ -2110,7 +2111,7 @@ def test_client_validate_gts_snapshot_has_correct_command_origin(tmp_path):
 
     ComplexGitSyncClient().validate(config_path)
 
-    expected_snapshot = _current_lgr_snapshot_path(tmp_path)
+    expected_snapshot = _current_state_path(tmp_path)
     data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
     assert data["document"]["command_origin"] == "validate"
     assert data["document"]["CGS_VERSION"]
@@ -2350,42 +2351,38 @@ def test_write_gts_snapshot_skips_stable_cgs_copy_without_a_current_branch(tmp_p
 
 
 def test_client_write_gts_snapshot_records_ledger_event(tmp_path, monkeypatch):
-    import tomllib
-
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
     config_path = _write_root_cgs(tmp_path)
 
     client = ComplexGitSyncClient()
     client.load(config_path)
 
-    expected_lgr = _current_lgr_path(tmp_path)
-    data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
-    assert "ledger" in data
-    assert len(data["ledger"]) == 1
-    event = data["ledger"][0]
-    assert event["sync_id"] == "lgr-000001"
-    assert event["operation"] == "load"
-    assert event["gts_snapshot_id"] == data["register"]["current_snapshot_id"]
-    assert re.fullmatch(r"state\([0-9a-f]{64}\)", event["gts_snapshot_id"])
-    assert len(event["workspace_hash"]) == 64
-    assert "demo" in event["affected_repos"]
-    assert event["parent_sync_ids"] == []
+    [entry] = _ledger_entries(tmp_path)
+    assert entry.seq == 1
+    assert entry.command == "load"
+    assert re.fullmatch(r"state\([0-9a-f]{64}\)", entry.state_id)
+    assert entry.outcome == "ok"
+
     # The run log is named for the run, beside the state area rather than
     # inside it: two runs leaving the tree identical share one State and
     # keep their own logs.
-    [log_path] = sorted((expected_lgr.parent / "logs").glob("*.log"))
+    [log_path] = sorted((tmp_path / ".cgitsync" / "logs").glob("*.log"))
     assert log_path.is_file()
     log_text = log_path.read_text(encoding="utf-8")
     log_data = json.loads(log_text)
     assert log_data["event"] == "memory_state_finalized"
     assert log_data["command_origin"] == "load"
-    assert log_data["state_id"] == data["register"]["current_snapshot_id"]
+    assert log_data["state_id"] == entry.state_id
     assert "@" not in log_text
 
 
-def test_client_multiple_operations_create_linked_ledger_events(tmp_path):
-    import tomllib
+def test_client_multiple_operations_create_a_linked_chain(tmp_path):
+    """Each entry's `prev` is its predecessor's hash — that is the chain.
 
+    The old register linked events by an id (`lgr-000002`'s parent is
+    `lgr-000001`), which any editor could renumber without trace. A link
+    that is a hash cannot be rewritten without the next entry noticing.
+    """
     config_path = _write_root_cgs(tmp_path)
 
     client = ComplexGitSyncClient()
@@ -2393,56 +2390,87 @@ def test_client_multiple_operations_create_linked_ledger_events(tmp_path):
     client.expand(config_path)
     client.validate(config_path)
 
-    expected_lgr = _current_lgr_path(tmp_path)
-    data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
-    events = data["ledger"]
-    assert len(events) == 3
-    sync_ids = [e["sync_id"] for e in events]
-    assert sync_ids == ["lgr-000001", "lgr-000002", "lgr-000003"]
-    # Each event (except the first) must link to its predecessor
-    assert events[0]["parent_sync_ids"] == []
-    assert events[1]["parent_sync_ids"] == ["lgr-000001"]
-    assert events[2]["parent_sync_ids"] == ["lgr-000002"]
-    # Three events, and as many States as there were distinct trees. Two
-    # operations that left the workspace identical record two events
-    # pointing at one State — being seen twice is a ledger fact, not a
-    # second copy of the same content.
-    for snapshot in data["snapshots"]:
-        snapshot_path = Path(snapshot["snapshot_path"])
-        assert snapshot_path.is_file()
-        assert snapshot_path.parent.name == "state"
-        assert snapshot_path.name == f"{snapshot['state_hash']}.gts"
-        assert snapshot["id"] == f"state({snapshot['state_hash']})"
+    entries = _ledger_entries(tmp_path)
+    assert [entry.seq for entry in entries] == [1, 2, 3]
+    assert entries[0].prev == "sha256:" + "0" * 64
+    assert entries[1].prev == entries[0].entry_hash
+    assert entries[2].prev == entries[1].entry_hash
+
+    # Three operations, and as many States as there were distinct trees:
+    # being seen twice is two entries pointing at one name.
+    states = {entry.state_id for entry in entries}
+    assert len(states) <= 3
+    for state_id in states:
+        state_hash = state_id[len("state(") : -1]
+        assert (tmp_path / ".cgitsync" / "state" / f"{state_hash}.gts").is_file()
 
 
-def test_client_get_ledger_history_via_public_api(tmp_path):
-    config_path = _write_root_cgs(tmp_path)
+def test_client_get_ledger_history_still_reads_a_legacy_register(tmp_path):
+    """The single-file register is no longer written, and is still read.
 
-    client = ComplexGitSyncClient()
-    client.load(config_path)
-    client.expand(config_path)
+    Every workspace created before the chain has one, and this is the API
+    that reads it.
+    """
+    legacy = tmp_path / "demo.lgr"
+    legacy.write_text(
+        """
+[register]
+current_snapshot_id = "gts-000002"
 
-    expected_lgr = _current_lgr_path(tmp_path)
-    history = client.get_ledger_history(expected_lgr)
-    assert len(history) == 2
-    assert history[0]["operation"] == "load"
-    assert history[1]["operation"] == "expand"
+[[ledger]]
+sync_id = "lgr-000001"
+parent_sync_ids = []
+operation = "load"
+timestamp = "2026-01-01T00:00:00.000Z"
+workspace_hash = "a"
+gts_snapshot_id = "gts-000001"
+affected_repos = ["demo"]
+
+[[ledger]]
+sync_id = "lgr-000002"
+parent_sync_ids = ["lgr-000001"]
+operation = "expand"
+timestamp = "2026-01-02T00:00:00.000Z"
+workspace_hash = "b"
+gts_snapshot_id = "gts-000002"
+affected_repos = ["demo"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    history = ComplexGitSyncClient().get_ledger_history(legacy)
+
+    assert [event["operation"] for event in history] == ["load", "expand"]
 
 
 def test_client_replay_ledger_reconstructs_history(tmp_path):
-    config_path = _write_root_cgs(tmp_path)
+    """``replay`` and ``history`` agree, on a legacy register as before."""
+    legacy = tmp_path / "demo.lgr"
+    legacy.write_text(
+        """
+[register]
+current_snapshot_id = "gts-000001"
+
+[[ledger]]
+sync_id = "lgr-000001"
+parent_sync_ids = []
+operation = "load"
+timestamp = "2026-01-01T00:00:00.000Z"
+workspace_hash = "a"
+gts_snapshot_id = "gts-000001"
+affected_repos = ["demo"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
 
     client = ComplexGitSyncClient()
-    client.load(config_path)
-    client.expand(config_path)
-
-    expected_lgr = _current_lgr_path(tmp_path)
-    replay = client.replay_ledger(expected_lgr)
-    history = client.get_ledger_history(expected_lgr)
-    assert replay == history
+    assert client.replay_ledger(legacy) == client.get_ledger_history(legacy)
 
 
-def test_sync_ledger_workspace_hash_matches_gts_snapshot_hash(tmp_path):
+def test_the_entry_names_the_hash_the_snapshot_recorded(tmp_path):
+    """The chain and the State agree, because both use the content hash."""
     import tomllib
 
     config_path = _write_root_cgs(tmp_path)
@@ -2450,14 +2478,11 @@ def test_sync_ledger_workspace_hash_matches_gts_snapshot_hash(tmp_path):
     client = ComplexGitSyncClient()
     client.load(config_path)
 
-    expected_lgr = _current_lgr_path(tmp_path)
-    lgr_data = tomllib.loads(expected_lgr.read_text(encoding="utf-8"))
-    expected_snapshot = _current_lgr_snapshot_path(tmp_path)
-    gts_data = tomllib.loads(expected_snapshot.read_text(encoding="utf-8"))
+    snapshot = _current_state_path(tmp_path)
+    gts_data = tomllib.loads(snapshot.read_text(encoding="utf-8"))
 
-    ledger_hash = lgr_data["ledger"][0]["workspace_hash"]
-    snapshot_hash = gts_data["document"]["snapshot_hash"]
-    assert ledger_hash == snapshot_hash
+    [entry] = _ledger_entries(tmp_path)
+    assert entry.state_id == f"state({gts_data['document']['snapshot_hash']})"
 
 
 def _write_root_cgs(tmp_path, *, nested_child: bool = False, project_name: str = "demo"):
@@ -2795,6 +2820,10 @@ nested_config = "disabled"
         set_upstream: bool = False,
     ) -> None:
         self.pushed.append((Path(repo_path).resolve(), remote, ref_name))
+
+    def tool_version(self, executable: str) -> str | None:
+        """Versions the ledger records; a fake reports a fixed one."""
+        return f"{executable} 0.0-test"
 
     def current_branch(self, repo_path: Path | str) -> str | None:
         resolved = Path(repo_path).resolve()

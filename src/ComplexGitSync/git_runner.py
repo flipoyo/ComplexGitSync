@@ -730,6 +730,33 @@ class GitRunner:
             paths = _extract_paths_from_legacy_merge_tree(legacy.stdout, legacy.stderr)
             return MergeCheckResult(is_clean=False, conflicting_paths=paths)
 
+    def tool_version(self, executable: str) -> str | None:
+        """The version string *executable* reports, or ``None`` if it has none.
+
+        Not a Git question, and here anyway: this module is the project's
+        only ``import subprocess``, and a second importer would break the
+        rule that makes the decoding and environment policies inescapable.
+        The memory workstream records which tools produced each ledger entry
+        (``.localSpec/AdditionalSpecs.md``, *The hash-chained register*), and
+        that answer has to come from somewhere.
+
+        ``None`` means "not installed" — a missing executable is an ordinary
+        answer here, not a failure. The caller decides what to record.
+        """
+        try:
+            completed = subprocess.run(
+                [executable, "--version"],
+                capture_output=True,
+                check=False,
+                env=_non_interactive_git_env(),
+            )
+        except (OSError, ValueError):
+            return None
+        if completed.returncode != 0:
+            return None
+        reported = _decode_git_output(completed.stdout).strip()
+        return reported.splitlines()[0].strip() if reported else None
+
     def _query_bytes(
         self,
         *args: str,

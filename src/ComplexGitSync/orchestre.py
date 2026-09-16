@@ -53,6 +53,7 @@ import os
 import re
 import secrets
 import shutil
+import sys
 import time
 import tomllib
 from collections.abc import Sequence
@@ -122,7 +123,14 @@ from .gts_document import GtsDocument
 from .integrity import Finding, HistoryState, VerificationReport, verify_chain
 from .json_render import dumps as json_dumps
 from .json_render import empty_status_payload, status_payload, verify_payload
-from .ledger_store import read_all_entries, read_head, recompute_head, verify_and_repair_head
+from .ledger_store import (
+    LedgerStoreError,
+    append_entry,
+    read_all_entries,
+    read_head,
+    recompute_head,
+    verify_and_repair_head,
+)
 from .master import MasterConfig
 from .operations import (
     BranchTopologyReport,
@@ -145,6 +153,7 @@ from .registry import (
 from .settings import resolve_use_case
 from .state_store import (
     _STATE_DIR_RE,
+    STATE_DIR_NAME,
     _format_state_id,
     _latest_state_artifact,
     _next_state_directory_order,
@@ -169,6 +178,7 @@ from .status_render import (
     _status_tracking_label,
     _tree_branch_label,
 )
+from .toolchain import toolchain
 
 # ============================================================
 #  Runtime document layer — .gts
@@ -1212,6 +1222,68 @@ def _protocol_switch_hint(git_error_message: str, *, command: str) -> str | None
 # ============================================================
 
 
+def _verify_states_on_disk(
+    workspace: Path,
+    entries: Sequence[Any],
+) -> list[tuple[int, Finding, str]]:
+    """Cross-reference the chain against the States actually on disk.
+
+    Three questions that became answerable only once a State was named by
+    its content: an entry naming a State nobody can find
+    (``MISSING_STATE``), a State nobody recorded (``ORPHAN_STATE``), and a
+    stored snapshot whose content no longer hashes to the name it is filed
+    under (``STATE_DIGEST_MISMATCH``).
+
+    The third is the one the naming change bought outright: before, a
+    State's name was a timestamp, so its contents could be edited freely and
+    nothing about the name would disagree.
+    """
+    cgitsync_dir = workspace / ".cgitsync"
+    findings: list[tuple[int, Finding, str]] = []
+    recorded: dict[str, int] = {}
+
+    for entry in entries:
+        state_hash = _parse_state_hash(entry.state_id)
+        if state_hash is None:
+            continue
+        recorded.setdefault(state_hash, entry.seq)
+        snapshot = state_path(cgitsync_dir, state_hash)
+        if not snapshot.is_file():
+            findings.append((
+                entry.seq,
+                Finding.MISSING_STATE,
+                f"entry names {entry.state_id}, which is not on disk",
+            ))
+            continue
+        try:
+            document = GtsDocument.from_toml(snapshot)
+            digest = document.compute_snapshot_hash()
+        except (OSError, tomllib.TOMLDecodeError, ConfigValidationError) as exc:
+            findings.append((
+                entry.seq,
+                Finding.STATE_DIGEST_MISMATCH,
+                f"{snapshot.name} could not be read: {exc}",
+            ))
+            continue
+        if digest != state_hash:
+            findings.append((
+                entry.seq,
+                Finding.STATE_DIGEST_MISMATCH,
+                f"{snapshot.name} now hashes to {digest}",
+            ))
+
+    state_dir = cgitsync_dir / STATE_DIR_NAME
+    if state_dir.is_dir():
+        for snapshot in sorted(state_dir.glob("*.gts")):
+            if snapshot.stem not in recorded:
+                findings.append((
+                    0,
+                    Finding.ORPHAN_STATE,
+                    f"{snapshot.name} is on disk and no entry records it",
+                ))
+    return findings
+
+
 def _write_file_atomically(destination: Path, write: Any) -> None:
     """Write *destination* through a temporary file in the same directory.
 
@@ -1243,9 +1315,20 @@ def _legacy_register_exists(workspace: Path) -> bool:
     in exactly this state, which is why the answer matters more than it
     looks.
     """
-    if any((workspace / ".cgitsync").glob("state(*)_*/*.lgr")):
-        return True
-    return any(workspace.glob("*.lgr"))
+    cgitsync_dir = workspace / ".cgitsync"
+    # Three places one has ever lived: inside a state directory (copied
+    # forward before every write), at the workspace root (older still), and
+    # at `.cgitsync/<project>.lgr`, where the flat state layout put it.
+    # Miss one and a workspace with history is told it has none, which is
+    # the lie this whole answer exists to remove.
+    for candidate in (
+        cgitsync_dir.glob("state(*)_*/*.lgr"),
+        cgitsync_dir.glob("*.lgr"),
+        workspace.glob("*.lgr"),
+    ):
+        if any(candidate):
+            return True
+    return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -3808,7 +3891,9 @@ class ComplexGitSyncClient:
                     Finding.HEAD_STALE,
                     f"cached HEAD={cached_head}, recomputed HEAD={true_head}",
                 ))
-                # The HEAD check runs after verify_chain, so the verdict is
+            report.findings.extend(_verify_states_on_disk(workspace, entries))
+            if report.findings:
+                # The store checks run after verify_chain, so the verdict is
                 # recomputed here rather than left at the chain's own.
                 report.state = HistoryState.CORRUPT
             if repair:
@@ -3980,6 +4065,56 @@ class ComplexGitSyncClient:
         if counts.recorded_mismatch:
             lines.append("legend: HEAD ending with * differs from the commit recorded in the loaded .gts")
         return "\n".join(lines)
+
+    def _append_ledger_entry(
+        self,
+        cgitsync_dir: Path,
+        *,
+        command_origin: str,
+        state_hash: str,
+        state_path: Path,
+    ) -> None:
+        """Record in the chain that this State was seen, now, by these tools.
+
+        The chain at ``.cgitsync/lgr/`` is what ``cgitsync verify`` checks,
+        and until this call existed nothing in ``src/`` ever wrote to it —
+        so ``verify`` read an empty directory and called every workspace on
+        earth clean. This is the write path that makes the check mean
+        something.
+
+        **Recording must never cost the command its work.** A snapshot that
+        was written successfully stays written even if the ledger cannot be
+        appended to — a full disk, a read-only mount, two processes racing
+        for one sequence number. The failure is logged and the command
+        succeeds; the next `verify` reports the gap rather than the user
+        losing a completed operation to a bookkeeping error.
+        """
+        try:
+            entry = append_entry(
+                cgitsync_dir / "lgr",
+                command=command_origin,
+                argv=sys.argv[1:],
+                state_id=_format_state_id(state_hash),
+                state_dir=str(state_path.parent.name),
+                outcome="ok",
+                clock=SystemClock(),
+                toolchain=tuple(sorted(toolchain(self.git_runner).items())),
+            )
+        except (LedgerStoreError, OSError) as exc:
+            self._log_event(
+                "ledger_append_failed",
+                level=logging.WARNING,
+                register_path=cgitsync_dir / "lgr",
+                error=str(exc),
+            )
+            return
+        self._log_event(
+            "ledger_append",
+            register_path=cgitsync_dir / "lgr",
+            seq=entry.seq,
+            state_id=entry.state_id,
+            command=command_origin,
+        )
 
     def _workspace_root(self) -> Path:
         """The workspace this client is answering about.
@@ -4226,33 +4361,16 @@ class ComplexGitSyncClient:
                 shutil.copy2(previous_register_path, final_register_path)
         legacy_register_path = root_entry.absolute_path / register_filename
 
-        register_id = LocalGitRegister(final_register_path).record_snapshot(
-            final_output_path,
+        # One ledger. The single-file register this used to rewrite whole on
+        # every operation is still *read* — an existing workspace resolves
+        # and replays exactly as it did — but nothing writes it any more.
+        # Three records of the same events, one of them tamper-evident, was
+        # two too many.
+        self._append_ledger_entry(
+            cgitsync_dir,
+            command_origin=command_origin,
             state_hash=canonical_state_hash,
-            state_order=0,
-            recorded_snapshot_path=final_output_path,
-        )
-        self._log_event(
-            "lgr_update",
-            register_path=final_register_path,
-            snapshot_path=final_output_path,
-            snapshot_id=register_id,
-        )
-        workspace_hash = document.snapshot_hash or document.compute_snapshot_hash()
-        affected_repos = sorted(entry.name for entry in registry.values())
-        ledger_id = SyncLedger(final_register_path).record_event(
-            operation=command_origin,
-            workspace_hash=workspace_hash,
-            gts_snapshot_id=register_id,
-            affected_repos=affected_repos,
-        )
-        self._log_event(
-            "ledger_event",
-            register_path=final_register_path,
-            sync_id=ledger_id,
-            operation=command_origin,
-            workspace_hash=workspace_hash,
-            gts_snapshot_id=register_id,
+            state_path=final_output_path,
         )
         # The log is a record of a run, not of a State: two runs that leave
         # the tree identical produce one State and two logs, so it is named

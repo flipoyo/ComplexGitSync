@@ -119,6 +119,7 @@ class LedgerEntry:
     state_id: str
     state_dir: str
     outcome: str
+    toolchain: tuple[tuple[str, str], ...]
     entry_hash: str
 
 
@@ -132,12 +133,17 @@ def _canonical_payload(
     state_id: str,
     state_dir: str,
     outcome: str,
+    toolchain: Sequence[tuple[str, str]] = (),
 ) -> dict[str, Any]:
     """Every ``LedgerEntry`` field except ``entry_hash`` itself, as a plain
     dict ready for canonical serialisation.
+
+    ``toolchain`` is inside the payload, so an edited version string is as
+    detectable as an edited command: the entry hash covers what produced the
+    record, not only what it says.
     """
 
-    return {
+    payload: dict[str, Any] = {
         "seq": seq,
         "prev": prev,
         "recorded_at": recorded_at,
@@ -147,6 +153,14 @@ def _canonical_payload(
         "state_dir": state_dir,
         "outcome": outcome,
     }
+    if toolchain:
+        # Absent when there is nothing to record, so an entry written before
+        # this field existed hashes to exactly what it hashed to then. Every
+        # entry this build writes carries all five tools, so the empty case
+        # means "an older writer", not "a tool was missing" — that is
+        # recorded as the word `none`.
+        payload["toolchain"] = {name: version for name, version in toolchain}
+    return payload
 
 
 def _canonical_json(payload: dict[str, Any]) -> str:
@@ -170,6 +184,7 @@ def compute_entry_hash(
     state_id: str,
     state_dir: str,
     outcome: str,
+    toolchain: Sequence[tuple[str, str]] = (),
 ) -> str:
     """Compute ``entry_hash`` over the canonical serialisation of every
     other field, including ``prev`` — so editing any field, or splicing in
@@ -185,6 +200,7 @@ def compute_entry_hash(
         state_id=state_id,
         state_dir=state_dir,
         outcome=outcome,
+        toolchain=toolchain,
     )
     digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
     return f"sha256:{digest}"
@@ -199,6 +215,7 @@ def build_next_entry(
     state_dir: str,
     outcome: str,
     clock: ClockProtocol,
+    toolchain: Sequence[tuple[str, str]] = (),
 ) -> LedgerEntry:
     """Build the next entry in the chain following ``prev``.
 
@@ -213,6 +230,8 @@ def build_next_entry(
     recorded_at = clock.now().astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
     argv_tuple = tuple(argv)
 
+    toolchain_tuple = tuple(sorted(toolchain))
+
     entry_hash = compute_entry_hash(
         seq=seq,
         prev=prev_hash,
@@ -222,6 +241,7 @@ def build_next_entry(
         state_id=state_id,
         state_dir=state_dir,
         outcome=outcome,
+        toolchain=toolchain_tuple,
     )
 
     return LedgerEntry(
@@ -233,5 +253,6 @@ def build_next_entry(
         state_id=state_id,
         state_dir=state_dir,
         outcome=outcome,
+        toolchain=toolchain_tuple,
         entry_hash=entry_hash,
     )

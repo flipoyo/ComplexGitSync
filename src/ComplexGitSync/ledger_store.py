@@ -228,6 +228,7 @@ def _entry_to_toml_payload(entry: LedgerEntry) -> dict[str, Any]:
             "state_id": entry.state_id,
             "state_dir": entry.state_dir,
             "outcome": entry.outcome,
+            "toolchain": dict(entry.toolchain),
             "entry_hash": entry.entry_hash,
         }
     }
@@ -244,6 +245,10 @@ def _entry_from_toml_payload(data: dict[str, Any]) -> LedgerEntry:
         state_id=raw["state_id"],
         state_dir=raw["state_dir"],
         outcome=raw["outcome"],
+        # An entry written before the toolchain was recorded has none, and
+        # is read exactly as it was written: its hash covers the fields it
+        # had, so nothing here may invent a value for it.
+        toolchain=tuple(sorted(raw.get("toolchain", {}).items())),
         entry_hash=raw["entry_hash"],
     )
 
@@ -431,6 +436,7 @@ def append_entry(
     state_dir: str,
     outcome: str,
     clock: ClockProtocol,
+    toolchain: Sequence[tuple[str, str]] = (),
 ) -> LedgerEntry:
     """Scrub ``argv``, build the next chain entry, and persist it.
 
@@ -455,6 +461,7 @@ def append_entry(
         state_dir=state_dir,
         outcome=outcome,
         clock=clock,
+        toolchain=toolchain,
     )
     write_entry(lgr_dir, entry)
     return entry

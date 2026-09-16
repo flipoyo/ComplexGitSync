@@ -99,6 +99,13 @@ class TestClientVerify:
         # Legacy is not corruption: there is nothing to report against it.
         assert report.findings == []
 
+    def test_a_legacy_register_beside_the_state_area_is_found_too(self, tmp_path: Path):
+        """Where the flat state layout put it: `.cgitsync/<project>.lgr`."""
+        (tmp_path / ".cgitsync").mkdir()
+        (tmp_path / ".cgitsync" / "demo.lgr").write_text("[register]\n", encoding="utf-8")
+
+        assert ComplexGitSyncClient().verify(tmp_path).state is HistoryState.LEGACY
+
     def test_a_legacy_register_inside_a_state_directory_is_found_too(
         self, tmp_path: Path
     ):

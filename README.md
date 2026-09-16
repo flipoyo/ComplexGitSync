@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.63
+# ComplexGitSync v0002.64
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -512,10 +512,15 @@ you gate a build on it:
 | `legacy` | `1` | History exists, in the old single-file register, which carries no chain. Readable, not verifiable. |
 | `corrupt` | `1` | A chain was read and it does not hold. |
 
-`legacy` exits non-zero on purpose: "I cannot tell" is not a yes. Until the
-hash-chained register is the one being written, most workspaces answer
-`legacy` or `no-history` — which is the honest answer, and the reason this
-command no longer reports a clean chain over a directory nothing writes.
+`legacy` exits non-zero on purpose: "I cannot tell" is not a yes.
+
+Every command that writes a snapshot now records it in a hash-chained
+ledger under `.cgitsync/lgr/`, so a workspace you have used since then
+answers `verified`. Each record also carries the versions that produced it —
+cgitsync, git, pixi, and dvc or git-lfs where they were used — so a memory
+says what made it, not just when. A workspace whose only history predates
+that answers `legacy`: the older single-file register is still read, and is
+no longer written.
 
 The Python row is worth stating plainly: this project requires every
 capability to exist as a `ComplexGitSyncClient` method with a thin CLI pair,

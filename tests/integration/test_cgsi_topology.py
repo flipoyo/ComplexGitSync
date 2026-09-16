@@ -65,14 +65,11 @@ def _run_git(repo_path: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def _current_lgr_path(repo_path: Path, register_name: str = "demo.lgr") -> Path:
-    fixed = repo_path / ".cgitsync" / register_name
-    if fixed.is_file():
-        return fixed
-    candidates = sorted((repo_path / ".cgitsync").glob(f"state(*)_*/{register_name}"))
-    if candidates:
-        return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
-    return repo_path / register_name
+def _ledger_entries(repo_path: Path):
+    """Every entry in the workspace's hash-chained ledger, oldest first."""
+    from ComplexGitSync.ledger_store import read_all_entries
+
+    return read_all_entries(repo_path / ".cgitsync" / "lgr")
 
 
 def _write_ready_gts(snapshot_path: Path, *, root_path: Path, commit_sha: str) -> Path:
@@ -531,16 +528,15 @@ class TestGitCommandCycleIntegration:
 
         remote_tags = _run_git(repo, "ls-remote", "--tags", "origin")
         assert "refs/tags/v0.2.0" in remote_tags
-        lgr_path = _current_lgr_path(repo)
-        assert lgr_path.is_file()
-        lgr_data = tomllib.loads(lgr_path.read_text(encoding="utf-8"))
-        assert re.fullmatch(r"state\([0-9a-f]{64}\)", lgr_data["register"]["current_snapshot_id"])
-        snapshot_path_parts = Path(lgr_data["register"]["current_snapshot_path"]).parts
-        assert snapshot_path_parts[-3] == ".cgitsync"
-        assert snapshot_path_parts[-2] == "state"
-        # The file is named by the tree's content, not by the project.
-        assert re.fullmatch(r"[0-9a-f]{64}\.gts", snapshot_path_parts[-1])
-        assert len(lgr_data["snapshots"]) >= 1
+        # A full add/commit/push/freeze/launch-release cycle leaves a chain,
+        # one entry per operation, each naming the State it wrote.
+        entries = _ledger_entries(repo)
+        assert len(entries) >= 1
+        assert [entry.seq for entry in entries] == list(range(1, len(entries) + 1))
+        for entry in entries:
+            assert re.fullmatch(r"state\([0-9a-f]{64}\)", entry.state_id)
+            state_hash = entry.state_id[len("state(") : -1]
+            assert (repo / ".cgitsync" / "state" / f"{state_hash}.gts").is_file()
 
     def test_tag_preflight_blocks_detached_head(self, ready_single_repo_snapshot):
         repo = ready_single_repo_snapshot["repo"]

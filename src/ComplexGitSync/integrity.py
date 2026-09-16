@@ -2,33 +2,29 @@
 
 Ring: 0 (pure — no I/O, no clock, no environment)
 Contract: given a sequence of entries, decide whether the chain is intact.
-Imports: none
+Imports: ledger_entry
 
-Known temporary duplication seam: ``recompute_entry_hash`` below reimplements
-the same canonicalisation routine (stable key ordering + deterministic JSON
-serialisation, sha256, ``"sha256:"`` prefix) that ``ledger_entry.py`` — authored
-concurrently as a separate, isolated work package, see
-``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md`` WP P4.1 / P4.1-integrity —
-also implements. Both follow the canonical-payload discipline
-``.localSpec/AdditionalSpecs.md``'s *The hash-chained register* section
-fixes, itself modelled on ``GtsDocument._build_canonical_payload``.
+One canonicalisation, shared
+----------------------------
+``recompute_entry_hash`` below delegates to
+``ledger_entry.compute_entry_hash``. It used to reimplement the same
+routine, deliberately, because the two modules were authored in parallel
+and this one depends on a structural protocol rather than that module's
+concrete class. Both have existed side by side for weeks, so the copy is
+gone: one canonicalisation, and no way for a verifier to disagree with a
+writer about what an entry hashes to.
 
-This module is deliberately decoupled from ``ledger_entry.py`` — it depends only on the structural
-``LedgerEntryLike`` protocol below, never on that module's concrete class —
-so the few lines of canonicalisation logic are duplicated here on purpose,
-not by oversight. A later integration work package (P4.1-integrate) collapses
-the duplication once both modules exist side by side in the same tree,
-most likely by having one delegate to the other's canonicalisation helper.
-Do not "fix" this duplication from within this work package.
+The protocol below is still the contract — nothing here imports
+``LedgerEntry`` itself.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Protocol, Sequence
+
+from .ledger_entry import compute_entry_hash
 
 HASH_ALGORITHM = "sha256"
 
@@ -126,43 +122,28 @@ class VerificationReport:
         return self.state is HistoryState.VERIFIED
 
 
-def _canonical_payload(entry: LedgerEntryLike) -> dict[str, object]:
-    """Build the canonical (pre-hash) payload for one entry.
-
-    Mirrors `GtsDocument._build_canonical_payload`'s discipline: an explicit,
-    fixed set of fields (never the whole record, so unrelated additions to
-    the entry shape don't silently change the hash), fed through
-    `json.dumps(..., sort_keys=True, separators=(",", ":"))` for a
-    deterministic byte-for-byte serialisation. `entry_hash` itself is
-    excluded — it covers every *other* field.
-    """
-    return {
-        "seq": entry.seq,
-        "prev": entry.prev,
-        "recorded_at": entry.recorded_at,
-        "command": entry.command,
-        "argv": list(entry.argv),
-        "state_id": entry.state_id,
-        "state_dir": entry.state_dir,
-        "outcome": entry.outcome,
-    }
-
-
 def recompute_entry_hash(entry: LedgerEntryLike) -> str:
     """Recompute what `entry.entry_hash` should be, from its other fields.
 
     Pure function of `entry`'s own current field values — it never looks at
     any other entry. Comparing this against the entry's stored `entry_hash`
     is exactly `BAD_ENTRY_HASH` detection.
+
+    The arithmetic lives in ``ledger_entry.compute_entry_hash``, the same
+    function the writer uses. A verifier with its own copy of a hash rule is
+    a verifier that can disagree with the writer and be wrong about it.
     """
-    canonical_json = json.dumps(
-        _canonical_payload(entry),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
+    return compute_entry_hash(
+        seq=entry.seq,
+        prev=entry.prev,
+        recorded_at=entry.recorded_at,
+        command=entry.command,
+        argv=entry.argv,
+        state_id=entry.state_id,
+        state_dir=entry.state_dir,
+        outcome=entry.outcome,
+        toolchain=getattr(entry, "toolchain", ()),
     )
-    digest = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
-    return f"{HASH_ALGORITHM}:{digest}"
 
 
 def verify_chain(entries: Sequence[LedgerEntryLike]) -> VerificationReport:

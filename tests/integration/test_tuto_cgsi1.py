@@ -30,7 +30,6 @@ All eight tutorial CLI steps are validated:
 from __future__ import annotations
 
 import subprocess
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -289,18 +288,19 @@ def _prepare_existing_root(output_path: Path, sandbox: dict[str, Path]) -> Path:
 
 
 def _current_lgr_snapshot_path(project_root: Path, register_name: str) -> Path:
-    data = tomllib.loads(_current_lgr_path(project_root, register_name).read_text(encoding="utf-8"))
-    return Path(data["register"]["current_snapshot_path"]).resolve()
+    """The State the workspace's chain last recorded.
 
+    *register_name* is kept for the call sites; the single-file register it
+    named is no longer written, and the hash-chained ledger answers the same
+    question with better evidence.
+    """
+    from ComplexGitSync.ledger_store import read_all_entries
+    from ComplexGitSync.state_store import _parse_state_hash, state_path
 
-def _current_lgr_path(project_root: Path, register_name: str) -> Path:
-    fixed = project_root / ".cgitsync" / register_name
-    if fixed.is_file():
-        return fixed
-    candidates = sorted((project_root / ".cgitsync").glob(f"state(*)_*/{register_name}"))
-    if candidates:
-        return max(candidates, key=lambda path: (path.stat().st_mtime, str(path)))
-    return project_root / register_name
+    cgitsync_dir = project_root / ".cgitsync"
+    entries = read_all_entries(cgitsync_dir / "lgr")
+    assert entries, f"no ledger entry under {cgitsync_dir}"
+    return state_path(cgitsync_dir, _parse_state_hash(entries[-1].state_id)).resolve()
 
 
 def _patch_git_identity(monkeypatch) -> None:
