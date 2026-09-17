@@ -491,7 +491,8 @@ class TestThisTreesOwnDeclaration:
             return {entry.name for entry in iter_tree_leaf_first(tree, scope)}
 
         assert names(RepoScope.PROJECT) == {"ComplexGitSync", "DocComplexGitSync"}
-        assert names(RepoScope.PRIVATE) == {".localSpec", ".claude"}
+        # .memory joined the other two 2026-09-17 (memory-dev_1-2_MemoryOnboarding).
+        assert names(RepoScope.PRIVATE) == {".localSpec", ".claude", ".memory"}
         assert ".agentSpec" not in names(RepoScope.WRITABLE)
         assert ".agentSpec" in names(RepoScope.ALL)
 

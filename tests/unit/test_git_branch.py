@@ -606,7 +606,8 @@ def test_this_trees_own_cgs_pins_exactly_the_shared_mounts():
     by_name = {repo["project_name"]: repo for repo in document.repos}
 
     private = {name for name, repo in by_name.items() if repo.get("private")}
-    assert private == {".agentSpec", ".localSpec", ".claude"}
+    # .memory joined the other three 2026-09-17 (memory-dev_1-2_MemoryOnboarding).
+    assert private == {".agentSpec", ".localSpec", ".claude", ".memory"}
 
     tree = _tree(
         *(
@@ -649,6 +650,7 @@ def test_the_workspace_mounts_sit_on_the_branches_their_cgs_names():
     local = {
         ".localSpec": "ComplexGitSync",
         ".claude": "ComplexGitSync",
+        ".cgitsync": "ComplexGitSync",
     }
     present = {
         path: base
