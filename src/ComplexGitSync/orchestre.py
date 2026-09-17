@@ -160,6 +160,9 @@ from .memory.pending import (
     memory_dirs as _memory_dirs,
 )
 from .memory.pending import (
+    memory_published_commits as _memory_published_commits,
+)
+from .memory.pending import (
     memory_read_commit_log as _memory_read_commit_log,
 )
 from .memory.pending import (
@@ -170,6 +173,9 @@ from .memory.pending import (
 )
 from .memory.pending import (
     memory_state_path as _memory_state_path,
+)
+from .memory.pending import (
+    memory_timeline as _memory_timeline,
 )
 from .memory.pending import (
     memory_unpublished_commits as _memory_unpublished_commits,
@@ -4694,6 +4700,50 @@ class ComplexGitSyncClient:
             ],
             "published": list(log["published"]),
         }
+
+    def memory_explore(
+        self,
+        cgshome: str | Path,
+        *,
+        branch: str | None = None,
+        timeline: bool = False,
+    ) -> dict[str, Any]:
+        """A memory a person can actually read, by branch or in ledger order.
+
+        The default view answers *what a colleague pulling this branch
+        would see*: one row per commit this memory recorded as published,
+        newest push first. ``timeline=True`` answers instead *everything
+        that happened, in the order it did*: one row per ledger entry —
+        `checkout`, `merge`, `push` included, which the commit-only view
+        drops.
+
+        Both read the same two sources every other `memory` command does —
+        `.cgitsync/.memory` (folded) and `.cgitsync` itself (pending) — so
+        a memory that has never been pushed still explores; nothing here
+        needs a mount to exist.
+
+        *branch* names a memory branch other than the one checked out on
+        this disk. MemoryExplore §D1 keeps this to local reads only for
+        now, so a name that does not match what is actually checked out at
+        the mount is refused by name, naming `memory clone --branch` as
+        the way to bring that branch here first — silently answering for
+        the wrong branch would be worse than saying so.
+        """
+        workspace = Path(cgshome)
+        cgitsync_dir = workspace / ".cgitsync"
+        mount = memory_mount_path(workspace)
+        current_branch = (
+            self.git_runner.current_branch(mount) if (mount / ".git").exists() else None
+        )
+        if branch is not None and branch != current_branch:
+            raise GitSyncError(
+                f"branch {branch!r} is not checked out at {mount}. Bring it onto this "
+                f"disk first with 'cgitsync memory clone --branch {branch}'."
+            )
+        resolved_branch = branch or current_branch
+        if timeline:
+            return {"branch": resolved_branch, "entries": _memory_timeline(cgitsync_dir)}
+        return {"branch": resolved_branch, "commits": _memory_published_commits(cgitsync_dir)}
 
     def verify(self, cgshome: str | Path, *, repair: bool = False) -> VerificationReport:
         """Say which of the four answers this workspace's history deserves.

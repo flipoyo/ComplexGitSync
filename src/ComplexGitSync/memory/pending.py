@@ -16,8 +16,8 @@ memory-dev_1-2_WorkingTransitionState_DevPlanTicket.md`) split what
 `.cgitsync` holds into two directories so the mount's own git worktree
 stays clean between one `memory push` and the next. Two different Ring
 levels need the same "read both, merge" answer: `orchestre.py`
-(`memory_status`/`memory_list`/`memory_show`/`verify`/`push`) and
-`snapshot_resolver.py` (which `.gts` a command defaults to, resolved
+(`memory_status`/`memory_list`/`memory_show`/`memory_explore`/`verify`/`push`)
+and `snapshot_resolver.py` (which `.gts` a command defaults to, resolved
 *before* a project is even loaded). Writing the union logic twice would
 have meant the two disagreeing the moment one of them drifted, so it lives
 here once, in the one package both already import from.
@@ -30,6 +30,7 @@ from typing import Any
 
 from .commit_log import (
     commit_log_path,
+    published_commits,
     read_commit_log,
     rows_by_entry,
     state_hashes_with_logs,
@@ -128,6 +129,47 @@ def memory_read_commit_log(cgitsync_dir: Path, state_hash: str) -> dict[str, lis
     return read_commit_log(pending_dir, state_hash)
 
 
+def memory_published_commits(cgitsync_dir: Path) -> list[dict[str, Any]]:
+    """`published_commits`, folded and pending merged, newest push first.
+
+    `memory explore`'s "by branch" view: a commit published before the last
+    fold and one published since are one list to a reader, so the merge
+    that already runs the same way for entries and States runs the same
+    way here.
+    """
+    folded_dir, pending_dir = memory_dirs(cgitsync_dir)
+    rows = [*published_commits(folded_dir), *published_commits(pending_dir)]
+    rows.sort(key=lambda row: (row["published_at"], row["entry"]), reverse=True)
+    return rows
+
+
+def memory_timeline(cgitsync_dir: Path) -> list[dict[str, Any]]:
+    """Every ledger entry, folded and pending, with what it committed and published.
+
+    `memory explore --timeline`'s source: one row per entry, in ledger
+    order — not commit order, not filename order — so `checkout`, `merge`
+    and `push` appear beside `commit` instead of being dropped the way a
+    commit-only view would. `commits`/`published` are empty for an entry
+    that recorded neither.
+    """
+    entries = read_ledger_entries(cgitsync_dir)
+    grouped = memory_commit_log_rows(cgitsync_dir)
+    rows: list[dict[str, Any]] = []
+    for entry in entries:
+        committed, entry_published = grouped.get(entry.seq, ([], []))
+        rows.append(
+            {
+                "seq": entry.seq,
+                "recorded_at": entry.recorded_at,
+                "command": entry.command,
+                "outcome": entry.outcome,
+                "commits": list(committed),
+                "published": list(entry_published),
+            }
+        )
+    return rows
+
+
 def memory_unpublished_commits(cgitsync_dir: Path, repo_id: str) -> list[tuple[str, str]]:
     """A repository's never-published commits, folded and pending combined.
 
@@ -167,10 +209,12 @@ __all__ = [
     "current_state_from_ledger",
     "memory_commit_log_rows",
     "memory_dirs",
+    "memory_published_commits",
     "memory_read_commit_log",
     "memory_state_files",
     "memory_state_hashes_with_logs",
     "memory_state_path",
+    "memory_timeline",
     "memory_unpublished_commits",
     "next_ledger_seq",
     "read_ledger_entries",

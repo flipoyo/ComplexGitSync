@@ -37,7 +37,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 23,
-      "loc": 1756,
+      "loc": 1811,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -122,8 +122,8 @@
     },
     "memory/commit_log.py": {
       "internal_imports": 0,
-      "loc": 215,
-      "public_symbols": 16
+      "loc": 249,
+      "public_symbols": 17
     },
     "memory/integrity.py": {
       "internal_imports": 1,
@@ -139,6 +139,11 @@
       "internal_imports": 4,
       "loc": 408,
       "public_symbols": 17
+    },
+    "memory/pending.py": {
+      "internal_imports": 13,
+      "loc": 182,
+      "public_symbols": 13
     },
     "memory/repository.py": {
       "internal_imports": 2,
@@ -161,8 +166,8 @@
       "public_symbols": 29
     },
     "orchestre.py": {
-      "internal_imports": 139,
-      "loc": 4984,
+      "internal_imports": 143,
+      "loc": 4973,
       "public_symbols": 11
     },
     "paths.py": {
@@ -186,8 +191,8 @@
       "public_symbols": 11
     },
     "snapshot_resolver.py": {
-      "internal_imports": 7,
-      "loc": 311,
+      "internal_imports": 5,
+      "loc": 292,
       "public_symbols": 18
     },
     "status_render.py": {

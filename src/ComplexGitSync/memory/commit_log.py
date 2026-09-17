@@ -252,6 +252,43 @@ def is_published(log: dict[str, list[dict[str, Any]]], sha: str) -> bool:
     return any(row.get("sha") == sha for row in log["published"])
 
 
+def published_commits(cgitsync_dir: Path) -> list[dict[str, Any]]:
+    """Every commit these logs record as published, newest push first.
+
+    One row per **published** commit — a commit with no publication row is
+    left out, because this answers "what would a colleague pulling this
+    branch see", not "what has this workspace ever committed" (`memory
+    show`'s job, over one State; `unpublished_commits`'s, over a
+    repository). Ordered by the push that made it public, not by when it
+    was made: a commit and its push are two different moments, and a
+    colleague pulling the branch sees them appear in push order.
+
+    Built for :mod:`memory.pending` to compose across the fold, and for
+    ``memory explore``: every row a plain dict, because it already crosses
+    two record types (``CommitRecord``, ``PublicationRecord``) and a caller
+    that only prints it has no use for two more dataclasses.
+    """
+    rows: list[dict[str, Any]] = []
+    for state_hash in state_hashes_with_logs(cgitsync_dir):
+        log = read_commit_log(cgitsync_dir, state_hash)
+        published_by_sha = {str(row.get("sha", "")): row for row in log["published"]}
+        for row in log["commit"]:
+            publication = published_by_sha.get(str(row.get("sha", "")))
+            if publication is None:
+                continue
+            rows.append(
+                {
+                    **row,
+                    "state": state_hash,
+                    "published_at": publication.get("at", ""),
+                    "remote": publication.get("remote", ""),
+                    "ref": publication.get("ref", ""),
+                }
+            )
+    rows.sort(key=lambda row: (row["published_at"], row["entry"]), reverse=True)
+    return rows
+
+
 __all__ = [
     "COMMIT_LOG_DIR_NAME",
     "SCOPE_PRIVATE",
@@ -265,6 +302,7 @@ __all__ = [
     "digest_of_rows",
     "find_state_for_commit",
     "is_published",
+    "published_commits",
     "read_commit_log",
     "rows_by_entry",
     "state_hashes_with_logs",
