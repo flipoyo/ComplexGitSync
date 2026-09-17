@@ -293,7 +293,7 @@ def _restart_tree(
     # derived branch has to be one that exists.
     propagate_global_branch(tree, current_branch, git_runner=git_runner)
 
-    for repo in iter_tree(tree, scope):
+    for repo in iter_write_scope(tree, scope, leaf_first=False):
         if repo.parent_id is not None:
             parent = tree.get(repo.parent_id)
             try:
@@ -332,8 +332,16 @@ def restart_tree(
 
     Reads the current branch from the root repository, propagates it across
     all repos except those declared ``private``, then pulls every repository
-    (parent-first) with ``git pull --ff-only`` on the branch that repo
-    actually targets.
+    but the workspace's own memory (``iter_write_scope``, parent-first)
+    with ``git pull --ff-only`` on the branch that repo actually targets.
+
+    The memory is skipped for the same reason ``add``/``commit``/``push``
+    skip it: this call records itself into the memory when it finishes, so
+    pulling the memory in the same sweep could never leave it clean, and a
+    fast-forward attempted against a memory that structurally always has
+    something uncommitted has no reason to behave any better. Its own
+    sync-from-a-colleague's-push is `memory push`'s and `memory clone`'s
+    job, not this one's.
 
     Does not require a ``READY`` tree; intended for use after loading a
     ``.cgs`` file (``DECLARED`` state).  Produces a ``READY`` tree or
@@ -359,7 +367,10 @@ def restart_tree_force(
     This is the destructive counterpart of :func:`restart_tree`: local
     uncommitted changes and untracked files can be discarded by the underlying
     git commands. It exists as an explicit recovery command for worktrees that
-    block a fast-forward pull.
+    block a fast-forward pull. The workspace's own memory is excluded from
+    that, same as from the ordinary pull it destructively repeats — a
+    discard-and-reclone is exactly the operation the memory must never be
+    exposed to from a command that is not one of its own.
 
     *force_access_protocol*, when given, rewrites each repo's remote to
     that protocol before force-pulling (``--force-protocol`` on
@@ -465,22 +476,31 @@ class RepoOutcome:
     detail: str
 
 
-def iter_write_scope(tree: WorkingGitTree, scope: RepoScope) -> Iterator[WorkingRepo]:
-    """*scope*'s repositories, leaf-first, minus the workspace's own memory.
+def iter_write_scope(
+    tree: WorkingGitTree, scope: RepoScope, *, leaf_first: bool = True
+) -> Iterator[WorkingRepo]:
+    """*scope*'s repositories, minus the workspace's own memory.
 
-    For ``add``/``commit``/``push`` only — see
+    For ``add``/``commit``/``push`` (leaf-first, the default) and
+    ``pull``/``pull-force`` (``leaf_first=False``, matching
+    :func:`_restart_tree`'s own parent-first order) only — see
     :meth:`~ComplexGitSync.git_repo.RepoScope.includes`'s docstring for why
-    those three, and no other scoped command, need this. Every command
-    records itself into the memory *after* it runs; a sweep that commits or
-    pushes the memory along with everything else can never leave it clean,
-    because the record of that very sweep is always still pending. Excluded
-    here, not from `RepoScope` itself, so `merge`, `tag` and
-    `freeze-release` go on reconciling the memory across project branches
-    exactly as they already reconcile `.localSpec`/`.claude` — and
-    `memory push` loses nothing either way, since it never went through
-    scope at all.
+    those, and no other scoped command, need this.
+
+    Every one of them records itself into the memory *after* it runs, so a
+    sweep that also committed, pushed, or pulled the memory can never leave
+    it clean — the record of that very sweep is always still pending, and
+    for ``pull`` specifically a fast-forward attempted against a memory
+    that (structurally) always has *something* uncommitted is a fresh way
+    for the same problem to surface, not a different one. Excluded here,
+    not from `RepoScope` itself, so `merge`, `tag` and `freeze-release` go
+    on reconciling the memory across project branches exactly as they
+    already reconcile `.localSpec`/`.claude` — and `memory push`/
+    `memory adopt` lose nothing either way, since neither ever went
+    through scope at all.
     """
-    return (repo for repo in iter_tree_leaf_first(tree, scope) if not repo.is_memory_mount)
+    walk = iter_tree_leaf_first if leaf_first else iter_tree
+    return (repo for repo in walk(tree, scope) if not repo.is_memory_mount)
 
 
 def add_tree(

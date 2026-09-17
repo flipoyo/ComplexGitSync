@@ -1226,6 +1226,11 @@ class _StatusView:
     tree_state: ProjectTreeState
     incoherent: list[str]
     is_empty: bool
+    # Whether the workspace's own memory mount has anything not yet swept
+    # into `memory push`. False (not just absent) whenever there is no
+    # memory mount at all, so `status()` can print the hint with no further
+    # check of its own.
+    memory_dirty: bool = False
 
 
 @dataclass
@@ -4642,10 +4647,13 @@ class ComplexGitSyncClient:
         # branch once and answers both the table and the split-tree warning
         # from that single read.
         branches = GitTreeBranches(registry, self.git_runner)
+        entries = list(iter_tree_leaf_first(registry))
         rows = [
-            self._repo_status_row(registry, entry, root_path, branches)
-            for entry in iter_tree_leaf_first(registry)
+            self._repo_status_row(registry, entry, root_path, branches) for entry in entries
         ]
+        memory_dirty = any(
+            entry.is_memory_mount and row[5] != "clean" for entry, row in zip(entries, rows, strict=True)
+        )
         return _StatusView(
             workspace=workspace,
             use_case=use_case,
@@ -4657,6 +4665,7 @@ class ComplexGitSyncClient:
             tree_state=build_tree_state(registry),
             incoherent=self._branch_incoherence(registry, branches),
             is_empty=False,
+            memory_dirty=memory_dirty,
         )
 
     def status_json(self) -> str:
@@ -4746,6 +4755,12 @@ class ComplexGitSyncClient:
             lines.append(SYNC_LEGEND)
         if counts.recorded_mismatch:
             lines.append("legend: HEAD ending with * differs from the commit recorded in the loaded .gts")
+        if view.memory_dirty:
+            lines.append(
+                "note: .memory is dirty because it just recorded the command that made this "
+                "report — that is expected after any command, not a fault. Run "
+                "'cgitsync memory push' to send it; add/commit/push do not touch it."
+            )
         return "\n".join(lines)
 
     def _append_ledger_entry(

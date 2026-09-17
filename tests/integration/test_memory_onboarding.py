@@ -357,3 +357,73 @@ def test_the_sequence_end_to_end(tmp_path):
     assert there["states"] == here["states"]
     assert there["entries"] == here["entries"]
     assert there["verification"] == "verified"
+
+
+# ---------------------------------------------------------------------------
+# pull leaves the memory alone — memory-dev short ticket, 2026-09-17
+# ---------------------------------------------------------------------------
+
+
+def test_pull_never_touches_the_memorys_own_git_content(tmp_path, monkeypatch):
+    """`cgitsync pull` must not run `git pull` on `.cgitsync` at all.
+
+    Reproduced the way it broke: a colleague pushes something new to the
+    memory's branch after this workspace last saw it, and the *project*
+    root is a real git repository too, so `pull`'s ordinary tree-wide sweep
+    genuinely runs (rather than failing before it reaches the memory at
+    all). Before this fix, that sweep (`RepoScope.ALL`) reached the memory
+    as well, and fetched+fast-forwarded it along with everything else —
+    which the memory must never be exposed to from a command that is not
+    one of its own.
+    """
+    project_remote = _bare_remote(tmp_path / "demo.git", branch="main")
+    workspace = tmp_path / "demo"
+    _git(tmp_path, "clone", "-b", "main", str(project_remote), str(workspace))
+    _identify(workspace)
+    config = workspace / "project.cgs"
+    config.write_text(_CGS, encoding="utf-8")
+
+    client = ComplexGitSyncClient()
+    client.load(config)
+    remote = _bare_remote(tmp_path / "memory.git")
+    client.add_memory_repo_cgs(config, cgshome=workspace)
+    client.memory_adopt(workspace, remote=str(remote), branch="demo_memory-dev")
+    _identify(workspace / ".cgitsync")
+    client.memory_push(workspace)
+    before = _git(workspace / ".cgitsync", "rev-parse", "HEAD")
+
+    # A colleague, elsewhere, pushes something new to the same branch.
+    elsewhere = tmp_path / "elsewhere"
+    _git(tmp_path, "clone", "-b", "demo_memory-dev", str(remote), str(elsewhere))
+    _identify(elsewhere)
+    (elsewhere / "colleague.txt").write_text("their work\n", encoding="utf-8")
+    _git(elsewhere, "add", "colleague.txt")
+    _git(elsewhere, "commit", "-m", "colleague's own memory push")
+    _git(elsewhere, "push")
+
+    snapshot = sorted((workspace / ".cgitsync" / "state").glob("*.gts"))[-1]
+    monkeypatch.chdir(workspace)
+    ComplexGitSyncClient().pull(snapshot)
+
+    after = _git(workspace / ".cgitsync", "rev-parse", "HEAD")
+    assert after == before  # untouched, colleague's commit included
+
+
+def test_status_explains_why_the_memory_is_dirty(tmp_path, capsys):
+    """The hint the short ticket asked for: dirty is expected, not a fault."""
+    workspace = _used_workspace(tmp_path / "demo")
+    remote = _bare_remote(tmp_path / "memory.git")
+    config = workspace / "project.cgs"
+    client = _loaded(workspace)
+    client.add_memory_repo_cgs(config, cgshome=workspace)
+    client.memory_adopt(workspace, remote=str(remote), branch="demo_memory-dev")
+    _identify(workspace / ".cgitsync")
+    client.memory_push(workspace)
+
+    assert "note:" not in client.status()  # clean right after memory push
+
+    client.load(config)  # any ordinary command re-dirties the memory
+
+    report = client.status()
+    assert "note: .memory is dirty" in report
+    assert "cgitsync memory push" in report
