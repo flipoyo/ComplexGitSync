@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.77
+# ComplexGitSync v0002.78
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -509,15 +509,18 @@ fingerprint.
 
 ### Keeping a memory when the disk does not
 
-A memory lives in `.cgitsync/`, which can be a repository of its own — the
-same kind of private mount `.localSpec` is. One repository holds every
-project's memory, on a branch per project, so nothing new has to be learned
-to use it:
+A memory lives at `.cgitsync/.memory`, which can be a repository of its
+own — the same kind of private mount `.localSpec` is. `.cgitsync` itself
+stays the workspace's own live state — States, the ledger, logs — and only
+what a `memory push` has folded in ever sits inside `.memory`, which is
+what lets that mount be checked out and merged like any other. One
+repository holds every project's memory, on a branch per project, so
+nothing new has to be learned to use it:
 
 ```bash
 cgitsync memory init     # the .cgs entry to add, and the branch it uses
 cgitsync memory clone    # bring this project's memory onto a new machine
-cgitsync memory push     # commit what the memory gained, and push it
+cgitsync memory push     # fold what accumulated, commit it, and push it
 ```
 
 `init` proposes and stops. **It never creates the repository for you**:
@@ -527,6 +530,10 @@ creates it and waits.
 Nothing is pushed automatically. A machine with no network keeps a
 complete, verifiable memory and sends it later — offline is the normal
 case, not a failure.
+
+A memory mounted before `cgitsync memory migrate` existed sat directly at
+`.cgitsync` instead. Running `cgitsync memory migrate` once moves it onto
+the layout above — nothing but the mount's own path changes.
 
 **What a memory carries off your machine.** One path: the tree's own root,
 with `$HOME` substituted. Everything else it records — every repository

@@ -174,7 +174,7 @@ def test_mounting_appends_one_entry_and_keeps_every_comment(tmp_path):
     assert after.count("#") == before.count("#")
     assert "A project, with a comment nobody may lose." in after
     assert 'repository = "github:owner/.memory"' in after
-    assert 'relative_path = ".cgitsync"' in after
+    assert 'relative_path = ".cgitsync/.memory"' in after
 
 
 def test_the_edited_spec_still_loads(tmp_path):
@@ -218,7 +218,13 @@ def test_a_spec_with_no_repos_array_is_refused_by_name(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_adopting_keeps_every_state_that_was_already_there(tmp_path):
+def test_adopting_leaves_the_pending_states_exactly_where_they_are(tmp_path):
+    """Adopt no longer carries anything forward — WorkingTransitionState.
+
+    `.cgitsync/state` is the pending area, untouched by `memory_adopt`:
+    the mount it creates, `.cgitsync/.memory`, starts genuinely empty, and
+    the first `memory push` is what folds the pending States into it.
+    """
     workspace = _used_workspace(tmp_path / "demo")
     remote = _bare_remote(tmp_path / "memory.git")
     before = sorted(path.name for path in (workspace / ".cgitsync" / "state").glob("*.gts"))
@@ -228,8 +234,8 @@ def test_adopting_keeps_every_state_that_was_already_there(tmp_path):
     after = sorted(path.name for path in (workspace / ".cgitsync" / "state").glob("*.gts"))
     assert before and after == before
     assert answer["branch"] == "demo_x"
-    assert answer["pending"] > 0
-    assert (workspace / ".cgitsync" / ".git").is_dir()
+    assert answer["pending"] == 0
+    assert (workspace / ".cgitsync" / ".memory" / ".git").is_dir()
 
 
 def test_an_adopted_memory_still_verifies(tmp_path):
@@ -248,7 +254,7 @@ def test_adopting_starts_the_branch_from_the_repositorys_own_history(tmp_path):
     answer = _loaded(workspace).memory_adopt(workspace, remote=str(remote), branch="demo_x")
 
     assert answer["started_from"] == "main"
-    mount = workspace / ".cgitsync"
+    mount = workspace / ".cgitsync" / ".memory"
     assert _git(mount, "rev-parse", "HEAD") == _git(mount, "rev-parse", "origin/main")
 
 
@@ -281,7 +287,7 @@ def test_the_first_push_creates_the_branch_on_the_remote(tmp_path):
     remote = _bare_remote(tmp_path / "memory.git")
     client = _loaded(workspace)
     client.memory_adopt(workspace, remote=str(remote), branch="demo_x")
-    _identify(workspace / ".cgitsync")
+    _identify(workspace / ".cgitsync" / ".memory")
 
     pushed = client.memory_push(workspace)
 
@@ -294,7 +300,7 @@ def test_the_branch_a_merge_will_need_can_be_made_before_the_merge(tmp_path):
     remote = _bare_remote(tmp_path / "memory.git")
     client = _loaded(workspace)
     client.memory_adopt(workspace, remote=str(remote), branch="demo_x")
-    _identify(workspace / ".cgitsync")
+    _identify(workspace / ".cgitsync" / ".memory")
     client.memory_push(workspace)
 
     answer = client.memory_branch(workspace, "main")
@@ -310,7 +316,7 @@ def test_making_a_branch_that_is_already_there_says_so(tmp_path):
     remote = _bare_remote(tmp_path / "memory.git")
     client = _loaded(workspace)
     client.memory_adopt(workspace, remote=str(remote), branch="demo_x")
-    _identify(workspace / ".cgitsync")
+    _identify(workspace / ".cgitsync" / ".memory")
     client.memory_push(workspace)
     client.memory_branch(workspace, "main")
 
@@ -342,7 +348,7 @@ def test_the_sequence_end_to_end(tmp_path):
     assert monkeypatch_free_exists  # the bare repository is readable as it stands
     client.add_memory_repo_cgs(config, cgshome=workspace)
     client.memory_adopt(workspace, remote=str(remote), branch="demo_memory-dev")
-    _identify(workspace / ".cgitsync")
+    _identify(workspace / ".cgitsync" / ".memory")
     client.memory_push(workspace)
     client.memory_branch(workspace, "main")
 
@@ -360,21 +366,20 @@ def test_the_sequence_end_to_end(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# pull leaves the memory alone — memory-dev short ticket, 2026-09-17
+# The memory is an ordinary private/local repository again —
+# WorkingTransitionState, 2026-09-17
 # ---------------------------------------------------------------------------
 
 
-def test_pull_never_touches_the_memorys_own_git_content(tmp_path, monkeypatch):
-    """`cgitsync pull` must not run `git pull` on `.cgitsync` at all.
+def test_pull_reaches_the_memory_like_any_other_private_repo(tmp_path, monkeypatch):
+    """`cgitsync pull` fast-forwards `.cgitsync/.memory`, same as `.localSpec`.
 
-    Reproduced the way it broke: a colleague pushes something new to the
-    memory's branch after this workspace last saw it, and the *project*
-    root is a real git repository too, so `pull`'s ordinary tree-wide sweep
-    genuinely runs (rather than failing before it reaches the memory at
-    all). Before this fix, that sweep (`RepoScope.ALL`) reached the memory
-    as well, and fetched+fast-forwarded it along with everything else —
-    which the memory must never be exposed to from a command that is not
-    one of its own.
+    Before WorkingTransitionState, `.cgitsync` was both the mount and the
+    workspace's own live state area, so `pull` had to be kept off it
+    entirely (`PullMemoryExclusion`). Now the mount is nested at
+    `.cgitsync/.memory`, clean except mid-fold, so there is nothing left to
+    protect it from — `pull` reaching a colleague's push there is exactly
+    what it is supposed to do.
     """
     project_remote = _bare_remote(tmp_path / "demo.git", branch="main")
     workspace = tmp_path / "demo"
@@ -387,62 +392,66 @@ def test_pull_never_touches_the_memorys_own_git_content(tmp_path, monkeypatch):
     client.load(config)
     remote = _bare_remote(tmp_path / "memory.git")
     client.add_memory_repo_cgs(config, cgshome=workspace)
-    client.memory_adopt(workspace, remote=str(remote), branch="demo_memory-dev")
-    _identify(workspace / ".cgitsync")
+    client.memory_adopt(workspace, remote=str(remote), branch="demo")
+    _identify(workspace / ".cgitsync" / ".memory")
     client.memory_push(workspace)
-    before = _git(workspace / ".cgitsync", "rev-parse", "HEAD")
+    before = _git(workspace / ".cgitsync" / ".memory", "rev-parse", "HEAD")
 
     # A colleague, elsewhere, pushes something new to the same branch.
     elsewhere = tmp_path / "elsewhere"
-    _git(tmp_path, "clone", "-b", "demo_memory-dev", str(remote), str(elsewhere))
+    _git(tmp_path, "clone", "-b", "demo", str(remote), str(elsewhere))
     _identify(elsewhere)
     (elsewhere / "colleague.txt").write_text("their work\n", encoding="utf-8")
     _git(elsewhere, "add", "colleague.txt")
     _git(elsewhere, "commit", "-m", "colleague's own memory push")
     _git(elsewhere, "push")
 
-    snapshot = sorted((workspace / ".cgitsync" / "state").glob("*.gts"))[-1]
     monkeypatch.chdir(workspace)
-    ComplexGitSyncClient().pull(snapshot)
+    ComplexGitSyncClient().pull(config)
 
-    after = _git(workspace / ".cgitsync", "rev-parse", "HEAD")
-    assert after == before  # untouched, colleague's commit included
+    after = _git(workspace / ".cgitsync" / ".memory", "rev-parse", "HEAD")
+    assert after != before  # the colleague's commit really did arrive
+    assert (workspace / ".cgitsync" / ".memory" / "colleague.txt").is_file()
 
 
-def test_status_explains_why_the_memory_is_dirty(tmp_path, capsys):
-    """The hint the short ticket asked for: dirty is expected, not a fault."""
+def test_the_memory_stays_clean_after_ordinary_commands(tmp_path):
+    """Ordinary command activity no longer touches the mount at all.
+
+    `status` used to explain why `.memory` read dirty after every command
+    (`PullMemoryExclusion` §3) — now nothing writes there except a fold, so
+    there is nothing left to explain: the note stays absent, run after run.
+    """
     workspace = _used_workspace(tmp_path / "demo")
     remote = _bare_remote(tmp_path / "memory.git")
     config = workspace / "project.cgs"
     client = _loaded(workspace)
     client.add_memory_repo_cgs(config, cgshome=workspace)
     client.memory_adopt(workspace, remote=str(remote), branch="demo_memory-dev")
-    _identify(workspace / ".cgitsync")
+    _identify(workspace / ".cgitsync" / ".memory")
     client.memory_push(workspace)
 
     assert "note:" not in client.status()  # clean right after memory push
 
-    client.load(config)  # any ordinary command re-dirties the memory
+    client.load(config)  # an ordinary command — writes only into .cgitsync itself
 
     report = client.status()
-    assert "note: .memory is dirty" in report
-    assert "cgitsync memory push" in report
+    assert "note:" not in report
+    assert ".cgitsync" in report  # .memory is still listed, still clean
 
 
 # ---------------------------------------------------------------------------
-# The recorded commit stays honest, even excluded from every write scope
+# The recorded commit stays honest — `memory push` bypasses the ordinary
+# write-scope refresh, so this stays orchestre.py's own job
 # ---------------------------------------------------------------------------
 
 
 def test_the_recorded_commit_catches_up_after_memory_push(tmp_path):
-    """Excluded from every write scope must not mean frozen at load time.
-
-    `.memory` is never visited by `add`/`commit`/`push`/`pull` any more, so
-    nothing refreshes its recorded `commit_sha` the way those commands
-    refresh every repository they do act on. Without a dedicated refresh,
-    `status`'s `HEAD ending with *` marker — recorded vs. actual — would
-    appear the moment `memory push` first moved it and never go away again,
-    however many ordinary commands ran afterward.
+    """`memory push` moves the mount through `git_runner` calls of its own,
+    not through `commit_tree`/`push_tree` — so nothing else refreshes the
+    registry's record of it. Without a dedicated refresh, `status`'s `HEAD
+    ending with *` marker — recorded vs. actual — would appear the moment
+    `memory push` first moved it and never go away again, however many
+    ordinary commands ran afterward.
     """
     project_remote = _bare_remote(tmp_path / "demo.git", branch="main")
     workspace = tmp_path / "demo"
@@ -456,44 +465,45 @@ def test_the_recorded_commit_catches_up_after_memory_push(tmp_path):
     remote = _bare_remote(tmp_path / "memory.git")
     client.add_memory_repo_cgs(config, cgshome=workspace)
     client.memory_adopt(workspace, remote=str(remote), branch="demo_memory-dev")
-    _identify(workspace / ".cgitsync")
+    _identify(workspace / ".cgitsync" / ".memory")
     client.memory_push(workspace)
     client.load(config)  # picks up the entry add_memory_repo_cgs just added
 
-    recorded_before = next(
-        e for e in client.get_dependency_registry().values() if e.is_memory_mount
-    ).commit_sha
+    def _recorded_commit_sha():
+        return next(
+            e for e in client.get_dependency_registry().values()
+            if e.relative_path == Path(".cgitsync") / ".memory"
+        ).commit_sha
+
+    recorded_before = _recorded_commit_sha()
 
     # More is recorded, pushed, and the memory moves without anything else
     # ever asking it to.
     client.load(config)
     client.memory_push(workspace)
-    actual_head = _git(workspace / ".cgitsync", "rev-parse", "HEAD")
+    actual_head = _git(workspace / ".cgitsync" / ".memory", "rev-parse", "HEAD")
     assert actual_head != recorded_before  # the memory really did move
 
     # One more ordinary command is all it takes to catch the record up.
     client.load(config)
 
-    recorded_after = next(
-        e for e in client.get_dependency_registry().values() if e.is_memory_mount
-    ).commit_sha
-    assert recorded_after == actual_head
+    assert _recorded_commit_sha() == actual_head
 
 
 # ---------------------------------------------------------------------------
-# merge --into must not be blocked by the memory's own expected state —
-# mergingIssue short ticket, 2026-09-17
+# merge reaches the memory with no exemption at all — WorkingTransitionState
 # ---------------------------------------------------------------------------
 
 
-def test_merging_is_not_blocked_by_the_memorys_own_dirtiness(tmp_path, monkeypatch):
-    """`merge --private branchX --into main` must not refuse on `.memory`.
+def test_merge_reaches_the_memory_with_no_exemption_needed(tmp_path, monkeypatch):
+    """`merge --private branchX --into main` moves `.cgitsync/.memory` too.
 
-    `.memory` records the very command that inspects it, so it reads dirty
-    at almost any moment an ordinary command runs — `status` already says
-    so as a note, not a fault. `merge`'s preflight (``require_clean=True``)
-    did not know that yet, and refused every merge that reached `.memory`
-    at all, which is every merge once a memory is mounted.
+    `MergeMemoryExclusion` (2026-09-17, superseded the same day) exempted
+    the mount from merge's worktree/tracking preflight because it was
+    always dirty by construction. WorkingTransitionState removes the cause
+    rather than exempting the symptom: a memory folded and pushed before
+    the merge has nothing pending in its own worktree, so preflight passes
+    with no special case for it at all.
     """
     project_remote = _bare_remote(tmp_path / "demo.git", branch="main")
     workspace = tmp_path / "demo"
@@ -508,7 +518,7 @@ def test_merging_is_not_blocked_by_the_memorys_own_dirtiness(tmp_path, monkeypat
     remote = _bare_remote(tmp_path / "memory.git")
     client.add_memory_repo_cgs(config, cgshome=workspace)
     client.memory_adopt(workspace, remote=str(remote), branch="demo")
-    _identify(workspace / ".cgitsync")
+    _identify(workspace / ".cgitsync" / ".memory")
     client.memory_push(workspace)
     client.memory_branch(workspace, "feature")  # demo_feature, for the merge
 
@@ -518,61 +528,15 @@ def test_merging_is_not_blocked_by_the_memorys_own_dirtiness(tmp_path, monkeypat
     _git(workspace, "commit", "-m", "work on feature")
     _git(workspace, "push", "-u", "origin", "feature")
 
-    client.restart(config)  # READY, on root's new branch; re-dirties .memory
-    assert "note: .memory is dirty" in client.status()  # the scenario, confirmed
+    client.restart(config)  # READY, on root's new branch
+    client.memory_push(workspace)  # folds the restart's own record; mount clean
+    client.restart(config)  # READY again, and refreshes the recorded commit_sha
+    assert "note:" not in client.status()
 
     outcomes = client.merge_into("feature", "main", private=True)
 
     # private=True merges only the private/writable repositories — .memory
     # here — leaving the (non-private) project root exactly where it was.
     assert _git(workspace, "branch", "--show-current") == "feature"
-    assert _git(workspace / ".cgitsync", "branch", "--show-current") == "demo"
-    assert any(outcome.name == ".memory" for outcome in outcomes)
-
-
-def test_merging_is_not_blocked_by_the_memorys_tracking_state(tmp_path, monkeypatch):
-    """A `.memory` behind its own origin must not block an unrelated merge.
-
-    Its sync with that origin is `memory push`'s job alone, on its own
-    schedule — not a precondition `merge` (or any other tree-wide command)
-    gets to enforce, the same reasoning that keeps it out of `commit`'s and
-    `push`'s own write scope.
-    """
-    project_remote = _bare_remote(tmp_path / "demo.git", branch="main")
-    workspace = tmp_path / "demo"
-    _git(tmp_path, "clone", "-b", "main", str(project_remote), str(workspace))
-    _identify(workspace)
-    config = workspace / "project.cgs"
-    config.write_text(_CGS, encoding="utf-8")
-
-    monkeypatch.chdir(workspace)
-    client = ComplexGitSyncClient()
-    client.load(config)
-    remote = _bare_remote(tmp_path / "memory.git")
-    client.add_memory_repo_cgs(config, cgshome=workspace)
-    client.memory_adopt(workspace, remote=str(remote), branch="demo")
-    _identify(workspace / ".cgitsync")
-    client.memory_push(workspace)
-    client.memory_branch(workspace, "feature")
-
-    _git(workspace, "checkout", "-b", "feature")
-    (workspace / "work.txt").write_text("feature work\n", encoding="utf-8")
-    _git(workspace, "add", "work.txt")
-    _git(workspace, "commit", "-m", "work on feature")
-    _git(workspace, "push", "-u", "origin", "feature")
-
-    # A colleague, elsewhere, pushes something new to the memory's branch —
-    # this workspace's `.memory` is now behind its own origin.
-    elsewhere = tmp_path / "elsewhere"
-    _git(tmp_path, "clone", "-b", "demo", str(remote), str(elsewhere))
-    _identify(elsewhere)
-    (elsewhere / "colleague.txt").write_text("their work\n", encoding="utf-8")
-    _git(elsewhere, "add", "colleague.txt")
-    _git(elsewhere, "commit", "-m", "colleague's own memory push")
-    _git(elsewhere, "push")
-
-    client.restart(config)  # READY, on root's new branch
-    outcomes = client.merge_into("feature", "main", private=True)
-
-    assert _git(workspace / ".cgitsync", "branch", "--show-current") == "demo"
+    assert _git(workspace / ".cgitsync" / ".memory", "branch", "--show-current") == "demo"
     assert any(outcome.name == ".memory" for outcome in outcomes)

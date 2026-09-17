@@ -153,17 +153,14 @@ class RepoScope(StrEnum):
         nested inside a private parent is private too, whatever its own entry
         says. See :attr:`WorkingRepo.effective_private`.
 
-        This does **not** single out the memory mount (see
-        :attr:`WorkingRepo.is_memory_mount`) — it is an ordinary private,
-        writable repository as far as scope goes, and needs to be: `merge`
-        reconciling it across project branches, the same way it already
-        reconciles `.localSpec`/`.claude`, depends on this returning ``True``
-        for it under ``PRIVATE``/``WRITABLE``. The exclusion belongs to
-        ``add``/``commit``/``push`` specifically — see
-        :func:`~ComplexGitSync.operations.iter_write_scope` — because only
-        those three write *and then record having written* in the same
-        breath; a repo that can never come out clean from its own sweep is
-        their problem to route around, not every scoped command's.
+        This does **not** single out the memory mount — it is an ordinary
+        private, writable repository as far as scope goes, and needs to be:
+        `merge` reconciling it across project branches, the same way it
+        already reconciles `.localSpec`/`.claude`, depends on this
+        returning ``True`` for it under ``PRIVATE``/``WRITABLE``. Nothing
+        writes into its worktree except `memory push`'s own fold
+        (`memory-dev_WorkingTransitionState`), so it no longer needs
+        routing around the way it once did.
         """
         if self is RepoScope.ALL:
             return True
@@ -461,16 +458,6 @@ class WorkingRepo(GitRepo):
     propagated_writable: bool | None = None
     remote_name: str | None = None
     is_external_reference: bool = False
-    # Set by registry.py when this entry mounts the workspace's own memory
-    # (relative_path == memory.repository.MOUNT_PATH) -- derived, never
-    # declared in a .cgs and never hashed into a State. RepoScope reads it
-    # to keep the memory out of the ordinary write scopes: every command
-    # records itself into the memory *after* it runs, so a scope that swept
-    # the memory into its own commit could never leave it clean -- the
-    # record of that very sweep is always still pending. `memory push`
-    # commits and pushes it directly, never through a scope at all, so
-    # excluding it here costs that command nothing.
-    is_memory_mount: bool = False
 
     @property
     def effective_private(self) -> bool:

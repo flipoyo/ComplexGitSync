@@ -35,7 +35,7 @@ Data classes exported here (Tier 2 — Actions):
 from __future__ import annotations
 
 import warnings
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -293,7 +293,7 @@ def _restart_tree(
     # derived branch has to be one that exists.
     propagate_global_branch(tree, current_branch, git_runner=git_runner)
 
-    for repo in iter_write_scope(tree, scope, leaf_first=False):
+    for repo in iter_tree(tree, scope):
         if repo.parent_id is not None:
             parent = tree.get(repo.parent_id)
             try:
@@ -332,16 +332,11 @@ def restart_tree(
 
     Reads the current branch from the root repository, propagates it across
     all repos except those declared ``private``, then pulls every repository
-    but the workspace's own memory (``iter_write_scope``, parent-first)
-    with ``git pull --ff-only`` on the branch that repo actually targets.
-
-    The memory is skipped for the same reason ``add``/``commit``/``push``
-    skip it: this call records itself into the memory when it finishes, so
-    pulling the memory in the same sweep could never leave it clean, and a
-    fast-forward attempted against a memory that structurally always has
-    something uncommitted has no reason to behave any better. Its own
-    sync-from-a-colleague's-push is `memory push`'s and `memory clone`'s
-    job, not this one's.
+    in *scope*, parent-first, with ``git pull --ff-only`` on the branch that
+    repo actually targets — the workspace's own memory mount included: its
+    worktree is an ordinary private/local repository now that nothing but
+    `memory push`'s own fold writes into it
+    (`memory-dev_WorkingTransitionState`).
 
     Does not require a ``READY`` tree; intended for use after loading a
     ``.cgs`` file (``DECLARED`` state).  Produces a ``READY`` tree or
@@ -367,10 +362,8 @@ def restart_tree_force(
     This is the destructive counterpart of :func:`restart_tree`: local
     uncommitted changes and untracked files can be discarded by the underlying
     git commands. It exists as an explicit recovery command for worktrees that
-    block a fast-forward pull. The workspace's own memory is excluded from
-    that, same as from the ordinary pull it destructively repeats — a
-    discard-and-reclone is exactly the operation the memory must never be
-    exposed to from a command that is not one of its own.
+    block a fast-forward pull — the memory mount included, in scope the same
+    way :func:`restart_tree` includes it.
 
     *force_access_protocol*, when given, rewrites each repo's remote to
     that protocol before force-pulling (``--force-protocol`` on
@@ -476,33 +469,6 @@ class RepoOutcome:
     detail: str
 
 
-def iter_write_scope(
-    tree: WorkingGitTree, scope: RepoScope, *, leaf_first: bool = True
-) -> Iterator[WorkingRepo]:
-    """*scope*'s repositories, minus the workspace's own memory.
-
-    For ``add``/``commit``/``push`` (leaf-first, the default) and
-    ``pull``/``pull-force`` (``leaf_first=False``, matching
-    :func:`_restart_tree`'s own parent-first order) only — see
-    :meth:`~ComplexGitSync.git_repo.RepoScope.includes`'s docstring for why
-    those, and no other scoped command, need this.
-
-    Every one of them records itself into the memory *after* it runs, so a
-    sweep that also committed, pushed, or pulled the memory can never leave
-    it clean — the record of that very sweep is always still pending, and
-    for ``pull`` specifically a fast-forward attempted against a memory
-    that (structurally) always has *something* uncommitted is a fresh way
-    for the same problem to surface, not a different one. Excluded here,
-    not from `RepoScope` itself, so `merge`, `tag` and `freeze-release` go
-    on reconciling the memory across project branches exactly as they
-    already reconcile `.localSpec`/`.claude` — and `memory push`/
-    `memory adopt` lose nothing either way, since neither ever went
-    through scope at all.
-    """
-    walk = iter_tree_leaf_first if leaf_first else iter_tree
-    return (repo for repo in walk(tree, scope) if not repo.is_memory_mount)
-
-
 def add_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
@@ -531,7 +497,7 @@ def add_tree(
 
     outcomes: list[RepoOutcome] = []
     if paths is None:
-        for repo in iter_write_scope(tree, scope):
+        for repo in iter_tree_leaf_first(tree, scope):
             pending = len(git_runner.status_porcelain(repo.absolute_path))
             git_runner.stage_all(repo.absolute_path)
             outcomes.append(
@@ -693,7 +659,7 @@ def commit_tree(
     )
 
     outcomes: list[RepoOutcome] = []
-    for repo in iter_write_scope(tree, scope):
+    for repo in iter_tree_leaf_first(tree, scope):
         if stage_all:
             git_runner.stage_all(repo.absolute_path)
         if not git_runner.has_staged_changes(repo.absolute_path):
@@ -1255,7 +1221,7 @@ def push_tree(
     )
 
     outcomes: list[RepoOutcome] = []
-    for repo in iter_write_scope(tree, scope):
+    for repo in iter_tree_leaf_first(tree, scope):
         remote = repo.remote_name or "origin"
         _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
         # Before the push, not after: ``push -u`` can only write the
@@ -1831,16 +1797,8 @@ def _collect_tracking_diagnostics(
     *,
     scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
-    # The memory mount's relationship to its own origin is managed only by
-    # ``memory push``/``memory adopt``/``memory clone`` — on a cadence
-    # entirely decoupled from whatever tree-wide operation is asking here —
-    # so being behind or diverged from that origin is not this operation's
-    # business, the same reasoning that keeps it out of add/commit/push's
-    # own action scope (``iter_write_scope``).
     diagnostics: list[PreflightDiagnostic] = []
     for repo in iter_tree_leaf_first(tree, scope):
-        if repo.is_memory_mount:
-            continue
         tracking_state = git_runner.branch_tracking_state(repo.absolute_path)
         if tracking_state in (None, SyncState.ALIGNED):
             continue
@@ -1917,17 +1875,10 @@ def _collect_worktree_diagnostics(
     # Walks the whole tree even when the scope is narrower: worktree_state
     # is written into the .gts snapshot for every repository, so it must
     # stay fresh. Only the diagnostics are scoped.
-    #
-    # The memory mount is excluded from the diagnostic (not from the
-    # worktree_state refresh above it): it records the very command that
-    # is running, so it is expected to read dirty at the moment a preflight
-    # asks, the same fact `status` already reports as a note rather than a
-    # fault. Blocking `merge --into` on it would make merging a branch that
-    # touches `.memory` impossible by construction.
     for repo in iter_tree_leaf_first(tree):
         is_dirty = _has_managed_uncommitted_changes(tree, git_runner, repo)
         repo.worktree_state = "DIRTY" if is_dirty else "CLEAN"
-        if is_dirty and scope.includes(repo) and not repo.is_memory_mount:
+        if is_dirty and scope.includes(repo):
             dirty.append(
                 PreflightDiagnostic(
                     severity,

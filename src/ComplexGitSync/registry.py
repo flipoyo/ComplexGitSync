@@ -10,10 +10,7 @@ Contract: given a parsed ``.cgs`` (``CgsDocument``) or ``.gts``
     env-marker path expansion inherited from the ``.gts``/``.cgs`` wire
     format itself (``$HOME``-style markers), which is why this module sits
     at Ring 2 rather than Ring 0/1.
-Imports: cgs_format, errors, git_branch, git_repo, git_tree, gts_document,
-    memory.repository (only for MOUNT_PATH, to recognise the workspace's own
-    memory mount and keep it out of the ordinary write scopes — Ring 1, so
-    downward from here)
+Imports: cgs_format, errors, git_branch, git_repo, git_tree, gts_document
 
 Extracted from ``orchestre.py`` (Wave 2, P5-registry of
 ``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
@@ -88,7 +85,6 @@ from .gts_document import (
     _repo_ref_name,
     _repo_ref_pair,
 )
-from .memory.repository import MOUNT_PATH
 from .paths import TREE_MARKER, _path_against_tree, _path_from_tree
 
 # ============================================================
@@ -311,10 +307,6 @@ def build_registry_from_cgs_document(
             private=bool(repo.get("private", False)),
             writable=bool(repo.get("writable", False)),
             remote_name=str(repo.get("remote_name") or document.read("project.default_remote_name", "origin")),
-            # Derived, not declared: a .cgs never says "this is the
-            # memory" -- it is recognised the same way every command that
-            # writes it already does, by where it sits.
-            is_memory_mount=relative_path == Path(MOUNT_PATH),
         )
         registry.add(entry)
 
@@ -454,10 +446,6 @@ def build_registry_from_gts_document(
             ),
             private=bool(repo_state.get("private", False)),
             writable=bool(repo_state.get("writable", False)),
-            # Derived, not read back: a State never records this either,
-            # for the same reason a .cgs never declares it -- recognised by
-            # where it sits, not by a flag that would need hashing or not.
-            is_memory_mount=(not is_root) and str(repo_state.get("relative_path")) == MOUNT_PATH,
         )
         registry.add(entry)
         path_to_repo_id[absolute_path] = repo_id

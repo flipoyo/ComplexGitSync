@@ -914,6 +914,9 @@ class _FakeGitRunner:
     def tracked_gitlink_paths(self, repo_path) -> set[Path]:
         return set()
 
+    def tracked_files(self, repo_path) -> list[Path]:
+        return []
+
     def has_staged_changes(self, repo_path) -> bool:
         return False
 

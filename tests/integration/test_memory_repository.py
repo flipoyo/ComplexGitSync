@@ -75,7 +75,7 @@ def test_init_proposes_the_entry_that_mounts_the_memory(tmp_path):
     assert proposal["entry"]["repository"] == "github:flipoyo/.memory"
     assert proposal["entry"]["private"] is True
     assert proposal["entry"]["writable"] is True
-    assert proposal["mount_path"] == str(workspace / ".cgitsync")
+    assert proposal["mount_path"] == str(workspace / ".cgitsync" / ".memory")
     assert proposal["mounted"] is False
 
 
@@ -109,7 +109,8 @@ def test_a_memory_pushed_here_is_the_same_memory_cloned_there(tmp_path):
     remote = _bare_remote(tmp_path / "remote.git")
 
     # Mount: the memory is a clone of the (empty) remote, in place.
-    mount = workspace / ".cgitsync"
+    mount = workspace / ".cgitsync" / ".memory"
+    mount.mkdir(parents=True)
     staging = tmp_path / "staging"
     subprocess.run(["git", "clone", str(remote), str(staging)], check=True, capture_output=True)
     (staging / ".git").rename(mount / ".git")
@@ -140,7 +141,8 @@ def test_a_memory_pushed_here_is_the_same_memory_cloned_there(tmp_path):
 def test_pushing_twice_with_nothing_new_records_nothing(tmp_path):
     workspace = _used_workspace(tmp_path / "demo")
     remote = _bare_remote(tmp_path / "remote.git")
-    mount = workspace / ".cgitsync"
+    mount = workspace / ".cgitsync" / ".memory"
+    mount.mkdir(parents=True)
     staging = tmp_path / "staging"
     subprocess.run(["git", "clone", str(remote), str(staging)], check=True, capture_output=True)
     (staging / ".git").rename(mount / ".git")
@@ -171,8 +173,12 @@ def test_clone_refuses_to_overwrite_a_memory_that_is_here(tmp_path):
     workspace = _used_workspace(tmp_path / "demo")
     remote = _bare_remote(tmp_path / "remote.git")
 
-    # The workspace already holds States and a chain; cloning over them
-    # would destroy the only copy of a memory nobody has pushed.
+    # Something is already sitting at the mount — an interrupted adopt or
+    # clone, say — and cloning over it would destroy whatever that was.
+    mount = workspace / ".cgitsync" / ".memory"
+    mount.mkdir(parents=True)
+    (mount / "leftover.txt").write_text("not a git repository yet\n", encoding="utf-8")
+
     with pytest.raises(GitSyncError, match="already holds a memory"):
         _loaded_client(workspace).memory_clone(
             workspace, remote=str(remote), branch="demo"

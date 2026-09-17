@@ -608,6 +608,17 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     )
     _add_search_dir_argument(adopt)
 
+    migrate = memory_commands.add_parser(
+        "migrate",
+        help="Move a memory mounted before WorkingTransitionState onto its new layout.",
+    )
+    migrate.add_argument(
+        "--cgs",
+        metavar="FILE",
+        help="The .cgs declaring the mount. Defaults to the one this tree was built from.",
+    )
+    _add_search_dir_argument(migrate)
+
     branch = memory_commands.add_parser(
         "branch",
         help="Create the memory branch another project branch needs, and push it.",
@@ -999,6 +1010,11 @@ def _execute_memory(
         return _print_memory_adopt(
             client.memory_adopt(cgshome, owner=owner, branch=branch, remote=remote)
         )
+    if subcommand == "migrate":
+        _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+        return _print_memory_migrate(
+            client.memory_migrate(cgshome, _cgs_to_edit(client, cgs, cgshome))
+        )
     if subcommand == "branch":
         _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
         return _print_memory_branch(
@@ -1037,6 +1053,14 @@ def _print_memory_mount(answer: dict) -> int:
         print("next: cgitsync memory adopt, then cgitsync memory push")
     else:
         print("added=already-there")
+    return EXIT_OK
+
+
+def _print_memory_migrate(answer: dict) -> int:
+    print(f"old_mount={answer['old_mount']}")
+    print(f"new_mount={answer['new_mount']}")
+    print(f"files_moved={answer['files_moved']}")
+    print(f"cgs={answer['cgs']}")
     return EXIT_OK
 
 

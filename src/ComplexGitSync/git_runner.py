@@ -292,6 +292,8 @@ class GitRunnerProtocol(Protocol):
 
     def tracked_gitlink_paths(self, repo_path: Path | str) -> set[Path]: ...
 
+    def tracked_files(self, repo_path: Path | str) -> list[Path]: ...
+
     def has_staged_changes(self, repo_path: Path | str) -> bool: ...
 
     def stage_all(self, repo_path: Path | str) -> None: ...
@@ -607,6 +609,17 @@ class GitRunner:
                 continue
             gitlinks.add(Path(path))
         return gitlinks
+
+    def tracked_files(self, repo_path: Path | str) -> list[Path]:
+        """Every path Git tracks in *repo_path*, relative to it, staged or committed.
+
+        ``git ls-files`` — includes what is staged but not yet committed,
+        which is what a migration moving a repository's worktree needs: a
+        file only in the index, not yet committed, is still part of the
+        repository and must move with it.
+        """
+        result = self._run("ls-files", cwd=repo_path)
+        return [Path(line) for line in result.stdout.splitlines() if line.strip()]
 
     def has_staged_changes(self, repo_path: Path | str) -> bool:
         """Return ``True`` if *repo_path* has changes staged for the next commit."""
