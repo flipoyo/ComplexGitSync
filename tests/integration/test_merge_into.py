@@ -331,6 +331,61 @@ def test_a_tree_that_is_not_self_hosted_has_no_build_to_warn_about(tmp_path):
     assert _loaded(tree["snapshot"]).build_installed_from("main") is None
 
 
+# ---------------------------------------------------------------------------
+# A scoped call must be finishable by a second one — main_1-1_MergeIntoScopeSync
+# ---------------------------------------------------------------------------
+
+
+def test_a_second_scoped_call_finishes_what_the_first_left_behind(tmp_path):
+    """The exact bug: project scope, then --private, as two separate calls.
+
+    The first call moves the project repository and leaves the private one
+    exactly where it was — correctly, since it was never asked to move. The
+    second call used to refuse for that very reason: the private repository
+    was "not yet on the branch the tree expects", which is the second
+    call's whole job to fix, not a sign anything was wrong.
+    """
+    tree = _tree(tmp_path)
+    client = _loaded(tree["snapshot"])
+
+    project_only = client.merge_into("feature", "main")
+    assert [row.status for row in project_only] == ["fast-forward"]
+    assert _git(tree["config"], "branch", "--show-current") == "demo_feature"
+
+    second_client = _loaded(tree["snapshot"])
+    private_only = second_client.merge_into("feature", "main", private=True)
+
+    assert [row.status for row in private_only] == ["fast-forward"]
+    assert _git(tree["config"], "branch", "--show-current") == "demo"
+
+
+def test_all_finishes_a_tree_a_scoped_call_already_split(tmp_path):
+    """`--all`, run after a project-only `--into`, must not refuse either."""
+    tree = _tree(tmp_path)
+    client = _loaded(tree["snapshot"])
+    client.merge_into("feature", "main")
+
+    second_client = _loaded(tree["snapshot"])
+    outcomes = second_client.merge_into("feature", "main", all_writable=True)
+
+    assert {row.name: row.status for row in outcomes} == {
+        "conf": "fast-forward",
+        "demo": "already-merged",
+    }
+    assert _git(tree["config"], "branch", "--show-current") == "demo"
+
+
+def test_a_dirty_repository_is_still_refused(tmp_path):
+    """Skipping branch-alignment must not skip the worktree check too."""
+    tree = _tree(tmp_path)
+    (tree["config"] / "dirty.txt").write_text("uncommitted\n", encoding="utf-8")
+
+    with pytest.raises(GitSyncError, match="uncommitted changes"):
+        _loaded(tree["snapshot"]).merge_into("feature", "main", all_writable=True)
+
+    assert _git(tree["root"], "branch", "--show-current") == "feature"
+
+
 def test_a_tree_that_holds_this_tool_warns_before_replacing_it(tmp_path, monkeypatch):
     """The warning the whole command exists to make unnecessary."""
     tree = _tree(tmp_path)

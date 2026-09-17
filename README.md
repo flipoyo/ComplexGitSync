@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.69
+# ComplexGitSync v0002.70
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -466,6 +466,12 @@ Every repository is checked before any is touched, so a conflict or a missing
 target leaves the whole tree where it was — still on the source branch, with
 nothing checked out and nothing merged. A fast-forward is reported as one,
 which is usually why a repository looks untouched afterwards.
+
+A `--private` or `--all` `--into` call is only ever about part of the tree
+until you run it; the branches it did not touch are meant to still be
+somewhere else. So a second scoped call — `--private` after the plain form,
+or `--all` after either — finishes the rest rather than refusing it for not
+having moved yet.
 
 `checkout` warns when it is about to install a different build of the tool and
 still does it: looking at an older branch is legitimate, being surprised by it

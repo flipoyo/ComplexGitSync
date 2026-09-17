@@ -210,6 +210,11 @@ def test_a_state_no_entry_recorded_is_reported_but_is_not_corruption(tmp_path):
     """
     config = _workspace(tmp_path / "demo")
     ComplexGitSyncClient().load(config)
+    # Captured before the orphan is added, and identified by name rather
+    # than by sort position below: a content hash is not ordered relative
+    # to an arbitrary fixed string, so "the first one alphabetically" is
+    # not a stable way to mean "the real one".
+    [real_state] = _states(tmp_path / "demo")
     (tmp_path / "demo" / ".cgitsync" / "state" / f"{'b' * 64}.gts").write_text(
         "orphan\n", encoding="utf-8"
     )
@@ -220,7 +225,7 @@ def test_a_state_no_entry_recorded_is_reported_but_is_not_corruption(tmp_path):
     assert report.state is HistoryState.VERIFIED
 
     # …and a real problem alongside it still reads as corrupt.
-    _states(tmp_path / "demo")[0].unlink()
+    real_state.unlink()
     assert ComplexGitSyncClient().verify(tmp_path / "demo").state is HistoryState.CORRUPT
 
 

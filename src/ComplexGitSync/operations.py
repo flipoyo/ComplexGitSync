@@ -952,6 +952,21 @@ def merge_into_tree(
     leaves the whole tree exactly where it was — still on the source branch,
     nothing checked out and nothing merged. That is the promise
     :func:`merge_tree` already makes, extended to cover the checkout.
+
+    **The shared preflight's branch-alignment check is left out on
+    purpose.** That check exists for commands that only ever act on
+    whatever branch a repository is already on — for them, "not on the
+    branch the tree expects" means `checkout` was skipped or failed. This
+    command's entire job is taking a repository *from* wherever it
+    currently sits *to* the branch named by *target_branch*, resolved
+    directly through :func:`merge_source_ref` rather than read off what is
+    checked out — so "not yet on the target" is this call's input, not a
+    sign anything is wrong. Without this, a `merge --into` scoped to part
+    of the tree could never be finished by a second scoped call: the second
+    call's own preflight would refuse the very repositories it exists to
+    move, on the grounds that they have not moved yet. `merge_into_status`
+    below is the accurate read of whether a repository can be acted on;
+    a check built for a different family of commands is not.
     """
     _assert_ready(tree)
     _run_preflight_checks(
@@ -960,6 +975,7 @@ def merge_into_tree(
         require_clean=True,
         operation_name="merge",
         scope=scope,
+        check_branch_alignment=False,
     )
 
     project_name = tree_project_name(tree)
@@ -1594,6 +1610,7 @@ def _run_preflight_checks(
     require_clean: bool,
     operation_name: str,
     scope: RepoScope = RepoScope.ALL,
+    check_branch_alignment: bool = True,
 ) -> None:
     """Check the repositories *scope* selects, and only those.
 
@@ -1601,6 +1618,12 @@ def _run_preflight_checks(
     never going to touch. ``commit`` writes this project's own repos, so a
     read-only configuration repo sitting on its own branch, or behind its
     upstream, is none of its business.
+
+    ``check_branch_alignment=False`` is for :func:`merge_into_tree` alone
+    (see its own docstring). Every other caller leaves it at the default:
+    "this repository is on the branch the tree expects" is a real
+    precondition for a command that only ever acts on whatever is already
+    checked out, and stays enforced for all of them.
     """
     diagnostics = _collect_preflight_diagnostics(
         tree,
@@ -1609,6 +1632,7 @@ def _run_preflight_checks(
         tag_name=tag_name,
         require_clean=require_clean,
         scope=scope,
+        check_branch_alignment=check_branch_alignment,
     )
     warnings_only = [item for item in diagnostics if item.severity == PreflightSeverity.WARNING]
     blocking = [
@@ -1628,6 +1652,7 @@ def _collect_preflight_diagnostics(
     tag_name: str | None,
     require_clean: bool,
     scope: RepoScope = RepoScope.ALL,
+    check_branch_alignment: bool = True,
 ) -> list[PreflightDiagnostic]:
     diagnostics: list[PreflightDiagnostic] = []
     diagnostics.extend(_collect_remote_diagnostics(tree, git_runner, scope=scope))
@@ -1637,7 +1662,8 @@ def _collect_preflight_diagnostics(
         )
     diagnostics.extend(_collect_detached_head_diagnostics(tree, git_runner, scope=scope))
     diagnostics.extend(_collect_merge_diagnostics(tree, git_runner, scope=scope))
-    diagnostics.extend(_collect_branch_alignment_diagnostics(tree, git_runner, scope=scope))
+    if check_branch_alignment:
+        diagnostics.extend(_collect_branch_alignment_diagnostics(tree, git_runner, scope=scope))
     diagnostics.extend(_collect_tracking_diagnostics(tree, git_runner, scope=scope))
     diagnostics.extend(
         _collect_commit_sha_diagnostics(
