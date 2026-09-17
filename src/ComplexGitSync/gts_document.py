@@ -147,11 +147,25 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     #: ``.localSpec/AdditionalSpecs.md``, *What a State's name is computed
     #: from*, for the field-by-field decision.
     #:
+    #: **3** drops the ``document`` block's ``CGS_VERSION`` from the
+    #: payload. Version 2 put it there meaning to fix the payload's own
+    #: format — the same job ``hash_canonicalisation`` itself already does,
+    #: correctly, by being read *before* the payload is built rather than
+    #: hashed inside it. Nothing ever wrote a real fixed value for it, so it
+    #: fell through to the running package's own version — provenance,
+    #: hashed by accident, so two machines running different builds against
+    #: the identical tree got two different names for it
+    #: (``memory-dev_1-2_StateVersionLeak_DevPlanTicket.md``). Every other
+    #: field in this payload is unchanged from version 2.
+    #:
     #: A document declares its own version in ``document.hash_canonicalisation``
     #: and is always checked with the one it declares. A snapshot written
     #: before this field existed is a version-1 document: it keeps validating
-    #: under version 1 for ever, and is never silently rewritten.
-    CURRENT_HASH_CANONICALISATION = 2
+    #: under version 1 for ever, and is never silently rewritten. The same
+    #: rule protects every version-2 snapshot from version 3: its hash is
+    #: never recomputed under the newer rule, so closing this leak for new
+    #: snapshots costs nothing already on disk.
+    CURRENT_HASH_CANONICALISATION = 3
     LEGACY_HASH_CANONICALISATION = 1
     _SUPPORTED_HASH_ALGORITHMS = frozenset((HASH_ALGORITHM,))
 
@@ -360,8 +374,15 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         two directories carried two names, and a distributed memory is a set
         of names two parties can agree on.
 
-        Version 1 is kept, unchanged, for documents that declare it. It is
-        never applied to a new snapshot and never "corrected" on an old one.
+        Version 3 additionally drops the ``document`` block: version 2 put
+        the running package's own ``CGS_VERSION`` there, provenance hashed
+        by accident rather than the fixed format marker it was meant to be
+        — see :attr:`CURRENT_HASH_CANONICALISATION`'s docstring. Every other
+        field is identical to version 2's.
+
+        Versions 1 and 2 are kept, unchanged, for documents that declare
+        them. Neither is ever applied to a new snapshot or "corrected" on
+        an old one.
         """
         project = self._data.get("project", {})
         tree_state = self._data.get("tree_state", {})
@@ -439,10 +460,13 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         if version == self.LEGACY_HASH_CANONICALISATION:
             canonical_project["root_absolute_path"] = project.get("root_absolute_path")
             canonical_project["source_cgs_path"] = project.get("source_cgs_path")
-        payload = {
-            "document": {
-                "CGS_VERSION": self.schema_version,
-            },
+        payload: dict[str, Any] = {}
+        if version < 3:
+            # Kept exactly as versions 1 and 2 always hashed it — including
+            # the leak version 3 exists to close. Never applied to a new
+            # snapshot; see CURRENT_HASH_CANONICALISATION's docstring.
+            payload["document"] = {"CGS_VERSION": self.schema_version}
+        payload.update({
             "project": canonical_project,
             "tree_state": {
                 "lifecycle_state": tree_state.get("lifecycle_state"),
@@ -450,7 +474,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 "registry_complete": tree_state.get("registry_complete"),
             },
             "repo_state": canonical_repo_states,
-        }
+        })
         if isinstance(freeze_manifest, dict):
             payload["freeze_manifest"] = {
                 "schema_version": freeze_manifest.get("schema_version"),

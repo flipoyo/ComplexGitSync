@@ -102,7 +102,7 @@
     },
     "gts_document.py": {
       "internal_imports": 8,
-      "loc": 355,
+      "loc": 361,
       "public_symbols": 1
     },
     "json_render.py": {
