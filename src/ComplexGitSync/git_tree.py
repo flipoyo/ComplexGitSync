@@ -226,6 +226,29 @@ class GitTreeGitCommands:
             no_ff=no_ff,
         )
 
+    def merge_into(
+        self,
+        git_runner: GitRunner,
+        source_branch: str,
+        target_branch: str,
+        *,
+        tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.PROJECT,
+        ff_only: bool = False,
+        no_ff: bool = False,
+    ):
+        from .operations import merge_into_tree
+
+        return merge_into_tree(
+            self._resolve_tree(tree),
+            git_runner,
+            source_branch,
+            target_branch,
+            scope=scope,
+            ff_only=ff_only,
+            no_ff=no_ff,
+        )
+
     def merge_one_at_a_time(
         self,
         git_runner: GitRunner,

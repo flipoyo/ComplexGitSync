@@ -850,6 +850,174 @@ def merge_tree(
     return tuple(merged)
 
 
+@dataclass(frozen=True)
+class MergeIntoPlan:
+    """What ``merge --into`` would do, or did, to one repository.
+
+    The same shape answers both questions, as ``merge_status`` does for the
+    ordinary merge: ``status`` is a prediction before the run and a verdict
+    after it, and a dry run cannot promise something the merge then refuses
+    because both come from :func:`merge_into_status`.
+    """
+
+    name: str
+    source: str
+    target: str
+    status: str
+    conflicting_paths: tuple[Path, ...] = ()
+
+
+#: What a repository's fate can be. ``fast-forward`` and ``merge`` both act;
+#: the rest do not. They are told apart because a fast-forward makes no
+#: commit and explains why a repository looks untouched afterwards.
+MERGE_INTO_ACTS = ("fast-forward", "merge")
+
+
+def merge_into_status(
+    repo: WorkingRepo,
+    git_runner: GitRunner,
+    source_branch: str,
+    target_branch: str,
+    *,
+    project_name: str | None = None,
+) -> MergeIntoPlan:
+    """What merging *source_branch* into *target_branch* would do to *repo*.
+
+    Both names are the **project's** branches, and each is translated for
+    this repository by the one rule that owns branch propagation — so a
+    private/local repository merges ``<base>_<source>`` into ``<base>``
+    while the project's own repositories take both names literally.
+
+    Five answers:
+
+    - ``no-source`` / ``no-target`` — that branch is not here and not on the
+      remote. Neither is invented: a branch that is missing is as likely to
+      be a typing mistake as a new branch.
+    - ``already-merged`` — the target already contains the source. Nothing
+      to do, and not a failure.
+    - ``fast-forward`` — the target is an ancestor of the source, so it only
+      has to move.
+    - ``merge`` — a real merge that applies cleanly.
+    - ``conflicts`` — with the paths git blamed, empty when it blamed none.
+    """
+    source = merge_source_ref(repo, source_branch, project_name=project_name)
+    target = merge_source_ref(repo, target_branch, project_name=project_name)
+    remote = repo.remote_name or "origin"
+
+    def plan(status: str, paths: tuple[Path, ...] = ()) -> MergeIntoPlan:
+        return MergeIntoPlan(repo.name, source, target, status, paths)
+
+    if not git_runner.branch_known(repo.absolute_path, source, remote=remote):
+        return plan("no-source")
+    if not git_runner.branch_known(repo.absolute_path, target, remote=remote):
+        return plan("no-target")
+    if git_runner.is_ancestor(repo.absolute_path, source, target):
+        return plan("already-merged")
+    if git_runner.is_ancestor(repo.absolute_path, target, source):
+        return plan("fast-forward")
+    check = git_runner.can_merge_cleanly(repo.absolute_path, source, into=target)
+    if not check.is_clean:
+        return plan("conflicts", tuple(check.conflicting_paths))
+    return plan("merge")
+
+
+def merge_into_tree(
+    tree: WorkingGitTree,
+    git_runner: GitRunner,
+    source_branch: str,
+    target_branch: str,
+    *,
+    scope: RepoScope = RepoScope.PROJECT,
+    ff_only: bool = False,
+    no_ff: bool = False,
+) -> tuple[MergeIntoPlan, ...]:
+    """Check out *target_branch* and merge *source_branch* into it, tree-wide.
+
+    **One operation, deliberately, and it must stay one.** This project
+    manages a tree that contains this project, installed editable, so a
+    tree-wide checkout rewrites the code that runs the *next* command.
+    Asking a user to run ``checkout`` and then ``merge`` therefore makes the
+    branch being merged *into* perform its own merge — and when that branch
+    is older, an older build reads a workspace a newer one wrote. That is
+    the incident of 2026-09-16.
+
+    A single process is immune to it: Python has already imported its
+    modules, so the build that started this call finishes it whatever
+    happens to the files underneath. **Nothing may be inserted between the
+    checkout and the merge below that starts another process**, and the two
+    must never be split into separate commands again. See
+    ``.localSpec/DevTickets/…_SelfHostedMerge_DevPlanTicket.md`` §2.
+
+    Every repository in scope is checked before any is touched, so a refusal
+    leaves the whole tree exactly where it was — still on the source branch,
+    nothing checked out and nothing merged. That is the promise
+    :func:`merge_tree` already makes, extended to cover the checkout.
+    """
+    _assert_ready(tree)
+    _run_preflight_checks(
+        tree,
+        git_runner,
+        require_clean=True,
+        operation_name="merge",
+        scope=scope,
+    )
+
+    project_name = tree_project_name(tree)
+    plans = [
+        merge_into_status(
+            repo, git_runner, source_branch, target_branch, project_name=project_name
+        )
+        for repo in iter_tree_leaf_first(tree, scope)
+    ]
+    by_name = {plan.name: plan for plan in plans}
+
+    blocked = [
+        _describe_merge_conflict(plan.name, plan.source, plan.conflicting_paths)
+        for plan in plans
+        if plan.status == "conflicts"
+    ]
+    if blocked:
+        raise GitSyncError(
+            "merge refused; nothing was checked out and nothing was merged: "
+            + "; ".join(blocked)
+        )
+
+    missing = [plan for plan in plans if plan.status == "no-target"]
+    if missing:
+        named = "; ".join(f"{plan.name}: no branch {plan.target!r}" for plan in missing)
+        raise GitSyncError(
+            f"merge --into {target_branch}: refused, and nothing was changed. {named}. "
+            "Create the branch where the work is, then run this again — this command "
+            "never creates its own target, because a branch that is not there is as "
+            "likely to be a typing mistake as a new branch."
+        )
+
+    for plan in plans:
+        if plan.status == "no-source":
+            _warn_branch_missing(
+                next(r for r in iter_tree_leaf_first(tree, scope) if r.name == plan.name),
+                plan.source,
+                source_branch,
+            )
+
+    outcomes: list[MergeIntoPlan] = []
+    for repo in iter_tree_leaf_first(tree, scope):
+        plan = by_name[repo.name]
+        if plan.status not in MERGE_INTO_ACTS and plan.status != "already-merged":
+            outcomes.append(plan)
+            continue
+        # Checkout and merge, in that order, in this process. See the
+        # docstring: splitting these is the bug this function exists to fix.
+        git_runner.checkout(repo.absolute_path, plan.target)
+        if plan.status in MERGE_INTO_ACTS:
+            git_runner.merge(repo.absolute_path, plan.source, ff_only=ff_only, no_ff=no_ff)
+        _refresh_repo_after_checkout(repo, plan.target, RefKind.BRANCH, git_runner)
+        outcomes.append(plan)
+
+    tree.recompute_tree_state()
+    return tuple(outcomes)
+
+
 @dataclass
 class ResolveOutcome:
     """Where ``merge --resolve`` got to: merged, then stopped, then untouched.

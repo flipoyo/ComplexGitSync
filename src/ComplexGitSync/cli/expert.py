@@ -324,6 +324,17 @@ def _register_merge(subparser: argparse.ArgumentParser) -> None:
             "that is where its settings for this project branch live."
         ),
     )
+    subparser.add_argument(
+        "--into",
+        metavar="TARGET",
+        help=(
+            "Check out this PROJECT branch and merge into it, in one command. "
+            "Without it, the merge goes into whatever is checked out. Use it "
+            "whenever the target holds an older ComplexGitSync: a separate "
+            "'checkout' would install that older build, and the merge after it "
+            "would run under it."
+        ),
+    )
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
     _add_scope_arguments(subparser)
@@ -809,6 +820,7 @@ def _handle_merge(args: argparse.Namespace) -> int:
             client,
             source,
             project_branch=args.branch,
+            into=args.into,
             private=args.private,
             all_writable=args.all_writable,
             ff_only=args.ff_only,
@@ -1462,6 +1474,7 @@ def _execute_merge(
     source_path: Path,
     *,
     project_branch: str,
+    into: str | None = None,
     private: bool = False,
     all_writable: bool = False,
     ff_only: bool = False,
@@ -1474,6 +1487,25 @@ def _execute_merge(
         client, private=private, command="merge", all_writable=all_writable
     )
     flag = " --ff-only" if ff_only else (" --no-ff" if no_ff else "")
+    if into:
+        if resolve:
+            raise GitSyncError(
+                "--into and --resolve cannot be combined: --resolve stops at the "
+                "first conflict with a worktree to fix, and --into promises the "
+                "opposite, that a conflict anywhere changes nothing."
+            )
+        print(f"git_command=git checkout {into} && git merge{flag} {project_branch}")
+        return _execute_merge_into(
+            client,
+            scope_value=scope.value,
+            source_branch=project_branch,
+            target_branch=into,
+            private=private,
+            all_writable=all_writable,
+            ff_only=ff_only,
+            no_ff=no_ff,
+            dry_run=dry_run,
+        )
     print(f"git_command=git merge{flag} {project_branch}")
     if dry_run:
         _print_merge_plan(
@@ -1508,6 +1540,73 @@ def _execute_merge(
     print(_format_tree_state_line(client.get_tree_state()))
     _print_repo_tree_result(client)
     return 0
+
+
+def _execute_merge_into(
+    client: ComplexGitSyncClient,
+    *,
+    scope_value: str,
+    source_branch: str,
+    target_branch: str,
+    private: bool,
+    all_writable: bool,
+    ff_only: bool,
+    no_ff: bool,
+    dry_run: bool,
+) -> int:
+    """``merge <source> --into <target>``: one checkout, one merge, one command."""
+    labels = {
+        "fast-forward": " (fast-forward — the branch just moves)",
+        "merge": "",
+        "already-merged": " (already has it — nothing to merge)",
+        "no-source": " (no such branch here — skipped)",
+        "no-target": " (no such branch here — would refuse)",
+        "conflicts": " (conflicts — would block the merge)",
+    }
+    plan = client.merge_into_plan(
+        source_branch, target_branch, private=private, all_writable=all_writable
+    )
+    print(f"dry_run={'true' if dry_run else 'false'} command=merge-into scope={scope_value}")
+    print(
+        "plan_order="
+        + (
+            " -> ".join(
+                f"{row.name}: {row.target} <- {row.source}{labels.get(row.status, '')}"
+                for row in plan
+            )
+            or "(no repository in scope)"
+        )
+    )
+
+    if dry_run:
+        blocked = [row for row in plan if row.status in ("conflicts", "no-target")]
+        if blocked:
+            print("refused=true")
+            for row in blocked:
+                listed = ", ".join(str(path) for path in row.conflicting_paths)
+                print(f"  {row.name}: {listed or f'no branch {row.target!r}'}")
+            print("note: nothing would be checked out and nothing would be merged.")
+        print(_format_tree_state_line(client.get_tree_state()))
+        return EXIT_OK
+
+    outcomes = client.merge_into(
+        source_branch,
+        target_branch,
+        private=private,
+        all_writable=all_writable,
+        ff_only=ff_only,
+        no_ff=no_ff,
+    )
+    for row in outcomes:
+        if row.status == "fast-forward":
+            print(f"fast-forwarded {row.name}: {row.target} <- {row.source}")
+        elif row.status == "merge":
+            print(f"merged {row.name}: {row.target} <- {row.source}")
+    if not any(row.status in ("fast-forward", "merge") for row in outcomes):
+        print(f"merged nothing: every repository in scope already has {source_branch!r}")
+    print(_format_tree_state_line(client.get_tree_state()))
+    _print_repo_tree_result(client)
+    return EXIT_OK
 
 
 def _execute_merge_resolve(

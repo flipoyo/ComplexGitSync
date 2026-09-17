@@ -880,7 +880,9 @@ class _FakeGitRunner:
     ) -> None:
         return None
 
-    def can_merge_cleanly(self, repo_path, ref_name: str) -> MergeCheckResult:
+    def can_merge_cleanly(
+        self, repo_path, ref_name: str, *, into: str | None = None
+    ) -> MergeCheckResult:
         return MergeCheckResult(is_clean=True, conflicting_paths=[])
 
     def merge_abort(self, repo_path) -> None:
@@ -929,6 +931,12 @@ class _FakeGitRunner:
 
     def commit_authored_at(self, repo_path, sha) -> str:
         return ""
+
+    def is_ancestor(self, repo_path, ancestor, descendant) -> bool:
+        return False
+
+    def show_file(self, repo_path, ref, path) -> str | None:
+        return None
 
     def remote_reachable(self, remote_url) -> bool:
         return True

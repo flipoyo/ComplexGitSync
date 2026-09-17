@@ -342,7 +342,13 @@ class GitRunnerProtocol(Protocol):
         message: str | None = None,
     ) -> None: ...
 
-    def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> MergeCheckResult: ...
+    def can_merge_cleanly(
+        self, repo_path: Path | str, ref_name: str, *, into: str | None = None
+    ) -> MergeCheckResult: ...
+
+    def is_ancestor(self, repo_path: Path | str, ancestor: str, descendant: str) -> bool: ...
+
+    def show_file(self, repo_path: Path | str, ref: str, path: str) -> str | None: ...
 
     def merge_abort(self, repo_path: Path | str) -> None: ...
 
@@ -713,8 +719,17 @@ class GitRunner:
         args.append(ref_name)
         self._run(*args, cwd=repo_path)
 
-    def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> MergeCheckResult:
+    def can_merge_cleanly(
+        self, repo_path: Path | str, ref_name: str, *, into: str | None = None
+    ) -> MergeCheckResult:
         """Whether merging *ref_name* would apply without a conflict.
+
+        *into* names the branch being merged **into**, defaulting to whatever
+        is checked out. Passing it is what lets a caller ask about a merge
+        into a branch that is not checked out — which `merge --into` must do
+        for every repository before it checks out anything, since a check
+        that required the checkout first could not report a conflict without
+        having already moved the tree.
 
         **Read-only.** Neither branch below touches the worktree, the index,
         or ``HEAD`` — which is what makes it safe to ask about every
@@ -741,7 +756,7 @@ class GitRunner:
         of either form: unmergeable, never assumed clean. Such a repository
         conflicts without naming a file, so the path list comes back empty.
         """
-        head = self.current_branch(repo_path) or "HEAD"
+        head = into or self.current_branch(repo_path) or "HEAD"
 
         modern = self._query(
             "merge-tree", "--write-tree", "--name-only", head, ref_name, cwd=repo_path
@@ -894,6 +909,36 @@ class GitRunner:
             _decode_git_output(completed.stdout),
             _decode_git_output(completed.stderr),
         )
+
+    def is_ancestor(self, repo_path: Path | str, ancestor: str, descendant: str) -> bool:
+        """Whether *ancestor* is reachable from *descendant*.
+
+        Which is the same question as "would merging *descendant* into
+        *ancestor* be a fast-forward?". Worth telling apart from an ordinary
+        merge because a fast-forward explains why nothing appeared to
+        happen: no commit is made, and the branch simply moves.
+
+        A ref either side cannot name is not an ancestor — a question, not
+        an operation, so an unknown ref answers ``False`` rather than
+        raising.
+        """
+        return (
+            self._query(
+                "merge-base", "--is-ancestor", ancestor, descendant, cwd=repo_path
+            ).returncode
+            == 0
+        )
+
+    def show_file(self, repo_path: Path | str, ref: str, path: str) -> str | None:
+        """The contents of *path* as of *ref*, without checking *ref* out.
+
+        ``None`` when the ref or the path is not there. Used to read what a
+        branch holds before moving to it — which is how a tree that manages
+        its own source can say that the build it is about to install is
+        older than the one running.
+        """
+        answer = self._query("show", f"{ref}:{path}", cwd=repo_path)
+        return answer.stdout if answer.returncode == 0 else None
 
     def merge_abort(self, repo_path: Path | str) -> None:
         """Abort a merge left in progress (``git merge --abort``)."""

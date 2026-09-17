@@ -56,6 +56,7 @@ import shutil
 import sys
 import time
 import tomllib
+import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -63,6 +64,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from . import __version__
 from .cgs_format import CgsDocument, parse_repo_id, repo_identifier
 from .clone_guard import (
     blocked_destinations,
@@ -172,6 +174,7 @@ from .memory.states import (
     state_path,
 )
 from .operations import (
+    MERGE_INTO_ACTS,
     BranchTopologyReport,
     RepoOutcome,
     ResolveOutcome,
@@ -195,7 +198,7 @@ from .registry import (
     build_registry_from_cgs_document,
     build_registry_from_gts_document,
 )
-from .settings import resolve_use_case
+from .settings import UseCase, resolve_use_case
 from .status_render import (
     PROJECT_SCOPE_LABEL,
     SCOPE_LEGEND,
@@ -3004,6 +3007,9 @@ class ComplexGitSyncClient:
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("checkout_start", branch_name=branch_name, ref_kind=ref_kind)
+        # Said before the tree moves, because afterwards the build that
+        # would say it is gone.
+        self._warn_if_build_changes(branch_name)
         self.orchestre.git_tree.git.checkout(
             self.git_runner,
             branch_name,
@@ -3204,6 +3210,148 @@ class ComplexGitSyncClient:
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="merge")
         self._log_event("merge_end", project_branch=project_branch, merged=len(merged))
         return merged
+
+    def merge_into(
+        self,
+        source_branch: str,
+        target_branch: str,
+        *,
+        private: bool = False,
+        all_writable: bool = False,
+        ff_only: bool = False,
+        no_ff: bool = False,
+    ) -> tuple[Any, ...]:
+        """Check out *target_branch* and merge *source_branch* into it.
+
+        What `merge` does after you have already run `checkout`, except that
+        it does both — and doing both in one call is the entire point, not a
+        convenience. This project manages a tree containing this project,
+        installed editable, so a tree-wide checkout replaces the code that
+        runs the next command: `checkout` followed by `merge` makes the
+        older branch merge itself. One process cannot be caught that way,
+        because its modules are already loaded.
+
+        Both names are the **project's** branches; each repository
+        translates them, so a private/local repository merges
+        ``<base>_<source>`` into ``<base>``.
+
+        Every repository is checked before any is touched — a conflict or a
+        missing target leaves the whole tree on the source branch, with
+        nothing checked out and nothing merged.
+
+        A State is written, as `checkout` writes one: the tree is on a
+        different branch afterwards and nothing else would record it.
+        """
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        scope = self._write_scope(registry, "merge", private, all_writable)
+        self._log_event(
+            "merge_into_start",
+            source_branch=source_branch,
+            target_branch=target_branch,
+            scope=scope.value,
+        )
+        self._warn_if_build_changes(target_branch, offer_remedy=False)
+        outcomes = self.orchestre.git_tree.git.merge_into(
+            self.git_runner,
+            source_branch,
+            target_branch,
+            scope=scope,
+            ff_only=ff_only,
+            no_ff=no_ff,
+        )
+        self._log_tree_transition(
+            previous_state, registry.lifecycle_state, reason="merge_into"
+        )
+        self.write_gts_snapshot(command_origin="merge-into")
+        self._log_event(
+            "merge_into_end",
+            source_branch=source_branch,
+            target_branch=target_branch,
+            acted=sum(1 for plan in outcomes if plan.status in MERGE_INTO_ACTS),
+        )
+        return outcomes
+
+    def merge_into_plan(
+        self,
+        source_branch: str,
+        target_branch: str,
+        *,
+        private: bool = False,
+        all_writable: bool = False,
+    ) -> tuple[Any, ...]:
+        """What :meth:`merge_into` would do, in order, without doing it.
+
+        Decided by the same function the merge uses, so a dry run cannot
+        promise something the merge then refuses.
+        """
+        from .operations import merge_into_status
+
+        self._warn_if_build_changes(target_branch, offer_remedy=False)
+        registry = self.get_dependency_registry()
+        scope = self._write_scope(registry, "merge", private, all_writable)
+        project_name = tree_project_name(registry)
+        return tuple(
+            merge_into_status(
+                repo,
+                self.git_runner,
+                source_branch,
+                target_branch,
+                project_name=project_name,
+            )
+            for repo in iter_tree_leaf_first(registry, scope)
+        )
+
+    def build_installed_from(self, branch: str) -> str | None:
+        """Which ComplexGitSync version *branch* holds, when this tree is one.
+
+        ``None`` when the workspace does not contain the running
+        installation, or when the branch does not carry a readable version —
+        both mean there is nothing to warn about.
+
+        This exists because a checkout of this tree rewrites the running
+        tool. Knowing what the next command will be is the difference
+        between a surprise and a sentence.
+        """
+        registry = self.registry
+        if registry is None or ROOT_REPO_ID not in registry.repos:
+            return None
+        root = registry.get(ROOT_REPO_ID)
+        if resolve_use_case(root.absolute_path) is not UseCase.NESTED:
+            return None
+        manifest = self.git_runner.show_file(root.absolute_path, branch, "pyproject.toml")
+        if not manifest:
+            return None
+        found = re.search(r'^version\s*=\s*"([^"]+)"', manifest, re.MULTILINE)
+        return found.group(1) if found else None
+
+    def _warn_if_build_changes(self, branch: str, *, offer_remedy: bool = True) -> None:
+        """Warn when moving to *branch* replaces the ComplexGitSync running.
+
+        Warned rather than printed, so a Python caller hears it too — the
+        CLI is not the only way this happens. Warned rather than refused,
+        because checking out an older branch to read it is legitimate;
+        `main_1-4_SnapshotVersionGuard` is what makes the older build fail
+        honestly if it is then pointed at a newer workspace.
+        """
+        installed = self.build_installed_from(branch)
+        if installed is None or installed == __version__:
+            return
+        older = installed < __version__
+        # `merge --into` is already the remedy, so it does not offer itself.
+        remedy = (
+            f" To merge into {branch!r} instead of stranding yourself there, run "
+            f"'cgitsync merge <source> --into {branch}', which checks out and "
+            f"merges in one command."
+            if older and offer_remedy
+            else ""
+        )
+        warnings.warn(
+            f"this tree holds the ComplexGitSync you are running: {branch!r} carries "
+            f"{installed} and this is {__version__}, so the next command runs "
+            f"{'an older' if older else 'a different'} build.{remedy}",
+            stacklevel=3,
+        )
 
     def merge_resolve(
         self,

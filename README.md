@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.68
+# ComplexGitSync v0002.69
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -301,7 +301,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `add` | `[PATH ...]` `--private` `--dry-run` `--gts` | Stage all changes across a READY tree. |
 | Expert | `rm` | `<PATH ...>` `--private` `--dry-run` `--gts` | Remove one or more tracked files, each from the repo that owns it. |
 | Expert | `commit` | `[message]` `--message` `--private` `--no-stage` `--dry-run` | Commit dirty repositories from a READY tree. |
-| Expert | `merge` | `<branch>` `--private` `--ff-only` `--no-ff` `--dry-run` `--resolve` | Merge a project branch across a READY tree, leaf-first. Names every conflicting file when it refuses. |
+| Expert | `merge` | `<branch>` `--into` `--private` `--ff-only` `--no-ff` `--dry-run` `--resolve` | Merge a project branch across a READY tree, leaf-first. Names every conflicting file when it refuses. `--into <target>` checks out the target and merges into it in one command. |
 | Expert | `push` | `--private` `--dry-run` `--force-protocol` `--gts` | Push repositories from a READY tree. |
 | Expert | `tag` | `<name>` `--private` `--gts` | Create and push a tag across a READY tree. |
 | Expert | `freeze` | `<name>` `--private` `--dry-run` `--gts` | Freeze a versioned state and emit a .gts snapshot. |
@@ -444,6 +444,32 @@ not recognise its own errors and the suggestion never appeared.
 Only the messages change language. Your file names, sorting and number
 formats are untouched, and nothing about your own shell changes — only what
 `cgitsync` asks Git for while it runs.
+
+### Merging into a branch you are not on
+
+`cgitsync merge <branch>` merges into whatever is checked out. `--into` names
+the target instead, and does both halves in one command:
+
+```bash
+cgitsync merge memory-dev --into main --dry-run   # what it would do, per repo
+cgitsync merge memory-dev --into main
+```
+
+This matters most when the tree you are merging **contains the ComplexGitSync
+you are running** — the developer checkout, which installs itself editable. A
+separate `cgitsync checkout main` would replace that build, and the merge you
+typed next would run under the older one, against a workspace the newer one
+wrote. One command cannot be caught that way: it finishes under the build it
+started with.
+
+Every repository is checked before any is touched, so a conflict or a missing
+target leaves the whole tree where it was — still on the source branch, with
+nothing checked out and nothing merged. A fast-forward is reported as one,
+which is usually why a repository looks untouched afterwards.
+
+`checkout` warns when it is about to install a different build of the tool and
+still does it: looking at an older branch is legitimate, being surprised by it
+is not.
 
 ### What the workspace remembers
 
