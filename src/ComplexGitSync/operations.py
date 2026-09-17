@@ -1831,8 +1831,16 @@ def _collect_tracking_diagnostics(
     *,
     scope: RepoScope = RepoScope.ALL,
 ) -> list[PreflightDiagnostic]:
+    # The memory mount's relationship to its own origin is managed only by
+    # ``memory push``/``memory adopt``/``memory clone`` — on a cadence
+    # entirely decoupled from whatever tree-wide operation is asking here —
+    # so being behind or diverged from that origin is not this operation's
+    # business, the same reasoning that keeps it out of add/commit/push's
+    # own action scope (``iter_write_scope``).
     diagnostics: list[PreflightDiagnostic] = []
     for repo in iter_tree_leaf_first(tree, scope):
+        if repo.is_memory_mount:
+            continue
         tracking_state = git_runner.branch_tracking_state(repo.absolute_path)
         if tracking_state in (None, SyncState.ALIGNED):
             continue
@@ -1909,10 +1917,17 @@ def _collect_worktree_diagnostics(
     # Walks the whole tree even when the scope is narrower: worktree_state
     # is written into the .gts snapshot for every repository, so it must
     # stay fresh. Only the diagnostics are scoped.
+    #
+    # The memory mount is excluded from the diagnostic (not from the
+    # worktree_state refresh above it): it records the very command that
+    # is running, so it is expected to read dirty at the moment a preflight
+    # asks, the same fact `status` already reports as a note rather than a
+    # fault. Blocking `merge --into` on it would make merging a branch that
+    # touches `.memory` impossible by construction.
     for repo in iter_tree_leaf_first(tree):
         is_dirty = _has_managed_uncommitted_changes(tree, git_runner, repo)
         repo.worktree_state = "DIRTY" if is_dirty else "CLEAN"
-        if is_dirty and scope.includes(repo):
+        if is_dirty and scope.includes(repo) and not repo.is_memory_mount:
             dirty.append(
                 PreflightDiagnostic(
                     severity,

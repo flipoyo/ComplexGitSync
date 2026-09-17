@@ -478,3 +478,101 @@ def test_the_recorded_commit_catches_up_after_memory_push(tmp_path):
         e for e in client.get_dependency_registry().values() if e.is_memory_mount
     ).commit_sha
     assert recorded_after == actual_head
+
+
+# ---------------------------------------------------------------------------
+# merge --into must not be blocked by the memory's own expected state —
+# mergingIssue short ticket, 2026-09-17
+# ---------------------------------------------------------------------------
+
+
+def test_merging_is_not_blocked_by_the_memorys_own_dirtiness(tmp_path, monkeypatch):
+    """`merge --private branchX --into main` must not refuse on `.memory`.
+
+    `.memory` records the very command that inspects it, so it reads dirty
+    at almost any moment an ordinary command runs — `status` already says
+    so as a note, not a fault. `merge`'s preflight (``require_clean=True``)
+    did not know that yet, and refused every merge that reached `.memory`
+    at all, which is every merge once a memory is mounted.
+    """
+    project_remote = _bare_remote(tmp_path / "demo.git", branch="main")
+    workspace = tmp_path / "demo"
+    _git(tmp_path, "clone", "-b", "main", str(project_remote), str(workspace))
+    _identify(workspace)
+    config = workspace / "project.cgs"
+    config.write_text(_CGS, encoding="utf-8")
+
+    monkeypatch.chdir(workspace)
+    client = ComplexGitSyncClient()
+    client.load(config)
+    remote = _bare_remote(tmp_path / "memory.git")
+    client.add_memory_repo_cgs(config, cgshome=workspace)
+    client.memory_adopt(workspace, remote=str(remote), branch="demo")
+    _identify(workspace / ".cgitsync")
+    client.memory_push(workspace)
+    client.memory_branch(workspace, "feature")  # demo_feature, for the merge
+
+    _git(workspace, "checkout", "-b", "feature")
+    (workspace / "work.txt").write_text("feature work\n", encoding="utf-8")
+    _git(workspace, "add", "work.txt")
+    _git(workspace, "commit", "-m", "work on feature")
+    _git(workspace, "push", "-u", "origin", "feature")
+
+    client.restart(config)  # READY, on root's new branch; re-dirties .memory
+    assert "note: .memory is dirty" in client.status()  # the scenario, confirmed
+
+    outcomes = client.merge_into("feature", "main", private=True)
+
+    # private=True merges only the private/writable repositories — .memory
+    # here — leaving the (non-private) project root exactly where it was.
+    assert _git(workspace, "branch", "--show-current") == "feature"
+    assert _git(workspace / ".cgitsync", "branch", "--show-current") == "demo"
+    assert any(outcome.name == ".memory" for outcome in outcomes)
+
+
+def test_merging_is_not_blocked_by_the_memorys_tracking_state(tmp_path, monkeypatch):
+    """A `.memory` behind its own origin must not block an unrelated merge.
+
+    Its sync with that origin is `memory push`'s job alone, on its own
+    schedule — not a precondition `merge` (or any other tree-wide command)
+    gets to enforce, the same reasoning that keeps it out of `commit`'s and
+    `push`'s own write scope.
+    """
+    project_remote = _bare_remote(tmp_path / "demo.git", branch="main")
+    workspace = tmp_path / "demo"
+    _git(tmp_path, "clone", "-b", "main", str(project_remote), str(workspace))
+    _identify(workspace)
+    config = workspace / "project.cgs"
+    config.write_text(_CGS, encoding="utf-8")
+
+    monkeypatch.chdir(workspace)
+    client = ComplexGitSyncClient()
+    client.load(config)
+    remote = _bare_remote(tmp_path / "memory.git")
+    client.add_memory_repo_cgs(config, cgshome=workspace)
+    client.memory_adopt(workspace, remote=str(remote), branch="demo")
+    _identify(workspace / ".cgitsync")
+    client.memory_push(workspace)
+    client.memory_branch(workspace, "feature")
+
+    _git(workspace, "checkout", "-b", "feature")
+    (workspace / "work.txt").write_text("feature work\n", encoding="utf-8")
+    _git(workspace, "add", "work.txt")
+    _git(workspace, "commit", "-m", "work on feature")
+    _git(workspace, "push", "-u", "origin", "feature")
+
+    # A colleague, elsewhere, pushes something new to the memory's branch —
+    # this workspace's `.memory` is now behind its own origin.
+    elsewhere = tmp_path / "elsewhere"
+    _git(tmp_path, "clone", "-b", "demo", str(remote), str(elsewhere))
+    _identify(elsewhere)
+    (elsewhere / "colleague.txt").write_text("their work\n", encoding="utf-8")
+    _git(elsewhere, "add", "colleague.txt")
+    _git(elsewhere, "commit", "-m", "colleague's own memory push")
+    _git(elsewhere, "push")
+
+    client.restart(config)  # READY, on root's new branch
+    outcomes = client.merge_into("feature", "main", private=True)
+
+    assert _git(workspace / ".cgitsync", "branch", "--show-current") == "demo"
+    assert any(outcome.name == ".memory" for outcome in outcomes)

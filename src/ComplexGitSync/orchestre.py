@@ -2899,6 +2899,11 @@ class ComplexGitSyncClient:
             force_pull_fallback=force_gitignore_sync,
             commit=commit_gitignore,
         )
+        # The memory mount is excluded from the pull loop above, so nothing
+        # in it has refreshed the memory's own readiness yet — ask before
+        # judging the tree, not after.
+        self._refresh_memory_mount_state(registry)
+        registry.recompute_tree_state()
         if not registry.is_ready():
             raise GitSyncError("restart did not produce a READY tree.")
         snapshot_path = self.write_gts_snapshot(command_origin="restart")
@@ -4996,7 +5001,7 @@ class ComplexGitSyncClient:
         )
 
     def _refresh_memory_mount_state(self, registry: WorkingGitTree) -> None:
-        """Read the memory mount's *actual* branch and HEAD, in place.
+        """Read the memory mount's *actual* branch, HEAD and readiness, in place.
 
         Every other repository's recorded `commit_sha` is kept fresh by the
         action that touched it — `checkout`, `commit`, `push` each refresh
@@ -5006,7 +5011,12 @@ class ComplexGitSyncClient:
         so nothing else ever refreshes it — and a State whose recorded
         commit for the memory never moves would disagree with `status`'s
         own live reading of it, for ever, the moment `memory push` first
-        moves it.
+        moves it. The same exclusion means nothing else ever marks it
+        `READY` either: `restart` calls this before its own `is_ready()`
+        check for exactly that reason
+        (`memory-dev_MergeMemoryExclusion`) — without it, a workspace with
+        a mounted memory could never pass that check again, from the first
+        restart after onboarding onward.
 
         This is the read-only fix: ask git what the memory mount actually
         is, right before every State is written, regardless of which
@@ -5014,7 +5024,8 @@ class ComplexGitSyncClient:
         branch`, the same questions `status` already asks. Silently does
         nothing when the mount does not exist yet, or is not a repository
         yet (`memory adopt` not run), or — a freshly adopted mount with
-        nothing committed — has no HEAD to read.
+        nothing committed — has no HEAD to read, in which case it is not
+        marked ready either.
         """
         for entry in registry.values():
             if not entry.is_memory_mount:
@@ -5031,6 +5042,13 @@ class ComplexGitSyncClient:
                 entry.current_ref_name = branch
                 entry.resolved_ref_kind = RefKind.BRANCH
                 entry.resolved_ref_name = branch
+                # Nothing else ever checks the memory mount out (it is
+                # excluded from every write scope), so nothing else ever
+                # marks it READY either — `is_ready()` would refuse the
+                # tree forever, from the first restart after onboarding
+                # onward, over a repository this refresh just confirmed
+                # is a real, resolvable checkout.
+                entry.repo_lifecycle_state = RepoLifecycleState.READY
 
     def write_gts_snapshot(
         self,
