@@ -152,9 +152,18 @@ class RepoScope(StrEnum):
         Reads the **effective** flags, not the declared ones: a repository
         nested inside a private parent is private too, whatever its own entry
         says. See :attr:`WorkingRepo.effective_private`.
+
+        The workspace's own memory mount is excluded from every scope but
+        ``ALL``, regardless of its declared privacy. Every command records
+        itself into the memory *after* it runs, so a write scope that swept
+        the memory into its own commit could never leave it clean — the
+        record of that sweep is always still pending. See
+        :attr:`WorkingRepo.is_memory_mount`.
         """
         if self is RepoScope.ALL:
             return True
+        if repo.is_memory_mount:
+            return False
         if self is RepoScope.PROJECT:
             return not repo.effective_private
         if self is RepoScope.PRIVATE:
@@ -449,6 +458,16 @@ class WorkingRepo(GitRepo):
     propagated_writable: bool | None = None
     remote_name: str | None = None
     is_external_reference: bool = False
+    # Set by registry.py when this entry mounts the workspace's own memory
+    # (relative_path == memory.repository.MOUNT_PATH) -- derived, never
+    # declared in a .cgs and never hashed into a State. RepoScope reads it
+    # to keep the memory out of the ordinary write scopes: every command
+    # records itself into the memory *after* it runs, so a scope that swept
+    # the memory into its own commit could never leave it clean -- the
+    # record of that very sweep is always still pending. `memory push`
+    # commits and pushes it directly, never through a scope at all, so
+    # excluding it here costs that command nothing.
+    is_memory_mount: bool = False
 
     @property
     def effective_private(self) -> bool:

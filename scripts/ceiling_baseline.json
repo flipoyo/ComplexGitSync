@@ -82,7 +82,7 @@
     },
     "git_repo.py": {
       "internal_imports": 0,
-      "loc": 383,
+      "loc": 392,
       "public_symbols": 15
     },
     "git_runner.py": {
@@ -176,8 +176,8 @@
       "public_symbols": 4
     },
     "registry.py": {
-      "internal_imports": 39,
-      "loc": 498,
+      "internal_imports": 40,
+      "loc": 504,
       "public_symbols": 3
     },
     "settings.py": {

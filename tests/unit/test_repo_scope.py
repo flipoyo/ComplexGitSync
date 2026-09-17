@@ -491,10 +491,15 @@ class TestThisTreesOwnDeclaration:
             return {entry.name for entry in iter_tree_leaf_first(tree, scope)}
 
         assert names(RepoScope.PROJECT) == {"ComplexGitSync", "DocComplexGitSync"}
-        # .memory joined the other two 2026-09-17 (memory-dev_1-2_MemoryOnboarding).
-        assert names(RepoScope.PRIVATE) == {".localSpec", ".claude", ".memory"}
+        # .memory is private and writable too, but every command records
+        # itself into the memory after it runs, so no write scope may ever
+        # sweep it in — it could never come out clean (memory-dirty short
+        # ticket, 2026-09-17). It stays reachable only through `memory push`.
+        assert names(RepoScope.PRIVATE) == {".localSpec", ".claude"}
+        assert ".memory" not in names(RepoScope.WRITABLE)
         assert ".agentSpec" not in names(RepoScope.WRITABLE)
         assert ".agentSpec" in names(RepoScope.ALL)
+        assert ".memory" in names(RepoScope.ALL)
 
 
 class TestUserInstallDeclaration:
