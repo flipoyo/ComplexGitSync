@@ -35,5 +35,5 @@ repos = [
     { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", private = true },
     { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
     { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
-    { repository = "github:flipoyo/.memory", relative_path = ".cgitsync", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.memory", relative_path = ".cgitsync", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
 ]

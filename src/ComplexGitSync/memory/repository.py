@@ -73,6 +73,11 @@ def mount_entry(
         "fallback_branch": DEFAULT_BRANCH,
         "private": True,
         "writable": True,
+        # A memory is a leaf, never a parent tree, and it holds its own
+        # directory named .cgs (the stable per-branch spec copies) that
+        # "auto" nested-config discovery would otherwise have to be told
+        # apart from a real nested .cgs file.
+        "nested_config": "disabled",
     }
 
 

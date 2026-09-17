@@ -173,7 +173,11 @@ def _resolve_nested_config_path(repo_root: Path, nested_config: str) -> Path | N
             raise NestedConfigDiscoveryError(f"nested_config escapes repo root: {candidate}")
         return candidate if candidate.is_file() else None
 
-    matches = sorted(repo_root.glob("*.cgs"))
+    # A directory can share a `.cgs` name too -- `.cgitsync/.cgs/` is one,
+    # the stable per-branch spec copies `write_gts_snapshot` keeps. "auto"
+    # means "the one nested config file", so a directory the glob happens
+    # to match is never a candidate.
+    matches = sorted(path for path in repo_root.glob("*.cgs") if path.is_file())
     if not matches:
         return None
     if len(matches) > 1:

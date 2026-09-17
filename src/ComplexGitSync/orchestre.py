@@ -199,6 +199,7 @@ from .registry import (
     build_registry_from_gts_document,
 )
 from .settings import UseCase, resolve_use_case
+from .snapshot_resolver import discover_cgshome
 from .status_render import (
     PROJECT_SCOPE_LABEL,
     SCOPE_LEGEND,
@@ -2123,11 +2124,27 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         discover_nested: bool = False,
+        project_root: Path | None = None,
     ) -> WorkingGitTree:
+        """Load a ``.cgs`` file, building the registry from it.
+
+        *project_root* overrides where the tree's repositories are assumed
+        to live. Every caller but :meth:`restart` leaves it unset, which
+        keeps the long-standing default: the `.cgs` file's own directory —
+        right for a spec that sits at the root it describes, which is the
+        ordinary case. :meth:`restart` re-syncs a tree that is *already on
+        disk*, possibly from a `.cgs` that sits elsewhere in it (a
+        developer spec under ``examples/``, say) — for that caller, the
+        `.cgs`'s own directory is not the tree's root and must not be
+        guessed as one. See
+        ``.localSpec/DevTickets/archive/…_PullOutsideRoot_DevPlanTicket.md``.
+        """
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        self.registry = build_registry_from_cgs_document(document, source_path)
+        self.registry = build_registry_from_cgs_document(
+            document, source_path, project_root=project_root
+        )
         self.orchestre.git_tree.git.bind_tree(self.registry)
         self.source_path = source_path
         self.loaded_snapshot_path = None
@@ -2844,11 +2861,26 @@ class ComplexGitSyncClient:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         resolved_path = Path(config_path).resolve()
         self._log_event("restart_start", config_path=resolved_path)
-        restart_cgshome = self.resolve_initialise_cgshome(resolved_path)
+        # The tree this re-syncs is already on disk somewhere; find that
+        # somewhere by the same walk every other command uses (cwd,
+        # $CGSHOME, the default workspace), never by guessing at the .cgs
+        # file's own directory. A developer spec that sits under examples/
+        # — this project's own — describes a tree rooted well above it.
+        try:
+            established_root: Path | None = discover_cgshome()
+        except FileNotFoundError:
+            established_root = None
+        restart_cgshome = (
+            established_root
+            if established_root is not None
+            else self.resolve_initialise_cgshome(resolved_path)
+        )
         MasterConfig.load(restart_cgshome)
         if git_user_name is not None or git_user_email is not None:
             MasterConfig.persist(restart_cgshome, user_name=git_user_name, user_email=git_user_email)
-        registry = self.load_cgs(resolved_path, discover_nested=True)
+        registry = self.load_cgs(
+            resolved_path, discover_nested=True, project_root=established_root
+        )
         protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
         try:
             self.orchestre.git_tree.git.pull(self.git_runner, force_access_protocol=protocol)
@@ -2948,7 +2980,16 @@ class ComplexGitSyncClient:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         self._log_event("pull_force_start", source_path=resolved_source)
         if resolved_source.suffix == ".cgs":
-            registry = self.load_cgs(resolved_source, discover_nested=True)
+            # Same reasoning as restart(): this re-syncs a tree already on
+            # disk, so the root is discovered, never guessed from the .cgs
+            # file's own directory.
+            try:
+                established_root: Path | None = discover_cgshome()
+            except FileNotFoundError:
+                established_root = None
+            registry = self.load_cgs(
+                resolved_source, discover_nested=True, project_root=established_root
+            )
         elif resolved_source.suffix == ".gts":
             registry = self.load_gts(resolved_source)
         else:

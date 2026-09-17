@@ -284,6 +284,24 @@ class TestResolveNestedConfigPath:
         candidate.write_text("", encoding="utf-8")
         assert _resolve_nested_config_path(tmp_path, "auto") == candidate.resolve()
 
+    def test_auto_ignores_a_directory_named_like_a_cgs_file(self, tmp_path):
+        """A memory's own `.cgs/` directory must not be read as a config.
+
+        `write_gts_snapshot` keeps stable per-branch spec copies at
+        `.cgitsync/.cgs/` — a directory whose name matches the `*.cgs` glob
+        "auto" discovery uses. main_1-1_PullOutsideRoot: this crashed
+        `pull` on this project's own developer tree the day its memory was
+        first mounted.
+        """
+        (tmp_path / ".cgs").mkdir()
+        assert _resolve_nested_config_path(tmp_path, "auto") is None
+
+    def test_auto_finds_the_file_even_beside_a_cgs_named_directory(self, tmp_path):
+        (tmp_path / ".cgs").mkdir()
+        candidate = tmp_path / "child.cgs"
+        candidate.write_text("", encoding="utf-8")
+        assert _resolve_nested_config_path(tmp_path, "auto") == candidate.resolve()
+
     def test_auto_with_multiple_cgs_raises(self, tmp_path):
         (tmp_path / "one.cgs").write_text("", encoding="utf-8")
         (tmp_path / "two.cgs").write_text("", encoding="utf-8")
