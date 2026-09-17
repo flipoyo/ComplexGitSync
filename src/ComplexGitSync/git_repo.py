@@ -153,17 +153,20 @@ class RepoScope(StrEnum):
         nested inside a private parent is private too, whatever its own entry
         says. See :attr:`WorkingRepo.effective_private`.
 
-        The workspace's own memory mount is excluded from every scope but
-        ``ALL``, regardless of its declared privacy. Every command records
-        itself into the memory *after* it runs, so a write scope that swept
-        the memory into its own commit could never leave it clean — the
-        record of that sweep is always still pending. See
-        :attr:`WorkingRepo.is_memory_mount`.
+        This does **not** single out the memory mount (see
+        :attr:`WorkingRepo.is_memory_mount`) — it is an ordinary private,
+        writable repository as far as scope goes, and needs to be: `merge`
+        reconciling it across project branches, the same way it already
+        reconciles `.localSpec`/`.claude`, depends on this returning ``True``
+        for it under ``PRIVATE``/``WRITABLE``. The exclusion belongs to
+        ``add``/``commit``/``push`` specifically — see
+        :func:`~ComplexGitSync.operations.iter_write_scope` — because only
+        those three write *and then record having written* in the same
+        breath; a repo that can never come out clean from its own sweep is
+        their problem to route around, not every scoped command's.
         """
         if self is RepoScope.ALL:
             return True
-        if repo.is_memory_mount:
-            return False
         if self is RepoScope.PROJECT:
             return not repo.effective_private
         if self is RepoScope.PRIVATE:

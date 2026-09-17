@@ -35,7 +35,7 @@ Data classes exported here (Tier 2 — Actions):
 from __future__ import annotations
 
 import warnings
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -465,6 +465,24 @@ class RepoOutcome:
     detail: str
 
 
+def iter_write_scope(tree: WorkingGitTree, scope: RepoScope) -> Iterator[WorkingRepo]:
+    """*scope*'s repositories, leaf-first, minus the workspace's own memory.
+
+    For ``add``/``commit``/``push`` only — see
+    :meth:`~ComplexGitSync.git_repo.RepoScope.includes`'s docstring for why
+    those three, and no other scoped command, need this. Every command
+    records itself into the memory *after* it runs; a sweep that commits or
+    pushes the memory along with everything else can never leave it clean,
+    because the record of that very sweep is always still pending. Excluded
+    here, not from `RepoScope` itself, so `merge`, `tag` and
+    `freeze-release` go on reconciling the memory across project branches
+    exactly as they already reconcile `.localSpec`/`.claude` — and
+    `memory push` loses nothing either way, since it never went through
+    scope at all.
+    """
+    return (repo for repo in iter_tree_leaf_first(tree, scope) if not repo.is_memory_mount)
+
+
 def add_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
@@ -493,7 +511,7 @@ def add_tree(
 
     outcomes: list[RepoOutcome] = []
     if paths is None:
-        for repo in iter_tree_leaf_first(tree, scope):
+        for repo in iter_write_scope(tree, scope):
             pending = len(git_runner.status_porcelain(repo.absolute_path))
             git_runner.stage_all(repo.absolute_path)
             outcomes.append(
@@ -655,7 +673,7 @@ def commit_tree(
     )
 
     outcomes: list[RepoOutcome] = []
-    for repo in iter_tree_leaf_first(tree, scope):
+    for repo in iter_write_scope(tree, scope):
         if stage_all:
             git_runner.stage_all(repo.absolute_path)
         if not git_runner.has_staged_changes(repo.absolute_path):
@@ -1217,7 +1235,7 @@ def push_tree(
     )
 
     outcomes: list[RepoOutcome] = []
-    for repo in iter_tree_leaf_first(tree, scope):
+    for repo in iter_write_scope(tree, scope):
         remote = repo.remote_name or "origin"
         _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
         # Before the push, not after: ``push -u`` can only write the

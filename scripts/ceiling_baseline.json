@@ -82,7 +82,7 @@
     },
     "git_repo.py": {
       "internal_imports": 0,
-      "loc": 392,
+      "loc": 395,
       "public_symbols": 15
     },
     "git_runner.py": {
@@ -157,8 +157,8 @@
     },
     "operations.py": {
       "internal_imports": 21,
-      "loc": 1617,
-      "public_symbols": 29
+      "loc": 1632,
+      "public_symbols": 30
     },
     "orchestre.py": {
       "internal_imports": 133,
