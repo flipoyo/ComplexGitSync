@@ -427,3 +427,54 @@ def test_status_explains_why_the_memory_is_dirty(tmp_path, capsys):
     report = client.status()
     assert "note: .memory is dirty" in report
     assert "cgitsync memory push" in report
+
+
+# ---------------------------------------------------------------------------
+# The recorded commit stays honest, even excluded from every write scope
+# ---------------------------------------------------------------------------
+
+
+def test_the_recorded_commit_catches_up_after_memory_push(tmp_path):
+    """Excluded from every write scope must not mean frozen at load time.
+
+    `.memory` is never visited by `add`/`commit`/`push`/`pull` any more, so
+    nothing refreshes its recorded `commit_sha` the way those commands
+    refresh every repository they do act on. Without a dedicated refresh,
+    `status`'s `HEAD ending with *` marker — recorded vs. actual — would
+    appear the moment `memory push` first moved it and never go away again,
+    however many ordinary commands ran afterward.
+    """
+    project_remote = _bare_remote(tmp_path / "demo.git", branch="main")
+    workspace = tmp_path / "demo"
+    _git(tmp_path, "clone", "-b", "main", str(project_remote), str(workspace))
+    _identify(workspace)
+    config = workspace / "project.cgs"
+    config.write_text(_CGS, encoding="utf-8")
+
+    client = ComplexGitSyncClient()
+    client.load(config)
+    remote = _bare_remote(tmp_path / "memory.git")
+    client.add_memory_repo_cgs(config, cgshome=workspace)
+    client.memory_adopt(workspace, remote=str(remote), branch="demo_memory-dev")
+    _identify(workspace / ".cgitsync")
+    client.memory_push(workspace)
+    client.load(config)  # picks up the entry add_memory_repo_cgs just added
+
+    recorded_before = next(
+        e for e in client.get_dependency_registry().values() if e.is_memory_mount
+    ).commit_sha
+
+    # More is recorded, pushed, and the memory moves without anything else
+    # ever asking it to.
+    client.load(config)
+    client.memory_push(workspace)
+    actual_head = _git(workspace / ".cgitsync", "rev-parse", "HEAD")
+    assert actual_head != recorded_before  # the memory really did move
+
+    # One more ordinary command is all it takes to catch the record up.
+    client.load(config)
+
+    recorded_after = next(
+        e for e in client.get_dependency_registry().values() if e.is_memory_mount
+    ).commit_sha
+    assert recorded_after == actual_head

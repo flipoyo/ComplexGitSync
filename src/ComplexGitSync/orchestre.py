@@ -4995,6 +4995,43 @@ class ComplexGitSyncClient:
             f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
         )
 
+    def _refresh_memory_mount_state(self, registry: WorkingGitTree) -> None:
+        """Read the memory mount's *actual* branch and HEAD, in place.
+
+        Every other repository's recorded `commit_sha` is kept fresh by the
+        action that touched it — `checkout`, `commit`, `push` each refresh
+        the repos they visited before a State is written. The memory mount
+        is deliberately excluded from those actions
+        (`memory-dev_MemoryScopeExclusion`, `memory-dev_PullMemoryExclusion`),
+        so nothing else ever refreshes it — and a State whose recorded
+        commit for the memory never moves would disagree with `status`'s
+        own live reading of it, for ever, the moment `memory push` first
+        moves it.
+
+        This is the read-only fix: ask git what the memory mount actually
+        is, right before every State is written, regardless of which
+        command asked for it. Never a write — `git rev-parse`/`current
+        branch`, the same questions `status` already asks. Silently does
+        nothing when the mount does not exist yet, or is not a repository
+        yet (`memory adopt` not run), or — a freshly adopted mount with
+        nothing committed — has no HEAD to read.
+        """
+        for entry in registry.values():
+            if not entry.is_memory_mount:
+                continue
+            if not (entry.absolute_path / ".git").is_dir():
+                continue
+            try:
+                entry.commit_sha = self.git_runner.rev_parse_head(entry.absolute_path)
+            except GitSyncError:
+                continue
+            branch = self.git_runner.current_branch(entry.absolute_path)
+            if branch:
+                entry.current_ref_kind = RefKind.BRANCH
+                entry.current_ref_name = branch
+                entry.resolved_ref_kind = RefKind.BRANCH
+                entry.resolved_ref_name = branch
+
     def write_gts_snapshot(
         self,
         *,
@@ -5006,6 +5043,7 @@ class ComplexGitSyncClient:
     ) -> Path:
         registry = self.get_dependency_registry()
         root_entry = registry.get("root")
+        self._refresh_memory_mount_state(registry)
         document = build_gts_document_from_registry(
             registry,
             command_origin=command_origin,
