@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.83
+# ComplexGitSync v0002.84
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -612,6 +612,17 @@ One command reads a document rather than acting on one. `cgitsync validate`
 exits `1` when the document is invalid, because saying so is its job; every
 other command exits `2` on the same document, because it could not run at
 all.
+
+One failure exits `2` even under `validate`: a `.gts` written by a newer
+`cgitsync` than the one running. That is not a verdict this build can
+reach — it cannot check a format it has never seen — so it says so by name
+(`this snapshot was written by a newer ComplexGitSync ...`) rather than
+guessing and reporting a hash mismatch that reads as corruption. If you hit
+this on a self-managing checkout (this project's own workspace, for
+example) before this message existed, the fix is plain Git: `git checkout
+<the branch you were on>` in the repository that is the running tool, then
+try again — the snapshot was never corrupt, and deleting it loses history
+for nothing.
 
 A failure prints one line on stderr — `cgitsync status: Unable to locate
 CGSHOME` — and no traceback. **If you ever see a traceback, it is a bug in

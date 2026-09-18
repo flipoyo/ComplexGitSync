@@ -54,7 +54,7 @@ from typing import Any
 from . import __version__ as CGS_VERSION
 from .config_document import ConfigDocument
 from .config_document_io import ConfigDocumentIOMixin
-from .errors import ConfigValidationError
+from .errors import ConfigValidationError, UnsupportedSnapshotFormatError
 from .git_repo import DiscoveryState, NodeType, RefKind, RepoLifecycleState
 
 # ============================================================
@@ -339,8 +339,25 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         under a version it does not declare — the migration path uses it;
         ordinary callers must not, or an old snapshot gets measured with an
         algorithm it was never written under.
+
+        Refuses, by name, before building any payload, when *version* is
+        higher than :attr:`CURRENT_HASH_CANONICALISATION` — a snapshot
+        written by a build newer than this one. Recomputing a hash under
+        rules this build does not actually know produces a wrong digest
+        that reads as "corrupt", which is what happened the one time this
+        was allowed to fall through
+        (`.localSpec/DevTickets/archive/20260918_SnapshotVersionGuard_DevPlanTicket.md`):
+        the workspace and the snapshot were both fine, and the tool reading
+        them had gone backwards in time.
         """
         version = canonicalisation or self.hash_canonicalisation
+        if version > self.CURRENT_HASH_CANONICALISATION:
+            raise UnsupportedSnapshotFormatError(
+                "this snapshot was written by a newer ComplexGitSync "
+                f"(snapshot format {version}; this build reads up to "
+                f"{self.CURRENT_HASH_CANONICALISATION}). Upgrade, or pass "
+                "--gts with a snapshot this build wrote."
+            )
         canonical_json = json.dumps(
             self._build_canonical_payload(version),
             sort_keys=True,

@@ -22,6 +22,7 @@ from ..errors import (
     GitSyncError,
     NestedConfigDiscoveryError,
     TreeNotReadyError,
+    UnsupportedSnapshotFormatError,
 )
 
 #: The command did what was asked.
@@ -52,6 +53,11 @@ def exit_code_for(exc: BaseException, *, command: str | None = None) -> int | No
     turn every bug in this codebase into a "bad input" message, which is how
     a defect survives for months.
     """
+    if isinstance(exc, UnsupportedSnapshotFormatError):
+        # Not a verdict this build can reach, so it never gets the
+        # document-judging treatment below — not even for `validate`,
+        # whose job is normally to answer "invalid", not to be refused.
+        return EXIT_UNUSABLE
     if isinstance(exc, ConfigValidationError):
         if command in _DOCUMENT_JUDGING_COMMANDS:
             return EXIT_REFUSED

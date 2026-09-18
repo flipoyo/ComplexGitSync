@@ -14,6 +14,21 @@ class ConfigValidationError(ComplexGitSyncError):
     """Raised when a .cgs or .gts document is invalid."""
 
 
+class UnsupportedSnapshotFormatError(ConfigValidationError):
+    """A ``.gts`` declares a format newer than this build understands.
+
+    Distinct from an ordinary :class:`ConfigValidationError` because it is
+    not a verdict this build is capable of reaching — it cannot check
+    whether the document is well-formed under a canonicalisation it has
+    never seen, only that the number is higher than the one it knows
+    (`.localSpec/DevTickets/archive/20260918_SnapshotVersionGuard_DevPlanTicket.md`).
+    A subclass of :class:`ConfigValidationError` so every existing catch of
+    that type still sweeps it up; the CLI still tells the two apart to exit
+    `2` unconditionally, even for ``validate``, whose job is normally to
+    judge a document rather than to be refused by one.
+    """
+
+
 class GitSyncError(ComplexGitSyncError):
     """Raised for irrecoverable Git synchronization failures."""
 

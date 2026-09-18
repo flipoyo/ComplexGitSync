@@ -1,6 +1,6 @@
 """ComplexGitSync package: deterministic distributed workspace synchronization over Git trees."""
 
-__version__ = "0002.83"
+__version__ = "0002.84"
 
 # --- Tier 1 — Public Errors (errors.py) ---
 # --- Cross-cutting document definitions ---
@@ -19,6 +19,7 @@ from .errors import (
     GitSyncError,
     NestedConfigDiscoveryError,
     TreeNotReadyError,
+    UnsupportedSnapshotFormatError,
 )
 
 # --- Tier 1 — Core State (git_repo.py) ---
@@ -88,6 +89,7 @@ __all__ = [
     "MasterConfig",
     "NestedConfigDiscoveryError",
     "TreeNotReadyError",
+    "UnsupportedSnapshotFormatError",
     # git_repo.py
     "AccessProtocol",
     "CANONICAL_GIT_PROVIDERS",

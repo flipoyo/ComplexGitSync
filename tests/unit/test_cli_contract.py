@@ -31,6 +31,7 @@ from ComplexGitSync.errors import (
     GitSyncError,
     NestedConfigDiscoveryError,
     TreeNotReadyError,
+    UnsupportedSnapshotFormatError,
 )
 
 # ---------------------------------------------------------------------------
@@ -44,6 +45,7 @@ from ComplexGitSync.errors import (
         (GitSyncError("merge refused"), EXIT_REFUSED),
         (TreeNotReadyError("tree is not READY"), EXIT_REFUSED),
         (ConfigValidationError("bad document"), EXIT_UNUSABLE),
+        (UnsupportedSnapshotFormatError("snapshot format too new"), EXIT_UNUSABLE),
         (NestedConfigDiscoveryError("ambiguous"), EXIT_UNUSABLE),
         (FileNotFoundError("no workspace"), EXIT_UNUSABLE),
         (PermissionError("not readable"), EXIT_UNUSABLE),
@@ -71,6 +73,20 @@ def test_validate_judges_documents_so_an_invalid_one_is_its_answer():
 
     assert exit_code_for(invalid, command="validate") == EXIT_REFUSED
     assert exit_code_for(invalid, command="initialise") == EXIT_UNUSABLE
+
+
+def test_a_newer_build_s_snapshot_exits_unusable_even_under_validate():
+    """SnapshotVersionGuard: unlike an ordinary invalid document, this is
+    not a verdict `validate` is capable of reaching, so it never gets the
+    "invalid is the answer" treatment `validate` gets for everything else.
+    """
+    refusal = UnsupportedSnapshotFormatError(
+        "this snapshot was written by a newer ComplexGitSync"
+    )
+
+    assert exit_code_for(refusal, command="validate") == EXIT_UNUSABLE
+    assert exit_code_for(refusal, command="status") == EXIT_UNUSABLE
+    assert exit_code_for(refusal) == EXIT_UNUSABLE
 
 
 def test_the_diagnostic_names_the_command_and_says_what_happened():
@@ -104,6 +120,65 @@ def test_a_missing_snapshot_exits_two(tmp_path, capsys):
     captured = capsys.readouterr()
 
     assert exit_code == EXIT_UNUSABLE
+    assert "Traceback" not in captured.err
+
+
+def test_a_snapshot_from_a_newer_build_names_the_versions_not_corruption(tmp_path, capsys):
+    """SnapshotVersionGuard end to end: the exact incident this ticket fixes.
+
+    A snapshot declaring a ``hash_canonicalisation`` this build has never
+    heard of used to fail every command with "snapshot_hash does not match
+    canonical .gts content hash" — a message that reads as corruption and
+    invites deleting a perfectly good file. It must now name both versions
+    and say what to do instead.
+    """
+    from ComplexGitSync.gts_document import GtsDocument
+
+    root = tmp_path / "demo"
+    root.mkdir()
+    unsupported = GtsDocument.CURRENT_HASH_CANONICALISATION + 1
+    snapshot = tmp_path / "demo.gts"
+    snapshot.write_text(
+        f"""
+[document]
+format_version = "1.0"
+generated_at = "2026-01-01T00:00:00Z"
+command_origin = "checkout"
+hash_canonicalisation = {unsupported}
+snapshot_hash = "{"0" * 64}"
+
+[project]
+name = "demo"
+root_absolute_path = "{root.as_posix()}"
+
+[tree_state]
+lifecycle_state = "READY"
+is_ready = true
+registry_complete = true
+
+[[repo_state]]
+name = "demo"
+node_type = "root"
+absolute_path = "{root.as_posix()}"
+relative_path = "."
+repo_lifecycle_state = "READY"
+sync_state = "ALIGNED"
+current_ref_kind = "branch"
+current_ref_name = "main"
+commit_sha = "{"a" * 40}"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = cli_main(["status", "--gts", str(snapshot)])
+    captured = capsys.readouterr()
+
+    assert exit_code == EXIT_UNUSABLE
+    assert "newer ComplexGitSync" in captured.err
+    assert str(unsupported) in captured.err
+    assert "corrupt" not in captured.err
+    assert "does not match" not in captured.err
     assert "Traceback" not in captured.err
 
 

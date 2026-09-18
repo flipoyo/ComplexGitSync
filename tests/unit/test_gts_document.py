@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.errors import ConfigValidationError
+from ComplexGitSync.errors import ConfigValidationError, UnsupportedSnapshotFormatError
 from ComplexGitSync.git_repo import NodeType
 from ComplexGitSync.gts_document import (
     GtsDocument,
@@ -170,6 +170,54 @@ class TestGtsDocumentValid:
         # module's current one -- this is what "never corrected on an old
         # one" means in practice.
         assert doc_a.compute_snapshot_hash() != doc_b.compute_snapshot_hash()
+
+    def test_a_snapshot_from_a_newer_build_is_refused_by_name(self):
+        """SnapshotVersionGuard: this build must say so, not recompute a
+        wrong hash and call the result corrupt.
+
+        `main`'s own incident: a workspace written by a build that declares
+        a canonicalisation this one has never heard of must not be silently
+        hashed under today's rules and reported as a mismatch — that message
+        reads as corruption and invites deleting a perfectly good snapshot.
+        """
+        data = copy.deepcopy(MINIMAL_GTS)
+        data["document"]["hash_canonicalisation"] = GtsDocument.CURRENT_HASH_CANONICALISATION + 1
+        doc = GtsDocument.from_dict(data)
+
+        with pytest.raises(UnsupportedSnapshotFormatError) as excinfo:
+            doc.compute_snapshot_hash()
+
+        message = str(excinfo.value)
+        assert "newer ComplexGitSync" in message
+        assert "corrupt" not in message
+        assert "does not match" not in message
+
+    def test_validate_reports_the_newer_build_refusal_not_a_hash_mismatch(self):
+        """The same refusal, reached the way a real command reaches it: via
+        ``validate()``'s own snapshot_hash check, not by calling
+        ``compute_snapshot_hash`` directly. ``from_dict`` validates on
+        construction, so the refusal fires there."""
+        data = copy.deepcopy(MINIMAL_GTS)
+        data["document"]["hash_canonicalisation"] = GtsDocument.CURRENT_HASH_CANONICALISATION + 1
+        data["document"]["snapshot_hash"] = "0" * 64
+
+        with pytest.raises(UnsupportedSnapshotFormatError) as excinfo:
+            GtsDocument.from_dict(data)
+
+        assert "snapshot_hash does not match" not in str(excinfo.value)
+
+    def test_unsupported_snapshot_format_error_is_still_a_config_validation_error(self):
+        """Existing callers that catch the broad type must keep catching this
+        one too — it is a refinement, not a parallel hierarchy."""
+        assert issubclass(UnsupportedSnapshotFormatError, ConfigValidationError)
+
+    def test_a_snapshot_this_build_knows_is_unaffected(self):
+        """The guard must not fire for the version this build actually
+        writes and reads every day."""
+        doc = GtsDocument.from_dict(copy.deepcopy(MINIMAL_GTS))
+        doc.ensure_snapshot_hash()
+        # No exception, and the document validates cleanly.
+        doc.validate()
 
     def test_compute_snapshot_hash_ignores_access_protocol(self):
         # A tree cloned entirely over ssh and the same tree cloned entirely

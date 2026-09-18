@@ -1,8 +1,8 @@
 {
   "modules": {
     "__init__.py": {
-      "internal_imports": 56,
-      "loc": 127,
+      "internal_imports": 57,
+      "loc": 129,
       "public_symbols": 0
     },
     "__main__.py": {
@@ -31,8 +31,8 @@
       "public_symbols": 1
     },
     "cli/exit_codes.py": {
-      "internal_imports": 4,
-      "loc": 63,
+      "internal_imports": 5,
+      "loc": 66,
       "public_symbols": 5
     },
     "cli/expert.py": {
@@ -72,8 +72,8 @@
     },
     "errors.py": {
       "internal_imports": 0,
-      "loc": 15,
-      "public_symbols": 5
+      "loc": 27,
+      "public_symbols": 6
     },
     "git_branch.py": {
       "internal_imports": 2,
@@ -101,8 +101,8 @@
       "public_symbols": 3
     },
     "gts_document.py": {
-      "internal_imports": 8,
-      "loc": 361,
+      "internal_imports": 9,
+      "loc": 377,
       "public_symbols": 1
     },
     "json_render.py": {
