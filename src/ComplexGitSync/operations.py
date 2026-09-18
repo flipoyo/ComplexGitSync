@@ -312,8 +312,19 @@ def _restart_tree(
         _rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
         _repair_fetch_refspec(git_runner, repo, remote)
         _fetch_all_refs(git_runner, repo, remote)
-        pull = git_runner.force_pull if force else git_runner.pull
-        pull(repo.absolute_path, remote=remote, ref_name=repo.target_ref_name or current_branch)
+        target_branch = repo.target_ref_name or current_branch
+        # A branch that has never been pushed has nothing to pull from —
+        # `git pull --ff-only origin <branch>` fails outright when origin
+        # has no such ref, which used to abort this whole tree-wide loop
+        # over one repository with real, current, merely unpublished work
+        # (a memory freshly rebooted or freshly adopted, most often). That
+        # is not a pull failure, it is nothing to do — the same distinction
+        # `freeze_release` already draws before its own pull
+        # (`orchestre.py::freeze_release`), generalised here to every
+        # repository this loop visits, not only the root.
+        if git_runner.remote_tracking_branch_exists(repo.absolute_path, target_branch, remote=remote):
+            pull = git_runner.force_pull if force else git_runner.pull
+            pull(repo.absolute_path, remote=remote, ref_name=target_branch)
 
         resolved_branch = git_runner.current_branch(repo.absolute_path) or current_branch
         _refresh_repo_after_checkout(repo, resolved_branch, RefKind.BRANCH, git_runner)

@@ -647,7 +647,12 @@ def test_restart_tree_pulls_root_and_children(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
     root_path = tmp_path / "project"
+    leaf_path = root_path / "deps" / "leaf"
     runner._current_branches[root_path] = "feature-restart"
+    # A pull needs something on the remote to pull from — see
+    # TestPullSkipsUnpushedBranches for the "nothing there yet" case.
+    runner._remote_tracking_branches[root_path] = {"feature-restart"}
+    runner._remote_tracking_branches[leaf_path] = {"feature-restart"}
 
     restart_tree(registry, runner)
 
@@ -665,6 +670,12 @@ def test_client_pull_gts_pulls_root_then_updates_parents_and_leaves(tmp_path):
 
     runner = _FakeGitRunnerForOperations()
     runner._current_branches[tmp_path / "deep"] = "main"
+    for path in (
+        tmp_path / "deep",
+        tmp_path / "deep" / "middle",
+        tmp_path / "deep" / "middle" / "sub",
+    ):
+        runner._remote_tracking_branches[path] = {"main"}
     client = ComplexGitSyncClient(
         git_runner=runner,
         state_store=RuntimeStateStore(tmp_path / "state-store"),
@@ -690,6 +701,8 @@ def test_restart_tree_propagates_branch_to_all_entries(tmp_path):
     runner = _FakeGitRunnerForOperations()
     root_path = tmp_path / "project"
     runner._current_branches[root_path] = "sync-branch"
+    runner._remote_tracking_branches[root_path] = {"sync-branch"}
+    runner._remote_tracking_branches[root_path / "deps" / "leaf"] = {"sync-branch"}
 
     restart_tree(registry, runner)
 
@@ -703,6 +716,8 @@ def test_restart_tree_runs_pull_parent_first(tmp_path):
     runner = _FakeGitRunnerForOperations()
     root_path = tmp_path / "deep"
     runner._current_branches[root_path] = "main"
+    for path in (root_path, root_path / "middle", root_path / "middle" / "sub"):
+        runner._remote_tracking_branches[path] = {"main"}
 
     restart_tree(registry, runner)
 
@@ -786,10 +801,59 @@ class TestPullBringsEveryBranchSRef:
         registry = _make_ready_registry(tmp_path)
         runner = _RefusingFetch()
         runner._current_branches[registry.get("root").absolute_path] = "main"
+        # The fetch this test breaks would ordinarily be what makes the
+        # remote-tracking ref visible; simulate it already being known from
+        # an earlier, successful fetch, so the failure below is isolated to
+        # exactly what this test means to exercise.
+        for repo in registry.values():
+            runner._remote_tracking_branches[repo.absolute_path] = {"main"}
 
         restart_tree(registry, runner)
 
         assert [path for path, _, _ in runner.pulled]
+
+
+class TestPullSkipsUnpushedBranches:
+    """A branch nobody has pushed yet has nothing to pull — that is not a
+    pull failure.
+
+    Field failure: a memory freshly rebooted (a real, current, committed
+    branch that has simply never been pushed under this name) made
+    ``git pull --ff-only origin <branch>`` fail with "couldn't find remote
+    ref", which `_restart_tree` let escape and abort the *entire* tree-wide
+    pull — one repository's ordinary "nothing to pull yet" took every
+    other repository down with it.
+    """
+
+    def test_a_repo_with_no_remote_branch_is_skipped_not_failed(self, tmp_path):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root_path = tmp_path / "project"
+        runner._current_branches[root_path] = "main"
+        runner._remote_tracking_branches[root_path] = {"main"}
+        # The leaf's branch has never been pushed — nothing in
+        # `_remote_tracking_branches` for it.
+
+        restart_tree(registry, runner)
+
+        assert runner.pulled == [(root_path, "origin", "main")]
+        assert registry.is_ready()
+
+    def test_the_rest_of_the_tree_still_pulls_leaf_first(self, tmp_path):
+        registry = _make_deep_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root_path = tmp_path / "deep"
+        middle_path = root_path / "middle"
+        sub_path = middle_path / "sub"
+        runner._current_branches[root_path] = "main"
+        # Only the middle repository was ever pushed under this name.
+        runner._remote_tracking_branches[middle_path] = {"main"}
+
+        restart_tree(registry, runner)
+
+        assert runner.pulled == [(middle_path, "origin", "main")]
+        assert root_path not in [path for path, _, _ in runner.pulled]
+        assert sub_path not in [path for path, _, _ in runner.pulled]
 
 
 class TestEveryWorkspaceRepairsItsOwnFetchRefspec:
@@ -859,6 +923,8 @@ def test_restart_tree_force_pulls_parent_first(tmp_path):
     runner = _FakeGitRunnerForOperations()
     root_path = tmp_path / "deep"
     runner._current_branches[root_path] = "main"
+    for path in (root_path, root_path / "middle", root_path / "middle" / "sub"):
+        runner._remote_tracking_branches[path] = {"main"}
 
     restart_tree_force(registry, runner)
 
@@ -882,6 +948,8 @@ def test_restart_tree_falls_back_to_resolved_ref_when_no_current_branch(tmp_path
     runner = _FakeGitRunnerForOperations()
     root_path = tmp_path / "project"
     runner._current_branches[root_path] = None
+    runner._remote_tracking_branches[root_path] = {"fallback-branch"}
+    runner._remote_tracking_branches[root_path / "deps" / "leaf"] = {"fallback-branch"}
     # Set a resolved ref name on the root entry as fallback
     registry.get("root").resolved_ref_name = "fallback-branch"
 

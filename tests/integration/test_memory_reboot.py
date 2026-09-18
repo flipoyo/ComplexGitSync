@@ -166,24 +166,59 @@ def test_verify_on_the_archived_branch_still_answers_as_before(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# The fresh branch: empty, under the original name, nothing committed
+# The fresh branch: a real, committed branch under the original name,
+# holding only its own genesis State — not the archived history
 # ---------------------------------------------------------------------------
 
 
-def test_reboot_clears_states_the_ledger_and_commit_logs(tmp_path):
+def test_reboot_clears_the_old_history_from_the_fresh_branch(tmp_path):
+    """Old chain, several entries deep, does not carry onto the fresh one.
+
+    A State's name is its content hash, so the fresh genesis State can
+    legitimately collide with an old one when nothing about the tree
+    actually changed in between (as here) — that is not history carrying
+    over, it is two moments producing the same fact. The ledger restarting
+    at exactly one entry is the meaningful, unambiguous claim: the old
+    chain's own multiple entries did not.
+    """
+    from ComplexGitSync.memory.ledger_store import read_all_entries
+
     tree = _memory_ready(tmp_path)
+    old_entry_count = len(read_all_entries(tree["mount"] / "lgr"))
+    assert old_entry_count > 1  # a real, multi-entry chain to clear
 
     result = _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
 
     assert result["branch"] == "demo_x"
     assert _git(tree["mount"], "branch", "--show-current") == "demo_x"
-    tracked = _git(tree["mount"], "ls-files").splitlines()
-    assert not any(path.startswith(("state/", "lgr/", "commit-logs/", "logs/")) for path in tracked)
-    # No commit at all yet — an orphan branch reboot leaves uncommitted.
+    tracked = set(_git(tree["mount"], "ls-files").splitlines())
+    assert not any(path.startswith("commit-logs/") for path in tracked)
+    entries = read_all_entries(tree["mount"] / "lgr")
+    assert [entry.seq for entry in entries] == [1]
+
+
+def test_reboot_leaves_the_fresh_branch_committed_not_dead(tmp_path):
+    """The field failure: an uncommitted orphan branch reads as broken.
+
+    `cgitsync status` computes everything from `git rev-parse HEAD`; a
+    branch with nothing committed fails that call and the whole row
+    reported `error`/`error` instead of the healthy, just-rebooted branch
+    it actually was.
+    """
+    tree = _memory_ready(tmp_path)
+
+    _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
+
     rev_parse = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=tree["mount"], capture_output=True, text=True
     )
-    assert rev_parse.returncode != 0
+    assert rev_parse.returncode == 0
+    # Committed, not pushed — the next `memory push` still has work to do.
+    assert _git(tree["mount"], "status", "--porcelain") == ""
+    status = subprocess.run(
+        ["git", "status", "-sb"], cwd=tree["mount"], capture_output=True, text=True
+    ).stdout
+    assert "..." not in status.splitlines()[0]  # no upstream configured yet
 
 
 def test_reboot_leaves_a_discoverable_gts_behind(tmp_path):

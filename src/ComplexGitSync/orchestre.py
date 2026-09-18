@@ -4636,14 +4636,15 @@ class ComplexGitSyncClient:
            *not* cleared — §2 calls that directory "a permanent, ordered
            record of every shape this project's memory has ever
            described," which a reboot is not exempt from being part of.
-           Nothing is committed on the fresh branch: the next ordinary
-           write does that, exactly as a freshly adopted mount already
-           works. Clearing `state/` would otherwise leave nowhere for
-           `discover_gts_path()` to resume from — a workspace that could
-           not even run `status` right after being rebooted — so this
-           step ends by writing one fresh State, pending, dated now: the
-           tree as it stands the moment of the reboot, not the history
-           just archived.
+           One fresh State is then written and immediately committed —
+           *not* pushed; the next `memory push` does that, same as any
+           other day — so the branch is a real, live branch the moment
+           this method returns, on the project's own current branch name,
+           rather than an orphan with no commit that `cgitsync status`
+           (and `discover_gts_path()`, and everything built on it) could
+           only read as broken. An uncommitted orphan branch was tried
+           first and reported back as exactly that: not "a fresh chapter,"
+           a dead one.
 
         Raises `GitSyncError` when the mount is not a repository yet
         (`memory adopt` first), and when today's archived name already
@@ -4698,14 +4699,31 @@ class ComplexGitSyncClient:
         # can find — the pending half was already empty (step 1 folded
         # it), so a workspace rebooted this way could not even run
         # `cgitsync status` afterward. `self.registry` is still the tree
-        # this method loaded at the top, so writing it now, into the
-        # pending half exactly as any ordinary command would, gives the
+        # this method loaded at the top, so writing it now gives the
         # workspace a State to resume from immediately — one State, dated
-        # now, not the history just archived. Nothing about "the fresh
-        # branch starts with no history" changes: this is written pending,
-        # not committed on the fresh branch, so the *next* real write still
-        # produces its first commit, same as before.
+        # now, not the history just archived.
         self.write_gts_snapshot(command_origin="memory_reboot")
+
+        # An orphan branch with nothing committed has no HEAD to read —
+        # `git rev-parse HEAD` fails, and `cgitsync status` reported that
+        # as `error`/`error` rather than as the healthy, just-rebooted
+        # branch it actually was. Folding and committing the one State
+        # just written gives the branch a real HEAD before this method
+        # returns; nothing is pushed here, the same way `memory_push`'s
+        # own commit step never pushes on its own — the next `memory push`
+        # (or the ordinary fold inside `push`/`tag`/`freeze`, once that
+        # exists) is what sends it.
+        self._fold_memory_pending(memory_pending_path(workspace), mount)
+        if uncommitted_memory_paths(self.git_runner.status_porcelain(mount)):
+            self.git_runner.stage_all(mount)
+            MasterConfig.load(workspace)
+            user_name, user_email = MasterConfig.resolve_identity(mount, self.git_runner)
+            self.git_runner.commit(
+                mount,
+                f"{project_name} memory reboot: first State of a fresh chapter",
+                user_name=user_name,
+                user_email=user_email,
+            )
 
         self._log_event(
             "memory_reboot",
