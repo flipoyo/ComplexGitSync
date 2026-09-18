@@ -3444,15 +3444,27 @@ class ComplexGitSyncClient:
         )
         return outcome
 
-    def open_merge_tool(self, repo_name: str) -> str | None:
+    def open_merge_tool(self, repo_id: str) -> str | None:
         """Open one repository's conflicts in a merge tool.
+
+        *repo_id* is the registry key (:class:`ResolveOutcome`'s
+        ``stopped_at_id``), never the display name (``stopped_at``): two
+        repositories in a tree may share a name, and a name is not always
+        its own id (`.memory`'s never is) — passing the name here used to
+        raise a bare ``KeyError`` instead of finding the repository.
 
         Returns ``None`` once the tool has run, or the command to run by hand
         when there is no tool to open — a missing editor is a normal outcome
         here, not an error.
         """
         registry = self.get_dependency_registry()
-        repo = registry.get(repo_name)
+        try:
+            repo = registry.get(repo_id)
+        except KeyError as exc:
+            raise GitSyncError(
+                f"{repo_id!r} is not a repository in this tree — expected a repo_id "
+                "(ResolveOutcome.stopped_at_id), not a display name."
+            ) from exc
         tool, command = self._resolve_merge_tool(repo.absolute_path)
         if tool is None:
             return (

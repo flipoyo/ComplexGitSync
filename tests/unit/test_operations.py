@@ -1836,17 +1836,49 @@ class TestMergeTree:
         merged_paths = [path for path, _ in runner.merged]
         assert leaf.absolute_path not in merged_paths
 
-    def test_one_writable_pass_merges_both_halves(self, tmp_path):
-        """What ``merge --all`` runs: one pass, both halves, names translated."""
+    def test_one_writable_pass_merges_both_halves_project_first(self, tmp_path):
+        """What ``merge --all`` runs: one pass, both halves, names translated.
+
+        Project repositories merge completely before any private one is
+        touched — a leaf-first walk over the union would put this
+        private-repo leaf ahead of the project's own root purely because of
+        where it happens to be mounted, which is backwards: a conflict in
+        the private half must never again be able to leave the project half
+        only partly merged (`.localSpec/DevTickets/archive/
+        20260918_MergeProjectBeforePrivate_DevPlanTicket.md`).
+        """
         registry = self._tree(tmp_path)
         runner = self._runner(registry)
 
         merge_tree(registry, runner, "multi-branch", scope=RepoScope.WRITABLE)
 
         assert runner.merged == [
-            (registry.get("root:deps/leaf").absolute_path, "project_multi-branch"),
             (registry.get("root").absolute_path, "multi-branch"),
+            (registry.get("root:deps/leaf").absolute_path, "project_multi-branch"),
         ]
+
+    def test_resolve_all_reaches_the_project_root_before_a_private_conflict(self, tmp_path):
+        """The field failure this ordering exists to prevent.
+
+        `cgitsync merge --all --resolve` stopping on a private/local repo
+        (`.memory`, in the field report) must never leave the project's own
+        root repository unmerged just because it happened to sit later in
+        a leaf-first walk over the whole tree. With project repositories
+        ordered first, the root is always merged (or correctly found to
+        need nothing) before a private conflict is ever reached.
+        """
+        registry = self._tree(tmp_path)
+        runner = self._runner(registry)
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._unmergeable[leaf] = {"project_multi-branch"}
+        runner._conflicting_paths[leaf] = [Path("settings.toml")]
+
+        outcome = merge_tree_one_at_a_time(registry, runner, "multi-branch", scope=RepoScope.WRITABLE)
+
+        root = registry.get("root").absolute_path
+        assert (root, "multi-branch") in runner.merged, "the project root must merge first"
+        assert outcome.stopped_at == "leaf"
+        assert outcome.not_reached == (), "the private leaf was the last repository in scope"
 
     def test_a_conflict_in_the_private_half_leaves_the_project_half_unmerged(self, tmp_path):
         """Why ``--all`` must be one pass and never two sequential ones.

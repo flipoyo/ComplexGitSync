@@ -805,6 +805,35 @@ def _describe_merge_conflict(
     return f"{repo_name}: merging {source!r} conflicts"
 
 
+def _iter_merge_scope_project_first(
+    tree: WorkingGitTree, scope: RepoScope
+) -> Iterator[WorkingRepo]:
+    """Leaf-first, but every repository *scope* reaches through ``PROJECT``
+    before any it reaches through ``PRIVATE``.
+
+    ``--all`` (``RepoScope.WRITABLE``) is the one merge scope that mixes the
+    two, and a plain leaf-first walk over the union interleaves them by
+    physical mount position, not by which one matters more: a private
+    configuration repository (`.memory` included) sits wherever it happens
+    to be mounted, so a conflict in one can leave this project's own root
+    repository unreached — merged nowhere, private repos ahead of it
+    already merged. That is backwards. This project's own history is
+    reconciled first, completely, before any shared configuration
+    repository is touched at all — so a conflict in the private half can
+    never again leave the project half only partly done
+    (`.localSpec/DevTickets/archive/20260918_MergeProjectBeforePrivate_DevPlanTicket.md`).
+
+    ``PROJECT`` and ``PRIVATE`` never overlap (a repository is either not
+    private, or private *and* writable), so this never yields one twice.
+    """
+    for repo in iter_tree_leaf_first(tree, RepoScope.PROJECT):
+        if scope.includes(repo):
+            yield repo
+    for repo in iter_tree_leaf_first(tree, RepoScope.PRIVATE):
+        if scope.includes(repo):
+            yield repo
+
+
 def merge_tree(
     tree: WorkingGitTree,
     git_runner: GitRunner,
@@ -845,7 +874,7 @@ def merge_tree(
     blocked: list[str] = []
     on_source: list[str] = []
     project_name = tree_project_name(tree)
-    for repo in iter_tree_leaf_first(tree, scope):
+    for repo in _iter_merge_scope_project_first(tree, scope):
         source, status, conflicts = merge_status(
             repo, git_runner, project_branch, project_name=project_name
         )
@@ -1021,7 +1050,7 @@ def merge_into_tree(
         merge_into_status(
             repo, git_runner, source_branch, target_branch, project_name=project_name
         )
-        for repo in iter_tree_leaf_first(tree, scope)
+        for repo in _iter_merge_scope_project_first(tree, scope)
     ]
     by_name = {plan.name: plan for plan in plans}
 
@@ -1049,13 +1078,17 @@ def merge_into_tree(
     for plan in plans:
         if plan.status == "no-source":
             _warn_branch_missing(
-                next(r for r in iter_tree_leaf_first(tree, scope) if r.name == plan.name),
+                next(
+                    r
+                    for r in _iter_merge_scope_project_first(tree, scope)
+                    if r.name == plan.name
+                ),
                 plan.source,
                 source_branch,
             )
 
     outcomes: list[MergeIntoPlan] = []
-    for repo in iter_tree_leaf_first(tree, scope):
+    for repo in _iter_merge_scope_project_first(tree, scope):
         plan = by_name[repo.name]
         if plan.status not in MERGE_INTO_ACTS and plan.status != "already-merged":
             outcomes.append(plan)
@@ -1078,10 +1111,20 @@ class ResolveOutcome:
 
     A resolve run can leave the tree partly merged, so the caller has to be
     able to say exactly where it stopped.
+
+    ``stopped_at`` is the repository's display **name**, for printing — two
+    repositories in a tree may share one, so it is never a lookup key.
+    ``stopped_at_id`` is its ``repo_id``, the one thing
+    :meth:`~ComplexGitSync.orchestre.ComplexGitSyncClient.open_merge_tool`
+    can actually find in the registry with (a bare name lookup there raised
+    ``KeyError`` for any repo, `.memory` included, whose id is not simply
+    its own name — see
+    `.localSpec/DevTickets/archive/20260918_ResolveMergeToolCrash_DevPlanTicket.md`).
     """
 
     merged: tuple[tuple[str, str], ...]
     stopped_at: str | None
+    stopped_at_id: str | None
     stopped_paths: tuple[Path, ...]
     not_reached: tuple[str, ...]
 
@@ -1099,12 +1142,16 @@ def merge_tree_one_at_a_time(
 
     The opposite trade from :func:`merge_tree`: repositories ahead of the
     conflict stay merged, and the conflict is left in the worktree for a
-    merge tool to open.
+    merge tool to open. Project repositories are still ordered ahead of
+    private ones (:func:`_iter_merge_scope_project_first`) even here, where
+    it matters most: this is the mode that can genuinely stop partway, and
+    stopping on a private repository with this project's own root already
+    merged is what that ordering exists to guarantee.
     """
     _assert_ready(tree)
 
     project_name = tree_project_name(tree)
-    repos = list(iter_tree_leaf_first(tree, scope))
+    repos = list(_iter_merge_scope_project_first(tree, scope))
     merged: list[tuple[str, str]] = []
 
     for position, repo in enumerate(repos):
@@ -1130,6 +1177,7 @@ def merge_tree_one_at_a_time(
             return ResolveOutcome(
                 merged=tuple(merged),
                 stopped_at=repo.name,
+                stopped_at_id=repo.repo_id,
                 stopped_paths=conflicts,
                 not_reached=tuple(r.name for r in repos[position + 1 :]),
             )
@@ -1142,7 +1190,11 @@ def merge_tree_one_at_a_time(
 
     tree.recompute_tree_state()
     return ResolveOutcome(
-        merged=tuple(merged), stopped_at=None, stopped_paths=(), not_reached=()
+        merged=tuple(merged),
+        stopped_at=None,
+        stopped_at_id=None,
+        stopped_paths=(),
+        not_reached=(),
     )
 
 

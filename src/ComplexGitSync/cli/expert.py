@@ -1651,7 +1651,7 @@ def _execute_merge_resolve(
     if outcome.not_reached:
         print(f"not reached: {', '.join(outcome.not_reached)}")
 
-    manual = client.open_merge_tool(outcome.stopped_at)
+    manual = client.open_merge_tool(outcome.stopped_at_id)
     if manual is None:
         print(f"merge tool closed. Review {outcome.stopped_at}, then commit.")
     else:

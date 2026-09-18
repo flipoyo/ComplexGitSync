@@ -203,6 +203,52 @@ def test_resolve_merges_the_clean_leaf_and_stops_at_the_conflict(
     )
 
 
+def test_resolve_reports_the_id_open_merge_tool_can_actually_use(
+    tree_with_one_blocked_repo,
+):
+    """`stopped_at` is a display name; a merge tool is opened by id instead.
+
+    Real field failure: `merge --resolve` stopping at `.memory` crashed with
+    a bare `KeyError('.memory')` — `open_merge_tool` looked the repository
+    up in the registry by its *name*, which is not always its *id* (this
+    fixture's root has `repo_id="root"`, `name="project"`, same as `.memory`
+    never having `repo_id=".memory"`). `stopped_at_id` is what fixes it.
+    """
+    tree = tree_with_one_blocked_repo
+
+    outcome = merge_tree_one_at_a_time(tree, GitRunner(), _MERGE_BRANCH)
+
+    assert outcome.stopped_at == "project"
+    assert outcome.stopped_at_id == "root"
+    assert tree.get(outcome.stopped_at_id) is tree.get("root")
+    with pytest.raises(KeyError):
+        tree.get(outcome.stopped_at)
+
+
+def test_client_open_merge_tool_accepts_the_id_and_refuses_the_name(
+    tree_with_one_blocked_repo, monkeypatch
+):
+    """The exact call `cli/expert.py` makes after a `--resolve` stop.
+
+    A missing merge tool is the common case in a test environment, so this
+    only has to prove the lookup itself succeeds — not that a tool opens.
+    """
+    from ComplexGitSync.errors import GitSyncError
+    from ComplexGitSync.orchestre import ComplexGitSyncClient
+
+    tree = tree_with_one_blocked_repo
+    client = ComplexGitSyncClient(git_runner=GitRunner())
+    client.registry = tree
+    monkeypatch.setattr(ComplexGitSyncClient, "_resolve_merge_tool", lambda self, path: (None, None))
+    outcome = merge_tree_one_at_a_time(tree, GitRunner(), _MERGE_BRANCH)
+
+    manual = client.open_merge_tool(outcome.stopped_at_id)
+
+    assert manual is not None  # no tool configured: the "resolve by hand" command
+    with pytest.raises(GitSyncError, match="not a repository in this tree"):
+        client.open_merge_tool(outcome.stopped_at)
+
+
 def test_the_check_is_read_only_even_when_it_cannot_decode(tree_with_one_blocked_repo):
     """HEAD, index and worktree survive a preflight over undecodable content."""
     tree = tree_with_one_blocked_repo
