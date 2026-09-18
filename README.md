@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.79
+# ComplexGitSync v0002.80
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -308,7 +308,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `import-submodules` | `<repo-root>` `--apply` `--recursive` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
 | Expert | `init-from-submodules` | `<repo-root>` `--cgs` `--max-depth` `--dry-run` `--force` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
 | Expert | `verify` | `--repair` `--search-dir` `--json` | Say whether this workspace's recorded history is verified, absent, legacy or corrupt. |
-| Expert | `memory` | `status` `list` `show <state>` `explore` `init` `mount` `adopt` `branch` `clone` `push` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. |
+| Expert | `memory` | `status` `list` `show <state>` `explore` `init` `mount` `adopt [--reboot]` `branch` `clone` `push` `reboot` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. |
 | Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
 | Configuration | `create-cgs` | `--project` `--repo` `--output` | Create a validated .cgs specification from CLI project definitions. |
@@ -551,6 +551,38 @@ case, not a failure.
 A memory mounted before `cgitsync memory migrate` existed sat directly at
 `.cgitsync` instead. Running `cgitsync memory migrate` once moves it onto
 the layout above — nothing but the mount's own path changes.
+
+### Starting a memory's history over
+
+A project's shape changes — repositories added, removed, restructured —
+and a memory built for the old shape stops being a clean answer to "what
+does this project look like." `cgitsync memory reboot` closes the current
+chapter and opens an empty one, without losing the old one:
+
+```bash
+cgitsync memory reboot
+```
+
+```
+folded=12 pending record(s)
+archived=ComplexGitSync -> ComplexGitSync.archived-20260917
+exported=.cgitsync/.memory/.cgs/ComplexGitSync-v2.cgs
+branch=ComplexGitSync (fresh, empty)
+next: use the tool as normal — the next command writes this branch's first State
+```
+
+Nothing is ever deleted or force-pushed. The old branch is renamed —
+locally and on origin — to `<branch>.archived-<date>`, still fetchable
+with every State, ledger entry and commit message it ever held; a fresh,
+empty branch takes the original name, so nothing about how the memory is
+mounted changes. The tree's current shape is exported to a permanent,
+versioned `.cgs` (`.cgitsync/.memory/.cgs/<project>-v<N>.cgs`, `N`
+incrementing once per reboot — never overwritten, never reused) rather
+than read from any hand-authored file. `cgitsync memory adopt --reboot`
+is the same fresh start for a mount being adopted for the very first time:
+it adopts the repository identity but starts its content empty instead of
+carrying forward whatever the fallback branch already holds. Appending —
+the ordinary `memory adopt` — stays the default either way.
 
 **What a memory carries off your machine.** One path: the tree's own root,
 with `$HOME` substituted. Everything else it records — every repository

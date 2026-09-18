@@ -59,7 +59,7 @@ COMMANDS: dict[str, str] = {
     "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
     "init-from-submodules": "Adopt a submodule-based checkout: discover, initialise, then convert its submodules.",
     "verify": "Verify the hash-chained .cgitsync/lgr register for tamper-evidence.",
-    "memory": "Look at what this workspace remembers: status, list, show <state>, explore.",
+    "memory": "Look at what this workspace remembers: status, list, show <state>, explore, reboot.",
 }
 
 
@@ -606,6 +606,12 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     adopt.add_argument(
         "--remote", help="Adopt this address instead of the one the project's owner implies."
     )
+    adopt.add_argument(
+        "--reboot",
+        action="store_true",
+        help="Adopt the repository identity, but start its content fresh rather than "
+        "carrying forward whatever the fallback branch already holds.",
+    )
     _add_search_dir_argument(adopt)
 
     migrate = memory_commands.add_parser(
@@ -655,6 +661,12 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
         help="Every ledger entry in order, not only the commits that were published.",
     )
     _add_search_dir_argument(explore)
+
+    reboot = memory_commands.add_parser(
+        "reboot",
+        help="Archive this memory's current branch and start a fresh, empty one under its name.",
+    )
+    _add_search_dir_argument(reboot)
 
     subparser.set_defaults(handler=_handle_memory)
 
@@ -982,6 +994,7 @@ def _handle_memory(args: argparse.Namespace) -> int:
             project_branch=getattr(args, "project_branch", None),
             no_push=getattr(args, "no_push", False),
             timeline=getattr(args, "timeline", False),
+            reboot=getattr(args, "reboot", False),
         ),
     )
 
@@ -1001,6 +1014,7 @@ def _execute_memory(
     project_branch: str | None = None,
     no_push: bool = False,
     timeline: bool = False,
+    reboot: bool = False,
 ) -> int:
     if subcommand == "status":
         return _print_memory_status(client.memory_status(cgshome))
@@ -1026,8 +1040,12 @@ def _execute_memory(
     if subcommand == "adopt":
         _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
         return _print_memory_adopt(
-            client.memory_adopt(cgshome, owner=owner, branch=branch, remote=remote)
+            client.memory_adopt(
+                cgshome, owner=owner, branch=branch, remote=remote, reboot=reboot
+            )
         )
+    if subcommand == "reboot":
+        return _print_memory_reboot(client.memory_reboot(cgshome))
     if subcommand == "migrate":
         _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
         return _print_memory_migrate(
@@ -1132,6 +1150,15 @@ def _print_memory_push(result: dict) -> int:
         f"pushed branch={result['branch']} states={result['states']} "
         f"entries={result['entries']}"
     )
+    return EXIT_OK
+
+
+def _print_memory_reboot(result: dict) -> int:
+    print(f"folded={result['folded']} pending record(s)")
+    print(f"archived={result['archived_from']} -> {result['archived_to']}")
+    print(f"exported={result['exported']}")
+    print(f"branch={result['branch']} (fresh, empty)")
+    print("next: use the tool as normal — the next command writes this branch's first State")
     return EXIT_OK
 
 

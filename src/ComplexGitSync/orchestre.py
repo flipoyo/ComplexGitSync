@@ -233,7 +233,7 @@ from .registry import (
     build_registry_from_gts_document,
 )
 from .settings import UseCase, resolve_use_case
-from .snapshot_resolver import discover_cgshome
+from .snapshot_resolver import discover_cgshome, discover_gts_path
 from .status_render import (
     PROJECT_SCOPE_LABEL,
     SCOPE_LEGEND,
@@ -1210,6 +1210,26 @@ def _write_file_atomically(destination: Path, write: Any) -> None:
         temporary.replace(destination)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _next_reboot_cgs_version(cgs_dir: Path, project_name: str) -> int:
+    """The `-v<N>` a `memory reboot` export should carry next.
+
+    The topology before any reboot is implicitly `v1` and is never written
+    under that name (`memory-dev_1-4_MemoryReboot_DevPlanTicket.md` §2), so
+    an empty directory answers `2` — one more than the unwritten `v1` —
+    and every later reboot answers one more than the highest version
+    already sitting beside it. Never reused, never chosen: found by
+    scanning, the same discipline a State's own name already follows.
+    """
+    pattern = re.compile(rf"^{re.escape(project_name)}-v(\d+)\.cgs$")
+    highest = 1
+    if cgs_dir.is_dir():
+        for path in cgs_dir.iterdir():
+            match = pattern.match(path.name)
+            if match:
+                highest = max(highest, int(match.group(1)))
+    return highest + 1
 
 
 def _legacy_register_exists(workspace: Path) -> bool:
@@ -4269,6 +4289,7 @@ class ComplexGitSyncClient:
         owner: str | None = None,
         branch: str | None = None,
         remote: str | None = None,
+        reboot: bool = False,
     ) -> dict[str, Any]:
         """Make this workspace's memory mount *be* a repository.
 
@@ -4282,6 +4303,14 @@ class ComplexGitSyncClient:
         Nothing is committed and nothing is pushed: `memory push` does both
         and already knows how. This only ends the state where there is
         nowhere to push *from*.
+
+        *reboot* (`cgitsync memory adopt --reboot`,
+        `memory-dev_1-4_MemoryReboot_DevPlanTicket.md` §4) skips the one
+        step below that would otherwise carry history forward: starting
+        *target_branch* from `fallback_branch`'s tip when that branch
+        already exists on the remote. Append — inheriting that history — is
+        still the default; `reboot=True` leaves the branch exactly as
+        `init_repository` made it, with nothing to inherit from.
         """
         workspace = Path(cgshome)
         mount = memory_mount_path(workspace)
@@ -4311,7 +4340,7 @@ class ComplexGitSyncClient:
         self.git_runner.configure_remote(mount, "origin", remote_url)
         self.git_runner.fetch(mount)
         started_from = ""
-        if base and self.git_runner.remote_branch_exists(remote_url, base):
+        if not reboot and base and self.git_runner.remote_branch_exists(remote_url, base):
             # Started from the repository's own default branch so the branch
             # shares its history, which is what makes `fallback_branch` in
             # the mount entry mean something.
@@ -4567,6 +4596,101 @@ class ComplexGitSyncClient:
             "recorded": len(pending),
             "states": status["states"],
             "entries": status["entries"],
+        }
+
+    def memory_reboot(self, cgshome: str | Path) -> dict[str, Any]:
+        """Close this memory's current chapter and open a fresh one, keeping the old.
+
+        Four steps (`memory-dev_1-4_MemoryReboot_DevPlanTicket.md` §1), in
+        this order, touching nothing but the memory itself:
+
+        1. Whatever `.cgitsync` is holding pending is folded in and pushed
+           under the branch's current name — `memory_push`'s own fold and
+           push, reused rather than duplicated, so nothing recorded since
+           the last push is lost to the reboot (§5 D6).
+        2. The tree's current shape is exported — `to_cgs()` against the
+           loaded `.gts`, never a hand-authored file — to a permanent,
+           versioned `.cgitsync/.memory/.cgs/<project>-v<N>.cgs`, committed
+           and pushed by the same call as step 1.
+        3. The branch is archived: pushed to origin under
+           `<branch>.archived-<YYYYMMDD>` *before* the old name is removed
+           from origin, never the reverse, so the commits are always
+           reachable under some name on the remote — then renamed locally
+           to match.
+        4. A fresh branch is created under the original name; its States,
+           ledger, commit logs and run logs are cleared, so the new
+           branch's first commit is a true beginning. `.cgs/`'s versioned
+           exports (step 2, and every export before it) are the one thing
+           *not* cleared — §2 calls that directory "a permanent, ordered
+           record of every shape this project's memory has ever
+           described," which a reboot is not exempt from being part of.
+           Nothing is committed on the fresh branch: the next ordinary
+           write does that, exactly as a freshly adopted mount already
+           works.
+
+        Raises `GitSyncError` when the mount is not a repository yet
+        (`memory adopt` first), and when today's archived name already
+        exists — a second reboot the same day needs the owner to say what
+        to call it, rather than silently colliding with the first.
+        """
+        workspace = Path(cgshome)
+        mount = memory_mount_path(workspace)
+        if not (mount / ".git").exists():
+            raise GitSyncError(
+                f"{mount} is not a repository yet. Run 'cgitsync memory adopt' first."
+            )
+
+        registry = self.load_gts(discover_gts_path(str(workspace)))
+        project_name = registry.get(ROOT_REPO_ID).name
+
+        folded = self._fold_memory_pending(memory_pending_path(workspace), mount)
+
+        cgs_dir = mount / ".cgs"
+        cgs_dir.mkdir(parents=True, exist_ok=True)
+        next_version = _next_reboot_cgs_version(cgs_dir, project_name)
+        exported_path = cgs_dir / f"{project_name}-v{next_version}.cgs"
+        _write_file_atomically(exported_path, registry.to_cgs().to_toml)
+
+        pushed = self.memory_push(
+            workspace,
+            message=f"{project_name} memory reboot: exporting v{next_version} before archiving",
+        )
+        current_branch = str(pushed["branch"])
+
+        archived_branch = f"{current_branch}.archived-{datetime.now(UTC):%Y%m%d}"
+        remote_url = self.git_runner.remote_get_url(mount, "origin") or ""
+        if self.git_runner.local_branch_exists(mount, archived_branch) or (
+            remote_url and self.git_runner.remote_branch_exists(remote_url, archived_branch)
+        ):
+            raise GitSyncError(
+                f"{archived_branch} already exists — this memory was already rebooted "
+                "today. Archive it under another name yourself first, or wait for tomorrow."
+            )
+
+        self.git_runner.push_ref_as(mount, current_branch, archived_branch, remote="origin")
+        self.git_runner.delete_remote_branch(mount, current_branch, remote="origin")
+        self.git_runner.rename_branch(mount, current_branch, archived_branch)
+
+        self.git_runner.create_orphan_branch(mount, current_branch)
+        for cleared in (*self._FOLD_SUBDIRS[:-1], COMMIT_LOG_DIR_NAME):
+            # Every fold subdirectory except `.cgs` — the one the fold
+            # brings forward is exactly the one a reboot must not erase.
+            self.git_runner.remove_tracked_path(mount, cleared)
+
+        self._log_event(
+            "memory_reboot",
+            mount=mount,
+            archived=archived_branch,
+            exported=exported_path,
+            branch=current_branch,
+        )
+        return {
+            "mount": str(mount),
+            "folded": folded,
+            "exported": str(exported_path),
+            "archived_from": current_branch,
+            "archived_to": archived_branch,
+            "branch": current_branch,
         }
 
     def memory_status(self, cgshome: str | Path) -> dict[str, Any]:

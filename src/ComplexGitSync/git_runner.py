@@ -286,6 +286,25 @@ class GitRunnerProtocol(Protocol):
 
     def checkout(self, repo_path: Path | str, branch: str) -> None: ...
 
+    def create_orphan_branch(self, repo_path: Path | str, branch: str) -> None: ...
+
+    def rename_branch(self, repo_path: Path | str, old_name: str, new_name: str) -> None: ...
+
+    def push_ref_as(
+        self,
+        repo_path: Path | str,
+        local_ref: str,
+        remote_ref: str,
+        *,
+        remote: str = "origin",
+    ) -> None: ...
+
+    def delete_remote_branch(
+        self, repo_path: Path | str, branch: str, *, remote: str = "origin"
+    ) -> None: ...
+
+    def remove_tracked_path(self, repo_path: Path | str, relative_path: str) -> None: ...
+
     def has_uncommitted_changes(self, repo_path: Path | str) -> bool: ...
 
     def status_porcelain(self, repo_path: Path | str) -> list[str]: ...
@@ -585,6 +604,69 @@ class GitRunner:
     def checkout(self, repo_path: Path | str, branch: str) -> None:
         """Switch *repo_path* to *branch* (``git checkout``)."""
         self._run("checkout", branch, cwd=repo_path)
+
+    def create_orphan_branch(self, repo_path: Path | str, branch: str) -> None:
+        """Switch to a brand-new *branch* with no parent commit (``git checkout --orphan``).
+
+        The index and worktree carry over from whatever was checked out
+        before — nothing is cleared here. Used by `memory reboot`
+        (`memory-dev_1-4_MemoryReboot_DevPlanTicket.md`) once *branch*'s old
+        name has been renamed out of the way, so the fresh branch inherits no
+        history at all; :meth:`remove_all_tracked` is the caller's next step.
+        """
+        self._run("checkout", "--orphan", branch, cwd=repo_path)
+
+    def rename_branch(self, repo_path: Path | str, old_name: str, new_name: str) -> None:
+        """Rename a local branch in place (``git branch -m``), keeping its history."""
+        self._run("branch", "-m", old_name, new_name, cwd=repo_path)
+
+    def push_ref_as(
+        self,
+        repo_path: Path | str,
+        local_ref: str,
+        remote_ref: str,
+        *,
+        remote: str = "origin",
+    ) -> None:
+        """Push *local_ref* to *remote* under *remote_ref*'s name.
+
+        Git has no native "rename a remote branch" — the safe way to do it
+        is to push the commits under the new name first (so they are always
+        reachable under *some* name on the remote) and only then remove the
+        old one with :meth:`delete_remote_branch`. Never force: a name
+        collision on the remote fails loudly rather than overwriting
+        history that was pushed there under the same name by someone else.
+        """
+        self._run("push", remote, f"{local_ref}:refs/heads/{remote_ref}", cwd=repo_path)
+
+    def delete_remote_branch(
+        self, repo_path: Path | str, branch: str, *, remote: str = "origin"
+    ) -> None:
+        """Remove *branch* from *remote* (``git push --delete``).
+
+        Only ever the second half of a rename (:meth:`push_ref_as` first) —
+        by the time this runs, the same commits are already reachable under
+        the new name, so nothing the memory ever recorded becomes
+        unreachable, even for the instant between the two calls.
+        """
+        self._run("push", remote, "--delete", branch, cwd=repo_path)
+
+    def remove_tracked_path(self, repo_path: Path | str, relative_path: str) -> None:
+        """Clear *relative_path* from the index and the worktree (``git rm -rf``).
+
+        Used after :meth:`create_orphan_branch` to empty specific
+        directories the inherited index and worktree still carry, leaving
+        any sibling path untouched — `memory reboot`
+        (`memory-dev_1-4_MemoryReboot_DevPlanTicket.md` §1.4) clears
+        States, the ledger, commit logs and run logs this way while
+        leaving `.cgs/`'s versioned exports (§2) alone, so a per-path call
+        rather than a blanket ``git rm -rf .``. A no-op when nothing under
+        *relative_path* is tracked — `git rm` refuses a pathspec that
+        matches no file, and an untouched orphan branch is not an error.
+        """
+        if not self._query("ls-files", "--", relative_path, cwd=repo_path).stdout.strip():
+            return
+        self._run("rm", "-rf", "--", relative_path, cwd=repo_path)
 
     def has_uncommitted_changes(self, repo_path: Path | str) -> bool:
         """Return ``True`` if *repo_path* has any tracked or staged modifications."""
