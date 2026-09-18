@@ -22,7 +22,7 @@
     },
     "cli/_shared.py": {
       "internal_imports": 21,
-      "loc": 542,
+      "loc": 573,
       "public_symbols": 0
     },
     "cli/configuration.py": {
@@ -36,8 +36,8 @@
       "public_symbols": 5
     },
     "cli/expert.py": {
-      "internal_imports": 23,
-      "loc": 1835,
+      "internal_imports": 25,
+      "loc": 1846,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -167,7 +167,7 @@
     },
     "orchestre.py": {
       "internal_imports": 144,
-      "loc": 5108,
+      "loc": 5169,
       "public_symbols": 11
     },
     "paths.py": {

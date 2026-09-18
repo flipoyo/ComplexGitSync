@@ -1324,6 +1324,14 @@ class ComplexGitSyncClient:
     # skipped, the same way it reads last_gitignore_sync.
     last_write_outcomes: tuple[RepoOutcome, ...] = ()
 
+    #: What the last ``push``/``tag``/``freeze`` folded and sent to this
+    #: project's own memory, before doing anything else — ``memory_push``'s
+    #: own result dict, or ``None`` when no memory is mounted or the fold
+    #: could not proceed (warned, not raised: see ``_fold_memory_before_push``).
+    #: Kept here for the same reason as ``last_write_outcomes``: a caller
+    #: reading it after the fact, Python or CLI, needs no second call.
+    last_memory_fold: dict[str, Any] | None = None
+
     #: The report the last ``verify_json`` produced, so a caller that needs
     #: both the rendered object and the verdict does not have to verify the
     #: chain twice — which with ``--repair`` would mean repairing twice.
@@ -3701,6 +3709,7 @@ class ComplexGitSyncClient:
         previous_state = registry.lifecycle_state
         scope = self._write_scope(registry, "push", private, all_writable)
         self._log_event("push_start", scope=scope.value)
+        self._fold_memory_before_push()
         protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
         try:
             self.last_write_outcomes = _as_write_outcomes(
@@ -3732,6 +3741,7 @@ class ComplexGitSyncClient:
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self._log_event("tag_start", tag_name=tag_name)
+        self._fold_memory_before_push()
         scope = (
             RepoScope.PRIVATE
             if private
@@ -3851,6 +3861,7 @@ class ComplexGitSyncClient:
             stage_all=stage_all,
             scope=scope.value,
         )
+        self._fold_memory_before_push()
         self.orchestre.git_tree.git.freeze(
             self.git_runner,
             tag_name,
@@ -4557,6 +4568,70 @@ class ComplexGitSyncClient:
             legacy.replace(mount / legacy.name)
             moved += 1
         return moved
+
+    def _memory_declared(self, registry: WorkingGitTree) -> bool:
+        """Whether *registry* declares a memory mount at all (`MOUNT_PATH`).
+
+        Says nothing about whether `memory adopt`/`memory clone` has run —
+        `memory_push` itself answers that, by raising when the mount's
+        `.git` is absent. Most trees declare no memory at all, which is why
+        this check exists separately: printing anything about a memory that
+        does not exist would be noise on every ordinary push.
+        """
+        return any(entry.relative_path == Path(MOUNT_PATH) for entry in registry.values())
+
+    def memory_declared(self) -> bool:
+        """Whether the loaded tree declares a memory mount at all.
+
+        The public, no-argument form of :meth:`_memory_declared` — used by
+        the CLI to decide whether a ``--dry-run`` plan should mention the
+        fold the real run would attempt
+        (`main_1-1_PushFoldsMemory_DevPlanTicket.md` D4). Says nothing
+        about adoption; `memory_push` is what answers that.
+        """
+        return self._memory_declared(self.get_dependency_registry())
+
+    def _fold_memory_before_push(self) -> dict[str, Any] | None:
+        """Fold this project's own memory and send it, before publishing anything else.
+
+        Unconditional, once a memory is mounted — `.cgitsync/.memory` is
+        this project's own record of itself, not a `--private`-scoped
+        configuration repository, so no scope flag decides whether this
+        runs (`main_1-1_PushFoldsMemory_DevPlanTicket.md` D1). Called first,
+        by `push()`, `tag()`, and `_freeze_tag()` (covering `freeze`/
+        `freeze_state`), so `.cgitsync` never carries more than what has
+        accumulated since the command that is about to publish something
+        else — `freeze_release` folding twice in one run, once via its own
+        `push()` call and once via its own `freeze()` call, is a harmless
+        consequence of that rather than a special case.
+
+        Returns `None`, without doing anything, when the tree declares no
+        memory mount (D2, most trees). When one is declared, returns
+        `memory_push`'s own result — or warns and returns `None` when
+        `memory_push` raises, whether because `memory adopt`/`memory clone`
+        was never run or for any other reason (D2/D3): an otherwise
+        successful push, tag, or freeze must never be blocked by the
+        memory's own trouble reaching its remote. Warned rather than
+        printed, so a Python caller hears it too, the same reasoning
+        `_warn_if_build_changes` already follows. Also recorded on
+        `self.last_memory_fold`, so the CLI can report what was folded
+        (count, branch, whether anything was committed) without asking
+        `memory_push` to run a second time.
+        """
+        registry = self.get_dependency_registry()
+        self.last_memory_fold = None
+        if not self._memory_declared(registry):
+            return None
+        try:
+            self.last_memory_fold = self.memory_push(self._workspace_root())
+        except GitSyncError as exc:
+            warnings.warn(
+                f"memory not folded: {exc} Run 'cgitsync memory push' by hand "
+                "once this is resolved.",
+                stacklevel=3,
+            )
+            return None
+        return self.last_memory_fold
 
     def memory_push(self, cgshome: str | Path, *, message: str | None = None) -> dict[str, Any]:
         """Fold what has accumulated since the last push, commit it, and send it.

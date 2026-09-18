@@ -27,9 +27,11 @@ from ._shared import (
     _format_tree_state_line,
     _json_stdout,
     _load_ready_registry_source,
+    _memory_declared_for_dry_run,
     _non_negative_int,
     _print_dry_run_plan,
     _print_gitignore_sync_report,
+    _print_memory_fold_outcome,
     _print_repo_tree_result,
     _print_write_outcomes,
     _resolve_cgshome,
@@ -1901,10 +1903,13 @@ def _execute_push(
     scope = _resolve_write_scope(client, private=private, command="push", all_writable=all_writable)
     print("git_command=git push (-u origin <branch> when upstream is missing)")
     if dry_run:
+        actions = ("git push", "git push -u origin <branch> when upstream is missing")
+        if _memory_declared_for_dry_run(client):
+            actions = ("cgitsync memory push", *actions)
         _print_dry_run_plan(
             client,
             command_name="push",
-            actions=("git push", "git push -u origin <branch> when upstream is missing"),
+            actions=actions,
             scope=scope,
         )
     else:
@@ -1913,6 +1918,7 @@ def _execute_push(
             private=private,
             all_writable=all_writable,
         )
+        _print_memory_fold_outcome(client)
         _print_write_outcomes(
             client,
             verb="pushed",
@@ -1939,6 +1945,7 @@ def _execute_tag(
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git tag {name} && git push origin {name}")
     client.tag(name, private=private)
+    _print_memory_fold_outcome(client)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -1962,14 +1969,18 @@ def _execute_freeze(
     )
     print(f"git_command=git add --all && git commit -m {name!r} && git tag {name} && git push")
     if dry_run:
+        actions = ("git add --all", f"git commit -m {name!r}", f"git tag {name}", "git push")
+        if _memory_declared_for_dry_run(client):
+            actions = ("cgitsync memory push", *actions)
         _print_dry_run_plan(
             client,
             command_name="freeze",
-            actions=("git add --all", f"git commit -m {name!r}", f"git tag {name}", "git push"),
+            actions=actions,
             scope=scope,
         )
     else:
         client.freeze(name, private=private)
+        _print_memory_fold_outcome(client)
     tree_state = client.get_tree_state()
     snapshot_path = getattr(client, "loaded_snapshot_path", None)
     snapshot_suffix = f" snapshot={snapshot_path}" if snapshot_path is not None else ""

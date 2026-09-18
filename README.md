@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.84
+# ComplexGitSync v0002.85
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -286,8 +286,8 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Minimalist | `initialise` | `[source]` `--output-path` `--force-protocol` `--force-reclone` `--commit-gitignore` | Initialise a project tree: clone(.cgs) or restore state(.gts). Re-clones every dependency; refuses when one holds unpushed work. |
 | Minimalist | `bootstrap` | `<source> <project-name>` `--cgs-path` `--force-protocol` | Clone a brand-new project tree into an isolated CGSHOME, for running ComplexGitSync standalone (not nested inside the project). |
 | Minimalist | `clean-init` | `<source>` `--output-path` `--force-protocol` `--commit-gitignore` | Purge generated clone state, then initialise from a .cgs spec. |
-| Minimalist | `freeze-release` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull, push, and freeze from a READY tree. |
-| Minimalist | `freeze-release-force` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull-force, push, and freeze from a READY tree. |
+| Minimalist | `freeze-release` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull, push, and freeze from a READY tree. Its own `push` and `freeze` steps each fold and send the memory, same as running them separately. |
+| Minimalist | `freeze-release-force` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull-force, push, and freeze from a READY tree. Its own `push` and `freeze` steps each fold and send the memory, same as running them separately. |
 | Minimalist | `status` | `--gts` `--search-dir` `--json` | Summarize tree readiness and sync state. |
 | Minimalist | `view-tree` | `[source]` `--depth` `--collapse` `--discover-nested` | Render a topology-focused tree view in terminal. |
 | Minimalist | `launch-release` | `<release>` `--gts` `--search-dir` | Check out a frozen release tag from a READY tree. |
@@ -302,9 +302,9 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `rm` | `<PATH ...>` `--private` `--dry-run` `--gts` | Remove one or more tracked files, each from the repo that owns it. |
 | Expert | `commit` | `[message]` `--message` `--private` `--no-stage` `--dry-run` | Commit dirty repositories from a READY tree. |
 | Expert | `merge` | `<branch>` `--into` `--private` `--ff-only` `--no-ff` `--dry-run` `--resolve` | Merge a project branch across a READY tree, leaf-first. Names every conflicting file when it refuses. `--into <target>` checks out the target and merges into it in one command. |
-| Expert | `push` | `--private` `--dry-run` `--force-protocol` `--gts` | Push repositories from a READY tree. |
-| Expert | `tag` | `<name>` `--private` `--gts` | Create and push a tag across a READY tree. |
-| Expert | `freeze` | `<name>` `--private` `--dry-run` `--gts` | Freeze a versioned state and emit a .gts snapshot. |
+| Expert | `push` | `--private` `--dry-run` `--force-protocol` `--gts` | Push repositories from a READY tree. Folds and sends this project's own memory first, when one is mounted and adopted. |
+| Expert | `tag` | `<name>` `--private` `--gts` | Create and push a tag across a READY tree. Folds and sends the memory first, same as `push`. |
+| Expert | `freeze` | `<name>` `--private` `--dry-run` `--gts` | Freeze a versioned state and emit a .gts snapshot. Folds and sends the memory first, same as `push`. |
 | Expert | `import-submodules` | `<repo-root>` `--apply` `--recursive` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
 | Expert | `init-from-submodules` | `<repo-root>` `--cgs` `--max-depth` `--dry-run` `--force` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
 | Expert | `verify` | `--repair` `--search-dir` `--json` | Say whether this workspace's recorded history is verified, absent, legacy or corrupt. |
@@ -546,9 +546,16 @@ cgitsync memory push     # fold what accumulated, commit it, and push it
 `cgitsync` speaks Git and nothing else, so it prints the one command that
 creates it and waits.
 
-Nothing is pushed automatically. A machine with no network keeps a
-complete, verifiable memory and sends it later — offline is the normal
-case, not a failure.
+Once mounted and adopted, nothing needs to be pushed by hand any more:
+`push`, `tag`, and `freeze` each fold and send this project's own memory
+first, before doing anything else — the same frontier `memory push` always
+crossed, crossed automatically by every command that was already about to
+reach a remote for an unrelated reason. `cgitsync memory push` remains the
+way to settle the memory on its own, with nothing else to publish. A
+machine with no network, or a memory that cannot reach its remote for any
+other reason, still keeps a complete, verifiable memory: the fold warns
+and the command it was folding for finishes anyway, offline being the
+normal case, not a failure.
 
 A memory mounted before `cgitsync memory migrate` existed sat directly at
 `.cgitsync` instead. Running `cgitsync memory migrate` once moves it onto

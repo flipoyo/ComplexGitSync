@@ -397,6 +397,42 @@ def _print_dry_run_plan(
     _print_scope_note(client, scope)
 
 
+def _memory_declared_for_dry_run(client: ComplexGitSyncClient) -> bool:
+    """Whether ``--dry-run`` should mention the memory fold the real run
+    would attempt. ``False`` for anything that is not the real client
+    (a CLI test double, most often) — same defensive shape as
+    :func:`_format_leaf_first_repo_order`."""
+    try:
+        return client.memory_declared()
+    except AttributeError:
+        return False
+
+
+def _print_memory_fold_outcome(client: ComplexGitSyncClient) -> None:
+    """Say what the command just folded into this project's own memory, if any.
+
+    Printed ahead of the command's own outcome lines
+    (`main_1-1_PushFoldsMemory_DevPlanTicket.md` WP-3): `push`/`tag`/
+    `freeze` now cross the `.cgitsync` → `.cgitsync/.memory` frontier
+    before doing their own work, and a person reading the output should
+    see that happen before whatever they actually ran. Prints nothing
+    when the tree declares no memory (`last_memory_fold` stays `None`) —
+    the common case, and not worth a line on every ordinary push — or when
+    *client* is a test double that carries no such attribute at all, the
+    same defensive shape :func:`_print_write_outcomes` already uses.
+    """
+    try:
+        fold = client.last_memory_fold
+    except AttributeError:
+        return
+    if fold is None:
+        return
+    print(
+        f"memory_fold branch={fold['branch']} committed={fold['committed']} "
+        f"recorded={fold['recorded']}"
+    )
+
+
 def _format_leaf_first_repo_order(
     client: ComplexGitSyncClient,
     scope: RepoScope = RepoScope.ALL,
