@@ -21,7 +21,7 @@ would only obscure). See each submodule's own docstring for its slice of
 the command surface: cli._shared (helpers used across every group),
 cli.minimalist (initialise/bootstrap/clean-init/freeze-release(-force)/
 status/view-tree/launch-release), cli.expert (purge/validate/clone/
-pull(-force)/checkout/branch/add/commit/push/tag/freeze/
+pull(-force)/checkout/branch/close-branch/add/commit/push/tag/freeze/
 import-submodules/verify), cli.configuration (discover/configure/
 create-cgs), cli.suggest (the "did you mean ...?" hint on a typo).
 """

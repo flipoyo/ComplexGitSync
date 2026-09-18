@@ -18,6 +18,7 @@ Free functions exported here (Tier 2 — Actions):
     restart_tree_force        Destructively resync the tree, discarding local changes
     checkout_tree             propagate → create → git checkout, parent-first
     branch_tree               propagate → create branch refs, no checkout
+    close_branch              Rename a branch to its closed name, tree-wide, leaf-first
     add_tree                  Stage changes across the tree, leaf-first
     remove_paths              Remove one or more tracked files, each from its owning repo
     commit_tree               Stage and commit changes across the tree, leaf-first
@@ -42,7 +43,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from .errors import GitSyncError, TreeNotReadyError
-from .git_branch import DEFAULT_BRANCH, resolve_entry_ref, resolve_propagated_ref
+from .git_branch import (
+    DEFAULT_BRANCH,
+    closeable,
+    closed_branch_name,
+    resolve_entry_ref,
+    resolve_propagated_ref,
+)
 from .git_repo import (
     AccessProtocol,
     RefKind,
@@ -467,6 +474,98 @@ def branch_tree(
     propagate_global_branch(tree, branch_name, ref_kind=RefKind.BRANCH)
     create_global_branch(tree, git_runner, branch_name, scope=scope)
     tree.recompute_tree_state()
+
+
+# ---------------------------------------------------------------------------
+# close_branch — Tier 2 action
+# ---------------------------------------------------------------------------
+
+
+def close_branch(
+    tree: WorkingGitTree,
+    git_runner: GitRunner,
+    branch_name: str,
+    *,
+    scope: RepoScope = RepoScope.ALL,
+) -> tuple[RepoOutcome, ...]:
+    """Rename *branch_name* to its closed name, tree-wide, leaf-first.
+
+    Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
+    otherwise. Renames, never deletes
+    (`main_1-1_BranchClosing_DevPlanTicket.md` D1): per repository, the
+    commits are pushed under the closed name
+    (:meth:`~ComplexGitSync.git_runner.GitRunner.push_ref_as`) before the
+    old remote name is removed
+    (:meth:`~ComplexGitSync.git_runner.GitRunner.delete_remote_branch`), so
+    they are always reachable under *some* name on the remote — the same
+    order `memory_reboot`'s own branch archiving already uses — and only
+    then is the local branch renamed
+    (:meth:`~ComplexGitSync.git_runner.GitRunner.rename_branch`). A branch
+    with nothing pushed under it yet (no remote, or the remote never had
+    it) is renamed locally only; there is no old remote name to remove.
+
+    Refuses, raising :exc:`~.errors.GitSyncError`, before touching any
+    repository:
+
+    * when *branch_name* is the project's own default branch
+      (:func:`~ComplexGitSync.git_branch.closeable`) — every fallback
+      chain :func:`~ComplexGitSync.git_branch.resolve_declared_ref`
+      computes eventually lands there;
+    * when any repository in *scope* is currently checked out on
+      *branch_name* (D5) — this command closes a branch, it does not move
+      the tree off one; the caller checks it out elsewhere first.
+
+    A repository with no local branch named *branch_name* is skipped, not
+    an error: closing a branch that only ever existed on some repositories
+    (a private/local mount, for instance) is ordinary, not a mistake.
+    Returns one :class:`RepoOutcome` per repository visited, in the order
+    visited.
+    """
+    _assert_ready(tree)
+    root = tree.get(ROOT_REPO_ID) if ROOT_REPO_ID in tree.repos else None
+    project_default_branch = (root.default_branch if root else None) or DEFAULT_BRANCH
+    if not closeable(branch_name, project_default_branch=project_default_branch):
+        raise GitSyncError(
+            f"'{branch_name}' is this project's own default branch and cannot be "
+            "closed: every repository with no branch of its own falls back to it."
+        )
+
+    repos = list(iter_tree_leaf_first(tree, scope))
+    checked_out = [
+        repo.name
+        for repo in repos
+        if repo.current_ref_kind == RefKind.BRANCH and repo.current_ref_name == branch_name
+    ]
+    if checked_out:
+        raise GitSyncError(
+            f"cannot close '{branch_name}': "
+            f"{', '.join(sorted(checked_out))} {'is' if len(checked_out) == 1 else 'are'} "
+            f"currently checked out on it. Check out another branch there first, "
+            "then close it."
+        )
+
+    closed_name = closed_branch_name(branch_name)
+    outcomes: list[RepoOutcome] = []
+    for repo in repos:
+        if not git_runner.local_branch_exists(repo.absolute_path, branch_name):
+            outcomes.append(
+                RepoOutcome(name=repo.name, acted=False, detail=f"has no branch '{branch_name}'")
+            )
+            continue
+        remote = repo.remote_name or "origin"
+        remote_url = git_runner.remote_get_url(repo.absolute_path, remote)
+        published = bool(remote_url) and git_runner.remote_branch_exists(remote_url, branch_name)
+        if published:
+            git_runner.push_ref_as(repo.absolute_path, branch_name, closed_name, remote=remote)
+            git_runner.delete_remote_branch(repo.absolute_path, branch_name, remote=remote)
+        git_runner.rename_branch(repo.absolute_path, branch_name, closed_name)
+        detail = (
+            f"renamed to '{closed_name}'"
+            if published
+            else f"renamed to '{closed_name}' (never published; nothing to remove remotely)"
+        )
+        outcomes.append(RepoOutcome(name=repo.name, acted=True, detail=detail))
+    return tuple(outcomes)
 
 
 # ---------------------------------------------------------------------------

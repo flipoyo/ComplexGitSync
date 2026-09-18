@@ -37,7 +37,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 25,
-      "loc": 1846,
+      "loc": 1891,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -77,8 +77,8 @@
     },
     "git_branch.py": {
       "internal_imports": 2,
-      "loc": 312,
-      "public_symbols": 9
+      "loc": 346,
+      "public_symbols": 12
     },
     "git_repo.py": {
       "internal_imports": 0,
@@ -91,8 +91,8 @@
       "public_symbols": 4
     },
     "git_tree.py": {
-      "internal_imports": 34,
-      "loc": 1272,
+      "internal_imports": 35,
+      "loc": 1282,
       "public_symbols": 26
     },
     "git_tree_branch.py": {
@@ -161,13 +161,13 @@
       "public_symbols": 4
     },
     "operations.py": {
-      "internal_imports": 21,
-      "loc": 1684,
-      "public_symbols": 29
+      "internal_imports": 23,
+      "loc": 1770,
+      "public_symbols": 30
     },
     "orchestre.py": {
       "internal_imports": 144,
-      "loc": 5169,
+      "loc": 5200,
       "public_symbols": 11
     },
     "paths.py": {

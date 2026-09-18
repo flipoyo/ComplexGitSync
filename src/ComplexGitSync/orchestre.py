@@ -3150,6 +3150,39 @@ class ComplexGitSyncClient:
         self._log_event("branch_end", branch_name=branch_name)
         return registry
 
+    def close_branch(self, branch_name: str, *, private: bool = False) -> WorkingGitTree:
+        """Rename *branch_name* to its closed name across the full tree, leaf-first.
+
+        Renames, never deletes
+        (`main_1-1_BranchClosing_DevPlanTicket.md` D1) —
+        :func:`~ComplexGitSync.git_branch.closed_branch_name` names the
+        target, and :func:`~ComplexGitSync.operations.close_branch` performs
+        it. Refuses before touching any repository when *branch_name* is
+        the project's own default branch, or when any repository in scope
+        is currently checked out on it (D5) — see that function's own
+        docstring for the full contract. ``--private`` selects the writable
+        configuration repositories instead of the project's own, the same
+        as ``branch`` (create).
+        """
+        registry = self.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        self._log_event("close_branch_start", branch_name=branch_name)
+        scope = _scope_for(registry, private=private, command="branch close")
+        self.last_write_outcomes = self.orchestre.git_tree.git.close_branch(
+            self.git_runner, branch_name, scope=scope
+        )
+        if ROOT_REPO_ID in registry.repos:
+            snapshot_path = self.write_gts_snapshot(command_origin="close_branch")
+            if self.source_path is not None:
+                self.state_store.record_snapshot(self.source_path, snapshot_path)
+        self._log_tree_transition(previous_state, registry.lifecycle_state, reason="close_branch")
+        self._log_event(
+            "close_branch_end",
+            branch_name=branch_name,
+            closed=sum(1 for o in self.last_write_outcomes if o.acted),
+        )
+        return registry
+
     def _write_scope(
         self, registry: WorkingGitTree, command: str, private: bool, all_writable: bool
     ) -> RepoScope:

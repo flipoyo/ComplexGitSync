@@ -23,11 +23,14 @@ import pytest
 
 from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.git_branch import (
+    CLOSED_BRANCH_PREFIX,
     DEFAULT_BRANCH,
     PRIVATE_LOCAL_SEPARATOR,
     BranchResolution,
     BranchSource,
     apply_declared_defaults,
+    closeable,
+    closed_branch_name,
     private_local_branch,
     resolve_declared_ref,
     resolve_entry_ref,
@@ -433,6 +436,34 @@ class TestPrivateLocalBranchFollowsTheProject:
             resolve_propagated_ref(leaf, "feature-x", project_name="MyProject").name
             == "MyProject_feature-x"
         )
+
+
+class TestClosedBranchNaming:
+    """BranchClosing: a pure name, and a pure guard, no I/O either way."""
+
+    def test_closed_branch_name_prefixes_with_closed_slash(self):
+        assert closed_branch_name("memory-dev") == "closed/memory-dev"
+
+    def test_closed_branch_name_uses_a_slash_not_the_private_local_separator(self):
+        """The two naming schemes must never be confused with each other —
+        `/` for closed, `_` for private/local."""
+        name = closed_branch_name("feature-x")
+
+        assert name == f"{CLOSED_BRANCH_PREFIX}feature-x"
+        assert name.split("/", 1) == ["closed", "feature-x"]
+        assert PRIVATE_LOCAL_SEPARATOR not in CLOSED_BRANCH_PREFIX
+
+    def test_closeable_refuses_the_projects_own_default_branch(self):
+        assert closeable("main", project_default_branch="main") is False
+
+    def test_closeable_allows_any_other_branch(self):
+        assert closeable("memory-dev", project_default_branch="main") is True
+
+    def test_closeable_reads_the_projects_declared_default_not_the_builtin(self):
+        """A project whose own default is not ``main`` protects that branch
+        instead — ``closeable`` never hard-codes ``DEFAULT_BRANCH``."""
+        assert closeable("main", project_default_branch="trunk") is True
+        assert closeable("trunk", project_default_branch="trunk") is False
 
 
 def test_the_private_local_naming_rule_has_exactly_one_owner():

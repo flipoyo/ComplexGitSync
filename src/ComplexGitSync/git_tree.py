@@ -122,6 +122,18 @@ class GitTreeGitCommands:
 
         branch_tree(self._resolve_tree(tree), git_runner, branch_name, scope=scope)
 
+    def close_branch(
+        self,
+        git_runner: GitRunner,
+        branch_name: str,
+        *,
+        tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.ALL,
+    ) -> tuple[RepoOutcome, ...]:
+        from .operations import close_branch
+
+        return close_branch(self._resolve_tree(tree), git_runner, branch_name, scope=scope)
+
     def pull(
         self,
         git_runner: GitRunner,

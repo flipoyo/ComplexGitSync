@@ -37,6 +37,8 @@ The public surface
     resolve_entry_ref         Target ref of a live WorkingRepo
     private_local_branch      <project>_<branch> for a private/local repo
     resolve_propagated_ref    Target ref under a tree-wide branch move (privacy)
+    closed_branch_name        closed/<branch> — the name a closed branch is renamed to
+    closeable                 Whether a branch may be closed (false for the project default)
 """
 
 from __future__ import annotations
@@ -306,6 +308,46 @@ def private_local_branch(project_name: str, project_branch: str) -> str:
     return f"{project_name}{PRIVATE_LOCAL_SEPARATOR}{project_branch}"
 
 
+CLOSED_BRANCH_PREFIX = "closed/"
+"""Marks a branch as closed: renamed, not deleted, its history untouched.
+
+A ``/``, not :data:`PRIVATE_LOCAL_SEPARATOR`'s ``_`` — the two schemes name
+different things (which project a private/local branch belongs to, versus
+whether any branch is closed) and must never be mistaken for each other.
+Git permits ``/`` freely in branch names, and ``git branch -a`` already
+groups a prefix like this together the same way ``feature/*`` would.
+"""
+
+
+def closed_branch_name(branch_name: str) -> str:
+    """The name a closed branch is renamed to: ``closed/<branch_name>``.
+
+    Pure — computes a string, touches nothing. ``operations.py::close_branch``
+    performs the actual rename, via ``git_runner.py``'s ``rename_branch``,
+    ``push_ref_as``, and ``delete_remote_branch``
+    (`main_1-1_BranchClosing_DevPlanTicket.md` §1). Closing is a rename, not
+    a deletion: the commits stay exactly as reachable as before, under a
+    name that says what happened to them.
+    """
+    return f"{CLOSED_BRANCH_PREFIX}{branch_name}"
+
+
+def closeable(branch_name: str, *, project_default_branch: str) -> bool:
+    """Whether *branch_name* may be closed at all.
+
+    ``False`` for the project's own default branch: every fallback chain
+    :func:`resolve_declared_ref` computes eventually lands on it, so
+    closing it would leave nothing for a repository with no branch of its
+    own to fall back to. ``True`` for every other name.
+
+    Says nothing about whether a repository is *currently* on
+    *branch_name* — that is tree state, which ``git_tree_branch.py`` owns,
+    not a fact this Ring-0 module can answer; ``operations.py::close_branch``
+    checks it separately before acting on any repository.
+    """
+    return branch_name != project_default_branch
+
+
 def resolve_propagated_ref(
     entry: WorkingRepo,
     ref_name: str,
@@ -386,6 +428,8 @@ __all__ = [
     "BranchResolution",
     "BranchSource",
     "apply_declared_defaults",
+    "closeable",
+    "closed_branch_name",
     "resolve_declared_ref",
     "resolve_entry_ref",
     "resolve_propagated_ref",

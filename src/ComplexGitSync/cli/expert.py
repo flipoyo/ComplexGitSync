@@ -51,6 +51,7 @@ COMMANDS: dict[str, str] = {
     "pull-force": "Destructively resynchronise an existing project tree from .cgs or .gts.",
     "checkout": "Synchronize the tree to a branch or tag.",
     "branch": "Create a branch across the full READY tree without checkout.",
+    "close-branch": "Rename a branch to its closed name, tree-wide, leaf-first.",
     "add": "Stage all changes across a READY tree.",
     "rm": "Remove one or more tracked files, each from the repo that owns it.",
     "commit": "Commit dirty repositories from a READY tree.",
@@ -66,7 +67,7 @@ COMMANDS: dict[str, str] = {
 
 
 def register_parsers(subparsers: argparse._SubParsersAction) -> None:
-    """Register this group's 16 subparsers.
+    """Register this group's 19 subparsers.
 
     Mirrors cli.py's build_parser() if/elif chain for exactly the Expert
     command group, but dispatches to one small ``_register_*`` builder per
@@ -290,6 +291,16 @@ def _register_branch(subparser: argparse.ArgumentParser) -> None:
     _add_search_dir_argument(subparser)
     _add_private_argument(subparser, verb="Create the branch in")
     subparser.set_defaults(handler=_handle_branch)
+
+
+def _register_close_branch(subparser: argparse.ArgumentParser) -> None:
+    subparser.add_argument(
+        "branch", help="Branch name to close (rename to closed/<branch>) across the READY tree."
+    )
+    _add_gts_argument(subparser)
+    _add_search_dir_argument(subparser)
+    _add_private_argument(subparser, verb="Close the branch in")
+    subparser.set_defaults(handler=_handle_close_branch)
 
 
 def _register_commit(subparser: argparse.ArgumentParser) -> None:
@@ -696,6 +707,7 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "pull-force": _register_pull_force,
     "checkout": _register_checkout,
     "branch": _register_branch,
+    "close-branch": _register_close_branch,
     "commit": _register_commit,
     "merge": _register_merge,
     "add": _register_add,
@@ -818,6 +830,17 @@ def _handle_branch(args: argparse.Namespace) -> int:
         command_name="branch",
         source=gts_path,
         runner=lambda client, source: _execute_branch(
+            client, source, branch=args.branch, private=args.private
+        ),
+    )
+
+
+def _handle_close_branch(args: argparse.Namespace) -> int:
+    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="close-branch",
+        source=gts_path,
+        runner=lambda client, source: _execute_close_branch(
             client, source, branch=args.branch, private=args.private
         ),
     )
@@ -1529,6 +1552,34 @@ def _execute_branch(
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git branch {branch}")
     client.branch(branch, private=private)
+    tree_state = client.get_tree_state()
+    print(
+        f"{_format_tree_state_line(tree_state)} "
+        f"branch={branch}"
+    )
+    _print_repo_tree_result(client)
+    return 0
+
+
+def _execute_close_branch(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    branch: str,
+    private: bool = False,
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    print(f"git_command=git push <remote> <branch>:refs/heads/closed/{branch} "
+          f"&& git push <remote> --delete {branch} && git branch -m {branch} closed/{branch}")
+    client.close_branch(branch, private=private)
+    _print_write_outcomes(
+        client,
+        verb="closed",
+        nothing_note=(
+            "no repository in scope had a branch named "
+            f"'{branch}' to close."
+        ),
+    )
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
