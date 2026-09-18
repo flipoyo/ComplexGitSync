@@ -4638,7 +4638,12 @@ class ComplexGitSyncClient:
            described," which a reboot is not exempt from being part of.
            Nothing is committed on the fresh branch: the next ordinary
            write does that, exactly as a freshly adopted mount already
-           works.
+           works. Clearing `state/` would otherwise leave nowhere for
+           `discover_gts_path()` to resume from — a workspace that could
+           not even run `status` right after being rebooted — so this
+           step ends by writing one fresh State, pending, dated now: the
+           tree as it stands the moment of the reboot, not the history
+           just archived.
 
         Raises `GitSyncError` when the mount is not a repository yet
         (`memory adopt` first), and when today's archived name already
@@ -4688,6 +4693,19 @@ class ComplexGitSyncClient:
             # Every fold subdirectory except `.cgs` — the one the fold
             # brings forward is exactly the one a reboot must not erase.
             self.git_runner.remove_tracked_path(mount, cleared)
+
+        # Clearing `state/` leaves nothing anywhere `discover_gts_path()`
+        # can find — the pending half was already empty (step 1 folded
+        # it), so a workspace rebooted this way could not even run
+        # `cgitsync status` afterward. `self.registry` is still the tree
+        # this method loaded at the top, so writing it now, into the
+        # pending half exactly as any ordinary command would, gives the
+        # workspace a State to resume from immediately — one State, dated
+        # now, not the history just archived. Nothing about "the fresh
+        # branch starts with no history" changes: this is written pending,
+        # not committed on the fresh branch, so the *next* real write still
+        # produces its first commit, same as before.
+        self.write_gts_snapshot(command_origin="memory_reboot")
 
         self._log_event(
             "memory_reboot",

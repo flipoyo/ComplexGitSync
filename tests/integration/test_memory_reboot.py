@@ -186,6 +186,26 @@ def test_reboot_clears_states_the_ledger_and_commit_logs(tmp_path):
     assert rev_parse.returncode != 0
 
 
+def test_reboot_leaves_a_discoverable_gts_behind(tmp_path):
+    """The field failure: `cgitsync status` broke right after a reboot.
+
+    Clearing `state/` left nothing anywhere `discover_gts_path()` could
+    find — the pending half was already folded away by step 1 — so a
+    workspace rebooted this way could not even answer `cgitsync status`
+    until some other command happened to write a fresh State first.
+    """
+    from ComplexGitSync.snapshot_resolver import discover_gts_path
+
+    tree = _memory_ready(tmp_path)
+
+    _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
+
+    resolved = discover_gts_path(str(tree["workspace"]))
+    assert resolved.is_file()
+    status = ComplexGitSyncClient().memory_status(tree["workspace"])
+    assert status["states"] >= 1
+
+
 def test_reboot_keeps_every_versioned_cgs_across_the_fresh_branch(tmp_path):
     """§2: `.cgs/` is a permanent record — the fresh branch does not erase it."""
     tree = _memory_ready(tmp_path)
@@ -231,7 +251,10 @@ def test_pending_content_is_folded_into_the_archive_first(tmp_path):
     result = client.memory_reboot(tree["workspace"])
 
     assert result["folded"] >= len(pending_entries_before)
-    assert not (tree["workspace"] / ".cgitsync" / "lgr").exists()
+    # Every pre-reboot entry was folded away — the only thing pending
+    # afterward is the fresh State reboot itself just wrote (below).
+    remaining = {path.stem for path in (tree["workspace"] / ".cgitsync" / "lgr").glob("*.toml")}
+    assert remaining.isdisjoint({path.stem for path in pending_entries_before})
 
 
 # ---------------------------------------------------------------------------
