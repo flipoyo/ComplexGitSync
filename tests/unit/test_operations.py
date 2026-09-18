@@ -254,6 +254,16 @@ class _FakeGitRunnerForOperations:
         self.merge_aborted: list[Path] = []
         self.fetched: list[tuple[Path, str, str | None]] = []
         self.refspecs_ensured: list[tuple[Path, str]] = []
+        # {path: url} a repo's configured remote answers with; a repo not
+        # listed here still answers with a synthesized, non-None URL, since
+        # every real repo this code runs against has one configured.
+        self._remote_urls: dict[Path, str] = {}
+        # {remote_url: set of branch names the remote actually has} — what
+        # an on-demand `git ls-remote --heads` would find. Empty by default,
+        # matching every existing test's "the remote has never heard of it"
+        # assumption.
+        self._remote_server_branches: dict[str, set[str]] = {}
+        self.fetched_on_demand: list[tuple[Path, str, str]] = []
         # Ordered log of the two calls whose *relative* order matters: a
         # refspec must be widened before the push that depends on it.
         self.write_order: list[tuple[str, Path]] = []
@@ -327,6 +337,28 @@ class _FakeGitRunnerForOperations:
         self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None
     ) -> None:
         self.fetched.append((Path(repo_path), remote, ref_name))
+
+    def remote_get_url(self, repo_path: Path | str, remote_name: str = "origin") -> str | None:
+        path = Path(repo_path)
+        return self._remote_urls.get(path, f"fake://{remote_name}/{path.name}")
+
+    def remote_branch_exists(self, remote_url: str, branch: str) -> bool:
+        return branch in self._remote_server_branches.get(remote_url, set())
+
+    def fetch_branch_if_remote_has_it(
+        self,
+        repo_path: Path | str,
+        remote_url: str,
+        branch: str,
+        *,
+        remote: str = "origin",
+    ) -> bool:
+        if not self.remote_branch_exists(remote_url, branch):
+            return False
+        self.fetch(repo_path, remote=remote, ref_name=branch)
+        self.fetched_on_demand.append((Path(repo_path), remote_url, branch))
+        self._remote_tracking_branches.setdefault(Path(repo_path), set()).add(branch)
+        return True
 
     def create_branch(
         self, repo_path: Path | str, branch: str, *, start_point: str | None = None
@@ -776,6 +808,51 @@ class TestABranchSomebodyElsePushedIsThatBranch:
         create_global_branch(registry, runner, "colleague")
 
         assert runner.created_from == []
+
+    def test_a_branch_never_fetched_here_but_real_on_the_remote_is_joined(self, tmp_path):
+        """CheckoutForkGuard: neither local nor cached does not mean new.
+
+        A branch pushed by another clone (or another machine) is a fact
+        this clone has simply never fetched — not a name to start fresh at
+        HEAD. One on-demand ``ls-remote`` (simulated here by
+        ``_remote_server_branches``) settles it before creating anything.
+        """
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            url = runner.remote_get_url(repo.absolute_path)
+            runner._remote_server_branches.setdefault(url, set()).add("never-fetched")
+
+        create_global_branch(registry, runner, "never-fetched")
+
+        for _, branch, start_point in runner.created_from:
+            assert (branch, start_point) == ("never-fetched", "origin/never-fetched")
+        assert len(runner.fetched_on_demand) == len(list(registry.values()))
+
+    def test_a_name_truly_unknown_to_the_remote_pays_the_round_trip_and_still_forks_fresh(
+        self, tmp_path
+    ):
+        """The on-demand check must not turn a real "new branch" request into
+        a no-op — it costs one lookup and then behaves exactly as before."""
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+
+        create_global_branch(registry, runner, "mine-alone")
+
+        assert runner.fetched_on_demand == []
+        assert [start_point for _, _, start_point in runner.created_from] == [None, None]
+
+    def test_a_branch_already_known_locally_or_from_a_cached_ref_never_asks_the_network(
+        self, tmp_path
+    ):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            runner._remote_tracking_branches[repo.absolute_path] = {"colleague"}
+
+        create_global_branch(registry, runner, "colleague")
+
+        assert runner.fetched_on_demand == []
 
 
 class TestPullBringsEveryBranchSRef:

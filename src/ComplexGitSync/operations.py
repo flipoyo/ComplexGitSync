@@ -151,9 +151,15 @@ def create_global_branch(
     rule is that they never have to think about it.
 
     A branch this clone already has a remote-tracking ref for is created
-    *from* that ref, with tracking set. Offline either way: it reads refs
-    already on disk and never contacts the remote, so what a fresh clone can
-    join is what the last fetch brought.
+    *from* that ref, with tracking set. A branch neither known locally nor
+    cached from the remote gets one on-demand ``ls-remote`` before it is
+    assumed new: a real, pushed branch this clone has simply never fetched
+    looks identical to a genuinely new name otherwise, and starting the
+    former at HEAD forks it under a name the user believes they are joining
+    (CheckoutForkGuard,
+    ``.localSpec/DevTickets/openTickets/main_1-1_CheckoutForkGuard_DevPlanTicket.md``).
+    A name truly unknown to the remote still costs nothing beyond that one
+    round-trip and falls through to today's behaviour unchanged.
     """
     branches = GitTreeBranches(tree)
     for repo in iter_tree(tree, scope):
@@ -170,6 +176,14 @@ def create_global_branch(
         # (.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md §3).
         remote = repo.remote_name or "origin"
         if git_runner.remote_tracking_branch_exists(repo.absolute_path, target, remote=remote):
+            git_runner.create_branch(
+                repo.absolute_path, target, start_point=f"{remote}/{target}"
+            )
+            continue
+        remote_url = git_runner.remote_get_url(repo.absolute_path, remote)
+        if remote_url and git_runner.fetch_branch_if_remote_has_it(
+            repo.absolute_path, remote_url, target, remote=remote
+        ):
             git_runner.create_branch(
                 repo.absolute_path, target, start_point=f"{remote}/{target}"
             )

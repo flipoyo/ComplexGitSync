@@ -899,6 +899,11 @@ class _FakeGitRunner:
     def fetch(self, repo_path, *, remote: str = "origin", ref_name: str | None = None) -> None:
         return None
 
+    def fetch_branch_if_remote_has_it(
+        self, repo_path, remote_url: str, branch: str, *, remote: str = "origin"
+    ) -> bool:
+        return False
+
     def create_branch(self, repo_path, branch: str, *, start_point: str | None = None) -> None:
         return None
 

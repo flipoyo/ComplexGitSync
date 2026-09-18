@@ -298,6 +298,27 @@ def test_checkout_joins_a_colleagues_branch_instead_of_forking_its_name(
     assert GitRunner().upstream_ref(repo) == "origin/colleague"
 
 
+def test_checkout_joins_a_colleagues_branch_with_no_prior_pull(cloned_workspace, tmp_path, capsys):
+    """CheckoutForkGuard: `checkout` must not depend on some other command
+    having fetched first.
+
+    Unlike the test above, no ``pull`` runs before ``checkout`` — this
+    clone has never heard of the colleague's branch, locally or as a
+    cached remote-tracking ref, which used to be exactly the shape that
+    forked it fresh at HEAD
+    (``.localSpec/DevTickets/openTickets/main_1-1_CheckoutForkGuard_DevPlanTicket.md``).
+    """
+    their_sha = _colleague_pushes(tmp_path, cloned_workspace["remote"], "never-fetched")
+    repo = cloned_workspace["repo"]
+
+    assert cli_main(["checkout", "never-fetched", "--gts", str(cloned_workspace["snapshot"])]) == 0
+    capsys.readouterr()
+
+    assert _run_git(repo, "rev-parse", "HEAD") == their_sha
+    assert (repo / "theirs.txt").read_text(encoding="utf-8") == "theirs\n"
+    assert GitRunner().upstream_ref(repo) == "origin/never-fetched"
+
+
 def test_checkout_still_creates_a_brand_new_branch_at_head(cloned_workspace, capsys):
     """A name the remote has never heard of is still created where we stand."""
     repo = cloned_workspace["repo"]

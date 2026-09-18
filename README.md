@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.82
+# ComplexGitSync v0002.83
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -296,8 +296,8 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `clone` | `<source>` `--target-dir` `--output-path` | Clone a nested project tree from .cgs. |
 | Expert | `pull` | `[source]` `--private` `--force-protocol` `--commit-gitignore` | Resynchronise an existing project tree from .cgs or .gts. |
 | Expert | `pull-force` | `[source]` `--private` `--force-protocol` | Destructively resynchronise an existing project tree from .cgs or .gts. |
-| Expert | `checkout` | `<branch>` `--private` `--ref-kind` `--gts` | Synchronize the tree to a branch or tag. A branch this workspace already knows from the remote is joined, not recreated; `pull` is what brings those branches here. |
-| Expert | `branch` | `<branch>` `--private` `--gts` | Create a branch across the full READY tree without checkout. |
+| Expert | `checkout` | `<branch>` `--private` `--ref-kind` `--gts` | Synchronize the tree to a branch or tag. A branch that exists on the remote is joined, not recreated — fetching it first if this workspace has never seen it, so a prior `pull` is not required. |
+| Expert | `branch` | `<branch>` `--private` `--gts` | Create a branch across the full READY tree without checkout. Joins a branch that already exists on the remote, fetching it on demand if needed, instead of creating a second one at HEAD. |
 | Expert | `add` | `[PATH ...]` `--private` `--dry-run` `--gts` | Stage all changes across a READY tree. |
 | Expert | `rm` | `<PATH ...>` `--private` `--dry-run` `--gts` | Remove one or more tracked files, each from the repo that owns it. |
 | Expert | `commit` | `[message]` `--message` `--private` `--no-stage` `--dry-run` | Commit dirty repositories from a READY tree. |
@@ -401,8 +401,10 @@ repository is actually on:
 `pull` fetches every branch of each remote before pulling your own, so
 `checkout <a branch a colleague pushed>` finds their work rather than
 starting a new branch of the same name where you happen to stand. `checkout`
-itself never touches the network — it reads what the last `pull` brought, and
-keeps working offline.
+does not depend on a prior `pull` for this: a branch it has neither locally
+nor cached from the remote gets one on-demand check with the remote before
+it is treated as new — found, it is fetched and joined; not found, it is
+created fresh at HEAD, exactly as before.
 
 The `summary` line counts `no-upstream` and `unknown` rows as `unmeasured`,
 separately from `ahead` and `behind`. A repository nobody could measure is

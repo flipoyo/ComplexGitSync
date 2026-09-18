@@ -387,6 +387,15 @@ class GitRunnerProtocol(Protocol):
         self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None
     ) -> None: ...
 
+    def fetch_branch_if_remote_has_it(
+        self,
+        repo_path: Path | str,
+        remote_url: str,
+        branch: str,
+        *,
+        remote: str = "origin",
+    ) -> bool: ...
+
     def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None: ...
 
     def clean_untracked(self, repo_path: Path | str) -> None: ...
@@ -1085,6 +1094,42 @@ class GitRunner:
         if ref_name:
             args.append(ref_name)
         self._run(*args, cwd=repo_path)
+
+    def fetch_branch_if_remote_has_it(
+        self,
+        repo_path: Path | str,
+        remote_url: str,
+        branch: str,
+        *,
+        remote: str = "origin",
+    ) -> bool:
+        """Fetch *branch* into *repo_path* if *remote_url* actually has it.
+
+        The one network round-trip
+        :func:`~ComplexGitSync.operations.create_global_branch` takes only
+        for a branch this clone has neither locally nor as a cached
+        remote-tracking ref — the exact ambiguity CheckoutForkGuard
+        (``.localSpec/DevTickets/openTickets/main_1-1_CheckoutForkGuard_DevPlanTicket.md``)
+        traces to a silent fork: "genuinely new" and "real, just never
+        fetched here" look identical to :meth:`remote_tracking_branch_exists`
+        alone.
+
+        Asks the remote first with :meth:`remote_branch_exists`
+        (``git ls-remote --heads``, no download) so a caller creating a
+        genuinely new branch pays no network cost at all. Only when the
+        remote has it does this fetch that one ref — *repo_path*'s fetch
+        refspec is already widened by :meth:`ensure_fetch_refspec` at clone
+        time, so fetching a single named ref still populates
+        ``refs/remotes/<remote>/<branch>``, which
+        :meth:`remote_tracking_branch_exists` then finds.
+
+        Returns whether the remote had it — the caller decides what to do
+        with that fact; this method never creates or moves a branch itself.
+        """
+        if not self.remote_branch_exists(remote_url, branch):
+            return False
+        self.fetch(repo_path, remote=remote, ref_name=branch)
+        return True
 
     def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None:
         """Discard local tracked changes in *repo_path*."""
