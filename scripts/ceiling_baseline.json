@@ -37,7 +37,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 23,
-      "loc": 1735,
+      "loc": 1835,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -82,12 +82,12 @@
     },
     "git_repo.py": {
       "internal_imports": 0,
-      "loc": 395,
+      "loc": 391,
       "public_symbols": 15
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 913,
+      "loc": 991,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -122,8 +122,8 @@
     },
     "memory/commit_log.py": {
       "internal_imports": 0,
-      "loc": 215,
-      "public_symbols": 16
+      "loc": 249,
+      "public_symbols": 17
     },
     "memory/integrity.py": {
       "internal_imports": 1,
@@ -140,10 +140,15 @@
       "loc": 408,
       "public_symbols": 17
     },
+    "memory/pending.py": {
+      "internal_imports": 13,
+      "loc": 182,
+      "public_symbols": 13
+    },
     "memory/repository.py": {
       "internal_imports": 2,
-      "loc": 180,
-      "public_symbols": 12
+      "loc": 206,
+      "public_symbols": 14
     },
     "memory/states.py": {
       "internal_imports": 0,
@@ -157,12 +162,12 @@
     },
     "operations.py": {
       "internal_imports": 21,
-      "loc": 1699,
-      "public_symbols": 30
+      "loc": 1668,
+      "public_symbols": 29
     },
     "orchestre.py": {
-      "internal_imports": 133,
-      "loc": 4781,
+      "internal_imports": 144,
+      "loc": 5090,
       "public_symbols": 11
     },
     "paths.py": {
@@ -176,8 +181,8 @@
       "public_symbols": 4
     },
     "registry.py": {
-      "internal_imports": 40,
-      "loc": 504,
+      "internal_imports": 39,
+      "loc": 498,
       "public_symbols": 3
     },
     "settings.py": {
@@ -186,8 +191,8 @@
       "public_symbols": 11
     },
     "snapshot_resolver.py": {
-      "internal_imports": 7,
-      "loc": 311,
+      "internal_imports": 5,
+      "loc": 292,
       "public_symbols": 18
     },
     "status_render.py": {

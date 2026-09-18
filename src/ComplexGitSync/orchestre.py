@@ -129,13 +129,13 @@ from .memory import (
     HistoryState,
     SyncLedger,
     VerificationReport,
-    append_entry,
-    next_seq,
-    read_all_entries,
+    build_next_entry,
     read_head,
     recompute_head,
+    scrub_argv,
     verify_and_repair_head,
     verify_chain,
+    write_entry,
 )
 from .memory.commit_log import (
     COMMIT_LOG_DIR_NAME,
@@ -148,18 +148,53 @@ from .memory.commit_log import (
     digest_of,
     digest_of_rows,
     read_commit_log,
-    rows_by_entry,
-    state_hashes_with_logs,
-    unpublished_commits,
 )
 from .memory.ledger_store import LedgerStoreError
+from .memory.pending import (
+    current_ledger_dir as _current_ledger_dir,
+)
+from .memory.pending import (
+    memory_commit_log_rows as _memory_commit_log_rows,
+)
+from .memory.pending import (
+    memory_dirs as _memory_dirs,
+)
+from .memory.pending import (
+    memory_published_commits as _memory_published_commits,
+)
+from .memory.pending import (
+    memory_read_commit_log as _memory_read_commit_log,
+)
+from .memory.pending import (
+    memory_state_files as _memory_state_files,
+)
+from .memory.pending import (
+    memory_state_hashes_with_logs as _memory_state_hashes_with_logs,
+)
+from .memory.pending import (
+    memory_state_path as _memory_state_path,
+)
+from .memory.pending import (
+    memory_timeline as _memory_timeline,
+)
+from .memory.pending import (
+    memory_unpublished_commits as _memory_unpublished_commits,
+)
+from .memory.pending import (
+    next_ledger_seq as _next_ledger_seq,
+)
+from .memory.pending import (
+    read_ledger_entries as _read_all_ledger_entries,
+)
 from .memory.repository import (
+    MOUNT_PATH,
     commit_message,
     creation_command,
     entry_already_present,
     format_mount_entry,
     insert_repo_entry,
     memory_mount_path,
+    memory_pending_path,
     mount_entry,
     uncommitted_memory_paths,
 )
@@ -167,7 +202,6 @@ from .memory.repository import (
     memory_branch as memory_branch_name,
 )
 from .memory.states import (
-    STATE_DIR_NAME,
     _format_state_id,
     _latest_state_artifact,
     _parse_state_hash,
@@ -199,7 +233,7 @@ from .registry import (
     build_registry_from_gts_document,
 )
 from .settings import UseCase, resolve_use_case
-from .snapshot_resolver import discover_cgshome
+from .snapshot_resolver import discover_cgshome, discover_gts_path
 from .status_render import (
     PROJECT_SCOPE_LABEL,
     SCOPE_LEGEND,
@@ -987,8 +1021,8 @@ def _verify_states_on_disk(
         if state_hash is None:
             continue
         recorded.setdefault(state_hash, entry.seq)
-        snapshot = state_path(cgitsync_dir, state_hash)
-        if not snapshot.is_file():
+        snapshot = _memory_state_path(cgitsync_dir, state_hash)
+        if snapshot is None:
             findings.append((
                 entry.seq,
                 Finding.MISSING_STATE,
@@ -1012,15 +1046,13 @@ def _verify_states_on_disk(
                 f"{snapshot.name} now hashes to {digest}",
             ))
 
-    state_dir = cgitsync_dir / STATE_DIR_NAME
-    if state_dir.is_dir():
-        for snapshot in sorted(state_dir.glob("*.gts")):
-            if snapshot.stem not in recorded:
-                findings.append((
-                    0,
-                    Finding.ORPHAN_STATE,
-                    f"{snapshot.name} is on disk and no entry records it",
-                ))
+    for snapshot in _memory_state_files(cgitsync_dir):
+        if snapshot.stem not in recorded:
+            findings.append((
+                0,
+                Finding.ORPHAN_STATE,
+                f"{snapshot.name} is on disk and no entry records it",
+            ))
     return findings
 
 
@@ -1081,12 +1113,13 @@ def _verify_commit_logs(
     rule the ledger itself follows.
     """
     cgitsync_dir = workspace / ".cgitsync"
-    if not (cgitsync_dir / COMMIT_LOG_DIR_NAME).is_dir():
+    folded_dir, pending_dir = _memory_dirs(cgitsync_dir)
+    if not (folded_dir / COMMIT_LOG_DIR_NAME).is_dir() and not (pending_dir / COMMIT_LOG_DIR_NAME).is_dir():
         return []
     findings: list[tuple[int, Finding, str]] = []
 
     known = {entry.seq: entry for entry in entries}
-    grouped = rows_by_entry(cgitsync_dir)
+    grouped = _memory_commit_log_rows(cgitsync_dir)
     for entry in entries:
         committed, published = grouped.get(entry.seq, ([], []))
         if not committed and not published:
@@ -1130,8 +1163,8 @@ def _verify_commit_logs(
             "which the chain does not have",
         ))
 
-    for state_hash in state_hashes_with_logs(cgitsync_dir):
-        if not state_path(cgitsync_dir, state_hash).is_file():
+    for state_hash in _memory_state_hashes_with_logs(cgitsync_dir):
+        if _memory_state_path(cgitsync_dir, state_hash) is None:
             findings.append((
                 0,
                 Finding.ORPHAN_COMMIT_LOG,
@@ -1177,6 +1210,26 @@ def _write_file_atomically(destination: Path, write: Any) -> None:
         temporary.replace(destination)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _next_reboot_cgs_version(cgs_dir: Path, project_name: str) -> int:
+    """The `-v<N>` a `memory reboot` export should carry next.
+
+    The topology before any reboot is implicitly `v1` and is never written
+    under that name (`memory-dev_1-4_MemoryReboot_DevPlanTicket.md` §2), so
+    an empty directory answers `2` — one more than the unwritten `v1` —
+    and every later reboot answers one more than the highest version
+    already sitting beside it. Never reused, never chosen: found by
+    scanning, the same discipline a State's own name already follows.
+    """
+    pattern = re.compile(rf"^{re.escape(project_name)}-v(\d+)\.cgs$")
+    highest = 1
+    if cgs_dir.is_dir():
+        for path in cgs_dir.iterdir():
+            match = pattern.match(path.name)
+            if match:
+                highest = max(highest, int(match.group(1)))
+    return highest + 1
 
 
 def _legacy_register_exists(workspace: Path) -> bool:
@@ -2899,11 +2952,6 @@ class ComplexGitSyncClient:
             force_pull_fallback=force_gitignore_sync,
             commit=commit_gitignore,
         )
-        # The memory mount is excluded from the pull loop above, so nothing
-        # in it has refreshed the memory's own readiness yet — ask before
-        # judging the tree, not after.
-        self._refresh_memory_mount_state(registry)
-        registry.recompute_tree_state()
         if not registry.is_ready():
             raise GitSyncError("restart did not produce a READY tree.")
         snapshot_path = self.write_gts_snapshot(command_origin="restart")
@@ -3198,7 +3246,8 @@ class ComplexGitSyncClient:
         """
         root_entry = registry.get("root")
         cgitsync_dir = root_entry.absolute_path / ".cgitsync"
-        if not (cgitsync_dir / COMMIT_LOG_DIR_NAME).is_dir():
+        folded_dir, pending_dir = _memory_dirs(cgitsync_dir)
+        if not (folded_dir / COMMIT_LOG_DIR_NAME).is_dir() and not (pending_dir / COMMIT_LOG_DIR_NAME).is_dir():
             return {}
         moment = datetime.now(UTC).isoformat(timespec="seconds")
         branches = GitTreeBranches(registry, self.git_runner)
@@ -3209,7 +3258,7 @@ class ComplexGitSyncClient:
             if not outcome.acted or not entry.repo_id:
                 continue
             branch = branches.observed(entry)
-            for state_hash, sha in unpublished_commits(cgitsync_dir, entry.repo_id):
+            for state_hash, sha in _memory_unpublished_commits(cgitsync_dir, entry.repo_id):
                 published.setdefault(state_hash, []).append(
                     PublicationRecord(
                         entry=0,  # replaced with the real seq in write_gts_snapshot
@@ -4252,20 +4301,28 @@ class ComplexGitSyncClient:
         owner: str | None = None,
         branch: str | None = None,
         remote: str | None = None,
+        reboot: bool = False,
     ) -> dict[str, Any]:
-        """Make the memory already on this disk *be* the memory repository.
+        """Make this workspace's memory mount *be* a repository.
 
-        The step that had no name. By the time anybody mounts a memory,
-        `.cgitsync` is full — States, a ledger, commit logs, logs — and none
-        of it may be lost, which is why `memory clone` refuses to run here
-        and is right to. This does what a person would otherwise do by hand:
-        the directory becomes a repository, gains the remote, and gets this
-        project branch's memory branch, with every file already there left
-        untracked and untouched.
+        `.cgitsync/.memory` is created fresh, empty — WorkingTransitionState
+        moved everything a memory used to adopt "as found" (States, ledger,
+        commit logs, logs) one level up, to `.cgitsync` itself, where every
+        command already writes it. There is nothing here to leave untracked
+        and untouched any more: the first thing this mount ever holds is
+        whatever the next `memory push` folds into it.
 
         Nothing is committed and nothing is pushed: `memory push` does both
         and already knows how. This only ends the state where there is
         nowhere to push *from*.
+
+        *reboot* (`cgitsync memory adopt --reboot`,
+        `memory-dev_1-4_MemoryReboot_DevPlanTicket.md` §4) skips the one
+        step below that would otherwise carry history forward: starting
+        *target_branch* from `fallback_branch`'s tip when that branch
+        already exists on the remote. Append — inheriting that history — is
+        still the default; `reboot=True` leaves the branch exactly as
+        `init_repository` made it, with nothing to inherit from.
         """
         workspace = Path(cgshome)
         mount = memory_mount_path(workspace)
@@ -4274,11 +4331,12 @@ class ComplexGitSyncClient:
                 f"{mount} is already a repository. 'cgitsync memory push' sends what "
                 "it has gained."
             )
-        if not mount.is_dir():
+        if not memory_pending_path(workspace).is_dir():
             raise GitSyncError(
-                f"{mount} does not exist yet, so there is no memory to adopt. Run any "
+                f"{memory_pending_path(workspace)} does not exist yet. Run any "
                 "cgitsync command in this workspace first."
             )
+        mount.mkdir(parents=True, exist_ok=True)
 
         target_branch, remote_url = self._memory_remote(
             workspace, owner=owner, branch=branch, remote=remote
@@ -4294,7 +4352,7 @@ class ComplexGitSyncClient:
         self.git_runner.configure_remote(mount, "origin", remote_url)
         self.git_runner.fetch(mount)
         started_from = ""
-        if base and self.git_runner.remote_branch_exists(remote_url, base):
+        if not reboot and base and self.git_runner.remote_branch_exists(remote_url, base):
             # Started from the repository's own default branch so the branch
             # shares its history, which is what makes `fallback_branch` in
             # the mount entry mean something.
@@ -4310,6 +4368,89 @@ class ComplexGitSyncClient:
             "remote": remote_url,
             "started_from": started_from,
             "pending": len(uncommitted_memory_paths(self.git_runner.status_porcelain(mount))),
+        }
+
+    #: Where a memory mounted before WorkingTransitionState sits: directly
+    #: at the workspace's own state area, sharing it with the live-write
+    #: content the new layout gives its own place. Migration's own source,
+    #: named once so it is never confused with `memory_pending_path` (which
+    #: still answers "where is the pending increment", true before and
+    #: after a migration — the two concepts collapse onto the same path
+    #: only for a workspace that has not migrated yet).
+    _OLD_MOUNT_RELATIVE_PATH = ".cgitsync"
+
+    def memory_migrate(self, cgshome: str | Path, cgs_path: str | Path) -> dict[str, Any]:
+        """Move a memory mounted before WorkingTransitionState onto its new layout.
+
+        A memory adopted before this milestone is mounted directly at
+        `.cgitsync` — sharing it with States, the ledger, commit logs and
+        run logs, the exact arrangement WorkingTransitionState exists to
+        end (`.localSpec/DevTickets/openTickets/memory-dev_1-2_WorkingTransitionState_DevPlanTicket.md`).
+        This is the one-time move: `.git` and every file `git ls-files`
+        names travel down into `.cgitsync/.memory`, untouched — no re-clone,
+        no rewritten history — and whatever was never tracked (this
+        workspace's own pending States, ledger entries, logs) stays exactly
+        where it already was, which is where the new layout wants it
+        anyway. The `.cgs` entry that declares the mount is then updated to
+        match.
+
+        `memory adopt` never needs this: a fresh adopt already creates the
+        mount at the new path. This is only for a `.cgitsync` that is
+        *already* a memory's own git repository, at the old path.
+        """
+        workspace = Path(cgshome)
+        old_mount = workspace / self._OLD_MOUNT_RELATIVE_PATH
+        new_mount = memory_mount_path(workspace)
+        if (new_mount / ".git").exists():
+            raise GitSyncError(f"{new_mount} is already a repository; nothing to migrate.")
+        if not (old_mount / ".git").is_dir():
+            raise GitSyncError(
+                f"{old_mount} is not a repository — there is no old-layout memory here "
+                "to migrate. 'cgitsync memory adopt' mounts a fresh one at the new layout "
+                "directly."
+            )
+
+        tracked = self.git_runner.tracked_files(old_mount)
+        new_mount.mkdir(parents=True, exist_ok=True)
+        (old_mount / ".git").rename(new_mount / ".git")
+        moved = 0
+        for relative in tracked:
+            source = old_mount / relative
+            if not source.is_file():
+                continue
+            destination = new_mount / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            source.rename(destination)
+            moved += 1
+
+        target = Path(cgs_path).resolve()
+        original = target.read_text(encoding="utf-8")
+        old_needle = f'relative_path = "{self._OLD_MOUNT_RELATIVE_PATH}"'
+        new_value = f'relative_path = "{MOUNT_PATH}"'
+        if old_needle not in original:
+            raise GitSyncError(
+                f"{target} does not declare {old_needle!r} — the mount was moved on disk, "
+                "but its .cgs entry needs updating by hand."
+            )
+        temporary = target.with_name(f".{target.name}.tmp")
+        temporary.write_text(original.replace(old_needle, new_value, 1), encoding="utf-8")
+        try:
+            CgsDocument.from_toml(temporary)
+        except (ConfigValidationError, tomllib.TOMLDecodeError) as exc:
+            temporary.unlink(missing_ok=True)
+            raise GitSyncError(
+                f"migrating the memory entry would make {target.name} invalid: {exc}"
+            ) from exc
+        temporary.replace(target)
+
+        self._log_event(
+            "memory_migrate", old_mount=old_mount, new_mount=new_mount, files_moved=moved
+        )
+        return {
+            "old_mount": str(old_mount),
+            "new_mount": str(new_mount),
+            "files_moved": moved,
+            "cgs": str(target),
         }
 
     def memory_branch(
@@ -4358,13 +4499,77 @@ class ComplexGitSyncClient:
         proposal = self.memory_init(workspace, owner=owner)
         return str(proposal["entry"].get("fallback_branch") or DEFAULT_BRANCH)
 
+    _FOLD_SUBDIRS = ("lgr", "state", "logs", ".cgs")
+
+    def _fold_memory_pending(self, pending_dir: Path, mount: Path) -> int:
+        """Move `.cgitsync`'s pending content into the memory mount.
+
+        The heart of `memory push`, since WorkingTransitionState:
+        everything a command wrote since the last fold — `lgr/`, `state/`,
+        `logs/`, `.cgs/`, plus the legacy single-file `.lgr` register if
+        one is still there — moves one level down, into the mount, so the
+        commit this method makes next has something of its own to commit.
+        A plain move is safe for all of these: entries and States are
+        named uniquely (a seq never repeats; a State's name is its own
+        content hash, so a name that does repeat is identical content),
+        and `HEAD`/the legacy register's stable copies are meant to be
+        overwritten with the newer answer.
+
+        Commit logs are the one exception — a State committed against
+        again after a fold would otherwise have its already-folded rows
+        silently discarded by a plain overwrite — so those go through
+        `append_commits`/`append_publications`, the same merge-on-append
+        logic every other write to a commit log already uses.
+
+        Returns how many files moved, across every subdirectory — 0 means
+        there was nothing pending to fold.
+        """
+        moved = 0
+        for name in self._FOLD_SUBDIRS:
+            source = pending_dir / name
+            if not source.is_dir():
+                continue
+            destination = mount / name
+            destination.mkdir(parents=True, exist_ok=True)
+            for item in sorted(source.iterdir()):
+                item.replace(destination / item.name)
+                moved += 1
+            source.rmdir()
+
+        commit_logs_source = pending_dir / COMMIT_LOG_DIR_NAME
+        if commit_logs_source.is_dir():
+            for path in sorted(commit_logs_source.glob("*.toml")):
+                state_hash = path.stem
+                log = read_commit_log(commit_logs_source, state_hash)
+                if log["commit"]:
+                    append_commits(
+                        mount, state_hash, [CommitRecord(**row) for row in log["commit"]]
+                    )
+                if log["published"]:
+                    append_publications(
+                        mount, state_hash, [PublicationRecord(**row) for row in log["published"]]
+                    )
+                path.unlink()
+                moved += 1
+            commit_logs_source.rmdir()
+
+        for legacy in pending_dir.glob("*.lgr"):
+            legacy.replace(mount / legacy.name)
+            moved += 1
+        return moved
+
     def memory_push(self, cgshome: str | Path, *, message: str | None = None) -> dict[str, Any]:
-        """Commit what the memory gained and push it.
+        """Fold what has accumulated since the last push, commit it, and send it.
 
         Offline is not a failure mode, it is the normal case: everything a
         memory records is written locally first and pushed when somebody
         asks. So this is a command, never automatic, and a machine with no
         network keeps a complete, valid, verifiable memory without it.
+
+        Folding (:meth:`_fold_memory_pending`) is part of what "send what
+        the memory gained" already means, not a step the caller has to
+        remember to run first — `.cgitsync`'s pending content only ever
+        moves into the mount here, and only here.
         """
         workspace = Path(cgshome)
         mount = memory_mount_path(workspace)
@@ -4374,6 +4579,7 @@ class ComplexGitSyncClient:
                 "entry that mounts one, then 'cgitsync memory clone'."
             )
         status = self.memory_status(workspace)
+        self._fold_memory_pending(memory_pending_path(workspace), mount)
         pending = uncommitted_memory_paths(self.git_runner.status_porcelain(mount))
         committed = False
         if pending:
@@ -4404,6 +4610,101 @@ class ComplexGitSyncClient:
             "entries": status["entries"],
         }
 
+    def memory_reboot(self, cgshome: str | Path) -> dict[str, Any]:
+        """Close this memory's current chapter and open a fresh one, keeping the old.
+
+        Four steps (`memory-dev_1-4_MemoryReboot_DevPlanTicket.md` §1), in
+        this order, touching nothing but the memory itself:
+
+        1. Whatever `.cgitsync` is holding pending is folded in and pushed
+           under the branch's current name — `memory_push`'s own fold and
+           push, reused rather than duplicated, so nothing recorded since
+           the last push is lost to the reboot (§5 D6).
+        2. The tree's current shape is exported — `to_cgs()` against the
+           loaded `.gts`, never a hand-authored file — to a permanent,
+           versioned `.cgitsync/.memory/.cgs/<project>-v<N>.cgs`, committed
+           and pushed by the same call as step 1.
+        3. The branch is archived: pushed to origin under
+           `<branch>.archived-<YYYYMMDD>` *before* the old name is removed
+           from origin, never the reverse, so the commits are always
+           reachable under some name on the remote — then renamed locally
+           to match.
+        4. A fresh branch is created under the original name; its States,
+           ledger, commit logs and run logs are cleared, so the new
+           branch's first commit is a true beginning. `.cgs/`'s versioned
+           exports (step 2, and every export before it) are the one thing
+           *not* cleared — §2 calls that directory "a permanent, ordered
+           record of every shape this project's memory has ever
+           described," which a reboot is not exempt from being part of.
+           Nothing is committed on the fresh branch: the next ordinary
+           write does that, exactly as a freshly adopted mount already
+           works.
+
+        Raises `GitSyncError` when the mount is not a repository yet
+        (`memory adopt` first), and when today's archived name already
+        exists — a second reboot the same day needs the owner to say what
+        to call it, rather than silently colliding with the first.
+        """
+        workspace = Path(cgshome)
+        mount = memory_mount_path(workspace)
+        if not (mount / ".git").exists():
+            raise GitSyncError(
+                f"{mount} is not a repository yet. Run 'cgitsync memory adopt' first."
+            )
+
+        registry = self.load_gts(discover_gts_path(str(workspace)))
+        project_name = registry.get(ROOT_REPO_ID).name
+
+        folded = self._fold_memory_pending(memory_pending_path(workspace), mount)
+
+        cgs_dir = mount / ".cgs"
+        cgs_dir.mkdir(parents=True, exist_ok=True)
+        next_version = _next_reboot_cgs_version(cgs_dir, project_name)
+        exported_path = cgs_dir / f"{project_name}-v{next_version}.cgs"
+        _write_file_atomically(exported_path, registry.to_cgs().to_toml)
+
+        pushed = self.memory_push(
+            workspace,
+            message=f"{project_name} memory reboot: exporting v{next_version} before archiving",
+        )
+        current_branch = str(pushed["branch"])
+
+        archived_branch = f"{current_branch}.archived-{datetime.now(UTC):%Y%m%d}"
+        remote_url = self.git_runner.remote_get_url(mount, "origin") or ""
+        if self.git_runner.local_branch_exists(mount, archived_branch) or (
+            remote_url and self.git_runner.remote_branch_exists(remote_url, archived_branch)
+        ):
+            raise GitSyncError(
+                f"{archived_branch} already exists — this memory was already rebooted "
+                "today. Archive it under another name yourself first, or wait for tomorrow."
+            )
+
+        self.git_runner.push_ref_as(mount, current_branch, archived_branch, remote="origin")
+        self.git_runner.delete_remote_branch(mount, current_branch, remote="origin")
+        self.git_runner.rename_branch(mount, current_branch, archived_branch)
+
+        self.git_runner.create_orphan_branch(mount, current_branch)
+        for cleared in (*self._FOLD_SUBDIRS[:-1], COMMIT_LOG_DIR_NAME):
+            # Every fold subdirectory except `.cgs` — the one the fold
+            # brings forward is exactly the one a reboot must not erase.
+            self.git_runner.remove_tracked_path(mount, cleared)
+
+        self._log_event(
+            "memory_reboot",
+            mount=mount,
+            archived=archived_branch,
+            exported=exported_path,
+            branch=current_branch,
+        )
+        return {
+            "mount": str(mount),
+            "folded": folded,
+            "exported": str(exported_path),
+            "archived_from": current_branch,
+            "archived_to": archived_branch,
+            "branch": current_branch,
+        }
+
     def memory_status(self, cgshome: str | Path) -> dict[str, Any]:
         """What this workspace remembers, in one answer.
 
@@ -4413,9 +4714,9 @@ class ComplexGitSyncClient:
         question being whether those two differ.
         """
         workspace = Path(cgshome)
-        entries = read_all_entries(workspace / ".cgitsync" / "lgr")
+        entries = _read_all_ledger_entries(workspace / ".cgitsync")
         report = self.verify(workspace)
-        states = sorted((workspace / ".cgitsync" / STATE_DIR_NAME).glob("*.gts"))
+        states = _memory_state_files(workspace / ".cgitsync")
         return {
             "cgshome": str(workspace.resolve()),
             "verification": report.state.name.lower().replace("_", "-"),
@@ -4441,7 +4742,7 @@ class ComplexGitSyncClient:
         """
         workspace = Path(cgshome)
         cgitsync_dir = workspace / ".cgitsync"
-        entries = read_all_entries(cgitsync_dir / "lgr")
+        entries = _read_all_ledger_entries(cgitsync_dir)
         seen: dict[str, list[Any]] = {}
         for entry in entries:
             state_hash = _parse_state_hash(entry.state_id)
@@ -4449,7 +4750,7 @@ class ComplexGitSyncClient:
                 seen.setdefault(state_hash, []).append(entry)
 
         rows: list[dict[str, Any]] = []
-        for snapshot in sorted((cgitsync_dir / STATE_DIR_NAME).glob("*.gts")):
+        for snapshot in _memory_state_files(cgitsync_dir):
             recorded = seen.pop(snapshot.stem, [])
             rows.append(
                 {
@@ -4489,12 +4790,12 @@ class ComplexGitSyncClient:
         cgitsync_dir = workspace / ".cgitsync"
         matches = sorted(
             snapshot
-            for snapshot in (cgitsync_dir / STATE_DIR_NAME).glob("*.gts")
+            for snapshot in _memory_state_files(cgitsync_dir)
             if snapshot.stem.startswith(state)
         )
         if not matches:
             raise GitSyncError(
-                f"no State in {cgitsync_dir / STATE_DIR_NAME} begins with {state!r}."
+                f"no State under {cgitsync_dir} (folded or pending) begins with {state!r}."
             )
         if len(matches) > 1:
             names = ", ".join(snapshot.stem[:12] for snapshot in matches)
@@ -4504,10 +4805,10 @@ class ComplexGitSyncClient:
         document = GtsDocument.from_toml(snapshot)
         recorded = [
             entry
-            for entry in read_all_entries(cgitsync_dir / "lgr")
+            for entry in _read_all_ledger_entries(cgitsync_dir)
             if _parse_state_hash(entry.state_id) == snapshot.stem
         ]
-        log = read_commit_log(cgitsync_dir, snapshot.stem)
+        log = _memory_read_commit_log(cgitsync_dir, snapshot.stem)
         committed: dict[int, list[dict[str, Any]]] = {}
         for row in log["commit"]:
             committed.setdefault(int(row.get("entry", 0)), []).append(row)
@@ -4535,6 +4836,50 @@ class ComplexGitSyncClient:
             ],
             "published": list(log["published"]),
         }
+
+    def memory_explore(
+        self,
+        cgshome: str | Path,
+        *,
+        branch: str | None = None,
+        timeline: bool = False,
+    ) -> dict[str, Any]:
+        """A memory a person can actually read, by branch or in ledger order.
+
+        The default view answers *what a colleague pulling this branch
+        would see*: one row per commit this memory recorded as published,
+        newest push first. ``timeline=True`` answers instead *everything
+        that happened, in the order it did*: one row per ledger entry —
+        `checkout`, `merge`, `push` included, which the commit-only view
+        drops.
+
+        Both read the same two sources every other `memory` command does —
+        `.cgitsync/.memory` (folded) and `.cgitsync` itself (pending) — so
+        a memory that has never been pushed still explores; nothing here
+        needs a mount to exist.
+
+        *branch* names a memory branch other than the one checked out on
+        this disk. MemoryExplore §D1 keeps this to local reads only for
+        now, so a name that does not match what is actually checked out at
+        the mount is refused by name, naming `memory clone --branch` as
+        the way to bring that branch here first — silently answering for
+        the wrong branch would be worse than saying so.
+        """
+        workspace = Path(cgshome)
+        cgitsync_dir = workspace / ".cgitsync"
+        mount = memory_mount_path(workspace)
+        current_branch = (
+            self.git_runner.current_branch(mount) if (mount / ".git").exists() else None
+        )
+        if branch is not None and branch != current_branch:
+            raise GitSyncError(
+                f"branch {branch!r} is not checked out at {mount}. Bring it onto this "
+                f"disk first with 'cgitsync memory clone --branch {branch}'."
+            )
+        resolved_branch = branch or current_branch
+        if timeline:
+            return {"branch": resolved_branch, "entries": _memory_timeline(cgitsync_dir)}
+        return {"branch": resolved_branch, "commits": _memory_published_commits(cgitsync_dir)}
 
     def verify(self, cgshome: str | Path, *, repair: bool = False) -> VerificationReport:
         """Say which of the four answers this workspace's history deserves.
@@ -4572,13 +4917,19 @@ class ComplexGitSyncClient:
         into looking clean is evidence of nothing.
         """
         workspace = Path(cgshome)
-        lgr_dir = workspace / ".cgitsync" / "lgr"
-        entries = read_all_entries(lgr_dir)
+        cgitsync_dir = workspace / ".cgitsync"
+        entries = _read_all_ledger_entries(cgitsync_dir)
         report = verify_chain(entries)
 
         if entries:
-            cached_head = read_head(lgr_dir)
-            true_head = recompute_head(lgr_dir)
+            # Whichever half currently holds the highest-seq entry is where
+            # the HEAD cache that matters lives — `write_entry` always
+            # updates it in the same directory it just wrote to, and a
+            # fold moves both together, so this is never split across the
+            # two halves.
+            active_lgr_dir = _current_ledger_dir(cgitsync_dir)
+            cached_head = read_head(active_lgr_dir)
+            true_head = recompute_head(active_lgr_dir)
             if cached_head != true_head:
                 report.findings.append((
                     entries[-1].seq,
@@ -4601,7 +4952,7 @@ class ComplexGitSyncClient:
             ):
                 report.state = HistoryState.CORRUPT
             if repair:
-                verify_and_repair_head(lgr_dir)
+                verify_and_repair_head(active_lgr_dir)
         elif _legacy_register_exists(workspace):
             report.state = HistoryState.LEGACY
 
@@ -4669,7 +5020,8 @@ class ComplexGitSyncClient:
             self._repo_status_row(registry, entry, root_path, branches) for entry in entries
         ]
         memory_dirty = any(
-            entry.is_memory_mount and row[5] != "clean" for entry, row in zip(entries, rows, strict=True)
+            entry.relative_path == Path(MOUNT_PATH) and row[5] != "clean"
+            for entry, row in zip(entries, rows, strict=True)
         )
         return _StatusView(
             workspace=workspace,
@@ -4722,12 +5074,12 @@ class ComplexGitSyncClient:
         """
         report = self.verify(cgshome, repair=repair)
         self.last_verify_report = report
-        lgr_dir = Path(cgshome) / ".cgitsync" / "lgr"
+        cgitsync_dir = Path(cgshome) / ".cgitsync"
         return json_dumps(
             verify_payload(
                 cgshome=str(Path(cgshome).resolve()),
                 state=report.state.name.lower().replace("_", "-"),
-                entries=len(read_all_entries(lgr_dir)),
+                entries=len(_read_all_ledger_entries(cgitsync_dir)),
                 findings=report.findings,
                 repair=repair,
             )
@@ -4804,20 +5156,29 @@ class ComplexGitSyncClient:
         for one sequence number. The failure is logged and the command
         succeeds; the next `verify` reports the gap rather than the user
         losing a completed operation to a bookkeeping error.
+
+        Always writes into the *pending* half (``cgitsync_dir / "lgr"``,
+        never ``.memory/lgr`` — that only ever gains content through
+        ``memory push``'s own fold), but chains from whichever entry is
+        actually last, folded or pending — `append_entry`'s own
+        single-directory read would otherwise treat a workspace that just
+        folded as having no history at all, and start a new genesis entry
+        over real, already-folded history.
         """
         try:
-            entry = append_entry(
-                cgitsync_dir / "lgr",
+            existing_entries = _read_all_ledger_entries(cgitsync_dir)
+            entry = build_next_entry(
+                existing_entries[-1] if existing_entries else None,
                 command=command_origin,
-                argv=sys.argv[1:],
+                argv=scrub_argv(sys.argv[1:], tree_root=tree_root),
                 state_id=_format_state_id(state_hash),
                 state_dir=str(state_path.parent.name),
                 outcome="ok",
                 clock=SystemClock(),
                 toolchain=tuple(sorted(toolchain(self.git_runner).items())),
-                tree_root=tree_root,
                 commit_log=commit_log,
             )
+            write_entry(cgitsync_dir / "lgr", entry)
         except (LedgerStoreError, OSError) as exc:
             self._log_event(
                 "ledger_append_failed",
@@ -5013,34 +5374,30 @@ class ComplexGitSyncClient:
         )
 
     def _refresh_memory_mount_state(self, registry: WorkingGitTree) -> None:
-        """Read the memory mount's *actual* branch, HEAD and readiness, in place.
+        """Read the memory mount's *actual* branch and HEAD, in place.
 
         Every other repository's recorded `commit_sha` is kept fresh by the
         action that touched it — `checkout`, `commit`, `push` each refresh
-        the repos they visited before a State is written. The memory mount
-        is deliberately excluded from those actions
-        (`memory-dev_MemoryScopeExclusion`, `memory-dev_PullMemoryExclusion`),
-        so nothing else ever refreshes it — and a State whose recorded
+        the repos they visited before a State is written. `memory push`
+        touches the mount too, but through `git_runner` calls of its own,
+        not through `commit_tree`/`push_tree` — so nothing else ever
+        refreshes the *registry's* record of it, and a State whose recorded
         commit for the memory never moves would disagree with `status`'s
-        own live reading of it, for ever, the moment `memory push` first
-        moves it. The same exclusion means nothing else ever marks it
-        `READY` either: `restart` calls this before its own `is_ready()`
-        check for exactly that reason
-        (`memory-dev_MergeMemoryExclusion`) — without it, a workspace with
-        a mounted memory could never pass that check again, from the first
-        restart after onboarding onward.
+        own live reading of it the moment a fold first moves it
+        (`memory-dev_MemoryRecordedRefresh`). Since
+        `memory-dev_WorkingTransitionState`, the mount is an ordinary
+        private/local repository everywhere else — `merge`/`checkout`/
+        `pull` all reach it normally, and their own per-repo refresh is
+        what marks it `READY`; this call only keeps its `commit_sha`/branch
+        honest between one `memory push` and the next State write.
 
-        This is the read-only fix: ask git what the memory mount actually
-        is, right before every State is written, regardless of which
-        command asked for it. Never a write — `git rev-parse`/`current
-        branch`, the same questions `status` already asks. Silently does
-        nothing when the mount does not exist yet, or is not a repository
-        yet (`memory adopt` not run), or — a freshly adopted mount with
-        nothing committed — has no HEAD to read, in which case it is not
-        marked ready either.
+        Read-only: `git rev-parse`/`current branch`, the same questions
+        `status` already asks. Silently does nothing when the mount does
+        not exist yet, is not a repository yet (`memory adopt` not run),
+        or — freshly adopted, nothing committed — has no HEAD to read.
         """
         for entry in registry.values():
-            if not entry.is_memory_mount:
+            if entry.relative_path != Path(MOUNT_PATH):
                 continue
             if not (entry.absolute_path / ".git").is_dir():
                 continue
@@ -5054,13 +5411,6 @@ class ComplexGitSyncClient:
                 entry.current_ref_name = branch
                 entry.resolved_ref_kind = RefKind.BRANCH
                 entry.resolved_ref_name = branch
-                # Nothing else ever checks the memory mount out (it is
-                # excluded from every write scope), so nothing else ever
-                # marks it READY either — `is_ready()` would refuse the
-                # tree forever, from the first restart after onboarding
-                # onward, over a repository this refresh just confirmed
-                # is a real, resolvable checkout.
-                entry.repo_lifecycle_state = RepoLifecycleState.READY
 
     def write_gts_snapshot(
         self,
@@ -5145,7 +5495,7 @@ class ComplexGitSyncClient:
             # The rows name the entry that wrote them and the entry carries
             # their digest, so one of the two has to go first. The rows do,
             # asking the ledger which sequence number is next.
-            pending_seq = next_seq(cgitsync_dir / "lgr")
+            pending_seq = _next_ledger_seq(cgitsync_dir)
             written: list[Any] = []
             if commits:
                 rows = [replace(record, entry=pending_seq) for record in commits]

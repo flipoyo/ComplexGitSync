@@ -21,14 +21,12 @@ import pytest
 from ComplexGitSync.cgs_format import CgsDocument, normalize_cgs
 from ComplexGitSync.discovery import discover_nested_configs
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError
-from ComplexGitSync.git_repo import NodeType, RepoScope, WorkingRepo
+from ComplexGitSync.git_repo import RepoScope, WorkingRepo
 from ComplexGitSync.git_tree import (
-    ROOT_REPO_ID,
     WorkingGitTree,
     iter_tree_leaf_first,
     propagate_privacy,
 )
-from ComplexGitSync.operations import iter_write_scope
 from ComplexGitSync.orchestre import resolve_command_scope
 from ComplexGitSync.registry import build_registry_from_cgs_document
 
@@ -498,55 +496,15 @@ class TestThisTreesOwnDeclaration:
 
         assert names(RepoScope.PROJECT) == {"ComplexGitSync", "DocComplexGitSync"}
         # .memory is private and writable, in RepoScope's own terms, exactly
-        # like .localSpec and .claude -- `merge`/`tag`/`freeze-release` need
-        # it to be, so they go on reconciling it across project branches the
-        # same way they reconcile the other two. What add/commit/push do
-        # about it is a narrower exclusion of their own; see
-        # TestIterWriteScope below.
+        # like .localSpec and .claude -- `merge`/`tag`/`freeze-release`, and
+        # now `add`/`commit`/`push`/`pull` too, all reconcile it across
+        # project branches the same way they reconcile the other two.
+        # Nothing writes into its worktree except `memory push`'s own fold
+        # (`memory-dev_WorkingTransitionState`), so no scope needs to route
+        # around it any more.
         assert names(RepoScope.PRIVATE) == {".localSpec", ".claude", ".memory"}
         assert ".agentSpec" not in names(RepoScope.WRITABLE)
         assert ".agentSpec" in names(RepoScope.ALL)
-
-
-class TestIterWriteScope:
-    """`iter_write_scope` — what `add`/`commit`/`push` actually sweep.
-
-    `RepoScope` itself does not know about the memory (see the test above);
-    the exclusion is narrower than that, and belongs only to the three
-    commands that write *and then record having written* in the same
-    breath — `memory-dev_…_MemoryScopeExclusion`, archived 2026-09-17.
-    """
-
-    def test_the_memory_mount_is_excluded(self):
-        source = _REPO_ROOT / "examples" / "complexgitsync4dev.cgs"
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
-
-        names = {entry.name for entry in iter_write_scope(tree, RepoScope.PRIVATE)}
-
-        assert ".memory" not in names
-        assert names == {".localSpec", ".claude"}
-
-    def test_ordinary_iteration_still_sees_it(self):
-        """`iter_write_scope` is the narrower one; `iter_tree_leaf_first`,
-        which `merge`/`tag`/`freeze-release` still use, is unchanged."""
-        source = _REPO_ROOT / "examples" / "complexgitsync4dev.cgs"
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
-
-        names = {entry.name for entry in iter_tree_leaf_first(tree, RepoScope.PRIVATE)}
-
-        assert ".memory" in names
-
-    def test_a_tree_with_no_memory_mount_is_unaffected(self):
-        owned = _repo("app")
-        writable_config = _repo("own-spec", private=True, writable=True)
-        tree = WorkingGitTree()
-        tree.add(WorkingRepo(repo_id=ROOT_REPO_ID, name="root", node_type=NodeType.ROOT))
-        tree.add(owned)
-        tree.add(writable_config)
-
-        names = {entry.name for entry in iter_write_scope(tree, RepoScope.WRITABLE)}
-
-        assert names == {"root", "app", "own-spec"}
 
 
 class TestUserInstallDeclaration:

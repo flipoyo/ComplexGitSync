@@ -29,12 +29,11 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .memory.ledger_store import LedgerStoreError, read_all_entries
+from .memory.pending import current_state_from_ledger as _current_state_from_ledger
+from .memory.pending import memory_dirs as _memory_dirs
 from .memory.states import (
-    _parse_state_hash,
     _state_order_from_directory_name,
     _state_snapshot_candidates,
-    state_path,
 )
 from .settings import default_workspace
 
@@ -299,7 +298,15 @@ def describe_gts_path(search_dir: str | Path | None = None) -> SnapshotResolutio
     except (FileNotFoundError, tomllib.TOMLDecodeError):
         pass
 
-    gts_entries = [(path, path.stat().st_mtime) for path in _state_snapshot_candidates(cgitsync_dir)]
+    # Folded and pending, unioned: a memory mount (`.cgitsync/.memory`) may
+    # hold everything a `memory push` has already folded, leaving nothing
+    # under `.cgitsync` itself to find — WorkingTransitionState.
+    folded_dir, pending_dir = _memory_dirs(cgitsync_dir)
+    gts_entries = [
+        (path, path.stat().st_mtime)
+        for directory in (folded_dir, pending_dir)
+        for path in _state_snapshot_candidates(directory)
+    ]
     if gts_entries:
         gts_entries.sort(key=lambda x: x[1], reverse=True)
         return SnapshotResolution(
@@ -313,33 +320,6 @@ def describe_gts_path(search_dir: str | Path | None = None) -> SnapshotResolutio
         f"(CGSHOME came from {cgshome.origin}). "
         "Run 'cgitsync initialise' first, or pass --gts FILE explicitly."
     )
-
-
-def _current_state_from_ledger(cgitsync_dir: Path) -> Path | None:
-    """The State the newest ledger entry names, if that file is on disk.
-
-    The ledger is the workspace's own record of what it last wrote, so it
-    answers "which snapshot is current" better than either fallback: the
-    single-file register is no longer written, and the most-recent-by-mtime
-    rule decides from a filesystem timestamp, which is exactly the kind of
-    evidence this project has been removing.
-
-    ``None`` whenever the chain cannot answer — no ledger, no entries, or an
-    entry naming a State that is not there. Resolution then falls through to
-    the older rules, so a workspace written before the chain existed keeps
-    resolving.
-    """
-    try:
-        entries = read_all_entries(cgitsync_dir / "lgr")
-    except (OSError, LedgerStoreError):
-        return None
-    if not entries:
-        return None
-    state_hash = _parse_state_hash(entries[-1].state_id)
-    if state_hash is None:
-        return None
-    candidate = state_path(cgitsync_dir, state_hash)
-    return candidate.resolve() if candidate.is_file() else None
 
 
 def discover_gts_path(search_dir: str | Path | None = None) -> Path:

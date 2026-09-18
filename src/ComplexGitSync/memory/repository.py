@@ -10,11 +10,26 @@ Imports: git_branch
 Why the Git stays outside
 -------------------------
 A memory is a private/local repository like ``.localSpec`` or ``.claude``:
-one shared repository, one branch per project, mounted at ``.cgitsync``.
-Nothing about cloning, committing or pushing it is special, so nothing here
-learns to do any of it — this module decides *what* and `orchestre.py` asks
-`git_runner.py` to do it. The package docstring states that boundary; this
-is the module that would have broken it first.
+one shared repository, one branch per project, mounted at
+``.cgitsync/.memory``. Nothing about cloning, committing or pushing it is
+special, so nothing here learns to do any of it — this module decides
+*what* and `orchestre.py` asks `git_runner.py` to do it. The package
+docstring states that boundary; this is the module that would have broken
+it first.
+
+Why the mount nests inside ``.cgitsync`` rather than being it
+---------------------------------------------------------------
+``.cgitsync`` is every workspace's own local state area — States, the
+ledger, commit logs, run logs — written by every command, memory-mounted
+workspace or not. A git worktree that is *also* written to by whatever
+command happens to be running can never reliably be checked out or merged:
+`WorkingTransitionState` (``.localSpec/DevTickets/openTickets/memory-dev_1-2_WorkingTransitionState_DevPlanTicket.md``)
+is the record of hitting that live, on this project's own tree.
+``.cgitsync/.memory`` is the fix — the git-tracked mount sits one level
+inside `.cgitsync`, so nothing but ``memory push``'s own fold step ever
+writes into its worktree. Everything else under ``.cgitsync`` — outside
+``.memory/`` — is the pending increment: written exactly as before this
+milestone, since `.cgitsync` itself never moved.
 """
 
 from __future__ import annotations
@@ -26,8 +41,20 @@ from typing import Any
 
 from ..git_branch import DEFAULT_BRANCH, private_local_branch
 
+#: The workspace's own state area — every command's live-write target,
+#: mounted or not. Not owned by this module (it predates the memory
+#: feature; see `settings.py`), but named here as the one place the mount
+#: path is built from it.
+_STATE_DIR_NAME = ".cgitsync"
+
+#: The subdirectory, inside the workspace's state area, that becomes a real
+#: git repository once a memory is adopted — the frontier between what the
+#: memory already holds (`.memory/`) and what has accumulated since the
+#: last `memory push` (everything else under `.cgitsync`).
+MEMORY_SUBDIR_NAME = ".memory"
+
 #: Where a memory is mounted in the tree it remembers.
-MOUNT_PATH = ".cgitsync"
+MOUNT_PATH = f"{_STATE_DIR_NAME}/{MEMORY_SUBDIR_NAME}"
 
 #: The repository every project's memory is a branch of. One repository,
 #: one branch per project — the owner's decision of 2026-09-16, reversing
@@ -214,12 +241,24 @@ def commit_message(project_name: str, states: int, entries: int) -> str:
 
 
 def memory_mount_path(workspace: Path) -> Path:
-    """Where the memory sits in *workspace*."""
+    """Where the memory's git repository sits in *workspace*: ``.cgitsync/.memory``."""
     return workspace / MOUNT_PATH
+
+
+def memory_pending_path(workspace: Path) -> Path:
+    """Where a memory's not-yet-folded content accumulates: ``.cgitsync``.
+
+    The mount's own parent — one directory holds both, so a workspace with
+    no memory mounted needs no separate concept: everything just lives
+    directly under this path, exactly as before `MEMORY_SUBDIR_NAME` ever
+    existed, and `memory_mount_path` simply has nothing under it yet.
+    """
+    return memory_mount_path(workspace).parent
 
 
 __all__ = [
     "DEFAULT_MEMORY_REPOSITORY",
+    "MEMORY_SUBDIR_NAME",
     "MOUNT_PATH",
     "commit_message",
     "creation_command",
@@ -228,6 +267,7 @@ __all__ = [
     "format_mount_entry",
     "memory_branch",
     "memory_mount_path",
+    "memory_pending_path",
     "memory_repository_id",
     "mount_entry",
     "uncommitted_memory_paths",

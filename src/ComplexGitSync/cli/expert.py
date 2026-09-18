@@ -59,7 +59,7 @@ COMMANDS: dict[str, str] = {
     "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
     "init-from-submodules": "Adopt a submodule-based checkout: discover, initialise, then convert its submodules.",
     "verify": "Verify the hash-chained .cgitsync/lgr register for tamper-evidence.",
-    "memory": "Look at what this workspace remembers: status, list, show <state>.",
+    "memory": "Look at what this workspace remembers: status, list, show <state>, explore, reboot.",
 }
 
 
@@ -606,7 +606,24 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     adopt.add_argument(
         "--remote", help="Adopt this address instead of the one the project's owner implies."
     )
+    adopt.add_argument(
+        "--reboot",
+        action="store_true",
+        help="Adopt the repository identity, but start its content fresh rather than "
+        "carrying forward whatever the fallback branch already holds.",
+    )
     _add_search_dir_argument(adopt)
+
+    migrate = memory_commands.add_parser(
+        "migrate",
+        help="Move a memory mounted before WorkingTransitionState onto its new layout.",
+    )
+    migrate.add_argument(
+        "--cgs",
+        metavar="FILE",
+        help="The .cgs declaring the mount. Defaults to the one this tree was built from.",
+    )
+    _add_search_dir_argument(migrate)
 
     branch = memory_commands.add_parser(
         "branch",
@@ -628,6 +645,28 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     )
     push.add_argument("-m", "--message", help="Commit message. One is generated otherwise.")
     _add_search_dir_argument(push)
+
+    explore = memory_commands.add_parser(
+        "explore",
+        help="A memory a person can read: by branch, or the whole ledger in order.",
+    )
+    explore.add_argument(
+        "--branch",
+        metavar="NAME",
+        help="Explore this memory branch. Defaults to the one checked out here.",
+    )
+    explore.add_argument(
+        "--timeline",
+        action="store_true",
+        help="Every ledger entry in order, not only the commits that were published.",
+    )
+    _add_search_dir_argument(explore)
+
+    reboot = memory_commands.add_parser(
+        "reboot",
+        help="Archive this memory's current branch and start a fresh, empty one under its name.",
+    )
+    _add_search_dir_argument(reboot)
 
     subparser.set_defaults(handler=_handle_memory)
 
@@ -954,6 +993,8 @@ def _handle_memory(args: argparse.Namespace) -> int:
             cgs=getattr(args, "cgs", None),
             project_branch=getattr(args, "project_branch", None),
             no_push=getattr(args, "no_push", False),
+            timeline=getattr(args, "timeline", False),
+            reboot=getattr(args, "reboot", False),
         ),
     )
 
@@ -972,6 +1013,8 @@ def _execute_memory(
     cgs: str | None = None,
     project_branch: str | None = None,
     no_push: bool = False,
+    timeline: bool = False,
+    reboot: bool = False,
 ) -> int:
     if subcommand == "status":
         return _print_memory_status(client.memory_status(cgshome))
@@ -997,7 +1040,16 @@ def _execute_memory(
     if subcommand == "adopt":
         _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
         return _print_memory_adopt(
-            client.memory_adopt(cgshome, owner=owner, branch=branch, remote=remote)
+            client.memory_adopt(
+                cgshome, owner=owner, branch=branch, remote=remote, reboot=reboot
+            )
+        )
+    if subcommand == "reboot":
+        return _print_memory_reboot(client.memory_reboot(cgshome))
+    if subcommand == "migrate":
+        _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+        return _print_memory_migrate(
+            client.memory_migrate(cgshome, _cgs_to_edit(client, cgs, cgshome))
         )
     if subcommand == "branch":
         _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
@@ -1006,6 +1058,10 @@ def _execute_memory(
         )
     if subcommand == "push":
         return _print_memory_push(client.memory_push(cgshome, message=message))
+    if subcommand == "explore":
+        return _print_memory_explore(
+            client.memory_explore(cgshome, branch=branch, timeline=timeline)
+        )
     return _print_memory_show(client.memory_show(cgshome, state or ""), full=full)
 
 
@@ -1037,6 +1093,14 @@ def _print_memory_mount(answer: dict) -> int:
         print("next: cgitsync memory adopt, then cgitsync memory push")
     else:
         print("added=already-there")
+    return EXIT_OK
+
+
+def _print_memory_migrate(answer: dict) -> int:
+    print(f"old_mount={answer['old_mount']}")
+    print(f"new_mount={answer['new_mount']}")
+    print(f"files_moved={answer['files_moved']}")
+    print(f"cgs={answer['cgs']}")
     return EXIT_OK
 
 
@@ -1089,6 +1153,15 @@ def _print_memory_push(result: dict) -> int:
     return EXIT_OK
 
 
+def _print_memory_reboot(result: dict) -> int:
+    print(f"folded={result['folded']} pending record(s)")
+    print(f"archived={result['archived_from']} -> {result['archived_to']}")
+    print(f"exported={result['exported']}")
+    print(f"branch={result['branch']} (fresh, empty)")
+    print("next: use the tool as normal — the next command writes this branch's first State")
+    return EXIT_OK
+
+
 def _print_memory_status(status: dict) -> int:
     print(
         f"states={status['states']} entries={status['entries']} "
@@ -1134,6 +1207,46 @@ def _shorten(message: str, *, full: bool) -> str:
     if len(first_line) <= _MESSAGE_WIDTH:
         return first_line
     return f"{first_line[: _MESSAGE_WIDTH - 1]}…"
+
+
+def _print_memory_explore(answer: dict) -> int:
+    branch = answer["branch"]
+    print(f"branch={branch} (current)" if branch else "branch=(no memory mounted here yet)")
+    if "entries" in answer:
+        return _print_memory_timeline(answer["entries"])
+    return _print_memory_published(answer["commits"])
+
+
+def _print_memory_published(rows: list[dict]) -> int:
+    if not rows:
+        print("no published commits in this memory.")
+        return EXIT_OK
+    for row in rows:
+        date = row["published_at"][:10] or "-"
+        print(
+            f"{date}  {row['repository']:<18} {row['branch']:<12} "
+            f"{row['sha'][:8]}  {_shorten(row['message'], full=False)}"
+        )
+    return EXIT_OK
+
+
+def _print_memory_timeline(rows: list[dict]) -> int:
+    if not rows:
+        print("nothing recorded here yet.")
+        return EXIT_OK
+    for row in rows:
+        print(f"seq={row['seq']}  {row['recorded_at']}  {row['command']}")
+        for commit in row["commits"]:
+            print(
+                f"    commit  {commit['repository']:<18} {commit['sha'][:8]}  "
+                f"{_shorten(commit['message'], full=False)}"
+            )
+        for publication in row["published"]:
+            print(
+                f"    push    {publication['repository']:<18} -> "
+                f"{publication['remote']} {publication['ref']}"
+            )
+    return EXIT_OK
 
 
 def _print_memory_show(state: dict, *, full: bool = False) -> int:

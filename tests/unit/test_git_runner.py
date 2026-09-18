@@ -905,6 +905,21 @@ class _FakeGitRunner:
     def checkout(self, repo_path, branch: str) -> None:
         return None
 
+    def create_orphan_branch(self, repo_path, branch: str) -> None:
+        return None
+
+    def rename_branch(self, repo_path, old_name: str, new_name: str) -> None:
+        return None
+
+    def push_ref_as(self, repo_path, local_ref: str, remote_ref: str, *, remote="origin") -> None:
+        return None
+
+    def delete_remote_branch(self, repo_path, branch: str, *, remote="origin") -> None:
+        return None
+
+    def remove_tracked_path(self, repo_path, relative_path: str) -> None:
+        return None
+
     def has_uncommitted_changes(self, repo_path) -> bool:
         return False
 
@@ -913,6 +928,9 @@ class _FakeGitRunner:
 
     def tracked_gitlink_paths(self, repo_path) -> set[Path]:
         return set()
+
+    def tracked_files(self, repo_path) -> list[Path]:
+        return []
 
     def has_staged_changes(self, repo_path) -> bool:
         return False

@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.78
+# ComplexGitSync v0002.81
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -308,7 +308,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `import-submodules` | `<repo-root>` `--apply` `--recursive` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
 | Expert | `init-from-submodules` | `<repo-root>` `--cgs` `--max-depth` `--dry-run` `--force` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
 | Expert | `verify` | `--repair` `--search-dir` `--json` | Say whether this workspace's recorded history is verified, absent, legacy or corrupt. |
-| Expert | `memory` | `status` `list` `show <state>` `init` `mount` `adopt` `branch` `clone` `push` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. |
+| Expert | `memory` | `status` `list` `show <state>` `explore` `init` `mount` `adopt [--reboot]` `branch` `clone` `push` `reboot` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. |
 | Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
 | Configuration | `create-cgs` | `--project` `--repo` `--output` | Create a validated .cgs specification from CLI project definitions. |
@@ -507,17 +507,37 @@ this record stays. Editing one of these messages afterwards is something
 `verify` reports, because the ledger entry that recorded them carries their
 fingerprint.
 
+None of the three above is organised by branch, and a memory holds one
+branch per project. `memory explore` is the read for a person who does not
+already have a hash to give `memory show`:
+
+```bash
+cgitsync memory explore              # published commits on this memory's branch, newest push first
+cgitsync memory explore --timeline   # every ledger entry in order — checkout, merge, push included
+```
+
+`explore`'s default view is what a colleague pulling this branch would
+see: one row per commit this memory recorded as published, not every
+commit ever made here. `--timeline` reads the ledger straight through
+instead, so operations a commit-only view drops still show up.
+`--branch NAME` asks for a memory branch other than the one checked out on
+this disk; today that only works for the one actually checked out, and
+names `memory clone --branch NAME` when it is not.
+
 ### Keeping a memory when the disk does not
 
-A memory lives in `.cgitsync/`, which can be a repository of its own — the
-same kind of private mount `.localSpec` is. One repository holds every
-project's memory, on a branch per project, so nothing new has to be learned
-to use it:
+A memory lives at `.cgitsync/.memory`, which can be a repository of its
+own — the same kind of private mount `.localSpec` is. `.cgitsync` itself
+stays the workspace's own live state — States, the ledger, logs — and only
+what a `memory push` has folded in ever sits inside `.memory`, which is
+what lets that mount be checked out and merged like any other. One
+repository holds every project's memory, on a branch per project, so
+nothing new has to be learned to use it:
 
 ```bash
 cgitsync memory init     # the .cgs entry to add, and the branch it uses
 cgitsync memory clone    # bring this project's memory onto a new machine
-cgitsync memory push     # commit what the memory gained, and push it
+cgitsync memory push     # fold what accumulated, commit it, and push it
 ```
 
 `init` proposes and stops. **It never creates the repository for you**:
@@ -527,6 +547,42 @@ creates it and waits.
 Nothing is pushed automatically. A machine with no network keeps a
 complete, verifiable memory and sends it later — offline is the normal
 case, not a failure.
+
+A memory mounted before `cgitsync memory migrate` existed sat directly at
+`.cgitsync` instead. Running `cgitsync memory migrate` once moves it onto
+the layout above — nothing but the mount's own path changes.
+
+### Starting a memory's history over
+
+A project's shape changes — repositories added, removed, restructured —
+and a memory built for the old shape stops being a clean answer to "what
+does this project look like." `cgitsync memory reboot` closes the current
+chapter and opens an empty one, without losing the old one:
+
+```bash
+cgitsync memory reboot
+```
+
+```
+folded=12 pending record(s)
+archived=ComplexGitSync -> ComplexGitSync.archived-20260917
+exported=.cgitsync/.memory/.cgs/ComplexGitSync-v2.cgs
+branch=ComplexGitSync (fresh, empty)
+next: use the tool as normal — the next command writes this branch's first State
+```
+
+Nothing is ever deleted or force-pushed. The old branch is renamed —
+locally and on origin — to `<branch>.archived-<date>`, still fetchable
+with every State, ledger entry and commit message it ever held; a fresh,
+empty branch takes the original name, so nothing about how the memory is
+mounted changes. The tree's current shape is exported to a permanent,
+versioned `.cgs` (`.cgitsync/.memory/.cgs/<project>-v<N>.cgs`, `N`
+incrementing once per reboot — never overwritten, never reused) rather
+than read from any hand-authored file. `cgitsync memory adopt --reboot`
+is the same fresh start for a mount being adopted for the very first time:
+it adopts the repository identity but starts its content empty instead of
+carrying forward whatever the fallback branch already holds. Appending —
+the ordinary `memory adopt` — stays the default either way.
 
 **What a memory carries off your machine.** One path: the tree's own root,
 with `$HOME` substituted. Everything else it records — every repository
