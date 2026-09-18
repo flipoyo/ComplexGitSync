@@ -60,7 +60,9 @@ them in order — each one builds on the last:
    What `cgitsync` remembers about your tree, and the five commands — run
    once per project — that turn that memory into a repository of its own, so
    it survives the disk it was made on and follows your project across
-   branches and machines.
+   branches and machines. Also: reading it without a hash (`memory
+   explore`), and starting its history over on purpose without losing what
+   came before (`memory reboot`).
 
 > **Every command in these tutorials is a Pixi task.** Run `pixi install`
 > once per checkout, then always invoke the CLI as `pixi run cgitsync ...`
