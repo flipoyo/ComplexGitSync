@@ -338,6 +338,36 @@ In order:
    true beginning — nothing is committed yet; the next ordinary command
    does that, exactly like a freshly adopted mount.
 
+**The fresh branch is local only until you push it.** A reboot never
+pushes the new branch — the same rule `memory push`'s own commit step
+follows. So `cgitsync status` straight after a reboot shows the memory
+with no upstream, and that is correct rather than broken:
+
+```
+REPOSITORY  PATH               SCOPE          LOCAL_BRANCH  UPSTREAM_BRANCH  SYNC
+.memory     .cgitsync/.memory  private/local  YourProject   -                no-upstream
+```
+
+`-` and `no-upstream` mean "this branch has never been pushed, so there is
+nothing to measure it against". One command settles it:
+
+```bash
+pixi run cgitsync memory push
+```
+
+That folds anything pending, commits it, pushes the branch **and sets its
+upstream**, after which the same row reads `origin/YourProject` and
+`synced`. It is worth running even when the reboot left nothing to commit:
+the push still sets the tracking the row is waiting for. `cgitsync push
+--private`, which pushes every private repository in the tree, sets it too
+and reports `(upstream set)` when it does.
+
+> **`memory branch` is not a substitute here.** It publishes the branch,
+> so the commits reach origin, but it does not set your local tracking —
+> `status` keeps showing `-` afterwards. Its job is to create the branch a
+> later merge will need (§2, Step 5), not to connect the branch you are
+> on. Run `memory push`.
+
 **Nothing is ever force-pushed or deleted.** The old branch is renamed and
 kept, reachable for as long as anyone wants it:
 
@@ -400,7 +430,7 @@ That is what the whole tutorial was for.
 | Once per project | `memory mount --cgs FILE` | Adds one entry to your `.cgs`, keeping the rest of the file |
 | Once per project | `memory adopt [--reboot]` | Makes the memory you already have into that repository — fresh, or history inherited |
 | Once per project | `memory branch --project-branch main` | Makes the branch your first merge will need |
-| Whenever | `memory push` | Sends what the memory has gained |
+| Whenever | `memory push` | Sends what the memory has gained, and sets the branch's upstream — the command to run after a reboot (§5) |
 | Whenever | `memory explore [--timeline]` | Reads the memory by branch, or the whole ledger in order — no hash needed |
 | Rarely, on purpose | `memory reboot` | Archives the current branch, exports the current shape, starts a fresh empty branch under the same name |
 | On a new machine | `memory clone [--branch NAME]` | Brings it back — the live branch, or an archived one by name |
