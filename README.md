@@ -670,7 +670,7 @@ never parsed, since the flag itself may be what failed.
 | Python modules under `src/ComplexGitSync/` | **Not a public interface.** `ComplexGitSyncClient` is the CLI's own implementation. Import it and a refactor may break you; no deprecation is owed. |
 | `verify` | **Experimental.** The register it reads is being rewritten, so its output and its findings may change. Everything else in the command table is covered by the promises above. |
 
-`cgitsync verify` answers one of four things, and the difference matters if
+`cgitsync verify` answers one of five things, and the difference matters if
 you gate a build on it:
 
 | Answer | Exit | Means |
@@ -679,8 +679,17 @@ you gate a build on it:
 | `no-history` | `0` | Nothing recorded here yet. A new workspace is not a broken one. |
 | `legacy` | `1` | History exists, in the old single-file register, which carries no chain. Readable, not verifiable. |
 | `corrupt` | `1` | A chain was read and it does not hold. |
+| `time-inconsistent` | `1` | The chain held, but its own timestamps move backwards somewhere. Your history is intact; the clock that stamped it was not. |
 
 `legacy` exits non-zero on purpose: "I cannot tell" is not a yes.
+
+`time-inconsistent` is deliberately not `corrupt`. Every link checked out —
+nothing was rewritten — so the two answers send you to look at different
+things. A clock corrected mid-session, a restored virtual machine, or a
+machine that disagreed about the hour all read like this, and so does an
+entry someone backdated: a date cannot be moved backwards without
+contradicting the chain around it. It still exits non-zero, because
+something is wrong even though your history is not.
 
 Every command that writes a snapshot now records it in a hash-chained
 ledger under `.cgitsync/lgr/`, so a workspace you have used since then
@@ -732,9 +741,10 @@ requests, following the convention that paid assistance is acknowledged
 and not co-signed.
 
 - **Claude** (Anthropic) — including Claude Code with Claude Opus 5
-- **ChatGPT** (OpenAI)
+- **Codex** (OpenAI)
 - **GitHub Copilot**
-- **Mistral Vibe**
+- **ChatGPT** (OpenAI)
+- **Mistral Vibe** (mistralAI)
 
 Responsibility for everything in this repository rests with the author.
 

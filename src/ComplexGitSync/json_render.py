@@ -157,10 +157,13 @@ def verify_payload(
 ) -> dict[str, Any]:
     """What ``cgitsync verify --json`` prints.
 
-    ``status`` is one of the four answers — ``verified``, ``no-history``,
-    ``legacy``, ``corrupt`` — never a blur of two. An empty register reads
-    as ``no-history`` rather than as a clean chain, because a check that
-    cannot fail is not a check.
+    ``status`` is one of the five answers — ``verified``, ``no-history``,
+    ``legacy``, ``corrupt``, ``time-inconsistent`` — never a blur of two. An
+    empty register reads as ``no-history`` rather than as a clean chain,
+    because a check that cannot fail is not a check; and a chain whose links
+    all held but whose timestamps move backwards reads as
+    ``time-inconsistent`` rather than ``corrupt``, because the history is
+    intact and only the clock that stamped it was not.
 
     ``findings`` carries each finding's name as a string rather than an enum
     member, so the object survives serialisation without a custom encoder

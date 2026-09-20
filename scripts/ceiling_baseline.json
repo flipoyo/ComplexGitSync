@@ -37,7 +37,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 25,
-      "loc": 1891,
+      "loc": 1904,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -107,7 +107,7 @@
     },
     "json_render.py": {
       "internal_imports": 0,
-      "loc": 192,
+      "loc": 195,
       "public_symbols": 6
     },
     "master.py": {
@@ -116,8 +116,8 @@
       "public_symbols": 1
     },
     "memory/__init__.py": {
-      "internal_imports": 31,
-      "loc": 110,
+      "internal_imports": 30,
+      "loc": 108,
       "public_symbols": 0
     },
     "memory/commit_log.py": {
@@ -127,13 +127,13 @@
     },
     "memory/integrity.py": {
       "internal_imports": 1,
-      "loc": 208,
-      "public_symbols": 8
+      "loc": 287,
+      "public_symbols": 9
     },
     "memory/ledger_entry.py": {
       "internal_imports": 0,
-      "loc": 220,
-      "public_symbols": 7
+      "loc": 201,
+      "public_symbols": 4
     },
     "memory/ledger_store.py": {
       "internal_imports": 4,
@@ -157,7 +157,7 @@
     },
     "memory/store.py": {
       "internal_imports": 10,
-      "loc": 326,
+      "loc": 329,
       "public_symbols": 4
     },
     "operations.py": {
@@ -166,8 +166,8 @@
       "public_symbols": 30
     },
     "orchestre.py": {
-      "internal_imports": 146,
-      "loc": 5191,
+      "internal_imports": 147,
+      "loc": 5188,
       "public_symbols": 10
     },
     "paths.py": {

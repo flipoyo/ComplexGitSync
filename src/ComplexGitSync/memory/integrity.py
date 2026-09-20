@@ -63,10 +63,10 @@ class Finding(Enum):
 
     Listed in `.localSpec/AdditionalSpecs.md`, *The hash-chained register*.
 
-    All ten members are defined here because the type is shared with the
+    All eleven members are defined here because the type is shared with the
     later `verify_store()` work (Ring 1, filesystem-backed, out of scope for
     this module). `verify_chain()` below — pure arithmetic over the entry
-    sequence — only ever produces the first four.
+    sequence — only ever produces the first four and `TIME_REGRESSION`.
     """
 
     BROKEN_LINK = auto()  # prev mismatch — history was rewritten
@@ -79,6 +79,23 @@ class Finding(Enum):
     HEAD_STALE = auto()  # cached HEAD disagrees with recomputed chain
     ORPHAN_COMMIT_LOG = auto()  # commit messages kept for a State that is gone
     COMMIT_LOG_MISMATCH = auto()  # commit rows edited since the entry vouched for them
+    TIME_REGRESSION = auto()  # recorded_at moved backwards along the chain
+
+
+#: Findings that mean the history itself does not hold — the chain was
+#: rewritten, truncated, edited, or no longer matches what it vouches for.
+#: Anything in here makes a pass `CORRUPT`.
+_STRUCTURAL_FINDINGS = frozenset({
+    Finding.BROKEN_LINK,
+    Finding.BAD_ENTRY_HASH,
+    Finding.SEQ_GAP,
+    Finding.SEQ_DUPLICATE,
+    Finding.MISSING_STATE,
+    Finding.STATE_DIGEST_MISMATCH,
+    Finding.HEAD_STALE,
+    Finding.ORPHAN_COMMIT_LOG,
+    Finding.COMMIT_LOG_MISMATCH,
+})
 
 
 class HistoryState(Enum):
@@ -90,7 +107,7 @@ class HistoryState(Enum):
     was nothing to verify" are now different answers, and so is "there is
     history here that this format cannot verify".
 
-    The four are fixed by `.localSpec/AdditionalSpecs.md`, *The hash-chained
+    The five are fixed by `.localSpec/AdditionalSpecs.md`, *The hash-chained
     register*.
     """
 
@@ -98,6 +115,37 @@ class HistoryState(Enum):
     NO_HISTORY = auto()  # nothing recorded here yet — not a failure
     LEGACY = auto()  # single-file register: readable, not verifiable
     CORRUPT = auto()  # a chain was read and it does not hold
+    TIME_INCONSISTENT = auto()  # the chain holds; its own timestamps do not
+
+
+def resolve_state(findings: Sequence[tuple[int, Finding, str]]) -> HistoryState:
+    """The verdict a non-empty chain's *findings* add up to.
+
+    The single authority on which findings mean what, so a chain-level pass
+    and a store-level one cannot drift into disagreeing about the same
+    finding. Three tiers, in precedence order:
+
+    1. **Structural** (:data:`_STRUCTURAL_FINDINGS`) — `CORRUPT`. The
+       history does not hold.
+    2. **`TIME_REGRESSION`** — `TIME_INCONSISTENT`. The history *does*
+       hold: every link checked out, and only the clock that stamped it
+       moved backwards. Calling that "corrupt" would be false, and this
+       project has already paid once for reporting an intact artefact as
+       corrupt (`.localSpec/AdditionalSpecs.md`, *What a State's name is
+       computed from* — the version-2 canonicalisation story): it is the
+       worst answer available, because it invites deleting the one thing
+       that was fine. Its own verdict, exiting non-zero, says "something is
+       wrong here and it is not your history".
+    3. **`ORPHAN_STATE`** — no verdict change. Every workspace used before
+       the ledger existed holds States no entry records; they are history,
+       not damage. Reported, never fatal.
+    """
+    kinds = {finding for _seq, finding, _detail in findings}
+    if kinds & _STRUCTURAL_FINDINGS:
+        return HistoryState.CORRUPT
+    if Finding.TIME_REGRESSION in kinds:
+        return HistoryState.TIME_INCONSISTENT
+    return HistoryState.VERIFIED
 
 
 @dataclass
@@ -168,6 +216,8 @@ def verify_chain(entries: Sequence[LedgerEntryLike]) -> VerificationReport:
     - **Sequential `seq`, no gaps or duplicates.** Computed once up front
       over the full (seq-sorted) set, so a deleted or doubled entry is
       reported regardless of where it falls in the hash-chain pass below.
+    - **Monotonic time.** `recorded_at` must never decrease along the
+      chain. See :func:`_check_time_monotonic`.
     - **Hash chain.** Walked once, in the given order, tracking an
       `expected_prev` cursor that starts at `GENESIS_PREV`. For each entry:
       `entry.prev` is compared against `expected_prev` (`BROKEN_LINK` on
@@ -195,11 +245,9 @@ def verify_chain(entries: Sequence[LedgerEntryLike]) -> VerificationReport:
 
     _check_seq_integrity(entries, findings)
     _check_hash_chain(entries, findings)
+    _check_time_monotonic(entries, findings)
 
-    return VerificationReport(
-        findings=findings,
-        state=HistoryState.CORRUPT if findings else HistoryState.VERIFIED,
-    )
+    return VerificationReport(findings=findings, state=resolve_state(findings))
 
 
 def _check_seq_integrity(
@@ -229,6 +277,52 @@ def _check_seq_integrity(
                     f"missing {missing} seq(s) between {previous_seq} and {current_seq}",
                 )
             )
+
+
+def _check_time_monotonic(
+    entries: Sequence[LedgerEntryLike], findings: list[tuple[int, Finding, str]]
+) -> None:
+    """Append `TIME_REGRESSION` wherever `recorded_at` moves backwards.
+
+    The chain fixes the order of entries beyond dispute; each entry also
+    carries the moment it claims to have been written. Put those together
+    and each checks the other: entry *N+1* was written after entry *N* — the
+    hash chain proves that — so a timestamp that decreases is not a
+    difference of opinion, it is a detected fault. That is what turns a
+    local clock reading from an unchecked claim into a checked one, without
+    a network, a signature, or a third party.
+
+    What it catches: an NTP correction or a manual `date` set mid-session, a
+    VM or container snapshot restored to an earlier moment, a dual-boot
+    machine with a different idea of the hour — and a **backdated entry**,
+    which is the tampering case. A date cannot be forged downwards without
+    contradicting the chain around it.
+
+    What it is not: proof that the dates are *true*. A machine whose clock
+    was wrong from the start, consistently, produces a perfectly monotonic
+    chain of wrong timestamps. Absolute time needs a witness outside the
+    machine — see the UniversalClock ticket, §4.3.
+
+    Comparison is lexicographic on the stored strings, which is exactly
+    chronological for the fixed-width UTC ISO-8601 form every chain entry is
+    written in (`build_next_entry`, `timespec="seconds"`, `Z` suffix) — no
+    parsing, so a malformed value cannot raise here. An entry missing the
+    field, or carrying an empty one, is skipped rather than reported: this
+    module's contract is a structural Protocol, and "not recorded" is not
+    the same claim as "recorded, and earlier".
+    """
+    previous: tuple[int, str] | None = None
+    for entry in entries:
+        moment = getattr(entry, "recorded_at", "") or ""
+        if not moment:
+            continue
+        if previous is not None and moment < previous[1]:
+            findings.append((
+                entry.seq,
+                Finding.TIME_REGRESSION,
+                f"recorded_at {moment} is earlier than seq {previous[0]}'s {previous[1]}",
+            ))
+        previous = (entry.seq, moment)
 
 
 def _check_hash_chain(

@@ -16,8 +16,10 @@ from hypothesis import strategies as st
 from ComplexGitSync.memory.integrity import (
     GENESIS_PREV,
     Finding,
+    HistoryState,
     VerificationReport,
     recompute_entry_hash,
+    resolve_state,
     verify_chain,
 )
 
@@ -35,6 +37,32 @@ class FakeEntry:
     state_dir: str = "state(aaaa)_1"
     outcome: str = "ok"
     entry_hash: str = ""
+
+
+def build_chain_stamped(moments: list[str]) -> list[FakeEntry]:
+    """A valid, self-consistent chain whose entries carry *moments* in order.
+
+    Separate from `build_chain` because `recorded_at` is inside the entry
+    hash: re-stamping an entry after the fact changes its `entry_hash`, so
+    the next entry's `prev` no longer matches and the chain reads as
+    rewritten. Timestamps a test wants to control have to be there when the
+    chain is linked, not edited into it afterwards.
+    """
+    entries: list[FakeEntry] = []
+    prev = GENESIS_PREV
+    for i, moment in enumerate(moments, start=1):
+        entry = FakeEntry(
+            seq=i,
+            prev=prev,
+            recorded_at=moment,
+            command="freeze",
+            argv=["freeze", "--message", f"checkpoint-{i}"],
+            state_dir=f"state(aaaa)_{i}",
+        )
+        entry.entry_hash = recompute_entry_hash(entry)
+        entries.append(entry)
+        prev = entry.entry_hash
+    return entries
 
 
 def build_chain(n: int) -> list[FakeEntry]:
@@ -108,7 +136,7 @@ def test_verification_report_is_clean_reflects_findings():
     assert not populated.is_clean
 
 
-def test_finding_has_exactly_ten_members():
+def test_finding_has_exactly_eleven_members():
     assert [f.name for f in Finding] == [
         "BROKEN_LINK",
         "BAD_ENTRY_HASH",
@@ -120,7 +148,121 @@ def test_finding_has_exactly_ten_members():
         "HEAD_STALE",
         "ORPHAN_COMMIT_LOG",
         "COMMIT_LOG_MISMATCH",
+        "TIME_REGRESSION",
     ]
+
+
+def test_history_state_has_exactly_five_answers():
+    assert [s.name for s in HistoryState] == [
+        "VERIFIED",
+        "NO_HISTORY",
+        "LEGACY",
+        "CORRUPT",
+        "TIME_INCONSISTENT",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Monotonic time — the chain and the clock checking each other
+# ---------------------------------------------------------------------------
+
+
+def test_a_forward_moving_clock_is_verified():
+    """`build_chain` stamps ascending moments, so the check is silent."""
+    report = verify_chain(build_chain(4))
+    assert report.state is HistoryState.VERIFIED
+    assert report.findings == []
+
+
+def test_a_backwards_timestamp_is_reported_and_names_both_entries():
+    entries = build_chain_stamped([
+        "2026-08-28T00:00:01Z",
+        "2026-08-28T00:00:02Z",
+        "2026-08-27T00:00:00Z",  # the clock went back
+    ])
+
+    report = verify_chain(entries)
+
+    assert [(seq, f) for seq, f, _ in report.findings] == [(3, Finding.TIME_REGRESSION)]
+    detail = report.findings[0][2]
+    assert "2026-08-27T00:00:00Z" in detail
+    assert "2026-08-28T00:00:02Z" in detail
+
+
+def test_a_backwards_timestamp_is_not_called_corrupt():
+    """The chain held. Saying 'corrupt' would be false, and this project has
+    already paid once for reporting an intact artefact as corrupt.
+    """
+    entries = build_chain_stamped([
+        "2026-08-28T00:00:01Z",
+        "2026-08-28T00:00:02Z",
+        "2026-01-01T00:00:00Z",
+    ])
+
+    report = verify_chain(entries)
+
+    assert report.state is HistoryState.TIME_INCONSISTENT
+    assert report.state is not HistoryState.CORRUPT
+    assert not report.is_verified
+
+
+def test_a_rewritten_history_outranks_a_backwards_clock():
+    """Both faults at once is CORRUPT: the worse answer wins, and the time
+    finding is still reported beside it.
+    """
+    entries = build_chain_stamped([
+        "2026-08-28T00:00:01Z",
+        "2026-08-28T00:00:02Z",
+        "2026-01-01T00:00:00Z",
+    ])
+    # Edited in place, without re-hashing: the entry no longer hashes to
+    # what it claims, which is what BAD_ENTRY_HASH detects.
+    entries[2] = replace(entries[2], command="edited")
+
+    report = verify_chain(entries)
+
+    kinds = {finding for _seq, finding, _detail in report.findings}
+    assert Finding.TIME_REGRESSION in kinds
+    assert Finding.BAD_ENTRY_HASH in kinds
+    assert report.state is HistoryState.CORRUPT
+
+
+def test_equal_timestamps_are_not_a_regression():
+    """Two entries inside one second is ordinary — the rule is "never
+    decreases", not "always increases".
+    """
+    one_moment = "2026-08-28T00:00:01Z"
+    report = verify_chain(build_chain_stamped([one_moment, one_moment, one_moment]))
+
+    assert report.state is HistoryState.VERIFIED
+
+
+def test_a_missing_recorded_at_is_skipped_not_reported():
+    """"Not recorded" is not the same claim as "recorded, and earlier"."""
+    entries = build_chain_stamped([
+        "2026-08-28T00:00:02Z",
+        "",  # never recorded
+        "2026-08-28T00:00:03Z",
+    ])
+
+    report = verify_chain(entries)
+
+    assert not any(f is Finding.TIME_REGRESSION for _s, f, _d in report.findings)
+    assert report.state is HistoryState.VERIFIED
+
+
+def test_resolve_state_is_the_single_authority_on_verdicts():
+    """Chain-level and store-level passes share one rule, so a finding
+    cannot mean one thing to one of them and something else to the other.
+    """
+    assert resolve_state([]) is HistoryState.VERIFIED
+    assert resolve_state([(1, Finding.ORPHAN_STATE, "")]) is HistoryState.VERIFIED
+    assert resolve_state([(1, Finding.TIME_REGRESSION, "")]) is HistoryState.TIME_INCONSISTENT
+    assert resolve_state([(1, Finding.HEAD_STALE, "")]) is HistoryState.CORRUPT
+    assert (
+        resolve_state([(1, Finding.TIME_REGRESSION, ""), (2, Finding.BROKEN_LINK, "")])
+        is HistoryState.CORRUPT
+    )
 
 
 # ---------------------------------------------------------------------------

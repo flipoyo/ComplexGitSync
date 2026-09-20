@@ -132,6 +132,7 @@ from .memory import (
     build_next_entry,
     read_head,
     recompute_head,
+    resolve_state,
     scrub_argv,
     verify_and_repair_head,
     verify_chain,
@@ -5075,18 +5076,13 @@ class ComplexGitSyncClient:
             report.findings.extend(_verify_states_on_disk(workspace, entries))
             report.findings.extend(_verify_commit_logs(workspace, entries))
             # The store checks run after verify_chain, so the verdict is
-            # recomputed here rather than left at the chain's own.
-            #
-            # An orphan is deliberately not evidence of corruption. Every
-            # workspace used before the ledger was written holds States that
-            # no entry records, and they are history, not damage: calling
-            # that "corrupt" would teach exactly the shrug this command was
-            # rebuilt to stop. It is still reported — the reader decides.
-            if any(
-                finding is not Finding.ORPHAN_STATE
-                for _seq, finding, _detail in report.findings
-            ):
-                report.state = HistoryState.CORRUPT
+            # recomputed here rather than left at the chain's own — through
+            # `resolve_state`, the same function the chain pass uses, so a
+            # finding cannot mean one thing to one pass and something else
+            # to the other. Which findings are fatal, which get their own
+            # verdict, and which are reported without changing it (an
+            # orphan State, for one) is decided there and only there.
+            report.state = resolve_state(report.findings)
             if repair:
                 verify_and_repair_head(active_lgr_dir)
         elif _legacy_register_exists(workspace):

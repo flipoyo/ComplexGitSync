@@ -1383,7 +1383,7 @@ def _execute_verify_json(
     return _verify_exit_code(report.state)
 
 
-#: What each of the four answers prints, and what it means for a reader who
+#: What each of the five answers prints, and what it means for a reader who
 #: has just been told it. The wording says what was actually checked: a
 #: command that answered "clean" over a directory nothing writes taught its
 #: users to ignore it.
@@ -1406,6 +1406,14 @@ _VERIFY_ANSWERS: dict[HistoryState, tuple[str, str]] = {
     HistoryState.CORRUPT: (
         "corrupt",
         "a chain was read and it does not hold.",
+    ),
+    HistoryState.TIME_INCONSISTENT: (
+        "time-inconsistent",
+        "the chain holds — every link checked out — but its own timestamps "
+        "move backwards somewhere. Your history is intact; the clock that "
+        "stamped it was not. A corrected clock, a restored snapshot, or a "
+        "machine that disagreed about the hour all look like this, and so "
+        "does a backdated entry.",
     ),
 }
 
@@ -1437,6 +1445,12 @@ def _verify_exit_code(state: HistoryState) -> int:
     intact?", and "I cannot tell" is not a yes — a build gating on
     ``verify`` must not pass because the evidence is in a format that cannot
     be checked.
+
+    ``time-inconsistent`` exits non-zero for the neighbouring reason: the
+    history holds, so it is not ``corrupt``, but something is wrong that a
+    caller gating on this command should not sail past. Which of the two it
+    is changes what the reader should go and look at, which is exactly why
+    it is its own answer rather than folded into the other.
     """
     if state in (HistoryState.VERIFIED, HistoryState.NO_HISTORY):
         return EXIT_OK

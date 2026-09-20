@@ -101,9 +101,12 @@ class LocalGitRegister:
     - a ``[register]`` section for the current snapshot pointer, and
     - a ``[[snapshots]]`` list for public ``state(HASH(.@))`` identifiers.
 
-    The private TIME-L0 anchor never leaves the local execution context.
-    ``snapshot_hash`` remains the canonical hash of the ``.gts`` payload, but it
-    does not participate in State identity.
+    The ``HASH(.@)`` spelling above is historical: a State's name is now the
+    content digest of its own ``.gts``, and the TIME-L0 anchor that used to
+    mint it was deleted with the rest of that machinery (see
+    ``ledger_entry.py``'s module docstring). ``snapshot_hash`` remains the
+    canonical hash of the ``.gts`` payload, but it does not participate in
+    State identity.
     """
 
     _HASH_CHUNK_SIZE = 65536

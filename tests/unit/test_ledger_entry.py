@@ -15,11 +15,8 @@ from hypothesis import strategies as st
 from ComplexGitSync.memory.ledger_entry import (
     ClockProtocol,
     LedgerEntry,
-    TimeL0State,
     build_next_entry,
     compute_entry_hash,
-    hash_time_l0_anchor,
-    new_time_l0_anchor,
 )
 
 _GENESIS_PREV = "sha256:" + "0" * 64
@@ -65,48 +62,6 @@ def test_fake_clock_satisfies_clock_protocol():
     assert isinstance(clock.time_ns(), int)
     assert isinstance(clock.pid(), int)
     assert isinstance(clock.token_hex(16), str)
-
-
-# ---------------------------------------------------------------------------
-# TIME-L0 anchor generation (absorbed from L0.py, now clock-injectable)
-# ---------------------------------------------------------------------------
-
-
-class TestTimeL0Anchor:
-    def test_deterministic_with_fake_clock(self):
-        clock = FakeClock()
-        first = new_time_l0_anchor(clock)
-        second = new_time_l0_anchor(clock)
-        assert first == second
-        assert isinstance(first, TimeL0State)
-
-    def test_state_id_wraps_hash(self):
-        clock = FakeClock()
-        anchor = new_time_l0_anchor(clock)
-        assert anchor.state_id == f"state({anchor.state_hash})"
-
-    def test_different_clock_reads_produce_different_anchors(self):
-        first = new_time_l0_anchor(FakeClock(instant=datetime(2026, 1, 1, tzinfo=UTC)))
-        second = new_time_l0_anchor(FakeClock(instant=datetime(2026, 1, 2, tzinfo=UTC)))
-        assert first != second
-
-    def test_pid_alone_changes_anchor(self):
-        first = new_time_l0_anchor(FakeClock(pid=1))
-        second = new_time_l0_anchor(FakeClock(pid=2))
-        assert first != second
-
-    def test_token_alone_changes_anchor(self):
-        first = new_time_l0_anchor(FakeClock(token="aa" * 16))
-        second = new_time_l0_anchor(FakeClock(token="bb" * 16))
-        assert first != second
-
-    def test_hash_time_l0_anchor_is_pure_sha256_of_dot_prefixed_input(self):
-        import hashlib
-
-        anchor_text = "TIME-L0:example"
-        assert hash_time_l0_anchor(anchor_text) == hashlib.sha256(
-            f".{anchor_text}".encode()
-        ).hexdigest()
 
 
 # ---------------------------------------------------------------------------

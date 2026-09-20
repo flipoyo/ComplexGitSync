@@ -9,17 +9,21 @@ Contract: given the previous chain entry (or none, for genesis) and the
 Imports: none
 
 Design reference: ``.localSpec/AdditionalSpecs.md``, *The hash-chained
-register* (hash-chained
-register schema) and §3.3 (``ClockProtocol``). This module also absorbs the
-responsibility of ``L0.py``'s ``new_time_l0_anchor()``/``hash_time_l0_anchor()``
-(see ``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``'s
-feasibility review): the
-same private TIME-L0 anchor generation, but driven through an injectable
-:class:`ClockProtocol` instead of reading ``datetime.now(UTC)``,
-``time.time_ns()``, ``os.getpid()``, and ``secrets.token_hex()`` directly,
-so it is fully deterministic under test with a fake clock. ``L0.py`` itself
-is not edited by this module — a later integration step wires the two
-together.
+register* (hash-chained register schema) and §3.3 (``ClockProtocol``).
+
+The TIME-L0 anchor, deleted
+---------------------------
+This module used to carry ``TimeL0State``/``new_time_l0_anchor()``/
+``hash_time_l0_anchor()``, inherited from a deleted ``L0.py``. They were
+unit tested and called from nowhere in ``src/``, and they had two defects
+that made adopting them worse than starting over: the anchor discarded its
+own pre-image, so it could identify but never *attest* — a commitment with
+nothing left to reveal — and its id format ``state(<64 hex>)`` was
+byte-identical to a real State id, so an anchor and a snapshot of a tree
+could not be told apart. Removed on the owner's decision (D4 of
+``.localSpec/DevTickets/openTickets/main_1-1_UniversalClock_DevPlanTicket.md``);
+when WP5 needs an attestation primitive it writes one that keeps its
+pre-image and carries an id of its own.
 """
 
 from __future__ import annotations
@@ -38,9 +42,16 @@ _GENESIS_PREV = "sha256:" + "0" * 64
 
 
 class ClockProtocol(Protocol):
-    """Everything a caller needs to inject to make entry creation and
-    TIME-L0 anchor generation fully deterministic — no direct clock, PID,
-    or entropy reads anywhere in this module.
+    """Everything a caller needs to inject to make entry creation fully
+    deterministic — no direct clock, PID, or entropy reads anywhere in this
+    module.
+
+    ``time_ns``/``pid``/``token_hex`` have no caller left in this module
+    since the TIME-L0 anchor was deleted (see the module docstring); they
+    stay because this Protocol must keep matching
+    ``universal_clock.ClockProtocol``, which is the one every other module
+    injects, and a narrower shape here would make the two stop being
+    interchangeable.
 
     Structurally identical to, and never imported from,
     ``universal_clock.ClockProtocol`` — that module is Ring 1 and this one
@@ -66,47 +77,6 @@ class ClockProtocol(Protocol):
     def token_hex(self, nbytes: int) -> str:
         """Random hex token, for anchor entropy."""
         ...
-
-
-@dataclass(frozen=True, slots=True)
-class TimeL0State:
-    """Public identity derived from a private TIME-L0 anchor.
-
-    Equivalent in shape to ``L0.py``'s ``TimeL0State`` — reimplemented here
-    (not imported; Ring-0 modules are self-contained, see module docstring)
-    so this module owns the injectable-clock variant of anchor generation.
-    """
-
-    state_hash: str
-
-    @property
-    def state_id(self) -> str:
-        return f"state({self.state_hash})"
-
-
-def hash_time_l0_anchor(anchor: str) -> str:
-    """Return ``HASH(.@)`` for a private TIME-L0 anchor.
-
-    Pure hashing logic, carried over as-is from ``L0.py``.
-    """
-
-    return hashlib.sha256(f".{anchor}".encode()).hexdigest()
-
-
-def new_time_l0_anchor(clock: ClockProtocol) -> TimeL0State:
-    """Create a private TIME-L0 anchor for one generated State.
-
-    Same construction as ``L0.py``'s ``new_time_l0_anchor()``, but every
-    entropy source (clock, high-resolution counter, PID, random token) is
-    read through ``clock`` instead of the real ``datetime``/``time``/``os``/
-    ``secrets`` modules — so this is deterministic and testable with a fake.
-    """
-
-    instant = clock.now().astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
-    private_anchor = (
-        f"TIME-L0:{instant}:{clock.time_ns()}:{clock.pid()}:{clock.token_hex(16)}"
-    )
-    return TimeL0State(state_hash=hash_time_l0_anchor(private_anchor))
 
 
 @dataclass(frozen=True, slots=True)

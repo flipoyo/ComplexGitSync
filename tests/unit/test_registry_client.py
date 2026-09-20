@@ -25,7 +25,6 @@ from ComplexGitSync.git_tree import (
     make_repo_id,
     normalize_node_types,
 )
-from ComplexGitSync.memory.ledger_entry import hash_time_l0_anchor, new_time_l0_anchor
 from ComplexGitSync.memory.states import (
     _resolve_memory_state_directory,
     _state_directory_name,
@@ -34,7 +33,6 @@ from ComplexGitSync.orchestre import (
     ComplexGitSyncClient,
     GtsDocument,
     RuntimeStateStore,
-    SystemClock,
     _looks_like_https_auth_failure,
     _looks_like_ssh_auth_failure,
     _protocol_switch_hint,
@@ -1890,15 +1888,6 @@ def test_make_repo_id_only_collapses_explicit_dot_relative_path():
     assert make_repo_id("root", ".", "child-repo") == "root"
     assert make_repo_id("root", None, ".") == "root:."
     assert make_repo_id("root", "", "") == "root:"
-
-
-def test_time_l0_anchor_hash_is_public_identity_only():
-    state = new_time_l0_anchor(SystemClock())
-
-    assert re.fullmatch(r"[0-9a-f]{64}", state.state_hash)
-    assert state.state_id == f"state({state.state_hash})"
-    assert hash_time_l0_anchor("local-test-anchor") == hash_time_l0_anchor("local-test-anchor")
-    assert not hasattr(state, "anchor")
 
 
 def test_state_directory_suffix_is_scoped_to_exact_state_hash(tmp_path):
