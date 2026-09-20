@@ -125,6 +125,7 @@ from .json_render import dumps as json_dumps
 from .json_render import empty_status_payload, status_payload, verify_payload
 from .master import MasterConfig
 from .memory import (
+    ClockProtocol,
     Finding,
     HistoryState,
     SyncLedger,
@@ -1314,6 +1315,13 @@ class ComplexGitSyncClient:
     orchestre: Orchestre = field(default_factory=Orchestre)
     git_runner: GitRunner = field(default_factory=GitRunner)
     state_store: RuntimeStateStore = field(default_factory=RuntimeStateStore)
+    #: Every dated fact this client writes reads the wall clock through
+    #: here — `memory_push`'s commit moment, `memory_reboot`'s archive
+    #: name — rather than `datetime.now(UTC)` directly, so a test can
+    #: inject a fixed date instead of reaching for `monkeypatch`. Real by
+    #: default; see `.localSpec/DevTickets/openTickets/
+    #: main_1-1_ClockSeam_DevPlanTicket.md` §2.
+    clock: ClockProtocol = field(default_factory=SystemClock)
     registry: WorkingGitTree | None = None
     source_path: Path | None = None
     loaded_snapshot_path: Path | None = None
@@ -4701,6 +4709,7 @@ class ComplexGitSyncClient:
                     Path(str(status["cgshome"])).name,
                     int(status["states"]),
                     int(status["entries"]),
+                    clock=self.clock,
                 ),
                 user_name=user_name,
                 user_email=user_email,
@@ -4783,7 +4792,7 @@ class ComplexGitSyncClient:
         )
         current_branch = str(pushed["branch"])
 
-        archived_branch = f"{current_branch}.archived-{datetime.now(UTC):%Y%m%d}"
+        archived_branch = f"{current_branch}.archived-{self.clock.now():%Y%m%d}"
         remote_url = self.git_runner.remote_get_url(mount, "origin") or ""
         if self.git_runner.local_branch_exists(mount, archived_branch) or (
             remote_url and self.git_runner.remote_branch_exists(remote_url, archived_branch)

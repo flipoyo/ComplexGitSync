@@ -5,7 +5,7 @@ Contract: propose the `.cgs` entry that mounts a memory, say what a memory
     holds that is worth committing, and write the commit message for it.
     Every Git command is run by the caller through `git_runner.py`, as it is
     for every other repository in the tree.
-Imports: git_branch
+Imports: git_branch, ledger_entry
 
 Why the Git stays outside
 -------------------------
@@ -35,11 +35,11 @@ milestone, since `.cgitsync` itself never moved.
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from ..git_branch import DEFAULT_BRANCH, private_local_branch
+from .ledger_entry import ClockProtocol
 
 #: The workspace's own state area — every command's live-write target,
 #: mounted or not. Not owned by this module (it predates the memory
@@ -226,15 +226,22 @@ def uncommitted_memory_paths(status_lines: list[str]) -> list[str]:
     return [line[3:].strip() for line in status_lines if line.strip()]
 
 
-def commit_message(project_name: str, states: int, entries: int) -> str:
+def commit_message(project_name: str, states: int, entries: int, *, clock: ClockProtocol) -> str:
     """What a memory's own commit says.
 
     Written here rather than in the CLI because it is a fact about the
     memory, and because `CLAUDE.md`'s rule about commit messages governs
     what *people* write; this is the tool's own bookkeeping, like the
     `--commit-gitignore` message, and it says plainly what it carries.
+
+    ``clock`` is required rather than defaulted to a real one: a default
+    that quietly reads the wall clock is exactly the seam
+    `.localSpec/DevTickets/openTickets/main_1-1_ClockSeam_DevPlanTicket.md`
+    exists to close, and this module (Ring 1) cannot reach `orchestre.py`'s
+    `SystemClock` (Ring 3) to supply one itself — the caller already has
+    it.
     """
-    moment = f"{datetime.now(UTC):%Y-%m-%d}"
+    moment = f"{clock.now():%Y-%m-%d}"
     return (
         f"{project_name} memory, {moment}: {states} state(s), {entries} ledger entr(ies)"
     )

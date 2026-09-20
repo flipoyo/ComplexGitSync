@@ -317,24 +317,35 @@ def test_reboot_exports_a_versioned_cgs_the_stable_copy_never_touches(tmp_path):
 
 
 def test_a_second_reboot_the_next_day_writes_v3(tmp_path, monkeypatch):
+    """Both reboots own a fixed date — neither borrows one from the real
+    calendar. A test about "the next day" must own both days: fixed dates
+    that are not today and never will be, per
+    `.localSpec/DevTickets/openTickets/main_1-1_ClockSeam_DevPlanTicket.md`
+    §1 — otherwise the "first" reboot silently races the real clock and the
+    test goes red the day its fixed "next day" catches up to it.
+    """
     import ComplexGitSync.orchestre as orchestre_module
 
+    def _fixed_now(year: int, month: int, day: int) -> type:
+        class _FixedDay(orchestre_module.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return orchestre_module.datetime(year, month, day, tzinfo=tz)
+
+        return _FixedDay
+
     tree = _memory_ready(tmp_path)
+    monkeypatch.setattr(orchestre_module, "datetime", _fixed_now(2026, 1, 1))
     _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
     client = ComplexGitSyncClient()
     client.load(tree["workspace"] / "project.cgs")
     client.memory_push(tree["workspace"])
 
-    class _NextDay(orchestre_module.datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return orchestre_module.datetime(2026, 9, 19, tzinfo=tz)
-
-    monkeypatch.setattr(orchestre_module, "datetime", _NextDay)
+    monkeypatch.setattr(orchestre_module, "datetime", _fixed_now(2026, 1, 2))
     second = client.memory_reboot(tree["workspace"])
 
     assert Path(second["exported"]).name == "demo-v3.cgs"
-    assert second["archived_to"] == "demo_x.archived-20260919"
+    assert second["archived_to"] == "demo_x.archived-20260102"
 
 
 def test_rebooting_twice_the_same_day_refuses_rather_than_collide(tmp_path):
