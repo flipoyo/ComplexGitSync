@@ -1,12 +1,13 @@
 """settings — the answers no workspace can give, because no workspace is open yet.
 
-Ring: 1 (reads the environment and the filesystem; no subprocess)
+Ring: 1 (reads the environment, the filesystem, and the clock via
+    universal_clock; no subprocess)
 Contract: where ComplexGitSync keeps its workspaces, which one it falls back
     to when nothing else resolves (creating it once, then reusing it), which
     other workspaces exist there, and whether this installation is running
     standalone or nested. Answers all of that before any `.gts` has been
     found, which is what separates it from `master.py`.
-Imports: gts_document
+Imports: gts_document, universal_clock
 
 Why this module exists
 ----------------------
@@ -44,11 +45,11 @@ The public surface
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
 from .gts_document import GtsDocument
+from .universal_clock import ClockProtocol, SystemClock
 
 #: Overrides the root every workspace is created under. ``CGSPATH`` already
 #: exists as a concept — the parent of ``CGSHOME`` — but only as the
@@ -117,12 +118,16 @@ def read_default_workspace(root: Path | None = None) -> Path | None:
     return candidate if (candidate / _STATE_DIR_NAME).is_dir() else None
 
 
-def default_workspace(root: Path | None = None, *, create: bool = True) -> Path | None:
+def default_workspace(
+    root: Path | None = None, *, create: bool = True, clock: ClockProtocol | None = None
+) -> Path | None:
     """The workspace to fall back on when nothing else resolves.
 
     Reuse before create: an existing pointer wins. With *create* false this
     only reports what is already there, which is what a caller that must not
-    write to disk — a dry run, a test — needs.
+    write to disk — a dry run, a test — needs. ``clock`` names a freshly
+    minted workspace's directory — real by default
+    (:class:`~.universal_clock.SystemClock`).
     """
     base = root if root is not None else cgs_root()
     recorded = read_default_workspace(base)
@@ -130,7 +135,7 @@ def default_workspace(root: Path | None = None, *, create: bool = True) -> Path 
         return recorded
     if not create:
         return None
-    return _mint_default_workspace(base)
+    return _mint_default_workspace(base, clock=clock)
 
 
 def other_workspaces(root: Path | None = None, *, exclude: Path | None = None) -> list[Path]:
@@ -173,17 +178,18 @@ def resolve_use_case(cgshome: Path) -> UseCase:
     return UseCase.STANDALONE
 
 
-def _mint_default_workspace(root: Path) -> Path:
+def _mint_default_workspace(root: Path, *, clock: ClockProtocol | None = None) -> Path:
     """Create the default workspace, record it, and return it."""
     root.mkdir(parents=True, exist_ok=True)
-    workspace = root / f"CGS{datetime.now(UTC):%Y%m%d%H%M%S}" / DEFAULT_WORKSPACE_NAME
+    clock = clock or SystemClock()
+    workspace = root / f"CGS{clock.now():%Y%m%d%H%M%S}" / DEFAULT_WORKSPACE_NAME
     workspace.mkdir(parents=True, exist_ok=True)
-    write_empty_snapshot(workspace)
+    write_empty_snapshot(workspace, clock=clock)
     pointer_file(root).write_text(f"{workspace}\n", encoding="utf-8")
     return workspace
 
 
-def write_empty_snapshot(workspace: Path) -> Path:
+def write_empty_snapshot(workspace: Path, *, clock: ClockProtocol | None = None) -> Path:
     """Write a valid `.gts` recording a workspace with no repositories.
 
     ``UNLOADED`` and ``is_ready = false``, because an empty tree must never
@@ -193,13 +199,15 @@ def write_empty_snapshot(workspace: Path) -> Path:
 
     The state directory is named by the document's **content** hash, which
     is what a State's name is supposed to mean, and which a document with no
-    repositories computes as well as any other.
+    repositories computes as well as any other. ``clock`` names
+    ``generated_at`` — real by default (:class:`~.universal_clock.SystemClock`).
     """
+    clock = clock or SystemClock()
     document = GtsDocument(
         {
             "document": {
                 "format_version": GtsDocument.CURRENT_SCHEMA_VERSION,
-                "generated_at": f"{datetime.now(UTC):%Y-%m-%dT%H:%M:%SZ}",
+                "generated_at": f"{clock.now():%Y-%m-%dT%H:%M:%SZ}",
                 "command_origin": "default-workspace",
             },
             "project": {

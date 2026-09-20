@@ -10,7 +10,7 @@ Contract: coordinate one GitTree's lifecycle end to end — load/validate/
     modules below rather than re-implementing them.
 Imports: cgs_format, discovery, errors, git_repo, git_runner, git_tree,
     gts_document, integrity, ledger_entry, ledger_store, master,
-    operations, paths, registry, state_store, status_render
+    operations, paths, registry, state_store, status_render, universal_clock
 
 This module is the **Orchestre anchor** — the authoritative source for the
 public client API and the infrastructure services (structured run logging,
@@ -29,9 +29,12 @@ ComplexGitSyncClient.verify()'s docstring).
 Classes still defined here (Tier 2 — Actions):
     CommandRunLogger        Structured JSON event logger for a command run
     RuntimeStateStore       Persistent snapshot-pointer registry (.cgs → .gts)
-    SystemClock             Real ledger_entry.ClockProtocol implementation
     LocalGitRegister        The (still single-file, not yet ledger_store-backed) .lgr writer
     SyncLedger              Append-only sync-event ledger sharing LocalGitRegister's file
+
+``SystemClock`` moved to ``universal_clock.py`` (Ring 1) — see that
+module's docstring — so every ring below this one can reach the real
+clock, not only this one. Imported here, not defined here.
 
 Classes defined here (Tier 3 — Client / API):
     Orchestre               Coordination layer owning one GitTree
@@ -51,15 +54,12 @@ import json
 import logging
 import os
 import re
-import secrets
 import shutil
 import sys
-import time
 import tomllib
 import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -125,7 +125,6 @@ from .json_render import dumps as json_dumps
 from .json_render import empty_status_payload, status_payload, verify_payload
 from .master import MasterConfig
 from .memory import (
-    ClockProtocol,
     Finding,
     HistoryState,
     SyncLedger,
@@ -254,6 +253,7 @@ from .status_render import (
     _tree_branch_label,
 )
 from .toolchain import toolchain
+from .universal_clock import ClockProtocol, SystemClock
 
 # ============================================================
 #  Runtime document layer — .gts
@@ -440,9 +440,16 @@ def create_run_logger(
     source_path: Path | None = None,
     project_root: Path | None = None,
     project_log_dir: Any = None,
+    clock: ClockProtocol | None = None,
 ) -> CommandRunLogger:
-    """Create a :class:`CommandRunLogger` for a specific command invocation."""
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    """Create a :class:`CommandRunLogger` for a specific command invocation.
+
+    ``clock`` names the run — real by default (:class:`SystemClock`), so a
+    caller that cares about the exact timestamp in the logger name can
+    inject a fixed one instead of two runs in the same second racing
+    ``logging``'s global logger cache below.
+    """
+    timestamp = (clock or SystemClock()).now().strftime("%Y%m%dT%H%M%SZ")
 
     logger_name = f"ComplexGitSync.run.{command_name}.{timestamp}"
     logger = logging.getLogger(logger_name)
@@ -509,30 +516,6 @@ def _resolve_state_base_dir() -> Path:
     if xdg_state:
         return Path(xdg_state) / "ComplexGitSync" / "snapshots"
     return Path.home() / ".local" / "state" / "ComplexGitSync" / "snapshots"
-
-
-class SystemClock:
-    """Real :class:`~.ledger_entry.ClockProtocol` implementation.
-
-    The only place in ``orchestre.py`` that reads the wall clock, PID, or an
-    entropy source directly for TIME-L0 anchor generation — every other
-    caller goes through :func:`~.ledger_entry.new_time_l0_anchor`, which
-    stays deterministic and testable because it only ever sees this
-    Protocol, never the real ``datetime``/``time``/``os``/``secrets``
-    modules itself.
-    """
-
-    def now(self) -> datetime:
-        return datetime.now(UTC)
-
-    def time_ns(self) -> int:
-        return time.time_ns()
-
-    def pid(self) -> int:
-        return os.getpid()
-
-    def token_hex(self, nbytes: int) -> str:
-        return secrets.token_hex(nbytes)
 
 
 def _release_snapshot_slug(release_name: str) -> str:
@@ -3298,7 +3281,7 @@ class ComplexGitSyncClient:
         folded_dir, pending_dir = _memory_dirs(cgitsync_dir)
         if not (folded_dir / COMMIT_LOG_DIR_NAME).is_dir() and not (pending_dir / COMMIT_LOG_DIR_NAME).is_dir():
             return {}
-        moment = datetime.now(UTC).isoformat(timespec="seconds")
+        moment = self.clock.now().isoformat(timespec="seconds")
         branches = GitTreeBranches(registry, self.git_runner)
         published: dict[str, list[PublicationRecord]] = {}
         for entry, outcome in zip(
@@ -5327,7 +5310,7 @@ class ComplexGitSyncClient:
                 state_id=_format_state_id(state_hash),
                 state_dir=str(state_path.parent.name),
                 outcome="ok",
-                clock=SystemClock(),
+                clock=self.clock,
                 toolchain=tuple(sorted(toolchain(self.git_runner).items())),
                 commit_log=commit_log,
             )
@@ -5678,7 +5661,7 @@ class ComplexGitSyncClient:
         # the tree identical produce one State and two logs, so it is named
         # for the run and kept out of the state area entirely.
         final_log_path = cgitsync_dir / "logs" / (
-            f"{command_origin}-{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}.log"
+            f"{command_origin}-{self.clock.now():%Y%m%dT%H%M%S%fZ}.log"
         )
         final_log_path.parent.mkdir(parents=True, exist_ok=True)
         if self.run_logger is None:

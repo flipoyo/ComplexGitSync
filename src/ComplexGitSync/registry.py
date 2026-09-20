@@ -10,7 +10,8 @@ Contract: given a parsed ``.cgs`` (``CgsDocument``) or ``.gts``
     env-marker path expansion inherited from the ``.gts``/``.cgs`` wire
     format itself (``$HOME``-style markers), which is why this module sits
     at Ring 2 rather than Ring 0/1.
-Imports: cgs_format, errors, git_branch, git_repo, git_tree, gts_document
+Imports: cgs_format, errors, git_branch, git_repo, git_tree, gts_document,
+    universal_clock
 
 Extracted from ``orchestre.py`` (Wave 2, P5-registry of
 ``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
@@ -40,7 +41,6 @@ import downward from it.
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -86,6 +86,7 @@ from .gts_document import (
     _repo_ref_pair,
 )
 from .paths import TREE_MARKER, _path_against_tree, _path_from_tree
+from .universal_clock import ClockProtocol, SystemClock
 
 # ============================================================
 #  Environment-marker path helpers
@@ -486,14 +487,20 @@ def build_gts_document_from_registry(
     command_origin: str,
     source_cgs_path: Path | None,
     freeze_name: str | None = None,
+    clock: ClockProtocol | None = None,
 ) -> GtsDocument:
-    """Build a :class:`GtsDocument` from the live *registry*."""
+    """Build a :class:`GtsDocument` from the live *registry*.
+
+    ``clock`` names ``generated_at`` — real by default
+    (:class:`~.universal_clock.SystemClock`); metadata, never part of the
+    document's canonical hash.
+    """
     root_entry = registry.get(ROOT_REPO_ID)
     tree_state = build_tree_state(registry)
     data: dict[str, Any] = {
         "document": {
             "CGS_VERSION": CGS_VERSION,
-            "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "generated_at": f"{(clock or SystemClock()).now():%Y-%m-%dT%H:%M:%SZ}",
             "command_origin": command_origin,
         },
         "project": _project_block(root_entry, source_cgs_path),

@@ -1,13 +1,14 @@
 """paths — environment-marker path portability ($HOME/%USERPROFILE%/etc.) and CGSHOME/CGSPATH resolution.
 
 Ring: 1 (reads os.environ, Path.cwd()/Path.home(), and — only in
-    resolve_bootstrap_root's timestamp default — the clock; no subprocess)
+    resolve_bootstrap_root's timestamp default — the clock, via
+    universal_clock; no subprocess)
 Contract: convert between absolute, machine-specific paths and the portable
     $HOME/%USERPROFILE%/%HOMEDRIVE%%HOMEPATH% marker tokens that .gts/.lgr
     documents record instead of raw absolute paths; and resolve where
     CGSHOME/CGSPATH live for load/initialise/clone/bootstrap, from an
     explicit override, the environment, or the current working directory.
-Imports: cgs_format, errors
+Imports: cgs_format, errors, universal_clock
 
 Extracted verbatim from ``orchestre.py`` (Wave 2, P5-paths of
 ``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
@@ -36,11 +37,11 @@ later integration step.
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
 from pathlib import Path
 
 from .cgs_format import CgsDocument
 from .errors import ConfigValidationError, GitSyncError
+from .universal_clock import ClockProtocol, SystemClock
 
 # ============================================================
 #  Environment-marker path portability
@@ -245,6 +246,7 @@ def resolve_bootstrap_root(
     project_name: str,
     *,
     cgs_path: str | Path | None = None,
+    clock: ClockProtocol | None = None,
 ) -> Path:
     """Resolve the isolated CGSHOME a bootstrap run will clone into.
 
@@ -255,7 +257,9 @@ def resolve_bootstrap_root(
     directory (``$HOME/.cgs`` is created if missing) so a bootstrapped
     project never lands inside the ComplexGitSync clone itself — running
     ComplexGitSync standalone must never mix its own repo with the
-    project state it manages.
+    project state it manages. ``clock`` names that timestamp — real by
+    default (:class:`~.universal_clock.SystemClock`); a caller that cares
+    about the exact directory name can inject a fixed one instead.
     """
     if not project_name:
         raise ValueError("bootstrap requires a non-empty project_name.")
@@ -264,5 +268,5 @@ def resolve_bootstrap_root(
     else:
         cgs_root = (Path.home() / ".cgs").expanduser().resolve()
         cgs_root.mkdir(parents=True, exist_ok=True)
-        cgspath = cgs_root / f"CGS{datetime.now(UTC):%Y%m%d%H%M%S}"
+        cgspath = cgs_root / f"CGS{(clock or SystemClock()).now():%Y%m%d%H%M%S}"
     return (cgspath / project_name).resolve()

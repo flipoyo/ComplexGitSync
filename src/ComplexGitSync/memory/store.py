@@ -1,11 +1,11 @@
 """store — the State area's writer, and the register format that predates it.
 
-Ring: 1 (filesystem and clock; no subprocess, no Git)
+Ring: 1 (filesystem and clock, via universal_clock; no subprocess, no Git)
 Contract: write one State to disk atomically, answer whether a workspace
     holds history in the old single-file format, and read that format for
     the callers that still expose it. Builds no document and decides no
     tree: what to write is handed in.
-Imports: errors, gts_document, paths, states
+Imports: errors, gts_document, paths, states, universal_clock
 
 Two things live here, and it is worth saying why they are together.
 
@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import hashlib
 import tomllib
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +33,7 @@ import tomli_w
 from ..errors import ConfigValidationError
 from ..gts_document import GtsDocument
 from ..paths import _path_to_environment_marker
+from ..universal_clock import ClockProtocol, SystemClock
 from .states import (
     _STATE_DIR_RE,
     _format_state_id,
@@ -118,6 +118,7 @@ class LocalGitRegister:
         state_hash: str | None = None,
         state_order: int | None = None,
         recorded_snapshot_path: Path | str | None = None,
+        clock: ClockProtocol | None = None,
     ) -> str:
         resolved_snapshot_path = Path(snapshot_path).resolve()
         public_snapshot_path = (
@@ -143,7 +144,8 @@ class LocalGitRegister:
         if state_order is None:
             state_order = self._next_state_order(snapshots, public_state_hash)
         recorded_at = (
-            datetime.now(UTC)
+            (clock or SystemClock())
+            .now()
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         )
@@ -311,6 +313,7 @@ class SyncLedger:
         gts_snapshot_id: str,
         affected_repos: list[str],
         actor: str | None = None,
+        clock: ClockProtocol | None = None,
     ) -> str:
         """Append an immutable event to the ledger and return the new ``sync_id``.
 
@@ -330,6 +333,9 @@ class SyncLedger:
         actor:
             The system user or process that triggered the operation.  When
             ``None``, the current OS user name is detected automatically.
+        clock:
+            Names ``timestamp`` — real by default
+            (:class:`~..universal_clock.SystemClock`).
         """
         data = self._load()
         events: list[dict[str, Any]] = data.setdefault("ledger", [])
@@ -340,7 +346,8 @@ class SyncLedger:
         )
 
         timestamp = (
-            datetime.now(UTC)
+            (clock or SystemClock())
+            .now()
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         )

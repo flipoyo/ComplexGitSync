@@ -13,12 +13,14 @@ remote, exactly like `test_memory_onboarding.py`.
 from __future__ import annotations
 
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.universal_clock import ClockProtocol
 
 _CGS = """\
 project = "demo"
@@ -27,6 +29,31 @@ repos = [
   "github:owner/demo",
 ]
 """
+
+
+class _FixedClock:
+    """Deterministic stand-in for :class:`ClockProtocol` — one fixed date,
+    for tests where "which day" is the whole point. See
+    `.localSpec/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md` and
+    `.localSpec/DevTickets/openTickets/main_1-1_UniversalClock_DevPlanTicket.md`:
+    a test that asserts on a date injects the date, through this Protocol,
+    rather than monkeypatching a module-level ``datetime``.
+    """
+
+    def __init__(self, year: int, month: int, day: int) -> None:
+        self._instant = datetime(year, month, day, tzinfo=UTC)
+
+    def now(self) -> datetime:
+        return self._instant
+
+    def time_ns(self) -> int:
+        return 0
+
+    def pid(self) -> int:
+        return 0
+
+    def token_hex(self, nbytes: int) -> str:
+        return "0" * (nbytes * 2)
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -68,10 +95,10 @@ def _used_workspace(root: Path, *, operations: int = 2) -> Path:
     return root
 
 
-def _loaded(workspace: Path) -> ComplexGitSyncClient:
+def _loaded(workspace: Path, *, clock: ClockProtocol | None = None) -> ComplexGitSyncClient:
     from ComplexGitSync.snapshot_resolver import discover_gts_path
 
-    client = ComplexGitSyncClient()
+    client = ComplexGitSyncClient() if clock is None else ComplexGitSyncClient(clock=clock)
     client.load_gts(discover_gts_path(str(workspace)))
     return client
 
@@ -316,32 +343,24 @@ def test_reboot_exports_a_versioned_cgs_the_stable_copy_never_touches(tmp_path):
     assert (clone / ".cgs" / "demo-v2.cgs").is_file()
 
 
-def test_a_second_reboot_the_next_day_writes_v3(tmp_path, monkeypatch):
+def test_a_second_reboot_the_next_day_writes_v3(tmp_path):
     """Both reboots own a fixed date — neither borrows one from the real
     calendar. A test about "the next day" must own both days: fixed dates
-    that are not today and never will be, per
-    `.localSpec/DevTickets/openTickets/main_1-1_ClockSeam_DevPlanTicket.md`
-    §1 — otherwise the "first" reboot silently races the real clock and the
+    that are not today and never will be, injected through
+    :class:`ComplexGitSyncClient`'s own ``clock`` field rather than
+    monkeypatching a module-level ``datetime``, per
+    `.localSpec/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md` §1
+    and `.localSpec/DevTickets/openTickets/main_1-1_UniversalClock_DevPlanTicket.md`
+    — otherwise the "first" reboot silently races the real clock and the
     test goes red the day its fixed "next day" catches up to it.
     """
-    import ComplexGitSync.orchestre as orchestre_module
-
-    def _fixed_now(year: int, month: int, day: int) -> type:
-        class _FixedDay(orchestre_module.datetime):
-            @classmethod
-            def now(cls, tz=None):
-                return orchestre_module.datetime(year, month, day, tzinfo=tz)
-
-        return _FixedDay
-
     tree = _memory_ready(tmp_path)
-    monkeypatch.setattr(orchestre_module, "datetime", _fixed_now(2026, 1, 1))
-    _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
-    client = ComplexGitSyncClient()
+    _loaded(tree["workspace"], clock=_FixedClock(2026, 1, 1)).memory_reboot(tree["workspace"])
+    client = ComplexGitSyncClient(clock=_FixedClock(2026, 1, 1))
     client.load(tree["workspace"] / "project.cgs")
     client.memory_push(tree["workspace"])
 
-    monkeypatch.setattr(orchestre_module, "datetime", _fixed_now(2026, 1, 2))
+    client.clock = _FixedClock(2026, 1, 2)
     second = client.memory_reboot(tree["workspace"])
 
     assert Path(second["exported"]).name == "demo-v3.cgs"

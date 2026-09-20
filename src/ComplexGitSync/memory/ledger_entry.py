@@ -41,6 +41,14 @@ class ClockProtocol(Protocol):
     """Everything a caller needs to inject to make entry creation and
     TIME-L0 anchor generation fully deterministic — no direct clock, PID,
     or entropy reads anywhere in this module.
+
+    Structurally identical to, and never imported from,
+    ``universal_clock.ClockProtocol`` — that module is Ring 1 and this one
+    is Ring 0, self-contained by rule, so it keeps its own copy rather than
+    importing upward. A ``universal_clock.SystemClock`` (or any fake
+    implementing the same four methods) satisfies this Protocol too:
+    Python's ``Protocol`` is structural, so nothing has to import the other
+    for the two to be interchangeable.
     """
 
     def now(self) -> datetime:

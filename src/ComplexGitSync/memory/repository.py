@@ -5,7 +5,7 @@ Contract: propose the `.cgs` entry that mounts a memory, say what a memory
     holds that is worth committing, and write the commit message for it.
     Every Git command is run by the caller through `git_runner.py`, as it is
     for every other repository in the tree.
-Imports: git_branch, ledger_entry
+Imports: git_branch, universal_clock
 
 Why the Git stays outside
 -------------------------
@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from ..git_branch import DEFAULT_BRANCH, private_local_branch
-from .ledger_entry import ClockProtocol
+from ..universal_clock import ClockProtocol
 
 #: The workspace's own state area — every command's live-write target,
 #: mounted or not. Not owned by this module (it predates the memory
@@ -236,10 +236,11 @@ def commit_message(project_name: str, states: int, entries: int, *, clock: Clock
 
     ``clock`` is required rather than defaulted to a real one: a default
     that quietly reads the wall clock is exactly the seam
-    `.localSpec/DevTickets/openTickets/main_1-1_ClockSeam_DevPlanTicket.md`
-    exists to close, and this module (Ring 1) cannot reach `orchestre.py`'s
-    `SystemClock` (Ring 3) to supply one itself — the caller already has
-    it.
+    `.localSpec/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md`
+    closed elsewhere and `main_1-1_UniversalClock_DevPlanTicket.md`
+    generalises — this is one of the two sites a test asserts on the exact
+    string produced, so it stays explicit rather than gaining a default
+    the caller could forget to override.
     """
     moment = f"{clock.now():%Y-%m-%d}"
     return (

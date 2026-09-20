@@ -27,6 +27,14 @@ selector covers natively:
    `Imports:` list matches the module's actual `from .<name> import ...`
    statements. A module without a contract header is skipped, not failed —
    the header is opt-in until P6 makes it universal.
+4. **Clock-seam check.** Every module except `universal_clock.py` is
+   scanned for a direct `datetime.now`/`datetime.utcnow`/`time.time_ns`/
+   `os.getpid`/`secrets.token_hex` reference. Unconditional, not
+   baseline-relative — a single hit anywhere outside that one module fails
+   `--check`, the way Ring-0 purity does. See
+   `.localSpec/DevTickets/openTickets/main_1-1_UniversalClock_DevPlanTicket.md`
+   WP2: the whole point of a universal clock is that there is no tenth
+   direct reader.
 
 Usage
 -----
@@ -68,6 +76,19 @@ _FORBIDDEN_RING0_ATTR_PATHS = {
     ("datetime", "utcnow"),
 }
 _FORBIDDEN_RING0_CALL_NAMES = {"open"}
+
+# The one module allowed to read the real clock, PID or entropy source —
+# see universal_clock.py's own docstring. Every other module in src/ is
+# checked, not only a declared subset, because the whole point of a
+# universal clock is that nothing opts out.
+_CLOCK_SEAM_EXEMPT_MODULE = "universal_clock.py"
+_FORBIDDEN_CLOCK_ATTR_PATHS = {
+    ("datetime", "now"),
+    ("datetime", "utcnow"),
+    ("time", "time_ns"),
+    ("os", "getpid"),
+    ("secrets", "token_hex"),
+}
 _FORBIDDEN_PATH_WRITE_METHODS = {
     "write_text",
     "write_bytes",
@@ -88,6 +109,7 @@ class ModuleReport:
     public_symbols: list[str] = field(default_factory=list)
     internal_imports: list[str] = field(default_factory=list)
     ring0_violations: list[str] = field(default_factory=list)
+    clock_seam_violations: list[str] = field(default_factory=list)
     contract: dict[str, str] | None = None
     contract_import_mismatch: list[str] = field(default_factory=list)
 
@@ -168,6 +190,22 @@ def _check_ring0_purity(tree: ast.Module) -> list[str]:
     return violations
 
 
+def _check_clock_seam(tree: ast.Module) -> list[str]:
+    """Every direct clock/PID/entropy read outside `universal_clock.py`.
+
+    Same shape as `_check_ring0_purity`'s attribute-path scan, over a
+    different forbidden set and applied module-wide rather than only to a
+    declared ring0 subset.
+    """
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            path = _attribute_path(node)
+            if path is not None and tuple(path[:2]) in _FORBIDDEN_CLOCK_ATTR_PATHS:
+                violations.append(f"line {node.lineno}: direct clock read {'.'.join(path)}")
+    return violations
+
+
 def _attribute_path(node: ast.Attribute) -> list[str] | None:
     parts: list[str] = [node.attr]
     current: ast.expr = node.value
@@ -194,6 +232,8 @@ def analyse_module(path: Path, *, ring0_modules: set[str]) -> ModuleReport:
     module_stem = path.stem
     if module_stem in ring0_modules or relative in ring0_modules:
         report.ring0_violations = _check_ring0_purity(tree)
+    if path.name != _CLOCK_SEAM_EXEMPT_MODULE:
+        report.clock_seam_violations = _check_clock_seam(tree)
     if report.contract and "Imports" in report.contract and report.internal_imports:
         # Only cross-checked when the module has at least one real internal
         # import — a module with none is free to describe that fact in
@@ -247,6 +287,8 @@ def _print_report(reports: list[ModuleReport]) -> None:
             flags.append(f"imports>{INTERNAL_IMPORTS_HARD_CEILING}")
         if r.ring0_violations:
             flags.append(f"RING0:{len(r.ring0_violations)}")
+        if r.clock_seam_violations:
+            flags.append(f"CLOCK:{len(r.clock_seam_violations)}")
         if r.contract_import_mismatch:
             flags.append(f"CONTRACT-MISMATCH:{','.join(r.contract_import_mismatch)}")
         print(
@@ -260,6 +302,30 @@ def run_check(reports: list[ModuleReport], baseline: dict) -> list[str]:
     known = baseline.get("modules", {})
     for r in reports:
         prior = known.get(r.relative_path)
+
+        # Absolute violations — Ring-0 purity, the clock seam, and the
+        # docstring/import cross-check — are checked whether or not a
+        # baseline entry exists. A brand-new module born with a violation
+        # must fail on its first --check, not sail through unnoticed until
+        # someone happens to run --write-baseline; a ratchet only makes
+        # sense for the size counters below, which have nothing to compare
+        # against until a first baseline is recorded.
+        if r.ring0_violations:
+            failures.append(
+                f"{r.relative_path}: Ring-0 purity violated — "
+                + "; ".join(r.ring0_violations)
+            )
+        if r.clock_seam_violations:
+            failures.append(
+                f"{r.relative_path}: reads the clock directly, outside "
+                f"universal_clock.py — " + "; ".join(r.clock_seam_violations)
+            )
+        if r.contract_import_mismatch:
+            failures.append(
+                f"{r.relative_path}: docstring 'Imports:' header disagrees with actual "
+                f"imports — missing {r.contract_import_mismatch}"
+            )
+
         if prior is None:
             if r.loc > MODULE_LOC_HARD_CEILING:
                 failures.append(
@@ -277,16 +343,6 @@ def run_check(reports: list[ModuleReport], baseline: dict) -> list[str]:
             failures.append(
                 f"{r.relative_path}: public symbol count grew "
                 f"{prior.get('public_symbols')} -> {len(r.public_symbols)}"
-            )
-        if r.ring0_violations:
-            failures.append(
-                f"{r.relative_path}: Ring-0 purity violated — "
-                + "; ".join(r.ring0_violations)
-            )
-        if r.contract_import_mismatch:
-            failures.append(
-                f"{r.relative_path}: docstring 'Imports:' header disagrees with actual "
-                f"imports — missing {r.contract_import_mismatch}"
             )
     return failures
 

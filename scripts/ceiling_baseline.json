@@ -132,7 +132,7 @@
     },
     "memory/ledger_entry.py": {
       "internal_imports": 0,
-      "loc": 213,
+      "loc": 220,
       "public_symbols": 7
     },
     "memory/ledger_store.py": {
@@ -147,7 +147,7 @@
     },
     "memory/repository.py": {
       "internal_imports": 3,
-      "loc": 212,
+      "loc": 213,
       "public_symbols": 14
     },
     "memory/states.py": {
@@ -156,8 +156,8 @@
       "public_symbols": 3
     },
     "memory/store.py": {
-      "internal_imports": 8,
-      "loc": 319,
+      "internal_imports": 10,
+      "loc": 326,
       "public_symbols": 4
     },
     "operations.py": {
@@ -166,13 +166,13 @@
       "public_symbols": 30
     },
     "orchestre.py": {
-      "internal_imports": 145,
-      "loc": 5203,
-      "public_symbols": 11
+      "internal_imports": 146,
+      "loc": 5191,
+      "public_symbols": 10
     },
     "paths.py": {
-      "internal_imports": 3,
-      "loc": 206,
+      "internal_imports": 5,
+      "loc": 210,
       "public_symbols": 5
     },
     "provider.py": {
@@ -181,13 +181,13 @@
       "public_symbols": 4
     },
     "registry.py": {
-      "internal_imports": 39,
-      "loc": 498,
+      "internal_imports": 41,
+      "loc": 504,
       "public_symbols": 3
     },
     "settings.py": {
-      "internal_imports": 1,
-      "loc": 184,
+      "internal_imports": 3,
+      "loc": 192,
       "public_symbols": 11
     },
     "snapshot_resolver.py": {
@@ -204,6 +204,11 @@
       "internal_imports": 2,
       "loc": 83,
       "public_symbols": 5
+    },
+    "universal_clock.py": {
+      "internal_imports": 0,
+      "loc": 70,
+      "public_symbols": 2
     }
   },
   "ring0_modules": [
