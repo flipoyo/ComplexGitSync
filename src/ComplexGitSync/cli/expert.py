@@ -1,12 +1,10 @@
 """cli.expert — the "Expert" cgitsync command group.
 
-Ring: 4 (CLI adapter — the same ring cli.py itself occupies)
-Contract: register argparse subparsers for, and dispatch/execute, the 16
-    Expert-tier commands (purge, validate, clone, pull, pull-force,
+Ring: 4. Contract: register, dispatch, and execute the 16 Expert-tier commands
+    (purge, validate, clone, pull, pull-force,
     checkout, branch, add, rm, commit, push, tag, freeze, import-submodules,
     init-from-submodules, verify). Argument/prompt collection only —
-    delegates all .cgs/.gts semantics to ComplexGitSyncClient; never
-    touches subprocess/Git or parses repository identifiers itself.
+    delegates all semantics to ComplexGitSyncClient; never touches Git.
 Imports: _shared, errors, git_repo, orchestre
 """
 
@@ -1281,6 +1279,8 @@ def _print_memory_show(state: dict, *, full: bool = False) -> int:
         f"project={state['project']} lifecycle_state={state['lifecycle_state']} "
         f"repos={state['repos']} hash_canonicalisation={state['hash_canonicalisation']}"
     )
+    for environment in state.get("environments", []):
+        print(f"environment={environment['id']} path={environment['path'] or 'missing'} record={environment.get('record')}")
     if not state["entries"]:
         print("no ledger entry records this State.")
         return EXIT_OK

@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.87
+# ComplexGitSync v0002.88
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -51,6 +51,12 @@ repos = [
 ComplexGitSync is developed and run with [Pixi](https://pixi.sh) only —
 `pip install -e .` is not a supported workflow. There is no global install:
 every invocation is `pixi run cgitsync ...`, run from inside the clone below.
+
+| Prerequisite | Why it is needed |
+|---|---|
+| Git | Clone the ComplexGitSync checkout and every repository in a tree. |
+| Pixi | Install the locked Python environment and run `cgitsync`. |
+| `gh`, `glab`, or `tea` | Create repositories on GitHub, GitLab, or Codeberg. Install only the provider tool you use. |
 
 ```bash
 git clone https://github.com/flipoyo/ComplexGitSync.git
@@ -309,6 +315,8 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `import-submodules` | `<repo-root>` `--apply` `--recursive` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
 | Expert | `init-from-submodules` | `<repo-root>` `--cgs` `--max-depth` `--dry-run` `--force` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
 | Expert | `verify` | `--repair` `--search-dir` `--json` | Say whether this workspace's recorded history is verified, absent, legacy or corrupt. |
+| Expert | `env` | `--search-dir` | Observe the machine, tool versions, credentials and tree manifests that make this workspace usable. |
+| Expert | `env check` | `--search-dir` `--cgs` | Compare the observed environment with the requirements declared by the tree or an explicit `.cgs`. Reports drift and exits non-zero when requirements are not met. |
 | Expert | `memory` | `status` `list` `show <state>` `explore` `init` `mount` `adopt [--reboot]` `branch` `clone` `push` `reboot` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. |
 | Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
@@ -705,6 +713,49 @@ but that is a rule about where logic lives inside the project — not a
 promise to anyone importing the package. The CLI is the product.
 
 ## 4. Further reading
+
+### Complete prerequisites
+
+ComplexGitSync records the environment that produced a State, but it does
+not install system tools or credentials. The tools needed depend on which
+parts of the tree and which commands you use:
+
+| Dependency | When it is needed | Version source |
+|---|---|---|
+| Git | Always: clone, inspect and synchronise repositories. | The observed version is recorded with the State. |
+| Pixi | Always for this installation: create the locked environment and run `cgitsync`. | `pixi.lock` pins the project environment; the observed Pixi version is recorded separately. |
+| Python | Runs ComplexGitSync inside the Pixi environment. | `pixi.toml` selects the interpreter; the exact observed interpreter is recorded. |
+| `gh`, `glab`, or `tea` | `repo create`, according to whether the provider is GitHub, GitLab, or Codeberg. | The matching provider CLI reports its observed version and whether it is authenticated. |
+| SSH client and agent | Any repository using an SSH remote. | Presence is observed; keys, user names and key paths are never recorded. |
+| DVC | Trees that use a DVC data backend. | The tree's manifest declares the package; the observed tool version is recorded when used. |
+| Git LFS | Trees that use Git Large File Storage. | The tree's manifest declares its use; the observed tool version is recorded when used. |
+| Compilers and system libraries | Only when a tree builds native code or relies on software outside Pixi. | Declare the requirements in the tree's `.cgs` `[environment]` table. |
+| `latexmk` and a TeX distribution | Developers rebuilding the manuals under `docs/`. | Declare as developer requirements for the tree; they are not end-user runtime dependencies. |
+
+The machine itself must also match the platforms supported by the tree's
+lock files. `pixi run cgitsync env` prints the observed operating system,
+architecture, Pixi platform and libc. `pixi run cgitsync env check` compares
+that observation with the tree's declared requirements. It reports drift but
+does not change or install anything.
+
+The optional declaration names the repository where the environment is
+installed and the requirements that cannot be inferred from a lock file:
+
+```toml
+environment_root = "my-project"
+
+[environment]
+tools = { git = "2.43", pixi = "0.66" }
+compilers = ["cc"]
+system_libraries = ["libssl"]
+services = ["postgresql"]
+manifests = ["Cargo.lock"]
+```
+
+Manifest contents remain in Git. The Environment record stores only their
+tree-relative paths and digests. `initialise` and `pull` warn about declared
+drift and continue; `env check` exits non-zero for missing or older
+requirements so CI can enforce them.
 
 [tutorials/](tutorials/) — five tutorials, simplest to most advanced:
 

@@ -179,8 +179,7 @@ def recompute_entry_hash(entry: LedgerEntryLike) -> str:
     any other entry. Comparing this against the entry's stored `entry_hash`
     is exactly `BAD_ENTRY_HASH` detection.
 
-    The arithmetic lives in ``ledger_entry.compute_entry_hash``, the same
-    function the writer uses. A verifier with its own copy of a hash rule is
+    ``ledger_entry.compute_entry_hash`` is the same function the writer uses; a verifier with its own copy of a hash rule is
     a verifier that can disagree with the writer and be wrong about it.
     """
     return compute_entry_hash(
@@ -196,9 +195,9 @@ def recompute_entry_hash(entry: LedgerEntryLike) -> str:
         # Both of these are read through getattr because this module's
         # contract is the Protocol above, not a concrete class — and an
         # entry written before either field existed has neither. The
-        # defaults are the same ones the writer uses, so an old entry
-        # recomputes to the hash it was written with.
+        # Writer defaults preserve hashes of entries from before additive fields.
         commit_log=getattr(entry, "commit_log", ""),
+        environment=getattr(entry, "environment", ""),
     )
 
 

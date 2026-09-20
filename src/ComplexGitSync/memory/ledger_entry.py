@@ -11,19 +11,9 @@ Imports: none
 Design reference: ``.localSpec/AdditionalSpecs.md``, *The hash-chained
 register* (hash-chained register schema) and §3.3 (``ClockProtocol``).
 
-The TIME-L0 anchor, deleted
----------------------------
-This module used to carry ``TimeL0State``/``new_time_l0_anchor()``/
-``hash_time_l0_anchor()``, inherited from a deleted ``L0.py``. They were
-unit tested and called from nowhere in ``src/``, and they had two defects
-that made adopting them worse than starting over: the anchor discarded its
-own pre-image, so it could identify but never *attest* — a commitment with
-nothing left to reveal — and its id format ``state(<64 hex>)`` was
-byte-identical to a real State id, so an anchor and a snapshot of a tree
-could not be told apart. Removed on the owner's decision (D4 of
-``.localSpec/DevTickets/openTickets/main_1-1_UniversalClock_DevPlanTicket.md``);
-when WP5 needs an attestation primitive it writes one that keeps its
-pre-image and carries an id of its own.
+The deleted TIME-L0 anchor discarded its pre-image and reused the State id
+shape. The UniversalClock ticket removed it; future attestation must keep
+its pre-image and use a distinct id.
 """
 
 from __future__ import annotations
@@ -100,6 +90,7 @@ class LedgerEntry:
     toolchain: tuple[tuple[str, str], ...]
     commit_log: str
     entry_hash: str
+    environment: str = ""
 
 
 def _canonical_payload(
@@ -114,6 +105,7 @@ def _canonical_payload(
     outcome: str,
     toolchain: Sequence[tuple[str, str]] = (),
     commit_log: str = "",
+    environment: str = "",
 ) -> dict[str, Any]:
     """Every ``LedgerEntry`` field except ``entry_hash`` itself, as a plain
     dict ready for canonical serialisation.
@@ -145,6 +137,11 @@ def _canonical_payload(
         # entry that wrote none — most of them — so the common case hashes
         # exactly as it did before this field existed.
         payload["commit_log"] = commit_log
+    if environment:
+        # Additive for the same reason as ``commit_log``: an entry written
+        # before Environment records existed must keep its original payload
+        # and therefore its original hash byte for byte.
+        payload["environment"] = environment
     return payload
 
 
@@ -171,6 +168,7 @@ def compute_entry_hash(
     outcome: str,
     toolchain: Sequence[tuple[str, str]] = (),
     commit_log: str = "",
+    environment: str = "",
 ) -> str:
     """Compute ``entry_hash`` over the canonical serialisation of every
     other field, including ``prev`` — so editing any field, or splicing in
@@ -188,6 +186,7 @@ def compute_entry_hash(
         outcome=outcome,
         toolchain=toolchain,
         commit_log=commit_log,
+        environment=environment,
     )
     digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
     return f"sha256:{digest}"
@@ -204,6 +203,7 @@ def build_next_entry(
     clock: ClockProtocol,
     toolchain: Sequence[tuple[str, str]] = (),
     commit_log: str = "",
+    environment: str = "",
 ) -> LedgerEntry:
     """Build the next entry in the chain following ``prev``.
 
@@ -231,6 +231,7 @@ def build_next_entry(
         outcome=outcome,
         toolchain=toolchain_tuple,
         commit_log=commit_log,
+        environment=environment,
     )
 
     return LedgerEntry(
@@ -245,4 +246,5 @@ def build_next_entry(
         toolchain=toolchain_tuple,
         commit_log=commit_log,
         entry_hash=entry_hash,
+        environment=environment,
     )

@@ -1,31 +1,22 @@
 """cgs_format — parse, normalize, validate, and serialize boundary for ``.cgs`` files.
 
-Ring: 0 core + Ring-1 I/O adapter, co-located — CgsDocument inherits
-    ConfigDocumentIOMixin (Ring 1) because every real caller invokes
-    CgsDocument.from_toml()/.to_toml() directly on the class; the pure
-    remainder (parse_repo_id, normalize_cgs, validation) is fully
-    Ring-0-testable with no filesystem access. Same shape as
-    gts_document.py — see that module's docstring for the full rationale
-    (WP-CFG, .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md §0).
-Contract: own the textual provider:owner/repository authoring grammar and
-    the .cgs parse/normalize/validate/serialize pipeline; deterministic and
-    offline.
-Imports: config_document, config_document_io, errors, git_repo
+Ring: 0 core plus the co-located Ring-1 ``ConfigDocumentIOMixin`` adapter.
+Contract: own the textual repository grammar and deterministic, offline
+``.cgs`` parse/normalize/validate/serialize pipeline. See ``gts_document``
+and the archived Isolation ticket for the co-location rationale.
+Imports: config_document, config_document_io, environment_spec, errors, git_repo
 
 TOML remains the lexical format. This module exclusively owns the textual
 ``provider:owner/repository`` grammar through :func:`parse_repo_id`.
-Human-authored shorthand is normalized into the complete canonical dictionaries
-consumed by :mod:`ComplexGitSync.git_tree` and :mod:`ComplexGitSync.orchestre`::
+Human shorthand becomes the canonical dictionaries consumed by the tree::
 
     PARSE (tomllib) -> NORMALIZE -> VALIDATE -> CgsDocument
 
-The reverse path projects a :class:`GitTree` into a canonical document before
-this module removes reconstructible defaults and writes concise TOML::
+The reverse path projects a tree, removes defaults, and writes concise TOML::
 
     GitTree -> CgsDocument -> MINIMIZE -> SERIALIZE (tomli_w)
 
-Every stage in this module is deterministic and offline. Remote existence,
-reference resolution, and other Git checks belong to the explicit runtime layer.
+Remote existence, ref resolution, and Git checks belong to the runtime layer.
 """
 
 from __future__ import annotations
@@ -38,11 +29,12 @@ from typing import TYPE_CHECKING, Any
 
 import tomli_w
 
+from . import environment_spec, git_branch, git_repo
 from .config_document import ConfigDocument
 from .config_document_io import ConfigDocumentIOMixin
 from .errors import ConfigValidationError
-from .git_branch import DEFAULT_BRANCH, apply_declared_defaults
-from .git_repo import AccessProtocol, GitProvider, GitRepo, validate_git_provider
+from .git_branch import DEFAULT_BRANCH
+from .git_repo import AccessProtocol, GitProvider, GitRepo
 
 if TYPE_CHECKING:
     from .git_tree import GitTree
@@ -198,7 +190,7 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
         if repo.get("repo_name") is None and repo.get("project_name") is not None:
             repo["repo_name"] = repo["project_name"]
 
-        apply_declared_defaults(repo, project["default_branch"])
+        git_branch.apply_declared_defaults(repo, project["default_branch"])
         repo["access_protocol"] = str(repo.get("access_protocol") or DEFAULT_ACCESS_PROTOCOL)
         repo["nested_config"] = str(repo.get("nested_config") or DEFAULT_NESTED_CONFIG)
         # Defaulted, never coerced: bool("yes") is True, which would hide a
@@ -624,7 +616,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 gitprovider = repo.get("gitprovider", GitProvider.GITHUB.value)
                 custom_url = repo.get("gitprovider_url")
                 try:
-                    validate_git_provider(gitprovider, gitprovider_url=custom_url)
+                    git_repo.validate_git_provider(gitprovider, gitprovider_url=custom_url)
                     provider_is_valid = True
                 except ValueError as exc:
                     errors.append(f"repos[{idx}].{exc}")
@@ -674,6 +666,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                         f"repository: a non-private repository is this project's own and is "
                         f"always writable. Add private = true, or drop writable."
                     )
+        errors.extend(environment_spec.validate_environment_declaration(self._data, repos))
         if errors:
             raise ConfigValidationError(
                 "Invalid .cgs document:\n" + "\n".join(f"  • {error}" for error in errors)
@@ -686,6 +679,15 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
     @property
     def default_branch(self) -> str | None:
         return self.read("project.default_branch")
+
+    @property
+    def environment_root(self) -> str | None:
+        return self.read("environment_root")
+
+    @property
+    def environment(self) -> dict[str, Any]:
+        value = self.read("environment", {})
+        return copy.deepcopy(value) if isinstance(value, dict) else {}
 
     @property
     def repos(self) -> list[dict[str, Any]]:

@@ -7,10 +7,7 @@ Contract: persist and load ``LedgerEntry`` records as one file per ``seq``
     ``HEAD`` cache.
 Imports: ledger_entry, paths
 
-Design reference: ``.localSpec/AdditionalSpecs.md``, *The hash-chained
-register* (one file per entry),
-§2.5 (secret scrubbing), and ``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``
-work package P4.2-store.
+Design: ``AdditionalSpecs.md``'s hash-chained register and secret scrubbing.
 
 File layout
 -----------
@@ -37,9 +34,7 @@ entry (§2.3's decisive property). Because the temp file is fully written and
 flushed *before* the link is attempted, a crash never leaves a partially
 written file visible at the final name either.
 
-Return shape
-------------
-Every read function below returns concrete
+Return shape: every read function returns concrete
 :class:`~ComplexGitSync.ledger_entry.LedgerEntry` instances, not raw dicts.
 ``LedgerEntry`` already carries exactly the eight fields
 ``integrity.LedgerEntryLike`` requires (``seq``, ``prev``, ``recorded_at``,
@@ -249,21 +244,22 @@ def scrub_argv(argv: Sequence[str], *, tree_root: Path | None = None) -> list[st
 
 
 def _entry_to_toml_payload(entry: LedgerEntry) -> dict[str, Any]:
-    return {
-        "entry": {
-            "seq": entry.seq,
-            "prev": entry.prev,
-            "recorded_at": entry.recorded_at,
-            "command": entry.command,
-            "argv": list(entry.argv),
-            "state_id": entry.state_id,
-            "state_dir": entry.state_dir,
-            "outcome": entry.outcome,
-            "toolchain": dict(entry.toolchain),
-            "commit_log": entry.commit_log,
-            "entry_hash": entry.entry_hash,
-        }
+    payload: dict[str, Any] = {
+        "seq": entry.seq,
+        "prev": entry.prev,
+        "recorded_at": entry.recorded_at,
+        "command": entry.command,
+        "argv": list(entry.argv),
+        "state_id": entry.state_id,
+        "state_dir": entry.state_dir,
+        "outcome": entry.outcome,
+        "toolchain": dict(entry.toolchain),
+        "commit_log": entry.commit_log,
+        "entry_hash": entry.entry_hash,
     }
+    if entry.environment:
+        payload["environment"] = entry.environment
+    return {"entry": payload}
 
 
 def _entry_from_toml_payload(data: dict[str, Any]) -> LedgerEntry:
@@ -285,6 +281,8 @@ def _entry_from_toml_payload(data: dict[str, Any]) -> LedgerEntry:
         # read exactly as it was written.
         commit_log=raw.get("commit_log", ""),
         entry_hash=raw["entry_hash"],
+        # Additive and absent on every entry written before TreeEnvironment.
+        environment=raw.get("environment", ""),
     )
 
 
@@ -491,6 +489,7 @@ def append_entry(
     toolchain: Sequence[tuple[str, str]] = (),
     tree_root: Path | None = None,
     commit_log: str = "",
+    environment: str = "",
 ) -> LedgerEntry:
     """Scrub ``argv``, build the next chain entry, and persist it.
 
@@ -517,6 +516,7 @@ def append_entry(
         clock=clock,
         toolchain=toolchain,
         commit_log=commit_log,
+        environment=environment,
     )
     write_entry(lgr_dir, entry)
     return entry

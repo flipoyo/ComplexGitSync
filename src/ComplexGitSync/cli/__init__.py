@@ -2,14 +2,12 @@
 
 Ring: 4 (adapter — argument/prompt collection only; delegates all .cgs/.gts
     semantics to ComplexGitSyncClient, per CLAUDE.md's CLI-mirrors-Python-API
-    rule)
-Contract: build the top-level argparse parser from each command group's
-    own subparsers, dispatch parsed args to the matching handler, and
-    expose main()/build_parser()/_PLANNED_COMMANDS at the package root so
+    rule). Contract: build the parser from each command group's subparsers,
+    dispatch args, and expose main()/build_parser()/_PLANNED_COMMANDS so
     external callers (pyproject.toml's console-script entry point,
     __main__.py, every test) see the same surface cli.py used to.
-Imports: _shared, configuration, exit_codes, expert, json_render, minimalist,
-    suggest
+Imports: _shared, configuration, environment, exit_codes, expert, json_render,
+    minimalist, suggest
 
 Replaces the single 1,991-line cli.py (.localSpec/DevTickets/archive/20260828_Isolation_
 DevPlanTicket.md, Wave 3, P6-cli-integrate) with a package of six modules,
@@ -35,7 +33,7 @@ from collections.abc import Sequence
 from .. import __version__
 from ..json_render import dumps as json_dumps
 from ..json_render import error_payload
-from . import _shared, configuration, expert, minimalist, suggest
+from . import _shared, configuration, environment, expert, minimalist, suggest
 from .exit_codes import EXIT_OK, diagnostic, exit_code_for
 from .minimalist import _validate_initialise_definition
 
@@ -43,6 +41,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     **minimalist.COMMANDS,
     **expert.COMMANDS,
     **configuration.COMMANDS,
+    **environment.COMMANDS,
 }
 
 
@@ -66,6 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     expert.register_parsers(subparsers)
     configuration.register_parsers(subparsers, non_negative_int=_shared._non_negative_int)
+    environment.register_parsers(subparsers)
     return parser
 
 

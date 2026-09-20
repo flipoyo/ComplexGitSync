@@ -1,49 +1,12 @@
-"""orchestre — orchestration hub for ComplexGitSync.
+"""orchestre — the Ring-3 orchestration hub and public client facade.
 
-Ring: 3 (imports downward from every Ring 0–2 module; owns the public
-    ComplexGitSyncClient facade — see
-    .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md §1)
-Contract: coordinate one GitTree's lifecycle end to end — load/validate/
-    clone/sync/freeze — gating every mutating action on TreeLifecycleState;
-    delegate document parsing, path resolution, state-directory allocation,
-    registry translation, discovery, and status rendering to the Ring 0–2
-    modules below rather than re-implementing them.
+Contract: coordinate one GitTree lifecycle, gate mutations on TreeLifecycleState,
+    and delegate formats, registry, discovery, paths, status, State, ledger, environment, and Git mechanics to their Ring 0–2 owners.
 Imports: cgs_format, discovery, errors, git_repo, git_runner, git_tree,
-    gts_document, integrity, ledger_entry, ledger_store, master,
-    operations, paths, registry, state_store, status_render, universal_clock
+    gts_document, memory, operations, paths, registry, status_render, tree_env, universal_clock
+The archived Isolation ticket documents the module split.
 
-This module is the **Orchestre anchor** — the authoritative source for the
-public client API and the infrastructure services (structured run logging,
-the local .lgr register/sync ledger) too small or too entangled with
-ComplexGitSyncClient's own state to extract on their own. Wave 1/2 of the
-isolation plan (.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) moved
-everything else out: GtsDocument → gts_document.py, GitRunner → git_runner.py,
-the registry builders → registry.py, nested-config/.gitmodules discovery →
-discovery.py, the state-directory allocator → state_store.py, path/CGSHOME
-resolution → paths.py, pure status-table rendering → status_render.py, the
-CLI's default-snapshot resolution → snapshot_resolver.py, and the
-hash-chained register mechanics → ledger_entry.py/integrity.py/
-ledger_store.py (not yet wired into SyncLedger's actual write path — see
-ComplexGitSyncClient.verify()'s docstring).
-
-Classes still defined here (Tier 2 — Actions):
-    CommandRunLogger        Structured JSON event logger for a command run
-    RuntimeStateStore       Persistent snapshot-pointer registry (.cgs → .gts)
-    LocalGitRegister        The (still single-file, not yet ledger_store-backed) .lgr writer
-    SyncLedger              Append-only sync-event ledger sharing LocalGitRegister's file
-
-``SystemClock`` moved to ``universal_clock.py`` (Ring 1) — see that
-module's docstring — so every ring below this one can reach the real
-clock, not only this one. Imported here, not defined here.
-
-Classes defined here (Tier 3 — Client / API):
-    Orchestre               Coordination layer owning one GitTree
-    ComplexGitSyncClient    Public facade; gates all actions on TreeLifecycleState
-
-A handful of private ref-token/status helpers (``_repo_ref_*``,
-``_status_*``, ``_unmanaged_gitlink_paths``) stayed here rather than moving
-to ``registry.py``/``status_render.py`` because they call ``self.git_runner``
-directly — real Git I/O, not pure formatting.
+Tier 2 retains CommandRunLogger, RuntimeStateStore, LocalGitRegister and SyncLedger; Tier 3 contains Orchestre and ComplexGitSyncClient. Private status/ref helpers stay here only when they directly need ``self.git_runner``.
 """
 
 from __future__ import annotations
@@ -64,7 +27,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import __version__
+from . import __version__, tree_env
 from .cgs_format import CgsDocument, parse_repo_id, repo_identifier
 from .clone_guard import (
     blocked_destinations,
@@ -78,6 +41,7 @@ from .discovery import (
     discover_nested_configs,
 )
 from .errors import (
+    ComplexGitSyncError,
     ConfigValidationError,
     GitSyncError,
 )
@@ -129,15 +93,12 @@ from .memory import (
     HistoryState,
     SyncLedger,
     VerificationReport,
-    build_next_entry,
-    read_head,
-    recompute_head,
     resolve_state,
-    scrub_argv,
-    verify_and_repair_head,
     verify_chain,
-    write_entry,
 )
+from .memory import environment as environment_store
+from .memory import ledger_entry as memory_ledger_entry
+from .memory import ledger_store as memory_ledger_store
 from .memory.commit_log import (
     COMMIT_LOG_DIR_NAME,
     SCOPE_PRIVATE,
@@ -150,7 +111,6 @@ from .memory.commit_log import (
     digest_of_rows,
     read_commit_log,
 )
-from .memory.ledger_store import LedgerStoreError
 from .memory.pending import (
     current_ledger_dir as _current_ledger_dir,
 )
@@ -1335,6 +1295,33 @@ class ComplexGitSyncClient:
     def is_loaded(self) -> bool:
         return self.registry is not None or bool(self.orchestre.git_tree.repos)
 
+    def environment(self) -> tree_env.TreeEnvironment:
+        """Observe the machine, tools, credentials, and manifests for the loaded tree."""
+        tree = self.get_dependency_registry()
+        tree_env.attach_source_context(tree)
+        return tree_env.observe(self.git_runner, tree)
+
+    def check_environment(self, document: CgsDocument | None = None) -> tree_env.Drift:
+        """Compare the observed environment with one ``.cgs`` declaration."""
+        if document is None:
+            document = tree_env.source_document(self.get_dependency_registry())
+            if document is None:
+                raise GitSyncError(
+                    "this State does not resolve to a .cgs; pass an explicit .cgs to env check."
+                )
+        tree = self.get_dependency_registry()
+        document.attach_serialization_context(tree)
+        observed = tree_env.observe(self.git_runner, tree)
+        return tree_env.compare(observed, tree_env.Requirements.from_cgs(document))
+
+    def _warn_environment_drift(self) -> None:
+        try:
+            drift = self.check_environment()
+        except (ComplexGitSyncError, OSError, RuntimeError, ValueError):
+            return
+        for mismatch in (*drift.missing, *drift.older):
+            warnings.warn(f"environment drift: {mismatch}", stacklevel=3)
+
     def configure(
         self,
         project: str | dict[str, Any],
@@ -2438,6 +2425,7 @@ class ComplexGitSyncClient:
         self._log_tree_transition(
             previous_tree_state, self.registry.lifecycle_state, reason="initialise_cgs"
         )
+        self._warn_environment_drift()
         return self.registry
 
     def clean_initialise_cgs(
@@ -2958,6 +2946,7 @@ class ComplexGitSyncClient:
         self.state_store.record_snapshot(resolved_path, snapshot_path)
         self._log_tree_transition(previous_tree_state, registry.lifecycle_state, reason="restart")
         self._log_event("restart_end", config_path=resolved_path)
+        self._warn_environment_drift()
         return registry
 
     def pull(
@@ -3012,6 +3001,7 @@ class ComplexGitSyncClient:
             self.state_store.record_snapshot(resolved_source, snapshot_path)
             self._log_tree_transition(previous_tree_state, registry.lifecycle_state, reason="pull")
             self._log_event("pull_end", snapshot_path=resolved_source, output_gts=snapshot_path)
+            self._warn_environment_drift()
             return registry
         raise ValueError(
             f"Unsupported source format '{resolved_source.suffix}' for {resolved_source!s}; expected .cgs or .gts."
@@ -4535,7 +4525,7 @@ class ComplexGitSyncClient:
         proposal = self.memory_init(workspace, owner=owner)
         return str(proposal["entry"].get("fallback_branch") or DEFAULT_BRANCH)
 
-    _FOLD_SUBDIRS = ("lgr", "state", "logs", ".cgs")
+    _FOLD_SUBDIRS = ("lgr", "state", "logs", "env", ".cgs")
 
     def _fold_memory_pending(self, pending_dir: Path, mount: Path) -> int:
         """Move `.cgitsync`'s pending content into the memory mount.
@@ -4950,6 +4940,9 @@ class ComplexGitSyncClient:
         for row in log["commit"]:
             committed.setdefault(int(row.get("entry", 0)), []).append(row)
         published_shas = {str(row.get("sha", "")) for row in log["published"]}
+        environments = environment_store.resolve_environment_references(
+            _memory_dirs(cgitsync_dir), (entry.environment for entry in recorded)
+        )
         return {
             "state": snapshot.stem,
             "path": str(snapshot),
@@ -4957,6 +4950,7 @@ class ComplexGitSyncClient:
             "lifecycle_state": document.read("tree_state.lifecycle_state"),
             "repos": len(document.repo_states),
             "hash_canonicalisation": document.hash_canonicalisation,
+            "environments": environments,
             "entries": [
                 {
                     "seq": entry.seq,
@@ -5065,8 +5059,8 @@ class ComplexGitSyncClient:
             # fold moves both together, so this is never split across the
             # two halves.
             active_lgr_dir = _current_ledger_dir(cgitsync_dir)
-            cached_head = read_head(active_lgr_dir)
-            true_head = recompute_head(active_lgr_dir)
+            cached_head = memory_ledger_store.read_head(active_lgr_dir)
+            true_head = memory_ledger_store.recompute_head(active_lgr_dir)
             if cached_head != true_head:
                 report.findings.append((
                     entries[-1].seq,
@@ -5084,7 +5078,7 @@ class ComplexGitSyncClient:
             # orphan State, for one) is decided there and only there.
             report.state = resolve_state(report.findings)
             if repair:
-                verify_and_repair_head(active_lgr_dir)
+                memory_ledger_store.verify_and_repair_head(active_lgr_dir)
         elif _legacy_register_exists(workspace):
             report.state = HistoryState.LEGACY
 
@@ -5276,18 +5270,11 @@ class ComplexGitSyncClient:
     ) -> None:
         """Record in the chain that this State was seen, now, by these tools.
 
-        The chain at ``.cgitsync/lgr/`` is what ``cgitsync verify`` checks,
-        and until this call existed nothing in ``src/`` ever wrote to it —
-        so ``verify`` read an empty directory and called every workspace on
-        earth clean. This is the write path that makes the check mean
-        something.
+        This writes the chain that makes ``cgitsync verify`` meaningful.
 
         **Recording must never cost the command its work.** A snapshot that
-        was written successfully stays written even if the ledger cannot be
-        appended to — a full disk, a read-only mount, two processes racing
-        for one sequence number. The failure is logged and the command
-        succeeds; the next `verify` reports the gap rather than the user
-        losing a completed operation to a bookkeeping error.
+        stays written if the ledger append fails. The failure is logged and
+        the next `verify` reports the gap.
 
         Always writes into the *pending* half (``cgitsync_dir / "lgr"``,
         never ``.memory/lgr`` — that only ever gains content through
@@ -5299,19 +5286,31 @@ class ComplexGitSyncClient:
         """
         try:
             existing_entries = _read_all_ledger_entries(cgitsync_dir)
-            entry = build_next_entry(
+            environment_id = ""
+            try:
+                observed = self.environment()
+                environment_store.write_environment(cgitsync_dir, observed)
+                environment_id = environment_store.format_environment_id(observed.digest())
+            except (ComplexGitSyncError, OSError, ValueError) as exc:
+                self._log_event(
+                    "environment_record_failed",
+                    level=logging.WARNING,
+                    error=str(exc),
+                )
+            entry = memory_ledger_entry.build_next_entry(
                 existing_entries[-1] if existing_entries else None,
                 command=command_origin,
-                argv=scrub_argv(sys.argv[1:], tree_root=tree_root),
+                argv=memory_ledger_store.scrub_argv(sys.argv[1:], tree_root=tree_root),
                 state_id=_format_state_id(state_hash),
                 state_dir=str(state_path.parent.name),
                 outcome="ok",
                 clock=self.clock,
                 toolchain=tuple(sorted(toolchain(self.git_runner).items())),
                 commit_log=commit_log,
+                environment=environment_id,
             )
-            write_entry(cgitsync_dir / "lgr", entry)
-        except (LedgerStoreError, OSError) as exc:
+            memory_ledger_store.write_entry(cgitsync_dir / "lgr", entry)
+        except (memory_ledger_store.LedgerStoreError, OSError) as exc:
             self._log_event(
                 "ledger_append_failed",
                 level=logging.WARNING,
