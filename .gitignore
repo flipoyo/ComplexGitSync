@@ -249,3 +249,11 @@ docs
 ComplexGitSync.lgr
 .cgitsync
 .cgitsync/.memory
+.agent/.distant/dev-sync
+.agent/.distant/documentation
+.agent/.distant/ticket
+.agent/.local/.claude
+.agent/.local/.localSpec
+.agent/.local/cgitsync-dev
+.agent/.local/dogfooding
+.agent/.local/release
