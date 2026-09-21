@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import __version__, tree_env
+from . import __build__, __version__, tree_env
 from .cgs_format import CgsDocument, parse_repo_id, repo_identifier
 from .clone_guard import (
     blocked_destinations,
@@ -3858,11 +3858,17 @@ class ComplexGitSyncClient:
         message: str | None = None,
         stage_all: bool = True,
         private: bool = False,
+        release: tuple[tuple[str, str], ...] | None = None,
     ) -> WorkingGitTree:
         """Freeze a release by committing, tagging, and pushing leaf-first.
 
         In lifecycle terms this emits the next persisted ``.gts`` state for the
         synchronized tree.
+
+        *release* is opt-in and ``None`` for every caller except
+        :meth:`freeze_release`: :meth:`freeze`/:meth:`freeze_state` share
+        this same path for internal, non-release states, which must never
+        carry a release row.
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
@@ -3888,6 +3894,7 @@ class ComplexGitSyncClient:
             command_origin="freeze_release",
             output_path=output_gts,
             freeze_name=tag_name,
+            release=release,
         )
         if self.source_path is not None:
             self.state_store.record_snapshot(self.source_path, snapshot_path)
@@ -3931,6 +3938,15 @@ class ComplexGitSyncClient:
         rewrite it makes persists (``git remote set-url``), so the
         ``freeze`` step's own tag push, further below, picks it up too
         without needing the parameter itself.
+
+        Unlike :meth:`freeze`/:meth:`freeze_state`, this records a
+        ``release`` row on the ledger entry it writes: the installed
+        package's own SemVer (``__version__``) and build counter
+        (``__build__``), plus *release_name* as the tag actually applied.
+        See ``.localSpec/AdditionalSpecs.md``, *Versioning* — *The release
+        register*. The orchestrator is expected to pass a SemVer-shaped
+        *release_name* (``v<semver>``, matching the tag this workflow
+        pushes); that is a convention, not something this method enforces.
         """
         resolved_message = commit_message or message or release_name
         if self.source_path is None:
@@ -3957,11 +3973,17 @@ class ComplexGitSyncClient:
                 absolute_path=root_entry.absolute_path,
             )
         self.push(force_access_protocol=force_access_protocol)
+        release = (
+            ("semver", __version__),
+            ("git_tag", release_name),
+            ("artefact:src", __build__),
+        )
         registry = self.freeze(
             release_name,
             output_gts=output_gts,
             message=resolved_message,
             stage_all=stage_all,
+            release=release,
         )
         self._log_event("freeze_release_workflow_end", release_name=release_name, force=force)
         return registry
@@ -4077,12 +4099,15 @@ class ComplexGitSyncClient:
         message: str | None = None,
         stage_all: bool = True,
         private: bool = False,
+        release: tuple[tuple[str, str], ...] | None = None,
     ) -> WorkingGitTree:
         """Freeze a tree state and emit the next ``.gts`` snapshot id.
 
         ``private`` freezes the writable configuration repositories alone.
         Without it every repository this project may write is frozen, which
-        is what this command has always done.
+        is what this command has always done. ``release`` is
+        :meth:`freeze_release`'s own parameter, threaded through rather than
+        duplicated; every other caller leaves it ``None``.
         """
         return self._freeze_tag(
             name,
@@ -4090,6 +4115,7 @@ class ComplexGitSyncClient:
             message=message,
             stage_all=stage_all,
             private=private,
+            release=release,
         )
 
     def get_dependency_registry(self) -> WorkingGitTree:
@@ -5267,6 +5293,7 @@ class ComplexGitSyncClient:
         state_path: Path,
         tree_root: Path,
         commit_log: str = "",
+        release: tuple[tuple[str, str], ...] | None = None,
     ) -> None:
         """Record in the chain that this State was seen, now, by these tools.
 
@@ -5308,6 +5335,7 @@ class ComplexGitSyncClient:
                 toolchain=tuple(sorted(toolchain(self.git_runner).items())),
                 commit_log=commit_log,
                 environment=environment_id,
+                release=release or (),
             )
             memory_ledger_store.write_entry(cgitsync_dir / "lgr", entry)
         except (memory_ledger_store.LedgerStoreError, OSError) as exc:
@@ -5551,6 +5579,7 @@ class ComplexGitSyncClient:
         freeze_name: str | None = None,
         commits: Sequence[Any] = (),
         publications: Mapping[str, Sequence[Any]] | None = None,
+        release: tuple[tuple[str, str], ...] | None = None,
     ) -> Path:
         registry = self.get_dependency_registry()
         root_entry = registry.get("root")
@@ -5651,6 +5680,7 @@ class ComplexGitSyncClient:
             state_path=final_output_path,
             tree_root=root_entry.absolute_path,
             commit_log=commit_log_digest,
+            release=release,
         )
         # The log is a record of a run, not of a State: two runs that leave
         # the tree identical produce one State and two logs, so it is named

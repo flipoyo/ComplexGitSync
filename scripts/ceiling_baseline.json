@@ -2,7 +2,7 @@
   "modules": {
     "__init__.py": {
       "internal_imports": 57,
-      "loc": 129,
+      "loc": 131,
       "public_symbols": 0
     },
     "__main__.py": {
@@ -11,12 +11,12 @@
       "public_symbols": 0
     },
     "cgs_format.py": {
-      "internal_imports": 11,
+      "internal_imports": 12,
       "loc": 669,
       "public_symbols": 9
     },
     "cli/__init__.py": {
-      "internal_imports": 12,
+      "internal_imports": 13,
       "loc": 100,
       "public_symbols": 2
     },
@@ -29,6 +29,11 @@
       "internal_imports": 10,
       "loc": 364,
       "public_symbols": 1
+    },
+    "cli/environment.py": {
+      "internal_imports": 8,
+      "loc": 82,
+      "public_symbols": 2
     },
     "cli/exit_codes.py": {
       "internal_imports": 5,
@@ -69,6 +74,11 @@
       "internal_imports": 20,
       "loc": 225,
       "public_symbols": 3
+    },
+    "environment_spec.py": {
+      "internal_imports": 1,
+      "loc": 261,
+      "public_symbols": 9
     },
     "errors.py": {
       "internal_imports": 0,
@@ -125,6 +135,11 @@
       "loc": 249,
       "public_symbols": 17
     },
+    "memory/environment.py": {
+      "internal_imports": 1,
+      "loc": 95,
+      "public_symbols": 7
+    },
     "memory/integrity.py": {
       "internal_imports": 1,
       "loc": 287,
@@ -132,12 +147,12 @@
     },
     "memory/ledger_entry.py": {
       "internal_imports": 0,
-      "loc": 201,
+      "loc": 210,
       "public_symbols": 4
     },
     "memory/ledger_store.py": {
       "internal_imports": 4,
-      "loc": 408,
+      "loc": 412,
       "public_symbols": 17
     },
     "memory/pending.py": {
@@ -166,8 +181,8 @@
       "public_symbols": 30
     },
     "orchestre.py": {
-      "internal_imports": 147,
-      "loc": 5188,
+      "internal_imports": 146,
+      "loc": 5216,
       "public_symbols": 10
     },
     "paths.py": {
@@ -204,6 +219,11 @@
       "internal_imports": 2,
       "loc": 83,
       "public_symbols": 5
+    },
+    "tree_env.py": {
+      "internal_imports": 15,
+      "loc": 302,
+      "public_symbols": 6
     },
     "universal_clock.py": {
       "internal_imports": 0,

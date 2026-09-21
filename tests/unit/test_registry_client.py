@@ -7,6 +7,7 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
+import ComplexGitSync
 from ComplexGitSync import MasterConfig
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import (
@@ -909,12 +910,15 @@ def test_client_freeze_delegates_to_freeze_tag(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_freeze_tag(name, *, output_gts=None, message=None, stage_all=True, private=False):
+    def _fake_freeze_tag(
+        name, *, output_gts=None, message=None, stage_all=True, private=False, release=None
+    ):
         captured["name"] = name
         captured["output_gts"] = output_gts
         captured["message"] = message
         captured["stage_all"] = stage_all
         captured["private"] = private
+        captured["release"] = release
         return "ok"
 
     monkeypatch.setattr(client, "_freeze_tag", _fake_freeze_tag)
@@ -928,6 +932,7 @@ def test_client_freeze_delegates_to_freeze_tag(monkeypatch):
         "message": "msg",
         "stage_all": False,
         "private": False,
+        "release": None,
     }
 
 
@@ -971,6 +976,11 @@ def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path)
     result = client.freeze_release("v1.0", "release commit")
 
     assert result == "ok"
+    expected_release = (
+        ("semver", ComplexGitSync.__version__),
+        ("git_tag", "v1.0"),
+        ("artefact:src", ComplexGitSync.__build__),
+    )
     assert calls == [
         ("add", None),
         ("commit", ("release commit", False)),
@@ -980,7 +990,12 @@ def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path)
             "freeze",
             (
                 "v1.0",
-                {"output_gts": None, "message": "release commit", "stage_all": True},
+                {
+                    "output_gts": None,
+                    "message": "release commit",
+                    "stage_all": True,
+                    "release": expected_release,
+                },
             ),
         ),
     ]

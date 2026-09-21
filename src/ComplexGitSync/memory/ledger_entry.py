@@ -91,6 +91,7 @@ class LedgerEntry:
     commit_log: str
     entry_hash: str
     environment: str = ""
+    release: tuple[tuple[str, str], ...] = ()
 
 
 def _canonical_payload(
@@ -106,6 +107,7 @@ def _canonical_payload(
     toolchain: Sequence[tuple[str, str]] = (),
     commit_log: str = "",
     environment: str = "",
+    release: Sequence[tuple[str, str]] = (),
 ) -> dict[str, Any]:
     """Every ``LedgerEntry`` field except ``entry_hash`` itself, as a plain
     dict ready for canonical serialisation.
@@ -142,6 +144,12 @@ def _canonical_payload(
         # before Environment records existed must keep its original payload
         # and therefore its original hash byte for byte.
         payload["environment"] = environment
+    if release:
+        # Additive for the same reason as ``commit_log``/``environment``: an
+        # entry written before a release field existed keeps its original
+        # hash. Absent on nearly every entry — only the one `freeze_release()`
+        # writes for an actual release carries this.
+        payload["release"] = {name: value for name, value in release}
     return payload
 
 
@@ -169,6 +177,7 @@ def compute_entry_hash(
     toolchain: Sequence[tuple[str, str]] = (),
     commit_log: str = "",
     environment: str = "",
+    release: Sequence[tuple[str, str]] = (),
 ) -> str:
     """Compute ``entry_hash`` over the canonical serialisation of every
     other field, including ``prev`` — so editing any field, or splicing in
@@ -187,6 +196,7 @@ def compute_entry_hash(
         toolchain=toolchain,
         commit_log=commit_log,
         environment=environment,
+        release=release,
     )
     digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
     return f"sha256:{digest}"
@@ -204,6 +214,7 @@ def build_next_entry(
     toolchain: Sequence[tuple[str, str]] = (),
     commit_log: str = "",
     environment: str = "",
+    release: Sequence[tuple[str, str]] = (),
 ) -> LedgerEntry:
     """Build the next entry in the chain following ``prev``.
 
@@ -219,6 +230,7 @@ def build_next_entry(
     argv_tuple = tuple(argv)
 
     toolchain_tuple = tuple(sorted(toolchain))
+    release_tuple = tuple(sorted(release))
 
     entry_hash = compute_entry_hash(
         seq=seq,
@@ -232,6 +244,7 @@ def build_next_entry(
         toolchain=toolchain_tuple,
         commit_log=commit_log,
         environment=environment,
+        release=release_tuple,
     )
 
     return LedgerEntry(
@@ -247,4 +260,5 @@ def build_next_entry(
         commit_log=commit_log,
         entry_hash=entry_hash,
         environment=environment,
+        release=release_tuple,
     )

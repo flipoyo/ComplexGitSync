@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+import ComplexGitSync as complexgitsync_pkg
+from ComplexGitSync.memory.ledger_store import read_all_entries
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 
@@ -351,7 +353,7 @@ def test_freeze_release_folds_via_its_own_push_and_its_own_freeze_harmlessly(tmp
     client = _loaded(tree["snapshot"])
     _change(tree["root"], "work.txt", "one")
 
-    client.freeze_release("release-1")
+    client.freeze_release("v-release-1")
 
     after = _memory_head(tree["memory_remote"], branch="demo")
     assert after != before
@@ -362,3 +364,17 @@ def test_freeze_release_folds_via_its_own_push_and_its_own_freeze_harmlessly(tmp
         text=True, capture_output=True,
     ).stdout
     assert status == ""
+
+    # The entry freeze_release() wrote carries a release row — the real
+    # end-to-end path, not just the unit-level plumbing. It lands in the
+    # pending half (`.cgitsync/lgr`): the memory fold happens before the
+    # freeze step writes this entry, so it is not folded in yet.
+    entries = read_all_entries(tree["root"] / ".cgitsync" / "lgr")
+    release_entry = entries[-1]
+    assert release_entry.command == "freeze_release"
+    release = dict(release_entry.release)
+    assert release == {
+        "semver": complexgitsync_pkg.__version__,
+        "git_tag": "v-release-1",
+        "artefact:src": complexgitsync_pkg.__build__,
+    }

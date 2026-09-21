@@ -259,6 +259,8 @@ def _entry_to_toml_payload(entry: LedgerEntry) -> dict[str, Any]:
     }
     if entry.environment:
         payload["environment"] = entry.environment
+    if entry.release:
+        payload["release"] = dict(entry.release)
     return {"entry": payload}
 
 
@@ -283,6 +285,8 @@ def _entry_from_toml_payload(data: dict[str, Any]) -> LedgerEntry:
         entry_hash=raw["entry_hash"],
         # Additive and absent on every entry written before TreeEnvironment.
         environment=raw.get("environment", ""),
+        # Additive and absent except on the entry a real release wrote.
+        release=tuple(sorted(raw.get("release", {}).items())),
     )
 
 
@@ -490,6 +494,7 @@ def append_entry(
     tree_root: Path | None = None,
     commit_log: str = "",
     environment: str = "",
+    release: Sequence[tuple[str, str]] = (),
 ) -> LedgerEntry:
     """Scrub ``argv``, build the next chain entry, and persist it.
 
@@ -517,6 +522,7 @@ def append_entry(
         toolchain=toolchain,
         commit_log=commit_log,
         environment=environment,
+        release=release,
     )
     write_entry(lgr_dir, entry)
     return entry

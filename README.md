@@ -1,4 +1,4 @@
-# ComplexGitSync v0002.88
+# ComplexGitSync v3.0.0
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -668,6 +668,11 @@ command line that does not parse is argparse's answer (usage on stderr, exit
 never parsed, since the flag itself may be what failed.
 
 ### What is stable, and what is not
+
+This is the project's first SemVer release. Earlier builds were numbered
+`0002.01`–`0002.88` under a calendar scheme (`YYYY.XX`); that scheme is
+kept, but only for the internal build counter (`__build__` in
+`src/ComplexGitSync/__init__.py`), not for the version shown above.
 
 | Surface | Promise |
 |---|---|

@@ -1,6 +1,14 @@
 """ComplexGitSync package: deterministic distributed workspace synchronization over Git trees."""
 
-__version__ = "0002.88"
+__version__ = "3.0.0"
+
+#: The build counter: bumped by `pixi run bump-build` on every change to
+#: `src/`, independently of `__version__`. See AdditionalSpecs.md,
+#: *Versioning* — SemVer says what the project promises; this says which
+#: build produced a given ledger entry. Carried over unchanged from the
+#: pre-SemVer `YYYY.XX` counter, not reset, when SemVer was cut over at
+#: `__version__` 3.0.0.
+__build__ = "0002.89"
 
 # --- Tier 1 — Public Errors (errors.py) ---
 # --- Cross-cutting document definitions ---
@@ -82,6 +90,7 @@ from .orchestre import (
 
 __all__ = [
     "__version__",
+    "__build__",
     # errors.py
     "ComplexGitSyncError",
     "ConfigValidationError",
