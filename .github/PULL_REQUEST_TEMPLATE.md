@@ -32,7 +32,7 @@ what applies; leave the rest unchecked.
 ### Any change to `.cgs` / `.gts` / `.lgr` semantics
 
 - [ ] `docs/Text/user_guide.tex` — update `\section{Document Formats}`.
-- [ ] `.localSpec/AdditionalSpecs.md` — update the architecture section if it changes a module responsibility boundary.
+- [ ] `.agent/.local/.localSpec/AdditionalSpecs.md` — update the architecture section if it changes a module responsibility boundary.
 - [ ] `CLAUDE.md` — update the module-responsibility table if a boundary
   moved.
 

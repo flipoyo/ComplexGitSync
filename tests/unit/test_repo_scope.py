@@ -475,17 +475,35 @@ class TestThisTreesOwnDeclaration:
         assert by_name[".localSpec"]["writable"] is True
         assert by_name[".claude"]["writable"] is True
 
-    def test_the_shared_config_repo_is_read_only(self):
-        """`.agentSpec` is private to main and read by every project.
+    def test_this_projects_own_skills_are_writable(self):
+        """`cgitsync-dev`, `release`, `dogfooding` (`AgentSkillsSplit`).
 
-        It must not be writable here: that is the entry whose accidental
-        push publishes to everyone.
+        Dispatched from what used to be sections of `CLAUDE.md` and
+        `AdditionalSpecs.md` — this project's own, so writable, the same
+        as `.localSpec`/`.claude` above.
         """
         document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync4dev.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
-        assert by_name[".agentSpec"]["private"] is True
-        assert by_name[".agentSpec"]["writable"] is False
+        assert by_name[".dev"]["writable"] is True
+        assert by_name[".versioning"]["writable"] is True
+        assert by_name[".auto"]["writable"] is True
+
+    def test_the_shared_skills_are_read_only(self):
+        """`.ticketing`, `DevSpec`, `DocSpec` (`AgentSkillsSplit`) are
+        private to `main` and read by every project.
+
+        None must be writable here: each is the entry whose accidental
+        push publishes to everyone. Each is declared directly (no
+        `.agent` repository nests them — `AgentMountSplit`), so its own
+        `private`/`writable` flags are exactly its effective ones.
+        """
+        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync4dev.cgs")
+        by_name = {r["project_name"]: r for r in document.repos}
+
+        for name in (".ticketing", "DevSpec", "DocSpec"):
+            assert by_name[name]["private"] is True
+            assert by_name[name]["writable"] is False
 
     def test_each_scope_selects_what_the_documentation_promises(self):
         source = _REPO_ROOT / "examples" / "complexgitsync4dev.cgs"
@@ -501,10 +519,17 @@ class TestThisTreesOwnDeclaration:
         # project branches the same way they reconcile the other two.
         # Nothing writes into its worktree except `memory push`'s own fold
         # (`memory-dev_WorkingTransitionState`), so no scope needs to route
-        # around it any more.
-        assert names(RepoScope.PRIVATE) == {".localSpec", ".claude", ".memory"}
-        assert ".agentSpec" not in names(RepoScope.WRITABLE)
-        assert ".agentSpec" in names(RepoScope.ALL)
+        # around it any more. .dev/.versioning/.auto (AgentSkillsSplit)
+        # join them the same way -- this project's own, writable.
+        assert names(RepoScope.PRIVATE) == {
+            ".localSpec", ".claude", ".memory", ".dev", ".versioning", ".auto",
+        }
+        # .ticketing/DevSpec/DocSpec are declared directly (AgentMountSplit)
+        # and need no nested discovery to appear at all -- the tree built
+        # from the document alone already has them, correctly read-only.
+        for name in (".ticketing", "DevSpec", "DocSpec"):
+            assert name not in names(RepoScope.WRITABLE)
+            assert name in names(RepoScope.ALL)
 
 
 class TestUserInstallDeclaration:

@@ -1,11 +1,11 @@
-"""Unit tests for .localSpec/scripts/bump_version.py.
+"""Unit tests for .agent/.local/release/scripts/bump_version.py.
 
-``bump_version.py`` lives in ``.localSpec``, not in this public repository
-(ProjectSpecSplit WP4) — a plain checkout of ``ComplexGitSync`` alone has
-no release tooling. This whole file needs ``.localSpec`` mounted, which a
-bootstrapped developer checkout has and a standalone checkout of the
-public repository does not, so it skips cleanly rather than failing when
-it is absent.
+``bump_version.py`` lives in the ``release`` skill (mounted at
+``.agent/.local/release``, ``AgentSkillsSplit``) — a plain checkout of
+``ComplexGitSync`` alone has no release tooling. This whole file needs
+``release`` mounted, which a bootstrapped developer checkout has and a
+standalone checkout of the public repository does not, so it skips
+cleanly rather than failing when it is absent.
 """
 
 from __future__ import annotations
@@ -17,14 +17,20 @@ from pathlib import Path
 import pytest
 
 _SCRIPT_PATH = (
-    Path(__file__).resolve().parents[2] / ".localSpec" / "scripts" / "bump_version.py"
+    Path(__file__).resolve().parents[2]
+    / ".agent"
+    / ".local"
+    / "release"
+    / "scripts"
+    / "bump_version.py"
 )
 
 if not _SCRIPT_PATH.is_file():
     pytest.skip(
-        "bump_version.py lives in .localSpec and is not mounted in this "
-        "checkout. Bootstrap examples/complexgitsync4dev.cgs to run these. "
-        "See .localSpec/DevTickets/archive/ (ProjectSpecSplit).",
+        "bump_version.py lives in the release skill (.agent/.local/release) "
+        "and is not mounted in this checkout. Bootstrap "
+        "examples/complexgitsync4dev.cgs to run these. See "
+        "AgentSkillsSplit.",
         allow_module_level=True,
     )
 
@@ -281,7 +287,7 @@ _DOCS_ABSENT_REASON = (
     "docs/ is a separate repository (DocComplexGitSync) and is not mounted in "
     "this checkout. Working on ComplexGitSync alone is legitimate; releasing "
     "from there is not -- bootstrap examples/complexgitsync4dev.cgs to run "
-    "these. See .localSpec/DevTickets/archive/20260911_ReleaseDocsDebt_DevPlanTicket.md."
+    "these. See .agent/.local/.localSpec/DevTickets/archive/20260911_ReleaseDocsDebt_DevPlanTicket.md."
 )
 _DOCS_TEX_PRESENT = all(path.is_file() for path in bump_version.DOCS_TEX_PATHS)
 _requires_docs = pytest.mark.skipif(not _DOCS_TEX_PRESENT, reason=_DOCS_ABSENT_REASON)
@@ -302,7 +308,7 @@ def test_real_docs_tex_files_have_a_matchable_cgsversion_macro(docs_path):
     assert bump_version._CGSVERSION_MACRO_RE.search(text) is not None, (
         f"{docs_path} no longer contains a "
         r"'\newcommand{\cgsversion}{<semver>}' definition that "
-        ".localSpec/scripts/bump_version.py can update."
+        ".agent/.local/release/scripts/bump_version.py can update."
     )
 
 

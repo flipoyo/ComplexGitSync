@@ -381,15 +381,32 @@ project-specific agent-facing documents ComplexGitSync itself uses —
 entries to the project's `.cgs`:
 
 ```toml
-{ repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", private = true },
-{ repository = "github:flipoyo/.localSpec", default_branch = "<ProjectName>", fallback_branch = "main", private = true },
-{ repository = "github:flipoyo/.claude", default_branch = "<ProjectName>", fallback_branch = "main", private = true },
+{ repository = "github:flipoyo/.ticketing", relative_path = ".agent/.distant/ticket", default_branch = "main", fallback_branch = "main", private = true },
+{ repository = "github:flipoyo/DevSpec", relative_path = ".agent/.distant/dev-sync", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+{ repository = "github:flipoyo/DocSpec", relative_path = ".agent/.distant/documentation", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+{ repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", default_branch = "<ProjectName>", fallback_branch = "main", private = true, writable = true },
+{ repository = "github:flipoyo/.claude", relative_path = ".agent/.local/.claude", default_branch = "<ProjectName>", fallback_branch = "main", private = true, writable = true },
 ```
+
+Five entries, none of them named `.agent` — `.agent/` is never itself a
+repository, only the shared prefix these `relative_path`s happen to nest
+inside (`AgentMountSplit`; the naming and split into `ticket`/`dev-sync`/
+`documentation` is `AgentSkillsSplit`). `DevSpec`'s own
+`nested_config = "disabled"` matters here: without it, its own
+`install.cgs` would still discover itself a second time nested one level
+inside `.agentSpec` — which this project no longer mounts at all, having
+split its one thing (`TICKETLIFECYCLE.md`) into `.ticketing` directly.
+`.localSpec` and `.claude` answer only to their own `private`/`writable`
+flags — nothing nests them under anything, so there is nothing for a
+shared, read-only mount's privacy to cap them through. See
+`tutorials/04_private_repos.md` for what the two kinds mean.
 
 `private = true` keeps each mount on its own branch when you run a tree-wide
 `branch`, `checkout` or `pull`. Without it, a feature branch you create for
-this project would also be created inside `.agentSpec`, which every other
-project mounts too.
+this project would also be created inside `.ticketing`, `DevSpec` or
+`DocSpec`, each of which every other project mounts too. `writable = true`
+on `.localSpec`/`.claude` is what lets *this* project commit to its own
+settings branch there.
 
 ### Seeing privacy work
 
@@ -399,48 +416,51 @@ checked out, printed by `cgitsync view-tree`:
 
 ```text
 ComplexGitSync (root) [ALIGNED] @9c9298a br=multi-branch fb=main
-├── .agentSpec (parent) [ALIGNED] @117a9c5 br=main
-│   └── DevSpec (leaf) [ALIGNED] @a5d3432 br=main
+├── .ticketing (leaf) [ALIGNED] @412759b br=main
+├── DevSpec (leaf) [ALIGNED] @a5d3432 br=main
+├── DocSpec (leaf) [ALIGNED] @02ee0b1 br=main
 ├── .claude (leaf) [ALIGNED] @df4221c br=ComplexGitSync fb=main
 ├── .localSpec (leaf) [ALIGNED] @9f50519 br=ComplexGitSync fb=main
 └── DocComplexGitSync (parent) [ALIGNED] @ac1176e br=multi-branch fb=main
-    └── DocSpec (leaf) [ALIGNED] @e6f1b0b br=main
 ```
 
 `br=` is the branch each repository is on. Read it top to bottom:
 
 - The two repositories this project actually owns — `ComplexGitSync` and
   `DocComplexGitSync` — moved to `multi-branch`.
-- The five private mounts did not. `.localSpec` and `.claude` stayed on
-  `ComplexGitSync`, the branch named after this project. `.agentSpec`,
-  `DevSpec` and `DocSpec` stayed on `main`, which every project that mounts
-  them reads.
+- The five private mounts above did not. `.localSpec` and `.claude` stayed
+  on `ComplexGitSync`, the branch named after this project. `.ticketing`,
+  `DevSpec` and `DocSpec` stayed on `main`, which every project that
+  mounts them reads.
 - `fb=` is shown only where the declared fallback branch differs from the
   branch targeted. It is what `cgitsync` would clone if the target branch
   did not exist on the remote.
 
 **That last difference decides how carefully you commit.** A mount private to
 a branch named after your project (`.localSpec`, `.claude` above) is yours —
-push to it freely. A mount private to `main` (`.agentSpec` above) is read by
-every project that mounts it, so a push there is published immediately, with
-no branch and no pull request in between. Check which kind you are looking at
-before committing to a private mount.
+push to it freely. A mount private to `main` (`.ticketing`, `DevSpec`,
+`DocSpec` above) is
+read by every project that mounts it, so a push there is published
+immediately, with no branch and no pull request in between. Check which kind
+you are looking at before committing to a private mount.
 
-Each repository mounts at its own name, so no `relative_path` is needed.
-`.agentSpec` carries its own `install.cgs`, which is why it declares
-`nested_config = "auto"`: discovery reads that file and clones
-`flipoyo/DevSpec` one level deeper, at `.agentSpec/DevSpec/`, where
-`DevSpecs.md`, `DOCSTYLE.md` and the generic `AGENT.md` template live.
+Each of these five sits at its own path under `.agent/` — `.distant/` or
+`.local/` — and that is the whole
+point: the path alone says which is which. None of them is declared
+as `.agent` itself, and `.agent/` is never a repository — a private/local
+mount (`.localSpec`, `.claude`, which this project writes) cannot sit
+under a private/distant repository and stay writable (nesting caps a
+child's writability at its parent's, with no override), so nothing here
+is nested under anything; each entry answers only to its own
+`private`/`writable` flags.
 
 Then create the `<ProjectName>` branch on `.localSpec` and on `.claude`
 (from their shared `main`) and write that project's own
-`.localSpec/AdditionalSpecs.md`, `AGENT.md`, and `audit.md`. Planning goes
-in the same private mount, at `.localSpec/DevTickets/` — keeping the
-project's own repository free of tickets, so what you publish is the
-product and not the workshop. `.agentSpec`
-needs nothing — it is the same document for every project. Run
-`cgitsync initialise` and the mounts land alongside the ones above;
-`.gitignore` is updated for you.
+`.agent/.local/.localSpec/AdditionalSpecs.md`, `AGENT.md`, and `audit.md`. Planning
+goes in the same private mount, at `.agent/.local/.localSpec/DevTickets/` — keeping
+the project's own repository free of tickets, so what you publish is the
+product and not the workshop. Run `cgitsync initialise` and the mounts land
+alongside the ones above; `.gitignore` is updated for you.
 
 **Next:** [Tutorial 4 — Private repos: the ones that configure your
 project](04_private_repos.md) picks up exactly where

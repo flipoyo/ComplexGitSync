@@ -15,11 +15,11 @@ less than "…by cgitsync 2.64 driving git 2.39.5", when the question two
 years later is why a restored release does not match.
 
 The owner asked for it in those words
-(``.localSpec/DevTickets/archive/.closedUserTicket/20260916_memory-dependencies.md``):
+(``.agent/.local/.localSpec/DevTickets/archive/.closedUserTicket/20260916_memory-dependencies.md``):
 record the versions used at state genesis and at the time of each record.
 
 Three rules, settled with the owner on 2026-09-16 and stated in
-``.localSpec/AdditionalSpecs.md``, *The hash-chained register*:
+``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained register*:
 
 1. **All five, in every entry.** Each line stands on its own; a truncated
    or partly synced chain still says what made each record.
@@ -34,7 +34,7 @@ Three rules, settled with the owner on 2026-09-16 and stated in
 **Versions are provenance, never identity.** They describe the machine that
 observed a tree, not the tree, so they never enter a State's name — two
 machines holding the same tree with different git versions must agree on
-what they hold. See ``.localSpec/AdditionalSpecs.md``, *What a State's name
+what they hold. See ``.agent/.local/.localSpec/AdditionalSpecs.md``, *What a State's name
 is computed from*.
 """
 

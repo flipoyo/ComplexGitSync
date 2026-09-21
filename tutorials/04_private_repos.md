@@ -92,12 +92,15 @@ pixi run cgitsync view-tree
 
 ```text
 ComplexGitSync (root) [ALIGNED] @9c9298a br=multi-branch fb=main
-├── .agentSpec (parent) [ALIGNED] @117a9c5 br=main
-│   └── DevSpec (leaf) [ALIGNED] @a5d3432 br=main
+├── .ticketing (leaf) [ALIGNED] @412759b br=main
+├── DevSpec (leaf) [ALIGNED] @a5d3432 br=main
+├── DocSpec (leaf) [ALIGNED] @02ee0b1 br=main
+├── .dev (leaf) [ALIGNED] @c85bb1d br=ComplexGitSync_multi-branch fb=main
+├── .versioning (leaf) [ALIGNED] @751182a br=ComplexGitSync_multi-branch fb=main
+├── .auto (leaf) [ALIGNED] @23de708 br=ComplexGitSync_multi-branch fb=main
 ├── .claude (leaf) [ALIGNED] @df4221c br=ComplexGitSync_multi-branch fb=main
 ├── .localSpec (leaf) [ALIGNED] @9f50519 br=ComplexGitSync_multi-branch fb=main
 └── DocComplexGitSync (parent) [ALIGNED] @ac1176e br=multi-branch fb=main
-    └── DocSpec (leaf) [ALIGNED] @e6f1b0b br=main
 ```
 
 `br=` is the branch each repository is on, and it tells you which kind
@@ -106,8 +109,8 @@ each one is:
 | Repository | Branch | Kind |
 |---|---|---|
 | `ComplexGitSync`, `DocComplexGitSync` | `multi-branch` | the project's own — they followed the feature branch |
-| `.localSpec`, `.claude` | `ComplexGitSync_multi-branch` | config, **read and write** — the branch is named after this project *and* the branch it is on |
-| `.agentSpec`, `DevSpec`, `DocSpec` | `main` | config, **read-only** — `main` is what every other project reads |
+| `.dev`, `.versioning`, `.auto`, `.localSpec`, `.claude` | `ComplexGitSync_multi-branch` | config, **read and write** — the branch is named after this project *and* the branch it is on |
+| `.ticketing`, `DevSpec`, `DocSpec` | `main` | config, **read-only** — `main` is what every other project reads |
 
 **The branch name is the whole tell.** A configuration repo sitting on a
 branch named after your project is yours. One sitting on `main` is
@@ -121,18 +124,30 @@ pixi run cgitsync status
 ```
 
 ```text
-REPOSITORY         PATH                SCOPE            LOCAL_BRANCH
-DocSpec            docs/DocSpec        private/distant  main
-DocComplexGitSync  docs                project          multi-branch
-.localSpec         .localSpec          private/local    ComplexGitSync_multi-branch
-.claude            .claude             private/local    ComplexGitSync_multi-branch
-DevSpec            .agentSpec/DevSpec  private/distant  main
-.agentSpec         .agentSpec          private/distant  main
-ComplexGitSync     .                   project          multi-branch
+REPOSITORY         PATH                           SCOPE            LOCAL_BRANCH
+DocComplexGitSync  docs                           project          multi-branch
+.ticketing         .agent/.distant/ticket         private/distant  main
+DevSpec            .agent/.distant/dev-sync       private/distant  main
+DocSpec            .agent/.distant/documentation  private/distant  main
+.dev               .agent/.local/cgitsync-dev     private/local    ComplexGitSync_multi-branch
+.versioning        .agent/.local/release          private/local    ComplexGitSync_multi-branch
+.auto              .agent/.local/dogfooding       private/local    ComplexGitSync_multi-branch
+.localSpec         .agent/.local/.localSpec       private/local    ComplexGitSync_multi-branch
+.claude            .agent/.local/.claude          private/local    ComplexGitSync_multi-branch
+ComplexGitSync     .                              project          multi-branch
 legend: SCOPE — project = this project's own; private = a configuration
 repository shared with other projects, local = this project may write to
 it, distant = read-only
 ```
+
+Six independent skills (`AgentSkillsSplit`) sit under `.agent/.distant/`
+and `.agent/.local/` — but none of them declares an `.agent` entry of its
+own. `.agent/` is never itself a repository: it is
+a plain directory each entry's own `relative_path` happens to nest
+inside, so there is nothing there for a shared, read-only mount's
+privacy to cap a writable one through (a private/local repository
+nested under an actual private/distant *repository* would be forced
+read-only too — see `AgentMountSplit` if you want the reproduction).
 
 Three words, and they map onto the three things you can do:
 
@@ -151,8 +166,13 @@ words is **who may commit**, not how far away anything is:
   settings are a contribution to your project, recorded on your own branch.
   You do commit to it.
 
-`DevSpec` and `DocSpec` are nested inside private repos and show as private
-too — a repository inside a shared one is just as shared.
+Nesting still propagates privacy when it happens — a repository declared
+inside another one's own nested `.cgs` is just as shared as its parent,
+with no `private` entry of its own needed. None of the six skills above
+nest, though: each is declared directly (`AgentSkillsSplit`), so this
+tree has no live example of it any more — see `AgentMountSplit` for why
+nesting a writable repository under a shared one specifically does not
+work, which is the reason.
 
 ### A branch per project branch
 
@@ -238,23 +258,31 @@ project = { name = "ComplexGitSync", default_branch = "main" }
 repos = [
     { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
     { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "auto" },
-    { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", private = true },
-    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
-    { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+
+    { repository = "github:flipoyo/.ticketing", relative_path = ".agent/.distant/ticket", default_branch = "main", fallback_branch = "main", private = true },
+    { repository = "github:flipoyo/DevSpec", relative_path = ".agent/.distant/dev-sync", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+    { repository = "github:flipoyo/DocSpec", relative_path = ".agent/.distant/documentation", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+
+    { repository = "github:flipoyo/.dev", relative_path = ".agent/.local/cgitsync-dev", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.claude", relative_path = ".agent/.local/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
 ]
 ```
 
-That is [`examples/complexgitsync4dev.cgs`](../examples/complexgitsync4dev.cgs),
-the spec this tree's own developer checkout is built from. (The root
-`install.cgs` is the user install and stops after the first two entries —
-it mounts no private repository at all.) Reading it:
+That is an excerpt of
+[`examples/complexgitsync4dev.cgs`](../examples/complexgitsync4dev.cgs)
+(three of its nine private entries left out, same pattern), the spec
+this tree's own developer checkout is built from. (The root `install.cgs`
+is the user install and stops after the first two entries — it mounts no
+private repository at all.) Reading it:
 
 - The first two entries have no `private`, so they are the project's own.
-- `.agentSpec` is `private` and nothing more — read-only.
-- `.localSpec` and `.claude` are `private, writable` — this project's, on
-  its own branch.
+- `.ticketing`, `DevSpec`, `DocSpec` are `private` and nothing more —
+  read-only.
+- `.dev`, `.localSpec`, `.claude` are `private, writable` — this project's,
+  on its own branch.
 
-This is where ComplexGitSync's own planning lives: `.localSpec/DevTickets/`
+This is where ComplexGitSync's own planning lives: `.agent/.local/.localSpec/DevTickets/`
 holds every ticket for the project, so cloning the public repository gets
 you the tool and none of the paperwork. Privacy here is not only about
 secrets — it is about which half of the work you are publishing.
@@ -262,20 +290,19 @@ secrets — it is about which half of the work you are publishing.
 The other fields are ordinary `.cgs`. `default_branch` is the branch a
 private repository stays on, which is the field that decides §2's question,
 so always write it. `fallback_branch = "main"` lets a fresh clone work
-before the project-named branch exists.
+before the project-named branch exists. `relative_path` says where —
+every entry above states its own, since none of them nests inside
+another (`AgentMountSplit`).
 
-**One entry covers everything inside it.** `.agentSpec` holds `DevSpec`,
-which reaches this tree through `.agentSpec`'s own nested `.cgs`. You never
-write a second `private = true` for it: `DevSpec` sits inside a read-only
-configuration repo, so it is read-only too. The same goes the other way —
-anything nested inside `.localSpec` is writable, and `--private` reaches
-it.
-
-A nested entry may lock itself down further than its parent: `private =
-true` on its own line, with no `writable`, makes it read-only inside a
-writable parent. It cannot open itself up. `writable = true` inside a
-read-only configuration repo does nothing, because no repository can be
-more open than the one holding it.
+**A repository nested inside another one's own nested `.cgs`** — none of
+these nine are, but the rule still matters if you ever declare one that
+is — inherits its parent's privacy with no entry of its own needed, and
+may lock itself down *further* than its parent (`private = true`, no
+`writable`, inside a writable parent) but never open itself up wider:
+`writable = true` inside a read-only configuration repo does nothing,
+because no repository can be more open than the one holding it. See
+`AgentMountSplit` for why that rule is also why none of these nine nest
+any more.
 
 **Adding one to your own project:** copy an entry, pick `default_branch`
 using §2, and run `pixi run cgitsync initialise <your.cgs>`.
@@ -349,8 +376,8 @@ You still see the two halves separately, so giving up the typing does not
 mean giving up knowing:
 
 ```text
-scope=all project=ComplexGitSync, DocComplexGitSync private=.claude, .localSpec
-scope=all never_written=3 read-only repo(s) (.agentSpec, DevSpec, DocSpec)
+scope=all project=ComplexGitSync, DocComplexGitSync private=.claude, .localSpec, .dev, .versioning, .auto
+scope=all never_written=3 read-only repo(s) (.ticketing, DevSpec, DocSpec)
 ```
 
 If your tree has no writable configuration repository at all, `--all` simply
@@ -370,7 +397,7 @@ quietly:
 
 ```text
 commit --private: no writable configuration repository in this tree. The private
-repositories in this tree are read-only: .agentSpec, DevSpec, DocSpec. A private
+repositories in this tree are read-only: .ticketing, DevSpec, DocSpec. A private
 repository is read-only unless its .cgs entry also says writable = true.
 ```
 
@@ -383,10 +410,10 @@ with plain `git`, one repository at a time, after your project's own work
 has been reviewed and merged:
 
 ```bash
-git -C .agentSpec status
-git -C .agentSpec add install.cgs
-git -C .agentSpec commit -m "what you changed"
-git -C .agentSpec push
+git -C .agent/.distant/ticket status
+git -C .agent/.distant/ticket add TICKETLIFECYCLE.md
+git -C .agent/.distant/ticket commit -m "what you changed"
+git -C .agent/.distant/ticket push
 ```
 
 Everyone mounting that repository sees the change on their next pull, so it

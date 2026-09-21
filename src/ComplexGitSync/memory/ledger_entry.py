@@ -8,7 +8,7 @@ Contract: given the previous chain entry (or none, for genesis) and the
     this module's.
 Imports: none
 
-Design reference: ``.localSpec/AdditionalSpecs.md``, *The hash-chained
+Design reference: ``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained
 register* (hash-chained register schema) and §3.3 (``ClockProtocol``).
 
 The deleted TIME-L0 anchor discarded its pre-image and reused the State id
@@ -73,7 +73,7 @@ class ClockProtocol(Protocol):
 class LedgerEntry:
     """One hash-chained ``.lgr`` register entry.
 
-    Schema fixed by ``.localSpec/AdditionalSpecs.md``'s *The hash-chained
+    Schema fixed by ``.agent/.local/.localSpec/AdditionalSpecs.md``'s *The hash-chained
     register* section — do not add or rename a field without changing that
     section first. The entry is hash-chained, so a field added later means
     migrating every chain already written.

@@ -2,7 +2,7 @@
 
 Ring: 2 (no direct subprocess import; drives Git only through an injected
     GitRunner-shaped object, same ring as git_runner.py per
-    .localSpec/AdditionalSpecs.md's ring table)
+    .agent/.local/.localSpec/AdditionalSpecs.md's ring table)
 Contract: leaf/parent-first Git operations over a WorkingGitTree + GitRunner;
     requires a READY tree for mutations, raises TreeNotReadyError otherwise.
 Imports: errors, git_branch, git_repo, git_tree
@@ -164,7 +164,7 @@ def create_global_branch(
     looks identical to a genuinely new name otherwise, and starting the
     former at HEAD forks it under a name the user believes they are joining
     (CheckoutForkGuard,
-    ``.localSpec/DevTickets/openTickets/main_1-1_CheckoutForkGuard_DevPlanTicket.md``).
+    ``.agent/.local/.localSpec/DevTickets/openTickets/main_1-1_CheckoutForkGuard_DevPlanTicket.md``).
     A name truly unknown to the remote still costs nothing beyond that one
     round-trip and falls through to today's behaviour unchanged.
     """
@@ -180,7 +180,7 @@ def create_global_branch(
         # instead forked a second history under a name the user believed they
         # were joining, and `checkout` then reported success on the wrong
         # commits — a colleague's work simply was not there
-        # (.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md §3).
+        # (.agent/.local/.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md §3).
         remote = repo.remote_name or "origin"
         if git_runner.remote_tracking_branch_exists(repo.absolute_path, target, remote=remote):
             git_runner.create_branch(
@@ -223,7 +223,7 @@ def _rewrite_remote_if_forced(
     than rebuilding a URL from *repo*'s stored identity fields. Those
     fields can be missing or stale for a repo loaded from an older
     ``.gts`` snapshot (gitprovider was not always recorded there — see
-    ``.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md``), and
+    ``.agent/.local/.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md``), and
     rebuilding from a wrong or absent provider silently aims the push at
     the wrong host. The URL actually configured on disk is never wrong in
     that way, so converting it in place is what stays correct regardless
@@ -248,7 +248,7 @@ def _repair_fetch_refspec(git_runner: GitRunner, repo: WorkingRepo, remote: str)
     """Widen *repo*'s fetch refspec if a ``--single-branch`` clone narrowed it.
 
     Every workspace cloned before that narrowing was fixed
-    (``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``)
+    (``.agent/.local/.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``)
     carries a refspec mapping one branch only, and no re-clone should be
     needed to recover from it. Modelled on :func:`_rewrite_remote_if_forced`,
     beside which it is called: a config fix persisted once, idempotently, by
@@ -911,7 +911,7 @@ def _iter_merge_scope_project_first(
     reconciled first, completely, before any shared configuration
     repository is touched at all — so a conflict in the private half can
     never again leave the project half only partly done
-    (`.localSpec/DevTickets/archive/20260918_MergeProjectBeforePrivate_DevPlanTicket.md`).
+    (`.agent/.local/.localSpec/DevTickets/archive/20260918_MergeProjectBeforePrivate_DevPlanTicket.md`).
 
     ``PROJECT`` and ``PRIVATE`` never overlap (a repository is either not
     private, or private *and* writable), so this never yields one twice.
@@ -1103,7 +1103,7 @@ def merge_into_tree(
     happens to the files underneath. **Nothing may be inserted between the
     checkout and the merge below that starts another process**, and the two
     must never be split into separate commands again. See
-    ``.localSpec/DevTickets/…_SelfHostedMerge_DevPlanTicket.md`` §2.
+    ``.agent/.local/.localSpec/DevTickets/…_SelfHostedMerge_DevPlanTicket.md`` §2.
 
     Every repository in scope is checked before any is touched, so a refusal
     leaves the whole tree exactly where it was — still on the source branch,
@@ -1209,7 +1209,7 @@ class ResolveOutcome:
     can actually find in the registry with (a bare name lookup there raised
     ``KeyError`` for any repo, `.memory` included, whose id is not simply
     its own name — see
-    `.localSpec/DevTickets/archive/20260918_ResolveMergeToolCrash_DevPlanTicket.md`).
+    `.agent/.local/.localSpec/DevTickets/archive/20260918_ResolveMergeToolCrash_DevPlanTicket.md`).
     """
 
     merged: tuple[tuple[str, str], ...]

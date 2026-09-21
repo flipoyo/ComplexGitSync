@@ -21,7 +21,7 @@ class UnsupportedSnapshotFormatError(ConfigValidationError):
     not a verdict this build is capable of reaching — it cannot check
     whether the document is well-formed under a canonicalisation it has
     never seen, only that the number is higher than the one it knows
-    (`.localSpec/DevTickets/archive/20260918_SnapshotVersionGuard_DevPlanTicket.md`).
+    (`.agent/.local/.localSpec/DevTickets/archive/20260918_SnapshotVersionGuard_DevPlanTicket.md`).
     A subclass of :class:`ConfigValidationError` so every existing catch of
     that type still sweeps it up; the CLI still tells the two apart to exit
     `2` unconditionally, even for ``validate``, whose job is normally to

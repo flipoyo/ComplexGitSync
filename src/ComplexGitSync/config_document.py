@@ -11,8 +11,8 @@ File-based loading/saving (``from_toml``/``to_toml``/``from_json``/``to_json``/
 ``from_yaml``/``to_yaml``) used to live on this class, but all six call
 ``open()`` directly and therefore do real filesystem I/O — that disqualifies
 them from Ring 0 (see
-``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md`` and its WP-CFG entry in
-``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md`` §0). They now live in the
+``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md`` and its WP-CFG entry in
+``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md`` §0). They now live in the
 sibling Ring-1 module ``config_document_io.py`` as ``ConfigDocumentIOMixin``,
 which subclasses combine with this class via multiple inheritance to regain
 the exact same method names and call syntax.

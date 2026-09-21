@@ -584,7 +584,6 @@ def _tree_cgs_paths() -> list[Path]:
         _REPO_ROOT / "ComplexGitSync.cgs",
         _REPO_ROOT / "examples" / "complexgitsync4dev.cgs",
         _REPO_ROOT / "examples" / "doccomplexgitsync.cgs",
-        _REPO_ROOT / ".agentSpec" / "install.cgs",
         _REPO_ROOT / "docs" / "DocCGS.cgs",
     ]
     return [path for path in candidates if path.is_file()]
@@ -598,8 +597,7 @@ def test_every_cgs_in_this_tree_states_its_branch_explicitly(cgs_path):
     people's files, and that stays. But a reader of *this* tree must be able
     to open any of its ``.cgs`` files and see which branch it lands on
     without reading ``git_branch.py`` — which is precisely what
-    ``.agentSpec/install.cgs`` and ``docs/DocCGS.cgs`` could not offer
-    before the MultiBranchSync ticket.
+    ``docs/DocCGS.cgs`` could not offer before the MultiBranchSync ticket.
     """
     raw = tomllib_loads(cgs_path)
     project = raw.get("project")
@@ -628,7 +626,7 @@ def tomllib_loads(path: Path) -> dict:
 
 
 def test_this_trees_own_cgs_pins_exactly_the_shared_mounts():
-    """The dev spec §3: branch moves reach two repos, tags reach all five.
+    """The dev spec §3: branch moves reach two repos, tags reach every private one.
 
     The ticket's acceptance criterion 5 asks for this to be proved by a
     test rather than by inspection.
@@ -637,8 +635,16 @@ def test_this_trees_own_cgs_pins_exactly_the_shared_mounts():
     by_name = {repo["project_name"]: repo for repo in document.repos}
 
     private = {name for name, repo in by_name.items() if repo.get("private")}
-    # .memory joined the other three 2026-09-17 (memory-dev_1-2_MemoryOnboarding).
-    assert private == {".agentSpec", ".localSpec", ".claude", ".memory"}
+    # .memory joined the original three 2026-09-17 (memory-dev_1-2_MemoryOnboarding).
+    # .agentSpec split into six independent skills 2026-09-22
+    # (AgentSkillsSplit): .ticketing, DevSpec, DocSpec (shared) and
+    # .dev, .versioning, .auto (this project's own, alongside .localSpec
+    # and .claude).
+    assert private == {
+        ".ticketing", "DevSpec", "DocSpec",
+        ".dev", ".versioning", ".auto",
+        ".localSpec", ".claude", ".memory",
+    }
 
     tree = _tree(
         *(
@@ -674,14 +680,17 @@ def test_the_workspace_mounts_sit_on_the_branches_their_cgs_names():
     Skipped in a plain checkout, where the mounts are not on disk.
     """
     distant = {
-        ".agentSpec": "main",
-        ".agentSpec/DevSpec": "main",
-        "docs/DocSpec": "main",
+        ".agent/.distant/ticket": "main",
+        ".agent/.distant/dev-sync": "main",
+        ".agent/.distant/documentation": "main",
     }
     local = {
-        ".localSpec": "ComplexGitSync",
-        ".claude": "ComplexGitSync",
-        ".cgitsync": "ComplexGitSync",
+        ".agent/.local/cgitsync-dev": "ComplexGitSync",
+        ".agent/.local/release": "ComplexGitSync",
+        ".agent/.local/dogfooding": "ComplexGitSync",
+        ".agent/.local/.localSpec": "ComplexGitSync",
+        ".agent/.local/.claude": "ComplexGitSync",
+        ".cgitsync/.memory": "ComplexGitSync",
     }
     present = {
         path: base

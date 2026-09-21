@@ -29,7 +29,7 @@ from .ledger_entry import compute_entry_hash
 HASH_ALGORITHM = "sha256"
 
 #: The `prev` value carried by the genesis (first) entry of a register —
-#: an all-zero digest. Schema: `.localSpec/AdditionalSpecs.md`, *The
+#: an all-zero digest. Schema: `.agent/.local/.localSpec/AdditionalSpecs.md`, *The
 #: hash-chained register*.
 GENESIS_PREV = f"{HASH_ALGORITHM}:" + "0" * 64
 
@@ -37,7 +37,7 @@ GENESIS_PREV = f"{HASH_ALGORITHM}:" + "0" * 64
 class LedgerEntryLike(Protocol):
     """Structural shape of one register entry.
 
-    The nine fields are fixed by `.localSpec/AdditionalSpecs.md`'s *The
+    The nine fields are fixed by `.agent/.local/.localSpec/AdditionalSpecs.md`'s *The
     hash-chained register* section; adding or renaming one is a change to
     that section first.
 
@@ -61,7 +61,7 @@ class LedgerEntryLike(Protocol):
 class Finding(Enum):
     """Taxonomy of register-integrity problems.
 
-    Listed in `.localSpec/AdditionalSpecs.md`, *The hash-chained register*.
+    Listed in `.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained register*.
 
     All eleven members are defined here because the type is shared with the
     later `verify_store()` work (Ring 1, filesystem-backed, out of scope for
@@ -107,7 +107,7 @@ class HistoryState(Enum):
     was nothing to verify" are now different answers, and so is "there is
     history here that this format cannot verify".
 
-    The five are fixed by `.localSpec/AdditionalSpecs.md`, *The hash-chained
+    The five are fixed by `.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained
     register*.
     """
 
@@ -131,7 +131,7 @@ def resolve_state(findings: Sequence[tuple[int, Finding, str]]) -> HistoryState:
        hold: every link checked out, and only the clock that stamped it
        moved backwards. Calling that "corrupt" would be false, and this
        project has already paid once for reporting an intact artefact as
-       corrupt (`.localSpec/AdditionalSpecs.md`, *What a State's name is
+       corrupt (`.agent/.local/.localSpec/AdditionalSpecs.md`, *What a State's name is
        computed from* — the version-2 canonicalisation story): it is the
        worst answer available, because it invites deleting the one thing
        that was fine. Its own verdict, exiting non-zero, says "something is
@@ -227,7 +227,7 @@ def verify_chain(entries: Sequence[LedgerEntryLike]) -> VerificationReport:
       *also* reported `BROKEN_LINK`, without re-attempting to resynchronise
       against a later entry's own hash. This is a deliberate, conservative
       choice matching the threat model's tamper-*evidence* goal
-      (`.localSpec/AdditionalSpecs.md`, *The hash-chained register* —
+      (`.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained register* —
       tamper-evidence): a single rewritten or deleted entry means
       nothing downstream of it can be trusted to still describe the real
       history, even if the raw bytes of later entries happen to still be

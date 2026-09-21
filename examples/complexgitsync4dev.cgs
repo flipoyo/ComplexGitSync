@@ -11,18 +11,59 @@
 # .cgs. Only install.cgs, the user install, stays at the repository root.
 #
 # install.cgs, beside it, is the USER install and mounts only the first two
-# entries. This file adds the three configuration repositories, and is also
-# tutorials/04_private_repos.md's worked example, because it is the only
-# checked-in spec using every kind of private entry:
+# entries. This file adds every agentic skill (AgentSkillsSplit) plus this
+# project's own private mounts, and is also tutorials/04_private_repos.md's
+# worked example, because it is the only checked-in spec using every kind
+# of private entry:
 #
-#   .agentSpec            private, read-only  -> SCOPE private/distant
-#   .localSpec, .claude   private, writable   -> SCOPE private/local
-#   ComplexGitSync, docs  the project's own   -> SCOPE project
+#   ticket (.ticketing), dev-sync (DevSpec),
+#   documentation (DocSpec)         private, read-only  -> SCOPE private/distant
+#   cgitsync-dev (.dev), release (.versioning),
+#   dogfooding (.auto), .localSpec, .claude
+#                                   private, writable   -> SCOPE private/local
+#   ComplexGitSync, docs            the project's own   -> SCOPE project
+#
+# .agent/ is never itself declared, and is never a repository — it is a
+# plain directory these entries happen to nest inside via their own
+# relative_path, nothing more (AgentMountSplit). An earlier design
+# (ProjectSpecSplit, WP2) mounted .agent as a real repository so its own
+# agent-mount.cgs could discover .agentSpec nested inside it, and that
+# broke: propagate_privacy caps a nested repository's writability at its
+# parent's, with no override, so nesting a private/local repository
+# (one this project writes to) under a private/distant one (shared, and
+# whose branch is the same for every project) either forced the parent
+# writable — which then put it on a branch its own remote does not have
+# — or capped the child read-only. Declaring every repository directly,
+# each answering only to its own private/writable flags, has nothing
+# left for propagate_privacy to cap through.
+#
+# .agentSpec itself is no longer mounted at all: TICKETLIFECYCLE.md,
+# the one thing it held directly, split out to its own repository
+# (.ticketing) under AgentSkillsSplit, and DevSpec (nested inside it)
+# mounts directly here instead (as "dev-sync") — the same reasoning as
+# .agent above: a repository mounted both nested and direct would clone
+# twice, so DevSpec cannot stay nested under .agentSpec once it is also
+# declared here. Nothing here edits .agentSpec's own repository, which
+# still nests DevSpec exactly as before for any other project that
+# mounts it unchanged.
+#
+# DocSpec ("documentation") is declared here directly too, not nested
+# one level inside docs/ the way it used to be, for the same reason —
+# and is no longer declared in docs/DocCGS.cgs.
+#
+# cgitsync-dev, release and dogfooding are this project's own — private
+# and writable, dispatched from what used to be sections of CLAUDE.md
+# and AdditionalSpecs.md. Their repository names (.dev, .versioning,
+# .auto) do not match their skill/mount names (cgitsync-dev, release,
+# dogfooding): the repository name is what GitHub calls it, the
+# relative_path is what this tree calls it, and the two are free to
+# differ, the same way .ticketing (repository) mounts as "ticket" below.
 #
 # .localSpec also carries DevTickets/ — the whole planning surface: the
 # owner's short tickets, the ranked open planning tickets, and the archive.
 # Mounting this file is therefore what gives you the tickets; install.cgs,
-# the user install, deliberately does not. See .localSpec/DevTickets/README.md.
+# the user install, deliberately does not. See
+# .agent/.local/.localSpec/DevTickets/README.md.
 #
 # main is the project branch; repository entries declare only fallback, path,
 # nested-discovery and private overrides.
@@ -32,8 +73,17 @@ project = { name = "ComplexGitSync", default_branch = "main" }
 repos = [
     { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
     { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "auto" },
-    { repository = "github:flipoyo/.agentSpec", default_branch = "main", fallback_branch = "main", nested_config = "auto", private = true },
-    { repository = "github:flipoyo/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
-    { repository = "github:flipoyo/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+
+    # .distant — shared, read-only, the same for every conforming project
+    { repository = "github:flipoyo/.ticketing", relative_path = ".agent/.distant/ticket", default_branch = "main", fallback_branch = "main", private = true },
+    { repository = "github:flipoyo/DevSpec", relative_path = ".agent/.distant/dev-sync", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+    { repository = "github:flipoyo/DocSpec", relative_path = ".agent/.distant/documentation", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+
+    # .local — this project's own, writable
+    { repository = "github:flipoyo/.dev", relative_path = ".agent/.local/cgitsync-dev", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.versioning", relative_path = ".agent/.local/release", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.auto", relative_path = ".agent/.local/dogfooding", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.claude", relative_path = ".agent/.local/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
     { repository = "github:flipoyo/.memory", relative_path = ".cgitsync/.memory", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
 ]

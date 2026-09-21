@@ -23,7 +23,7 @@ Why the mount nests inside ``.cgitsync`` rather than being it
 ledger, commit logs, run logs — written by every command, memory-mounted
 workspace or not. A git worktree that is *also* written to by whatever
 command happens to be running can never reliably be checked out or merged:
-`WorkingTransitionState` (``.localSpec/DevTickets/openTickets/memory-dev_1-2_WorkingTransitionState_DevPlanTicket.md``)
+`WorkingTransitionState` (``.agent/.local/.localSpec/DevTickets/openTickets/memory-dev_1-2_WorkingTransitionState_DevPlanTicket.md``)
 is the record of hitting that live, on this project's own tree.
 ``.cgitsync/.memory`` is the fix — the git-tracked mount sits one level
 inside `.cgitsync`, so nothing but ``memory push``'s own fold step ever
@@ -236,7 +236,7 @@ def commit_message(project_name: str, states: int, entries: int, *, clock: Clock
 
     ``clock`` is required rather than defaulted to a real one: a default
     that quietly reads the wall clock is exactly the seam
-    `.localSpec/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md`
+    `.agent/.local/.localSpec/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md`
     closed elsewhere and `main_1-1_UniversalClock_DevPlanTicket.md`
     generalises — this is one of the two sites a test asserts on the exact
     string produced, so it stays explicit rather than gaining a default

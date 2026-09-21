@@ -14,7 +14,7 @@ Imports: cgs_format, errors, git_branch, git_repo, git_tree, gts_document,
     universal_clock
 
 Extracted from ``orchestre.py`` (Wave 2, P5-registry of
-``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
+``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
 carries its own copy of ``build_registry_from_cgs_document``,
 ``build_registry_from_gts_document``, and ``build_gts_document_from_registry``
 until the separate P5-registry-integrate step deletes them there and
@@ -430,7 +430,7 @@ def build_registry_from_gts_document(
             # A snapshot written before this field existed has no
             # "gitprovider" key at all -- GITHUB below is then a filled-in
             # default, not a recorded fact, so gitprovider_declared says
-            # so (.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
+            # so (.agent/.local/.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
             gitprovider=_parse_enum(GitProvider, repo_state.get("gitprovider"), GitProvider.GITHUB),
             gitprovider_declared=repo_state.get("gitprovider") is not None,
             group_name=_as_optional_str(repo_state.get("group_name")),

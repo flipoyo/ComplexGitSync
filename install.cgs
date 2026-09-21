@@ -5,13 +5,13 @@
 #
 # To work ON ComplexGitSync rather than with it, use
 # examples/complexgitsync4dev.cgs instead — it adds the repositories that
-# configure how the project is developed (.agentSpec, .localSpec, .claude).
+# configure how the project is developed (.agent, .localSpec, .claude).
 #
 # USER and DEV are separated by which repositories a spec mounts, and the
 # split is now complete: the planning surface — every short ticket, planning
-# ticket and archived plan — lives in .localSpec/DevTickets/, inside the
-# private .localSpec mount this file does not carry. It used to sit in the
-# ComplexGitSync repository itself as AgentSpec/, so a user install shipped
+# ticket and archived plan — lives in .agent/.local/.localSpec/DevTickets/, inside
+# the private .localSpec mount this file does not carry. It used to sit in
+# the ComplexGitSync repository itself as AgentSpec/, so a user install shipped
 # the workshop along with the tool. This install gets the tool.
 #
 # nested_config on docs is "disabled" on purpose. Leaving it "auto" would

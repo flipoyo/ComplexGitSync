@@ -559,7 +559,7 @@ def _blocking_worktree_dirt(status_lines: Sequence[str]) -> list[str]:
     is routinely dirty in exactly the tree ``import-submodules`` is asked
     to convert — ``initialise`` writes it moments before, and refusing over
     it would deadlock the one working order (see
-    ``.localSpec/DevTickets/archive/20260903_InitFromSubmodules_DevPlanTicket.md``). Exempting it is
+    ``.agent/.local/.localSpec/DevTickets/archive/20260903_InitFromSubmodules_DevPlanTicket.md``). Exempting it is
     safe: the conversion only runs ``git rm --cached`` in the *holding*
     repository, which never touches the child's working tree at all. The
     check exists to protect real, unsaved work in a child, and it still
@@ -853,7 +853,7 @@ class GitignoreSyncEntry:
 # a non-English machine. OpenSSH ships no translations, so anything ssh prints
 # is English everywhere; git translates its own prose, so a git-worded marker
 # matches only because git_runner.py pins the message locale
-# (.localSpec/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md).
+# (.agent/.local/.localSpec/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md).
 _SSH_AUTH_FAILURE_MARKERS = (
     # OpenSSH's own wording — locale-proof.
     "Permission denied (publickey)",
@@ -1263,7 +1263,7 @@ class ComplexGitSyncClient:
     #: here — `memory_push`'s commit moment, `memory_reboot`'s archive
     #: name — rather than `datetime.now(UTC)` directly, so a test can
     #: inject a fixed date instead of reaching for `monkeypatch`. Real by
-    #: default; see `.localSpec/DevTickets/openTickets/
+    #: default; see `.agent/.local/.localSpec/DevTickets/openTickets/
     #: main_1-1_ClockSeam_DevPlanTicket.md` §2.
     clock: ClockProtocol = field(default_factory=SystemClock)
     registry: WorkingGitTree | None = None
@@ -1491,7 +1491,7 @@ class ComplexGitSyncClient:
         return levels
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # .agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of the submodule-conversion
     # flow risks behaviour change under time pressure. New code is enforced
     # at 12.
@@ -1820,7 +1820,7 @@ class ComplexGitSyncClient:
         )
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # .agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of the filesystem-walking
     # discovery flow risks behaviour change under time pressure. New code
     # is enforced at 12.
@@ -2004,7 +2004,7 @@ class ComplexGitSyncClient:
         )
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # .agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of the .gitignore sync flow
     # risks behaviour change under time pressure. New code is enforced at
     # 12.
@@ -2182,7 +2182,7 @@ class ComplexGitSyncClient:
         developer spec under ``examples/``, say) — for that caller, the
         `.cgs`'s own directory is not the tree's root and must not be
         guessed as one. See
-        ``.localSpec/DevTickets/archive/…_PullOutsideRoot_DevPlanTicket.md``.
+        ``.agent/.local/.localSpec/DevTickets/archive/…_PullOutsideRoot_DevPlanTicket.md``.
         """
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
@@ -3682,7 +3682,7 @@ class ComplexGitSyncClient:
         owned by a repository outside it is refused by name before anything
         is removed. Without it the reach is every repository, which is what
         this command has always done — see
-        ``.localSpec/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
+        ``.agent/.local/.localSpec/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
 
         Each repository actually removed from is reported in
         :attr:`last_write_outcomes`.
@@ -3716,7 +3716,7 @@ class ComplexGitSyncClient:
         ``--force-protocol``), when given, rewrites each repo's remote to
         that protocol before pushing, persisting the change (``git remote
         set-url``) rather than a one-off override — see
-        ``.localSpec/DevTickets/archive/20260903_ProtocolSwitchOnPush_DevPlanTicket.md``. On a failure
+        ``.agent/.local/.localSpec/DevTickets/archive/20260903_ProtocolSwitchOnPush_DevPlanTicket.md``. On a failure
         that looks like an auth problem, the error gains an actionable
         hint naming ``--force-protocol <the other one>``.
         """
@@ -3943,7 +3943,7 @@ class ComplexGitSyncClient:
         ``release`` row on the ledger entry it writes: the installed
         package's own SemVer (``__version__``) and build counter
         (``__build__``), plus *release_name* as the tag actually applied.
-        See ``.localSpec/AdditionalSpecs.md``, *Versioning* — *The release
+        See ``.agent/.local/.localSpec/AdditionalSpecs.md``, *Versioning* — *The release
         register*. The orchestrator is expected to pass a SemVer-shaped
         *release_name* (``v<semver>``, matching the tag this workflow
         pushes); that is a convention, not something this method enforces.
@@ -4437,7 +4437,7 @@ class ComplexGitSyncClient:
         A memory adopted before this milestone is mounted directly at
         `.cgitsync` — sharing it with States, the ledger, commit logs and
         run logs, the exact arrangement WorkingTransitionState exists to
-        end (`.localSpec/DevTickets/openTickets/memory-dev_1-2_WorkingTransitionState_DevPlanTicket.md`).
+        end (`.agent/.local/.localSpec/DevTickets/openTickets/memory-dev_1-2_WorkingTransitionState_DevPlanTicket.md`).
         This is the one-time move: `.git` and every file `git ls-files`
         names travel down into `.cgitsync/.memory`, untouched — no re-clone,
         no rewritten history — and whatever was never tracked (this
@@ -5044,7 +5044,7 @@ class ComplexGitSyncClient:
         ``report.state`` is the answer — **verified**, **no history**,
         **legacy** or **corrupt** — and ``report.findings`` says why when it
         is the last one. The four are fixed by
-        ``.localSpec/AdditionalSpecs.md``, *The hash-chained register*.
+        ``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained register*.
 
         The distinction this method exists to make: an empty
         ``.cgitsync/lgr`` used to be reported as a clean chain, so the
@@ -5965,7 +5965,7 @@ class ComplexGitSyncClient:
             raise GitSyncError(
                 f"Cannot determine a remote URL for {entry.name}: it was loaded from a "
                 f".gts snapshot written before the provider was recorded there "
-                f"(.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md). "
+                f"(.agent/.local/.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md). "
                 f"Regenerate the snapshot from its .cgs — e.g. 'cgitsync initialise "
                 f"<the .cgs>' followed by a fresh 'freeze' — rather than cloning "
                 f"from a guessed host."

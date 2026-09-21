@@ -15,7 +15,7 @@ goes away, a repository is archived, and the commit is gone while the
 memory still claims to remember the operation.
 
 The owner asked for it in those words
-(``.localSpec/DevTickets/archive/.closedUserTicket/20260916_addCommitMsgToMem.md``):
+(``.agent/.local/.localSpec/DevTickets/archive/.closedUserTicket/20260916_addCommitMsgToMem.md``):
 commit messages for project and private, linked to their push, reachable
 from a State's hash.
 

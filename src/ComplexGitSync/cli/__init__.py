@@ -9,7 +9,7 @@ Ring: 4 (adapter — argument/prompt collection only; delegates all .cgs/.gts
 Imports: _shared, configuration, environment, exit_codes, expert, json_render,
     minimalist, suggest
 
-Replaces the single 1,991-line cli.py (.localSpec/DevTickets/archive/20260828_Isolation_
+Replaces the single 1,991-line cli.py (.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_
 DevPlanTicket.md, Wave 3, P6-cli-integrate) with a package of six modules,
 each under the ~400 LOC target except the two largest command groups
 (cli/expert.py, cli/minimalist.py — 14 and 8 commands respectively; kept

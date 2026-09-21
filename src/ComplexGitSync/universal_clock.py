@@ -21,9 +21,9 @@ directly instead. Moving the implementation down to the lowest ring a clock
 read may occupy — Ring 0 is I/O-free by rule, clock reads named explicitly
 — makes it reachable from every module that needs it.
 
-See ``.localSpec/DevTickets/openTickets/main_1-1_UniversalClock_DevPlanTicket.md``
+See ``.agent/.local/.localSpec/DevTickets/openTickets/main_1-1_UniversalClock_DevPlanTicket.md``
 for the design this module implements, and
-``.localSpec/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md`` for
+``.agent/.local/.localSpec/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md`` for
 the two call sites (`orchestre.memory_reboot`'s archive name,
 `memory/repository.commit_message`'s commit moment) that already used an
 injectable clock before this module existed — `ledger_entry.ClockProtocol`,

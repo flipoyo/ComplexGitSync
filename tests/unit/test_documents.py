@@ -657,14 +657,15 @@ class TestCgsDocumentValid:
         assert len(doc.repos) == 2
 
     def test_from_toml_parses_the_developer_install(self):
-        """The developer install adds the three configuration repositories,
-        plus the project's own memory (memory-dev_1-2_MemoryOnboarding,
-        2026-09-17)."""
+        """The developer install adds every agentic skill (AgentSkillsSplit:
+        ticket, dev-sync, documentation, cgitsync-dev, release, dogfooding),
+        plus .localSpec/.claude and the project's own memory
+        (memory-dev_1-2_MemoryOnboarding, 2026-09-17)."""
         repo_root = Path(__file__).parent.parent.parent
         doc = CgsDocument.from_toml(repo_root / "examples" / "complexgitsync4dev.cgs")
         assert doc.project_name == "ComplexGitSync"
         assert doc.default_branch == "main"
-        assert len(doc.repos) == 6
+        assert len(doc.repos) == 11
 
     def test_from_toml_parses_doccomplexgitsync_example(self):
         examples = Path(__file__).parent.parent.parent / "examples"

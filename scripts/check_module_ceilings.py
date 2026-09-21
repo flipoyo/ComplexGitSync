@@ -1,7 +1,7 @@
 """Module-size ratchet and Ring-0 purity checker for the Isolation Plan.
 
-Operationalises three checks that `.localSpec/DevTickets/IsolationPlan.md` §3.1/§3.2 and
-`.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md` call for but that no `ruff`
+Operationalises three checks that `.agent/.local/.localSpec/DevTickets/IsolationPlan.md` §3.1/§3.2 and
+`.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md` call for but that no `ruff`
 selector covers natively:
 
 1. **Ratchet, not a fixed ceiling.** Each module's LOC/public-symbol/
@@ -32,7 +32,7 @@ selector covers natively:
    `os.getpid`/`secrets.token_hex` reference. Unconditional, not
    baseline-relative — a single hit anywhere outside that one module fails
    `--check`, the way Ring-0 purity does. See
-   `.localSpec/DevTickets/openTickets/main_1-1_UniversalClock_DevPlanTicket.md`
+   `.agent/.local/.localSpec/DevTickets/openTickets/main_1-1_UniversalClock_DevPlanTicket.md`
    WP2: the whole point of a universal clock is that there is no tenth
    direct reader.
 

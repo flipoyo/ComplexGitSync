@@ -3,7 +3,7 @@
 ``__build__`` (``src/ComplexGitSync/__init__.py``) is a separate cadence
 from SemVer (``__version__``, bumped by ``pixi run bump-version``): it
 moves on every change to ``src/``, whoever makes it, while SemVer moves
-only when a release is deliberately cut. See ``.localSpec/AdditionalSpecs.md``,
+only when a release is deliberately cut. See ``.agent/.local/.localSpec/AdditionalSpecs.md``,
 *Versioning*, §2.4–2.5 of the ticket that introduced this split.
 
 The counter itself keeps the calendar scheme the whole package used to

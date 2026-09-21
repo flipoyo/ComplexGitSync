@@ -365,7 +365,7 @@ def convert_remote_url_protocol(url: str, protocol: AccessProtocol) -> str:
     path is inferred, so this cannot rebuild the wrong address the way
     deriving one from identity can when that identity is stale, missing,
     or was never fully known — see
-    ``.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md``, where
+    ``.agent/.local/.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md``, where
     a ``.gts`` snapshot with no recorded provider caused exactly that.
 
     A URL already in the requested form is returned unchanged (idempotent

@@ -11,7 +11,7 @@ Imports: commit_log, ledger_entry, ledger_store, repository, states
 
 Why this exists as its own module
 ----------------------------------
-WorkingTransitionState (`.localSpec/DevTickets/openTickets/
+WorkingTransitionState (`.agent/.local/.localSpec/DevTickets/openTickets/
 memory-dev_1-2_WorkingTransitionState_DevPlanTicket.md`) split what
 `.cgitsync` holds into two directories so the mount's own git worktree
 stays clean between one `memory push` and the next. Two different Ring

@@ -95,7 +95,7 @@ def parse_repo_id(identifier: str) -> dict[str, str]:
 parse_repository_identifier = parse_repo_id
 
 
-# Pre-existing complexity debt from before C90 was enabled (P6, .localSpec/DevTickets/
+# Pre-existing complexity debt from before C90 was enabled (P6, .agent/.local/.localSpec/DevTickets/
 # 20260828_Isolation_DevPlanTicket.md) — flagged, not fixed under this
 # ticket, since a real refactor of .cgs normalization risks behaviour
 # change under time pressure. New code is enforced at 12.
@@ -574,7 +574,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 tree._repo_metadata[tree_key] = copy.deepcopy(unmatched.pop(match_index))
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # .agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of .cgs static validation
     # risks behaviour change under time pressure. New code is enforced at
     # 12.

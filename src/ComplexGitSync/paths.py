@@ -11,7 +11,7 @@ Contract: convert between absolute, machine-specific paths and the portable
 Imports: cgs_format, errors, universal_clock
 
 Extracted verbatim from ``orchestre.py`` (Wave 2, P5-paths of
-``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
+``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
 carries its own copy of every function below until a later, separate
 integration step deletes it there and re-points imports — this module does
 not change that file.
