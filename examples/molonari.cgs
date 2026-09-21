@@ -1,9 +1,9 @@
-project = "MOLONARI"
+project = "MOLONARI1D"
 repos = [
     { repository = "github:flipoyo/MOLONARI1D", fallback_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-API", relative_path = "Molonaviz" },
-    { repository = "github:flipoyo/MOLONARI-data", relative_path = "data" },
-    { repository = "github:flipoyo/MOLONARI-hardware", relative_path = "hardware" },
-    { repository = "github:flipoyo/MOLONARI-gate", relative_path = "molonari.io" },
-    { repository = "github:flipoyo/MOLONARI-computo", relative_path = "pyheatmy" },
+    { repository = "github:flipoyo/MOLONARI-API", fallback_branch = "CGS-MOLO", relative_path = "Molonaviz" },
+    { repository = "github:flipoyo/MOLONARI-data", fallback_branch = "CGS-MOLO", relative_path = "data" },
+    { repository = "github:flipoyo/MOLONARI-hardware", fallback_branch = "CGS-MOLO", relative_path = "hardware" },
+    { repository = "github:flipoyo/MOLONARI-gate", fallback_branch = "CGS-MOLO", relative_path = "molonari.io" },
+    { repository = "github:flipoyo/MOLONARI-computo", fallback_branch = "CGS-MOLO", relative_path = "pyheatmy" },
 ]
