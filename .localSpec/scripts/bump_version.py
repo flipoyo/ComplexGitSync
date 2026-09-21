@@ -1,5 +1,16 @@
 """Bump the ComplexGitSync package's SemVer and sync it across manifests.
 
+**This script lives in `.localSpec`, not in the public `ComplexGitSync`
+repository.** A checkout of the public repository alone has no release
+tooling and cannot cut a release by accident — only a bootstrapped
+developer checkout (`examples/complexgitsync4dev.cgs`), which mounts
+`.localSpec`, can. See `.localSpec/DevTickets/archive/` (ProjectSpecSplit)
+and `.localSpec/AdditionalSpecs.md`'s *Versioning* section. It is not in
+the shared `.agentSpec/DevSpec` either: every path target below
+(`pyproject.toml`, `src/ComplexGitSync/__init__.py`, `docs/Setup/`, ...) is
+specific to this one project, so it belongs beside this project's own
+deeper specs, not in the repository other projects share.
+
 The version is real SemVer (``MAJOR.MINOR.PATCH``, with an optional
 ``-<stage>.<N>`` pre-release suffix), read from ``pyproject.toml``. Unlike
 the old calendar scheme, there is no "next" version to compute
@@ -62,7 +73,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 PIXI_TOML_PATH = REPO_ROOT / "pixi.toml"
 INIT_PATH = REPO_ROOT / "src" / "ComplexGitSync" / "__init__.py"

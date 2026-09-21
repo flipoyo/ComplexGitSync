@@ -1,4 +1,12 @@
-"""Unit tests for scripts/bump_version.py."""
+"""Unit tests for .localSpec/scripts/bump_version.py.
+
+``bump_version.py`` lives in ``.localSpec``, not in this public repository
+(ProjectSpecSplit WP4) — a plain checkout of ``ComplexGitSync`` alone has
+no release tooling. This whole file needs ``.localSpec`` mounted, which a
+bootstrapped developer checkout has and a standalone checkout of the
+public repository does not, so it skips cleanly rather than failing when
+it is absent.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +16,18 @@ from pathlib import Path
 
 import pytest
 
-_SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "bump_version.py"
+_SCRIPT_PATH = (
+    Path(__file__).resolve().parents[2] / ".localSpec" / "scripts" / "bump_version.py"
+)
+
+if not _SCRIPT_PATH.is_file():
+    pytest.skip(
+        "bump_version.py lives in .localSpec and is not mounted in this "
+        "checkout. Bootstrap examples/complexgitsync4dev.cgs to run these. "
+        "See .localSpec/DevTickets/archive/ (ProjectSpecSplit).",
+        allow_module_level=True,
+    )
+
 _SPEC = importlib.util.spec_from_file_location("bump_version", _SCRIPT_PATH)
 bump_version = importlib.util.module_from_spec(_SPEC)
 assert _SPEC.loader is not None
@@ -283,7 +302,7 @@ def test_real_docs_tex_files_have_a_matchable_cgsversion_macro(docs_path):
     assert bump_version._CGSVERSION_MACRO_RE.search(text) is not None, (
         f"{docs_path} no longer contains a "
         r"'\newcommand{\cgsversion}{<semver>}' definition that "
-        "scripts/bump_version.py can update."
+        ".localSpec/scripts/bump_version.py can update."
     )
 
 
