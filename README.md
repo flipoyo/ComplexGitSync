@@ -796,7 +796,8 @@ here rather than credited as co-authors on commits, merges or pull
 requests, following the convention that paid assistance is acknowledged
 and not co-signed.
 
-- **Claude** (Anthropic) — including Claude Code with Claude Opus 5
+- **Claude** (Anthropic) — including Claude Code with Claude Opus 5 and
+  Claude Sonnet 5
 - **Codex** (OpenAI)
 - **GitHub Copilot**
 - **ChatGPT** (OpenAI)
