@@ -1,10 +1,11 @@
 """cli.expert — the "Expert" cgitsync command group.
 
-Ring: 4. Contract: register, dispatch, and execute the 16 Expert-tier commands
-    (purge, validate, clone, pull, pull-force,
-    checkout, branch, add, rm, commit, push, tag, freeze, import-submodules,
-    init-from-submodules, verify). Argument/prompt collection only —
-    delegates all semantics to ComplexGitSyncClient; never touches Git.
+Ring: 4. Contract: register, dispatch, and execute the 20 Expert-tier commands
+    (purge, validate, clone, pull, pull-force, autofix,
+    checkout, branch, close-branch, add, rm, commit, merge, push, tag, freeze,
+    import-submodules, init-from-submodules, verify, memory). Argument/prompt
+    collection only — delegates all semantics to ComplexGitSyncClient; never
+    touches Git.
 Imports: _shared, errors, git_repo, orchestre
 """
 
@@ -47,6 +48,7 @@ COMMANDS: dict[str, str] = {
     "clone": "Clone a nested project tree from .cgs.",
     "pull": "Resynchronise an existing project tree from .cgs or .gts.",
     "pull-force": "Destructively resynchronise an existing project tree from .cgs or .gts.",
+    "autofix": "Diagnose and repair the situation named by the last failing command's error.",
     "checkout": "Synchronize the tree to a branch or tag.",
     "branch": "Create a branch across the full READY tree without checkout.",
     "close-branch": "Rename a branch to its closed name, tree-wide, leaf-first.",
@@ -206,6 +208,29 @@ def _register_pull_force(subparser: argparse.ArgumentParser) -> None:
     _add_force_protocol_argument(subparser, command_name="pull-force")
     _add_private_argument(subparser, verb="Force-resynchronise")
     subparser.set_defaults(handler=_handle_pull_force)
+
+
+def _register_autofix(subparser: argparse.ArgumentParser) -> None:
+    _register_pull_source_and_search_dir(subparser)
+    subparser.add_argument(
+        "--error",
+        default=None,
+        help=(
+            "The error text to diagnose, instead of reading the most recent "
+            "failing command from .cgitsync/logs/ — the owner's own "
+            "'it takes the former error as an entry'."
+        ),
+    )
+    subparser.add_argument(
+        "--repo",
+        dest="repo_name",
+        default=None,
+        help=(
+            "The mounted repository to repair (e.g. .memory), instead of "
+            "guessing it from --error."
+        ),
+    )
+    subparser.set_defaults(handler=_handle_autofix)
 
 
 def _add_private_argument(subparser: argparse.ArgumentParser, *, verb: str) -> None:
@@ -703,6 +728,7 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "clone": _register_clone,
     "pull": _register_pull,
     "pull-force": _register_pull_force,
+    "autofix": _register_autofix,
     "checkout": _register_checkout,
     "branch": _register_branch,
     "close-branch": _register_close_branch,
@@ -806,6 +832,17 @@ def _handle_pull_force(args: argparse.Namespace) -> int:
             source,
             force_access_protocol=force_access_protocol,
             private=args.private,
+        ),
+    )
+
+
+def _handle_autofix(args: argparse.Namespace) -> int:
+    source = _resolve_workspace_source(args.source, getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="autofix",
+        source=source,
+        runner=lambda client, source: _execute_autofix(
+            client, source, error=args.error, repo_name=args.repo_name
         ),
     )
 
@@ -1534,6 +1571,19 @@ def _execute_pull_force(
     )
     _print_repo_tree_result(client)
     return 0
+
+
+def _execute_autofix(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    error: str | None,
+    repo_name: str | None,
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    outcome = client.autofix(error=error, repo_name=repo_name)
+    print(f"repaired={outcome.repaired} detail={outcome.detail}")
+    return EXIT_OK if outcome.repaired else EXIT_REFUSED
 
 
 def _execute_checkout(

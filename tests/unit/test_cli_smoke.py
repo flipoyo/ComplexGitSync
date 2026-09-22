@@ -1089,7 +1089,7 @@ def test_pull_command_failure_suggests_pull_force(monkeypatch, tmp_path, capsys)
         main(["pull", str(source_path)])
 
     captured = capsys.readouterr()
-    assert "You can try cgitsync pull-force command" in captured.err
+    assert "You can try cgitsync autofix" in captured.err
 
 
 def test_pull_force_command_uses_client_handler(monkeypatch, tmp_path, capsys):

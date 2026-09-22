@@ -223,7 +223,7 @@ def test_run_with_logging_pull_failure_suggests_pull_force(capsys, tmp_path):
         )
 
     captured = capsys.readouterr()
-    assert "You can try cgitsync pull-force command" in captured.err
+    assert "You can try cgitsync autofix" in captured.err
 
 
 def test_run_with_logging_other_command_failure_prints_no_hint(capsys, tmp_path):
@@ -240,7 +240,7 @@ def test_run_with_logging_other_command_failure_prints_no_hint(capsys, tmp_path)
 
     captured = capsys.readouterr()
     assert "Try clean-init method" not in captured.err
-    assert "You can try cgitsync pull-force command" not in captured.err
+    assert "You can try cgitsync autofix" not in captured.err
 
 
 def test_run_with_logging_success_returns_runner_exit_code(tmp_path):

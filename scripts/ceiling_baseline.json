@@ -10,6 +10,26 @@
       "loc": 2,
       "public_symbols": 0
     },
+    "autofix/__init__.py": {
+      "internal_imports": 4,
+      "loc": 18,
+      "public_symbols": 0
+    },
+    "autofix/base.py": {
+      "internal_imports": 2,
+      "loc": 60,
+      "public_symbols": 4
+    },
+    "autofix/repair_divergent_user.py": {
+      "internal_imports": 11,
+      "loc": 229,
+      "public_symbols": 1
+    },
+    "autofix/repair_from_cli.py": {
+      "internal_imports": 8,
+      "loc": 112,
+      "public_symbols": 2
+    },
     "cgs_format.py": {
       "internal_imports": 12,
       "loc": 669,
@@ -22,7 +42,7 @@
     },
     "cli/_shared.py": {
       "internal_imports": 21,
-      "loc": 573,
+      "loc": 579,
       "public_symbols": 0
     },
     "cli/configuration.py": {
@@ -36,13 +56,13 @@
       "public_symbols": 2
     },
     "cli/exit_codes.py": {
-      "internal_imports": 5,
-      "loc": 66,
+      "internal_imports": 6,
+      "loc": 69,
       "public_symbols": 5
     },
     "cli/expert.py": {
       "internal_imports": 25,
-      "loc": 1904,
+      "loc": 1948,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -97,7 +117,7 @@
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 1031,
+      "loc": 1066,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -181,8 +201,8 @@
       "public_symbols": 30
     },
     "orchestre.py": {
-      "internal_imports": 146,
-      "loc": 5216,
+      "internal_imports": 148,
+      "loc": 5250,
       "public_symbols": 10
     },
     "paths.py": {

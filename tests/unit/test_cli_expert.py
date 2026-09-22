@@ -90,7 +90,7 @@ def test_commands_dict_matches_registered_parsers():
     subparsers = parser.add_subparsers(dest="command")
     expert.register_parsers(subparsers)
     assert set(subparsers.choices.keys()) == set(expert.COMMANDS.keys())
-    assert len(expert.COMMANDS) == 19
+    assert len(expert.COMMANDS) == 20
 
 
 def test_commands_dict_help_text_matches_source_of_truth():
@@ -310,7 +310,7 @@ def test_pull_command_failure_suggests_pull_force(monkeypatch, tmp_path, capsys)
         _run(["pull", str(source_path)])
 
     captured = capsys.readouterr()
-    assert "You can try cgitsync pull-force command" in captured.err
+    assert "You can try cgitsync autofix" in captured.err
 
 
 def test_pull_force_command_uses_client_handler(monkeypatch, tmp_path, capsys):

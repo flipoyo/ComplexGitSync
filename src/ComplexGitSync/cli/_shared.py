@@ -165,7 +165,20 @@ def _run_with_logging(
         if command_name == "initialise":
             print("Try clean-init method", file=sys.stderr, flush=True)
         if command_name == "pull":
-            print("You can try cgitsync pull-force command", file=sys.stderr, flush=True)
+            # `pull-force` is a hard reset to the remote's tip — safe for a
+            # repository whose content is prose, but it discards local-only
+            # commits outright for one whose content is not (main_1-1_Autofix
+            # ticket §3). `autofix` diagnoses first and only ever repairs a
+            # situation a registered repair recognises, so it is offered
+            # first; `pull-force` remains available for when the answer really
+            # is "the remote wins, unconditionally".
+            print(
+                "You can try cgitsync autofix (diagnoses first) or, to "
+                "discard any local-only commits unconditionally, cgitsync "
+                "pull-force",
+                file=sys.stderr,
+                flush=True,
+            )
         raise
 
     if active_client.run_logger is not None:

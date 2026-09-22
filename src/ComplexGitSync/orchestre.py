@@ -24,7 +24,7 @@ import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 from . import __build__, __version__, tree_env
@@ -46,6 +46,9 @@ from .errors import (
     GitSyncError,
 )
 from .git_branch import DEFAULT_BRANCH, BranchResolution, resolve_entry_ref
+
+if TYPE_CHECKING:
+    from .autofix import RepairOutcome
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
@@ -3072,6 +3075,41 @@ class ComplexGitSyncClient:
         self._log_tree_transition(previous_tree_state, registry.lifecycle_state, reason="pull-force")
         self._log_event("pull_force_end", source_path=resolved_source, output_gts=snapshot_path)
         return registry
+
+    def autofix(
+        self,
+        *,
+        error: str | None = None,
+        repo_name: str | None = None,
+    ) -> "RepairOutcome":
+        """Read "the former error" — or *error*, if given directly — and
+        run whichever registered repair in :mod:`ComplexGitSync.autofix`
+        matches it.
+
+        With *error* omitted, reads the most recent
+        ``.cgitsync/logs/*.log``'s failing command, the same one the
+        owner just saw fail — see ``main_1-1_Autofix_DevPlanTicket.md``.
+        *repo_name* narrows which mounted repository is diagnosed;
+        omitted, it is guessed from the error text (a chain-shaped
+        repository's name is normally visible in its own remote URL)
+        before falling back to every repository in the tree.
+        """
+        from .autofix import FromCliRepair
+
+        if self.registry is None:
+            raise GitSyncError("autofix: no workspace loaded.")
+        root_entry = self.registry.get("root")
+        logs_dir = root_entry.absolute_path / ".cgitsync" / "logs"
+        self._log_event("autofix_start", error=error, repo_name=repo_name)
+        outcome = FromCliRepair().run(
+            self.registry,
+            self.git_runner,
+            logs_dir=logs_dir,
+            error=error,
+            repo_name=repo_name,
+        )
+        self._log_event("autofix_end", repaired=outcome.repaired, detail=outcome.detail)
+        return outcome
 
     def checkout(
         self,

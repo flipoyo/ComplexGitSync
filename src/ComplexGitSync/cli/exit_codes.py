@@ -5,7 +5,7 @@ Contract: three documented exit codes, and one function saying which code an
     expected failure gets. Returns ``None`` for anything it does not
     recognise, so a programming defect still reaches the user as a traceback
     instead of being disguised as a tidy failure.
-Imports: errors
+Imports: autofix, errors
 
 The distinction that matters to a script is between **"I asked and the
 answer is no"** and **"I could not ask"**. A CI job treats those
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import tomllib
 
+from ..autofix.repair_from_cli import NoMatchingRepairError
 from ..errors import (
     ConfigValidationError,
     GitSyncError,
@@ -67,6 +68,10 @@ def exit_code_for(exc: BaseException, *, command: str | None = None) -> int | No
     if isinstance(exc, GitSyncError):
         # Operational refusals: a preflight that blocked, a conflict, a
         # remote that said no. The command ran; the answer is no.
+        return EXIT_REFUSED
+    if isinstance(exc, NoMatchingRepairError):
+        # autofix looked and declined — nothing failed, nothing matched.
+        # "Refusing is an acceptable answer" (main_1-1_Autofix ticket §7).
         return EXIT_REFUSED
     if isinstance(exc, NestedConfigDiscoveryError):
         return EXIT_UNUSABLE

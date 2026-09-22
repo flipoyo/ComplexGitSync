@@ -369,6 +369,12 @@ class GitRunnerProtocol(Protocol):
 
     def is_ancestor(self, repo_path: Path | str, ancestor: str, descendant: str) -> bool: ...
 
+    def merge_base(self, repo_path: Path | str, ref_a: str, ref_b: str) -> str | None: ...
+
+    def added_paths(
+        self, repo_path: Path | str, ref_a: str, ref_b: str, *, subdir: str | None = None
+    ) -> list[str]: ...
+
     def show_file(self, repo_path: Path | str, ref: str, path: str) -> str | None: ...
 
     def merge_abort(self, repo_path: Path | str) -> None: ...
@@ -1043,6 +1049,41 @@ class GitRunner:
         """
         answer = self._query("show", f"{ref}:{path}", cwd=repo_path)
         return answer.stdout if answer.returncode == 0 else None
+
+    def merge_base(self, repo_path: Path | str, ref_a: str, ref_b: str) -> str | None:
+        """The best common ancestor of *ref_a* and *ref_b* (``git
+        merge-base``), or ``None`` if the two share no history.
+
+        Read-only and worktree-free, unlike :meth:`merge` — a caller that
+        needs to know *what* changed on each side of a divergence before
+        deciding how to reconcile it asks this first, the same way
+        :meth:`can_merge_cleanly` already separates asking from acting.
+        """
+        answer = self._query("merge-base", ref_a, ref_b, cwd=repo_path)
+        if answer.returncode != 0:
+            return None
+        return answer.stdout.strip() or None
+
+    def added_paths(
+        self, repo_path: Path | str, ref_a: str, ref_b: str, *, subdir: str | None = None
+    ) -> list[str]:
+        """Paths that exist at *ref_b* but not at *ref_a* (``git diff
+        --name-only --diff-filter=A``), optionally restricted to *subdir*.
+
+        Used to find what a branch appended since a common ancestor to a
+        write-once, one-file-per-entry store (a ledger's ``lgr/``) without
+        assuming anything about how many entries there are or what they
+        are named — a plain rename or edit inside *subdir* is deliberately
+        excluded (``--diff-filter=A``, additions only), since anything
+        this project's own write-once stores do is an addition or nothing.
+        """
+        args = ["diff", "--name-only", "--diff-filter=A", ref_a, ref_b]
+        if subdir is not None:
+            args.extend(["--", subdir])
+        answer = self._query(*args, cwd=repo_path)
+        if answer.returncode != 0:
+            return []
+        return [line for line in answer.stdout.splitlines() if line]
 
     def merge_abort(self, repo_path: Path | str) -> None:
         """Abort a merge left in progress (``git merge --abort``)."""

@@ -958,6 +958,12 @@ class _FakeGitRunner:
     def is_ancestor(self, repo_path, ancestor, descendant) -> bool:
         return False
 
+    def merge_base(self, repo_path, ref_a, ref_b) -> str | None:
+        return None
+
+    def added_paths(self, repo_path, ref_a, ref_b, *, subdir=None) -> list[str]:
+        return []
+
     def show_file(self, repo_path, ref, path) -> str | None:
         return None
 
