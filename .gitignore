@@ -257,3 +257,6 @@ ComplexGitSync.lgr
 .agent/.local/cgitsync-dev
 .agent/.local/dogfooding
 .agent/.local/release
+.agent/.local/.auto
+.agent/.local/.dev
+.agent/.local/.versioning
