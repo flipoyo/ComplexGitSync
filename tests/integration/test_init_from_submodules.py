@@ -245,7 +245,7 @@ class TestOrderingRegression:
         # ...then initialise, which re-clones every non-root repository.
         # force_reclone is required now: the conversion above is a local
         # commit no remote has, so the clone guard
-        # (.localSpec/DevTickets/ InitialiseDestroysExistingClones) refuses to delete it
+        # (.agent/.local/.localSpec/DevTickets/ InitialiseDestroysExistingClones) refuses to delete it
         # unless the caller says so. This test exists to characterise the
         # destruction, so it opts in deliberately.
         client.discover_repos(root, max_depth=5, output=root / "root.cgs")

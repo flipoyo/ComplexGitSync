@@ -1,6 +1,6 @@
 """Unit tests for ``_walk_git_repositories`` — the filesystem walk behind ``discover``.
 
-See ``.localSpec/DevTickets/archive/20260904_MaxDepthAutodetect_DevPlanTicket.md``:
+See ``.agent/.local/.localSpec/DevTickets/archive/20260904_MaxDepthAutodetect_DevPlanTicket.md``:
 the walk is unbounded by default (``max_depth=None``) and iterative, so it
 does not raise ``RecursionError`` on a filesystem deeper than Python's call
 stack. ``max_depth`` stays available as an opt-in bound.

@@ -1,6 +1,6 @@
 """Characterisation net for ``configure``/``create-cgs`` as real CLI commands.
 
-Wave 0 of .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md (work package G1-c)
+Wave 0 of .agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md (work package G1-c)
 requires end-to-end coverage of ``cgitsync configure`` and
 ``cgitsync create-cgs`` invoked through the actual CLI entry point
 (``ComplexGitSync.cli.main``), not just their underlying
@@ -102,7 +102,7 @@ def test_create_cgs_cli_rejects_unknown_provider(tmp_path, capsys):
 
     It exits ``2`` — the command could not run on what it was given — with a
     one-line diagnostic and no traceback, which is the contract
-    ``.localSpec/DevTickets/archive/20260916_CliContract_DevPlanTicket.md`` fixed.
+    ``.agent/.local/.localSpec/DevTickets/archive/20260916_CliContract_DevPlanTicket.md`` fixed.
     """
     output = tmp_path / "rejected.cgs"
 

@@ -765,7 +765,7 @@ class TestABranchSomebodyElsePushedIsThatBranch:
 
     ``checkout`` then reported ``READY``/``ALIGNED`` on commits that shared
     nothing with the colleague's branch but its name — worse than failing to
-    find it (``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` §3).
+    find it (``.agent/.local/.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` §3).
     """
 
     def test_a_known_remote_branch_is_the_start_point(self, tmp_path):
@@ -941,7 +941,7 @@ class TestEveryWorkspaceRepairsItsOwnFetchRefspec:
     remote-tracking ref that ``@{upstream}`` resolves through. Pull and push
     are the commands that write to a repository anyway, so they are where the
     config is repaired — once, idempotently
-    (``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``).
+    (``.agent/.local/.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``).
     """
 
     def test_pull_widens_the_refspec_of_every_repository(self, tmp_path):
@@ -1989,7 +1989,7 @@ class TestMergeTree:
         private-repo leaf ahead of the project's own root purely because of
         where it happens to be mounted, which is backwards: a conflict in
         the private half must never again be able to leave the project half
-        only partly merged (`.localSpec/DevTickets/archive/
+        only partly merged (`.agent/.local/.localSpec/DevTickets/archive/
         20260918_MergeProjectBeforePrivate_DevPlanTicket.md`).
         """
         registry = self._tree(tmp_path)
@@ -3128,7 +3128,7 @@ class TestRemovePathsHonoursItsScope:
 
     ``rm`` is handed its paths rather than sweeping for them, so its scope
     is a filter on the repository each path resolves to — see
-    ``.localSpec/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
+    ``.agent/.local/.localSpec/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
     """
 
     @staticmethod

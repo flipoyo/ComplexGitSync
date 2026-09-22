@@ -10,7 +10,7 @@ the clone. ``status`` then printed ``-`` and ``unknown`` for a branch that had
 just been pushed successfully, and ``checkout`` could not see a branch a
 colleague had pushed.
 
-See ``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``.
+See ``.agent/.local/.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``.
 """
 
 from __future__ import annotations
@@ -306,7 +306,7 @@ def test_checkout_joins_a_colleagues_branch_with_no_prior_pull(cloned_workspace,
     clone has never heard of the colleague's branch, locally or as a
     cached remote-tracking ref, which used to be exactly the shape that
     forked it fresh at HEAD
-    (``.localSpec/DevTickets/openTickets/main_1-1_CheckoutForkGuard_DevPlanTicket.md``).
+    (``.agent/.local/.localSpec/DevTickets/openTickets/main_1-1_CheckoutForkGuard_DevPlanTicket.md``).
     """
     their_sha = _colleague_pushes(tmp_path, cloned_workspace["remote"], "never-fetched")
     repo = cloned_workspace["repo"]

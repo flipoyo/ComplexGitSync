@@ -1059,7 +1059,7 @@ def test_object_missing_methods_does_not_satisfy_protocol():
 # not merge. That content is whatever the repository holds — a PDF, an image,
 # a latin-1 source file — and decoding it strictly turned a preflight question
 # into a UnicodeDecodeError before the caller could read the exit code. See
-# .localSpec/DevTickets/archive/20260910_MergeOutputDecoding_DevPlanTicket.md.
+# .agent/.local/.localSpec/DevTickets/archive/20260910_MergeOutputDecoding_DevPlanTicket.md.
 # ---------------------------------------------------------------------------
 
 
@@ -1246,7 +1246,7 @@ class TestGitOutputDecodingPolicy:
 
 
 # ---------------------------------------------------------------------------
-# Message locale — .localSpec/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md
+# Message locale — .agent/.local/.localSpec/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md
 # ---------------------------------------------------------------------------
 
 _FRENCH = "fr_FR.UTF-8"

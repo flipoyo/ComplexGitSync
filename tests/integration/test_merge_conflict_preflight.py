@@ -6,7 +6,7 @@ exist because of the same field failure: ``cgitsync merge apoub`` crashed
 inside the conflict check with a ``UnicodeDecodeError`` raised on the content
 of a tracked PDF, so no repository was checked and none was merged — but the
 user could not tell that from the traceback. See
-``.localSpec/DevTickets/archive/20260910_MergeOutputDecoding_DevPlanTicket.md``.
+``.agent/.local/.localSpec/DevTickets/archive/20260910_MergeOutputDecoding_DevPlanTicket.md``.
 
 Real repositories and a real ``GitRunner`` throughout: the guarantee under
 test is that ComplexGitSync agrees with what ``git merge`` would actually do,

@@ -4,7 +4,7 @@ Everything after the first time works already: a mounted memory is an
 ordinary private/local repository and every tree command covers it. It is
 the first time that did not, and the first time is the one every new user
 meets. These tests are that first time, step by step —
-``.localSpec/DevTickets/archive/…_MemoryOnboarding_DevPlanTicket.md`` §2.
+``.agent/.local/.localSpec/DevTickets/archive/…_MemoryOnboarding_DevPlanTicket.md`` §2.
 
 The "provider" here is a bare repository in a temporary directory and a fake
 `gh`. Both are real in the only way that matters: no network, and no

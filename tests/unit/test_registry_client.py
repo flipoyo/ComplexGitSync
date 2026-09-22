@@ -449,7 +449,7 @@ def test_initialise_cgs_skips_the_gitignore_pre_pull_on_a_detached_head(tmp_path
     Guessing is wrong even when the branch does exist, because the pull would
     move the checkout off the exact commit under test. Reproduced from a real
     bootstrapped workspace first — see
-    .localSpec/DevTickets/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md.
+    .agent/.local/.localSpec/DevTickets/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md.
     """
     cgspath = tmp_path / "workspace"
     cgshome = cgspath / "demo"
@@ -1053,7 +1053,7 @@ def test_client_freeze_release_pulls_a_branch_whose_upstream_does_not_resolve(
     ``has_upstream`` there skipped the pull and called it "nothing to pull",
     which was wrong twice over: there was something to pull, and the branch
     had been pushed. See
-    ``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` D4.
+    ``.agent/.local/.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` D4.
     """
     client = _client_with_root_registry(tmp_path)
     client.source_path = tmp_path / "project.gts"
@@ -1113,7 +1113,7 @@ def test_looks_like_https_auth_failure_matches_known_markers():
 # Both lines below are verbatim from one real `git fetch` of a GitHub
 # repository the ambient credentials could not read, run twice on the same
 # machine under the two locales
-# (.localSpec/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md).
+# (.agent/.local/.localSpec/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md).
 _GITHUB_AUTH_FAILURE_SERVER_LINE = (
     "remote: Invalid username or token. Password authentication is not "
     "supported for Git operations."
@@ -3011,7 +3011,7 @@ def test_resolve_repo_for_path_accepts_a_relative_path(tmp_path, monkeypatch):
 def test_resolve_repo_for_path_relative_path_anchors_at_tree_root_not_cwd(tmp_path, monkeypatch):
     """A relative path resolves against CGSHOME (the tree root), regardless
     of the process's CWD -- the standalone-mode invariant every other
-    command already honors (.localSpec/DevTickets/archive/20260902_AddRmCgshomeResolution_DevPlanTicket.md).
+    command already honors (.agent/.local/.localSpec/DevTickets/archive/20260902_AddRmCgshomeResolution_DevPlanTicket.md).
     """
     from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
 

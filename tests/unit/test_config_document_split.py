@@ -6,7 +6,7 @@ file-I/O operations plus ``print()`` moved to ``ConfigDocumentIOMixin`` in
 config_document_io.py.
 
 These tests use a test-only combined subclass, exactly the pattern
-``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``'s WP-CFG describes for the
+``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``'s WP-CFG describes for the
 later integration step (wiring the mixin into ``CgsDocument``/``GtsDocument``
 is a separate, not-yet-done step — this file only proves the design works).
 """

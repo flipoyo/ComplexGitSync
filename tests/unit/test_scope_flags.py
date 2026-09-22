@@ -1,6 +1,6 @@
 """Scope flags: every one is read, and each one changes what is written.
 
-Backs ``.localSpec/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md``. Three
+Backs ``.agent/.local/.localSpec/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md``. Three
 flags were registered in the parser and never read — ``rm --private``,
 ``freeze --private`` and ``pull-force --private`` — so each reported
 success while writing to the repositories the user was trying to avoid.

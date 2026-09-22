@@ -1,4 +1,4 @@
-"""Characterisation net for G1-b (.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md, Wave 0).
+"""Characterisation net for G1-b (.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md, Wave 0).
 
 This file exists to pin down two things that were confirmed missing from the
 existing integration/CLI coverage before any part of ``orchestre.py`` gets

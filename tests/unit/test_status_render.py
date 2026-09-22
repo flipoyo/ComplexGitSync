@@ -2,7 +2,7 @@
 
 These import directly from ``ComplexGitSync.status_render`` — never from
 ``ComplexGitSync.orchestre`` — to prove the extraction (P5-status of
-``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``) stands on its own: pure
+``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``) stands on its own: pure
 text/path formatting, importable and fully testable with no Git binary, no
 filesystem, and no network. This does not replace the existing golden
 coverage of ``cgitsync status``'s printed output in
@@ -163,7 +163,7 @@ class TestSyncColumnSeparatesNeverPushedFromUnmeasurable:
     upstream. A branch that was pushed but whose remote-tracking ref is
     missing is a fault. Printing both as ``unknown`` is what taught readers
     to stop trusting the column
-    (``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``).
+    (``.agent/.local/.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``).
     """
 
     def test_a_branch_that_names_no_upstream_says_so(self):

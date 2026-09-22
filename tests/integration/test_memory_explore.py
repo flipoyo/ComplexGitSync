@@ -2,7 +2,7 @@
 
 `memory show` needs a hash and `memory list` reads as a wall of `.gts`
 filenames; neither answers "I don't have a hash, show me the branch." These
-tests cover the two views MemoryExplore (`.localSpec/DevTickets/openTickets/
+tests cover the two views MemoryExplore (`.agent/.local/.localSpec/DevTickets/openTickets/
 memory-dev_1-3_MemoryExplore_DevPlanTicket.md`) adds: published commits by
 branch, and the ledger's own order made legible.
 
@@ -114,7 +114,7 @@ def _bare_memory_remote(path: Path) -> Path:
 
     Seeded on `main`, same as every other memory-onboarding test: `adopt`
     starts a brand-new branch from the repository's own fallback branch
-    (`.localSpec/DevTickets/archive/20260917_MemoryOnboarding_DevPlanTicket.md`),
+    (`.agent/.local/.localSpec/DevTickets/archive/20260917_MemoryOnboarding_DevPlanTicket.md`),
     not from the branch it is about to create.
     """
     path.mkdir(parents=True, exist_ok=True)

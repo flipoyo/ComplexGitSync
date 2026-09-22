@@ -1,6 +1,6 @@
 """`initialise` must not delete a dependency holding work that exists nowhere else.
 
-Backs ``.localSpec/DevTickets/`` InitialiseDestroysExistingClones. On 2026-09-09 a plain
+Backs ``.agent/.local/.localSpec/DevTickets/`` InitialiseDestroysExistingClones. On 2026-09-09 a plain
 ``cgitsync initialise`` run inside a populated workspace re-cloned three
 dependencies and took one local commit and two dirty worktrees with them.
 Each reflog was left with a single ``clone:`` entry, so nothing was
