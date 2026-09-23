@@ -150,6 +150,11 @@
       "loc": 108,
       "public_symbols": 0
     },
+    "memory/agent_contract.py": {
+      "internal_imports": 0,
+      "loc": 114,
+      "public_symbols": 7
+    },
     "memory/commit_log.py": {
       "internal_imports": 0,
       "loc": 249,
@@ -201,8 +206,8 @@
       "public_symbols": 30
     },
     "orchestre.py": {
-      "internal_imports": 148,
-      "loc": 5250,
+      "internal_imports": 149,
+      "loc": 5262,
       "public_symbols": 10
     },
     "paths.py": {

@@ -26,6 +26,7 @@ from ComplexGitSync.git_tree import (
     make_repo_id,
     normalize_node_types,
 )
+from ComplexGitSync.memory.agent_contract import AgentContractRecord, write_contract
 from ComplexGitSync.memory.states import (
     _resolve_memory_state_directory,
     _state_directory_name,
@@ -999,6 +1000,41 @@ def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path)
             ),
         ),
     ]
+
+
+def test_client_freeze_release_names_the_signed_agent_contract(monkeypatch, tmp_path):
+    client = _client_with_root_registry(tmp_path)
+    client.source_path = tmp_path / "project.gts"
+    record = AgentContractRecord(
+        provider="anthropic",
+        terms_version="Anthropic Consumer Terms of Service, effective 2025-10-08 (consumer-subscription)",
+        date="2026-09-23",
+        legal_terms_sha256="a" * 64,
+        attested_by="Claude (Anthropic), model claude-sonnet-5",
+    )
+    write_contract(tmp_path / "root" / ".agent" / ".distant" / "dev-sync", record)
+
+    monkeypatch.setattr(
+        type(client.git_runner), "upstream_configured", lambda self, path: True
+    )
+    monkeypatch.setattr(client, "add", lambda: None)
+    monkeypatch.setattr(client, "commit", lambda message, *, stage_all=True: None)
+    monkeypatch.setattr(client, "pull", lambda source, **_kwargs: None)
+    monkeypatch.setattr(client, "push", lambda **_kwargs: None)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        client,
+        "freeze",
+        lambda name, **kwargs: captured.update(kwargs) or "ok",
+    )
+
+    assert client.freeze_release("v1.0", "release commit") == "ok"
+    assert captured["release"] == (
+        ("semver", ComplexGitSync.__version__),
+        ("git_tag", "v1.0"),
+        ("artefact:src", ComplexGitSync.__build__),
+        ("artefact:agent_contract", record.terms_version),
+    )
 
 
 def test_client_freeze_release_force_uses_pull_force(monkeypatch, tmp_path):

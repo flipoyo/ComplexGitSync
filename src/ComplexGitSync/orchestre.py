@@ -99,6 +99,7 @@ from .memory import (
     resolve_state,
     verify_chain,
 )
+from .memory import agent_contract as agent_contract_store
 from .memory import environment as environment_store
 from .memory import ledger_entry as memory_ledger_entry
 from .memory import ledger_store as memory_ledger_store
@@ -3985,6 +3986,12 @@ class ComplexGitSyncClient:
         register*. The orchestrator is expected to pass a SemVer-shaped
         *release_name* (``v<semver>``, matching the tag this workflow
         pushes); that is a convention, not something this method enforces.
+
+        When ``.agent/.distant/dev-sync/agent-contracts/current`` names a
+        signed :class:`~ComplexGitSync.memory.agent_contract.AgentContractRecord`,
+        the row also carries ``artefact:agent_contract`` naming that
+        record's terms version — absent, not fatal, when none has been
+        signed (AgentContract ticket, D4).
         """
         resolved_message = commit_message or message or release_name
         if self.source_path is None:
@@ -4011,17 +4018,23 @@ class ComplexGitSyncClient:
                 absolute_path=root_entry.absolute_path,
             )
         self.push(force_access_protocol=force_access_protocol)
-        release = (
+        release = [
             ("semver", __version__),
             ("git_tag", release_name),
             ("artefact:src", __build__),
-        )
+        ]
+        dev_sync_dir = root_entry.absolute_path / ".agent" / ".distant" / "dev-sync"
+        contract = agent_contract_store.read_current_contract(dev_sync_dir)
+        if contract is not None:
+            release.append(("artefact:agent_contract", contract.terms_version))
+        else:
+            self._log_event("freeze_release_agent_contract_missing", dev_sync_dir=str(dev_sync_dir))
         registry = self.freeze(
             release_name,
             output_gts=output_gts,
             message=resolved_message,
             stage_all=stage_all,
-            release=release,
+            release=tuple(release),
         )
         self._log_event("freeze_release_workflow_end", release_name=release_name, force=force)
         return registry
