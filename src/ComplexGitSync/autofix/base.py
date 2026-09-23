@@ -6,7 +6,7 @@ Contract: define ``RepairOutcome``, ``Situation``, the ``Repair`` protocol,
     touches the filesystem directly.
 Imports: git_repo, git_runner
 
-Design reference: main_1-1_Autofix_DevPlanTicket.md, sections 7-8 (D1).
+Design reference: .agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md, sections 7-8 (D1).
 """
 
 from __future__ import annotations

@@ -123,6 +123,37 @@ def _add_gitignore_sync_arguments(subparser: argparse.ArgumentParser) -> None:
     )
 
 
+def _pull_force_risk_hint(client: ComplexGitSyncClient) -> str:
+    """The hint printed when a `pull` fails, naming exactly what
+    `pull-force` would discard for each repository that has local-only
+    commits — the archived Autofix ticket (.agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md) §3/WP6.
+
+    Best-effort: a repository whose tracking state cannot be read (no
+    remote configured, or the git query itself fails) is silently
+    skipped rather than letting a diagnostic query mask the original
+    failure this hint is printed alongside.
+    """
+    ahead: list[tuple[str, int]] = []
+    registry = getattr(client, "registry", None)
+    if registry is not None:
+        for repo in registry.values():
+            try:
+                counts = client.git_runner.branch_tracking_counts(repo.absolute_path)
+            except Exception:  # noqa: BLE001 — a diagnostic hint must not mask the real error
+                continue
+            if counts is not None and counts[0] > 0:
+                ahead.append((repo.name or repo.repo_id, counts[0]))
+
+    base = (
+        "You can try cgitsync autofix (diagnoses first) or, to discard "
+        "local-only commits unconditionally, cgitsync pull-force"
+    )
+    if not ahead:
+        return base
+    discards = ", ".join(f"{name} ahead(+{count})" for name, count in ahead)
+    return f"{base} — this would discard: {discards}"
+
+
 def _run_with_logging(
     *,
     command_name: str,
@@ -167,15 +198,18 @@ def _run_with_logging(
         if command_name == "pull":
             # `pull-force` is a hard reset to the remote's tip — safe for a
             # repository whose content is prose, but it discards local-only
-            # commits outright for one whose content is not (main_1-1_Autofix
-            # ticket §3). `autofix` diagnoses first and only ever repairs a
+            # commits outright for one whose content is not (the archived
+            # Autofix ticket,
+            # .agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md,
+            # §3). `autofix` diagnoses first and only ever repairs a
             # situation a registered repair recognises, so it is offered
             # first; `pull-force` remains available for when the answer really
-            # is "the remote wins, unconditionally".
+            # is "the remote wins, unconditionally" — named here with exactly
+            # what it would discard, the same count `status` itself would
+            # print, so the risk is visible before it happens rather than
+            # only in `--help`.
             print(
-                "You can try cgitsync autofix (diagnoses first) or, to "
-                "discard any local-only commits unconditionally, cgitsync "
-                "pull-force",
+                _pull_force_risk_hint(active_client),
                 file=sys.stderr,
                 flush=True,
             )

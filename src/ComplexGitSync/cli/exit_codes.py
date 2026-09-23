@@ -71,7 +71,7 @@ def exit_code_for(exc: BaseException, *, command: str | None = None) -> int | No
         return EXIT_REFUSED
     if isinstance(exc, NoMatchingRepairError):
         # autofix looked and declined — nothing failed, nothing matched.
-        # "Refusing is an acceptable answer" (main_1-1_Autofix ticket §7).
+        # "Refusing is an acceptable answer" (the archived Autofix ticket (.agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md) §7).
         return EXIT_REFUSED
     if isinstance(exc, NestedConfigDiscoveryError):
         return EXIT_UNUSABLE

@@ -670,3 +670,76 @@ def test_write_outcomes_report_an_empty_scope_in_words(capsys):
     )
 
     assert "pushed nothing: no repository was in scope" in capsys.readouterr().out
+
+
+class _FakeRepo:
+    def __init__(self, *, repo_id, name, absolute_path):
+        self.repo_id = repo_id
+        self.name = name
+        self.absolute_path = absolute_path
+
+
+class _FakeRegistry:
+    def __init__(self, repos):
+        self._repos = repos
+
+    def values(self):
+        return list(self._repos)
+
+
+class _FakeGitRunnerForHint:
+    def __init__(self, counts_by_path):
+        self._counts_by_path = counts_by_path
+
+    def branch_tracking_counts(self, repo_path):
+        result = self._counts_by_path.get(repo_path)
+        if result is None:
+            raise RuntimeError(f"no upstream configured for {repo_path}")
+        return result
+
+
+def test_pull_force_risk_hint_names_what_would_be_discarded(tmp_path):
+    memory_path = tmp_path / ".memory"
+    clean_path = tmp_path / "docs"
+    client = SimpleNamespace(
+        registry=_FakeRegistry(
+            [
+                _FakeRepo(repo_id="mem", name=".memory", absolute_path=memory_path),
+                _FakeRepo(repo_id="docs", name="docs", absolute_path=clean_path),
+            ]
+        ),
+        git_runner=_FakeGitRunnerForHint(
+            {memory_path: (3, 0), clean_path: (0, 0)}
+        ),
+    )
+
+    hint = _shared._pull_force_risk_hint(client)
+
+    assert "cgitsync autofix" in hint
+    assert "cgitsync pull-force" in hint
+    assert ".memory ahead(+3)" in hint
+    assert "docs ahead" not in hint
+
+
+def test_pull_force_risk_hint_skips_a_repo_whose_tracking_state_cannot_be_read(tmp_path):
+    unreadable_path = tmp_path / "broken"
+    client = SimpleNamespace(
+        registry=_FakeRegistry(
+            [_FakeRepo(repo_id="broken", name="broken", absolute_path=unreadable_path)]
+        ),
+        git_runner=_FakeGitRunnerForHint({}),
+    )
+
+    hint = _shared._pull_force_risk_hint(client)
+
+    assert "this would discard" not in hint
+    assert "cgitsync autofix" in hint
+
+
+def test_pull_force_risk_hint_with_no_registry_is_the_bare_suggestion(tmp_path):
+    hint = _shared._pull_force_risk_hint(_StubClient())
+
+    assert hint == (
+        "You can try cgitsync autofix (diagnoses first) or, to discard "
+        "local-only commits unconditionally, cgitsync pull-force"
+    )

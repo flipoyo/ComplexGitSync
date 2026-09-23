@@ -42,7 +42,7 @@
     },
     "cli/_shared.py": {
       "internal_imports": 21,
-      "loc": 579,
+      "loc": 604,
       "public_symbols": 0
     },
     "cli/configuration.py": {

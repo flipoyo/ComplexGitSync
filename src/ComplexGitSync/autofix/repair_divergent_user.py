@@ -9,7 +9,7 @@ Contract: DivergentUserRepair.matches()/repair(), per the Repair protocol in
     seq/prev chain a plain merge cannot see (memory/ledger_entry.py).
 Imports: base, errors, memory, git_repo, git_runner
 
-Design reference: main_1-1_Autofix_DevPlanTicket.md, sections 5-7. The
+Design reference: .agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md, sections 5-7. The
 algorithm below is the hand-run rescue
 (scripts/rescue_20260922_memory_ledger_splice.py) generalised: no
 hardcoded refs, no hardcoded commit hashes.
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from ..git_runner import GitRunnerProtocol
 
 #: Substrings this project has already seen twice for a divergence, on the
-#: push side and the pull side respectively — main_1-1_Autofix ticket §1/§3.
+#: push side and the pull side respectively — the archived Autofix ticket (.agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md) §1/§3.
 _DIVERGENCE_MARKERS = (
     "[rejected]",
     "fetch first",

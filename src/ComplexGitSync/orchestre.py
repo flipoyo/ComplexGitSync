@@ -3088,7 +3088,7 @@ class ComplexGitSyncClient:
 
         With *error* omitted, reads the most recent
         ``.cgitsync/logs/*.log``'s failing command, the same one the
-        owner just saw fail — see ``main_1-1_Autofix_DevPlanTicket.md``.
+        owner just saw fail — see ``.agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md``.
         *repo_name* narrows which mounted repository is diagnosed;
         omitted, it is guessed from the error text (a chain-shaped
         repository's name is normally visible in its own remote URL)

@@ -8,7 +8,7 @@ Contract: FromCliRepair.find_last_error()/run(). Owns the registry of
     repair_*.py module, never a branch inside this class.
 Imports: base, repair_divergent_user, git_repo, git_runner, git_tree
 
-Design reference: main_1-1_Autofix_DevPlanTicket.md §7-§9 (WP2).
+Design reference: .agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md §7-§9 (WP2).
 """
 
 from __future__ import annotations

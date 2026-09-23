@@ -2,7 +2,7 @@
 already produced.
 
 One ``repair_*.py`` module per repair purpose, each with its own class
-(``base.Repair``'s shape) — see ``main_1-1_Autofix_DevPlanTicket.md`` §7.
+(``base.Repair``'s shape) — see ``.agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md`` §7.
 ``repair_from_cli.FromCliRepair`` is the dispatcher `cgitsync autofix`
 calls; every other module registers into it. Growth happens by adding a
 new module and one line in ``repair_from_cli.FromCliRepair._REGISTRY``,
