@@ -12,7 +12,7 @@ Contract: store and load one ``AgentContractRecord`` under
 Imports: (stdlib only, plus tomli_w/tomllib for the same TOML the .cgs/.gts
     documents already use)
 
-See ``.agent/.local/.localSpec/DevTickets/openTickets/main_1-1_AgentContract_DevPlanTicket.md``
+See ``.agent/.local/.localSpec/DevTickets/archive/20260923_AgentContract_DevPlanTicket.md``
 §3 for why this lives beside, not inside, ``.cgitsync/``: the record is
 signed once per provider and shared across every project the owner runs
 with that provider, not scoped to one workspace's own state area the way
