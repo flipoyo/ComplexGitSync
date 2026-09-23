@@ -27,6 +27,12 @@ from ComplexGitSync.git_tree import (
     normalize_node_types,
 )
 from ComplexGitSync.memory.agent_contract import AgentContractRecord, write_contract
+from ComplexGitSync.memory.self_history import (
+    AgentInfo,
+    ConformityCriterion,
+    ConformityScore,
+    read_record,
+)
 from ComplexGitSync.memory.states import (
     _resolve_memory_state_directory,
     _state_directory_name,
@@ -1035,6 +1041,114 @@ def test_client_freeze_release_names_the_signed_agent_contract(monkeypatch, tmp_
         ("artefact:src", ComplexGitSync.__build__),
         ("artefact:agent_contract", record.terms_version),
     )
+
+
+def _agent_info(role: str = "Dev") -> AgentInfo:
+    return AgentInfo(role=role, vendor="Anthropic", model="claude-sonnet-5")
+
+
+def _conformity() -> ConformityScore:
+    return ConformityScore(
+        spec_respect=ConformityCriterion(score=33, basis="measured", reasoning="lint/test pass"),
+        gating=ConformityCriterion(score=33, basis="measured", reasoning="nothing private pushed"),
+        quality=ConformityCriterion(score=30, basis="asserted", reasoning="a reasonable first pass"),
+    )
+
+
+def test_client_self_history_add_writes_to_the_pending_half(tmp_path):
+    client = ComplexGitSyncClient()
+
+    path = client.self_history_add(
+        tmp_path,
+        ticket="AgentReport",
+        goal="Implement WP1.",
+        action="Wrote self_history_add.",
+        worker=_agent_info("Dev"),
+        orchestrator=_agent_info("Orchestration"),
+        conformity=_conformity(),
+        lint_passed=True,
+        tests_passed=True,
+    )
+
+    assert path.parent == tmp_path / ".cgitsync" / ".self-history"
+    record = read_record(path)
+    assert record.ticket == "AgentReport"
+    assert record.lint_passed is True
+
+
+def test_client_self_history_add_cites_the_signed_agent_contract_by_hash(tmp_path):
+    client = ComplexGitSyncClient()
+    contract = AgentContractRecord(
+        provider="anthropic",
+        terms_version="Anthropic Consumer Terms of Service, effective 2025-10-08 (consumer-subscription)",
+        date="2026-09-23",
+        legal_terms_sha256="a" * 64,
+        attested_by="Claude (Anthropic), model claude-sonnet-5",
+    )
+    write_contract(tmp_path / ".agent" / ".distant" / "dev-sync", contract)
+
+    path = client.self_history_add(
+        tmp_path,
+        ticket="AgentReport",
+        goal="Implement WP6.",
+        action="Wired the contract field.",
+        worker=_agent_info(),
+        orchestrator=_agent_info("Orchestration"),
+        conformity=_conformity(),
+    )
+
+    assert read_record(path).contract == contract.digest()
+
+
+def test_client_self_history_add_has_no_contract_when_none_is_signed(tmp_path):
+    client = ComplexGitSyncClient()
+
+    path = client.self_history_add(
+        tmp_path,
+        ticket="AgentReport",
+        goal="Implement WP1.",
+        action="Wrote self_history_add.",
+        worker=_agent_info(),
+        orchestrator=_agent_info("Orchestration"),
+        conformity=_conformity(),
+    )
+
+    assert read_record(path).contract == ""
+
+
+def test_client_self_history_add_observes_the_workspace_status_errors(tmp_path):
+    client = _client_with_root_registry(tmp_path)
+
+    path = client.self_history_add(
+        tmp_path,
+        ticket="AgentReport",
+        goal="Implement WP1.",
+        action="Wrote self_history_add.",
+        worker=_agent_info(),
+        orchestrator=_agent_info("Orchestration"),
+        conformity=_conformity(),
+    )
+
+    # The registry's one root entry has no .git of its own, which `status`
+    # already counts as an error row — the same fact `cgitsync status`
+    # would print, observed here rather than typed.
+    assert read_record(path).status_errors == 1
+
+
+def test_client_self_history_add_has_no_status_errors_when_nothing_is_loaded(tmp_path):
+    client = ComplexGitSyncClient()
+
+    path = client.self_history_add(
+        tmp_path,
+        ticket="AgentReport",
+        goal="Implement WP1.",
+        action="Wrote self_history_add.",
+        worker=_agent_info(),
+        orchestrator=_agent_info("Orchestration"),
+        conformity=_conformity(),
+    )
+
+    assert read_record(path).status_errors is None
 
 
 def test_client_freeze_release_force_uses_pull_force(monkeypatch, tmp_path):

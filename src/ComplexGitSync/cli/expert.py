@@ -1,12 +1,12 @@
 """cli.expert — the "Expert" cgitsync command group.
 
-Ring: 4. Contract: register, dispatch, and execute the 20 Expert-tier commands
+Ring: 4. Contract: register, dispatch, and execute the 21 Expert-tier commands
     (purge, validate, clone, pull, pull-force, autofix,
     checkout, branch, close-branch, add, rm, commit, merge, push, tag, freeze,
-    import-submodules, init-from-submodules, verify, memory). Argument/prompt
-    collection only — delegates all semantics to ComplexGitSyncClient; never
-    touches Git.
-Imports: _shared, errors, git_repo, orchestre
+    import-submodules, init-from-submodules, verify, memory, self-history).
+    Argument/prompt collection only — delegates all semantics to
+    ComplexGitSyncClient; never touches Git.
+Imports: _shared, errors, git_repo, memory, orchestre
 """
 
 from __future__ import annotations
@@ -19,6 +19,13 @@ from pathlib import Path
 from ..errors import GitSyncError
 from ..git_repo import RefKind, RepoScope
 from ..memory.integrity import HistoryState
+from ..memory.self_history import (
+    VALID_AGENT_ROLES,
+    VALID_CONFORMITY_BASES,
+    AgentInfo,
+    ConformityCriterion,
+    ConformityScore,
+)
 from ..orchestre import ComplexGitSyncClient
 from ._shared import (
     _add_gitignore_sync_arguments,
@@ -63,6 +70,7 @@ COMMANDS: dict[str, str] = {
     "init-from-submodules": "Adopt a submodule-based checkout: discover, initialise, then convert its submodules.",
     "verify": "Verify the hash-chained .cgitsync/lgr register for tamper-evidence.",
     "memory": "Look at what this workspace remembers: status, list, show <state>, explore, reboot.",
+    "self-history": "Record one piece of agent work: add.",
 }
 
 
@@ -707,6 +715,76 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     subparser.set_defaults(handler=_handle_memory)
 
 
+_AGENT_ROLE_CHOICES = tuple(sorted(VALID_AGENT_ROLES))
+_CONFORMITY_BASIS_CHOICES = tuple(sorted(VALID_CONFORMITY_BASES))
+
+
+def _add_agent_arguments(subparser: argparse.ArgumentParser, prefix: str, label: str) -> None:
+    subparser.add_argument(
+        f"--{prefix}-role", required=True, choices=_AGENT_ROLE_CHOICES,
+        help=f"The {label}'s role, from .localSpec/AGENT.md's roster.",
+    )
+    subparser.add_argument(f"--{prefix}-vendor", required=True, help=f"The {label}'s vendor.")
+    subparser.add_argument(f"--{prefix}-model", required=True, help=f"The {label}'s model version.")
+
+
+def _add_conformity_arguments(subparser: argparse.ArgumentParser, prefix: str, label: str) -> None:
+    subparser.add_argument(
+        f"--{prefix}-score", required=True, type=float,
+        help=f"{label} score (0-33, or 0-34 for quality).",
+    )
+    subparser.add_argument(
+        f"--{prefix}-basis", required=True, choices=_CONFORMITY_BASIS_CHOICES,
+        help=f"Whether {label} was measured by the tool or asserted by the orchestrator.",
+    )
+    subparser.add_argument(
+        f"--{prefix}-reasoning", required=True, help=f"One line: why this {label} score."
+    )
+
+
+def _register_self_history(subparser: argparse.ArgumentParser) -> None:
+    """``self-history add`` — one record of one piece of agent work.
+
+    A group of its own, not folded into ``memory``, because the ticket
+    that designed it (AgentReport) names the command ``cgitsync
+    self-history add`` explicitly and the mount it writes into is a
+    second, separate repository nested inside the memory mount, not the
+    memory mount itself.
+    """
+    self_history_commands = subparser.add_subparsers(dest="self_history_command", required=True)
+
+    add = self_history_commands.add_parser(
+        "add", help="Record one piece of agent work to the pending half."
+    )
+    add.add_argument("--ticket", required=True, help="The ticket served, by its short name.")
+    add.add_argument("--goal", required=True, help="The ticket's objective, at most 3 lines.")
+    add.add_argument("--action", required=True, help="The main action taken, at most 3 lines.")
+    _add_agent_arguments(add, "worker", "worker")
+    _add_agent_arguments(add, "orchestrator", "orchestrator")
+    _add_conformity_arguments(add, "spec-respect", "spec respect")
+    _add_conformity_arguments(add, "gating", ".PUBLIC/.PRIVATE gating")
+    _add_conformity_arguments(add, "quality", "quality of production")
+    add.add_argument(
+        "--state-before", default="", help="state(<hash>) before the work, if known."
+    )
+    add.add_argument("--state-after", default="", help="state(<hash>) after the work, if known.")
+    lint_group = add.add_mutually_exclusive_group()
+    lint_group.add_argument("--lint-passed", action="store_true", default=None, dest="lint_passed")
+    lint_group.add_argument("--lint-failed", action="store_false", dest="lint_passed")
+    tests_group = add.add_mutually_exclusive_group()
+    tests_group.add_argument("--tests-passed", action="store_true", default=None, dest="tests_passed")
+    tests_group.add_argument("--tests-failed", action="store_false", dest="tests_passed")
+    add.add_argument(
+        "--pushed", action="store_true", help="Something reached a remote this session."
+    )
+    add.add_argument(
+        "--pushed-reason", default="", help="On whose instruction, if --pushed was given."
+    )
+    _add_search_dir_argument(add)
+
+    subparser.set_defaults(handler=_handle_self_history)
+
+
 def _register_verify(subparser: argparse.ArgumentParser) -> None:
     _add_search_dir_argument(subparser)
     subparser.add_argument(
@@ -743,6 +821,7 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "init-from-submodules": _register_init_from_submodules,
     "verify": _register_verify,
     "memory": _register_memory,
+    "self-history": _register_self_history,
 }
 
 
@@ -1125,6 +1204,54 @@ def _execute_memory(
     return _print_memory_show(client.memory_show(cgshome, state or ""), full=full)
 
 
+def _handle_self_history(args: argparse.Namespace) -> int:
+    cgshome = _resolve_cgshome(getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name=f"self-history-{args.self_history_command}",
+        source=cgshome,
+        runner=lambda client, source: _execute_self_history(client, source, args=args),
+    )
+
+
+def _execute_self_history(
+    client: ComplexGitSyncClient, cgshome: Path, *, args: argparse.Namespace
+) -> int:
+    _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+    worker = AgentInfo(role=args.worker_role, vendor=args.worker_vendor, model=args.worker_model)
+    orchestrator = AgentInfo(
+        role=args.orchestrator_role, vendor=args.orchestrator_vendor, model=args.orchestrator_model
+    )
+    conformity = ConformityScore(
+        spec_respect=ConformityCriterion(
+            score=args.spec_respect_score,
+            basis=args.spec_respect_basis,
+            reasoning=args.spec_respect_reasoning,
+        ),
+        gating=ConformityCriterion(
+            score=args.gating_score, basis=args.gating_basis, reasoning=args.gating_reasoning
+        ),
+        quality=ConformityCriterion(
+            score=args.quality_score, basis=args.quality_basis, reasoning=args.quality_reasoning
+        ),
+    )
+    path = client.self_history_add(
+        cgshome,
+        ticket=args.ticket,
+        goal=args.goal,
+        action=args.action,
+        worker=worker,
+        orchestrator=orchestrator,
+        conformity=conformity,
+        state_before=args.state_before,
+        state_after=args.state_after,
+        lint_passed=args.lint_passed,
+        tests_passed=args.tests_passed,
+        pushed=args.pushed,
+        pushed_reason=args.pushed_reason,
+    )
+    return _print_self_history_add(path)
+
+
 def _cgs_to_edit(client: ComplexGitSyncClient, cgs: str | None, cgshome: Path) -> Path:
     """Which `.cgs` `memory mount` edits.
 
@@ -1210,6 +1337,11 @@ def _print_memory_push(result: dict) -> int:
         f"pushed branch={result['branch']} states={result['states']} "
         f"entries={result['entries']}"
     )
+    return EXIT_OK
+
+
+def _print_self_history_add(path: Path) -> int:
+    print(f"recorded={path}")
     return EXIT_OK
 
 

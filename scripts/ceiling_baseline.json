@@ -61,8 +61,8 @@
       "public_symbols": 5
     },
     "cli/expert.py": {
-      "internal_imports": 25,
-      "loc": 1948,
+      "internal_imports": 30,
+      "loc": 2063,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -190,6 +190,11 @@
       "loc": 213,
       "public_symbols": 14
     },
+    "memory/self_history.py": {
+      "internal_imports": 2,
+      "loc": 266,
+      "public_symbols": 12
+    },
     "memory/states.py": {
       "internal_imports": 0,
       "loc": 132,
@@ -206,8 +211,8 @@
       "public_symbols": 30
     },
     "orchestre.py": {
-      "internal_imports": 149,
-      "loc": 5262,
+      "internal_imports": 150,
+      "loc": 5341,
       "public_symbols": 10
     },
     "paths.py": {

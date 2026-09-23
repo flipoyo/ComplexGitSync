@@ -90,7 +90,7 @@ def test_commands_dict_matches_registered_parsers():
     subparsers = parser.add_subparsers(dest="command")
     expert.register_parsers(subparsers)
     assert set(subparsers.choices.keys()) == set(expert.COMMANDS.keys())
-    assert len(expert.COMMANDS) == 20
+    assert len(expert.COMMANDS) == 21
 
 
 def test_commands_dict_help_text_matches_source_of_truth():
@@ -1196,3 +1196,122 @@ def test_the_existing_two_forms_reach_the_client_exactly_as_before(
     assert _run(["add", *flags, "--gts", str(gts_path)]) == 0
     assert captured_call["private"] is expected["private"]
     assert captured_call["all_writable"] is expected["all_writable"]
+
+
+# ---------------------------------------------------------------------------
+# self-history add
+# ---------------------------------------------------------------------------
+
+_SELF_HISTORY_ARGV = [
+    "self-history",
+    "add",
+    "--ticket", "AgentReport",
+    "--goal", "Implement WP1.",
+    "--action", "Wrote self_history.py and self_history_add.",
+    "--worker-role", "Dev",
+    "--worker-vendor", "Anthropic",
+    "--worker-model", "claude-sonnet-5",
+    "--orchestrator-role", "Orchestration",
+    "--orchestrator-vendor", "Anthropic",
+    "--orchestrator-model", "claude-sonnet-5",
+    "--spec-respect-score", "33",
+    "--spec-respect-basis", "measured",
+    "--spec-respect-reasoning", "lint and test both pass",
+    "--gating-score", "33",
+    "--gating-basis", "measured",
+    "--gating-reasoning", "nothing private pushed",
+    "--quality-score", "30",
+    "--quality-basis", "asserted",
+    "--quality-reasoning", "a reasonable first pass",
+]
+
+
+def test_self_history_add_builds_the_record_and_calls_the_client(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+    written_path = tmp_path / "recorded.toml"
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def self_history_add(self, cgshome, **kwargs):
+            captured_call["cgshome"] = Path(cgshome)
+            captured_call["kwargs"] = kwargs
+            return written_path
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr(expert, "_resolve_gts_path", lambda *_a, **_k: tmp_path / "project.gts")
+    (tmp_path / ".cgitsync").mkdir()
+
+    exit_code = _run([*_SELF_HISTORY_ARGV, "--search-dir", str(tmp_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert f"recorded={written_path}" in captured.out
+    kwargs = captured_call["kwargs"]
+    assert kwargs["ticket"] == "AgentReport"
+    assert kwargs["worker"].role == "Dev"
+    assert kwargs["worker"].vendor == "Anthropic"
+    assert kwargs["orchestrator"].role == "Orchestration"
+    assert kwargs["conformity"].spec_respect.score == 33.0
+    assert kwargs["conformity"].spec_respect.basis == "measured"
+    assert kwargs["conformity"].quality.basis == "asserted"
+    assert kwargs["state_before"] == ""
+    assert kwargs["lint_passed"] is None
+    assert kwargs["pushed"] is False
+
+
+def test_self_history_add_forwards_lint_tests_and_pushed_flags(monkeypatch, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            pass
+
+        def self_history_add(self, cgshome, **kwargs):
+            captured_call["kwargs"] = kwargs
+            return tmp_path / "r.toml"
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr(expert, "_resolve_gts_path", lambda *_a, **_k: tmp_path / "project.gts")
+    (tmp_path / ".cgitsync").mkdir()
+
+    _run([
+        *_SELF_HISTORY_ARGV,
+        "--search-dir", str(tmp_path),
+        "--state-before", f"state({'a' * 64})",
+        "--state-after", f"state({'b' * 64})",
+        "--lint-passed",
+        "--tests-failed",
+        "--pushed",
+        "--pushed-reason", "owner asked",
+    ])
+
+    kwargs = captured_call["kwargs"]
+    assert kwargs["state_before"] == f"state({'a' * 64})"
+    assert kwargs["state_after"] == f"state({'b' * 64})"
+    assert kwargs["lint_passed"] is True
+    assert kwargs["tests_passed"] is False
+    assert kwargs["pushed"] is True
+    assert kwargs["pushed_reason"] == "owner asked"
+
+
+def test_self_history_add_rejects_an_unknown_role():
+    argv = [arg if arg != "Dev" else "Manager" for arg in _SELF_HISTORY_ARGV]
+    parser = _build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(argv)

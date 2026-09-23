@@ -103,6 +103,7 @@ from .memory import agent_contract as agent_contract_store
 from .memory import environment as environment_store
 from .memory import ledger_entry as memory_ledger_entry
 from .memory import ledger_store as memory_ledger_store
+from .memory import self_history as self_history_store
 from .memory.commit_log import (
     COMMIT_LOG_DIR_NAME,
     SCOPE_PRIVATE,
@@ -4777,6 +4778,88 @@ class ComplexGitSyncClient:
             "states": status["states"],
             "entries": status["entries"],
         }
+
+    def self_history_add(
+        self,
+        cgshome: str | Path,
+        *,
+        ticket: str,
+        goal: str,
+        action: str,
+        worker: self_history_store.AgentInfo,
+        orchestrator: self_history_store.AgentInfo,
+        conformity: self_history_store.ConformityScore,
+        state_before: str = "",
+        state_after: str = "",
+        repos_written: Sequence[tuple[str, str]] = (),
+        lint_passed: bool | None = None,
+        tests_passed: bool | None = None,
+        pushed: bool = False,
+        pushed_reason: str = "",
+    ) -> Path:
+        """Write one self-history record to the pending half (AgentReport WP1).
+
+        ``ticket``/``goal``/``action``/``worker``/``orchestrator``/
+        ``conformity``/``state_before``/``state_after``/``repos_written``/
+        ``pushed``/``pushed_reason`` are the orchestrator's own account of
+        the work — declared, not observed, per the ticket's §1 split. Two
+        facts this method fills in itself, because the tool can check them
+        directly and an agent should not have to (or be trusted to) type
+        them by hand:
+
+        - ``contract`` — the current signed
+          :class:`~ComplexGitSync.memory.agent_contract.AgentContractRecord`'s
+          own hash, from ``.agent/.distant/dev-sync/agent-contracts/current``;
+          empty when nothing is signed (AgentContract D4: absent, not fatal).
+        - ``checks.status_errors`` — this workspace's own ``errors=`` count,
+          from the same view ``status`` prints, when a tree is loaded.
+
+        ``lint_passed``/``tests_passed`` stay caller-supplied: whether
+        ``pixi run lint``/``pixi run test`` passed is a fact about a
+        process outside this tool's own reach (Ring confinement keeps
+        ``subprocess`` inside ``git_runner.py`` alone, and that runs Git,
+        not Pixi), so this method cannot observe it independently — see
+        the AgentReport ticket's own note that D5's *how* is not fully
+        settled, and WP4 remains open for it.
+        """
+        workspace = Path(cgshome)
+        pending_dir = workspace / ".cgitsync" / self_history_store.SELF_HISTORY_PENDING_DIR_NAME
+        contract = ""
+        try:
+            dev_sync_dir = workspace / ".agent" / ".distant" / "dev-sync"
+            current_contract = agent_contract_store.read_current_contract(dev_sync_dir)
+            if current_contract is not None:
+                contract = current_contract.digest()
+        except (OSError, ValueError):
+            contract = ""
+        status_errors: int | None = None
+        try:
+            view = self._collect_status()
+            if not view.is_empty:
+                status_errors = view.counts.errors
+        except (GitSyncError, RuntimeError):
+            status_errors = None
+        record = self_history_store.SelfHistoryRecord(
+            ticket=ticket,
+            goal=goal,
+            action=action,
+            worker=worker,
+            orchestrator=orchestrator,
+            conformity=conformity,
+            recorded_at=self.clock.now().isoformat(),
+            state_before=state_before,
+            state_after=state_after,
+            contract=contract,
+            repos_written=tuple(repos_written),
+            lint_passed=lint_passed,
+            tests_passed=tests_passed,
+            status_errors=status_errors,
+            pushed=pushed,
+            pushed_reason=pushed_reason,
+        )
+        path = self_history_store.write_record(pending_dir, record)
+        self._log_event("self_history_add", path=path, ticket=ticket, contract=contract)
+        return path
 
     def memory_reboot(self, cgshome: str | Path) -> dict[str, Any]:
         """Close this memory's current chapter and open a fresh one, keeping the old.
