@@ -2169,7 +2169,7 @@ def _refresh_repo_after_checkout(
     repo.current_ref_name = branch_name
     repo.resolved_ref_kind = ref_kind
     repo.resolved_ref_name = branch_name
-    repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
+    repo.commit_sha = git_runner.head_commit_sha_or_none(repo.absolute_path)
     repo.fallback_applied = False
     repo.fallback_reason = None
     repo.repo_lifecycle_state = RepoLifecycleState.READY

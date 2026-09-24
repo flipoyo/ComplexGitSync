@@ -208,10 +208,30 @@ def _self_history_ready_workspace(
         _fake_remote_url_for_identifier(self_history_remote),
     )
 
-    client.memory_adopt(root, remote=str(memory_remote), branch="demo")
     mount = root / ".cgitsync" / ".memory"
-    _identify(mount)
     self_history_mount = mount / ".self-history"
+    if opt_in:
+        # `_finish_self_history_adopt` now makes self-history's own first
+        # commit ("empty but initiated") the moment it is adopted, inside
+        # `memory_adopt` itself — before this fixture would otherwise get
+        # to `_identify` it the way every other mount here is identified
+        # right after being created (it does not exist yet to identify,
+        # and pre-creating it as a `.git` directory would trip
+        # `_adopt_self_history_if_declared`'s own "already adopted" guard,
+        # skipping the real adoption this test asserts happened). A global
+        # git config fallback, scoped to this test process only, is what a
+        # real machine's own `~/.gitconfig` already provides; local config
+        # from `_identify` elsewhere in this fixture still takes
+        # precedence over it, so no other test's identity choice changes.
+        global_gitconfig = tmp_path / "global.gitconfig"
+        global_gitconfig.write_text(
+            "[user]\n\tname = ComplexGitSync Integration\n\temail = integration@complexgitsync.test\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_gitconfig))
+
+    client.memory_adopt(root, remote=str(memory_remote), branch="demo")
+    _identify(mount)
     if opt_in:
         _identify(self_history_mount)
         assert (self_history_mount / ".git").exists(), (
@@ -250,32 +270,28 @@ def test_memory_adopt_also_adopts_self_history_when_opted_in(tmp_path, monkeypat
     assert (tree["mount"] / "config-memory.cgs").is_file()
 
 
-def test_memory_push_after_adopt_with_nothing_pending_does_not_crash(tmp_path, monkeypatch):
+def test_memory_push_after_adopt_with_nothing_pending_pushes_the_initiated_commit(
+    tmp_path, monkeypatch
+):
     """A real incident, caught live on this project's own tree:
     self-history adopted, nothing ever recorded to it yet, then
     `memory push` (or `memory reboot`, which folds via the same method)
-    runs. `.self-history` is an unborn branch — no commit for HEAD to
-    resolve at all — and `git rev-parse --abbrev-ref HEAD` raises outright
-    on that, rather than answering "none" the way a detached HEAD would.
-    Before `self-history add` has ever run, this must be a no-op, the same
-    stance a workspace that never adopted self-history at all already
-    gets."""
+    runs. `_finish_self_history_adopt` now gives it a real, contentless
+    commit ("empty but initiated") the moment it is adopted — a repo
+    `is_ready()` (`git_tree.py`) requires a `commit_sha` for, which an
+    unborn branch could never supply — so `memory push` here has exactly
+    one real thing to do: send that commit, not no-op past it. Before this
+    was fixed, `current_branch`'s `git rev-parse --abbrev-ref HEAD` raised
+    outright on the unborn branch this used to leave behind."""
     tree = _self_history_ready_workspace(tmp_path, monkeypatch, opt_in=True)
     client = tree["client"]
 
     result = client.memory_push(tree["root"])  # must not raise
 
     assert result["mount"] == str(tree["mount"])
-    # The local branch itself is still unborn — no commit of its own —
-    # even though `origin/main` was fetched during adopt; `rev-list --all`
-    # would count that remote-tracking ref too, so check the local branch
-    # by name instead.
-    local_branch = _git(tree["self_history_mount"], "branch", "--show-current")
-    show_ref = subprocess.run(
-        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{local_branch}"],
-        cwd=tree["self_history_mount"],
-    )
-    assert show_ref.returncode != 0
+    assert _git(tree["self_history_mount"], "rev-list", "--count", "HEAD") == "1"
+    remote_head = _remote_head(tree["self_history_remote"], branch="demo")
+    assert remote_head == _git(tree["self_history_mount"], "rev-parse", "HEAD")
 
 
 def test_memory_reboot_after_adopt_with_nothing_pending_does_not_crash(tmp_path, monkeypatch):

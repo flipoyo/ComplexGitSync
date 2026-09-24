@@ -2951,6 +2951,9 @@ nested_config = "disabled"
         repo_name = Path(repo_path).name
         return f"sha-{repo_name}"
 
+    def head_commit_sha_or_none(self, repo_path: Path | str) -> str | None:
+        return self.rev_parse_head(repo_path)
+
     def pull(
         self,
         repo_path: Path | str,

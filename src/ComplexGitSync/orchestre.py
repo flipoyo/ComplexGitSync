@@ -4698,6 +4698,22 @@ class ComplexGitSyncClient:
         mount = self_history_mount_path(workspace)
         mount.mkdir(parents=True, exist_ok=True)
         self.git_runner.init_repository(mount, branch=branch)
+        # An unborn branch (no commit at all) is a shape `current_branch`
+        # degrades gracefully for, but `is_ready()` (`git_tree.py`) still
+        # requires every repo's `commit_sha` to be real — self-history is
+        # "empty but initiated" (AgentReport WP2's own phrase for it), not
+        # unborn, so it gets exactly one real, contentless commit right
+        # here, the moment it exists, rather than waiting for the first
+        # `self-history add` to give it one implicitly.
+        MasterConfig.load(workspace)
+        user_name, user_email = MasterConfig.resolve_identity(mount, self.git_runner)
+        self.git_runner.commit(
+            mount,
+            self_history_commit_message(workspace.name, 0, clock=self.clock),
+            user_name=user_name,
+            user_email=user_email,
+            allow_empty=True,
+        )
         self.git_runner.configure_remote(mount, "origin", remote_url)
         self.git_runner.fetch(mount)
         # `.memory`'s own worktree now holds a *second* repository nested

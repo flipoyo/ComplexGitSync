@@ -266,6 +266,8 @@ class GitRunnerProtocol(Protocol):
 
     def rev_parse_head(self, repo_path: Path | str) -> str: ...
 
+    def head_commit_sha_or_none(self, repo_path: Path | str) -> str | None: ...
+
     def commit_authored_at(self, repo_path: Path | str, sha: str) -> str: ...
 
     def current_branch(self, repo_path: Path | str) -> str | None: ...
@@ -326,6 +328,7 @@ class GitRunnerProtocol(Protocol):
         *,
         user_name: str | None = None,
         user_email: str | None = None,
+        allow_empty: bool = False,
     ) -> None: ...
 
     def push(
@@ -539,6 +542,25 @@ class GitRunner:
     def rev_parse_head(self, repo_path: Path | str) -> str:
         return self._run("rev-parse", "HEAD", cwd=repo_path).stdout.strip()
 
+    def head_commit_sha_or_none(self, repo_path: Path | str) -> str | None:
+        """:meth:`rev_parse_head`, degrading to ``None`` for an unborn
+        branch instead of raising.
+
+        A question (:meth:`_query`, never raises for "no commit"), not an
+        operation: `_refresh_repo_after_checkout` calls this for *every*
+        repository a tree-wide checkout visits, including one freshly
+        discovered with no commit of its own yet (a just-adopted
+        self-history mount, most concretely) — a state `commit_sha: str |
+        None` (`git_repo.py`) already models, so answering `None` here is
+        not a new relaxation, only this method actually using it. Every
+        other caller of `rev_parse_head` runs after an operation that
+        guarantees a commit exists (a `commit`, a `checkout` of a branch
+        already known to have one); those keep raising on purpose, since
+        an unresolved HEAD there is a real bug, not a normal shape.
+        """
+        completed = self._query("rev-parse", "HEAD", cwd=repo_path)
+        return completed.stdout.strip() if completed.returncode == 0 else None
+
     def commit_authored_at(self, repo_path: Path | str, sha: str) -> str:
         """When a commit was authored, as the memory records it.
 
@@ -551,8 +573,31 @@ class GitRunner:
         return completed.stdout.strip() if completed.returncode == 0 else ""
 
     def current_branch(self, repo_path: Path | str) -> str | None:
-        branch = self._run("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_path).stdout.strip()
-        return None if branch == "HEAD" else branch
+        """The branch HEAD points at, or ``None`` for a detached HEAD.
+
+        A question (:meth:`_query`, never raises), not an operation — an
+        **unborn** branch (freshly `init_repository`-d, no commit yet, the
+        shape a just-adopted self-history mount has before its first
+        `self-history add`) still has a real name here, because
+        `symbolic-ref` reads which ref HEAD points *at*, not whether that
+        ref resolves to a commit. `git rev-parse --abbrev-ref HEAD` answers
+        a related but different question — what commit-ish does HEAD name
+        — and raises outright on an unborn branch instead of degrading,
+        which crashed both `memory push`/`memory reboot` (AgentReport WP2)
+        and `pull`'s post-discovery checkout on exactly this repository
+        shape before this method moved to `symbolic-ref`.
+
+        A deleted repository directory is a different, more severe
+        condition than "no branch name" and still raises, matching
+        :meth:`_run`'s own guard — `_query` has no cwd pre-check of its own
+        (its callers' questions are meant to fail soft), so this repeats it
+        rather than letting a bare ``FileNotFoundError`` escape.
+        """
+        if not Path(repo_path).is_dir():
+            command = " ".join([self.executable, "symbolic-ref", "--short", "-q", "HEAD"])
+            raise GitSyncError(f"Git command failed ({command}): no such directory '{repo_path}'.")
+        completed = self._query("symbolic-ref", "--short", "-q", "HEAD", cwd=repo_path)
+        return completed.stdout.strip() or None if completed.returncode == 0 else None
 
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool:
         """Return ``True`` if *branch* exists as a local branch in *repo_path*."""
@@ -738,14 +783,25 @@ class GitRunner:
         *,
         user_name: str | None = None,
         user_email: str | None = None,
+        allow_empty: bool = False,
     ) -> None:
-        """Commit staged changes in *repo_path* with *message* (``git commit``)."""
+        """Commit staged changes in *repo_path* with *message* (``git commit``).
+
+        *allow_empty* (``--allow-empty``) is for a repository whose first
+        commit is meant to have no content of its own — self-history's own
+        "empty but initiated" mount (AgentReport WP2), given a real commit
+        the moment it is adopted so it is never an unborn branch for
+        `current_branch`/`head_commit_sha_or_none`/`is_ready()` to disagree
+        about later.
+        """
         args: list[str] = []
         if user_name is not None:
             args.extend(["-c", f"user.name={user_name}"])
         if user_email is not None:
             args.extend(["-c", f"user.email={user_email}"])
         args.extend(["commit", "-m", message])
+        if allow_empty:
+            args.append("--allow-empty")
         self._run(*args, cwd=repo_path)
 
     def push(

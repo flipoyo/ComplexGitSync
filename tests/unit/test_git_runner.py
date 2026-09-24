@@ -787,6 +787,47 @@ def test_git_runner_upstream_configured_is_false_on_a_detached_head(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# current_branch / head_commit_sha_or_none — unborn branches degrade,
+# they do not raise (a real incident: AgentReport WP2's self-history mount,
+# freshly `init_repository`-d and never committed to, crashed both
+# `memory push` and `pull`'s post-discovery checkout before this was fixed)
+# ---------------------------------------------------------------------------
+
+
+def test_current_branch_answers_a_name_for_an_unborn_branch(tmp_path):
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    GitRunner().init_repository(repo_path, branch="demo")
+
+    assert GitRunner().current_branch(repo_path) == "demo"
+
+
+def test_head_commit_sha_or_none_is_none_for_an_unborn_branch(tmp_path):
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    GitRunner().init_repository(repo_path, branch="demo")
+
+    assert GitRunner().head_commit_sha_or_none(repo_path) is None
+
+
+def test_rev_parse_head_still_raises_for_an_unborn_branch(tmp_path):
+    """Unlike `head_commit_sha_or_none`, `rev_parse_head` keeps raising —
+    every other caller runs after an operation that guarantees a commit
+    exists, where an unresolved HEAD is a real bug, not a normal shape."""
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    GitRunner().init_repository(repo_path, branch="demo")
+
+    with pytest.raises(GitSyncError, match="rev-parse HEAD"):
+        GitRunner().rev_parse_head(repo_path)
+
+
+def test_current_branch_still_raises_when_repo_directory_is_gone(tmp_path):
+    with pytest.raises(GitSyncError, match="no such directory"):
+        GitRunner().current_branch(tmp_path / "deleted-repo")
+
+
+# ---------------------------------------------------------------------------
 # Ring-2 confinement — GitRunner is the only subprocess importer
 # ---------------------------------------------------------------------------
 
@@ -853,6 +894,9 @@ class _FakeGitRunner:
         return False
 
     def rev_parse_head(self, repo_path) -> str:
+        return "0" * 40
+
+    def head_commit_sha_or_none(self, repo_path):
         return "0" * 40
 
     def current_branch(self, repo_path):

@@ -117,7 +117,7 @@
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 1066,
+      "loc": 1116,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -212,7 +212,7 @@
     },
     "orchestre.py": {
       "internal_imports": 156,
-      "loc": 5644,
+      "loc": 5653,
       "public_symbols": 10
     },
     "paths.py": {

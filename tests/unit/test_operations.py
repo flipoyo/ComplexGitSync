@@ -379,6 +379,9 @@ class _FakeGitRunnerForOperations:
     def rev_parse_head(self, repo_path: Path | str) -> str:
         return self._shas.get(Path(repo_path), "abc123")
 
+    def head_commit_sha_or_none(self, repo_path: Path | str) -> str | None:
+        return self._shas.get(Path(repo_path), "abc123")
+
     # --- commit ---
     def stage_all(self, repo_path: Path | str) -> None:
         path = Path(repo_path)
