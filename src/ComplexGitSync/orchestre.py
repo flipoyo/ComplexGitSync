@@ -126,6 +126,9 @@ from .memory.pending import (
     memory_dirs as _memory_dirs,
 )
 from .memory.pending import (
+    memory_environment_files as _memory_environment_files,
+)
+from .memory.pending import (
     memory_published_commits as _memory_published_commits,
 )
 from .memory.pending import (
@@ -1029,6 +1032,19 @@ def _normalise_state_argument(state: str) -> str:
     if state.startswith("state="):
         return state[len("state=") :]
     return state
+
+
+def _normalise_environment_argument(env_ref: str) -> str:
+    """`_normalise_state_argument`'s sibling for an Environment reference:
+    strips the full ``env(<hash>)`` id (the form `memory show`'s own
+    ``environment=`` line prints it in) and a leading ``env=`` label,
+    leaving a bare prefix typed by hand unchanged."""
+    parsed = environment_store.parse_environment_hash(env_ref)
+    if parsed is not None:
+        return parsed
+    if env_ref.startswith("env="):
+        return env_ref[len("env=") :]
+    return env_ref
 
 
 def _resolve_ledger_state(cgitsync_dir: Path, state_id: str) -> str | None:
@@ -5514,6 +5530,15 @@ class ComplexGitSyncClient:
         be shown as a single line is the printer's business, not this
         method's: a caller reading the memory from Python wants the message
         that was written, not the one that fitted.
+
+        ``tree`` is this State's own topology, rendered exactly the way
+        ``cgitsync view-tree`` renders the live one (`format_view_tree`) —
+        but built from *this* `.gts` document, not whatever is currently
+        loaded, so it shows the tree as it was at this State, not as it is
+        now. A full Environment's own machine/tools/credentials/manifests
+        detail is `memory show env=<ref>`'s job (:meth:`memory_show_environment`),
+        not this method's — ``environments`` here stays the bare reference
+        it always was.
         """
         workspace = Path(cgshome)
         cgitsync_dir = workspace / ".cgitsync"
@@ -5547,6 +5572,15 @@ class ComplexGitSyncClient:
         environments = environment_store.resolve_environment_references(
             _memory_dirs(cgitsync_dir), (entry.environment for entry in recorded)
         )
+        try:
+            tree = format_view_tree(build_registry_from_gts_document(document, tree_root=workspace))
+        except (ValueError, KeyError, TypeError):
+            # A snapshot old enough to carry its own absolute paths, taken
+            # on a different machine, can name a repository this one never
+            # had — the same "read what was there" spirit `verify` already
+            # applies to a State's own content: showing it is not
+            # conditional on this machine being able to rebuild it.
+            tree = ""
         return {
             "state": snapshot.stem,
             "path": str(snapshot),
@@ -5554,6 +5588,7 @@ class ComplexGitSyncClient:
             "lifecycle_state": document.read("tree_state.lifecycle_state"),
             "repos": len(document.repo_states),
             "hash_canonicalisation": document.hash_canonicalisation,
+            "tree": tree,
             "environments": environments,
             "entries": [
                 {
@@ -5570,6 +5605,48 @@ class ComplexGitSyncClient:
                 for entry in recorded
             ],
             "published": list(log["published"]),
+        }
+
+    def memory_show_environment(self, cgshome: str | Path, env_ref: str) -> dict[str, Any]:
+        """One Environment record, in full — ``memory show env=<ref>``.
+
+        *env_ref* may be the full content hash, any unambiguous prefix of
+        one, or that hash pasted back decorated the way `memory show`
+        itself prints it (``env(<hash>)``) or the way its own CLI argument
+        is spelled (``env=<hash>``) — `_normalise_environment_argument`
+        strips whichever is present, the same accommodation `memory_show`
+        already makes for a State reference.
+
+        This is the one place the full machine/tools/credentials/manifests
+        detail lives: `memory_show` (a State) only ever cites an
+        Environment by its bare reference, because a State's own topology —
+        `format_view_tree`'s job there — is the thing that answers "what
+        was this tree", not "what ran it".
+        """
+        workspace = Path(cgshome)
+        cgitsync_dir = workspace / ".cgitsync"
+        normalised_ref = _normalise_environment_argument(env_ref)
+        matches = sorted(
+            path
+            for path in _memory_environment_files(cgitsync_dir)
+            if path.stem.startswith(normalised_ref)
+        )
+        if not matches:
+            raise GitSyncError(
+                f"no Environment under {cgitsync_dir} (folded or pending) begins with "
+                f"{env_ref!r}. 'cgitsync memory show state=<ref>' names the Environment "
+                "each State cites."
+            )
+        if len(matches) > 1:
+            names = ", ".join(path.stem[:12] for path in matches)
+            raise GitSyncError(f"{env_ref!r} matches more than one Environment: {names}.")
+
+        path = matches[0]
+        record = environment_store.read_environment(path)
+        return {
+            "id": environment_store.format_environment_id(path.stem),
+            "path": str(path),
+            "record": record.to_dict(),
         }
 
     def memory_explore(

@@ -7,7 +7,7 @@ Contract: given a workspace's own state area (`.cgitsync`), answer every
     *folded* — what the last `memory push` committed) with what has
     accumulated since (`.cgitsync` itself, *pending*). No caller of this
     module ever needs to know which half a given entry currently sits in.
-Imports: commit_log, ledger_entry, ledger_store, repository, states
+Imports: commit_log, environment, ledger_entry, ledger_store, repository, states
 
 Why this exists as its own module
 ----------------------------------
@@ -36,6 +36,7 @@ from .commit_log import (
     state_hashes_with_logs,
     unpublished_commits,
 )
+from .environment import ENVIRONMENT_DIR_NAME
 from .ledger_entry import LedgerEntry
 from .ledger_store import LedgerStoreError, read_all_entries
 from .repository import MEMORY_SUBDIR_NAME
@@ -87,6 +88,18 @@ def memory_state_files(cgitsync_dir: Path) -> list[Path]:
     files = [
         *(folded_dir / STATE_DIR_NAME).glob("*.gts"),
         *(pending_dir / STATE_DIR_NAME).glob("*.gts"),
+    ]
+    files.sort()
+    return files
+
+
+def memory_environment_files(cgitsync_dir: Path) -> list[Path]:
+    """Every Environment record a memory holds, folded and pending, sorted
+    by name — `memory_state_files`'s sibling, for `memory show env=<ref>`."""
+    folded_dir, pending_dir = memory_dirs(cgitsync_dir)
+    files = [
+        *(folded_dir / ENVIRONMENT_DIR_NAME).glob("*.toml"),
+        *(pending_dir / ENVIRONMENT_DIR_NAME).glob("*.toml"),
     ]
     files.sort()
     return files

@@ -125,6 +125,43 @@ def test_show_takes_a_prefix_and_prints_the_entries(tmp_path, capsys):
     assert "seq=2" in captured.out
 
 
+def test_cli_show_state_prints_a_bare_environment_reference_and_the_tree(tmp_path, capsys):
+    """`memory show state=<ref>` prints the environment as a bare reference
+    (its full detail is `env=<ref>`'s job) followed by the `[tree]` section,
+    drawn exactly the way `view-tree` draws it."""
+    workspace = _used_workspace(tmp_path / "demo")
+    [state] = sorted((workspace / ".cgitsync" / "state").glob("*.gts"))
+
+    exit_code = cli_main(["memory", "show", state.stem, "--search-dir", str(workspace)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "environment=env(" in captured.out
+    # The bare reference line names a path, not machine/tools/credentials
+    # detail — that full record only ever appears under `env=<ref>`.
+    assert "architecture" not in captured.out
+    assert "[tree]" in captured.out
+    assert "demo (root)" in captured.out
+
+
+def test_cli_show_env_prints_the_full_record_as_a_tree(tmp_path, capsys):
+    workspace = _used_workspace(tmp_path / "demo")
+    client = ComplexGitSyncClient()
+    [row] = client.memory_list(workspace)
+    [environment] = client.memory_show(workspace, row["state"])["environments"]
+
+    exit_code = cli_main(
+        ["memory", "show", environment["id"], "--search-dir", str(workspace)]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert f"environment={environment['id']}" in captured.out
+    assert "├── machine" in captured.out
+    assert "architecture:" in captured.out
+    assert "[tree]" not in captured.out
+
+
 def test_show_refuses_a_prefix_that_matches_nothing(tmp_path, capsys):
     workspace = _used_workspace(tmp_path / "demo")
 
@@ -186,3 +223,42 @@ def test_the_client_methods_mirror_the_commands(tmp_path):
         "dvc",
         "git-lfs",
     }
+
+
+def test_show_carries_this_states_own_tree_rendered_like_view_tree(tmp_path):
+    """`memory show`'s ``tree`` is this State's own topology, drawn exactly
+    the way `cgitsync view-tree` draws the live one (`format_view_tree`) —
+    built from this `.gts` document, not whatever the client currently has
+    loaded, so it answers "what did the tree look like then", not now."""
+    workspace = _used_workspace(tmp_path / "demo")
+    client = ComplexGitSyncClient()
+    client.load(workspace / "project.cgs")
+    [row] = client.memory_list(workspace)
+
+    shown = client.memory_show(workspace, row["state"])
+
+    assert shown["tree"] == client.view_tree()
+
+
+def test_show_environment_reads_the_full_record_by_its_own_hash(tmp_path):
+    """`memory show`'s own environment reference (a bare `env(<hash>)`
+    citation, never the full record — that stays `memory show env=<ref>`'s
+    job) resolves back to the real record through `memory_show_environment`,
+    by the full id, a bare prefix, or the `env=` form its own CLI argument
+    is spelled with."""
+    workspace = _used_workspace(tmp_path / "demo")
+    client = ComplexGitSyncClient()
+    [row] = client.memory_list(workspace)
+    shown = client.memory_show(workspace, row["state"])
+    [environment] = shown["environments"]
+
+    full = client.memory_show_environment(workspace, environment["id"])
+    assert full["record"] == environment["record"]
+    assert full["path"] == environment["path"]
+
+    env_hash = environment["id"][len("env(") : -1]
+    assert client.memory_show_environment(workspace, env_hash[:8])["id"] == environment["id"]
+    assert (
+        client.memory_show_environment(workspace, f"env={env_hash[:8]}")["id"]
+        == environment["id"]
+    )

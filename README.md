@@ -1,4 +1,4 @@
-# ComplexGitSync v3.1.6
+# ComplexGitSync v3.1.7
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -501,6 +501,7 @@ cgitsync memory status          # how much is remembered, and does it verify
 cgitsync memory list            # every State, newest recording first
 cgitsync memory show 2acdc98b   # one State, what was committed, who published it
 cgitsync memory show 2acdc98b --full   # whole commit messages, not first lines
+cgitsync memory show env=df9bc322      # one Environment record, in full
 ```
 
 `memory status` prints the tool versions the records carry — cgitsync, git,
@@ -512,13 +513,21 @@ A State named by `list` with no timestamp is one nobody recorded: history
 from before the ledger existed, or a file that arrived some other way.
 `verify` reports those, and does not call them corruption.
 
-`memory show` also prints what each `commit` wrote — the message, the
-repository, and whether anybody but this machine has ever seen it. A commit
-marked `unpushed` exists only here. That answer survives the repository
-itself: a deleted branch or an archived project takes `git log` with it, and
-this record stays. Editing one of these messages afterwards is something
+`memory show <state>` prints the environment that State's own commits ran
+under as a bare reference, then that State's own topology — drawn exactly
+the way `view-tree` draws the live one, but as it was at that State, not as
+it is now — then what each `commit` wrote: the message, the repository, and
+whether anybody but this machine has ever seen it. A commit marked
+`unpushed` exists only here. That answer survives the repository itself: a
+deleted branch or an archived project takes `git log` with it, and this
+record stays. Editing one of these messages afterwards is something
 `verify` reports, because the ledger entry that recorded them carries their
 fingerprint.
+
+`memory show env=<ref>` is the full record behind that bare reference: the
+machine, tools, credentials and manifest digests it names — a State only
+ever cites which Environment it ran under, never the detail, since that is
+a different question ("what ran it", not "what was this tree").
 
 None of the three above is organised by branch, and a memory holds one
 branch per project. `memory explore` is the read for a person who does not

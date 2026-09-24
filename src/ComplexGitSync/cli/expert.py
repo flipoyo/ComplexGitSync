@@ -1214,6 +1214,14 @@ def _execute_memory(
         return _print_memory_explore(
             client.memory_explore(cgshome, branch=branch, timeline=timeline)
         )
+    # `env=<ref>` (the new argument this command's own environment=env(...)
+    # reference line asks for) or the full `env(<ref>)` form that reference
+    # is itself printed in — either routes to the full Environment record
+    # instead of a State.
+    if (state or "").startswith(("env=", "env(")):
+        return _print_memory_show_environment(
+            client.memory_show_environment(cgshome, state or "")
+        )
     return _print_memory_show(client.memory_show(cgshome, state or ""), full=full)
 
 
@@ -1541,14 +1549,16 @@ def _print_memory_show(state: dict, *, full: bool = False) -> int:
         f"project={state['project']} lifecycle_state={state['lifecycle_state']} "
         f"repos={state['repos']} hash_canonicalisation={state['hash_canonicalisation']}"
     )
+    # The environment this State's own commits ran under, first — a bare
+    # reference, not the full record: 'memory show env=<ref>' is where that
+    # detail lives, since a State answers "what was this tree", not "what
+    # ran it". The tree comes right after — this State's own topology, not
+    # the live one 'view-tree' shows, rendered exactly the same way.
     for environment in state.get("environments", []):
         print(f"environment={environment['id']} path={environment['path'] or 'missing'}")
-        record = environment.get("record")
-        if record is None:
-            print("    (record missing on disk)")
-        else:
-            for line in _format_environment_tree(record):
-                print(f"    {line}")
+    if state.get("tree"):
+        print("[tree]")
+        print(state["tree"])
     if not state["entries"]:
         print("no ledger entry records this State.")
         return EXIT_OK
@@ -1572,6 +1582,14 @@ def _print_memory_show(state: dict, *, full: bool = False) -> int:
                 f"published {row['sha'][:8]} -> {row['remote']} {row['ref']} "
                 f"(seq={row['entry']}, {row['at']})"
             )
+    return EXIT_OK
+
+
+def _print_memory_show_environment(answer: dict) -> int:
+    print(f"environment={answer['id']}")
+    print(f"path={answer['path']}")
+    for line in _format_environment_tree(answer["record"]):
+        print(line)
     return EXIT_OK
 
 
