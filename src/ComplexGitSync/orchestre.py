@@ -1012,6 +1012,25 @@ def _verify_states_on_disk(
     return findings
 
 
+def _normalise_state_argument(state: str) -> str:
+    """Strip a decoration a State's name is commonly printed or cited with,
+    so pasting it back verbatim works the same as typing the bare prefix.
+
+    Handles, in order: the full ``state(<hash>)`` id (`_parse_state_hash`,
+    the same form a ledger entry and `self-history add --state-before`
+    both use) and the ``state=`` label `memory explore --timeline` prints
+    each row under — the label reads exactly like the value to give back,
+    which is precisely the mistake a real user made with it. Anything else
+    passes through unchanged: an ordinary bare prefix, typed by hand.
+    """
+    parsed = _parse_state_hash(state)
+    if parsed is not None:
+        return parsed
+    if state.startswith("state="):
+        return state[len("state=") :]
+    return state
+
+
 def _resolve_ledger_state(cgitsync_dir: Path, state_id: str) -> str | None:
     """The state hash *state_id* names, verified against the ledger — or
     ``None`` when it does not hold up.
@@ -5480,7 +5499,16 @@ class ComplexGitSyncClient:
         was committed.
 
         *state* may be the full content hash or any unambiguous prefix of
-        one — a 64-character name is not something anybody retypes.
+        one — a 64-character name is not something anybody retypes. It may
+        also be pasted verbatim from wherever a State's name was printed
+        rather than typed by hand: a bare hash the way `memory show` itself
+        wants it, the full ``state(<hash>)`` id the way a ledger entry or
+        ``self-history add --state-before`` prints it, or the ``state=``
+        label `memory explore --timeline` prints it under — a real incident
+        this exact copy-paste produced, since that label reads exactly like
+        the argument to give back. `_normalise_state_argument` strips
+        whichever of those two decorations is present; a bare prefix with
+        neither passes through unchanged, as before.
 
         The commit messages come back whole. Deciding that a long one should
         be shown as a single line is the printer's business, not this
@@ -5489,10 +5517,11 @@ class ComplexGitSyncClient:
         """
         workspace = Path(cgshome)
         cgitsync_dir = workspace / ".cgitsync"
+        normalised_state = _normalise_state_argument(state)
         matches = sorted(
             snapshot
             for snapshot in _memory_state_files(cgitsync_dir)
-            if snapshot.stem.startswith(state)
+            if snapshot.stem.startswith(normalised_state)
         )
         if not matches:
             raise GitSyncError(

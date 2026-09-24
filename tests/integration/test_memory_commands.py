@@ -169,6 +169,15 @@ def test_the_client_methods_mirror_the_commands(tmp_path):
 
     shown = client.memory_show(workspace, row["state"][:8])
     assert shown["state"] == row["state"]
+
+    # A real incident: `memory explore --timeline` prints each row as
+    # `state=<hash>`, which reads exactly like the argument to paste back —
+    # and a user did exactly that. `memory_show` strips the label rather
+    # than treating "state=" as part of the prefix to match.
+    assert client.memory_show(workspace, f"state={row['state'][:8]}")["state"] == row["state"]
+    # Likewise the full `state(<hash>)` id, the form a ledger entry and
+    # `self-history add --state-before` both use.
+    assert client.memory_show(workspace, f"state({row['state']})")["state"] == row["state"]
     assert [entry["seq"] for entry in shown["entries"]] == [1, 2]
     assert set(shown["entries"][0]["toolchain"]) == {
         "cgitsync",
