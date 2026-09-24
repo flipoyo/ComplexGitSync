@@ -212,7 +212,7 @@
     },
     "orchestre.py": {
       "internal_imports": 156,
-      "loc": 5653,
+      "loc": 5702,
       "public_symbols": 10
     },
     "paths.py": {

@@ -1047,6 +1047,37 @@ def _resolve_ledger_state(cgitsync_dir: Path, state_id: str) -> str | None:
     return state_hash if digest == state_hash else None
 
 
+def _repos_written_between(
+    cgitsync_dir: Path, workspace: Path, before_hash: str, after_hash: str
+) -> list[tuple[str, str]] | None:
+    """Which repositories changed between two verified States, and their
+    scope — AgentReport WP4/D5's "how" for ``repos_written``: **observed**
+    by diffing two `.gts` snapshots' own ``commit_sha`` per repository,
+    rather than typed by the orchestrator.
+
+    A `.gts` already names, per repository, exactly the fact this needs
+    (`gts_document.py`'s canonical fields include `commit_sha`) — the same
+    "trust what was already verified" principle `_resolve_ledger_state`
+    applies to a single citation applies here to a pair of them. Returns
+    ``None`` when either snapshot fails to load, so the caller can fall
+    back to whatever the orchestrator declared rather than record a false
+    empty diff.
+    """
+    try:
+        before_doc = GtsDocument.from_toml(_memory_state_path(cgitsync_dir, before_hash))
+        after_doc = GtsDocument.from_toml(_memory_state_path(cgitsync_dir, after_hash))
+        before_tree = build_registry_from_gts_document(before_doc, tree_root=workspace)
+        after_tree = build_registry_from_gts_document(after_doc, tree_root=workspace)
+    except (OSError, tomllib.TOMLDecodeError, ConfigValidationError, TypeError):
+        return None
+    before_shas = {repo.name: repo.commit_sha for repo in before_tree.values()}
+    written: list[tuple[str, str]] = []
+    for repo in after_tree.values():
+        if before_shas.get(repo.name) != repo.commit_sha:
+            written.append((repo.name, _status_scope_label(repo)))
+    return written
+
+
 def _identifier_of(remote_url: str) -> str:
     """The `.cgs` spelling of a remote URL, for a message that names a command.
 
@@ -5124,12 +5155,11 @@ class ComplexGitSyncClient:
         """Write one self-history record to the pending half (AgentReport WP1).
 
         ``ticket``/``goal``/``action``/``worker``/``orchestrator``/
-        ``conformity``/``state_before``/``state_after``/``repos_written``/
-        ``pushed``/``pushed_reason`` are the orchestrator's own account of
-        the work — declared, not observed, per the ticket's §1 split. Two
-        facts this method fills in itself, because the tool can check them
-        directly and an agent should not have to (or be trusted to) type
-        them by hand:
+        ``conformity``/``state_before``/``pushed``/``pushed_reason`` are the
+        orchestrator's own account of the work — declared, not observed,
+        per the ticket's §1 split. Three facts this method fills in
+        itself, because the tool can check them directly and an agent
+        should not have to (or be trusted to) type them by hand:
 
         - ``contract`` — the current signed
           :class:`~ComplexGitSync.memory.agent_contract.AgentContractRecord`'s
@@ -5137,14 +5167,23 @@ class ComplexGitSyncClient:
           empty when nothing is signed (AgentContract D4: absent, not fatal).
         - ``checks.status_errors`` — this workspace's own ``errors=`` count,
           from the same view ``status`` prints, when a tree is loaded.
+        - ``repos_written`` (AgentReport WP4/D5) — when both ``state_before``
+          and ``state_after`` resolve, **observed** by diffing the two
+          States' own per-repository ``commit_sha`` (`_repos_written_between`):
+          any repository whose commit changed between them was written, and
+          its scope is read from the same ``private``/``writable`` flags
+          `cgitsync status` labels a row with. The *argument* still exists
+          for the one case this cannot cover — no ``state_before`` to diff
+          from — where the orchestrator's own account is recorded as given,
+          same as before.
 
-        ``lint_passed``/``tests_passed`` stay caller-supplied: whether
-        ``pixi run lint``/``pixi run test`` passed is a fact about a
-        process outside this tool's own reach (Ring confinement keeps
-        ``subprocess`` inside ``git_runner.py`` alone, and that runs Git,
-        not Pixi), so this method cannot observe it independently — see
-        the AgentReport ticket's own note that D5's *how* is not fully
-        settled, and WP4 remains open for it.
+        ``lint_passed``/``tests_passed`` stay caller-supplied, permanently,
+        by design rather than by omission: whether ``pixi run lint``/``pixi
+        run test`` passed is a fact about a process outside this tool's own
+        reach, and Ring confinement keeps ``subprocess`` inside
+        ``git_runner.py`` alone, which runs Git, not Pixi. No future version
+        of this method can observe it without breaking that confinement, so
+        this is not open work — see the AgentReport ticket's own note.
 
         ``state_after`` is observed too, when not given: the ledger's own
         most recent entry, folded and pending merged — "the state after"
@@ -5188,6 +5227,19 @@ class ComplexGitSyncClient:
                     "hashes to its own name. self-history only cites States the "
                     "ledger can actually verify."
                 )
+        observed_repos_written = None
+        if state_before and state_after:
+            before_hash = _parse_state_hash(state_before)
+            after_hash = _parse_state_hash(state_after)
+            if before_hash is not None and after_hash is not None:
+                observed_repos_written = _repos_written_between(
+                    cgitsync_dir, workspace, before_hash, after_hash
+                )
+        resolved_repos_written = (
+            tuple(observed_repos_written)
+            if observed_repos_written is not None
+            else tuple(repos_written)
+        )
         record = self_history_store.SelfHistoryRecord(
             ticket=ticket,
             goal=goal,
@@ -5199,7 +5251,7 @@ class ComplexGitSyncClient:
             state_before=state_before,
             state_after=state_after,
             contract=contract,
-            repos_written=tuple(repos_written),
+            repos_written=resolved_repos_written,
             lint_passed=lint_passed,
             tests_passed=tests_passed,
             status_errors=status_errors,

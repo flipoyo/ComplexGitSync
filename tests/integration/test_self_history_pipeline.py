@@ -549,3 +549,40 @@ def test_self_history_add_rejects_a_state_whose_file_was_tampered_with(tmp_path,
 
     with pytest.raises(GitSyncError, match="does not resolve in the ledger"):
         _add_self_history(client, tree["root"], state_after=real_state)
+
+
+def test_self_history_add_observes_repos_written_from_the_ledger_diff(tmp_path, monkeypatch):
+    """AgentReport WP4/D5: `repos_written` is observed, not typed, whenever
+    both States resolve — a real commit to the root repository between two
+    States must show up in the record without the orchestrator declaring
+    it."""
+    tree = _self_history_ready_workspace(tmp_path, monkeypatch, opt_in=False)
+    client = tree["client"]
+    cgitsync_dir = tree["root"] / ".cgitsync"
+    state_before = _read_all_ledger_entries(cgitsync_dir)[-1].state_id
+
+    (tree["root"] / "NEW_FILE.txt").write_text("content\n", encoding="utf-8")
+    client.add()
+    client.commit("a real commit between two states")
+    state_after = _read_all_ledger_entries(cgitsync_dir)[-1].state_id
+    assert state_after != state_before
+
+    path = _add_self_history(
+        client, tree["root"], state_before=state_before, state_after=state_after
+    )
+
+    assert read_record(path).repos_written == (("demo", "project"),)
+
+
+def test_self_history_add_keeps_the_declared_repos_written_with_no_state_before(
+    tmp_path, monkeypatch
+):
+    """With no `state_before` to diff against, there is nothing to observe
+    from — the orchestrator's own declared value is recorded as given,
+    same as before WP4/D5."""
+    tree = _self_history_ready_workspace(tmp_path, monkeypatch, opt_in=False)
+    client = tree["client"]
+
+    path = _add_self_history(client, tree["root"], repos_written=[("demo", "project")])
+
+    assert read_record(path).repos_written == (("demo", "project"),)
