@@ -5496,7 +5496,8 @@ class ComplexGitSyncClient:
         )
         if not matches:
             raise GitSyncError(
-                f"no State under {cgitsync_dir} (folded or pending) begins with {state!r}."
+                f"no State under {cgitsync_dir} (folded or pending) begins with {state!r}. "
+                "'cgitsync memory explore --timeline' lists every State's real hash prefix."
             )
         if len(matches) > 1:
             names = ", ".join(snapshot.stem[:12] for snapshot in matches)

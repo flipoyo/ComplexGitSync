@@ -205,6 +205,26 @@ def test_timeline_carries_every_entry_with_its_command(tmp_path):
     assert push_entry["published"][0]["sha"] == _git(tree["root"], "rev-parse", "HEAD")
 
 
+def test_timeline_carries_the_state_hash_memory_show_actually_takes(tmp_path):
+    """A real gap this covers: `memory explore --timeline` used to print a
+    command and a timestamp for every entry but never the one thing a
+    reader would need to look at it closer — the State hash `memory show
+    <prefix>` takes. Nothing else in `memory` prints it either, so a reader
+    with no hash memorised had no way to get one short of listing
+    `.cgitsync/state/`'s filenames by hand."""
+    tree = _workspace(tmp_path)
+    client = _loaded(tree["snapshot"])
+    _change(tree["root"], "one")
+    client.commit("recorded in the timeline")
+
+    entries = ComplexGitSyncClient().memory_explore(tree["root"], timeline=True)["entries"]
+
+    [commit_entry] = [entry for entry in entries if entry["command"] == "commit"]
+    assert commit_entry["state"]
+    shown = ComplexGitSyncClient().memory_show(tree["root"], commit_entry["state"])
+    assert shown["state"].startswith(commit_entry["state"])
+
+
 def test_timeline_on_a_workspace_that_never_committed_is_empty(tmp_path):
     tree = _workspace(tmp_path)
 

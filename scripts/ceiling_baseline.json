@@ -62,7 +62,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 30,
-      "loc": 2111,
+      "loc": 2112,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -182,7 +182,7 @@
     },
     "memory/pending.py": {
       "internal_imports": 13,
-      "loc": 182,
+      "loc": 189,
       "public_symbols": 13
     },
     "memory/repository.py": {
@@ -212,7 +212,7 @@
     },
     "orchestre.py": {
       "internal_imports": 156,
-      "loc": 5702,
+      "loc": 5703,
       "public_symbols": 10
     },
     "paths.py": {

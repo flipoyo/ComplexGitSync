@@ -1446,7 +1446,8 @@ def _print_memory_timeline(rows: list[dict]) -> int:
         print("nothing recorded here yet.")
         return EXIT_OK
     for row in rows:
-        print(f"seq={row['seq']}  {row['recorded_at']}  {row['command']}")
+        state = row["state"][:12] if row["state"] else "-"
+        print(f"seq={row['seq']}  {row['recorded_at']}  {row['command']}  state={state}")
         for commit in row["commits"]:
             print(
                 f"    commit  {commit['repository']:<18} {commit['sha'][:8]}  "

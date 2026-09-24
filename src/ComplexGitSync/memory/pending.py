@@ -151,6 +151,13 @@ def memory_timeline(cgitsync_dir: Path) -> list[dict[str, Any]]:
     and `push` appear beside `commit` instead of being dropped the way a
     commit-only view would. `commits`/`published` are empty for an entry
     that recorded neither.
+
+    Each row also carries ``state`` — the hash `memory show <prefix>` takes
+    — because that is otherwise nowhere a reader of this timeline can find
+    it: `state_id` names the State an entry recorded, but `memory show`
+    only takes the bare hash, and this was the one command in the whole
+    `memory` group that printed a State's name without also printing what
+    you would type to look at it.
     """
     entries = read_ledger_entries(cgitsync_dir)
     grouped = memory_commit_log_rows(cgitsync_dir)
@@ -163,6 +170,7 @@ def memory_timeline(cgitsync_dir: Path) -> list[dict[str, Any]]:
                 "recorded_at": entry.recorded_at,
                 "command": entry.command,
                 "outcome": entry.outcome,
+                "state": _parse_state_hash(entry.state_id) or "",
                 "commits": list(committed),
                 "published": list(entry_published),
             }
