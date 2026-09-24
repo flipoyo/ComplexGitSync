@@ -1012,6 +1012,41 @@ def _verify_states_on_disk(
     return findings
 
 
+def _resolve_ledger_state(cgitsync_dir: Path, state_id: str) -> str | None:
+    """The state hash *state_id* names, verified against the ledger — or
+    ``None`` when it does not hold up.
+
+    The same three questions `verify`'s own `MISSING_STATE`/
+    `STATE_DIGEST_MISMATCH` findings ask (`_verify_states_on_disk`, above),
+    applied to one citation rather than a whole chain: does some ledger
+    entry actually name this state_id, is the State it names on disk, and
+    does that file's content still hash to the name it is filed under. A
+    `.gts` is a static snapshot — once a tree is READY it does not
+    re-discover anything — so "is this a real State" is never a question
+    of re-parsing `.cgs` or re-deriving something from a transformed `.gts`;
+    it is a question of what the ledger itself recorded, exactly the way
+    `verify` already answers it. AgentReport WP3: a self-history record
+    citing a state that fails any of the three is not naming "a State the
+    work moved between" — a fake or malformed reference is refused here
+    (`self_history_add`) rather than recorded as though it were fact.
+    """
+    state_hash = _parse_state_hash(state_id)
+    if state_hash is None:
+        return None
+    entries = _read_all_ledger_entries(cgitsync_dir)
+    if not any(entry.state_id == state_id for entry in entries):
+        return None
+    snapshot = _memory_state_path(cgitsync_dir, state_hash)
+    if snapshot is None:
+        return None
+    try:
+        document = GtsDocument.from_toml(snapshot)
+        digest = document.compute_snapshot_hash()
+    except (OSError, tomllib.TOMLDecodeError, ConfigValidationError):
+        return None
+    return state_hash if digest == state_hash else None
+
+
 def _identifier_of(remote_url: str) -> str:
     """The `.cgs` spelling of a remote URL, for a message that names a command.
 
@@ -1049,6 +1084,34 @@ def _remote_url_for_identifier(identifier: str) -> str:
         ),
         AccessProtocol.SSH,
     )
+
+
+def _self_history_identity_from_config(config_path: Path) -> tuple[str, str] | None:
+    """``(owner, remote_url)`` for self-history, read from `.memory`'s own
+    already-committed ``config-memory.cgs`` — or ``None`` when that file
+    does not exist, which means this project has not adopted self-history
+    at all.
+
+    This is the one place self-history's identity is decided from —
+    `self_history_adopt` writes the file once, on the machine that first
+    bootstraps it; every reader here (an automatic adopt on a second
+    machine, a clone) only ever repeats it back from that committed
+    content, never re-derives it from a registry, a `.cgs` flag, or a
+    runtime probe. ``self_history_adopt``'s own bootstrap write is the one
+    exception, and it is exactly that: the one place this fact is *decided*
+    rather than *read*.
+    """
+    if not config_path.is_file():
+        return None
+    document = CgsDocument.from_toml(config_path)
+    self_history_repo = next(
+        (repo for repo in document.repos if repo.get("relative_path") == SELF_HISTORY_SUBDIR_NAME),
+        None,
+    )
+    if self_history_repo is None:
+        return None
+    owner = str(self_history_repo["project_owner_name"])
+    return owner, _remote_url_for_identifier(self_history_repository_id(owner))
 
 
 def _verify_commit_logs(
@@ -4392,22 +4455,14 @@ class ComplexGitSyncClient:
         `.memory`: if it is there, this machine's `.memory` was adopted with
         self-history, and D8's principle — *"a project state must be
         Replicable"* — means a second machine gets the same accounting
-        record as the first, not a memory that merely looks complete. The
-        repository to clone is read from that file rather than re-derived,
-        so there is exactly one place self-history's identity is decided
-        (`_adopt_self_history_if_wanted` wrote it) and this only ever
-        repeats it back.
+        record as the first, not a memory that merely looks complete.
+        `_self_history_identity_from_config` reads which repository that
+        is, from the file itself rather than re-derived.
         """
-        config_path = config_memory_path(workspace)
-        if not config_path.is_file():
+        identity = _self_history_identity_from_config(config_memory_path(workspace))
+        if identity is None:
             return None
-        document = CgsDocument.from_toml(config_path)
-        self_history_repo = next(
-            (repo for repo in document.repos if repo.get("relative_path") == SELF_HISTORY_SUBDIR_NAME),
-            None,
-        )
-        if self_history_repo is None:
-            return None
+        _owner, remote_url = identity
         destination = self_history_mount_path(workspace)
         if (destination / ".git").exists():
             return None
@@ -4416,9 +4471,6 @@ class ComplexGitSyncClient:
                 f"{destination} already holds content. Move it aside before cloning "
                 "self-history over it — this command never overwrites local content."
             )
-        remote_url = _remote_url_for_identifier(
-            self_history_repository_id(str(self_history_repo["project_owner_name"]))
-        )
         if not self.git_runner.remote_branch_exists(remote_url, branch):
             # Adopted but never pushed — nothing to clone yet, and not an
             # error: the same case `.memory` itself refuses on, one level
@@ -4518,7 +4570,7 @@ class ComplexGitSyncClient:
         self._log_event(
             "memory_adopt", mount=mount, branch=target_branch, started_from=started_from
         )
-        self._adopt_self_history_if_wanted(workspace, owner=owner, branch=target_branch)
+        self._adopt_self_history_if_declared(workspace, branch=target_branch)
         return {
             "mount": str(mount),
             "branch": target_branch,
@@ -4530,16 +4582,25 @@ class ComplexGitSyncClient:
     def self_history_adopt(
         self, cgshome: str | Path, *, owner: str | None = None, branch: str | None = None
     ) -> dict[str, Any]:
-        """Adopt self-history for a `.memory` that was adopted before it existed.
+        """Bootstrap self-history for this project, or retrofit it onto a
+        `.memory` that was adopted before self-history existed.
 
-        `memory_adopt` already does this automatically, silently, for any
-        `.memory` adopted from now on (:meth:`_adopt_self_history_if_wanted`
-        — the moment `github:<owner>/.self-history` is reachable). This is
-        the one-time retrofit for a memory that predates that — this
-        project's own, among others. Unlike the automatic attempt inside
-        `memory_adopt`, asking for this explicitly means wanting to know
-        why it did not work, not a silent no-op: every precondition below
-        raises instead of returning `None`.
+        This is the **one place self-history's identity is decided** — it
+        writes `config-memory.cgs` when nothing has decided that identity
+        yet. Every other reader (`_adopt_self_history_if_declared` on a
+        second machine, `_clone_self_history_if_declared`) only ever reads
+        that file back via `_self_history_identity_from_config`; none of
+        them re-derive an owner or guess at whether self-history applies
+        here. That split — one writer, several readers of the same
+        committed fact — is deliberate: a `.gts` is a static snapshot of an
+        already-discovered tree, not a place to keep re-asking "should I
+        create this," and there is exactly one place that question is ever
+        answered by *deciding*, not by reading.
+
+        Unlike the automatic path `memory_adopt` runs on every adopt,
+        asking for this explicitly means wanting to know why it did not
+        work, not a silent no-op: every precondition below raises instead
+        of returning `None`.
 
         *branch* defaults to `.memory`'s own actual current branch, read
         off the mount directly rather than re-derived — the retrofit case
@@ -4571,59 +4632,70 @@ class ComplexGitSyncClient:
                 f"{remote_url} is not there, or these credentials cannot see it. "
                 f"Create it with 'cgitsync repo create {_identifier_of(remote_url)}'."
             )
-        result = self._adopt_self_history_if_wanted(
-            workspace, owner=repository_owner, branch=resolved_branch
-        )
-        if result is None:
-            raise GitSyncError("self-history was not adopted for an unexpected reason.")
-        return result
+        config_path = config_memory_path(workspace)
+        if not config_path.is_file():
+            config_path.write_text(
+                config_memory_document(repository_owner, resolved_branch), encoding="utf-8"
+            )
+        return self._finish_self_history_adopt(workspace, branch=resolved_branch, remote_url=remote_url)
 
-    def _adopt_self_history_if_wanted(
-        self, workspace: Path, *, owner: str | None, branch: str
+    def _adopt_self_history_if_declared(
+        self, workspace: Path, *, branch: str
     ) -> dict[str, Any] | None:
-        """Give self-history the same fresh, empty start `.memory` just got,
-        the moment its own repository actually exists to receive it.
+        """Follow what `.memory`'s own already-fetched content already
+        decided, if anything — never bootstraps, never probes a remote
+        that has no reason to exist.
 
-        There is no separate opt-in flag to check here, and deliberately
-        so: `nested_config` (the `.cgs`-side declaration that makes
-        `.self-history` a real, discoverable child of `.memory` —
-        `discover_nested_configs`) is `.cgs`-only information that a `.gts`
-        snapshot never carries (`registry.build_registry_from_gts_document`
-        has no such field), so a check against `self.registry` here would
-        silently never fire for the ordinary `load_gts` path every command
-        actually takes. **Reachability is the opt-in instead**: this is
-        tried on every `.memory` adopt, and for every project that has not
-        created `github:<owner>/.self-history`, `remote_reachable` answers
-        `False`, cheaply, and nothing else happens — additive by
-        construction, not by a flag that could drift from what is
-        actually there. Bootstrapping `config-memory.cgs` here, before the
-        outer `.cgs` ever names it, is deliberate too: the owner runs this
-        once to create the file and the mount, then flips `.memory`'s own
-        `nested_config` to `"config-memory.cgs"` so future discovery finds
-        it — the two steps in the order a person can actually do them.
+        The signal is `config-memory.cgs` **as `.memory`'s own adopt just
+        fetched it** — not a `nested_config` flag on the registry, and not
+        a blind reachability probe on every adopt. Both of those were the
+        wrong question: `.gts` is a static, already-discovered snapshot —
+        a READY tree does not re-run discovery, and the fact that a `.gts`
+        can be loaded at all is downstream of it having been generated
+        from a tree that already went through discovery once. Asking the
+        registry "does `.memory` declare `nested_config`" therefore asks a
+        `.cgs`-only question a `.gts`-loaded registry was never going to be
+        able to answer — not a bug to route around with a probe, just the
+        wrong layer to ask at all. The question that actually matters is
+        simpler and does not touch the registry at all: has *this
+        project's `.memory`, as actually committed*, already decided to
+        use self-history. `config-memory.cgs`'s presence in what `.memory`
+        just fetched answers that directly, the same way `verify` trusts
+        the ledger over a runtime guess about what happened.
 
-        Idempotent: an already-adopted `.self-history` (its own `.git`
-        already present) is left alone. Unreachable is silent, not a
-        warning — unlike `.memory` itself, which is always expected to
-        exist once declared, `.self-history` not existing is the ordinary
-        case for the overwhelming majority of projects.
+        For a project that has never bootstrapped self-history at all,
+        `config-memory.cgs` does not exist anywhere to fetch, so this is a
+        silent no-op — additive by construction. For one that has, an
+        unreachable remote here is unexpected (the ledger side already
+        says this repository should exist) and warns rather than raising,
+        the same "a second repository's trouble is not a reason to fail
+        the first one's operation" stance `_fold_memory_before_push`
+        already takes.
         """
         mount = self_history_mount_path(workspace)
         if (mount / ".git").exists():
             return None
-        registry = self.registry
-        root = registry.get(ROOT_REPO_ID) if registry is not None else None
-        repository_owner = owner or (root.project_owner_name if root is not None else None)
-        if not repository_owner:
+        identity = _self_history_identity_from_config(config_memory_path(workspace))
+        if identity is None:
             return None
-        remote_url = _remote_url_for_identifier(self_history_repository_id(repository_owner))
+        _owner, remote_url = identity
         if not self.git_runner.remote_reachable(remote_url):
-            return None
-        config_path = config_memory_path(workspace)
-        if not config_path.is_file():
-            config_path.write_text(
-                config_memory_document(repository_owner, branch), encoding="utf-8"
+            warnings.warn(
+                f"self-history is declared for this project but {remote_url} is not "
+                "there, or these credentials cannot see it. Adopt it by hand once it "
+                "is, with 'cgitsync self-history adopt'.",
+                stacklevel=2,
             )
+            return None
+        return self._finish_self_history_adopt(workspace, branch=branch, remote_url=remote_url)
+
+    def _finish_self_history_adopt(
+        self, workspace: Path, *, branch: str, remote_url: str
+    ) -> dict[str, Any]:
+        """The git-level mechanics both adopt paths share, once each has
+        decided (bootstrap) or confirmed (follow) that self-history
+        applies here and found a reachable remote for it."""
+        mount = self_history_mount_path(workspace)
         mount.mkdir(parents=True, exist_ok=True)
         self.git_runner.init_repository(mount, branch=branch)
         self.git_runner.configure_remote(mount, "origin", remote_url)
@@ -5043,9 +5115,23 @@ class ComplexGitSyncClient:
         not Pixi), so this method cannot observe it independently — see
         the AgentReport ticket's own note that D5's *how* is not fully
         settled, and WP4 remains open for it.
+
+        ``state_after`` is observed too, when not given: the ledger's own
+        most recent entry, folded and pending merged — "the state after"
+        is exactly what the ledger says is current at the moment this
+        method runs. ``state_before``/``state_after`` are otherwise
+        **verified against the ledger** (WP3), not merely shape-checked:
+        each, if given, must name a real ledger entry whose State is on
+        disk and still hashes to its own name (`_resolve_ledger_state` —
+        the same three questions `verify`'s own `MISSING_STATE`/
+        `STATE_DIGEST_MISMATCH` findings ask). A citation that does not
+        resolve raises rather than being recorded as though it were fact —
+        AgentReport's own acceptance criterion is that both States *name*
+        real history, not merely look like a state id.
         """
         workspace = Path(cgshome)
-        pending_dir = workspace / ".cgitsync" / self_history_store.SELF_HISTORY_PENDING_DIR_NAME
+        cgitsync_dir = workspace / ".cgitsync"
+        pending_dir = cgitsync_dir / self_history_store.SELF_HISTORY_PENDING_DIR_NAME
         contract = ""
         try:
             dev_sync_dir = workspace / ".agent" / ".distant" / "dev-sync"
@@ -5061,6 +5147,17 @@ class ComplexGitSyncClient:
                 status_errors = view.counts.errors
         except (GitSyncError, RuntimeError):
             status_errors = None
+        ledger_entries = _read_all_ledger_entries(cgitsync_dir)
+        if not state_after and ledger_entries:
+            state_after = ledger_entries[-1].state_id
+        for label, value in (("state_before", state_before), ("state_after", state_after)):
+            if value and _resolve_ledger_state(cgitsync_dir, value) is None:
+                raise GitSyncError(
+                    f"{label}={value!r} does not resolve in the ledger: no entry "
+                    "names it, its State is not on disk, or its content no longer "
+                    "hashes to its own name. self-history only cites States the "
+                    "ledger can actually verify."
+                )
         record = self_history_store.SelfHistoryRecord(
             ticket=ticket,
             goal=goal,
