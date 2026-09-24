@@ -5000,6 +5000,20 @@ class ComplexGitSyncClient:
                 user_email=user_email,
             )
             committed = True
+        if not committed:
+            try:
+                self.git_runner.rev_parse_head(mount)
+            except GitSyncError:
+                # Adopted, and nothing has ever been committed here yet —
+                # `current_branch`/`push` below both need a real commit to
+                # resolve HEAD against, and `git rev-parse --abbrev-ref
+                # HEAD` raises outright on an unborn branch rather than
+                # answering "none". A `memory push` (or `memory reboot`,
+                # which folds via this same method) before the first
+                # `self-history add` must be a no-op here, not a crash —
+                # additive, the same stance a workspace that never adopted
+                # self-history at all already gets from the check above.
+                return None
         branch = self.git_runner.current_branch(mount)
         self.git_runner.push(mount, ref_name=branch, set_upstream=True)
         self._log_event("self_history_push", mount=mount, branch=branch, committed=committed)

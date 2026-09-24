@@ -250,6 +250,41 @@ def test_memory_adopt_also_adopts_self_history_when_opted_in(tmp_path, monkeypat
     assert (tree["mount"] / "config-memory.cgs").is_file()
 
 
+def test_memory_push_after_adopt_with_nothing_pending_does_not_crash(tmp_path, monkeypatch):
+    """A real incident, caught live on this project's own tree:
+    self-history adopted, nothing ever recorded to it yet, then
+    `memory push` (or `memory reboot`, which folds via the same method)
+    runs. `.self-history` is an unborn branch — no commit for HEAD to
+    resolve at all — and `git rev-parse --abbrev-ref HEAD` raises outright
+    on that, rather than answering "none" the way a detached HEAD would.
+    Before `self-history add` has ever run, this must be a no-op, the same
+    stance a workspace that never adopted self-history at all already
+    gets."""
+    tree = _self_history_ready_workspace(tmp_path, monkeypatch, opt_in=True)
+    client = tree["client"]
+
+    result = client.memory_push(tree["root"])  # must not raise
+
+    assert result["mount"] == str(tree["mount"])
+    # The local branch itself is still unborn — no commit of its own —
+    # even though `origin/main` was fetched during adopt; `rev-list --all`
+    # would count that remote-tracking ref too, so check the local branch
+    # by name instead.
+    local_branch = _git(tree["self_history_mount"], "branch", "--show-current")
+    show_ref = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{local_branch}"],
+        cwd=tree["self_history_mount"],
+    )
+    assert show_ref.returncode != 0
+
+
+def test_memory_reboot_after_adopt_with_nothing_pending_does_not_crash(tmp_path, monkeypatch):
+    tree = _self_history_ready_workspace(tmp_path, monkeypatch, opt_in=True)
+    client = tree["client"]
+
+    client.memory_reboot(tree["root"])  # must not raise
+
+
 def test_memory_adopt_gitignores_self_history_inside_memorys_own_worktree(tmp_path, monkeypatch):
     """A real incident, caught live on this project's own tree: an empty
     ``.self-history`` has no commit for `git add` to make a gitlink out of,
