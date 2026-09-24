@@ -61,10 +61,32 @@ MOUNT_PATH = f"{_STATE_DIR_NAME}/{MEMORY_SUBDIR_NAME}"
 #: the architecture's D2. See MemoryArchitecture §2.2 for what it costs.
 DEFAULT_MEMORY_REPOSITORY = ".memory"
 
+#: The subdirectory, inside a memory's own mount, that becomes a *second*
+#: real git repository once self-history is adopted (AgentReport WP2) — one
+#: level deeper than ``MEMORY_SUBDIR_NAME``, nested inside it rather than
+#: beside it so `git_tree.propagate_privacy` makes it private/local for
+#: free, the same argument the ticket's §2 makes for nesting it here at all.
+SELF_HISTORY_SUBDIR_NAME = ".self-history"
+
+#: The repository self-history is a branch of, mirroring
+#: ``DEFAULT_MEMORY_REPOSITORY``: one repository, one branch per project.
+DEFAULT_SELF_HISTORY_REPOSITORY = ".self-history"
+
+#: The nested `.cgs` `.memory`'s own entry names explicitly — never
+#: ``"auto"`` — because a memory's own `.cgs/` directory of exported reboot
+#: specs would otherwise have to be told apart from a real nested file (see
+#: `mount_entry`'s own comment on `nested_config`).
+CONFIG_MEMORY_FILENAME = "config-memory.cgs"
+
 
 def memory_repository_id(owner: str, *, provider: str = "github") -> str:
     """The repository id a memory is proposed under: ``github:<owner>/.memory``."""
     return f"{provider}:{owner}/{DEFAULT_MEMORY_REPOSITORY}"
+
+
+def self_history_repository_id(owner: str, *, provider: str = "github") -> str:
+    """The repository id self-history is proposed under: ``github:<owner>/.self-history``."""
+    return f"{provider}:{owner}/{DEFAULT_SELF_HISTORY_REPOSITORY}"
 
 
 def memory_branch(project_name: str, project_branch: str) -> str:
@@ -248,6 +270,17 @@ def commit_message(project_name: str, states: int, entries: int, *, clock: Clock
     )
 
 
+def self_history_commit_message(project_name: str, records: int, *, clock: ClockProtocol) -> str:
+    """What self-history's own commit says — `commit_message`'s sibling.
+
+    Counts records, not States and ledger entries: self-history is not the
+    memory, it is a second repository nested inside it, and its commit
+    should say what it actually holds.
+    """
+    moment = f"{clock.now():%Y-%m-%d}"
+    return f"{project_name} self-history, {moment}: {records} record(s)"
+
+
 def memory_mount_path(workspace: Path) -> Path:
     """Where the memory's git repository sits in *workspace*: ``.cgitsync/.memory``."""
     return workspace / MOUNT_PATH
@@ -264,11 +297,62 @@ def memory_pending_path(workspace: Path) -> Path:
     return memory_mount_path(workspace).parent
 
 
+def self_history_mount_path(workspace: Path) -> Path:
+    """Where self-history's git repository sits: ``.cgitsync/.memory/.self-history``.
+
+    One level inside the memory's own mount, per the ticket's §2 table —
+    the folded half. Its pending half is `.cgitsync/.self-history`, a
+    sibling of the memory's own mount rather than nested under it; see
+    ``memory.self_history.self_history_dirs``, which owns that pair, the
+    same way this module owns the memory's own mount/pending pair above.
+    """
+    return memory_mount_path(workspace) / SELF_HISTORY_SUBDIR_NAME
+
+
+def config_memory_path(workspace: Path) -> Path:
+    """Where the nested `.cgs` that discovers self-history lives, once adopted."""
+    return memory_mount_path(workspace) / CONFIG_MEMORY_FILENAME
+
+
+def config_memory_document(memory_owner: str, project_default_branch: str) -> str:
+    """The `config-memory.cgs` text that makes self-history discoverable.
+
+    Two entries: the memory re-asserting its own identity at
+    ``relative_path = "."`` — the same self-reference
+    ``docs/DocCGS.cgs`` used for ``DocComplexGitSync`` before DocSpec's own
+    de-nesting, which resolves to an absolute path already registered and
+    is therefore a safe no-op rather than a duplicate child (see
+    `discovery.discover_nested_configs`'s ``registered_paths`` guard) — and
+    self-history itself, nested at ``.self-history``. Neither entry states
+    its own branch: both fall back to this document's own
+    ``project.default_branch``, so self-history's branch can never drift
+    from the memory's own without this file changing too.
+    """
+    memory_repository = memory_repository_id(memory_owner)
+    self_history_repository = self_history_repository_id(memory_owner)
+    return (
+        f'project = {{ name = "{DEFAULT_MEMORY_REPOSITORY}", '
+        f'default_branch = "{project_default_branch}" }}\n'
+        "\n"
+        "repos = [\n"
+        f'    {{ repository = "{memory_repository}", relative_path = "." }},\n'
+        f'    {{ repository = "{self_history_repository}", '
+        f'relative_path = "{SELF_HISTORY_SUBDIR_NAME}", fallback_branch = "main", '
+        "private = true, writable = true },\n"
+        "]\n"
+    )
+
+
 __all__ = [
+    "CONFIG_MEMORY_FILENAME",
     "DEFAULT_MEMORY_REPOSITORY",
+    "DEFAULT_SELF_HISTORY_REPOSITORY",
     "MEMORY_SUBDIR_NAME",
     "MOUNT_PATH",
+    "SELF_HISTORY_SUBDIR_NAME",
     "commit_message",
+    "config_memory_document",
+    "config_memory_path",
     "creation_command",
     "entry_already_present",
     "insert_repo_entry",
@@ -278,5 +362,8 @@ __all__ = [
     "memory_pending_path",
     "memory_repository_id",
     "mount_entry",
+    "self_history_commit_message",
+    "self_history_mount_path",
+    "self_history_repository_id",
     "uncommitted_memory_paths",
 ]

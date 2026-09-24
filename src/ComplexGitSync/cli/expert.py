@@ -712,6 +712,12 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     )
     _add_search_dir_argument(reboot)
 
+    self_history = memory_commands.add_parser(
+        "self-history",
+        help="Every self-history record this workspace holds, folded and pending.",
+    )
+    _add_search_dir_argument(self_history)
+
     subparser.set_defaults(handler=_handle_memory)
 
 
@@ -781,6 +787,14 @@ def _register_self_history(subparser: argparse.ArgumentParser) -> None:
         "--pushed-reason", default="", help="On whose instruction, if --pushed was given."
     )
     _add_search_dir_argument(add)
+
+    adopt = self_history_commands.add_parser(
+        "adopt",
+        help="Retrofit self-history onto a .memory adopted before it existed.",
+    )
+    adopt.add_argument("--owner", help="Account the self-history repository belongs to.")
+    adopt.add_argument("--branch", help="Branch to adopt. Defaults to .memory's own current branch.")
+    _add_search_dir_argument(adopt)
 
     subparser.set_defaults(handler=_handle_self_history)
 
@@ -1155,10 +1169,9 @@ def _execute_memory(
     timeline: bool = False,
     reboot: bool = False,
 ) -> int:
-    if subcommand == "status":
-        return _print_memory_status(client.memory_status(cgshome))
-    if subcommand == "list":
-        return _print_memory_list(client.memory_list(cgshome))
+    if subcommand in _SIMPLE_MEMORY_SUBCOMMANDS:
+        fetch, render = _SIMPLE_MEMORY_SUBCOMMANDS[subcommand]
+        return render(fetch(client, cgshome))
     if subcommand == "init":
         _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
         return _print_memory_init(client.memory_init(cgshome, owner=owner))
@@ -1217,6 +1230,12 @@ def _execute_self_history(
     client: ComplexGitSyncClient, cgshome: Path, *, args: argparse.Namespace
 ) -> int:
     _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+    if args.self_history_command == "adopt":
+        result = client.self_history_adopt(
+            cgshome, owner=getattr(args, "owner", None), branch=getattr(args, "branch", None)
+        )
+        print(f"mount={result['mount']} branch={result['branch']} remote={result['remote']}")
+        return EXIT_OK
     worker = AgentInfo(role=args.worker_role, vendor=args.worker_vendor, model=args.worker_model)
     orchestrator = AgentInfo(
         role=args.orchestrator_role, vendor=args.orchestrator_vendor, model=args.orchestrator_model
@@ -1438,6 +1457,31 @@ def _print_memory_timeline(rows: list[dict]) -> int:
                 f"    push    {publication['repository']:<18} -> "
                 f"{publication['remote']} {publication['ref']}"
             )
+    return EXIT_OK
+
+
+def _print_memory_self_history(records: list[dict]) -> int:
+    if not records:
+        print("no self-history recorded here yet.")
+        return EXIT_OK
+    for record in records:
+        worker, orchestrator = record["worker"], record["orchestrator"]
+        conformity = record["conformity"]
+        print(
+            f"{record['recorded_at']}  ticket={record['ticket']}  "
+            f"worker={worker['role']}({worker['vendor']}/{worker['model']})  "
+            f"orchestrator={orchestrator['role']}({orchestrator['vendor']}/{orchestrator['model']})"
+        )
+        print(f"    goal: {record['goal']}")
+        print(f"    action: {record['action']}")
+        print(
+            "    conformity: "
+            f"spec_respect={conformity['spec_respect']['score']}({conformity['spec_respect']['basis']}) "
+            f"gating={conformity['gating']['score']}({conformity['gating']['basis']}) "
+            f"quality={conformity['quality']['score']}({conformity['quality']['basis']})"
+        )
+        contract = record["contract"] or "(none signed)"
+        print(f"    contract={contract}")
     return EXIT_OK
 
 
@@ -2338,3 +2382,18 @@ def _execute_init_from_submodules(
         '  cgitsync add && cgitsync commit "<message>"'
     )
     return 0
+
+
+#: Memory subcommands with no argument beyond `cgshome` and one call/print
+#: each — pulled out of `_execute_memory`'s if-chain as a single branch so
+#: that chain stays under the C90 complexity ceiling as new read-only
+#: subcommands (like `self-history`) are added. Defined last: every
+#: `_print_memory_*` function it references must already exist.
+_SIMPLE_MEMORY_SUBCOMMANDS: dict[str, tuple[Callable, Callable]] = {
+    "status": (lambda client, cgshome: client.memory_status(cgshome), _print_memory_status),
+    "list": (lambda client, cgshome: client.memory_list(cgshome), _print_memory_list),
+    "self-history": (
+        lambda client, cgshome: client.memory_self_history(cgshome),
+        _print_memory_self_history,
+    ),
+}

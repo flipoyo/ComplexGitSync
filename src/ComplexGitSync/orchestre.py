@@ -154,7 +154,10 @@ from .memory.pending import (
 )
 from .memory.repository import (
     MOUNT_PATH,
+    SELF_HISTORY_SUBDIR_NAME,
     commit_message,
+    config_memory_document,
+    config_memory_path,
     creation_command,
     entry_already_present,
     format_mount_entry,
@@ -162,6 +165,9 @@ from .memory.repository import (
     memory_mount_path,
     memory_pending_path,
     mount_entry,
+    self_history_commit_message,
+    self_history_mount_path,
+    self_history_repository_id,
     uncommitted_memory_paths,
 )
 from .memory.repository import (
@@ -4374,6 +4380,52 @@ class ComplexGitSyncClient:
             )
         self.git_runner.clone(remote_url, destination, branch=target_branch)
         self._log_event("memory_clone", destination=destination, branch=target_branch)
+        self._clone_self_history_if_declared(workspace, branch=target_branch)
+        return destination
+
+    def _clone_self_history_if_declared(
+        self, workspace: Path, *, branch: str
+    ) -> Path | None:
+        """Bring self-history along, per D8 — a clone replicates both or neither.
+
+        The signal is `config-memory.cgs` itself, just cloned down with
+        `.memory`: if it is there, this machine's `.memory` was adopted with
+        self-history, and D8's principle — *"a project state must be
+        Replicable"* — means a second machine gets the same accounting
+        record as the first, not a memory that merely looks complete. The
+        repository to clone is read from that file rather than re-derived,
+        so there is exactly one place self-history's identity is decided
+        (`_adopt_self_history_if_wanted` wrote it) and this only ever
+        repeats it back.
+        """
+        config_path = config_memory_path(workspace)
+        if not config_path.is_file():
+            return None
+        document = CgsDocument.from_toml(config_path)
+        self_history_repo = next(
+            (repo for repo in document.repos if repo.get("relative_path") == SELF_HISTORY_SUBDIR_NAME),
+            None,
+        )
+        if self_history_repo is None:
+            return None
+        destination = self_history_mount_path(workspace)
+        if (destination / ".git").exists():
+            return None
+        if destination.is_dir() and any(destination.iterdir()):
+            raise GitSyncError(
+                f"{destination} already holds content. Move it aside before cloning "
+                "self-history over it — this command never overwrites local content."
+            )
+        remote_url = _remote_url_for_identifier(
+            self_history_repository_id(str(self_history_repo["project_owner_name"]))
+        )
+        if not self.git_runner.remote_branch_exists(remote_url, branch):
+            # Adopted but never pushed — nothing to clone yet, and not an
+            # error: the same case `.memory` itself refuses on, one level
+            # deeper.
+            return None
+        self.git_runner.clone(remote_url, destination, branch=branch)
+        self._log_event("self_history_clone", destination=destination, branch=branch)
         return destination
 
     def _memory_remote(
@@ -4466,6 +4518,7 @@ class ComplexGitSyncClient:
         self._log_event(
             "memory_adopt", mount=mount, branch=target_branch, started_from=started_from
         )
+        self._adopt_self_history_if_wanted(workspace, owner=owner, branch=target_branch)
         return {
             "mount": str(mount),
             "branch": target_branch,
@@ -4473,6 +4526,120 @@ class ComplexGitSyncClient:
             "started_from": started_from,
             "pending": len(uncommitted_memory_paths(self.git_runner.status_porcelain(mount))),
         }
+
+    def self_history_adopt(
+        self, cgshome: str | Path, *, owner: str | None = None, branch: str | None = None
+    ) -> dict[str, Any]:
+        """Adopt self-history for a `.memory` that was adopted before it existed.
+
+        `memory_adopt` already does this automatically, silently, for any
+        `.memory` adopted from now on (:meth:`_adopt_self_history_if_wanted`
+        — the moment `github:<owner>/.self-history` is reachable). This is
+        the one-time retrofit for a memory that predates that — this
+        project's own, among others. Unlike the automatic attempt inside
+        `memory_adopt`, asking for this explicitly means wanting to know
+        why it did not work, not a silent no-op: every precondition below
+        raises instead of returning `None`.
+
+        *branch* defaults to `.memory`'s own actual current branch, read
+        off the mount directly rather than re-derived — the retrofit case
+        is exactly the one where re-deriving it from the project's own
+        name could, in principle, disagree with what is really checked
+        out.
+        """
+        workspace = Path(cgshome)
+        memory_mount = memory_mount_path(workspace)
+        if not (memory_mount / ".git").exists():
+            raise GitSyncError(
+                f"{memory_mount} is not a repository yet. Run 'cgitsync memory adopt' first."
+            )
+        mount = self_history_mount_path(workspace)
+        if (mount / ".git").exists():
+            raise GitSyncError(
+                f"{mount} is already a repository. 'cgitsync memory push' sends what "
+                "it has gained."
+            )
+        resolved_branch = branch or self.git_runner.current_branch(memory_mount)
+        registry = self.registry
+        root = registry.get(ROOT_REPO_ID) if registry is not None else None
+        repository_owner = owner or (root.project_owner_name if root is not None else None)
+        if not repository_owner:
+            raise GitSyncError("self-history needs an owner to adopt under: pass one explicitly.")
+        remote_url = _remote_url_for_identifier(self_history_repository_id(repository_owner))
+        if not self.git_runner.remote_reachable(remote_url):
+            raise GitSyncError(
+                f"{remote_url} is not there, or these credentials cannot see it. "
+                f"Create it with 'cgitsync repo create {_identifier_of(remote_url)}'."
+            )
+        result = self._adopt_self_history_if_wanted(
+            workspace, owner=repository_owner, branch=resolved_branch
+        )
+        if result is None:
+            raise GitSyncError("self-history was not adopted for an unexpected reason.")
+        return result
+
+    def _adopt_self_history_if_wanted(
+        self, workspace: Path, *, owner: str | None, branch: str
+    ) -> dict[str, Any] | None:
+        """Give self-history the same fresh, empty start `.memory` just got,
+        the moment its own repository actually exists to receive it.
+
+        There is no separate opt-in flag to check here, and deliberately
+        so: `nested_config` (the `.cgs`-side declaration that makes
+        `.self-history` a real, discoverable child of `.memory` —
+        `discover_nested_configs`) is `.cgs`-only information that a `.gts`
+        snapshot never carries (`registry.build_registry_from_gts_document`
+        has no such field), so a check against `self.registry` here would
+        silently never fire for the ordinary `load_gts` path every command
+        actually takes. **Reachability is the opt-in instead**: this is
+        tried on every `.memory` adopt, and for every project that has not
+        created `github:<owner>/.self-history`, `remote_reachable` answers
+        `False`, cheaply, and nothing else happens — additive by
+        construction, not by a flag that could drift from what is
+        actually there. Bootstrapping `config-memory.cgs` here, before the
+        outer `.cgs` ever names it, is deliberate too: the owner runs this
+        once to create the file and the mount, then flips `.memory`'s own
+        `nested_config` to `"config-memory.cgs"` so future discovery finds
+        it — the two steps in the order a person can actually do them.
+
+        Idempotent: an already-adopted `.self-history` (its own `.git`
+        already present) is left alone. Unreachable is silent, not a
+        warning — unlike `.memory` itself, which is always expected to
+        exist once declared, `.self-history` not existing is the ordinary
+        case for the overwhelming majority of projects.
+        """
+        mount = self_history_mount_path(workspace)
+        if (mount / ".git").exists():
+            return None
+        registry = self.registry
+        root = registry.get(ROOT_REPO_ID) if registry is not None else None
+        repository_owner = owner or (root.project_owner_name if root is not None else None)
+        if not repository_owner:
+            return None
+        remote_url = _remote_url_for_identifier(self_history_repository_id(repository_owner))
+        if not self.git_runner.remote_reachable(remote_url):
+            return None
+        config_path = config_memory_path(workspace)
+        if not config_path.is_file():
+            config_path.write_text(
+                config_memory_document(repository_owner, branch), encoding="utf-8"
+            )
+        mount.mkdir(parents=True, exist_ok=True)
+        self.git_runner.init_repository(mount, branch=branch)
+        self.git_runner.configure_remote(mount, "origin", remote_url)
+        self.git_runner.fetch(mount)
+        # `.memory`'s own worktree now holds a *second* repository nested
+        # inside it — an empty one, with no commit `git add` could even
+        # make a gitlink entry out of, so `.memory`'s next ordinary
+        # `stage_all` (inside `memory_push`) would fail outright on
+        # ".self-history/ does not have a commit checked out" until this is
+        # written. `sync_gitignore` would write the same line once a full
+        # discovery pass registers `.self-history` as `.memory`'s child;
+        # this does not wait for that pass, because a `.memory` push can
+        # run before it ever does.
+        _update_gitignore_file(memory_mount_path(workspace), [SELF_HISTORY_SUBDIR_NAME])
+        self._log_event("self_history_adopt", mount=mount, branch=branch)
+        return {"mount": str(mount), "branch": branch, "remote": remote_url}
 
     #: Where a memory mounted before WorkingTransitionState sits: directly
     #: at the workspace's own state area, sharing it with the live-write
@@ -4726,6 +4893,51 @@ class ComplexGitSyncClient:
             return None
         return self.last_memory_fold
 
+    def _push_self_history(self, workspace: Path) -> dict[str, Any] | None:
+        """Fold self-history's pending records into its own mount, and push.
+
+        A plain move, unlike :meth:`_fold_memory_pending`'s per-kind
+        handling: every self-history record is named by its own content
+        hash (AgentReport §2: "the same reason it is safe for States"), so
+        a name that repeats is identical content and a plain
+        ``Path.replace`` can never lose anything. Returns ``None`` without
+        touching anything when self-history has not been adopted — the
+        mount's own ``.git`` is the only thing asked, so a workspace that
+        never opted in behaves exactly as it did before this existed.
+        """
+        mount = self_history_mount_path(workspace)
+        if not (mount / ".git").exists():
+            return None
+        pending_dir = workspace / ".cgitsync" / self_history_store.SELF_HISTORY_PENDING_DIR_NAME
+        moved = 0
+        if pending_dir.is_dir():
+            for item in sorted(pending_dir.iterdir()):
+                item.replace(mount / item.name)
+                moved += 1
+            pending_dir.rmdir()
+        pending_paths = uncommitted_memory_paths(self.git_runner.status_porcelain(mount))
+        committed = False
+        if pending_paths:
+            self.git_runner.stage_all(mount)
+            MasterConfig.load(workspace)
+            user_name, user_email = MasterConfig.resolve_identity(mount, self.git_runner)
+            self.git_runner.commit(
+                mount,
+                self_history_commit_message(workspace.name, moved, clock=self.clock),
+                user_name=user_name,
+                user_email=user_email,
+            )
+            committed = True
+        branch = self.git_runner.current_branch(mount)
+        self.git_runner.push(mount, ref_name=branch, set_upstream=True)
+        self._log_event("self_history_push", mount=mount, branch=branch, committed=committed)
+        return {
+            "mount": str(mount),
+            "branch": branch,
+            "committed": committed,
+            "recorded": moved,
+        }
+
     def memory_push(self, cgshome: str | Path, *, message: str | None = None) -> dict[str, Any]:
         """Fold what has accumulated since the last push, commit it, and send it.
 
@@ -4738,8 +4950,18 @@ class ComplexGitSyncClient:
         the memory gained" already means, not a step the caller has to
         remember to run first — `.cgitsync`'s pending content only ever
         moves into the mount here, and only here.
+
+        When self-history has been adopted (AgentReport WP2), its own fold
+        and push run **first** — the leaf before the parent, the order
+        every tree-wide operation already uses (`operations.py`'s
+        `iter_tree_leaf_first`) — so `.memory`'s own push, below, commits a
+        tree in which the leaf's new commit already exists to be recorded.
+        A workspace where self-history was never adopted sees no new
+        behaviour at all: :meth:`_push_self_history` is a no-op the moment
+        its mount has no `.git`.
         """
         workspace = Path(cgshome)
+        self._push_self_history(workspace)
         mount = memory_mount_path(workspace)
         if not (mount / ".git").exists():
             raise GitSyncError(
@@ -5060,6 +5282,19 @@ class ComplexGitSyncClient:
             )
         rows.sort(key=lambda row: (row["recorded_at"] or "", row["state"]), reverse=True)
         return rows
+
+    def memory_self_history(self, cgshome: str | Path) -> list[dict[str, Any]]:
+        """Every self-history record this workspace holds, oldest first.
+
+        Consultation only, folded and pending merged — see
+        :meth:`self_history_add` for how a record gets here, and
+        ``self_history.read_records`` for the merge itself. A workspace
+        that has never adopted self-history, or that has adopted it but
+        written nothing yet, answers with an empty list rather than an
+        error: this command is additive, like everything else about it.
+        """
+        cgitsync_dir = Path(cgshome) / ".cgitsync"
+        return [record.to_dict() for record in self_history_store.read_records(cgitsync_dir)]
 
     def memory_show(self, cgshome: str | Path, state: str) -> dict[str, Any]:
         """One State: what it recorded, every entry that names it, and what

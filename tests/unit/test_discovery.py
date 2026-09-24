@@ -269,6 +269,68 @@ nested_config = "named.cgs"
         child_entry = registry.get("root:deps/child-repo")
         assert child_entry.discovery_state == DiscoveryState.MISSING
 
+    def test_config_memory_cgs_reasserts_memory_and_adds_self_history(self, tmp_path):
+        """AgentReport WP2: `memory.repository.config_memory_document`'s own
+        output, discovered for real — not a hand-written stand-in. `.memory`
+        keeps its outer identity (private/writable, its own branch); a new
+        `.self-history` leaf appears beside it, private/writable via
+        `propagate_privacy`, on the same branch (neither entry states one)."""
+        from ComplexGitSync.memory.repository import (
+            MOUNT_PATH,
+            config_memory_document,
+        )
+
+        root_cgs = tmp_path / "project.cgs"
+        root_cgs.write_text(
+            f"""
+[document]
+format_version = "1.0"
+
+[project]
+name = "Demo"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "Demo"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "flipoyo"
+project_name = ".memory"
+relative_path = "{MOUNT_PATH}"
+default_branch = "Demo"
+fallback_branch = "main"
+private = true
+writable = true
+nested_config = "config-memory.cgs"
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+        memory_dir = tmp_path / MOUNT_PATH
+        memory_dir.mkdir(parents=True)
+        (memory_dir / "config-memory.cgs").write_text(
+            config_memory_document("flipoyo", "Demo"), encoding="utf-8"
+        )
+
+        registry = _load_registry(root_cgs, discover_nested=True)
+
+        memory_entry = registry.get(f"root:{MOUNT_PATH}")
+        self_history_entry = registry.get(f"root:{MOUNT_PATH}:.self-history")
+        assert memory_entry.node_type == NodeType.PARENT
+        assert memory_entry.project_name == ".memory"
+        assert memory_entry.default_branch == "Demo"
+        assert memory_entry.private is True
+        assert memory_entry.writable is True
+        assert self_history_entry.node_type == NodeType.LEAF
+        assert self_history_entry.absolute_path == (memory_dir / ".self-history").resolve()
+        assert self_history_entry.default_branch == "Demo"
+        assert self_history_entry.private is True
+        assert self_history_entry.writable is True
+
 
 class TestResolveNestedConfigPath:
     """_resolve_nested_config_path() — locate a repo's nested .cgs."""
