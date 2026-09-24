@@ -1,4 +1,4 @@
-# ComplexGitSync v3.1.5
+# ComplexGitSync v3.1.6
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*

@@ -1315,3 +1315,46 @@ def test_self_history_add_rejects_an_unknown_role():
     parser = _build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(argv)
+
+
+def test_environment_tree_renders_like_view_tree_not_a_raw_dict():
+    """`memory show`'s environment section used to print `record={...}` —
+    Python's own dict repr, unreadable at a glance. It now draws the same
+    box-drawing tree `view-tree` (`git_tree.format_view_tree`) uses for a
+    repo tree, applied to the Environment record's own nested shape."""
+    record = {
+        "format_version": 1,
+        "environment_root": "",
+        "machine": {"architecture": "x86_64", "os_name": "ubuntu"},
+        "tools": [{"name": "git", "raw": "git version 2.43.0", "version": "2.43.0"}],
+        "credentials": [
+            {"provider": "github", "tool": "gh", "available": False, "authenticated": False}
+        ],
+        "manifests": [
+            {
+                "repository": "root",
+                "path": "pixi.lock",
+                "digest": "sha256:" + "a" * 64,
+                "platforms": ["linux-64"],
+            }
+        ],
+    }
+
+    lines = expert._format_environment_tree(record)
+
+    assert lines[0] == "├── machine"
+    assert "│   ├── architecture: x86_64" in lines
+    assert "│   └── os_name: ubuntu" in lines
+    assert any(line.endswith("git: 2.43.0") for line in lines)
+    assert any("available=no authenticated=no" in line for line in lines)
+    assert "pixi.lock: sha256:" in lines[-1]
+    assert "[linux-64]" in lines[-1]
+    assert not any("record=" in line or "{" in line for line in lines)
+
+
+def test_environment_tree_drops_empty_sections():
+    lines = expert._format_environment_tree(
+        {"format_version": 1, "environment_root": "", "machine": {}, "tools": []}
+    )
+
+    assert lines == []

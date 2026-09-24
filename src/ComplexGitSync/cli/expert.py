@@ -1486,6 +1486,54 @@ def _print_memory_self_history(records: list[dict]) -> int:
     return EXIT_OK
 
 
+def _tree_branches(count: int) -> list[str]:
+    """``├── `` for every item but the last, ``└── `` for it — the same
+    connectors `view-tree` (`git_tree.format_view_tree`) draws a repo tree
+    with, reused here for an environment record's own nested shape rather
+    than a second, differently-styled way of indenting a list."""
+    return ["├── "] * (count - 1) + ["└── "] if count else []
+
+
+def _format_environment_tree(record: dict) -> list[str]:
+    """Render one Environment record (`environment_spec.TreeEnvironment.to_dict()`)
+    the way `view-tree` draws a repo tree — box-drawing connectors, not a
+    raw ``record={...}`` dict dump nobody can read at a glance."""
+    lines: list[str] = []
+    machine = record.get("machine", {})
+    tools = record.get("tools", [])
+    credentials = record.get("credentials", [])
+    manifests = record.get("manifests", [])
+    sections = [
+        ("machine", [f"{key}: {value}" for key, value in machine.items()]),
+        ("tools", [f"{tool['name']}: {tool['version']}" for tool in tools]),
+        (
+            "credentials",
+            [
+                f"{cred['provider']} ({cred['tool']}): "
+                f"available={'yes' if cred['available'] else 'no'} "
+                f"authenticated={'yes' if cred['authenticated'] else 'no'}"
+                for cred in credentials
+            ],
+        ),
+        (
+            "manifests",
+            [
+                f"{manifest['path']}: {manifest['digest'][:15]}..."
+                + (f" [{', '.join(manifest['platforms'])}]" if manifest["platforms"] else "")
+                for manifest in manifests
+            ],
+        ),
+    ]
+    sections = [(name, rows) for name, rows in sections if rows]
+    root_branches = _tree_branches(len(sections))
+    for (name, rows), root_branch in zip(sections, root_branches):
+        lines.append(f"{root_branch}{name}")
+        child_prefix = "    " if root_branch == "└── " else "│   "
+        for row, branch in zip(rows, _tree_branches(len(rows))):
+            lines.append(f"{child_prefix}{branch}{row}")
+    return lines
+
+
 def _print_memory_show(state: dict, *, full: bool = False) -> int:
     print(f"state={state['state']}")
     print(f"path={state['path']}")
@@ -1494,7 +1542,13 @@ def _print_memory_show(state: dict, *, full: bool = False) -> int:
         f"repos={state['repos']} hash_canonicalisation={state['hash_canonicalisation']}"
     )
     for environment in state.get("environments", []):
-        print(f"environment={environment['id']} path={environment['path'] or 'missing'} record={environment.get('record')}")
+        print(f"environment={environment['id']} path={environment['path'] or 'missing'}")
+        record = environment.get("record")
+        if record is None:
+            print("    (record missing on disk)")
+        else:
+            for line in _format_environment_tree(record):
+                print(f"    {line}")
     if not state["entries"]:
         print("no ledger entry records this State.")
         return EXIT_OK
