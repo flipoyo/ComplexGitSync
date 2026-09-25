@@ -2,9 +2,10 @@
 
 `memory adopt` has one behaviour: carry the mount's history forward.
 `memory reboot` is the other one — close the current chapter, archive it
-under a new name nobody can lose, and open an empty one under the name the
-memory has always used. `memory adopt --reboot` is the same fresh start,
-for a mount being adopted for the first time.
+under a new name nobody can lose, and push a fresh, minimal one under the
+name the memory has always used, so that name is never missing from origin
+for longer than this command takes to run. `memory adopt --reboot` is the
+same fresh start, for a mount being adopted for the first time.
 
 Real Git throughout — a bare repository standing in for the memory's
 remote, exactly like `test_memory_onboarding.py`.
@@ -136,17 +137,34 @@ def test_reboot_archives_the_old_branch_under_a_dated_name(tmp_path):
     assert result["archived_to"] in remotes
 
 
-def test_the_fresh_branch_is_not_pushed_by_reboot_itself(tmp_path):
-    """§3 step 6: reboot stops at the fresh, empty branch; it never pushes it."""
+def test_the_fresh_branch_is_pushed_by_reboot_itself(tmp_path):
+    """The field failure: a second machine bootstrapping right after a
+    reboot, before anyone ran `memory push`, found no `demo_x` on origin
+    at all — the old name had already been removed as half of the
+    archive rename, and nothing had taken its place there yet. Reboot
+    must not leave that window open past its own return.
+    """
     tree = _memory_ready(tmp_path)
 
-    _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
+    result = _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
 
     remotes = _remote_branches(tree["remote"])
-    # "demo_x" was removed from origin as half of the rename, and reboot
-    # does not push the new, empty branch under that name either — so it
-    # is absent from the remote until the next ordinary `memory push`.
-    assert "demo_x" not in remotes
+    assert "demo_x" in remotes
+
+    # What a bootstrap on a second machine would actually clone: the
+    # versioned `.cgs/` export, plus the one genesis State/ledger entry
+    # reboot itself wrote and committed — never the archived history or
+    # its commit logs.
+    clone = tmp_path / "fresh-clone"
+    _git(tmp_path, "clone", "--branch", "demo_x", str(tree["remote"]), str(clone))
+    assert (clone / ".cgs" / "demo-v2.cgs").is_file()
+    tracked = set(_git(clone, "ls-files").splitlines())
+    assert not any(path.startswith("commit-logs/") for path in tracked)
+
+    from ComplexGitSync.memory.ledger_store import read_all_entries
+
+    assert [entry.seq for entry in read_all_entries(clone / "lgr")] == [1]
+    assert result["branch"] == "demo_x"
 
 
 def test_the_archived_branch_still_holds_every_state_and_message(tmp_path):
@@ -240,12 +258,12 @@ def test_reboot_leaves_the_fresh_branch_committed_not_dead(tmp_path):
         ["git", "rev-parse", "HEAD"], cwd=tree["mount"], capture_output=True, text=True
     )
     assert rev_parse.returncode == 0
-    # Committed, not pushed — the next `memory push` still has work to do.
+    # Committed and pushed — nothing left for the worktree to report.
     assert _git(tree["mount"], "status", "--porcelain") == ""
     status = subprocess.run(
         ["git", "status", "-sb"], cwd=tree["mount"], capture_output=True, text=True
     ).stdout
-    assert "..." not in status.splitlines()[0]  # no upstream configured yet
+    assert "..." in status.splitlines()[0]  # upstream tracking set by the push
 
 
 def test_reboot_leaves_a_discoverable_gts_behind(tmp_path):
@@ -436,7 +454,7 @@ def test_cli_reboot_prints_the_archive_and_the_export(tmp_path, capsys):
     assert exit_code == 0
     assert "archived=demo_x ->" in captured.out
     assert "exported=" in captured.out
-    assert "branch=demo_x (fresh, empty)" in captured.out
+    assert "branch=demo_x (fresh, pushed)" in captured.out
 
 
 def test_cli_adopt_reboot_flag(tmp_path, capsys):

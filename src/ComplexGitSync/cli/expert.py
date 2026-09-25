@@ -1376,8 +1376,8 @@ def _print_memory_reboot(result: dict) -> int:
     print(f"folded={result['folded']} pending record(s)")
     print(f"archived={result['archived_from']} -> {result['archived_to']}")
     print(f"exported={result['exported']}")
-    print(f"branch={result['branch']} (fresh, empty)")
-    print("next: use the tool as normal — the next command writes this branch's first State")
+    print(f"branch={result['branch']} (fresh, pushed)")
+    print("next: use the tool as normal — the next command writes this branch's next State")
     return EXIT_OK
 
 

@@ -5320,18 +5320,15 @@ class ComplexGitSyncClient:
            ledger, commit logs and run logs are cleared, so the new
            branch's first commit is a true beginning. `.cgs/`'s versioned
            exports (step 2, and every export before it) are the one thing
-           *not* cleared — §2 calls that directory "a permanent, ordered
-           record of every shape this project's memory has ever
-           described," which a reboot is not exempt from being part of.
-           One fresh State is then written and immediately committed —
-           *not* pushed; the next `memory push` does that, same as any
-           other day — so the branch is a real, live branch the moment
-           this method returns, on the project's own current branch name,
-           rather than an orphan with no commit that `cgitsync status`
-           (and `discover_gts_path()`, and everything built on it) could
-           only read as broken. An uncommitted orphan branch was tried
-           first and reported back as exactly that: not "a fresh chapter,"
-           a dead one.
+           *not* cleared — §2 calls that directory a permanent, ordered
+           record this reboot is not exempt from. One fresh State is then
+           written, committed, and **pushed**: step 3 already removed
+           *current_branch* from origin, so a second machine bootstrapping
+           before this push lands on a branch (`fallback_branch`) that
+           never held this project's `.cgs` at all — the field failure a
+           reboot done right before switching machines actually produced.
+           Pushing here, rather than waiting for the next ordinary
+           `memory push`, is what bounds that window to this method.
 
         Raises `GitSyncError` when the mount is not a repository yet
         (`memory adopt` first), and when today's archived name already
@@ -5396,10 +5393,7 @@ class ComplexGitSyncClient:
         # as `error`/`error` rather than as the healthy, just-rebooted
         # branch it actually was. Folding and committing the one State
         # just written gives the branch a real HEAD before this method
-        # returns; nothing is pushed here, the same way `memory_push`'s
-        # own commit step never pushes on its own — the next `memory push`
-        # (or the ordinary fold inside `push`/`tag`/`freeze`, once that
-        # exists) is what sends it.
+        # returns.
         self._fold_memory_pending(memory_pending_path(workspace), mount)
         if uncommitted_memory_paths(self.git_runner.status_porcelain(mount)):
             self.git_runner.stage_all(mount)
@@ -5411,6 +5405,19 @@ class ComplexGitSyncClient:
                 user_name=user_name,
                 user_email=user_email,
             )
+
+        # Step 3 already deleted *current_branch* from origin as half of
+        # the archive rename — from that moment until this push, origin
+        # has no ref under the memory's own name at all. Pushing this
+        # commit now, rather than leaving it to whenever the next ordinary
+        # `memory push` happens to run, is what keeps that window to the
+        # width of this method rather than to however long the owner goes
+        # before their next push — the field failure a bootstrap on a
+        # second machine hit when that window was left open across a
+        # machine switch. `set_upstream=True` mirrors `memory_push`'s own
+        # push exactly, so the branch is `synced`, not merely `ahead`, the
+        # moment this method returns.
+        self.git_runner.push(mount, ref_name=current_branch, set_upstream=True)
 
         self._log_event(
             "memory_reboot",
