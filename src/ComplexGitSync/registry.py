@@ -237,10 +237,13 @@ def build_registry_from_cgs_document(
 
     seen_relative_paths: set[Path] = set()
     root_identity_assigned = False
+    is_sole_repo = len(document.repos) == 1
     declared: list[tuple[Path, dict[str, Any]]] = []
     for repo in document.repos:
         _validate_repo_shape(repo)
-        if _is_root_repo_spec(repo, document.project_name, root_identity_assigned):
+        if _is_root_repo_spec(
+            repo, document.project_name, root_identity_assigned, is_sole_repo=is_sole_repo
+        ):
             _apply_repo_identity(root_entry, repo, document.default_branch)
             # The source .cgs for the project root is already loaded.  The
             # authoring default ``nested_config = auto`` applies to its
@@ -257,6 +260,20 @@ def build_registry_from_cgs_document(
             context="root",
         )
         declared.append((relative_path, repo))
+
+    if not root_identity_assigned:
+        # DiscoverRoundTrip D2: a document naming no entry as its own root
+        # used to build a tree anyway — a root_entry with no provider, no
+        # owner, no repository — and the real root repository mounted one
+        # level down as an ordinary child. `validate` reported
+        # `complete=true` over that phantom root. Refused by name, naming
+        # the fix, rather than materialising a tree that cannot clone its
+        # own root.
+        raise ConfigValidationError(
+            f"{source_path}: no repository entry names the project root. "
+            f"Add `relative_path = \".\"` to the entry for {document.project_name!r}, "
+            "or set its `project_name` to match the document's own."
+        )
 
     # Every path in a ``.cgs`` is written from the project root, so a repo
     # that sits *inside* another repo is only recognisable by comparing the

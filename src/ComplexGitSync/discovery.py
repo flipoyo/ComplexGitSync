@@ -29,6 +29,7 @@ from .git_tree import (
     WorkingGitTree,
     _apply_repo_identity,
     _initial_discovery_state,
+    _is_root_repo_spec,
     _normalise_relative_path,
     _parse_enum,
     _validate_repo_shape,
@@ -83,9 +84,17 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
         existing_child_paths = {
             child.relative_path for child in registry.children_of(entry.repo_id) if child.relative_path is not None
         }
+        # Unlike the top-level document, a nested `.cgs` with exactly one
+        # repository is not necessarily re-declaring its own parent mount
+        # (`is_sole_repo` stays False here): a nested file listing a single
+        # *child* — the ordinary shape for a repository mounting just one
+        # dependency of its own — is exactly as common as one re-declaring
+        # the mount itself, and the two cannot be told apart by count
+        # alone. `relative_path = "."` (or a matching `project_name`) is
+        # the one unambiguous way to mean "this entry is the mount itself".
         for repo in nested_document.repos:
             _validate_repo_shape(repo)
-            if not root_identity_assigned and repo.get("project_name") == nested_document.project_name:
+            if _is_root_repo_spec(repo, nested_document.project_name, root_identity_assigned):
                 _apply_repo_identity(entry, repo, nested_document.default_branch)
                 # This nested document has just been resolved for ``entry``.
                 entry.discovery_state = DiscoveryState.RESOLVED
@@ -157,6 +166,15 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
             )
             registered_paths.add(new_entry.absolute_path)
             changes.append(f"discovered:{child_id}")
+
+        # Unlike the top-level document (`build_registry_from_cgs_document`,
+        # DiscoverRoundTrip D2), a nested `.cgs` naming no entry as its own
+        # root is not an error: `entry` already has a full identity from
+        # the *outer* document — the parent mount this nested file was
+        # found inside. A nested `.cgs` re-declaring that identity
+        # (`config-memory.cgs`'s self-reference, `relative_path = "."`) is
+        # optional enrichment, not a requirement; one that only ever lists
+        # children, like this test's own fixture, is equally valid.
 
     normalize_node_types(registry)
     propagate_privacy(registry)

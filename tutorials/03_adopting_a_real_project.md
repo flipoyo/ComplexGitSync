@@ -215,6 +215,22 @@ pixi run cgitsync import-submodules "$WORK/cawaqsviz" --recursive --apply
    `hydrological_twin` sitting *inside* `HydrologicalTwinAlphaSeries` and
    drafts it as that repository's child, not the root's. Only what is
    checked out can be found — which is what step 2 was for.
+
+   > **If the checkout is not on `main`, check the draft before running
+   > `initialise`.** `discover --write` records the root's own checked-out
+   > branch as `project.default_branch`, and drafts `default_branch` on any
+   > other repository scanned on a *different* branch — open the drafted
+   > `.cgs` and confirm `project.default_branch` actually names the branch
+   > you are adopting, especially if you hand-edit the file afterwards.
+   > Every repository also keeps its scanned branch as `fallback_branch`,
+   > used only if the target branch turns out to be missing from the
+   > remote; setting *only* `fallback_branch` by hand, with no
+   > `default_branch` anywhere in a repository's own chain, still targets
+   > whatever `project.default_branch` says — `main` by default — and
+   > **not** the branch named in `fallback_branch`. That mismatch is silent
+   > until `push`: `status`, `add` and `commit` all measure a repository
+   > against whatever branch the tree already agrees it is on, and only a
+   > push against the *remote* first notices the target was wrong.
 2. **`initialise`** *adopts* the root already on disk at
    `CGSHOME = --output-path/<project-name>` in place, without touching it,
    and clones everything else. `--output-path "$WORK"` plus

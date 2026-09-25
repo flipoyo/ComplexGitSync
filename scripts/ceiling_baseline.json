@@ -91,8 +91,8 @@
       "public_symbols": 1
     },
     "discovery.py": {
-      "internal_imports": 20,
-      "loc": 225,
+      "internal_imports": 21,
+      "loc": 226,
       "public_symbols": 3
     },
     "environment_spec.py": {
@@ -121,8 +121,8 @@
       "public_symbols": 4
     },
     "git_tree.py": {
-      "internal_imports": 35,
-      "loc": 1282,
+      "internal_imports": 36,
+      "loc": 1316,
       "public_symbols": 26
     },
     "git_tree_branch.py": {
@@ -212,7 +212,7 @@
     },
     "orchestre.py": {
       "internal_imports": 157,
-      "loc": 5794,
+      "loc": 5807,
       "public_symbols": 10
     },
     "paths.py": {
@@ -227,7 +227,7 @@
     },
     "registry.py": {
       "internal_imports": 41,
-      "loc": 504,
+      "loc": 513,
       "public_symbols": 3
     },
     "settings.py": {

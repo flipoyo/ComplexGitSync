@@ -22,6 +22,8 @@ import pytest
 
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.git_runner import GitRunner
+from ComplexGitSync.operations import restart_tree
+from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 WIDE_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
 
@@ -330,3 +332,63 @@ def test_checkout_still_creates_a_brand_new_branch_at_head(cloned_workspace, cap
     assert _run_git(repo, "rev-parse", "HEAD") == head_before
     assert _run_git(repo, "rev-parse", "--abbrev-ref", "HEAD") == "mine-alone"
     assert GitRunner().upstream_configured(repo) is False
+
+
+def test_push_succeeds_even_when_the_cgs_declares_a_branch_the_checkout_is_not_on(tmp_path):
+    """DiscoverRoundTrip S1 — investigated, not reproduced.
+
+    The owner's report: ``add``/``commit`` worked, ``push`` did not, against
+    a remote that only had ``main``, for a tree whose ``.cgs`` recorded the
+    real branch (``branch1``) only as `fallback_branch` — exactly what
+    `discover --write` used to draft before F4 (a hand-authored `.cgs` still
+    can, and this reproduces that shape directly). Resolving the tree's
+    declared chain alone gives every repository a `target_ref_name` of
+    ``main`` here, while the real checkout sits on ``branch1``: the
+    mismatch S1's three candidate causes are all about.
+
+    It does not reproduce. `restart_tree` — the one path that can bring a
+    bare `load()` to `READY` (`push` requires it) — reads each repository's
+    *actual* checked-out branch (`git_runner.current_branch`, `operations.py`
+    ~L350) and propagates it as the resolved target before `push` ever
+    runs, correcting the very mismatch S1 describes. Reaching `push` at all
+    without going through that correction is not currently possible through
+    the client's own API, which rules out candidate 3 (`git push` itself,
+    naming a branch the local repository does not have) and candidate 1
+    (branch misalignment, which would have blocked `commit` too, same as
+    the ticket's own reasoning already argued). Candidate 2 (behind/diverged
+    upstream) needs the owner's own failing `push` output or run log to
+    pin down — this harness has no divergent upstream to reproduce against.
+    """
+    remote = _seeded_remote(tmp_path)
+    repo = tmp_path / "work"
+    _run_git(tmp_path, "clone", remote.as_posix(), "work")
+    _identify(repo)
+    _run_git(repo, "checkout", "-b", "branch1")
+    (repo / "b.txt").write_text("second\n", encoding="utf-8")
+    _run_git(repo, "add", "b.txt")
+    _run_git(repo, "commit", "-m", "second")
+
+    cgs_path = repo / "proj.cgs"
+    cgs_path.write_text(
+        'project = { name = "proj", default_branch = "main" }\n'
+        "repos = [\n"
+        '    { repository = "github:acme/proj", relative_path = ".", '
+        'fallback_branch = "branch1" },\n'
+        "]\n",
+        encoding="utf-8",
+    )
+
+    client = ComplexGitSyncClient()
+    client.load(cgs_path)
+    assert client.registry.get("root").target_ref_name == "main", (
+        "the declared chain alone must still resolve to main — the mismatch"
+        " this test starts from"
+    )
+
+    restart_tree(client.registry, client.git_runner)
+
+    assert client.registry.get("root").target_ref_name == "branch1"
+    assert client.registry.is_ready()
+    client.push()  # must not raise
+
+    assert _run_git(remote, "rev-parse", "branch1") == _run_git(repo, "rev-parse", "HEAD")

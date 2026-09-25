@@ -125,6 +125,12 @@ default_branch = "main"
 [[repos]]
 gitprovider = "github"
 project_owner_name = "owner"
+project_name = "demo"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
 project_name = "child-repo"
 relative_path = "deps/child-repo"
 nested_config = "auto"

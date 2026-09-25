@@ -1485,6 +1485,11 @@ class ComplexGitSyncClient:
         output_path:
             Optional destination for concise ``.cgs`` TOML. When omitted, the
             validated document is returned without writing a file.
+
+        A lone repository is always the root — `_is_root_repo_spec`'s own
+        rule (DiscoverRoundTrip F2/D2): with nothing else in the tree,
+        there is no other repository it could be, whatever its own
+        identifier's name happens to be.
         """
         document = CgsDocument.from_dict(
             {
@@ -2054,9 +2059,17 @@ class ComplexGitSyncClient:
 
             identifier: str | None = None
             if remote_url is None:
+                # F5: naming what to add, not only what was missing — a
+                # remote-less repository used to vanish from the draft with
+                # one warning among the report's output, and the user's
+                # next move (hand-write the entry) was the one thing the
+                # warning did not say how to do.
+                branch_hint = f', default_branch = "{branch}"' if branch else ""
                 warnings.append(
                     f"{relative}: no 'origin' remote — cannot determine an address; "
-                    f"add one, or add this repository to the .cgs by hand."
+                    f"add one, or add this entry by hand: "
+                    f'{{ repository = "provider:owner/{Path(relative).name}", '
+                    f'relative_path = "{relative}"{branch_hint} }}.'
                 )
             else:
                 candidate = _url_to_repo_identifier(remote_url)
@@ -2091,6 +2104,17 @@ class ComplexGitSyncClient:
         project_name = root.name
         if root_repo is not None and root_repo.identifier is not None:
             project_name = root_repo.identifier.rsplit("/", 1)[-1]
+        # DiscoverRoundTrip D1/F4: the tree's own default branch is the
+        # root's branch, drafted as `project.default_branch` — not only as
+        # a `fallback_branch`, which `_select_clone_ref` only ever
+        # consults when the *target* branch is absent from the remote.
+        # Without this, a tree scanned entirely on `branch1` drafted a
+        # `.cgs` that targeted `main` everywhere the remote happened to
+        # have it, and the draft did not reproduce the tree it scanned.
+        root_branch = root_repo.branch if root_repo is not None else None
+        project: str | dict[str, str] = (
+            {"name": project_name, "default_branch": root_branch} if root_branch else project_name
+        )
 
         cgs_entries: list[dict] = []
         for repo in repos:
@@ -2102,6 +2126,13 @@ class ComplexGitSyncClient:
             }
             if repo.branch:
                 entry["fallback_branch"] = repo.branch
+                # A repository scanned on a different branch than the
+                # tree's own default needs its own explicit target — left
+                # unset when it matches, so the common case (everything on
+                # one branch) drafts one `project.default_branch` rather
+                # than repeating the same value on every entry.
+                if repo.branch != root_branch:
+                    entry["default_branch"] = repo.branch
             # A repository with no .cgs of its own resolves cleanly on the
             # default "auto" (zero matches -> RESOLVED), so it is left
             # unset here rather than private to "disabled".
@@ -2133,7 +2164,7 @@ class ComplexGitSyncClient:
                     f"discover: no resolvable git repository found under {root} — "
                     f"nothing to write."
                 )
-            self.configure(project_name, cgs_entries, output_path=output)
+            self.configure(project, cgs_entries, output_path=output)
 
         return DiscoverReport(
             root=root,

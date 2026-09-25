@@ -8,7 +8,7 @@ __version__ = "3.1.7"
 #: build produced a given ledger entry. Carried over unchanged from the
 #: pre-SemVer `YYYY.XX` counter, not reset, when SemVer was cut over at
 #: `__version__` 3.0.0.
-__build__ = "0003.14"
+__build__ = "0003.15"
 
 # --- Tier 1 — Public Errors (errors.py) ---
 # --- Cross-cutting document definitions ---
