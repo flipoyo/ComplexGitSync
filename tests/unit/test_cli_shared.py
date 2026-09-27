@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import logging
 from pathlib import Path
 from types import SimpleNamespace
@@ -194,6 +195,107 @@ class _StubClient:
         self.run_logger = None
 
 
+class _StubClientWithTree:
+    """A client that has got as far as loading a registry before failing.
+
+    Which is where the merge in
+    ``.agent/.local/.localSpec/DevTickets/archive/20260927_MergeLogGap_DevPlanTicket.md``
+    §1 failed: the tree was loaded and ``READY``, and the operation then
+    refused. Nothing here stubs ``bind_log_file`` — see the tests below.
+    """
+
+    def __init__(self, root_path):
+        self.run_logger = None
+        self.registry = SimpleNamespace(
+            lifecycle_state=SimpleNamespace(value="READY"),
+            get=lambda repo_id: SimpleNamespace(absolute_path=root_path),
+        )
+
+
+def test_failed_command_persists_its_own_log_without_writing_a_state(tmp_path, capsys):
+    """WP2's regression test, and the whole point of the ticket.
+
+    A refused command writes no State, so nothing used to call
+    ``bind_log_file`` and the ``command_end``/``status="error"`` record
+    never reached disk — leaving ``autofix``, which reads
+    ``.cgitsync/logs/*.log``, with only older successful runs to find.
+
+    **This test must never stub ``bind_log_file``.** The two existing
+    ``test_pull_command_creates_log_file`` tests do exactly that, which is
+    why a green suite coexisted with this bug for as long as it did: they
+    prove the ``log_file=`` line is printed when *something* binds a path,
+    never that production binds one on a failure path. Here the only thing
+    that may bind it is the code under test.
+    """
+    root_path = tmp_path / "project"
+    root_path.mkdir()
+
+    def runner(client, source):
+        raise RuntimeError("merge refused; no repository was merged: demo: conflicts")
+
+    with pytest.raises(RuntimeError, match="merge refused"):
+        _shared._run_with_logging(
+            command_name="merge",
+            source=root_path / ".cgitsync" / "state" / "abc.gts",
+            runner=runner,
+            client=_StubClientWithTree(root_path),
+        )
+
+    logs = sorted((root_path / ".cgitsync" / "logs").glob("merge-*.log"))
+    assert len(logs) == 1, "a failed merge must leave exactly one log behind"
+
+    records = [
+        json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+    ends = [record for record in records if record.get("event") == "command_end"]
+    assert [record["status"] for record in ends] == ["error"]
+    assert "merge refused" in ends[0]["error"]
+    # The buffered command_start has to be in there too: a log holding only
+    # the failure says nothing about what was attempted.
+    assert any(record.get("event") == "command_start" for record in records)
+    assert f"log_file={logs[0]}" in capsys.readouterr().out
+
+
+def test_failed_command_log_falls_back_to_the_snapshot_path_without_a_registry(tmp_path):
+    """The failure happened before the registry loaded, so the source
+    answers instead — the ticket's §2.3 Finding 3, second branch."""
+    cgitsync_dir = tmp_path / "project" / ".cgitsync"
+
+    def runner(client, source):
+        raise RuntimeError("snapshot unreadable")
+
+    with pytest.raises(RuntimeError, match="snapshot unreadable"):
+        _shared._run_with_logging(
+            command_name="status",
+            source=cgitsync_dir / "state" / "abc.gts",
+            runner=runner,
+            client=_StubClient(),
+        )
+
+    assert len(sorted((cgitsync_dir / "logs").glob("status-*.log"))) == 1
+
+
+def test_failed_command_writes_no_log_when_no_cgshome_can_be_derived(tmp_path, capsys):
+    """A ``.cgs`` need not live inside the tree it describes, so there is no
+    CGSHOME to derive from it. Inventing a directory to log into would be
+    worse than not logging — nothing is written, and no ``log_file=`` line
+    claims otherwise."""
+
+    def runner(client, source):
+        raise RuntimeError("configure failed")
+
+    with pytest.raises(RuntimeError, match="configure failed"):
+        _shared._run_with_logging(
+            command_name="configure",
+            source=tmp_path / "loose.cgs",
+            runner=runner,
+            client=_StubClient(),
+        )
+
+    assert not list(tmp_path.rglob("*.log"))
+    assert "log_file=" not in capsys.readouterr().out
+
+
 def test_run_with_logging_initialise_failure_suggests_clean_init(capsys, tmp_path):
     def runner(client, source):
         raise RuntimeError("clone failed")
@@ -314,18 +416,14 @@ def test_create_command_logger_reads_explicit_quiet_profile_from_cgs(tmp_path):
     # wall-clock second would reuse (and keep appending handlers to) the
     # very same cached Logger object.
     config_path = _write_cgs(tmp_path, profile="quiet")
-    logger = _shared._create_command_logger(
-        "quiet-profile-status", config_path, project_root=None
-    )
+    logger = _shared._create_command_logger("quiet-profile-status", config_path)
     console_handler = logger._logger.handlers[-1]
     assert console_handler.level == logging.WARNING
 
 
 def test_create_command_logger_reads_verbose_profile_from_cgs(tmp_path):
     config_path = _write_cgs(tmp_path, profile="verbose")
-    logger = _shared._create_command_logger(
-        "verbose-profile-status", config_path, project_root=None
-    )
+    logger = _shared._create_command_logger("verbose-profile-status", config_path)
     console_handler = logger._logger.handlers[-1]
     assert console_handler.level == logging.INFO
 
@@ -336,9 +434,7 @@ def test_create_command_logger_defaults_to_cgs_runtime_default_when_unset(tmp_pa
     # local "quiet" fallback — that fallback only applies when no .cgs
     # document could be read at all (see the missing-source test below).
     config_path = _write_cgs(tmp_path)
-    logger = _shared._create_command_logger(
-        "unset-profile-status", config_path, project_root=None
-    )
+    logger = _shared._create_command_logger("unset-profile-status", config_path)
     console_handler = logger._logger.handlers[-1]
     assert console_handler.level == logging.INFO
 
@@ -348,7 +444,7 @@ def test_create_command_logger_tolerates_missing_source(tmp_path):
     # directory for `verify`) fall back to the quiet default instead of
     # raising.
     logger = _shared._create_command_logger(
-        "missing-source-verify", tmp_path / "nonexistent.gts", project_root=None
+        "missing-source-verify", tmp_path / "nonexistent.gts"
     )
     console_handler = logger._logger.handlers[-1]
     assert console_handler.level == logging.WARNING

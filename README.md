@@ -1,4 +1,4 @@
-# ComplexGitSync v3.1.9
+# ComplexGitSync v3.2.0
 __An alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
@@ -345,7 +345,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 > conflicting file under it, so you do not have to go looking:
 >
 > ```text
-> merge refused; no repository was merged: ComplexGitSync: tests/unit/test_documents.py
+> merge refused; no repository was merged: ComplexGitSync: merging 'my-feature' conflicts in tests/unit/test_documents.py
 > ```
 >
 > `merge --dry-run` shows the same list without merging anything.

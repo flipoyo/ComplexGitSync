@@ -26,9 +26,14 @@
       "public_symbols": 1
     },
     "autofix/repair_from_cli.py": {
-      "internal_imports": 8,
-      "loc": 112,
+      "internal_imports": 9,
+      "loc": 114,
       "public_symbols": 2
+    },
+    "autofix/repair_merge_conflict.py": {
+      "internal_imports": 3,
+      "loc": 98,
+      "public_symbols": 1
     },
     "cgs_format.py": {
       "internal_imports": 12,
@@ -42,7 +47,7 @@
     },
     "cli/_shared.py": {
       "internal_imports": 21,
-      "loc": 604,
+      "loc": 612,
       "public_symbols": 0
     },
     "cli/configuration.py": {
@@ -207,12 +212,12 @@
     },
     "operations.py": {
       "internal_imports": 23,
-      "loc": 1770,
+      "loc": 1777,
       "public_symbols": 30
     },
     "orchestre.py": {
       "internal_imports": 157,
-      "loc": 5794,
+      "loc": 5842,
       "public_symbols": 10
     },
     "paths.py": {

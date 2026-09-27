@@ -6,7 +6,8 @@ Ring: 2 (orchestrates git_runner.py; imports no subprocess itself)
 Contract: FromCliRepair.find_last_error()/run(). Owns the registry of
     Repair instances — growth is one entry added here per new
     repair_*.py module, never a branch inside this class.
-Imports: base, repair_divergent_user, git_repo, git_runner, git_tree
+Imports: base, repair_divergent_user, repair_merge_conflict, git_repo,
+    git_runner, git_tree
 
 Design reference: .agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md §7-§9 (WP2).
 """
@@ -19,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from .base import CHAIN_SHAPED_REPOS, Repair, RepairOutcome, Situation
 from .repair_divergent_user import DivergentUserRepair
+from .repair_merge_conflict import MergeConflictRepair
 
 if TYPE_CHECKING:
     from ..git_repo import WorkingRepo
@@ -39,8 +41,11 @@ class FromCliRepair:
     name = "from_cli"
 
     #: Grows one entry per new repair_*.py module. Tried in order; the
-    #: first whose matches() returns True runs.
-    _REGISTRY: tuple[Repair, ...] = (DivergentUserRepair(),)
+    #: first whose matches() returns True runs. `DivergentUserRepair` stays
+    #: first because it is the narrower match of the two — a chain-shaped
+    #: repository whose specific divergence it can actually repair, where
+    #: `MergeConflictRepair` only ever diagnoses.
+    _REGISTRY: tuple[Repair, ...] = (DivergentUserRepair(), MergeConflictRepair())
 
     def find_last_error(self, logs_dir: Path) -> tuple[str, str] | None:
         """The most recent ``*.log``'s ``command_end``/``status=error``

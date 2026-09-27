@@ -391,6 +391,85 @@ your project repositories untouched too. Two separate `merge` commands could
 not promise that: the first would already have merged before the second
 found the conflict.
 
+### When a merge refuses
+
+Sooner or later two branches will have edited the same lines, and the merge
+will stop before touching anything:
+
+```text
+cgitsync merge: merge refused; no repository was merged: docs: merging
+'my-feature' conflicts in guide.tex; MyProject: merging 'my-feature' conflicts
+```
+
+Read that as good news about the tree, not only bad news about the branch.
+**Nothing was merged anywhere** — not the repository that conflicts, not the
+ones that would have merged cleanly. Your tree is exactly where it was, and
+you can fix the conflict without also unpicking half a merge.
+
+Ask what is wrong, and you get the same list back, re-checked against Git
+rather than remembered:
+
+```bash
+pixi run cgitsync autofix
+```
+
+```text
+docs: merging 'my-feature' still conflicts in guide.tex. This needs a person,
+not a repair — nothing here can guess which side of a conflict is right.
+  cgitsync merge --resolve my-feature
+  cd /path/to/tree/docs && git mergetool
+  cgitsync add && cgitsync commit
+```
+
+`autofix` will not resolve a content conflict, and no version of it ever
+will: which side of two people's edits is right is not a question a tool can
+answer. What it does is tell you which repositories are blocking, which files
+in them, and whether the conflict is still there at all — run it after you
+have fixed something and it will say so.
+
+To do the fixing, hand the conflict to a worktree with `--resolve`:
+
+```bash
+pixi run cgitsync merge --resolve my-feature
+```
+
+This one **gives up the all-or-nothing promise on purpose**: it merges one
+repository at a time and stops at the first conflict, leaving the conflict
+markers in that repository's files for you to edit. Repositories merged
+before it stay merged, and it says which ones they were and which it never
+reached.
+
+```text
+stopped at docs: guide.tex
+not reached: MyProject
+no merge tool available. Resolve by hand:
+  cd /path/to/tree/docs && git mergetool  # then: cgitsync add && cgitsync commit
+```
+
+`no merge tool available` means Git has no `merge.tool` configured on this
+machine — `git mergetool` there would only ask you to set one. You do not
+need one. Open the file, and edit the conflict markers Git wrote into it:
+
+```text
+<<<<<<< HEAD
+the line as it is on the branch you are merging into
+=======
+the line as it is on my-feature
+>>>>>>> my-feature
+```
+
+Keep whichever text is right — often a bit of both — delete the three marker
+lines, then finish the merge from the tree's root:
+
+```bash
+pixi run cgitsync add
+pixi run cgitsync commit "MyProject1.2.0 resolve guide.tex against my-feature"
+```
+
+Then run the merge again for whatever `--resolve` never reached. If you would
+rather have a merge tool, `git config --global merge.tool meld` (or
+`vimdiff`, or `code`) and `--resolve` will open it next time.
+
 If you ask for `--private` in a tree whose configuration repos are all
 read-only, the command stops and tells you why rather than doing nothing
 quietly:

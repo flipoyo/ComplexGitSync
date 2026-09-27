@@ -154,6 +154,31 @@ def _pull_force_risk_hint(client: ComplexGitSyncClient) -> str:
     return f"{base} — this would discard: {discards}"
 
 
+def _run_logs_dir(client: ComplexGitSyncClient, resolved_source: Path) -> Path | None:
+    """Where this run's log belongs: ``<CGSHOME>/.cgitsync/logs``, or ``None``.
+
+    Two answers, most authoritative first, because a failure lands either
+    side of the registry loading: the loaded registry's own root (the same
+    directory `write_gts_snapshot` writes to, so every log `autofix` reads
+    sits together), else the source path when it is a snapshot inside a
+    ``.cgitsync/`` tree. ``None`` when neither answers — a ``.cgs`` need not
+    live inside the tree it describes (`CLAUDE.md`, *Layout*), and inventing
+    a directory to log into is worse than not logging.
+    """
+    registry = getattr(client, "registry", None)
+    if registry is not None:
+        try:
+            root = registry.get("root")
+        except Exception:  # noqa: BLE001 — resolving a log path must not mask the real error
+            root = None
+        if root is not None and getattr(root, "absolute_path", None) is not None:
+            return Path(root.absolute_path) / ".cgitsync" / "logs"
+    for parent in resolved_source.parents:
+        if parent.name == ".cgitsync":
+            return parent / "logs"
+    return None
+
+
 def _run_with_logging(
     *,
     command_name: str,
@@ -164,11 +189,7 @@ def _run_with_logging(
 ) -> int:
     resolved_source = source.resolve()
     active_client = client or ComplexGitSyncClient()
-    active_client.run_logger = _create_command_logger(
-        command_name,
-        resolved_source,
-        project_root=project_root,
-    )
+    active_client.run_logger = _create_command_logger(command_name, resolved_source)
     active_client.run_logger.log_event(
         "command_start",
         command=command_name,
@@ -191,6 +212,15 @@ def _run_with_logging(
                     else None
                 ),
             )
+            # A failure writes no State, so `write_gts_snapshot` — until now
+            # the only thing that ever bound a log file — was never reached,
+            # and the error just recorded stayed in memory. `autofix` then
+            # read `.cgitsync/logs/*.log`, found the last run that
+            # *succeeded*, and reported "no failing command found". A log has
+            # to outlive the command that failed to be diagnosable at all.
+            logs_dir = _run_logs_dir(active_client, resolved_source)
+            if logs_dir is not None:
+                active_client.run_logger.ensure_log_file(logs_dir)
             if active_client.run_logger.log_path is not None:
                 print(f"log_file={active_client.run_logger.log_path}")
         if command_name == "initialise":
@@ -228,14 +258,8 @@ def _run_with_logging(
     return exit_code
 
 
-def _create_command_logger(
-    command_name: str,
-    source_path: Path,
-    *,
-    project_root: Path | None,
-):
+def _create_command_logger(command_name: str, source_path: Path):
     profile = "quiet"
-    project_log_dir = None
     if source_path.suffix == ".cgs" and source_path.is_file():
         try:
             document = CgsDocument.from_toml(source_path)
@@ -243,14 +267,7 @@ def _create_command_logger(
             document = None
         if document is not None:
             profile = str(document.runtime_setting("profile") or "quiet")
-            project_log_dir = document.read("project.log_dir")
-    return create_run_logger(
-        command_name,
-        profile=profile,
-        source_path=source_path,
-        project_root=project_root,
-        project_log_dir=project_log_dir,
-    )
+    return create_run_logger(command_name, profile=profile)
 
 
 def _load_ready_registry_source(

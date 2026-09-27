@@ -349,12 +349,27 @@ def _write_compact_refs(repo_data: dict[str, Any], entry: WorkingRepo) -> None:
 
 
 class CommandRunLogger:
-    """Structured JSON logger for a single ComplexGitSync command run."""
+    """Structured JSON logger for a single ComplexGitSync command run.
 
-    def __init__(self, logger: logging.Logger, *, log_path: Path | None = None) -> None:
+    ``command_name``/``run_stamp`` name a :meth:`ensure_log_file` fallback.
+    They are carried rather than recomputed because the stamp must be this
+    run's own, and `universal_clock.py` is the sole reader of the clock —
+    `create_run_logger` has already read it once for this logger's name.
+    """
+
+    def __init__(
+        self,
+        logger: logging.Logger,
+        *,
+        log_path: Path | None = None,
+        command_name: str = "command",
+        run_stamp: str = "",
+    ) -> None:
         self._logger = logger
         self.log_path = log_path
         self._buffered_lines: list[str] = []
+        self._command_name = command_name
+        self._run_stamp = run_stamp
 
     def log_event(self, event: str, *, level: int = logging.INFO, **fields: object) -> None:
         """Log *event* together with arbitrary keyword *fields* as a JSON record."""
@@ -384,6 +399,27 @@ class CommandRunLogger:
             encoding="utf-8",
         )
 
+    def ensure_log_file(self, logs_dir: Path | str) -> Path | None:
+        """Bind a log file under *logs_dir* if this run has not bound one.
+
+        `write_gts_snapshot` used to be the only caller of
+        :meth:`bind_log_file`, so records reached disk only when the run also
+        wrote a State — never on a refusal, which by definition writes none.
+        The failing run `autofix` exists to diagnose was therefore the one
+        run that left no trace. Returns the path bound, the one already
+        bound, or ``None``: a logger that cannot write must not mask the
+        error it was called to record, so ``OSError`` is swallowed.
+        """
+        if self.log_path is not None:
+            return self.log_path
+        stamped = f"{self._command_name}-{self._run_stamp}" if self._run_stamp else self._command_name
+        try:
+            self.bind_log_file(Path(logs_dir) / f"{stamped}.log")
+        except OSError:
+            self.log_path = None
+            return None
+        return self.log_path
+
     @staticmethod
     def _operation_for_event(event: str, fields: dict[str, object]) -> str:
         if event.startswith("memory_"):
@@ -412,9 +448,6 @@ def create_run_logger(
     command_name: str,
     *,
     profile: str = "quiet",
-    source_path: Path | None = None,
-    project_root: Path | None = None,
-    project_log_dir: Any = None,
     clock: ClockProtocol | None = None,
 ) -> CommandRunLogger:
     """Create a :class:`CommandRunLogger` for a specific command invocation.
@@ -423,6 +456,12 @@ def create_run_logger(
     caller that cares about the exact timestamp in the logger name can
     inject a fixed one instead of two runs in the same second racing
     ``logging``'s global logger cache below.
+
+    A run log lives in the tree's own ``.cgitsync/logs/`` and nowhere else.
+    This used to take a ``project_root``/``project_log_dir``/``source_path``
+    trio and use none of them, beside a `_resolve_log_dir` no caller called
+    that still answered with the ``XDG_STATE_HOME`` location the tree had
+    moved away from. Both are gone, and ``project.log_dir`` is not read.
     """
     timestamp = (clock or SystemClock()).now().strftime("%Y%m%dT%H%M%SZ")
 
@@ -445,16 +484,7 @@ def create_run_logger(
     ch.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(ch)
 
-    return CommandRunLogger(logger)
-
-
-def _resolve_log_dir(project_root: Path | None, project_log_dir: Any) -> Path:
-    if project_root is not None and project_log_dir:
-        return (project_root / str(project_log_dir)).resolve()
-    xdg_state = os.environ.get("XDG_STATE_HOME")
-    if xdg_state:
-        return Path(xdg_state) / "ComplexGitSync" / "logs"
-    return Path.home() / ".local" / "state" / "ComplexGitSync" / "logs"
+    return CommandRunLogger(logger, command_name=command_name, run_stamp=timestamp)
 
 
 class RuntimeStateStore:
@@ -3491,13 +3521,31 @@ class ComplexGitSyncClient:
         conflict anywhere leaves the whole tree untouched. Returns one
         ``(repo_name, merged_ref)`` pair per repository a merge moved.
 
+        **This merge knows what it merged into.** ``merge b`` is
+        ``merge b --into <the branch the tree is on>``, and that target is
+        read once, up front, instead of staying implicit in whatever each
+        repository's ``HEAD`` happens to be — it names the branch in
+        ``merge_start``/``merge_end``, and a merge that cannot say what it
+        merged into cannot be recorded as more than "something moved". The
+        branch comes from `git_tree_branch.py`, which owns the question.
+
+        A State *is* written, unlike before: a merge moves ``HEAD``, which is
+        what a State records, and skipping the write left `status`'s
+        ``RECORDED`` column stale about commits this command had just made.
+
         Requires a ``READY`` registry; raises
         :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
         scope = self._write_scope(registry, "merge", private, all_writable)
-        self._log_event("merge_start", project_branch=project_branch, scope=scope.value)
+        into_branch = GitTreeBranches(registry, self.git_runner).tree_branch
+        self._log_event(
+            "merge_start",
+            project_branch=project_branch,
+            into_branch=into_branch,
+            scope=scope.value,
+        )
         merged = self.orchestre.git_tree.git.merge(
             self.git_runner,
             project_branch,
@@ -3506,7 +3554,13 @@ class ComplexGitSyncClient:
             no_ff=no_ff,
         )
         self._log_tree_transition(previous_state, registry.lifecycle_state, reason="merge")
-        self._log_event("merge_end", project_branch=project_branch, merged=len(merged))
+        self.write_gts_snapshot(command_origin="merge")
+        self._log_event(
+            "merge_end",
+            project_branch=project_branch,
+            into_branch=into_branch,
+            merged=len(merged),
+        )
         return merged
 
     def merge_into(

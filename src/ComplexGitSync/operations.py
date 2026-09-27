@@ -888,11 +888,17 @@ def _warn_branch_missing(repo: WorkingRepo, source: str, project_branch: str) ->
 def _describe_merge_conflict(
     repo_name: str, source: str, paths: Sequence[Path]
 ) -> str:
-    # Falls back to the branch when git named no file: an unmergeable
-    # repository conflicts without blaming one.
-    if paths:
-        return f"{repo_name}: {', '.join(str(path) for path in paths)}"
-    return f"{repo_name}: merging {source!r} conflicts"
+    """One repository's entry in a refusal: which branch, and which files.
+
+    The branch is named whether or not git blamed a file. It used to be
+    named only in the no-file case, which read fine in a terminal the
+    moment you had typed the branch yourself and badly everywhere else: a
+    refusal listing four repositories by path alone leaves a reader — and
+    `autofix.repair_merge_conflict`, which re-checks the conflict against
+    Git before reporting it — with no way to tell what was being merged.
+    """
+    where = f" in {', '.join(str(path) for path in paths)}" if paths else ""
+    return f"{repo_name}: merging {source!r} conflicts{where}"
 
 
 def _iter_merge_scope_project_first(

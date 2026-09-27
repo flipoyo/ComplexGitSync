@@ -1874,7 +1874,14 @@ class TestMergeTree:
         assert "leaf" in message and "project" in message
 
     def test_the_error_names_every_conflicting_file_under_its_repository(self, tmp_path):
-        """The reporting case: 'ComplexGitSync: tests/unit/test_documents.py'."""
+        """The reporting case: which repository, which branch, which files.
+
+        The branch used to be named only when git blamed no file, so a
+        refusal listing several repositories by path alone never said what
+        was being merged — unhelpful to a reader and unusable to
+        `autofix.repair_merge_conflict`, which re-checks the conflict before
+        reporting it (MergeLogGap, WP3).
+        """
         registry = _make_ready_registry(tmp_path)
         runner = _FakeGitRunnerForOperations()
         root = registry.get("root").absolute_path
@@ -1891,7 +1898,10 @@ class TestMergeTree:
             merge_tree(registry, runner, "multi-branch")
 
         message = str(excinfo.value)
-        assert "project: tests/unit/test_documents.py, docs/MASTER.pdf" in message
+        assert (
+            "project: merging 'multi-branch' conflicts in "
+            "tests/unit/test_documents.py, docs/MASTER.pdf"
+        ) in message
 
     def test_resolve_keeps_what_it_merged_and_names_where_it_stopped(self, tmp_path):
         """The trade --resolve makes: partial progress, reported exactly."""
