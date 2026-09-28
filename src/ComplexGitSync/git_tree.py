@@ -46,7 +46,7 @@ from pathlib import Path, PurePath, PurePosixPath
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from .errors import ConfigValidationError, GitSyncError
-from .git_branch import resolve_entry_ref
+from .git_branch import resolve_declared_ref, resolve_entry_ref
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
@@ -1548,11 +1548,29 @@ def _is_root_repo_spec(
     repo: dict[str, Any],
     project_name: str | None,
     root_identity_assigned: bool,
+    *,
+    is_sole_repo: bool = False,
 ) -> bool:
+    """Is *repo* the entry that identifies the project (or nested-config
+    parent) root — the single test both `registry.py` and `discovery.py`
+    now share (DiscoverRoundTrip F3), rather than each answering it by a
+    different rule.
+
+    *is_sole_repo*: a document naming exactly one repository has no other
+    candidate for its root, whatever that entry's own `relative_path` or
+    `project_name` says — the ordinary case for a hand-written single-repo
+    ``.cgs`` (a project is rarely named after its own repository) and for
+    a nested ``.cgs`` that only ever lists one child. Without this, that
+    lone entry named no root at all: DiscoverRoundTrip F2 at the top level,
+    and a phantom self-mount one level deeper for a nested document
+    (`<mount>/<name>`, per its own table's second row).
+    """
     relative_path = repo.get("relative_path")
     if isinstance(relative_path, str) and relative_path.strip() in {".", ""}:
         return True
-    return not root_identity_assigned and project_name is not None and repo.get("project_name") == project_name
+    if not root_identity_assigned and project_name is not None and repo.get("project_name") == project_name:
+        return True
+    return not root_identity_assigned and is_sole_repo
 
 
 def _normalise_relative_path(repo: dict[str, Any]) -> Path:
@@ -1577,6 +1595,21 @@ def _apply_repo_identity(
     repo: dict[str, Any],
     default_branch: str | None,
 ) -> None:
+    """Apply *repo*'s declared identity to *entry* — the root's own case,
+    at load time (`registry.py`) and at nested-config resolution
+    (`discovery.py`), the two places an entry's identity is filled in from
+    a *root* spec rather than an ordinary declared entry going through
+    :func:`~ComplexGitSync.registry.build_registry_from_cgs_document`'s own
+    per-repository loop.
+
+    `target_ref_kind`/`target_ref_name` are resolved here through
+    :func:`~ComplexGitSync.git_branch.resolve_declared_ref`, the same call
+    every non-root entry already goes through — before this, a root spec's
+    own ``branch``/``tag``/``default_branch`` were accepted by validation,
+    survived serialisation, and did nothing: the root's target came only
+    from the document's own ``default_branch``, set once before any entry
+    was even read (DiscoverRoundTrip F1).
+    """
     entry.gitprovider = _parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB)
     entry.project_owner_name = _as_optional_str(repo.get("project_owner_name"))
     entry.project_name = _as_optional_str(repo.get("project_name"))
@@ -1587,6 +1620,9 @@ def _apply_repo_identity(
     entry.default_branch = str(repo.get("default_branch") or default_branch)
     entry.fallback_branch = _as_optional_str(repo.get("fallback_branch"))
     entry.nested_config = _as_optional_str(repo.get("nested_config"))
+    target = resolve_declared_ref(repo, document_default_branch=default_branch)
+    entry.target_ref_kind = target.kind
+    entry.target_ref_name = target.name
     entry.discovery_state = _initial_discovery_state(entry.nested_config)
 
 

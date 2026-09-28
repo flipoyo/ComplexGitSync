@@ -1329,6 +1329,59 @@ class TestDiscoverRepos:
         # import-submodules' job.
         assert [r.relative_path for r in report.repos] == ["."]
 
+    def test_discover_write_drafts_the_branch_it_scanned(self, tmp_path):
+        """DiscoverRoundTrip WP2/D1/F4 — the whole point of the work
+        package: a tree scanned entirely on a non-``main`` branch must draft
+        a ``.cgs`` that reads back targeting that branch, not ``main``
+        wherever the remote happens to have it. Before this, the observed
+        branch was drafted only as ``fallback_branch``, which
+        ``_select_clone_ref`` consults only when the *target* is absent
+        from the remote — so the round trip silently did not reproduce the
+        tree it scanned."""
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git", branch="branch1")
+        output = tmp_path / "draft.cgs"
+
+        report = ComplexGitSyncClient().discover_repos(root, output=output)
+
+        assert report.cgs_entries[0]["fallback_branch"] == "branch1"
+        document = CgsDocument.from_toml(output)
+        assert document.read("project.default_branch") == "branch1"
+
+        tree = build_registry_from_cgs_document(document, output)
+        assert tree.get("root").target_ref_name == "branch1"
+
+    def test_discover_write_only_drafts_a_per_repo_branch_where_it_differs(self, tmp_path):
+        """A repository scanned on the same branch as the root inherits
+        ``project.default_branch`` — no redundant per-entry field. One
+        scanned on a *different* branch gets its own explicit
+        ``default_branch``, since inheriting the root's would silently
+        retarget it."""
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git", branch="branch1")
+        self._init_repo_with_remote(
+            root / "same", "https://github.com/owner/same.git", branch="branch1"
+        )
+        self._init_repo_with_remote(
+            root / "other", "https://github.com/owner/other.git", branch="branch2"
+        )
+        output = tmp_path / "draft.cgs"
+
+        ComplexGitSyncClient().discover_repos(root, output=output)
+
+        # `CgsDocument.repos` normalises every entry with the project's own
+        # default filled in, so whether an entry declared its own
+        # `default_branch` explicitly is only visible in the raw authoring
+        # TOML, not the parsed, normalised view.
+        raw = output.read_text(encoding="utf-8")
+        assert '"github:owner/same"' in raw
+        assert 'repository = "github:owner/other", default_branch = "branch2"' in raw
+
+        document = CgsDocument.from_toml(output)
+        tree = build_registry_from_cgs_document(document, output)
+        assert tree.get("root:same").target_ref_name == "branch1"
+        assert tree.get("root:other").target_ref_name == "branch2"
+
     def test_max_depth_bounds_the_walk(self, tmp_path):
         root = tmp_path / "proj"
         self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
