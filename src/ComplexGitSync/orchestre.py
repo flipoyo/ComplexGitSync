@@ -3776,6 +3776,135 @@ class ComplexGitSyncClient:
         )
         return outcome
 
+    def merge_resolve_all(
+        self,
+        project_branch: str,
+        *,
+        private: bool = False,
+        all_writable: bool = False,
+        ff_only: bool = False,
+        no_ff: bool = False,
+    ) -> ResolveOutcome:
+        """Merge all repositories, resolving conflicts one at a time until done.
+
+        Repeatedly calls :meth:`merge_resolve`, continuing past conflicts after
+        either opening a merge tool (for human-editable files) or regenerating
+        (for binary/generated files). Stops only when all repositories are merged
+        or when a human-editable conflict requires manual resolution.
+
+        Returns the outcome of the last merge_resolve call. If all conflicts were
+        resolved, ``stopped_at`` will be None.
+        """
+        outcome = None
+        while True:
+            outcome = self.merge_resolve(
+                project_branch,
+                private=private,
+                all_writable=all_writable,
+                ff_only=ff_only,
+                no_ff=no_ff,
+            )
+            # If nothing is left to merge, we're done
+            if outcome.stopped_at is None:
+                break
+
+            stopped_repo_path = None
+            try:
+                registry = self.get_dependency_registry()
+                repo = registry.get(outcome.stopped_at_id)
+                stopped_repo_path = repo.absolute_path
+            except (KeyError, AttributeError):
+                # If we can't find the repo, break to avoid infinite loop
+                break
+
+            # Check if conflicting files are all binary or generated
+            # If so, regenerate them and continue; otherwise, let user resolve
+            should_continue = self._handle_conflicted_files(
+                outcome.stopped_paths, stopped_repo_path
+            )
+            if not should_continue:
+                # User needs to resolve manually; open merge tool and stop
+                if outcome.stopped_at_id:
+                    self.open_merge_tool(outcome.stopped_at_id)
+                break
+
+        return outcome
+
+    def _handle_conflicted_files(self, paths: tuple[Path, ...], repo_path: Path) -> bool:
+        """Check if conflicted files are binary/generated; regenerate if so.
+
+        Returns True if all conflicts were auto-resolved (regenerated), False if
+        human resolution is needed.
+        """
+        if not paths:
+            return True  # No paths means unmergeable (no shared history), skip
+
+        # Patterns for files that should be regenerated rather than merged
+        generated_patterns = {
+            "scripts/ceiling_baseline.json",
+            "docs/MASTER.pdf",
+            "docs/c_*.pdf",
+        }
+
+        binary_extensions = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".ico"}
+
+        def is_generated(path: Path) -> bool:
+            path_str = str(path).replace("\\", "/")
+            # Check exact matches
+            if path_str in generated_patterns:
+                return True
+            # Check pattern matches (c_*.pdf)
+            if "docs/" in path_str and path_str.endswith(".pdf"):
+                return True
+            return False
+
+        def is_binary(path: Path) -> bool:
+            return path.suffix.lower() in binary_extensions
+
+        # Check if all conflicts are binary/generated
+        all_regenerable = all(is_generated(p) or is_binary(p) for p in paths)
+
+        if not all_regenerable:
+            return False  # Has human-editable files; need merge tool
+
+        # Regenerate all binary/generated files
+        for path in paths:
+            if is_generated(path):
+                self._regenerate_file(path, repo_path)
+            # For other binary files, just mark as resolved (user will regenerate)
+            # Add the file to mark conflict as resolved
+            self.git_runner._run("add", str(path), cwd=repo_path)
+
+        return True
+
+    def _regenerate_file(self, path: Path, repo_path: Path) -> None:
+        """Regenerate a known generated file.
+
+        Prints the regeneration command and executes it.
+        """
+        path_str = str(path).replace("\\", "/")
+
+        if path_str == "scripts/ceiling_baseline.json":
+            print(
+                f"Regenerating {path_str}...\n"
+                "  pixi run python scripts/check_module_ceilings.py --write-baseline"
+            )
+            self.git_runner._run(
+                "python",
+                "scripts/check_module_ceilings.py",
+                "--write-baseline",
+                cwd=repo_path,
+            )
+        elif path_str.endswith(".pdf") and "docs/" in path_str:
+            print(
+                f"Regenerating {path_str}...\n"
+                f"  cd {repo_path}/docs && latexmk -pdf {path.stem}.tex"
+            )
+            docs_path = repo_path / "docs"
+            self.git_runner._run(
+                "latexmk", "-pdf", f"{path.stem}.tex", cwd=docs_path
+            )
+
     def open_merge_tool(self, repo_id: str) -> str | None:
         """Open one repository's conflicts in a merge tool.
 
@@ -3815,8 +3944,17 @@ class ComplexGitSyncClient:
         configured = self.git_runner.configured_merge_tool(repo_path)
         if configured:
             return configured, None
-        if shutil.which("code") and os.environ.get("DISPLAY"):
-            return "vscode", "code --wait --merge $REMOTE $LOCAL $BASE $MERGED"
+        if shutil.which("code"):
+            # VS Code is available. Check if we can reach it:
+            # - $DISPLAY for X11 sessions
+            # - $WAYLAND_DISPLAY for Wayland sessions
+            # - $TERM_PROGRAM=="vscode" for integrated terminal or Remote-SSH/Tunnel
+            if (
+                os.environ.get("DISPLAY")
+                or os.environ.get("WAYLAND_DISPLAY")
+                or os.environ.get("TERM_PROGRAM") == "vscode"
+            ):
+                return "vscode", "code --wait --merge $REMOTE $LOCAL $BASE $MERGED"
         return None, None
 
     def refresh_private(self) -> tuple[tuple[str, str], ...]:

@@ -990,7 +990,7 @@ def merge_tree(
 
     if blocked:
         raise GitSyncError(
-            "merge refused; no repository was merged: " + "; ".join(blocked)
+            "merge refused; no repository was merged: " + "; ".join(blocked) + MERGE_RESOLVE_HINT
         )
     if on_source and not planned:
         raise GitSyncError(
@@ -1034,6 +1034,13 @@ class MergeIntoPlan:
 #: the rest do not. They are told apart because a fast-forward makes no
 #: commit and explains why a repository looks untouched afterwards.
 MERGE_INTO_ACTS = ("fast-forward", "merge")
+
+#: Hint shown when a merge is refused due to conflicts.
+MERGE_RESOLVE_HINT = (
+    " Run 'cgitsync merge --resolve <branch>' to merge one repository at a "
+    "time — it will stop at the first conflict and open a merge tool "
+    "automatically if one is configured."
+)
 
 
 def merge_into_status(
@@ -1158,7 +1165,7 @@ def merge_into_tree(
     if blocked:
         raise GitSyncError(
             "merge refused; nothing was checked out and nothing was merged: "
-            + "; ".join(blocked)
+            + "; ".join(blocked) + MERGE_RESOLVE_HINT
         )
 
     missing = [plan for plan in plans if plan.status == "no-target"]
@@ -1933,13 +1940,17 @@ def _collect_merge_diagnostics(
     merges: list[PreflightDiagnostic] = []
     for repo in iter_tree_leaf_first(tree, scope):
         if git_runner.has_unresolved_merge(repo.absolute_path):
-            merges.append(
-                PreflightDiagnostic(
-                    PreflightSeverity.BLOCKING_ERROR,
-                    repo.name,
-                    "repository has an unresolved merge in progress.",
+            # Merge is in progress. Check if there are still unmerged paths.
+            # If not, all conflicts have been resolved and staged, and the
+            # commit can go through to finish the merge.
+            if git_runner.has_unmerged_paths(repo.absolute_path):
+                merges.append(
+                    PreflightDiagnostic(
+                        PreflightSeverity.BLOCKING_ERROR,
+                        repo.name,
+                        "repository has an unresolved merge in progress.",
+                    )
                 )
-            )
     return merges
 
 

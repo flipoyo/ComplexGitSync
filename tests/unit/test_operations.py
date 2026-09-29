@@ -247,6 +247,7 @@ class _FakeGitRunnerForOperations:
         self._tracking_states: dict[Path, SyncState | None] = {}
         self._has_upstream: dict[Path, bool] = {}
         self._merge_in_progress: dict[Path, bool] = {}
+        self._unmerged_paths: dict[Path, bool] = {}
         self._unmergeable: dict[Path, set[str]] = {}
         self._conflicting_paths: dict[Path, list[Path]] = {}
         self.mergetool_opened: list[Path] = []
@@ -513,6 +514,9 @@ class _FakeGitRunnerForOperations:
     def has_unresolved_merge(self, repo_path: Path | str) -> bool:
         return self._merge_in_progress.get(Path(repo_path), False)
 
+    def has_unmerged_paths(self, repo_path: Path | str) -> bool:
+        return self._unmerged_paths.get(Path(repo_path), False)
+
     def branch_tracking_state(self, repo_path: Path | str) -> SyncState | None:
         return self._tracking_states.get(Path(repo_path), SyncState.ALIGNED)
 
@@ -541,6 +545,9 @@ class _FakeGitRunnerForOperations:
 
     def set_unresolved_merge(self, repo_path: Path | str, value: bool) -> None:
         self._merge_in_progress[Path(repo_path)] = value
+
+    def set_unmerged_paths(self, repo_path: Path | str, value: bool) -> None:
+        self._unmerged_paths[Path(repo_path)] = value
 
 
 # ---------------------------------------------------------------------------
@@ -1670,6 +1677,8 @@ def test_push_tree_preflight_fails_when_merge_is_unresolved(tmp_path):
     runner = _FakeGitRunnerForOperations()
     root_path = registry.get("root").absolute_path
     runner.set_unresolved_merge(root_path, True)
+    # Merge is in progress with unmerged paths (conflicts not yet resolved)
+    runner.set_unmerged_paths(root_path, True)
 
     with pytest.raises(GitSyncError, match="unresolved merge in progress"):
         push_tree(registry, runner)

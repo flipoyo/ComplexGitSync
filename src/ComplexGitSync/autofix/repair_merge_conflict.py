@@ -114,16 +114,19 @@ class MergeConflictRepair:
                 f"{repo.name}: merging {branch!r} still conflicts{where}. This needs a "
                 "person, not a repair — nothing here can guess which side of a "
                 "conflict is right.\n"
-                f"  cgitsync merge --resolve {branch}   # stops here with the conflict "
-                "in the worktree\n"
-                f"  cd {repo.absolute_path} && git mergetool   # or edit the markers by "
-                "hand if no tool is configured\n"
-                "  cgitsync add && cgitsync commit\n"
+                f"  1. Run: cgitsync merge --resolve {branch}\n"
+                "     This will stop at the conflict and open a merge tool automatically\n"
+                "     if one is configured or if VS Code is available.\n"
+                f"  2. If no merge tool opened, either:\n"
+                f"     - Manually edit the conflict markers in the files\n"
+                f"     - Or run: git mergetool (if a merge tool is configured)\n"
+                "  3. When done, commit the resolved merge:\n"
+                "     git commit\n"
                 # The refusal named every repository it blocked on, and this
                 # runs in a later invocation than the one that printed it —
                 # quoting it back is the only way the owner sees the whole
                 # list rather than the one repository this Situation carries.
-                f"the refused merge reported: {situation.source_error}"
+                f"The refused merge reported: {situation.source_error}"
             ),
         )
 

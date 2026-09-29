@@ -26,6 +26,7 @@ from ..memory.self_history import (
     ConformityCriterion,
     ConformityScore,
 )
+from ..operations import MERGE_RESOLVE_HINT
 from ..orchestre import ComplexGitSyncClient
 from ._shared import (
     _add_gitignore_sync_arguments,
@@ -405,6 +406,15 @@ def _register_merge(subparser: argparse.ArgumentParser) -> None:
             "Merge one repository at a time and stop at the first conflict, "
             "then open it in a merge tool. Gives up the guarantee that a "
             "conflict anywhere leaves the tree untouched."
+        ),
+    )
+    subparser.add_argument(
+        "--all-conflicts",
+        action="store_true",
+        help=(
+            "Used with --resolve: continue merging all repositories, resolving "
+            "each conflict in turn. Binary/generated files are regenerated automatically; "
+            "human-editable files open in a merge tool."
         ),
     )
     subparser.set_defaults(handler=_handle_merge)
@@ -1019,6 +1029,7 @@ def _handle_merge(args: argparse.Namespace) -> int:
             no_ff=args.no_ff,
             dry_run=args.dry_run,
             resolve=args.resolve,
+            all_conflicts=getattr(args, "all_conflicts", False),
         ),
     )
 
@@ -1960,6 +1971,7 @@ def _execute_merge(
     no_ff: bool = False,
     dry_run: bool = False,
     resolve: bool = False,
+    all_conflicts: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     scope = _resolve_write_scope(
@@ -2004,6 +2016,7 @@ def _execute_merge(
             all_writable=all_writable,
             ff_only=ff_only,
             no_ff=no_ff,
+            all_conflicts=all_conflicts,
         )
     merged = client.merge(
         project_branch,
@@ -2096,22 +2109,37 @@ def _execute_merge_resolve(
     all_writable: bool,
     ff_only: bool,
     no_ff: bool,
+    all_conflicts: bool = False,
 ) -> int:
     # The warning prints before the writes, not after: this is the one merge
     # mode that can leave the tree half-merged.
-    print(
-        "note: --resolve merges one repository at a time and stops at the "
-        "first conflict. Repositories merged before it stay merged, so the "
-        "tree can be left partly merged. Plain 'cgitsync merge' merges "
-        "nothing when any repository conflicts."
-    )
-    outcome = client.merge_resolve(
-        project_branch,
-        private=private,
-        all_writable=all_writable,
-        ff_only=ff_only,
-        no_ff=no_ff,
-    )
+    if all_conflicts:
+        print(
+            "note: --resolve --all-conflicts merges all repositories, resolving "
+            "each conflict in turn. Binary/generated files are regenerated automatically. "
+            "This may leave the tree partly merged."
+        )
+        outcome = client.merge_resolve_all(
+            project_branch,
+            private=private,
+            all_writable=all_writable,
+            ff_only=ff_only,
+            no_ff=no_ff,
+        )
+    else:
+        print(
+            "note: --resolve merges one repository at a time and stops at the "
+            "first conflict. Repositories merged before it stay merged, so the "
+            "tree can be left partly merged. Plain 'cgitsync merge' merges "
+            "nothing when any repository conflicts."
+        )
+        outcome = client.merge_resolve(
+            project_branch,
+            private=private,
+            all_writable=all_writable,
+            ff_only=ff_only,
+            no_ff=no_ff,
+        )
     for repo_name, source in outcome.merged:
         print(f"merged {repo_name} <- {source}")
 
@@ -2174,8 +2202,8 @@ def _print_merge_plan(
             listed = ", ".join(str(path) for path in paths) or "(no file named)"
             print(f"  {name}: {listed}")
         print(
-            "note: merge would refuse and merge nothing. Resolve these files, "
-            "or run 'cgitsync merge --resolve' to merge one repository at a time."
+            "note: merge would refuse and merge nothing. Resolve these files, or"
+            + MERGE_RESOLVE_HINT
         )
     elif plan and all(status != "merge" for _, _, status, _ in plan):
         print(

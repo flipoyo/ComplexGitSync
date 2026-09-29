@@ -646,6 +646,26 @@ class GitRunner:
             == 0
         )
 
+    def resolve_merge_ref(
+        self, repo_path: Path | str, ref_name: str, *, remote: str = "origin"
+    ) -> str:
+        """Resolve a merge ref to a name ``git merge`` can understand.
+
+        If *ref_name* is not a valid local branch but exists as a
+        remote-tracking ref (``refs/remotes/<remote>/<ref_name>``), return
+        the qualified ref ``<remote>/<ref_name>`` so that ``git merge-base``
+        and ``git merge`` can both resolve it. Otherwise return *ref_name*
+        unchanged.
+
+        Used by :meth:`can_merge_cleanly` and :meth:`merge` to handle branches
+        that exist only on the remote and have never been checked out locally.
+        """
+        if self.local_branch_exists(repo_path, ref_name):
+            return ref_name
+        if self.remote_tracking_branch_exists(repo_path, ref_name, remote=remote):
+            return f"{remote}/{ref_name}"
+        return ref_name
+
     def create_branch(
         self, repo_path: Path | str, branch: str, *, start_point: str | None = None
     ) -> None:
@@ -861,6 +881,7 @@ class GitRunner:
         ff_only: bool = False,
         no_ff: bool = False,
         message: str | None = None,
+        remote: str = "origin",
     ) -> None:
         """Merge *ref_name* into the current branch of *repo_path* (``git merge``).
 
@@ -875,6 +896,7 @@ class GitRunner:
         """
         if ff_only and no_ff:
             raise ValueError("merge: ff_only and no_ff are mutually exclusive")
+        resolved_ref = self.resolve_merge_ref(repo_path, ref_name, remote=remote)
         args = ["merge"]
         if ff_only:
             args.append("--ff-only")
@@ -882,11 +904,11 @@ class GitRunner:
             args.append("--no-ff")
         if message is not None:
             args.extend(["-m", message])
-        args.append(ref_name)
+        args.append(resolved_ref)
         self._run(*args, cwd=repo_path)
 
     def can_merge_cleanly(
-        self, repo_path: Path | str, ref_name: str, *, into: str | None = None
+        self, repo_path: Path | str, ref_name: str, *, into: str | None = None, remote: str = "origin"
     ) -> MergeCheckResult:
         """Whether merging *ref_name* would apply without a conflict.
 
@@ -923,9 +945,10 @@ class GitRunner:
         conflicts without naming a file, so the path list comes back empty.
         """
         head = into or self.current_branch(repo_path) or "HEAD"
+        resolved_ref = self.resolve_merge_ref(repo_path, ref_name, remote=remote)
 
         modern = self._query(
-            "merge-tree", "--write-tree", "--name-only", head, ref_name, cwd=repo_path
+            "merge-tree", "--write-tree", "--name-only", head, resolved_ref, cwd=repo_path
         )
         if modern.returncode == 0:
             return MergeCheckResult(is_clean=True, conflicting_paths=[])
@@ -936,11 +959,11 @@ class GitRunner:
         # Anything else from the modern form — a usage error on old Git
         # (exit 129 before 2.38, where --write-tree does not exist), a bad
         # ref — means fall through and ask the way old Git understands.
-        base = self._query("merge-base", head, ref_name, cwd=repo_path)
+        base = self._query("merge-base", head, resolved_ref, cwd=repo_path)
         if base.returncode != 0 or not base.stdout.strip():
             return MergeCheckResult(is_clean=False, conflicting_paths=[])
         legacy = self._query_bytes(
-            "merge-tree", base.stdout.strip(), head, ref_name, cwd=repo_path
+            "merge-tree", base.stdout.strip(), head, resolved_ref, cwd=repo_path
         )
         if legacy.returncode != 0:
             return MergeCheckResult(is_clean=False, conflicting_paths=[])
@@ -1288,6 +1311,19 @@ class GitRunner:
     def has_unresolved_merge(self, repo_path: Path | str) -> bool:
         """Return ``True`` when *repo_path* has an in-progress merge conflict."""
         return self._ref_query("rev-parse", "--verify", "--quiet", "MERGE_HEAD", cwd=repo_path)
+
+    def has_unmerged_paths(self, repo_path: Path | str) -> bool:
+        """Return ``True`` when *repo_path* has unmerged paths in the index.
+
+        Used to distinguish between "merge in progress with conflicts" (this
+        returns True) and "merge in progress but all conflicts resolved and
+        staged" (this returns False). The latter is safe to commit.
+        """
+        # git diff --name-only --diff-filter=U lists unmerged paths
+        result = self._query(
+            "diff", "--name-only", "--diff-filter=U", cwd=repo_path
+        )
+        return bool(result.stdout.strip())
 
     def branch_tracking_state(self, repo_path: Path | str) -> SyncState | None:
         """Return upstream tracking state for the current branch in *repo_path*."""

@@ -32,7 +32,7 @@
     },
     "autofix/repair_merge_conflict.py": {
       "internal_imports": 3,
-      "loc": 98,
+      "loc": 101,
       "public_symbols": 1
     },
     "cgs_format.py": {
@@ -66,8 +66,8 @@
       "public_symbols": 5
     },
     "cli/expert.py": {
-      "internal_imports": 30,
-      "loc": 2169,
+      "internal_imports": 31,
+      "loc": 2197,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
@@ -122,7 +122,7 @@
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 1116,
+      "loc": 1146,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -212,12 +212,12 @@
     },
     "operations.py": {
       "internal_imports": 23,
-      "loc": 1777,
-      "public_symbols": 30
+      "loc": 1783,
+      "public_symbols": 31
     },
     "orchestre.py": {
       "internal_imports": 157,
-      "loc": 5855,
+      "loc": 5958,
       "public_symbols": 10
     },
     "paths.py": {
