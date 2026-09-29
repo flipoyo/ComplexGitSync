@@ -1,5 +1,6 @@
 # ComplexGitSync v3.3.0
-__An alternative to git submodules for complex multi git-repo project management and synchronization__
+__A distributed git-native Operating Space_
+_More than an alternative to git submodules for complex multi git-repo project management and synchronization__
 
 *Created: 2026-05-12*
 
@@ -9,7 +10,7 @@ __An alternative to git submodules for complex multi git-repo project management
 ### 1.1 What is ComplexGitSync for?
 
 ComplexGitSync is a CLI (command-line tool) for synchronising a multi git-repository 
-workspace — in the form of a GitTree — from one local `.cgs`
+operating space — in the form of a GitTree — from one local `.cgs`
 specification (ASCII file) or one tracked `.gts` workspace snapshot (ASCII file describing the GitTree State). It is a Python package for which the API is exposed through the CLI only.
 
 The CLI is used to operate the same git command on all repos that compose the project. It is a robust and convenient alternative to git submodules, offering a straightforward development experience.
