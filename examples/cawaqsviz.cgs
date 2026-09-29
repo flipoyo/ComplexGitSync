@@ -10,11 +10,11 @@
 # left at its "auto" default, which resolves a repo with no .cgs to a
 # normal entry.
 
-project = { name = "CaWaQS-Viz", default_branch = "main" }
+project = { name = "CaWaQS-Viz", default_branch = "cgitsync" }
 
 repos = [
-    { repository = "gitlab:cawaqs/gviz/cawaqsviz", relative_path = ".", fallback_branch = "main" },
-    { repository = "github:flipoyo/HydrologicalTwinAlphaSeries", relative_path = "external/HydrologicalTwinAlphaSeries", fallback_branch = "main" },
-    { repository = "github:flipoyo/hydrological_twin", relative_path = "external/HydrologicalTwinAlphaSeries/docs/hydrological_twin", fallback_branch = "main" },
-    { repository = "github:flipoyo/user_guide_CaWaQS-Viz", relative_path = "docs/CWV_user_guide", fallback_branch = "main" },
+    { repository = "gitlab:cawaqs/gviz/cawaqsviz", relative_path = "." },
+    { repository = "github:flipoyo/HydrologicalTwinAlphaSeries", relative_path = "external/HydrologicalTwinAlphaSeries" },
+    { repository = "github:flipoyo/hydrological_twin", relative_path = "external/HydrologicalTwinAlphaSeries/docs/hydrological_twin" },
+    { repository = "github:flipoyo/user_guide_CaWaQS-Viz", relative_path = "docs/CWV_user_guide" },
 ]
