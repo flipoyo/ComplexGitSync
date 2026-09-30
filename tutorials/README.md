@@ -57,8 +57,8 @@ them in order — each one builds on the last:
    one, why branch moves skip it but commit and push do not, and the safe
    order for shipping a change — run against ComplexGitSync's own tree.
 5. **[05 — Your project's memory](05_memory.md)**
-   What `cgitsync` remembers about your tree, and the five commands — run
-   once per project — that turn that memory into a repository of its own, so
+   What `cgitsync` remembers about your tree, and `cgitsync memory setup` —
+   one command, run at any time — or the five it stands for, that turn that memory into a repository of its own, so
    it survives the disk it was made on and follows your project across
    branches and machines. Also: reading it without a hash (`memory
    explore`), and starting its history over on purpose without losing what

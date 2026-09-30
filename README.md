@@ -809,7 +809,7 @@ requirements so CI can enforce them.
 2. [02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md) — hand-author a `.cgs` for a real 19-repo project, then hand off to its existing `make` build.
 3. [03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md) — a real project with no `.cgs` of its own that still uses git submodules: one `init-from-submodules` command, what it runs underneath, and on to a pushed `READY` tree.
 4. [04_private_repos.md](tutorials/04_private_repos.md) — the repos that configure your project rather than being it: what `private = true` protects, when to add `writable = true`, and how their branches follow yours.
-5. [05_memory.md](tutorials/05_memory.md) — your project's memory: the five commands, run once per project, that turn what `cgitsync` remembers into a repository of its own, so it outlives the disk it was made on.
+5. [05_memory.md](tutorials/05_memory.md) — your project's memory: `cgitsync memory setup`, runnable at any time, or the five commands it stands for, that turn what `cgitsync` remembers into a repository of its own, so it outlives the disk it was made on.
 
 [docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference
 book: full command details, expert-mode primitives (`add`/`commit`/`push`/...),

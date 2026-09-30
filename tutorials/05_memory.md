@@ -12,12 +12,14 @@ came before.
 
 **Why it exists.** Every `cgitsync` command already writes a memory into
 `.cgitsync/`. It lives on one disk, and a disk is one hard drive away from
-gone. Turning it into a repository takes five commands that you run **once
-per project, ever**. They are the only five in this tool most people meet
-exactly once, which is why they get a tutorial of their own.
+gone. Turning it into a repository takes **one command, `cgitsync memory
+setup`, which you can run at any time** — or the five it stands for, one by
+one, **once per project, ever**. They are the commands in this tool most
+people meet exactly once, which is why they get a tutorial of their own.
 
 **What you will find.** What a memory is, and the two directories it
-actually lives in (§1), the five commands in order (§2), how a memory
+actually lives in (§1), `memory setup` and the five commands it stands for
+(§2), how a memory
 follows your branches (§3), the day-to-day commands including reading it
 without a hash (§4), starting a memory's history over on purpose (§5), what
 to do on a second machine (§6), and a summary (§7).
@@ -32,7 +34,7 @@ that, §4 is all you need — until the day you need §5.
 ```mermaid
 graph LR
     T4["04 — configuration repos"] --> T5["05 — your project's memory<br/>YOU ARE HERE"]
-    T5 --> ONCE["§2 — five commands<br/><i>once per project</i>"]
+    T5 --> ONCE["§2 — memory setup, or five commands<br/><i>once per project, any time</i>"]
     T5 --> DAILY["§4 — memory push, explore<br/><i>whenever you like</i>"]
     T5 --> REBOOT["§5 — memory reboot<br/><i>on purpose, rarely</i>"]
 
@@ -90,7 +92,8 @@ memory, the first command that records something asks you, in a terminal,
 for a provider, an owner and a name, then runs the three steps of §2 for you
 as one command, `cgitsync memory setup`. Answer no and it asks only once;
 from then on, and wherever it cannot ask, it warns that the work has no
-memory back-up. §2 is the same thing done step by step.
+memory back-up. You can run `cgitsync memory setup` yourself at any time
+(§2, *The short way*).
 
 **A memory is not a backup of your code.** It holds no source, no diffs and
 no files from your repositories — only what the tree *was* and what
@@ -125,12 +128,35 @@ halves deliberately, so it is worth knowing before you get there.
 > `memory adopt` never needs this: it mounts at `.cgitsync/.memory`
 > directly.
 
-## 2. The five commands, once per project
+## 2. Giving your memory a repository, once per project
 
-The example is ComplexGitSync's own tree. Substitute your own names and the
-sequence is identical.
+### The short way — one command, whenever you want
 
-### Step 1 — create the repository
+If your tree is a developer's (`cgitsync status` says `profile=dev`) and its
+`.cgs` declares no memory, this is the command, and you can run it at any
+time — right after installing, weeks later, or after saying no to the
+question `cgitsync` asked you:
+
+```bash
+pixi run cgitsync memory setup                      # asks provider, owner and name in a terminal
+pixi run cgitsync memory setup --provider github --owner you --name .memory
+```
+
+It does Steps 1 to 3 below in order: creates the repository with your
+provider's own tool (`gh`, `glab` or `tea`), adds its entry to your `.cgs`
+with your comments kept, and turns the memory already on this disk into
+that repository, keeping every record. It stops at the first step that
+fails and tells you which. Then run `memory push` (Step 4). `--cgs FILE`
+names the `.cgs` to edit when it is not the one your tree was built from.
+
+### The long way — the five commands, one by one
+
+The steps `memory setup` runs for you, plus the two that follow it. Use
+them when you want to see or change each step. The example is
+ComplexGitSync's own tree. Substitute your own names and the sequence is
+identical.
+
+#### Step 1 — create the repository
 
 One repository holds every project's memory, with one branch per project.
 So you create it once, ever, for all your projects:
@@ -156,7 +182,7 @@ and stops. If the repository is already there — because you created it by
 hand — it says `created=already-there` and carries on. Running it twice is
 safe.
 
-### Step 2 — tell your `.cgs` about it
+#### Step 2 — tell your `.cgs` about it
 
 ```bash
 pixi run cgitsync memory mount --cgs examples/complexgitsync4dev.cgs
@@ -179,7 +205,7 @@ own name. `nested_config = "disabled"` is the one field a memory adds: it
 is a leaf that holds its own `.cgs/` directory of exported specs (§5), and
 that must never be mistaken for a nested project to descend into.
 
-### Step 3 — make this memory *be* that repository
+#### Step 3 — make this memory *be* that repository
 
 Your `.cgitsync/` is not empty — it has been filling up since your first
 command. None of it may be lost, so you cannot clone over it:
@@ -211,7 +237,7 @@ itself, waiting for the next step to fold it in.
 > `init` made it. This is the one-time version of §5's `memory reboot`;
 > ordinary `memory adopt` — appending — stays the default.
 
-### Step 4 — push it
+#### Step 4 — push it
 
 ```bash
 pixi run cgitsync memory push
@@ -222,7 +248,7 @@ This is the command that performs the fold §1 described: everything
 committed, and is pushed. Your memory is now in two places. This is the
 point at which losing the disk stops mattering.
 
-### Step 5 — the branch your first merge will need
+#### Step 5 — the branch your first merge will need
 
 This step surprises people, so here is why it exists.
 
