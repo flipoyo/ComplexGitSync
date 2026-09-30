@@ -139,8 +139,9 @@ class MemoryStates:
         """Where a State of *state_hash* is written: ``state/<hash><suffix>``.
 
         The one place that composes a State's path. ``.gts`` is the State
-        itself; ``.cgs`` beside it is the spec it was built from, which is part
-        of what the State *was*.
+        itself, and the only thing written there: a State is the tree, not the
+        spec that built it. Older memories may still hold a ``.cgs`` beside a
+        State; nothing writes one, and nothing treats one as damage.
         """
         return self.cgitsync_dir / STATE_DIR_NAME / f"{state_hash}{suffix}"
 

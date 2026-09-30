@@ -294,6 +294,15 @@ before the project-named branch exists. `relative_path` says where —
 every entry above states its own, since none of them nests inside
 another (`AgentMountSplit`).
 
+**For a `private, writable` entry the branch is computed, not chosen.** It is
+your project's name on `main` and `<project>_<branch>` on any other branch,
+and it is worked out the same way at the first clone as at every later
+branch move. Writing `default_branch` there is optional; a value that is
+neither that name nor the project's own `default_branch` is refused as a
+near-certain copy-and-paste mistake. That branch is created by your first
+private commit, so a first `initialise` finds it missing and clones the
+entry's `fallback_branch`, then the shared repository's own active branch.
+
 **A repository nested inside another one's own nested `.cgs`** — none of
 these nine are, but the rule still matters if you ever declare one that
 is — inherits its parent's privacy with no entry of its own needed, and

@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from ..cgs_format import CgsDocument
-from ..errors import GitSyncError
+from ..errors import ConfigValidationError, GitSyncError, InstallFrontierError
 from ..git_repo import RepoScope
 from ..git_tree import ProjectTreeState, iter_tree_leaf_first, resolve_repo_for_path
 from ..orchestre import (
@@ -179,6 +179,19 @@ def _run_logs_dir(client: ComplexGitSyncClient, resolved_source: Path) -> Path |
     return None
 
 
+def _clean_init_may_help(exc: Exception) -> bool:
+    """Whether ``clean-init`` could plausibly fix what just failed ``initialise``.
+
+    ``clean-init`` purges generated state and runs ``initialise`` again. That
+    cannot cross the install frontier (the refusal names ``bootstrap``
+    instead), cannot fix a document the user must correct, and cannot create a
+    branch a remote does not have.
+    """
+    if isinstance(exc, (InstallFrontierError, ConfigValidationError)):
+        return False
+    return "No cloneable" not in str(exc)
+
+
 def _run_with_logging(
     *,
     command_name: str,
@@ -223,7 +236,7 @@ def _run_with_logging(
                 active_client.run_logger.ensure_log_file(logs_dir)
             if active_client.run_logger.log_path is not None:
                 print(f"log_file={active_client.run_logger.log_path}")
-        if command_name == "initialise":
+        if command_name == "initialise" and _clean_init_may_help(exc):
             print("Try clean-init method", file=sys.stderr, flush=True)
         if command_name == "pull":
             # `pull-force` is a hard reset to the remote's tip — safe for a

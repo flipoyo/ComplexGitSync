@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -257,6 +258,16 @@ class GitRunnerProtocol(Protocol):
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None: ...
 
     def remote_reachable(self, remote_url: str) -> bool: ...
+
+    def remote_head_branch(self, remote_url: str) -> str | None: ...
+
+    def remote_holds_commit(self, remote_url: str, sha: str) -> bool: ...
+
+    def is_repository_root(self, path: Path | str) -> bool: ...
+
+    def checkout_commit(
+        self, repo_path: Path | str, sha: str, *, branch: str | None = None
+    ) -> None: ...
 
     def init_repository(self, repo_path: Path | str, *, branch: str) -> None: ...
 
@@ -1045,6 +1056,76 @@ class GitRunner:
         answer ``False``: from here they are the same situation.
         """
         return self._query("ls-remote", remote_url).returncode == 0
+
+    def remote_head_branch(self, remote_url: str) -> str | None:
+        """The branch a remote's ``HEAD`` points at — its own active branch.
+
+        A question, never an error: ``None`` when the remote cannot be read,
+        is empty, or has a ``HEAD`` that names no branch. Asked with
+        ``ls-remote --symref``, so nothing is downloaded.
+        """
+        completed = self._query("ls-remote", "--symref", remote_url, "HEAD")
+        if completed.returncode != 0:
+            return None
+        for line in completed.stdout.splitlines():
+            match = re.match(r"^ref:\s+refs/heads/(?P<branch>\S+)\s+HEAD$", line)
+            if match:
+                return match.group("branch")
+        return None
+
+    def remote_holds_commit(self, remote_url: str, sha: str) -> bool:
+        """Whether the repository at *remote_url* can still hand out commit *sha*.
+
+        Two asks, cheapest first. ``ls-remote`` answers for a commit that is
+        the tip of some ref. Anything older needs the remote to be asked for
+        the object itself, which is done in a throwaway bare repository so
+        that no directory of the caller's is touched — the point of asking
+        *before* a clone is that a refusal leaves the disk as it was.
+        """
+        listed = self._query("ls-remote", remote_url)
+        if listed.returncode != 0:
+            return False
+        if any(line.split("\t", 1)[0] == sha for line in listed.stdout.splitlines()):
+            return True
+        with tempfile.TemporaryDirectory(prefix="cgitsync-probe-") as scratch:
+            if self._query("init", "--bare", "-q", scratch).returncode != 0:
+                return False
+            args: list[str] = []
+            if self._uses_file_transport(remote_url):
+                args.extend(["-c", "protocol.file.allow=always"])
+            args.extend(["fetch", "-q", "--depth=1", remote_url, sha])
+            return self._query(*args, cwd=scratch).returncode == 0
+
+    def is_repository_root(self, path: Path | str) -> bool:
+        """Whether *path* is itself the top level of a Git checkout.
+
+        A directory that merely sits inside some other repository is not one:
+        ``rev-parse --show-toplevel`` would answer with the outer path, which
+        is why the answer is compared instead of its exit code. A detached
+        ``HEAD`` and an unborn branch are both still a checkout.
+        """
+        target = Path(path)
+        if not target.is_dir():
+            return False
+        completed = self._query("rev-parse", "--show-toplevel", cwd=target)
+        if completed.returncode != 0:
+            return False
+        return Path(completed.stdout.strip()).resolve() == target.resolve()
+
+    def checkout_commit(
+        self, repo_path: Path | str, sha: str, *, branch: str | None = None
+    ) -> None:
+        """Put *repo_path* on commit *sha*.
+
+        With *branch*, that branch is (re)pointed at *sha* and checked out
+        (``git checkout -B``), so the repository is still on a branch — behind
+        its remote, which is a fact about the remote, not a detached state.
+        Without one, ``HEAD`` is detached at *sha*.
+        """
+        if branch:
+            self._run("checkout", "-B", branch, sha, cwd=repo_path)
+        else:
+            self._run("checkout", "--detach", sha, cwd=repo_path)
 
     def init_repository(self, repo_path: Path | str, *, branch: str) -> None:
         """Make *repo_path* a repository whose first branch is *branch*.

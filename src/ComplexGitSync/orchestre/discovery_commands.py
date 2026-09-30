@@ -2,7 +2,7 @@
 
 Ring: 3
 Contract: Find repositories and submodules and turn them into specs.
-Imports: cgs_format, client, discovery, errors, git_probes, git_tree, memory_facts, provider, reports
+Imports: cgs_format, client, discovery, errors, git_probes, git_tree, git_tree_branch, memory_facts, provider, reports
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from ..git_tree import (
     _update_gitignore_file,
     innermost_containing_path,
 )
+from ..git_tree_branch import GitTreeBranches
 from ..provider import (
     creation_plan,
     looks_like_already_exists,
@@ -800,7 +801,13 @@ class DiscoveryCommands:
         raise GitSyncError(f"{plan.command} failed: {run.message}")
 
     def discover_nested_configs(self) -> tuple[str, ...]:
-        return discover_nested_configs(self.client.get_dependency_registry())
+        registry = self.client.get_dependency_registry()
+        changes = discover_nested_configs(registry)
+        # A nested `.cgs` names a project of its own; what a private/local
+        # child targets is the *tree's* project's branch, which only a tree
+        # (not a single document) can say.
+        GitTreeBranches(registry).declare_targets()
+        return changes
 
 
 __all__ = ["DiscoveryCommands"]

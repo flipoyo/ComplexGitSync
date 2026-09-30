@@ -8,7 +8,7 @@ Contract: convert between absolute, machine-specific paths and the portable
     documents record instead of raw absolute paths; and resolve where
     CGSHOME/CGSPATH live for load/initialise/clone/bootstrap, from an
     explicit override, the environment, or the current working directory.
-Imports: cgs_format, errors, universal_clock
+Imports: cgs_format, errors, gts_document, universal_clock
 
 Extracted verbatim from ``orchestre/`` (Wave 2, P5-paths of
 ``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre/`` still
@@ -41,6 +41,7 @@ from pathlib import Path
 
 from .cgs_format import CgsDocument
 from .errors import ConfigValidationError, GitSyncError
+from .gts_document import GtsDocument
 from .universal_clock import ClockProtocol, SystemClock
 
 # ============================================================
@@ -200,14 +201,30 @@ class PathResolver:
         output_path: str | Path | None = None,
     ) -> Path:
         """Resolve CGSHOME from CGSPATH, the environment, or CWD."""
+        return PathResolver.resolve_named_cgshome(
+            document.project_name or source_path.stem, output_path=output_path
+        )
+
+    @staticmethod
+    def resolve_named_cgshome(
+        project_name: str,
+        *,
+        output_path: str | Path | None = None,
+    ) -> Path:
+        """Resolve CGSHOME for a project called *project_name*.
+
+        The one answer both a ``.cgs`` and a ``.gts`` source get: CGSPATH
+        (``output_path``) plus the project's name, else ``$CGSHOME``, else
+        two levels above the working directory.
+        """
         if output_path is not None:
             cgspath = Path(output_path).expanduser().resolve()
-            return (cgspath / (document.project_name or source_path.stem)).resolve()
+            return (cgspath / project_name).resolve()
         env_cgshome = os.environ.get("CGSHOME")
         if env_cgshome:
             return Path(env_cgshome).expanduser().resolve()
         cgspath = (Path.cwd() / "../..").resolve()
-        return (cgspath / (document.project_name or source_path.stem)).resolve()
+        return (cgspath / project_name).resolve()
 
     @staticmethod
     def resolve_initialise_cgshome(
@@ -215,8 +232,12 @@ class PathResolver:
         *,
         output_path: str | Path | None = None,
     ) -> Path:
-        """Read a .cgs file and resolve the CGSHOME initialise will use."""
+        """Read a ``.cgs`` or ``.gts`` file and resolve the CGSHOME initialise will use."""
         source_path = Path(config_path).resolve()
+        if source_path.suffix == ".gts":
+            snapshot = GtsDocument.from_toml(source_path)
+            name = str(snapshot.read("project.name") or source_path.stem)
+            return PathResolver.resolve_named_cgshome(name, output_path=output_path)
         document = CgsDocument.from_toml(source_path)
         return PathResolver.resolve_cgshome(document, source_path, output_path=output_path)
 

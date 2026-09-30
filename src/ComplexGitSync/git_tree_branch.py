@@ -46,8 +46,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .errors import GitSyncError
-from .git_branch import BranchResolution, resolve_propagated_ref
-from .git_repo import RefKind, RepoScope, WorkingRepo
+from .git_branch import DEFAULT_BRANCH, BranchResolution, resolve_propagated_ref
+from .git_repo import RefKind, RepoLifecycleState, RepoScope, WorkingRepo
 from .git_tree import (
     ROOT_REPO_ID,
     WorkingGitTree,
@@ -179,6 +179,38 @@ class GitTreeBranches:
         return resolve_propagated_ref(
             repo, ref_name, ref_kind=ref_kind, project_name=self._project_name
         )
+
+    def declare_targets(self) -> None:
+        """Give every private/local repository the branch it targets *now*.
+
+        Both ``target_ref_name`` and ``default_branch`` take it: for a
+        private/local repository they are one fact, computed from the tree,
+        and a nested ``.cgs``'s own default (its own project's) is not it.
+
+        A ``.cgs`` says which branch a repository is on; for a private/local
+        one that answer is a function of the tree (its project and the branch
+        the tree is on), not something the entry can know — least of all an
+        entry read from a nested ``.cgs`` that names a project of its own.
+        Run after privacy has propagated, so the rule is asked of the
+        *effective* flags, and with the root's declared branch, since nothing
+        is checked out yet at load time. Everything else is left exactly as
+        declared, and a tag is never rewritten.
+        """
+        root = self.root
+        if root is None or self._project_name is None:
+            return
+        tree_ref = _as_optional_str(root.target_ref_name) or DEFAULT_BRANCH
+        for repo in self._tree.values():
+            if (
+                repo is root
+                or repo.target_ref_kind is RefKind.TAG
+                or repo.repo_lifecycle_state is not RepoLifecycleState.DECLARED
+            ):
+                continue
+            if repo.effective_private and repo.effective_writable:
+                declared = self.target(repo, tree_ref).name
+                repo.target_ref_name = declared
+                repo.default_branch = declared
 
     def expected(self, repo: WorkingRepo) -> str | None:
         """The branch *repo* should be on right now, or ``None`` if unmeasurable.

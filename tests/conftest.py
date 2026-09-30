@@ -42,3 +42,24 @@ def _isolate_home(monkeypatch, tmp_path_factory):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv("CGSPATH", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _nested_use_case(request, monkeypatch):
+    """Run every install as the nested case, unless a test asks for the real answer.
+
+    ``initialise`` obeys ``settings.UseCase`` (``AdditionalSpecs.md``, *The
+    install frontier*): it refuses when the running ComplexGitSync is not
+    inside the workspace. The suite runs the installed package against
+    temporary directories, which is the standalone case by construction, so
+    without this every test of ``initialise`` would be refused before it began.
+    The answer is injected at the one place the installer asks for it — never
+    an escape flag on the command. A test of the frontier itself opts out with
+    ``@pytest.mark.real_use_case``.
+    """
+    if request.node.get_closest_marker("real_use_case"):
+        return
+    from ComplexGitSync.orchestre.installer import Installer
+    from ComplexGitSync.settings import UseCase
+
+    monkeypatch.setattr(Installer, "_use_case_of", lambda self, cgshome: UseCase.NESTED)

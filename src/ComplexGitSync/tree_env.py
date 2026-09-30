@@ -201,7 +201,11 @@ class TreeObserver:
         """Load the source declaration carried by a working tree, when available."""
         root = next((repo for repo in tree.values() if getattr(repo, "parent_id", None) is None), None)
         source = getattr(root, "source_cgs_path", None)
-        return CgsDocument.from_toml(source) if source is not None and source.is_file() else None
+        return (
+            CgsDocument.from_toml(source)
+            if source is not None and source.suffix == ".cgs" and source.is_file()
+            else None
+        )
 
     @staticmethod
     def attach_source_context(tree: WorkingGitTree) -> CgsDocument | None:

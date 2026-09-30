@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ComplexGitSync"
-version = "3.5.1"
+version = "3.6.0"
 description = "Synchronize nested Git repository trees from .cgs specs and .gts state snapshots."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,6 +29,9 @@ packages = ["src/ComplexGitSync"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "real_use_case: do not inject the nested use case; ask settings.resolve_use_case for real",
+]
 
 [tool.ruff]
 line-length = 100

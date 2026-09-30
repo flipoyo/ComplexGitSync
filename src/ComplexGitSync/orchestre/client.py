@@ -30,7 +30,7 @@ from ..errors import (
     ComplexGitSyncError,
     GitSyncError,
 )
-from ..git_branch import BranchResolution, resolve_entry_ref
+from ..git_branch import DEFAULT_BRANCH, BranchResolution, resolve_entry_ref
 
 if TYPE_CHECKING:
     from ..autofix import RepairOutcome
@@ -161,7 +161,7 @@ class ComplexGitSyncClient:
     #: after a migration — the two concepts collapse onto the same path
     #: only for a workspace that has not migrated yet).
     _OLD_MOUNT_RELATIVE_PATH = ".cgitsync"
-    _FOLD_SUBDIRS = ("lgr", "state", "logs", "env", ".cgs")
+    _FOLD_SUBDIRS = ("lgr", "state", "logs", "env")
 
 
     def __post_init__(self) -> None:
@@ -246,7 +246,7 @@ class ComplexGitSyncClient:
         *,
         output_path: str | Path | None = None,
     ) -> WorkingGitTree:
-        """Unified initialisation entry point (lifecycle step 1)."""
+        """The nested install (lifecycle step 1): a ``.cgs`` or a ``.gts``."""
         return self._installer.initialise(source, output_path=output_path)
 
     def initialise_cgs(
@@ -264,6 +264,21 @@ class ComplexGitSyncClient:
     ) -> WorkingGitTree:
         """Initialise a workspace using CGSPATH/CGSHOME semantics."""
         return self._installer.initialise_cgs(config_path, output_path=output_path, clean_before_clone=clean_before_clone, force_reclone=force_reclone, commit_gitignore=commit_gitignore, force_gitignore_sync=force_gitignore_sync, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
+
+    def initialise_gts(
+        self,
+        snapshot_path: str | Path,
+        *,
+        output_path: str | Path | None = None,
+        force_reclone: bool = False,
+        commit_gitignore: bool = False,
+        force_gitignore_sync: bool = False,
+        git_user_name: str | None = None,
+        git_user_email: str | None = None,
+        force_access_protocol: str | None = None,
+    ) -> WorkingGitTree:
+        """Initialise a workspace from a ``.gts`` snapshot, each repository at its recorded commit."""
+        return self._installer.initialise_gts(snapshot_path, output_path=output_path, force_reclone=force_reclone, commit_gitignore=commit_gitignore, force_gitignore_sync=force_gitignore_sync, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
 
     def initialise_cgs_document(
         self,
@@ -1386,6 +1401,9 @@ class ComplexGitSyncClient:
                 f"No cloneable tag found for {entry.name}: expected '{entry.target_ref_name}' on {remote_url}"
             )
 
+        if entry.effective_private and entry.effective_writable:
+            return self._select_private_local_ref(entry, remote_url)
+
         target_branch = entry.target_ref_name or entry.default_branch
         if target_branch and self.git_runner.remote_branch_exists(remote_url, target_branch):
             return (target_branch, RefKind.BRANCH)
@@ -1397,6 +1415,52 @@ class ComplexGitSyncClient:
         expected = [branch for branch in (target_branch, fallback_branch) if branch]
         raise GitSyncError(
             f"No cloneable branch found for {entry.name}: expected one of {expected} on {remote_url}"
+        )
+
+    def _select_private_local_ref(self, entry: WorkingRepo, remote_url: str) -> tuple[str, RefKind]:
+        """The branch to clone a private/local repository on, three rungs deep.
+
+        The first clone must decide what every later branch move already
+        decides — :class:`~ComplexGitSync.git_tree_branch.GitTreeBranches`, and
+        through it ``git_branch.resolve_propagated_ref`` — from the branch the
+        tree's root is on, so that both agree on the name however the ``.cgs``
+        was written. That name is created lazily by a private commit, so on a
+        first install it usually does not exist yet; the shared repository's own
+        branch is then the honest answer, not an error.
+
+        In order: the computed private/local branch, the entry's declared
+        ``fallback_branch``, the branch the remote's own ``HEAD`` points at.
+        """
+        computed = GitTreeBranches(self.get_dependency_registry()).target(
+            entry, self._tree_branch_for_clone()
+        ).name
+        entry.target_ref_name = computed
+        entry.target_ref_kind = RefKind.BRANCH
+        for branch in (computed, entry.fallback_branch):
+            if branch and self.git_runner.remote_branch_exists(remote_url, branch):
+                return (branch, RefKind.BRANCH)
+        active = self.git_runner.remote_head_branch(remote_url)
+        if active:
+            return (active, RefKind.BRANCH)
+        expected = [branch for branch in (computed, entry.fallback_branch) if branch]
+        raise GitSyncError(
+            f"No cloneable branch found for {entry.name}: expected one of {expected} on "
+            f"{remote_url}, and its remote names no active branch to fall back to."
+        )
+
+    def _tree_branch_for_clone(self) -> str:
+        """The branch the tree is on while it is still being cloned.
+
+        The root's, which a nested install has already attached from its own
+        checkout and a standalone install has just cloned (the root is always
+        the shallowest pending entry). Before either, the root's declared
+        target, then the ordinary default.
+        """
+        root = self.get_dependency_registry().repos.get(ROOT_REPO_ID)
+        if root is None:
+            return DEFAULT_BRANCH
+        return (
+            root.resolved_ref_name or root.current_ref_name or root.target_ref_name or DEFAULT_BRANCH
         )
 
     def _build_remote_url(self, entry: WorkingRepo) -> str:

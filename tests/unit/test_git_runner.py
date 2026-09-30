@@ -878,6 +878,18 @@ class _FakeGitRunner:
     def remote_branch_exists(self, remote_url: str, branch: str) -> bool:
         return False
 
+    def remote_head_branch(self, remote_url: str) -> str | None:
+        return None
+
+    def remote_holds_commit(self, remote_url: str, sha: str) -> bool:
+        return True
+
+    def is_repository_root(self, path) -> bool:
+        return True
+
+    def checkout_commit(self, repo_path, sha: str, *, branch=None) -> None:
+        return None
+
     def remote_tag_exists(self, remote_url: str, tag: str) -> bool:
         return False
 

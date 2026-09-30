@@ -10,7 +10,7 @@ Contract: given a parsed ``.cgs`` (``CgsDocument``) or ``.gts``
     env-marker path expansion inherited from the ``.gts``/``.cgs`` wire
     format itself (``$HOME``-style markers), which is why this module sits
     at Ring 2 rather than Ring 0/1.
-Imports: cgs_format, errors, git_branch, git_repo, git_tree, gts_document,
+Imports: cgs_format, errors, git_branch, git_repo, git_tree, git_tree_branch, gts_document,
     universal_clock
 
 Extracted from ``orchestre/`` (Wave 2, P5-registry of
@@ -77,6 +77,7 @@ from .git_tree import (
     propagate_privacy,
     register_relative_path,
 )
+from .git_tree_branch import GitTreeBranches
 from .gts_document import (
     _FREEZE_COMMAND_ORIGINS,
     GtsDocument,
@@ -259,6 +260,7 @@ class RegistryTranslator:
 
         normalize_node_types(registry)
         propagate_privacy(registry)
+        GitTreeBranches(registry).declare_targets()
         registry.recompute_tree_state()
         document.attach_serialization_context(registry)
         return registry

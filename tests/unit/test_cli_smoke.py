@@ -11,6 +11,7 @@ from ComplexGitSync import __version__
 from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.cli import main
 from ComplexGitSync.orchestre import DiscoveredRepo
+from ComplexGitSync.settings import UseCase
 
 
 def _is_state_file(path: Path) -> bool:
@@ -76,22 +77,40 @@ def test_gitignore_sync_flags_rejected_on_unrelated_command(capsys):
     assert "unrecognized arguments" in captured.err
 
 
-def test_initialise_command_restores_gts_snapshot(tmp_path, capsys):
+def test_initialise_command_builds_from_gts_snapshot(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def resolve_initialise_cgshome(self, source, *, output_path=None):
+            return tmp_path / "workspace" / "demo"
+
+        def initialise_gts(self, source, *, output_path=None, **kwargs):
+            captured_call["source"] = Path(source)
+            captured_call["output_path"] = output_path
+            captured_call["kwargs"] = kwargs
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "workspace" / "demo")
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+        def format_project_tree(self):
+            return "demo (project)"
+
+    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
     gts_path = _write_ready_gts(tmp_path)
 
-    exit_code = main(["initialise", str(gts_path)])
+    exit_code = main(["initialise", str(gts_path), "--output-path", str(tmp_path / "parent")])
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "log_file=" not in captured.out
-    assert "workflow=load->validate" in captured.out
+    assert captured_call["source"] == gts_path
+    assert captured_call["output_path"] == str(tmp_path / "parent")
+    assert "GT-CLONE" in captured.out
     assert "READY" in captured.out
-    assert "ready=true" in captured.out
-    assert "complete=true" in captured.out
-    assert "gittree_created=true" in captured.out
-    assert "gittree_active=true" in captured.out
-    assert "tree:" in captured.out
-    assert "demo (project)" in captured.out
 
 
 def test_load_command_is_not_registered(capsys):
@@ -1014,20 +1033,22 @@ def test_initialise_command_output_path_is_forwarded(monkeypatch, capsys, tmp_pa
     assert captured_call["output_path"] == output_path
 
 
-def test_initialise_command_gts_does_not_write_external_log_file(monkeypatch, tmp_path, capsys):
+def test_initialise_command_gts_refusal_names_bootstrap_and_hints_nothing_about_clean_init(
+    monkeypatch, tmp_path, capsys
+):
+    """The nested install refuses a workspace that is not a checkout, by name."""
     gts_path = _write_ready_gts(tmp_path)
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    monkeypatch.setattr(
+        "ComplexGitSync.orchestre.installer.Installer._use_case_of",
+        lambda self, cgshome: UseCase.STANDALONE,
+    )
 
-    exit_code = main(["initialise", str(gts_path)])
+    exit_code = main(["initialise", str(gts_path), "--output-path", str(tmp_path / "parent")])
     captured = capsys.readouterr()
 
-    log_dir = tmp_path / "state-home" / "ComplexGitSync" / "logs"
-
-    assert exit_code == 0
-    assert "READY" in captured.out
-    assert "operation_sequence=GT-LOAD->GT-VALIDATE" in captured.out
-    assert "log_file=" not in captured.out
-    assert not log_dir.exists()
+    assert exit_code != 0
+    assert "bootstrap" in captured.err
+    assert "clean-init" not in captured.err
 
 
 def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):

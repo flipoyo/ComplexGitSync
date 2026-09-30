@@ -35,7 +35,7 @@ problem this module solves.
 The public surface
 ------------------
     CGS_ROOT_ENV        The variable that overrides the default root
-    UseCase             STANDALONE / NESTED — observed, never obeyed
+    UseCase             STANDALONE / NESTED — decides which install command may run
     cgs_root            Where workspaces live: $CGSPATH, else $HOME/.cgs
     default_workspace   The fallback workspace, created once and reused
     other_workspaces    Every other workspace under the root — a hint only
@@ -70,11 +70,14 @@ _STATE_DIR_NAME = ".cgitsync"
 class UseCase(StrEnum):
     """Which of README §2's two ways of running is in force.
 
-    **Observed, never obeyed.** It is printed so that a user who believes
-    they are in one case and is in the other has something to correct them.
-    Nothing branches on it: a flag that changes behaviour needs its own
-    ticket and its own tests, and this one is worth having now precisely
-    because getting it wrong costs nothing.
+    **Obeyed by the two install commands, observed everywhere else.**
+    ``initialise`` is the *nested* install and ``bootstrap`` the
+    *standalone* one, and which applies is this fact — where the running
+    ComplexGitSync sits relative to the workspace — not a choice between two
+    ways of doing the same thing (``AdditionalSpecs.md``, *The install
+    frontier*). ``initialise`` therefore refuses a standalone use case and
+    names ``bootstrap``. Every other command still only prints it: a flag that
+    changes behaviour needs its own ticket and its own tests.
     """
 
     STANDALONE = "standalone"
@@ -169,8 +172,13 @@ class Settings:
         return found
 
     @staticmethod
-    def resolve_use_case(cgshome: Path) -> UseCase:
+    def resolve_use_case(cgshome: Path, *, installation: Path | None = None) -> UseCase:
         """Whether the running installation lives inside *cgshome*.
+
+        *installation* is where the running ComplexGitSync is; ``None`` (every
+        real caller) reads it from this module's own location. A test that
+        needs to stand a ComplexGitSync inside a workspace injects it here —
+        there is deliberately no flag a user can pass to override the answer.
 
         **Nested** is the case where the ComplexGitSync being executed sits
         inside the workspace it is managing — the developer tree, where the tool
@@ -181,7 +189,9 @@ class Settings:
         the answer cannot go stale when a later command resolves a different
         workspace.
         """
-        installation = Path(__file__).resolve().parent
+        installation = (installation or Path(__file__)).resolve()
+        if installation.is_file():
+            installation = installation.parent
         workspace = Path(cgshome).expanduser().resolve()
         if workspace == installation or workspace in installation.parents:
             return UseCase.NESTED

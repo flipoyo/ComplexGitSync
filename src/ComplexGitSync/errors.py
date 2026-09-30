@@ -33,6 +33,18 @@ class GitSyncError(ComplexGitSyncError):
     """Raised for irrecoverable Git synchronization failures."""
 
 
+class InstallFrontierError(GitSyncError):
+    """An install command was asked to do the other install command's job.
+
+    ``initialise`` is the nested install and ``bootstrap`` the standalone one
+    (``AdditionalSpecs.md``, *The install frontier*); each refuses, before it
+    touches the disk, what belongs to the other and names it. A subclass of
+    :class:`GitSyncError` so every existing catch still sweeps it up; the CLI
+    tells it apart only to stop suggesting ``clean-init``, which cannot cross
+    that line.
+    """
+
+
 class NestedConfigDiscoveryError(ComplexGitSyncError):
     """Raised when nested .cgs discovery fails or is ambiguous."""
 
@@ -45,6 +57,7 @@ __all__ = [
     "ComplexGitSyncError",
     "ConfigValidationError",
     "GitSyncError",
+    "InstallFrontierError",
     "NestedConfigDiscoveryError",
     "TreeNotReadyError",
     "UnsupportedSnapshotFormatError",

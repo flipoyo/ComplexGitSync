@@ -33,6 +33,8 @@ from types import SimpleNamespace
 import pytest
 
 from ComplexGitSync.cgs_format import CgsDocument
+from ComplexGitSync.errors import InstallFrontierError
+from ComplexGitSync.settings import UseCase
 
 
 def _load_module(name: str, relative_parts: tuple[str, ...]):
@@ -92,7 +94,8 @@ def test_commands_dict_has_exactly_the_eight_minimalist_commands():
 
 def test_commands_help_text_matches_readme_command_table():
     assert minimalist.COMMANDS["initialise"] == (
-        "Initialise a project tree: clone(.cgs) or restore state(.gts)."
+        "Nested install: build the dependencies of a project whose root is already "
+        "checked out here, from a .cgs (branch tips) or a .gts (recorded commits)."
     )
     assert minimalist.COMMANDS["clean-init"] == (
         "Purge generated clone state, then initialise from a .cgs spec."
@@ -158,22 +161,40 @@ def test_initialise_help_documents_repeatable_repos(capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_initialise_command_restores_gts_snapshot(tmp_path, capsys):
+def test_initialise_command_builds_from_gts_snapshot(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def resolve_initialise_cgshome(self, source, *, output_path=None):
+            return tmp_path / "workspace" / "demo"
+
+        def initialise_gts(self, source, *, output_path=None, **kwargs):
+            captured_call["source"] = Path(source)
+            captured_call["output_path"] = output_path
+            captured_call["kwargs"] = kwargs
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "workspace" / "demo")
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+        def format_project_tree(self):
+            return "demo (project)"
+
+    monkeypatch.setattr(minimalist, "ComplexGitSyncClient", StubClient)
     gts_path = _write_ready_gts(tmp_path)
 
-    exit_code = _dispatch(["initialise", str(gts_path)])
+    exit_code = _dispatch(["initialise", str(gts_path), "--output-path", str(tmp_path / "parent")])
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "log_file=" not in captured.out
-    assert "workflow=load->validate" in captured.out
+    assert captured_call["source"] == gts_path
+    assert captured_call["output_path"] == str(tmp_path / "parent")
+    assert "GT-CLONE" in captured.out
     assert "READY" in captured.out
-    assert "ready=true" in captured.out
-    assert "complete=true" in captured.out
-    assert "gittree_created=true" in captured.out
-    assert "gittree_active=true" in captured.out
-    assert "tree:" in captured.out
-    assert "demo (project)" in captured.out
 
 
 def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):
@@ -349,20 +370,20 @@ def test_initialise_command_output_path_is_forwarded(monkeypatch, capsys, tmp_pa
     assert captured_call["output_path"] == output_path
 
 
-def test_initialise_command_gts_does_not_write_external_log_file(monkeypatch, tmp_path, capsys):
+def test_initialise_command_gts_refusal_names_bootstrap_and_hints_nothing_about_clean_init(
+    monkeypatch, tmp_path, capsys
+):
+    """The nested install refuses a workspace that is not a checkout, by name."""
     gts_path = _write_ready_gts(tmp_path)
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    monkeypatch.setattr(
+        "ComplexGitSync.orchestre.installer.Installer._use_case_of",
+        lambda self, cgshome: UseCase.STANDALONE,
+    )
 
-    exit_code = _dispatch(["initialise", str(gts_path)])
-    captured = capsys.readouterr()
+    with pytest.raises(InstallFrontierError, match="bootstrap"):
+        _dispatch(["initialise", str(gts_path), "--output-path", str(tmp_path / "parent")])
 
-    log_dir = tmp_path / "state-home" / "ComplexGitSync" / "logs"
-
-    assert exit_code == 0
-    assert "READY" in captured.out
-    assert "operation_sequence=GT-LOAD->GT-VALIDATE" in captured.out
-    assert "log_file=" not in captured.out
-    assert not log_dir.exists()
+    assert "clean-init" not in capsys.readouterr().err
 
 
 def test_initialise_command_requires_source_or_project(capsys):

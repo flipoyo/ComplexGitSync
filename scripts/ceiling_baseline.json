@@ -37,7 +37,7 @@
     },
     "cgs_format.py": {
       "internal_imports": 12,
-      "loc": 670,
+      "loc": 682,
       "public_symbols": 9
     },
     "cli/__init__.py": {
@@ -46,8 +46,8 @@
       "public_symbols": 2
     },
     "cli/_shared.py": {
-      "internal_imports": 20,
-      "loc": 613,
+      "internal_imports": 22,
+      "loc": 623,
       "public_symbols": 0
     },
     "cli/configuration.py": {
@@ -72,7 +72,7 @@
     },
     "cli/minimalist.py": {
       "internal_imports": 15,
-      "loc": 744,
+      "loc": 780,
       "public_symbols": 1
     },
     "cli/suggest.py": {
@@ -112,13 +112,13 @@
     },
     "errors.py": {
       "internal_imports": 0,
-      "loc": 35,
-      "public_symbols": 6
+      "loc": 45,
+      "public_symbols": 7
     },
     "git_branch.py": {
       "internal_imports": 2,
-      "loc": 347,
-      "public_symbols": 12
+      "loc": 377,
+      "public_symbols": 13
     },
     "git_repo.py": {
       "internal_imports": 0,
@@ -127,7 +127,7 @@
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 1152,
+      "loc": 1221,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -136,8 +136,8 @@
       "public_symbols": 26
     },
     "git_tree_branch.py": {
-      "internal_imports": 11,
-      "loc": 220,
+      "internal_imports": 13,
+      "loc": 249,
       "public_symbols": 3
     },
     "gts_document.py": {
@@ -212,7 +212,7 @@
     },
     "memory/states.py": {
       "internal_imports": 0,
-      "loc": 177,
+      "loc": 178,
       "public_symbols": 3
     },
     "memory/store.py": {
@@ -276,8 +276,8 @@
       "public_symbols": 1
     },
     "orchestre/client.py": {
-      "internal_imports": 55,
-      "loc": 1315,
+      "internal_imports": 56,
+      "loc": 1372,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -286,13 +286,13 @@
       "public_symbols": 1
     },
     "orchestre/discovery_commands.py": {
-      "internal_imports": 18,
-      "loc": 664,
+      "internal_imports": 19,
+      "loc": 668,
       "public_symbols": 1
     },
     "orchestre/document_loader.py": {
       "internal_imports": 16,
-      "loc": 345,
+      "loc": 340,
       "public_symbols": 1
     },
     "orchestre/environment_commands.py": {
@@ -311,8 +311,8 @@
       "public_symbols": 1
     },
     "orchestre/installer.py": {
-      "internal_imports": 12,
-      "loc": 538,
+      "internal_imports": 20,
+      "loc": 829,
       "public_symbols": 1
     },
     "orchestre/memory_commands.py": {
@@ -351,8 +351,8 @@
       "public_symbols": 1
     },
     "paths.py": {
-      "internal_imports": 5,
-      "loc": 233,
+      "internal_imports": 6,
+      "loc": 252,
       "public_symbols": 2
     },
     "provider.py": {
@@ -361,13 +361,13 @@
       "public_symbols": 4
     },
     "registry.py": {
-      "internal_imports": 40,
-      "loc": 457,
+      "internal_imports": 41,
+      "loc": 459,
       "public_symbols": 1
     },
     "settings.py": {
       "internal_imports": 3,
-      "loc": 203,
+      "loc": 212,
       "public_symbols": 5
     },
     "snapshot_resolver.py": {
@@ -387,7 +387,7 @@
     },
     "tree_env.py": {
       "internal_imports": 15,
-      "loc": 325,
+      "loc": 329,
       "public_symbols": 2
     },
     "universal_clock.py": {

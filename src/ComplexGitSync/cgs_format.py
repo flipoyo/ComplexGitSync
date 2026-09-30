@@ -666,6 +666,18 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                         f"repository: a non-private repository is this project's own and is "
                         f"always writable. Add private = true, or drop writable."
                     )
+                expected_branch = git_branch.declared_private_local_mismatch(
+                    repo,
+                    project_name=self.project_name,
+                    project_default=self.default_branch,
+                )
+                if expected_branch is not None:
+                    errors.append(
+                        f"repos[{idx}].default_branch = {repo.get('default_branch')!r} disagrees with "
+                        f"the branch a private, writable repository takes from this project: "
+                        f"{expected_branch!r}. That name is computed from the project's name and "
+                        f"branch, so drop default_branch (or write {expected_branch!r})."
+                    )
         errors.extend(environment_spec.validate_environment_declaration(self._data, repos))
         if errors:
             raise ConfigValidationError(

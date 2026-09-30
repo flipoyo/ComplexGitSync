@@ -2,40 +2,70 @@
 
 Ring: 3
 Contract: Install, initialise, clone and bootstrap a tree, and work out where it lives.
-Imports: auth_hints, cgs_format, client, errors, git_repo, git_tree, master, paths, registry, snapshot_resolver
+Imports: auth_hints, cgs_format, client, errors, git_repo, git_tree, gts_document, master, paths, registry, settings, snapshot_resolver
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..cgs_format import CgsDocument
 from ..errors import (
     GitSyncError,
+    InstallFrontierError,
 )
 
 if TYPE_CHECKING:
     pass
 from ..git_repo import (
     AccessProtocol,
+    RefKind,
+    RepoLifecycleState,
+    SyncState,
+    WorkingRepo,
 )
 from ..git_tree import (
     ROOT_REPO_ID,
     TreeLifecycleState,
     WorkingGitTree,
 )
+from ..gts_document import GtsDocument
 from ..master import MasterConfig
 from ..paths import PathResolver
 from ..registry import (
     RegistryTranslator,
 )
+from ..settings import Settings, UseCase
 from ..snapshot_resolver import discover_cgshome
 from .auth_hints import AuthFailureHints
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .client import ComplexGitSyncClient
+
+
+@dataclass(frozen=True, slots=True)
+class _Pin:
+    """What a ``.gts`` recorded about one repository, kept while it is cloned.
+
+    A snapshot describes a tree *as it was*: the commit each repository sat
+    on, and the branch it sat on it under. Cloning has to reproduce that, so
+    the clone is aimed at the recorded branch and the entry is put back to
+    what the snapshot said once the clone is done — the State name is
+    computed from those fields, and a rebuilt tree must carry the same one.
+    """
+
+    commit: str
+    current_kind: RefKind | None
+    current_name: str | None
+    resolved_kind: RefKind | None
+    resolved_name: str | None
+    target_kind: RefKind | None
+    target_name: str | None
+    fallback_applied: bool
+    fallback_reason: str | None
 
 
 class Installer:
@@ -49,6 +79,14 @@ class Installer:
 
     def __init__(self, client: ComplexGitSyncClient) -> None:
         self.client = client
+        #: Where the running ComplexGitSync sits; ``None`` reads it from the
+        #: package's own location. Injected by a test that has to stand an
+        #: installation inside a workspace — never a flag a user can pass.
+        self.installation: Path | None = None
+
+    def _use_case_of(self, cgshome: Path) -> UseCase:
+        """Whether the running installation is nested in *cgshome* or standalone to it."""
+        return Settings.resolve_use_case(cgshome, installation=self.installation)
 
     def configure(
         self,
@@ -95,32 +133,39 @@ class Installer:
         *,
         output_path: str | Path | None = None,
     ) -> WorkingGitTree:
-        """Unified initialisation entry point (lifecycle step 1).
+        """The nested install (lifecycle step 1): build a workspace around a checked-out root.
 
-        Dispatches based on source file extension:
+        ``initialise`` is the nested install and nothing else — ``bootstrap``
+        is the standalone one (``AdditionalSpecs.md``, *The install
+        frontier*). It builds a workspace whose root repository is already
+        checked out at CGSHOME, with the running ComplexGitSync inside it, and
+        it refuses — before touching the disk, naming ``bootstrap`` — when
+        CGSHOME is not a Git checkout or the running installation is not inside
+        it.
 
-        - ``.cgs`` source: initialises the workspace using CGSPATH/CGSHOME
-          semantics (calls :meth:`initialise_cgs`).  The output path is
-          CGSPATH, and CGSHOME is derived as ``CGSPATH/<project_name>`` after
-          reading the ``.cgs``.  The root repository at CGSHOME is treated as
-          already existing and is never recloned; **every dependency below it
+        Dispatches on the source's extension:
+
+        - ``.cgs`` source: clones the workspace's dependencies at the branch
+          the ``.cgs``'s fallback chain names (calls :meth:`initialise_cgs`).
+          The output path is CGSPATH, and CGSHOME is derived as
+          ``CGSPATH/<project_name>`` after reading the ``.cgs``.  The root
+          repository at CGSHOME is never recloned; **every dependency below it
           is deleted and cloned again**, which is not the same promise. See
           :meth:`initialise_cgs`.  All ComplexGitSync state is
           written under ``CGSHOME/.cgitsync/state(<hash>)_n/``.
-        - ``.gts`` source: restores from a saved snapshot (calls
-          :meth:`load_gts`).  Use this for existing projects that already have
-          a ``.gts`` state file.
+        - ``.gts`` source: clones the same dependencies and checks each out at
+          the commit the snapshot recorded — the tree as it was, not as a
+          ``.cgs`` would rebuild it today (calls :meth:`initialise_gts`).
 
         Both paths end in a ``READY`` tree or raise explicitly.
 
         Parameters
         ----------
         source:
-            Path to a ``.cgs`` authoring spec (clone mode) or a ``.gts``
-            snapshot (restore mode).
+            Path to a ``.cgs`` authoring spec or a ``.gts`` snapshot.
         output_path:
             CGSPATH — parent directory used to derive CGSHOME as
-            ``CGSPATH/<project_name>`` after the ``.cgs`` is read.  Defaults to
+            ``CGSPATH/<project_name>`` after the source is read.  Defaults to
             ``../..`` relative to the current working directory
             (``CWD=$CGSHOME/ComplexGitSync``).
         """
@@ -128,7 +173,7 @@ class Installer:
         if resolved.suffix == ".cgs":
             return self.client.initialise_cgs(resolved, output_path=output_path)
         if resolved.suffix == ".gts":
-            return self.client.load_gts(resolved)
+            return self.client.initialise_gts(resolved, output_path=output_path)
         raise ValueError(
             f"Unsupported source format '{resolved.suffix}' for {resolved!s}; expected .cgs or .gts."
         )
@@ -249,6 +294,7 @@ class Installer:
         )
         source_path = Path(source_path).resolve()
         cgshome = self.client.resolve_cgshome(document, source_path, output_path=output_path)
+        self._require_nested_install(cgshome)
         MasterConfig.load(cgshome)
         if git_user_name is not None or git_user_email is not None:
             MasterConfig.persist(cgshome, user_name=git_user_name, user_email=git_user_email)
@@ -273,21 +319,7 @@ class Installer:
 
         # Root is already checked out at CGSHOME; initialise clones only the
         # dependencies declared by the .cgs.
-        sync_stack: set[Path] = {project_root}
-
-        while True:
-            cloned_any = False
-            pending = self.client._pending_clone_entries(sync_stack)
-            self.client._guard_clone_destinations(pending)
-            for entry in pending:
-                sync_stack.add(entry.absolute_path)
-                self.client._clone_registry_entry(entry)
-                cloned_any = True
-
-            discovered = self.client.discover_nested_configs()
-            self.client._log_nested_discovery(discovered)
-            if not cloned_any and not discovered:
-                break
+        self._clone_pending(sync_stack={project_root})
 
         fixed = self.client.fix_circularities()
         if fixed:
@@ -442,21 +474,7 @@ class Installer:
         # This provides defence-in-depth against infinite-recursion edge cases
         # that may arise before fix_circularities() has had a chance to clean up
         # the registry.
-        sync_stack: set[Path] = set()
-
-        while True:
-            cloned_any = False
-            pending = self.client._pending_clone_entries(sync_stack)
-            self.client._guard_clone_destinations(pending)
-            for entry in pending:
-                sync_stack.add(entry.absolute_path)
-                self.client._clone_registry_entry(entry)
-                cloned_any = True
-
-            discovered = self.client.discover_nested_configs()
-            self.client._log_nested_discovery(discovered)
-            if not cloned_any and not discovered:
-                break
+        self._clone_pending(sync_stack=set())
 
         fixed = self.client.fix_circularities()
         if fixed:
@@ -542,13 +560,318 @@ class Installer:
             ``initialise``) also clones from scratch.
         """
         source_path = Path(config_path).resolve()
-        if source_path.suffix != ".cgs":
+        if source_path.suffix not in {".cgs", ".gts"}:
             raise ValueError(
-                f"bootstrap requires a .cgs source, got '{source_path.suffix}' for {source_path!s}."
+                f"bootstrap requires a .cgs or .gts source, got '{source_path.suffix}' for {source_path!s}."
             )
         target_dir = self.client.resolve_bootstrap_root(project_name, cgs_path=cgs_path)
+        self._require_fresh_target(target_dir)
+        if source_path.suffix == ".gts":
+            return self._clone_gts(
+                source_path, target_dir=target_dir, force_access_protocol=force_access_protocol
+            )
         return self.client.clone_cgs(
             source_path, target_dir=target_dir, force_access_protocol=force_access_protocol
+        )
+
+    def initialise_gts(
+        self,
+        snapshot_path: str | Path,
+        *,
+        output_path: str | Path | None = None,
+        force_reclone: bool = False,
+        commit_gitignore: bool = False,
+        force_gitignore_sync: bool = False,
+        git_user_name: str | None = None,
+        git_user_email: str | None = None,
+        force_access_protocol: str | None = None,
+    ) -> WorkingGitTree:
+        """The nested install, from a ``.gts`` snapshot: the tree as it was.
+
+        Same frontier as :meth:`initialise_cgs` — CGSHOME must already be a
+        checkout with the running installation inside it, and the root is
+        never cloned or moved — but each dependency is checked out at the
+        commit the snapshot recorded, not at the tip of the branch a ``.cgs``
+        would name today. The snapshot is read with the hash algorithm it
+        declares; one newer than this build knows is refused by name before
+        anything is computed, and a commit no remote holds any more is
+        refused by name, listing every repository, before anything is cloned.
+
+        A dependency is deleted and cloned again exactly as
+        :meth:`initialise_cgs` does, under the same unpushed-work guard
+        (*force_reclone* skips it). The root stays where it is: if it is on a
+        different commit than the snapshot recorded, that is logged, not
+        changed — it is the user's checkout.
+
+        *commit_gitignore* and *force_gitignore_sync* are accepted so the two
+        sources take one set of options; a pinned repository is never pulled,
+        so neither has a pull to force, and ``.gitignore`` files are written
+        but not committed.
+        """
+        resolved = Path(snapshot_path).resolve()
+        document = GtsDocument.from_toml(resolved)
+        cgshome = PathResolver.resolve_initialise_cgshome(resolved, output_path=output_path)
+        self._require_nested_install(cgshome)
+        MasterConfig.load(cgshome)
+        if git_user_name is not None or git_user_email is not None:
+            MasterConfig.persist(cgshome, user_name=git_user_name, user_email=git_user_email)
+        return self._install_from_snapshot(
+            document,
+            resolved,
+            cgshome,
+            root_is_checkout=True,
+            force_reclone=force_reclone,
+            force_access_protocol=force_access_protocol,
+            reason="initialise_gts",
+        )
+
+    def _clone_gts(
+        self,
+        snapshot_path: Path,
+        *,
+        target_dir: Path,
+        force_access_protocol: str | None,
+    ) -> WorkingGitTree:
+        """The standalone install, from a ``.gts`` snapshot: root cloned too."""
+        document = GtsDocument.from_toml(snapshot_path)
+        return self._install_from_snapshot(
+            document,
+            snapshot_path,
+            target_dir,
+            root_is_checkout=False,
+            force_reclone=False,
+            force_access_protocol=force_access_protocol,
+            reason="clone_gts",
+        )
+
+    def _install_from_snapshot(
+        self,
+        document: GtsDocument,
+        snapshot_path: Path,
+        cgshome: Path,
+        *,
+        root_is_checkout: bool,
+        force_reclone: bool,
+        force_access_protocol: str | None,
+        reason: str,
+    ) -> WorkingGitTree:
+        """Clone every repository a snapshot records, each at its recorded commit.
+
+        The one ``.gts`` path both install commands share; they differ only in
+        *root_is_checkout* — whether the root is already there and left alone
+        (nested), or is one more repository to clone (standalone).
+        """
+        client = self.client
+        previous_tree_state = (
+            client.registry.lifecycle_state if client.registry else TreeLifecycleState.UNLOADED
+        )
+        client._forced_access_protocol = (
+            AccessProtocol(force_access_protocol) if force_access_protocol else None
+        )
+        client._force_reclone = force_reclone
+        registry = RegistryTranslator.from_gts_document(document, tree_root=cgshome)
+        client.registry = registry
+        client.orchestre.git_tree.git.bind_tree(registry)
+        client.source_path = snapshot_path
+        root_entry = registry.get(ROOT_REPO_ID)
+
+        pins = self._pins_for(registry, skip_root=root_is_checkout)
+        self._require_commits_held(registry, pins)
+        if root_is_checkout:
+            recorded_root = root_entry.commit_sha
+            client._attach_existing_root(root_entry, cgshome)
+            if recorded_root and root_entry.commit_sha != recorded_root:
+                client._log_event(
+                    "root_commit_differs",
+                    recorded=recorded_root,
+                    actual=root_entry.commit_sha,
+                )
+        self._clone_pending(
+            sync_stack={cgshome} if root_is_checkout else set(), pins=pins, discover=False
+        )
+
+        client._assert_nested_discovery_complete()
+        # Never pre-pull: a pinned repository is exactly where the snapshot
+        # put it, and a pull would move it.
+        client._gitignore_sync._sync_gitignore_lifecycle(pre_pull=False, commit=False)
+        registry.recompute_tree_state()
+        if not registry.is_ready():
+            raise GitSyncError(f"{reason} did not produce a READY tree.")
+        written = client.write_gts_snapshot(command_origin="clone")
+        client.state_store.record_snapshot(snapshot_path, written)
+        client._log_tree_transition(previous_tree_state, registry.lifecycle_state, reason=reason)
+        client._warn_environment_drift()
+        return registry
+
+    @staticmethod
+    def _pins_for(registry: WorkingGitTree, *, skip_root: bool) -> dict[str, _Pin]:
+        """Note what the snapshot recorded, then reset every repository to be cloned.
+
+        A snapshot's entries arrive already ``READY``, which would make the
+        clone loop skip them. Each is put back to ``DECLARED`` and aimed at the
+        branch it was resolved on; :meth:`_apply_pin` restores what was
+        recorded once the clone has landed.
+        """
+        pins: dict[str, _Pin] = {}
+        for entry in registry.values():
+            if skip_root and entry.repo_id == ROOT_REPO_ID:
+                continue
+            if entry.commit_sha:
+                pins[entry.repo_id] = _Pin(
+                    commit=entry.commit_sha,
+                    current_kind=entry.current_ref_kind,
+                    current_name=entry.current_ref_name,
+                    resolved_kind=entry.resolved_ref_kind,
+                    resolved_name=entry.resolved_ref_name,
+                    target_kind=entry.target_ref_kind,
+                    target_name=entry.target_ref_name,
+                    fallback_applied=entry.fallback_applied,
+                    fallback_reason=entry.fallback_reason,
+                )
+            if entry.resolved_ref_name:
+                entry.target_ref_kind = entry.resolved_ref_kind or RefKind.BRANCH
+                entry.target_ref_name = entry.resolved_ref_name
+            entry.repo_lifecycle_state = RepoLifecycleState.DECLARED
+            entry.sync_state = SyncState.PENDING
+            entry.worktree_state = None
+            entry.commit_sha = None
+        return pins
+
+    def _require_commits_held(self, registry: WorkingGitTree, pins: Mapping[str, _Pin]) -> None:
+        """Refuse, before cloning anything, when a recorded commit is gone.
+
+        Falling back to the branch tip would build a tree that carries a
+        different State name than the one asked for, so it is refused instead,
+        naming every repository at once.
+        """
+        missing: list[str] = []
+        for entry in registry.values():
+            pin = pins.get(entry.repo_id)
+            if pin is None:
+                continue
+            remote_url = self.client._build_remote_url(entry)
+            if not self.client.git_runner.remote_holds_commit(remote_url, pin.commit):
+                missing.append(f"  {entry.name}: {pin.commit} on {remote_url}")
+        if missing:
+            raise InstallFrontierError(
+                "The snapshot records commits its remotes no longer hold, so the tree it "
+                "describes cannot be rebuilt. Nothing was cloned. Repositories:\n"
+                + "\n".join(missing)
+            )
+
+    def _clone_pending(
+        self,
+        *,
+        sync_stack: set[Path],
+        pins: Mapping[str, _Pin] | None = None,
+        discover: bool = True,
+    ) -> None:
+        """Clone every declared repository, parents first, until none is left.
+
+        The one clone path all four install entry points share — a ``.cgs`` or
+        a ``.gts``, nested or standalone. *sync_stack* holds the paths that
+        already entered the pipeline: a later reference to one is a mount
+        point, skipped rather than cloned again, which is defence in depth
+        against infinite-recursion edge cases before ``fix_circularities()``
+        has cleaned the registry. *discover* is false for a snapshot, which
+        already names every repository, so there is nothing left to find.
+        """
+        client = self.client
+        while True:
+            cloned_any = False
+            pending = client._pending_clone_entries(sync_stack)
+            client._guard_clone_destinations(pending)
+            for entry in pending:
+                sync_stack.add(entry.absolute_path)
+                client._clone_registry_entry(entry)
+                pin = pins.get(entry.repo_id) if pins else None
+                if pin is not None:
+                    self._apply_pin(entry, pin)
+                cloned_any = True
+
+            if not discover:
+                if not cloned_any:
+                    return
+                continue
+            discovered = client.discover_nested_configs()
+            client._log_nested_discovery(discovered)
+            if not cloned_any and not discovered:
+                return
+
+    def _apply_pin(self, entry: WorkingRepo, pin: _Pin) -> None:
+        """Put a freshly cloned repository on its recorded commit, and back to its record."""
+        runner = self.client.git_runner
+        if runner.head_commit_sha_or_none(entry.absolute_path) != pin.commit:
+            # Stay on the branch the clone landed on, pointed at the recorded
+            # commit; a tag has no branch to stay on, so it is detached.
+            branch = runner.current_branch(entry.absolute_path)
+            try:
+                runner.checkout_commit(entry.absolute_path, pin.commit, branch=branch)
+            except GitSyncError:
+                # A single-branch clone holds one branch's history; the
+                # commit may sit on another. Ask the remote for it by name.
+                runner.fetch(entry.absolute_path, ref_name=pin.commit)
+                runner.checkout_commit(entry.absolute_path, pin.commit, branch=branch)
+        entry.commit_sha = pin.commit
+        entry.current_ref_kind, entry.current_ref_name = pin.current_kind, pin.current_name
+        entry.resolved_ref_kind, entry.resolved_ref_name = pin.resolved_kind, pin.resolved_name
+        entry.target_ref_kind, entry.target_ref_name = pin.target_kind, pin.target_name
+        entry.fallback_applied = pin.fallback_applied
+        entry.fallback_reason = pin.fallback_reason
+        entry.repo_lifecycle_state = (
+            RepoLifecycleState.FALLBACK_READY if pin.fallback_applied else RepoLifecycleState.READY
+        )
+        if pin.fallback_applied:
+            entry.sync_state = SyncState.FALLBACK_APPLIED
+        elif runner.current_branch(entry.absolute_path) is None:
+            entry.sync_state = SyncState.DETACHED_EXACT
+        else:
+            entry.sync_state = SyncState.ALIGNED
+
+    def _require_nested_install(self, cgshome: Path) -> None:
+        """Refuse ``initialise``, before touching the disk, when it is not the nested case.
+
+        ``initialise`` builds the dependencies of a project whose root is
+        already checked out at CGSHOME, with this ComplexGitSync inside it.
+        Anything else is ``bootstrap``'s job, and cloning the root here would
+        blur the two commands into one. A detached ``HEAD`` is still a
+        checkout.
+        """
+        if self._use_case_of(cgshome) is UseCase.STANDALONE:
+            raise InstallFrontierError(
+                f"`initialise` is the nested install: it builds a workspace around the "
+                f"ComplexGitSync running it, and this one is not inside {cgshome}. To "
+                f"build a workspace from outside it, run `cgitsync bootstrap <spec> <name>`."
+            )
+        if not self.client.git_runner.is_repository_root(cgshome):
+            raise InstallFrontierError(
+                f"{cgshome} is not a git repository. `initialise` builds the dependencies of "
+                f"a project whose root is already checked out here. To clone the whole tree, "
+                f"root included, run `cgitsync bootstrap <spec> <name>`."
+            )
+
+    def _require_fresh_target(self, target_dir: Path) -> None:
+        """Refuse ``bootstrap``, before touching the disk, into a directory that holds something.
+
+        ``bootstrap`` clones the root as well, so its target starts empty or
+        absent. A checkout already there is the nested case — ``initialise``'s
+        — and adopting it here would blur the two commands.
+        """
+        if not target_dir.exists():
+            return
+        if target_dir.is_dir() and not any(target_dir.iterdir()):
+            return
+        if self.client.git_runner.is_repository_root(target_dir):
+            raise InstallFrontierError(
+                f"{target_dir} already holds a checkout. `bootstrap` clones the root as well, "
+                f"so it needs an empty target. To build the dependencies around a root that "
+                f"is already checked out, run `cgitsync initialise <spec>` from its "
+                f"ComplexGitSync."
+            )
+        raise InstallFrontierError(
+            f"{target_dir} already exists and is not empty. `bootstrap` clones the whole tree, "
+            f"root included, into an empty directory: choose another <name> or --cgs-path, or "
+            f"empty this one."
         )
 
     def restart(

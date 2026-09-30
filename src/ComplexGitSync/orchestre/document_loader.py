@@ -282,6 +282,16 @@ class DocumentLoader:
         }
         return json.dumps(summary, indent=2, sort_keys=True)
 
+    def _recorded_source(self) -> Path | None:
+        """The ``.cgs`` a snapshot names as its source — never a ``.gts``.
+
+        A State is the tree, not the spec that built it: no copy of the spec is
+        stored beside it. What is recorded is only *where* the spec was, and
+        only when it was a ``.cgs``; a tree rebuilt from a snapshot has no spec.
+        """
+        source = self.client.source_path
+        return source if source is not None and source.suffix == ".cgs" else None
+
     def write_gts_snapshot(
         self,
         *,
@@ -295,7 +305,7 @@ class DocumentLoader:
         registry = self.client.get_dependency_registry()
         root_entry = registry.get("root")
         self.client._memory_commands._refresh_memory_mount_state(registry)
-        document = RegistryTranslator.to_gts_document(registry, command_origin=command_origin, source_cgs_path=self.client.source_path, freeze_name=freeze_name)
+        document = RegistryTranslator.to_gts_document(registry, command_origin=command_origin, source_cgs_path=self._recorded_source(), freeze_name=freeze_name)
         # The State's name is its content. Two machines holding the same
         # tree write the same file name, which is the whole point of a
         # memory that can travel; and writing the same workspace twice
@@ -306,22 +316,6 @@ class DocumentLoader:
         cgitsync_dir = root_entry.absolute_path / ".cgitsync"
         cgitsync_dir.mkdir(parents=True, exist_ok=True)
         final_output_path = MemoryStates(cgitsync_dir).write(canonical_state_hash, document.to_toml)
-
-        if self.client.source_path is not None and self.client.source_path.suffix == ".cgs" and self.client.source_path.is_file():
-            # Beside the State, under its name: the spec it was built from
-            # is part of what that State was.
-            shutil.copy2(
-                self.client.source_path,
-                MemoryStates(cgitsync_dir).path(canonical_state_hash, ".cgs"),
-            )
-            if root_entry.current_ref_name:
-                branch_slug = MemoryFacts.release_snapshot_slug(root_entry.current_ref_name)
-                stable_cgs_dir = cgitsync_dir / ".cgs"
-                stable_cgs_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(
-                    self.client.source_path,
-                    stable_cgs_dir / f"{root_entry.name}-{branch_slug}.cgs",
-                )
 
         self.client._log_event(
             "gts_write",

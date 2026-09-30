@@ -219,10 +219,43 @@ def apply_declared_defaults(repo: MutableMapping[str, Any], project_default: str
     defaulted to :data:`DEFAULT_BRANCH` by the caller), and
     ``repos[].fallback_branch`` defaults to whatever ``default_branch``
     just resolved to — the second and third links of the chain.
+
+    A private/local entry gets the same defaults here, though its real branch
+    is :func:`private_local_branch` of the *tree's* project: a document cannot
+    compute that (a nested ``.cgs`` names a project of its own), so
+    :meth:`~ComplexGitSync.git_tree_branch.GitTreeBranches.declare_targets`
+    does, once the tree exists.
     """
     default_branch = str(repo.get("default_branch") or project_default or DEFAULT_BRANCH)
     repo["default_branch"] = default_branch
     repo["fallback_branch"] = str(repo.get("fallback_branch") or default_branch)
+
+
+def declared_private_local_mismatch(
+    repo: Mapping[str, Any],
+    *,
+    project_name: str | None,
+    project_default: str | None,
+) -> str | None:
+    """The branch a private/local entry should carry, when its declared one disagrees.
+
+    ``None`` when the entry is not private/local, names no project to derive
+    from, or carries either the derived branch or the document's own
+    ``project.default_branch`` — the value normalisation gives an entry that
+    names none, which must keep passing so a document survives being written
+    out and read back. A private/local repository's branch is a function of
+    the project (:func:`private_local_branch`), so any other typed value is a
+    near-certain authoring error — a name copied from another project's file
+    and never updated is how ``molonari.cgs`` went stale — and is reported
+    rather than obeyed.
+    """
+    if not project_name or repo.get("private") is not True or repo.get("writable") is not True:
+        return None
+    declared = _as_optional_str(repo.get("default_branch"))
+    expected = private_local_branch(project_name, project_default or DEFAULT_BRANCH)
+    if declared is None or declared in {expected, project_default or DEFAULT_BRANCH}:
+        return None
+    return expected
 
 
 def resolve_declared_ref(
@@ -431,6 +464,7 @@ __all__ = [
     "apply_declared_defaults",
     "closeable",
     "closed_branch_name",
+    "declared_private_local_mismatch",
     "resolve_declared_ref",
     "resolve_entry_ref",
     "resolve_propagated_ref",

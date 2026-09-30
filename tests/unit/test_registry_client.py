@@ -129,22 +129,22 @@ def test_client_load_accepts_gts_source(tmp_path):
     assert client.get_tree_state().lifecycle_state == TreeLifecycleState.READY
 
 
-def test_client_initialise_dispatches_to_load_gts_for_gts_source(monkeypatch, tmp_path):
+def test_client_initialise_dispatches_to_initialise_gts_for_gts_source(monkeypatch, tmp_path):
     snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=(tmp_path / "workspace" / "demo").resolve())
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
-    original_load_gts = client.load_gts
 
-    def _fake_load_gts(path):
+    def _fake_initialise_gts(path, *, output_path=None):
         captured["path"] = path
-        return original_load_gts(path)
+        captured["output_path"] = output_path
+        return "ok"
 
-    monkeypatch.setattr(client, "load_gts", _fake_load_gts)
+    monkeypatch.setattr(client, "initialise_gts", _fake_initialise_gts)
 
-    registry = client.initialise(snapshot_path)
+    assert client.initialise(snapshot_path, output_path="somewhere") == "ok"
 
     assert captured["path"] == snapshot_path.resolve()
-    assert registry.lifecycle_state == TreeLifecycleState.READY
+    assert captured["output_path"] == "somewhere"
 
 
 def test_client_initialise_dispatches_to_initialise_cgs_for_cgs_source(monkeypatch):
@@ -775,12 +775,12 @@ def test_resolve_bootstrap_root_rejects_empty_project_name():
         client.resolve_bootstrap_root("")
 
 
-def test_bootstrap_rejects_non_cgs_source(tmp_path):
+def test_bootstrap_rejects_a_source_that_is_neither_cgs_nor_gts(tmp_path):
     client = ComplexGitSyncClient()
-    gts_path = tmp_path / "demo.gts"
+    gts_path = tmp_path / "demo.txt"
     gts_path.write_text("{}", encoding="utf-8")
 
-    with pytest.raises(ValueError, match=r"\.cgs source"):
+    with pytest.raises(ValueError, match=r"\.cgs or \.gts source"):
         client.bootstrap(gts_path, "myproject")
 
 
@@ -2101,9 +2101,9 @@ def test_client_load_cgs_writes_gts_snapshot(tmp_path):
     states = sorted((tmp_path / ".cgitsync" / "state").glob("*.gts"))
     assert len(states) == 1
     assert re.fullmatch(r"[0-9a-f]{64}\.gts", states[0].name)
-    # The .cgs it was built from sits beside it, under the same name: it is
-    # part of what that State was.
-    assert states[0].with_suffix(".cgs").is_file()
+    # A State is the tree, not the spec that built it: no .cgs beside it.
+    assert not states[0].with_suffix(".cgs").exists()
+    assert not (tmp_path / ".cgitsync" / ".cgs").exists()
     # One ledger, hash-chained, one file per entry. The single-file
     # register this used to write is no longer written at all.
     assert (tmp_path / ".cgitsync" / "lgr" / "000001.toml").is_file()
@@ -2423,40 +2423,12 @@ def test_sync_ledger_actor_auto_detected_when_none(tmp_path):
     assert events[0]["actor"] != ""
 
 
-def test_write_gts_snapshot_writes_stable_per_branch_cgs_copy(tmp_path):
-    # BootstrapGitignoreSync's sibling ticket, FirstBranchTestWorkflow §0.3:
-    # a .cgs snapshot per run already existed, but only inside an opaque
-    # state(<hash>)_n/ directory -- nothing named "the .cgs for branch X".
+def test_write_gts_snapshot_stores_no_cgs_anywhere_in_the_state_area(tmp_path):
+    """A State is a .gts (InstallFrontier WP6): no spec copy beside it, no per-branch copy."""
     root_path = tmp_path / "root"
     root_path.mkdir()
     config_path = tmp_path / "project.cgs"
-    config_path.write_text(
-        '[project]\nname = "demo"\ndefault_branch = "main"\n\n'
-        'repos = [{ repository = "github:owner/demo", relative_path = "." }]\n',
-        encoding="utf-8",
-    )
-
-    client = ComplexGitSyncClient()
-    registry = WorkingGitTree()
-    root_entry = _make_entry("root", root_path)
-    root_entry.current_ref_kind = RefKind.BRANCH
-    root_entry.current_ref_name = "test-cgs"
-    registry.add(root_entry)
-    client.registry = registry
-    client.source_path = config_path
-
-    client.write_gts_snapshot(command_origin="branch")
-
-    stable_path = root_path / ".cgitsync" / ".cgs" / "root-test-cgs.cgs"
-    assert stable_path.is_file()
-    assert stable_path.read_text(encoding="utf-8") == config_path.read_text(encoding="utf-8")
-
-
-def test_write_gts_snapshot_stable_cgs_copy_sanitizes_branch_name(tmp_path):
-    root_path = tmp_path / "root"
-    root_path.mkdir()
-    config_path = tmp_path / "project.cgs"
-    config_path.write_text("[project]\nname = \"demo\"\n", encoding="utf-8")
+    config_path.write_text('[project]\nname = "demo"\n', encoding="utf-8")
 
     client = ComplexGitSyncClient()
     registry = WorkingGitTree()
@@ -2468,33 +2440,10 @@ def test_write_gts_snapshot_stable_cgs_copy_sanitizes_branch_name(tmp_path):
     client.source_path = config_path
 
     client.write_gts_snapshot(command_origin="branch")
-
-    stable_dir = root_path / ".cgitsync" / ".cgs"
-    [stable_path] = list(stable_dir.iterdir())
-    assert stable_path.name == "root-feature-my-thing.cgs"
-
-
-def test_write_gts_snapshot_refreshes_stable_cgs_copy_on_each_run(tmp_path):
-    root_path = tmp_path / "root"
-    root_path.mkdir()
-    config_path = tmp_path / "project.cgs"
-    config_path.write_text("[project]\nname = \"demo\"\n", encoding="utf-8")
-
-    client = ComplexGitSyncClient()
-    registry = WorkingGitTree()
-    root_entry = _make_entry("root", root_path)
-    root_entry.current_ref_kind = RefKind.BRANCH
-    root_entry.current_ref_name = "test-cgs"
-    registry.add(root_entry)
-    client.registry = registry
-    client.source_path = config_path
-
-    client.write_gts_snapshot(command_origin="branch")
-    config_path.write_text("[project]\nname = \"demo-v2\"\n", encoding="utf-8")
     client.write_gts_snapshot(command_origin="checkout")
 
-    stable_path = root_path / ".cgitsync" / ".cgs" / "root-test-cgs.cgs"
-    assert stable_path.read_text(encoding="utf-8") == config_path.read_text(encoding="utf-8")
+    assert not list((root_path / ".cgitsync").rglob("*.cgs"))
+    assert not (root_path / ".cgitsync" / ".cgs").exists()
 
 
 def test_write_gts_snapshot_skips_stable_cgs_copy_without_a_current_branch(tmp_path):
@@ -2909,6 +2858,12 @@ class _FakeGitRunner:
 
     def remote_branch_exists(self, remote_url: str, branch: str) -> bool:
         return branch in self.remote_branches.get(remote_url, set())
+
+    def remote_head_branch(self, remote_url: str) -> str | None:
+        return None
+
+    def is_repository_root(self, path) -> bool:
+        return True
 
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
         destination_path = Path(destination)

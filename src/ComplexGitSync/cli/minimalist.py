@@ -35,10 +35,14 @@ from ._shared import (
 )
 
 COMMANDS: dict[str, str] = {
-    "initialise": "Initialise a project tree: clone(.cgs) or restore state(.gts).",
+    "initialise": (
+        "Nested install: build the dependencies of a project whose root is already "
+        "checked out here, from a .cgs (branch tips) or a .gts (recorded commits)."
+    ),
     "bootstrap": (
-        "Clone a brand-new project tree into an isolated CGSHOME, for running "
-        "ComplexGitSync from its own standalone clone (not nested inside the project)."
+        "Standalone install: clone a brand-new project tree, root included, into an "
+        "isolated CGSHOME, from a .cgs or a .gts; run from a ComplexGitSync that is "
+        "not inside the project."
     ),
     "clean-init": "Purge generated clone state, then initialise from a .cgs spec.",
     "freeze-release": "Run add, commit, pull, push, and freeze from a READY tree.",
@@ -150,7 +154,7 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
             add_gitignore_sync_arguments(subparser)
             subparser.set_defaults(handler=_handle_clean_init)
         elif command_name == "bootstrap":
-            subparser.add_argument("source", help="Path to the local .cgs file to clone from.")
+            subparser.add_argument("source", help="Path to the local .cgs or .gts file to clone from.")
             subparser.add_argument(
                 "project_name",
                 help=(
@@ -388,10 +392,25 @@ def _handle_initialise(args: argparse.Namespace) -> int:
                 force_access_protocol=force_access_protocol,
             ),
         )
+    output_path = getattr(args, "output_path", None)
+    client = ComplexGitSyncClient()
+    project_root = client.resolve_initialise_cgshome(source_path, output_path=output_path)
     return _run_with_logging(
         command_name="initialise",
         source=source_path,
-        runner=lambda client, source: _execute_initialise_gts(client, source),
+        client=client,
+        project_root=project_root,
+        runner=lambda active_client, source: _execute_initialise_gts(
+            active_client,
+            source,
+            output_path=output_path,
+            force_reclone=force_reclone,
+            commit_gitignore=commit_gitignore,
+            force_gitignore_sync=force_gitignore_sync,
+            git_user_name=git_user_name,
+            git_user_email=git_user_email,
+            force_access_protocol=force_access_protocol,
+        ),
     )
 
 
@@ -650,12 +669,29 @@ def _execute_clean_init_cgs(
 def _execute_initialise_gts(
     client: ComplexGitSyncClient,
     snapshot_path: Path,
+    *,
+    output_path: str | Path | None = None,
+    force_reclone: bool = False,
+    commit_gitignore: bool = False,
+    force_gitignore_sync: bool = False,
+    git_user_name: str | None = None,
+    git_user_email: str | None = None,
+    force_access_protocol: str | None = None,
 ) -> int:
-    print("operation_sequence=GT-LOAD->GT-VALIDATE")
-    print("workflow=load->validate")
-    client.load_gts(snapshot_path)
+    print("operation_sequence=GT-LOAD->GT-CLONE->GT-PIN->GT-VALIDATE")
+    print("git_command=git clone && git checkout -B <branch> <recorded commit> (executed per repo)")
+    registry = client.initialise_gts(
+        snapshot_path,
+        output_path=output_path,
+        force_reclone=force_reclone,
+        commit_gitignore=commit_gitignore,
+        force_gitignore_sync=force_gitignore_sync,
+        git_user_name=git_user_name,
+        git_user_email=git_user_email,
+        force_access_protocol=force_access_protocol,
+    )
     tree_state = client.get_tree_state()
-    print(_format_tree_state_line(tree_state))
+    print(f"{_format_tree_state_line(tree_state)} root={registry.get('root').absolute_path}")
     outline = _format_repo_tree_outline(client)
     if outline:
         print("tree:")

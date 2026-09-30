@@ -1,4 +1,4 @@
-# ComplexGitSync v3.5.1
+# ComplexGitSync v3.6.0
 __A distributed git-native Operating Space_
 _More than an alternative to git submodules for complex multi git-repo project management and synchronization__
 
@@ -111,6 +111,12 @@ Initialising the project sync uses `bootstrap`, that clones the project's full t
 ```bash
 pixi run cgitsync bootstrap install.cgs ComplexGitSync
 ```
+
+`bootstrap` is the *standalone install* and `initialise` (section 2.2) the
+*nested install*; each refuses the other's job by name before it touches the
+disk. `bootstrap` takes a `.cgs` (every repository at the branch the file
+names) or a `.gts` snapshot (every repository at the commit the snapshot
+recorded — the tree as it was). Its target must be empty or absent.
 
 `bootstrap` prints the workspace path and a `CGSHOME` export line at the end
 of its output. Since `pixi run` must be executed from the ComplexGitSync
@@ -266,6 +272,14 @@ CGSPATH/<project-name>`) then defaults to `../..` relative to the current
 directory, with no `export` needed. The example below uses the CGSil1
 reference topology (<https://gitlab.com/CGS_test/CGSil1>):
 
+`initialise` builds the *dependencies* of a project whose root is already
+checked out at `CGSHOME` with this ComplexGitSync inside it. If `CGSHOME` is
+not a Git checkout, or ComplexGitSync is running from outside it, it stops
+before cloning anything and tells you to use `bootstrap`. Given a `.gts`
+instead of a `.cgs`, it checks each dependency out at the commit the snapshot
+recorded, and refuses — listing every repository — if a remote no longer
+holds one.
+
 ```bash
 git clone https://gitlab.com/CGS_test/CGSil1.git
 cd CGSil1
@@ -290,8 +304,8 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 
 | Group | Command | Arguments and key options | Description |
 |---|---|---|---|
-| Minimalist | `initialise` | `[source]` `--output-path` `--force-protocol` `--force-reclone` `--commit-gitignore` | Initialise a project tree: clone(.cgs) or restore state(.gts). Re-clones every dependency; refuses when one holds unpushed work. |
-| Minimalist | `bootstrap` | `<source> <project-name>` `--cgs-path` `--force-protocol` | Clone a brand-new project tree into an isolated CGSHOME, for running ComplexGitSync standalone (not nested inside the project). |
+| Minimalist | `initialise` | `[source]` `--output-path` `--force-protocol` `--force-reclone` `--commit-gitignore` | Nested install: build the dependencies of a project whose root is already checked out here, from a .cgs (branch tips) or a .gts (recorded commits). Re-clones every dependency; refuses when one holds unpushed work, and refuses — naming `bootstrap` — when the root is not a checkout or this ComplexGitSync is not inside it. |
+| Minimalist | `bootstrap` | `<source> <project-name>` `--cgs-path` `--force-protocol` | Standalone install: clone a brand-new project tree, root included, into an isolated CGSHOME, from a .cgs or a .gts; run from a ComplexGitSync that is not inside the project. Refuses — naming `initialise` — a target that already holds a checkout. |
 | Minimalist | `clean-init` | `<source>` `--output-path` `--force-protocol` `--commit-gitignore` | Purge generated clone state, then initialise from a .cgs spec. |
 | Minimalist | `freeze-release` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull, push, and freeze from a READY tree. Its own `push` and `freeze` steps each fold and send the memory, same as running them separately. |
 | Minimalist | `freeze-release-force` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull-force, push, and freeze from a READY tree. Its own `push` and `freeze` steps each fold and send the memory, same as running them separately. |

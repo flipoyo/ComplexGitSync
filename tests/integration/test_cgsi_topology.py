@@ -698,10 +698,17 @@ class TestCloneAndLaunchReleaseLifecycle:
         examples_dir = Path(__file__).resolve().parents[2] / "examples"
         cawaqsviz_cgs = examples_dir / "cawaqsviz.cgs"
 
-        root_remote, _ = _seed_remote_repo(tmp_path, "cawaqsviz-root")
-        htas_remote, _ = _seed_remote_repo(tmp_path, "htas")
-        twin_remote, _ = _seed_remote_repo(tmp_path, "hydrological-twin")
-        guide_remote, _ = _seed_remote_repo(tmp_path, "user-guide")
+        root_remote, root_seed = _seed_remote_repo(tmp_path, "cawaqsviz-root")
+        htas_remote, htas_seed = _seed_remote_repo(tmp_path, "htas")
+        twin_remote, twin_seed = _seed_remote_repo(tmp_path, "hydrological-twin")
+        guide_remote, guide_seed = _seed_remote_repo(tmp_path, "user-guide")
+
+        # The example names the branch every repository is cloned on
+        # (project.default_branch); the remotes must have it, whatever it is
+        # today, or this test tracks the example's old value instead of the file.
+        example_branch = CgsDocument.from_toml(cawaqsviz_cgs).default_branch
+        for seed in (root_seed, htas_seed, twin_seed, guide_seed):
+            _run_git(seed, "push", "origin", f"main:refs/heads/{example_branch}")
 
         clone_target = tmp_path / "workspace"
         client = ComplexGitSyncClient()
