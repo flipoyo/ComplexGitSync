@@ -512,7 +512,7 @@ _ALLOWED_MAIN_LITERALS = {
     # Git's own .gitmodules default for a submodule that names no branch —
     # read on one line, written back on another.
     "discovery.py": 2,
-    "orchestre.py": 1,
+    "orchestre/discovery_commands.py": 1,
     # Last resort on a bare repository path with no tree behind it.
     "git_runner.py": 1,
     # Frozen input to the canonical .gts snapshot hash.

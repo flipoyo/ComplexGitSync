@@ -322,7 +322,7 @@ groups a prefix like this together the same way ``feature/*`` would.
 def closed_branch_name(branch_name: str) -> str:
     """The name a closed branch is renamed to: ``closed/<branch_name>``.
 
-    Pure — computes a string, touches nothing. ``operations.py::close_branch``
+    Pure — computes a string, touches nothing. ``BranchOperation.close_branch``
     performs the actual rename, via ``git_runner.py``'s ``rename_branch``,
     ``push_ref_as``, and ``delete_remote_branch``
     (`main_1-1_BranchClosing_DevPlanTicket.md` §1). Closing is a rename, not
@@ -342,7 +342,7 @@ def closeable(branch_name: str, *, project_default_branch: str) -> bool:
 
     Says nothing about whether a repository is *currently* on
     *branch_name* — that is tree state, which ``git_tree_branch.py`` owns,
-    not a fact this Ring-0 module can answer; ``operations.py::close_branch``
+    not a fact this Ring-0 module can answer; ``BranchOperation.close_branch``
     checks it separately before acting on any repository.
     """
     return branch_name != project_default_branch

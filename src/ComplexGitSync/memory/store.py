@@ -11,7 +11,7 @@ Two things live here, and it is worth saying why they are together.
 
 **The State writer.** A State is one file, named by its own content hash,
 published by a single rename so a reader never sees half of one. That is
-memory's business, and it used to sit in the middle of ``orchestre.py``.
+memory's business, and it used to sit in the middle of ``orchestre/``.
 
 **The single-file register.** ``LocalGitRegister`` and ``SyncLedger`` are
 the format ComplexGitSync wrote before the hash-chained ledger: one TOML

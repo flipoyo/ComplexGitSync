@@ -14,7 +14,7 @@ Imports: none
 Why this exists
 ----------------
 Before this module, the real clock implementation (``SystemClock``) lived
-inside ``orchestre.py`` — Ring 3. A Ring 1 or Ring 2 module cannot import
+inside ``orchestre/`` — Ring 3. A Ring 1 or Ring 2 module cannot import
 Ring 3, so ``settings.py``, ``paths.py``, ``registry.py`` and
 ``memory/store.py`` had no seam to reach for and read ``datetime.now(UTC)``
 directly instead. Moving the implementation down to the lowest ring a clock

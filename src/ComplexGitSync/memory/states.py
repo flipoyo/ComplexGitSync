@@ -19,11 +19,11 @@ content-addressed directory allocator every lifecycle command (``initialise``,
 ``.cgitsync/state(<hash>)_<n>/`` directories — see that ticket's D1
 "naming collision" section for the full history if this is confusing.
 
-Extracted from ``orchestre.py`` (module-level functions/class starting at
+Extracted from ``orchestre/`` (module-level functions/class starting at
 ``_format_state_id``, plus the ``_SHA256_HEX_RE``/``_STATE_ID_RE``/
 ``_STATE_DIR_RE`` regex constants they depend on) as part of
 ``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md`` Wave 2, work package
-P5-state. That integration has landed: ``orchestre.py`` imports six names
+P5-state. That integration has landed: ``orchestre/`` imports six names
 from here and keeps no copy of its own, so this module is the live
 allocator every lifecycle command goes through.
 """

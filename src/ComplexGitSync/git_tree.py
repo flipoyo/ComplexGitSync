@@ -1400,14 +1400,14 @@ def cgitsync_managed_state_paths(repo: WorkingRepo) -> set[Path]:
     """Return paths ``cgitsync`` itself manages under *repo* — never real project content.
 
     Every repo gets its generated ``.cgitsync/`` runtime-state directory
-    (snapshots, register, run logs — see ``orchestre.py``'s
+    (snapshots, register, run logs — see ``orchestre/``'s
     ``write_gts_snapshot``) excluded. Only the tree's root additionally
     gets its own ``<name>.lgr`` hash-chained register file excluded — that
     loose file only ever exists at the root, never at a nested repo.
 
     Shared by three call sites that each need this concept for a
-    different reason: worktree-dirty preflight (``operations.py``),
-    status-line filtering (``orchestre.py``), and ``.gitignore``
+    different reason: worktree-dirty preflight (``operations/``),
+    status-line filtering (``orchestre/``), and ``.gitignore``
     generation (this module, :func:`sync_gitignore`) — one definition,
     reused, rather than three.
     """
@@ -1427,7 +1427,7 @@ def sync_gitignore(tree: WorkingGitTree, *, skip: Collection[str] = ()) -> tuple
     has children — that state is written under the root regardless of
     tree shape. Repo_ids in *skip* are left untouched this run — this call
     performs no Git operations of its own, so callers that need a repo to
-    be pulled before its ``.gitignore`` is written (see ``orchestre.py``)
+    be pulled before its ``.gitignore`` is written (see ``orchestre/``)
     are responsible for excluding any repo that couldn't be safely pulled.
 
     Returns the repo_ids whose ``.gitignore`` was actually created or
@@ -1478,7 +1478,7 @@ def _update_gitignore_file(repo_path: Path, relative_paths: Sequence[str]) -> bo
 
 
 # ---------------------------------------------------------------------------
-# Private helpers (also used by cgs_format.py validation and orchestre.py builders)
+# Private helpers (also used by cgs_format.py validation and orchestre/ builders)
 # ---------------------------------------------------------------------------
 
 

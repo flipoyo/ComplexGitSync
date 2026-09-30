@@ -94,7 +94,7 @@ class SelfHistoryRecord:
     ``ticket``/``goal``/``action``) or **observed** (everything else) —
     the ticket's own distinction (§1), kept explicit in this module by
     which fields the caller must supply outright versus which
-    ``memory.self_history_add`` (WP1, in ``orchestre.py``) fills in from
+    ``memory.self_history_add`` (WP1, in ``orchestre/``) fills in from
     what the tool can itself check. This dataclass does not enforce that
     split — it is a plain, honest container; the split is a contract
     between the client method and its caller, stated in ``AdditionalSpecs.md``.

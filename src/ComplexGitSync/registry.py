@@ -13,8 +13,8 @@ Contract: given a parsed ``.cgs`` (``CgsDocument``) or ``.gts``
 Imports: cgs_format, errors, git_branch, git_repo, git_tree, gts_document,
     universal_clock
 
-Extracted from ``orchestre.py`` (Wave 2, P5-registry of
-``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
+Extracted from ``orchestre/`` (Wave 2, P5-registry of
+``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre/`` still
 carries its own copy of ``build_registry_from_cgs_document``,
 ``build_registry_from_gts_document``, and ``build_gts_document_from_registry``
 until the separate P5-registry-integrate step deletes them there and
@@ -22,9 +22,9 @@ re-points callers — this module does not change that file.
 
 Duplicated-helper note (same shape as ``gts_document.py``'s own note on the
 ref-token helpers): the env-marker path helpers
-(``_path_to_environment_marker`` and friends) are used in ``orchestre.py``
+(``_path_to_environment_marker`` and friends) are used in ``orchestre/``
 by code outside this module's scope too (``ComplexGitSyncClient.load_gts``,
-snapshot writing) — since this module must not import from ``orchestre.py``
+snapshot writing) — since this module must not import from ``orchestre/``
 (Ring 3, upward) and no Ring-1 ``paths.py`` exists yet to hold the
 env-marker logic, they are duplicated here as tiny, stable, pure/near-pure
 functions tied to a frozen wire format, not forked business logic. The
@@ -90,9 +90,9 @@ from .universal_clock import ClockProtocol, SystemClock
 # ============================================================
 #  Environment-marker path helpers
 #
-#  Duplicated from orchestre.py — see the module docstring above for why
+#  Duplicated from orchestre/ — see the module docstring above for why
 #  these are copies, not imports (no Ring-1 paths.py exists yet to import
-#  them from, and orchestre.py itself has other, non-extracted callers).
+#  them from, and orchestre/ itself has other, non-extracted callers).
 # ============================================================
 
 

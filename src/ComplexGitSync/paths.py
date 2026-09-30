@@ -10,15 +10,15 @@ Contract: convert between absolute, machine-specific paths and the portable
     explicit override, the environment, or the current working directory.
 Imports: cgs_format, errors, universal_clock
 
-Extracted verbatim from ``orchestre.py`` (Wave 2, P5-paths of
-``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
+Extracted verbatim from ``orchestre/`` (Wave 2, P5-paths of
+``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre/`` still
 carries its own copy of every function below until a later, separate
 integration step deletes it there and re-points imports — this module does
 not change that file.
 
 The five env-marker functions (``_get_path_environment_markers`` through
 ``_preferred_path_separators``) are copied verbatim, unchanged, from
-``orchestre.py``: pure string/``Path`` manipulation that only reads
+``orchestre/``: pure string/``Path`` manipulation that only reads
 environment-variable *values*, never mutates anything.
 
 The four ``resolve_*`` functions mirror ``ComplexGitSyncClient``'s

@@ -155,7 +155,7 @@ class LedgerEntry:
     @staticmethod
     def _canonical_json(payload: dict[str, Any]) -> str:
         """Same canonicalisation discipline ``GtsDocument.compute_snapshot_hash``
-        already uses in ``orchestre.py`` — stable key ordering, compact
+        already uses in ``orchestre/`` — stable key ordering, compact
         separators, no ASCII escaping. One canonicalisation idea, two users
         (AdditionalSpecs.md's register schema); reimplemented here rather than imported,
         since Ring 0 cannot depend on Ring 3.

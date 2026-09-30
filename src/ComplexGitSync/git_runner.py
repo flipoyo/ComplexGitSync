@@ -93,7 +93,7 @@ def _english_message_locale(env: dict[str, str]) -> None:
     """Pin *env* so git writes its own messages in English. Mutates in place.
 
     Git translates its messages and this module reads them: no exit code says
-    whether a fetch failed for want of credentials, so ``orchestre.py`` matches
+    whether a fetch failed for want of credentials, so ``orchestre/`` matches
     English fragments of git's prose to decide whether to offer the
     ``--force-protocol`` recovery. On a French machine nothing matched, so the
     hint never fired for anyone whose shell was not English (see
@@ -232,8 +232,8 @@ class GitRunnerProtocol(Protocol):
     """Structural contract for anything that can stand in for :class:`GitRunner`.
 
     Lists every public method `GitRunner` exposes, with its exact signature,
-    so callers elsewhere in the codebase (``orchestre.py``'s `Orchestre` /
-    `ComplexGitSyncClient`, `operations.py`, `git_tree.py`, `master.py`) can
+    so callers elsewhere in the codebase (``orchestre/``'s `Orchestre` /
+    `ComplexGitSyncClient`, `operations/`, `git_tree.py`, `master.py`) can
     eventually type against this Protocol instead of the concrete class, and
     so tests can hand a hand-written fake instead of a `GitRunner` instance
     or a `unittest.mock.Mock`.

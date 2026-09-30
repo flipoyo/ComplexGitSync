@@ -67,7 +67,7 @@ PENDING_OWNER_DECISION = frozenset(
 
 
 def _client_public_methods() -> set[str]:
-    tree = ast.parse((SRC / "orchestre.py").read_text(encoding="utf-8"))
+    tree = ast.parse((SRC / "orchestre" / "client.py").read_text(encoding="utf-8"))
     client = next(
         node
         for node in tree.body

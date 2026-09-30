@@ -13,7 +13,7 @@ Why this module exists
 "Which branch is the tree on, which branch should each repository be on
 under it, and which is it actually on" was computed independently in four
 places: ``validate_branch_topology`` and ``_collect_branch_alignment_diagnostics``
-in ``operations.py``, ``_branch_incoherence`` in ``orchestre.py``, and the
+in ``operations/``, ``_branch_incoherence`` in ``orchestre/``, and the
 root read at the top of ``_restart_tree_common``. Each read the root's
 branch, walked the tree, called
 :func:`~ComplexGitSync.git_branch.resolve_propagated_ref` with

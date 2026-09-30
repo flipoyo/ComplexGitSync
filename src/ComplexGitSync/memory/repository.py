@@ -13,7 +13,7 @@ A memory is a private/local repository like ``.localSpec`` or ``.claude``:
 one shared repository, one branch per project, mounted at
 ``.cgitsync/.memory``. Nothing about cloning, committing or pushing it is
 special, so nothing here learns to do any of it — this module decides
-*what* and `orchestre.py` asks `git_runner.py` to do it. The package
+*what* and `orchestre/` asks `git_runner.py` to do it. The package
 docstring states that boundary; this is the module that would have broken
 it first.
 

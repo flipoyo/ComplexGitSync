@@ -1,4 +1,4 @@
-# ComplexGitSync v3.5.0
+# ComplexGitSync v3.5.1
 __A distributed git-native Operating Space_
 _More than an alternative to git submodules for complex multi git-repo project management and synchronization__
 

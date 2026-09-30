@@ -12,8 +12,10 @@ Five lists are measured over every module under `src/ComplexGitSync/`:
    dunders; enums, exception types and method-less value objects do not
    count), three or more public module-level functions, and 100+ lines.
 2. **over_class_cap** — more than three behaviour classes in one file.
-3. **over_2000_lines** — a module past 2000 lines, which must become a
-   directory (see the ModulePackagisation ticket).
+3. **over_2000_lines** — a module past 2000 lines. Outside `cli/` that is an
+   outright failure, with no baseline to hide behind: it must become a
+   directory (ModulePackagisation). `cli/` is recorded at its size and may
+   not grow.
 4. **missing_all** — a module that declares no `__all__`, or whose public
    classes and functions are not all listed in it.
 5. **filesystem_writers** — a module-level function that calls a
@@ -221,7 +223,14 @@ def run_check(measured: dict[str, object], baseline: dict[str, object]) -> list[
                 failures.append(f"{name}: {member} is new (the ratchet only tightens)")
     recorded_sizes = baseline.get("over_2000_lines", {})
     for module, loc in measured["over_2000_lines"].items():  # type: ignore[union-attr]
-        if module not in recorded_sizes:
+        if not module.startswith(_CLASS_EXEMPT_PREFIXES):
+            # Outside cli/ there is no baseline to hide behind: a module this
+            # long must become a directory of one-major-class files.
+            failures.append(
+                f"over_2000_lines: {module} is {loc} lines and must become a package "
+                f"(only cli/ may stay a single file)"
+            )
+        elif module not in recorded_sizes:
             failures.append(f"over_2000_lines: {module} ({loc} lines) is new")
         elif loc > recorded_sizes[module]:
             failures.append(

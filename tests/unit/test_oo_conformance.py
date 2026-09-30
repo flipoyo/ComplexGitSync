@@ -120,12 +120,12 @@ def test_the_ratchet_fails_when_a_list_gains_a_member_and_when_a_size_grows():
         "over_class_cap": [],
         "missing_all": [],
         "filesystem_writers": [],
-        "over_2000_lines": {"big.py": 2100},
+        "over_2000_lines": {"cli/big.py": 2100},
     }
-    grew = {**baseline, "no_behaviour_class": ["new.py"], "over_2000_lines": {"big.py": 2200}}
+    grew = {**baseline, "no_behaviour_class": ["new.py"], "over_2000_lines": {"cli/big.py": 2200}}
     failures = oo.run_check(grew, baseline)
     assert any("no_behaviour_class: new.py" in f for f in failures)
-    assert any("big.py grew 2100 -> 2200" in f for f in failures)
+    assert any("cli/big.py grew 2100 -> 2200" in f for f in failures)
     assert oo.run_check(baseline, baseline) == []
 
 
@@ -135,7 +135,32 @@ def test_a_list_that_shrinks_passes():
         "over_class_cap": [],
         "missing_all": [],
         "filesystem_writers": [],
+        "over_2000_lines": {"cli/big.py": 2100},
+    }
+    better = {**baseline, "no_behaviour_class": [], "over_2000_lines": {"cli/big.py": 2000}}
+    assert oo.run_check(better, baseline) == []
+
+
+def test_a_module_over_2000_lines_outside_cli_fails_even_with_a_baseline_entry():
+    baseline = {"over_2000_lines": {"big.py": 2100}}
+    measured = {
+        "no_behaviour_class": [],
+        "over_class_cap": [],
+        "missing_all": [],
+        "filesystem_writers": [],
         "over_2000_lines": {"big.py": 2100},
     }
-    better = {**baseline, "no_behaviour_class": [], "over_2000_lines": {"big.py": 2000}}
-    assert oo.run_check(better, baseline) == []
+    failures = oo.run_check(measured, baseline)
+    assert any("big.py is 2100 lines and must become a package" in f for f in failures)
+
+
+def test_cli_may_stay_over_2000_lines_at_its_recorded_size():
+    baseline = {"over_2000_lines": {"cli/expert.py": 2500}}
+    measured = {
+        "no_behaviour_class": [],
+        "over_class_cap": [],
+        "missing_all": [],
+        "filesystem_writers": [],
+        "over_2000_lines": {"cli/expert.py": 2500},
+    }
+    assert oo.run_check(measured, baseline) == []

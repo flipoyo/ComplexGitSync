@@ -17,10 +17,10 @@ What lives here
 
 Why a package
 -------------
-Before this, a workspace's memory was spread across ``orchestre.py``,
+Before this, a workspace's memory was spread across ``orchestre/``,
 ``state_store.py`` and three ledger modules, with no single place to look.
 The next two milestones add a repository and a network protocol; adding
-those to code with no home means adding them to ``orchestre.py``, which is
+those to code with no home means adding them to ``orchestre/``, which is
 what every other extraction has been trying to empty. ``cli/`` earned its
 own package when it outgrew one file, and memory is a larger subject than
 the CLI.
@@ -29,7 +29,7 @@ The Git boundary, stated while it is still cheap to state
 ---------------------------------------------------------
 **Nothing in here runs Git, and nothing in here should learn to.** The next
 milestone makes a memory a repository that is committed and pushed; when it
-does, that Git work belongs to ``operations.py`` and ``git_runner.py``, as
+does, that Git work belongs to ``operations/`` and ``git_runner.py``, as
 it does for every other repository in the tree — driven *by* this package,
 never done inside it. A memory knows what it holds; it does not know how to
 push.

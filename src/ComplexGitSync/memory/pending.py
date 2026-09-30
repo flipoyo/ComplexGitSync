@@ -15,7 +15,7 @@ WorkingTransitionState (`.agent/.local/.localSpec/DevTickets/openTickets/
 memory-dev_1-2_WorkingTransitionState_DevPlanTicket.md`) split what
 `.cgitsync` holds into two directories so the mount's own git worktree
 stays clean between one `memory push` and the next. Two different Ring
-levels need the same "read both, merge" answer: `orchestre.py`
+levels need the same "read both, merge" answer: `orchestre/`
 (`memory_status`/`memory_list`/`memory_show`/`memory_explore`/`verify`/`push`)
 and `snapshot_resolver.py` (which `.gts` a command defaults to, resolved
 *before* a project is even loaded). Writing the union logic twice would

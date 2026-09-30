@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from ..git_runner import GitRunnerProtocol
 
 #: The per-repository half of a refusal, as
-#: `operations.py::_describe_merge_conflict` writes it, carrying the branch
+#: `MergeOperation.describe_merge_conflict` writes it, carrying the branch
 #: whether or not git blamed a file. Matching this phrase rather than a whole
 #: sentence is what keeps one pattern working for both wrappers —
 #: `merge_tree`'s "merge refused; no repository was merged: ..." and

@@ -8,7 +8,7 @@ Imports: config_document, config_document_io, errors, git_repo
 
 Ring-classification note (found during P2-integrate, same shape as the
 config_document.py/config_document_io.py split from WP-CFG): every real
-caller across the codebase — orchestre.py, tests/integration/, tests/unit/
+caller across the codebase — orchestre/, tests/integration/, tests/unit/
 — invokes ``GtsDocument.from_toml(path)``/``.from_json(path)`` directly on
 this class, so the class itself must carry ``ConfigDocumentIOMixin``
 (Ring 1) rather than staying strictly Ring-0-pure. This mirrors
@@ -21,26 +21,26 @@ is deliberately *not* applied to this module (or to ``cgs_format.py``) for
 this reason — it stays scoped to modules with no I/O-adapter mixin at all,
 e.g. ``errors.py``, ``ledger_entry.py``, ``integrity.py``.
 
-Extracted verbatim from ``orchestre.py`` (Wave 1, P2 of
-``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
+Extracted verbatim from ``orchestre/`` (Wave 1, P2 of
+``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre/`` still
 carries its own copy of ``GtsDocument`` until the separate P2-integrate step
 deletes it there and re-points imports — this module does not change that
 file.
 
 A handful of small, private, string-only helpers (``_repo_ref_name`` and
 friends, ``_parse_gts_node_type``, ``_SHA256_HEX_RE``,
-``_FREEZE_COMMAND_ORIGINS``) are also used elsewhere in ``orchestre.py`` by
+``_FREEZE_COMMAND_ORIGINS``) are also used elsewhere in ``orchestre/`` by
 code that is not part of ``GtsDocument`` (e.g. ``build_registry_from_gts_document``,
 future ``registry.py``). Per the Ring-0 rule that this module may import from
-rings below it only — ``orchestre.py`` is Ring 3, ``git_tree.py`` (where
+rings below it only — ``orchestre/`` is Ring 3, ``git_tree.py`` (where
 ``_parse_gts_node_type``/``_as_optional_str`` currently live) is Ring 1 —
 this module cannot import them from there without breaking Ring 0 purity and
-the "no dependency on the rest of orchestre.py" standalone requirement this
+the "no dependency on the rest of orchestre/" standalone requirement this
 extraction is built to satisfy. They are therefore duplicated here as tiny,
 stable, pure functions tied to a frozen wire format, not forked business
 logic; a later integration step (most naturally when the ref-token helpers'
 other caller becomes ``registry.py``, Ring 2, which *can* import downward
-from this Ring-0 module) can retire ``orchestre.py``'s copies in favour of
+from this Ring-0 module) can retire ``orchestre/``'s copies in favour of
 importing from here.
 """
 
@@ -60,7 +60,7 @@ from .git_repo import DiscoveryState, NodeType, RefKind, RepoLifecycleState
 # ============================================================
 #  Module-level constants and helpers GtsDocument depends on
 #
-#  Duplicated from orchestre.py / git_tree.py — see the module
+#  Duplicated from orchestre/ / git_tree.py — see the module
 #  docstring above for why these are copies, not imports.
 # ============================================================
 

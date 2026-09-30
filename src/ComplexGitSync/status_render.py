@@ -14,10 +14,10 @@ Wave 2 Lane A). ``ComplexGitSyncClient.status()`` itself is **not** moved
 here — it calls ``self.git_runner.current_branch(...)``,
 ``.rev_parse_head(...)``, ``.upstream_ref(...)``, and
 ``.branch_tracking_counts(...)`` (real `git` subprocess calls) to build each
-row, so it stays Ring 3 orchestration in ``orchestre.py``. This module only
+row, so it stays Ring 3 orchestration in ``orchestre/``. This module only
 holds the pure formatting/parsing helpers that method calls once each row's
 raw values already exist. ``_unmanaged_gitlink_paths`` also stays in
-``orchestre.py`` for the same reason — despite living next to these
+``orchestre/`` for the same reason — despite living next to these
 functions there, it calls ``git_runner.tracked_gitlink_paths(...)``.
 """
 

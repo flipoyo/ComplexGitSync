@@ -3,11 +3,7 @@
   "missing_all": [],
   "no_behaviour_class": [],
   "over_2000_lines": {
-    "cli/expert.py": 2501,
-    "operations.py": 2228,
-    "orchestre.py": 6796
+    "cli/expert.py": 2501
   },
-  "over_class_cap": [
-    "orchestre.py"
-  ]
+  "over_class_cap": []
 }

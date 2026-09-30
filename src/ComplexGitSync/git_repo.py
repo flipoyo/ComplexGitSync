@@ -483,7 +483,7 @@ def repo_remote_url(repo: WorkingRepo, protocol: AccessProtocol) -> str:
 
     The same :class:`RepoAddress` construction
     :meth:`ComplexGitSyncClient._build_remote_url` uses for cloning,
-    exposed as a free function so ``operations.py`` (which has no client
+    exposed as a free function so ``operations/`` (which has no client
     to call a method on) can compute a repo's URL under a *different*
     protocol than whatever its `origin` remote is currently configured
     to — used by ``push``/``pull``/``pull-force``'s ``--force-protocol``

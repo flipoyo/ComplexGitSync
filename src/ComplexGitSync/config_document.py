@@ -5,7 +5,7 @@ Contract: wrap a dict, expose dot-path read access and a validation hook.
 Imports: none
 
 The shared :class:`ConfigDocument` base lives outside both ``cgs_format.py`` and
-``orchestre.py`` because it is also used by the runtime ``.gts`` format.
+``orchestre/`` because it is also used by the runtime ``.gts`` format.
 
 File-based loading/saving (``from_toml``/``to_toml``/``from_json``/``to_json``/
 ``from_yaml``/``to_yaml``) used to live on this class, but all six call
