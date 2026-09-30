@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.git_runner import GitRunner
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
@@ -151,3 +152,22 @@ def test_adopting_is_the_opt_in_that_publishes_what_was_recorded_locally(tmp_pat
     assert pushed["pushed"] is True
     assert _git(remote, "rev-parse", "--verify", "refs/heads/demo")
     assert _git(remote, "ls-tree", "-r", "--name-only", "demo")
+
+
+def test_publish_only_commands_say_why_they_refuse_a_defaulted_memory(tmp_path):
+    workspace, client = _workspace(tmp_path / "demo")
+
+    for call in (lambda: client.memory_branch(workspace, "feature"), lambda: client.memory_reboot(workspace)):
+        with pytest.raises(GitSyncError, match="local memory ComplexGitSync made itself"):
+            call()
+
+
+def test_a_defaulted_memory_records_no_self_history(tmp_path):
+    workspace, client = _workspace(tmp_path / "demo")
+
+    with pytest.raises(GitSyncError, match="never published"):
+        client.self_history_adopt(workspace)
+    with pytest.raises(GitSyncError, match="never published"):
+        client.self_history_add(  # the guard runs before any argument is read
+            workspace, ticket="", goal="", action="", worker=None, orchestrator=None, conformity=None
+        )

@@ -645,10 +645,7 @@ class MemoryCommands:
         """
         workspace = Path(cgshome)
         memory_mount = MemoryRepository(workspace).mount_path()
-        if not (memory_mount / ".git").exists():
-            raise GitSyncError(
-                f"{memory_mount} is not a repository yet. Run 'cgitsync memory adopt' first."
-            )
+        DefaultMemory(self.client).require_published(workspace, "self-history adopt")
         mount = MemoryRepository(workspace).self_history_mount_path()
         if (mount / ".git").exists():
             raise GitSyncError(
@@ -859,10 +856,7 @@ class MemoryCommands:
         """
         workspace = Path(cgshome)
         mount = MemoryRepository(workspace).mount_path()
-        if not DefaultMemory(self.client).is_published(workspace):  # a defaulted memory has no remote to branch on
-            raise GitSyncError(
-                f"{mount} is not a repository yet. Run 'cgitsync memory adopt' first."
-            )
+        DefaultMemory(self.client).require_published(workspace, "memory branch")
         registry = self.client.get_dependency_registry()
         target = MemoryRepository.branch(registry.get(ROOT_REPO_ID).name, project_branch)
         existed = self.client.git_runner.local_branch_exists(mount, target)
@@ -1123,6 +1117,7 @@ class MemoryCommands:
         real history, not merely look like a state id.
         """
         workspace = Path(cgshome)
+        DefaultMemory(self.client).refuse_self_history(workspace)
         cgitsync_dir = workspace / ".cgitsync"
         pending_dir = cgitsync_dir / self_history_store.SELF_HISTORY_PENDING_DIR_NAME
         contract = ""
@@ -1226,10 +1221,7 @@ class MemoryCommands:
         """
         workspace = Path(cgshome)
         mount = MemoryRepository(workspace).mount_path()
-        if not DefaultMemory(self.client).is_published(workspace):  # a defaulted memory has no remote to branch on
-            raise GitSyncError(
-                f"{mount} is not a repository yet. Run 'cgitsync memory adopt' first."
-            )
+        DefaultMemory(self.client).require_published(workspace, "memory reboot")
 
         registry = self.client.load_gts(discover_gts_path(str(workspace)))
         project_name = registry.get(ROOT_REPO_ID).name

@@ -1388,11 +1388,10 @@ def _print_memory_reboot(result: dict) -> int:
 
 
 def _print_memory_status(status: dict) -> int:
-    print(
-        f"states={status['states']} entries={status['entries']} "
-        f"verification={status['verification']} findings={status['findings']}"
-    )
-    print(f"last_recorded_at={status['last_recorded_at'] or '(never)'}" + (f"\n{status['notice']}" if status.get("notice") else ""))
+    print(f"states={status['states']} entries={status['entries']} verification={status['verification']} findings={status['findings']}")
+    print(f"last_recorded_at={status['last_recorded_at'] or '(never)'}")
+    if status.get("notice"):
+        print(status["notice"])
     if not status["entries"]:
         print("nothing has been recorded here yet; the next command that writes a State starts the chain.")
         return EXIT_OK

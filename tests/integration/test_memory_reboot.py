@@ -434,7 +434,7 @@ def test_adopt_without_reboot_still_inherits_as_before(tmp_path):
 def test_reboot_refuses_before_the_memory_is_a_repository(tmp_path):
     workspace = _used_workspace(tmp_path / "demo")
 
-    with pytest.raises(GitSyncError, match="not a repository yet"):
+    with pytest.raises(GitSyncError, match="local memory ComplexGitSync made itself"):
         _loaded(workspace).memory_reboot(workspace)
 
 

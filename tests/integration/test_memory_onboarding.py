@@ -328,7 +328,7 @@ def test_making_a_branch_that_is_already_there_says_so(tmp_path):
 def test_the_branch_command_refuses_before_the_memory_is_a_repository(tmp_path):
     workspace = _used_workspace(tmp_path / "demo")
 
-    with pytest.raises(GitSyncError, match="not a repository yet"):
+    with pytest.raises(GitSyncError, match="local memory ComplexGitSync made itself"):
         _loaded(workspace).memory_branch(workspace, "main")
 
 

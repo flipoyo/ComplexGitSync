@@ -72,6 +72,26 @@ class DefaultMemory:
         """Whether *workspace* has a memory repository that is not the local default."""
         return (MemoryRepository(workspace).mount_path() / ".git").exists() and not self.is_defaulted(workspace)
 
+    def require_published(self, workspace: Path, action: str) -> None:
+        """Refuse *action*, which needs a published memory, with the real reason.
+
+        A defaulted memory is a repository, so "not a repository yet" would be
+        wrong; it is local by design and only `memory adopt` changes that.
+        """
+        mount = MemoryRepository(workspace).mount_path()
+        if self.is_defaulted(workspace):
+            raise GitSyncError(
+                f"{mount} is a local memory ComplexGitSync made itself, never published, so '{action}' "
+                "does not apply. Declare a memory in your .cgs and run 'cgitsync memory adopt' to publish it."
+            )
+        if not (mount / ".git").exists():
+            raise GitSyncError(f"{mount} is not a repository yet. Run 'cgitsync memory adopt' first.")
+
+    def refuse_self_history(self, workspace: Path) -> None:
+        """Self-history is developer machinery (D4): a defaulted memory records none."""
+        if self.is_defaulted(workspace):
+            self.require_published(workspace, "self-history")
+
     def retire(self, workspace: Path) -> None:
         """Discard a defaulted memory's repository so `memory adopt` can make a real one.
 
