@@ -8,7 +8,7 @@ Contract: dispatch a command handler under structured run-logging (with the
     standing in — and format/print the plan, tree-state, and
     .gitignore-sync reports every command group's _execute_* functions
     reuse — no group-specific handler logic.
-Imports: cgs_format, errors, git_repo, git_tree, orchestre, snapshot_resolver
+Imports: cgs_format, errors, git_repo, git_tree, memory_prompt, orchestre, snapshot_resolver
 """
 
 from __future__ import annotations
@@ -209,8 +209,11 @@ def _run_with_logging(
         source_path=resolved_source,
         project_root=project_root,
     )
+    from . import memory_prompt  # imported here: memory_prompt builds on this module
+
     try:
-        exit_code = runner(active_client, resolved_source)
+        with memory_prompt.silenced_setup_warning():
+            exit_code = runner(active_client, resolved_source)
     except Exception as exc:
         if active_client.run_logger is not None:
             active_client.run_logger.log_event(
@@ -258,6 +261,7 @@ def _run_with_logging(
             )
         raise
 
+    memory_prompt.offer_after_command(active_client)
     if active_client.run_logger is not None:
         tree_state = active_client.get_tree_state() if getattr(active_client, "registry", None) is not None else None
         active_client.run_logger.log_event(

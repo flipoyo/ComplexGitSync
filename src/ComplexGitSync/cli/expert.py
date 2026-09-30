@@ -6,7 +6,7 @@ Ring: 4. Contract: register, dispatch, and execute the 21 Expert-tier commands
     import-submodules, init-from-submodules, verify, memory, self-history).
     Argument/prompt collection only — delegates all semantics to
     ComplexGitSyncClient; never touches Git.
-Imports: _shared, errors, git_repo, memory, orchestre
+Imports: _shared, errors, git_repo, memory, memory_prompt, orchestre
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from ..memory.integrity import HistoryState
 from ..memory.self_history import VALID_AGENT_ROLES, AgentInfo
 from ..operations import MERGE_RESOLVE_HINT
 from ..orchestre import ComplexGitSyncClient
+from . import memory_prompt
 from ._shared import (
     _add_gitignore_sync_arguments,
     _add_json_argument,
@@ -582,12 +583,7 @@ def _register_init_from_submodules(subparser: argparse.ArgumentParser) -> None:
 
 
 def _register_memory(subparser: argparse.ArgumentParser) -> None:
-    """``memory status|list|show`` — read-only, for now.
-
-    A group rather than three flat commands: they answer one subject, and
-    the next milestones add more of them (a push, an adopt). Read-only
-    because there is nowhere to push a memory to yet.
-    """
+    """``memory <subcommand>`` — one group, because every subcommand answers one subject."""
     memory_commands = subparser.add_subparsers(dest="memory_command", required=True)
 
     status = memory_commands.add_parser(
@@ -663,6 +659,7 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
         "carrying forward whatever the fallback branch already holds.",
     )
     _add_search_dir_argument(adopt)
+    memory_prompt.register(memory_commands)
 
     migrate = memory_commands.add_parser(
         "migrate",

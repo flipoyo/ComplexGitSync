@@ -13,6 +13,7 @@ in-memory tree structure, lifecycle, registry, and tree-level utilities.
 
 Classes defined here (Tier 1 — Core State):
     TreeLifecycleState      Tree-level lifecycle progression enum
+    TreeProfile             USER or DEV, read off what the tree holds
     GitTree                 In-memory dict of GitRepo nodes (MAIN class)
     WorkingGitTree          Runtime GitTree with WorkingRepo state
     ProjectTreeState        Frozen snapshot of tree readiness (read-only)
@@ -360,6 +361,17 @@ class TreeLifecycleState(StrEnum):
     ERROR = "ERROR"
 
 
+class TreeProfile(StrEnum):
+    """Whose tree this is: USER holds no private repository, DEV holds at least one.
+
+    Read off the tree, never configured (`AdditionalSpecs.md`, *The tree
+    profile*). Only a DEV tree's memory is synced to a remote.
+    """
+
+    USER = "user"
+    DEV = "dev"
+
+
 # ---------------------------------------------------------------------------
 # GitTree — core in-memory tree
 # ---------------------------------------------------------------------------
@@ -546,6 +558,15 @@ class WorkingGitTree(GitTree):
         else:
             self.lifecycle_state = TreeLifecycleState.PARTIAL
         return self.lifecycle_state
+
+    @property
+    def profile(self) -> TreeProfile:
+        """DEV when any repository is effectively private, USER otherwise.
+
+        The one place this rule lives. Reads :attr:`WorkingRepo.effective_private`,
+        so a repository private only through :func:`propagate_privacy` counts.
+        """
+        return TreeProfile.DEV if any(repo.effective_private for repo in self.repos.values()) else TreeProfile.USER
 
     @property
     def registry_complete(self) -> bool:
@@ -1663,6 +1684,7 @@ __all__ = [
     "GitTreeGitCommands",
     "ProjectTreeState",
     "TreeLifecycleState",
+    "TreeProfile",
     "WorkingGitTree",
     "build_tree_state",
     "cgitsync_managed_state_paths",

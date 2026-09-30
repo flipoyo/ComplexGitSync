@@ -2,7 +2,7 @@
 
 Ring: 3
 Contract: Everything the client does with a workspace's memory, its ledger and its releases.
-Imports: __build__, __version__, cgs_format, client, errors, git_branch, git_repo, git_tree, git_tree_branch, gts_document, master, memory, memory_facts, registry, snapshot_resolver, toolchain
+Imports: __build__, __version__, cgs_format, client, errors, git_branch, git_repo, git_tree, git_tree_branch, gts_document, master, memory, memory_facts, memory_setup, registry, snapshot_resolver, toolchain
 """
 
 from __future__ import annotations
@@ -80,6 +80,7 @@ from ..snapshot_resolver import discover_gts_path
 from ..toolchain import Toolchain
 from .default_memory import DefaultMemory
 from .memory_facts import MemoryFacts
+from .memory_setup import MemorySetup
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .client import ComplexGitSyncClient
@@ -389,6 +390,7 @@ class MemoryCommands:
         *,
         cgshome: str | Path | None = None,
         owner: str | None = None,
+        entry: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Add this project's memory to a `.cgs` that already exists.
 
@@ -408,9 +410,9 @@ class MemoryCommands:
         target = Path(cgs_path).resolve()
         if not target.is_file():
             raise GitSyncError(f"{target} is not a file.")
-        proposal = self.client.memory_init(cgshome or target.parent, owner=owner)
-        entry = dict(proposal["entry"])
-        line = str(proposal["line"])
+        # *entry*, when given, is one `memory setup` built for another provider or name.
+        entry = dict(entry or self.client.memory_init(cgshome or target.parent, owner=owner)["entry"])
+        line = CgsEntryEditor.format_entry(entry)
         original = target.read_text(encoding="utf-8")
 
         if CgsEntryEditor.already_present(original, str(entry["repository"]), str(entry["relative_path"])):
@@ -1330,7 +1332,7 @@ class MemoryCommands:
         states = PendingMemory(workspace / ".cgitsync").state_files()
         return {
             "cgshome": str(workspace.resolve()),
-            "notice": DefaultMemory(self.client).notice(workspace),
+            "notice": MemorySetup(self.client).notice(workspace),
             "verification": report.state.name.lower().replace("_", "-"),
             "findings": len(report.findings),
             "states": len(states),
@@ -1733,7 +1735,7 @@ class MemoryCommands:
         not exist yet, is not a repository yet (`memory adopt` not run),
         or — freshly adopted, nothing committed — has no HEAD to read.
         """
-        DefaultMemory(self.client).ensure(registry)  # runs before every State is written
+        MemorySetup(self.client).before_recording(registry)  # runs before every State is written
         for entry in registry.values():
             if entry.relative_path != Path(MOUNT_PATH):
                 continue

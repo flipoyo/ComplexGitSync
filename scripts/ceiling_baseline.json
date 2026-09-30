@@ -46,8 +46,8 @@
       "public_symbols": 2
     },
     "cli/_shared.py": {
-      "internal_imports": 22,
-      "loc": 623,
+      "internal_imports": 23,
+      "loc": 626,
       "public_symbols": 0
     },
     "cli/configuration.py": {
@@ -66,9 +66,14 @@
       "public_symbols": 5
     },
     "cli/expert.py": {
-      "internal_imports": 31,
-      "loc": 2196,
+      "internal_imports": 33,
+      "loc": 2194,
       "public_symbols": 1
+    },
+    "cli/memory_prompt.py": {
+      "internal_imports": 8,
+      "loc": 112,
+      "public_symbols": 4
     },
     "cli/minimalist.py": {
       "internal_imports": 15,
@@ -132,8 +137,8 @@
     },
     "git_tree.py": {
       "internal_imports": 36,
-      "loc": 1340,
-      "public_symbols": 26
+      "loc": 1356,
+      "public_symbols": 27
     },
     "git_tree_branch.py": {
       "internal_imports": 13,
@@ -147,7 +152,7 @@
     },
     "json_render.py": {
       "internal_imports": 0,
-      "loc": 202,
+      "loc": 206,
       "public_symbols": 2
     },
     "master.py": {
@@ -171,9 +176,14 @@
       "public_symbols": 6
     },
     "memory/conformity.py": {
-      "internal_imports": 0,
-      "loc": 61,
+      "internal_imports": 1,
+      "loc": 49,
       "public_symbols": 3
+    },
+    "memory/conformity_scale.py": {
+      "internal_imports": 0,
+      "loc": 47,
+      "public_symbols": 1
     },
     "memory/environment.py": {
       "internal_imports": 1,
@@ -202,7 +212,7 @@
     },
     "memory/repository.py": {
       "internal_imports": 3,
-      "loc": 290,
+      "loc": 291,
       "public_symbols": 8
     },
     "memory/self_history.py": {
@@ -276,12 +286,17 @@
       "public_symbols": 1
     },
     "orchestre/client.py": {
-      "internal_imports": 56,
-      "loc": 1372,
+      "internal_imports": 57,
+      "loc": 1395,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
       "internal_imports": 2,
+      "loc": 134,
+      "public_symbols": 1
+    },
+    "orchestre/default_memory.py": {
+      "internal_imports": 11,
       "loc": 134,
       "public_symbols": 1
     },
@@ -316,14 +331,19 @@
       "public_symbols": 1
     },
     "orchestre/memory_commands.py": {
-      "internal_imports": 48,
-      "loc": 1568,
+      "internal_imports": 50,
+      "loc": 1559,
       "public_symbols": 1
     },
     "orchestre/memory_facts.py": {
       "internal_imports": 19,
       "loc": 383,
       "public_symbols": 1
+    },
+    "orchestre/memory_setup.py": {
+      "internal_imports": 12,
+      "loc": 206,
+      "public_symbols": 2
     },
     "orchestre/orchestre.py": {
       "internal_imports": 2,
@@ -332,12 +352,12 @@
     },
     "orchestre/reporting.py": {
       "internal_imports": 31,
-      "loc": 286,
+      "loc": 288,
       "public_symbols": 1
     },
     "orchestre/reports.py": {
       "internal_imports": 4,
-      "loc": 149,
+      "loc": 150,
       "public_symbols": 4
     },
     "orchestre/runtime_state_store.py": {

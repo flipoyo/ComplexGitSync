@@ -287,7 +287,7 @@ class TestStatusGoldenOutput:
 
         # Summary line: exact field set and values for a fresh, aligned, clean tree.
         assert lines[0] == (
-            "summary ready=true complete=true use_case=standalone "
+            "summary ready=true complete=true use_case=standalone profile=user "
             "cgitsync_branch=main repos=1 dirty=0 staged=0 ahead=0 behind=0 "
             "unmeasured=0 recorded_mismatch=0 errors=0"
         )
@@ -356,7 +356,7 @@ class TestStatusGoldenOutput:
         lines = captured.out.splitlines()
 
         assert lines[0] == (
-            "summary ready=true complete=true use_case=standalone "
+            "summary ready=true complete=true use_case=standalone profile=user "
             "cgitsync_branch=main repos=1 dirty=1 staged=0 ahead=1 behind=0 "
             "unmeasured=0 recorded_mismatch=1 errors=0"
         )

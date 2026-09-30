@@ -155,6 +155,7 @@ class Reporting:
             incoherent=self._branch_incoherence(registry, branches),
             is_empty=False,
             memory_dirty=memory_dirty,
+            profile=registry.profile.value,
         )
 
     def status_json(self) -> str:
@@ -165,9 +166,9 @@ class Reporting:
         """
         view = self._collect_status()
         if view.is_empty:
-            payload = JsonRender.empty_status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value)
+            payload = JsonRender.empty_status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value, profile=view.profile)
         else:
-            payload = JsonRender.status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value, is_ready=view.tree_state.is_ready, registry_complete=view.tree_state.registry_complete, rows=view.rows, counts=view.counts, warnings=view.incoherent)
+            payload = JsonRender.status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value, is_ready=view.tree_state.is_ready, registry_complete=view.tree_state.registry_complete, rows=view.rows, counts=view.counts, warnings=view.incoherent, profile=view.profile)
         return JsonRender.dumps(payload)
 
     def verify_json(self, cgshome: str | Path, *, repair: bool = False) -> str:
@@ -196,6 +197,7 @@ class Reporting:
                 f"ready={str(tree_state.is_ready).lower()} "
                 f"complete={str(tree_state.registry_complete).lower()} "
                 f"use_case={use_case} "
+                f"profile={view.profile} "
                 f"cgitsync_branch={view.branch_label} "
                 f"repos={len(rows)} "
                 f"dirty={counts.dirty} "

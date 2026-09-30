@@ -5,7 +5,7 @@ Contract: hold one client's state (registry, runner, clock, the last results a
     caller reads back) and expose every public method unchanged, each
     delegating to the collaborator that owns it; keep the private helpers that
     several collaborators share, and the ones tests reach through the client.
-Imports: auth_hints, autofix, cgs_format, clone_guard, command_run_logger, discovery, discovery_commands, document_loader, environment_commands, errors, git_branch, git_probes, git_repo, git_runner, git_tree, git_tree_branch, gitignore_sync, installer, memory, memory_commands, operations, orchestre, reporting, reports, runtime_state_store, status_render, tree_commands, tree_env, universal_clock
+Imports: auth_hints, autofix, cgs_format, clone_guard, command_run_logger, discovery, discovery_commands, document_loader, environment_commands, errors, git_branch, git_probes, git_repo, git_runner, git_tree, git_tree_branch, gitignore_sync, installer, memory, memory_commands, memory_setup, operations, orchestre, reporting, reports, runtime_state_store, status_render, tree_commands, tree_env, universal_clock
 """
 
 from __future__ import annotations
@@ -84,6 +84,7 @@ from .git_probes import GitProbes
 from .gitignore_sync import GitignoreSync
 from .installer import Installer
 from .memory_commands import MemoryCommands
+from .memory_setup import MemorySetup
 from .orchestre import Orchestre
 from .reporting import Reporting
 from .reports import (
@@ -150,6 +151,8 @@ class ComplexGitSyncClient:
     #: both the rendered object and the verdict does not have to verify the
     #: chain twice — which with ``--repair`` would mean repairing twice.
     last_verify_report: VerificationReport | None = None
+    #: Set when this run recorded a State in a DEV tree whose ``.cgs`` declares no memory (`MemorySetup`).
+    memory_setup_due: bool = False
     run_logger: CommandRunLogger | None = None
     _forced_access_protocol: AccessProtocol | None = field(default=None, init=False, repr=False)
     _force_reclone: bool = field(default=False, init=False, repr=False)
@@ -175,6 +178,7 @@ class ComplexGitSyncClient:
         self._reporting = Reporting(self)
         self._environment_commands = EnvironmentCommands(self)
         self._gitignore_sync = GitignoreSync(self)
+        self._memory_setup = MemorySetup(self)
 
     def is_loaded(self) -> bool:
         return self._reporting.is_loaded()
@@ -740,9 +744,32 @@ class ComplexGitSyncClient:
         *,
         cgshome: str | Path | None = None,
         owner: str | None = None,
+        entry: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Add this project's memory to a `.cgs` that already exists."""
-        return self._memory_commands.add_memory_repo_cgs(cgs_path, cgshome=cgshome, owner=owner)
+        return self._memory_commands.add_memory_repo_cgs(cgs_path, cgshome=cgshome, owner=owner, entry=entry)
+
+    def memory_setup_proposal(
+        self, cgshome: str | Path | None = None, *, provider: str | None = None, owner: str | None = None, name: str | None = None
+    ) -> dict[str, Any] | None:
+        """What `memory setup` would do for a DEV tree with no declared memory; ``None`` otherwise."""
+        return self._memory_setup.proposal(cgshome, provider=provider, owner=owner, name=name)
+
+    def memory_setup(
+        self,
+        cgshome: str | Path | None = None,
+        *,
+        provider: str | None = None,
+        owner: str | None = None,
+        name: str | None = None,
+        cgs_path: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Create, declare and adopt the memory a DEV tree lacks, stopping at the first failure."""
+        return self._memory_setup.setup(cgshome, provider=provider, owner=owner, name=name, cgs_path=cgs_path)
+
+    def memory_setup_decline(self, cgshome: str | Path | None = None) -> Path:
+        """Remember that the memory setup proposal was declined, so it is asked only once."""
+        return self._memory_setup.decline(cgshome)
 
     def memory_clone(
         self,

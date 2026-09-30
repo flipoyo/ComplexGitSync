@@ -94,9 +94,9 @@ class MemoryRepository:
     workspace: Path
 
     @staticmethod
-    def repository_id(owner: str, *, provider: str = "github") -> str:
+    def repository_id(owner: str, *, provider: str = "github", name: str = DEFAULT_MEMORY_REPOSITORY) -> str:
         """The repository id a memory is proposed under: ``github:<owner>/.memory``."""
-        return f"{provider}:{owner}/{DEFAULT_MEMORY_REPOSITORY}"
+        return f"{provider}:{owner}/{name}"
 
     @staticmethod
     def self_history_repository_id(owner: str, *, provider: str = "github") -> str:
@@ -122,6 +122,7 @@ class MemoryRepository:
         project_name: str,
         *,
         provider: str = "github",
+        name: str = DEFAULT_MEMORY_REPOSITORY,
     ) -> dict[str, Any]:
         """The `.cgs` entry that mounts this project's memory.
 
@@ -131,7 +132,7 @@ class MemoryRepository:
         project's own branch of the memory and the rule does the rest.
         """
         return {
-            "repository": MemoryRepository.repository_id(owner, provider=provider),
+            "repository": MemoryRepository.repository_id(owner, provider=provider, name=name),
             "relative_path": MOUNT_PATH,
             "default_branch": project_name,
             "fallback_branch": DEFAULT_BRANCH,

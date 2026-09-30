@@ -1634,7 +1634,7 @@ def test_status_rendering_contains_live_git_summary(tmp_path):
     rendered_status = client.status()
 
     assert (
-        "summary ready=true complete=true use_case=standalone "
+        "summary ready=true complete=true use_case=standalone profile=user "
         "cgitsync_branch=main repos=1 dirty=1 staged=1 ahead=1" in rendered_status
     )
     assert "REPOSITORY" in rendered_status
@@ -1664,7 +1664,7 @@ def test_status_ignores_cgitsync_managed_generated_files(tmp_path):
     rendered_status = client.status()
 
     assert (
-        "summary ready=true complete=true use_case=standalone "
+        "summary ready=true complete=true use_case=standalone profile=user "
         "cgitsync_branch=main repos=1 dirty=0 staged=0" in rendered_status
     )
     assert "demo" in rendered_status

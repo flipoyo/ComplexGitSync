@@ -67,6 +67,7 @@ class JsonRender:
         rows: Sequence[tuple[str, str, str, str, str, str, str, str, str]],
         counts: Any,
         warnings: Sequence[str] = (),
+        profile: str = "user",
     ) -> dict[str, Any]:
         """What ``cgitsync status --json`` prints.
 
@@ -94,6 +95,7 @@ class JsonRender:
             "command": "status",
             "cgshome": cgshome,
             "use_case": use_case,
+            "profile": profile,
             "cgitsync_branch": cgitsync_branch,
             "tree_state": {
                 "lifecycle_state": lifecycle_state,
@@ -121,6 +123,7 @@ class JsonRender:
         use_case: str,
         cgitsync_branch: str,
         lifecycle_state: str,
+        profile: str = "user",
     ) -> dict[str, Any]:
         """``status --json`` for a workspace that holds no repositories.
 
@@ -135,6 +138,7 @@ class JsonRender:
             "command": "status",
             "cgshome": cgshome,
             "use_case": use_case,
+            "profile": profile,
             "cgitsync_branch": cgitsync_branch,
             "tree_state": {
                 "lifecycle_state": lifecycle_state,

@@ -81,6 +81,17 @@ publish it. It is never pushed — not even if you add a remote by hand —
 until your `.cgs` declares it and you run `memory adopt` (§2). Publishing is
 the opt-in; the default keeps everything on your disk.
 
+**A user's tree or a developer's.** `cgitsync status` prints `profile=user`
+or `profile=dev`. A tree with no private repository is a user's, and the
+local memory above is all it ever needs. A tree with at least one private
+repository — like the one this tutorial uses — is a developer's, and its
+memory is meant to be sent somewhere. When such a tree's `.cgs` declares no
+memory, the first command that records something asks you, in a terminal,
+for a provider, an owner and a name, then runs the three steps of §2 for you
+as one command, `cgitsync memory setup`. Answer no and it asks only once;
+from then on, and wherever it cannot ask, it warns that the work has no
+memory back-up. §2 is the same thing done step by step.
+
 **A memory is not a backup of your code.** It holds no source, no diffs and
 no files from your repositories — only what the tree *was* and what
 `cgitsync` *did*. Your code is already in your repositories.
@@ -436,6 +447,7 @@ That is what the whole tutorial was for.
 
 | When | Command | What it does |
 |---|---|---|
+| Once per project, all at once | `memory setup [--provider --owner --name]` | Steps 1–3 below in one command: creates, declares, adopts — offered on its own in a developer's tree |
 | Once, ever | `repo create <provider:owner/.memory>` | Creates the repository, through your provider's own tool |
 | Once per project | `memory mount --cgs FILE` | Adds one entry to your `.cgs`, keeping the rest of the file |
 | Once per project | `memory adopt [--reboot]` | Makes the memory you already have into that repository — fresh, or history inherited |

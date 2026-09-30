@@ -1,4 +1,4 @@
-# ComplexGitSync v3.8.0
+# ComplexGitSync v3.9.0
 __A distributed git-native Operating Space_
 _More than an alternative to git submodules for complex multi git-repo project management and synchronization__
 
@@ -333,7 +333,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `verify` | `--repair` `--search-dir` `--json` | Say whether this workspace's recorded history is verified, absent, legacy or corrupt. |
 | Expert | `env` | `--search-dir` | Observe the machine, tool versions, credentials and tree manifests that make this workspace usable. |
 | Expert | `env check` | `--search-dir` `--cgs` | Compare the observed environment with the requirements declared by the tree or an explicit `.cgs`. Reports drift and exits non-zero when requirements are not met. |
-| Expert | `memory` | `status` `list` `show <state>` `explore` `init` `mount` `adopt [--reboot]` `branch` `clone` `push` `reboot` `self-history` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. `self-history` prints every self-history record this workspace holds, folded and pending. A workspace whose `.cgs` declares no memory gets a local one, created on the first recording command, which `memory push` folds into and never publishes; `memory adopt` (with the entry declared) is the opt-in. |
+| Expert | `memory` | `status` `list` `show <state>` `explore` `init` `setup [--provider --owner --name --cgs]` `mount` `adopt [--reboot]` `branch` `clone` `push` `reboot` `self-history` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. `self-history` prints every self-history record this workspace holds, folded and pending. A workspace whose `.cgs` declares no memory gets a local one, created on the first recording command, which `memory push` folds into and never publishes; `memory adopt` (with the entry declared) is the opt-in. A developer tree (one holding a private repository) with no memory declared is offered `setup`, which creates the repository with `gh`, `glab` or `tea`, adds it to the `.cgs` and adopts the local memory in one step. |
 | Expert | `self-history` | `add --ticket --goal --action --worker-role --worker-vendor --worker-model --orchestrator-role --orchestrator-vendor --orchestrator-model --spec-respect-score --spec-respect-basis --spec-respect-reasoning --gating-score --gating-basis --gating-reasoning --quality-score --quality-basis --quality-reasoning --state-before --state-after --lint-passed --tests-passed --pushed --pushed-reason --conformity-explanation --search-dir` `adopt --owner --branch --search-dir` | Record one piece of agent work — who did it, for which ticket, and a three-part conformity score out of 100 (spec respect 33, gating 33, quality 34; the total is their sum and every score is shown with its maximum) — to the pending half of this project's own accounting record. Fills in the current signed AgentContract's hash and this workspace's `errors=` count itself; every other field is the orchestrator's own account. `adopt` retrofits self-history onto a `.memory` that was adopted before it existed — `memory adopt` already does this on its own for any `.memory` adopted from now on. |
 | Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
@@ -580,6 +580,21 @@ cgitsync memory push     # fold what accumulated, commit it, and push it
 `init` proposes and stops. **It never creates the repository for you**:
 `cgitsync` speaks Git and nothing else, so it prints the one command that
 creates it and waits.
+
+**User or developer.** `status` says which kind of tree you are in, as
+`profile=user` or `profile=dev`. A tree with no private repository is a
+user's: its memory is kept on this disk and never sent anywhere. A tree with
+at least one private repository is a developer's, and its memory is meant to
+be sent to a repository of its own. If a developer's `.cgs` names none, the
+first command that records something asks, in a terminal, which provider,
+owner and name to use (`github`, the owner of most of your private
+repositories, and `.memory` by default), shows the command that will create
+it, and on your yes runs `cgitsync memory setup`: it creates the repository,
+adds it to the `.cgs` with your comments kept, and adopts the memory already
+on this disk. Say no and it asks only once; after that, and whenever there is
+no terminal to ask in, it warns that your work has no memory back-up and
+names the command that fixes it. Tutorial 5 (`tutorials/05_memory.md`)
+walks through it.
 
 Once mounted and adopted, nothing needs to be pushed by hand any more:
 `push`, `tag`, and `freeze` each fold and send this project's own memory
