@@ -361,3 +361,87 @@ def test_an_unanswered_question_does_not_fail_the_command(tmp_path, monkeypatch,
     memory_prompt.offer_after_command(client)
 
     assert "no memory back-up" in capsys.readouterr().err
+
+
+def test_answers_that_leave_nothing_to_create_count_as_a_no(tmp_path, monkeypatch, capsys):
+    workspace = tmp_path / "d"
+    client = _loaded(workspace, _DEV_NO_MEMORY_CGS)
+    monkeypatch.setattr(memory_prompt, "interactive", lambda: True)
+    answers = iter(["nowhere", "", ""])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    memory_prompt.offer_after_command(client)
+
+    assert (workspace / ".cgitsync" / MemorySetup.DECLINED).is_file()
+    assert "no memory back-up" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# End to end — a real tree, a real recording command
+# ---------------------------------------------------------------------------
+
+
+def _seed(tmp_path: Path, name: str) -> Path:
+    remote = tmp_path / f"{name}-remote.git"
+    subprocess.run(["git", "init", "--bare", "-b", "main", str(remote)], check=True, capture_output=True)
+    seed = tmp_path / f"{name}-seed"
+    seed.mkdir()
+    _git(seed, "init", "-b", "main")
+    (seed / "README.md").write_text(f"{name}\n", encoding="utf-8")
+    _git(seed, "add", "README.md")
+    _git(seed, "commit", "-m", "initial")
+    _git(seed, "remote", "add", "origin", str(remote))
+    _git(seed, "push", "-u", "origin", "main")
+    return remote
+
+
+@pytest.fixture
+def dev_tree(tmp_path, monkeypatch):
+    """A bootstrapped DEV tree (one read-only private dependency), no memory declared, remotes on disk."""
+    remotes = {"demo": _seed(tmp_path, "demo"), "conf": _seed(tmp_path, "conf")}
+    monkeypatch.setattr(ComplexGitSyncClient, "_build_remote_url", lambda self, entry: str(remotes[entry.project_name]))
+    monkeypatch.setenv("CGSPATH", str(tmp_path / "cgspath"))
+    monkeypatch.delenv("CGSHOME", raising=False)
+    cgs = tmp_path / "demo.cgs"
+    cgs.write_text(
+        'project = { name = "demo", default_branch = "main" }\n'
+        "repos = [\n"
+        '    { repository = "github:someone/demo", relative_path = "." },\n'
+        '    { repository = "github:someone/conf", relative_path = "conf", private = true },\n'
+        "]\n",
+        encoding="utf-8",
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", MemorySetupWarning)
+        ComplexGitSyncClient().bootstrap(cgs, "demo", cgs_path=tmp_path / "cgspath")
+    return tmp_path / "cgspath" / "demo"
+
+
+def test_a_recording_command_without_a_terminal_only_warns(dev_tree, monkeypatch, capsys):
+    _no_questions(monkeypatch)
+
+    assert cli_main(["branch", "feature", "--search-dir", str(dev_tree)]) == 0
+
+    err = capsys.readouterr().err
+    assert "no memory back-up and no global ledger record" in err
+    assert "MemorySetupWarning" not in err  # the CLI says it in its own words, once
+
+
+def test_a_recording_command_in_a_terminal_asks_once(dev_tree, monkeypatch, capsys):
+    monkeypatch.setattr(memory_prompt, "interactive", lambda: True)
+    asked: list[str] = []
+    answers = iter(["", "", "", "n"])
+
+    def answer(prompt):
+        asked.append(prompt)
+        return next(answers)
+    monkeypatch.setattr("builtins.input", answer)
+
+    assert cli_main(["branch", "feature", "--search-dir", str(dev_tree)]) == 0
+    assert len(asked) == 4 and "[someone]" in asked[1]
+    assert (dev_tree / ".cgitsync" / MemorySetup.DECLINED).is_file()
+    capsys.readouterr()
+
+    assert cli_main(["branch", "other", "--search-dir", str(dev_tree)]) == 0
+    assert len(asked) == 4  # declined once: only the warning now
+    assert "no memory back-up" in capsys.readouterr().err

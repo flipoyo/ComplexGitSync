@@ -90,8 +90,9 @@ def _execute_memory_setup(
         name = _ask("Repository name", proposal["name"])
         proposal = client.memory_setup_proposal(cgshome, provider=provider, owner=owner, name=name)
         if proposal["create_with"] is None:
-            print(f"no repository can be created for provider {provider!r} without an owner and a tool.", file=sys.stderr)
-            print(proposal["warning"], file=sys.stderr)
+            # Answers that leave nothing to create count as a no, or the question returns every command.
+            client.memory_setup_decline(cgshome)
+            print(f"no repository can be created for provider {provider!r} without an owner and a tool.", proposal["warning"], sep="\n", file=sys.stderr)
             return EXIT_REFUSED
         print(f"this creates the repository with: {proposal['create_with']}")
         print(f"adds to {cgs or proposal['cgs'] or 'your .cgs'}: {proposal['line']}")
