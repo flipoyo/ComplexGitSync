@@ -19,6 +19,7 @@ from pathlib import Path
 from ..errors import GitSyncError
 from ..git_repo import RefKind, RepoScope
 from ..memory.conformity import VALID_CONFORMITY_BASES, ConformityCriterion, ConformityScore
+from ..memory.conformity_scale import ConformityScale
 from ..memory.integrity import HistoryState
 from ..memory.self_history import VALID_AGENT_ROLES, AgentInfo
 from ..operations import MERGE_RESOLVE_HINT
@@ -741,8 +742,8 @@ def _add_agent_arguments(subparser: argparse.ArgumentParser, prefix: str, label:
 
 def _add_conformity_arguments(subparser: argparse.ArgumentParser, prefix: str, label: str) -> None:
     subparser.add_argument(
-        f"--{prefix}-score", required=True, type=float,
-        help=f"{label} score (0-33, or 0-34 for quality).",
+        f"--{prefix}-score", required=True, type=ConformityScale.argument(prefix.replace("-", "_")),
+        help=f"{label} score, from 0 to its maximum {ConformityScale.MAXIMUM[prefix.replace('-', '_')]}.",
     )
     subparser.add_argument(
         f"--{prefix}-basis", required=True, choices=_CONFORMITY_BASIS_CHOICES,
@@ -775,6 +776,7 @@ def _register_self_history(subparser: argparse.ArgumentParser) -> None:
     _add_conformity_arguments(add, "spec-respect", "spec respect")
     _add_conformity_arguments(add, "gating", ".PUBLIC/.PRIVATE gating")
     _add_conformity_arguments(add, "quality", "quality of production")
+    add.add_argument("--conformity-explanation", default="", help="Optional: a short account of how the total out of 100 came about.")
     add.add_argument(
         "--state-before", default="", help="state(<hash>) before the work, if known."
     )
@@ -1266,6 +1268,7 @@ def _execute_self_history(
         quality=ConformityCriterion(
             score=args.quality_score, basis=args.quality_basis, reasoning=args.quality_reasoning
         ),
+        explanation=args.conformity_explanation,
     )
     path = client.self_history_add(
         cgshome,
@@ -1282,6 +1285,7 @@ def _execute_self_history(
         pushed=args.pushed,
         pushed_reason=args.pushed_reason,
     )
+    print(f"conformity: {ConformityScale.render(conformity.to_dict())}")
     return _print_self_history_add(path)
 
 
@@ -1488,12 +1492,9 @@ def _print_memory_self_history(records: list[dict]) -> int:
         )
         print(f"    goal: {record['goal']}")
         print(f"    action: {record['action']}")
-        print(
-            "    conformity: "
-            f"spec_respect={conformity['spec_respect']['score']}({conformity['spec_respect']['basis']}) "
-            f"gating={conformity['gating']['score']}({conformity['gating']['basis']}) "
-            f"quality={conformity['quality']['score']}({conformity['quality']['basis']})"
-        )
+        print(f"    conformity: {ConformityScale.render(conformity)}")
+        if conformity.get("explanation"):
+            print(f"    explanation: {conformity['explanation']}")
         contract = record["contract"] or "(none signed)"
         print(f"    contract={contract}")
     return EXIT_OK
