@@ -19,7 +19,7 @@ The owner asked for it in those words
 record the versions used at state genesis and at the time of each record.
 
 Three rules, settled with the owner on 2026-09-16 and stated in
-``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained register*:
+``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained ledger*:
 
 1. **All five, in every entry.** Each line stands on its own; a truncated
    or partly synced chain still says what made each record.

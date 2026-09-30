@@ -214,7 +214,7 @@ class MemoryCommands:
         package's own SemVer (``__version__``) and build counter
         (``__build__``), plus *release_name* as the tag actually applied.
         See ``.agent/.local/.localSpec/AdditionalSpecs.md``, *Versioning* — *The release
-        register*. The orchestrator is expected to pass a SemVer-shaped
+        ledger*. The orchestrator is expected to pass a SemVer-shaped
         *release_name* (``v<semver>``, matching the tag this workflow
         pushes); that is a convention, not something this method enforces.
 
@@ -1586,7 +1586,7 @@ class MemoryCommands:
         ``report.state`` is the answer — **verified**, **no history**,
         **legacy** or **corrupt** — and ``report.findings`` says why when it
         is the last one. The four are fixed by
-        ``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained register*.
+        ``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained ledger*.
 
         The distinction this method exists to make: an empty
         ``.cgitsync/lgr`` used to be reported as a clean chain, so the
@@ -1612,7 +1612,7 @@ class MemoryCommands:
 
         With ``repair=True``, a stale ``HEAD`` cache is corrected in place.
         Entries themselves are never rewritten or deleted — a broken chain
-        is reported, not silently healed. A register that can be edited back
+        is reported, not silently healed. A ledger that can be edited back
         into looking clean is evidence of nothing.
         """
         workspace = Path(cgshome)

@@ -1,4 +1,4 @@
-"""integrity — register verification: Finding taxonomy and chain-arithmetic checks.
+"""integrity — ledger verification: Finding taxonomy and chain-arithmetic checks.
 
 Ring: 0 (pure — no I/O, no clock, no environment)
 Contract: given a sequence of entries, decide whether the chain is intact.
@@ -28,17 +28,17 @@ from .ledger_entry import LedgerEntry
 
 HASH_ALGORITHM = "sha256"
 
-#: The `prev` value carried by the genesis (first) entry of a register —
+#: The `prev` value carried by the genesis (first) entry of a ledger —
 #: an all-zero digest. Schema: `.agent/.local/.localSpec/AdditionalSpecs.md`, *The
-#: hash-chained register*.
+#: hash-chained ledger*.
 GENESIS_PREV = f"{HASH_ALGORITHM}:" + "0" * 64
 
 
 class LedgerEntryLike(Protocol):
-    """Structural shape of one register entry.
+    """Structural shape of one ledger entry.
 
     The nine fields are fixed by `.agent/.local/.localSpec/AdditionalSpecs.md`'s *The
-    hash-chained register* section; adding or renaming one is a change to
+    hash-chained ledger* section; adding or renaming one is a change to
     that section first.
 
     Any object with these attributes satisfies this protocol — including,
@@ -59,9 +59,9 @@ class LedgerEntryLike(Protocol):
 
 
 class Finding(Enum):
-    """Taxonomy of register-integrity problems.
+    """Taxonomy of ledger-integrity problems.
 
-    Listed in `.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained register*.
+    Listed in `.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained ledger*.
 
     All eleven members are defined here because the type is shared with the
     later `verify_store()` work (Ring 1, filesystem-backed, out of scope for
@@ -74,7 +74,7 @@ class Finding(Enum):
     SEQ_GAP = auto()  # entries removed
     SEQ_DUPLICATE = auto()  # concurrent write slipped through
     MISSING_STATE = auto()  # entry references an absent state directory
-    ORPHAN_STATE = auto()  # state directory with no register entry
+    ORPHAN_STATE = auto()  # state directory with no ledger entry
     STATE_DIGEST_MISMATCH = auto()  # directory contents no longer hash to its name
     HEAD_STALE = auto()  # cached HEAD disagrees with recomputed chain
     ORPHAN_COMMIT_LOG = auto()  # commit messages kept for a State that is gone
@@ -108,7 +108,7 @@ class HistoryState(Enum):
     history here that this format cannot verify".
 
     The five are fixed by `.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained
-    register*.
+    ledger*.
     """
 
     VERIFIED = auto()  # a non-empty chain was read and every link held
@@ -130,7 +130,7 @@ class VerificationReport:
         """True when no findings were recorded — nothing wrong was detected.
 
         Deliberately **not** the same question as "is this history
-        verified". An empty register has no findings and is not evidence of
+        verified". An empty ledger has no findings and is not evidence of
         anything; :attr:`state` is what says which of the four answers this
         pass reached.
         """
@@ -199,7 +199,7 @@ class ChainVerifier:
 
         `entries` must be given in chain (append) order — the order entries were
         originally recorded in, e.g. ascending by `seq` for an uncorrupted
-        register. An empty sequence produces no findings and
+        ledger. An empty sequence produces no findings and
         `HistoryState.NO_HISTORY`: there was nothing to check, which is not the
         same answer as "checked, and it holds".
 
@@ -220,7 +220,7 @@ class ChainVerifier:
           *also* reported `BROKEN_LINK`, without re-attempting to resynchronise
           against a later entry's own hash. This is a deliberate, conservative
           choice matching the threat model's tamper-*evidence* goal
-          (`.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained register* —
+          (`.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained ledger* —
           tamper-evidence): a single rewritten or deleted entry means
           nothing downstream of it can be trusted to still describe the real
           history, even if the raw bytes of later entries happen to still be

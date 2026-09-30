@@ -707,7 +707,7 @@ kept, but only for the internal build counter (`__build__` in
 | `--json` output | **Additive only** — new fields may appear; existing ones do not change meaning and do not vanish. `schema_version` says which generation you are reading. |
 | `.cgs` and `.gts` grammar | Versioned in the file, and the version is read on load. |
 | Python modules under `src/ComplexGitSync/` | **Not a public interface.** `ComplexGitSyncClient` is the CLI's own implementation. Import it and a refactor may break you; no deprecation is owed. |
-| `verify` | **Experimental.** The register it reads is being rewritten, so its output and its findings may change. Everything else in the command table is covered by the promises above. |
+| `verify` | **Experimental.** The ledger it reads is being rewritten, so its output and its findings may change. Everything else in the command table is covered by the promises above. |
 
 `cgitsync verify` answers one of five things, and the difference matters if
 you gate a build on it:

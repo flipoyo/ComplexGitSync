@@ -1,4 +1,4 @@
-"""ledger_entry — hash-chained register entry construction.
+"""ledger_entry — hash-chained ledger entry construction.
 
 Ring: 0 (pure — no I/O, no clock, no environment)
 Contract: given the previous chain entry (or none, for genesis) and the
@@ -9,7 +9,7 @@ Contract: given the previous chain entry (or none, for genesis) and the
 Imports: none
 
 Design reference: ``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained
-register* (hash-chained register schema) and §3.3 (``ClockProtocol``).
+ledger* (hash-chained ledger schema) and §3.3 (``ClockProtocol``).
 
 The deleted TIME-L0 anchor discarded its pre-image and reused the State id
 shape. The UniversalClock ticket removed it; future attestation must keep
@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol, Sequence
 
 # Genesis predecessor hash — the fixed all-zero sentinel a chain's first
-# entry points at, per AdditionalSpecs.md's register schema ("the genesis
+# entry points at, per AdditionalSpecs.md's ledger schema ("the genesis
 # entry carries prev =
 # 'sha256:' + '0' * 64").
 _GENESIS_PREV = "sha256:" + "0" * 64
@@ -71,10 +71,10 @@ class ClockProtocol(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class LedgerEntry:
-    """One hash-chained ``.lgr`` register entry.
+    """One hash-chained ledger entry.
 
     Schema fixed by ``.agent/.local/.localSpec/AdditionalSpecs.md``'s *The hash-chained
-    register* section — do not add or rename a field without changing that
+    ledger* section — do not add or rename a field without changing that
     section first. The entry is hash-chained, so a field added later means
     migrating every chain already written.
     """
@@ -157,7 +157,7 @@ class LedgerEntry:
         """Same canonicalisation discipline ``GtsDocument.compute_snapshot_hash``
         already uses in ``orchestre/`` — stable key ordering, compact
         separators, no ASCII escaping. One canonicalisation idea, two users
-        (AdditionalSpecs.md's register schema); reimplemented here rather than imported,
+        (AdditionalSpecs.md's ledger schema); reimplemented here rather than imported,
         since Ring 0 cannot depend on Ring 3.
         """
 

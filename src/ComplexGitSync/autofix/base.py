@@ -80,7 +80,7 @@ class Repair(Protocol):
 #: the directory, relative to the repository root, that holds the chain.
 #: An explicit registry, not content-sniffing — the same reasoning
 #: ``git_branch.py``'s privacy rule and ``git_repo.py``'s provider registry
-#: already use elsewhere in this project. ``Omniscience``'s own register
+#: already use elsewhere in this project. ``Omniscience``'s own journal
 #: never needs an entry here, by its own one-file-per-record design.
 CHAIN_SHAPED_REPOS: dict[str, str] = {
     ".memory": "lgr",

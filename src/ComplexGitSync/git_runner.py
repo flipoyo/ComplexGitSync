@@ -996,7 +996,7 @@ class GitRunner:
         only ``import subprocess``, and a second importer would break the
         rule that makes the decoding and environment policies inescapable.
         The memory workstream records which tools produced each ledger entry
-        (``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained register*), and
+        (``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained ledger*), and
         that answer has to come from somewhere.
 
         ``None`` means "not installed" — a missing executable is an ordinary

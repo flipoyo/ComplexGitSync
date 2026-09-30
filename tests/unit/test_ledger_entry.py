@@ -1,4 +1,4 @@
-"""Unit tests for ``ledger_entry`` — hash-chained register entry construction.
+"""Unit tests for ``ledger_entry`` — hash-chained ledger entry construction.
 
 Pure-unit, no filesystem, no real clock: every entry is built through a fake
 ``ClockProtocol`` so the tests are fully deterministic.

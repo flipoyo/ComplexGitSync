@@ -180,7 +180,7 @@ class LocalGitRegister:
         — so a workspace that has one has history that ``verify`` must report as
         *legacy* rather than as nothing at all.
 
-        Every workspace created before the hash-chained register is written is
+        Every workspace created before the hash-chained ledger is written is
         in exactly this state, which is why the answer matters more than it
         looks.
         """

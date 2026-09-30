@@ -30,7 +30,7 @@ from ComplexGitSync.universal_clock import SystemClock
 
 
 def _chain(workspace: Path, *, entries: int = 2) -> Path:
-    """A real hash-chained register under *workspace*."""
+    """A real hash-chained ledger under *workspace*."""
     (workspace / ".cgitsync").mkdir(parents=True, exist_ok=True)
     lgr_dir = workspace / ".cgitsync" / "lgr"
     clock = SystemClock()

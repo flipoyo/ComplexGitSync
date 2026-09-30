@@ -65,7 +65,7 @@ COMMANDS: dict[str, str] = {
     "freeze": "Freeze a versioned state and emit a .gts snapshot.",
     "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
     "init-from-submodules": "Adopt a submodule-based checkout: discover, initialise, then convert its submodules.",
-    "verify": "Verify the hash-chained .cgitsync/lgr register for tamper-evidence.",
+    "verify": "Verify the hash-chained .cgitsync/lgr ledger for tamper-evidence.",
     "memory": "Look at what this workspace remembers: status, list, show <state>, explore, reboot.",
     "self-history": "Record one piece of agent work: add.",
 }
@@ -813,7 +813,7 @@ def _register_verify(subparser: argparse.ArgumentParser) -> None:
         action="store_true",
         help=(
             "Repair a stale HEAD cache to match the recomputed true "
-            "head. Never rewrites or deletes a register entry — a "
+            "head. Never rewrites or deletes a ledger entry — a "
             "broken chain is reported, not healed."
         ),
     )

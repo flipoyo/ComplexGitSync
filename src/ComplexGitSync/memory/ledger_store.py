@@ -1,4 +1,4 @@
-"""ledger_store — atomic, one-file-per-entry persistence for the hash-chained register.
+"""ledger_store — atomic, one-file-per-entry persistence for the hash-chained ledger.
 
 Ring: 1 (filesystem only, no subprocess)
 Contract: ``LedgerStore`` persists and loads ``LedgerEntry`` records as one
@@ -8,7 +8,7 @@ Contract: ``LedgerStore`` persists and loads ``LedgerEntry`` records as one
     redaction rule the store applies to every argv it records.
 Imports: ledger_entry, paths
 
-Design: ``AdditionalSpecs.md``'s hash-chained register and secret scrubbing.
+Design: ``AdditionalSpecs.md``'s hash-chained ledger and secret scrubbing.
 
 File layout
 -----------
@@ -93,16 +93,16 @@ class LedgerStoreCorruptionError(LedgerStoreError):
 
 @dataclass(frozen=True, slots=True)
 class HeadPointer:
-    """Cached identity of the last entry written to a register."""
+    """Cached identity of the last entry written to a ledger."""
 
     seq: int
     entry_hash: str
 
 
 class ArgvScrubber:
-    """Secret scrubbing (AdditionalSpecs.md, *The hash-chained register*).
+    """Secret scrubbing (AdditionalSpecs.md, *The hash-chained ledger*).
 
-    Applied before hashing or writing: what a register records about a
+    Applied before hashing or writing: what a ledger records about a
     command must never carry a credential, and must say what was done to
     *this tree* and nothing about the disk it sat on.
     """
@@ -114,7 +114,7 @@ class ArgvScrubber:
     )
 
     #: Flags whose *value* (the next argv element, or the ``=``-joined suffix)
-    #: is a secret and must never appear in the register, scrubbed form or not.
+    #: is a secret and must never appear in the ledger, scrubbed form or not.
     _SECRET_FLAG_NAMES = ("token", "password", "service")
     _SECRET_FLAG_RE = re.compile(
         r"^--(?P<name>" + "|".join(_SECRET_FLAG_NAMES) + r")(?P<eq_value>=.*)?$"
@@ -126,7 +126,7 @@ class ArgvScrubber:
     def scrub(cls, argv: Sequence[str], *, tree_root: Path | None = None) -> list[str]:
         """Return a copy of ``argv`` with credentials redacted and paths tamed.
 
-        Three independent rules, per AdditionalSpecs.md's register section:
+        Three independent rules, per AdditionalSpecs.md's ledger section:
 
         - Any URL-shaped element (``scheme://user:token@host/...``) has its
           userinfo replaced with ``***``, keeping the scheme and host visible.
@@ -227,7 +227,7 @@ class LedgerStore:
     def _best_effort_chmod(path: Path, mode: int) -> None:
         """Set ``mode`` on ``path``, never raising.
 
-        Permission bits are best-effort per AdditionalSpecs.md's register
+        Permission bits are best-effort per AdditionalSpecs.md's ledger
         section: on platforms where ``os.chmod`` semantics don't map onto
         POSIX bits (chiefly Windows), this call either succeeds without fully
         applying the requested bits or fails outright — either way, storage
@@ -346,7 +346,7 @@ class LedgerStore:
         """Load every entry in the directory, in ascending ``seq`` order.
 
         Returns ``[]`` if the directory doesn't exist yet (an empty/unstarted
-        register is not an error). Raises :class:`LedgerStoreCorruptionError`
+        ledger is not an error). Raises :class:`LedgerStoreCorruptionError`
         if an entry file's name and its own ``seq`` field disagree.
         """
         if not self.lgr_dir.exists():
@@ -418,7 +418,7 @@ class LedgerStore:
 
         This never reads the cached ``HEAD`` file — it is the ground truth
         :meth:`verify_and_repair_head` compares the cache against. Returns
-        ``None`` if the register has no entries yet.
+        ``None`` if the ledger has no entries yet.
         """
         entries = self.read_all_entries()
         if not entries:
@@ -431,10 +431,10 @@ class LedgerStore:
 
         Never trusts the cached file (§2.3): always recomputes from the entry
         files first, then compares. If the cache is missing, stale, or
-        outright malformed, it is rewritten to match; if the register is
+        outright malformed, it is rewritten to match; if the ledger is
         empty, any leftover ``HEAD`` file is removed since it would otherwise
         point at nothing. Returns the true head (or ``None`` for an empty
-        register) either way.
+        ledger) either way.
         """
         true_head = self.recompute_head()
         cached_head = self.read_head()

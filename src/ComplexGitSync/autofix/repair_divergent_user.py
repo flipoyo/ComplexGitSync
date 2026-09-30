@@ -41,7 +41,7 @@ _DIVERGENCE_MARKERS = (
     "not possible to fast-forward",
 )
 
-#: AdditionalSpecs.md's register schema: "the genesis entry carries prev =
+#: AdditionalSpecs.md's ledger schema: "the genesis entry carries prev =
 #: 'sha256:' + '0' * 64" — duplicated here (ledger_entry._GENESIS_PREV is
 #: private to that module) only for the empty-chain-at-the-merge-base edge
 #: case; every real incident so far has had entries to chain from instead.

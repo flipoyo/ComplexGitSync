@@ -95,7 +95,7 @@ def test_commands_dict_matches_registered_parsers():
 
 def test_commands_dict_help_text_matches_source_of_truth():
     assert expert.COMMANDS["purge"] == "Remove generated clone state for a .cgs workspace."
-    assert expert.COMMANDS["verify"] == "Verify the hash-chained .cgitsync/lgr register for tamper-evidence."
+    assert expert.COMMANDS["verify"] == "Verify the hash-chained .cgitsync/lgr ledger for tamper-evidence."
 
 
 # ---------------------------------------------------------------------------
