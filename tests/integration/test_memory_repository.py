@@ -12,6 +12,7 @@ also the point: a memory must work offline and be pushed later.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -110,6 +111,7 @@ def test_a_memory_pushed_here_is_the_same_memory_cloned_there(tmp_path):
 
     # Mount: the memory is a clone of the (empty) remote, in place.
     mount = workspace / ".cgitsync" / ".memory"
+    shutil.rmtree(mount, ignore_errors=True)  # the default memory this workspace already made
     mount.mkdir(parents=True)
     staging = tmp_path / "staging"
     subprocess.run(["git", "clone", str(remote), str(staging)], check=True, capture_output=True)
@@ -142,6 +144,7 @@ def test_pushing_twice_with_nothing_new_records_nothing(tmp_path):
     workspace = _used_workspace(tmp_path / "demo")
     remote = _bare_remote(tmp_path / "remote.git")
     mount = workspace / ".cgitsync" / ".memory"
+    shutil.rmtree(mount, ignore_errors=True)  # the default memory this workspace already made
     mount.mkdir(parents=True)
     staging = tmp_path / "staging"
     subprocess.run(["git", "clone", str(remote), str(staging)], check=True, capture_output=True)
@@ -164,6 +167,7 @@ def test_pushing_twice_with_nothing_new_records_nothing(tmp_path):
 
 def test_push_refuses_when_the_memory_is_not_a_repository_yet(tmp_path):
     workspace = _used_workspace(tmp_path / "demo")
+    shutil.rmtree(workspace / ".cgitsync" / ".memory")  # the default memory made on load
 
     with pytest.raises(GitSyncError, match="not a repository yet"):
         _loaded_client(workspace).memory_push(workspace)
@@ -176,6 +180,7 @@ def test_clone_refuses_to_overwrite_a_memory_that_is_here(tmp_path):
     # Something is already sitting at the mount — an interrupted adopt or
     # clone, say — and cloning over it would destroy whatever that was.
     mount = workspace / ".cgitsync" / ".memory"
+    shutil.rmtree(mount, ignore_errors=True)  # the default memory this workspace already made
     mount.mkdir(parents=True)
     (mount / "leftover.txt").write_text("not a git repository yet\n", encoding="utf-8")
 
@@ -213,7 +218,7 @@ def test_a_memory_holds_no_path_from_the_machine_that_made_it(tmp_path, monkeypa
     everything = "\n".join(
         path.read_text(encoding="utf-8")
         for path in sorted((workspace / ".cgitsync").rglob("*"))
-        if path.is_file()
+        if path.is_file() and ".git" not in path.parts  # Git's own objects are binary
     )
 
     # No user name, and no directory above the tree — the two things G5

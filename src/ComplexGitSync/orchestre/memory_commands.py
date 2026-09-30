@@ -78,6 +78,7 @@ from ..registry import (
 )
 from ..snapshot_resolver import discover_gts_path
 from ..toolchain import Toolchain
+from .default_memory import DefaultMemory
 from .memory_facts import MemoryFacts
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -379,7 +380,7 @@ class MemoryCommands:
             "branch": MemoryRepository.branch(root.name, branches.tree_branch or DEFAULT_BRANCH),
             "mount_path": str(MemoryRepository(workspace).mount_path()),
             "create_with": MemoryRepository.creation_command(entry),
-            "mounted": MemoryRepository(workspace).mount_path().joinpath(".git").exists(),
+            "mounted": DefaultMemory(self.client).is_published(workspace),
         }
 
     def add_memory_repo_cgs(
@@ -565,7 +566,9 @@ class MemoryCommands:
         """
         workspace = Path(cgshome)
         mount = MemoryRepository(workspace).mount_path()
-        if (mount / ".git").exists():
+        # Adopting is the opt-in: a defaulted memory is retired below and adopted as found.
+        default_memory = DefaultMemory(self.client)
+        if (mount / ".git").exists() and not default_memory.is_defaulted(workspace):
             raise GitSyncError(
                 f"{mount} is already a repository. 'cgitsync memory push' sends what "
                 "it has gained."
@@ -587,6 +590,7 @@ class MemoryCommands:
             )
 
         base = self._memory_base_branch(workspace, owner=owner)
+        default_memory.retire(workspace)
         self.client.git_runner.init_repository(mount, branch=target_branch)
         self.client.git_runner.configure_remote(mount, "origin", remote_url)
         self.client.git_runner.fetch(mount)
@@ -855,7 +859,7 @@ class MemoryCommands:
         """
         workspace = Path(cgshome)
         mount = MemoryRepository(workspace).mount_path()
-        if not (mount / ".git").exists():
+        if not DefaultMemory(self.client).is_published(workspace):  # a defaulted memory has no remote to branch on
             raise GitSyncError(
                 f"{mount} is not a repository yet. Run 'cgitsync memory adopt' first."
             )
@@ -881,24 +885,14 @@ class MemoryCommands:
         return str(proposal["entry"].get("fallback_branch") or DEFAULT_BRANCH)
 
     def _memory_declared(self, registry: WorkingGitTree) -> bool:
-        """Whether *registry* declares a memory mount at all (`MOUNT_PATH`).
-
-        Says nothing about whether `memory adopt`/`memory clone` has run —
-        `memory_push` itself answers that, by raising when the mount's
-        `.git` is absent. Most trees declare no memory at all, which is why
-        this check exists separately: printing anything about a memory that
-        does not exist would be noise on every ordinary push.
-        """
-        return any(entry.relative_path == Path(MOUNT_PATH) for entry in registry.values())
+        """Whether *registry* declares a memory mount at all; says nothing about adoption."""
+        return DefaultMemory.declared(registry)
 
     def memory_declared(self) -> bool:
         """Whether the loaded tree declares a memory mount at all.
 
-        The public, no-argument form of :meth:`_memory_declared` — used by
-        the CLI to decide whether a ``--dry-run`` plan should mention the
-        fold the real run would attempt
-        (`main_1-1_PushFoldsMemory_DevPlanTicket.md` D4). Says nothing
-        about adoption; `memory_push` is what answers that.
+        The public form of :meth:`_memory_declared`, used by the CLI to decide
+        whether a ``--dry-run`` plan mentions the fold (PushFoldsMemory D4).
         """
         return self._memory_declared(self.client.get_dependency_registry())
 
@@ -1017,16 +1011,17 @@ class MemoryCommands:
         moves into the mount here, and only here.
 
         When self-history has been adopted (AgentReport WP2), its own fold
-        and push run **first** — the leaf before the parent, the order
-        every tree-wide operation already uses (`operations/`'s
-        `iter_tree_leaf_first`) — so `.memory`'s own push, below, commits a
-        tree in which the leaf's new commit already exists to be recorded.
-        A workspace where self-history was never adopted sees no new
-        behaviour at all: :meth:`_push_self_history` is a no-op the moment
-        its mount has no `.git`.
+        and push run **first** — leaf before parent, as every tree-wide
+        operation does — and are a no-op when its mount has no `.git`.
+
+        A defaulted memory (`default_memory.py`) is folded and committed
+        here but never pushed, and never has self-history: both are a
+        developer's privilege, stated in a `.cgs`.
         """
         workspace = Path(cgshome)
-        self._push_self_history(workspace)
+        defaulted = DefaultMemory(self.client).is_defaulted(workspace)
+        if not defaulted:
+            self._push_self_history(workspace)
         mount = MemoryRepository(workspace).mount_path()
         if not (mount / ".git").exists():
             raise GitSyncError(
@@ -1050,12 +1045,14 @@ class MemoryCommands:
             )
             committed = True
         branch = self.client.git_runner.current_branch(mount)
-        self.client.git_runner.push(mount, ref_name=branch, set_upstream=True)
-        self.client._log_event("memory_push", mount=mount, branch=branch, committed=committed)
+        if not defaulted:  # a defaulted memory is never published
+            self.client.git_runner.push(mount, ref_name=branch, set_upstream=True)
+        self.client._log_event("memory_push", mount=mount, branch=branch, committed=committed, pushed=not defaulted)
         return {
             "mount": str(mount),
             "branch": branch,
             "committed": committed,
+            "pushed": not defaulted,
             "recorded": len(pending),
             "states": status["states"],
             "entries": status["entries"],
@@ -1229,7 +1226,7 @@ class MemoryCommands:
         """
         workspace = Path(cgshome)
         mount = MemoryRepository(workspace).mount_path()
-        if not (mount / ".git").exists():
+        if not DefaultMemory(self.client).is_published(workspace):  # a defaulted memory has no remote to branch on
             raise GitSyncError(
                 f"{mount} is not a repository yet. Run 'cgitsync memory adopt' first."
             )
@@ -1341,6 +1338,7 @@ class MemoryCommands:
         states = PendingMemory(workspace / ".cgitsync").state_files()
         return {
             "cgshome": str(workspace.resolve()),
+            "notice": DefaultMemory(self.client).notice(workspace),
             "verification": report.state.name.lower().replace("_", "-"),
             "findings": len(report.findings),
             "states": len(states),
@@ -1743,6 +1741,7 @@ class MemoryCommands:
         not exist yet, is not a repository yet (`memory adopt` not run),
         or — freshly adopted, nothing committed — has no HEAD to read.
         """
+        DefaultMemory(self.client).ensure(registry)  # runs before every State is written
         for entry in registry.values():
             if entry.relative_path != Path(MOUNT_PATH):
                 continue

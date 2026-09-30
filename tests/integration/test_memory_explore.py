@@ -177,12 +177,13 @@ def test_explore_orders_by_push_not_by_commit(tmp_path):
     assert [row["message"] for row in rows] == ["second", "first"]
 
 
-def test_explore_with_no_memory_mounted_names_no_branch(tmp_path):
+def test_explore_with_no_declared_memory_names_the_default_ones_branch(tmp_path):
     tree = _workspace(tmp_path)
     _change(tree["root"], "one")
     _loaded(tree["snapshot"]).commit("work with no memory repository yet")
 
-    assert ComplexGitSyncClient().memory_explore(tree["root"])["branch"] is None
+    # No declared memory: the local default one is what is explored, on its own branch.
+    assert ComplexGitSyncClient().memory_explore(tree["root"])["branch"] == "demo"
 
 
 # ---------------------------------------------------------------------------

@@ -215,6 +215,10 @@ class _FakeGitRunnerForOperations:
     Tracks calls and simulates branch existence.
     """
 
+    def init_repository(self, repo_path: Path | str, *, branch: str) -> None:
+        """Makes no repository, so the default memory is declined and recorded nothing."""
+        raise GitSyncError("the fake runner makes no repositories")
+
     def __init__(self, *, existing_local_branches: dict[Path, set[str]] | None = None):
         # {path: set of branch names that exist locally}
         self._local_branches: dict[Path, set[str]] = existing_local_branches or {}

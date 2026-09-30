@@ -71,6 +71,16 @@ states=14 entries=31 verification=verified
 That memory is real, and it is on exactly one disk. The rest of this
 tutorial is about that.
 
+**You did not have to create it.** If your `.cgs` declares no memory — the
+normal case for an install from `install.cgs` — `cgitsync` makes one itself,
+the first time a command records something: a local repository at
+`.cgitsync/.memory` with no remote, on the branch a declared memory would use.
+`memory push` folds and commits into it and stops there; `memory status` says
+it is local and unpublished and prints the line to add to your `.cgs` to
+publish it. It is never pushed — not even if you add a remote by hand —
+until your `.cgs` declares it and you run `memory adopt` (§2). Publishing is
+the opt-in; the default keeps everything on your disk.
+
 **A memory is not a backup of your code.** It holds no source, no diffs and
 no files from your repositories — only what the tree *was* and what
 `cgitsync` *did*. Your code is already in your repositories.

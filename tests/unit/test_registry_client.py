@@ -2841,6 +2841,10 @@ writable = true
 
 
 class _FakeGitRunner:
+    def init_repository(self, repo_path: Path | str, *, branch: str) -> None:
+        """Makes no repository, so the default memory is declined and recorded nothing."""
+        raise GitSyncError("the fake runner makes no repositories")
+
     def __init__(self, remote_branches: dict[str, set[str]]):
         self.remote_branches = remote_branches
         self.clones: list[tuple[str, Path, str]] = []

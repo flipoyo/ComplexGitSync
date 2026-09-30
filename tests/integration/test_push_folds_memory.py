@@ -240,10 +240,12 @@ def test_a_tree_with_no_memory_mounted_sees_no_change(tmp_path):
     client = _loaded(snapshot)
     client.commit("no memory here")
 
-    client.push()  # must not raise, must not warn, must not touch anything memory-shaped
+    client.push()  # must not raise, must not warn, must not fold or send anything
 
     assert client.last_memory_fold is None
-    assert not (root / ".cgitsync" / ".memory").exists()
+    # The tree declares no memory, so the default one is made locally — and stays there.
+    assert (root / ".cgitsync" / ".memory" / ".git").exists()
+    assert not _git(root / ".cgitsync" / ".memory", "remote")
 
 
 def test_a_declared_but_not_yet_adopted_memory_warns_and_the_push_still_succeeds(

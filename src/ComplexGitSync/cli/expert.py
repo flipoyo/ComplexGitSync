@@ -1367,8 +1367,8 @@ def _print_memory_push(result: dict) -> int:
     else:
         print("committed=0 (nothing new to record)")
     print(
-        f"pushed branch={result['branch']} states={result['states']} "
-        f"entries={result['entries']}"
+        f"{'pushed' if result.get('pushed', True) else 'kept local, never published:'} "
+        f"branch={result['branch']} states={result['states']} entries={result['entries']}"
     )
     return EXIT_OK
 
@@ -1392,7 +1392,7 @@ def _print_memory_status(status: dict) -> int:
         f"states={status['states']} entries={status['entries']} "
         f"verification={status['verification']} findings={status['findings']}"
     )
-    print(f"last_recorded_at={status['last_recorded_at'] or '(never)'}")
+    print(f"last_recorded_at={status['last_recorded_at'] or '(never)'}" + (f"\n{status['notice']}" if status.get("notice") else ""))
     if not status["entries"]:
         print("nothing has been recorded here yet; the next command that writes a State starts the chain.")
         return EXIT_OK

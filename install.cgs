@@ -18,6 +18,11 @@
 # load docs/DocCGS.cgs, which mounts flipoyo/DocSpec — a convention for
 # people *writing* the documentation, not for people reading it. A user
 # install mounts no private repository at all.
+#
+# A user install still has a memory. ComplexGitSync creates one itself, locally,
+# at .cgitsync/.memory the first time a command records something, with no
+# remote, and never publishes it: publishing a memory is a developer's
+# privilege, stated by declaring one in a .cgs (see tutorials/05_memory.md).
 
 project = { name = "ComplexGitSync", default_branch = "main" }
 
