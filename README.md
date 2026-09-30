@@ -47,17 +47,43 @@ repos = [
 ]
 ```
 
-### 1.2 How to run ComplexGitSync ?
+### 1.2 Installing and running ComplexGitSync
 
-ComplexGitSync is developed and run with [Pixi](https://pixi.sh) only —
-`pip install -e .` is not a supported workflow. There is no global install:
-every invocation is `pixi run cgitsync ...`, run from inside the clone below.
+There are two routes, for two kinds of reader.
+
+#### For users — one install command
+
+| Prerequisite | Why it is needed |
+|---|---|
+| Git, on your `PATH` | Clone and sync every repository in a tree. |
+| Python 3.11 or newer | What `cgitsync` runs on. |
+| [pipx](https://pipx.pypa.io) | Installs `cgitsync` on your `PATH` in an environment of its own. |
+| `gh`, `glab`, or `tea` | Only to create repositories on GitHub, GitLab, or Codeberg. Install just the provider tool you use. |
+
+```bash
+pipx install complexgitsync
+cgitsync --help
+cgitsync --version
+```
+
+The first release is not on the package index yet. Until it is, install the
+same thing from the repository:
+`pipx install git+https://github.com/flipoyo/ComplexGitSync.git`. No clone,
+no Pixi, and none of the developer repositories are needed — see
+[CHANGELOG.md](CHANGELOG.md) for what each version changed. Everywhere below
+in this README, a command written `pixi run cgitsync ...` is simply
+`cgitsync ...` for this install.
+
+#### For contributors — Pixi
+
+ComplexGitSync is developed and tested with [Pixi](https://pixi.sh), which
+installs the locked Python environment. `pip install -e .` is not a supported
+workflow; every invocation from a clone is `pixi run cgitsync ...`.
 
 | Prerequisite | Why it is needed |
 |---|---|
 | Git | Clone the ComplexGitSync checkout and every repository in a tree. |
 | Pixi | Install the locked Python environment and run `cgitsync`. |
-| `gh`, `glab`, or `tea` | Create repositories on GitHub, GitLab, or Codeberg. Install only the provider tool you use. |
 
 ```bash
 git clone https://github.com/flipoyo/ComplexGitSync.git
@@ -68,7 +94,7 @@ pixi run cgitsync --help
 
 ```mermaid
 flowchart LR
-    CGS[".cgs spec"] -->|initialise| CLI(("pixi run cgitsync"))
+    CGS[".cgs spec"] -->|initialise| CLI(("cgitsync"))
     GTS[".gts snapshot"] -.->|restore| CLI
 
     subgraph TREE["nested Git repo tree"]

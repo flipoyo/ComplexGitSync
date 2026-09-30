@@ -12,6 +12,18 @@ license = { text = "Apache-2.0" }
 authors = [
     { name = "Nicolas Flipo" },
 ]
+keywords = ["git", "multi-repository", "synchronisation", "submodules", "workspace"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Version Control :: Git",
+]
 dependencies = [
     "tomli-w>=1.0,<2",
 ]
@@ -21,8 +33,19 @@ yaml = [
     "PyYAML>=6,<7",
 ]
 
+[project.urls]
+Repository = "https://github.com/flipoyo/ComplexGitSync"
+Issues = "https://github.com/flipoyo/ComplexGitSync/issues"
+Documentation = "https://github.com/flipoyo/ComplexGitSync#readme"
+Changelog = "https://github.com/flipoyo/ComplexGitSync/blob/main/CHANGELOG.md"
+
 [project.scripts]
 cgitsync = "ComplexGitSync.cli:main"
+
+# The source archive carries the package and what a user needs to read about it —
+# never the developer mounts (CLAUDE.md, AGENT.md, .agent/) or the contributor tooling.
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/README.md", "/LICENSE", "/CHANGELOG.md", "/install.cgs", "/examples"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ComplexGitSync"]

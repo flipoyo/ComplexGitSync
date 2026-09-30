@@ -758,7 +758,7 @@ def _execute_bootstrap(
     print("\nTo use this workspace, run:")
     print(f"  export CGSHOME={root_path}")
     print("\nOr for the current command:")
-    print(f"  CGSHOME={root_path} pixi run cgitsync <command>")
+    print(f"  CGSHOME={root_path} cgitsync <command>   (from a Pixi checkout: pixi run cgitsync <command>)")
     return 0
 
 

@@ -24,3 +24,25 @@ jobs:
         run: pixi run lint
       - name: Run tests
         run: pixi run test
+
+  # The user's route: build the artefact, install it the way the README tells a user to
+  # (pipx, no Pixi, no clone on the path), and run a workspace outside the checkout.
+  # Linux only: it is the one platform this release claims (pyproject classifiers).
+  installed:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build the artefacts
+        run: pipx run build --outdir "$RUNNER_TEMP/dist" .
+      - name: Check the artefacts
+        run: pipx run twine check "$RUNNER_TEMP/dist"/*
+      - name: Install the wheel with pipx
+        run: pipx install "$RUNNER_TEMP"/dist/*.whl
+      - name: Smoke check outside the checkout
+        run: cd "$RUNNER_TEMP" && bash "$GITHUB_WORKSPACE/scripts/smoke_installed.sh"
