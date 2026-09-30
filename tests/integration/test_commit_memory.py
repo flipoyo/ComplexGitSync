@@ -20,7 +20,7 @@ import tomli_w
 
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.memory.integrity import Finding, HistoryState
-from ComplexGitSync.memory.ledger_store import read_all_entries
+from ComplexGitSync.memory.ledger_store import LedgerStore
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 
@@ -261,7 +261,7 @@ def test_a_push_records_the_remote_the_ref_and_the_entry_that_did_it(tmp_path):
     [publication] = _published(tree["root"])
     assert publication["remote"] == "github:owner/demo"
     assert publication["ref"] == "refs/heads/main"
-    entries = read_all_entries(tree["root"] / ".cgitsync" / "lgr")
+    entries = LedgerStore(tree["root"] / ".cgitsync" / "lgr").read_all_entries()
     pushes = [entry for entry in entries if entry.command == "push"]
     assert publication["entry"] == pushes[-1].seq
 

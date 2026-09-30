@@ -39,3 +39,13 @@ class NestedConfigDiscoveryError(ComplexGitSyncError):
 
 class TreeNotReadyError(ComplexGitSyncError):
     """Raised when an operation requires a READY tree."""
+
+
+__all__ = [
+    "ComplexGitSyncError",
+    "ConfigValidationError",
+    "GitSyncError",
+    "NestedConfigDiscoveryError",
+    "TreeNotReadyError",
+    "UnsupportedSnapshotFormatError",
+]

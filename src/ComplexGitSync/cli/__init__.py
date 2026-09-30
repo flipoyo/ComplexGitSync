@@ -31,8 +31,7 @@ import sys
 from collections.abc import Sequence
 
 from .. import __version__
-from ..json_render import dumps as json_dumps
-from ..json_render import error_payload
+from ..json_render import JsonRender
 from . import _shared, configuration, environment, expert, minimalist, suggest
 from .exit_codes import EXIT_OK, diagnostic, exit_code_for
 from .minimalist import _validate_initialise_definition
@@ -104,14 +103,7 @@ def _report_expected_failure(exc: Exception, args: argparse.Namespace) -> int:
         # succeeded or not, rather than telling the two apart by whether
         # the parse failed.
         print(
-            json_dumps(
-                error_payload(
-                    command=args.command,
-                    exit_code=code,
-                    message=str(exc),
-                    error_type=type(exc).__name__,
-                )
-            )
+            JsonRender.dumps(JsonRender.error(command=args.command, exit_code=code, message=str(exc), error_type=type(exc).__name__))
         )
     print(diagnostic(exc, command=args.command), file=sys.stderr, flush=True)
     return code

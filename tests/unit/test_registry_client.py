@@ -26,25 +26,20 @@ from ComplexGitSync.git_tree import (
     make_repo_id,
     normalize_node_types,
 )
-from ComplexGitSync.memory.agent_contract import AgentContractRecord, write_contract
-from ComplexGitSync.memory.self_history import (
-    AgentInfo,
-    ConformityCriterion,
-    ConformityScore,
-    read_record,
-)
+from ComplexGitSync.memory.agent_contract import AgentContractRecord
+from ComplexGitSync.memory.conformity import ConformityCriterion, ConformityScore
+from ComplexGitSync.memory.self_history import AgentInfo, SelfHistoryRecord
 from ComplexGitSync.memory.states import (
-    _resolve_memory_state_directory,
-    _state_directory_name,
+    MemoryStates,
 )
 from ComplexGitSync.orchestre import (
     ComplexGitSyncClient,
     GtsDocument,
+    RegistryTranslator,
     RuntimeStateStore,
     _looks_like_https_auth_failure,
     _looks_like_ssh_auth_failure,
     _protocol_switch_hint,
-    build_registry_from_gts_document,
 )
 
 
@@ -667,10 +662,13 @@ def test_initialise_cgs_default_cgshome_is_cgspath_project_name(tmp_path, monkey
 
     client.tree = None
 
+    from ComplexGitSync.registry import RegistryTranslator
+
+    _orig = RegistryTranslator.from_cgs_document
+
     def _fake_build_registry(*args, **kwargs):
         from ComplexGitSync.git_repo import RepoLifecycleState
         from ComplexGitSync.orchestre import ROOT_REPO_ID
-        from ComplexGitSync.orchestre import build_registry_from_cgs_document as _orig
         reg = _orig(*args, **kwargs)
         # Pre-mark root READY so the clone loop completes without git calls.
         root = reg.get(ROOT_REPO_ID)
@@ -680,8 +678,7 @@ def test_initialise_cgs_default_cgshome_is_cgspath_project_name(tmp_path, monkey
         root.resolved_ref_name = "main"
         return reg
 
-    import ComplexGitSync.orchestre as _mod
-    monkeypatch.setattr(_mod, "build_registry_from_cgs_document", _fake_build_registry)
+    monkeypatch.setattr(RegistryTranslator, "from_cgs_document", staticmethod(_fake_build_registry))
 
     try:
         client.initialise_cgs(config_path)
@@ -712,10 +709,13 @@ def test_initialise_cgs_default_cgshome_uses_environment(tmp_path, monkeypatch):
     monkeypatch.setattr(client, "write_gts_snapshot", _fake_write_gts)
     monkeypatch.setattr(client.state_store, "record_snapshot", lambda *a, **kw: None)
 
+    from ComplexGitSync.registry import RegistryTranslator
+
+    _orig = RegistryTranslator.from_cgs_document
+
     def _fake_build_registry(*args, **kwargs):
         from ComplexGitSync.git_repo import RepoLifecycleState
         from ComplexGitSync.orchestre import ROOT_REPO_ID
-        from ComplexGitSync.orchestre import build_registry_from_cgs_document as _orig
 
         reg = _orig(*args, **kwargs)
         root = reg.get(ROOT_REPO_ID)
@@ -725,9 +725,7 @@ def test_initialise_cgs_default_cgshome_uses_environment(tmp_path, monkeypatch):
         root.resolved_ref_name = "main"
         return reg
 
-    import ComplexGitSync.orchestre as _mod
-
-    monkeypatch.setattr(_mod, "build_registry_from_cgs_document", _fake_build_registry)
+    monkeypatch.setattr(RegistryTranslator, "from_cgs_document", staticmethod(_fake_build_registry))
 
     try:
         client.initialise_cgs(config_path)
@@ -1018,7 +1016,7 @@ def test_client_freeze_release_names_the_signed_agent_contract(monkeypatch, tmp_
         legal_terms_sha256="a" * 64,
         attested_by="Claude (Anthropic), model claude-sonnet-5",
     )
-    write_contract(tmp_path / "root" / ".agent" / ".distant" / "dev-sync", record)
+    record.write(tmp_path / "root" / ".agent" / ".distant" / "dev-sync")
 
     monkeypatch.setattr(
         type(client.git_runner), "upstream_configured", lambda self, path: True
@@ -1071,7 +1069,7 @@ def test_client_self_history_add_writes_to_the_pending_half(tmp_path):
     )
 
     assert path.parent == tmp_path / ".cgitsync" / ".self-history"
-    record = read_record(path)
+    record = SelfHistoryRecord.read(path)
     assert record.ticket == "AgentReport"
     assert record.lint_passed is True
 
@@ -1085,7 +1083,7 @@ def test_client_self_history_add_cites_the_signed_agent_contract_by_hash(tmp_pat
         legal_terms_sha256="a" * 64,
         attested_by="Claude (Anthropic), model claude-sonnet-5",
     )
-    write_contract(tmp_path / ".agent" / ".distant" / "dev-sync", contract)
+    contract.write(tmp_path / ".agent" / ".distant" / "dev-sync")
 
     path = client.self_history_add(
         tmp_path,
@@ -1097,7 +1095,7 @@ def test_client_self_history_add_cites_the_signed_agent_contract_by_hash(tmp_pat
         conformity=_conformity(),
     )
 
-    assert read_record(path).contract == contract.digest()
+    assert SelfHistoryRecord.read(path).contract == contract.digest()
 
 
 def test_client_self_history_add_has_no_contract_when_none_is_signed(tmp_path):
@@ -1113,7 +1111,7 @@ def test_client_self_history_add_has_no_contract_when_none_is_signed(tmp_path):
         conformity=_conformity(),
     )
 
-    assert read_record(path).contract == ""
+    assert SelfHistoryRecord.read(path).contract == ""
 
 
 def test_client_self_history_add_observes_the_workspace_status_errors(tmp_path):
@@ -1132,7 +1130,7 @@ def test_client_self_history_add_observes_the_workspace_status_errors(tmp_path):
     # The registry's one root entry has no .git of its own, which `status`
     # already counts as an error row — the same fact `cgitsync status`
     # would print, observed here rather than typed.
-    assert read_record(path).status_errors == 1
+    assert SelfHistoryRecord.read(path).status_errors == 1
 
 
 def test_client_self_history_add_has_no_status_errors_when_nothing_is_loaded(tmp_path):
@@ -1148,7 +1146,7 @@ def test_client_self_history_add_has_no_status_errors_when_nothing_is_loaded(tmp
         conformity=_conformity(),
     )
 
-    assert read_record(path).status_errors is None
+    assert SelfHistoryRecord.read(path).status_errors is None
 
 
 def test_client_freeze_release_force_uses_pull_force(monkeypatch, tmp_path):
@@ -1909,7 +1907,7 @@ project_name = "leaf"
 
     empty_registry = WorkingGitTree()
     assert empty_registry.recompute_tree_state() == TreeLifecycleState.UNLOADED
-    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
+    registry = RegistryTranslator.from_gts_document(GtsDocument.from_toml(snapshot_path))
     assert registry.lifecycle_state == TreeLifecycleState.READY
 
     tree = GitTree()
@@ -1995,7 +1993,7 @@ commit_sha = "sha-leaf"
         encoding="utf-8",
     )
 
-    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
+    registry = RegistryTranslator.from_gts_document(GtsDocument.from_toml(snapshot_path))
     assert registry.get("root").absolute_path == workspace
     assert registry.get("root").source_cgs_path == (workspace / "project.cgs")
     assert registry.get("root:deps/leaf").absolute_path == leaf_path
@@ -2033,7 +2031,7 @@ commit_sha = "abc123"
         encoding="utf-8",
     )
 
-    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
+    registry = RegistryTranslator.from_gts_document(GtsDocument.from_toml(snapshot_path))
     root = registry.get("root")
 
     assert root.current_ref_kind == RefKind.BRANCH
@@ -2059,16 +2057,16 @@ def test_state_directory_suffix_is_scoped_to_exact_state_hash(tmp_path):
     cgitsync_dir = tmp_path / ".cgitsync"
     state_hash = "a" * 64
     other_hash = "b" * 64
-    (cgitsync_dir / _state_directory_name(state_hash, 0)).mkdir(parents=True)
-    (cgitsync_dir / _state_directory_name(state_hash, 1)).mkdir()
+    (cgitsync_dir / MemoryStates.directory_name(state_hash, 0)).mkdir(parents=True)
+    (cgitsync_dir / MemoryStates.directory_name(state_hash, 1)).mkdir()
 
-    same_hash_state = _resolve_memory_state_directory(cgitsync_dir, state_hash)
-    other_hash_state = _resolve_memory_state_directory(cgitsync_dir, other_hash)
+    same_hash_state = MemoryStates(cgitsync_dir).resolve_directory(state_hash)
+    other_hash_state = MemoryStates(cgitsync_dir).resolve_directory(other_hash)
 
     assert same_hash_state.state_order == 2
-    assert same_hash_state.final_path.name == _state_directory_name(state_hash, 2)
+    assert same_hash_state.final_path.name == MemoryStates.directory_name(state_hash, 2)
     assert other_hash_state.state_order == 0
-    assert other_hash_state.final_path.name == _state_directory_name(other_hash, 0)
+    assert other_hash_state.final_path.name == MemoryStates.directory_name(other_hash, 0)
 
 
 def _current_state_path(workspace: Path) -> Path:
@@ -2078,19 +2076,19 @@ def _current_state_path(workspace: Path) -> Path:
     last wrote. It replaced the single-file register these tests used to
     read, which nothing writes any more.
     """
-    from ComplexGitSync.memory.ledger_store import read_all_entries
-    from ComplexGitSync.memory.states import _parse_state_hash, state_path
+    from ComplexGitSync.memory.ledger_store import LedgerStore
+    from ComplexGitSync.memory.states import MemoryStates
 
-    entries = read_all_entries(workspace / ".cgitsync" / "lgr")
+    entries = LedgerStore(workspace / ".cgitsync" / "lgr").read_all_entries()
     assert entries, "no ledger entry was written"
-    return state_path(workspace / ".cgitsync", _parse_state_hash(entries[-1].state_id)).resolve()
+    return MemoryStates(workspace / ".cgitsync").path(MemoryStates.parse_hash(entries[-1].state_id)).resolve()
 
 
 def _ledger_entries(workspace: Path):
     """Every entry in the workspace's chain, oldest first."""
-    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.ledger_store import LedgerStore
 
-    return read_all_entries(workspace / ".cgitsync" / "lgr")
+    return LedgerStore(workspace / ".cgitsync" / "lgr").read_all_entries()
 
 
 def test_client_load_cgs_writes_gts_snapshot(tmp_path):

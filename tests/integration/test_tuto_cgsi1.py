@@ -301,13 +301,13 @@ def _current_lgr_snapshot_path(project_root: Path, register_name: str) -> Path:
     named is no longer written, and the hash-chained ledger answers the same
     question with better evidence.
     """
-    from ComplexGitSync.memory.ledger_store import read_all_entries
-    from ComplexGitSync.memory.states import _parse_state_hash, state_path
+    from ComplexGitSync.memory.ledger_store import LedgerStore
+    from ComplexGitSync.memory.states import MemoryStates
 
     cgitsync_dir = project_root / ".cgitsync"
-    entries = read_all_entries(cgitsync_dir / "lgr")
+    entries = LedgerStore(cgitsync_dir / "lgr").read_all_entries()
     assert entries, f"no ledger entry under {cgitsync_dir}"
-    return state_path(cgitsync_dir, _parse_state_hash(entries[-1].state_id)).resolve()
+    return MemoryStates(cgitsync_dir).path(MemoryStates.parse_hash(entries[-1].state_id)).resolve()
 
 
 def _patch_git_identity(monkeypatch) -> None:

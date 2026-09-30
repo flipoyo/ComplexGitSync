@@ -565,13 +565,9 @@ class WorkingGitTree(GitTree):
         source_cgs_path: Path | None = None,
     ) -> GtsDocument:
         """Convert the working tree to a ``.gts`` snapshot document."""
-        from .orchestre import build_gts_document_from_registry
+        from .orchestre import RegistryTranslator
 
-        return build_gts_document_from_registry(
-            self,
-            command_origin=command_origin,
-            source_cgs_path=source_cgs_path,
-        )
+        return RegistryTranslator.to_gts_document(self, command_origin=command_origin, source_cgs_path=source_cgs_path)
 
     def _root_project_name(self) -> str | None:
         root = self.repos.get(ROOT_REPO_ID)
@@ -1659,3 +1655,33 @@ def _parse_enum(enum_type: type[_E], value: Any, default: _E) -> _E:
     if value is None:
         return default
     return enum_type(str(value))
+
+
+__all__ = [
+    "ROOT_REPO_ID",
+    "GitTree",
+    "GitTreeGitCommands",
+    "ProjectTreeState",
+    "TreeLifecycleState",
+    "WorkingGitTree",
+    "build_tree_state",
+    "cgitsync_managed_state_paths",
+    "find_strongly_connected_components",
+    "fix_circularities",
+    "format_project_tree",
+    "format_registry_json",
+    "format_repo_tree_outline",
+    "format_view_operation",
+    "format_view_tree",
+    "innermost_containing_path",
+    "iter_tree",
+    "iter_tree_leaf_first",
+    "make_repo_id",
+    "normalize_node_types",
+    "promote_to_parent",
+    "propagate_privacy",
+    "register_relative_path",
+    "resolve_repo_for_path",
+    "sync_gitignore",
+    "topological_sort",
+]

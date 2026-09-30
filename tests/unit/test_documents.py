@@ -22,7 +22,7 @@ from ComplexGitSync.config_document_io import ConfigDocumentIOMixin
 from ComplexGitSync.errors import ConfigValidationError
 from ComplexGitSync.orchestre import (
     GtsDocument,
-    build_registry_from_cgs_document,
+    RegistryTranslator,
 )
 
 # ---------------------------------------------------------------------------
@@ -503,11 +503,7 @@ class TestCgsDocumentValid:
                 ],
             }
         )
-        tree = build_registry_from_cgs_document(
-            before,
-            tmp_path / "source.cgs",
-            project_root=tmp_path / "demo",
-        )
+        tree = RegistryTranslator.from_cgs_document(before, tmp_path / "source.cgs", project_root=tmp_path / "demo")
 
         output = tmp_path / "working-round-trip.cgs"
         tree.to_cgs().to_toml(output)

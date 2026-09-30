@@ -7,7 +7,7 @@
     },
     "__main__.py": {
       "internal_imports": 1,
-      "loc": 2,
+      "loc": 3,
       "public_symbols": 0
     },
     "autofix/__init__.py": {
@@ -17,42 +17,42 @@
     },
     "autofix/base.py": {
       "internal_imports": 2,
-      "loc": 60,
+      "loc": 67,
       "public_symbols": 4
     },
     "autofix/repair_divergent_user.py": {
       "internal_imports": 11,
-      "loc": 229,
+      "loc": 221,
       "public_symbols": 1
     },
     "autofix/repair_from_cli.py": {
       "internal_imports": 9,
-      "loc": 114,
+      "loc": 118,
       "public_symbols": 2
     },
     "autofix/repair_merge_conflict.py": {
       "internal_imports": 3,
-      "loc": 101,
+      "loc": 104,
       "public_symbols": 1
     },
     "cgs_format.py": {
       "internal_imports": 12,
-      "loc": 669,
+      "loc": 670,
       "public_symbols": 9
     },
     "cli/__init__.py": {
-      "internal_imports": 13,
-      "loc": 100,
+      "internal_imports": 12,
+      "loc": 92,
       "public_symbols": 2
     },
     "cli/_shared.py": {
-      "internal_imports": 21,
-      "loc": 612,
+      "internal_imports": 20,
+      "loc": 613,
       "public_symbols": 0
     },
     "cli/configuration.py": {
       "internal_imports": 10,
-      "loc": 364,
+      "loc": 368,
       "public_symbols": 1
     },
     "cli/environment.py": {
@@ -67,23 +67,23 @@
     },
     "cli/expert.py": {
       "internal_imports": 31,
-      "loc": 2197,
+      "loc": 2196,
       "public_symbols": 1
     },
     "cli/minimalist.py": {
       "internal_imports": 15,
-      "loc": 740,
+      "loc": 744,
       "public_symbols": 1
     },
     "cli/suggest.py": {
       "internal_imports": 0,
-      "loc": 88,
+      "loc": 94,
       "public_symbols": 4
     },
     "clone_guard.py": {
       "internal_imports": 2,
-      "loc": 116,
-      "public_symbols": 6
+      "loc": 127,
+      "public_symbols": 2
     },
     "commit_message.py": {
       "internal_imports": 1,
@@ -102,7 +102,7 @@
     },
     "discovery.py": {
       "internal_imports": 21,
-      "loc": 226,
+      "loc": 231,
       "public_symbols": 3
     },
     "environment_spec.py": {
@@ -112,27 +112,27 @@
     },
     "errors.py": {
       "internal_imports": 0,
-      "loc": 27,
+      "loc": 35,
       "public_symbols": 6
     },
     "git_branch.py": {
       "internal_imports": 2,
-      "loc": 346,
+      "loc": 347,
       "public_symbols": 12
     },
     "git_repo.py": {
       "internal_imports": 0,
-      "loc": 391,
+      "loc": 409,
       "public_symbols": 15
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 1146,
+      "loc": 1152,
       "public_symbols": 4
     },
     "git_tree.py": {
       "internal_imports": 36,
-      "loc": 1316,
+      "loc": 1340,
       "public_symbols": 26
     },
     "git_tree_branch.py": {
@@ -147,88 +147,93 @@
     },
     "json_render.py": {
       "internal_imports": 0,
-      "loc": 195,
-      "public_symbols": 6
+      "loc": 202,
+      "public_symbols": 2
     },
     "master.py": {
       "internal_imports": 1,
-      "loc": 89,
+      "loc": 92,
       "public_symbols": 1
     },
     "memory/__init__.py": {
-      "internal_imports": 30,
-      "loc": 108,
+      "internal_imports": 17,
+      "loc": 82,
       "public_symbols": 0
     },
     "memory/agent_contract.py": {
       "internal_imports": 0,
-      "loc": 114,
-      "public_symbols": 7
+      "loc": 122,
+      "public_symbols": 3
     },
     "memory/commit_log.py": {
       "internal_imports": 0,
-      "loc": 249,
-      "public_symbols": 17
+      "loc": 241,
+      "public_symbols": 6
+    },
+    "memory/conformity.py": {
+      "internal_imports": 0,
+      "loc": 61,
+      "public_symbols": 3
     },
     "memory/environment.py": {
       "internal_imports": 1,
-      "loc": 95,
-      "public_symbols": 7
+      "loc": 103,
+      "public_symbols": 2
     },
     "memory/integrity.py": {
       "internal_imports": 1,
-      "loc": 287,
-      "public_symbols": 9
+      "loc": 296,
+      "public_symbols": 7
     },
     "memory/ledger_entry.py": {
       "internal_imports": 0,
-      "loc": 210,
-      "public_symbols": 4
+      "loc": 218,
+      "public_symbols": 2
     },
     "memory/ledger_store.py": {
-      "internal_imports": 4,
-      "loc": 412,
-      "public_symbols": 17
+      "internal_imports": 3,
+      "loc": 413,
+      "public_symbols": 7
     },
     "memory/pending.py": {
-      "internal_imports": 14,
-      "loc": 200,
-      "public_symbols": 14
+      "internal_imports": 8,
+      "loc": 192,
+      "public_symbols": 1
     },
     "memory/repository.py": {
       "internal_imports": 3,
-      "loc": 273,
-      "public_symbols": 22
+      "loc": 290,
+      "public_symbols": 8
     },
     "memory/self_history.py": {
-      "internal_imports": 2,
-      "loc": 266,
-      "public_symbols": 12
+      "internal_imports": 3,
+      "loc": 230,
+      "public_symbols": 4
     },
     "memory/states.py": {
       "internal_imports": 0,
-      "loc": 132,
+      "loc": 177,
       "public_symbols": 3
     },
     "memory/store.py": {
-      "internal_imports": 10,
-      "loc": 329,
-      "public_symbols": 4
+      "internal_imports": 7,
+      "loc": 315,
+      "public_symbols": 2
     },
     "operations.py": {
       "internal_imports": 23,
-      "loc": 1783,
+      "loc": 1816,
       "public_symbols": 31
     },
     "orchestre.py": {
-      "internal_imports": 158,
-      "loc": 5966,
+      "internal_imports": 119,
+      "loc": 5809,
       "public_symbols": 10
     },
     "paths.py": {
       "internal_imports": 5,
-      "loc": 210,
-      "public_symbols": 5
+      "loc": 233,
+      "public_symbols": 2
     },
     "provider.py": {
       "internal_imports": 1,
@@ -236,34 +241,34 @@
       "public_symbols": 4
     },
     "registry.py": {
-      "internal_imports": 41,
-      "loc": 513,
-      "public_symbols": 3
+      "internal_imports": 40,
+      "loc": 457,
+      "public_symbols": 1
     },
     "settings.py": {
       "internal_imports": 3,
-      "loc": 192,
-      "public_symbols": 11
+      "loc": 203,
+      "public_symbols": 5
     },
     "snapshot_resolver.py": {
-      "internal_imports": 5,
-      "loc": 292,
+      "internal_imports": 3,
+      "loc": 310,
       "public_symbols": 18
     },
     "status_render.py": {
       "internal_imports": 2,
-      "loc": 240,
+      "loc": 253,
       "public_symbols": 11
     },
     "toolchain.py": {
       "internal_imports": 2,
-      "loc": 83,
-      "public_symbols": 5
+      "loc": 92,
+      "public_symbols": 3
     },
     "tree_env.py": {
       "internal_imports": 15,
-      "loc": 302,
-      "public_symbols": 6
+      "loc": 325,
+      "public_symbols": 2
     },
     "universal_clock.py": {
       "internal_imports": 0,

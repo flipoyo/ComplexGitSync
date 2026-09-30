@@ -311,3 +311,10 @@ def _parse_gitmodules(content: str) -> list[SubmoduleEntry]:
         if path and url:
             result.append(SubmoduleEntry(name=name, path=path, url=url, branch=branch))
     return result
+
+
+__all__ = [
+    "ImportSubmodulesReport",
+    "SubmoduleEntry",
+    "discover_nested_configs",
+]

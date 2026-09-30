@@ -2191,3 +2191,38 @@ def _refresh_repo_after_checkout(
     repo.fallback_reason = None
     repo.repo_lifecycle_state = RepoLifecycleState.READY
     repo.sync_state = SyncState.ALIGNED
+
+
+__all__ = [
+    "MERGE_INTO_ACTS",
+    "MERGE_RESOLVE_HINT",
+    "BranchTopologyConflict",
+    "BranchTopologyReport",
+    "MergeIntoPlan",
+    "PreflightDiagnostic",
+    "PreflightSeverity",
+    "RepoOutcome",
+    "ResolveOutcome",
+    "add_tree",
+    "branch_tree",
+    "checkout_tree",
+    "close_branch",
+    "commit_tree",
+    "create_global_branch",
+    "freeze_release_tree",
+    "merge_into_status",
+    "merge_into_tree",
+    "merge_source_ref",
+    "merge_status",
+    "merge_tree",
+    "merge_tree_one_at_a_time",
+    "paths_outside_scope",
+    "propagate_global_branch",
+    "push_tree",
+    "refresh_private_tree",
+    "remove_paths",
+    "restart_tree",
+    "restart_tree_force",
+    "tag_tree",
+    "validate_branch_topology",
+]

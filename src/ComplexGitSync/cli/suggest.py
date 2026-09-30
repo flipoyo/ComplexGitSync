@@ -110,3 +110,11 @@ def parse_args_with_hint(
             if hint:
                 print(hint, file=sys.stderr)
         raise
+
+
+__all__ = [
+    "closest_command",
+    "command_token",
+    "parse_args_with_hint",
+    "suggestion_line",
+]

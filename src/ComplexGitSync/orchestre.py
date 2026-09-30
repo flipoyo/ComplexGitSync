@@ -30,9 +30,7 @@ from urllib.parse import urlsplit
 from . import __build__, __version__, tree_env
 from .cgs_format import CgsDocument, parse_repo_id, repo_identifier
 from .clone_guard import (
-    blocked_destinations,
-    format_block_error,
-    is_populated_destination,
+    CloneGuard,
 )
 from .commit_message import CommitMessagePolicy
 from .discovery import (
@@ -47,6 +45,7 @@ from .errors import (
     GitSyncError,
 )
 from .git_branch import DEFAULT_BRANCH, BranchResolution, resolve_entry_ref
+from .tree_env import TreeObserver
 
 if TYPE_CHECKING:
     from .autofix import RepairOutcome
@@ -89,99 +88,41 @@ from .git_tree import (
 )
 from .git_tree_branch import GitTreeBranches, tree_project_name
 from .gts_document import GtsDocument
-from .json_render import dumps as json_dumps
-from .json_render import empty_status_payload, status_payload, verify_payload
+from .json_render import JsonRender
 from .master import MasterConfig
 from .memory import (
+    ChainVerifier,
     Finding,
     HistoryState,
+    LocalGitRegister,
     SyncLedger,
     VerificationReport,
-    resolve_state,
-    verify_chain,
 )
-from .memory import agent_contract as agent_contract_store
-from .memory import environment as environment_store
-from .memory import ledger_entry as memory_ledger_entry
-from .memory import ledger_store as memory_ledger_store
 from .memory import self_history as self_history_store
+from .memory.agent_contract import AgentContractRecord
 from .memory.commit_log import (
     COMMIT_LOG_DIR_NAME,
     SCOPE_PRIVATE,
     SCOPE_PROJECT,
+    CommitLog,
     CommitRecord,
     PublicationRecord,
-    append_commits,
-    append_publications,
-    digest_of,
-    digest_of_rows,
-    read_commit_log,
 )
+from .memory.environment import EnvironmentStore
+from .memory.ledger_entry import LedgerEntry
+from .memory.ledger_store import ArgvScrubber, LedgerStore, LedgerStoreError
 from .memory.pending import (
-    current_ledger_dir as _current_ledger_dir,
-)
-from .memory.pending import (
-    memory_commit_log_rows as _memory_commit_log_rows,
-)
-from .memory.pending import (
-    memory_dirs as _memory_dirs,
-)
-from .memory.pending import (
-    memory_environment_files as _memory_environment_files,
-)
-from .memory.pending import (
-    memory_published_commits as _memory_published_commits,
-)
-from .memory.pending import (
-    memory_read_commit_log as _memory_read_commit_log,
-)
-from .memory.pending import (
-    memory_state_files as _memory_state_files,
-)
-from .memory.pending import (
-    memory_state_hashes_with_logs as _memory_state_hashes_with_logs,
-)
-from .memory.pending import (
-    memory_state_path as _memory_state_path,
-)
-from .memory.pending import (
-    memory_timeline as _memory_timeline,
-)
-from .memory.pending import (
-    memory_unpublished_commits as _memory_unpublished_commits,
-)
-from .memory.pending import (
-    next_ledger_seq as _next_ledger_seq,
-)
-from .memory.pending import (
-    read_ledger_entries as _read_all_ledger_entries,
+    PendingMemory,
 )
 from .memory.repository import (
     MOUNT_PATH,
     SELF_HISTORY_SUBDIR_NAME,
-    commit_message,
-    config_memory_document,
-    config_memory_path,
-    creation_command,
-    entry_already_present,
-    format_mount_entry,
-    insert_repo_entry,
-    memory_mount_path,
-    memory_pending_path,
-    mount_entry,
-    self_history_commit_message,
-    self_history_mount_path,
-    self_history_repository_id,
-    uncommitted_memory_paths,
+    CgsEntryEditor,
+    MemoryRepository,
 )
-from .memory.repository import (
-    memory_branch as memory_branch_name,
-)
+from .memory.self_history import SelfHistoryRecord
 from .memory.states import (
-    _format_state_id,
-    _latest_state_artifact,
-    _parse_state_hash,
-    state_path,
+    MemoryStates,
 )
 from .operations import (
     MERGE_INTO_ACTS,
@@ -193,22 +134,16 @@ from .operations import (
 from .operations import (
     validate_branch_topology as _validate_branch_topology,
 )
-from .paths import _resolve_project_root
-from .paths import resolve_bootstrap_root as _resolve_bootstrap_root
-from .paths import resolve_cgshome as _resolve_cgshome
-from .paths import resolve_initialise_cgshome as _resolve_initialise_cgshome
+from .paths import PathResolver
 from .provider import (
     creation_plan,
     looks_like_already_exists,
     looks_like_not_signed_in,
 )
 from .registry import (
-    _path_from_tree,
-    build_gts_document_from_registry,
-    build_registry_from_cgs_document,
-    build_registry_from_gts_document,
+    RegistryTranslator,
 )
-from .settings import UseCase, resolve_use_case
+from .settings import Settings, UseCase
 from .snapshot_resolver import discover_cgshome, discover_gts_path
 from .status_render import (
     PROJECT_SCOPE_LABEL,
@@ -228,7 +163,7 @@ from .status_render import (
     _status_tracking_label,
     _tree_branch_label,
 )
-from .toolchain import toolchain
+from .toolchain import Toolchain
 from .universal_clock import ClockProtocol, SystemClock
 
 # ============================================================
@@ -1007,11 +942,11 @@ def _verify_states_on_disk(
     recorded: dict[str, int] = {}
 
     for entry in entries:
-        state_hash = _parse_state_hash(entry.state_id)
+        state_hash = MemoryStates.parse_hash(entry.state_id)
         if state_hash is None:
             continue
         recorded.setdefault(state_hash, entry.seq)
-        snapshot = _memory_state_path(cgitsync_dir, state_hash)
+        snapshot = PendingMemory(cgitsync_dir).state_path(state_hash)
         if snapshot is None:
             findings.append((
                 entry.seq,
@@ -1036,7 +971,7 @@ def _verify_states_on_disk(
                 f"{snapshot.name} now hashes to {digest}",
             ))
 
-    for snapshot in _memory_state_files(cgitsync_dir):
+    for snapshot in PendingMemory(cgitsync_dir).state_files():
         if snapshot.stem not in recorded:
             findings.append((
                 0,
@@ -1057,7 +992,7 @@ def _normalise_state_argument(state: str) -> str:
     which is precisely the mistake a real user made with it. Anything else
     passes through unchanged: an ordinary bare prefix, typed by hand.
     """
-    parsed = _parse_state_hash(state)
+    parsed = MemoryStates.parse_hash(state)
     if parsed is not None:
         return parsed
     if state.startswith("state="):
@@ -1070,7 +1005,7 @@ def _normalise_environment_argument(env_ref: str) -> str:
     strips the full ``env(<hash>)`` id (the form `memory show`'s own
     ``environment=`` line prints it in) and a leading ``env=`` label,
     leaving a bare prefix typed by hand unchanged."""
-    parsed = environment_store.parse_environment_hash(env_ref)
+    parsed = EnvironmentStore.parse_hash(env_ref)
     if parsed is not None:
         return parsed
     if env_ref.startswith("env="):
@@ -1096,13 +1031,13 @@ def _resolve_ledger_state(cgitsync_dir: Path, state_id: str) -> str | None:
     work moved between" — a fake or malformed reference is refused here
     (`self_history_add`) rather than recorded as though it were fact.
     """
-    state_hash = _parse_state_hash(state_id)
+    state_hash = MemoryStates.parse_hash(state_id)
     if state_hash is None:
         return None
-    entries = _read_all_ledger_entries(cgitsync_dir)
+    entries = PendingMemory(cgitsync_dir).read_ledger_entries()
     if not any(entry.state_id == state_id for entry in entries):
         return None
-    snapshot = _memory_state_path(cgitsync_dir, state_hash)
+    snapshot = PendingMemory(cgitsync_dir).state_path(state_hash)
     if snapshot is None:
         return None
     try:
@@ -1130,10 +1065,10 @@ def _repos_written_between(
     empty diff.
     """
     try:
-        before_doc = GtsDocument.from_toml(_memory_state_path(cgitsync_dir, before_hash))
-        after_doc = GtsDocument.from_toml(_memory_state_path(cgitsync_dir, after_hash))
-        before_tree = build_registry_from_gts_document(before_doc, tree_root=workspace)
-        after_tree = build_registry_from_gts_document(after_doc, tree_root=workspace)
+        before_doc = GtsDocument.from_toml(PendingMemory(cgitsync_dir).state_path(before_hash))
+        after_doc = GtsDocument.from_toml(PendingMemory(cgitsync_dir).state_path(after_hash))
+        before_tree = RegistryTranslator.from_gts_document(before_doc, tree_root=workspace)
+        after_tree = RegistryTranslator.from_gts_document(after_doc, tree_root=workspace)
     except (OSError, tomllib.TOMLDecodeError, ConfigValidationError, TypeError):
         return None
     before_shas = {repo.name: repo.commit_sha for repo in before_tree.values()}
@@ -1208,7 +1143,7 @@ def _self_history_identity_from_config(config_path: Path) -> tuple[str, str] | N
     if self_history_repo is None:
         return None
     owner = str(self_history_repo["project_owner_name"])
-    return owner, _remote_url_for_identifier(self_history_repository_id(owner))
+    return owner, _remote_url_for_identifier(MemoryRepository.self_history_repository_id(owner))
 
 
 def _verify_commit_logs(
@@ -1229,13 +1164,13 @@ def _verify_commit_logs(
     rule the ledger itself follows.
     """
     cgitsync_dir = workspace / ".cgitsync"
-    folded_dir, pending_dir = _memory_dirs(cgitsync_dir)
+    folded_dir, pending_dir = PendingMemory(cgitsync_dir).dirs()
     if not (folded_dir / COMMIT_LOG_DIR_NAME).is_dir() and not (pending_dir / COMMIT_LOG_DIR_NAME).is_dir():
         return []
     findings: list[tuple[int, Finding, str]] = []
 
     known = {entry.seq: entry for entry in entries}
-    grouped = _memory_commit_log_rows(cgitsync_dir)
+    grouped = PendingMemory(cgitsync_dir).commit_log_rows()
     for entry in entries:
         committed, published = grouped.get(entry.seq, ([], []))
         if not committed and not published:
@@ -1255,7 +1190,7 @@ def _verify_commit_logs(
             ))
             continue
         try:
-            digest = digest_of_rows(committed, published)
+            digest = CommitLog.digest_of_rows(committed, published)
         except TypeError as exc:
             findings.append((
                 entry.seq,
@@ -1279,8 +1214,8 @@ def _verify_commit_logs(
             "which the chain does not have",
         ))
 
-    for state_hash in _memory_state_hashes_with_logs(cgitsync_dir):
-        if _memory_state_path(cgitsync_dir, state_hash) is None:
+    for state_hash in PendingMemory(cgitsync_dir).state_hashes_with_logs():
+        if PendingMemory(cgitsync_dir).state_path(state_hash) is None:
             findings.append((
                 0,
                 Finding.ORPHAN_COMMIT_LOG,
@@ -1310,24 +1245,6 @@ def _workspace_of_snapshot(snapshot_path: Path) -> Path | None:
     return None
 
 
-def _write_file_atomically(destination: Path, write: Any) -> None:
-    """Write *destination* through a temporary file in the same directory.
-
-    The old layout got atomicity from building a whole state directory and
-    renaming it into place. A State is one file now, so the same guarantee
-    costs one rename: a reader never sees a half-written snapshot, and a
-    crash leaves either the previous State or none, never a truncated one.
-
-    *write* is called with the temporary path and must write the file.
-    """
-    temporary = destination.with_name(f".{destination.name}.tmp")
-    try:
-        write(temporary)
-        temporary.replace(destination)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
 def _next_reboot_cgs_version(cgs_dir: Path, project_name: str) -> int:
     """The `-v<N>` a `memory reboot` export should carry next.
 
@@ -1346,35 +1263,6 @@ def _next_reboot_cgs_version(cgs_dir: Path, project_name: str) -> int:
             if match:
                 highest = max(highest, int(match.group(1)))
     return highest + 1
-
-
-def _legacy_register_exists(workspace: Path) -> bool:
-    """Whether *workspace* holds history in the single-file ``.lgr`` format.
-
-    That format is what ``LocalGitRegister`` writes: one TOML file,
-    rewritten whole on every operation, with a sequential id and no chain.
-    It is readable and it is not verifiable — an edit to it leaves no trace
-    — so a workspace that has one has history that ``verify`` must report as
-    *legacy* rather than as nothing at all.
-
-    Every workspace created before the hash-chained register is written is
-    in exactly this state, which is why the answer matters more than it
-    looks.
-    """
-    cgitsync_dir = workspace / ".cgitsync"
-    # Three places one has ever lived: inside a state directory (copied
-    # forward before every write), at the workspace root (older still), and
-    # at `.cgitsync/<project>.lgr`, where the flat state layout put it.
-    # Miss one and a workspace with history is told it has none, which is
-    # the lie this whole answer exists to remove.
-    for candidate in (
-        cgitsync_dir.glob("state(*)_*/*.lgr"),
-        cgitsync_dir.glob("*.lgr"),
-        workspace.glob("*.lgr"),
-    ):
-        if any(candidate):
-            return True
-    return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1469,21 +1357,21 @@ class ComplexGitSyncClient:
     def environment(self) -> tree_env.TreeEnvironment:
         """Observe the machine, tools, credentials, and manifests for the loaded tree."""
         tree = self.get_dependency_registry()
-        tree_env.attach_source_context(tree)
-        return tree_env.observe(self.git_runner, tree)
+        TreeObserver.attach_source_context(tree)
+        return TreeObserver.observe(self.git_runner, tree)
 
     def check_environment(self, document: CgsDocument | None = None) -> tree_env.Drift:
         """Compare the observed environment with one ``.cgs`` declaration."""
         if document is None:
-            document = tree_env.source_document(self.get_dependency_registry())
+            document = TreeObserver.source_document(self.get_dependency_registry())
             if document is None:
                 raise GitSyncError(
                     "this State does not resolve to a .cgs; pass an explicit .cgs to env check."
                 )
         tree = self.get_dependency_registry()
         document.attach_serialization_context(tree)
-        observed = tree_env.observe(self.git_runner, tree)
-        return tree_env.compare(observed, tree_env.Requirements.from_cgs(document))
+        observed = TreeObserver.observe(self.git_runner, tree)
+        return TreeObserver.compare(observed, tree_env.Requirements.from_cgs(document))
 
     def _warn_environment_drift(self) -> None:
         try:
@@ -2389,9 +2277,7 @@ class ComplexGitSyncClient:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        self.registry = build_registry_from_cgs_document(
-            document, source_path, project_root=project_root
-        )
+        self.registry = RegistryTranslator.from_cgs_document(document, source_path, project_root=project_root)
         self.orchestre.git_tree.git.bind_tree(self.registry)
         self.source_path = source_path
         self.loaded_snapshot_path = None
@@ -2573,11 +2459,7 @@ class ComplexGitSyncClient:
         self._force_reclone = force_reclone or clean_before_clone
         project_root = cgshome
 
-        self.registry = build_registry_from_cgs_document(
-            document,
-            source_path,
-            project_root=project_root,
-        )
+        self.registry = RegistryTranslator.from_cgs_document(document, source_path, project_root=project_root)
         self.orchestre.git_tree.git.bind_tree(self.registry)
         self.source_path = source_path
 
@@ -2685,11 +2567,7 @@ class ComplexGitSyncClient:
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
         cgshome = self.resolve_cgshome(document, source_path, output_path=output_path)
-        self.registry = build_registry_from_cgs_document(
-            document,
-            source_path,
-            project_root=cgshome,
-        )
+        self.registry = RegistryTranslator.from_cgs_document(document, source_path, project_root=cgshome)
         self.orchestre.git_tree.git.bind_tree(self.registry)
         self.source_path = source_path
         return self._purge_registry_workspace(self.registry)
@@ -2746,7 +2624,7 @@ class ComplexGitSyncClient:
         output_path: str | Path | None = None,
     ) -> Path:
         """Resolve CGSHOME from CGSPATH, the environment, or CWD."""
-        return _resolve_cgshome(document, source_path, output_path=output_path)
+        return PathResolver.resolve_cgshome(document, source_path, output_path=output_path)
 
     def resolve_initialise_cgshome(
         self,
@@ -2755,7 +2633,7 @@ class ComplexGitSyncClient:
         output_path: str | Path | None = None,
     ) -> Path:
         """Read a .cgs file and resolve the CGSHOME initialise will use."""
-        return _resolve_initialise_cgshome(config_path, output_path=output_path)
+        return PathResolver.resolve_initialise_cgshome(config_path, output_path=output_path)
 
     def load(
         self,
@@ -2886,11 +2764,11 @@ class ComplexGitSyncClient:
         # snapshot was found in. That is what lets a memory be cloned onto
         # another machine and still rebuild the right directories.
         tree_root = _workspace_of_snapshot(resolved_snapshot_path)
-        self.registry = build_registry_from_gts_document(document, tree_root=tree_root)
+        self.registry = RegistryTranslator.from_gts_document(document, tree_root=tree_root)
         self.orchestre.git_tree.git.bind_tree(self.registry)
         recorded_source = document.read("project.source_cgs_path")
         self.source_path = (
-            _path_from_tree(str(recorded_source), tree_root)
+            PathResolver.from_tree(str(recorded_source), tree_root)
             if recorded_source
             else resolved_snapshot_path
         )
@@ -2942,7 +2820,7 @@ class ComplexGitSyncClient:
     ) -> Path:
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        return _resolve_project_root(document, source_path, target_dir, output_path)
+        return PathResolver.resolve_project_root(document, source_path, target_dir, output_path)
 
     def clone_cgs(
         self,
@@ -2956,17 +2834,13 @@ class ComplexGitSyncClient:
         previous_tree_state = self.registry.lifecycle_state if self.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        project_root = _resolve_project_root(document, source_path, target_dir, output_path)
+        project_root = PathResolver.resolve_project_root(document, source_path, target_dir, output_path)
         self._forced_access_protocol = (
             AccessProtocol(force_access_protocol) if force_access_protocol else None
         )
         self._force_reclone = force_reclone
 
-        self.registry = build_registry_from_cgs_document(
-            document,
-            source_path,
-            project_root=project_root,
-        )
+        self.registry = RegistryTranslator.from_cgs_document(document, source_path, project_root=project_root)
         self.orchestre.git_tree.git.bind_tree(self.registry)
         self.source_path = source_path
 
@@ -3040,7 +2914,7 @@ class ComplexGitSyncClient:
         ComplexGitSync standalone must never mix its own repo with the
         project state it manages.
         """
-        return _resolve_bootstrap_root(project_name, cgs_path=cgs_path)
+        return PathResolver.resolve_bootstrap_root(project_name, cgs_path=cgs_path)
 
     def bootstrap(
         self,
@@ -3514,7 +3388,7 @@ class ComplexGitSyncClient:
         """
         root_entry = registry.get("root")
         cgitsync_dir = root_entry.absolute_path / ".cgitsync"
-        folded_dir, pending_dir = _memory_dirs(cgitsync_dir)
+        folded_dir, pending_dir = PendingMemory(cgitsync_dir).dirs()
         if not (folded_dir / COMMIT_LOG_DIR_NAME).is_dir() and not (pending_dir / COMMIT_LOG_DIR_NAME).is_dir():
             return {}
         moment = self.clock.now().isoformat(timespec="seconds")
@@ -3526,7 +3400,7 @@ class ComplexGitSyncClient:
             if not outcome.acted or not entry.repo_id:
                 continue
             branch = branches.observed(entry)
-            for state_hash, sha in _memory_unpublished_commits(cgitsync_dir, entry.repo_id):
+            for state_hash, sha in PendingMemory(cgitsync_dir).unpublished_commits(entry.repo_id):
                 published.setdefault(state_hash, []).append(
                     PublicationRecord(
                         entry=0,  # replaced with the real seq in write_gts_snapshot
@@ -3709,7 +3583,7 @@ class ComplexGitSyncClient:
         if registry is None or ROOT_REPO_ID not in registry.repos:
             return None
         root = registry.get(ROOT_REPO_ID)
-        if resolve_use_case(root.absolute_path) is not UseCase.NESTED:
+        if Settings.resolve_use_case(root.absolute_path) is not UseCase.NESTED:
             return None
         manifest = self.git_runner.show_file(root.absolute_path, branch, "pyproject.toml")
         if not manifest:
@@ -4392,7 +4266,7 @@ class ComplexGitSyncClient:
             ("artefact:src", __build__),
         ]
         dev_sync_dir = root_entry.absolute_path / ".agent" / ".distant" / "dev-sync"
-        contract = agent_contract_store.read_current_contract(dev_sync_dir)
+        contract = AgentContractRecord.read_current(dev_sync_dir)
         if contract is not None:
             release.append(("artefact:agent_contract", contract.terms_version))
         else:
@@ -4638,15 +4512,15 @@ class ComplexGitSyncClient:
                 "the project's root repository declares no owner, so no memory "
                 "repository name can be proposed. Pass one explicitly."
             )
-        entry = mount_entry(repository_owner, root.name)
+        entry = MemoryRepository.mount_entry(repository_owner, root.name)
         branches = GitTreeBranches(registry, self.git_runner)
         return {
             "entry": entry,
-            "line": format_mount_entry(entry),
-            "branch": memory_branch_name(root.name, branches.tree_branch or DEFAULT_BRANCH),
-            "mount_path": str(memory_mount_path(workspace)),
-            "create_with": creation_command(entry),
-            "mounted": memory_mount_path(workspace).joinpath(".git").exists(),
+            "line": CgsEntryEditor.format_entry(entry),
+            "branch": MemoryRepository.branch(root.name, branches.tree_branch or DEFAULT_BRANCH),
+            "mount_path": str(MemoryRepository(workspace).mount_path()),
+            "create_with": MemoryRepository.creation_command(entry),
+            "mounted": MemoryRepository(workspace).mount_path().joinpath(".git").exists(),
         }
 
     def add_memory_repo_cgs(
@@ -4679,11 +4553,11 @@ class ComplexGitSyncClient:
         line = str(proposal["line"])
         original = target.read_text(encoding="utf-8")
 
-        if entry_already_present(original, str(entry["repository"]), str(entry["relative_path"])):
+        if CgsEntryEditor.already_present(original, str(entry["repository"]), str(entry["relative_path"])):
             return {"cgs": str(target), "line": line, "added": False, "entry": entry}
 
         try:
-            updated = insert_repo_entry(original, line)
+            updated = CgsEntryEditor.insert(original, line)
         except ValueError as exc:
             raise GitSyncError(f"{target} cannot take a repository entry: {exc}.") from exc
 
@@ -4722,7 +4596,7 @@ class ComplexGitSyncClient:
         destroy exactly the thing this milestone exists to preserve.
         """
         workspace = Path(cgshome)
-        destination = memory_mount_path(workspace)
+        destination = MemoryRepository(workspace).mount_path()
         if (destination / ".git").exists():
             raise GitSyncError(f"{destination} is already a repository; nothing to clone.")
         if destination.is_dir() and any(destination.iterdir()):
@@ -4757,11 +4631,11 @@ class ComplexGitSyncClient:
         `_self_history_identity_from_config` reads which repository that
         is, from the file itself rather than re-derived.
         """
-        identity = _self_history_identity_from_config(config_memory_path(workspace))
+        identity = _self_history_identity_from_config(MemoryRepository(workspace).config_path())
         if identity is None:
             return None
         _owner, remote_url = identity
-        destination = self_history_mount_path(workspace)
+        destination = MemoryRepository(workspace).self_history_mount_path()
         if (destination / ".git").exists():
             return None
         if destination.is_dir() and any(destination.iterdir()):
@@ -4831,15 +4705,15 @@ class ComplexGitSyncClient:
         `init_repository` made it, with nothing to inherit from.
         """
         workspace = Path(cgshome)
-        mount = memory_mount_path(workspace)
+        mount = MemoryRepository(workspace).mount_path()
         if (mount / ".git").exists():
             raise GitSyncError(
                 f"{mount} is already a repository. 'cgitsync memory push' sends what "
                 "it has gained."
             )
-        if not memory_pending_path(workspace).is_dir():
+        if not MemoryRepository(workspace).pending_path().is_dir():
             raise GitSyncError(
-                f"{memory_pending_path(workspace)} does not exist yet. Run any "
+                f"{MemoryRepository(workspace).pending_path()} does not exist yet. Run any "
                 "cgitsync command in this workspace first."
             )
         mount.mkdir(parents=True, exist_ok=True)
@@ -4874,7 +4748,7 @@ class ComplexGitSyncClient:
             "branch": target_branch,
             "remote": remote_url,
             "started_from": started_from,
-            "pending": len(uncommitted_memory_paths(self.git_runner.status_porcelain(mount))),
+            "pending": len(MemoryRepository.uncommitted_paths(self.git_runner.status_porcelain(mount))),
         }
 
     def self_history_adopt(
@@ -4907,12 +4781,12 @@ class ComplexGitSyncClient:
         out.
         """
         workspace = Path(cgshome)
-        memory_mount = memory_mount_path(workspace)
+        memory_mount = MemoryRepository(workspace).mount_path()
         if not (memory_mount / ".git").exists():
             raise GitSyncError(
                 f"{memory_mount} is not a repository yet. Run 'cgitsync memory adopt' first."
             )
-        mount = self_history_mount_path(workspace)
+        mount = MemoryRepository(workspace).self_history_mount_path()
         if (mount / ".git").exists():
             raise GitSyncError(
                 f"{mount} is already a repository. 'cgitsync memory push' sends what "
@@ -4924,16 +4798,16 @@ class ComplexGitSyncClient:
         repository_owner = owner or (root.project_owner_name if root is not None else None)
         if not repository_owner:
             raise GitSyncError("self-history needs an owner to adopt under: pass one explicitly.")
-        remote_url = _remote_url_for_identifier(self_history_repository_id(repository_owner))
+        remote_url = _remote_url_for_identifier(MemoryRepository.self_history_repository_id(repository_owner))
         if not self.git_runner.remote_reachable(remote_url):
             raise GitSyncError(
                 f"{remote_url} is not there, or these credentials cannot see it. "
                 f"Create it with 'cgitsync repo create {_identifier_of(remote_url)}'."
             )
-        config_path = config_memory_path(workspace)
+        config_path = MemoryRepository(workspace).config_path()
         if not config_path.is_file():
             config_path.write_text(
-                config_memory_document(repository_owner, resolved_branch), encoding="utf-8"
+                MemoryRepository.config_document(repository_owner, resolved_branch), encoding="utf-8"
             )
         return self._finish_self_history_adopt(workspace, branch=resolved_branch, remote_url=remote_url)
 
@@ -4970,10 +4844,10 @@ class ComplexGitSyncClient:
         the first one's operation" stance `_fold_memory_before_push`
         already takes.
         """
-        mount = self_history_mount_path(workspace)
+        mount = MemoryRepository(workspace).self_history_mount_path()
         if (mount / ".git").exists():
             return None
-        identity = _self_history_identity_from_config(config_memory_path(workspace))
+        identity = _self_history_identity_from_config(MemoryRepository(workspace).config_path())
         if identity is None:
             return None
         _owner, remote_url = identity
@@ -4993,7 +4867,7 @@ class ComplexGitSyncClient:
         """The git-level mechanics both adopt paths share, once each has
         decided (bootstrap) or confirmed (follow) that self-history
         applies here and found a reachable remote for it."""
-        mount = self_history_mount_path(workspace)
+        mount = MemoryRepository(workspace).self_history_mount_path()
         mount.mkdir(parents=True, exist_ok=True)
         self.git_runner.init_repository(mount, branch=branch)
         # An unborn branch (no commit at all) is a shape `current_branch`
@@ -5007,7 +4881,7 @@ class ComplexGitSyncClient:
         user_name, user_email = MasterConfig.resolve_identity(mount, self.git_runner)
         self.git_runner.commit(
             mount,
-            self_history_commit_message(workspace.name, 0, clock=self.clock),
+            MemoryRepository.self_history_commit_message(workspace.name, 0, clock=self.clock),
             user_name=user_name,
             user_email=user_email,
             allow_empty=True,
@@ -5023,7 +4897,7 @@ class ComplexGitSyncClient:
         # discovery pass registers `.self-history` as `.memory`'s child;
         # this does not wait for that pass, because a `.memory` push can
         # run before it ever does.
-        _update_gitignore_file(memory_mount_path(workspace), [SELF_HISTORY_SUBDIR_NAME])
+        _update_gitignore_file(MemoryRepository(workspace).mount_path(), [SELF_HISTORY_SUBDIR_NAME])
         self._log_event("self_history_adopt", mount=mount, branch=branch)
         return {"mount": str(mount), "branch": branch, "remote": remote_url}
 
@@ -5057,7 +4931,7 @@ class ComplexGitSyncClient:
         """
         workspace = Path(cgshome)
         old_mount = workspace / self._OLD_MOUNT_RELATIVE_PATH
-        new_mount = memory_mount_path(workspace)
+        new_mount = MemoryRepository(workspace).mount_path()
         if (new_mount / ".git").exists():
             raise GitSyncError(f"{new_mount} is already a repository; nothing to migrate.")
         if not (old_mount / ".git").is_dir():
@@ -5130,13 +5004,13 @@ class ComplexGitSyncClient:
         the merge has something to merge into on both sides.
         """
         workspace = Path(cgshome)
-        mount = memory_mount_path(workspace)
+        mount = MemoryRepository(workspace).mount_path()
         if not (mount / ".git").exists():
             raise GitSyncError(
                 f"{mount} is not a repository yet. Run 'cgitsync memory adopt' first."
             )
         registry = self.get_dependency_registry()
-        target = memory_branch_name(registry.get(ROOT_REPO_ID).name, project_branch)
+        target = MemoryRepository.branch(registry.get(ROOT_REPO_ID).name, project_branch)
         existed = self.git_runner.local_branch_exists(mount, target)
         if not existed:
             self.git_runner.create_branch(mount, target)
@@ -5197,15 +5071,11 @@ class ComplexGitSyncClient:
         if commit_logs_source.is_dir():
             for path in sorted(commit_logs_source.glob("*.toml")):
                 state_hash = path.stem
-                log = read_commit_log(commit_logs_source, state_hash)
+                log = CommitLog(commit_logs_source).read(state_hash)
                 if log["commit"]:
-                    append_commits(
-                        mount, state_hash, [CommitRecord(**row) for row in log["commit"]]
-                    )
+                    CommitLog(mount).append_commits(state_hash, [CommitRecord(**row) for row in log["commit"]])
                 if log["published"]:
-                    append_publications(
-                        mount, state_hash, [PublicationRecord(**row) for row in log["published"]]
-                    )
+                    CommitLog(mount).append_publications(state_hash, [PublicationRecord(**row) for row in log["published"]])
                 path.unlink()
                 moved += 1
             commit_logs_source.rmdir()
@@ -5291,7 +5161,7 @@ class ComplexGitSyncClient:
         mount's own ``.git`` is the only thing asked, so a workspace that
         never opted in behaves exactly as it did before this existed.
         """
-        mount = self_history_mount_path(workspace)
+        mount = MemoryRepository(workspace).self_history_mount_path()
         if not (mount / ".git").exists():
             return None
         pending_dir = workspace / ".cgitsync" / self_history_store.SELF_HISTORY_PENDING_DIR_NAME
@@ -5301,7 +5171,7 @@ class ComplexGitSyncClient:
                 item.replace(mount / item.name)
                 moved += 1
             pending_dir.rmdir()
-        pending_paths = uncommitted_memory_paths(self.git_runner.status_porcelain(mount))
+        pending_paths = MemoryRepository.uncommitted_paths(self.git_runner.status_porcelain(mount))
         committed = False
         if pending_paths:
             self.git_runner.stage_all(mount)
@@ -5309,7 +5179,7 @@ class ComplexGitSyncClient:
             user_name, user_email = MasterConfig.resolve_identity(mount, self.git_runner)
             self.git_runner.commit(
                 mount,
-                self_history_commit_message(workspace.name, moved, clock=self.clock),
+                MemoryRepository.self_history_commit_message(workspace.name, moved, clock=self.clock),
                 user_name=user_name,
                 user_email=user_email,
             )
@@ -5362,15 +5232,15 @@ class ComplexGitSyncClient:
         """
         workspace = Path(cgshome)
         self._push_self_history(workspace)
-        mount = memory_mount_path(workspace)
+        mount = MemoryRepository(workspace).mount_path()
         if not (mount / ".git").exists():
             raise GitSyncError(
                 f"{mount} is not a repository yet. Run 'cgitsync memory init' for the "
                 "entry that mounts one, then 'cgitsync memory clone'."
             )
         status = self.memory_status(workspace)
-        self._fold_memory_pending(memory_pending_path(workspace), mount)
-        pending = uncommitted_memory_paths(self.git_runner.status_porcelain(mount))
+        self._fold_memory_pending(MemoryRepository(workspace).pending_path(), mount)
+        pending = MemoryRepository.uncommitted_paths(self.git_runner.status_porcelain(mount))
         committed = False
         if pending:
             self.git_runner.stage_all(mount)
@@ -5379,12 +5249,7 @@ class ComplexGitSyncClient:
             self.git_runner.commit(
                 mount,
                 message
-                or commit_message(
-                    Path(str(status["cgshome"])).name,
-                    int(status["states"]),
-                    int(status["entries"]),
-                    clock=self.clock,
-                ),
+                or MemoryRepository.commit_message(Path(str(status["cgshome"])).name, int(status["states"]), int(status["entries"]), clock=self.clock),
                 user_name=user_name,
                 user_email=user_email,
             )
@@ -5471,7 +5336,7 @@ class ComplexGitSyncClient:
         contract = ""
         try:
             dev_sync_dir = workspace / ".agent" / ".distant" / "dev-sync"
-            current_contract = agent_contract_store.read_current_contract(dev_sync_dir)
+            current_contract = AgentContractRecord.read_current(dev_sync_dir)
             if current_contract is not None:
                 contract = current_contract.digest()
         except (OSError, ValueError):
@@ -5483,7 +5348,7 @@ class ComplexGitSyncClient:
                 status_errors = view.counts.errors
         except (GitSyncError, RuntimeError):
             status_errors = None
-        ledger_entries = _read_all_ledger_entries(cgitsync_dir)
+        ledger_entries = PendingMemory(cgitsync_dir).read_ledger_entries()
         if not state_after and ledger_entries:
             state_after = ledger_entries[-1].state_id
         for label, value in (("state_before", state_before), ("state_after", state_after)):
@@ -5496,8 +5361,8 @@ class ComplexGitSyncClient:
                 )
         observed_repos_written = None
         if state_before and state_after:
-            before_hash = _parse_state_hash(state_before)
-            after_hash = _parse_state_hash(state_after)
+            before_hash = MemoryStates.parse_hash(state_before)
+            after_hash = MemoryStates.parse_hash(state_after)
             if before_hash is not None and after_hash is not None:
                 observed_repos_written = _repos_written_between(
                     cgitsync_dir, workspace, before_hash, after_hash
@@ -5525,7 +5390,7 @@ class ComplexGitSyncClient:
             pushed=pushed,
             pushed_reason=pushed_reason,
         )
-        path = self_history_store.write_record(pending_dir, record)
+        path = record.write(pending_dir)
         self._log_event("self_history_add", path=path, ticket=ticket, contract=contract)
         return path
 
@@ -5568,7 +5433,7 @@ class ComplexGitSyncClient:
         to call it, rather than silently colliding with the first.
         """
         workspace = Path(cgshome)
-        mount = memory_mount_path(workspace)
+        mount = MemoryRepository(workspace).mount_path()
         if not (mount / ".git").exists():
             raise GitSyncError(
                 f"{mount} is not a repository yet. Run 'cgitsync memory adopt' first."
@@ -5577,13 +5442,13 @@ class ComplexGitSyncClient:
         registry = self.load_gts(discover_gts_path(str(workspace)))
         project_name = registry.get(ROOT_REPO_ID).name
 
-        folded = self._fold_memory_pending(memory_pending_path(workspace), mount)
+        folded = self._fold_memory_pending(MemoryRepository(workspace).pending_path(), mount)
 
         cgs_dir = mount / ".cgs"
         cgs_dir.mkdir(parents=True, exist_ok=True)
         next_version = _next_reboot_cgs_version(cgs_dir, project_name)
         exported_path = cgs_dir / f"{project_name}-v{next_version}.cgs"
-        _write_file_atomically(exported_path, registry.to_cgs().to_toml)
+        MemoryStates.write_atomically(exported_path, registry.to_cgs().to_toml)
 
         pushed = self.memory_push(
             workspace,
@@ -5626,8 +5491,8 @@ class ComplexGitSyncClient:
         # branch it actually was. Folding and committing the one State
         # just written gives the branch a real HEAD before this method
         # returns.
-        self._fold_memory_pending(memory_pending_path(workspace), mount)
-        if uncommitted_memory_paths(self.git_runner.status_porcelain(mount)):
+        self._fold_memory_pending(MemoryRepository(workspace).pending_path(), mount)
+        if MemoryRepository.uncommitted_paths(self.git_runner.status_porcelain(mount)):
             self.git_runner.stage_all(mount)
             MasterConfig.load(workspace)
             user_name, user_email = MasterConfig.resolve_identity(mount, self.git_runner)
@@ -5676,9 +5541,9 @@ class ComplexGitSyncClient:
         question being whether those two differ.
         """
         workspace = Path(cgshome)
-        entries = _read_all_ledger_entries(workspace / ".cgitsync")
+        entries = PendingMemory(workspace / ".cgitsync").read_ledger_entries()
         report = self.verify(workspace)
-        states = _memory_state_files(workspace / ".cgitsync")
+        states = PendingMemory(workspace / ".cgitsync").state_files()
         return {
             "cgshome": str(workspace.resolve()),
             "verification": report.state.name.lower().replace("_", "-"),
@@ -5704,15 +5569,15 @@ class ComplexGitSyncClient:
         """
         workspace = Path(cgshome)
         cgitsync_dir = workspace / ".cgitsync"
-        entries = _read_all_ledger_entries(cgitsync_dir)
+        entries = PendingMemory(cgitsync_dir).read_ledger_entries()
         seen: dict[str, list[Any]] = {}
         for entry in entries:
-            state_hash = _parse_state_hash(entry.state_id)
+            state_hash = MemoryStates.parse_hash(entry.state_id)
             if state_hash is not None:
                 seen.setdefault(state_hash, []).append(entry)
 
         rows: list[dict[str, Any]] = []
-        for snapshot in _memory_state_files(cgitsync_dir):
+        for snapshot in PendingMemory(cgitsync_dir).state_files():
             recorded = seen.pop(snapshot.stem, [])
             rows.append(
                 {
@@ -5747,7 +5612,7 @@ class ComplexGitSyncClient:
         error: this command is additive, like everything else about it.
         """
         cgitsync_dir = Path(cgshome) / ".cgitsync"
-        return [record.to_dict() for record in self_history_store.read_records(cgitsync_dir)]
+        return [record.to_dict() for record in SelfHistoryRecord.read_all(cgitsync_dir)]
 
     def memory_show(self, cgshome: str | Path, state: str) -> dict[str, Any]:
         """One State: what it recorded, every entry that names it, and what
@@ -5784,7 +5649,7 @@ class ComplexGitSyncClient:
         normalised_state = _normalise_state_argument(state)
         matches = sorted(
             snapshot
-            for snapshot in _memory_state_files(cgitsync_dir)
+            for snapshot in PendingMemory(cgitsync_dir).state_files()
             if snapshot.stem.startswith(normalised_state)
         )
         if not matches:
@@ -5800,19 +5665,17 @@ class ComplexGitSyncClient:
         document = GtsDocument.from_toml(snapshot)
         recorded = [
             entry
-            for entry in _read_all_ledger_entries(cgitsync_dir)
-            if _parse_state_hash(entry.state_id) == snapshot.stem
+            for entry in PendingMemory(cgitsync_dir).read_ledger_entries()
+            if MemoryStates.parse_hash(entry.state_id) == snapshot.stem
         ]
-        log = _memory_read_commit_log(cgitsync_dir, snapshot.stem)
+        log = PendingMemory(cgitsync_dir).read_commit_log(snapshot.stem)
         committed: dict[int, list[dict[str, Any]]] = {}
         for row in log["commit"]:
             committed.setdefault(int(row.get("entry", 0)), []).append(row)
         published_shas = {str(row.get("sha", "")) for row in log["published"]}
-        environments = environment_store.resolve_environment_references(
-            _memory_dirs(cgitsync_dir), (entry.environment for entry in recorded)
-        )
+        environments = EnvironmentStore.resolve_references(PendingMemory(cgitsync_dir).dirs(), (entry.environment for entry in recorded))
         try:
-            tree = format_view_tree(build_registry_from_gts_document(document, tree_root=workspace))
+            tree = format_view_tree(RegistryTranslator.from_gts_document(document, tree_root=workspace))
         except (ValueError, KeyError, TypeError):
             # A snapshot old enough to carry its own absolute paths, taken
             # on a different machine, can name a repository this one never
@@ -5867,7 +5730,7 @@ class ComplexGitSyncClient:
         normalised_ref = _normalise_environment_argument(env_ref)
         matches = sorted(
             path
-            for path in _memory_environment_files(cgitsync_dir)
+            for path in PendingMemory(cgitsync_dir).environment_files()
             if path.stem.startswith(normalised_ref)
         )
         if not matches:
@@ -5881,9 +5744,9 @@ class ComplexGitSyncClient:
             raise GitSyncError(f"{env_ref!r} matches more than one Environment: {names}.")
 
         path = matches[0]
-        record = environment_store.read_environment(path)
+        record = EnvironmentStore.read(path)
         return {
-            "id": environment_store.format_environment_id(path.stem),
+            "id": EnvironmentStore.format_id(path.stem),
             "path": str(path),
             "record": record.to_dict(),
         }
@@ -5918,7 +5781,7 @@ class ComplexGitSyncClient:
         """
         workspace = Path(cgshome)
         cgitsync_dir = workspace / ".cgitsync"
-        mount = memory_mount_path(workspace)
+        mount = MemoryRepository(workspace).mount_path()
         current_branch = (
             self.git_runner.current_branch(mount) if (mount / ".git").exists() else None
         )
@@ -5929,8 +5792,8 @@ class ComplexGitSyncClient:
             )
         resolved_branch = branch or current_branch
         if timeline:
-            return {"branch": resolved_branch, "entries": _memory_timeline(cgitsync_dir)}
-        return {"branch": resolved_branch, "commits": _memory_published_commits(cgitsync_dir)}
+            return {"branch": resolved_branch, "entries": PendingMemory(cgitsync_dir).timeline()}
+        return {"branch": resolved_branch, "commits": PendingMemory(cgitsync_dir).published_commits()}
 
     def verify(self, cgshome: str | Path, *, repair: bool = False) -> VerificationReport:
         """Say which of the four answers this workspace's history deserves.
@@ -5969,8 +5832,8 @@ class ComplexGitSyncClient:
         """
         workspace = Path(cgshome)
         cgitsync_dir = workspace / ".cgitsync"
-        entries = _read_all_ledger_entries(cgitsync_dir)
-        report = verify_chain(entries)
+        entries = PendingMemory(cgitsync_dir).read_ledger_entries()
+        report = ChainVerifier.verify(entries)
 
         if entries:
             # Whichever half currently holds the highest-seq entry is where
@@ -5978,9 +5841,9 @@ class ComplexGitSyncClient:
             # updates it in the same directory it just wrote to, and a
             # fold moves both together, so this is never split across the
             # two halves.
-            active_lgr_dir = _current_ledger_dir(cgitsync_dir)
-            cached_head = memory_ledger_store.read_head(active_lgr_dir)
-            true_head = memory_ledger_store.recompute_head(active_lgr_dir)
+            active_lgr_dir = PendingMemory(cgitsync_dir).current_ledger_dir()
+            cached_head = LedgerStore(active_lgr_dir).read_head()
+            true_head = LedgerStore(active_lgr_dir).recompute_head()
             if cached_head != true_head:
                 report.findings.append((
                     entries[-1].seq,
@@ -5996,10 +5859,10 @@ class ComplexGitSyncClient:
             # to the other. Which findings are fatal, which get their own
             # verdict, and which are reported without changing it (an
             # orphan State, for one) is decided there and only there.
-            report.state = resolve_state(report.findings)
+            report.state = ChainVerifier.resolve_state(report.findings)
             if repair:
-                memory_ledger_store.verify_and_repair_head(active_lgr_dir)
-        elif _legacy_register_exists(workspace):
+                LedgerStore(active_lgr_dir).verify_and_repair_head()
+        elif LocalGitRegister.exists_in(workspace):
             report.state = HistoryState.LEGACY
 
         return report
@@ -6040,7 +5903,7 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         workspace = self._workspace_root()
-        use_case = resolve_use_case(workspace).value
+        use_case = Settings.resolve_use_case(workspace).value
         if ROOT_REPO_ID not in registry.repos:
             # A workspace with no repositories is a valid state, not a
             # failure: it is where every user starts. Answering it here is
@@ -6091,25 +5954,10 @@ class ComplexGitSyncClient:
         """
         view = self._collect_status()
         if view.is_empty:
-            payload = empty_status_payload(
-                cgshome=str(view.workspace),
-                use_case=view.use_case,
-                cgitsync_branch=view.branch_label,
-                lifecycle_state=view.tree_state.lifecycle_state.value,
-            )
+            payload = JsonRender.empty_status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value)
         else:
-            payload = status_payload(
-                cgshome=str(view.workspace),
-                use_case=view.use_case,
-                cgitsync_branch=view.branch_label,
-                lifecycle_state=view.tree_state.lifecycle_state.value,
-                is_ready=view.tree_state.is_ready,
-                registry_complete=view.tree_state.registry_complete,
-                rows=view.rows,
-                counts=view.counts,
-                warnings=view.incoherent,
-            )
-        return json_dumps(payload)
+            payload = JsonRender.status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value, is_ready=view.tree_state.is_ready, registry_complete=view.tree_state.registry_complete, rows=view.rows, counts=view.counts, warnings=view.incoherent)
+        return JsonRender.dumps(payload)
 
     def verify_json(self, cgshome: str | Path, *, repair: bool = False) -> str:
         """``verify`` as one JSON object, from the same report ``verify`` returns.
@@ -6121,15 +5969,7 @@ class ComplexGitSyncClient:
         report = self.verify(cgshome, repair=repair)
         self.last_verify_report = report
         cgitsync_dir = Path(cgshome) / ".cgitsync"
-        return json_dumps(
-            verify_payload(
-                cgshome=str(Path(cgshome).resolve()),
-                state=report.state.name.lower().replace("_", "-"),
-                entries=len(_read_all_ledger_entries(cgitsync_dir)),
-                findings=report.findings,
-                repair=repair,
-            )
-        )
+        return JsonRender.dumps(JsonRender.verify(cgshome=str(Path(cgshome).resolve()), state=report.state.name.lower().replace("_", "-"), entries=len(PendingMemory(cgitsync_dir).read_ledger_entries()), findings=report.findings, repair=repair))
 
     def status(self) -> str:
         view = self._collect_status()
@@ -6206,33 +6046,21 @@ class ComplexGitSyncClient:
         over real, already-folded history.
         """
         try:
-            existing_entries = _read_all_ledger_entries(cgitsync_dir)
+            existing_entries = PendingMemory(cgitsync_dir).read_ledger_entries()
             environment_id = ""
             try:
                 observed = self.environment()
-                environment_store.write_environment(cgitsync_dir, observed)
-                environment_id = environment_store.format_environment_id(observed.digest())
+                EnvironmentStore(cgitsync_dir).write(observed)
+                environment_id = EnvironmentStore.format_id(observed.digest())
             except (ComplexGitSyncError, OSError, ValueError) as exc:
                 self._log_event(
                     "environment_record_failed",
                     level=logging.WARNING,
                     error=str(exc),
                 )
-            entry = memory_ledger_entry.build_next_entry(
-                existing_entries[-1] if existing_entries else None,
-                command=command_origin,
-                argv=memory_ledger_store.scrub_argv(sys.argv[1:], tree_root=tree_root),
-                state_id=_format_state_id(state_hash),
-                state_dir=str(state_path.parent.name),
-                outcome="ok",
-                clock=self.clock,
-                toolchain=tuple(sorted(toolchain(self.git_runner).items())),
-                commit_log=commit_log,
-                environment=environment_id,
-                release=release or (),
-            )
-            memory_ledger_store.write_entry(cgitsync_dir / "lgr", entry)
-        except (memory_ledger_store.LedgerStoreError, OSError) as exc:
+            entry = LedgerEntry.build_next(existing_entries[-1] if existing_entries else None, command=command_origin, argv=ArgvScrubber.scrub(sys.argv[1:], tree_root=tree_root), state_id=MemoryStates.format_id(state_hash), state_dir=str(state_path.parent.name), outcome="ok", clock=self.clock, toolchain=tuple(sorted(Toolchain.read(self.git_runner).items())), commit_log=commit_log, environment=environment_id, release=release or ())
+            LedgerStore(cgitsync_dir / "lgr").write_entry(entry)
+        except (LedgerStoreError, OSError) as exc:
             self._log_event(
                 "ledger_append_failed",
                 level=logging.WARNING,
@@ -6478,12 +6306,7 @@ class ComplexGitSyncClient:
         registry = self.get_dependency_registry()
         root_entry = registry.get("root")
         self._refresh_memory_mount_state(registry)
-        document = build_gts_document_from_registry(
-            registry,
-            command_origin=command_origin,
-            source_cgs_path=self.source_path,
-            freeze_name=freeze_name,
-        )
+        document = RegistryTranslator.to_gts_document(registry, command_origin=command_origin, source_cgs_path=self.source_path, freeze_name=freeze_name)
         # The State's name is its content. Two machines holding the same
         # tree write the same file name, which is the whole point of a
         # memory that can travel; and writing the same workspace twice
@@ -6493,16 +6316,14 @@ class ComplexGitSyncClient:
         canonical_state_hash = document.ensure_snapshot_hash()
         cgitsync_dir = root_entry.absolute_path / ".cgitsync"
         cgitsync_dir.mkdir(parents=True, exist_ok=True)
-        final_output_path = state_path(cgitsync_dir, canonical_state_hash)
-        final_output_path.parent.mkdir(parents=True, exist_ok=True)
-        _write_file_atomically(final_output_path, document.to_toml)
+        final_output_path = MemoryStates(cgitsync_dir).write(canonical_state_hash, document.to_toml)
 
         if self.source_path is not None and self.source_path.suffix == ".cgs" and self.source_path.is_file():
             # Beside the State, under its name: the spec it was built from
             # is part of what that State was.
             shutil.copy2(
                 self.source_path,
-                state_path(cgitsync_dir, canonical_state_hash, ".cgs"),
+                MemoryStates(cgitsync_dir).path(canonical_state_hash, ".cgs"),
             )
             if root_entry.current_ref_name:
                 branch_slug = _release_snapshot_slug(root_entry.current_ref_name)
@@ -6528,7 +6349,7 @@ class ComplexGitSyncClient:
         register_filename = f"{root_entry.name}.lgr"
         final_register_path = cgitsync_dir / register_filename
         if not final_register_path.is_file():
-            previous_register_path = _latest_state_artifact(cgitsync_dir, register_filename)
+            previous_register_path = MemoryStates(cgitsync_dir).latest_artifact(register_filename)
             legacy_register_path = root_entry.absolute_path / register_filename
             if previous_register_path is None and legacy_register_path.is_file():
                 previous_register_path = legacy_register_path
@@ -6549,11 +6370,11 @@ class ComplexGitSyncClient:
             # The rows name the entry that wrote them and the entry carries
             # their digest, so one of the two has to go first. The rows do,
             # asking the ledger which sequence number is next.
-            pending_seq = _next_ledger_seq(cgitsync_dir)
+            pending_seq = PendingMemory(cgitsync_dir).next_ledger_seq()
             written: list[Any] = []
             if commits:
                 rows = [replace(record, entry=pending_seq) for record in commits]
-                append_commits(cgitsync_dir, canonical_state_hash, rows)
+                CommitLog(cgitsync_dir).append_commits(canonical_state_hash, rows)
                 written.extend(rows)
             # Publications go into the logs of the States whose commits they
             # publish, which are older States than this one — a push
@@ -6564,9 +6385,9 @@ class ComplexGitSyncClient:
                     replace(record, entry=pending_seq)
                     for record in (publications or {})[state_hash]
                 ]
-                append_publications(cgitsync_dir, state_hash, rows)
+                CommitLog(cgitsync_dir).append_publications(state_hash, rows)
                 written.extend(rows)
-            commit_log_digest = digest_of(written)
+            commit_log_digest = CommitLog.digest_of(written)
         self._append_ledger_entry(
             cgitsync_dir,
             command_origin=command_origin,
@@ -6589,7 +6410,7 @@ class ComplexGitSyncClient:
                     {
                         "event": "memory_state_finalized",
                         "command_origin": command_origin,
-                        "state_id": _format_state_id(canonical_state_hash),
+                        "state_id": MemoryStates.format_id(canonical_state_hash),
                     },
                     sort_keys=True,
                 )
@@ -6816,7 +6637,7 @@ class ComplexGitSyncClient:
         self._log_repo_transition(entry, previous_state, previous_sync_state)
 
     def _is_populated_nested_destination(self, entry: WorkingRepo) -> bool:
-        return entry.parent_id is not None and is_populated_destination(entry.absolute_path)
+        return entry.parent_id is not None and CloneGuard.is_populated(entry.absolute_path)
 
     def _guard_clone_destinations(self, entries: Sequence[WorkingRepo]) -> None:
         """Refuse the whole run when any destination holds unpushed work.
@@ -6826,12 +6647,9 @@ class ComplexGitSyncClient:
         """
         if self._force_reclone:
             return
-        blocked = blocked_destinations(
-            [entry for entry in entries if entry.parent_id is not None],
-            self.git_runner,
-        )
+        blocked = CloneGuard.blocked([entry for entry in entries if entry.parent_id is not None], self.git_runner)
         if blocked:
-            raise GitSyncError(format_block_error(blocked))
+            raise GitSyncError(CloneGuard.format_error(blocked))
 
     def _select_clone_ref(self, entry: WorkingRepo, remote_url: str) -> tuple[str, RefKind]:
         if entry.target_ref_kind == RefKind.TAG and entry.target_ref_name:
@@ -6962,3 +6780,17 @@ class ComplexGitSyncClient:
                 removed_repo_id=removed_id,
                 canonical_repo_id=canonical_id,
             )
+
+
+__all__ = [
+    "CommandRunLogger",
+    "ComplexGitSyncClient",
+    "DiscoverReport",
+    "DiscoveredRepo",
+    "GitignoreSyncEntry",
+    "InitFromSubmodulesReport",
+    "Orchestre",
+    "RuntimeStateStore",
+    "create_run_logger",
+    "resolve_command_scope",
+]

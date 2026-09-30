@@ -15,12 +15,10 @@ from hypothesis import strategies as st
 
 from ComplexGitSync.memory.integrity import (
     GENESIS_PREV,
+    ChainVerifier,
     Finding,
     HistoryState,
     VerificationReport,
-    recompute_entry_hash,
-    resolve_state,
-    verify_chain,
 )
 
 
@@ -59,7 +57,7 @@ def build_chain_stamped(moments: list[str]) -> list[FakeEntry]:
             argv=["freeze", "--message", f"checkpoint-{i}"],
             state_dir=f"state(aaaa)_{i}",
         )
-        entry.entry_hash = recompute_entry_hash(entry)
+        entry.entry_hash = ChainVerifier.recompute_hash(entry)
         entries.append(entry)
         prev = entry.entry_hash
     return entries
@@ -78,7 +76,7 @@ def build_chain(n: int) -> list[FakeEntry]:
             argv=["freeze", "--message", f"checkpoint-{i}"],
             state_dir=f"state(aaaa)_{i}",
         )
-        entry.entry_hash = recompute_entry_hash(entry)
+        entry.entry_hash = ChainVerifier.recompute_hash(entry)
         entries.append(entry)
         prev = entry.entry_hash
     return entries
@@ -90,43 +88,43 @@ def build_chain(n: int) -> list[FakeEntry]:
 
 
 def test_empty_sequence_is_clean():
-    report = verify_chain([])
+    report = ChainVerifier.verify([])
     assert isinstance(report, VerificationReport)
     assert report.is_clean
     assert report.findings == []
 
 
 def test_single_genesis_entry_is_clean():
-    report = verify_chain(build_chain(1))
+    report = ChainVerifier.verify(build_chain(1))
     assert report.is_clean
 
 
 def test_genesis_with_wrong_prev_is_broken_link():
     (entry,) = build_chain(1)
     entry.prev = "sha256:" + "1" * 64
-    entry.entry_hash = recompute_entry_hash(entry)
-    report = verify_chain([entry])
+    entry.entry_hash = ChainVerifier.recompute_hash(entry)
+    report = ChainVerifier.verify([entry])
     assert not report.is_clean
     assert (entry.seq, Finding.BROKEN_LINK, report.findings[0][2]) in report.findings
 
 
 def test_recompute_entry_hash_is_deterministic():
     (entry,) = build_chain(1)
-    assert recompute_entry_hash(entry) == recompute_entry_hash(entry)
+    assert ChainVerifier.recompute_hash(entry) == ChainVerifier.recompute_hash(entry)
 
 
 def test_recompute_entry_hash_changes_with_field_value():
     (entry,) = build_chain(1)
-    original = recompute_entry_hash(entry)
+    original = ChainVerifier.recompute_hash(entry)
     entry.outcome = "failed"
-    assert recompute_entry_hash(entry) != original
+    assert ChainVerifier.recompute_hash(entry) != original
 
 
 def test_recompute_entry_hash_ignores_entry_hash_field_itself():
     (entry,) = build_chain(1)
-    original = recompute_entry_hash(entry)
+    original = ChainVerifier.recompute_hash(entry)
     entry.entry_hash = "sha256:" + "f" * 64
-    assert recompute_entry_hash(entry) == original
+    assert ChainVerifier.recompute_hash(entry) == original
 
 
 def test_verification_report_is_clean_reflects_findings():
@@ -169,7 +167,7 @@ def test_history_state_has_exactly_five_answers():
 
 def test_a_forward_moving_clock_is_verified():
     """`build_chain` stamps ascending moments, so the check is silent."""
-    report = verify_chain(build_chain(4))
+    report = ChainVerifier.verify(build_chain(4))
     assert report.state is HistoryState.VERIFIED
     assert report.findings == []
 
@@ -181,7 +179,7 @@ def test_a_backwards_timestamp_is_reported_and_names_both_entries():
         "2026-08-27T00:00:00Z",  # the clock went back
     ])
 
-    report = verify_chain(entries)
+    report = ChainVerifier.verify(entries)
 
     assert [(seq, f) for seq, f, _ in report.findings] == [(3, Finding.TIME_REGRESSION)]
     detail = report.findings[0][2]
@@ -199,7 +197,7 @@ def test_a_backwards_timestamp_is_not_called_corrupt():
         "2026-01-01T00:00:00Z",
     ])
 
-    report = verify_chain(entries)
+    report = ChainVerifier.verify(entries)
 
     assert report.state is HistoryState.TIME_INCONSISTENT
     assert report.state is not HistoryState.CORRUPT
@@ -219,7 +217,7 @@ def test_a_rewritten_history_outranks_a_backwards_clock():
     # what it claims, which is what BAD_ENTRY_HASH detects.
     entries[2] = replace(entries[2], command="edited")
 
-    report = verify_chain(entries)
+    report = ChainVerifier.verify(entries)
 
     kinds = {finding for _seq, finding, _detail in report.findings}
     assert Finding.TIME_REGRESSION in kinds
@@ -232,7 +230,7 @@ def test_equal_timestamps_are_not_a_regression():
     decreases", not "always increases".
     """
     one_moment = "2026-08-28T00:00:01Z"
-    report = verify_chain(build_chain_stamped([one_moment, one_moment, one_moment]))
+    report = ChainVerifier.verify(build_chain_stamped([one_moment, one_moment, one_moment]))
 
     assert report.state is HistoryState.VERIFIED
 
@@ -245,7 +243,7 @@ def test_a_missing_recorded_at_is_skipped_not_reported():
         "2026-08-28T00:00:03Z",
     ])
 
-    report = verify_chain(entries)
+    report = ChainVerifier.verify(entries)
 
     assert not any(f is Finding.TIME_REGRESSION for _s, f, _d in report.findings)
     assert report.state is HistoryState.VERIFIED
@@ -255,12 +253,12 @@ def test_resolve_state_is_the_single_authority_on_verdicts():
     """Chain-level and store-level passes share one rule, so a finding
     cannot mean one thing to one of them and something else to the other.
     """
-    assert resolve_state([]) is HistoryState.VERIFIED
-    assert resolve_state([(1, Finding.ORPHAN_STATE, "")]) is HistoryState.VERIFIED
-    assert resolve_state([(1, Finding.TIME_REGRESSION, "")]) is HistoryState.TIME_INCONSISTENT
-    assert resolve_state([(1, Finding.HEAD_STALE, "")]) is HistoryState.CORRUPT
+    assert ChainVerifier.resolve_state([]) is HistoryState.VERIFIED
+    assert ChainVerifier.resolve_state([(1, Finding.ORPHAN_STATE, "")]) is HistoryState.VERIFIED
+    assert ChainVerifier.resolve_state([(1, Finding.TIME_REGRESSION, "")]) is HistoryState.TIME_INCONSISTENT
+    assert ChainVerifier.resolve_state([(1, Finding.HEAD_STALE, "")]) is HistoryState.CORRUPT
     assert (
-        resolve_state([(1, Finding.TIME_REGRESSION, ""), (2, Finding.BROKEN_LINK, "")])
+        ChainVerifier.resolve_state([(1, Finding.TIME_REGRESSION, ""), (2, Finding.BROKEN_LINK, "")])
         is HistoryState.CORRUPT
     )
 
@@ -272,7 +270,7 @@ def test_resolve_state_is_the_single_authority_on_verdicts():
 
 @given(n=st.integers(min_value=1, max_value=25))
 def test_clean_chain_always_verifies_clean(n):
-    report = verify_chain(build_chain(n))
+    report = ChainVerifier.verify(build_chain(n))
     assert report.is_clean
     assert report.findings == []
 
@@ -283,7 +281,7 @@ def test_deleting_middle_entry_always_produces_seq_gap(n, data):
     idx = data.draw(st.integers(min_value=1, max_value=n - 2))
     del entries[idx]
 
-    report = verify_chain(entries)
+    report = ChainVerifier.verify(entries)
 
     assert any(finding is Finding.SEQ_GAP for _, finding, _ in report.findings)
 
@@ -295,7 +293,7 @@ def test_mutating_one_field_breaks_that_entry_and_every_entry_after(n, data):
     target = entries[idx]
     target.command = target.command + "-tampered"
 
-    report = verify_chain(entries)
+    report = ChainVerifier.verify(entries)
 
     findings_by_seq: dict[int, set[Finding]] = {}
     for seq, finding, _ in report.findings:
@@ -314,7 +312,7 @@ def test_duplicating_a_seq_always_produces_seq_duplicate(n):
     duplicate = replace(entries[-1])
     entries_with_duplicate = [*entries, duplicate]
 
-    report = verify_chain(entries_with_duplicate)
+    report = ChainVerifier.verify(entries_with_duplicate)
 
     assert any(finding is Finding.SEQ_DUPLICATE for _, finding, _ in report.findings)
     assert any(seq == duplicate.seq for seq, _, _ in report.findings)

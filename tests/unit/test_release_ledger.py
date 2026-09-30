@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from ComplexGitSync.memory.integrity import Finding, HistoryState, verify_chain
-from ComplexGitSync.memory.ledger_entry import build_next_entry
-from ComplexGitSync.memory.ledger_store import read_entry, write_entry
+from ComplexGitSync.memory.integrity import ChainVerifier, Finding, HistoryState
+from ComplexGitSync.memory.ledger_entry import LedgerEntry
+from ComplexGitSync.memory.ledger_store import LedgerStore
 
 
 class Clock:
@@ -16,20 +16,12 @@ class Clock:
 
 
 def test_old_entry_without_release_still_verifies_and_omits_field(tmp_path):
-    entry = build_next_entry(
-        None,
-        command="load",
-        argv=("load",),
-        state_id="state(ab12)",
-        state_dir="state",
-        outcome="ok",
-        clock=Clock(),
-    )
-    path = write_entry(tmp_path / "lgr", entry)
+    entry = LedgerEntry.build_next(None, command="load", argv=("load",), state_id="state(ab12)", state_dir="state", outcome="ok", clock=Clock())
+    path = LedgerStore(tmp_path / "lgr").write_entry(entry)
 
     assert "[entry.release]" not in path.read_text(encoding="utf-8")
-    assert read_entry(path) == entry
-    assert verify_chain([entry]).state is HistoryState.VERIFIED
+    assert LedgerStore.read_entry(path) == entry
+    assert ChainVerifier.verify([entry]).state is HistoryState.VERIFIED
 
 
 def test_release_round_trips_and_is_covered_by_entry_hash(tmp_path):
@@ -38,21 +30,12 @@ def test_release_round_trips_and_is_covered_by_entry_hash(tmp_path):
         ("git_tag", "v3.0.0"),
         ("artefact:src", "0002.88"),
     )
-    entry = build_next_entry(
-        None,
-        command="freeze_release",
-        argv=("freeze-release", "v3.0.0"),
-        state_id="state(ab12)",
-        state_dir="state",
-        outcome="ok",
-        clock=Clock(),
-        release=release,
-    )
-    path = write_entry(tmp_path / "lgr", entry)
+    entry = LedgerEntry.build_next(None, command="freeze_release", argv=("freeze-release", "v3.0.0"), state_id="state(ab12)", state_dir="state", outcome="ok", clock=Clock(), release=release)
+    path = LedgerStore(tmp_path / "lgr").write_entry(entry)
 
-    assert read_entry(path).release == tuple(sorted(release))
+    assert LedgerStore.read_entry(path).release == tuple(sorted(release))
     changed = replace(entry, release=(("semver", "4.0.0"),) + entry.release[1:])
-    report = verify_chain([changed])
+    report = ChainVerifier.verify([changed])
     assert any(finding is Finding.BAD_ENTRY_HASH for _seq, finding, _detail in report.findings)
 
 
@@ -64,18 +47,9 @@ def test_release_resolves_to_one_state_and_one_artefact_set(tmp_path):
         ("git_tag", "v3.1.0"),
         ("artefact:src", "0002.90"),
     )
-    entry = build_next_entry(
-        None,
-        command="freeze_release",
-        argv=("freeze-release", "v3.1.0"),
-        state_id="state(cd34)",
-        state_dir="state",
-        outcome="ok",
-        clock=Clock(),
-        release=release,
-    )
-    path = write_entry(tmp_path / "lgr", entry)
-    read_back = read_entry(path)
+    entry = LedgerEntry.build_next(None, command="freeze_release", argv=("freeze-release", "v3.1.0"), state_id="state(cd34)", state_dir="state", outcome="ok", clock=Clock(), release=release)
+    path = LedgerStore(tmp_path / "lgr").write_entry(entry)
+    read_back = LedgerStore.read_entry(path)
 
     assert dict(read_back.release)["semver"] == "3.1.0"
     assert read_back.state_id == "state(cd34)"

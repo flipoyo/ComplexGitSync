@@ -32,7 +32,7 @@ from ComplexGitSync.discovery import (
 )
 from ComplexGitSync.errors import NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import DiscoveryState, NodeType
-from ComplexGitSync.orchestre import build_registry_from_cgs_document
+from ComplexGitSync.orchestre import RegistryTranslator
 
 
 def _write_root_cgs(tmp_path, *, nested_child: bool = False, project_name: str = "demo"):
@@ -91,7 +91,7 @@ relative_path = "."
 def _load_registry(config_path, *, discover_nested: bool = False):
     """Build a WorkingGitTree the same way ``ComplexGitSyncClient.load_cgs`` does."""
     document = CgsDocument.from_toml(config_path)
-    registry = build_registry_from_cgs_document(document, config_path)
+    registry = RegistryTranslator.from_cgs_document(document, config_path)
     if discover_nested:
         discover_nested_configs(registry)
     return registry
@@ -276,9 +276,9 @@ nested_config = "named.cgs"
         `.self-history` leaf appears beside it, private/writable via
         `propagate_privacy`, on the same branch (neither entry states one)."""
         from ComplexGitSync.memory.repository import (
-            MOUNT_PATH,
-            config_memory_document,
-        )
+    MOUNT_PATH,
+    MemoryRepository,
+)
 
         root_cgs = tmp_path / "project.cgs"
         root_cgs.write_text(
@@ -313,7 +313,7 @@ nested_config = "config-memory.cgs"
         memory_dir = tmp_path / MOUNT_PATH
         memory_dir.mkdir(parents=True)
         (memory_dir / "config-memory.cgs").write_text(
-            config_memory_document("flipoyo", "Demo"), encoding="utf-8"
+            MemoryRepository.config_document("flipoyo", "Demo"), encoding="utf-8"
         )
 
         registry = _load_registry(root_cgs, discover_nested=True)

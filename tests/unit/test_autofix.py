@@ -24,8 +24,9 @@ from ComplexGitSync.autofix.repair_from_cli import FromCliRepair, NoMatchingRepa
 from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.git_repo import WorkingRepo
 from ComplexGitSync.git_runner import GitRunner
-from ComplexGitSync.memory import integrity, ledger_store
-from ComplexGitSync.memory.ledger_entry import build_next_entry
+from ComplexGitSync.memory.integrity import ChainVerifier
+from ComplexGitSync.memory.ledger_entry import LedgerEntry
+from ComplexGitSync.memory.ledger_store import LedgerStore
 
 _PUSH_REJECTED = (
     "Git command failed (git push origin ComplexGitSync): "
@@ -80,16 +81,8 @@ def _write_ancestor_entry(repo_path: Path) -> None:
     """One genesis ledger entry, committed — the shared history both
     sides diverge from."""
     lgr_dir = repo_path / "lgr"
-    entry = build_next_entry(
-        None,
-        command="commit",
-        argv=["commit", "--all", "ancestor"],
-        state_id="state(ancestor)",
-        state_dir="state",
-        outcome="ok",
-        clock=FakeClock(datetime(2026, 9, 20, 0, 0, 0, tzinfo=UTC)),
-    )
-    ledger_store.write_entry(lgr_dir, entry)
+    entry = LedgerEntry.build_next(None, command="commit", argv=["commit", "--all", "ancestor"], state_id="state(ancestor)", state_dir="state", outcome="ok", clock=FakeClock(datetime(2026, 9, 20, 0, 0, 0, tzinfo=UTC)))
+    LedgerStore(lgr_dir).write_entry(entry)
     _git("add", "-A", cwd=repo_path)
     _git("commit", "-m", "ancestor", cwd=repo_path)
 
@@ -99,17 +92,9 @@ def _append_new_entry(repo_path: Path, *, command: str, when: datetime) -> None:
     committed — a real ``memory push``-shaped commit, not a hand-written
     file."""
     lgr_dir = repo_path / "lgr"
-    prev = ledger_store.read_all_entries(lgr_dir)[-1]
-    entry = build_next_entry(
-        prev,
-        command=command,
-        argv=[command],
-        state_id=f"state({command})",
-        state_dir="state",
-        outcome="ok",
-        clock=FakeClock(when),
-    )
-    ledger_store.write_entry(lgr_dir, entry)
+    prev = LedgerStore(lgr_dir).read_all_entries()[-1]
+    entry = LedgerEntry.build_next(prev, command=command, argv=[command], state_id=f"state({command})", state_dir="state", outcome="ok", clock=FakeClock(when))
+    LedgerStore(lgr_dir).write_entry(entry)
     _git("add", "-A", cwd=repo_path)
     _git("commit", "-m", f"{command} entry", cwd=repo_path)
 
@@ -195,9 +180,9 @@ class TestDivergentUserRepairRepair:
         outcome = DivergentUserRepair().repair(situation, GitRunner())
 
         assert outcome.repaired is True
-        entries = ledger_store.read_all_entries(local / "lgr")
+        entries = LedgerStore(local / "lgr").read_all_entries()
         assert len(entries) == 3  # ancestor + the two spliced entries
-        report = integrity.verify_chain(entries)
+        report = ChainVerifier.verify(entries)
         assert report.is_verified, report.findings
         # Chronological, not "local then remote": remote's entry (13:00)
         # sorts before local's (20:00) despite arriving second.
@@ -239,7 +224,7 @@ class TestDivergentUserRepairRepair:
         outcome = DivergentUserRepair().repair(situation, GitRunner())
 
         assert outcome.repaired is False
-        entries = ledger_store.read_all_entries(local / "lgr")
+        entries = LedgerStore(local / "lgr").read_all_entries()
         assert len(entries) == 2
 
 

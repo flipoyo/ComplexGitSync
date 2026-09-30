@@ -28,7 +28,7 @@ from ComplexGitSync.git_tree import (
     propagate_privacy,
 )
 from ComplexGitSync.orchestre import resolve_command_scope
-from ComplexGitSync.registry import build_registry_from_cgs_document
+from ComplexGitSync.registry import RegistryTranslator
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -200,7 +200,7 @@ class TestCgsDeclaration:
             encoding="utf-8",
         )
 
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+        tree = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(source), source)
         by_name = {entry.name: entry for entry in tree.values()}
 
         assert by_name["spec"].private is True
@@ -450,7 +450,7 @@ class TestNestedPinningThroughDiscovery:
             encoding="utf-8",
         )
 
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+        tree = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(source), source)
         discover_nested_configs(tree)
         by_name = {entry.name: entry for entry in tree.values()}
 
@@ -507,7 +507,7 @@ class TestThisTreesOwnDeclaration:
 
     def test_each_scope_selects_what_the_documentation_promises(self):
         source = _REPO_ROOT / "examples" / "complexgitsync4dev.cgs"
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+        tree = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(source), source)
 
         def names(scope: RepoScope) -> set[str]:
             return {entry.name for entry in iter_tree_leaf_first(tree, scope)}
@@ -547,7 +547,7 @@ class TestUserInstallDeclaration:
 
     def test_it_mounts_only_the_tool_and_its_documentation(self):
         source = _REPO_ROOT / "install.cgs"
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+        tree = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(source), source)
         names = {entry.name for entry in iter_tree_leaf_first(tree, RepoScope.ALL)}
         assert names == {"ComplexGitSync", "DocComplexGitSync"}
 

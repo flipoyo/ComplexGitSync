@@ -134,3 +134,8 @@ class MergeConflictRepair:
     def _branch_from(error: str) -> str | None:
         match = _CONFLICT_PHRASE.search(error)
         return match.group("branch") if match else None
+
+
+__all__ = [
+    "MergeConflictRepair",
+]

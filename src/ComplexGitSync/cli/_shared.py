@@ -30,7 +30,7 @@ from ..orchestre import (
     create_run_logger,
     resolve_command_scope,
 )
-from ..settings import other_workspaces, resolve_use_case
+from ..settings import Settings
 from ..snapshot_resolver import (
     CGSHOME_ORIGIN_CWD,
     CGSHOME_ORIGIN_DEFAULT,
@@ -352,7 +352,7 @@ def _print_cgshome_line(cgshome: CgshomeResolution) -> None:
     """
     print(
         f"cgshome={cgshome.path} (from {cgshome.origin}) "
-        f"use_case={resolve_use_case(cgshome.path).value}"
+        f"use_case={Settings.resolve_use_case(cgshome.path).value}"
     )
 
 
@@ -367,7 +367,7 @@ def _print_workspace_hint(cgshome: CgshomeResolution) -> None:
     """
     if cgshome.origin != CGSHOME_ORIGIN_DEFAULT:
         return
-    existing = other_workspaces(exclude=cgshome.path)
+    existing = Settings.other_workspaces(exclude=cgshome.path)
     if not existing:
         return
     print(f"{len(existing)} other workspace(s) exist. To use one, export it:")
@@ -728,3 +728,7 @@ def _print_gitignore_sync_report(client: ComplexGitSyncClient) -> None:
         print(f".gitignore updated ({status}): {entry.name} ({entry.absolute_path})")
         for relative_path in entry.added_paths:
             print(f"  + {relative_path}")
+
+
+# Private helpers shared by the command modules of this package; nothing is public.
+__all__ = []

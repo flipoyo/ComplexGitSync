@@ -24,7 +24,7 @@ import tomli_w
 
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.memory.integrity import HistoryState
-from ComplexGitSync.memory.ledger_store import append_entry
+from ComplexGitSync.memory.ledger_store import LedgerStore
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 from ComplexGitSync.universal_clock import SystemClock
 
@@ -35,15 +35,7 @@ def _chain(workspace: Path, *, entries: int = 2) -> Path:
     lgr_dir = workspace / ".cgitsync" / "lgr"
     clock = SystemClock()
     for index in range(entries):
-        append_entry(
-            lgr_dir,
-            command="push",
-            argv=["push"],
-            state_id=chr(ord("a") + index) * 64,
-            state_dir=f"state({chr(ord('a') + index) * 64})_0",
-            outcome="ok",
-            clock=clock,
-        )
+        LedgerStore(lgr_dir).append_entry(command="push", argv=["push"], state_id=chr(ord("a") + index) * 64, state_dir=f"state({chr(ord('a') + index) * 64})_0", outcome="ok", clock=clock)
     return lgr_dir
 
 
@@ -74,15 +66,7 @@ def _chain_with_moments(workspace: Path, moments: list[datetime]) -> Path:
     lgr_dir = workspace / ".cgitsync" / "lgr"
     clock = _StoppedClock(moments)
     for index in range(len(moments)):
-        append_entry(
-            lgr_dir,
-            command="push",
-            argv=["push"],
-            state_id=chr(ord("a") + index) * 64,
-            state_dir=f"state({chr(ord('a') + index) * 64})_0",
-            outcome="ok",
-            clock=clock,
-        )
+        LedgerStore(lgr_dir).append_entry(command="push", argv=["push"], state_id=chr(ord("a") + index) * 64, state_dir=f"state({chr(ord('a') + index) * 64})_0", outcome="ok", clock=clock)
     return lgr_dir
 
 

@@ -794,6 +794,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
 
 
 __all__ = [
+    "repo_identifier",
     "DEFAULT_ACCESS_PROTOCOL",
     "DEFAULT_BRANCH",
     "DEFAULT_FORMAT_VERSION",

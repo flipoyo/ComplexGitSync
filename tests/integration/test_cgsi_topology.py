@@ -34,8 +34,7 @@ from ComplexGitSync.git_repo import GitProvider, NodeType, RefKind, RepoLifecycl
 from ComplexGitSync.git_tree import TreeLifecycleState, sync_gitignore
 from ComplexGitSync.orchestre import ComplexGitSyncClient, GtsDocument
 from ComplexGitSync.registry import (
-    build_gts_document_from_registry,
-    build_registry_from_cgs_document,
+    RegistryTranslator,
 )
 
 TEST_PLACEHOLDER_COMMIT_SHA = "f" * 40
@@ -67,9 +66,9 @@ def _run_git(repo_path: Path, *args: str) -> str:
 
 def _ledger_entries(repo_path: Path):
     """Every entry in the workspace's hash-chained ledger, oldest first."""
-    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.ledger_store import LedgerStore
 
-    return read_all_entries(repo_path / ".cgitsync" / "lgr")
+    return LedgerStore(repo_path / ".cgitsync" / "lgr").read_all_entries()
 
 
 def _write_ready_gts(snapshot_path: Path, *, root_path: Path, commit_sha: str) -> Path:
@@ -838,7 +837,7 @@ relative_path = "."
             encoding="utf-8",
         )
         document = CgsDocument.from_toml(config_path)
-        registry = build_registry_from_cgs_document(document, config_path)
+        registry = RegistryTranslator.from_cgs_document(document, config_path)
         root_entry = registry.get("root")
         root_entry.repo_lifecycle_state = RepoLifecycleState.READY
         root_entry.current_ref_kind = root_entry.target_ref_kind = root_entry.resolved_ref_kind = RefKind.BRANCH
@@ -849,9 +848,7 @@ relative_path = "."
         root_entry.absolute_path = restore_root
         registry.recompute_tree_state()
 
-        gts_document = build_gts_document_from_registry(
-            registry, command_origin="freeze_release", source_cgs_path=config_path
-        )
+        gts_document = RegistryTranslator.to_gts_document(registry, command_origin="freeze_release", source_cgs_path=config_path)
         snapshot_path = tmp_path / "demo.gts"
         gts_document.to_toml(snapshot_path)
 
@@ -1188,9 +1185,7 @@ class TestDiscoverRepos:
         out = tmp_path / "drafted.cgs"
 
         ComplexGitSyncClient().discover_repos(root, output=out)
-        registry = build_registry_from_cgs_document(
-            CgsDocument.from_toml(out), out, project_root=root
-        )
+        registry = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(out), out, project_root=root)
 
         holder = registry.get("root:external/HydrologicalTwinAlphaSeries")
         nested = registry.get(
@@ -1218,9 +1213,7 @@ class TestDiscoverRepos:
         root = self._cawaqsviz_checkout(tmp_path)
         out = tmp_path / "drafted.cgs"
         ComplexGitSyncClient().discover_repos(root, output=out)
-        registry = build_registry_from_cgs_document(
-            CgsDocument.from_toml(out), out, project_root=root
-        )
+        registry = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(out), out, project_root=root)
 
         sync_gitignore(registry)
 
@@ -1236,9 +1229,7 @@ class TestDiscoverRepos:
         root = self._cawaqsviz_checkout(tmp_path)
         out = tmp_path / "drafted.cgs"
         ComplexGitSyncClient().discover_repos(root, output=out)
-        registry = build_registry_from_cgs_document(
-            CgsDocument.from_toml(out), out, project_root=root
-        )
+        registry = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(out), out, project_root=root)
         sync_gitignore(registry)
 
         holder = root / "external" / "HydrologicalTwinAlphaSeries"
@@ -1348,7 +1339,7 @@ class TestDiscoverRepos:
         document = CgsDocument.from_toml(output)
         assert document.read("project.default_branch") == "branch1"
 
-        tree = build_registry_from_cgs_document(document, output)
+        tree = RegistryTranslator.from_cgs_document(document, output)
         assert tree.get("root").target_ref_name == "branch1"
 
     def test_discover_write_only_drafts_a_per_repo_branch_where_it_differs(self, tmp_path):
@@ -1378,7 +1369,7 @@ class TestDiscoverRepos:
         assert 'repository = "github:owner/other", default_branch = "branch2"' in raw
 
         document = CgsDocument.from_toml(output)
-        tree = build_registry_from_cgs_document(document, output)
+        tree = RegistryTranslator.from_cgs_document(document, output)
         assert tree.get("root:same").target_ref_name == "branch1"
         assert tree.get("root:other").target_ref_name == "branch2"
 

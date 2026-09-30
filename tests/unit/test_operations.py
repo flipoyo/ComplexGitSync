@@ -81,19 +81,19 @@ def _current_state_path(root_path: Path) -> Path:
     last wrote. It replaced the single-file register these tests used to
     read, which nothing writes any more.
     """
-    from ComplexGitSync.memory.ledger_store import read_all_entries
-    from ComplexGitSync.memory.states import _parse_state_hash, state_path
+    from ComplexGitSync.memory.ledger_store import LedgerStore
+    from ComplexGitSync.memory.states import MemoryStates
 
-    entries = read_all_entries(root_path / ".cgitsync" / "lgr")
+    entries = LedgerStore(root_path / ".cgitsync" / "lgr").read_all_entries()
     assert entries, "no ledger entry was written"
-    return state_path(root_path / ".cgitsync", _parse_state_hash(entries[-1].state_id)).resolve()
+    return MemoryStates(root_path / ".cgitsync").path(MemoryStates.parse_hash(entries[-1].state_id)).resolve()
 
 
 def _ledger_entries(root_path: Path):
     """Every entry in the root_path's chain, oldest first."""
-    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.ledger_store import LedgerStore
 
-    return read_all_entries(root_path / ".cgitsync" / "lgr")
+    return LedgerStore(root_path / ".cgitsync" / "lgr").read_all_entries()
 
 
 def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:

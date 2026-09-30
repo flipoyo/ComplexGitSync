@@ -40,7 +40,7 @@ is computed from*.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from . import __version__
 
@@ -62,51 +62,59 @@ _EXECUTABLES = {
     "git-lfs": "git-lfs",
 }
 
-#: Read once per process, reused for every entry a command writes.
-_CACHE: dict[str, str] = {}
+class Toolchain:
+    """The five version strings a ledger entry records, read once per process.
 
-
-def tool_version(name: str, git_runner: GitRunner) -> str:
-    """The recorded version of *name*, or :data:`ABSENT`.
-
-    Cached for the life of the process: a command that writes several
-    entries asks each tool once, and a command that never touches a data
-    backend never pays for asking it.
+    Versions are provenance, never identity: they never enter a State's name.
+    The cache lives on the class because the answer is a fact about the
+    process, not about any one caller.
     """
-    if name in _CACHE:
-        return _CACHE[name]
-    if name == "cgitsync":
-        version = str(__version__)
-    else:
-        executable = _EXECUTABLES.get(name)
-        reported = git_runner.tool_version(executable) if executable else None
-        version = reported or ABSENT
-    _CACHE[name] = version
-    return version
+
+    #: Read once per process, reused for every entry a command writes.
+    _cache: ClassVar[dict[str, str]] = {}
+
+    @staticmethod
+    def tool_version(name: str, git_runner: GitRunner) -> str:
+        """The recorded version of *name*, or :data:`ABSENT`.
+
+        Cached for the life of the process: a command that writes several
+        entries asks each tool once, and a command that never touches a data
+        backend never pays for asking it.
+        """
+        if name in Toolchain._cache:
+            return Toolchain._cache[name]
+        if name == "cgitsync":
+            version = str(__version__)
+        else:
+            executable = _EXECUTABLES.get(name)
+            reported = git_runner.tool_version(executable) if executable else None
+            version = reported or ABSENT
+        Toolchain._cache[name] = version
+        return version
+
+    @staticmethod
+    def read(git_runner: GitRunner, *, backends: bool = False) -> dict[str, str]:
+        """The versions to record on an entry written now.
+
+        *backends* is what stops an ordinary workspace paying for a tool it does
+        not use: with it false — every command that touched no data repository —
+        ``dvc`` and ``git-lfs`` are recorded as :data:`ABSENT` without being
+        asked. They are only asked when the operation being recorded actually
+        used one.
+        """
+        recorded = {
+            "cgitsync": Toolchain.tool_version("cgitsync", git_runner),
+            "git": Toolchain.tool_version("git", git_runner),
+            "pixi": Toolchain.tool_version("pixi", git_runner),
+        }
+        for backend in ("dvc", "git-lfs"):
+            recorded[backend] = Toolchain.tool_version(backend, git_runner) if backends else ABSENT
+        return recorded
+
+    @staticmethod
+    def reset_cache() -> None:
+        """Forget every version read so far — for tests, and for a long-lived process."""
+        Toolchain._cache.clear()
 
 
-def toolchain(git_runner: GitRunner, *, backends: bool = False) -> dict[str, str]:
-    """The versions to record on an entry written now.
-
-    *backends* is what stops an ordinary workspace paying for a tool it does
-    not use: with it false — every command that touched no data repository —
-    ``dvc`` and ``git-lfs`` are recorded as :data:`ABSENT` without being
-    asked. They are only asked when the operation being recorded actually
-    used one.
-    """
-    recorded = {
-        "cgitsync": tool_version("cgitsync", git_runner),
-        "git": tool_version("git", git_runner),
-        "pixi": tool_version("pixi", git_runner),
-    }
-    for backend in ("dvc", "git-lfs"):
-        recorded[backend] = tool_version(backend, git_runner) if backends else ABSENT
-    return recorded
-
-
-def reset_cache() -> None:
-    """Forget every version read so far — for tests, and for a long-lived process."""
-    _CACHE.clear()
-
-
-__all__ = ["ABSENT", "TOOLS", "reset_cache", "tool_version", "toolchain"]
+__all__ = ["ABSENT", "TOOLS", "Toolchain"]

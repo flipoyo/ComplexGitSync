@@ -20,7 +20,7 @@ from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.discovery import discover_nested_configs
 from ComplexGitSync.errors import ConfigValidationError
 from ComplexGitSync.git_branch import RefKind
-from ComplexGitSync.registry import build_registry_from_cgs_document
+from ComplexGitSync.registry import RegistryTranslator
 
 # ---------------------------------------------------------------------------
 # F1 — the root repository's declared branch used to be ignored
@@ -38,7 +38,7 @@ def test_root_entry_targets_its_own_declared_default_branch(tmp_path):
         }
     )
 
-    tree = build_registry_from_cgs_document(document, tmp_path / "P.cgs")
+    tree = RegistryTranslator.from_cgs_document(document, tmp_path / "P.cgs")
 
     root = tree.get("root")
     assert root.target_ref_name == "X"
@@ -55,7 +55,7 @@ def test_root_entry_targets_a_declared_tag_over_any_branch(tmp_path):
         }
     )
 
-    tree = build_registry_from_cgs_document(document, tmp_path / "P.cgs")
+    tree = RegistryTranslator.from_cgs_document(document, tmp_path / "P.cgs")
 
     root = tree.get("root")
     assert root.target_ref_kind == RefKind.TAG
@@ -82,7 +82,7 @@ def test_a_document_with_no_root_entry_is_refused(tmp_path):
     )
 
     with pytest.raises(ConfigValidationError, match="no repository entry names the project root"):
-        build_registry_from_cgs_document(document, tmp_path / "P.cgs")
+        RegistryTranslator.from_cgs_document(document, tmp_path / "P.cgs")
 
 
 def test_a_sole_repository_is_always_the_root(tmp_path):
@@ -97,7 +97,7 @@ def test_a_sole_repository_is_always_the_root(tmp_path):
         }
     )
 
-    tree = build_registry_from_cgs_document(document, tmp_path / "P.cgs")
+    tree = RegistryTranslator.from_cgs_document(document, tmp_path / "P.cgs")
 
     assert tree.get("root").project_owner_name == "acme"
 
@@ -115,7 +115,7 @@ def test_a_root_entry_named_by_project_name_alone_is_still_accepted(tmp_path):
         }
     )
 
-    tree = build_registry_from_cgs_document(document, tmp_path / "P.cgs")
+    tree = RegistryTranslator.from_cgs_document(document, tmp_path / "P.cgs")
 
     assert tree.get("root").project_owner_name == "o"
 
@@ -153,7 +153,7 @@ def test_nested_root_with_relative_path_dot_keeps_its_own_declared_values(tmp_pa
         encoding="utf-8",
     )
 
-    tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+    tree = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(source), source)
     discover_nested_configs(tree)
 
     child_entry = tree.get("root:child")
@@ -187,7 +187,7 @@ def test_nested_cgs_with_no_root_identifying_entry_is_not_an_error(tmp_path):
         encoding="utf-8",
     )
 
-    tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+    tree = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(source), source)
     discover_nested_configs(tree)  # must not raise
 
     assert "nested-leaf" in {entry.name for entry in tree.values()}
@@ -206,6 +206,6 @@ def test_every_checked_in_example_cgs_resolves_a_root_with_a_declared_owner():
 
     for path in cgs_files:
         document = CgsDocument.from_toml(path)
-        tree = build_registry_from_cgs_document(document, path)
+        tree = RegistryTranslator.from_cgs_document(document, path)
         root = tree.get("root")
         assert root.project_owner_name, f"{path}: root resolved with no declared owner"

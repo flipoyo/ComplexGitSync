@@ -18,9 +18,7 @@ from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.memory.integrity import Finding, HistoryState
 from ComplexGitSync.memory.ledger_store import (
     HeadPointer,
-    append_entry,
-    read_head,
-    write_head,
+    LedgerStore,
 )
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
@@ -50,15 +48,7 @@ def _lgr_dir(cgshome: Path) -> Path:
 
 
 def _append(lgr_dir: Path, clock: _FixedClock, *, command: str, state_id: str):
-    return append_entry(
-        lgr_dir,
-        command=command,
-        argv=[command],
-        state_id=state_id,
-        state_dir=f"state({state_id})_0",
-        outcome="ok",
-        clock=clock,
-    )
+    return LedgerStore(lgr_dir).append_entry(command=command, argv=[command], state_id=state_id, state_dir=f"state({state_id})_0", outcome="ok", clock=clock)
 
 
 class TestClientVerify:
@@ -161,7 +151,7 @@ class TestClientVerify:
         # Corrupt the HEAD cache directly rather than through the writer that
         # keeps it consistent -- the untrusted-cache scenario IsolationPlan.md
         # §2.3 requires `verify` to catch, not silently paper over.
-        write_head(lgr_dir, HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64))
+        LedgerStore(lgr_dir).write_head(HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64))
 
         client = ComplexGitSyncClient()
         report = client.verify(tmp_path)
@@ -172,19 +162,19 @@ class TestClientVerify:
         assert report.state is HistoryState.CORRUPT
         assert any(finding is Finding.HEAD_STALE for _seq, finding, _detail in report.findings)
         # Without --repair, the corrupt cache file must be left exactly as-is.
-        assert read_head(lgr_dir) == HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64)
+        assert LedgerStore(lgr_dir).read_head() == HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64)
 
     def test_repair_fixes_stale_head_without_touching_entries(self, tmp_path: Path):
         lgr_dir = _lgr_dir(tmp_path)
         clock = _FixedClock()
         entry1 = _append(lgr_dir, clock, command="push", state_id="a" * 64)
-        write_head(lgr_dir, HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64))
+        LedgerStore(lgr_dir).write_head(HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64))
 
         client = ComplexGitSyncClient()
         report = client.verify(tmp_path, repair=True)
 
         assert not report.is_clean, "the run that performed the repair still reports what it found"
-        repaired_head = read_head(lgr_dir)
+        repaired_head = LedgerStore(lgr_dir).read_head()
         assert repaired_head == HeadPointer(seq=entry1.seq, entry_hash=entry1.entry_hash)
 
         # A second run against the now-repaired cache is clean.

@@ -32,66 +32,12 @@ import tomli_w
 
 from ..errors import ConfigValidationError
 from ..gts_document import GtsDocument
-from ..paths import _path_to_environment_marker
+from ..paths import PathResolver
 from ..universal_clock import ClockProtocol, SystemClock
 from .states import (
     _STATE_DIR_RE,
-    _format_state_id,
-    _next_state_directory_order,
-    _parse_state_hash,
-    state_path,
+    MemoryStates,
 )
-
-
-def write_state(cgitsync_dir: Path, state_hash: str, write: Any, *, suffix: str = ".gts") -> Path:
-    """Write one State, atomically, at the path its content hash names.
-
-    *write* is called with a temporary path in the same directory and must
-    write the file; the rename that follows is what makes the State appear
-    all at once. A crash leaves either the previous State or none, never a
-    truncated one.
-
-    The old layout got the same guarantee by building a whole directory and
-    renaming it into place. A State is one file now, so it costs one rename.
-    """
-    destination = state_path(cgitsync_dir, state_hash, suffix)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_name(f".{destination.name}.tmp")
-    try:
-        write(temporary)
-        temporary.replace(destination)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return destination
-
-
-def legacy_register_exists(workspace: Path) -> bool:
-    """Whether *workspace* holds history in the single-file ``.lgr`` format.
-
-    That format is what :class:`LocalGitRegister` writes: one TOML file,
-    rewritten whole on every operation, with a sequential id and no chain.
-    It is readable and it is not verifiable — an edit to it leaves no trace
-    — so a workspace that has one has history that ``verify`` must report as
-    *legacy* rather than as nothing at all.
-
-    Every workspace created before the hash-chained register is written is
-    in exactly this state, which is why the answer matters more than it
-    looks.
-    """
-    cgitsync_dir = workspace / ".cgitsync"
-    # Three places one has ever lived: inside a state directory (copied
-    # forward before every write), at the workspace root (older still), and
-    # at `.cgitsync/<project>.lgr`, where the flat state layout put it.
-    # Miss one and a workspace with history is told it has none, which is
-    # the lie this whole answer exists to remove.
-    for candidate in (
-        cgitsync_dir.glob("state(*)_*/*.lgr"),
-        cgitsync_dir.glob("*.lgr"),
-        workspace.glob("*.lgr"),
-    ):
-        if any(candidate):
-            return True
-    return False
 
 
 class LocalGitRegister:
@@ -129,7 +75,7 @@ class LocalGitRegister:
             if recorded_snapshot_path is not None
             else resolved_snapshot_path
         )
-        snapshot_path_marker = _path_to_environment_marker(public_snapshot_path)
+        snapshot_path_marker = PathResolver.to_environment_marker(public_snapshot_path)
 
         data = self._load()
         snapshots = data.setdefault("snapshots", [])
@@ -143,7 +89,7 @@ class LocalGitRegister:
             if state_hash is not None
             else self._hash_snapshot_file(resolved_snapshot_path)
         )
-        snapshot_id = _format_state_id(public_state_hash)
+        snapshot_id = MemoryStates.format_id(public_state_hash)
         if state_order is None:
             state_order = self._next_state_order(snapshots, public_state_hash)
         recorded_at = (
@@ -189,7 +135,7 @@ class LocalGitRegister:
                 continue
             entry_state_hash = entry.get("state_hash")
             if not isinstance(entry_state_hash, str):
-                entry_state_hash = _parse_state_hash(str(entry.get("id", "")))
+                entry_state_hash = MemoryStates.parse_hash(str(entry.get("id", "")))
             if entry_state_hash != state_hash:
                 continue
             raw_order = entry.get("state_order")
@@ -208,7 +154,7 @@ class LocalGitRegister:
             if _STATE_DIR_RE.fullmatch(register_parent.name) is not None
             else register_parent / ".cgitsync"
         )
-        return max(max_order + 1, _next_state_directory_order(cgitsync_dir, state_hash))
+        return max(max_order + 1, MemoryStates(cgitsync_dir).next_directory_order(state_hash))
 
     def _hash_snapshot_file(self, snapshot_path: Path) -> str:
         """Compute a canonical snapshot hash for ``snapshot_path``."""
@@ -224,58 +170,34 @@ class LocalGitRegister:
             return document.snapshot_hash
         return document.compute_snapshot_hash()
 
+    @staticmethod
+    def exists_in(workspace: Path) -> bool:
+        """Whether *workspace* holds history in the single-file ``.lgr`` format.
 
-def _get_actor() -> str:
-    """Return the current system user name, or ``'unknown'`` on failure."""
-    try:
-        import getpass
+        That format is what :class:`LocalGitRegister` writes: one TOML file,
+        rewritten whole on every operation, with a sequential id and no chain.
+        It is readable and it is not verifiable — an edit to it leaves no trace
+        — so a workspace that has one has history that ``verify`` must report as
+        *legacy* rather than as nothing at all.
 
-        return getpass.getuser()
-    except Exception:  # pragma: no cover
-        return "unknown"
-
-
-def _topological_sort_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return *events* in topological order (parents before children).
-
-    Uses Kahn's BFS algorithm on the ``parent_sync_ids`` graph.
-    Events without a valid ``sync_id`` are appended last, preserving their
-    original relative order.
-    """
-    by_id: dict[str, dict[str, Any]] = {}
-    for event in events:
-        if isinstance(event, dict):
-            sid = str(event.get("sync_id", ""))
-            if sid:
-                by_id[sid] = event
-
-    in_degree: dict[str, int] = {sid: 0 for sid in by_id}
-    children: dict[str, list[str]] = {sid: [] for sid in by_id}
-
-    for sid, event in by_id.items():
-        for parent_id in event.get("parent_sync_ids", []):
-            parent_str = str(parent_id)
-            if parent_str in by_id:
-                in_degree[sid] += 1
-                children[parent_str].append(sid)
-
-    queue: list[str] = sorted(sid for sid, deg in in_degree.items() if deg == 0)
-    result: list[dict[str, Any]] = []
-    while queue:
-        current = queue.pop(0)
-        result.append(by_id[current])
-        for child in sorted(children.get(current, [])):
-            in_degree[child] -= 1
-            if in_degree[child] == 0:
-                queue.append(child)
-
-    # Append any events not reachable via the DAG (malformed entries)
-    seen: set[str] = {str(e.get("sync_id", "")) for e in result}
-    for event in events:
-        if not isinstance(event, dict) or str(event.get("sync_id", "")) not in seen:
-            result.append(event)
-
-    return result
+        Every workspace created before the hash-chained register is written is
+        in exactly this state, which is why the answer matters more than it
+        looks.
+        """
+        cgitsync_dir = workspace / ".cgitsync"
+        # Three places one has ever lived: inside a state directory (copied
+        # forward before every write), at the workspace root (older still), and
+        # at `.cgitsync/<project>.lgr`, where the flat state layout put it.
+        # Miss one and a workspace with history is told it has none, which is
+        # the lie this whole answer exists to remove.
+        for candidate in (
+            cgitsync_dir.glob("state(*)_*/*.lgr"),
+            cgitsync_dir.glob("*.lgr"),
+            workspace.glob("*.lgr"),
+        ):
+            if any(candidate):
+                return True
+        return False
 
 
 class SyncLedger:
@@ -354,7 +276,7 @@ class SyncLedger:
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         )
-        resolved_actor = actor if actor is not None else _get_actor()
+        resolved_actor = actor if actor is not None else SyncLedger._get_actor()
 
         events.append(
             {
@@ -376,7 +298,7 @@ class SyncLedger:
     def history(self) -> list[dict[str, Any]]:
         """Return all ledger events in topological DAG order (parents first)."""
         data = self._load()
-        return _topological_sort_events(list(data.get("ledger", [])))
+        return SyncLedger._topological_sort_events(list(data.get("ledger", [])))
 
     def replay(self) -> list[dict[str, Any]]:
         """Return events in topological order for deterministic replay.
@@ -402,3 +324,62 @@ class SyncLedger:
                 except ValueError:
                     continue
         return f"lgr-{max_id + 1:06d}"
+
+    @staticmethod
+    def _get_actor() -> str:
+        """Return the current system user name, or ``'unknown'`` on failure."""
+        try:
+            import getpass
+
+            return getpass.getuser()
+        except Exception:  # pragma: no cover
+            return "unknown"
+
+    @staticmethod
+    def _topological_sort_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return *events* in topological order (parents before children).
+
+        Uses Kahn's BFS algorithm on the ``parent_sync_ids`` graph.
+        Events without a valid ``sync_id`` are appended last, preserving their
+        original relative order.
+        """
+        by_id: dict[str, dict[str, Any]] = {}
+        for event in events:
+            if isinstance(event, dict):
+                sid = str(event.get("sync_id", ""))
+                if sid:
+                    by_id[sid] = event
+
+        in_degree: dict[str, int] = {sid: 0 for sid in by_id}
+        children: dict[str, list[str]] = {sid: [] for sid in by_id}
+
+        for sid, event in by_id.items():
+            for parent_id in event.get("parent_sync_ids", []):
+                parent_str = str(parent_id)
+                if parent_str in by_id:
+                    in_degree[sid] += 1
+                    children[parent_str].append(sid)
+
+        queue: list[str] = sorted(sid for sid, deg in in_degree.items() if deg == 0)
+        result: list[dict[str, Any]] = []
+        while queue:
+            current = queue.pop(0)
+            result.append(by_id[current])
+            for child in sorted(children.get(current, [])):
+                in_degree[child] -= 1
+                if in_degree[child] == 0:
+                    queue.append(child)
+
+        # Append any events not reachable via the DAG (malformed entries)
+        seen: set[str] = {str(e.get("sync_id", "")) for e in result}
+        for event in events:
+            if not isinstance(event, dict) or str(event.get("sync_id", "")) not in seen:
+                result.append(event)
+
+        return result
+
+
+__all__ = [
+    "LocalGitRegister",
+    "SyncLedger",
+]

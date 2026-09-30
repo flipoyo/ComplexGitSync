@@ -312,20 +312,12 @@ def test_verify_json_reports_findings_and_exits_one(tmp_path, capsys):
 
     import tomli_w
 
-    from ComplexGitSync.memory.ledger_store import append_entry
+    from ComplexGitSync.memory.ledger_store import LedgerStore
     from ComplexGitSync.orchestre import SystemClock
 
     (tmp_path / ".cgitsync").mkdir()
     lgr_dir = tmp_path / ".cgitsync" / "lgr"
-    append_entry(
-        lgr_dir,
-        command="push",
-        argv=["push"],
-        state_id="a" * 64,
-        state_dir=f"state({'a' * 64})_0",
-        outcome="ok",
-        clock=SystemClock(),
-    )
+    LedgerStore(lgr_dir).append_entry(command="push", argv=["push"], state_id="a" * 64, state_dir=f"state({'a' * 64})_0", outcome="ok", clock=SystemClock())
     entry_path = lgr_dir / "000001.toml"
     data = tomllib.loads(entry_path.read_text(encoding="utf-8"))
     data["entry"]["command"] = "tampered-command"

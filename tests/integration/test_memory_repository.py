@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.memory.repository import memory_branch, mount_entry
+from ComplexGitSync.memory.repository import MemoryRepository
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 _CGS = """
@@ -71,7 +71,7 @@ def test_init_proposes_the_entry_that_mounts_the_memory(tmp_path):
 
     proposal = _loaded_client(workspace).memory_init(workspace)
 
-    assert proposal["entry"] == mount_entry("flipoyo", "demo")
+    assert proposal["entry"] == MemoryRepository.mount_entry("flipoyo", "demo")
     assert proposal["entry"]["repository"] == "github:flipoyo/.memory"
     assert proposal["entry"]["private"] is True
     assert proposal["entry"]["writable"] is True
@@ -95,8 +95,8 @@ def test_init_never_creates_the_repository(tmp_path, capsys):
 
 def test_the_memory_branch_follows_the_project_branch(tmp_path):
     """One repository, one branch per project — and per project branch."""
-    assert memory_branch("demo", "main") == "demo"
-    assert memory_branch("demo", "memory-dev") == "demo_memory-dev"
+    assert MemoryRepository.branch("demo", "main") == "demo"
+    assert MemoryRepository.branch("demo", "memory-dev") == "demo_memory-dev"
 
 
 # ---------------------------------------------------------------------------

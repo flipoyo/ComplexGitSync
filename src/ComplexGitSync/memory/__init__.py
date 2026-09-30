@@ -42,75 +42,49 @@ about a command line, not about what is remembered. It imports from here.
 from __future__ import annotations
 
 from .integrity import (
+    ChainVerifier,
     Finding,
     HistoryState,
     VerificationReport,
-    recompute_entry_hash,
-    resolve_state,
-    verify_chain,
 )
 from .ledger_entry import (
     ClockProtocol,
     LedgerEntry,
-    build_next_entry,
-    compute_entry_hash,
 )
 from .ledger_store import (
+    ArgvScrubber,
     HeadPointer,
     LedgerSeqCollisionError,
+    LedgerStore,
     LedgerStoreCorruptionError,
     LedgerStoreError,
-    append_entry,
-    next_seq,
-    read_all_entries,
-    read_head,
-    recompute_head,
-    scrub_argv,
-    verify_and_repair_head,
-    write_entry,
-    write_head,
 )
 from .states import (
     STATE_DIR_NAME,
     MemoryStateDirectory,
-    state_path,
+    MemoryStates,
 )
 from .store import (
     LocalGitRegister,
     SyncLedger,
-    legacy_register_exists,
-    write_state,
 )
 
 __all__ = [
     "STATE_DIR_NAME",
+    "ArgvScrubber",
+    "ChainVerifier",
     "ClockProtocol",
     "Finding",
     "HeadPointer",
     "HistoryState",
     "LedgerEntry",
     "LedgerSeqCollisionError",
+    "LedgerStore",
     "LedgerStoreCorruptionError",
     "LedgerStoreError",
     "LocalGitRegister",
     "MemoryStateDirectory",
+    "MemoryStates",
     "SyncLedger",
     "VerificationReport",
-    "append_entry",
-    "next_seq",
-    "build_next_entry",
-    "compute_entry_hash",
-    "legacy_register_exists",
-    "read_all_entries",
-    "read_head",
-    "recompute_entry_hash",
-    "recompute_head",
-    "resolve_state",
-    "scrub_argv",
-    "state_path",
-    "verify_and_repair_head",
-    "verify_chain",
-    "write_entry",
-    "write_head",
-    "write_state",
 ]

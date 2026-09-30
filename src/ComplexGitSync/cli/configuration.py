@@ -413,3 +413,9 @@ def _execute_discover(
     else:
         print("Dry run — pass --write FILE to save this draft as a .cgs.")
     return 0
+
+
+__all__ = [
+    "COMMANDS",
+    "register_parsers",
+]

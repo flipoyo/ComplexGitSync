@@ -424,6 +424,7 @@ def _as_optional_str(value: Any) -> str | None:
 
 
 __all__ = [
+    "private_local_branch",
     "DEFAULT_BRANCH",
     "BranchResolution",
     "BranchSource",

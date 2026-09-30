@@ -90,3 +90,12 @@ CHAIN_SHAPED_REPOS: dict[str, str] = {
 def is_chain_shaped(repo_name: str) -> bool:
     """Whether *repo_name* is registered in :data:`CHAIN_SHAPED_REPOS`."""
     return repo_name in CHAIN_SHAPED_REPOS
+
+
+__all__ = [
+    "CHAIN_SHAPED_REPOS",
+    "Repair",
+    "RepairOutcome",
+    "Situation",
+    "is_chain_shaped",
+]

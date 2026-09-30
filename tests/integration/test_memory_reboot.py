@@ -161,9 +161,9 @@ def test_the_fresh_branch_is_pushed_by_reboot_itself(tmp_path):
     tracked = set(_git(clone, "ls-files").splitlines())
     assert not any(path.startswith("commit-logs/") for path in tracked)
 
-    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.ledger_store import LedgerStore
 
-    assert [entry.seq for entry in read_all_entries(clone / "lgr")] == [1]
+    assert [entry.seq for entry in LedgerStore(clone / "lgr").read_all_entries()] == [1]
     assert result["branch"] == "demo_x"
 
 
@@ -202,11 +202,11 @@ def test_verify_on_the_archived_branch_still_answers_as_before(tmp_path):
     # Archiving is a rename, not an edit (D4): every State, ledger entry
     # and commit log on the old branch is untouched, so the chain a
     # checkout of it holds verifies exactly as it did before the reboot.
-    from ComplexGitSync.memory.integrity import verify_chain
-    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.integrity import ChainVerifier
+    from ComplexGitSync.memory.ledger_store import LedgerStore
 
-    entries = read_all_entries(clone / "lgr")
-    chain_report = verify_chain(entries)
+    entries = LedgerStore(clone / "lgr").read_all_entries()
+    chain_report = ChainVerifier.verify(entries)
     assert chain_report.findings == []
 
 
@@ -226,10 +226,10 @@ def test_reboot_clears_the_old_history_from_the_fresh_branch(tmp_path):
     at exactly one entry is the meaningful, unambiguous claim: the old
     chain's own multiple entries did not.
     """
-    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.ledger_store import LedgerStore
 
     tree = _memory_ready(tmp_path)
-    old_entry_count = len(read_all_entries(tree["mount"] / "lgr"))
+    old_entry_count = len(LedgerStore(tree["mount"] / "lgr").read_all_entries())
     assert old_entry_count > 1  # a real, multi-entry chain to clear
 
     result = _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
@@ -238,7 +238,7 @@ def test_reboot_clears_the_old_history_from_the_fresh_branch(tmp_path):
     assert _git(tree["mount"], "branch", "--show-current") == "demo_x"
     tracked = set(_git(tree["mount"], "ls-files").splitlines())
     assert not any(path.startswith("commit-logs/") for path in tracked)
-    entries = read_all_entries(tree["mount"] / "lgr")
+    entries = LedgerStore(tree["mount"] / "lgr").read_all_entries()
     assert [entry.seq for entry in entries] == [1]
 
 

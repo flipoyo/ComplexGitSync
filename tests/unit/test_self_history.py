@@ -10,17 +10,8 @@ from dataclasses import replace
 
 import pytest
 
-from ComplexGitSync.memory.self_history import (
-    AgentInfo,
-    ConformityCriterion,
-    ConformityScore,
-    SelfHistoryRecord,
-    read_record,
-    read_records,
-    record_path,
-    self_history_dirs,
-    write_record,
-)
+from ComplexGitSync.memory.conformity import ConformityCriterion, ConformityScore
+from ComplexGitSync.memory.self_history import AgentInfo, SelfHistoryRecord
 
 _WORKER = AgentInfo(role="Dev", vendor="Anthropic", model="claude-sonnet-5")
 _ORCHESTRATOR = AgentInfo(role="Orchestration", vendor="Anthropic", model="claude-sonnet-5")
@@ -44,47 +35,47 @@ _RECORD = SelfHistoryRecord(
 
 
 def test_write_then_read_round_trips(tmp_path):
-    path = write_record(tmp_path, _RECORD)
+    path = _RECORD.write(tmp_path)
 
-    assert path == record_path(tmp_path, _RECORD.digest())
-    assert read_record(path) == _RECORD
+    assert path == SelfHistoryRecord.path_in(tmp_path, _RECORD.digest())
+    assert SelfHistoryRecord.read(path) == _RECORD
 
 
 def test_write_is_idempotent_for_identical_content(tmp_path):
-    first = write_record(tmp_path, _RECORD)
-    second = write_record(tmp_path, _RECORD)
+    first = _RECORD.write(tmp_path)
+    second = _RECORD.write(tmp_path)
 
     assert first == second
-    assert read_record(first) == _RECORD
+    assert SelfHistoryRecord.read(first) == _RECORD
 
 
 def test_write_rejects_a_hash_collision_with_different_content(tmp_path, monkeypatch):
-    write_record(tmp_path, _RECORD)
+    _RECORD.write(tmp_path)
     forced_digest = _RECORD.digest()
     colliding = replace(_RECORD, action="a completely different action")
     monkeypatch.setattr(SelfHistoryRecord, "digest", lambda self: forced_digest)
 
     with pytest.raises(ValueError, match="collision"):
-        write_record(tmp_path, colliding)
+        colliding.write(tmp_path)
 
 
 def test_read_rejects_a_record_whose_content_does_not_match_its_filename(tmp_path):
-    path = write_record(tmp_path, _RECORD)
+    path = _RECORD.write(tmp_path)
     tampered = path.with_name(f"{'0' * 64}.toml")
     path.rename(tampered)
 
     with pytest.raises(ValueError, match="does not match its filename"):
-        read_record(tampered)
+        SelfHistoryRecord.read(tampered)
 
 
 def test_editing_the_record_changes_its_name(tmp_path):
-    original_path = write_record(tmp_path, _RECORD)
+    original_path = _RECORD.write(tmp_path)
     edited = replace(_RECORD, action="a superseding account of the work")
-    edited_path = write_record(tmp_path, edited)
+    edited_path = edited.write(tmp_path)
 
     assert original_path != edited_path
-    assert read_record(original_path) == _RECORD
-    assert read_record(edited_path) == edited
+    assert SelfHistoryRecord.read(original_path) == _RECORD
+    assert SelfHistoryRecord.read(edited_path) == edited
 
 
 @pytest.mark.parametrize(
@@ -123,17 +114,17 @@ def test_conformity_criterion_rejects_an_unknown_basis():
 
 def test_read_records_merges_folded_and_pending_and_sorts_by_recorded_at(tmp_path):
     cgitsync_dir = tmp_path / ".cgitsync"
-    folded_dir, pending_dir = self_history_dirs(cgitsync_dir)
+    folded_dir, pending_dir = SelfHistoryRecord.dirs(cgitsync_dir)
     earlier = replace(_RECORD, recorded_at="2026-09-20T00:00:00+00:00")
     later = replace(_RECORD, action="a later action", recorded_at="2026-09-24T00:00:00+00:00")
 
-    write_record(folded_dir, later)
-    write_record(pending_dir, earlier)
+    later.write(folded_dir)
+    earlier.write(pending_dir)
 
-    records = read_records(cgitsync_dir)
+    records = SelfHistoryRecord.read_all(cgitsync_dir)
 
     assert [record.recorded_at for record in records] == [earlier.recorded_at, later.recorded_at]
 
 
 def test_read_records_is_empty_when_nothing_has_been_recorded(tmp_path):
-    assert read_records(tmp_path / ".cgitsync") == []
+    assert SelfHistoryRecord.read_all(tmp_path / ".cgitsync") == []

@@ -312,3 +312,18 @@ def _render_status_table(rows: list[tuple[str, str, str, str, str, str, str, str
     lines = [render_row(headers), "-" * (sum(widths) + 2 * (len(headers) - 1))]
     lines.extend(render_row(row) for row in rows)
     return "\n".join(lines)
+
+
+__all__ = [
+    "EMPTY_WORKSPACE_LINE",
+    "PRIVATE_DISTANT_SCOPE_LABEL",
+    "PRIVATE_LOCAL_SCOPE_LABEL",
+    "PROJECT_SCOPE_LABEL",
+    "SCOPE_LEGEND",
+    "SYNC_LEGEND",
+    "SYNC_NO_UPSTREAM",
+    "SYNC_UNKNOWN",
+    "TREE_BRANCH_DETACHED",
+    "TREE_BRANCH_UNKNOWN",
+    "StatusCounts",
+]

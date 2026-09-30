@@ -138,3 +138,9 @@ class FromCliRepair:
                     return candidate_repair.repair(situation, runner)
 
         raise NoMatchingRepairError(f"autofix: {error!r} did not match any registered repair.")
+
+
+__all__ = [
+    "FromCliRepair",
+    "NoMatchingRepairError",
+]

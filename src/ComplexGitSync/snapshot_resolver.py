@@ -29,13 +29,11 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .memory.pending import current_state_from_ledger as _current_state_from_ledger
-from .memory.pending import memory_dirs as _memory_dirs
+from .memory.pending import PendingMemory
 from .memory.states import (
-    _state_order_from_directory_name,
-    _state_snapshot_candidates,
+    MemoryStates,
 )
-from .settings import default_workspace
+from .settings import Settings
 
 
 def _state_lgr_candidates(cgshome: Path) -> list[Path]:
@@ -46,7 +44,7 @@ def _state_lgr_candidates(cgshome: Path) -> list[Path]:
         return []
     candidates: list[Path] = []
     for state_dir in sorted(cgitsync_dir.iterdir(), key=lambda path: path.name):
-        if not state_dir.is_dir() or _state_order_from_directory_name(state_dir.name) is None:
+        if not state_dir.is_dir() or MemoryStates.order_from_directory_name(state_dir.name) is None:
             continue
         candidates.extend(sorted(state_dir.glob("*.lgr")))
     return candidates
@@ -223,7 +221,7 @@ def describe_cgshome(search_dir: str | Path | None = None) -> CgshomeResolution:
             )
 
     if origin != CGSHOME_ORIGIN_SEARCH_DIR:
-        fallback = default_workspace()
+        fallback = Settings.default_workspace()
         if fallback is not None:
             return CgshomeResolution(
                 path=fallback.resolve(),
@@ -274,7 +272,7 @@ def describe_gts_path(search_dir: str | Path | None = None) -> SnapshotResolutio
     cgshome = describe_cgshome(search_dir)
     cgitsync_dir = cgshome.path / ".cgitsync"
 
-    ledger_state = _current_state_from_ledger(cgitsync_dir)
+    ledger_state = PendingMemory(cgitsync_dir).current_state_from_ledger()
     if ledger_state is not None:
         return SnapshotResolution(
             path=ledger_state,
@@ -301,11 +299,11 @@ def describe_gts_path(search_dir: str | Path | None = None) -> SnapshotResolutio
     # Folded and pending, unioned: a memory mount (`.cgitsync/.memory`) may
     # hold everything a `memory push` has already folded, leaving nothing
     # under `.cgitsync` itself to find — WorkingTransitionState.
-    folded_dir, pending_dir = _memory_dirs(cgitsync_dir)
+    folded_dir, pending_dir = PendingMemory(cgitsync_dir).dirs()
     gts_entries = [
         (path, path.stat().st_mtime)
         for directory in (folded_dir, pending_dir)
-        for path in _state_snapshot_candidates(directory)
+        for path in MemoryStates(directory).snapshot_candidates()
     ]
     if gts_entries:
         gts_entries.sort(key=lambda x: x[1], reverse=True)
@@ -385,3 +383,25 @@ def resolve_visualization_source(source: str | None, search_dir: str | None) -> 
     automatically via :func:`discover_gts_path`.
     """
     return resolve_workspace_source(source, search_dir)
+
+
+__all__ = [
+    "CGSHOME_ORIGIN_CWD",
+    "CGSHOME_ORIGIN_DEFAULT",
+    "CGSHOME_ORIGIN_ENVIRONMENT",
+    "CGSHOME_ORIGIN_SEARCH_DIR",
+    "SNAPSHOT_ORIGIN_EXPLICIT",
+    "SNAPSHOT_ORIGIN_LEDGER",
+    "SNAPSHOT_ORIGIN_MOST_RECENT",
+    "SNAPSHOT_ORIGIN_REGISTER",
+    "CgshomeResolution",
+    "SnapshotResolution",
+    "describe_cgshome",
+    "describe_gts_path",
+    "describe_workspace_source",
+    "discover_cgshome",
+    "discover_gts_path",
+    "resolve_gts_path",
+    "resolve_visualization_source",
+    "resolve_workspace_source",
+]

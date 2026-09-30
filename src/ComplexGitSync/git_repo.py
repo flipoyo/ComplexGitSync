@@ -498,3 +498,23 @@ def repo_remote_url(repo: WorkingRepo, protocol: AccessProtocol) -> str:
         gitprovider_url=repo.gitprovider_url,
     )
     return address.to_url(protocol)
+
+
+__all__ = [
+    "CANONICAL_GIT_PROVIDERS",
+    "KNOWN_PROVIDER_HOSTS",
+    "AccessProtocol",
+    "DiscoveryState",
+    "GitProvider",
+    "GitRepo",
+    "NodeType",
+    "RefKind",
+    "RepoAddress",
+    "RepoLifecycleState",
+    "RepoScope",
+    "SyncState",
+    "WorkingRepo",
+    "convert_remote_url_protocol",
+    "repo_remote_url",
+    "validate_git_provider",
+]

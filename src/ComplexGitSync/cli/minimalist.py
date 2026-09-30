@@ -789,3 +789,9 @@ def _execute_launch_release(
     )
     _print_repo_tree_result(client)
     return 0
+
+
+__all__ = [
+    "COMMANDS",
+    "register_parsers",
+]

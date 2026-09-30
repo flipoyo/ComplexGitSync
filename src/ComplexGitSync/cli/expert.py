@@ -18,14 +18,9 @@ from pathlib import Path
 
 from ..errors import GitSyncError
 from ..git_repo import RefKind, RepoScope
+from ..memory.conformity import VALID_CONFORMITY_BASES, ConformityCriterion, ConformityScore
 from ..memory.integrity import HistoryState
-from ..memory.self_history import (
-    VALID_AGENT_ROLES,
-    VALID_CONFORMITY_BASES,
-    AgentInfo,
-    ConformityCriterion,
-    ConformityScore,
-)
+from ..memory.self_history import VALID_AGENT_ROLES, AgentInfo
 from ..operations import MERGE_RESOLVE_HINT
 from ..orchestre import ComplexGitSyncClient
 from ._shared import (
@@ -2498,3 +2493,9 @@ _SIMPLE_MEMORY_SUBCOMMANDS: dict[str, tuple[Callable, Callable]] = {
         _print_memory_self_history,
     ),
 }
+
+
+__all__ = [
+    "COMMANDS",
+    "register_parsers",
+]

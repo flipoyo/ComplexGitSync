@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 import ComplexGitSync as complexgitsync_pkg
-from ComplexGitSync.memory.ledger_store import read_all_entries
+from ComplexGitSync.memory.ledger_store import LedgerStore
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 
@@ -369,7 +369,7 @@ def test_freeze_release_folds_via_its_own_push_and_its_own_freeze_harmlessly(tmp
     # end-to-end path, not just the unit-level plumbing. It lands in the
     # pending half (`.cgitsync/lgr`): the memory fold happens before the
     # freeze step writes this entry, so it is not folded in yet.
-    entries = read_all_entries(tree["root"] / ".cgitsync" / "lgr")
+    entries = LedgerStore(tree["root"] / ".cgitsync" / "lgr").read_all_entries()
     release_entry = entries[-1]
     assert release_entry.command == "freeze_release"
     release = dict(release_entry.release)

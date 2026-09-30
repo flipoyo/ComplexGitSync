@@ -8,10 +8,6 @@ import pytest
 
 from ComplexGitSync.memory.agent_contract import (
     AgentContractRecord,
-    contract_path,
-    read_contract,
-    read_current_contract,
-    write_contract,
 )
 
 _RECORD = AgentContractRecord(
@@ -24,58 +20,58 @@ _RECORD = AgentContractRecord(
 
 
 def test_write_then_read_round_trips(tmp_path):
-    path = write_contract(tmp_path, _RECORD)
+    path = _RECORD.write(tmp_path)
 
-    assert path == contract_path(tmp_path, _RECORD.digest())
-    assert read_contract(path) == _RECORD
+    assert path == AgentContractRecord.path_in(tmp_path, _RECORD.digest())
+    assert AgentContractRecord.read(path) == _RECORD
 
 
 def test_write_is_idempotent_for_identical_content(tmp_path):
-    first = write_contract(tmp_path, _RECORD)
-    second = write_contract(tmp_path, _RECORD)
+    first = _RECORD.write(tmp_path)
+    second = _RECORD.write(tmp_path)
 
     assert first == second
-    assert read_contract(first) == _RECORD
+    assert AgentContractRecord.read(first) == _RECORD
 
 
 def test_write_rejects_a_hash_collision_with_different_content(tmp_path, monkeypatch):
-    write_contract(tmp_path, _RECORD)
+    _RECORD.write(tmp_path)
     forced_digest = _RECORD.digest()
     colliding = replace(_RECORD, attested_by="a different attestation entirely")
     monkeypatch.setattr(AgentContractRecord, "digest", lambda self: forced_digest)
 
     with pytest.raises(ValueError, match="collision"):
-        write_contract(tmp_path, colliding)
+        colliding.write(tmp_path)
 
 
 def test_read_rejects_a_record_whose_content_does_not_match_its_filename(tmp_path):
-    path = write_contract(tmp_path, _RECORD)
+    path = _RECORD.write(tmp_path)
     tampered = path.with_name(f"{'0' * 64}.toml")
     path.rename(tampered)
 
     with pytest.raises(ValueError, match="does not match its filename"):
-        read_contract(tampered)
+        AgentContractRecord.read(tampered)
 
 
 def test_editing_the_record_changes_its_name(tmp_path):
-    original_path = write_contract(tmp_path, _RECORD)
+    original_path = _RECORD.write(tmp_path)
     edited = replace(_RECORD, terms_version="a superseding terms reference")
-    edited_path = write_contract(tmp_path, edited)
+    edited_path = edited.write(tmp_path)
 
     assert original_path != edited_path
-    assert read_contract(original_path) == _RECORD
-    assert read_contract(edited_path) == edited
+    assert AgentContractRecord.read(original_path) == _RECORD
+    assert AgentContractRecord.read(edited_path) == edited
 
 
 def test_current_pointer_follows_the_most_recently_written_record(tmp_path):
-    write_contract(tmp_path, _RECORD)
+    _RECORD.write(tmp_path)
     superseding = replace(_RECORD, terms_version="a superseding terms reference")
-    write_contract(tmp_path, superseding)
+    superseding.write(tmp_path)
 
-    assert read_current_contract(tmp_path) == superseding
+    assert AgentContractRecord.read_current(tmp_path) == superseding
 
 
 def test_read_current_contract_is_none_when_nothing_has_been_signed(tmp_path):
-    assert read_current_contract(tmp_path) is None
+    assert AgentContractRecord.read_current(tmp_path) is None
     (tmp_path / "agent-contracts").mkdir()
-    assert read_current_contract(tmp_path) is None
+    assert AgentContractRecord.read_current(tmp_path) is None

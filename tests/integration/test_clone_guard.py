@@ -19,10 +19,7 @@ from types import SimpleNamespace
 import pytest
 
 from ComplexGitSync.clone_guard import (
-    blocked_destinations,
-    destination_block_reason,
-    format_block_error,
-    is_populated_destination,
+    CloneGuard,
 )
 from ComplexGitSync.git_runner import GitRunner
 
@@ -79,7 +76,7 @@ def _entry(path: Path, name: str = "dep") -> SimpleNamespace:
 
 def test_a_clean_fully_pushed_clone_is_safe(pushed_clone: Path, runner: GitRunner):
     """Everything in it can be fetched again, so clearing loses nothing."""
-    assert destination_block_reason(pushed_clone, runner) is None
+    assert CloneGuard.block_reason(pushed_clone, runner) is None
 
 
 def test_a_populated_directory_that_is_not_a_git_repo_is_safe(tmp_path: Path, runner: GitRunner):
@@ -88,15 +85,15 @@ def test_a_populated_directory_that_is_not_a_git_repo_is_safe(tmp_path: Path, ru
     half_written.mkdir()
     (half_written / "leftover.txt").write_text("partial\n", encoding="utf-8")
 
-    assert is_populated_destination(half_written) is True
-    assert destination_block_reason(half_written, runner) is None
+    assert CloneGuard.is_populated(half_written) is True
+    assert CloneGuard.block_reason(half_written, runner) is None
 
 
 def test_an_empty_directory_is_not_even_a_candidate(tmp_path: Path, runner: GitRunner):
     empty = tmp_path / "empty"
     empty.mkdir()
-    assert is_populated_destination(empty) is False
-    assert blocked_destinations([_entry(empty)], runner) == []
+    assert CloneGuard.is_populated(empty) is False
+    assert CloneGuard.blocked([_entry(empty)], runner) == []
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +104,7 @@ def test_an_empty_directory_is_not_even_a_candidate(tmp_path: Path, runner: GitR
 def test_uncommitted_changes_block(pushed_clone: Path, runner: GitRunner):
     (pushed_clone / "file.txt").write_text("edited, never committed\n", encoding="utf-8")
 
-    reason = destination_block_reason(pushed_clone, runner)
+    reason = CloneGuard.block_reason(pushed_clone, runner)
     assert reason == "uncommitted changes"
 
 
@@ -115,7 +112,7 @@ def test_an_untracked_file_blocks(pushed_clone: Path, runner: GitRunner):
     """An untracked file is work too: git clean -fd would take it."""
     (pushed_clone / "notes.md").write_text("scratch\n", encoding="utf-8")
 
-    assert destination_block_reason(pushed_clone, runner) == "uncommitted changes"
+    assert CloneGuard.block_reason(pushed_clone, runner) == "uncommitted changes"
 
 
 def test_a_local_only_commit_blocks(pushed_clone: Path, runner: GitRunner):
@@ -124,7 +121,7 @@ def test_a_local_only_commit_blocks(pushed_clone: Path, runner: GitRunner):
     _run_git(pushed_clone, "add", ".")
     _run_git(pushed_clone, "commit", "-m", "local only")
 
-    reason = destination_block_reason(pushed_clone, runner)
+    reason = CloneGuard.block_reason(pushed_clone, runner)
     assert reason is not None
     assert "1 commit" in reason
     assert "no remote has" in reason
@@ -136,7 +133,7 @@ def test_two_local_commits_are_counted_and_pluralised(pushed_clone: Path, runner
         _run_git(pushed_clone, "add", ".")
         _run_git(pushed_clone, "commit", "-m", f"local {index}")
 
-    assert "2 commits" in destination_block_reason(pushed_clone, runner)
+    assert "2 commits" in CloneGuard.block_reason(pushed_clone, runner)
 
 
 def test_a_branch_with_no_upstream_blocks_once_it_carries_a_commit(
@@ -148,7 +145,7 @@ def test_a_branch_with_no_upstream_blocks_once_it_carries_a_commit(
     _run_git(pushed_clone, "add", ".")
     _run_git(pushed_clone, "commit", "-m", "feature work")
 
-    reason = destination_block_reason(pushed_clone, runner)
+    reason = CloneGuard.block_reason(pushed_clone, runner)
     assert reason == "1 commit on 'feature-never-pushed' that no remote has"
 
 
@@ -156,7 +153,7 @@ def test_a_fresh_branch_with_no_commits_does_not_block(pushed_clone: Path, runne
     """A branch is not work. Only commits the remote lacks are."""
     _run_git(pushed_clone, "checkout", "-b", "just-branched")
 
-    assert destination_block_reason(pushed_clone, runner) is None
+    assert CloneGuard.block_reason(pushed_clone, runner) is None
 
 
 def test_a_detached_head_on_a_remote_commit_does_not_block(pushed_clone: Path, runner: GitRunner):
@@ -165,7 +162,7 @@ def test_a_detached_head_on_a_remote_commit_does_not_block(pushed_clone: Path, r
     _run_git(pushed_clone, "checkout", "--detach", head)
 
     assert runner.current_branch(pushed_clone) in (None, "HEAD")
-    assert destination_block_reason(pushed_clone, runner) is None
+    assert CloneGuard.block_reason(pushed_clone, runner) is None
 
 
 def test_being_behind_the_upstream_does_not_block(pushed_clone: Path, tmp_path: Path, runner: GitRunner):
@@ -178,7 +175,7 @@ def test_being_behind_the_upstream_does_not_block(pushed_clone: Path, tmp_path: 
     _run_git(pushed_clone, "fetch", "origin")
 
     assert runner.branch_tracking_counts(pushed_clone) == (0, 1)
-    assert destination_block_reason(pushed_clone, runner) is None
+    assert CloneGuard.block_reason(pushed_clone, runner) is None
 
 
 # ---------------------------------------------------------------------------
@@ -214,14 +211,11 @@ def test_every_blocked_repository_is_named_in_one_message(tmp_path: Path, runner
     _run_git(unpushed, "add", ".")
     _run_git(unpushed, "commit", "-m", "local only")
 
-    blocked = blocked_destinations(
-        [_entry(dirty, "dirty"), _entry(unpushed, "unpushed"), _entry(clean, "clean")],
-        runner,
-    )
+    blocked = CloneGuard.blocked([_entry(dirty, "dirty"), _entry(unpushed, "unpushed"), _entry(clean, "clean")], runner)
 
     assert {item.name for item in blocked} == {"dirty", "unpushed"}
 
-    message = format_block_error(blocked)
+    message = CloneGuard.format_error(blocked)
     assert "dirty" in message and "unpushed" in message
     assert "clean" not in message.replace("cleared", "")
     assert "Nothing has been deleted" in message
@@ -237,8 +231,8 @@ def test_the_root_repository_is_never_a_candidate(pushed_clone: Path, runner: Gi
     # The same directory blocks when it is a nested entry, and is never
     # offered to the guard when it is the root: orchestre filters on
     # parent_id before calling, because only nested entries reach the rmtree.
-    assert destination_block_reason(pushed_clone, runner) == "uncommitted changes"
-    assert [item.name for item in blocked_destinations([_entry(pushed_clone)], runner)] == ["dep"]
+    assert CloneGuard.block_reason(pushed_clone, runner) == "uncommitted changes"
+    assert [item.name for item in CloneGuard.blocked([_entry(pushed_clone)], runner)] == ["dep"]
     assert [e for e in (root_entry,) if e.parent_id is not None] == []
 
 

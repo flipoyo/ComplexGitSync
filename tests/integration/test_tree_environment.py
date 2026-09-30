@@ -6,11 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync import tree_env
-from ComplexGitSync.memory.environment import write_environment
-from ComplexGitSync.memory.ledger_store import read_all_entries
+from ComplexGitSync.memory.environment import EnvironmentStore
+from ComplexGitSync.memory.ledger_store import LedgerStore
 from ComplexGitSync.orchestre import ComplexGitSyncClient
-from ComplexGitSync.tree_env import ToolVersion, TreeEnvironment
+from ComplexGitSync.tree_env import ToolVersion, TreeEnvironment, TreeObserver
 
 _CGS = 'project = "demo"\nenvironment_root = "demo"\nrepos = ["github:owner/demo"]\n'
 
@@ -43,7 +42,7 @@ def test_ordinary_operations_reuse_one_environment_record(tmp_path):
 
     cgitsync = config.parent / ".cgitsync"
     records = list((cgitsync / "env").glob("*.toml"))
-    entries = read_all_entries(cgitsync / "lgr")
+    entries = LedgerStore(cgitsync / "lgr").read_all_entries()
     assert len(records) == 1
     assert len({entry.environment for entry in entries}) == 1
     assert entries[0].environment == f"env({records[0].stem})"
@@ -57,7 +56,7 @@ def test_two_machine_records_leave_one_state_name(monkeypatch, tmp_path):
         root = registry.get("root").absolute_path
         return _record("machine-a" if "machine-a" in root.parts else "machine-b")
 
-    monkeypatch.setattr(tree_env, "observe", observed)
+    monkeypatch.setattr(TreeObserver, "observe", staticmethod(observed))
     ComplexGitSyncClient().load(first)
     ComplexGitSyncClient().load(second)
 
@@ -85,7 +84,7 @@ def test_memory_fold_moves_environment_records_with_their_ledger_reference(tmp_p
     pending = tmp_path / ".cgitsync"
     mount = pending / ".memory"
     mount.mkdir(parents=True)
-    path = write_environment(pending, _record("x86_64"))
+    path = EnvironmentStore(pending).write(_record("x86_64"))
 
     moved = ComplexGitSyncClient()._fold_memory_pending(pending, mount)
 

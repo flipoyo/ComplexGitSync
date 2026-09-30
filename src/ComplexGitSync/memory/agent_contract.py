@@ -77,59 +77,65 @@ class AgentContractRecord:
         )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def path_in(dev_sync_dir: Path, contract_hash: str) -> Path:
+        """Return the canonical path for *contract_hash* under *dev_sync_dir*."""
+        if not _HASH_RE.fullmatch(contract_hash):
+            raise ValueError("AgentContract hash must be 64 lowercase hexadecimal characters")
+        return dev_sync_dir / AGENT_CONTRACTS_DIR_NAME / f"{contract_hash}.toml"
 
-def contract_path(dev_sync_dir: Path, contract_hash: str) -> Path:
-    """Return the canonical path for *contract_hash* under *dev_sync_dir*."""
-    if not _HASH_RE.fullmatch(contract_hash):
-        raise ValueError("AgentContract hash must be 64 lowercase hexadecimal characters")
-    return dev_sync_dir / AGENT_CONTRACTS_DIR_NAME / f"{contract_hash}.toml"
+    def write(self, dev_sync_dir: Path) -> Path:
+        """Atomically persist *self* under the name of its own digest and
+        point ``current`` at it. A byte-identical record already on disk is
+        left alone; a colliding hash with different content raises."""
+        digest = self.digest()
+        destination = AgentContractRecord.path_in(dev_sync_dir, digest)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        content = tomli_w.dumps(self.to_dict()).encode("utf-8")
+        if destination.is_file():
+            if destination.read_bytes() != content:
+                raise ValueError(f"AgentContract digest collision at {destination}")
+        else:
+            temporary = destination.with_name(f".{destination.name}.tmp")
+            try:
+                descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(content)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                temporary.replace(destination)
+            finally:
+                temporary.unlink(missing_ok=True)
+        current_path = dev_sync_dir / AGENT_CONTRACTS_DIR_NAME / CURRENT_POINTER_NAME
+        current_path.write_text(digest + "\n", encoding="utf-8")
+        return destination
+
+    @staticmethod
+    def read(path: Path) -> AgentContractRecord:
+        """Load an AgentContract record and verify its name matches its content."""
+        with path.open("rb") as handle:
+            record = AgentContractRecord.from_dict(tomllib.load(handle))
+        expected = path.stem
+        if record.digest() != expected:
+            raise ValueError(f"AgentContract record digest does not match its filename: {path}")
+        return record
+
+    @staticmethod
+    def read_current(dev_sync_dir: Path) -> AgentContractRecord | None:
+        """Return the record ``current`` points to, or ``None`` when nothing has
+        been signed yet (D4: absent, not fatal — a caller reports the absence
+        rather than blocking on it)."""
+        current_path = dev_sync_dir / AGENT_CONTRACTS_DIR_NAME / CURRENT_POINTER_NAME
+        if not current_path.is_file():
+            return None
+        contract_hash = current_path.read_text(encoding="utf-8").strip()
+        if not contract_hash:
+            return None
+        return AgentContractRecord.read(AgentContractRecord.path_in(dev_sync_dir, contract_hash))
 
 
-def write_contract(dev_sync_dir: Path, record: AgentContractRecord) -> Path:
-    """Atomically persist *record* under the name of its own digest and
-    point ``current`` at it. A byte-identical record already on disk is
-    left alone; a colliding hash with different content raises."""
-    digest = record.digest()
-    destination = contract_path(dev_sync_dir, digest)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    content = tomli_w.dumps(record.to_dict()).encode("utf-8")
-    if destination.is_file():
-        if destination.read_bytes() != content:
-            raise ValueError(f"AgentContract digest collision at {destination}")
-    else:
-        temporary = destination.with_name(f".{destination.name}.tmp")
-        try:
-            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(content)
-                handle.flush()
-                os.fsync(handle.fileno())
-            temporary.replace(destination)
-        finally:
-            temporary.unlink(missing_ok=True)
-    current_path = dev_sync_dir / AGENT_CONTRACTS_DIR_NAME / CURRENT_POINTER_NAME
-    current_path.write_text(digest + "\n", encoding="utf-8")
-    return destination
-
-
-def read_contract(path: Path) -> AgentContractRecord:
-    """Load an AgentContract record and verify its name matches its content."""
-    with path.open("rb") as handle:
-        record = AgentContractRecord.from_dict(tomllib.load(handle))
-    expected = path.stem
-    if record.digest() != expected:
-        raise ValueError(f"AgentContract record digest does not match its filename: {path}")
-    return record
-
-
-def read_current_contract(dev_sync_dir: Path) -> AgentContractRecord | None:
-    """Return the record ``current`` points to, or ``None`` when nothing has
-    been signed yet (D4: absent, not fatal — a caller reports the absence
-    rather than blocking on it)."""
-    current_path = dev_sync_dir / AGENT_CONTRACTS_DIR_NAME / CURRENT_POINTER_NAME
-    if not current_path.is_file():
-        return None
-    contract_hash = current_path.read_text(encoding="utf-8").strip()
-    if not contract_hash:
-        return None
-    return read_contract(contract_path(dev_sync_dir, contract_hash))
+__all__ = [
+    "AGENT_CONTRACTS_DIR_NAME",
+    "CURRENT_POINTER_NAME",
+    "AgentContractRecord",
+]

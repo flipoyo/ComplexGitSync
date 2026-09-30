@@ -22,8 +22,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..errors import GitSyncError
-from ..memory import integrity, ledger_store
-from ..memory.ledger_entry import LedgerEntry, compute_entry_hash
+from ..memory import integrity
+from ..memory.integrity import ChainVerifier
+from ..memory.ledger_entry import LedgerEntry
+from ..memory.ledger_store import LedgerStore
 from .base import CHAIN_SHAPED_REPOS, RepairOutcome, Situation, is_chain_shaped
 
 if TYPE_CHECKING:
@@ -209,7 +211,7 @@ class DivergentUserRepair:
         first_new_seq = next_seq
 
         for seq in range(first_new_seq, first_new_seq + len(originals)):
-            stale = ledger_store.entry_path(lgr_dir, seq)
+            stale = LedgerStore(lgr_dir).entry_path(seq)
             if stale.exists():
                 stale.unlink()
 
@@ -218,20 +220,7 @@ class DivergentUserRepair:
             release = tuple(sorted(original.get("release", {}).items()))
             environment = original.get("environment", "")
             commit_log = original.get("commit_log", "")
-            entry_hash = compute_entry_hash(
-                seq=next_seq,
-                prev=prev_hash,
-                recorded_at=original["recorded_at"],
-                command=original["command"],
-                argv=original["argv"],
-                state_id=original["state_id"],
-                state_dir=original["state_dir"],
-                outcome=original["outcome"],
-                toolchain=toolchain,
-                commit_log=commit_log,
-                environment=environment,
-                release=release,
-            )
+            entry_hash = LedgerEntry.compute_hash(seq=next_seq, prev=prev_hash, recorded_at=original["recorded_at"], command=original["command"], argv=original["argv"], state_id=original["state_id"], state_dir=original["state_dir"], outcome=original["outcome"], toolchain=toolchain, commit_log=commit_log, environment=environment, release=release)
             entry = LedgerEntry(
                 seq=next_seq,
                 prev=prev_hash,
@@ -247,7 +236,7 @@ class DivergentUserRepair:
                 environment=environment,
                 release=release,
             )
-            ledger_store.write_entry(lgr_dir, entry)
+            LedgerStore(lgr_dir).write_entry(entry)
             prev_hash = entry_hash
             next_seq += 1
         return first_new_seq
@@ -258,13 +247,18 @@ class DivergentUserRepair:
         """§7 step 7: verify before ever committing. ``VERIFIED`` is the
         only passing result — anything else aborts outright, exactly as
         if this repair had never run."""
-        entries = ledger_store.read_all_entries(lgr_dir)
-        report = integrity.verify_chain(entries)
+        entries = LedgerStore(lgr_dir).read_all_entries()
+        report = ChainVerifier.verify(entries)
         if not report.is_verified:
             runner.merge_abort(repo_path)
             raise GitSyncError(
                 f"{repo.name}: splice produced {report.state.name}, not VERIFIED "
                 f"— aborted, nothing written. Findings: {report.findings}"
             )
-        ledger_store.verify_and_repair_head(lgr_dir)
+        LedgerStore(lgr_dir).verify_and_repair_head()
         return report
+
+
+__all__ = [
+    "DivergentUserRepair",
+]

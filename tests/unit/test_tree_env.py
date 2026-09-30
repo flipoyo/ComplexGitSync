@@ -12,17 +12,15 @@ from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.errors import ConfigValidationError
 from ComplexGitSync.git_repo import GitProvider
 from ComplexGitSync.git_runner import ToolRun
-from ComplexGitSync.memory.environment import read_environment, write_environment
-from ComplexGitSync.toolchain import reset_cache as reset_toolchain_cache
+from ComplexGitSync.memory.environment import EnvironmentStore
+from ComplexGitSync.toolchain import Toolchain
 from ComplexGitSync.tree_env import (
     CredentialFact,
     Manifest,
     Requirements,
     ToolVersion,
     TreeEnvironment,
-    compare,
-    observe,
-    reset_cache,
+    TreeObserver,
 )
 
 
@@ -70,11 +68,11 @@ class FakeTree:
 
 @pytest.fixture(autouse=True)
 def _clear_observation_caches():
-    reset_cache()
-    reset_toolchain_cache()
+    TreeObserver.reset_cache()
+    Toolchain.reset_cache()
     yield
-    reset_cache()
-    reset_toolchain_cache()
+    TreeObserver.reset_cache()
+    Toolchain.reset_cache()
 
 
 def _record(*, pixi: str = "0.66.0") -> TreeEnvironment:
@@ -111,8 +109,8 @@ def test_observe_records_required_facts_manifests_and_boolean_auth(tmp_path):
         }
     }
 
-    first = observe(runner, tree)
-    second = observe(runner, tree)
+    first = TreeObserver.observe(runner, tree)
+    second = TreeObserver.observe(runner, tree)
 
     assert first is second
     assert all((first.architecture, first.pixi_platform, first.os_name, first.kernel_release))
@@ -135,11 +133,11 @@ def test_digest_is_stable_and_changes_with_the_observed_pixi_version():
 
 def test_environment_store_round_trips_without_copying_manifest_contents(tmp_path):
     record = _record()
-    path = write_environment(tmp_path / ".cgitsync", record)
+    path = EnvironmentStore(tmp_path / ".cgitsync").write(record)
 
     assert path == tmp_path / ".cgitsync" / "env" / f"{record.digest()}.toml"
-    assert write_environment(tmp_path / ".cgitsync", record) == path
-    assert read_environment(path) == record
+    assert EnvironmentStore(tmp_path / ".cgitsync").write(record) == path
+    assert EnvironmentStore.read(path) == record
     text = path.read_text(encoding="utf-8")
     assert "pixi.toml" in text
     assert "[workspace]" not in text
@@ -153,7 +151,7 @@ def test_requirements_compare_missing_older_and_undeclared_tools():
             "environment": {"tools": {"git": "2.44", "pixi": "0.60", "gh": "2.0"}},
         }
     )
-    drift = compare(_record(), required)
+    drift = TreeObserver.compare(_record(), required)
 
     assert drift.missing == ("tool:gh",)
     assert drift.older == ("tool:git 2.43.0 < 2.44",)

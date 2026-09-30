@@ -30,19 +30,11 @@ import pytest
 
 import ComplexGitSync.orchestre as orchestre_module
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.memory.pending import memory_state_path as _memory_state_path
-from ComplexGitSync.memory.pending import read_ledger_entries as _read_all_ledger_entries
-from ComplexGitSync.memory.repository import config_memory_document, self_history_repository_id
-from ComplexGitSync.memory.self_history import (
-    AgentInfo,
-    ConformityCriterion,
-    ConformityScore,
-    SelfHistoryRecord,
-    read_record,
-    read_records,
-    write_record,
-)
-from ComplexGitSync.memory.states import _parse_state_hash
+from ComplexGitSync.memory.conformity import ConformityCriterion, ConformityScore
+from ComplexGitSync.memory.pending import PendingMemory
+from ComplexGitSync.memory.repository import MemoryRepository
+from ComplexGitSync.memory.self_history import AgentInfo, SelfHistoryRecord
+from ComplexGitSync.memory.states import MemoryStates
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 _ORIGINAL_REMOTE_URL_FOR_IDENTIFIER = orchestre_module._remote_url_for_identifier
@@ -77,7 +69,7 @@ def _fake_remote_url_for_identifier(self_history_remote: Path):
     """
 
     def _resolve(identifier: str) -> str:
-        if identifier == self_history_repository_id("owner"):
+        if identifier == MemoryRepository.self_history_repository_id("owner"):
             return str(self_history_remote)
         return _ORIGINAL_REMOTE_URL_FOR_IDENTIFIER(identifier)
 
@@ -197,7 +189,7 @@ def _self_history_ready_workspace(
     # config-memory.cgs — see the docstring above for why that is what
     # makes `memory_adopt`'s own "start from base" step bring it onto
     # "demo" automatically.
-    memory_extra = {"config-memory.cgs": config_memory_document("owner", "demo")} if opt_in else None
+    memory_extra = {"config-memory.cgs": MemoryRepository.config_document("owner", "demo")} if opt_in else None
     memory_remote = _bare_remote(tmp_path / "memory.git", branch="main", extra_files=memory_extra)
     self_history_remote = tmp_path / "self-history.git"
     if opt_in:
@@ -347,7 +339,7 @@ def test_memory_push_folds_and_sends_self_history_before_memory(tmp_path, monkey
     tree = _self_history_ready_workspace(tmp_path, monkeypatch, opt_in=True)
     client = tree["client"]
     pending_dir = tree["root"] / ".cgitsync" / ".self-history"
-    record_path = write_record(pending_dir, _sample_record())
+    record_path = _sample_record().write(pending_dir)
 
     before = _remote_head(tree["self_history_remote"], branch="demo")
     client.memory_push(tree["root"])
@@ -379,7 +371,7 @@ def test_memory_clone_brings_back_self_history_too(tmp_path, monkeypatch):
     tree = _self_history_ready_workspace(tmp_path, monkeypatch, opt_in=True)
     client = tree["client"]
     pending_dir = tree["root"] / ".cgitsync" / ".self-history"
-    write_record(pending_dir, _sample_record())
+    _sample_record().write(pending_dir)
     client.memory_push(tree["root"])
 
     fresh_root = tmp_path / "fresh-machine"
@@ -392,7 +384,7 @@ def test_memory_clone_brings_back_self_history_too(tmp_path, monkeypatch):
 
     fresh_self_history = fresh_root / ".cgitsync" / ".memory" / ".self-history"
     assert fresh_self_history.is_dir()
-    records = read_records(fresh_root / ".cgitsync")
+    records = SelfHistoryRecord.read_all(fresh_root / ".cgitsync")
     assert len(records) == 1
     assert records[0] == _sample_record()
 
@@ -422,7 +414,7 @@ def test_memory_reboot_does_not_touch_self_history(tmp_path, monkeypatch):
     tree = _self_history_ready_workspace(tmp_path, monkeypatch, opt_in=True)
     client = tree["client"]
     pending_dir = tree["root"] / ".cgitsync" / ".self-history"
-    record_path = write_record(pending_dir, _sample_record())
+    record_path = _sample_record().write(pending_dir)
     client.memory_push(tree["root"])
     before_head = _git(tree["self_history_mount"], "rev-parse", "HEAD")
     before_branch = _git(tree["self_history_mount"], "branch", "--show-current")
@@ -504,11 +496,11 @@ def _add_self_history(client, root, **overrides):
 def test_self_history_add_auto_fills_state_after_from_the_ledger(tmp_path, monkeypatch):
     tree = _self_history_ready_workspace(tmp_path, monkeypatch, opt_in=False)
     client = tree["client"]
-    last_entry = _read_all_ledger_entries(tree["root"] / ".cgitsync")[-1]
+    last_entry = PendingMemory(tree["root"] / ".cgitsync").read_ledger_entries()[-1]
 
     path = _add_self_history(client, tree["root"])
 
-    record = read_record(path)
+    record = SelfHistoryRecord.read(path)
     assert record.state_after == last_entry.state_id
     assert record.state_before == ""
 
@@ -516,11 +508,11 @@ def test_self_history_add_auto_fills_state_after_from_the_ledger(tmp_path, monke
 def test_self_history_add_accepts_a_state_the_ledger_actually_recorded(tmp_path, monkeypatch):
     tree = _self_history_ready_workspace(tmp_path, monkeypatch, opt_in=False)
     client = tree["client"]
-    real_state = _read_all_ledger_entries(tree["root"] / ".cgitsync")[-1].state_id
+    real_state = PendingMemory(tree["root"] / ".cgitsync").read_ledger_entries()[-1].state_id
 
     path = _add_self_history(client, tree["root"], state_before=real_state, state_after=real_state)
 
-    assert read_record(path).state_before == real_state
+    assert SelfHistoryRecord.read(path).state_before == real_state
 
 
 def test_self_history_add_rejects_a_state_the_ledger_never_recorded(tmp_path, monkeypatch):
@@ -536,8 +528,8 @@ def test_self_history_add_rejects_a_state_whose_file_was_tampered_with(tmp_path,
     tree = _self_history_ready_workspace(tmp_path, monkeypatch, opt_in=False)
     client = tree["client"]
     cgitsync_dir = tree["root"] / ".cgitsync"
-    real_state = _read_all_ledger_entries(cgitsync_dir)[-1].state_id
-    snapshot = _memory_state_path(cgitsync_dir, _parse_state_hash(real_state))
+    real_state = PendingMemory(cgitsync_dir).read_ledger_entries()[-1].state_id
+    snapshot = PendingMemory(cgitsync_dir).state_path(MemoryStates.parse_hash(real_state))
     # A comment wouldn't move the hash: compute_snapshot_hash() canonicalises
     # parsed fields, not raw bytes. Editing an actual field is what a real
     # tamper — or a genuine rewrite of history — would look like.
@@ -559,19 +551,19 @@ def test_self_history_add_observes_repos_written_from_the_ledger_diff(tmp_path, 
     tree = _self_history_ready_workspace(tmp_path, monkeypatch, opt_in=False)
     client = tree["client"]
     cgitsync_dir = tree["root"] / ".cgitsync"
-    state_before = _read_all_ledger_entries(cgitsync_dir)[-1].state_id
+    state_before = PendingMemory(cgitsync_dir).read_ledger_entries()[-1].state_id
 
     (tree["root"] / "NEW_FILE.txt").write_text("content\n", encoding="utf-8")
     client.add()
     client.commit("a real commit between two states")
-    state_after = _read_all_ledger_entries(cgitsync_dir)[-1].state_id
+    state_after = PendingMemory(cgitsync_dir).read_ledger_entries()[-1].state_id
     assert state_after != state_before
 
     path = _add_self_history(
         client, tree["root"], state_before=state_before, state_after=state_after
     )
 
-    assert read_record(path).repos_written == (("demo", "project"),)
+    assert SelfHistoryRecord.read(path).repos_written == (("demo", "project"),)
 
 
 def test_self_history_add_keeps_the_declared_repos_written_with_no_state_before(
@@ -585,4 +577,4 @@ def test_self_history_add_keeps_the_declared_repos_written_with_no_state_before(
 
     path = _add_self_history(client, tree["root"], repos_written=[("demo", "project")])
 
-    assert read_record(path).repos_written == (("demo", "project"),)
+    assert SelfHistoryRecord.read(path).repos_written == (("demo", "project"),)

@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ComplexGitSync import settings
 from ComplexGitSync.cli import main as cli_main
+from ComplexGitSync.settings import Settings
 
 
 def _cgs_root() -> Path:
@@ -47,7 +47,7 @@ def test_status_names_the_workspace_it_landed_in(tmp_path, monkeypatch, capsys):
     cli_main(["status"])
     captured = capsys.readouterr()
 
-    workspace = settings.read_default_workspace(_cgs_root())
+    workspace = Settings.read_default_workspace(_cgs_root())
     assert workspace is not None
     assert str(workspace) in captured.out
     assert f"(from {'default workspace'})" in captured.out
@@ -68,7 +68,7 @@ def test_the_default_snapshot_passes_validate(tmp_path, monkeypatch, capsys):
     cli_main(["status"])
     capsys.readouterr()
 
-    workspace = settings.read_default_workspace(_cgs_root())
+    workspace = Settings.read_default_workspace(_cgs_root())
     snapshot = next((workspace / ".cgitsync").rglob("*.gts"))
 
     assert cli_main(["validate", str(snapshot)]) == 0
@@ -96,7 +96,7 @@ def test_other_workspaces_are_listed_but_never_selected(tmp_path, monkeypatch, c
     assert f"export CGSHOME={_cgs_root() / 'CGS20260101000000' / 'alpha'}" in captured.out
     assert f"export CGSHOME={_cgs_root() / 'CGS20260202000000' / 'beta'}" in captured.out
     # Listed, and not chosen: the workspace acted on is still the default.
-    workspace = settings.read_default_workspace(_cgs_root())
+    workspace = Settings.read_default_workspace(_cgs_root())
     assert f"cgshome={workspace}" in captured.out
 
 
