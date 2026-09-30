@@ -1,9 +1,9 @@
-"""Unit tests for .agent/.local/release/scripts/bump_version.py.
+"""Unit tests for .agent/.local/.versioning/scripts/bump_version.py.
 
-``bump_version.py`` lives in the ``release`` skill (mounted at
-``.agent/.local/release``, ``AgentSkillsSplit``) — a plain checkout of
+``bump_version.py`` lives in the ``.versioning`` mount (at
+``.agent/.local/.versioning``, ``AgentSkillsSplit``) — a plain checkout of
 ``ComplexGitSync`` alone has no release tooling. This whole file needs
-``release`` mounted, which a bootstrapped developer checkout has and a
+``.versioning`` mounted, which a bootstrapped developer checkout has and a
 standalone checkout of the public repository does not, so it skips
 cleanly rather than failing when it is absent.
 """
@@ -20,14 +20,14 @@ _SCRIPT_PATH = (
     Path(__file__).resolve().parents[2]
     / ".agent"
     / ".local"
-    / "release"
+    / ".versioning"
     / "scripts"
     / "bump_version.py"
 )
 
 if not _SCRIPT_PATH.is_file():
     pytest.skip(
-        "bump_version.py lives in the release skill (.agent/.local/release) "
+        "bump_version.py lives in the .versioning mount (.agent/.local/.versioning) "
         "and is not mounted in this checkout. Bootstrap "
         "examples/complexgitsync4dev.cgs to run these. See "
         "AgentSkillsSplit.",
@@ -308,7 +308,7 @@ def test_real_docs_tex_files_have_a_matchable_cgsversion_macro(docs_path):
     assert bump_version._CGSVERSION_MACRO_RE.search(text) is not None, (
         f"{docs_path} no longer contains a "
         r"'\newcommand{\cgsversion}{<semver>}' definition that "
-        ".agent/.local/release/scripts/bump_version.py can update."
+        ".agent/.local/.versioning/scripts/bump_version.py can update."
     )
 
 

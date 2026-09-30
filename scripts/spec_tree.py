@@ -32,8 +32,9 @@ agent does:
    pointer, resolved wrong" from "just prose," so this direction only ever
    adds edges, never reports them broken.
 
-**Universe:** `DECLARED_SPEC_FILES` below — a hand-maintained list, not a
-glob over every `.md` under `.agent/`. Ticket §5 D1: globbing would pull
+**Universe:** `DECLARED_SPEC_FILES`, read from `AgenticManifest.md` (the one
+hand-written list, which this script also checks against the developer
+`.cgs`'s mounts) — not a glob over every `.md` under `.agent/`. Ticket §5 D1: globbing would pull
 in content that is not a spec at all (a mounted documentation repository's
 own theme/template docs, a planning ticket's own body) and the scope this
 checker cares about is specs — deliberately, exactly what D1 states.
@@ -65,49 +66,122 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# D1 (answered): the declared spec universe. Hand-maintained on purpose —
+# D1 (answered): the declared spec universe. Hand-written on purpose, in the manifest —
 # see the module docstring above for why a glob is the wrong tool here.
 # Paths are POSIX-relative to REPO_ROOT.
 ROOT_SPEC = ".agent/.local/.claude/CLAUDE.md"
 DIGEST_PATH = ".agent/.local/.localSpec/digest.md"
 
-DECLARED_SPEC_FILES: list[str] = [
-    ROOT_SPEC,
-    ".agent/.local/.claude/AGENT.md",
-    ".agent/.local/.localSpec/AdditionalSpecs.md",
-    ".agent/.local/.localSpec/audit.md",
-    ".agent/.local/.localSpec/AGENT.md",
-    ".agent/.local/.localSpec/DevTickets/README.md",
-    DIGEST_PATH,
-    ".agent/.distant/dev-sync/AgentConduct.md",
-    ".agent/.distant/dev-sync/AgentDataContract.md",
-    ".agent/.distant/dev-sync/DevSpecs.md",
-    ".agent/.distant/dev-sync/AGENT.md",
-    ".agent/.distant/dev-sync/legalTerms/anthropic.md",
-    ".agent/.distant/documentation/DOCSTYLE.md",
-    ".agent/.distant/ticket/TICKETLIFECYCLE.md",
-]
+#: Where the mounts and the spec files are written down (ticket
+#: the SpecTreeManifest ticket, D1): the manifest is the one list, and this
+#: script holds none of its own.
+MANIFEST_PATH = ".agent/.local/.localSpec/AgenticManifest.md"
+DEV_CGS_PATH = "examples/complexgitsync4dev.cgs"
+_AGENT_MOUNT_PREFIX = ".agent/"
 
-#: Declared specs that state no binding rule, so contribute no digest line.
-#: Hand-maintained beside `DECLARED_SPEC_FILES`, and for the same reason: an
-#: exemption is a deliberate act that carries its reason with it. Without
-#: this, `--check-digest` could only ask for a filler line per file, and a
-#: filler line is worse than none. A spec absent from both this table and
-#: the digest is the failure the AgentGuardrails ticket exists to prevent:
-#: `DevSpecs.md` sat in the universe, reachable, cited by nothing.
-DIGEST_EXEMPT: dict[str, str] = {
-    DIGEST_PATH: "the digest itself",
-    ".agent/.local/.claude/AGENT.md": "a pointer stating the reading order; carries no rules of its own",
-    ".agent/.local/.localSpec/AGENT.md": "the roster of agent roles; the handoff rules are cited from dev-sync/AGENT.md",
-    ".agent/.local/.localSpec/audit.md": "findings and open risks, not rules",
-    ".agent/.distant/dev-sync/AgentDataContract.md": "states the owner's intent and what a document can and cannot deliver; the binding half is AgentConduct.md §3",
-    ".agent/.distant/dev-sync/legalTerms/anthropic.md": "a provider-terms assessment, not a rule set",
-}
+
+@dataclass
+class Manifest:
+    """What `AgenticManifest.md` says: the mounts, the spec files, the exemptions."""
+
+    mounts: dict[str, str] = field(default_factory=dict)  # mount path -> repository
+    specs: list[str] = field(default_factory=list)  # POSIX-relative to REPO_ROOT
+    spec_mounts: dict[str, str] = field(default_factory=dict)  # spec file -> mount path
+    exempt: dict[str, str] = field(default_factory=dict)  # spec file -> reason, "" if none given
+    problems: list[str] = field(default_factory=list)  # malformed rows, reported by `--check`
+
+
+def _table_rows(text: str, heading: str) -> list[list[str]]:
+    """The cells of each body row of the table under the `## <heading>` section."""
+    rows: list[list[str]] = []
+    in_section = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            in_section = line[3:].strip() == heading
+            continue
+        stripped = line.strip()
+        if in_section and stripped.startswith("|") and not re.fullmatch(r"[|\s:\-]+", stripped):
+            rows.append([cell.strip() for cell in stripped.strip("|").split("|")])
+    return rows[1:]  # the first row is the header
+
+
+def parse_manifest(text: str, manifest_path: str = MANIFEST_PATH) -> Manifest:
+    """Read the manifest's two tables. Nothing is guessed: a malformed row is a problem, not a skip."""
+    manifest = Manifest()
+    for cells in _table_rows(text, "Mounts"):
+        if len(cells) != 4 or cells[2] not in ("local", "distant") or not cells[3]:
+            manifest.problems.append(f"{manifest_path}: malformed mount row: {cells}")
+            continue
+        mount = cells[0].strip("`")
+        if mount in manifest.mounts:
+            manifest.problems.append(f"{manifest_path}: mount '{mount}' is listed twice")
+        manifest.mounts[mount] = cells[1].strip("`")
+    for cells in _table_rows(text, "Spec files"):
+        link = _MD_LINK_RE.search(cells[0]) if cells else None
+        target = _resolve_link_target(manifest_path, link.group(1)) if link else None
+        if len(cells) != 3 or target is None:
+            manifest.problems.append(f"{manifest_path}: malformed spec-file row: {cells}")
+            continue
+        if target in manifest.spec_mounts:
+            manifest.problems.append(f"{manifest_path}: spec file '{target}' is listed twice")
+        manifest.specs.append(target)
+        manifest.spec_mounts[target] = cells[1].strip("`")
+        if cells[2].startswith("exempt:"):
+            manifest.exempt[target] = cells[2][len("exempt:"):].strip()
+        elif cells[2] != "cited":
+            manifest.problems.append(
+                f"{manifest_path}: '{target}' digest column must be 'cited' or 'exempt: <reason>'"
+            )
+    return manifest
+
+
+def dev_cgs_agent_mounts(cgs_path: str = DEV_CGS_PATH) -> dict[str, str]:
+    """The mounts under `.agent/` that the developer `.cgs` declares: path -> repository."""
+    with open(REPO_ROOT / cgs_path, "rb") as handle:
+        document = tomllib.load(handle)
+    mounts: dict[str, str] = {}
+    for entry in document.get("repos", []):
+        if isinstance(entry, dict):
+            path = str(entry.get("relative_path", ""))
+            if path.startswith(_AGENT_MOUNT_PREFIX):
+                mounts[path] = str(entry.get("repository", ""))
+    return mounts
+
+
+def run_check_manifest(manifest: Manifest, cgs_mounts: dict[str, str]) -> list[str]:
+    """The manifest and the developer `.cgs` agree, and every spec file belongs to a mount."""
+    failures = list(manifest.problems)
+    for mount in sorted(set(cgs_mounts) - set(manifest.mounts)):
+        failures.append(f"{mount}: mounted by {DEV_CGS_PATH} but not named in {MANIFEST_PATH}")
+    for mount in sorted(set(manifest.mounts) - set(cgs_mounts)):
+        failures.append(f"{mount}: named in {MANIFEST_PATH} but not mounted by {DEV_CGS_PATH}")
+    for mount in sorted(set(manifest.mounts) & set(cgs_mounts)):
+        if manifest.mounts[mount] != cgs_mounts[mount]:
+            failures.append(
+                f"{mount}: {MANIFEST_PATH} says {manifest.mounts[mount]}, "
+                f"{DEV_CGS_PATH} says {cgs_mounts[mount]}"
+            )
+    for spec in manifest.specs:
+        mount = manifest.spec_mounts[spec]
+        if mount not in manifest.mounts:
+            failures.append(f"{spec}: listed under mount '{mount}', which is not in the mounts table")
+        elif not spec.startswith(mount + "/"):
+            failures.append(f"{spec}: does not sit inside its mount '{mount}'")
+    return failures
+
+
+def load_manifest(path: str = MANIFEST_PATH) -> Manifest:
+    full = REPO_ROOT / path
+    if not full.is_file():
+        raise SystemExit(f"spec tree: {path} does not exist — it is the one list of spec files")
+    return parse_manifest(full.read_text(encoding="utf-8"), path)
+
 
 _MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 _BACKTICK_MD_RE = re.compile(r"`([A-Za-z0-9_.\-]+\.md)`")
@@ -166,6 +240,16 @@ def _resolve_link_target(source: str, raw_target: str) -> str | None:
         return resolved.relative_to(REPO_ROOT).as_posix()
     except ValueError:
         return None  # escapes the repo entirely — not a spec edge
+
+
+_MANIFEST = load_manifest()
+DECLARED_SPEC_FILES: list[str] = [ROOT_SPEC, *[f for f in _MANIFEST.specs if f != ROOT_SPEC]]
+
+#: Declared specs that state no binding rule, so contribute no digest line —
+#: read from the manifest's *digest* column, where each carries its reason. A
+#: spec absent from both the digest and this table is the failure the
+#: AgentGuardrails ticket exists to prevent.
+DIGEST_EXEMPT: dict[str, str] = dict(_MANIFEST.exempt)
 
 
 def extract_edges(source: str) -> list[Edge]:
@@ -239,7 +323,7 @@ def analyse(universe: list[str] = DECLARED_SPEC_FILES, root: str = ROOT_SPEC) ->
 def run_check(report: GraphReport) -> list[str]:
     failures: list[str] = []
     for f in report.missing_universe_files:
-        failures.append(f"{f}: declared in DECLARED_SPEC_FILES but does not exist")
+        failures.append(f"{f}: listed in the manifest but does not exist")
     for edge in report.broken_links:
         failures.append(f"{edge.source}: broken link -> {edge.target}")
     for f in report.orphans:
@@ -399,6 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     failures: list[str] = []
     if args.check:
         failures.extend(run_check(report))
+        failures.extend(run_check_manifest(_MANIFEST, dev_cgs_agent_mounts()))
     if args.check_digest:
         entries = parse_digest()
         failures.extend(run_check_digest(entries, report.reachable))

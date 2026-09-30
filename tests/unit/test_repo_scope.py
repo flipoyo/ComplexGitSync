@@ -476,7 +476,7 @@ class TestThisTreesOwnDeclaration:
         assert by_name[".claude"]["writable"] is True
 
     def test_this_projects_own_skills_are_writable(self):
-        """`cgitsync-dev`, `release`, `dogfooding` (`AgentSkillsSplit`).
+        """`.dev`, `.versioning`, `.auto` (`AgentSkillsSplit`).
 
         Dispatched from what used to be sections of `CLAUDE.md` and
         `AdditionalSpecs.md` — this project's own, so writable, the same

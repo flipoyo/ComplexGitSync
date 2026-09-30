@@ -275,3 +275,94 @@ def test_devspecs_is_cited_by_the_real_digest():
     reachable, and cited by nothing."""
     cited = {e.citation for e in spec_tree.parse_digest()}
     assert "DevSpecs.md" in cited
+
+
+# ---------------------------------------------------------------------------
+# The manifest — the SpecTreeManifest ticket
+# ---------------------------------------------------------------------------
+
+_MANIFEST_TEXT = """\
+## Mounts
+
+| mount | repository | side | role |
+|---|---|---|---|
+| `.agent/.local/.a` | `github:x/.a` | local | the a mount |
+| `.agent/.distant/b` | `github:x/b` | distant | the b mount |
+
+## Spec files
+
+| file | mount | digest |
+|---|---|---|
+| [A.md](../.a/A.md) | `.agent/.local/.a` | cited |
+| [B.md](../../.distant/b/B.md) | `.agent/.distant/b` | exempt: a pointer |
+"""
+_CGS_MOUNTS = {".agent/.local/.a": "github:x/.a", ".agent/.distant/b": "github:x/b"}
+
+
+def _manifest(text: str = _MANIFEST_TEXT):
+    return spec_tree.parse_manifest(text, ".agent/.local/.localSpec/AgenticManifest.md")
+
+
+def test_the_manifest_holds_every_mount_and_spec_in_this_repo():
+    manifest = spec_tree.load_manifest()
+    failures = spec_tree.run_check_manifest(manifest, spec_tree.dev_cgs_agent_mounts())
+    assert not failures, "\n".join(failures)
+
+
+def test_the_script_holds_no_list_of_its_own():
+    manifest = spec_tree.load_manifest()
+    assert set(spec_tree.DECLARED_SPEC_FILES) == set(manifest.specs)
+    assert spec_tree.DIGEST_EXEMPT == manifest.exempt
+
+
+def test_a_manifest_is_read_into_mounts_specs_and_exemptions():
+    manifest = _manifest()
+
+    assert manifest.mounts == _CGS_MOUNTS
+    assert manifest.specs == [".agent/.local/.a/A.md", ".agent/.distant/b/B.md"]
+    assert manifest.exempt == {".agent/.distant/b/B.md": "a pointer"}
+    assert spec_tree.run_check_manifest(manifest, _CGS_MOUNTS) == []
+
+
+def test_a_mount_in_the_cgs_and_not_the_manifest_is_a_failure():
+    failures = spec_tree.run_check_manifest(_manifest(), {**_CGS_MOUNTS, ".agent/.local/.new": "github:x/.new"})
+    assert any(".agent/.local/.new" in f and "not named" in f for f in failures)
+
+
+def test_a_mount_in_the_manifest_and_not_the_cgs_is_a_failure():
+    failures = spec_tree.run_check_manifest(_manifest(), {".agent/.local/.a": "github:x/.a"})
+    assert any(".agent/.distant/b" in f and "not mounted" in f for f in failures)
+
+
+def test_a_mount_whose_repository_differs_is_a_failure():
+    failures = spec_tree.run_check_manifest(_manifest(), {**_CGS_MOUNTS, ".agent/.local/.a": "github:x/other"})
+    assert any("github:x/other" in f for f in failures)
+
+
+def test_a_spec_file_outside_its_mount_is_a_failure():
+    text = _MANIFEST_TEXT.replace("`.agent/.local/.a` | cited", "`.agent/.distant/b` | cited")
+    failures = spec_tree.run_check_manifest(_manifest(text), _CGS_MOUNTS)
+    assert any("does not sit inside its mount" in f for f in failures)
+
+
+def test_an_exemption_with_no_reason_is_a_failure():
+    manifest = _manifest(_MANIFEST_TEXT.replace("a pointer", ""))
+    failures = spec_tree.run_check_digest_coverage(
+        [_entry("A.md")], universe=manifest.specs, exempt=manifest.exempt
+    )
+    assert any("no reason given" in f for f in failures)
+
+
+def test_a_malformed_row_is_reported_not_skipped():
+    failures = spec_tree.run_check_manifest(_manifest(_MANIFEST_TEXT.replace("| local |", "| sideways |")), _CGS_MOUNTS)
+    assert any("malformed mount row" in f for f in failures)
+    text = _MANIFEST_TEXT.replace("| cited |", "| mostly |")
+    assert any("digest column" in f for f in spec_tree.run_check_manifest(_manifest(text), _CGS_MOUNTS))
+
+
+def test_a_spec_file_listed_but_missing_on_disk_is_a_failure(fixture_root):
+    _write(fixture_root, "root.md", "No links.")
+
+    report = spec_tree.analyse(universe=["root.md", "gone.md"], root="root.md")
+
+    assert any("gone.md" in f and "does not exist" in f for f in spec_tree.run_check(report))

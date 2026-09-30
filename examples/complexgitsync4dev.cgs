@@ -18,8 +18,7 @@
 #
 #   ticket (.ticketing), dev-sync (DevSpec),
 #   documentation (DocSpec)         private, read-only  -> SCOPE private/distant
-#   cgitsync-dev (.dev), release (.versioning),
-#   dogfooding (.auto), .localSpec, .claude
+#   .dev, .versioning, .auto, .localSpec, .claude
 #                                   private, writable   -> SCOPE private/local
 #   ComplexGitSync, docs            the project's own   -> SCOPE project
 #
@@ -51,13 +50,12 @@
 # one level inside docs/ the way it used to be, for the same reason —
 # and is no longer declared in docs/DocCGS.cgs.
 #
-# cgitsync-dev, release and dogfooding are this project's own — private
-# and writable, dispatched from what used to be sections of CLAUDE.md
-# and AdditionalSpecs.md. Their repository names (.dev, .versioning,
-# .auto) do not match their skill/mount names (cgitsync-dev, release,
-# dogfooding): the repository name is what GitHub calls it, the
-# relative_path is what this tree calls it, and the two are free to
-# differ, the same way .ticketing (repository) mounts as "ticket" below.
+# .dev, .versioning and .auto are this project's own — private and
+# writable, dispatched from what used to be sections of CLAUDE.md and
+# AdditionalSpecs.md. Their relative_path is the repository's own name,
+# so what GitHub calls them and what this tree calls them agree;
+# .ticketing (repository) still mounts as "ticket" below, where the two
+# are free to differ.
 #
 # .localSpec also carries DevTickets/ — the whole planning surface: the
 # owner's short tickets, the ranked open planning tickets, and the archive.

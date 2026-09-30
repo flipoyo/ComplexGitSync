@@ -685,9 +685,9 @@ def test_the_workspace_mounts_sit_on_the_branches_their_cgs_names():
         ".agent/.distant/documentation": "main",
     }
     local = {
-        ".agent/.local/cgitsync-dev": "ComplexGitSync",
-        ".agent/.local/release": "ComplexGitSync",
-        ".agent/.local/dogfooding": "ComplexGitSync",
+        ".agent/.local/.dev": "ComplexGitSync",
+        ".agent/.local/.versioning": "ComplexGitSync",
+        ".agent/.local/.auto": "ComplexGitSync",
         ".agent/.local/.localSpec": "ComplexGitSync",
         ".agent/.local/.claude": "ComplexGitSync",
         ".cgitsync/.memory": "ComplexGitSync",

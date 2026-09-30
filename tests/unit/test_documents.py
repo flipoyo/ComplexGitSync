@@ -654,7 +654,7 @@ class TestCgsDocumentValid:
 
     def test_from_toml_parses_the_developer_install(self):
         """The developer install adds every agentic skill (AgentSkillsSplit:
-        ticket, dev-sync, documentation, cgitsync-dev, release, dogfooding),
+        ticket, dev-sync, documentation, .dev, .versioning, .auto),
         plus .localSpec/.claude and the project's own memory
         (memory-dev_1-2_MemoryOnboarding, 2026-09-17)."""
         repo_root = Path(__file__).parent.parent.parent
