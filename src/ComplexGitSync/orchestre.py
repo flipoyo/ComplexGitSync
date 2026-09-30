@@ -34,6 +34,7 @@ from .clone_guard import (
     format_block_error,
     is_populated_destination,
 )
+from .commit_message import CommitMessagePolicy
 from .discovery import (
     ImportSubmodulesReport,
     SubmoduleEntry,
@@ -3423,8 +3424,16 @@ class ComplexGitSyncClient:
         :exc:`~ComplexGitSync.errors.TreeNotReadyError` otherwise.  Repos with
         no staged changes are silently skipped.  After a successful execution
         the registry remains ``READY``.
+
+        In a tree that has adopted DevSpec, *message* is checked against
+        ``AgentConduct.md`` §2 first and a message that breaks it raises
+        :exc:`~ComplexGitSync.errors.GitSyncError` naming the rule, before
+        anything is staged or committed.  Any other tree is not checked.
         """
         registry = self.get_dependency_registry()
+        policy = CommitMessagePolicy.for_tree(registry.get(ROOT_REPO_ID).absolute_path)
+        if policy is not None:
+            policy.require(message)
         previous_state = registry.lifecycle_state
         scope = self._write_scope(registry, "commit", private, all_writable)
         self._log_event("commit_start", message=message, stage_all=stage_all, scope=scope.value)

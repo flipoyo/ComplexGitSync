@@ -224,3 +224,54 @@ def test_digest_line_not_matching_the_citation_shape_is_ignored(fixture_root):
     entries = spec_tree.parse_digest()
 
     assert entries == []
+
+
+# ---------------------------------------------------------------------------
+# Digest coverage — every declared spec contributes a line, or is exempt
+# ---------------------------------------------------------------------------
+
+
+def _entry(citation: str) -> "spec_tree.DigestEntry":
+    return spec_tree.DigestEntry(line_no=1, text=f"- rule. — `{citation}`", citation=citation)
+
+
+def test_digest_coverage_holds_in_this_repo():
+    failures = spec_tree.run_check_digest_coverage(spec_tree.parse_digest())
+    assert not failures, "\n".join(failures)
+
+
+def test_a_declared_spec_cited_by_no_line_is_a_failure():
+    universe = ["a/Rules.md", "a/Other.md"]
+    failures = spec_tree.run_check_digest_coverage(
+        [_entry("Rules.md")], universe=universe, exempt={}
+    )
+    assert len(failures) == 1
+    assert "a/Other.md" in failures[0]
+    assert "cited by no digest line" in failures[0]
+
+
+def test_an_exempt_spec_needs_no_line_but_needs_a_reason():
+    universe = ["a/Rules.md", "a/Roster.md"]
+    entries = [_entry("Rules.md")]
+    ok = spec_tree.run_check_digest_coverage(
+        entries, universe=universe, exempt={"a/Roster.md": "a roster, no rules"}
+    )
+    assert ok == []
+    silent = spec_tree.run_check_digest_coverage(
+        entries, universe=universe, exempt={"a/Roster.md": "  "}
+    )
+    assert any("no reason given" in f for f in silent)
+
+
+def test_an_exemption_naming_a_file_outside_the_universe_is_a_failure():
+    failures = spec_tree.run_check_digest_coverage(
+        [_entry("Rules.md")], universe=["a/Rules.md"], exempt={"a/Gone.md": "was a roster"}
+    )
+    assert any("a/Gone.md" in f and "not a declared spec file" in f for f in failures)
+
+
+def test_devspecs_is_cited_by_the_real_digest():
+    """The regression this ticket exists for: DevSpecs.md sat in the universe,
+    reachable, and cited by nothing."""
+    cited = {e.citation for e in spec_tree.parse_digest()}
+    assert "DevSpecs.md" in cited

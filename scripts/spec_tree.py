@@ -44,8 +44,9 @@ path does not exist on disk.
 **The digest** (`digest.md`, ticket §5 D3/D5): a short, hand-written file
 — one rule per line, each citing its source — that a session loads in
 full, in place of eager-loading the whole discursive tree. `--check-digest`
-verifies every citation still resolves inside the reachable universe;
-it does not, and cannot, verify that a digest line still accurately
+verifies every citation still resolves inside the reachable universe, and
+that every declared spec is cited by a digest line or exempt by name with a
+reason; it does not, and cannot, verify that a digest line still accurately
 summarises its source — that is an editorial judgement, not a graph
 property.
 
@@ -91,6 +92,22 @@ DECLARED_SPEC_FILES: list[str] = [
     ".agent/.distant/documentation/DOCSTYLE.md",
     ".agent/.distant/ticket/TICKETLIFECYCLE.md",
 ]
+
+#: Declared specs that state no binding rule, so contribute no digest line.
+#: Hand-maintained beside `DECLARED_SPEC_FILES`, and for the same reason: an
+#: exemption is a deliberate act that carries its reason with it. Without
+#: this, `--check-digest` could only ask for a filler line per file, and a
+#: filler line is worse than none. A spec absent from both this table and
+#: the digest is the failure the AgentGuardrails ticket exists to prevent:
+#: `DevSpecs.md` sat in the universe, reachable, cited by nothing.
+DIGEST_EXEMPT: dict[str, str] = {
+    DIGEST_PATH: "the digest itself",
+    ".agent/.local/.claude/AGENT.md": "a pointer stating the reading order; carries no rules of its own",
+    ".agent/.local/.localSpec/AGENT.md": "the roster of agent roles; the handoff rules are cited from dev-sync/AGENT.md",
+    ".agent/.local/.localSpec/audit.md": "findings and open risks, not rules",
+    ".agent/.distant/dev-sync/AgentDataContract.md": "states the owner's intent and what a document can and cannot deliver; the binding half is AgentConduct.md §3",
+    ".agent/.distant/dev-sync/legalTerms/anthropic.md": "a provider-terms assessment, not a rule set",
+}
 
 _MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 _BACKTICK_MD_RE = re.compile(r"`([A-Za-z0-9_.\-]+\.md)`")
@@ -286,6 +303,40 @@ def run_check_digest(
     return failures
 
 
+def run_check_digest_coverage(
+    entries: list[DigestEntry],
+    universe: list[str] = DECLARED_SPEC_FILES,
+    exempt: dict[str, str] = DIGEST_EXEMPT,
+) -> list[str]:
+    """Every declared spec is cited by a digest line, or exempt with a reason.
+
+    The other half of `run_check_digest`: that one asks whether a citation
+    resolves, and cannot notice a spec nobody cites. Whether a cited line
+    still says what its source says stays editorial; "this spec contributes
+    no rule at all" is a graph property, and this checks it.
+    """
+    failures: list[str] = []
+    cited: set[str] = set()
+    for entry in entries:
+        matches = _resolve_citation(entry.citation, universe)
+        if len(matches) == 1:
+            cited.add(matches[0])
+    for stale in sorted(set(exempt) - set(universe)):
+        failures.append(f"DIGEST_EXEMPT names '{stale}', which is not a declared spec file")
+    for f in universe:
+        if f in cited:
+            continue
+        if f in exempt:
+            if not exempt[f].strip():
+                failures.append(f"{f}: exempt from the digest with no reason given")
+            continue
+        failures.append(
+            f"{f}: declared spec is cited by no digest line — add its rules to digest.md, "
+            f"or name it in DIGEST_EXEMPT with the reason it states none"
+        )
+    return failures
+
+
 def flatten(root: str = ROOT_SPEC, universe: list[str] = DECLARED_SPEC_FILES) -> str:
     """One document, depth-first from *root*, each target inlined the
     first time it is reached. A report for reading, not what a session
@@ -351,6 +402,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.check_digest:
         entries = parse_digest()
         failures.extend(run_check_digest(entries, report.reachable))
+        failures.extend(run_check_digest_coverage(entries))
 
     if args.check or args.check_digest:
         if failures:

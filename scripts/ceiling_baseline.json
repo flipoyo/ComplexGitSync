@@ -85,6 +85,11 @@
       "loc": 116,
       "public_symbols": 6
     },
+    "commit_message.py": {
+      "internal_imports": 1,
+      "loc": 126,
+      "public_symbols": 1
+    },
     "config_document.py": {
       "internal_imports": 0,
       "loc": 90,
@@ -216,8 +221,8 @@
       "public_symbols": 31
     },
     "orchestre.py": {
-      "internal_imports": 157,
-      "loc": 5958,
+      "internal_imports": 158,
+      "loc": 5966,
       "public_symbols": 10
     },
     "paths.py": {
