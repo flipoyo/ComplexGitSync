@@ -1,4 +1,4 @@
-"""Unit tests for ``ledger_store`` — atomic, one-file-per-entry register persistence.
+"""Unit tests for ``ledger_store`` — atomic, one-file-per-entry ledger persistence.
 
 Filesystem-backed (Ring 1): everything runs against a real ``tmp_path``
 directory. The clock is still faked (via the same ``ClockProtocol`` shape
@@ -297,11 +297,11 @@ class TestHeadRepair:
         assert repaired == HeadPointer(seq=1, entry_hash=entry.entry_hash)
         assert LedgerStore(lgr_dir).read_head() == repaired
 
-    def test_verify_and_repair_head_on_empty_register_returns_none(self, tmp_path):
+    def test_verify_and_repair_head_on_empty_ledger_returns_none(self, tmp_path):
         lgr_dir = _lgr_dir(tmp_path)
         assert LedgerStore(lgr_dir).verify_and_repair_head() is None
 
-    def test_verify_and_repair_head_removes_stale_head_when_register_empty(self, tmp_path):
+    def test_verify_and_repair_head_removes_stale_head_when_ledger_empty(self, tmp_path):
         lgr_dir = _lgr_dir(tmp_path)
         LedgerStore(lgr_dir).ensure_dir()
         LedgerStore(lgr_dir).write_head(HeadPointer(seq=7, entry_hash="sha256:" + "a" * 64))

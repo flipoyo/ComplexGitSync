@@ -957,8 +957,8 @@ def test_init_from_submodules_forwards_every_flag_to_the_client(monkeypatch, cap
 # ---------------------------------------------------------------------------
 
 
-def test_verify_command_says_no_history_for_an_unstarted_register(tmp_path, capsys):
-    """An empty register is "nothing recorded", never "chain clean".
+def test_verify_command_says_no_history_for_an_unstarted_ledger(tmp_path, capsys):
+    """An empty ledger is "nothing recorded", never "chain clean".
 
     Exit 0 all the same: a new workspace is not a broken one.
     """

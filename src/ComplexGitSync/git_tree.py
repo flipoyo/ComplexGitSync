@@ -1400,7 +1400,7 @@ def cgitsync_managed_state_paths(repo: WorkingRepo) -> set[Path]:
     """Return paths ``cgitsync`` itself manages under *repo* — never real project content.
 
     Every repo gets its generated ``.cgitsync/`` runtime-state directory
-    (snapshots, register, run logs — see ``orchestre/``'s
+    (snapshots, ledger, run logs — see ``orchestre/``'s
     ``write_gts_snapshot``) excluded. Only the tree's root additionally
     gets its own ``<name>.lgr`` hash-chained register file excluded — that
     loose file only ever exists at the root, never at a nested repo.

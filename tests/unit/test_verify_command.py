@@ -52,7 +52,7 @@ def _append(lgr_dir: Path, clock: _FixedClock, *, command: str, state_id: str):
 
 
 class TestClientVerify:
-    def test_an_empty_register_is_no_history_not_a_verified_chain(self, tmp_path: Path):
+    def test_an_empty_ledger_is_no_history_not_a_verified_chain(self, tmp_path: Path):
         """The bug this milestone exists for.
 
         Nothing writes ``.cgitsync/lgr`` yet, so reading it empty and
@@ -183,7 +183,7 @@ class TestClientVerify:
 
 
 class TestVerifyCli:
-    def test_verify_command_says_no_history_for_an_unstarted_register(
+    def test_verify_command_says_no_history_for_an_unstarted_ledger(
         self, tmp_path: Path, capsys
     ):
         (tmp_path / ".cgitsync").mkdir()
