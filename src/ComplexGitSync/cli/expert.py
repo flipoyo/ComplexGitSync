@@ -6,7 +6,7 @@ Ring: 4. Contract: register, dispatch, and execute the 21 Expert-tier commands
     import-submodules, init-from-submodules, verify, memory, self-history).
     Argument/prompt collection only — delegates all semantics to
     ComplexGitSyncClient; never touches Git.
-Imports: _shared, errors, git_repo, help_text, memory, memory_prompt, orchestre
+Imports: _shared, errors, git_repo, help_text, memory, memory_asof, memory_prompt, orchestre
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from ..memory.integrity import HistoryState
 from ..memory.self_history import VALID_AGENT_ROLES, AgentInfo
 from ..operations import MERGE_RESOLVE_HINT
 from ..orchestre import ComplexGitSyncClient
-from . import memory_prompt
+from . import memory_asof, memory_prompt
 from ._shared import (
     _add_gitignore_sync_arguments,
     _add_json_argument,
@@ -68,7 +68,7 @@ COMMANDS: dict[str, str] = {
     "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
     "init-from-submodules": "Adopt a submodule-based checkout: discover, initialise, then convert its submodules.",
     "verify": "Verify the hash-chained .cgitsync/lgr ledger for tamper-evidence.",
-    "memory": "What this workspace remembers: read it (status, list, show, explore), keep it in a repository.",
+    "memory": "What this workspace remembers: read it (status, list, show, explore, as-of), keep it in a repository.",
     "self-history": "The private record of agent work on this project (add, adopt).",
 }
 
@@ -657,6 +657,7 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     )
     _add_search_dir_argument(adopt)
     memory_prompt.register(memory_commands)
+    memory_asof.register(memory_commands)
 
     migrate = memory_commands.add_parser(
         "migrate",

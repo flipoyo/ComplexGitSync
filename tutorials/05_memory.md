@@ -342,6 +342,21 @@ seq=32  2026-09-17T10:11:05Z  push
     push    YourProject         -> github:you/YourProject refs/heads/memory-dev
 ```
 
+**What was this tree at a given time?** `memory as-of` answers that from the
+ledger: the State recorded at or before the moment you give, not the nearest
+and not the latest.
+
+```bash
+pixi run cgitsync memory as-of 2026-09-30            # a bare date: the end of that day
+pixi run cgitsync memory as-of 2026-09-30T17:00      # UTC, like the ledger; add +02:00 for another zone
+```
+
+It prints the entry and the `memory show <state>` to type next. A time before
+the first entry says nothing was recorded yet. If the chain does not verify,
+or a clock moved backwards in it (`verify` calls that *time-inconsistent*),
+the answer comes with `answer_reliable=false` and a warning instead of
+passing as clean.
+
 `cgitsync verify` is the one to run if you ever doubt what you are holding.
 It answers **verified**, **no-history**, **legacy** or **corrupt**, and it
 never repairs anything — a record that can be edited back into looking clean

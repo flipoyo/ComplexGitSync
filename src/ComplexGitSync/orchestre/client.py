@@ -854,6 +854,10 @@ class ComplexGitSyncClient:
         """What this workspace remembers, in one answer."""
         return self._memory_commands.memory_status(cgshome)
 
+    def memory_as_of(self, cgshome: str | Path, moment: str) -> dict[str, Any]:
+        """What was this tree at *moment*: the State the chain recorded at or before it."""
+        return self._memory_commands.memory_as_of(cgshome, moment)
+
     def memory_list(self, cgshome: str | Path) -> list[dict[str, Any]]:
         """Every State this workspace holds, with what the ledger says about it."""
         return self._memory_commands.memory_list(cgshome)

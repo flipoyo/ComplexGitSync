@@ -50,6 +50,7 @@ from ..memory import (
 )
 from ..memory import self_history as self_history_store
 from ..memory.agent_contract import AgentContractRecord
+from ..memory.as_of import AsOf
 from ..memory.commit_log import (
     COMMIT_LOG_DIR_NAME,
     SCOPE_PRIVATE,
@@ -1341,6 +1342,31 @@ class MemoryCommands:
             "last_recorded_at": entries[-1].recorded_at if entries else None,
             "genesis_toolchain": dict(entries[0].toolchain) if entries else {},
             "latest_toolchain": dict(entries[-1].toolchain) if entries else {},
+        }
+
+    def memory_as_of(self, cgshome: str | Path, moment: str) -> dict[str, Any]:
+        """What was this tree at *moment*? The State the chain recorded at or before it.
+
+        Read-only and local: it reads the same folded-and-pending ledger every
+        `memory` command reads. ``entry`` is the last entry, in chain order, recorded at
+        or before *moment* (see `AsOf`), or ``None`` when nothing was recorded yet.
+
+        ``reliable`` is false whenever the chain does not verify cleanly, and
+        ``history`` says why — notably ``time-inconsistent``, where a clock moved
+        backwards and "at or before" can name an entry the workspace did not hold at
+        that moment. The answer is still returned, flagged, never silently confident.
+        """
+        entries = PendingMemory(Path(cgshome) / ".cgitsync").read_ledger_entries()
+        resolved = AsOf.parse_moment(moment)
+        report = ChainVerifier.verify(entries)
+        chosen = AsOf.select(entries, resolved)
+        return {
+            "moment": resolved,
+            "entry": None if chosen is None else {"seq": chosen.seq, "recorded_at": chosen.recorded_at, "command": chosen.command, "state": MemoryStates.parse_hash(chosen.state_id) or ""},
+            "first_recorded_at": AsOf.first_recorded_at(entries),
+            "reliable": report.is_verified,
+            "history": report.state.name.lower().replace("_", "-"),
+            "findings": [f"seq={seq} {finding.name}: {detail}" for seq, finding, detail in report.findings[:5]],
         }
 
     def memory_list(self, cgshome: str | Path) -> list[dict[str, Any]]:

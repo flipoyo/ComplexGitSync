@@ -85,6 +85,11 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
         "that names it. Takes the State's hash or any unambiguous prefix of it.",
         ("cgitsync memory show 3fa2", "cgitsync memory show 3fa2 --full", "cgitsync memory show env=9c1e"),
     ),
+    ("memory", "as-of"): (
+        "What was this tree at a given time? The State the memory recorded at or before it, and the "
+        "command to look at it. Times are UTC unless they carry an offset; a bare date means the end of that day.",
+        ("cgitsync memory as-of 2026-09-30", "cgitsync memory as-of 2026-09-30T17:00", "cgitsync memory as-of 2026-09-30T17:00+02:00"),
+    ),
     ("memory", "init"): (
         "Print the .cgs entry that would mount this project's memory, the branch it would use and "
         "the command that creates its repository. Changes nothing.",
