@@ -57,7 +57,16 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
     ("clone",): (None, ("cgitsync clone install.cgs --target-dir ~/work",)),
     ("pull",): (None, ("cgitsync pull", "cgitsync pull --private")),
     ("pull-force",): (None, ("cgitsync pull-force", "cgitsync pull-force --private")),
-    ("autofix",): (None, ("cgitsync autofix", 'cgitsync autofix --error "<pasted git error>" --repo .memory')),
+    ("autofix",): (
+        "Diagnose and repair the situation named by the last failing command's error, or, with "
+        "--tip-commit, find a latest commit message a shell damaged — a defect that logged no error.",
+        (
+            "cgitsync autofix",
+            'cgitsync autofix --error "<pasted git error>" --repo .memory',
+            "cgitsync autofix --tip-commit",
+            "cgitsync autofix --tip-commit --repo docs --message-file corrected.txt",
+        ),
+    ),
     ("checkout",): (None, ("cgitsync checkout main", "cgitsync checkout v1.2.0 --ref-kind tag")),
     ("branch",): (None, ("cgitsync branch feature-x", "cgitsync branch feature-x --private")),
     ("close-branch",): (None, ("cgitsync close-branch feature-x",)),

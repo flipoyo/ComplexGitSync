@@ -201,14 +201,12 @@ class TreeCommands:
         repository's name is normally visible in its own remote URL)
         before falling back to every repository in the tree.
         """
-        from ..autofix import FromCliRepair
-
         if self.client.registry is None:
             raise GitSyncError("autofix: no workspace loaded.")
         root_entry = self.client.registry.get("root")
         logs_dir = root_entry.absolute_path / ".cgitsync" / "logs"
         self.client._log_event("autofix_start", error=error, repo_name=repo_name)
-        outcome = FromCliRepair().run(
+        outcome = self._autofix_dispatcher().run(
             self.client.registry,
             self.client.git_runner,
             logs_dir=logs_dir,
@@ -216,6 +214,41 @@ class TreeCommands:
             repo_name=repo_name,
         )
         self.client._log_event("autofix_end", repaired=outcome.repaired, detail=outcome.detail)
+        return outcome
+
+    @staticmethod
+    def _autofix_dispatcher():
+        """The one place the autofix package is imported: it loads lazily, only when asked."""
+        from ..autofix import FromCliRepair
+
+        return FromCliRepair()
+
+    def autofix_tip_commits(self, *, repo_name: str | None = None) -> dict:
+        """Read every writable repository's tip commit and say which messages are malformed.
+
+        The way into `autofix` for a defect that raised no error: a commit made by a bare
+        ``git commit`` outside ``cgitsync``, whose message a shell damaged
+        (AutofixBlindSpot). Read-only. See `FromCliRepair.inspect_tip_commits`.
+        """
+        if self.client.registry is None:
+            raise GitSyncError("autofix: no workspace loaded.")
+        answer = self._autofix_dispatcher().inspect_tip_commits(self.client.registry, self.client.git_runner, repo_name=repo_name)
+        self.client._log_event("autofix_tip_commits", checked=answer["checked"], flagged=len(answer["findings"]))
+        return answer
+
+    def autofix_amend(self, repo_name: str, message: str, *, force: bool = False) -> "RepairOutcome":
+        """Rewrite *repo_name*'s malformed tip commit message to *message* — locally, never pushing.
+
+        Refuses a commit a remote already holds unless *force*, and never rewrites a commit
+        that is not malformed. See `MalformedCommitMessageRepair.amend`.
+        """
+        if self.client.registry is None:
+            raise GitSyncError("autofix: no workspace loaded.")
+        self.client._log_event("autofix_amend_start", repo_name=repo_name, force=force)
+        outcome = self._autofix_dispatcher().amend_tip_commit(
+            self.client.registry, self.client.git_runner, repo_name=repo_name, replacement=message, force=force
+        )
+        self.client._log_event("autofix_amend_end", repaired=outcome.repaired, detail=outcome.detail)
         return outcome
 
     def checkout(

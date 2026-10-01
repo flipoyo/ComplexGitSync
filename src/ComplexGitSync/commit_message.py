@@ -99,13 +99,17 @@ class CommitMessagePolicy:
         stems = (name, *(str(script) for script in scripts))
         return cls(stems=tuple(dict.fromkeys(stems)), version=version)
 
-    def violations(self, message: str) -> list[str]:
-        """Every rule *message* breaks, each named; empty when it conforms."""
+    def violations(self, message: str, *, any_version: bool = False) -> list[str]:
+        """Every rule *message* breaks, each named; empty when it conforms.
+
+        *any_version* accepts a prefix naming any version, not only the current one:
+        for judging a commit already made, which was rightly written at an earlier release.
+        """
         broken: list[str] = []
         body = message.strip()
         if not body:
             return ["the message is empty"]
-        if not self._has_prefix(body):
+        if not (self._has_any_version_prefix(body) if any_version else self._has_prefix(body)):
             broken.append(
                 f"it must start with '<project-name><version>' -- for example "
                 f"'{self.stems[-1]}{self.version}' -- with no space and no 'v'"
@@ -139,6 +143,10 @@ class CommitMessagePolicy:
             "Write the message again in plain English, one message for every "
             "repository the change touched."
         )
+
+    def _has_any_version_prefix(self, body: str) -> bool:
+        """``<project-name><some version>`` at the start, e.g. ``cgitsync3.1.1``."""
+        return any(re.match(rf"{re.escape(stem)}\d+\.\d+\.\d+(?![\w.])", body, re.IGNORECASE) for stem in self.stems)
 
     def _has_prefix(self, body: str) -> bool:
         lowered = body.lower()

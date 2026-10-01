@@ -17,7 +17,7 @@
     },
     "autofix/base.py": {
       "internal_imports": 2,
-      "loc": 67,
+      "loc": 73,
       "public_symbols": 4
     },
     "autofix/repair_divergent_user.py": {
@@ -26,8 +26,8 @@
       "public_symbols": 1
     },
     "autofix/repair_from_cli.py": {
-      "internal_imports": 9,
-      "loc": 118,
+      "internal_imports": 10,
+      "loc": 191,
       "public_symbols": 2
     },
     "autofix/repair_merge_conflict.py": {
@@ -66,7 +66,7 @@
       "public_symbols": 5
     },
     "cli/expert.py": {
-      "internal_imports": 35,
+      "internal_imports": 36,
       "loc": 2194,
       "public_symbols": 1
     },
@@ -92,7 +92,7 @@
     },
     "commit_message.py": {
       "internal_imports": 1,
-      "loc": 126,
+      "loc": 132,
       "public_symbols": 1
     },
     "config_document.py": {
@@ -132,7 +132,7 @@
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 1221,
+      "loc": 1289,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -287,7 +287,7 @@
     },
     "orchestre/client.py": {
       "internal_imports": 57,
-      "loc": 1398,
+      "loc": 1404,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -367,7 +367,7 @@
     },
     "orchestre/tree_commands.py": {
       "internal_imports": 23,
-      "loc": 929,
+      "loc": 957,
       "public_symbols": 1
     },
     "paths.py": {

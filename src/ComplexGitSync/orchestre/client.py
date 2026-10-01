@@ -516,6 +516,14 @@ class ComplexGitSyncClient:
         matches it."""
         return self._tree_commands.autofix(error=error, repo_name=repo_name)
 
+    def autofix_tip_commits(self, *, repo_name: str | None = None) -> dict:
+        """Read every writable repository's tip commit and say which messages are malformed."""
+        return self._tree_commands.autofix_tip_commits(repo_name=repo_name)
+
+    def autofix_amend(self, repo_name: str, message: str, *, force: bool = False) -> "RepairOutcome":
+        """Rewrite *repo_name*'s malformed tip commit message to *message*, locally and never pushing."""
+        return self._tree_commands.autofix_amend(repo_name, message, force=force)
+
     def checkout(
         self,
         branch_name: str,

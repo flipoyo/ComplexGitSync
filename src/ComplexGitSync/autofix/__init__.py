@@ -1,7 +1,7 @@
 """autofix — repairs a git situation, dispatched from the error `cgitsync`
 already produced.
 
-One ``repair_*.py`` module per repair purpose, each with its own class
+One ``repair_*.py`` module per repair purpose (the dispatcher also reads tip commits, for a defect that logged no error), each with its own class
 (``base.Repair``'s shape) — see ``.agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md`` §7.
 ``repair_from_cli.FromCliRepair`` is the dispatcher `cgitsync autofix`
 calls; every other module registers into it. Growth happens by adding a

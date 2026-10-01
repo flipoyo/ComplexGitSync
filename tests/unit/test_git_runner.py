@@ -1002,6 +1002,18 @@ class _FakeGitRunner:
     def stage_path(self, repo_path, relative_path: str) -> None:
         return None
 
+    def head_commit(self, repo_path):
+        return None
+
+    def head_is_published(self, repo_path) -> bool:
+        return False
+
+    def operation_in_progress(self, repo_path):
+        return None
+
+    def amend_head_message(self, repo_path, message: str, *, user_name=None, user_email=None) -> None:
+        return None
+
     def commit(self, repo_path, message: str, *, user_name=None, user_email=None) -> None:
         return None
 

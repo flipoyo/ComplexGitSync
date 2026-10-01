@@ -12,6 +12,7 @@ Design reference: .agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_D
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -34,16 +35,21 @@ class RepairOutcome:
 
 @dataclass(frozen=True, slots=True)
 class Situation:
-    """One already-raised error, paired with the repository it named.
+    """One repository, and what is known about the trouble in it.
 
-    Carries nothing else — a :class:`Repair`'s own ``matches``/``repair``
-    decide everything from ``repo`` and ``source_error`` themselves, so a
-    new repair module never has to ask this dataclass to grow a field for
-    its own purposes.
+    Two sources of trouble, never both at once. An already-raised error
+    (``source_error``, from the run log) is what every repair but one reads. A
+    commit nobody logged — one made by a bare ``git commit`` outside ``cgitsync``, whose
+    message was damaged by the shell it was pasted into — has no error to read, so
+    ``commit_message`` carries the tip commit's own message and ``project_root`` the
+    tree whose rule it is judged against (AutofixBlindSpot). Both default to
+    "absent", so no existing repair had to change.
     """
 
     repo: "WorkingRepo"
     source_error: str
+    commit_message: str | None = None
+    project_root: Path | None = None
 
 
 class Repair(Protocol):

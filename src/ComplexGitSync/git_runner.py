@@ -332,6 +332,21 @@ class GitRunnerProtocol(Protocol):
 
     def stage_path(self, repo_path: Path | str, relative_path: str) -> None: ...
 
+    def head_commit(self, repo_path: Path | str) -> tuple[str, int, str] | None: ...
+
+    def head_is_published(self, repo_path: Path | str) -> bool: ...
+
+    def operation_in_progress(self, repo_path: Path | str) -> str | None: ...
+
+    def amend_head_message(
+        self,
+        repo_path: Path | str,
+        message: str,
+        *,
+        user_name: str | None = None,
+        user_email: str | None = None,
+    ) -> None: ...
+
     def commit(
         self,
         repo_path: Path | str,
@@ -806,6 +821,73 @@ class GitRunner:
     def stage_path(self, repo_path: Path | str, relative_path: str) -> None:
         """Stage a single path in *repo_path* (``git add -- <relative_path>``)."""
         self._run("add", "--", relative_path, cwd=repo_path)
+
+    def head_commit(self, repo_path: Path | str) -> tuple[str, int, str] | None:
+        """The tip commit as ``(sha, parent count, message)``, or ``None`` on an unborn branch.
+
+        A question (:meth:`_query`, never raises). The message is what ``git log -1
+        --format=%B`` prints, trailing newline removed, so it is exactly what a reader of
+        the commit sees. The parent count is what tells a merge commit, whose message
+        Git wrote and nobody hand-wrote, from a commit a person made.
+        """
+        parents = self._query("rev-list", "--parents", "-n", "1", "HEAD", cwd=repo_path)
+        if parents.returncode != 0 or not parents.stdout.strip():
+            return None
+        sha, *parent_shas = parents.stdout.split()
+        message = self._query("log", "-1", "--format=%B", "HEAD", cwd=repo_path)
+        return sha, len(parent_shas), message.stdout.rstrip("\n")
+
+    def head_is_published(self, repo_path: Path | str) -> bool:
+        """Whether any remote-tracking ref already holds the tip commit.
+
+        Read-only and offline: it asks what this clone last knew about its remotes, which
+        is every push this clone ever made. It cannot see a push made from another clone
+        since the last fetch, so a ``False`` means "this clone has not published it", not
+        "nobody has". The same question `local_only_commit_count` asks, for one commit.
+        """
+        held = self._query("for-each-ref", "--contains", "HEAD", "--format=%(refname)", "refs/remotes", cwd=repo_path)
+        return held.returncode == 0 and bool(held.stdout.strip())
+
+    #: What Git keeps in its directory while an operation waits for a person, by what it is called.
+    _IN_PROGRESS = (("rebase-merge", "a rebase"), ("rebase-apply", "a rebase"), ("MERGE_HEAD", "a merge"),
+                    ("CHERRY_PICK_HEAD", "a cherry-pick"), ("REVERT_HEAD", "a revert"))
+
+    def operation_in_progress(self, repo_path: Path | str) -> str | None:
+        """The rebase, merge, cherry-pick or revert stopped in *repo_path*, or ``None``.
+
+        Read through ``git rev-parse --git-path``, so it is right for a worktree or a submodule
+        whose ``.git`` is a file. While one of these waits, the tip commit is not a settled
+        commit: it is the one the operation stands on.
+        """
+        for name, label in self._IN_PROGRESS:
+            located = self._query("rev-parse", "--git-path", name, cwd=repo_path)
+            path = Path(located.stdout.strip())
+            if located.returncode == 0 and located.stdout.strip() and (path if path.is_absolute() else Path(repo_path) / path).exists():
+                return label
+        return None
+
+    def amend_head_message(
+        self,
+        repo_path: Path | str,
+        message: str,
+        *,
+        user_name: str | None = None,
+        user_email: str | None = None,
+    ) -> None:
+        """Rewrite the tip commit's message and nothing else (``git commit --amend --only -m``).
+
+        ``--only`` with no paths commits the tip's own tree, so anything staged in the
+        index at this moment is left staged and is never folded into the amended commit.
+        Rewrites history: the commit gets a new sha. Callers decide whether that is
+        allowed; this method never pushes.
+        """
+        args: list[str] = []
+        if user_name is not None:
+            args.extend(["-c", f"user.name={user_name}"])
+        if user_email is not None:
+            args.extend(["-c", f"user.email={user_email}"])
+        args.extend(["commit", "--amend", "--only", "--allow-empty", "-m", message])
+        self._run(*args, cwd=repo_path)
 
     def commit(
         self,
