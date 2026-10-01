@@ -36,6 +36,7 @@ from ..git_tree import (
 from ..git_tree_branch import GitTreeBranches, tree_project_name
 from ..operations import (
     MERGE_INTO_ACTS,
+    RepoBranches,
     ResolveOutcome,
     paths_outside_scope,
 )
@@ -276,6 +277,18 @@ class TreeCommands:
         self.client._log_tree_transition(previous_state, registry.lifecycle_state, reason="branch")
         self.client._log_event("branch_end", branch_name=branch_name)
         return registry
+
+    def list_branches(self, *, private: bool = False) -> tuple[RepoBranches, ...]:
+        """Every local branch of every repository in the tree, read-only.
+
+        Without ``private`` that is the whole tree — a private/local
+        repository carries branches of its own too, and they are part of
+        what a branch of this project means. ``private`` narrows it to the
+        writable configuration repositories, as it does for ``branch``.
+        """
+        registry = self.client.get_dependency_registry()
+        scope = GitProbes.scope_for(registry, private=private, command="branch --list")
+        return self.client.orchestre.git_tree.git.list_branches(self.client.git_runner, scope=scope)
 
     def close_branch(self, branch_name: str, *, private: bool = False) -> WorkingGitTree:
         """Rename *branch_name* to its closed name across the full tree, leaf-first.

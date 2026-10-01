@@ -65,6 +65,7 @@ from ..memory.commit_log import (
 )
 from ..operations import (
     BranchTopologyReport,
+    RepoBranches,
     RepoOutcome,
     ResolveOutcome,
 )
@@ -534,6 +535,10 @@ class ComplexGitSyncClient:
     ) -> WorkingGitTree:
         """Create *branch_name* across the full tree without checkout."""
         return self._tree_commands.branch(branch_name, private=private)
+
+    def list_branches(self, *, private: bool = False) -> tuple[RepoBranches, ...]:
+        """List the local branches of every repository in the tree, without changing anything."""
+        return self._tree_commands.list_branches(private=private)
 
     def close_branch(self, branch_name: str, *, private: bool = False) -> WorkingGitTree:
         """Rename *branch_name* to its closed name across the full tree, leaf-first."""

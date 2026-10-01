@@ -11,6 +11,7 @@ from .branch import (
     BranchOperation,
     BranchTopologyConflict,
     BranchTopologyReport,
+    RepoBranches,
 )
 from .commit import (
     CommitOperation,
@@ -54,6 +55,7 @@ checkout_tree = BranchOperation.checkout_tree
 close_branch = BranchOperation.close_branch
 commit_tree = CommitOperation.commit_tree
 create_global_branch = BranchOperation.create_global_branch
+list_branches = BranchOperation.list_branches
 freeze_release_tree = PushOperation.freeze_release_tree
 merge_into_status = MergeOperation.merge_into_status
 merge_into_tree = MergeOperation.merge_into_tree
@@ -85,6 +87,7 @@ __all__ = [
     "PreflightSeverity",
     "PushOperation",
     "RemovalOperation",
+    "RepoBranches",
     "RepoOutcome",
     "ResolveOutcome",
     "RestartOperation",
@@ -95,6 +98,7 @@ __all__ = [
     "commit_tree",
     "create_global_branch",
     "freeze_release_tree",
+    "list_branches",
     "merge_into_status",
     "merge_into_tree",
     "merge_source_ref",

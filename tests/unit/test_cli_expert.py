@@ -58,6 +58,9 @@ def _load_cli_expert():
     shared = sys.modules.get("ComplexGitSync.cli._shared") or _load_cli_module(
         "ComplexGitSync.cli._shared", "cli/_shared.py"
     )
+    # Loaded afresh, after ``_shared``, so it binds the same ``_shared`` the
+    # stubs below patch rather than one imported earlier in the session.
+    _load_cli_module("ComplexGitSync.cli.branch_command", "cli/branch_command.py")
     expert = _load_cli_module("ComplexGitSync.cli.expert", "cli/expert.py")
     return expert, shared
 

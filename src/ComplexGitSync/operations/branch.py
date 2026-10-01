@@ -38,6 +38,15 @@ from .outcome import RepoOutcome
 from .preflight import Preflight
 
 
+@dataclass(frozen=True)
+class RepoBranches:
+    """The local branches of one repository, and which one it is on."""
+
+    name: str
+    current: str | None
+    branches: tuple[str, ...]
+
+
 @dataclass(slots=True)
 class BranchTopologyConflict:
     """A single branch alignment conflict in the workspace topology.
@@ -303,6 +312,29 @@ class BranchOperation:
         tree.recompute_tree_state()
 
     @staticmethod
+    def list_branches(
+        tree: WorkingGitTree,
+        git_runner: GitRunner,
+        *,
+        scope: RepoScope = RepoScope.ALL,
+    ) -> tuple[RepoBranches, ...]:
+        """Every local branch of every repository in *scope*, parent-first.
+
+        Read-only: asks Git, writes nothing. A repository not yet cloned has
+        no branches to list and is reported with none rather than skipped,
+        so the answer names every repository the tree holds.
+        """
+        return tuple(
+            RepoBranches(
+                name=repo.name,
+                current=git_runner.current_branch(repo.absolute_path),
+                branches=tuple(git_runner.local_branches(repo.absolute_path)),
+            )
+            for repo in iter_tree(tree, scope)
+            if repo.absolute_path.is_dir()
+        )
+
+    @staticmethod
     def close_branch(
         tree: WorkingGitTree,
         git_runner: GitRunner,
@@ -521,4 +553,5 @@ __all__ = [
     "BranchOperation",
     "BranchTopologyConflict",
     "BranchTopologyReport",
+    "RepoBranches",
 ]

@@ -914,6 +914,9 @@ class _FakeGitRunner:
     def current_branch(self, repo_path):
         return "main"
 
+    def local_branches(self, repo_path) -> list[str]:
+        return ["main"]
+
     def local_branch_exists(self, repo_path, branch: str) -> bool:
         return True
 

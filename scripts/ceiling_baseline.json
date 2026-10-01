@@ -50,6 +50,11 @@
       "loc": 626,
       "public_symbols": 0
     },
+    "cli/branch_command.py": {
+      "internal_imports": 6,
+      "loc": 70,
+      "public_symbols": 1
+    },
     "cli/configuration.py": {
       "internal_imports": 10,
       "loc": 368,
@@ -66,8 +71,23 @@
       "public_symbols": 5
     },
     "cli/expert.py": {
-      "internal_imports": 35,
-      "loc": 2194,
+      "internal_imports": 36,
+      "loc": 2176,
+      "public_symbols": 1
+    },
+    "cli/help_format.py": {
+      "internal_imports": 9,
+      "loc": 136,
+      "public_symbols": 5
+    },
+    "cli/help_text.py": {
+      "internal_imports": 0,
+      "loc": 175,
+      "public_symbols": 2
+    },
+    "cli/memory_asof.py": {
+      "internal_imports": 5,
+      "loc": 57,
       "public_symbols": 1
     },
     "cli/memory_prompt.py": {
@@ -77,7 +97,7 @@
     },
     "cli/minimalist.py": {
       "internal_imports": 16,
-      "loc": 780,
+      "loc": 765,
       "public_symbols": 1
     },
     "cli/suggest.py": {
@@ -132,12 +152,12 @@
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 1221,
+      "loc": 1230,
       "public_symbols": 4
     },
     "git_tree.py": {
-      "internal_imports": 36,
-      "loc": 1356,
+      "internal_imports": 38,
+      "loc": 1365,
       "public_symbols": 27
     },
     "git_tree_branch.py": {
@@ -169,6 +189,11 @@
       "internal_imports": 0,
       "loc": 122,
       "public_symbols": 3
+    },
+    "memory/as_of.py": {
+      "internal_imports": 1,
+      "loc": 74,
+      "public_symbols": 1
     },
     "memory/commit_log.py": {
       "internal_imports": 0,
@@ -231,14 +256,14 @@
       "public_symbols": 2
     },
     "operations/__init__.py": {
-      "internal_imports": 16,
-      "loc": 108,
-      "public_symbols": 22
+      "internal_imports": 17,
+      "loc": 112,
+      "public_symbols": 23
     },
     "operations/branch.py": {
       "internal_imports": 17,
-      "loc": 437,
-      "public_symbols": 3
+      "loc": 465,
+      "public_symbols": 4
     },
     "operations/commit.py": {
       "internal_imports": 7,
@@ -286,8 +311,8 @@
       "public_symbols": 1
     },
     "orchestre/client.py": {
-      "internal_imports": 57,
-      "loc": 1398,
+      "internal_imports": 58,
+      "loc": 1402,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -306,7 +331,7 @@
       "public_symbols": 1
     },
     "orchestre/document_loader.py": {
-      "internal_imports": 16,
+      "internal_imports": 17,
       "loc": 342,
       "public_symbols": 1
     },
@@ -341,7 +366,7 @@
       "public_symbols": 1
     },
     "orchestre/memory_setup.py": {
-      "internal_imports": 12,
+      "internal_imports": 14,
       "loc": 206,
       "public_symbols": 2
     },
@@ -366,8 +391,8 @@
       "public_symbols": 1
     },
     "orchestre/tree_commands.py": {
-      "internal_imports": 23,
-      "loc": 929,
+      "internal_imports": 24,
+      "loc": 940,
       "public_symbols": 1
     },
     "paths.py": {

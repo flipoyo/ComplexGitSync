@@ -67,7 +67,7 @@ ROOT_REPO_ID = "root"
 
 if TYPE_CHECKING:
     from .cgs_format import CgsDocument
-    from .operations import RepoOutcome
+    from .operations import RepoBranches, RepoOutcome
     from .orchestre import GitRunner, GtsDocument
 
 
@@ -122,6 +122,17 @@ class GitTreeGitCommands:
         from .operations import branch_tree
 
         branch_tree(self._resolve_tree(tree), git_runner, branch_name, scope=scope)
+
+    def list_branches(
+        self,
+        git_runner: GitRunner,
+        *,
+        tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.ALL,
+    ) -> tuple[RepoBranches, ...]:
+        from .operations import list_branches
+
+        return list_branches(self._resolve_tree(tree), git_runner, scope=scope)
 
     def close_branch(
         self,

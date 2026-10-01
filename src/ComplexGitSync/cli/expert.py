@@ -6,7 +6,7 @@ Ring: 4. Contract: register, dispatch, and execute the 21 Expert-tier commands
     import-submodules, init-from-submodules, verify, memory, self-history).
     Argument/prompt collection only — delegates all semantics to
     ComplexGitSyncClient; never touches Git.
-Imports: _shared, errors, git_repo, help_text, memory, memory_asof, memory_prompt, orchestre
+Imports: _shared, branch_command, errors, git_repo, help_text, memory, memory_asof, memory_prompt, orchestre
 """
 
 from __future__ import annotations
@@ -45,6 +45,7 @@ from ._shared import (
     _run_with_logging,
     _warn_paths_reaching_configuration_repos,
 )
+from .branch_command import handle as _handle_branch_command
 from .exit_codes import EXIT_OK, EXIT_REFUSED
 from .help_text import SEARCH_DIR_HELP
 
@@ -312,10 +313,17 @@ def _register_checkout(subparser: argparse.ArgumentParser) -> None:
 
 
 def _register_branch(subparser: argparse.ArgumentParser) -> None:
-    subparser.add_argument("branch", help="Branch name to create across the READY tree.")
+    subparser.add_argument(
+        "branch", nargs="?", help="Branch name to create across the READY tree."
+    )
+    subparser.add_argument(
+        "--list",
+        action="store_true",
+        help="List the branches of every repository in the tree instead of creating one.",
+    )
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
-    _add_private_argument(subparser, verb="Create the branch in")
+    _add_private_argument(subparser, verb="Create or list the branch in")
     subparser.set_defaults(handler=_handle_branch)
 
 
@@ -955,14 +963,7 @@ def _handle_checkout(args: argparse.Namespace) -> int:
 
 
 def _handle_branch(args: argparse.Namespace) -> int:
-    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
-    return _run_with_logging(
-        command_name="branch",
-        source=gts_path,
-        runner=lambda client, source: _execute_branch(
-            client, source, branch=args.branch, private=args.private
-        ),
-    )
+    return _handle_branch_command(args)
 
 
 def _handle_close_branch(args: argparse.Namespace) -> int:
@@ -1847,25 +1848,6 @@ def _execute_checkout(
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git checkout {branch}")
     client.checkout(branch, ref_kind=ref_kind, private=private)
-    tree_state = client.get_tree_state()
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"branch={branch}"
-    )
-    _print_repo_tree_result(client)
-    return 0
-
-
-def _execute_branch(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    branch: str,
-    private: bool = False,
-) -> int:
-    _load_ready_registry_source(client, source_path)
-    print(f"git_command=git branch {branch}")
-    client.branch(branch, private=private)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "

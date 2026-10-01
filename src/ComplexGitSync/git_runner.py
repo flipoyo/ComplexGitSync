@@ -285,6 +285,8 @@ class GitRunnerProtocol(Protocol):
 
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool: ...
 
+    def local_branches(self, repo_path: Path | str) -> list[str]: ...
+
     def branch_known(
         self, repo_path: Path | str, branch: str, *, remote: str = "origin"
     ) -> bool: ...
@@ -609,6 +611,15 @@ class GitRunner:
             raise GitSyncError(f"Git command failed ({command}): no such directory '{repo_path}'.")
         completed = self._query("symbolic-ref", "--short", "-q", "HEAD", cwd=repo_path)
         return completed.stdout.strip() or None if completed.returncode == 0 else None
+
+    def local_branches(self, repo_path: Path | str) -> list[str]:
+        """Names of every local branch in *repo_path*, sorted; empty when it has none."""
+        completed = self._query(
+            "for-each-ref", "--format=%(refname:short)", "--sort=refname", "refs/heads", cwd=repo_path
+        )
+        if completed.returncode != 0:
+            return []
+        return [line for line in completed.stdout.splitlines() if line]
 
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool:
         """Return ``True`` if *branch* exists as a local branch in *repo_path*."""
