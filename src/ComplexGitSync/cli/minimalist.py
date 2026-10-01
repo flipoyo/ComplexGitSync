@@ -8,7 +8,7 @@ Contract: register argparse subparsers for, and dispatch/execute, exactly
     table. Argument collection and printing only — every ``.cgs``/``.gts``
     semantic is delegated to ``ComplexGitSyncClient``; no ``subprocess``, no
     Git, no repository-identifier parsing.
-Imports: cgs_format, orchestre, _shared
+Imports: cgs_format, help_text, orchestre, _shared
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from ._shared import (
     _resolve_visualization_source,
     _run_with_logging,
 )
+from .help_text import SEARCH_DIR_HELP
 
 COMMANDS: dict[str, str] = {
     "initialise": (
@@ -202,11 +203,7 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
             subparser.add_argument(
                 "--search-dir",
                 metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
-                    "or walks up from the current working directory."
-                ),
+                help=SEARCH_DIR_HELP,
             )
             subparser.add_argument(
                 "--dry-run",
@@ -247,11 +244,7 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
             subparser.add_argument(
                 "--search-dir",
                 metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
-                    "or walks up from the current working directory."
-                ),
+                help=SEARCH_DIR_HELP,
             )
             _add_json_argument(subparser)
             subparser.set_defaults(handler=_handle_status)
@@ -286,11 +279,7 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
             subparser.add_argument(
                 "--search-dir",
                 metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
-                    "or walks up from the current working directory."
-                ),
+                help=SEARCH_DIR_HELP,
             )
             subparser.set_defaults(handler=_handle_view_tree)
         elif command_name == "launch-release":
@@ -310,11 +299,7 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
             subparser.add_argument(
                 "--search-dir",
                 metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
-                    "or walks up from the current working directory."
-                ),
+                help=SEARCH_DIR_HELP,
             )
             subparser.set_defaults(handler=_handle_launch_release)
 

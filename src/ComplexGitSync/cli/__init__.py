@@ -6,7 +6,7 @@ Ring: 4 (adapter — argument/prompt collection only; delegates all .cgs/.gts
     dispatch args, and expose main()/build_parser()/_PLANNED_COMMANDS so
     external callers (pyproject.toml's console-script entry point,
     __main__.py, every test) see the same surface cli.py used to.
-Imports: _shared, configuration, environment, exit_codes, expert, json_render,
+Imports: _shared, configuration, environment, exit_codes, expert, help_format, json_render,
     minimalist, suggest
 
 Replaces the single 1,991-line cli.py (.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_
@@ -32,7 +32,7 @@ from collections.abc import Sequence
 
 from .. import __version__
 from ..json_render import JsonRender
-from . import _shared, configuration, environment, expert, minimalist, suggest
+from . import _shared, configuration, environment, expert, help_format, minimalist, suggest
 from .exit_codes import EXIT_OK, diagnostic, exit_code_for
 from .minimalist import _validate_initialise_definition
 
@@ -41,6 +41,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     **expert.COMMANDS,
     **configuration.COMMANDS,
     **environment.COMMANDS,
+    **help_format.COMMANDS,
 }
 
 
@@ -48,11 +49,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cgitsync",
         description=(
-            "ComplexGitSync CLI — manage a nested Git repository tree. "
-            "Start with 'initialise' to clone or restore a project tree, "
-            "then use 'freeze-release' for the minimalist workflow or expert "
-            "'pull', 'checkout', 'add', 'commit', 'push', 'tag', and 'freeze' "
-            "to keep repositories in sync."
+            "ComplexGitSync — run one Git operation across a whole tree of nested "
+            "repositories, described by a .cgs file and recorded as .gts States."
         ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -65,6 +63,8 @@ def build_parser() -> argparse.ArgumentParser:
     expert.register_parsers(subparsers)
     configuration.register_parsers(subparsers, non_negative_int=_shared._non_negative_int)
     environment.register_parsers(subparsers)
+    help_format.register(subparsers, parser)
+    help_format.apply(parser)
     return parser
 
 

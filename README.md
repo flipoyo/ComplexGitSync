@@ -1,4 +1,4 @@
-# ComplexGitSync v3.9.2
+# ComplexGitSync v3.10.0
 __A distributed git-native Operating Space_
 _More than an alternative to git submodules for complex multi git-repo project management and synchronization__
 
@@ -134,7 +134,7 @@ pixi run cgitsync add
 pixi run cgitsync commit "<MESSAGE>"
 pixi run cgitsync push
 ```
-Run any command with `--help` for its full option list.
+Run any command with `--help`: it says what the command does, shows its options and gives examples. A group such as `cgitsync memory --help` lists every subcommand with its options, and `cgitsync help --all` prints every command and option on one page, so `cgitsync help --all | grep timeline` finds which command takes an option.
 
 `CGSHOME` outranks the directory you are standing in. If you bootstrap a
 second workspace later, the export from the first one is still in that shell
@@ -339,6 +339,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
 | Configuration | `create-cgs` | `--project` `--repo` `--output` | Create a validated .cgs specification from CLI project definitions. |
 | Configuration | `repo` | `create <provider:owner/name>` | Create a repository on its provider, without leaving cgitsync. `create` takes `--public` and `--description`; repositories are private otherwise. |
+| Help | `help` | `[command ...]` `--all` | Help on one command (`cgitsync help memory explore`), or every command and option on one page (`cgitsync help --all`, which `grep` can search). |
 
 > **`initialise` re-clones your dependencies.** Only the root repository at
 > CGSHOME is kept as it is. Every repository below it whose directory already

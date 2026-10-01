@@ -41,7 +41,7 @@
       "public_symbols": 9
     },
     "cli/__init__.py": {
-      "internal_imports": 12,
+      "internal_imports": 13,
       "loc": 92,
       "public_symbols": 2
     },
@@ -56,8 +56,8 @@
       "public_symbols": 1
     },
     "cli/environment.py": {
-      "internal_imports": 8,
-      "loc": 82,
+      "internal_imports": 9,
+      "loc": 83,
       "public_symbols": 2
     },
     "cli/exit_codes.py": {
@@ -66,17 +66,17 @@
       "public_symbols": 5
     },
     "cli/expert.py": {
-      "internal_imports": 33,
+      "internal_imports": 34,
       "loc": 2194,
       "public_symbols": 1
     },
     "cli/memory_prompt.py": {
-      "internal_imports": 8,
-      "loc": 112,
+      "internal_imports": 9,
+      "loc": 113,
       "public_symbols": 4
     },
     "cli/minimalist.py": {
-      "internal_imports": 15,
+      "internal_imports": 16,
       "loc": 780,
       "public_symbols": 1
     },

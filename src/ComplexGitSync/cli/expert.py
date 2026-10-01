@@ -6,7 +6,7 @@ Ring: 4. Contract: register, dispatch, and execute the 21 Expert-tier commands
     import-submodules, init-from-submodules, verify, memory, self-history).
     Argument/prompt collection only — delegates all semantics to
     ComplexGitSyncClient; never touches Git.
-Imports: _shared, errors, git_repo, memory, memory_prompt, orchestre
+Imports: _shared, errors, git_repo, help_text, memory, memory_prompt, orchestre
 """
 
 from __future__ import annotations
@@ -46,6 +46,7 @@ from ._shared import (
     _warn_paths_reaching_configuration_repos,
 )
 from .exit_codes import EXIT_OK, EXIT_REFUSED
+from .help_text import SEARCH_DIR_HELP
 
 COMMANDS: dict[str, str] = {
     "purge": "Remove generated clone state for a .cgs workspace.",
@@ -67,8 +68,8 @@ COMMANDS: dict[str, str] = {
     "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
     "init-from-submodules": "Adopt a submodule-based checkout: discover, initialise, then convert its submodules.",
     "verify": "Verify the hash-chained .cgitsync/lgr ledger for tamper-evidence.",
-    "memory": "Look at what this workspace remembers: status, list, show <state>, explore, reboot.",
-    "self-history": "Record one piece of agent work: add.",
+    "memory": "What this workspace remembers: read it (status, list, show, explore), keep it in a repository.",
+    "self-history": "The private record of agent work on this project (add, adopt).",
 }
 
 
@@ -106,11 +107,7 @@ def _add_search_dir_argument(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--search-dir",
         metavar="DIR",
-        help=(
-            "Directory used to resolve CGSHOME before loading "
-            "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
-            "or walks up from the current working directory."
-        ),
+        help=SEARCH_DIR_HELP,
     )
 
 

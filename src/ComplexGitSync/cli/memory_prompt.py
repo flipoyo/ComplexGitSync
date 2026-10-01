@@ -4,7 +4,7 @@ Ring: 4. Contract: collect the provider, owner and repository name for the
     memory a DEV tree lacks — in a terminal only — then call
     `ComplexGitSyncClient.memory_setup`; everywhere else print the client's
     warning. Asks and prints; every answer comes from the client.
-Imports: _shared, exit_codes, orchestre
+Imports: _shared, exit_codes, help_text, orchestre
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from ._shared import (
     _run_with_logging,
 )
 from .exit_codes import EXIT_OK, EXIT_REFUSED
+from .help_text import SEARCH_DIR_HELP
 
 
 def interactive() -> bool:
@@ -54,7 +55,7 @@ def register(memory_commands) -> None:
     setup.add_argument("--owner", help="Account the memory repository belongs to. Guessed from the tree.")
     setup.add_argument("--name", dest="repo_name", help="Repository name (default: .memory).")
     setup.add_argument("--cgs", metavar="FILE", help="The .cgs to declare it in. Defaults to the one this tree was built from.")
-    setup.add_argument("--search-dir", metavar="DIR", help="Directory used to resolve CGSHOME.")
+    setup.add_argument("--search-dir", metavar="DIR", help=SEARCH_DIR_HELP)
     setup.set_defaults(handler=_handle_memory_setup)
 
 

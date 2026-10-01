@@ -3,7 +3,7 @@
 Ring: 4 (CLI adapter)
 Contract: collect ``env`` arguments, delegate observation/comparison to the
     public client, and render the returned data without inspecting the tree.
-Imports: _shared, cgs_format, exit_codes, orchestre
+Imports: _shared, cgs_format, exit_codes, help_text, orchestre
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from ..orchestre import ComplexGitSyncClient
 from ..tree_env import Drift, TreeEnvironment
 from ._shared import _resolve_gts_path, _run_with_logging
 from .exit_codes import EXIT_OK, EXIT_REFUSED
+from .help_text import SEARCH_DIR_HELP
 
 COMMANDS = {"env": "Observe this tree's reproducibility environment, or check its requirements."}
 
@@ -23,10 +24,10 @@ COMMANDS = {"env": "Observe this tree's reproducibility environment, or check it
 def register_parsers(subparsers: argparse._SubParsersAction) -> None:
     """Register ``env`` and its optional ``check`` subcommand."""
     parser = subparsers.add_parser("env", help=COMMANDS["env"], description=COMMANDS["env"])
-    parser.add_argument("--search-dir", metavar="DIR")
+    parser.add_argument("--search-dir", metavar="DIR", help=SEARCH_DIR_HELP)
     commands = parser.add_subparsers(dest="environment_command")
     check = commands.add_parser("check", help="Compare observation with .cgs requirements.")
-    check.add_argument("--search-dir", metavar="DIR")
+    check.add_argument("--search-dir", metavar="DIR", help=SEARCH_DIR_HELP)
     check.add_argument("--cgs", metavar="FILE", help="Requirements source; defaults to the tree's .cgs.")
     parser.set_defaults(handler=_handle_environment)
 
