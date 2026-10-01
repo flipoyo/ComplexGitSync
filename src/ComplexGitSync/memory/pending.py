@@ -3,7 +3,7 @@
 Ring: 1 (filesystem only, no subprocess)
 Contract: given a workspace's own state area (`.cgitsync`), answer every
     question about what a memory holds — ledger entries, States, commit
-    logs — by composing the git-tracked mount (`.cgitsync/.memory`,
+    logs; run logs are local and are not part of it — by composing the git-tracked mount (`.cgitsync/.memory`,
     *folded* — what the last `memory push` committed) with what has
     accumulated since (`.cgitsync` itself, *pending*). No caller of this
     module ever needs to know which half a given entry currently sits in.

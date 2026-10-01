@@ -109,7 +109,10 @@ makes sense once you know which is which:
 - **`.cgitsync/`** stays the workspace's own live state area — States, the
   ledger, commit logs, run logs — written by every command, whether or not
   a memory is mounted. This is the **pending** half: what has accumulated
-  since the last time anybody sent it anywhere.
+  since the last time anybody sent it anywhere. The one exception is the
+  **run logs** in `.cgitsync/logs/`: they are a local record of each run,
+  stay on this machine, are never sent anywhere, and only the 200 most
+  recent are kept.
 - **`.cgitsync/.memory`** is the git-tracked mount — an ordinary
   private/local repository, exactly like `.localSpec` or `.claude` from
   [Tutorial 4](04_private_repos.md). This is the **folded** half: what the
@@ -381,7 +384,8 @@ In order:
    remote, never for less than an instant unreachable. Locally, the branch
    is renamed to match.
 4. **A fresh branch is created under the original name.** Its States, the
-   ledger, commit logs and run logs are cleared, so its first commit is a
+   ledger and commit logs are cleared (and any run logs an older version had
+   pushed), so its first commit is a
    true beginning — nothing is committed yet; the next ordinary command
    does that, exactly like a freshly adopted mount.
 

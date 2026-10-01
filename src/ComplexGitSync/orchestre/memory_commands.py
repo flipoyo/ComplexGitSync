@@ -1257,9 +1257,10 @@ class MemoryCommands:
         self.client.git_runner.rename_branch(mount, current_branch, archived_branch)
 
         self.client.git_runner.create_orphan_branch(mount, current_branch)
-        for cleared in (*self.client._FOLD_SUBDIRS, COMMIT_LOG_DIR_NAME):
-            # Every fold subdirectory. `.cgs` is not one of them: the export
-            # above lives there, and a reboot must not erase it.
+        for cleared in (*self.client._FOLD_SUBDIRS, COMMIT_LOG_DIR_NAME, "logs"):
+            # Every fold subdirectory, and the `logs/` older folds left behind (never
+            # folded any more, but still tracked on this branch). `.cgs` is not one
+            # of them: the export above lives there, and a reboot must not erase it.
             self.client.git_runner.remove_tracked_path(mount, cleared)
 
         # Clearing `state/` leaves nothing anywhere `discover_gts_path()`

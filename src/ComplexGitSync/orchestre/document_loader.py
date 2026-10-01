@@ -2,7 +2,7 @@
 
 Ring: 3
 Contract: Load, validate and snapshot the `.cgs`/`.gts` documents a tree is built from.
-Imports: cgs_format, client, git_tree, gts_document, memory, memory_facts, paths, registry
+Imports: cgs_format, client, command_run_logger, git_tree, gts_document, memory, memory_facts, paths, registry
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ from ..paths import PathResolver
 from ..registry import (
     RegistryTranslator,
 )
+from .command_run_logger import CommandRunLogger
 from .memory_facts import MemoryFacts
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -400,6 +401,7 @@ class DocumentLoader:
                 + "\n",
                 encoding="utf-8",
             )
+            CommandRunLogger.prune_old_logs(final_log_path.parent, keep_path=final_log_path)
 
         if legacy_register_path.is_file() and final_register_path.is_file():
             legacy_register_path.unlink()

@@ -20,7 +20,7 @@ it first.
 Why the mount nests inside ``.cgitsync`` rather than being it
 ---------------------------------------------------------------
 ``.cgitsync`` is every workspace's own local state area — States, the
-ledger, commit logs, run logs — written by every command, memory-mounted
+ledger, commit logs, run logs (which stay local) — written by every command, memory-mounted
 workspace or not. A git worktree that is *also* written to by whatever
 command happens to be running can never reliably be checked out or merged:
 `WorkingTransitionState` (``.agent/.local/.localSpec/DevTickets/openTickets/memory-dev_1-2_WorkingTransitionState_DevPlanTicket.md``)
@@ -164,7 +164,7 @@ class MemoryRepository:
         """What a memory has gained, from `git status --porcelain` over its mount.
 
         Everything is fair game — a memory's whole content is States, ledger
-        entries, commit logs and logs, all of which it wrote itself. There is no
+        entries, Environment records and commit logs (run logs stay local), all of which it wrote itself. There is no
         filtering to do, so this only answers "is there anything", which is what
         decides whether a push has work to do.
         """

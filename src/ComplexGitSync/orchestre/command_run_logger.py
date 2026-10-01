@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -25,6 +26,10 @@ class CommandRunLogger:
     run's own, and `universal_clock.py` is the sole reader of the clock —
     `create_run_logger` has already read it once for this logger's name.
     """
+
+    #: How many run logs `.cgitsync/logs/` keeps (LocalRunLogs D2). A run log is a local
+    #: record of one run, never pushed; `autofix` only ever needs the most recent.
+    MAX_RUN_LOGS = 200
 
     def __init__(
         self,
@@ -67,6 +72,35 @@ class CommandRunLogger:
             "".join(f"{line}\n" for line in self._buffered_lines),
             encoding="utf-8",
         )
+        self.prune_old_logs(self.log_path.parent, keep_path=self.log_path)
+
+    @staticmethod
+    def prune_old_logs(logs_dir: Path | str, *, keep_path: Path | str, keep: int = MAX_RUN_LOGS) -> int:
+        """Delete the oldest ``*.log`` files in *logs_dir* beyond the *keep* most recent.
+
+        The one place the bound lives: both writers of a run log — this class's
+        :meth:`bind_log_file` and `write_gts_snapshot`'s own file, whose name starts with
+        the command, not the time — call it. Oldest by modification time, never *keep_path*
+        (the log just written). Failing to delete only warns, like every other recording
+        failure. Returns how many files were deleted.
+        """
+        protected = Path(keep_path)
+        try:
+            logs = sorted(
+                (path for path in Path(logs_dir).glob("*.log") if path != protected),
+                key=lambda path: (path.stat().st_mtime_ns, path.name),
+            )
+        except OSError as exc:
+            warnings.warn(f"could not list run logs in {logs_dir}: {exc}", stacklevel=2)
+            return 0
+        deleted = 0
+        for path in logs[: max(0, len(logs) + 1 - keep)]:
+            try:
+                path.unlink()
+                deleted += 1
+            except OSError as exc:
+                warnings.warn(f"could not delete old run log {path}: {exc}", stacklevel=2)
+        return deleted
 
     def ensure_log_file(self, logs_dir: Path | str) -> Path | None:
         """Bind a log file under *logs_dir* if this run has not bound one.

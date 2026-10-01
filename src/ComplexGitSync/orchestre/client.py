@@ -164,7 +164,9 @@ class ComplexGitSyncClient:
     #: after a migration — the two concepts collapse onto the same path
     #: only for a workspace that has not migrated yet).
     _OLD_MOUNT_RELATIVE_PATH = ".cgitsync"
-    _FOLD_SUBDIRS = ("lgr", "state", "logs", "env")
+    # Run logs are not here: they stay in `.cgitsync/logs/` on the machine that wrote them
+    # (LocalRunLogs), where `autofix` reads them, and are never folded or pushed.
+    _FOLD_SUBDIRS = ("lgr", "state", "env")
 
 
     def __post_init__(self) -> None:
@@ -1151,8 +1153,8 @@ class ComplexGitSyncClient:
 
         The heart of `memory push`, since WorkingTransitionState:
         everything a command wrote since the last fold — `lgr/`, `state/`,
-        `logs/`, `.cgs/`, plus the legacy single-file `.lgr` register if
-        one is still there — moves one level down, into the mount, so the
+        `env/`, `.cgs/`, plus the legacy single-file `.lgr` register if
+        one is still there (not `logs/`, which stays local) — moves one level down, into the mount, so the
         commit this method makes next has something of its own to commit.
         A plain move is safe for all of these: entries and States are
         named uniquely (a seq never repeats; a State's name is its own

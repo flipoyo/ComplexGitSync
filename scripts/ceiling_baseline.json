@@ -292,7 +292,7 @@
     },
     "orchestre/command_run_logger.py": {
       "internal_imports": 2,
-      "loc": 134,
+      "loc": 163,
       "public_symbols": 1
     },
     "orchestre/default_memory.py": {
@@ -307,7 +307,7 @@
     },
     "orchestre/document_loader.py": {
       "internal_imports": 16,
-      "loc": 340,
+      "loc": 342,
       "public_symbols": 1
     },
     "orchestre/environment_commands.py": {
