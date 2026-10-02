@@ -33,7 +33,7 @@ from ..git_tree import (
     WorkingGitTree,
     iter_tree_leaf_first,
 )
-from ..git_tree_branch import GitTreeBranches, tree_project_name
+from ..git_tree_branch import GitTreeBranches, ProjectBranch, tree_project_name
 from ..operations import (
     MERGE_INTO_ACTS,
     RepoBranches,
@@ -41,6 +41,7 @@ from ..operations import (
     paths_outside_scope,
 )
 from ..snapshot_resolver import discover_cgshome
+from ..status_render import _tree_branch_label
 from .auth_hints import AuthFailureHints
 from .git_probes import GitProbes
 
@@ -289,6 +290,22 @@ class TreeCommands:
         registry = self.client.get_dependency_registry()
         scope = GitProbes.scope_for(registry, private=private, command="branch --list")
         return self.client.orchestre.git_tree.git.list_branches(self.client.git_runner, scope=scope)
+
+    def project_branches(self, *, private: bool = False) -> tuple[ProjectBranch, ...]:
+        """Every branch of the project, with the repositories that hold or lack it; read-only.
+
+        A project branch is a branch of the root repository, local or on
+        origin as of the last fetch. `private` narrows the coverage, not the
+        branches listed.
+        """
+        registry = self.client.get_dependency_registry()
+        scope = GitProbes.scope_for(registry, private=private, command="branch --list")
+        return GitTreeBranches(registry, self.client.git_runner).project_branches(scope=scope)
+
+    def tree_branch_label(self) -> str:
+        """The branch the project is on, as `status` prints `cgitsync_branch`: a name, `detached` or `unknown`."""
+        branches = GitTreeBranches(self.client.get_dependency_registry(), self.client.git_runner)
+        return _tree_branch_label(branches.tree_branch, detached=branches.is_detached)
 
     def close_branch(self, branch_name: str, *, private: bool = False) -> WorkingGitTree:
         """Rename *branch_name* to its closed name across the full tree, leaf-first.

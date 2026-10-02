@@ -38,6 +38,7 @@ The public surface
     private_local_branch      <project>_<branch> for a private/local repo
     resolve_propagated_ref    Target ref under a tree-wide branch move (privacy)
     closed_branch_name        closed/<branch> — the name a closed branch is renamed to
+    closed_branch_origin      The name a closed/<branch> was closed from, or None
     closeable                 Whether a branch may be closed (false for the project default)
 """
 
@@ -365,6 +366,17 @@ def closed_branch_name(branch_name: str) -> str:
     return f"{CLOSED_BRANCH_PREFIX}{branch_name}"
 
 
+def closed_branch_origin(branch_name: str) -> str | None:
+    """The name *branch_name* was closed from, or ``None`` if it is not a closed branch.
+
+    The inverse of :func:`closed_branch_name`; pure, and the only place the
+    ``closed/`` prefix is read back.
+    """
+    if not branch_name.startswith(CLOSED_BRANCH_PREFIX):
+        return None
+    return branch_name.removeprefix(CLOSED_BRANCH_PREFIX) or None
+
+
 def closeable(branch_name: str, *, project_default_branch: str) -> bool:
     """Whether *branch_name* may be closed at all.
 
@@ -464,6 +476,7 @@ __all__ = [
     "apply_declared_defaults",
     "closeable",
     "closed_branch_name",
+    "closed_branch_origin",
     "declared_private_local_mismatch",
     "resolve_declared_ref",
     "resolve_entry_ref",

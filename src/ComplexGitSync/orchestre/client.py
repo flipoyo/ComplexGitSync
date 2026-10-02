@@ -52,7 +52,7 @@ from ..git_tree import (
     WorkingGitTree,
     iter_tree,
 )
-from ..git_tree_branch import GitTreeBranches
+from ..git_tree_branch import GitTreeBranches, ProjectBranch
 from ..memory import (
     VerificationReport,
 )
@@ -539,6 +539,14 @@ class ComplexGitSyncClient:
     def list_branches(self, *, private: bool = False) -> tuple[RepoBranches, ...]:
         """List the local branches of every repository in the tree, without changing anything."""
         return self._tree_commands.list_branches(private=private)
+
+    def project_branches(self, *, private: bool = False) -> tuple[ProjectBranch, ...]:
+        """List the project's own branches and which repositories hold each, without changing anything."""
+        return self._tree_commands.project_branches(private=private)
+
+    def tree_branch_label(self) -> str:
+        """The branch the project is on, as `status` prints `cgitsync_branch`: a name, `detached` or `unknown`."""
+        return self._tree_commands.tree_branch_label()
 
     def close_branch(self, branch_name: str, *, private: bool = False) -> WorkingGitTree:
         """Rename *branch_name* to its closed name across the full tree, leaf-first."""

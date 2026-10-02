@@ -319,7 +319,12 @@ def _register_branch(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--list",
         action="store_true",
-        help="List the branches of every repository in the tree instead of creating one.",
+        help="List the project's branches, and which repositories hold each, instead of creating one.",
+    )
+    subparser.add_argument(
+        "--per-repo",
+        action="store_true",
+        help="With --list: one line per repository with its own local branches, instead of the project's branches.",
     )
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)

@@ -1,6 +1,9 @@
-# ComplexGitSync v3.12.0
-__A distributed git-native Operating Space_
-_More than an alternative to git submodules for complex multi git-repo project management and synchronization__
+# ComplexGitSync v3.13.0
+## A distributed git-native Operating Space
+
+__Multi git-repo project management, synchronization, and persistance__
+
+More than an alternative to git submodules
 
 *Created: 2026-05-12*
 
@@ -319,7 +322,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `pull-force` | `[source]` `--private` `--force-protocol` | Destructively resynchronise an existing project tree from .cgs or .gts. |
 | Expert | `autofix` | `[source]` `--error` `--repo` | Diagnose and repair the situation named by the last failing command's error — reads `.cgitsync/logs/` when `--error` is omitted. Only repairs a situation a registered repair recognises; refuses rather than guessing otherwise. |
 | Expert | `checkout` | `<branch>` `--private` `--ref-kind` `--gts` | Synchronize the tree to a branch or tag. A branch that exists on the remote is joined, not recreated — fetching it first if this workspace has never seen it, so a prior `pull` is not required. |
-| Expert | `branch` | `<branch>` `--list` `--private` `--gts` | Create a branch across the full READY tree without checkout, or with `--list` print the branches of every repository in the tree, marking the one each is on, and change nothing. Joins a branch that already exists on the remote, fetching it on demand if needed, instead of creating a second one at HEAD. |
+| Expert | `branch` | `<branch>` `--list` `--per-repo` `--private` `--gts` | Create a branch across the full READY tree without checkout, or with `--list` print the project's own branches (the root's, local and on origin as of the last fetch), marking the one the project is on and naming the repositories that lack each, and change nothing. `--list --per-repo` prints each repository's own local branches instead. Joins a branch that already exists on the remote, fetching it on demand if needed, instead of creating a second one at HEAD. |
 | Expert | `close-branch` | `<branch>` `--private` `--gts` | Rename a branch to `closed/<branch>`, tree-wide, leaf-first — locally and on the remote. Renames only, never deletes; refuses on the project's own default branch, or when any repository is currently checked out on the branch being closed. |
 | Expert | `add` | `[PATH ...]` `--private` `--dry-run` `--gts` | Stage all changes across a READY tree. |
 | Expert | `rm` | `<PATH ...>` `--private` `--dry-run` `--gts` | Remove one or more tracked files, each from the repo that owns it. |
@@ -393,7 +396,9 @@ same on purpose: a **private/local** repository keeps your settings on a
 branch named after your project, so with the project on `apoub` you will see
 `ComplexGitSync_apoub` there. That is the rule working, not a repository out
 of step. `cgitsync_branch` is the one line that answers "which branch am I
-on?" without you having to know which row to read.
+on?" without you having to know which row to read. To see the project's
+*other* branches, and which repositories hold each, run
+`cgitsync branch --list`.
 
 Two values are not branch names:
 

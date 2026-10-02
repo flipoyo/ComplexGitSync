@@ -40,10 +40,10 @@ def test_list_branches_changes_nothing(tmp_path):
     assert _git(tree["root"], "for-each-ref") == before
 
 
-def test_cli_branch_list_prints_one_line_per_repository(tmp_path, capsys):
+def test_cli_branch_list_per_repo_prints_one_line_per_repository(tmp_path, capsys):
     tree = _two_repo_workspace(tmp_path)
 
-    code = main(["branch", "--list", "--gts", str(tree["snapshot"])])
+    code = main(["branch", "--list", "--per-repo", "--gts", str(tree["snapshot"])])
 
     out = capsys.readouterr().out
     assert code == 0

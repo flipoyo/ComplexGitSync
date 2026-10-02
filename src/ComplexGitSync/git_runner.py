@@ -287,6 +287,8 @@ class GitRunnerProtocol(Protocol):
 
     def local_branches(self, repo_path: Path | str) -> list[str]: ...
 
+    def remote_tracking_branches(self, repo_path: Path | str, remote: str = "origin") -> list[str]: ...
+
     def branch_known(
         self, repo_path: Path | str, branch: str, *, remote: str = "origin"
     ) -> bool: ...
@@ -620,6 +622,21 @@ class GitRunner:
         if completed.returncode != 0:
             return []
         return [line for line in completed.stdout.splitlines() if line]
+
+    def remote_tracking_branches(self, repo_path: Path | str, remote: str = "origin") -> list[str]:
+        """Branches *remote* held at the last fetch, sorted; empty when there are none.
+
+        Reads ``refs/remotes/<remote>`` only — no network. The remote's own
+        ``HEAD`` pointer is not a branch and is left out.
+        """
+        prefix = f"refs/remotes/{remote}/"
+        completed = self._query(
+            "for-each-ref", "--format=%(refname)", "--sort=refname", prefix, cwd=repo_path
+        )
+        if completed.returncode != 0:
+            return []
+        names = (line.removeprefix(prefix) for line in completed.stdout.splitlines() if line)
+        return [name for name in names if name != "HEAD"]
 
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool:
         """Return ``True`` if *branch* exists as a local branch in *repo_path*."""

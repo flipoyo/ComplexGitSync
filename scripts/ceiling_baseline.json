@@ -52,7 +52,7 @@
     },
     "cli/branch_command.py": {
       "internal_imports": 6,
-      "loc": 70,
+      "loc": 98,
       "public_symbols": 1
     },
     "cli/configuration.py": {
@@ -72,7 +72,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 36,
-      "loc": 2176,
+      "loc": 2181,
       "public_symbols": 1
     },
     "cli/help_format.py": {
@@ -142,8 +142,8 @@
     },
     "git_branch.py": {
       "internal_imports": 2,
-      "loc": 377,
-      "public_symbols": 13
+      "loc": 387,
+      "public_symbols": 14
     },
     "git_repo.py": {
       "internal_imports": 0,
@@ -152,7 +152,7 @@
     },
     "git_runner.py": {
       "internal_imports": 2,
-      "loc": 1230,
+      "loc": 1244,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -161,9 +161,9 @@
       "public_symbols": 27
     },
     "git_tree_branch.py": {
-      "internal_imports": 13,
-      "loc": 249,
-      "public_symbols": 3
+      "internal_imports": 15,
+      "loc": 334,
+      "public_symbols": 4
     },
     "gts_document.py": {
       "internal_imports": 9,
@@ -311,8 +311,8 @@
       "public_symbols": 1
     },
     "orchestre/client.py": {
-      "internal_imports": 58,
-      "loc": 1402,
+      "internal_imports": 59,
+      "loc": 1408,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -391,8 +391,8 @@
       "public_symbols": 1
     },
     "orchestre/tree_commands.py": {
-      "internal_imports": 24,
-      "loc": 940,
+      "internal_imports": 26,
+      "loc": 954,
       "public_symbols": 1
     },
     "paths.py": {

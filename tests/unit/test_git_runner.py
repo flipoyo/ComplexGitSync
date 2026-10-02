@@ -917,6 +917,9 @@ class _FakeGitRunner:
     def local_branches(self, repo_path) -> list[str]:
         return ["main"]
 
+    def remote_tracking_branches(self, repo_path, remote: str = "origin") -> list[str]:
+        return ["main"]
+
     def local_branch_exists(self, repo_path, branch: str) -> bool:
         return True
 

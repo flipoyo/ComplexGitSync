@@ -36,6 +36,7 @@ The public surface
 ------------------
     tree_project_name   The project a private/local branch is named after
     BranchDeviation     One repository not on the branch the tree says
+    ProjectBranch       One branch of the project, and which repositories have it
     GitTreeBranches     The tree's branches: the root's, each repo's target,
                         each repo's observed branch, and the deviations
 """
@@ -46,12 +47,18 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .errors import GitSyncError
-from .git_branch import DEFAULT_BRANCH, BranchResolution, resolve_propagated_ref
+from .git_branch import (
+    DEFAULT_BRANCH,
+    BranchResolution,
+    closed_branch_origin,
+    resolve_propagated_ref,
+)
 from .git_repo import RefKind, RepoLifecycleState, RepoScope, WorkingRepo
 from .git_tree import (
     ROOT_REPO_ID,
     WorkingGitTree,
     _as_optional_str,
+    iter_tree,
     iter_tree_leaf_first,
 )
 
@@ -87,6 +94,27 @@ class BranchDeviation:
     repo: WorkingRepo
     expected: str
     observed: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectBranch:
+    """One branch of the project: a branch of its root, and who else has it.
+
+    *name* is the branch as the project knows it, so a closed branch
+    (`closed/<name>`) appears under its original name with *closed* set.
+    *missing* names the repositories that follow the project and hold no
+    branch for it, locally or on origin; *uncloned* those not on disk yet.
+    *following* counts the cloned repositories that do hold it.
+    """
+
+    name: str
+    local: bool
+    on_origin: bool
+    closed: bool
+    current: bool
+    following: int
+    missing: tuple[str, ...]
+    uncloned: tuple[str, ...]
 
 
 class GitTreeBranches:
@@ -275,6 +303,68 @@ class GitTreeBranches:
                 )
         return tuple(found)
 
+    def project_branches(
+        self, *, scope: RepoScope = RepoScope.ALL
+    ) -> tuple[ProjectBranch, ...]:
+        """Every branch of the project, live ones first, each with its coverage.
+
+        A project branch is a branch of the root, local or on origin as of
+        the last fetch (no network). Coverage asks `target` what each
+        repository would be on under that branch, so the privacy rule stays
+        in `git_branch.py`; a private/distant repository, which never
+        follows the project, and a tag-pinned one are not counted.
+        """
+        root = self.root
+        if root is None:
+            return ()
+        runner = self._runner()
+        local = set(runner.local_branches(root.absolute_path))
+        origin = set(runner.remote_tracking_branches(root.absolute_path))
+        current = self.tree_branch
+        followers = [
+            repo
+            for repo in iter_tree(self._tree, scope)
+            if repo.target_ref_kind is not RefKind.TAG
+            and not (repo.effective_private and not repo.effective_writable)
+        ]
+        held: dict[Path, set[str]] = {}
+        uncloned: list[str] = []
+        for repo in followers:
+            if repo.absolute_path.is_dir():
+                held[repo.absolute_path] = set(runner.local_branches(repo.absolute_path)) | set(
+                    runner.remote_tracking_branches(repo.absolute_path)
+                )
+            else:
+                uncloned.append(repo.name)
+        found: list[ProjectBranch] = []
+        for branch in sorted(local | origin):
+            original = closed_branch_origin(branch)
+            closed = original is not None
+            name = original if original is not None else branch
+            missing: list[str] = []
+            following = 0
+            if not closed:
+                for repo in followers:
+                    if repo.absolute_path not in held:
+                        continue
+                    if self.target(repo, name).name in held[repo.absolute_path]:
+                        following += 1
+                    else:
+                        missing.append(repo.name)
+            found.append(
+                ProjectBranch(
+                    name=name,
+                    local=branch in local,
+                    on_origin=branch in origin,
+                    closed=closed,
+                    current=not closed and branch == current,
+                    following=following,
+                    missing=tuple(missing),
+                    uncloned=() if closed else tuple(uncloned),
+                )
+            )
+        return tuple(sorted(found, key=lambda b: (b.closed, b.name)))
+
     def refresh(self) -> None:
         """Forget every observed branch, so the next read asks Git again."""
         self._observed.clear()
@@ -291,5 +381,6 @@ class GitTreeBranches:
 __all__ = [
     "BranchDeviation",
     "GitTreeBranches",
+    "ProjectBranch",
     "tree_project_name",
 ]

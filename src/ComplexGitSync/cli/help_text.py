@@ -59,7 +59,7 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
     ("pull-force",): (None, ("cgitsync pull-force", "cgitsync pull-force --private")),
     ("autofix",): (None, ("cgitsync autofix", 'cgitsync autofix --error "<pasted git error>" --repo .memory')),
     ("checkout",): (None, ("cgitsync checkout main", "cgitsync checkout v1.2.0 --ref-kind tag")),
-    ("branch",): (None, ("cgitsync branch feature-x", "cgitsync branch feature-x --private", "cgitsync branch --list")),
+    ("branch",): (None, ("cgitsync branch feature-x", "cgitsync branch feature-x --private", "cgitsync branch --list", "cgitsync branch --list --per-repo")),
     ("close-branch",): (None, ("cgitsync close-branch feature-x",)),
     ("add",): (None, ("cgitsync add", "cgitsync add README.md docs/Text/user_guide.tex", "cgitsync add --dry-run")),
     ("rm",): (None, ("cgitsync rm old_notes.md", "cgitsync rm old_notes.md --dry-run")),
