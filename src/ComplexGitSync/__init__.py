@@ -1,6 +1,6 @@
 """ComplexGitSync package: deterministic distributed workspace synchronization over Git trees."""
 
-__version__ = "3.14.4"
+__version__ = "3.14.5"
 
 #: The build counter: bumped by `pixi run bump-build` on every change to
 #: `src/`, independently of `__version__`. See AdditionalSpecs.md,
