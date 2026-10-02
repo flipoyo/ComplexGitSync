@@ -7,6 +7,7 @@ Imports: branch, errors, git_branch, git_repo, git_tree, git_tree_branch, merge,
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -130,6 +131,30 @@ class RestartOperation:
             return
 
     @staticmethod
+    def _refuse_if_commits_would_be_dropped(
+        tree: WorkingGitTree, git_runner: GitRunner, current_branch: str, scope: RepoScope
+    ) -> None:
+        """Refuse, before any repository is touched, when a forced pull would orphan a commit.
+
+        ComplexGitSync rewrites nothing (`AdditionalSpecs.md`, *The hard
+        prohibitions*), and a forced pull moves a branch off commits no remote
+        holds. Asked of every repository in scope first, so a refusal anywhere
+        leaves the whole tree as it was.
+        """
+        found = [
+            f"  {repo.name}: {dropped} commit(s)"
+            for repo in iter_tree(tree, scope)
+            if repo.absolute_path.is_dir()
+            and (dropped := git_runner.commits_force_pull_would_drop(repo.absolute_path, repo.target_ref_name or current_branch))
+        ]
+        if found:
+            raise GitSyncError(
+                "pull-force would leave commits on no branch, because no remote holds them:\n"
+                + "\n".join(found)
+                + "\nNothing was changed. Push them, or merge, and run it again."
+            )
+
+    @staticmethod
     def _restart_tree(
         tree: WorkingGitTree,
         git_runner: GitRunner,
@@ -152,6 +177,8 @@ class RestartOperation:
         # the loop below pulls whatever this decides, and a private/local repo's
         # derived branch has to be one that exists.
         BranchOperation.propagate_global_branch(tree, current_branch, git_runner=git_runner)
+        if force:
+            RestartOperation._refuse_if_commits_would_be_dropped(tree, git_runner, current_branch, scope)
 
         for repo in iter_tree(tree, scope):
             if repo.parent_id is not None:
@@ -183,8 +210,15 @@ class RestartOperation:
             # (`MemoryCommands.freeze_release`), generalised here to every
             # repository this loop visits, not only the root.
             if git_runner.remote_tracking_branch_exists(repo.absolute_path, target_branch, remote=remote):
-                pull = git_runner.force_pull if force else git_runner.pull
-                pull(repo.absolute_path, remote=remote, ref_name=target_branch)
+                if force:
+                    if git_runner.force_pull(repo.absolute_path, remote=remote, ref_name=target_branch):
+                        warnings.warn(
+                            f"pull-force set aside uncommitted work in {repo.name}: "
+                            f"'git -C {repo.absolute_path} stash pop' brings it back.",
+                            stacklevel=2,
+                        )
+                else:
+                    git_runner.pull(repo.absolute_path, remote=remote, ref_name=target_branch)
 
             resolved_branch = git_runner.current_branch(repo.absolute_path) or current_branch
             BranchOperation.refresh_repo_after_checkout(repo, resolved_branch, RefKind.BRANCH, git_runner)

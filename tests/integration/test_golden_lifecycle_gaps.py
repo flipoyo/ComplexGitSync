@@ -250,11 +250,12 @@ def test_checkout_switches_current_ref_across_workspace(ready_single_repo_snapsh
 # ---------------------------------------------------------------------------
 
 
-def test_pull_force_discards_local_changes_and_matches_remote(
+def test_pull_force_sets_untracked_files_aside_and_matches_remote(
     ready_single_repo_snapshot, tmp_path, capsys
 ):
-    """``cgitsync pull-force`` discards a diverging local commit + untracked
-    files and resynchronises the working tree to exactly match origin/main.
+    """``cgitsync pull-force`` sets untracked files aside (``git stash -u``) and
+    resynchronises the working tree to exactly match origin/main. It never discards a commit no
+    remote holds: that case is refused (``test_force_pull_guard.py``).
     """
     repo = ready_single_repo_snapshot["repo"]
     remote = ready_single_repo_snapshot["remote"]
@@ -270,11 +271,7 @@ def test_pull_force_discards_local_changes_and_matches_remote(
     _run_git(other_clone, "push", "origin", "main")
     remote_head = _run_git(other_clone, "rev-parse", "HEAD")
 
-    # Meanwhile the local workspace diverges: a local-only commit plus an
-    # untracked file that must both be discarded.
-    (repo / "local-only.txt").write_text("local only\n", encoding="utf-8")
-    _run_git(repo, "add", "local-only.txt")
-    _run_git(repo, "commit", "-m", "local only commit, never pushed")
+    # Meanwhile the local workspace holds an untracked file, which is set aside.
     (repo / "untracked.txt").write_text("junk\n", encoding="utf-8")
     assert _run_git(repo, "rev-parse", "HEAD") != remote_head
 
@@ -287,7 +284,7 @@ def test_pull_force_discards_local_changes_and_matches_remote(
 
     assert (repo / "README.md").read_text(encoding="utf-8") == "remote update\n"
     assert not (repo / "untracked.txt").exists()
-    assert not (repo / "local-only.txt").exists()
+    assert "pull-force" in _run_git(repo, "stash", "list")
     assert _run_git(repo, "rev-parse", "HEAD") == remote_head
     # ``.cgitsync/`` is ComplexGitSync's own generated state directory, not a
     # discarded local change; git clean -fd never touches it (see

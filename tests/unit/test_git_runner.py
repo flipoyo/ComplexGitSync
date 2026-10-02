@@ -371,6 +371,7 @@ def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch,
         calls.append((tuple(args), Path(cwd) if cwd is not None else None))
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
+    monkeypatch.setattr(GitRunner, "commits_force_pull_would_drop", lambda self, path, ref: 0)
     monkeypatch.setattr(GitRunner, "_run", _fake_run)
     repo_path = tmp_path / "repo"
 
@@ -378,6 +379,7 @@ def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch,
 
     assert calls == [
         (("fetch", "origin", "main"), repo_path),
+        (("status", "--porcelain"), repo_path),
         (("checkout", "-B", "main", "FETCH_HEAD"), repo_path),
         (("clean", "-fd"), repo_path),
     ]
@@ -1051,11 +1053,8 @@ class _FakeGitRunner:
     def pull(self, repo_path, *, remote="origin", ref_name=None) -> None:
         return None
 
-    def force_pull(self, repo_path, *, remote="origin", ref_name=None) -> None:
-        return None
-
-    def reset_hard(self, repo_path, ref_name: str = "HEAD") -> None:
-        return None
+    def force_pull(self, repo_path, *, remote="origin", ref_name=None) -> bool:
+        return False
 
     def clean_untracked(self, repo_path) -> None:
         return None
@@ -1093,7 +1092,10 @@ class _FakeGitRunner:
     def upstream_configured(self, repo_path) -> bool:
         return True
 
-    def local_only_commit_count(self, repo_path) -> int:
+    def local_only_commit_count(self, repo_path, ref: str = "HEAD") -> int:
+        return 0
+
+    def commits_force_pull_would_drop(self, repo_path, ref_name) -> int:
         return 0
 
 

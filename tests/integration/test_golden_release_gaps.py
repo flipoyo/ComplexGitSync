@@ -212,58 +212,33 @@ class TestFreezeReleaseForceGoldenCoverage:
         assert "fast-forward" in captured.err
         assert "Traceback" not in captured.err
 
-    def test_freeze_release_force_resolves_genuine_divergence(self, tmp_path, capsys):
+    def test_freeze_release_force_refuses_to_drop_a_local_only_commit(self, tmp_path, capsys):
+        """A genuine divergence holds a commit no remote has. ComplexGitSync rewrites
+        nothing (`AdditionalSpecs.md`, *The hard prohibitions*), so the forced pull
+        refuses instead of leaving that commit on no branch: nothing is tagged, nothing
+        is pushed, and the local commit is still there. (The command commits before it
+        pulls, so HEAD may carry its own commit on top; the old head stays an ancestor.)
+        """
         workspace = self._diverged_workspace(tmp_path)
         repo = workspace["repo"]
         remote = workspace["remote"]
         snapshot = workspace["snapshot"]
+        head_before = _run_git(repo, "rev-parse", "HEAD")
 
         exit_code = cli_main(
             ["freeze-release-force", "v1.0.0", "release commit", "--gts", str(snapshot)]
         )
         captured = capsys.readouterr()
 
-        assert exit_code == 0
-
-        # The printed git_command line documents the force pull path
-        # (fetch + checkout -B <branch> FETCH_HEAD + clean -fd), not a plain
-        # fast-forward pull.
-        assert "git fetch" in captured.out
-        assert "checkout -B" in captured.out
-        assert "FETCH_HEAD" in captured.out
-        assert "clean -fd" in captured.out
-        assert "git commit -m 'release commit'" in captured.out
-        assert "git tag v1.0.0" in captured.out
-
-        # Tree-state summary line and repo tree are printed.
-        assert "READY" in captured.out
-        assert "ready=true" in captured.out
-        assert "name=v1.0.0" in captured.out
-        assert "repos:" in captured.out
-        assert "demo (root) [ALIGNED]" in captured.out
-
-        # The local-only divergent commit was genuinely discarded ...
-        assert not (repo / "local-only.txt").exists()
-        # ... while the remote's diverged commit was actually adopted.
-        assert (repo / "remote-only.txt").exists()
-        assert (repo / "remote-only.txt").read_text(encoding="utf-8") == "remote change\n"
-
-        # The remote-only commit is part of local history (not just the
-        # working tree) — a real force-checkout happened, not a merge.
-        log = _run_git(repo, "log", "--oneline", "--all")
-        assert "remote-only change" in log
-
-        # The release tag reached the remote, on top of the adopted history.
-        remote_tags = _run_git(remote, "tag")
-        assert "v1.0.0" in remote_tags.splitlines()
-        tagged_sha = _run_git(repo, "rev-parse", "v1.0.0")
-        remote_only_sha = _run_git(repo, "log", "--format=%H", "--all", "--grep=remote-only change").splitlines()[0]
+        assert exit_code == 1
+        assert "no remote holds them" in captured.err
+        assert "Traceback" not in captured.err
         ancestry = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", remote_only_sha, tagged_sha],
-            cwd=repo,
-            capture_output=True,
+            ["git", "merge-base", "--is-ancestor", head_before, "HEAD"], cwd=repo, capture_output=True
         )
-        assert ancestry.returncode == 0, "release tag must descend from the adopted remote commit"
+        assert ancestry.returncode == 0
+        assert (repo / "local-only.txt").exists()
+        assert "v1.0.0" not in _run_git(remote, "tag").splitlines()
 
 
 # ---------------------------------------------------------------------------

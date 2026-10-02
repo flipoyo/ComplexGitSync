@@ -371,7 +371,7 @@ class GitRunnerProtocol(Protocol):
         *,
         remote: str = "origin",
         ref_name: str | None = None,
-    ) -> None: ...
+    ) -> bool: ...
 
     def merge(
         self,
@@ -430,8 +430,6 @@ class GitRunnerProtocol(Protocol):
         remote: str = "origin",
     ) -> bool: ...
 
-    def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None: ...
-
     def clean_untracked(self, repo_path: Path | str) -> None: ...
 
     def rm_cached(self, repo_path: Path | str, path: str) -> None: ...
@@ -452,7 +450,9 @@ class GitRunnerProtocol(Protocol):
 
     def branch_tracking_counts(self, repo_path: Path | str) -> tuple[int, int] | None: ...
 
-    def local_only_commit_count(self, repo_path: Path | str) -> int: ...
+    def local_only_commit_count(self, repo_path: Path | str, ref: str = "HEAD") -> int: ...
+
+    def commits_force_pull_would_drop(self, repo_path: Path | str, ref_name: str) -> int: ...
 
     def has_upstream(self, repo_path: Path | str) -> bool: ...
 
@@ -913,8 +913,12 @@ class GitRunner:
         *,
         remote: str = "origin",
         ref_name: str | None = None,
-    ) -> None:
-        """Force the local branch to match *remote/ref_name* and clean untracked files."""
+    ) -> bool:
+        """Force the local branch to match *remote/ref_name*; returns whether work was stashed first.
+
+        Uncommitted and untracked work is saved with ``git stash push -u``, so it can be
+        brought back with ``git stash pop``. A commit no remote holds is refused, never dropped.
+        """
         # Deliberately not git_branch.DEFAULT_BRANCH: this module knows
         # nothing about a .cgs and must stay usable on a bare repository
         # path with no tree behind it. Reaching a literal here means both
@@ -923,8 +927,25 @@ class GitRunner:
         # chain that git_branch.py owns.
         selected_ref = ref_name or self.current_branch(repo_path) or "main"
         self._run("fetch", remote, selected_ref, cwd=repo_path)
+        # ComplexGitSync rewrites nothing (AdditionalSpecs.md, *The hard prohibitions*): a
+        # forced pull never leaves a commit on no branch. Push or merge it first.
+        dropped = self.commits_force_pull_would_drop(repo_path, selected_ref)
+        if dropped:
+            raise GitSyncError(
+                f"{repo_path}: pull-force would leave {dropped} commit(s) on no branch, because no "
+                "remote holds them. Nothing was changed. Push them, or merge, and run it again."
+            )
+        # Uncommitted and untracked work is set aside, not discarded: `git stash push -u`.
+        stashed = bool(self.status_porcelain(repo_path))
+        if stashed:
+            self._run(
+                "-c", "user.name=cgitsync", "-c", "user.email=cgitsync@localhost",
+                "stash", "push", "-u", "-m", "cgitsync pull-force: work set aside before the resync",
+                cwd=repo_path,
+            )
         self._run("checkout", "-B", selected_ref, "FETCH_HEAD", cwd=repo_path)
         self.clean_untracked(repo_path)
+        return stashed
 
     def merge(
         self,
@@ -1395,10 +1416,6 @@ class GitRunner:
         self.fetch(repo_path, remote=remote, ref_name=branch)
         return True
 
-    def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None:
-        """Discard local tracked changes in *repo_path*."""
-        self._run("reset", "--hard", ref_name, cwd=repo_path)
-
     def clean_untracked(self, repo_path: Path | str) -> None:
         """Remove untracked files and directories in *repo_path*."""
         self._run("clean", "-fd", cwd=repo_path)
@@ -1500,8 +1517,8 @@ class GitRunner:
         ahead_raw, behind_raw = counts.stdout.strip().split()
         return (int(ahead_raw), int(behind_raw))
 
-    def local_only_commit_count(self, repo_path: Path | str) -> int:
-        """Count commits reachable from HEAD that no remote-tracking ref holds.
+    def local_only_commit_count(self, repo_path: Path | str, ref: str = "HEAD") -> int:
+        """Count commits reachable from *ref* (``HEAD`` by default) that no remote-tracking ref holds.
 
         Read-only, and a sharper question than "is the branch ahead of its
         upstream": it is true of a branch with no upstream at all, and false
@@ -1512,11 +1529,26 @@ class GitRunner:
         Returns ``0`` for a repository with no commits yet, since an unborn
         HEAD holds nothing to lose.
         """
-        counted = self._query("rev-list", "--count", "HEAD", "--not", "--remotes", cwd=repo_path)
+        counted = self._query("rev-list", "--count", ref, "--not", "--remotes", cwd=repo_path)
         if counted.returncode != 0:
             return 0
         raw = counted.stdout.strip()
         return int(raw) if raw.isdigit() else 0
+
+    def commits_force_pull_would_drop(self, repo_path: Path | str, ref_name: str) -> int:
+        """Commits only this repository holds that :meth:`force_pull` would leave on no branch.
+
+        ``force_pull`` points the target branch at the remote's tip, and moves
+        ``HEAD`` off wherever it was. Commits reachable from the target branch
+        or from a detached ``HEAD`` that no remote-tracking ref holds would be left in
+        the reflog alone; another checked-out branch keeps its own ref. Read-only. ``0`` means nothing would be lost.
+        """
+        target = ref_name
+        dropped = self.local_only_commit_count(repo_path, f"refs/heads/{target}") if self.local_branch_exists(repo_path, target) else 0
+        # A different checked-out *branch* keeps its own ref; only a detached HEAD is left on no branch.
+        if self.current_branch(repo_path) is None:
+            dropped += self.local_only_commit_count(repo_path, "HEAD")
+        return dropped
 
     def upstream_configured(self, repo_path: Path | str) -> bool:
         """Return ``True`` when the current branch *names* an upstream.

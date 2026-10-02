@@ -144,14 +144,14 @@ def _pull_force_risk_hint(client: ComplexGitSyncClient) -> str:
             if counts is not None and counts[0] > 0:
                 ahead.append((repo.name or repo.repo_id, counts[0]))
 
-    base = (
-        "You can try cgitsync autofix (diagnoses first) or, to discard "
-        "local-only commits unconditionally, cgitsync pull-force"
-    )
+    base = "You can try cgitsync autofix (diagnoses first)"
     if not ahead:
         return base
-    discards = ", ".join(f"{name} ahead(+{count})" for name, count in ahead)
-    return f"{base} — this would discard: {discards}"
+    holding = ", ".join(f"{name} ahead(+{count})" for name, count in ahead)
+    return (
+        f"{base}. cgitsync pull-force refuses while commits exist only here ({holding}); "
+        "push or merge them first"
+    )
 
 
 def _run_logs_dir(client: ComplexGitSyncClient, resolved_source: Path) -> Path | None:

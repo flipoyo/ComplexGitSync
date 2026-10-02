@@ -812,7 +812,7 @@ def test_pull_force_risk_hint_names_what_would_be_discarded(tmp_path):
     hint = _shared._pull_force_risk_hint(client)
 
     assert "cgitsync autofix" in hint
-    assert "cgitsync pull-force" in hint
+    assert "pull-force refuses" in hint
     assert ".memory ahead(+3)" in hint
     assert "docs ahead" not in hint
 
@@ -835,7 +835,4 @@ def test_pull_force_risk_hint_skips_a_repo_whose_tracking_state_cannot_be_read(t
 def test_pull_force_risk_hint_with_no_registry_is_the_bare_suggestion(tmp_path):
     hint = _shared._pull_force_risk_hint(_StubClient())
 
-    assert hint == (
-        "You can try cgitsync autofix (diagnoses first) or, to discard "
-        "local-only commits unconditionally, cgitsync pull-force"
-    )
+    assert hint == "You can try cgitsync autofix (diagnoses first)"

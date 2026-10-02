@@ -157,7 +157,7 @@
     },
     "git_runner.py": {
       "internal_imports": 3,
-      "loc": 1275,
+      "loc": 1302,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -307,7 +307,7 @@
     },
     "operations/restart.py": {
       "internal_imports": 17,
-      "loc": 263,
+      "loc": 295,
       "public_symbols": 1
     },
     "orchestre/__init__.py": {

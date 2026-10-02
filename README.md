@@ -1,4 +1,4 @@
-# ComplexGitSync v3.14.8
+# ComplexGitSync v3.14.11
 ## A distributed git-native Operating Space
 
 __Multi git-repo project management, synchronization, and persistance__
@@ -319,7 +319,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `validate` | `<source>` `--discover-nested` | Parse, normalize, and validate a .cgs or validate a .gts topology. |
 | Expert | `clone` | `<source>` `--target-dir` `--output-path` | Clone a nested project tree from .cgs. |
 | Expert | `pull` | `[source]` `--private` `--force-protocol` `--commit-gitignore` | Resynchronise an existing project tree from .cgs or .gts. |
-| Expert | `pull-force` | `[source]` `--private` `--force-protocol` | Destructively resynchronise an existing project tree from .cgs or .gts. |
+| Expert | `pull-force` | `[source]` `--private` `--force-protocol` | Destructively resynchronise an existing project tree from .cgs or .gts: uncommitted changes and untracked files are set aside with `git stash push -u` (a warning names each; `git stash pop` brings them back), and it refuses for the whole tree, changing nothing, when any repository holds commits no remote has. It never force-pushes. |
 | Expert | `autofix` | `[source]` `--error` `--repo` | Diagnose and repair the situation named by the last failing command's error — reads `.cgitsync/logs/` when `--error` is omitted. Only repairs a situation a registered repair recognises; refuses rather than guessing otherwise. |
 | Expert | `fetch` | `--private` `--gts` | Update every repository's view of its origin (`git fetch --prune origin`), without moving any branch, `HEAD` or worktree, and writes no State. Prints one line per repository, fetched or skipped with the reason. Run it before `branch --list` to see branches pushed or deleted elsewhere since the last fetch. |
 | Expert | `checkout` | `<branch>` `--private` `--ref-kind` `--gts` | Synchronize the tree to a branch or tag. A branch that exists on the remote is joined, not recreated — fetching it first if this workspace has never seen it, so a prior `pull` is not required. |
@@ -428,7 +428,7 @@ repository is actually on:
 | `synced` | Level with the upstream. |
 | `ahead(+N)` | `N` commits here that the remote does not have. `push` sends them. |
 | `behind(-N)` | `N` commits on the remote that are not here. `pull` fetches them. |
-| `diverged(+N/-M)` | Both, from a common ancestor. `merge` or `pull-force` resolves it. |
+| `diverged(+N/-M)` | Both, from a common ancestor. `merge` or `autofix` resolves it; `pull-force` refuses while you hold commits no remote has. |
 | `no-upstream` | This branch was never pushed, so there is nothing to compare it to. Normal for a branch you just made, and for a **private/local** repository that only `push --private` ever sends. |
 | `unknown` | The branch names an upstream that does not resolve. `pull` or `push` repairs it; if it persists, the remote is unreachable or the ref was deleted. |
 

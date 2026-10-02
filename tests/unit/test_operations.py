@@ -237,7 +237,6 @@ class _FakeGitRunnerForOperations:
         self.force_pulled: list[tuple[Path, str, str | None]] = []
         self.tagged: list[tuple[Path, str]] = []
         self.cloned: list[tuple[str, Path, str]] = []
-        self.reset_hard_paths: list[Path] = []
         self.cleaned_paths: list[Path] = []
         self.command_order: list[tuple[str, Path]] = []
         self._staged_changes: dict[Path, bool] = {}
@@ -479,10 +478,8 @@ class _FakeGitRunnerForOperations:
         if ref_name is not None:
             self._current_branches[path] = ref_name
 
-    def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None:
-        path = Path(repo_path)
-        self.reset_hard_paths.append(path)
-        self.command_order.append(("reset_hard", path))
+    def commits_force_pull_would_drop(self, repo_path: Path | str, ref_name: str) -> int:
+        return 0
 
     def clean_untracked(self, repo_path: Path | str) -> None:
         path = Path(repo_path)
@@ -672,6 +669,7 @@ def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch,
         calls.append((tuple(args), Path(cwd) if cwd is not None else None))
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
+    monkeypatch.setattr(GitRunner, "commits_force_pull_would_drop", lambda self, path, ref: 0)
     monkeypatch.setattr(GitRunner, "_run", _fake_run)
     repo_path = tmp_path / "repo"
 
@@ -679,6 +677,7 @@ def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch,
 
     assert calls == [
         (("fetch", "origin", "main"), repo_path),
+        (("status", "--porcelain"), repo_path),
         (("checkout", "-B", "main", "FETCH_HEAD"), repo_path),
         (("clean", "-fd"), repo_path),
     ]

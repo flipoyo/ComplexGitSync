@@ -55,7 +55,7 @@ COMMANDS: dict[str, str] = {
     "validate": "Parse, normalize, and validate a .cgs or validate a .gts topology.",
     "clone": "Clone a nested project tree from .cgs.",
     "pull": "Resynchronise an existing project tree from .cgs or .gts.",
-    "pull-force": "Destructively resynchronise an existing project tree from .cgs or .gts.",
+    "pull-force": "Destructively resynchronise an existing project tree from .cgs or .gts; refuses while commits exist only here.",
     "fetch": "Update every repository's view of its origin, without moving any branch.",
     "autofix": "Diagnose and repair the situation named by the last failing command's error.",
     "checkout": "Synchronize the tree to a branch or tag.",
