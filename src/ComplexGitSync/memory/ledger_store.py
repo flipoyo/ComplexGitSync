@@ -59,7 +59,7 @@ import tomli_w
 
 from ..paths import PathResolver
 from ..universal_clock import SystemClock
-from .ledger_entry import ClockProtocol, LedgerEntry
+from .ledger_entry import ClockProtocol, LedgerEntry, Relocation
 
 #: Filename of the HEAD cache, sibling to the numbered entry files.
 HEAD_FILENAME = "HEAD"
@@ -275,6 +275,8 @@ class LedgerStore:
             payload["environment"] = entry.environment
         if entry.release:
             payload["release"] = dict(entry.release)
+        if entry.relocations:
+            payload["relocations"] = [relocation.as_dict() for relocation in entry.relocations]
         return {"entry": payload}
 
     @staticmethod
@@ -301,6 +303,8 @@ class LedgerStore:
             environment=raw.get("environment", ""),
             # Additive and absent except on the entry a real release wrote.
             release=tuple(sorted(raw.get("release", {}).items())),
+            # Additive and absent except on an entry that persisted a branch on `ancestors`.
+            relocations=tuple(Relocation.from_dict(item) for item in raw.get("relocations", [])),
         )
 
     # -- atomic write / read of one entry ----------------------------------
@@ -346,6 +350,11 @@ class LedgerStore:
         with open(path, "rb") as fh:
             data = tomllib.load(fh)
         return cls._entry_from_toml_payload(data)
+
+    @classmethod
+    def entry_from_text(cls, text: str) -> LedgerEntry:
+        """Load one entry from the text of an entry file — one read from Git, say, not from disk."""
+        return cls._entry_from_toml_payload(tomllib.loads(text))
 
     def read_all_entries(self) -> list[LedgerEntry]:
         """Load every entry in the directory, in ascending ``seq`` order.
@@ -490,6 +499,7 @@ class LedgerStore:
         commit_log: str = "",
         environment: str = "",
         release: Sequence[tuple[str, str]] = (),
+        relocations: Sequence[Relocation] = (),
     ) -> LedgerEntry:
         """Scrub ``argv``, build the next chain entry, and persist it.
 
@@ -506,7 +516,7 @@ class LedgerStore:
         existing_entries = self.read_all_entries()
         prev_entry = existing_entries[-1] if existing_entries else None
 
-        entry = LedgerEntry.build_next(prev_entry, command=command, argv=scrubbed_argv, state_id=state_id, state_dir=state_dir, outcome=outcome, clock=clock, toolchain=toolchain, commit_log=commit_log, environment=environment, release=release)
+        entry = LedgerEntry.build_next(prev_entry, command=command, argv=scrubbed_argv, state_id=state_id, state_dir=state_dir, outcome=outcome, clock=clock, toolchain=toolchain, commit_log=commit_log, environment=environment, release=release, relocations=relocations)
         self.write_entry(entry)
         return entry
 

@@ -50,6 +50,7 @@ from .integrity import (
 from .ledger_entry import (
     ClockProtocol,
     LedgerEntry,
+    Relocation,
 )
 from .ledger_store import (
     ArgvScrubber,
@@ -78,6 +79,7 @@ __all__ = [
     "HeadPointer",
     "HistoryState",
     "LedgerEntry",
+    "Relocation",
     "LedgerSeqCollisionError",
     "LedgerStore",
     "LedgerStoreCorruptionError",

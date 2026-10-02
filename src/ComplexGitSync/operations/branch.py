@@ -12,7 +12,9 @@ from typing import TYPE_CHECKING, Literal
 
 from ..errors import GitSyncError
 from ..git_branch import (
+    ANCESTORS_BRANCH,
     DEFAULT_BRANCH,
+    BranchResolution,
     closeable,
     closed_branch_name,
 )
@@ -365,9 +367,34 @@ class BranchOperation:
         no such branch is skipped, not an error. Returns one
         :class:`RepoOutcome` per repository visited.
         """
+        plan = BranchOperation.assert_closeable(tree, git_runner, branch_name, scope=scope)
+        return tuple(
+            BranchOperation._close_one(repo, resolution, git_runner) for repo, resolution in plan
+        )
+
+    @staticmethod
+    def assert_closeable(
+        tree: WorkingGitTree,
+        git_runner: GitRunner,
+        branch_name: str,
+        *,
+        scope: RepoScope = RepoScope.ALL,
+    ) -> list[tuple[WorkingRepo, BranchResolution]]:
+        """Refuse a close that cannot happen, before anything is written; else return the plan.
+
+        The checks :meth:`close_branch` makes first, on their own, so a
+        caller with work to do before the rename (keeping the branch on
+        ``ancestors``) refuses at the same point. The plan is each
+        repository in *scope*, leaf-first, with the branch it follows.
+        """
         Preflight.assert_ready(tree)
         root = tree.get(ROOT_REPO_ID) if ROOT_REPO_ID in tree.repos else None
         project_default_branch = (root.default_branch if root else None) or DEFAULT_BRANCH
+        if branch_name == ANCESTORS_BRANCH:
+            raise GitSyncError(
+                f"'{ANCESTORS_BRANCH}' keeps what every closed branch alone held, "
+                "and is never closed or deleted."
+            )
         if not closeable(branch_name, project_default_branch=project_default_branch):
             raise GitSyncError(
                 f"'{branch_name}' is this project's own default branch and cannot be "
@@ -393,10 +420,7 @@ class BranchOperation:
                 f"currently checked out on it. Check out another branch there first, "
                 "then close it."
             )
-
-        return tuple(
-            BranchOperation._close_one(repo, resolution, git_runner) for repo, resolution in plan
-        )
+        return plan
 
     @staticmethod
     def _close_one(repo: WorkingRepo, resolution, git_runner: GitRunner) -> RepoOutcome:

@@ -30,6 +30,7 @@ from ..git_tree import (
     fix_circularities as _fix_circularities,
 )
 from ..gts_document import GtsDocument
+from ..memory import Relocation
 from ..memory.commit_log import (
     CommitLog,
 )
@@ -302,6 +303,7 @@ class DocumentLoader:
         commits: Sequence[Any] = (),
         publications: Mapping[str, Sequence[Any]] | None = None,
         release: tuple[tuple[str, str], ...] | None = None,
+        relocations: Sequence[Relocation] = (),
     ) -> Path:
         registry = self.client.get_dependency_registry()
         root_entry = registry.get("root")
@@ -380,6 +382,7 @@ class DocumentLoader:
             tree_root=root_entry.absolute_path,
             commit_log=commit_log_digest,
             release=release,
+            relocations=relocations,
         )
         # The log is a record of a run, not of a State: two runs that leave
         # the tree identical produce one State and two logs, so it is named

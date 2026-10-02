@@ -54,6 +54,7 @@ from ..git_tree import (
 )
 from ..git_tree_branch import GitTreeBranches, ProjectBranch
 from ..memory import (
+    Relocation,
     VerificationReport,
 )
 from ..memory import self_history as self_history_store
@@ -65,6 +66,7 @@ from ..memory.commit_log import (
 )
 from ..operations import (
     BranchTopologyReport,
+    RepoAncestry,
     RepoBranches,
     RepoOutcome,
     ResolveOutcome,
@@ -152,6 +154,13 @@ class ComplexGitSyncClient:
     #: both the rendered object and the verdict does not have to verify the
     #: chain twice — which with ``--repair`` would mean repairing twice.
     last_verify_report: VerificationReport | None = None
+    #: What the last ``branch close``/``branch delete``/``branch check``
+    #: found each repository's copy of the branch to hold
+    #: (`AncestorOperation.inspect`), and what keeping it on ``ancestors``
+    #: did, per repository. Kept here for the same reason as
+    #: ``last_write_outcomes``.
+    last_ancestry: tuple[RepoAncestry, ...] = ()
+    last_kept_outcomes: tuple[RepoOutcome, ...] = ()
     #: Set when this run recorded a State in a DEV tree whose ``.cgs`` declares no memory (`MemorySetup`).
     memory_setup_due: bool = False
     run_logger: CommandRunLogger | None = None
@@ -476,8 +485,20 @@ class ComplexGitSyncClient:
         return self._tree_commands.tree_branch_label()
 
     def close_branch(self, branch_name: str, *, private: bool = False) -> WorkingGitTree:
-        """Rename *branch_name* to its closed name across the full tree, leaf-first."""
+        """Keep what *branch_name* alone holds on ``ancestors``, then rename it to its closed name, leaf-first."""
         return self._tree_commands.close_branch(branch_name, private=private)
+
+    def branch_ancestry(self, branch_name: str, *, private: bool = False) -> tuple[RepoAncestry, ...]:
+        """What deleting *branch_name* would lose in each repository, and whether ``ancestors`` keeps it; writes nothing."""
+        return self._tree_commands.branch_ancestry(branch_name, private=private)
+
+    def preserved_branches(self) -> tuple[str, ...]:
+        """The project branches whose history the ledger records as kept on ``ancestors``, deleted ones included."""
+        return self._tree_commands.preserved_branches()
+
+    def delete_branch(self, branch_name: str, *, private: bool = False) -> WorkingGitTree:
+        """Delete a closed branch tree-wide, once ``ancestors`` keeps and the ledger records everything it alone held."""
+        return self._tree_commands.delete_branch(branch_name, private=private)
 
     def commit(
         self,
@@ -789,13 +810,13 @@ class ComplexGitSyncClient:
         """What this workspace remembers, in one answer."""
         return self._memory_commands.memory_status(cgshome)
 
-    def memory_as_of(self, cgshome: str | Path, moment: str) -> dict[str, Any]:
-        """What was this tree at *moment*: the State the chain recorded at or before it."""
-        return self._memory_commands.memory_as_of(cgshome, moment)
+    def memory_as_of(self, cgshome: str | Path, moment: str, *, branch: str | None = None) -> dict[str, Any]:
+        """What was this tree at *moment*: the State the chain recorded at or before it, in this chapter or *branch*'s."""
+        return self._memory_commands.memory_as_of(cgshome, moment, branch=branch)
 
-    def memory_list(self, cgshome: str | Path) -> list[dict[str, Any]]:
-        """Every State this workspace holds, with what the ledger says about it."""
-        return self._memory_commands.memory_list(cgshome)
+    def memory_list(self, cgshome: str | Path, *, branch: str | None = None) -> list[dict[str, Any]]:
+        """Every State this workspace holds, or *branch*'s chapter holds, with what the ledger says about it."""
+        return self._memory_commands.memory_list(cgshome, branch=branch)
 
     def memory_self_history(self, cgshome: str | Path) -> list[dict[str, Any]]:
         """Every self-history record this workspace holds, oldest first."""
@@ -880,8 +901,9 @@ class ComplexGitSyncClient:
         commits: Sequence[Any] = (),
         publications: Mapping[str, Sequence[Any]] | None = None,
         release: tuple[tuple[str, str], ...] | None = None,
+        relocations: Sequence[Relocation] = (),
     ) -> Path:
-        return self._document_loader.write_gts_snapshot(command_origin=command_origin, output_path=output_path, freeze_name=freeze_name, commits=commits, publications=publications, release=release)
+        return self._document_loader.write_gts_snapshot(command_origin=command_origin, output_path=output_path, freeze_name=freeze_name, commits=commits, publications=publications, release=release, relocations=relocations)
 
     def get_ledger_history(self, register_path: str | Path) -> list[dict[str, Any]]:
         """Return all ledger events for *register_path* in topological DAG order."""

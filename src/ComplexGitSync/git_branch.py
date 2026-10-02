@@ -377,20 +377,31 @@ def closed_branch_origin(branch_name: str) -> str | None:
     return branch_name.removeprefix(CLOSED_BRANCH_PREFIX) or None
 
 
+ANCESTORS_BRANCH = "ancestors"
+"""The project branch that keeps every history a closed branch alone held.
+
+One per project (BranchAncestors, ruling 1), named in each repository by
+the same rule as any project branch: ``ancestors`` in a project repository,
+``<project>_ancestors`` in a private/local one. It is permanent: never
+checked out, never closed, never deleted, and it only ever gains commits.
+"""
+
+
 def closeable(branch_name: str, *, project_default_branch: str) -> bool:
     """Whether *branch_name* may be closed at all.
 
     ``False`` for the project's own default branch: every fallback chain
     :func:`resolve_declared_ref` computes eventually lands on it, so
     closing it would leave nothing for a repository with no branch of its
-    own to fall back to. ``True`` for every other name.
+    own to fall back to. ``False`` for :data:`ANCESTORS_BRANCH` too, which
+    holds what every closed branch alone held. ``True`` for every other name.
 
     Says nothing about whether a repository is *currently* on
     *branch_name* — that is tree state, which ``git_tree_branch.py`` owns,
     not a fact this Ring-0 module can answer; ``BranchOperation.close_branch``
     checks it separately before acting on any repository.
     """
-    return branch_name != project_default_branch
+    return branch_name not in (project_default_branch, ANCESTORS_BRANCH)
 
 
 def resolve_propagated_ref(
@@ -469,6 +480,7 @@ def _as_optional_str(value: Any) -> str | None:
 
 
 __all__ = [
+    "ANCESTORS_BRANCH",
     "private_local_branch",
     "DEFAULT_BRANCH",
     "BranchResolution",

@@ -45,6 +45,7 @@ from ._shared import (
     _warn_paths_reaching_configuration_repos,
 )
 from .branch_command import handle as _handle_branch_command
+from .branch_command import print_ancestry as _print_ancestry
 from .exit_codes import EXIT_OK, EXIT_REFUSED
 from .fetch_command import handle as _handle_fetch_command
 from .help_text import SEARCH_DIR_HELP
@@ -299,12 +300,44 @@ def _register_branch(subparser: argparse.ArgumentParser) -> None:
     _add_search_dir_argument(listing)
     _add_private_argument(listing, verb="List the branches of")
     close = actions.add_parser(
-        "close", help="Close a project branch: rename it to its closed name, tree-wide, leaf-first.", description="Close a project branch: rename it to its closed name, tree-wide, leaf-first."
+        "close",
+        help="Close a project branch: keep what it alone holds on 'ancestors', then rename it to closed/<branch>.",
+        description=(
+            "Close a project branch: keep what it alone holds on the permanent 'ancestors' branch and record "
+            "that in the ledger, then rename it to closed/<branch>, tree-wide, leaf-first. Afterwards any tool "
+            "may delete the closed branch without losing a commit."
+        ),
     )
     close.add_argument("branch", help="Project branch to close (renamed to closed/<branch>).")
     _add_gts_argument(close)
     _add_search_dir_argument(close)
     _add_private_argument(close, verb="Close the branch in")
+    check = actions.add_parser(
+        "check",
+        help="Say what deleting a branch would lose in each repository, and whether 'ancestors' keeps it; change nothing.",
+        description=(
+            "Say what deleting a branch would lose in each repository: the commits only it reaches and the "
+            "memory files only it holds, and whether 'ancestors' already keeps them (safe, recorded or "
+            "needs ancestor). Changes nothing."
+        ),
+    )
+    check.add_argument("branch", help="Branch to check: a live branch, closed/<branch>, or a closed branch by its old name.")
+    _add_gts_argument(check)
+    _add_search_dir_argument(check)
+    _add_private_argument(check, verb="Check the branch in")
+    delete = actions.add_parser(
+        "delete",
+        help="Delete a closed branch, tree-wide, once 'ancestors' keeps everything it alone held.",
+        description=(
+            "Delete a closed branch, tree-wide: keep on 'ancestors' and record in the ledger anything it alone "
+            "holds that is not kept yet, verify the ledger, then delete it on origin and locally, leaf-first. "
+            "Refuses with nothing deleted when any step fails."
+        ),
+    )
+    delete.add_argument("branch", help="Closed branch to delete: closed/<branch>, or its old name.")
+    _add_gts_argument(delete)
+    _add_search_dir_argument(delete)
+    _add_private_argument(delete, verb="Delete the branch in")
     subparser.set_defaults(handler=_handle_branch)
 
 
@@ -573,6 +606,10 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
 
     listing = memory_commands.add_parser(
         "list", help="Every State this workspace holds, newest recording first."
+    )
+    listing.add_argument(
+        "--branch",
+        help="List another chapter's States instead, read from Git: its branch, closed/<branch>, or the copy 'ancestors' keeps once it is deleted.",
     )
     _add_search_dir_argument(listing)
 
@@ -1115,7 +1152,7 @@ def _execute_memory(
 ) -> int:
     if subcommand in _SIMPLE_MEMORY_SUBCOMMANDS:
         fetch, render = _SIMPLE_MEMORY_SUBCOMMANDS[subcommand]
-        return render(fetch(client, cgshome))
+        return render(fetch(client, cgshome, branch))
     if subcommand == "init":
         _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
         return _print_memory_init(client.memory_init(cgshome, owner=owner))
@@ -1351,6 +1388,8 @@ def _print_memory_list(rows: list[dict]) -> int:
     if not rows:
         print("no States recorded in this workspace.")
         return EXIT_OK
+    if rows[0].get("read_from"):
+        print(f"read_from={rows[0]['read_from']}")
     print(f"{'STATE':<16}  {'RECORDED':<21}  COMMANDS")
     for row in rows:
         commands = ", ".join(row["commands"]) if row["commands"] else "(no entry records it)"
@@ -1377,7 +1416,10 @@ def _shorten(message: str, *, full: bool) -> str:
 
 def _print_memory_explore(answer: dict) -> int:
     branch = answer["branch"]
-    print(f"branch={branch} (current)" if branch else "branch=(no memory mounted here yet)")
+    if answer.get("read_from"):
+        print(f"branch={branch} read_from={answer['read_from']}")
+    else:
+        print(f"branch={branch} (current)" if branch else "branch=(no memory mounted here yet)")
     if "entries" in answer:
         return _print_memory_timeline(answer["entries"])
     return _print_memory_published(answer["commits"])
@@ -1489,6 +1531,10 @@ def _format_environment_tree(record: dict) -> list[str]:
 def _print_memory_show(state: dict, *, full: bool = False) -> int:
     print(f"state={state['state']}")
     print(f"path={state['path']}")
+    if state.get("read_from") and state["read_from"] != "this workspace":
+        print(f"read_from={state['read_from']}")
+    if state.get("commits_on_ancestors"):
+        print(f"commits_on_ancestors={', '.join(state['commits_on_ancestors'])} (their branches are gone; 'ancestors' keeps these commits)")
     print(
         f"project={state['project']} lifecycle_state={state['lifecycle_state']} "
         f"repos={state['repos']} hash_canonicalisation={state['hash_canonicalisation']}"
@@ -1771,14 +1817,15 @@ def _execute_close_branch(
     print(f"git_command=git push <remote> <branch>:refs/heads/closed/{branch} "
           f"&& git push <remote> --delete {branch} && git branch -m {branch} closed/{branch}")
     client.close_branch(branch, private=private)
-    _print_write_outcomes(
-        client,
-        verb="closed",
-        nothing_note=(
-            "no repository in scope had a branch named "
-            f"'{branch}' to close."
-        ),
-    )
+    _print_ancestry(client)
+    if client.last_ancestry and not client.last_write_outcomes:
+        print(f"closed nothing: '{branch}' was already closed; what it alone holds is now kept on 'ancestors'.")
+    else:
+        _print_write_outcomes(
+            client,
+            verb="closed",
+            nothing_note=f"no repository in scope had a branch named '{branch}' to close.",
+        )
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -2327,8 +2374,8 @@ def _execute_init_from_submodules(
 #: subcommands are added. Defined last: every
 #: `_print_memory_*` function it references must already exist.
 _SIMPLE_MEMORY_SUBCOMMANDS: dict[str, tuple[Callable, Callable]] = {
-    "status": (lambda client, cgshome: client.memory_status(cgshome), _print_memory_status),
-    "list": (lambda client, cgshome: client.memory_list(cgshome), _print_memory_list),
+    "status": (lambda client, cgshome, branch: client.memory_status(cgshome), _print_memory_status),
+    "list": (lambda client, cgshome, branch: client.memory_list(cgshome, branch=branch), _print_memory_list),
 }
 
 

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 from ..errors import GitSyncError
 from ..memory import integrity
 from ..memory.integrity import ChainVerifier
-from ..memory.ledger_entry import LedgerEntry
+from ..memory.ledger_entry import LedgerEntry, Relocation
 from ..memory.ledger_store import LedgerStore
 from .base import CHAIN_SHAPED_REPOS, RepairOutcome, Situation, is_chain_shaped
 
@@ -220,7 +220,8 @@ class DivergentUserRepair:
             release = tuple(sorted(original.get("release", {}).items()))
             environment = original.get("environment", "")
             commit_log = original.get("commit_log", "")
-            entry_hash = LedgerEntry.compute_hash(seq=next_seq, prev=prev_hash, recorded_at=original["recorded_at"], command=original["command"], argv=original["argv"], state_id=original["state_id"], state_dir=original["state_dir"], outcome=original["outcome"], toolchain=toolchain, commit_log=commit_log, environment=environment, release=release)
+            relocations = tuple(Relocation.from_dict(item) for item in original.get("relocations", []))
+            entry_hash = LedgerEntry.compute_hash(seq=next_seq, prev=prev_hash, recorded_at=original["recorded_at"], command=original["command"], argv=original["argv"], state_id=original["state_id"], state_dir=original["state_dir"], outcome=original["outcome"], toolchain=toolchain, commit_log=commit_log, environment=environment, release=release, relocations=relocations)
             entry = LedgerEntry(
                 seq=next_seq,
                 prev=prev_hash,
@@ -235,6 +236,7 @@ class DivergentUserRepair:
                 entry_hash=entry_hash,
                 environment=environment,
                 release=release,
+                relocations=relocations,
             )
             LedgerStore(lgr_dir).write_entry(entry)
             prev_hash = entry_hash

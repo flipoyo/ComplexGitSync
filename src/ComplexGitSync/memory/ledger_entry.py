@@ -70,6 +70,33 @@ class ClockProtocol(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class Relocation:
+    """One asset's address mutation: where it was, where it is kept now, and what it hashed to.
+
+    Written by the step that persists a branch on ``ancestors``
+    (BranchAncestors §2). ``asset`` is ``commit:<repo>:<sha>`` or
+    ``lgr:<repo>:<chapter>:<seq>``; ``origin`` and ``to`` are
+    ``<repo>:refs/heads/<branch>`` addresses; ``ancestor`` is the commit sha
+    or the entry's ``entry_hash`` at its old address. Serialised with the
+    key ``from`` for ``origin``, which Python reserves.
+    """
+
+    asset: str
+    origin: str
+    to: str
+    ancestor: str
+
+    def as_dict(self) -> dict[str, str]:
+        """The four fields under the keys the ledger writes them with."""
+        return {"asset": self.asset, "from": self.origin, "to": self.to, "ancestor": self.ancestor}
+
+    @staticmethod
+    def from_dict(raw: dict[str, str]) -> Relocation:
+        """Read back what :meth:`as_dict` wrote."""
+        return Relocation(asset=raw["asset"], origin=raw["from"], to=raw["to"], ancestor=raw["ancestor"])
+
+
+@dataclass(frozen=True, slots=True)
 class LedgerEntry:
     """One hash-chained ledger entry.
 
@@ -92,6 +119,7 @@ class LedgerEntry:
     entry_hash: str
     environment: str = ""
     release: tuple[tuple[str, str], ...] = ()
+    relocations: tuple[Relocation, ...] = ()
 
     @staticmethod
     def _canonical_payload(
@@ -108,6 +136,7 @@ class LedgerEntry:
         commit_log: str = "",
         environment: str = "",
         release: Sequence[tuple[str, str]] = (),
+        relocations: Sequence[Relocation] = (),
     ) -> dict[str, Any]:
         """Every ``LedgerEntry`` field except ``entry_hash`` itself, as a plain
         dict ready for canonical serialisation.
@@ -150,6 +179,11 @@ class LedgerEntry:
             # hash. Absent on nearly every entry — only the one `freeze_release()`
             # writes for an actual release carries this.
             payload["release"] = {name: value for name, value in release}
+        if relocations:
+            # Additive for the same reason again: only the entry written by
+            # the step that persists a branch on `ancestors` carries it, so
+            # every chain written before it keeps its hashes byte for byte.
+            payload["relocations"] = [relocation.as_dict() for relocation in relocations]
         return payload
 
     @staticmethod
@@ -178,6 +212,7 @@ class LedgerEntry:
         commit_log: str = "",
         environment: str = "",
         release: Sequence[tuple[str, str]] = (),
+        relocations: Sequence[Relocation] = (),
     ) -> str:
         """Compute ``entry_hash`` over the canonical serialisation of every
         other field, including ``prev`` — so editing any field, or splicing in
@@ -197,6 +232,7 @@ class LedgerEntry:
             commit_log=commit_log,
             environment=environment,
             release=release,
+            relocations=relocations,
         )
         digest = hashlib.sha256(LedgerEntry._canonical_json(payload).encode("utf-8")).hexdigest()
         return f"sha256:{digest}"
@@ -215,6 +251,7 @@ class LedgerEntry:
         commit_log: str = "",
         environment: str = "",
         release: Sequence[tuple[str, str]] = (),
+        relocations: Sequence[Relocation] = (),
     ) -> LedgerEntry:
         """Build the next entry in the chain following ``prev``.
 
@@ -231,6 +268,7 @@ class LedgerEntry:
 
         toolchain_tuple = tuple(sorted(toolchain))
         release_tuple = tuple(sorted(release))
+        relocation_tuple = tuple(relocations)
 
         entry_hash = LedgerEntry.compute_hash(
             seq=seq,
@@ -245,6 +283,7 @@ class LedgerEntry:
             commit_log=commit_log,
             environment=environment,
             release=release_tuple,
+            relocations=relocation_tuple,
         )
 
         return LedgerEntry(
@@ -261,10 +300,12 @@ class LedgerEntry:
             entry_hash=entry_hash,
             environment=environment,
             release=release_tuple,
+            relocations=relocation_tuple,
         )
 
 
 __all__ = [
     "ClockProtocol",
     "LedgerEntry",
+    "Relocation",
 ]

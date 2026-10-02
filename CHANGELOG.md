@@ -1,5 +1,41 @@
 # Changelog
 
+## 4.2.1 - 2026-10-02
+
+- `branch delete` now refuses, with nothing deleted, when origin has moved a
+  branch since the check, so a commit pushed in between is never lost.
+- `memory as-of`, `list`, `explore` and `show` now find a deleted chapter by
+  the address the ledger recorded for it.
+- `branch check` on a branch no repository has now says so, and exits
+  non-zero.
+
+## 4.2.0 - 2026-10-02
+
+A closed branch can now be deleted by any tool, even plain Git, without
+losing a commit.
+
+- `branch close` first keeps every commit the branch alone holds on the
+  project's permanent `ancestors` branch (`<project>_ancestors` in a
+  private/local repository), records each move in the ledger, and checks the
+  ledger still verifies. Only then does it rename. `ancestors` only ever gains
+  a commit, and is never closed, deleted or forced.
+- `branch close` on a branch that is already closed keeps and records what it
+  alone holds, and renames nothing.
+- New `branch check <branch>` says, per repository, what deleting a branch
+  would lose, and whether `ancestors` already keeps it: `safe`, `recorded` or
+  `needs ancestor`. It changes nothing but remote-tracking refs.
+- New `branch delete <branch>` deletes a closed branch on origin and locally.
+  It first keeps and records anything not yet kept, reusing what the close
+  recorded, and refuses with nothing deleted if any step fails.
+- `branch list` marks the closed branches `ancestors` keeps, and names deleted
+  branches whose history it still holds.
+- `memory as-of`, `memory list` and `memory explore` take `--branch` to read
+  another chapter of the memory, even one whose branch was deleted, and say
+  where they read it. `memory show` finds such a State too.
+- `verify` checks every recorded move and reports one that does not resolve
+  as `UNRESOLVED_RELOCATION`.
+- Fixed: `verify` could never verify the ledger entry written by a release.
+
 ## 4.1.0 - 2026-10-02
 
 Every command now follows one grammar. Several commands are spelled

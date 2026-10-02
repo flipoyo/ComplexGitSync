@@ -28,6 +28,10 @@ def register(memory_commands) -> None:
         metavar="TIME",
         help="An ISO-8601 date or time, in UTC unless it carries an offset. A bare date means the end of that day.",
     )
+    parser.add_argument(
+        "--branch",
+        help="Answer from another chapter, read from Git: its branch, closed/<branch>, or the copy 'ancestors' keeps once it is deleted.",
+    )
     parser.add_argument("--search-dir", metavar="DIR", help=SEARCH_DIR_HELP)
     parser.set_defaults(handler=_handle_memory_as_of)
 
@@ -37,13 +41,13 @@ def _handle_memory_as_of(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="memory-as-of",
         source=cgshome,
-        runner=lambda client, source: _execute_memory_as_of(client, source, moment=args.moment),
+        runner=lambda client, source: _execute_memory_as_of(client, source, moment=args.moment, branch=args.branch),
     )
 
 
-def _execute_memory_as_of(client: ComplexGitSyncClient, cgshome: Path, *, moment: str) -> int:
-    answer = client.memory_as_of(cgshome, moment)
-    print(f"moment={answer['moment']}")
+def _execute_memory_as_of(client: ComplexGitSyncClient, cgshome: Path, *, moment: str, branch: str | None = None) -> int:
+    answer = client.memory_as_of(cgshome, moment, branch=branch)
+    print(f"moment={answer['moment']}  read_from={answer['read_from']}")
     entry = answer["entry"]
     if entry is None:
         first = answer["first_recorded_at"]

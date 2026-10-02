@@ -2,11 +2,15 @@
 
 Ring: 2
 Contract: re-export the package surface unchanged.
-Imports: branch, commit, fetch, merge, outcome, preflight, push, removal, restart
+Imports: ancestors, branch, commit, fetch, merge, outcome, preflight, push, removal, restart
 """
 
 from __future__ import annotations
 
+from .ancestors import (
+    AncestorOperation,
+    RepoAncestry,
+)
 from .branch import (
     BranchOperation,
     BranchTopologyConflict,
@@ -78,6 +82,8 @@ tag_tree = PushOperation.tag_tree
 validate_branch_topology = BranchOperation.validate_branch_topology
 
 __all__ = [
+    "AncestorOperation",
+    "RepoAncestry",
     "BranchOperation",
     "BranchTopologyConflict",
     "BranchTopologyReport",

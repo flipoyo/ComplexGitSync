@@ -249,6 +249,8 @@ class GitRunnerProtocol(Protocol):
 
     def remote_branch_exists(self, remote_url: str, branch: str) -> bool: ...
 
+    def remote_branch_sha(self, remote_url: str, branch: str) -> str | None: ...
+
     def remote_tag_exists(self, remote_url: str, tag: str) -> bool: ...
 
     def remote_get_url(self, repo_path: Path | str, remote_name: str = "origin") -> str | None: ...
@@ -400,6 +402,30 @@ class GitRunnerProtocol(Protocol):
 
     def show_file(self, repo_path: Path | str, ref: str, path: str) -> str | None: ...
 
+    def ref_sha(self, repo_path: Path | str, ref: str) -> str | None: ...
+
+    def branch_refs(self, repo_path: Path | str) -> dict[str, str]: ...
+
+    def exclusive_commits(
+        self, repo_path: Path | str, tip: str, exclude: list[str] | tuple[str, ...]
+    ) -> list[str]: ...
+
+    def tree_blobs(self, repo_path: Path | str, ref: str, prefix: str) -> dict[str, str]: ...
+
+    def create_root_commit(self, repo_path: Path | str, message: str) -> str: ...
+
+    def commit_keeping_tree(
+        self, repo_path: Path | str, base: str, other: str, message: str
+    ) -> str: ...
+
+    def update_branch(
+        self, repo_path: Path | str, branch: str, new_sha: str, old_sha: str | None
+    ) -> None: ...
+
+    def delete_local_branch(self, repo_path: Path | str, branch: str, expected_sha: str) -> None: ...
+
+    def preserved_tips(self, repo_path: Path | str, ref: str) -> list[tuple[str, str]]: ...
+
     def merge_abort(self, repo_path: Path | str) -> None: ...
 
     def configured_merge_tool(self, repo_path: Path | str) -> str | None: ...
@@ -475,6 +501,14 @@ class GitRunner:
 
     def remote_tag_exists(self, remote_url: str, tag: str) -> bool:
         return self._remote_ref_exists(remote_url, "--tags", tag)
+
+    def remote_branch_sha(self, remote_url: str, branch: str) -> str | None:
+        """The commit *remote_url* holds *branch* at right now, or ``None`` when it has none."""
+        for line in self._run("ls-remote", "--heads", remote_url, f"refs/heads/{branch}").stdout.splitlines():
+            sha, _, ref = line.partition("\t")
+            if ref == f"refs/heads/{branch}":
+                return sha
+        return None
 
     def _remote_ref_exists(self, remote_url: str, ref_selector: str, ref_name: str) -> bool:
         completed = self._run("ls-remote", ref_selector, remote_url, ref_name)
@@ -1285,6 +1319,112 @@ class GitRunner:
         """
         answer = self._query("show", f"{ref}:{path}", cwd=repo_path)
         return answer.stdout if answer.returncode == 0 else None
+
+    def ref_sha(self, repo_path: Path | str, ref: str) -> str | None:
+        """The commit *ref* names, or ``None`` when it names none; read-only."""
+        answer = self._query("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}", cwd=repo_path)
+        return answer.stdout.strip() or None if answer.returncode == 0 else None
+
+    def branch_refs(self, repo_path: Path | str) -> dict[str, str]:
+        """Every local and remote-tracking branch, full ref name to commit; read-only.
+
+        A remote's symbolic ``HEAD`` is left out: it is another name for a
+        branch already listed, not a branch.
+        """
+        answer = self._query(
+            "for-each-ref", "--format=%(refname) %(objectname) %(symref)", "refs/heads", "refs/remotes",
+            cwd=repo_path,
+        )
+        refs: dict[str, str] = {}
+        for line in answer.stdout.splitlines():
+            name, sha, *symref = line.split(" ")
+            if not any(symref):
+                refs[name] = sha
+        return refs
+
+    def exclusive_commits(
+        self, repo_path: Path | str, tip: str, exclude: list[str] | tuple[str, ...]
+    ) -> list[str]:
+        """The commits *tip* reaches that none of *exclude* reaches (``git rev-list tip --not ...``).
+
+        What deleting *tip*'s only name would make unreachable, when
+        *exclude* is every other name in the repository. Raises when *tip*
+        names nothing: asking what an absent branch holds is a caller's mistake.
+        """
+        return self._run("rev-list", tip, "--not", *exclude, "--", cwd=repo_path).stdout.split()
+
+    def tree_blobs(self, repo_path: Path | str, ref: str, prefix: str) -> dict[str, str]:
+        """Every file under *prefix* as of *ref*, path to blob id; empty when there is none."""
+        answer = self._query("ls-tree", "-r", ref, "--", prefix, cwd=repo_path)
+        blobs: dict[str, str] = {}
+        for line in answer.stdout.splitlines():
+            meta, _, path = line.partition("\t")
+            parts = meta.split()
+            if len(parts) == 3 and parts[1] == "blob":
+                blobs[path] = parts[2]
+        return blobs
+
+    def create_root_commit(self, repo_path: Path | str, message: str) -> str:
+        """Write a commit with no parent and an empty tree, and return it.
+
+        No ref moves and no worktree is touched: the caller names it with
+        :meth:`update_branch`. This is how the ``ancestors`` branch starts.
+        """
+        empty_tree = self._run("hash-object", "-w", "-t", "tree", os.devnull, cwd=repo_path).stdout.strip()
+        return self._run("commit-tree", empty_tree, "-m", message, cwd=repo_path).stdout.strip()
+
+    def commit_keeping_tree(
+        self, repo_path: Path | str, base: str, other: str, message: str
+    ) -> str:
+        """A merge of *other* into *base* that keeps *base*'s tree, written without a checkout.
+
+        The same commit ``git merge -s ours --no-ff --allow-unrelated-histories``
+        makes on a checked-out *base*, built with ``commit-tree`` so the
+        branch it extends never has to be checked out. *other* becomes the
+        second parent, so its whole history is reachable from the result.
+        Moves no ref.
+        """
+        return self._run(
+            "commit-tree", f"{base}^{{tree}}", "-p", base, "-p", other, "-m", message, cwd=repo_path
+        ).stdout.strip()
+
+    def update_branch(
+        self, repo_path: Path | str, branch: str, new_sha: str, old_sha: str | None
+    ) -> None:
+        """Point *branch* at *new_sha*, only if it still points at *old_sha*.
+
+        ``old_sha=None`` means the branch must not exist yet. Git refuses
+        the update otherwise, so a branch someone else moved meanwhile is
+        never overwritten.
+        """
+        self._run("update-ref", f"refs/heads/{branch}", new_sha, old_sha or "", cwd=repo_path)
+
+    def delete_local_branch(self, repo_path: Path | str, branch: str, expected_sha: str) -> None:
+        """Remove the local *branch*, only if it still points at *expected_sha*.
+
+        ``update-ref -d`` with the expected value, rather than ``branch -D``:
+        the caller has checked that *expected_sha* is kept elsewhere, and a
+        branch that moved since then must not go with it.
+        """
+        self._run("update-ref", "-d", f"refs/heads/{branch}", expected_sha, cwd=repo_path)
+
+    def preserved_tips(self, repo_path: Path | str, ref: str) -> list[tuple[str, str]]:
+        """Each history *ref* preserves by a keep-tree merge: ``(second parent, subject)``.
+
+        Walks *ref*'s first-parent chain, newest first, so it reads the
+        ``ancestors`` branch exactly as :meth:`commit_keeping_tree` built
+        it. Empty when *ref* names nothing.
+        """
+        answer = self._query("log", "--first-parent", "--merges", "--format=%P%x09%s", ref, "--", cwd=repo_path)
+        if answer.returncode != 0:
+            return []
+        tips: list[tuple[str, str]] = []
+        for line in answer.stdout.splitlines():
+            parents, _, subject = line.partition("\t")
+            parent_list = parents.split()
+            if len(parent_list) >= 2:
+                tips.append((parent_list[1], subject))
+        return tips
 
     def merge_base(self, repo_path: Path | str, ref_a: str, ref_b: str) -> str | None:
         """The best common ancestor of *ref_a* and *ref_b* (``git

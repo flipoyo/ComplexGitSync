@@ -100,6 +100,6 @@ def _walk(parser, path=()):
 def test_private_is_accepted_by_exactly_these_commands():
     accepting = {" ".join(p) for p, sub in _walk(build_parser()) if p and "--private" in _options(sub)}
     assert accepting == {
-        "pull", "fetch", "checkout", "branch create", "branch list", "branch close",
+        "pull", "fetch", "checkout", "branch create", "branch list", "branch close", "branch check", "branch delete",
         "add", "rm", "commit", "merge", "push", "tag",
     }

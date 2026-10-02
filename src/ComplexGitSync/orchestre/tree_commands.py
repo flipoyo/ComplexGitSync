@@ -22,6 +22,7 @@ from ..errors import (
 
 if TYPE_CHECKING:
     from ..autofix import RepairOutcome
+from ..git_branch import closed_branch_origin
 from ..git_repo import (
     AccessProtocol,
     RefKind,
@@ -34,8 +35,13 @@ from ..git_tree import (
     iter_tree_leaf_first,
 )
 from ..git_tree_branch import GitTreeBranches, ProjectBranch, tree_project_name
+from ..memory import HistoryState, Relocation
+from ..memory.pending import PendingMemory
 from ..operations import (
     MERGE_INTO_ACTS,
+    AncestorOperation,
+    BranchOperation,
+    RepoAncestry,
     RepoBranches,
     RepoOutcome,
     ResolveOutcome,
@@ -328,13 +334,31 @@ class TreeCommands:
         docstring for the full contract. ``--private`` selects the writable
         configuration repositories instead of the project's own, the same
         as ``branch`` (create).
+
+        A branch already closed — ``closed/<name>``, or a name the project
+        only has closed — is not renamed again: what it alone holds is kept
+        and recorded, and nothing else changes. That is how a branch closed
+        before ``ancestors`` existed is made safe to delete with any tool.
         """
         registry = self.client.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self.client._log_event("close_branch_start", branch_name=branch_name)
         scope = GitProbes.scope_for(registry, private=private, command="branch close")
-        self.client.last_write_outcomes = self.client.orchestre.git_tree.git.close_branch(
-            self.client.git_runner, branch_name, scope=scope
+        name, already_closed = self._closed_or_live(registry, branch_name)
+        if not already_closed:
+            BranchOperation.assert_closeable(registry, self.client.git_runner, name, scope=scope)
+        # Closing is the safe point (BranchAncestors §2): what the branch alone
+        # holds is kept on `ancestors` and recorded before anything is renamed,
+        # so deleting the closed branch later, by any tool, loses nothing.
+        self.client.last_ancestry = AncestorOperation.inspect(
+            registry, self.client.git_runner, name, scope=scope, closed=already_closed,
+            recorded=self._recorded_relocations(registry),
+        )
+        self.client.last_kept_outcomes = self._keep_on_ancestors(
+            registry, self.client.last_ancestry, preserved=name, command_origin="branch_close_keep"
+        )
+        self.client.last_write_outcomes = () if already_closed else self.client.orchestre.git_tree.git.close_branch(
+            self.client.git_runner, name, scope=scope
         )
         if ROOT_REPO_ID in registry.repos:
             snapshot_path = self.client.write_gts_snapshot(command_origin="close_branch")
@@ -347,6 +371,161 @@ class TreeCommands:
             closed=sum(1 for o in self.client.last_write_outcomes if o.acted),
         )
         return registry
+
+    def branch_ancestry(self, branch_name: str, *, private: bool = False) -> tuple[RepoAncestry, ...]:
+        """What deleting *branch_name* would lose, per repository, leaf-first; writes nothing.
+
+        *branch_name* may be a live branch, a closed one (``closed/<name>``)
+        or a closed one by its old name. Each answer is ``safe``, ``recorded``
+        or ``needs ancestor`` (BranchAncestors WP1); fetching what origin
+        holds of the branch and of ``ancestors`` is the only thing it moves.
+        """
+        registry = self.client.get_dependency_registry()
+        scope = GitProbes.scope_for(registry, private=private, command="branch check")
+        name, closed = self._closed_or_live(registry, branch_name)
+        self.client.last_ancestry = AncestorOperation.inspect(
+            registry, self.client.git_runner, name, scope=scope, closed=closed,
+            recorded=self._recorded_relocations(registry),
+        )
+        return self.client.last_ancestry
+
+    def delete_branch(self, branch_name: str, *, private: bool = False) -> WorkingGitTree:
+        """Delete a closed branch, tree-wide, once nothing it alone holds can be lost.
+
+        Only a closed branch is deleted: close it first. The ledger is read
+        first, and a relocation already recorded that still resolves is
+        reused, never written twice — so a branch closed by `branch close`
+        records nothing new here. Anything not yet kept is kept and recorded
+        exactly as a close does. Then the ledger is verified, and only then
+        is the branch deleted, on origin first and then locally, leaf-first.
+        Any failure before the deletion refuses with nothing deleted.
+        """
+        registry = self.client.get_dependency_registry()
+        previous_state = registry.lifecycle_state
+        scope = GitProbes.scope_for(registry, private=private, command="branch delete")
+        name, closed = self._closed_or_live(registry, branch_name)
+        if not closed:
+            raise GitSyncError(
+                f"'{branch_name}' is not closed: run 'cgitsync branch close {name}' first, "
+                "which keeps what it alone holds before anything can be deleted."
+            )
+        self.client._log_event("delete_branch_start", branch_name=name)
+        self.client.last_ancestry = AncestorOperation.inspect(
+            registry, self.client.git_runner, name, scope=scope, closed=True,
+            recorded=self._recorded_relocations(registry),
+        )
+        self.client.last_kept_outcomes = self._keep_on_ancestors(
+            registry, self.client.last_ancestry, preserved=name, command_origin="branch_delete_keep"
+        )
+        self._assert_history_holds(registry)
+        checked = AncestorOperation.inspect(
+            registry, self.client.git_runner, name, scope=scope, closed=True,
+            recorded=self._recorded_relocations(registry),
+        )
+        self.client.last_write_outcomes = AncestorOperation.delete(registry, self.client.git_runner, checked)
+        if ROOT_REPO_ID in registry.repos:
+            snapshot_path = self.client.write_gts_snapshot(command_origin="branch_delete")
+            if self.client.source_path is not None:
+                self.client.state_store.record_snapshot(self.client.source_path, snapshot_path)
+        self.client._log_tree_transition(previous_state, registry.lifecycle_state, reason="branch_delete")
+        self.client._log_event(
+            "delete_branch_end", branch_name=name,
+            deleted=sum(1 for o in self.client.last_write_outcomes if o.acted),
+        )
+        return registry
+
+    def preserved_branches(self) -> tuple[str, ...]:
+        """The project branches whose history the ledger records as kept on ``ancestors``; read-only.
+
+        Read from the relocations every entry carries, so a branch deleted
+        since is still named: its history is kept there, and the ledger says so.
+        """
+        registry = self.client.get_dependency_registry()
+        project = tree_project_name(registry)
+        names = set()
+        for relocation in self._recorded_relocations(registry):
+            branch = relocation.origin.partition(":refs/heads/")[2]
+            branch = closed_branch_origin(branch) or branch
+            if project and branch.startswith(f"{project}_"):
+                branch = branch.removeprefix(f"{project}_")
+            names.add(branch)
+        return tuple(sorted(names))
+
+    def _closed_or_live(self, registry: WorkingGitTree, branch_name: str) -> tuple[str, bool]:
+        """*branch_name* as the project names it, and whether it is the closed one.
+
+        ``closed/<name>`` is closed. A bare name is the live branch when the
+        project has one, else the closed branch of that name if there is one.
+        """
+        origin = closed_branch_origin(branch_name)
+        if origin is not None:
+            return origin, True
+        known = GitTreeBranches(registry, self.client.git_runner).project_branches(scope=RepoScope.ALL)
+        if any(b.name == branch_name and not b.closed for b in known):
+            return branch_name, False
+        return branch_name, any(b.name == branch_name and b.closed for b in known)
+
+    def _recorded_relocations(self, registry: WorkingGitTree) -> tuple[Relocation, ...]:
+        """Every relocation the ledger holds, folded and pending, in chain order."""
+        if ROOT_REPO_ID not in registry.repos:
+            return ()
+        cgitsync_dir = registry.get(ROOT_REPO_ID).absolute_path / ".cgitsync"
+        return tuple(r for entry in PendingMemory(cgitsync_dir).read_ledger_entries() for r in entry.relocations)
+
+    def _keep_on_ancestors(
+        self,
+        registry: WorkingGitTree,
+        ancestry: Sequence[RepoAncestry],
+        *,
+        preserved: str,
+        command_origin: str,
+    ) -> tuple[RepoOutcome, ...]:
+        """Keep, record and check every ``needs ancestor`` answer; refuse at the first step that fails.
+
+        Keeping only ever adds a commit to ``ancestors``, so a refusal after
+        it leaves nothing lost: running the command again finds the commits
+        kept and records them.
+        """
+        pending = [answer for answer in ancestry if answer.verdict == "needs ancestor"]
+        if not pending:
+            return ()
+        if ROOT_REPO_ID not in registry.repos:
+            raise GitSyncError("this tree has no root repository, so there is no ledger to record the move in.")
+        kept = AncestorOperation.persist(registry, self.client.git_runner, pending, preserved=preserved)
+        relocations = tuple(r for answer in pending for r in answer.missing)
+        self.client.write_gts_snapshot(command_origin=command_origin, relocations=relocations)
+        cgitsync_dir = registry.get(ROOT_REPO_ID).absolute_path / ".cgitsync"
+        entries = PendingMemory(cgitsync_dir).read_ledger_entries()
+        if not entries or tuple(entries[-1].relocations) != relocations:
+            raise GitSyncError(
+                f"'{preserved}' is kept on 'ancestors' but the ledger could not record it, so nothing "
+                "was renamed or deleted. Run the same command again to record it."
+            )
+        repos = {repo.name: repo for repo in registry.values()}
+        for relocation in relocations:
+            repo = repos[relocation.to.partition(":")[0]]
+            if not AncestorOperation.resolves(
+                self.client.git_runner, repo.absolute_path, relocation, remote=repo.remote_name or "origin"
+            ):
+                raise GitSyncError(
+                    f"{relocation.asset} was recorded but is not at {relocation.to}; "
+                    "nothing was renamed or deleted."
+                )
+        self._assert_history_holds(registry)
+        return kept
+
+    def _assert_history_holds(self, registry: WorkingGitTree) -> None:
+        """Refuse when ``verify`` finds the ledger corrupt — a relocation that does not resolve included."""
+        root = registry.get(ROOT_REPO_ID).absolute_path if ROOT_REPO_ID in registry.repos else None
+        if root is None:
+            return
+        report = self.client.verify(root)
+        if report.state is HistoryState.CORRUPT:
+            first = "; ".join(f"seq={seq} {finding.name}" for seq, finding, _ in report.findings[:3])
+            raise GitSyncError(
+                f"the ledger does not verify ({first}), so nothing was renamed or deleted; "
+                "run 'cgitsync verify check' for every finding."
+            )
 
     def commit(
         self,

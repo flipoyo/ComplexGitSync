@@ -22,9 +22,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Protocol, Sequence
+from typing import Callable, Protocol, Sequence
 
-from .ledger_entry import LedgerEntry
+from .ledger_entry import LedgerEntry, Relocation
 
 HASH_ALGORITHM = "sha256"
 
@@ -63,7 +63,7 @@ class Finding(Enum):
 
     Listed in `.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained ledger*.
 
-    All eleven members are defined here because the type is shared with the
+    All twelve members are defined here because the type is shared with the
     later `verify_store()` work (Ring 1, filesystem-backed, out of scope for
     this module). `verify_chain()` below — pure arithmetic over the entry
     sequence — only ever produces the first four and `TIME_REGRESSION`.
@@ -80,6 +80,7 @@ class Finding(Enum):
     ORPHAN_COMMIT_LOG = auto()  # commit messages kept for a State that is gone
     COMMIT_LOG_MISMATCH = auto()  # commit rows edited since the entry vouched for them
     TIME_REGRESSION = auto()  # recorded_at moved backwards along the chain
+    UNRESOLVED_RELOCATION = auto()  # a recorded move's asset is not at its new address
 
 
 #: Findings that mean the history itself does not hold — the chain was
@@ -95,6 +96,7 @@ _STRUCTURAL_FINDINGS = frozenset({
     Finding.HEAD_STALE,
     Finding.ORPHAN_COMMIT_LOG,
     Finding.COMMIT_LOG_MISMATCH,
+    Finding.UNRESOLVED_RELOCATION,
 })
 
 
@@ -191,7 +193,7 @@ class ChainVerifier:
         ``ledger_entry.compute_entry_hash`` is the same function the writer uses; a verifier with its own copy of a hash rule is
         a verifier that can disagree with the writer and be wrong about it.
         """
-        return LedgerEntry.compute_hash(seq=entry.seq, prev=entry.prev, recorded_at=entry.recorded_at, command=entry.command, argv=entry.argv, state_id=entry.state_id, state_dir=entry.state_dir, outcome=entry.outcome, toolchain=getattr(entry, "toolchain", ()), commit_log=getattr(entry, "commit_log", ""), environment=getattr(entry, "environment", ""))
+        return LedgerEntry.compute_hash(seq=entry.seq, prev=entry.prev, recorded_at=entry.recorded_at, command=entry.command, argv=entry.argv, state_id=entry.state_id, state_dir=entry.state_dir, outcome=entry.outcome, toolchain=getattr(entry, "toolchain", ()), commit_log=getattr(entry, "commit_log", ""), environment=getattr(entry, "environment", ""), release=getattr(entry, "release", ()), relocations=getattr(entry, "relocations", ()))
 
     @staticmethod
     def verify(entries: Sequence[LedgerEntryLike]) -> VerificationReport:
@@ -240,6 +242,28 @@ class ChainVerifier:
         ChainVerifier._check_time_monotonic(entries, findings)
 
         return VerificationReport(findings=findings, state=ChainVerifier.resolve_state(findings))
+
+    @staticmethod
+    def check_relocations(
+        entries: Sequence[LedgerEntryLike], resolves: Callable[[Relocation], bool]
+    ) -> list[tuple[int, Finding, str]]:
+        """An `UNRESOLVED_RELOCATION` finding for each recorded move *resolves* rejects.
+
+        A relocation says an asset now lives at its `to` address with the
+        hash in `ancestor`. Whether it does is a question about a
+        repository, which this pure module cannot ask, so the caller hands
+        in *resolves*; this method only decides what a "no" means.
+        """
+        findings: list[tuple[int, Finding, str]] = []
+        for entry in entries:
+            for relocation in getattr(entry, "relocations", ()):
+                if not resolves(relocation):
+                    findings.append((
+                        entry.seq,
+                        Finding.UNRESOLVED_RELOCATION,
+                        f"{relocation.asset} is not at {relocation.to} with {relocation.ancestor}",
+                    ))
+        return findings
 
     @staticmethod
     def _check_seq_integrity(

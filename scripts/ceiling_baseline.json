@@ -21,8 +21,8 @@
       "public_symbols": 4
     },
     "autofix/repair_divergent_user.py": {
-      "internal_imports": 11,
-      "loc": 221,
+      "internal_imports": 12,
+      "loc": 223,
       "public_symbols": 1
     },
     "autofix/repair_from_cli.py": {
@@ -51,9 +51,9 @@
       "public_symbols": 0
     },
     "cli/branch_command.py": {
-      "internal_imports": 6,
-      "loc": 88,
-      "public_symbols": 1
+      "internal_imports": 9,
+      "loc": 154,
+      "public_symbols": 2
     },
     "cli/configuration.py": {
       "internal_imports": 7,
@@ -71,8 +71,8 @@
       "public_symbols": 5
     },
     "cli/expert.py": {
-      "internal_imports": 37,
-      "loc": 2052,
+      "internal_imports": 38,
+      "loc": 2099,
       "public_symbols": 1
     },
     "cli/fetch_command.py": {
@@ -87,12 +87,12 @@
     },
     "cli/help_text.py": {
       "internal_imports": 0,
-      "loc": 177,
+      "loc": 179,
       "public_symbols": 2
     },
     "cli/memory_asof.py": {
       "internal_imports": 5,
-      "loc": 57,
+      "loc": 61,
       "public_symbols": 1
     },
     "cli/memory_prompt.py": {
@@ -107,7 +107,7 @@
     },
     "cli/suggest.py": {
       "internal_imports": 0,
-      "loc": 114,
+      "loc": 113,
       "public_symbols": 5
     },
     "clone_guard.py": {
@@ -147,8 +147,8 @@
     },
     "git_branch.py": {
       "internal_imports": 2,
-      "loc": 387,
-      "public_symbols": 14
+      "loc": 396,
+      "public_symbols": 15
     },
     "git_repo.py": {
       "internal_imports": 0,
@@ -157,7 +157,7 @@
     },
     "git_runner.py": {
       "internal_imports": 3,
-      "loc": 1301,
+      "loc": 1414,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -186,8 +186,8 @@
       "public_symbols": 1
     },
     "memory/__init__.py": {
-      "internal_imports": 17,
-      "loc": 82,
+      "internal_imports": 18,
+      "loc": 84,
       "public_symbols": 0
     },
     "memory/agent_contract.py": {
@@ -221,18 +221,18 @@
       "public_symbols": 2
     },
     "memory/integrity.py": {
-      "internal_imports": 1,
-      "loc": 296,
+      "internal_imports": 2,
+      "loc": 318,
       "public_symbols": 7
     },
     "memory/ledger_entry.py": {
       "internal_imports": 0,
-      "loc": 218,
-      "public_symbols": 2
+      "loc": 250,
+      "public_symbols": 3
     },
     "memory/ledger_store.py": {
-      "internal_imports": 4,
-      "loc": 416,
+      "internal_imports": 5,
+      "loc": 424,
       "public_symbols": 7
     },
     "memory/pending.py": {
@@ -261,13 +261,18 @@
       "public_symbols": 2
     },
     "operations/__init__.py": {
-      "internal_imports": 18,
-      "loc": 118,
+      "internal_imports": 20,
+      "loc": 124,
       "public_symbols": 24
     },
+    "operations/ancestors.py": {
+      "internal_imports": 12,
+      "loc": 354,
+      "public_symbols": 4
+    },
     "operations/branch.py": {
-      "internal_imports": 17,
-      "loc": 479,
+      "internal_imports": 19,
+      "loc": 502,
       "public_symbols": 4
     },
     "operations/commit.py": {
@@ -321,8 +326,8 @@
       "public_symbols": 1
     },
     "orchestre/client.py": {
-      "internal_imports": 59,
-      "loc": 1304,
+      "internal_imports": 61,
+      "loc": 1318,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -341,8 +346,8 @@
       "public_symbols": 1
     },
     "orchestre/document_loader.py": {
-      "internal_imports": 17,
-      "loc": 342,
+      "internal_imports": 18,
+      "loc": 345,
       "public_symbols": 1
     },
     "orchestre/environment_commands.py": {
@@ -365,9 +370,14 @@
       "loc": 711,
       "public_symbols": 1
     },
+    "orchestre/memory_chapters.py": {
+      "internal_imports": 10,
+      "loc": 194,
+      "public_symbols": 2
+    },
     "orchestre/memory_commands.py": {
-      "internal_imports": 51,
-      "loc": 1622,
+      "internal_imports": 54,
+      "loc": 1684,
       "public_symbols": 1
     },
     "orchestre/memory_facts.py": {
@@ -401,8 +411,8 @@
       "public_symbols": 1
     },
     "orchestre/tree_commands.py": {
-      "internal_imports": 28,
-      "loc": 961,
+      "internal_imports": 35,
+      "loc": 1124,
       "public_symbols": 1
     },
     "paths.py": {

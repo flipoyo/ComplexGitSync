@@ -1039,6 +1039,36 @@ class _FakeGitRunner:
     def show_file(self, repo_path, ref, path) -> str | None:
         return None
 
+    def ref_sha(self, repo_path, ref) -> str | None:
+        return None
+
+    def remote_branch_sha(self, remote_url, branch) -> str | None:
+        return None
+
+    def branch_refs(self, repo_path) -> dict[str, str]:
+        return {}
+
+    def exclusive_commits(self, repo_path, tip, exclude) -> list[str]:
+        return []
+
+    def tree_blobs(self, repo_path, ref, prefix) -> dict[str, str]:
+        return {}
+
+    def create_root_commit(self, repo_path, message) -> str:
+        return "0" * 40
+
+    def commit_keeping_tree(self, repo_path, base, other, message) -> str:
+        return "0" * 40
+
+    def update_branch(self, repo_path, branch, new_sha, old_sha) -> None:
+        return None
+
+    def delete_local_branch(self, repo_path, branch, expected_sha) -> None:
+        return None
+
+    def preserved_tips(self, repo_path, ref) -> list[tuple[str, str]]:
+        return []
+
     def remote_reachable(self, remote_url) -> bool:
         return True
 

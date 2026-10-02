@@ -31,7 +31,7 @@ GROUP_DESCRIPTIONS: dict[tuple[str, ...], str] = {
         "Observe this tree's reproducibility environment (show), "
         "or compare it with the .cgs requirements (check)."
     ),
-    ("branch",): "Create, list or close a project branch across the whole tree.",
+    ("branch",): "Create, list, close, check or delete a project branch across the whole tree.",
     ("submodules",): "Turn a checkout built on git submodules into a ComplexGitSync tree.",
     ("verify",): "Check this workspace's hash-chained ledger, or repair its HEAD cache.",
 }
@@ -60,6 +60,8 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
     ("branch", "create"): (None, ("cgitsync branch create feature-x", "cgitsync branch create feature-x --private")),
     ("branch", "list"): (None, ("cgitsync branch list", "cgitsync branch list --per-repo")),
     ("branch", "close"): (None, ("cgitsync branch close feature-x", "cgitsync branch close feature-x --private")),
+    ("branch", "check"): (None, ("cgitsync branch check feature-x", "cgitsync branch check closed/feature-x")),
+    ("branch", "delete"): (None, ("cgitsync branch delete feature-x", "cgitsync branch delete closed/feature-x --private")),
     ("fetch",): (None, ("cgitsync fetch", "cgitsync fetch --private")),
     ("add",): (None, ("cgitsync add", "cgitsync add README.md docs/Text/user_guide.tex", "cgitsync add --dry-run")),
     ("rm",): (None, ("cgitsync rm old_notes.md", "cgitsync rm old_notes.md --dry-run")),

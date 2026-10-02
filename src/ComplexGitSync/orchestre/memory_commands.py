@@ -23,6 +23,8 @@ from ..errors import (
     GitSyncError,
 )
 from ..git_branch import DEFAULT_BRANCH
+from ..operations import AncestorOperation
+from .memory_chapters import MemoryChapters
 
 if TYPE_CHECKING:
     pass
@@ -45,6 +47,7 @@ from ..memory import (
     Finding,
     HistoryState,
     LocalGitRegister,
+    Relocation,
     SyncLedger,
     VerificationReport,
 )
@@ -1388,7 +1391,38 @@ class MemoryCommands:
             "latest_toolchain": dict(entries[-1].toolchain) if entries else {},
         }
 
-    def memory_as_of(self, cgshome: str | Path, moment: str) -> dict[str, Any]:
+    def _verify_relocations(self, cgitsync_dir: Path, entries: Sequence[Any]) -> list[tuple[int, Finding, str]]:
+        """`UNRESOLVED_RELOCATION` for each recorded move whose asset is not where it says.
+
+        A relocation names its repository, not a path, so the tree is
+        needed to ask Git. When none is loaded, the State the ledger last
+        recorded is loaded for it; when even that fails, nothing is
+        checked, because "could not ask" is not "asked, and it was missing".
+        """
+        if not any(entry.relocations for entry in entries):
+            return []
+        if self.client.registry is None:
+            latest = PendingMemory(cgitsync_dir).current_state_from_ledger()
+            try:
+                if latest is not None:
+                    self.client.load_gts(latest)
+            except (ComplexGitSyncError, OSError, ValueError):
+                return []
+        if self.client.registry is None:
+            return []
+        repos = {repo.name: repo for repo in self.client.registry.values()}
+
+        def resolves(relocation: Relocation) -> bool:
+            repo = repos.get(relocation.to.partition(":")[0])
+            if repo is None or not repo.absolute_path.is_dir():
+                return False
+            return AncestorOperation.resolves(
+                self.client.git_runner, repo.absolute_path, relocation, remote=repo.remote_name or "origin"
+            )
+
+        return ChainVerifier.check_relocations(entries, resolves)
+
+    def memory_as_of(self, cgshome: str | Path, moment: str, *, branch: str | None = None) -> dict[str, Any]:
         """What was this tree at *moment*? The State the chain recorded at or before it.
 
         Read-only and local: it reads the same folded-and-pending ledger every
@@ -1399,8 +1433,17 @@ class MemoryCommands:
         ``history`` says why — notably ``time-inconsistent``, where a clock moved
         backwards and "at or before" can name an entry the workspace did not hold at
         that moment. The answer is still returned, flagged, never silently confident.
+
+        *branch* reads another chapter instead, from Git: its branch, its
+        closed name, or the copy ``ancestors`` keeps once it is deleted;
+        ``read_from`` says which.
         """
-        entries = PendingMemory(Path(cgshome) / ".cgitsync").read_ledger_entries()
+        read_from = "this workspace"
+        if branch is None:
+            entries = PendingMemory(Path(cgshome) / ".cgitsync").read_ledger_entries()
+        else:
+            entries, source = MemoryChapters(self.client).entries(Path(cgshome), branch)
+            read_from = source.read_from
         resolved = AsOf.parse_moment(moment)
         report = ChainVerifier.verify(entries)
         chosen = AsOf.select(entries, resolved)
@@ -1411,9 +1454,10 @@ class MemoryCommands:
             "reliable": report.is_verified,
             "history": report.state.name.lower().replace("_", "-"),
             "findings": [f"seq={seq} {finding.name}: {detail}" for seq, finding, detail in report.findings[:5]],
+            "read_from": read_from,
         }
 
-    def memory_list(self, cgshome: str | Path) -> list[dict[str, Any]]:
+    def memory_list(self, cgshome: str | Path, *, branch: str | None = None) -> list[dict[str, Any]]:
         """Every State this workspace holds, with what the ledger says about it.
 
         One row per State on disk, newest recording first. ``recorded_at``
@@ -1424,7 +1468,12 @@ class MemoryCommands:
         A State no entry records still appears, with no timestamp. It is
         there, and saying so is more useful than hiding it — ``verify``
         reports it as an orphan.
+
+        *branch* lists another chapter's States, read from Git as
+        :meth:`memory_as_of` reads it; each row then says where.
         """
+        if branch is not None:
+            return MemoryChapters(self.client).list_rows(Path(cgshome), branch)
         workspace = Path(cgshome)
         cgitsync_dir = workspace / ".cgitsync"
         entries = PendingMemory(cgitsync_dir).read_ledger_entries()
@@ -1510,30 +1559,40 @@ class MemoryCommands:
             for snapshot in PendingMemory(cgitsync_dir).state_files()
             if snapshot.stem.startswith(normalised_state)
         )
-        if not matches:
-            raise GitSyncError(
-                f"no State under {cgitsync_dir} (folded or pending) begins with {state!r}. "
-                "'cgitsync memory explore --timeline' lists every State's real hash prefix."
-            )
         if len(matches) > 1:
             names = ", ".join(snapshot.stem[:12] for snapshot in matches)
             raise GitSyncError(f"{state!r} matches more than one State: {names}.")
-
-        snapshot = matches[0]
-        document = GtsDocument.from_toml(snapshot)
+        chapters = MemoryChapters(self.client)
+        if matches:
+            stem, document, read_from, shown_path = matches[0].stem, GtsDocument.from_toml(matches[0]), "this workspace", str(matches[0])
+        else:
+            # Not on disk: a chapter whose branch was closed or deleted may
+            # still hold it, on its branch or through `ancestors`.
+            found = chapters.find_state(workspace, normalised_state) if (MemoryRepository(workspace).mount_path() / ".git").exists() else None
+            if found is None:
+                raise GitSyncError(
+                    f"no State under {cgitsync_dir} (folded or pending), nor in any chapter of the memory "
+                    f"repository, begins with {state!r}. "
+                    "'cgitsync memory explore --timeline' lists every State's real hash prefix."
+                )
+            stem, document, read_from = found
+            shown_path = f"(in Git: {read_from})"
         recorded = [
             entry
             for entry in PendingMemory(cgitsync_dir).read_ledger_entries()
-            if MemoryStates.parse_hash(entry.state_id) == snapshot.stem
+            if MemoryStates.parse_hash(entry.state_id) == stem
         ]
-        log = PendingMemory(cgitsync_dir).read_commit_log(snapshot.stem)
+        log = PendingMemory(cgitsync_dir).read_commit_log(stem)
         committed: dict[int, list[dict[str, Any]]] = {}
         for row in log["commit"]:
             committed.setdefault(int(row.get("entry", 0)), []).append(row)
         published_shas = {str(row.get("sha", "")) for row in log["published"]}
         environments = EnvironmentStore.resolve_references(PendingMemory(cgitsync_dir).dirs(), (entry.environment for entry in recorded))
+        kept_on_ancestors: list[str] = []
         try:
-            tree = format_view_tree(RegistryTranslator.from_gts_document(document, tree_root=workspace))
+            state_tree = RegistryTranslator.from_gts_document(document, tree_root=workspace)
+            tree = format_view_tree(state_tree)
+            kept_on_ancestors = chapters.commits_only_on_ancestors(workspace, list(state_tree.values()))
         except (ValueError, KeyError, TypeError):
             # A snapshot old enough to carry its own absolute paths, taken
             # on a different machine, can name a repository this one never
@@ -1542,8 +1601,10 @@ class MemoryCommands:
             # conditional on this machine being able to rebuild it.
             tree = ""
         return {
-            "state": snapshot.stem,
-            "path": str(snapshot),
+            "state": stem,
+            "path": shown_path,
+            "read_from": read_from,
+            "commits_on_ancestors": kept_on_ancestors,
             "project": document.read("project.name"),
             "lifecycle_state": document.read("tree_state.lifecycle_state"),
             "repos": len(document.repo_states),
@@ -1644,10 +1705,19 @@ class MemoryCommands:
             self.client.git_runner.current_branch(mount) if (mount / ".git").exists() else None
         )
         if branch is not None and branch != current_branch:
-            raise GitSyncError(
-                f"branch {branch!r} is not checked out at {mount}. Bring it onto this "
-                f"disk first with 'cgitsync memory clone --branch {branch}'."
-            )
+            # Another chapter is read from Git when this clone reaches it —
+            # its branch, its closed name, or `ancestors` — as a timeline of
+            # its entries; its commit messages need it checked out.
+            try:
+                entries, source = MemoryChapters(self.client).entries(workspace, branch)
+            except GitSyncError:
+                raise GitSyncError(
+                    f"branch {branch!r} is not checked out at {mount}, and no branch, closed branch or "
+                    f"ancestors copy here holds it. Bring it onto this disk first with "
+                    f"'cgitsync memory clone --branch {branch}'."
+                ) from None
+            rows = [{"seq": e.seq, "recorded_at": e.recorded_at, "command": e.command, "outcome": e.outcome, "state": MemoryStates.parse_hash(e.state_id) or "", "commits": [], "published": []} for e in entries]
+            return {"branch": branch, "read_from": source.read_from, "entries": rows}
         resolved_branch = branch or current_branch
         if timeline:
             return {"branch": resolved_branch, "entries": PendingMemory(cgitsync_dir).timeline()}
@@ -1710,6 +1780,7 @@ class MemoryCommands:
                 ))
             report.findings.extend(MemoryFacts.verify_states_on_disk(workspace, entries))
             report.findings.extend(MemoryFacts.verify_commit_logs(workspace, entries))
+            report.findings.extend(self._verify_relocations(cgitsync_dir, entries))
             # The store checks run after verify_chain, so the verdict is
             # recomputed here rather than left at the chain's own — through
             # `resolve_state`, the same function the chain pass uses, so a
@@ -1735,6 +1806,7 @@ class MemoryCommands:
         tree_root: Path,
         commit_log: str = "",
         release: tuple[tuple[str, str], ...] | None = None,
+        relocations: Sequence[Relocation] = (),
     ) -> None:
         """Record in the chain that this State was seen, now, by these tools.
 
@@ -1765,7 +1837,7 @@ class MemoryCommands:
                     level=logging.WARNING,
                     error=str(exc),
                 )
-            entry = LedgerEntry.build_next(existing_entries[-1] if existing_entries else None, command=command_origin, argv=ArgvScrubber.scrub(sys.argv[1:], tree_root=tree_root), state_id=MemoryStates.format_id(state_hash), state_dir=str(state_path.parent.name), outcome="ok", clock=self.client.clock, toolchain=tuple(sorted(Toolchain.read(self.client.git_runner).items())), commit_log=commit_log, environment=environment_id, release=release or ())
+            entry = LedgerEntry.build_next(existing_entries[-1] if existing_entries else None, command=command_origin, argv=ArgvScrubber.scrub(sys.argv[1:], tree_root=tree_root), state_id=MemoryStates.format_id(state_hash), state_dir=str(state_path.parent.name), outcome="ok", clock=self.client.clock, toolchain=tuple(sorted(Toolchain.read(self.client.git_runner).items())), commit_log=commit_log, environment=environment_id, release=release or (), relocations=relocations)
             LedgerStore(cgitsync_dir / "lgr").write_entry(entry)
         except (LedgerStoreError, OSError) as exc:
             self.client._log_event(
