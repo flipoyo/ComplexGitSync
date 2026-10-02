@@ -49,7 +49,7 @@ from ..status_render import (
     _status_line_path,
     _status_line_targets_any,
     _status_summary_counts,
-    _tree_branch_label,
+    tree_branch_label,
 )
 from .git_probes import GitProbes
 from .reports import (
@@ -146,7 +146,7 @@ class Reporting:
         return _StatusView(
             workspace=workspace,
             use_case=use_case,
-            branch_label=_tree_branch_label(
+            branch_label=tree_branch_label(
                 branches.tree_branch, detached=branches.is_detached
             ),
             rows=rows,

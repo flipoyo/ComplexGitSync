@@ -38,7 +38,7 @@ from ComplexGitSync.status_render import (
     _status_scope_label,
     _status_summary_counts,
     _status_tracking_label,
-    _tree_branch_label,
+    tree_branch_label,
 )
 
 # ---------------------------------------------------------------------------
@@ -361,21 +361,21 @@ def test_render_status_table_matches_golden_status_output_shape():
 
 
 # ---------------------------------------------------------------------------
-# _tree_branch_label — the word `cgitsync_branch` prints
+# tree_branch_label — the word `cgitsync_branch` prints
 # ---------------------------------------------------------------------------
 
 
 def test_tree_branch_label_prints_the_branch_it_is_given():
-    assert _tree_branch_label("apoub", detached=False) == "apoub"
+    assert tree_branch_label("apoub", detached=False) == "apoub"
 
 
 def test_tree_branch_label_separates_detached_from_unknown():
     # Parked on a commit is an answer; nobody could tell is not the same one.
-    assert _tree_branch_label(None, detached=True) == TREE_BRANCH_DETACHED
-    assert _tree_branch_label(None, detached=False) == TREE_BRANCH_UNKNOWN
+    assert tree_branch_label(None, detached=True) == TREE_BRANCH_DETACHED
+    assert tree_branch_label(None, detached=False) == TREE_BRANCH_UNKNOWN
 
 
 def test_tree_branch_label_always_returns_a_word():
     """The field is printed in every state — a vanishing field is harder to read."""
     for branch, detached in (("main", False), (None, True), (None, False), ("", False)):
-        assert _tree_branch_label(branch, detached=detached)
+        assert tree_branch_label(branch, detached=detached)

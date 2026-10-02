@@ -140,3 +140,20 @@ def test_cli_names_a_detached_root_as_detached(tmp_path, capsys):
     assert code == 0
     assert "cgitsync_branch=detached" in out
     assert "* " not in out
+
+
+def test_a_tag_pinned_repository_is_not_counted(tmp_path):
+    tree = _two_repo_workspace(tmp_path)
+    _push_new_branch(tree["root"], "feature-x")
+    text = tree["snapshot"].read_text(encoding="utf-8")
+    pinned = text.replace(
+        'target_ref_kind = "branch"\ntarget_ref_name = "demo"',
+        'target_ref_kind = "tag"\ntarget_ref_name = "demo"',
+    )
+    assert pinned != text
+    tree["snapshot"].write_text(pinned, encoding="utf-8")
+
+    found = _by_name(tree)["feature-x"]
+
+    assert found.following == 1
+    assert found.missing == ()

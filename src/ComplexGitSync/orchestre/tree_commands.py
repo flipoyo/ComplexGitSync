@@ -41,7 +41,7 @@ from ..operations import (
     paths_outside_scope,
 )
 from ..snapshot_resolver import discover_cgshome
-from ..status_render import _tree_branch_label
+from ..status_render import tree_branch_label
 from .auth_hints import AuthFailureHints
 from .git_probes import GitProbes
 
@@ -305,7 +305,7 @@ class TreeCommands:
     def tree_branch_label(self) -> str:
         """The branch the project is on, as `status` prints `cgitsync_branch`: a name, `detached` or `unknown`."""
         branches = GitTreeBranches(self.client.get_dependency_registry(), self.client.git_runner)
-        return _tree_branch_label(branches.tree_branch, detached=branches.is_detached)
+        return tree_branch_label(branches.tree_branch, detached=branches.is_detached)
 
     def close_branch(self, branch_name: str, *, private: bool = False) -> WorkingGitTree:
         """Rename *branch_name* to its closed name across the full tree, leaf-first.

@@ -422,8 +422,8 @@
     },
     "status_render.py": {
       "internal_imports": 2,
-      "loc": 253,
-      "public_symbols": 11
+      "loc": 254,
+      "public_symbols": 12
     },
     "toolchain.py": {
       "internal_imports": 2,

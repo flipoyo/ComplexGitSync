@@ -145,7 +145,7 @@ TREE_BRANCH_DETACHED = "detached"
 TREE_BRANCH_UNKNOWN = "unknown"
 
 
-def _tree_branch_label(tree_branch: str | None, *, detached: bool) -> str:
+def tree_branch_label(tree_branch: str | None, *, detached: bool) -> str:
     """Name the branch the whole tree is on, for the ``summary`` line.
 
     *tree_branch* is the root repository's branch, which is the tree's:
@@ -325,5 +325,6 @@ __all__ = [
     "SYNC_UNKNOWN",
     "TREE_BRANCH_DETACHED",
     "TREE_BRANCH_UNKNOWN",
+    "tree_branch_label",
     "StatusCounts",
 ]
