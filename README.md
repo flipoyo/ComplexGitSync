@@ -848,7 +848,7 @@ and not co-signed.
 - **ChatGPT** (OpenAI)
 - **Mistral Vibe** (mistralAI)
 
-Responsibility for everything in this repository rests with the author.
+Responsibility for everything in this repository rests under the license terms.
 
 ## License
 
