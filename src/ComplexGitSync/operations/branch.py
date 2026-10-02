@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Literal
 from ..errors import GitSyncError
 from ..git_branch import (
     DEFAULT_BRANCH,
-    BranchSource,
     closeable,
     closed_branch_name,
 )
@@ -383,7 +382,7 @@ class BranchOperation:
         checked_out = [
             f"{repo.name} ({resolution.name})"
             for repo, resolution in plan
-            if resolution.source is not BranchSource.PRIVATE_DISTANT
+            if not (repo.effective_private and not repo.effective_writable)
             and repo.current_ref_kind == RefKind.BRANCH
             and repo.current_ref_name == resolution.name
         ]
@@ -402,7 +401,7 @@ class BranchOperation:
     @staticmethod
     def _close_one(repo: WorkingRepo, resolution, git_runner: GitRunner) -> RepoOutcome:
         """Close the one branch *repo* follows, or say why nothing was closed."""
-        if resolution.source is BranchSource.PRIVATE_DISTANT:
+        if repo.effective_private and not repo.effective_writable:  # private/distant: never follows the project
             detail = f"private/distant: stays on its own branch '{resolution.name}'"
             return RepoOutcome(name=repo.name, acted=False, detail=detail)
         name = resolution.name

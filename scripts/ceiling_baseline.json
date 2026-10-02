@@ -266,8 +266,8 @@
       "public_symbols": 24
     },
     "operations/branch.py": {
-      "internal_imports": 18,
-      "loc": 483,
+      "internal_imports": 17,
+      "loc": 479,
       "public_symbols": 4
     },
     "operations/commit.py": {
