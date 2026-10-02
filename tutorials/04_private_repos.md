@@ -205,13 +205,13 @@ A branch per project branch keeps unmerged notes unmerged.
 **You never type the second name.** `cgitsync checkout multi-branch` puts
 your own repositories on `multi-branch` and your settings repositories on
 `ComplexGitSync_multi-branch`, creating that branch if it is not there.
-`cgitsync branch multi-branch` does the same without moving anything. One
+`cgitsync branch create multi-branch` does the same without moving anything. One
 command, one branch name, and `cgitsync` works out what each repository
 needs.
 
-**Twelve commands take `--private`:** `pull`, `pull-force`, `fetch`,
-`checkout`, `branch`, `close-branch`, `add`, `rm`, `commit`, `merge`,
-`push` and `tag`.
+**Ten commands take `--private`:** `pull` (with or without `--force`),
+`fetch`, `checkout`, `branch` (on `create`, `list` and `close`), `add`,
+`rm`, `commit`, `merge`, `push` and `tag`.
 Four of them — `add`, `commit`, `push` and `merge` — also take `--all`,
 which does both halves at once (see *Or do both at once* below). It
 narrows the command to your writable configuration repositories alone — so
@@ -325,7 +325,7 @@ Nothing special. The everyday commands already leave configuration repos
 alone:
 
 ```bash
-pixi run cgitsync branch my-feature
+pixi run cgitsync branch create my-feature
 pixi run cgitsync checkout my-feature
 # ... edit files ...
 pixi run cgitsync add

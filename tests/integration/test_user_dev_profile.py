@@ -420,7 +420,7 @@ def dev_tree(tmp_path, monkeypatch):
 def test_a_recording_command_without_a_terminal_only_warns(dev_tree, monkeypatch, capsys):
     _no_questions(monkeypatch)
 
-    assert cli_main(["branch", "feature", "--search-dir", str(dev_tree)]) == 0
+    assert cli_main(["branch", "create", "feature", "--search-dir", str(dev_tree)]) == 0
 
     err = capsys.readouterr().err
     assert "no memory back-up and no global ledger record" in err
@@ -437,11 +437,11 @@ def test_a_recording_command_in_a_terminal_asks_once(dev_tree, monkeypatch, caps
         return next(answers)
     monkeypatch.setattr("builtins.input", answer)
 
-    assert cli_main(["branch", "feature", "--search-dir", str(dev_tree)]) == 0
+    assert cli_main(["branch", "create", "feature", "--search-dir", str(dev_tree)]) == 0
     assert len(asked) == 4 and "[someone]" in asked[1]
     assert (dev_tree / ".cgitsync" / MemorySetup.DECLINED).is_file()
     capsys.readouterr()
 
-    assert cli_main(["branch", "other", "--search-dir", str(dev_tree)]) == 0
+    assert cli_main(["branch", "create", "other", "--search-dir", str(dev_tree)]) == 0
     assert len(asked) == 4  # declined once: only the warning now
     assert "no memory back-up" in capsys.readouterr().err

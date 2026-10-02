@@ -1,9 +1,8 @@
 """cli.expert — the "Expert" cgitsync command group.
 
-Ring: 4. Contract: register, dispatch, and execute the 19 Expert-tier commands
-    (validate, pull, pull-force, fetch, autofix,
-    checkout, branch, close-branch, add, rm, commit, merge, push, tag,
-    import-submodules, init-from-submodules, verify, memory, self-history).
+Ring: 4. Contract: register, dispatch, and execute the Expert-tier commands
+    (validate, pull, fetch, autofix, checkout, branch, add, rm, commit,
+    merge, push, tag, submodules, verify, memory, self-history).
     Argument/prompt collection only — delegates all semantics to
     ComplexGitSyncClient; never touches Git.
 Imports: _shared, branch_command, errors, fetch_command, git_repo, help_text, memory, memory_asof, memory_prompt, orchestre
@@ -52,36 +51,33 @@ from .help_text import SEARCH_DIR_HELP
 
 COMMANDS: dict[str, str] = {
     "validate": "Parse, normalize, and validate a .cgs or validate a .gts topology.",
-    "pull": "Resynchronise an existing project tree from .cgs or .gts.",
-    "pull-force": "Destructively resynchronise an existing project tree from .cgs or .gts; refuses while commits exist only here.",
+    "pull": "Resynchronise an existing project tree from .cgs or .gts; --force resets it to the remote, refusing while commits exist only here.",
     "fetch": "Update every repository's view of its origin, without moving any branch.",
     "autofix": "Diagnose and repair the situation named by the last failing command's error.",
     "checkout": "Synchronize the tree to a branch or tag.",
-    "branch": "Create a branch across the full READY tree without checkout.",
-    "close-branch": "Close a project branch: rename it to its closed name, tree-wide, leaf-first.",
+    "branch": "Create, list or close a project branch across the tree (create, list, close).",
     "add": "Stage all changes across a READY tree.",
     "rm": "Remove one or more tracked files, each from the repo that owns it.",
     "commit": "Commit dirty repositories from a READY tree.",
     "merge": "Merge a project branch across a READY tree, leaf-first.",
     "push": "Push repositories from a READY tree.",
     "tag": "Create and push a tag across a READY tree.",
-    "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
-    "init-from-submodules": "Adopt a submodule-based checkout: discover, initialise, then convert its submodules.",
-    "verify": "Verify the hash-chained .cgitsync/lgr ledger for tamper-evidence.",
+    "submodules": "Turn a git-submodule checkout into a ComplexGitSync tree (report, import, init).",
+    "verify": "Check the hash-chained .cgitsync/lgr ledger, or repair its HEAD cache (check, repair).",
     "memory": "What this workspace remembers: read it (status, list, show, explore, as-of), keep it in a repository.",
-    "self-history": "The private record of agent work on this project (add, adopt).",
+    "self-history": "The private record of agent work on this project (add, adopt, list).",
 }
 
 
 def register_parsers(subparsers: argparse._SubParsersAction) -> None:
-    """Register this group's 19 subparsers.
+    """Register this group's subparsers.
 
     Mirrors cli.py's build_parser() if/elif chain for exactly the Expert
     command group, but dispatches to one small ``_register_*`` builder per
     command (via ``_PARSER_BUILDERS``) instead of a single long if/elif
     chain, to stay under the C90 complexity ceiling enabled alongside this
     split. One command's parser registration needs a numeric argument type
-    (``init-from-submodules --max-depth``); it uses ``_shared``'s own
+    (``submodules init --max-depth``); it uses ``_shared``'s own
     ``_non_negative_int`` directly, the same helper ``cli.configuration``
     has threaded in for ``view-tree``/``discover``.
     """
@@ -160,6 +156,17 @@ def _register_pull(subparser: argparse.ArgumentParser) -> None:
     _add_gitignore_sync_arguments(subparser)
     _add_force_protocol_argument(subparser, command_name="pull")
     subparser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Reset every repository to its remote's tip instead of fast-forwarding. "
+            "Uncommitted and untracked work is set aside with git stash push -u, and "
+            "the whole tree is refused, changing nothing, while any repository holds "
+            "commits no remote has. Never force-pushes. Not combined with the "
+            ".gitignore options."
+        ),
+    )
+    subparser.add_argument(
         "--private",
         action="store_true",
         help=(
@@ -168,17 +175,10 @@ def _register_pull(subparser: argparse.ArgumentParser) -> None:
             "merge '<its default_branch>' into the derived branch it is on. Use it "
             "while a project feature branch is open, so its settings branch does not "
             "drift behind the project's. Read-only configuration repositories are "
-            "never touched."
+            "never touched. With --force, force-resynchronise only those repositories."
         ),
     )
     subparser.set_defaults(handler=_handle_pull)
-
-
-def _register_pull_force(subparser: argparse.ArgumentParser) -> None:
-    _register_pull_source_and_search_dir(subparser)
-    _add_force_protocol_argument(subparser, command_name="pull-force")
-    _add_private_argument(subparser, verb="Force-resynchronise")
-    subparser.set_defaults(handler=_handle_pull_force)
 
 
 def _register_autofix(subparser: argparse.ArgumentParser) -> None:
@@ -280,22 +280,31 @@ def _register_checkout(subparser: argparse.ArgumentParser) -> None:
 
 
 def _register_branch(subparser: argparse.ArgumentParser) -> None:
-    subparser.add_argument(
-        "branch", nargs="?", help="Branch name to create across the READY tree."
+    """``branch <subcommand>``: create, list or close a project branch."""
+    actions = subparser.add_subparsers(dest="branch_command", required=True)
+    create = actions.add_parser("create", help="Create a branch across the full READY tree without checkout.", description="Create a branch across the full READY tree without checkout.")
+    create.add_argument("branch", help="Branch name to create across the READY tree.")
+    _add_gts_argument(create)
+    _add_search_dir_argument(create)
+    _add_private_argument(create, verb="Create the branch in")
+    listing = actions.add_parser(
+        "list", help="List the project's branches and which repositories hold each; change nothing.", description="List the project's branches and which repositories hold each; change nothing."
     )
-    subparser.add_argument(
-        "--list",
-        action="store_true",
-        help="List the project's branches, and which repositories hold each, instead of creating one.",
-    )
-    subparser.add_argument(
+    listing.add_argument(
         "--per-repo",
         action="store_true",
-        help="With --list: one line per repository with its own local branches, instead of the project's branches.",
+        help="One line per repository with its own local branches, instead of the project's branches.",
     )
-    _add_gts_argument(subparser)
-    _add_search_dir_argument(subparser)
-    _add_private_argument(subparser, verb="Create or list the branch in")
+    _add_gts_argument(listing)
+    _add_search_dir_argument(listing)
+    _add_private_argument(listing, verb="List the branches of")
+    close = actions.add_parser(
+        "close", help="Close a project branch: rename it to its closed name, tree-wide, leaf-first.", description="Close a project branch: rename it to its closed name, tree-wide, leaf-first."
+    )
+    close.add_argument("branch", help="Project branch to close (renamed to closed/<branch>).")
+    _add_gts_argument(close)
+    _add_search_dir_argument(close)
+    _add_private_argument(close, verb="Close the branch in")
     subparser.set_defaults(handler=_handle_branch)
 
 
@@ -304,16 +313,6 @@ def _register_fetch(subparser: argparse.ArgumentParser) -> None:
     _add_search_dir_argument(subparser)
     _add_private_argument(subparser, verb="Fetch")
     subparser.set_defaults(handler=_handle_fetch_command)
-
-
-def _register_close_branch(subparser: argparse.ArgumentParser) -> None:
-    subparser.add_argument(
-        "branch", help="Branch name to close (rename to closed/<branch>) across the READY tree."
-    )
-    _add_gts_argument(subparser)
-    _add_search_dir_argument(subparser)
-    _add_private_argument(subparser, verb="Close the branch in")
-    subparser.set_defaults(handler=_handle_close_branch)
 
 
 def _register_commit(subparser: argparse.ArgumentParser) -> None:
@@ -455,23 +454,12 @@ def _register_tag(subparser: argparse.ArgumentParser) -> None:
     subparser.set_defaults(handler=_handle_tag)
 
 
-def _register_import_submodules(subparser: argparse.ArgumentParser) -> None:
+def _add_import_submodules_arguments(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "repo_root",
         help=(
             "Path to the local git repository whose .gitmodules file "
             "lists the submodules to import."
-        ),
-    )
-    subparser.add_argument(
-        "--apply",
-        action="store_true",
-        default=False,
-        help=(
-            "Perform the conversion: run 'git rm --cached' for each "
-            "submodule, remove its .gitmodules stanza, and update "
-            ".gitignore. Without this flag the command only prints "
-            "what would change (dry-run)."
         ),
     )
     subparser.add_argument(
@@ -485,10 +473,9 @@ def _register_import_submodules(subparser: argparse.ArgumentParser) -> None:
             "only REPO_ROOT's own .gitmodules is converted."
         ),
     )
-    subparser.set_defaults(handler=_handle_import_submodules)
 
 
-def _register_init_from_submodules(subparser: argparse.ArgumentParser) -> None:
+def _add_init_from_submodules_arguments(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "repo_root",
         help=(
@@ -554,7 +541,25 @@ def _register_init_from_submodules(subparser: argparse.ArgumentParser) -> None:
             "unaffected."
         ),
     )
-    subparser.set_defaults(handler=_handle_init_from_submodules)
+
+
+def _register_submodules(subparser: argparse.ArgumentParser) -> None:
+    """``submodules <subcommand>``: report, import, or init a submodule checkout."""
+    actions = subparser.add_subparsers(dest="submodules_command", required=True)
+    report = actions.add_parser(
+        "report", help="Print what converting the submodules would change; change nothing.", description="Print what converting the submodules would change; change nothing."
+    )
+    _add_import_submodules_arguments(report)
+    convert = actions.add_parser(
+        "import",
+        help="Convert git submodules to plain ComplexGitSync nested repositories: git rm --cached, .gitmodules and .gitignore.", description="Convert git submodules to plain ComplexGitSync nested repositories: git rm --cached, .gitmodules and .gitignore.",
+    )
+    _add_import_submodules_arguments(convert)
+    init = actions.add_parser(
+        "init", help="Adopt a submodule-based checkout: discover, initialise, then convert its submodules.", description="Adopt a submodule-based checkout: discover, initialise, then convert its submodules."
+    )
+    _add_init_from_submodules_arguments(init)
+    subparser.set_defaults(handler=_handle_submodules)
 
 
 def _register_memory(subparser: argparse.ArgumentParser) -> None:
@@ -691,12 +696,6 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     )
     _add_search_dir_argument(reboot)
 
-    self_history = memory_commands.add_parser(
-        "self-history",
-        help="Every self-history record this workspace holds, folded and pending.",
-    )
-    _add_search_dir_argument(self_history)
-
     subparser.set_defaults(handler=_handle_memory)
 
 
@@ -776,41 +775,49 @@ def _register_self_history(subparser: argparse.ArgumentParser) -> None:
     adopt.add_argument("--branch", help="Branch to adopt. Defaults to .memory's own current branch.")
     _add_search_dir_argument(adopt)
 
+    listing = self_history_commands.add_parser(
+        "list", help="Every self-history record this workspace holds, folded and pending."
+    )
+    _add_search_dir_argument(listing)
+
     subparser.set_defaults(handler=_handle_self_history)
 
 
 def _register_verify(subparser: argparse.ArgumentParser) -> None:
-    _add_search_dir_argument(subparser)
-    subparser.add_argument(
-        "--repair",
-        action="store_true",
+    """``verify <subcommand>``: check the ledger, or repair its HEAD cache."""
+    actions = subparser.add_subparsers(dest="verify_command", required=True)
+    check = actions.add_parser("check", help="Say whether this workspace's recorded history is verified, absent, legacy or corrupt.", description="Say whether this workspace's recorded history is verified, absent, legacy or corrupt.")
+    _add_search_dir_argument(check)
+    _add_json_argument(check)
+    repair = actions.add_parser(
+        "repair",
         help=(
-            "Repair a stale HEAD cache to match the recomputed true "
-            "head. Never rewrites or deletes a ledger entry — a "
-            "broken chain is reported, not healed."
+            "Check, then repair a stale HEAD cache to match the recomputed true head. "
+            "Never rewrites or deletes a ledger entry: a broken chain is reported, not healed."
+        ), description=(
+            "Check, then repair a stale HEAD cache to match the recomputed true head. "
+            "Never rewrites or deletes a ledger entry: a broken chain is reported, not healed."
         ),
     )
-    _add_json_argument(subparser)
+    _add_search_dir_argument(repair)
+    _add_json_argument(repair)
     subparser.set_defaults(handler=_handle_verify)
 
 
 _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "validate": _register_validate,
     "pull": _register_pull,
-    "pull-force": _register_pull_force,
     "fetch": _register_fetch,
     "autofix": _register_autofix,
     "checkout": _register_checkout,
     "branch": _register_branch,
-    "close-branch": _register_close_branch,
     "commit": _register_commit,
     "merge": _register_merge,
     "add": _register_add,
     "rm": _register_rm,
     "push": _register_push,
     "tag": _register_tag,
-    "import-submodules": _register_import_submodules,
-    "init-from-submodules": _register_init_from_submodules,
+    "submodules": _register_submodules,
     "verify": _register_verify,
     "memory": _register_memory,
     "self-history": _register_self_history,
@@ -826,6 +833,15 @@ def _handle_validate(args: argparse.Namespace) -> int:
 
 
 def _handle_pull(args: argparse.Namespace) -> int:
+    if getattr(args, "force", False):
+        if args.commit_gitignore or args.git_user_name or args.git_user_email:
+            print(
+                "cgitsync pull: error: --force does not take --commit-gitignore, "
+                "--git-user-name or --git-user-email",
+                file=sys.stderr,
+            )
+            return 2
+        return _handle_pull_force(args)
     source = _resolve_workspace_source(args.source, getattr(args, "search_dir", None))
     if getattr(args, "private", False):
         return _run_with_logging(
@@ -890,13 +906,15 @@ def _handle_checkout(args: argparse.Namespace) -> int:
 
 
 def _handle_branch(args: argparse.Namespace) -> int:
+    if args.branch_command == "close":
+        return _handle_close_branch(args)
     return _handle_branch_command(args)
 
 
 def _handle_close_branch(args: argparse.Namespace) -> int:
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
-        command_name="close-branch",
+        command_name="branch-close",
         source=gts_path,
         runner=lambda client, source: _execute_close_branch(
             client, source, branch=args.branch, private=args.private
@@ -1010,12 +1028,18 @@ def _handle_tag(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_submodules(args: argparse.Namespace) -> int:
+    if args.submodules_command == "init":
+        return _handle_init_from_submodules(args)
+    return _handle_import_submodules(args)
+
+
 def _handle_import_submodules(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).resolve()
-    apply = args.apply
+    apply = args.submodules_command == "import"
     recursive = args.recursive
     return _run_with_logging(
-        command_name="import-submodules",
+        command_name=f"submodules-{args.submodules_command}",
         source=repo_root,
         runner=lambda client, source: _execute_import_submodules(
             client,
@@ -1034,7 +1058,7 @@ def _handle_init_from_submodules(args: argparse.Namespace) -> int:
     force = args.force
     force_access_protocol = args.force_access_protocol
     return _run_with_logging(
-        command_name="init-from-submodules",
+        command_name="submodules-init",
         source=repo_root,
         runner=lambda client, source: _execute_init_from_submodules(
             client,
@@ -1157,6 +1181,8 @@ def _handle_self_history(args: argparse.Namespace) -> int:
 def _execute_self_history(
     client: ComplexGitSyncClient, cgshome: Path, *, args: argparse.Namespace
 ) -> int:
+    if args.self_history_command == "list":
+        return _print_memory_self_history(client.memory_self_history(cgshome))
     _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
     if args.self_history_command == "adopt":
         result = client.self_history_adopt(
@@ -1516,14 +1542,14 @@ def _handle_verify(args: argparse.Namespace) -> int:
         return _handle_verify_json(args)
     cgshome = _resolve_cgshome(getattr(args, "search_dir", None))
     return _run_with_logging(
-        command_name="verify",
+        command_name=f"verify-{args.verify_command}",
         source=cgshome,
-        runner=lambda client, source: _execute_verify(client, source, repair=args.repair),
+        runner=lambda client, source: _execute_verify(client, source, repair=args.verify_command == "repair"),
     )
 
 
 def _handle_verify_json(args: argparse.Namespace) -> int:
-    """``verify --json``: the same chain check, rendered for a script.
+    """``verify check --json``: the same chain check, rendered for a script.
 
     Same exit code as the human form — ``0`` clean, ``1`` when the chain has
     findings — so a caller may read either signal.
@@ -1532,10 +1558,10 @@ def _handle_verify_json(args: argparse.Namespace) -> int:
     with _json_stdout():
         cgshome = _resolve_cgshome(getattr(args, "search_dir", None))
         exit_code = _run_with_logging(
-            command_name="verify",
+            command_name=f"verify-{args.verify_command}",
             source=cgshome,
             runner=lambda client, source: _execute_verify_json(
-                client, source, repair=args.repair, rendered=rendered
+                client, source, repair=args.verify_command == "repair", rendered=rendered
             ),
         )
     print(rendered["payload"])
@@ -2203,7 +2229,7 @@ def _execute_import_submodules(
     apply: bool = False,
     recursive: bool = False,
 ) -> int:
-    """Execute the import-submodules command and print a human-readable report."""
+    """Execute submodules report/import and print a human-readable report."""
     report = client.import_submodules(source, apply=apply, recursive=recursive)
 
     if not report.submodules:
@@ -2216,7 +2242,7 @@ def _execute_import_submodules(
     # without saying which repository it was read from.
     if not apply:
         print(f"Dry run — {len(report.submodules)} submodule(s) under {source}")
-        print("Pass --apply to perform the conversion.\n")
+        print("Run 'cgitsync submodules import' with the same arguments to perform the conversion.\n")
         for sub in report.submodules:
             print(f"  submodule: {sub.name}")
             print(f"    path:        {report.path_from_scan_root(sub)}")
@@ -2246,7 +2272,7 @@ def _execute_init_from_submodules(
     force: bool = False,
     force_access_protocol: str | None = None,
 ) -> int:
-    """Execute init-from-submodules and print a human-readable report."""
+    """Execute submodules init and print a human-readable report."""
     report = client.init_from_submodules(
         source,
         cgs_path=cgs_path,
@@ -2289,7 +2315,7 @@ def _execute_init_from_submodules(
     print(
         "\nThe conversion is staged but not committed. Review it, then:\n"
         f"  export CGSHOME={report.root}\n"
-        "  cgitsync branch <name> && cgitsync checkout <name>\n"
+        "  cgitsync branch create <name> && cgitsync checkout <name>\n"
         '  cgitsync add && cgitsync commit "<message>"'
     )
     return 0
@@ -2298,15 +2324,11 @@ def _execute_init_from_submodules(
 #: Memory subcommands with no argument beyond `cgshome` and one call/print
 #: each — pulled out of `_execute_memory`'s if-chain as a single branch so
 #: that chain stays under the C90 complexity ceiling as new read-only
-#: subcommands (like `self-history`) are added. Defined last: every
+#: subcommands are added. Defined last: every
 #: `_print_memory_*` function it references must already exist.
 _SIMPLE_MEMORY_SUBCOMMANDS: dict[str, tuple[Callable, Callable]] = {
     "status": (lambda client, cgshome: client.memory_status(cgshome), _print_memory_status),
     "list": (lambda client, cgshome: client.memory_list(cgshome), _print_memory_list),
-    "self-history": (
-        lambda client, cgshome: client.memory_self_history(cgshome),
-        _print_memory_self_history,
-    ),
 }
 
 

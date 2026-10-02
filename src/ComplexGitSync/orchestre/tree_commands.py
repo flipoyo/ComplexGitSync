@@ -158,27 +158,27 @@ class TreeCommands:
             )
         protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
         scope = GitProbes.scope_for(
-            registry, private=private, command="pull-force", default=RepoScope.ALL
+            registry, private=private, command="pull --force", default=RepoScope.ALL
         )
         try:
             self.client.orchestre.git_tree.git.pull_force(
                 self.client.git_runner, force_access_protocol=protocol, scope=scope
             )
         except GitSyncError as exc:
-            hint = AuthFailureHints.protocol_switch_hint(str(exc), command="pull-force")
+            hint = AuthFailureHints.protocol_switch_hint(str(exc), command="pull --force")
             if hint:
                 raise GitSyncError(f"{exc}\n{hint}") from exc
             raise
         if not registry.is_ready():
             if scope is not RepoScope.ALL:
                 raise GitSyncError(
-                    f"pull-force --private did not produce a READY tree: the "
+                    f"pull --force --private did not produce a READY tree: the "
                     f"repositories outside the {scope.value} scope were not "
                     f"resynchronised, and {resolved_source.name} describes them "
                     f"too. Resynchronise from a .gts snapshot of a tree that is "
                     f"already checked out, or drop --private to do the whole tree."
                 )
-            raise GitSyncError("pull-force did not produce a READY tree.")
+            raise GitSyncError("pull --force did not produce a READY tree.")
         snapshot_path = self.client.write_gts_snapshot(command_origin="pull-force")
         self.client.state_store.record_snapshot(resolved_source, snapshot_path)
         self.client._log_tree_transition(previous_tree_state, registry.lifecycle_state, reason="pull-force")
@@ -288,7 +288,7 @@ class TreeCommands:
         writable configuration repositories, as it does for ``branch``.
         """
         registry = self.client.get_dependency_registry()
-        scope = GitProbes.scope_for(registry, private=private, command="branch --list")
+        scope = GitProbes.scope_for(registry, private=private, command="branch list")
         return self.client.orchestre.git_tree.git.list_branches(self.client.git_runner, scope=scope)
 
     def project_branches(self, *, private: bool = False) -> tuple[ProjectBranch, ...]:
@@ -299,7 +299,7 @@ class TreeCommands:
         branches listed.
         """
         registry = self.client.get_dependency_registry()
-        scope = GitProbes.scope_for(registry, private=private, command="branch --list")
+        scope = GitProbes.scope_for(registry, private=private, command="branch list")
         return GitTreeBranches(registry, self.client.git_runner).project_branches(scope=scope)
 
     def fetch(self, *, private: bool = False) -> tuple[RepoOutcome, ...]:

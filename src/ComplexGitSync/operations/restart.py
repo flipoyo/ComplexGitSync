@@ -149,7 +149,7 @@ class RestartOperation:
         ]
         if found:
             raise GitSyncError(
-                "pull-force would leave commits on no branch, because no remote holds them:\n"
+                "pull --force would leave commits on no branch, because no remote holds them:\n"
                 + "\n".join(found)
                 + "\nNothing was changed. Push them, or merge, and run it again."
             )
@@ -169,7 +169,7 @@ class RestartOperation:
         root's branch, propagating it, the parent/child path preflight, the
         per-repo remote rewrite, and the refresh — is identical either way.
         """
-        label = "pull-force" if force else "pull"
+        label = "pull --force" if force else "pull"
         root_entry = tree.get(ROOT_REPO_ID)
         observed = GitTreeBranches(tree, git_runner).observed(root_entry)
         current_branch = resolve_entry_ref(root_entry, observed_branch=observed).name
@@ -213,7 +213,7 @@ class RestartOperation:
                 if force:
                     if git_runner.force_pull(repo.absolute_path, remote=remote, ref_name=target_branch):
                         warnings.warn(
-                            f"pull-force set aside uncommitted work in {repo.name}: "
+                            f"pull --force set aside uncommitted work in {repo.name}: "
                             f"'git -C {repo.absolute_path} stash pop' brings it back.",
                             stacklevel=2,
                         )
@@ -272,7 +272,7 @@ class RestartOperation:
 
         *force_access_protocol*, when given, rewrites each repo's remote to
         that protocol before force-pulling (``--force-protocol`` on
-        ``pull-force``).
+        ``pull --force``).
         """
         RestartOperation._restart_tree(
             tree, git_runner, force=True, force_access_protocol=force_access_protocol, scope=scope

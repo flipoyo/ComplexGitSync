@@ -37,9 +37,9 @@ class FakeClient:
 
 
 def test_parser_accepts_show_and_check_forms():
-    show = build_parser().parse_args(["env", "--search-dir", "work"])
+    show = build_parser().parse_args(["env", "show", "--search-dir", "work"])
     check = build_parser().parse_args(["env", "check", "--search-dir", "work", "--cgs", "x.cgs"])
-    assert show.environment_command is None
+    assert show.environment_command == "show"
     assert check.environment_command == "check"
     assert check.cgs == "x.cgs"
 

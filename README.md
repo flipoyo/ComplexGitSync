@@ -1,4 +1,4 @@
-# ComplexGitSync v4.0.0
+# ComplexGitSync v4.1.0
 ## A distributed git-native Operating Space
 
 __Multi git-repo project management, synchronization, and persistance__
@@ -37,9 +37,9 @@ ComplexGitSync considers Private repos as read-only by default. Private repos co
 | **private/distant** | someone else's repository | read only |
 
 `--private` points a command at your private/local repos instead of the
-project's own. Twelve commands take it — `pull`, `pull-force`, `fetch`,
-`checkout`, `branch`, `close-branch`, `add`, `rm`, `commit`, `merge`,
-`push` and `tag`; the table in section 3 marks each one. ComplexGitSync never
+project's own. Ten commands take it — `pull` (with or without `--force`),
+`fetch`, `checkout`, `branch` (on `create`, `list` and `close`), `add`,
+`rm`, `commit`, `merge`, `push` and `tag`; the table in section 3 marks each one. ComplexGitSync never
 writes to a private/distant repo.
 
 ```toml
@@ -185,17 +185,18 @@ Full walkthrough: [tutorials/03_adopting_a_real_project.md](tutorials/03_adoptin
 ### 2.1.3 The project uses git submodules
 
 A project may already use git submodules. ComplexGitSync converts them to plain nested repositories using
-`import-submodules`, that reports on, or converts, each submodule's gitlink into a plain clone:
+`submodules report`, which says what converting would change, and `submodules import`, which turns
+each submodule's gitlink into a plain clone:
 
 ```bash
-pixi run cgitsync import-submodules ~/work/project           # dry run
-pixi run cgitsync import-submodules ~/work/project --apply   # convert
+pixi run cgitsync submodules report ~/work/project   # change nothing
+pixi run cgitsync submodules import ~/work/project   # convert
 ```
 
 That's the whole job — turning gitlinks into plain clones on disk. It does
 not also write a `.cgs`: `.gitmodules` never records the root's own
 identity, and a checkout worth converting already has a `.cgs` (hand-authored)
-or can get one from `discover`, run before or after `--apply`.
+or can get one from `discover`, run before or after `submodules import`.
 
 Add `--recursive` when a submodule has submodules of its own, so every
 level is converted rather than just the top one. The report prints each
@@ -210,24 +211,24 @@ second `--recursive` pass cannot repair it either: that walk follows the
 submodule graph declared by the root's own `.gitmodules`, which the first
 pass removed.
 
-`init-from-submodules` does the whole adoption in that one working order —
+`submodules init` does the whole adoption in that one working order —
 `discover`, write the `.cgs`, `initialise`, then convert — against a
 checkout you cloned and `git submodule update --init --recursive`'d
 yourself:
 
 ```bash
-pixi run cgitsync init-from-submodules ~/work/project --dry-run  # show the plan
-pixi run cgitsync init-from-submodules ~/work/project            # adopt and convert
+pixi run cgitsync submodules init ~/work/project --dry-run  # show the plan
+pixi run cgitsync submodules init ~/work/project            # adopt and convert
 ```
 
 It ends at a `READY` tree with the conversion staged but **not** committed
 — the conversion touches every repository that held a submodule, and some
-of those may not be yours — then prints the `branch`/`checkout`/`add`/
+of those may not be yours — then prints the `branch create`/`checkout`/`add`/
 `commit` steps to run next. The directory must be named after the project
 (`discover` derives that from the root repository's own address), since
 `CGSHOME` is resolved as `<parent>/<project-name>`.
 
-Full walkthrough over `discover`, `import-submodules`, and `initialise`: [tutorials/03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md).
+Full walkthrough over `discover`, `initialise` and `submodules import`: [tutorials/03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md).
 
 
 
@@ -313,26 +314,22 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Minimalist | `status` | `--gts` `--search-dir` `--json` | Summarize tree readiness and sync state. |
 | Minimalist | `view-tree` | `[source]` `--depth` `--collapse` `--discover-nested` | Render a topology-focused tree view in terminal. |
 | Expert | `validate` | `<source>` `--discover-nested` | Parse, normalize, and validate a .cgs or validate a .gts topology. |
-| Expert | `pull` | `[source]` `--private` `--force-protocol` `--commit-gitignore` | Resynchronise an existing project tree from .cgs or .gts. |
-| Expert | `pull-force` | `[source]` `--private` `--force-protocol` | Destructively resynchronise an existing project tree from .cgs or .gts: uncommitted changes and untracked files are set aside with `git stash push -u` (a warning names each; `git stash pop` brings them back), and it refuses for the whole tree, changing nothing, when any repository holds commits no remote has. It never force-pushes. |
+| Expert | `pull` | `[source]` `--private` `--force` `--force-protocol` `--commit-gitignore` | Resynchronise an existing project tree from .cgs or .gts. With `--force`, reset every repository to its remote's tip instead: uncommitted changes and untracked files are set aside with `git stash push -u` (a warning names each; `git stash pop` brings them back), and the whole tree is refused, changing nothing, when any repository holds commits no remote has. Never force-pushes. |
 | Expert | `autofix` | `[source]` `--error` `--repo` | Diagnose and repair the situation named by the last failing command's error — reads `.cgitsync/logs/` when `--error` is omitted. Only repairs a situation a registered repair recognises; refuses rather than guessing otherwise. |
-| Expert | `fetch` | `--private` `--gts` | Update every repository's view of its origin (`git fetch --prune origin`), without moving any branch, `HEAD` or worktree, and writes no State. Prints one line per repository, fetched or skipped with the reason. Run it before `branch --list` to see branches pushed or deleted elsewhere since the last fetch. |
+| Expert | `fetch` | `--private` `--gts` | Update every repository's view of its origin (`git fetch --prune origin`), without moving any branch, `HEAD` or worktree, and writes no State. Prints one line per repository, fetched or skipped with the reason. Run it before `branch list` to see branches pushed or deleted elsewhere since the last fetch. |
 | Expert | `checkout` | `<branch>` `--private` `--ref-kind` `--gts` | Synchronize the tree to a branch or tag. A branch that exists on the remote is joined, not recreated — fetching it first if this workspace has never seen it, so a prior `pull` is not required. |
-| Expert | `branch` | `<branch>` `--list` `--per-repo` `--private` `--gts` | Create a branch across the full READY tree without checkout, or with `--list` print the project's own branches (the root's, local and on origin as of the last fetch), marking the one the project is on and naming the repositories that lack each, and change nothing. `--list --per-repo` prints each repository's own local branches instead. Joins a branch that already exists on the remote, fetching it on demand if needed, instead of creating a second one at HEAD. |
-| Expert | `close-branch` | `<branch>` `--private` `--gts` | Close a *project* branch: rename it to `closed/<branch>`, tree-wide, leaf-first — locally and on the remote. Each repository closes the branch it follows (`<project>_<branch>` in a private/local repository; a private/distant one is skipped), including a branch that exists only on the remote (run `fetch` first to see it). Renames only, never deletes or forces; refuses on the project's own default branch, or when any repository is currently on the branch it would close. |
+| Expert | `branch` | `create <branch>` `list [--per-repo]` `close <branch>`, each with `--private` `--gts` | `create` makes a branch across the full READY tree without checkout, joining one that already exists on the remote (fetching it on demand) instead of making a second one at HEAD. `list` prints the project's own branches (the root's, local and on origin as of the last fetch), marking the one the project is on and naming the repositories that lack each, and changes nothing; `--per-repo` prints each repository's own local branches instead. `close` renames a *project* branch to `closed/<branch>`, tree-wide, leaf-first, locally and on the remote: each repository closes the branch it follows (`<project>_<branch>` in a private/local one; a private/distant one is skipped), a branch that exists only on the remote included. It renames only, never deletes or forces, and refuses on the project's own default branch or when a repository is on the branch it would close. |
 | Expert | `add` | `[PATH ...]` `--private` `--dry-run` `--gts` | Stage all changes across a READY tree. |
 | Expert | `rm` | `<PATH ...>` `--private` `--dry-run` `--gts` | Remove one or more tracked files, each from the repo that owns it. |
 | Expert | `commit` | `[message]` `--message` `--private` `--no-stage` `--dry-run` | Commit dirty repositories from a READY tree. |
 | Expert | `merge` | `<branch>` `--into` `--private` `--ff-only` `--no-ff` `--dry-run` `--resolve` | Merge a project branch across a READY tree, leaf-first. Names every conflicting file when it refuses. `--into <target>` checks out the target and merges into it in one command. |
 | Expert | `push` | `--private` `--dry-run` `--force-protocol` `--gts` | Push repositories from a READY tree. Folds and sends this project's own memory first, when one is mounted and adopted. |
 | Expert | `tag` | `<name>` `--private` `--gts` | Create and push a tag across a READY tree. Folds and sends the memory first, same as `push`. |
-| Expert | `import-submodules` | `<repo-root>` `--apply` `--recursive` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
-| Expert | `init-from-submodules` | `<repo-root>` `--cgs` `--max-depth` `--dry-run` `--force` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
-| Expert | `verify` | `--repair` `--search-dir` `--json` | Say whether this workspace's recorded history is verified, absent, legacy or corrupt. |
-| Expert | `env` | `--search-dir` | Observe the machine, tool versions, credentials and tree manifests that make this workspace usable. |
-| Expert | `env check` | `--search-dir` `--cgs` | Compare the observed environment with the requirements declared by the tree or an explicit `.cgs`. Reports drift and exits non-zero when requirements are not met. |
-| Expert | `memory` | `status` `list` `show <state>` `explore` `as-of <time>` `init` `setup [--provider --owner --name --cgs]` `mount` `adopt [--reboot]` `branch` `clone` `push` `reboot` `self-history` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. `as-of <time>` answers *what was this tree at that time?*: the State the ledger recorded at or before it (UTC unless an offset is given; a bare date means the end of that day), with a warning when the chain does not verify or its clock ran backwards. `self-history` prints every self-history record this workspace holds, folded and pending. A workspace whose `.cgs` declares no memory gets a local one, created on the first recording command, which `memory push` folds into and never publishes; `memory adopt` (with the entry declared) is the opt-in. A developer tree (one holding a private repository) with no memory declared is offered `setup`, which creates the repository with `gh`, `glab` or `tea`, adds it to the `.cgs` and adopts the local memory in one step. |
-| Expert | `self-history` | `add --ticket --goal --action --worker-role --worker-vendor --worker-model --orchestrator-role --orchestrator-vendor --orchestrator-model --spec-respect-score --spec-respect-basis --spec-respect-reasoning --gating-score --gating-basis --gating-reasoning --quality-score --quality-basis --quality-reasoning --state-before --state-after --lint-passed --tests-passed --pushed --pushed-reason --conformity-explanation --search-dir` `adopt --owner --branch --search-dir` | Record one piece of agent work — who did it, for which ticket, and a three-part conformity score out of 100 (spec respect 33, gating 33, quality 34; the total is their sum and every score is shown with its maximum) — to the pending half of this project's own accounting record. Fills in the current signed AgentContract's hash and this workspace's `errors=` count itself; every other field is the orchestrator's own account. `adopt` retrofits self-history onto a `.memory` that was adopted before it existed — `memory adopt` already does this on its own for any `.memory` adopted from now on. |
+| Expert | `submodules` | `report <repo-root> [--recursive]` `import <repo-root> [--recursive]` `init <repo-root> [--cgs --max-depth --dry-run --force --force-protocol]` | Turn a checkout built on git submodules into a ComplexGitSync tree. `report` prints what converting would change and changes nothing; `import` converts each submodule to a plain nested repository (`git rm --cached`, its `.gitmodules` stanza, `.gitignore`); `init` adopts a submodule checkout end to end: discover, write the `.cgs`, initialise, convert. |
+| Expert | `verify` | `check [--json]` `repair [--json]`, each with `--search-dir` | `check` says whether this workspace's recorded history is verified, absent, legacy or corrupt. `repair` checks, then repairs a stale HEAD cache; it never rewrites or deletes a ledger entry. |
+| Expert | `env` | `show` `check [--cgs]`, each with `--search-dir` | `show` observes the machine, tool versions, credentials and tree manifests that make this workspace usable. `check` compares that with the requirements declared by the tree or an explicit `.cgs`, reports drift, and exits non-zero when requirements are not met. |
+| Expert | `memory` | `status` `list` `show <state>` `explore` `as-of <time>` `init` `setup [--provider --owner --name --cgs]` `mount` `adopt [--reboot]` `branch` `clone` `push` `reboot` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. `as-of <time>` answers *what was this tree at that time?*: the State the ledger recorded at or before it (UTC unless an offset is given; a bare date means the end of that day), with a warning when the chain does not verify or its clock ran backwards. A workspace whose `.cgs` declares no memory gets a local one, created on the first recording command, which `memory push` folds into and never publishes; `memory adopt` (with the entry declared) is the opt-in. A developer tree (one holding a private repository) with no memory declared is offered `setup`, which creates the repository with `gh`, `glab` or `tea`, adds it to the `.cgs` and adopts the local memory in one step. |
+| Expert | `self-history` | `add --ticket --goal --action --worker-role --worker-vendor --worker-model --orchestrator-role --orchestrator-vendor --orchestrator-model --spec-respect-score --spec-respect-basis --spec-respect-reasoning --gating-score --gating-basis --gating-reasoning --quality-score --quality-basis --quality-reasoning --state-before --state-after --lint-passed --tests-passed --pushed --pushed-reason --conformity-explanation --search-dir` `adopt --owner --branch --search-dir` `list --search-dir` | Record one piece of agent work — who did it, for which ticket, and a three-part conformity score out of 100 (spec respect 33, gating 33, quality 34; the total is their sum and every score is shown with its maximum) — to the pending half of this project's own accounting record. Fills in the current signed AgentContract's hash and this workspace's `errors=` count itself; every other field is the orchestrator's own account. `adopt` retrofits self-history onto a `.memory` that was adopted before it existed — `memory adopt` already does this on its own for any `.memory` adopted from now on. `list` prints every self-history record this workspace holds, folded and pending. |
 | Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
 | Configuration | `repo` | `create <provider:owner/name>` | Create a repository on its provider, without leaving cgitsync. `create` takes `--public` and `--description`; repositories are private otherwise. |
 | Help | `help` | `[command ...]` `--all` | Help on one command (`cgitsync help memory explore`), or every command and option on one page (`cgitsync help --all`, which `grep` can search). |
@@ -382,7 +379,8 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 
 The `summary` line starts with `cgitsync_branch=<branch>` — the branch your
 project is on, which is the branch its root repository is on. It is the one
-`cgitsync branch` and `cgitsync checkout` set, and the one every other
+`cgitsync checkout` sets (`branch create` makes a branch without moving
+onto it), and the one every other
 repository follows.
 
 The table below it shows a branch per repository, and they are not all the
@@ -392,7 +390,7 @@ branch named after your project, so with the project on `apoub` you will see
 of step. `cgitsync_branch` is the one line that answers "which branch am I
 on?" without you having to know which row to read. To see the project's
 *other* branches, and which repositories hold each, run
-`cgitsync branch --list`. It reads origin as of the last fetch; run
+`cgitsync branch list`. It reads origin as of the last fetch; run
 `cgitsync fetch` first to see what changed there since.
 
 Two values are not branch names:
@@ -421,7 +419,7 @@ repository is actually on:
 | `synced` | Level with the upstream. |
 | `ahead(+N)` | `N` commits here that the remote does not have. `push` sends them. |
 | `behind(-N)` | `N` commits on the remote that are not here. `pull` fetches them. |
-| `diverged(+N/-M)` | Both, from a common ancestor. `merge` or `autofix` resolves it; `pull-force` refuses while you hold commits no remote has. |
+| `diverged(+N/-M)` | Both, from a common ancestor. `merge` or `autofix` resolves it; `pull --force` refuses while you hold commits no remote has. |
 | `no-upstream` | This branch was never pushed, so there is nothing to compare it to. Normal for a branch you just made, and for a **private/local** repository that only `push --private` ever sends. |
 | `unknown` | The branch names an upstream that does not resolve. `pull` or `push` repairs it; if it persists, the remote is unreachable or the ref was deleted. |
 
@@ -444,12 +442,12 @@ A few flags mean the same thing wherever they appear:
 
 | Option | Meaning |
 |---|---|
-| `--private` | Run on your **private/local** repos instead of the project's own. Exclusive, not additive. Available on `pull`, `pull-force`, `fetch`, `checkout`, `branch`, `close-branch`, `add`, `rm`, `commit`, `merge`, `push` and `tag` — and on nothing else. |
+| `--private` | Run on your **private/local** repos instead of the project's own. Exclusive, not additive. Available on `pull`, `fetch`, `checkout`, `branch`, `add`, `rm`, `commit`, `merge`, `push` and `tag` — and on nothing else. |
 | `--all` | Run on both halves at once — your own repos **and** your **private/local** ones, sharing one commit message. Available on `add`, `commit`, `push` and `merge`. Cannot be combined with `--private`. Read-only configuration repos are never written to. |
 | `--gts <snapshot.gts>` | Act on an explicit snapshot rather than the one found automatically. |
 | `--search-dir <dir>` | Where to start looking for the tree. Accepted by every command that finds a tree on its own. |
 | `--dry-run` | Print the plan and change nothing. |
-| `--force-protocol {ssh,https}` | Rewrite remotes to that protocol while cloning or pushing. Unrelated to `pull-force`, which is the destructive one. |
+| `--force-protocol {ssh,https}` | Rewrite remotes to that protocol while cloning or pushing. Unrelated to `pull --force`, which is the destructive one. |
 
 `rm` is the one command you hand a path to rather than a scope, so
 `--private` works as a filter there: it refuses a path that belongs to one
@@ -695,12 +693,12 @@ stay visible.
 
 ### `--json`
 
-`status` and `verify` accept `--json`. Each prints **one JSON object on
+`status` and `verify check` accept `--json`. Each prints **one JSON object on
 stdout and nothing else**, so a pipe never has to strip a banner:
 
 ```bash
 cgitsync status --json | jq -r '.cgitsync_branch'
-cgitsync verify --json | jq -e '.status == "clean"'
+cgitsync verify check --json | jq -e '.status == "verified"'
 ```
 
 Everything a person would read — the workspace that was resolved, the log
@@ -730,7 +728,7 @@ kept, but only for the internal build counter (`__build__` in
 | Python modules under `src/ComplexGitSync/` | **Not a public interface.** `ComplexGitSyncClient` is the CLI's own implementation. Import it and a refactor may break you; no deprecation is owed. |
 | `verify` | **Experimental.** The ledger it reads is being rewritten, so its output and its findings may change. Everything else in the command table is covered by the promises above. |
 
-`cgitsync verify` answers one of five things, and the difference matters if
+`cgitsync verify check` answers one of five things, and the difference matters if
 you gate a build on it:
 
 | Answer | Exit | Means |
@@ -785,7 +783,7 @@ parts of the tree and which commands you use:
 | `latexmk` and a TeX distribution | Developers rebuilding the manuals under `docs/`. | Declare as developer requirements for the tree; they are not end-user runtime dependencies. |
 
 The machine itself must also match the platforms supported by the tree's
-lock files. `pixi run cgitsync env` prints the observed operating system,
+lock files. `pixi run cgitsync env show` prints the observed operating system,
 architecture, Pixi platform and libc. `pixi run cgitsync env check` compares
 that observation with the tree's declared requirements. It reports drift but
 does not change or install anything.
@@ -813,7 +811,7 @@ requirements so CI can enforce them.
 
 1. [01_first_multi_repo_workspace.md](tutorials/01_first_multi_repo_workspace.md) — full CLI lifecycle walkthrough on a synthetic sandbox tree.
 2. [02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md) — hand-author a `.cgs` for a real 19-repo project, then hand off to its existing `make` build.
-3. [03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md) — a real project with no `.cgs` of its own that still uses git submodules: one `init-from-submodules` command, what it runs underneath, and on to a pushed `READY` tree.
+3. [03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md) — a real project with no `.cgs` of its own that still uses git submodules: one `submodules init` command, what it runs underneath, and on to a pushed `READY` tree.
 4. [04_private_repos.md](tutorials/04_private_repos.md) — the repos that configure your project rather than being it: what `private = true` protects, when to add `writable = true`, and how their branches follow yours.
 5. [05_memory.md](tutorials/05_memory.md) — your project's memory: `cgitsync memory setup`, runnable at any time, or the five commands it stands for, that turn what `cgitsync` remembers into a repository of its own, so it outlives the disk it was made on.
 

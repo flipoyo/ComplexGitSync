@@ -65,7 +65,7 @@ def test_pull_force_sets_uncommitted_and_untracked_work_aside_instead_of_discard
         client.pull_force(tree["snapshot"])
 
     assert not (tree["root"] / "notes.txt").exists()
-    assert "pull-force" in _git(tree["root"], "stash", "list")
+    assert "pull --force" in _git(tree["root"], "stash", "list")
     _git(tree["root"], "stash", "pop")
     assert (tree["root"] / "notes.txt").read_text(encoding="utf-8") == "untracked work\n"
     assert (tree["root"] / "README.md").read_text(encoding="utf-8") == "edited, not committed\n"

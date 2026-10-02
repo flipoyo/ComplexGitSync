@@ -18,15 +18,16 @@ from ._shared import _resolve_gts_path, _run_with_logging
 from .exit_codes import EXIT_OK, EXIT_REFUSED
 from .help_text import SEARCH_DIR_HELP
 
-COMMANDS = {"env": "Observe this tree's reproducibility environment, or check its requirements."}
+COMMANDS = {"env": "Observe this tree's reproducibility environment, or check its requirements (show, check)."}
 
 
 def register_parsers(subparsers: argparse._SubParsersAction) -> None:
-    """Register ``env`` and its optional ``check`` subcommand."""
+    """Register ``env`` and its two subcommands, ``show`` and ``check``."""
     parser = subparsers.add_parser("env", help=COMMANDS["env"], description=COMMANDS["env"])
-    parser.add_argument("--search-dir", metavar="DIR", help=SEARCH_DIR_HELP)
-    commands = parser.add_subparsers(dest="environment_command")
-    check = commands.add_parser("check", help="Compare observation with .cgs requirements.")
+    commands = parser.add_subparsers(dest="environment_command", required=True)
+    show = commands.add_parser("show", help="Observe the machine, tool versions, credentials and tree manifests.", description="Observe the machine, tool versions, credentials and tree manifests.")
+    show.add_argument("--search-dir", metavar="DIR", help=SEARCH_DIR_HELP)
+    check = commands.add_parser("check", help="Compare observation with .cgs requirements.", description="Compare observation with .cgs requirements.")
     check.add_argument("--search-dir", metavar="DIR", help=SEARCH_DIR_HELP)
     check.add_argument("--cgs", metavar="FILE", help="Requirements source; defaults to the tree's .cgs.")
     parser.set_defaults(handler=_handle_environment)
@@ -35,7 +36,7 @@ def register_parsers(subparsers: argparse._SubParsersAction) -> None:
 def _handle_environment(args: argparse.Namespace) -> int:
     source = _resolve_gts_path(None, getattr(args, "search_dir", None))
     return _run_with_logging(
-        command_name="env-check" if args.environment_command == "check" else "env",
+        command_name=f"env-{args.environment_command}",
         source=source,
         runner=lambda client, resolved: _execute_environment(
             client,

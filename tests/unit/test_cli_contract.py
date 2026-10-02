@@ -292,9 +292,9 @@ def test_a_failure_in_json_mode_is_still_one_json_object(tmp_path, capsys):
 def test_verify_json_matches_the_human_exit_code(tmp_path, capsys):
     (tmp_path / ".cgitsync").mkdir()
 
-    human = cli_main(["verify", "--search-dir", str(tmp_path)])
+    human = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
     capsys.readouterr()
-    machine = cli_main(["verify", "--json", "--search-dir", str(tmp_path)])
+    machine = cli_main(["verify", "check", "--json", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert human == machine == EXIT_OK
@@ -323,7 +323,7 @@ def test_verify_json_reports_findings_and_exits_one(tmp_path, capsys):
     data["entry"]["command"] = "tampered-command"
     entry_path.write_text(tomli_w.dumps(data), encoding="utf-8")
 
-    exit_code = cli_main(["verify", "--json", "--search-dir", str(tmp_path)])
+    exit_code = cli_main(["verify", "check", "--json", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == EXIT_REFUSED

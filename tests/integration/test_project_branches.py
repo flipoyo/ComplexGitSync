@@ -90,7 +90,7 @@ def test_cli_branch_list_prints_the_project_branches(tmp_path, capsys):
     tree = _two_repo_workspace(tmp_path)
     _push_new_branch(tree["root"], "feature-x")
 
-    code = main(["branch", "--list", "--gts", str(tree["snapshot"])])
+    code = main(["branch", "list", "--gts", str(tree["snapshot"])])
 
     out = capsys.readouterr().out
     assert code == 0
@@ -99,10 +99,14 @@ def test_cli_branch_list_prints_the_project_branches(tmp_path, capsys):
     assert "missing in: conf" in out
 
 
-def test_cli_per_repo_needs_list(tmp_path, capsys):
+def test_cli_per_repo_belongs_to_list_only(tmp_path, capsys):
+    import pytest
+
     tree = _two_repo_workspace(tmp_path)
 
-    assert main(["branch", "x", "--per-repo", "--gts", str(tree["snapshot"])]) == 2
+    with pytest.raises(SystemExit) as refused:
+        main(["branch", "create", "x", "--per-repo", "--gts", str(tree["snapshot"])])
+    assert refused.value.code == 2
 
 
 def test_private_narrows_coverage_but_not_the_branches_listed(tmp_path):
@@ -134,7 +138,7 @@ def test_cli_names_a_detached_root_as_detached(tmp_path, capsys):
     tree = _two_repo_workspace(tmp_path)
     _git(tree["root"], "checkout", "--detach")
 
-    code = main(["branch", "--list", "--gts", str(tree["snapshot"])])
+    code = main(["branch", "list", "--gts", str(tree["snapshot"])])
 
     out = capsys.readouterr().out
     assert code == 0

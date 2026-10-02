@@ -28,9 +28,12 @@ GROUP_DESCRIPTIONS: dict[tuple[str, ...], str] = {
     ("self-history",): "The private record of agent work on this project.",
     ("repo",): "Create a repository on its provider, without leaving cgitsync.",
     ("env",): (
-        "Observe this tree's reproducibility environment (no subcommand), "
+        "Observe this tree's reproducibility environment (show), "
         "or compare it with the .cgs requirements (check)."
     ),
+    ("branch",): "Create, list or close a project branch across the whole tree.",
+    ("submodules",): "Turn a checkout built on git submodules into a ComplexGitSync tree.",
+    ("verify",): "Check this workspace's hash-chained ledger, or repair its HEAD cache.",
 }
 
 #: Command path -> (description, or None to keep the parser's own; examples).
@@ -50,22 +53,27 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
     ("status",): (None, ("cgitsync status", "cgitsync status --json")),
     ("view-tree",): (None, ("cgitsync view-tree", "cgitsync view-tree install.cgs --depth 1")),
     ("validate",): (None, ("cgitsync validate project.cgs", "cgitsync validate project.cgs --discover-nested")),
-    ("pull",): (None, ("cgitsync pull", "cgitsync pull --private")),
-    ("pull-force",): (None, ("cgitsync pull-force", "cgitsync pull-force --private")),
+    ("pull",): (None, ("cgitsync pull", "cgitsync pull --private", "cgitsync pull --force", "cgitsync pull --force --private")),
     ("autofix",): (None, ("cgitsync autofix", 'cgitsync autofix --error "<pasted git error>" --repo .memory')),
     ("checkout",): (None, ("cgitsync checkout main", "cgitsync checkout v1.2.0 --ref-kind tag")),
-    ("branch",): (None, ("cgitsync branch feature-x", "cgitsync branch feature-x --private", "cgitsync branch --list", "cgitsync branch --list --per-repo")),
+    ("branch",): (None, ("cgitsync branch list", "cgitsync branch create feature-x", "cgitsync branch close feature-x")),
+    ("branch", "create"): (None, ("cgitsync branch create feature-x", "cgitsync branch create feature-x --private")),
+    ("branch", "list"): (None, ("cgitsync branch list", "cgitsync branch list --per-repo")),
+    ("branch", "close"): (None, ("cgitsync branch close feature-x", "cgitsync branch close feature-x --private")),
     ("fetch",): (None, ("cgitsync fetch", "cgitsync fetch --private")),
-    ("close-branch",): (None, ("cgitsync close-branch feature-x", "cgitsync close-branch feature-x --private")),
     ("add",): (None, ("cgitsync add", "cgitsync add README.md docs/Text/user_guide.tex", "cgitsync add --dry-run")),
     ("rm",): (None, ("cgitsync rm old_notes.md", "cgitsync rm old_notes.md --dry-run")),
     ("commit",): (None, ('cgitsync commit "Fix the install section"', 'cgitsync commit -m "Fix the install section" --private')),
     ("merge",): (None, ("cgitsync merge feature-x --dry-run", "cgitsync merge feature-x", "cgitsync merge feature-x --resolve")),
     ("push",): (None, ("cgitsync push", "cgitsync push --private --dry-run")),
     ("tag",): (None, ("cgitsync tag v1.2.0",)),
-    ("import-submodules",): (None, ("cgitsync import-submodules ~/work/project", "cgitsync import-submodules ~/work/project --apply")),
-    ("init-from-submodules",): (None, ("cgitsync init-from-submodules ~/work/project --dry-run",)),
-    ("verify",): (None, ("cgitsync verify", "cgitsync verify --json")),
+    ("submodules",): (None, ("cgitsync submodules report ~/work/project", "cgitsync submodules init ~/work/project")),
+    ("submodules", "report"): (None, ("cgitsync submodules report ~/work/project", "cgitsync submodules report ~/work/project --recursive")),
+    ("submodules", "import"): (None, ("cgitsync submodules import ~/work/project", "cgitsync submodules import ~/work/project --recursive")),
+    ("submodules", "init"): (None, ("cgitsync submodules init ~/work/project --dry-run", "cgitsync submodules init ~/work/project")),
+    ("verify",): (None, ("cgitsync verify check", "cgitsync verify repair")),
+    ("verify", "check"): (None, ("cgitsync verify check", "cgitsync verify check --json")),
+    ("verify", "repair"): (None, ("cgitsync verify repair",)),
     ("memory", "status"): (
         "How much this workspace remembers — States, ledger entries, when it was last written — "
         "whether it verifies, and the tool versions its records carry.",
@@ -131,10 +139,6 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
         "Nothing is deleted.",
         ("cgitsync memory reboot",),
     ),
-    ("memory", "self-history"): (
-        "Every self-history record this workspace holds, folded and pending.",
-        ("cgitsync memory self-history",),
-    ),
     ("self-history", "add"): (
         "Record one piece of agent work — the ticket, who did it, and its conformity score out of 100 "
         "(33 + 33 + 34) — in this project's private accounting record.",
@@ -147,6 +151,10 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
             "--quality-score 30 --quality-basis asserted --quality-reasoning \"...\"",
         ),
     ),
+    ("self-history", "list"): (
+        "Every self-history record this workspace holds, folded and pending.",
+        ("cgitsync self-history list",),
+    ),
     ("self-history", "adopt"): (
         "Give self-history a repository of its own, inside a .memory adopted before self-history existed.",
         ("cgitsync self-history adopt", "cgitsync self-history adopt --owner you"),
@@ -157,9 +165,10 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
         "which you have already signed in to. ComplexGitSync stores no credential and sends none.",
         ("cgitsync repo create github:you/.memory", 'cgitsync repo create github:you/demo --public --description "A demo"'),
     ),
-    ("env",): (None, ("cgitsync env",)),
+    ("env",): (None, ("cgitsync env show", "cgitsync env check")),
+    ("env", "show"): (None, ("cgitsync env show",)),
     ("env", "check"): (
-        "Compare what 'cgitsync env' observes with the requirements the .cgs declares.",
+        "Compare what 'cgitsync env show' observes with the requirements the .cgs declares.",
         ("cgitsync env check", "cgitsync env check --cgs project.cgs"),
     ),
     ("help",): (None, ("cgitsync help memory explore", "cgitsync help --all", "cgitsync help --all | grep timeline")),

@@ -177,7 +177,7 @@ def test_status_shows_upstream_and_synced_after_branch_and_push(cloned_workspace
     """The exact table row from the field report, which used to read ``-``/``unknown``."""
     repo = cloned_workspace["repo"]
 
-    assert cli_main(["branch", "apoub", "--gts", str(cloned_workspace["snapshot"])]) == 0
+    assert cli_main(["branch", "create", "apoub", "--gts", str(cloned_workspace["snapshot"])]) == 0
     assert cli_main(["checkout", "apoub", "--gts", str(_latest_gts(repo))]) == 0
     assert cli_main(["push", "--gts", str(_latest_gts(repo))]) == 0
     capsys.readouterr()
@@ -244,7 +244,7 @@ def test_push_repairs_a_narrow_refspec_left_by_an_older_clone(tmp_path, capsys):
         root_path=clone.resolve(),
         commit_sha=_run_git(clone, "rev-parse", "HEAD"),
     )
-    assert cli_main(["branch", "apoub", "--gts", str(snapshot)]) == 0
+    assert cli_main(["branch", "create", "apoub", "--gts", str(snapshot)]) == 0
     assert cli_main(["checkout", "apoub", "--gts", str(_latest_gts(clone))]) == 0
     (clone / "mine.txt").write_text("mine\n", encoding="utf-8")
     assert cli_main(["add", "--gts", str(_latest_gts(clone))]) == 0

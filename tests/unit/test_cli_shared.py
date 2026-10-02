@@ -809,7 +809,7 @@ def test_pull_force_risk_hint_names_what_would_be_discarded(tmp_path):
     hint = _shared._pull_force_risk_hint(client)
 
     assert "cgitsync autofix" in hint
-    assert "pull-force refuses" in hint
+    assert "pull --force refuses" in hint
     assert ".memory ahead(+3)" in hint
     assert "docs ahead" not in hint
 

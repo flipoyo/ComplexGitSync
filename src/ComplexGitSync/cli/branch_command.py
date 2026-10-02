@@ -1,8 +1,8 @@
-"""cli.branch_command — `cgitsync branch <name>` and `cgitsync branch --list`.
+"""cli.branch_command — `cgitsync branch create <name>` and `cgitsync branch list`.
 
-Ring: 4. Contract: collect a branch name or `--list`, call
+Ring: 4. Contract: for `branch create` or `branch list`, call
     `ComplexGitSyncClient.branch`, `.project_branches` or `.list_branches`
-    (`--list --per-repo`), and print the answer.
+    (`list --per-repo`), and print the answer.
     Argument collection and printing only.
 Imports: _shared, orchestre
 """
@@ -10,7 +10,6 @@ Imports: _shared, orchestre
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 from ..orchestre import ComplexGitSyncClient
@@ -26,27 +25,18 @@ __all__ = ["handle"]
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Create the named branch, or list branches; exactly one of the two."""
-    if args.per_repo and not args.list:
-        print("cgitsync branch: error: --per-repo only goes with --list", file=sys.stderr)
-        return 2
-    if args.list == (args.branch is not None):
-        print(
-            "cgitsync branch: error: give a branch name to create, or --list to list, not both or neither",
-            file=sys.stderr,
-        )
-        return 2
+    """``branch create <name>`` or ``branch list [--per-repo]``."""
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
-    if args.list:
+    if args.branch_command == "list":
         return _run_with_logging(
-            command_name="branch --list",
+            command_name="branch-list",
             source=gts_path,
             runner=lambda client, source: _execute_list(
                 client, source, private=args.private, per_repo=args.per_repo
             ),
         )
     return _run_with_logging(
-        command_name="branch",
+        command_name="branch-create",
         source=gts_path,
         runner=lambda client, source: _execute_create(
             client, source, branch=args.branch, private=args.private

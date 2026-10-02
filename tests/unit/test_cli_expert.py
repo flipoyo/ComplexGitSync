@@ -93,12 +93,12 @@ def test_commands_dict_matches_registered_parsers():
     subparsers = parser.add_subparsers(dest="command")
     expert.register_parsers(subparsers)
     assert set(subparsers.choices.keys()) == set(expert.COMMANDS.keys())
-    assert len(expert.COMMANDS) == 19
+    assert len(expert.COMMANDS) == 16
 
 
 def test_commands_dict_help_text_matches_source_of_truth():
     assert "purge" not in expert.COMMANDS
-    assert expert.COMMANDS["verify"] == "Verify the hash-chained .cgitsync/lgr ledger for tamper-evidence."
+    assert expert.COMMANDS["verify"] == "Check the hash-chained .cgitsync/lgr ledger, or repair its HEAD cache (check, repair)."
 
 
 # ---------------------------------------------------------------------------
@@ -143,13 +143,9 @@ def test_gitignore_sync_flags_documented_on_pull(capsys):
     assert "--git-user-email" in captured.out
 
 
-def test_gitignore_sync_flags_absent_on_pull_force(capsys):
-    with pytest.raises(SystemExit) as exc_info:
-        _run(["pull-force", "--commit-gitignore"])
-
-    captured = capsys.readouterr()
-    assert exc_info.value.code == 2
-    assert "unrecognized arguments" in captured.err
+def test_gitignore_sync_flags_refused_with_pull_force(capsys):
+    assert _run(["pull", "--force", "--commit-gitignore"]) == 2
+    assert "--force does not take --commit-gitignore" in capsys.readouterr().err
 
 
 def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
@@ -220,7 +216,7 @@ def test_pull_force_command_uses_client_handler(monkeypatch, tmp_path, capsys):
 
     source_path = tmp_path / "project.gts"
     source_path.touch()
-    exit_code = _run(["pull-force", str(source_path)])
+    exit_code = _run(["pull", "--force", str(source_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -310,7 +306,7 @@ def test_branch_command_uses_client_handler(monkeypatch, capsys, tmp_path):
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
-    exit_code = _run(["branch", "feature-x", "--gts", str(gts_path)])
+    exit_code = _run(["branch", "create", "feature-x", "--gts", str(gts_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -630,13 +626,13 @@ def test_import_submodules_dry_run_reports_without_apply(monkeypatch, capsys, tm
 
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    exit_code = _run(["import-submodules", str(repo_root)])
+    exit_code = _run(["submodules", "report", str(repo_root)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
     assert "Dry run" in captured.out
     assert "submodule: child" in captured.out
-    assert "Pass --apply to perform the conversion." in captured.out
+    assert "Run 'cgitsync submodules import' with the same arguments to perform the conversion." in captured.out
 
 
 def test_import_submodules_apply_converts(monkeypatch, capsys, tmp_path):
@@ -653,7 +649,7 @@ def test_import_submodules_apply_converts(monkeypatch, capsys, tmp_path):
 
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    exit_code = _run(["import-submodules", str(repo_root), "--apply"])
+    exit_code = _run(["submodules", "import", str(repo_root)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -670,7 +666,7 @@ def test_import_submodules_no_gitmodules_reports_nothing_to_import(monkeypatch, 
 
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    exit_code = _run(["import-submodules", str(repo_root)])
+    exit_code = _run(["submodules", "report", str(repo_root)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -719,7 +715,7 @@ def test_init_from_submodules_dry_run_reports_the_plan(monkeypatch, capsys, tmp_
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
-    exit_code = _run(["init-from-submodules", str(repo_root), "--dry-run"])
+    exit_code = _run(["submodules", "init", str(repo_root), "--dry-run"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -739,14 +735,14 @@ def test_init_from_submodules_prints_next_steps_after_adopting(monkeypatch, caps
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
-    exit_code = _run(["init-from-submodules", str(repo_root)])
+    exit_code = _run(["submodules", "init", str(repo_root)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
     assert "Converted 1 submodule(s) to plain nested clones" in captured.out
     # The conversion is staged only, so the commit sequence must be spelled out.
     assert "staged but not committed" in captured.out
-    assert "cgitsync branch <name>" in captured.out
+    assert "cgitsync branch create <name>" in captured.out
 
 
 def test_init_from_submodules_forwards_every_flag_to_the_client(monkeypatch, capsys, tmp_path):
@@ -762,17 +758,7 @@ def test_init_from_submodules_forwards_every_flag_to_the_client(monkeypatch, cap
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
     exit_code = _run(
-        [
-            "init-from-submodules",
-            str(repo_root),
-            "--cgs",
-            str(tmp_path / "hand.cgs"),
-            "--max-depth",
-            "3",
-            "--force",
-            "--force-protocol",
-            "https",
-        ]
+        ["submodules", "init", str(repo_root), "--cgs", str(tmp_path / "hand.cgs"), "--max-depth", "3", "--force", "--force-protocol", "https"]
     )
     capsys.readouterr()
 
@@ -798,7 +784,7 @@ def test_verify_command_says_no_history_for_an_unstarted_ledger(tmp_path, capsys
     """
     (tmp_path / ".cgitsync").mkdir()
 
-    exit_code = _run(["verify", "--search-dir", str(tmp_path)])
+    exit_code = _run(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -821,7 +807,7 @@ def test_verify_command_exits_nonzero_and_lists_findings_on_tamper(monkeypatch, 
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
-    exit_code = _run(["verify", "--search-dir", str(tmp_path)])
+    exit_code = _run(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -845,7 +831,7 @@ def test_verify_command_repair_flag_is_forwarded(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
-    exit_code = _run(["verify", "--search-dir", str(tmp_path), "--repair"])
+    exit_code = _run(["verify", "repair", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -856,7 +842,7 @@ def test_verify_command_repair_flag_is_forwarded(monkeypatch, tmp_path, capsys):
 def test_verify_command_requires_locatable_cgshome(monkeypatch, tmp_path):
     monkeypatch.delenv("CGSHOME", raising=False)
     with pytest.raises(FileNotFoundError, match=r"Unable to locate CGSHOME"):
-        _run(["verify", "--search-dir", str(tmp_path)])
+        _run(["verify", "check", "--search-dir", str(tmp_path)])
 
 
 # ---------------------------------------------------------------------------
@@ -956,10 +942,10 @@ def test_all_is_offered_on_every_command_that_writes_this_projects_history(comma
     assert args.all_writable is False, "the default must not move"
 
 
-@pytest.mark.parametrize("command", ["tag", "checkout", "branch"])
+@pytest.mark.parametrize("command", [["tag"], ["checkout"], ["branch", "create"]])
 def test_all_is_not_offered_where_it_would_mean_nothing(capsys, command):
     with pytest.raises(SystemExit) as excinfo:
-        _run([command, "x", "--all"])
+        _run([*command, "x", "--all"])
 
     assert excinfo.value.code == 2
     assert "unrecognized arguments: --all" in capsys.readouterr().err

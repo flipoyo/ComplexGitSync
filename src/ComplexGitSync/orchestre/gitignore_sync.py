@@ -60,7 +60,7 @@ class GitignoreSync:
         any such repo, no ``.gitignore`` is written at all and this raises
         :exc:`~.errors.GitSyncError` immediately — no forcing, no silent
         degradation. (The ``--force-gitignore-sync`` fallback to
-        ``pull-force`` was removed: run ``pull-force`` yourself if a pull
+        ``pull --force`` was removed: run ``pull --force`` yourself if a pull
         cannot sync.)
 
         Returns one :class:`GitignoreSyncEntry` per repo whose

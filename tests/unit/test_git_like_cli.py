@@ -21,9 +21,9 @@ REMOVED_COMMANDS = {
 REMOVED_OPTIONS = {"--force-reclone", "--force-gitignore-sync"}
 KEPT_COMMANDS = {
     "initialise", "bootstrap", "freeze-release", "status", "view-tree",
-    "validate", "pull", "pull-force", "fetch", "autofix", "checkout", "branch",
-    "close-branch", "add", "rm", "commit", "merge", "push", "tag",
-    "import-submodules", "init-from-submodules", "verify", "memory",
+    "validate", "pull", "fetch", "autofix", "checkout", "branch",
+    "add", "rm", "commit", "merge", "push", "tag",
+    "submodules", "verify", "memory",
     "self-history", "discover", "repo", "env", "help",
 }
 
@@ -57,7 +57,7 @@ def test_discover_keeps_every_option():
 
 
 def test_init_from_submodules_keeps_every_option_including_force():
-    sub = _subparsers(build_parser())["init-from-submodules"]
+    sub = _subparsers(_subparsers(build_parser())["submodules"])["init"]
     assert {"--cgs", "--max-depth", "--dry-run", "--force", "--force-protocol"} <= _options(sub)
 
 
@@ -89,9 +89,17 @@ def test_internal_steps_stay_on_the_client(name):
     assert hasattr(ComplexGitSyncClient, name)
 
 
-def test_private_is_accepted_by_exactly_twelve_commands():
-    accepting = {n for n, sub in _subparsers(build_parser()).items() if "--private" in _options(sub)}
+def _walk(parser, path=()):
+    yield path, parser
+    action = next((a for a in parser._actions if isinstance(a, argparse._SubParsersAction)), None)
+    if action is not None:
+        for name, child in action.choices.items():
+            yield from _walk(child, (*path, name))
+
+
+def test_private_is_accepted_by_exactly_these_commands():
+    accepting = {" ".join(p) for p, sub in _walk(build_parser()) if p and "--private" in _options(sub)}
     assert accepting == {
-        "pull", "pull-force", "fetch", "checkout", "branch", "close-branch",
+        "pull", "fetch", "checkout", "branch create", "branch list", "branch close",
         "add", "rm", "commit", "merge", "push", "tag",
     }

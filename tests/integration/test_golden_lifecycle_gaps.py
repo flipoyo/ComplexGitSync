@@ -205,7 +205,7 @@ def test_branch_creates_branch_without_switching_current_ref(ready_single_repo_s
     repo = ready_single_repo_snapshot["repo"]
     snapshot = ready_single_repo_snapshot["snapshot"]
 
-    exit_code = cli_main(["branch", "feature-x", "--gts", str(snapshot)])
+    exit_code = cli_main(["branch", "create", "feature-x", "--gts", str(snapshot)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -270,7 +270,7 @@ def test_pull_force_sets_untracked_files_aside_and_matches_remote(
     (repo / "untracked.txt").write_text("junk\n", encoding="utf-8")
     assert _run_git(repo, "rev-parse", "HEAD") != remote_head
 
-    exit_code = cli_main(["pull-force", str(snapshot)])
+    exit_code = cli_main(["pull", "--force", str(snapshot)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -279,7 +279,7 @@ def test_pull_force_sets_untracked_files_aside_and_matches_remote(
 
     assert (repo / "README.md").read_text(encoding="utf-8") == "remote update\n"
     assert not (repo / "untracked.txt").exists()
-    assert "pull-force" in _run_git(repo, "stash", "list")
+    assert "pull --force" in _run_git(repo, "stash", "list")
     assert _run_git(repo, "rev-parse", "HEAD") == remote_head
     # ``.cgitsync/`` is ComplexGitSync's own generated state directory, not a
     # discarded local change; git clean -fd never touches it (see

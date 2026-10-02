@@ -486,7 +486,7 @@ def repo_remote_url(repo: WorkingRepo, protocol: AccessProtocol) -> str:
     exposed as a free function so ``operations/`` (which has no client
     to call a method on) can compute a repo's URL under a *different*
     protocol than whatever its `origin` remote is currently configured
-    to — used by ``push``/``pull``/``pull-force``'s ``--force-protocol``
+    to — used by ``push``/``pull``/``pull --force``'s ``--force-protocol``
     to rewrite an already-cloned repo's remote in place.
     """
     address = RepoAddress(

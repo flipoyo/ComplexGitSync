@@ -275,7 +275,7 @@ def test_pull_force_forwards_private_to_the_client(monkeypatch, tmp_path, capsys
     source = tmp_path / "project.gts"
     source.touch()
 
-    assert _run(["pull-force", str(source), *flags]) == 0
+    assert _run(["pull", "--force", str(source), *flags]) == 0
     capsys.readouterr()
 
     assert captured["private"] is expected

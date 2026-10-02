@@ -60,7 +60,7 @@ def _execute_memory_as_of(client: ComplexGitSyncClient, cgshome: Path, *, moment
             if answer["history"] == "time-inconsistent"
             else "this chain does not verify"
         )
-        print(f"warning: {reason}. Run 'cgitsync verify' for the findings.", file=sys.stderr)
+        print(f"warning: {reason}. Run 'cgitsync verify check' for the findings.", file=sys.stderr)
         for finding in answer["findings"]:
             print(f"  {finding}", file=sys.stderr)
     return EXIT_OK

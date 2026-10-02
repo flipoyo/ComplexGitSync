@@ -147,7 +147,7 @@ class GitProbes:
         Everything blocks except the repository's own ``.gitignore``. That one
         file is written by ComplexGitSync itself, in every repository that
         holds a child (:func:`~ComplexGitSync.git_tree.sync_gitignore`), so it
-        is routinely dirty in exactly the tree ``import-submodules`` is asked
+        is routinely dirty in exactly the tree ``submodules import`` is asked
         to convert — ``initialise`` writes it moments before, and refusing over
         it would deadlock the one working order (see
         ``.agent/.local/.localSpec/DevTickets/archive/20260903_InitFromSubmodules_DevPlanTicket.md``). Exempting it is

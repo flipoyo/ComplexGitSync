@@ -86,7 +86,7 @@ def _legacy(workspace: Path) -> None:
 def test_a_real_chain_is_verified(tmp_path, capsys):
     _chain(tmp_path)
 
-    exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+    exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -102,7 +102,7 @@ def test_a_real_chain_is_verified(tmp_path, capsys):
 def test_a_workspace_with_nothing_recorded_says_so(tmp_path, capsys):
     (tmp_path / ".cgitsync").mkdir()
 
-    exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+    exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -120,7 +120,7 @@ def test_no_history_is_not_a_failure(tmp_path, capsys):
     """
     (tmp_path / ".cgitsync").mkdir()
 
-    assert cli_main(["verify", "--search-dir", str(tmp_path)]) == 0
+    assert cli_main(["verify", "check", "--search-dir", str(tmp_path)]) == 0
     capsys.readouterr()
 
 
@@ -132,7 +132,7 @@ def test_no_history_is_not_a_failure(tmp_path, capsys):
 def test_a_legacy_register_is_named_and_not_verified(tmp_path, capsys):
     _legacy(tmp_path)
 
-    exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+    exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -145,7 +145,7 @@ def test_a_legacy_register_does_not_crash_the_command(tmp_path, capsys):
     """It is readable. Refusing to verify it is not the same as failing on it."""
     _legacy(tmp_path)
 
-    cli_main(["verify", "--search-dir", str(tmp_path)])
+    cli_main(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert "Traceback" not in captured.out + captured.err
@@ -156,7 +156,7 @@ def test_a_chain_beside_a_legacy_register_is_still_verified(tmp_path, capsys):
     _legacy(tmp_path)
     _chain(tmp_path)
 
-    exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+    exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -175,7 +175,7 @@ def test_one_flipped_byte_makes_the_chain_corrupt(tmp_path, capsys):
     data["entry"]["outcome"] = "tampered"
     entry_path.write_text(tomli_w.dumps(data), encoding="utf-8")
 
-    exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+    exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -190,7 +190,7 @@ def test_a_removed_entry_is_corrupt(tmp_path, capsys):
     lgr_dir = _chain(tmp_path, entries=3)
     (lgr_dir / "000002.toml").unlink()
 
-    exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+    exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -212,7 +212,7 @@ def test_a_clock_set_back_mid_session_is_reported_by_name(tmp_path, capsys):
         ],
     )
 
-    exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+    exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -232,7 +232,7 @@ def test_a_backwards_clock_is_not_reported_as_corrupt(tmp_path, capsys):
         ],
     )
 
-    cli_main(["verify", "--search-dir", str(tmp_path)])
+    cli_main(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert "status=corrupt" not in captured.out
@@ -250,7 +250,7 @@ def test_a_forward_clock_stays_verified(tmp_path, capsys):
         ],
     )
 
-    exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+    exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -268,7 +268,7 @@ def test_json_says_time_inconsistent_too(tmp_path, capsys):
         ],
     )
 
-    cli_main(["verify", "--search-dir", str(tmp_path), "--json"])
+    cli_main(["verify", "check", "--search-dir", str(tmp_path), "--json"])
     payload = json.loads(capsys.readouterr().out)
 
     assert payload["status"] == "time-inconsistent"
@@ -314,7 +314,7 @@ def test_json_carries_the_answer_and_the_entry_count(tmp_path, capsys):
 
     _chain(tmp_path, entries=2)
 
-    exit_code = cli_main(["verify", "--json", "--search-dir", str(tmp_path)])
+    exit_code = cli_main(["verify", "check", "--json", "--search-dir", str(tmp_path)])
     payload = json.loads(capsys.readouterr().out)
 
     assert exit_code == 0
@@ -328,7 +328,7 @@ def test_json_says_legacy_too(tmp_path, capsys):
 
     _legacy(tmp_path)
 
-    exit_code = cli_main(["verify", "--json", "--search-dir", str(tmp_path)])
+    exit_code = cli_main(["verify", "check", "--json", "--search-dir", str(tmp_path)])
     payload = json.loads(capsys.readouterr().out)
 
     assert exit_code == 1

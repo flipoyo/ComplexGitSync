@@ -12,16 +12,11 @@ Imports: stdlib only (argparse, difflib, sys)
 Where the hint is printed, and why it is done this way
 ------------------------------------------------------
 ``parse_args_with_hint`` lets argparse parse exactly as before and reacts
-to the ``SystemExit(2)`` argparse raises for a usage error. The two
-alternatives considered in the ticket are both worse. Checking the command
-*before* ``parse_args`` would print the hint above argparse's usage block,
-which is where it scrolls out of sight — the hint is worth having only if
-it is the last thing on screen. Subclassing ``ArgumentParser.error`` would
-tie this project to argparse's private message wording, since recognising
-"invalid choice" means matching the text argparse happens to produce.
-
-Reacting to the exit code needs neither: argparse's own usage and choices
-output is left untouched, and one line is added after it.
+to the ``SystemExit(2)`` it raises for a usage error. Checking *before*
+``parse_args`` would print the hint above argparse's usage block, where it
+scrolls out of sight; subclassing ``ArgumentParser.error`` would tie this
+project to argparse's private message wording. Reacting to the exit code
+leaves argparse's own output untouched and adds one line after it.
 """
 
 from __future__ import annotations
@@ -41,20 +36,28 @@ _ARGUMENT_SEPARATOR = "--"
 
 _USAGE_ERROR_EXIT_CODE = 2
 
+#: Spellings that changed with the CLI grammar (CliGrammar, 4.1.0): a
+#: subcommand is a plain word, and `--` is only ever an option. Typing an old
+#: one names the new form; it is advice, and never runs anything.
+RESPELLED: dict[str, str] = {
+    "close-branch": "branch close",
+    "pull-force": "pull --force",
+    "import-submodules": "submodules report (or submodules import to convert)",
+    "init-from-submodules": "submodules init",
+    "branch --list": "branch list",
+    "verify --repair": "verify repair",
+    "memory self-history": "self-history list",
+}
+
 
 def command_token(argv: Sequence[str]) -> str | None:
     """Return the token argparse reads as the command name, if there is one.
 
-    Only the first argument can be the command. Every top-level option
-    (``-h``, ``--help``, ``--version``) is a flag that takes no value and
-    exits on its own, so nothing standing before the command can swallow
-    an argument. That makes this exact rather than a guess: an option
-    name, an option's value, and a command's own operands all sit further
-    right, and none of them is ever read as a command.
-
-    Returns ``None`` when the first argument is an option, or when there
-    are no arguments at all — in both cases there is no command to
-    misspell.
+    Only the first argument can be the command: every top-level option
+    (``-h``, ``--help``, ``--version``) takes no value and exits on its own,
+    so nothing before the command can swallow an argument. That makes this
+    exact rather than a guess. Returns ``None`` when the first argument is
+    an option, or when there are none: there is no command to misspell.
     """
     if not argv:
         return None
@@ -77,13 +80,18 @@ def closest_command(token: str, known_commands: Iterable[str]) -> str | None:
 def suggestion_line(argv: Sequence[str], known_commands: Iterable[str]) -> str | None:
     """Return the hint line for *argv*, or ``None`` when there is nothing to say.
 
-    Nothing is said when no command was typed, when the command typed is a
-    real one (a later argument may still be wrong, but the command is not),
-    or when nothing on the list is close enough to be worth naming.
+    An old spelling (``RESPELLED``, one word or two) is named first. Otherwise
+    nothing is said when no command was typed, when the command typed is a
+    real one, or when nothing on the list is close enough to be worth naming.
     """
     known = list(known_commands)
     token = command_token(argv)
-    if token is None or token in known:
+    if token is None:
+        return None
+    for typed in (" ".join(argv[:2]), token):
+        if typed in RESPELLED and typed not in known:
+            return f"'{typed}' is now '{RESPELLED[typed]}'."
+    if token in known:
         return None
     match = closest_command(token, known)
     return f"Did you mean '{match}'?" if match else None
@@ -106,15 +114,32 @@ def parse_args_with_hint(
     except SystemExit as exit_request:
         if exit_request.code == _USAGE_ERROR_EXIT_CODE:
             typed = sys.argv[1:] if argv is None else argv
-            hint = suggestion_line(typed, known_commands)
+            hint = suggestion_line(typed, known_commands) or subcommands_line(parser, typed)
             if hint:
                 print(hint, file=sys.stderr)
         raise
 
 
+def subcommands_line(parser: argparse.ArgumentParser, argv: Sequence[str]) -> str | None:
+    """For a group typed without one of its subcommands (``cgitsync branch``,
+    ``cgitsync verify --json``), name the subcommands it takes."""
+    group = _choices(parser).get(argv[0]) if argv else None
+    names = list(_choices(group)) if group is not None else []
+    if not names or (len(argv) > 1 and argv[1] in (*names, "-h", "--help")):
+        return None
+    return f"'{argv[0]}' takes a subcommand: {', '.join(names)}."
+
+
+def _choices(parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
+    action = next((a for a in parser._actions if isinstance(a, argparse._SubParsersAction)), None)
+    return dict(action.choices) if action is not None else {}
+
+
 __all__ = [
+    "RESPELLED",
     "closest_command",
     "command_token",
     "parse_args_with_hint",
+    "subcommands_line",
     "suggestion_line",
 ]

@@ -708,7 +708,7 @@ def test_pull_force_command_uses_client_handler(monkeypatch, tmp_path, capsys):
 
     source_path = tmp_path / "project.gts"
     source_path.touch()
-    exit_code = main(["pull-force", str(source_path)])
+    exit_code = main(["pull", "--force", str(source_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -802,7 +802,7 @@ def test_branch_command_uses_client_handler(monkeypatch, capsys, tmp_path):
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
-    exit_code = main(["branch", "feature-x", "--gts", str(gts_path)])
+    exit_code = main(["branch", "create", "feature-x", "--gts", str(gts_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -1367,7 +1367,7 @@ def test_branch_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
     gts_path.touch()
 
     monkeypatch.setenv("CGSHOME", str(workspace))
-    exit_code = main(["branch", "feature/demo"])
+    exit_code = main(["branch", "create", "feature/demo"])
     capsys.readouterr()
 
     assert exit_code == 0
@@ -1593,10 +1593,7 @@ def test_readme_command_options_exist_on_their_command():
 
     parser = build_parser()
     subparsers = next(a for a in parser._actions if getattr(a, "choices", None))
-    real_options = {
-        name: {opt for action in sub._actions for opt in action.option_strings}
-        for name, sub in subparsers.choices.items()
-    }
+    real_options = {name: _subtree_options(sub) for name, sub in subparsers.choices.items()}
 
     readme_text = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
     table = re.search(
@@ -1632,7 +1629,7 @@ def test_readme_lists_exactly_the_commands_that_accept_private():
     accepts_private = {
         name
         for name, sub in subparsers.choices.items()
-        if any("--private" in action.option_strings for action in sub._actions)
+        if "--private" in _subtree_options(sub)
     }
 
     readme_text = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
@@ -1707,3 +1704,15 @@ def test_discover_command_forwards_write_and_max_depth(monkeypatch, capsys, tmp_
     assert exit_code == 0
     assert captured_call["max_depth"] == 2
     assert captured_call["output"] == out
+
+
+def _subtree_options(sub) -> set[str]:
+    """Every option a command takes, its subcommands' included (``branch list --per-repo``)."""
+    import argparse
+
+    found = {opt for action in sub._actions for opt in action.option_strings}
+    for action in sub._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for child in action.choices.values():
+                found |= _subtree_options(child)
+    return found

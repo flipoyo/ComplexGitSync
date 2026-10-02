@@ -168,7 +168,7 @@ class JsonRender:
         findings: Sequence[tuple[Any, Any, str]],
         repair: bool,
     ) -> dict[str, Any]:
-        """What ``cgitsync verify --json`` prints.
+        """What ``cgitsync verify check --json`` prints.
 
         ``status`` is one of the five answers — ``verified``, ``no-history``,
         ``legacy``, ``corrupt``, ``time-inconsistent`` — never a blur of two. An

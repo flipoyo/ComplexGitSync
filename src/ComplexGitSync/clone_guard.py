@@ -81,7 +81,7 @@ class CloneGuard:
         carries local commits, and a detached HEAD parked on a commit the remote
         already has does *not* block -- which is precisely what a submodule
         checkout looks like, and blocking those would break
-        ``init-from-submodules`` for no gain.
+        ``submodules init`` for no gain.
 
         Every question here is read-only. None of them writes to the worktree,
         the index, or the remote.

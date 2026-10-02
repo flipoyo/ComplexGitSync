@@ -115,7 +115,7 @@ def _add_gitignore_sync_arguments(subparser: argparse.ArgumentParser) -> None:
 
 def _pull_force_risk_hint(client: ComplexGitSyncClient) -> str:
     """The hint printed when a `pull` fails, naming exactly what
-    `pull-force` would discard for each repository that has local-only
+    `pull --force` would discard for each repository that has local-only
     commits — the archived Autofix ticket (.agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md) §3/WP6.
 
     Best-effort: a repository whose tracking state cannot be read (no
@@ -139,7 +139,7 @@ def _pull_force_risk_hint(client: ComplexGitSyncClient) -> str:
         return base
     holding = ", ".join(f"{name} ahead(+{count})" for name, count in ahead)
     return (
-        f"{base}. cgitsync pull-force refuses while commits exist only here ({holding}); "
+        f"{base}. cgitsync pull --force refuses while commits exist only here ({holding}); "
         "push or merge them first"
     )
 
@@ -217,14 +217,14 @@ def _run_with_logging(
             if active_client.run_logger.log_path is not None:
                 print(f"log_file={active_client.run_logger.log_path}")
         if command_name == "pull":
-            # `pull-force` is a hard reset to the remote's tip — safe for a
+            # `pull --force` is a hard reset to the remote's tip — safe for a
             # repository whose content is prose, but it discards local-only
             # commits outright for one whose content is not (the archived
             # Autofix ticket,
             # .agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md,
             # §3). `autofix` diagnoses first and only ever repairs a
             # situation a registered repair recognises, so it is offered
-            # first; `pull-force` remains available for when the answer really
+            # first; `pull --force` remains available for when the answer really
             # is "the remote wins, unconditionally" — named here with exactly
             # what it would discard, the same count `status` itself would
             # print, so the risk is visible before it happens rather than

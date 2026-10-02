@@ -353,11 +353,11 @@ pixi run cgitsync memory as-of 2026-09-30T17:00      # UTC, like the ledger; add
 
 It prints the entry and the `memory show <state>` to type next. A time before
 the first entry says nothing was recorded yet. If the chain does not verify,
-or a clock moved backwards in it (`verify` calls that *time-inconsistent*),
+or a clock moved backwards in it (`verify check` calls that *time-inconsistent*),
 the answer comes with `answer_reliable=false` and a warning instead of
 passing as clean.
 
-`cgitsync verify` is the one to run if you ever doubt what you are holding.
+`cgitsync verify check` is the one to run if you ever doubt what you are holding.
 It answers **verified**, **no-history**, **legacy** or **corrupt**, and it
 never repairs anything — a record that can be edited back into looking clean
 would be evidence of nothing.
@@ -443,7 +443,7 @@ git -C .cgitsync/.memory checkout YourProject_memory-dev.archived-20260918
 pixi run cgitsync memory clone --branch YourProject_memory-dev.archived-20260918
 ```
 
-`cgitsync verify`, run against a checkout of the archived branch, answers
+`cgitsync verify check`, run against a checkout of the archived branch, answers
 exactly as it did the day before the reboot — archiving is a rename, not an
 edit.
 

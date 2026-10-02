@@ -188,7 +188,7 @@ class TestVerifyCli:
     ):
         (tmp_path / ".cgitsync").mkdir()
 
-        exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+        exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
         captured = capsys.readouterr()
 
         assert exit_code == 0
@@ -205,7 +205,7 @@ class TestVerifyCli:
         data["entry"]["command"] = "tampered-command"
         entry_path.write_text(tomli_w.dumps(data), encoding="utf-8")
 
-        exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+        exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
         captured = capsys.readouterr()
 
         assert exit_code == 1
@@ -219,7 +219,7 @@ class TestVerifyCli:
         workspace deliberately does not step in here — a directory the user
         named is never silently replaced.
         """
-        exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+        exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
         captured = capsys.readouterr()
 
         assert exit_code == 2

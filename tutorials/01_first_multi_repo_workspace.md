@@ -253,7 +253,7 @@ default this only writes the file and reports what changed
 also stage/commit/push it, and `--git-user-name`/`--git-user-email` to
 override the commit identity (persisted to `$CGSHOME/.cgitsync/master.toml`
 for later invocations on this workspace). If a repo's safe pull fails here,
-`initialise` errors out; run `pull-force`, then `initialise` again.
+`initialise` errors out; run `pull --force`, then `initialise` again.
 
 A runtime snapshot is written under `$CGSHOME/.cgitsync/` and recorded in
 the project's `.lgr` register. Subsequent commands resolve this snapshot
@@ -279,15 +279,16 @@ pixi run cgitsync pull
 `pull` includes the project root repository. It runs parent-first:
 `ROOT -> PARENT -> LEAF`, pulling every repository — root, parent, and leaf
 alike — as its own plain `git pull`.
-If local files block this safe pull, the CLI suggests `pixi run cgitsync pull-force`.
-`pull-force` never discards work: it sets uncommitted and untracked files
+If local files block this safe pull, the CLI suggests `pixi run cgitsync pull --force`.
+`pull --force` never discards work: it sets uncommitted and untracked files
 aside with `git stash push -u`, and it refuses, before changing anything,
 while a commit exists that no remote has. Push or merge that commit first.
 
 `pull` also runs the same `.gitignore` lifecycle sync as `initialise` (Step 3
 above) once the tree-wide pull completes, and accepts the same
 `--commit-gitignore`/`--git-user-name`/`--git-user-email` flags.
-`pull-force` does not run this sync — it is a recovery command, not a
+`pull --force` does not run this sync, and does not take those three
+flags — it is a recovery command, not a
 lifecycle path the sync is wired into.
 
 ---
@@ -354,7 +355,7 @@ pixi run cgitsync freeze-release v1.1.0 "release v1.1.0"
 ```
 
 `freeze-release` is the one freeze procedure; there is no separate
-`freeze` command. If your branch has fallen behind, run `pull-force` first,
+`freeze` command. If your branch has fallen behind, run `pull --force` first,
 then `freeze-release`.
 
 The `.lgr` ledger file in the project root is updated with the new

@@ -131,7 +131,7 @@ def _non_interactive_git_env() -> dict[str, str]:
     """Environment for a git subprocess that must never block on a prompt.
 
     ComplexGitSync stores no credentials and has no private-repository
-    authentication story (see ``import-submodules``/``discover``'s own
+    authentication story (see ``submodules``/``discover``'s own
     docs) — every git operation is meant to succeed on ambient
     credentials already cached by the environment, or fail. Without this,
     a missing/expired credential makes ``git`` silently wait on a
@@ -932,7 +932,7 @@ class GitRunner:
         dropped = self.commits_force_pull_would_drop(repo_path, selected_ref)
         if dropped:
             raise GitSyncError(
-                f"{repo_path}: pull-force would leave {dropped} commit(s) on no branch, because no "
+                f"{repo_path}: pull --force would leave {dropped} commit(s) on no branch, because no "
                 "remote holds them. Nothing was changed. Push them, or merge, and run it again."
             )
         # Uncommitted and untracked work is set aside, not discarded: `git stash push -u`.
@@ -940,7 +940,7 @@ class GitRunner:
         if stashed:
             self._run(
                 "-c", "user.name=cgitsync", "-c", "user.email=cgitsync@localhost",
-                "stash", "push", "-u", "-m", "cgitsync pull-force: work set aside before the resync",
+                "stash", "push", "-u", "-m", "cgitsync pull --force: work set aside before the resync",
                 cwd=repo_path,
             )
         self._run("checkout", "-B", selected_ref, "FETCH_HEAD", cwd=repo_path)

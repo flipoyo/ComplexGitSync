@@ -259,7 +259,7 @@ class DiscoveryCommands:
             dirty_lines = GitProbes.blocking_worktree_dirt(self.client.git_runner.status_porcelain(child_path))
             if dirty_lines:
                 raise GitSyncError(
-                    f"import-submodules preflight failed: submodule '{sub.name}' "
+                    f"submodules import preflight failed: submodule '{sub.name}' "
                     f"at '{sub.path}' has uncommitted changes — stage or stash them first.\n"
                     + "\n".join(dirty_lines)
                 )
@@ -395,7 +395,7 @@ class DiscoveryCommands:
         """
         root = Path(repo_root).resolve()
         if not root.is_dir():
-            raise GitSyncError(f"init-from-submodules: not a directory: {root}")
+            raise GitSyncError(f"submodules init: not a directory: {root}")
 
         report = self.client.discover_repos(root, max_depth=max_depth)
         target_cgs = (
@@ -455,7 +455,7 @@ class DiscoveryCommands:
                 f"hint: the tree at {root} is initialised but its submodules are "
                 f"not converted yet — every repository is exactly as its remote "
                 f"declares it. Fix the cause above, then finish the job with "
-                f"'cgitsync import-submodules {root} --recursive --apply'."
+                f"'cgitsync submodules import {root} --recursive'."
             ) from exc
 
         self.client._log_event(
@@ -501,12 +501,12 @@ class DiscoveryCommands:
         """
         if not reuse_existing and not report.cgs_entries:
             raise GitSyncError(
-                f"init-from-submodules: no resolvable git repository found under "
+                f"submodules init: no resolvable git repository found under "
                 f"{root} — nothing to adopt."
             )
         if project_name != root.name:
             raise GitSyncError(
-                f"init-from-submodules: the project name is '{project_name}' but the "
+                f"submodules init: the project name is '{project_name}' but the "
                 f"directory is named '{root.name}'. CGSHOME is resolved as "
                 f"<parent>/<project name>, so these must match. Rename the directory "
                 f"to '{root.parent / project_name}' and run this again."
@@ -514,7 +514,7 @@ class DiscoveryCommands:
         if force or (root / ".gitmodules").is_file():
             return
         raise GitSyncError(
-            f"init-from-submodules: no .gitmodules in {root}, so there is nothing to "
+            f"submodules init: no .gitmodules in {root}, so there is nothing to "
             f"convert — this tree looks already adopted, or never used submodules. "
             f"Running anyway would still delete and re-clone every non-root "
             f"repository from its remote, losing any uncommitted work in them. "
@@ -579,7 +579,7 @@ class DiscoveryCommands:
             Optional path to write the drafted ``.cgs`` to. When omitted,
             the draft is only returned — matching the "report first, write
             only when asked" posture of ``--commit-gitignore`` and
-            ``import-submodules --apply``.
+            ``submodules import``.
 
         Returns
         -------
