@@ -88,6 +88,10 @@ def main(argv: list[str] | None = None) -> int:
         apply_build(new)
 
     print(f"{current} -> {new}")
+    if not args.dry_run:
+        # Every build is released (Versioning.md, *Who bumps what*): this is
+        # never the last versioning step, so say the next one where it is run.
+        print("next: pixi run bump-version patch (at least) -- every build is released")
     return 0
 
 
