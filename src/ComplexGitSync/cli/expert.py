@@ -60,7 +60,7 @@ COMMANDS: dict[str, str] = {
     "autofix": "Diagnose and repair the situation named by the last failing command's error.",
     "checkout": "Synchronize the tree to a branch or tag.",
     "branch": "Create a branch across the full READY tree without checkout.",
-    "close-branch": "Rename a branch to its closed name, tree-wide, leaf-first.",
+    "close-branch": "Close a project branch: rename it to its closed name, tree-wide, leaf-first.",
     "add": "Stage all changes across a READY tree.",
     "rm": "Remove one or more tracked files, each from the repo that owns it.",
     "commit": "Commit dirty repositories from a READY tree.",

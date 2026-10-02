@@ -61,7 +61,7 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
     ("checkout",): (None, ("cgitsync checkout main", "cgitsync checkout v1.2.0 --ref-kind tag")),
     ("branch",): (None, ("cgitsync branch feature-x", "cgitsync branch feature-x --private", "cgitsync branch --list", "cgitsync branch --list --per-repo")),
     ("fetch",): (None, ("cgitsync fetch", "cgitsync fetch --private")),
-    ("close-branch",): (None, ("cgitsync close-branch feature-x",)),
+    ("close-branch",): (None, ("cgitsync close-branch feature-x", "cgitsync close-branch feature-x --private")),
     ("add",): (None, ("cgitsync add", "cgitsync add README.md docs/Text/user_guide.tex", "cgitsync add --dry-run")),
     ("rm",): (None, ("cgitsync rm old_notes.md", "cgitsync rm old_notes.md --dry-run")),
     ("commit",): (None, ('cgitsync commit "Fix the install section"', 'cgitsync commit -m "Fix the install section" --private')),

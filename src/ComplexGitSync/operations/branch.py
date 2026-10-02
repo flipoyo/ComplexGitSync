@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Literal
 from ..errors import GitSyncError
 from ..git_branch import (
     DEFAULT_BRANCH,
+    BranchSource,
     closeable,
     closed_branch_name,
 )
@@ -342,38 +343,28 @@ class BranchOperation:
         *,
         scope: RepoScope = RepoScope.ALL,
     ) -> tuple[RepoOutcome, ...]:
-        """Rename *branch_name* to its closed name, tree-wide, leaf-first.
+        """Close a *project* branch: rename it to its closed name, tree-wide, leaf-first.
 
-        Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
-        otherwise. Renames, never deletes
-        (`main_1-1_BranchClosing_DevPlanTicket.md` D1): per repository, the
-        commits are pushed under the closed name
-        (:meth:`~ComplexGitSync.git_runner.GitRunner.push_ref_as`) before the
-        old remote name is removed
-        (:meth:`~ComplexGitSync.git_runner.GitRunner.delete_remote_branch`), so
-        they are always reachable under *some* name on the remote — the same
-        order `memory_reboot`'s own branch archiving already uses — and only
-        then is the local branch renamed
-        (:meth:`~ComplexGitSync.git_runner.GitRunner.rename_branch`). A branch
-        with nothing pushed under it yet (no remote, or the remote never had
-        it) is renamed locally only; there is no old remote name to remove.
+        *branch_name* is the project's branch, and each repository closes
+        the branch it follows under it (:meth:`GitTreeBranches.target`): the
+        same name in a project repository, ``<project>_<branch>`` in a
+        private/local one, and nothing in a private/distant one, which never
+        follows the project. Requires a ``READY`` tree.
+
+        Renames, never deletes. Per repository the commits are pushed under
+        the closed name before the old remote name is removed, so they are
+        always reachable under some name on the remote. The push never forces,
+        and the old name is removed only once the remote is seen to hold the
+        closed one. A branch that exists only on the remote (never checked
+        out here) is closed from its remote-tracking ref; a branch with
+        nothing on the remote is renamed locally only.
 
         Refuses, raising :exc:`~.errors.GitSyncError`, before touching any
-        repository:
-
-        * when *branch_name* is the project's own default branch
-          (:func:`~ComplexGitSync.git_branch.closeable`) — every fallback
-          chain :func:`~ComplexGitSync.git_branch.resolve_declared_ref`
-          computes eventually lands there;
-        * when any repository in *scope* is currently checked out on
-          *branch_name* (D5) — this command closes a branch, it does not move
-          the tree off one; the caller checks it out elsewhere first.
-
-        A repository with no local branch named *branch_name* is skipped, not
-        an error: closing a branch that only ever existed on some repositories
-        (a private/local mount, for instance) is ordinary, not a mistake.
-        Returns one :class:`RepoOutcome` per repository visited, in the order
-        visited.
+        repository, when *branch_name* is the project's own default branch
+        (:func:`~ComplexGitSync.git_branch.closeable`) or when a repository in
+        *scope* is currently on the branch it would close. A repository with
+        no such branch is skipped, not an error. Returns one
+        :class:`RepoOutcome` per repository visited.
         """
         Preflight.assert_ready(tree)
         root = tree.get(ROOT_REPO_ID) if ROOT_REPO_ID in tree.repos else None
@@ -384,11 +375,17 @@ class BranchOperation:
                 "closed: every repository with no branch of its own falls back to it."
             )
 
-        repos = list(iter_tree_leaf_first(tree, scope))
+        targets = GitTreeBranches(tree, git_runner)
+        plan = [
+            (repo, targets.target(repo, branch_name))
+            for repo in iter_tree_leaf_first(tree, scope)
+        ]
         checked_out = [
-            repo.name
-            for repo in repos
-            if repo.current_ref_kind == RefKind.BRANCH and repo.current_ref_name == branch_name
+            f"{repo.name} ({resolution.name})"
+            for repo, resolution in plan
+            if resolution.source is not BranchSource.PRIVATE_DISTANT
+            and repo.current_ref_kind == RefKind.BRANCH
+            and repo.current_ref_name == resolution.name
         ]
         if checked_out:
             raise GitSyncError(
@@ -398,28 +395,46 @@ class BranchOperation:
                 "then close it."
             )
 
-        closed_name = closed_branch_name(branch_name)
-        outcomes: list[RepoOutcome] = []
-        for repo in repos:
-            if not git_runner.local_branch_exists(repo.absolute_path, branch_name):
-                outcomes.append(
-                    RepoOutcome(name=repo.name, acted=False, detail=f"has no branch '{branch_name}'")
+        return tuple(
+            BranchOperation._close_one(repo, resolution, git_runner) for repo, resolution in plan
+        )
+
+    @staticmethod
+    def _close_one(repo: WorkingRepo, resolution, git_runner: GitRunner) -> RepoOutcome:
+        """Close the one branch *repo* follows, or say why nothing was closed."""
+        if resolution.source is BranchSource.PRIVATE_DISTANT:
+            detail = f"private/distant: stays on its own branch '{resolution.name}'"
+            return RepoOutcome(name=repo.name, acted=False, detail=detail)
+        name = resolution.name
+        closed_name = closed_branch_name(name)
+        path = repo.absolute_path
+        remote = repo.remote_name or "origin"
+        remote_url = git_runner.remote_get_url(path, remote)
+        local = git_runner.local_branch_exists(path, name)
+        published = bool(remote_url) and git_runner.remote_branch_exists(remote_url, name)
+        if not local and not published:
+            return RepoOutcome(name=repo.name, acted=False, detail=f"has no branch '{name}'")
+        note = " (never published; nothing to remove remotely)"
+        if published:
+            git_runner.fetch_branch_if_remote_has_it(path, remote_url, name, remote=remote)
+            tracking = f"refs/remotes/{remote}/{name}"
+            if local and not git_runner.is_ancestor(path, tracking, name):
+                raise GitSyncError(
+                    f"{repo.name}: '{name}' lacks commits that {remote} holds on it, so closing "
+                    f"it would lose them; pull or merge '{name}' first."
                 )
-                continue
-            remote = repo.remote_name or "origin"
-            remote_url = git_runner.remote_get_url(repo.absolute_path, remote)
-            published = bool(remote_url) and git_runner.remote_branch_exists(remote_url, branch_name)
-            if published:
-                git_runner.push_ref_as(repo.absolute_path, branch_name, closed_name, remote=remote)
-                git_runner.delete_remote_branch(repo.absolute_path, branch_name, remote=remote)
-            git_runner.rename_branch(repo.absolute_path, branch_name, closed_name)
-            detail = (
-                f"renamed to '{closed_name}'"
-                if published
-                else f"renamed to '{closed_name}' (never published; nothing to remove remotely)"
-            )
-            outcomes.append(RepoOutcome(name=repo.name, acted=True, detail=detail))
-        return tuple(outcomes)
+            git_runner.push_ref_as(path, name if local else tracking, closed_name, remote=remote)
+            if not git_runner.remote_branch_exists(remote_url, closed_name):
+                raise GitSyncError(
+                    f"{repo.name}: pushed '{closed_name}' but {remote} does not hold it, "
+                    f"so '{name}' was left where it is."
+                )
+            git_runner.delete_remote_branch(path, name, remote=remote)
+            note = "" if local else " (on the remote only; no local branch)"
+        if local:
+            git_runner.rename_branch(path, name, closed_name)
+        detail = f"'{name}' renamed to '{closed_name}'{note}"
+        return RepoOutcome(name=repo.name, acted=True, detail=detail)
 
     @staticmethod
     def validate_branch_topology(

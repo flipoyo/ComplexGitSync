@@ -159,17 +159,79 @@ def _push_new_branch(repo: Path, branch: str) -> None:
 def test_close_branch_renames_locally_and_remotely_across_the_tree(tmp_path):
     tree = _two_repo_workspace(tmp_path)
     _push_new_branch(tree["root"], "feature-x")
-    _push_new_branch(tree["config"], "feature-x")
+    # The configuration repository is private/local: under the project branch
+    # `feature-x` it follows `<project>_feature-x`, not a branch of the same name.
+    _push_new_branch(tree["config"], "demo_feature-x")
 
     _loaded(tree["snapshot"]).close_branch("feature-x")
 
-    for repo, remote in ((tree["root"], tree["project_remote"]), (tree["config"], tree["config_remote"])):
+    for repo, remote, old_name in (
+        (tree["root"], tree["project_remote"], "feature-x"),
+        (tree["config"], tree["config_remote"], "demo_feature-x"),
+    ):
         local_branches = _git(repo, "branch", "--list").split()
-        assert "closed/feature-x" in local_branches
-        assert "feature-x" not in local_branches
+        assert f"closed/{old_name}" in local_branches
+        assert old_name not in local_branches
         remotes = _remote_branches(remote)
-        assert "closed/feature-x" in remotes
-        assert "feature-x" not in remotes
+        assert f"closed/{old_name}" in remotes
+        assert old_name not in remotes
+
+
+def test_a_private_local_branch_of_the_same_name_is_not_closed(tmp_path):
+    tree = _two_repo_workspace(tmp_path)
+    _push_new_branch(tree["root"], "feature-x")
+    _push_new_branch(tree["config"], "feature-x")  # not the branch it follows
+
+    client = _loaded(tree["snapshot"])
+    client.close_branch("feature-x")
+
+    outcomes = {o.name: o for o in client.last_write_outcomes}
+    assert "feature-x" in _git(tree["config"], "branch", "--list").split()
+    assert outcomes["conf"].acted is False
+
+
+def test_a_branch_that_exists_only_on_the_remote_is_closed_there(tmp_path):
+    tree = _two_repo_workspace(tmp_path)
+    _push_new_branch(tree["root"], "feature-x")
+    sha = _git(tree["root"], "rev-parse", "feature-x")
+    _git(tree["root"], "branch", "-D", "feature-x")  # only origin/feature-x is left
+
+    client = _loaded(tree["snapshot"])
+    client.close_branch("feature-x")
+
+    remotes = _remote_branches(tree["project_remote"])
+    assert "closed/feature-x" in remotes and "feature-x" not in remotes
+    assert _git(tree["project_remote"], "rev-parse", "closed/feature-x") == sha
+    assert "no local branch" in {o.name: o for o in client.last_write_outcomes}["demo"].detail
+
+
+def test_a_private_distant_repository_is_never_closed(tmp_path):
+    tree = _two_repo_workspace(tmp_path)
+    _push_new_branch(tree["config"], "demo_feature-x")
+    snapshot = tree["snapshot"]
+    snapshot.write_text(
+        snapshot.read_text(encoding="utf-8").replace("writable = true\n", ""), encoding="utf-8"
+    )
+
+    client = _loaded(snapshot)
+    client.close_branch("feature-x")
+
+    outcome = {o.name: o for o in client.last_write_outcomes}["conf"]
+    assert outcome.acted is False and "private/distant" in outcome.detail
+    assert "demo_feature-x" in _git(tree["config"], "branch", "--list").split()
+
+
+def test_close_refuses_when_a_private_local_repository_is_on_the_branch_it_follows(tmp_path):
+    tree = _two_repo_workspace(tmp_path)
+    _push_new_branch(tree["config"], "demo_feature-x")
+    _git(tree["config"], "checkout", "demo_feature-x")
+    text = tree["snapshot"].read_text(encoding="utf-8")
+    tree["snapshot"].write_text(
+        text.replace('current_ref_name = "demo"', 'current_ref_name = "demo_feature-x"'), encoding="utf-8"
+    )
+
+    with pytest.raises(GitSyncError, match="conf .demo_feature-x. is currently checked out"):
+        _loaded(tree["snapshot"]).close_branch("feature-x")
 
 
 def test_close_branch_loses_no_history(tmp_path):
@@ -212,6 +274,45 @@ def test_close_branch_never_pushed_is_renamed_locally_only(tmp_path):
 
     assert "closed/feature-x" in _git(tree["root"], "branch", "--list").split()
     assert "closed/feature-x" not in _remote_branches(tree["project_remote"])
+
+
+def test_a_closed_name_already_on_the_remote_fails_loudly_and_keeps_the_old_name(tmp_path):
+    tree = _two_repo_workspace(tmp_path)
+    _push_new_branch(tree["root"], "feature-x")
+    _git(tree["root"], "checkout", "-b", "closed/feature-x", "main")
+    (tree["root"] / "other.txt").write_text("someone else's\n", encoding="utf-8")
+    _git(tree["root"], "add", "other.txt")
+    _git(tree["root"], "commit", "-m", "other")
+    _git(tree["root"], "push", "origin", "closed/feature-x")
+    _git(tree["root"], "checkout", "main")
+    _git(tree["root"], "branch", "-D", "closed/feature-x")
+
+    with pytest.raises(GitSyncError):
+        _loaded(tree["snapshot"]).close_branch("feature-x")
+
+    assert "feature-x" in _remote_branches(tree["project_remote"])
+    assert "feature-x" in _git(tree["root"], "branch", "--list").split()
+
+
+def test_a_local_branch_behind_the_remote_is_refused_so_no_commit_is_lost(tmp_path):
+    tree = _two_repo_workspace(tmp_path)
+    _push_new_branch(tree["root"], "feature-x")
+    # Another machine pushes one more commit to feature-x; this clone is behind.
+    other = tmp_path / "other-clone"
+    _git(tmp_path, "clone", "-b", "feature-x", tree["project_remote"].as_posix(), other.as_posix())
+    _identify(other)
+    (other / "more.txt").write_text("more\n", encoding="utf-8")
+    _git(other, "add", "more.txt")
+    _git(other, "commit", "-m", "more")
+    _git(other, "push", "origin", "feature-x")
+    tip = _git(other, "rev-parse", "HEAD")
+
+    with pytest.raises(GitSyncError, match="lacks commits"):
+        _loaded(tree["snapshot"]).close_branch("feature-x")
+
+    remotes = _remote_branches(tree["project_remote"])
+    assert "feature-x" in remotes and "closed/feature-x" not in remotes
+    assert _git(tree["project_remote"], "rev-parse", "feature-x") == tip
 
 
 # ---------------------------------------------------------------------------
