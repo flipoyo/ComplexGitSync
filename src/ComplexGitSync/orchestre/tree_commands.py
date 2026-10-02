@@ -37,7 +37,9 @@ from ..git_tree_branch import GitTreeBranches, ProjectBranch, tree_project_name
 from ..operations import (
     MERGE_INTO_ACTS,
     RepoBranches,
+    RepoOutcome,
     ResolveOutcome,
+    fetch_tree,
     paths_outside_scope,
 )
 from ..snapshot_resolver import discover_cgshome
@@ -301,6 +303,14 @@ class TreeCommands:
         registry = self.client.get_dependency_registry()
         scope = GitProbes.scope_for(registry, private=private, command="branch --list")
         return GitTreeBranches(registry, self.client.git_runner).project_branches(scope=scope)
+
+    def fetch(self, *, private: bool = False) -> tuple[RepoOutcome, ...]:
+        """Fetch origin, pruned, into every repository in scope; moves no `HEAD`, writes no State."""
+        registry = self.client.get_dependency_registry()
+        scope = GitProbes.scope_for(registry, private=private, command="fetch")
+        self.client.last_write_outcomes = fetch_tree(registry, self.client.git_runner, scope=scope)
+        self.client._log_event("fetch_end", fetched=sum(1 for o in self.client.last_write_outcomes if o.acted))
+        return self.client.last_write_outcomes
 
     def tree_branch_label(self) -> str:
         """The branch the project is on, as `status` prints `cgitsync_branch`: a name, `detached` or `unknown`."""

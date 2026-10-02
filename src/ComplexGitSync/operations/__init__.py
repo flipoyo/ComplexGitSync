@@ -2,7 +2,7 @@
 
 Ring: 2
 Contract: re-export the package surface unchanged.
-Imports: branch, commit, merge, outcome, preflight, push, removal, restart
+Imports: branch, commit, fetch, merge, outcome, preflight, push, removal, restart
 """
 
 from __future__ import annotations
@@ -15,6 +15,9 @@ from .branch import (
 )
 from .commit import (
     CommitOperation,
+)
+from .fetch import (
+    FetchOperation,
 )
 from .merge import (
     MERGE_INTO_ACTS,
@@ -56,6 +59,7 @@ close_branch = BranchOperation.close_branch
 commit_tree = CommitOperation.commit_tree
 create_global_branch = BranchOperation.create_global_branch
 list_branches = BranchOperation.list_branches
+fetch_tree = FetchOperation.fetch_tree
 freeze_release_tree = PushOperation.freeze_release_tree
 merge_into_status = MergeOperation.merge_into_status
 merge_into_tree = MergeOperation.merge_into_tree
@@ -99,6 +103,8 @@ __all__ = [
     "create_global_branch",
     "freeze_release_tree",
     "list_branches",
+    "fetch_tree",
+    "FetchOperation",
     "merge_into_status",
     "merge_into_tree",
     "merge_source_ref",

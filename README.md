@@ -1,4 +1,4 @@
-# ComplexGitSync v3.13.1
+# ComplexGitSync v3.14.0
 ## A distributed git-native Operating Space
 
 __Multi git-repo project management, synchronization, and persistance__
@@ -37,9 +37,9 @@ ComplexGitSync considers Private repos as read-only by default. Private repos co
 | **private/distant** | someone else's repository | read only |
 
 `--private` points a command at your private/local repos instead of the
-project's own. Twelve commands take it — `pull`, `pull-force`, `checkout`,
-`branch`, `close-branch`, `add`, `rm`, `commit`, `merge`, `push`, `tag` and
-`freeze`; the table in section 3 marks each one. ComplexGitSync never
+project's own. Thirteen commands take it — `pull`, `pull-force`, `fetch`,
+`checkout`, `branch`, `close-branch`, `add`, `rm`, `commit`, `merge`,
+`push`, `tag` and `freeze`; the table in section 3 marks each one. ComplexGitSync never
 writes to a private/distant repo.
 
 ```toml
@@ -321,6 +321,7 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `pull` | `[source]` `--private` `--force-protocol` `--commit-gitignore` | Resynchronise an existing project tree from .cgs or .gts. |
 | Expert | `pull-force` | `[source]` `--private` `--force-protocol` | Destructively resynchronise an existing project tree from .cgs or .gts. |
 | Expert | `autofix` | `[source]` `--error` `--repo` | Diagnose and repair the situation named by the last failing command's error — reads `.cgitsync/logs/` when `--error` is omitted. Only repairs a situation a registered repair recognises; refuses rather than guessing otherwise. |
+| Expert | `fetch` | `--private` `--gts` | Update every repository's view of its origin (`git fetch --prune origin`), without moving any branch, `HEAD` or worktree, and writes no State. Prints one line per repository, fetched or skipped with the reason. Run it before `branch --list` to see branches pushed or deleted elsewhere since the last fetch. |
 | Expert | `checkout` | `<branch>` `--private` `--ref-kind` `--gts` | Synchronize the tree to a branch or tag. A branch that exists on the remote is joined, not recreated — fetching it first if this workspace has never seen it, so a prior `pull` is not required. |
 | Expert | `branch` | `<branch>` `--list` `--per-repo` `--private` `--gts` | Create a branch across the full READY tree without checkout, or with `--list` print the project's own branches (the root's, local and on origin as of the last fetch), marking the one the project is on and naming the repositories that lack each, and change nothing. `--list --per-repo` prints each repository's own local branches instead. Joins a branch that already exists on the remote, fetching it on demand if needed, instead of creating a second one at HEAD. |
 | Expert | `close-branch` | `<branch>` `--private` `--gts` | Rename a branch to `closed/<branch>`, tree-wide, leaf-first — locally and on the remote. Renames only, never deletes; refuses on the project's own default branch, or when any repository is currently checked out on the branch being closed. |
@@ -398,7 +399,8 @@ branch named after your project, so with the project on `apoub` you will see
 of step. `cgitsync_branch` is the one line that answers "which branch am I
 on?" without you having to know which row to read. To see the project's
 *other* branches, and which repositories hold each, run
-`cgitsync branch --list`.
+`cgitsync branch --list`. It reads origin as of the last fetch; run
+`cgitsync fetch` first to see what changed there since.
 
 Two values are not branch names:
 
@@ -449,7 +451,7 @@ A few flags mean the same thing wherever they appear:
 
 | Option | Meaning |
 |---|---|
-| `--private` | Run on your **private/local** repos instead of the project's own. Exclusive, not additive. Available on `pull`, `pull-force`, `checkout`, `branch`, `close-branch`, `add`, `rm`, `commit`, `merge`, `push`, `tag` and `freeze` — and on nothing else. |
+| `--private` | Run on your **private/local** repos instead of the project's own. Exclusive, not additive. Available on `pull`, `pull-force`, `fetch`, `checkout`, `branch`, `close-branch`, `add`, `rm`, `commit`, `merge`, `push`, `tag` and `freeze` — and on nothing else. |
 | `--all` | Run on both halves at once — your own repos **and** your **private/local** ones, sharing one commit message. Available on `add`, `commit`, `push` and `merge`. Cannot be combined with `--private`. Read-only configuration repos are never written to. |
 | `--gts <snapshot.gts>` | Act on an explicit snapshot rather than the one found automatically. |
 | `--search-dir <dir>` | Where to start looking for the tree. Accepted by every command that finds a tree on its own. |

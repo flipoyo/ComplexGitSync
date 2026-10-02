@@ -408,7 +408,12 @@ class GitRunnerProtocol(Protocol):
     ) -> None: ...
 
     def fetch(
-        self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+        prune: bool = False,
     ) -> None: ...
 
     def fetch_branch_if_remote_has_it(
@@ -1310,16 +1315,24 @@ class GitRunner:
         self._run(*args, "mergetool", "--no-prompt", cwd=repo_path)
 
     def fetch(
-        self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+        prune: bool = False,
     ) -> None:
         """Update remote-tracking refs from *remote* (``git fetch``).
+
+        *prune* also drops the remote-tracking ref of a branch deleted on
+        *remote*; local branches are never touched either way.
 
         Touches no branch and no worktree — only ``refs/remotes``. Separate
         from :meth:`pull`, which fetches *and* merges into the current
         branch; a caller that wants to decide what to merge for itself needs
         the two halves apart.
         """
-        args = ["fetch", remote]
+        args = ["fetch", "--prune", remote] if prune else ["fetch", remote]
         if ref_name:
             args.append(ref_name)
         self._run(*args, cwd=repo_path)

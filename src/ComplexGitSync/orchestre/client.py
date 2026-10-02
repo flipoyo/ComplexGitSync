@@ -544,6 +544,10 @@ class ComplexGitSyncClient:
         """List the project's own branches and which repositories hold each, without changing anything."""
         return self._tree_commands.project_branches(private=private)
 
+    def fetch(self, *, private: bool = False) -> tuple[RepoOutcome, ...]:
+        """Fetch origin, pruned, into every repository in the tree, without moving any branch."""
+        return self._tree_commands.fetch(private=private)
+
     def tree_branch_label(self) -> str:
         """The branch the project is on, as `status` prints `cgitsync_branch`: a name, `detached` or `unknown`."""
         return self._tree_commands.tree_branch_label()

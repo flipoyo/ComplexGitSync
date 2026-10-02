@@ -958,7 +958,9 @@ class _FakeGitRunner:
     ) -> None:
         return None
 
-    def fetch(self, repo_path, *, remote: str = "origin", ref_name: str | None = None) -> None:
+    def fetch(
+        self, repo_path, *, remote: str = "origin", ref_name: str | None = None, prune: bool = False
+    ) -> None:
         return None
 
     def fetch_branch_if_remote_has_it(

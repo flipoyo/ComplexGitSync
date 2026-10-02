@@ -1,12 +1,12 @@
 """cli.expert — the "Expert" cgitsync command group.
 
-Ring: 4. Contract: register, dispatch, and execute the 21 Expert-tier commands
-    (purge, validate, clone, pull, pull-force, autofix,
+Ring: 4. Contract: register, dispatch, and execute the 22 Expert-tier commands
+    (purge, validate, clone, pull, pull-force, fetch, autofix,
     checkout, branch, close-branch, add, rm, commit, merge, push, tag, freeze,
     import-submodules, init-from-submodules, verify, memory, self-history).
     Argument/prompt collection only — delegates all semantics to
     ComplexGitSyncClient; never touches Git.
-Imports: _shared, branch_command, errors, git_repo, help_text, memory, memory_asof, memory_prompt, orchestre
+Imports: _shared, branch_command, errors, fetch_command, git_repo, help_text, memory, memory_asof, memory_prompt, orchestre
 """
 
 from __future__ import annotations
@@ -47,6 +47,7 @@ from ._shared import (
 )
 from .branch_command import handle as _handle_branch_command
 from .exit_codes import EXIT_OK, EXIT_REFUSED
+from .fetch_command import handle as _handle_fetch_command
 from .help_text import SEARCH_DIR_HELP
 
 COMMANDS: dict[str, str] = {
@@ -55,6 +56,7 @@ COMMANDS: dict[str, str] = {
     "clone": "Clone a nested project tree from .cgs.",
     "pull": "Resynchronise an existing project tree from .cgs or .gts.",
     "pull-force": "Destructively resynchronise an existing project tree from .cgs or .gts.",
+    "fetch": "Update every repository's view of its origin, without moving any branch.",
     "autofix": "Diagnose and repair the situation named by the last failing command's error.",
     "checkout": "Synchronize the tree to a branch or tag.",
     "branch": "Create a branch across the full READY tree without checkout.",
@@ -330,6 +332,13 @@ def _register_branch(subparser: argparse.ArgumentParser) -> None:
     _add_search_dir_argument(subparser)
     _add_private_argument(subparser, verb="Create or list the branch in")
     subparser.set_defaults(handler=_handle_branch)
+
+
+def _register_fetch(subparser: argparse.ArgumentParser) -> None:
+    _add_gts_argument(subparser)
+    _add_search_dir_argument(subparser)
+    _add_private_argument(subparser, verb="Fetch")
+    subparser.set_defaults(handler=_handle_fetch_command)
 
 
 def _register_close_branch(subparser: argparse.ArgumentParser) -> None:
@@ -835,6 +844,7 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "clone": _register_clone,
     "pull": _register_pull,
     "pull-force": _register_pull_force,
+    "fetch": _register_fetch,
     "autofix": _register_autofix,
     "checkout": _register_checkout,
     "branch": _register_branch,

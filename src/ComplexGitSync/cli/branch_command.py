@@ -95,7 +95,7 @@ def _print_project_branches(client: ComplexGitSyncClient, *, private: bool) -> i
     branches = client.project_branches(private=private)
     live = [b for b in branches if not b.closed]
     closed = [b for b in branches if b.closed]
-    print(f"cgitsync_branch={client.tree_branch_label()}  (origin as of the last fetch)")
+    print(f"cgitsync_branch={client.tree_branch_label()}  (origin as of the last fetch; cgitsync fetch refreshes it)")
     width = max((len(b.name) for b in branches), default=0)
     for b in live:
         where = ", ".join(w for w, held in (("local", b.local), ("origin", b.on_origin)) if held)
