@@ -522,12 +522,12 @@ class TestGitCommandCycleIntegration:
         assert cli_main(["push", "--gts", str(snapshot)]) == 0
 
         cycle_file.write_text("cli cycle 2\n", encoding="utf-8")
-        assert cli_main(["freeze", "v0.2.0", "--gts", str(snapshot)]) == 0
-        assert cli_main(["launch-release", "v0.2.0", "--gts", str(snapshot)]) == 0
+        assert cli_main(["freeze-release", "v0.2.0", "cli cycle freeze", "--gts", str(snapshot)]) == 0
+        assert cli_main(["checkout", "v0.2.0", "--ref-kind", "tag", "--gts", str(snapshot)]) == 0
 
         remote_tags = _run_git(repo, "ls-remote", "--tags", "origin")
         assert "refs/tags/v0.2.0" in remote_tags
-        # A full add/commit/push/freeze/launch-release cycle leaves a chain,
+        # A full add/commit/push/freeze-release/checkout cycle leaves a chain,
         # one entry per operation, each naming the State it wrote.
         entries = _ledger_entries(repo)
         assert len(entries) >= 1
@@ -652,7 +652,7 @@ class TestGtsSnapshotDeterminismIntegration:
 
 
 class TestCloneAndLaunchReleaseLifecycle:
-    """Complete local clone and launch_release scenarios for T18 / T29."""
+    """Complete local clone scenarios for T18 / T29."""
 
     def test_clone_cgs_supports_local_file_remotes(self, local_two_repo_remotes, monkeypatch, tmp_path):
         clone_spec = local_two_repo_remotes["clone_spec"]

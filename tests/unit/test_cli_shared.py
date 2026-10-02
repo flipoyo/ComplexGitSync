@@ -55,14 +55,13 @@ _shared = _load_cli_shared()
 # ---------------------------------------------------------------------------
 
 
-def test_add_gitignore_sync_arguments_registers_all_four_flags():
+def test_add_gitignore_sync_arguments_registers_all_three_flags():
     parser = argparse.ArgumentParser()
     _shared._add_gitignore_sync_arguments(parser)
 
     args = parser.parse_args(
         [
             "--commit-gitignore",
-            "--force-gitignore-sync",
             "--git-user-name",
             "Alice",
             "--git-user-email",
@@ -70,7 +69,6 @@ def test_add_gitignore_sync_arguments_registers_all_four_flags():
         ]
     )
     assert args.commit_gitignore is True
-    assert args.force_gitignore_sync is True
     assert args.git_user_name == "Alice"
     assert args.git_user_email == "alice@example.com"
 
@@ -81,7 +79,6 @@ def test_add_gitignore_sync_arguments_flags_default_off():
 
     args = parser.parse_args([])
     assert args.commit_gitignore is False
-    assert args.force_gitignore_sync is False
     assert args.git_user_name is None
     assert args.git_user_email is None
 
@@ -296,7 +293,7 @@ def test_failed_command_writes_no_log_when_no_cgshome_can_be_derived(tmp_path, c
     assert "log_file=" not in capsys.readouterr().out
 
 
-def test_run_with_logging_initialise_failure_suggests_clean_init(capsys, tmp_path):
+def test_run_with_logging_initialise_failure_suggests_no_clean_init(capsys, tmp_path):
     def runner(client, source):
         raise RuntimeError("clone failed")
 
@@ -309,7 +306,7 @@ def test_run_with_logging_initialise_failure_suggests_clean_init(capsys, tmp_pat
         )
 
     captured = capsys.readouterr()
-    assert "Try clean-init method" in captured.err
+    assert "clean-init" not in captured.err
 
 
 def test_run_with_logging_pull_failure_suggests_pull_force(capsys, tmp_path):

@@ -1,6 +1,4 @@
 import re
-import socket
-import subprocess
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,17 +29,7 @@ def test_main_without_command_prints_help(capsys):
     assert "cgitsync" in captured.out
 
 
-def test_configure_help_lists_all_canonical_providers(capsys):
-    with pytest.raises(SystemExit) as exc_info:
-        main(["configure", "--help"])
-
-    captured = capsys.readouterr()
-    assert exc_info.value.code == 0
-    for provider in ("GitHub", "GitLab", "Codeberg", "custom"):
-        assert provider in captured.out
-
-
-@pytest.mark.parametrize("command", ["initialise", "create-cgs"])
+@pytest.mark.parametrize("command", ["initialise"])
 def test_cli_project_definition_help_documents_repeatable_repos(command, capsys):
     with pytest.raises(SystemExit) as exc_info:
         main([command, "--help"])
@@ -53,7 +41,7 @@ def test_cli_project_definition_help_documents_repeatable_repos(command, capsys)
     assert "repeat" in captured.out
 
 
-@pytest.mark.parametrize("command", ["initialise", "clean-init", "pull"])
+@pytest.mark.parametrize("command", ["initialise", "pull"])
 def test_gitignore_sync_flags_documented_on_relevant_commands(command, capsys):
     """DevPlanTicket Milestone 2 (M2.0): flags registered on exactly these three."""
     with pytest.raises(SystemExit) as exc_info:
@@ -62,7 +50,7 @@ def test_gitignore_sync_flags_documented_on_relevant_commands(command, capsys):
     captured = capsys.readouterr()
     assert exc_info.value.code == 0
     assert "--commit-gitignore" in captured.out
-    assert "--force-gitignore-sync" in captured.out
+    assert "--force-gitignore-sync" not in captured.out
     assert "--git-user-name" in captured.out
     assert "--git-user-email" in captured.out
 
@@ -268,157 +256,6 @@ def test_initialise_accepts_direct_cli_project_definition(
     assert "workflow=load->expand->validate->clone" in captured.out
 
 
-def test_create_cgs_writes_equivalent_validated_document(
-    monkeypatch, capsys, tmp_path
-):
-    def _forbid_runtime_access(*_args, **_kwargs):
-        raise AssertionError("create-cgs attempted Git or network access")
-
-    monkeypatch.setattr(subprocess, "run", _forbid_runtime_access)
-    monkeypatch.setattr(socket, "create_connection", _forbid_runtime_access)
-
-    output = tmp_path / "CGSil1.cgs"
-    repositories = [
-        "github:flipoyo/ComplexGitSync",
-        "codeberg:GX4G/GX4G",
-    ]
-    exit_code = main(
-        [
-            "create-cgs",
-            "--project",
-            "CGSil1",
-            "--repo",
-            repositories[0],
-            "--repo",
-            repositories[1],
-            "--output",
-            str(output),
-        ]
-    )
-    captured = capsys.readouterr()
-
-    generated = CgsDocument.from_toml(output)
-    equivalent_source = tmp_path / "equivalent.cgs"
-    equivalent_source.write_text(
-        'project = "CGSil1"\n\n'
-        'repos = [\n'
-        '    "github:flipoyo/ComplexGitSync",\n'
-        '    "codeberg:GX4G/GX4G",\n'
-        ']\n',
-        encoding="utf-8",
-    )
-    equivalent = CgsDocument.from_toml(equivalent_source)
-    assert exit_code == 0
-    assert generated.to_dict() == equivalent.to_dict()
-    assert "codeberg:GX4G/GX4G" in output.read_text(encoding="utf-8")
-    assert f".cgs file written to: {output.resolve()}" in captured.out
-
-
-def test_create_cgs_delegates_to_public_python_configuration_api(
-    monkeypatch, tmp_path
-):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def configure(self, project, repositories, *, output_path=None):
-            captured_call["project"] = project
-            captured_call["repositories"] = list(repositories)
-            captured_call["output_path"] = output_path
-            document = CgsDocument.from_dict(
-                {"project": project, "repos": list(repositories)}
-            )
-            document.to_toml(output_path)
-            return document
-
-    monkeypatch.setattr("ComplexGitSync.cli.configuration.ComplexGitSyncClient", StubClient)
-    output = tmp_path / "GX4G.cgs"
-
-    exit_code = main(
-        [
-            "create-cgs",
-            "--project",
-            "GX4G",
-            "--repo",
-            "codeberg:GX4G/GX4G",
-            "--output",
-            str(output),
-        ]
-    )
-
-    assert exit_code == 0
-    assert captured_call == {
-        "project": "GX4G",
-        "repositories": ["codeberg:GX4G/GX4G"],
-        "output_path": output,
-    }
-    assert CgsDocument.from_toml(output).project_name == "GX4G"
-
-
-def test_configure_collects_input_then_writes_validated_cgs(
-    monkeypatch, capsys, tmp_path
-):
-    responses = iter(
-        [
-            "demo",
-            "main",
-            "owner",
-            "",
-            "",
-            "1",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
-    output = tmp_path / "demo.cgs"
-
-    exit_code = main(["configure", "--output", str(output)])
-
-    document = CgsDocument.from_toml(output)
-    assert exit_code == 0
-    assert document.project_name == "demo"
-    assert document.repos[0]["gitprovider"] == "github"
-    assert document.to_authoring_dict() == {
-        "project": "demo",
-        "repos": ["github:owner/demo"],
-    }
-    assert "[project]" not in output.read_text(encoding="utf-8")
-    assert f".cgs file written to: {output.resolve()}" in capsys.readouterr().out
-
-
-def test_configure_collects_codeberg_as_first_class_provider(monkeypatch, tmp_path):
-    responses = iter(
-        [
-            "GX4G",
-            "main",
-            "GX4G",
-            "codeberg",
-            "ssh",
-            "1",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
-    output = tmp_path / "GX4G.cgs"
-
-    assert main(["configure", "--output", str(output)]) == 0
-
-    document = CgsDocument.from_toml(output)
-    assert document.to_dict() == CgsDocument.from_project_definition(
-        "GX4G", ["codeberg:GX4G/GX4G"]
-    ).to_dict()
-    assert "codeberg:GX4G/GX4G" in output.read_text(encoding="utf-8")
-
-
 def test_file_and_cli_codeberg_authoring_are_semantically_equivalent(tmp_path):
     source = tmp_path / "GX4G.cgs"
     source.write_text(
@@ -432,93 +269,6 @@ def test_file_and_cli_codeberg_authoring_are_semantically_equivalent(tmp_path):
     )
 
     assert from_file.to_dict() == from_cli.to_dict()
-
-
-def test_initialise_command_failure_suggests_clean_init(monkeypatch, capsys, tmp_path):
-    class StubClient:
-        def resolve_initialise_cgshome(self, source, *, output_path=None):
-            return tmp_path / "workspace" / "project"
-
-        def initialise_cgs(self, source, *, output_path=None, **_kwargs):
-            raise RuntimeError("clone failed")
-
-    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
-
-    config_path = tmp_path / "project.cgs"
-    config_path.touch()
-    with pytest.raises(RuntimeError, match="clone failed"):
-        main(["initialise", str(config_path)])
-
-    captured = capsys.readouterr()
-    assert "Try clean-init method" in captured.err
-
-
-def test_clean_init_command_purges_before_clone(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_initialise_cgshome(self, source, *, output_path=None):
-            return Path(output_path) / "project"
-
-        def clean_init(self, source, *, output_path=None, **_kwargs):
-            captured_call["source"] = Path(source)
-            captured_call["output_path"] = output_path
-            return SimpleNamespace(
-                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "parent" / "project")
-            )
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-        def format_repo_tree(self):
-            return "demo (project)\n└── child-repo (leaf)"
-
-    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
-
-    config_path = tmp_path / "project.cgs"
-    config_path.touch()
-    output_path = str(tmp_path / "parent")
-    exit_code = main(["clean-init", str(config_path), "--output-path", output_path])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["source"] == config_path.resolve()
-    assert captured_call["output_path"] == output_path
-    assert "operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE" in captured.out
-    assert "workflow=load->expand->validate->purge->clone" in captured.out
-    assert "READY ready=true" in captured.out
-
-
-def test_purge_command_removes_generated_clone_state(monkeypatch, capsys, tmp_path):
-    removed = (tmp_path / "parent" / "project" / "child-repo", tmp_path / "parent" / "project" / ".gitmodules")
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_initialise_cgshome(self, source, *, output_path=None):
-            return Path(output_path) / "project"
-
-        def purge(self, source, *, output_path=None):
-            captured_call["source"] = Path(source)
-            captured_call["output_path"] = output_path
-            return removed
-
-    monkeypatch.setattr("ComplexGitSync.cli.expert.ComplexGitSyncClient", StubClient)
-
-    config_path = tmp_path / "project.cgs"
-    config_path.touch()
-    output_path = str(tmp_path / "parent")
-    exit_code = main(["purge", str(config_path), "--output-path", output_path])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["source"] == config_path.resolve()
-    assert captured_call["output_path"] == output_path
-    assert "operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE" in captured.out
-    assert "workflow=load->expand->validate->purge" in captured.out
-    assert str(removed[0]) in captured.out
-    assert str(removed[1]) in captured.out
 
 
 def test_initialise_command_requires_source_or_project(capsys):
@@ -567,22 +317,6 @@ def test_initialise_rejects_source_and_cli_definition(capsys):
     assert "SOURCE or --project with --repo, not both" in captured.err
 
 
-@pytest.mark.parametrize(
-    "argv, missing_option",
-    [
-        (["create-cgs", "--repo", "github:owner/repository", "--output", "p.cgs"], "--project"),
-        (["create-cgs", "--project", "demo", "--output", "p.cgs"], "--repo"),
-    ],
-)
-def test_create_cgs_requires_project_and_repo(argv, missing_option, capsys):
-    with pytest.raises(SystemExit) as exc_info:
-        main(argv)
-
-    captured = capsys.readouterr()
-    assert exc_info.value.code == 2
-    assert missing_option in captured.err
-
-
 def test_validate_command_creates_state_local_log_file(monkeypatch, tmp_path, capsys):
     config_path = _write_project_cgs(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
@@ -608,65 +342,6 @@ def test_validate_command_creates_state_local_log_file(monkeypatch, tmp_path, ca
     assert log_content.splitlines()[0].startswith('{"operation": "GT-VALIDATE", "event": "command_start"')
     assert '"event": "command_start"' in log_content
     assert '"event": "command_end"' in log_content
-
-
-def test_freeze_command_uses_client_handler(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        run_logger = None
-        loaded_snapshot_path = tmp_path / ".cgitsync" / "state" / "gts-000001-v1.0.gts"
-
-        def load_gts(self, path):
-            captured_call["gts_path"] = Path(path)
-
-        def freeze(self, name, **kwargs):
-            captured_call["name"] = name
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
-
-    gts_path = tmp_path / "project.gts"
-    gts_path.touch()
-    exit_code = main(["freeze", "v1.0", "--gts", str(gts_path)])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["name"] == "v1.0"
-    assert "name=v1.0" in captured.out
-    assert "snapshot=" in captured.out
-    assert "gts-000001-v1.0.gts" in captured.out
-
-
-def test_freeze_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
-    class StubClient:
-        run_logger = None
-
-        def load_gts(self, path):
-            pass
-
-        def freeze(self, name, **kwargs):
-            raise AssertionError("freeze should not be called during --dry-run")
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
-
-    gts_path = tmp_path / "project.gts"
-    gts_path.touch()
-    exit_code = main(["freeze", "v1.0", "--gts", str(gts_path), "--dry-run"])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "dry_run=true command=freeze" in captured.out
-    assert "plan_actions=git add --all -> git commit -m 'v1.0' -> git tag v1.0 -> git push" in captured.out
 
 
 def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_path):
@@ -710,40 +385,6 @@ def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_pat
     assert "message='release commit'" in captured.out
     assert "snapshot=" in captured.out
     assert "repos:" in captured.out
-
-
-def test_freeze_release_force_command_uses_force_workflow(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        run_logger = None
-
-        def load_gts(self, path):
-            captured_call["gts_path"] = Path(path)
-
-        def freeze_release(self, name, message, *, force=False, **kwargs):
-            captured_call["name"] = name
-            captured_call["message"] = message
-            captured_call["force"] = force
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-        def view_tree(self):
-            return "ROOT project [main] clean synced"
-
-    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
-
-    gts_path = tmp_path / "project.gts"
-    gts_path.touch()
-    exit_code = main(["freeze-release-force", "v1.0", "release commit", "--gts", str(gts_path)])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["force"] is True
-    assert "git clean -fd" in captured.out
 
 
 def test_tag_command_uses_client_handler(monkeypatch, capsys, tmp_path):
@@ -864,72 +505,6 @@ def test_view_operation_command_is_not_registered(capsys):
 
     assert exc_info.value.code == 2
     assert "invalid choice" in captured.err
-
-
-def test_clone_command_uses_client_method(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_clone_root(self, source, *, target_dir=None, output_path=None):
-            captured_call["resolve_source"] = Path(source)
-            captured_call["resolve_target_dir"] = target_dir
-            captured_call["resolve_output_path"] = output_path
-            return Path(target_dir)
-
-        def clone(self, source, *, target_dir=None, output_path=None):
-            captured_call["source"] = Path(source)
-            captured_call["target_dir"] = target_dir
-            captured_call["output_path"] = output_path
-            return SimpleNamespace(
-                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "workspace" / "demo")
-            )
-
-        def get_tree_state(self):
-            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
-
-    monkeypatch.setattr("ComplexGitSync.cli.expert.ComplexGitSyncClient", StubClient)
-
-    target_dir = str(tmp_path / "workspace" / "demo")
-    exit_code = main(["clone", "project.cgs", "--target-dir", target_dir])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["resolve_source"] == Path("project.cgs")
-    assert captured_call["resolve_target_dir"] == target_dir
-    assert captured_call["source"] == Path("project.cgs").resolve()
-    assert captured_call["target_dir"] == target_dir
-    assert "READY ready=true complete=true" in captured.out
-
-
-def test_clone_command_output_path_is_forwarded(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_clone_root(self, source, *, target_dir=None, output_path=None):
-            captured_call["resolve_output_path"] = output_path
-            return tmp_path / "parent" / "demo"
-
-        def clone(self, source, *, target_dir=None, output_path=None):
-            captured_call["source"] = Path(source)
-            captured_call["output_path"] = output_path
-            return SimpleNamespace(
-                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "parent" / "demo")
-            )
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-    monkeypatch.setattr("ComplexGitSync.cli.expert.ComplexGitSyncClient", StubClient)
-
-    output_path = str(tmp_path / "parent")
-    exit_code = main(["clone", "project.cgs", "--output-path", output_path])
-    capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["resolve_output_path"] == output_path
-    assert captured_call["output_path"] == output_path
 
 
 def test_bootstrap_command_uses_client_method(monkeypatch, capsys, tmp_path):
@@ -1480,74 +1055,6 @@ def test_add_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
     assert exit_code == 0
     assert "dry_run=true command=add" in captured.out
     assert "plan_actions=git add --all" in captured.out
-
-
-def test_launch_release_command_uses_client_handler(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        run_logger = None
-
-        def load_gts(self, path):
-            captured_call["gts_path"] = Path(path)
-
-        def launch_release(self, release_name):
-            captured_call["release_name"] = release_name
-
-        def get_tree_state(self):
-            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
-
-        def view_tree(self):
-            return "ROOT project [main] clean synced"
-
-    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
-
-    gts_path = tmp_path / "project.gts"
-    gts_path.touch()
-    exit_code = main(["launch-release", "v2.0", "--gts", str(gts_path)])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["release_name"] == "v2.0"
-    assert "release=v2.0" in captured.out
-
-
-def test_launch_release_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
-    """launch_release resolves its READY snapshot from CGSHOME when --gts is omitted."""
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        run_logger = None
-
-        def load_gts(self, path):
-            captured_call["gts_path"] = Path(path)
-
-        def launch_release(self, release_name):
-            captured_call["release_name"] = release_name
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-        def view_tree(self):
-            return "ROOT project [main] clean synced"
-
-    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
-
-    workspace = tmp_path / "workspace"
-    state_dir = workspace / ".cgitsync" / "state"
-    state_dir.mkdir(parents=True)
-    gts_path = state_dir / "workspace.gts"
-    gts_path.touch()
-
-    monkeypatch.setenv("CGSHOME", str(workspace))
-    exit_code = main(["launch-release", "v2.0"])
-    capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["gts_path"] == gts_path.resolve()
-    assert captured_call["release_name"] == "v2.0"
 
 
 def test_gts_auto_discovery_from_parent_cgitsync(monkeypatch, capsys, tmp_path):

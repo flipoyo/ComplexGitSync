@@ -13,8 +13,7 @@ Despite the ``MemoryStateDirectory``/``_resolve_memory_state_directory``
 naming, this has **nothing to do with** the deleted Memory SSH-Git transport
 (removed by ``CleanupPass2_DevPlanTicket.md`` D1). This is the general,
 content-addressed directory allocator every lifecycle command (``initialise``,
-``pull``, ``checkout``, ``push``, ``commit``, ``branch``, ``freeze``,
-``freeze_release``, ``launch_release``) uses, via
+``pull``, ``checkout``, ``push``, ``commit``, ``branch``, ``freeze_release``) uses, via
 ``ComplexGitSyncClient.write_gts_snapshot()``, to allocate
 ``.cgitsync/state(<hash>)_<n>/`` directories — see that ticket's D1
 "naming collision" section for the full history if this is confusing.

@@ -481,166 +481,6 @@ def test_initialise_cgs_skips_the_gitignore_pre_pull_on_a_detached_head(tmp_path
     assert (root_path / ".gitignore").is_file()
 
 
-def test_initialise_cgs_force_gitignore_sync_recovers_from_blocked_pull(tmp_path, monkeypatch):
-    """DevPlanTicket Milestone 2: pull-force fallback is opt-in only."""
-    cgspath = tmp_path / "workspace"
-    cgshome = cgspath / "demo"
-    wcd = cgshome / "ComplexGitSync"
-    wcd.mkdir(parents=True)
-    monkeypatch.chdir(wcd)
-
-    config_path = _write_clone_ready_cgs(tmp_path)
-
-    class _FailingPullGitRunner(_FakeGitRunner):
-        def pull(self, repo_path, *, remote="origin", ref_name=None):
-            if Path(repo_path).resolve() == cgshome.resolve():
-                raise GitSyncError("simulated: local changes block a fast-forward pull")
-            super().pull(repo_path, remote=remote, ref_name=ref_name)
-
-    fake_runner = _FailingPullGitRunner(
-        {
-            "git@github.com:owner/child-repo.git": {"autoTest"},
-            "git@github.com:owner/docs.git": {"main"},
-        }
-    )
-    fake_runner.branch_overrides[cgshome.resolve()] = "autoTest"
-    client = ComplexGitSyncClient(git_runner=fake_runner, state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"))
-
-    registry = client.initialise_cgs(config_path, output_path=cgspath, force_gitignore_sync=True)
-
-    root_path = registry.get("root").absolute_path.resolve()
-    assert any(path == root_path for path, _, _ in fake_runner.force_pulled)
-    assert (root_path / ".gitignore").read_text(encoding="utf-8").splitlines() == [
-        ".cgitsync/",
-        "demo.lgr",
-        "deps/child-repo",
-    ]
-    # force_gitignore_sync only covers the pull step — it never implies
-    # --commit-gitignore, so nothing is staged/committed/pushed here.
-    assert fake_runner.staged_paths == []
-
-
-def test_purge_cgs_removes_top_level_repos_and_ledgers(tmp_path):
-    cgspath = tmp_path / "workspace"
-    cgshome = cgspath / "demo"
-    top_level_child = cgshome / "child-repo"
-    nested_child = cgshome / "deps" / "nested-repo"
-    top_level_child.mkdir(parents=True)
-    nested_child.mkdir(parents=True)
-    (cgshome / "demo.lgr").write_text("ledger\n", encoding="utf-8")
-
-    config_path = tmp_path / "project.cgs"
-    config_path.write_text(
-        """
-[document]
-format_version = "1.0"
-
-[project]
-name = "demo"
-default_branch = "main"
-
-[[repos]]
-gitprovider = "github"
-project_owner_name = "owner"
-project_name = "demo"
-relative_path = "."
-
-[[repos]]
-gitprovider = "github"
-project_owner_name = "owner"
-project_name = "child-repo"
-relative_path = "child-repo"
-
-[[repos]]
-gitprovider = "github"
-project_owner_name = "owner"
-project_name = "nested-repo"
-relative_path = "deps/nested-repo"
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-    client = ComplexGitSyncClient(git_runner=_FakeGitRunner({}))
-
-    removed = client.purge_cgs(config_path, output_path=cgspath)
-
-    assert top_level_child in removed
-    assert cgshome / "demo.lgr" in removed
-    assert not top_level_child.exists()
-    assert not (cgshome / "demo.lgr").exists()
-    assert nested_child.exists()
-
-
-def test_purge_cgs_keeps_workspace_master_config(tmp_path):
-    cgspath = tmp_path / "workspace"
-    cgshome = cgspath / "demo"
-    (cgshome / ".cgitsync").mkdir(parents=True)
-    master_config = cgshome / ".cgitsync" / "master.toml"
-    master_config.write_text("[master]\nuser_name = 'cgitsync-bot'\n", encoding="utf-8")
-
-    config_path = tmp_path / "project.cgs"
-    config_path.write_text(
-        """
-[document]
-format_version = "1.0"
-
-[project]
-name = "demo"
-default_branch = "main"
-
-[[repos]]
-gitprovider = "github"
-project_owner_name = "owner"
-project_name = "demo"
-relative_path = "."
-
-[[repos]]
-gitprovider = "github"
-project_owner_name = "owner"
-project_name = "child-repo"
-relative_path = "child-repo"
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-    client = ComplexGitSyncClient(git_runner=_FakeGitRunner({}))
-
-    client.purge_cgs(config_path, output_path=cgspath)
-
-    assert master_config.is_file()
-    assert "cgitsync-bot" in master_config.read_text(encoding="utf-8")
-
-
-def test_clean_init_keeps_workspace_master_config(tmp_path, monkeypatch):
-    cgspath = tmp_path / "workspace"
-    cgshome = cgspath / "demo"
-    wcd = cgshome / "ComplexGitSync"
-    wcd.mkdir(parents=True)
-    monkeypatch.chdir(wcd)
-
-    master_config = cgshome / ".cgitsync" / "master.toml"
-    master_config.parent.mkdir(parents=True, exist_ok=True)
-    master_config.write_text("[master]\nuser_email = 'bot@example.com'\n", encoding="utf-8")
-
-    config_path = _write_clone_ready_cgs(tmp_path)
-    fake_runner = _FakeGitRunner(
-        {
-            "git@github.com:owner/child-repo.git": {"autoTest"},
-            "git@github.com:owner/docs.git": {"main"},
-        }
-    )
-    client = ComplexGitSyncClient(
-        git_runner=fake_runner,
-        state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"),
-    )
-
-    client.clean_init(config_path, output_path=cgspath)
-
-    assert master_config.is_file()
-    assert "bot@example.com" in master_config.read_text(encoding="utf-8")
-    assert MasterConfig.resolve_identity(cgshome, client.git_runner) == (None, "bot@example.com")
-
-
 def test_initialise_cgs_default_cgshome_is_cgspath_project_name(tmp_path, monkeypatch):
     # Build the CWD layout: tmp_path/cgspath/demo/ComplexGitSync
     wcd = tmp_path / "cgspath" / "demo" / "ComplexGitSync"
@@ -736,17 +576,6 @@ def test_initialise_cgs_default_cgshome_uses_environment(tmp_path, monkeypatch):
         assert str(captured["output_path"]).startswith(str(env_cgshome.resolve()))
 
 
-def test_resolve_clone_root_uses_output_path_as_base(tmp_path):
-    config_path = _write_root_cgs(tmp_path)
-    client = ComplexGitSyncClient()
-    output_path = tmp_path / "parent"
-    output_path.mkdir()
-
-    result = client.resolve_clone_root(config_path, output_path=output_path)
-
-    assert result == (output_path / "demo").resolve()
-
-
 def test_resolve_bootstrap_root_uses_cgs_path_override(tmp_path):
     client = ComplexGitSyncClient()
     cgs_path = tmp_path / "elsewhere"
@@ -812,26 +641,6 @@ def test_client_load_source_supports_gts(tmp_path):
 
     assert registry.lifecycle_state == TreeLifecycleState.READY
     assert client.get_tree_state().lifecycle_state == TreeLifecycleState.READY
-
-
-def test_client_clone_method_calls_clone_cgs(monkeypatch):
-    client = ComplexGitSyncClient()
-    captured: dict[str, object] = {}
-
-    def _fake_clone_cgs(path, *, target_dir=None, output_path=None):
-        captured["path"] = path
-        captured["target_dir"] = target_dir
-        captured["output_path"] = output_path
-        return "ok"
-
-    monkeypatch.setattr(client, "clone_cgs", _fake_clone_cgs)
-
-    result = client.clone("project.cgs", target_dir="workspace/demo", output_path="workspace")
-
-    assert result == "ok"
-    assert captured["path"] == "project.cgs"
-    assert captured["target_dir"] == "workspace/demo"
-    assert captured["output_path"] == "workspace"
 
 
 def test_client_branch_delegates_to_gittree_git_branch(monkeypatch):
@@ -1149,25 +958,6 @@ def test_client_self_history_add_has_no_status_errors_when_nothing_is_loaded(tmp
     assert SelfHistoryRecord.read(path).status_errors is None
 
 
-def test_client_freeze_release_force_uses_pull_force(monkeypatch, tmp_path):
-    client = _client_with_root_registry(tmp_path)
-    client.source_path = tmp_path / "project.gts"
-    calls: list[str] = []
-
-    monkeypatch.setattr(
-        type(client.git_runner), "upstream_configured", lambda self, path: True
-    )
-    monkeypatch.setattr(client, "add", lambda: calls.append("add"))
-    monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
-    monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))
-    monkeypatch.setattr(client, "pull_force", lambda source, **_kwargs: calls.append("pull-force"))
-    monkeypatch.setattr(client, "push", lambda **_kwargs: calls.append("push"))
-    monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
-
-    assert client.freeze_release("v1.0", "release commit", force=True) == "ok"
-    assert calls == ["add", "commit", "pull-force", "push", "freeze"]
-
-
 def test_client_freeze_release_skips_pull_when_branch_has_no_upstream(monkeypatch, tmp_path):
     # Reproduces this ticket's exact scenario: a branch created and checked
     # out this same session, never pushed. freeze-release must succeed by
@@ -1219,25 +1009,6 @@ def test_client_freeze_release_pulls_a_branch_whose_upstream_does_not_resolve(
 
     assert client.freeze_release("v1.0", "release commit") == "ok"
     assert calls == ["add", "commit", "pull", "push", "freeze"]
-
-
-def test_client_freeze_release_force_also_skips_pull_when_no_upstream(monkeypatch, tmp_path):
-    client = _client_with_root_registry(tmp_path)
-    client.source_path = tmp_path / "project.gts"
-    calls: list[str] = []
-
-    monkeypatch.setattr(
-        type(client.git_runner), "upstream_configured", lambda self, path: False
-    )
-    monkeypatch.setattr(client, "add", lambda: calls.append("add"))
-    monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
-    monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))
-    monkeypatch.setattr(client, "pull_force", lambda source, **_kwargs: calls.append("pull-force"))
-    monkeypatch.setattr(client, "push", lambda **_kwargs: calls.append("push"))
-    monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
-
-    assert client.freeze_release("v1.0", "release commit", force=True) == "ok"
-    assert calls == ["add", "commit", "push", "freeze"]
 
 
 # ---------------------------------------------------------------------------

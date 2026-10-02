@@ -1,4 +1,4 @@
-# ComplexGitSync v3.14.11
+# ComplexGitSync v4.0.0
 ## A distributed git-native Operating Space
 
 __Multi git-repo project management, synchronization, and persistance__
@@ -37,9 +37,9 @@ ComplexGitSync considers Private repos as read-only by default. Private repos co
 | **private/distant** | someone else's repository | read only |
 
 `--private` points a command at your private/local repos instead of the
-project's own. Thirteen commands take it — `pull`, `pull-force`, `fetch`,
+project's own. Twelve commands take it — `pull`, `pull-force`, `fetch`,
 `checkout`, `branch`, `close-branch`, `add`, `rm`, `commit`, `merge`,
-`push`, `tag` and `freeze`; the table in section 3 marks each one. ComplexGitSync never
+`push` and `tag`; the table in section 3 marks each one. ComplexGitSync never
 writes to a private/distant repo.
 
 ```toml
@@ -307,17 +307,12 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 
 | Group | Command | Arguments and key options | Description |
 |---|---|---|---|
-| Minimalist | `initialise` | `[source]` `--output-path` `--force-protocol` `--force-reclone` `--commit-gitignore` | Nested install: build the dependencies of a project whose root is already checked out here, from a .cgs (branch tips) or a .gts (recorded commits). Re-clones every dependency; refuses when one holds unpushed work, and refuses — naming `bootstrap` — when the root is not a checkout or this ComplexGitSync is not inside it. |
+| Minimalist | `initialise` | `[source]` `--output-path` `--force-protocol` `--commit-gitignore` | Nested install: build the dependencies of a project whose root is already checked out here, from a .cgs (branch tips) or a .gts (recorded commits). Re-clones every dependency; refuses when one holds unpushed work, and refuses — naming `bootstrap` — when the root is not a checkout or this ComplexGitSync is not inside it. |
 | Minimalist | `bootstrap` | `<source> <project-name>` `--cgs-path` `--force-protocol` | Standalone install: clone a brand-new project tree, root included, into an isolated CGSHOME, from a .cgs or a .gts; run from a ComplexGitSync that is not inside the project. Refuses — naming `initialise` — a target that already holds a checkout. |
-| Minimalist | `clean-init` | `<source>` `--output-path` `--force-protocol` `--commit-gitignore` | Purge generated clone state, then initialise from a .cgs spec. |
 | Minimalist | `freeze-release` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull, push, and freeze from a READY tree. Its own `push` and `freeze` steps each fold and send the memory, same as running them separately. |
-| Minimalist | `freeze-release-force` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull-force, push, and freeze from a READY tree. Its own `push` and `freeze` steps each fold and send the memory, same as running them separately. |
 | Minimalist | `status` | `--gts` `--search-dir` `--json` | Summarize tree readiness and sync state. |
 | Minimalist | `view-tree` | `[source]` `--depth` `--collapse` `--discover-nested` | Render a topology-focused tree view in terminal. |
-| Minimalist | `launch-release` | `<release>` `--gts` `--search-dir` | Check out a frozen release tag from a READY tree. |
-| Expert | `purge` | `<source>` `--output-path` | Remove generated clone state for a .cgs workspace. |
 | Expert | `validate` | `<source>` `--discover-nested` | Parse, normalize, and validate a .cgs or validate a .gts topology. |
-| Expert | `clone` | `<source>` `--target-dir` `--output-path` | Clone a nested project tree from .cgs. |
 | Expert | `pull` | `[source]` `--private` `--force-protocol` `--commit-gitignore` | Resynchronise an existing project tree from .cgs or .gts. |
 | Expert | `pull-force` | `[source]` `--private` `--force-protocol` | Destructively resynchronise an existing project tree from .cgs or .gts: uncommitted changes and untracked files are set aside with `git stash push -u` (a warning names each; `git stash pop` brings them back), and it refuses for the whole tree, changing nothing, when any repository holds commits no remote has. It never force-pushes. |
 | Expert | `autofix` | `[source]` `--error` `--repo` | Diagnose and repair the situation named by the last failing command's error — reads `.cgitsync/logs/` when `--error` is omitted. Only repairs a situation a registered repair recognises; refuses rather than guessing otherwise. |
@@ -331,7 +326,6 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `merge` | `<branch>` `--into` `--private` `--ff-only` `--no-ff` `--dry-run` `--resolve` | Merge a project branch across a READY tree, leaf-first. Names every conflicting file when it refuses. `--into <target>` checks out the target and merges into it in one command. |
 | Expert | `push` | `--private` `--dry-run` `--force-protocol` `--gts` | Push repositories from a READY tree. Folds and sends this project's own memory first, when one is mounted and adopted. |
 | Expert | `tag` | `<name>` `--private` `--gts` | Create and push a tag across a READY tree. Folds and sends the memory first, same as `push`. |
-| Expert | `freeze` | `<name>` `--private` `--dry-run` `--gts` | Freeze a versioned state and emit a .gts snapshot. Folds and sends the memory first, same as `push`. |
 | Expert | `import-submodules` | `<repo-root>` `--apply` `--recursive` | Report or convert git submodules to plain ComplexGitSync nested repositories. |
 | Expert | `init-from-submodules` | `<repo-root>` `--cgs` `--max-depth` `--dry-run` `--force` | Adopt a submodule-based checkout: discover, initialise, then convert its submodules. |
 | Expert | `verify` | `--repair` `--search-dir` `--json` | Say whether this workspace's recorded history is verified, absent, legacy or corrupt. |
@@ -340,8 +334,6 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 | Expert | `memory` | `status` `list` `show <state>` `explore` `as-of <time>` `init` `setup [--provider --owner --name --cgs]` `mount` `adopt [--reboot]` `branch` `clone` `push` `reboot` `self-history` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. `as-of <time>` answers *what was this tree at that time?*: the State the ledger recorded at or before it (UTC unless an offset is given; a bare date means the end of that day), with a warning when the chain does not verify or its clock ran backwards. `self-history` prints every self-history record this workspace holds, folded and pending. A workspace whose `.cgs` declares no memory gets a local one, created on the first recording command, which `memory push` folds into and never publishes; `memory adopt` (with the entry declared) is the opt-in. A developer tree (one holding a private repository) with no memory declared is offered `setup`, which creates the repository with `gh`, `glab` or `tea`, adds it to the `.cgs` and adopts the local memory in one step. |
 | Expert | `self-history` | `add --ticket --goal --action --worker-role --worker-vendor --worker-model --orchestrator-role --orchestrator-vendor --orchestrator-model --spec-respect-score --spec-respect-basis --spec-respect-reasoning --gating-score --gating-basis --gating-reasoning --quality-score --quality-basis --quality-reasoning --state-before --state-after --lint-passed --tests-passed --pushed --pushed-reason --conformity-explanation --search-dir` `adopt --owner --branch --search-dir` | Record one piece of agent work — who did it, for which ticket, and a three-part conformity score out of 100 (spec respect 33, gating 33, quality 34; the total is their sum and every score is shown with its maximum) — to the pending half of this project's own accounting record. Fills in the current signed AgentContract's hash and this workspace's `errors=` count itself; every other field is the orchestrator's own account. `adopt` retrofits self-history onto a `.memory` that was adopted before it existed — `memory adopt` already does this on its own for any `.memory` adopted from now on. |
 | Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
-| Configuration | `configure` | `--output` | Create a concise .cgs specification for GitHub, GitLab, Codeberg, or a custom provider. |
-| Configuration | `create-cgs` | `--project` `--repo` `--output` | Create a validated .cgs specification from CLI project definitions. |
 | Configuration | `repo` | `create <provider:owner/name>` | Create a repository on its provider, without leaving cgitsync. `create` takes `--public` and `--description`; repositories are private otherwise. |
 | Help | `help` | `[command ...]` `--all` | Help on one command (`cgitsync help memory explore`), or every command and option on one page (`cgitsync help --all`, which `grep` can search). |
 
@@ -354,7 +346,8 @@ what the command does. Run `cgitsync <command> --help` for the full set.
 > whole run if one holds work that exists nowhere else: uncommitted changes,
 > commits you have not pushed, or a branch with no upstream. It names every
 > repository that blocked it and deletes none of them. Commit and push, or
-> pass `--force-reclone` to delete the work on purpose.
+> move those directories aside yourself. No flag deletes work that exists
+> nowhere else.
 >
 > A directory that is not a Git checkout — what a clone interrupted halfway
 > leaves behind — is still cleared with no flag needed.
@@ -451,7 +444,7 @@ A few flags mean the same thing wherever they appear:
 
 | Option | Meaning |
 |---|---|
-| `--private` | Run on your **private/local** repos instead of the project's own. Exclusive, not additive. Available on `pull`, `pull-force`, `fetch`, `checkout`, `branch`, `close-branch`, `add`, `rm`, `commit`, `merge`, `push`, `tag` and `freeze` — and on nothing else. |
+| `--private` | Run on your **private/local** repos instead of the project's own. Exclusive, not additive. Available on `pull`, `pull-force`, `fetch`, `checkout`, `branch`, `close-branch`, `add`, `rm`, `commit`, `merge`, `push` and `tag` — and on nothing else. |
 | `--all` | Run on both halves at once — your own repos **and** your **private/local** ones, sharing one commit message. Available on `add`, `commit`, `push` and `merge`. Cannot be combined with `--private`. Read-only configuration repos are never written to. |
 | `--gts <snapshot.gts>` | Act on an explicit snapshot rather than the one found automatically. |
 | `--search-dir <dir>` | Where to start looking for the tree. Accepted by every command that finds a tree on its own. |
@@ -605,7 +598,7 @@ names the command that fixes it. Tutorial 5 (`tutorials/05_memory.md`)
 walks through it.
 
 Once mounted and adopted, nothing needs to be pushed by hand any more:
-`push`, `tag`, and `freeze` each fold and send this project's own memory
+`push`, `tag`, and `freeze-release` each fold and send this project's own memory
 first, before doing anything else — the same frontier `memory push` always
 crossed, crossed automatically by every command that was already about to
 reach a remote for an unrelated reason. `cgitsync memory push` remains the

@@ -68,14 +68,13 @@ class TreeCommands:
         source_path: str | Path,
         *,
         commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Resynchronize from a ``.cgs`` spec or restore from a ``.gts`` snapshot.
 
-        ``commit_gitignore``/``force_gitignore_sync``/``git_user_name``/
+        ``commit_gitignore``/``git_user_name``/
         ``git_user_email`` only apply to ``.cgs`` sources (dispatched to
         :meth:`restart`) — a ``.gts`` source runs no discovery, so there is
         nothing new for the ``.gitignore`` lifecycle sync to find.
@@ -86,7 +85,6 @@ class TreeCommands:
             return self.client.restart(
                 resolved_source,
                 commit_gitignore=commit_gitignore,
-                force_gitignore_sync=force_gitignore_sync,
                 git_user_name=git_user_name,
                 git_user_email=git_user_email,
                 force_access_protocol=force_access_protocol,

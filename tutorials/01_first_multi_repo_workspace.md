@@ -15,7 +15,7 @@ authoring, the READY state, tree-wide git operations, freeze/release.
 
 **What you will find.** A topology overview, the `CGSil1.cgs` spec
 explained field by field, a 9-step CLI walkthrough from `validate` through
-`launch-release`, and a command summary table.
+`checkout <tag> --ref-kind tag`, and a command summary table.
 
 **Who it is for.** Anyone new to `cgitsync`, regardless of their own
 project's shape. Nothing here requires a private repository, real
@@ -85,7 +85,7 @@ workspace state:
 flowchart TD
     CGS[CGSil1.cgs authoring spec] --> REF[GitTree + GitRepo reference tree]
     REF --> WORK[WorkingGitTree + WorkingRepo runtime tree]
-    WORK --> OPS[checkout/add/commit/push/freeze/launch-release operations]
+    WORK --> OPS[checkout/add/commit/push/freeze-release operations]
     WORK --> GTS[CGSil1.gts runtime snapshot]
     GTS --> WORK
 ```
@@ -158,16 +158,20 @@ absolute path as already registered (by `CGSil1.cgs`'s own entry) and
 retains that canonical entry before `"auto"` ever gets a chance to reopen
 `CGSih1.cgs` through this duplicate route.
 
-For a new project, the interactive equivalent is:
+For a new project, you can skip the file and name the repositories on the
+command line instead:
 
 ```bash
-pixi run cgitsync configure --output ../CGSil1.cgs
+pixi run cgitsync initialise --project CGSil1 \
+    --repo gitlab:CGS_test/CGSil1 \
+    --repo codeberg:GX4G/GX4G
 ```
 
-The command builds a `GitTree` reference tree from prompts, validates the
-generated `CgsDocument`, and writes the `.cgs` file. The checked-in tutorial
-fixture is shown explicitly above so the CI sandbox can reproduce the same
-topology without interactive input.
+The command builds a `GitTree` reference tree from those values, validates
+the generated `CgsDocument`, and initialises it. To write a `.cgs` from a
+checkout that already exists, use `discover --write FILE`. The checked-in
+tutorial fixture is shown explicitly above so the CI sandbox can reproduce
+the same topology without any of that.
 
 ---
 
@@ -249,38 +253,18 @@ default this only writes the file and reports what changed
 also stage/commit/push it, and `--git-user-name`/`--git-user-email` to
 override the commit identity (persisted to `$CGSHOME/.cgitsync/master.toml`
 for later invocations on this workspace). If a repo's safe pull fails here,
-`initialise` errors out unless `--force-gitignore-sync` is passed.
+`initialise` errors out; run `pull-force`, then `initialise` again.
 
 A runtime snapshot is written under `$CGSHOME/.cgitsync/` and recorded in
 the project's `.lgr` register. Subsequent commands resolve this snapshot
 automatically — no explicit `.gts` path is required.
 
-If a previous failed run left partial child checkouts, `initialise` fails
-explicitly and prints:
-
-```
-Try clean-init method
-```
-
-In that case, rerun the same setup with a cleanup step inserted between
-validation and cloning:
-
-```bash
-pixi run cgitsync clean-init ../CGSil1.cgs
-```
-
-`clean-init` prints
-`operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE->GT-GITIGNORE`
-and `workflow=load->expand->validate->purge->clone->gitignore`. The `purge`
-phase removes generated clone state from `$CGSHOME`: repositories declared
-directly under the root and project `*.lgr` files — a persisted
-`.cgitsync/master.toml` identity override, if any, is workspace
-configuration, not clone state, and is left in place. The cleanup can also
-be run alone:
-
-```bash
-pixi run cgitsync purge ../CGSil1.cgs
-```
+`initialise` re-clones every dependency whose directory already holds
+files, so before deleting anything it checks each one. If a destination
+holds work that exists nowhere else (uncommitted changes, or commits no
+remote has), it stops, names the directories, and changes nothing. No flag
+overrides that. Commit and push the work, or move those directories aside
+yourself, then run `initialise` again. There is no clean-up command.
 
 ---
 
@@ -296,14 +280,15 @@ pixi run cgitsync pull
 `ROOT -> PARENT -> LEAF`, pulling every repository — root, parent, and leaf
 alike — as its own plain `git pull`.
 If local files block this safe pull, the CLI suggests `pixi run cgitsync pull-force`.
-Use that recovery command only when discarding local uncommitted and untracked
-work is acceptable.
+`pull-force` never discards work: it sets uncommitted and untracked files
+aside with `git stash push -u`, and it refuses, before changing anything,
+while a commit exists that no remote has. Push or merge that commit first.
 
 `pull` also runs the same `.gitignore` lifecycle sync as `initialise` (Step 3
 above) once the tree-wide pull completes, and accepts the same
-`--commit-gitignore`/`--force-gitignore-sync`/`--git-user-name`/
-`--git-user-email` flags. `pull-force` does not run this sync — it is a
-destructive recovery command, not a lifecycle path the sync is wired into.
+`--commit-gitignore`/`--git-user-name`/`--git-user-email` flags.
+`pull-force` does not run this sync — it is a recovery command, not a
+lifecycle path the sync is wired into.
 
 ---
 
@@ -361,30 +346,28 @@ pixi run cgitsync status
 
 ### Step 8 — Freeze
 
-Minimalist release workflow: stage, commit, pull, push, freeze, and emit a
+Minimalist release workflow: stage, commit, pull, push, tag, and emit a
 versioned `.gts` snapshot:
 
 ```bash
 pixi run cgitsync freeze-release v1.1.0 "release v1.1.0"
 ```
 
-Expert equivalent for the final freeze step:
-
-```bash
-pixi run cgitsync freeze v1.1.0
-```
+`freeze-release` is the one freeze procedure; there is no separate
+`freeze` command. If your branch has fallen behind, run `pull-force` first,
+then `freeze-release`.
 
 The `.lgr` ledger file in the project root is updated with the new
 snapshot entry.
 
 ---
 
-### Step 9 — Launch Release
+### Step 9 — Return to the Release
 
 Check out the frozen release tag across the READY tree:
 
 ```bash
-pixi run cgitsync launch-release v1.1.0
+pixi run cgitsync checkout v1.1.0 --ref-kind tag
 ```
 
 ---
@@ -396,16 +379,13 @@ pixi run cgitsync launch-release v1.1.0
 | 1 | `pixi run cgitsync validate ../CGSil1.cgs` | Parse and check the topology |
 | 2 | `pixi run cgitsync view-tree ../CGSil1.cgs` | Render the tree summary |
 | 3 | `pixi run cgitsync initialise ../CGSil1.cgs` | Attach the root repo and clone child repos |
-| recovery | `pixi run cgitsync clean-init ../CGSil1.cgs` | Purge generated clone state, then initialise |
-| cleanup | `pixi run cgitsync purge ../CGSil1.cgs` | Remove root-level generated clone state |
 | 4 | `pixi run cgitsync pull` | Resync root, parent, and leaf repos |
 | 5 | `pixi run cgitsync add` | Stage all changes |
 | 6 | `pixi run cgitsync commit "message"` | Commit across the tree |
 | 7 | `pixi run cgitsync push` | Push to remotes |
 | optional | `pixi run cgitsync status` | Inspect local cleanliness and recorded snapshot drift |
 | 8 | `pixi run cgitsync freeze-release v1.1.0 "release v1.1.0"` | Minimalist release workflow |
-| expert | `pixi run cgitsync freeze v1.1.0` | Expert release commit + tag + snapshot |
-| 9 | `pixi run cgitsync launch-release v1.1.0` | Check out the frozen release tag |
+| 9 | `pixi run cgitsync checkout v1.1.0 --ref-kind tag` | Check out the frozen release tag |
 
 See `tests/integration/test_tuto_cgsi1.py` for a runnable sandbox that
 exercises the full workflow against local bare-repo remotes.

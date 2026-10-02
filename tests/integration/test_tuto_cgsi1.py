@@ -15,7 +15,7 @@ nested-config discovery is attempted during the sandbox clone.  The real
 CGSil1 project uses ``"auto"`` to pull in CGSih2 transitively; that
 behaviour is covered by the full topology tests in ``test_cgsi_topology.py``.
 
-All eight tutorial CLI steps are validated:
+All seven tutorial CLI steps are validated:
 
   1. ``cgitsync validate CGSil1.cgs``  – topology parses as DECLARED
   2. ``cgitsync print    CGSil1.cgs``  – tree summary renders
@@ -23,8 +23,7 @@ All eight tutorial CLI steps are validated:
   4. ``cgitsync add``                  – changes staged
   5. ``cgitsync commit "…"``           – changes committed
   6. ``cgitsync push``                 – changes pushed
-  7. ``cgitsync freeze v1.1.0``        – release commit + tag + snapshot
-  8. ``cgitsync launch_release v1.1.0`` – release tag checked out
+  7. ``cgitsync freeze-release v1.1.0 "…"`` – release commit + tag + snapshot
 """
 
 from __future__ import annotations
@@ -207,7 +206,7 @@ class TestTutoCGSil1CLI:
     # ── Tutorial steps 4-8 (end-to-end git cycle) ──────────────────────────
 
     def test_complete_git_cycle(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
-        """Steps 4-8: initialise -> add -> commit -> push -> freeze -> launch_release."""
+        """Steps 4-7: initialise -> add -> commit -> push -> freeze-release."""
         sandbox = cgsi1_sandbox
         _patch_remote_urls(monkeypatch, sandbox)
         _patch_git_identity(monkeypatch)
@@ -244,16 +243,16 @@ class TestTutoCGSil1CLI:
         assert exit_code == 0
         assert "READY" in captured.out
 
-        # Step 7: freeze (requires at least one uncommitted change)
+        # Step 7: freeze-release (add, commit, pull, push, freeze; needs a change to commit)
         (project_root / "release.txt").write_text("release 1.1.0\n", encoding="utf-8")
-        exit_code = cli_main(["freeze", "v1.1.0", "--gts", str(gts_path)])
+        exit_code = cli_main(["freeze-release", "v1.1.0", "release 1.1.0", "--gts", str(gts_path)])
         captured = capsys.readouterr()
         assert exit_code == 0
         assert "READY" in captured.out
         assert "v1.1.0" in captured.out
 
-        # Step 8: launch the frozen release
-        exit_code = cli_main(["launch-release", "v1.1.0", "--gts", str(gts_path)])
+        # Step 8: return to the frozen release (checkout of its tag)
+        exit_code = cli_main(["checkout", "v1.1.0", "--ref-kind", "tag", "--gts", str(gts_path)])
         captured = capsys.readouterr()
         assert exit_code == 0
         assert "READY" in captured.out

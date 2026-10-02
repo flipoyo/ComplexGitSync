@@ -1,7 +1,7 @@
 """Unit tests for ``ComplexGitSync.cli.configuration``.
 
 Adapted from the end-to-end ``main([...])`` coverage of the "Configuration"
-command group (``discover``, ``configure``, ``create-cgs``, ``repo``) already
+command group (``discover``, ``repo``) already
 exercised in ``tests/unit/test_cli_smoke.py``, so the ``_handle_*``/
 ``_execute_*`` pairs are covered directly against the new module rather
 than only through a full CLI invocation.
@@ -25,15 +25,12 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import socket
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.orchestre import DiscoveredRepo
 
 _CLI_DIR = Path(__file__).resolve().parents[2] / "src" / "ComplexGitSync" / "cli"
@@ -65,10 +62,10 @@ def _build_parser():
     return parser
 
 
-def test_register_parsers_registers_exactly_four_commands():
+def test_register_parsers_registers_exactly_two_commands():
     parser = _build_parser()
     registered = set(parser._subparsers._group_actions[0].choices.keys())
-    assert registered == {"discover", "configure", "create-cgs", "repo"}
+    assert registered == {"discover", "repo"}
 
 
 def test_commands_dict_matches_registered_help_text():
@@ -76,43 +73,6 @@ def test_commands_dict_matches_registered_help_text():
     choices = parser._subparsers._group_actions[0].choices
     for name, help_text in configuration.COMMANDS.items():
         assert choices[name].description == help_text
-
-
-def test_configure_help_lists_all_canonical_providers(capsys):
-    parser = _build_parser()
-    with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["configure", "--help"])
-    captured = capsys.readouterr()
-    assert exc_info.value.code == 0
-    for provider in ("GitHub", "GitLab", "Codeberg", "custom"):
-        assert provider in captured.out
-
-
-def test_create_cgs_help_documents_repeatable_repos(capsys):
-    parser = _build_parser()
-    with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["create-cgs", "--help"])
-    captured = capsys.readouterr()
-    assert exc_info.value.code == 0
-    assert "--project" in captured.out
-    assert "--repo" in captured.out
-    assert "repeat" in captured.out
-
-
-@pytest.mark.parametrize(
-    "argv, missing_option",
-    [
-        (["create-cgs", "--repo", "github:owner/repository", "--output", "p.cgs"], "--project"),
-        (["create-cgs", "--project", "demo", "--output", "p.cgs"], "--repo"),
-    ],
-)
-def test_create_cgs_requires_project_and_repo(argv, missing_option, capsys):
-    parser = _build_parser()
-    with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(argv)
-    captured = capsys.readouterr()
-    assert exc_info.value.code == 2
-    assert missing_option in captured.err
 
 
 def test_discover_max_depth_uses_non_negative_int(capsys):
@@ -127,167 +87,6 @@ def test_discover_max_depth_uses_non_negative_int(capsys):
 # ---------------------------------------------------------------------------
 # _handle_create_cgs / configure delegation to ComplexGitSyncClient.configure
 # ---------------------------------------------------------------------------
-
-
-def test_create_cgs_writes_equivalent_validated_document(monkeypatch, capsys, tmp_path):
-    def _forbid_runtime_access(*_args, **_kwargs):
-        raise AssertionError("create-cgs attempted Git or network access")
-
-    monkeypatch.setattr(subprocess, "run", _forbid_runtime_access)
-    monkeypatch.setattr(socket, "create_connection", _forbid_runtime_access)
-
-    output = tmp_path / "CGSil1.cgs"
-    repositories = [
-        "github:flipoyo/ComplexGitSync",
-        "codeberg:GX4G/GX4G",
-    ]
-    args = argparse.Namespace(project="CGSil1", repo=repositories, output=str(output))
-    exit_code = configuration._handle_create_cgs(args)
-    captured = capsys.readouterr()
-
-    generated = CgsDocument.from_toml(output)
-    equivalent_source = tmp_path / "equivalent.cgs"
-    equivalent_source.write_text(
-        'project = "CGSil1"\n\n'
-        "repos = [\n"
-        '    "github:flipoyo/ComplexGitSync",\n'
-        '    "codeberg:GX4G/GX4G",\n'
-        "]\n",
-        encoding="utf-8",
-    )
-    equivalent = CgsDocument.from_toml(equivalent_source)
-    assert exit_code == 0
-    assert generated.to_dict() == equivalent.to_dict()
-    assert "codeberg:GX4G/GX4G" in output.read_text(encoding="utf-8")
-    assert f".cgs file written to: {output.resolve()}" in captured.out
-
-
-def test_create_cgs_delegates_to_public_python_configuration_api(monkeypatch, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def configure(self, project, repositories, *, output_path=None):
-            captured_call["project"] = project
-            captured_call["repositories"] = list(repositories)
-            captured_call["output_path"] = output_path
-            document = CgsDocument.from_dict(
-                {"project": project, "repos": list(repositories)}
-            )
-            document.to_toml(output_path)
-            return document
-
-    monkeypatch.setattr(configuration, "ComplexGitSyncClient", StubClient)
-    output = tmp_path / "GX4G.cgs"
-
-    args = argparse.Namespace(
-        project="GX4G", repo=["codeberg:GX4G/GX4G"], output=str(output)
-    )
-    exit_code = configuration._handle_create_cgs(args)
-
-    assert exit_code == 0
-    assert captured_call == {
-        "project": "GX4G",
-        "repositories": ["codeberg:GX4G/GX4G"],
-        "output_path": output,
-    }
-    assert CgsDocument.from_toml(output).project_name == "GX4G"
-
-
-def test_configure_collects_input_then_writes_validated_cgs(monkeypatch, capsys, tmp_path):
-    responses = iter(
-        [
-            "demo",
-            "main",
-            "owner",
-            "",
-            "",
-            "1",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
-    output = tmp_path / "demo.cgs"
-
-    args = argparse.Namespace(output=str(output))
-    exit_code = configuration._handle_configure(args)
-
-    document = CgsDocument.from_toml(output)
-    assert exit_code == 0
-    assert document.project_name == "demo"
-    assert document.repos[0]["gitprovider"] == "github"
-    assert document.to_authoring_dict() == {
-        "project": "demo",
-        "repos": ["github:owner/demo"],
-    }
-    assert "[project]" not in output.read_text(encoding="utf-8")
-    assert f".cgs file written to: {output.resolve()}" in capsys.readouterr().out
-
-
-def test_configure_collects_codeberg_as_first_class_provider(monkeypatch, tmp_path):
-    responses = iter(
-        [
-            "GX4G",
-            "main",
-            "GX4G",
-            "codeberg",
-            "ssh",
-            "1",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
-    output = tmp_path / "GX4G.cgs"
-
-    args = argparse.Namespace(output=str(output))
-    assert configuration._handle_configure(args) == 0
-
-    document = CgsDocument.from_toml(output)
-    assert document.to_dict() == CgsDocument.from_project_definition(
-        "GX4G", ["codeberg:GX4G/GX4G"]
-    ).to_dict()
-    assert "codeberg:GX4G/GX4G" in output.read_text(encoding="utf-8")
-
-
-def test_configure_prompts_for_output_path_when_omitted(monkeypatch, tmp_path):
-    responses = iter(
-        [
-            "demo",
-            "main",
-            "owner",
-            "",
-            "",
-            "1",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-
-    def _fake_input(prompt=""):
-        if prompt.startswith("\nOutput .cgs path"):
-            return str(tmp_path / "prompted.cgs")
-        return next(responses)
-
-    monkeypatch.setattr("builtins.input", _fake_input)
-
-    args = argparse.Namespace(output=None)
-    exit_code = configuration._handle_configure(args)
-
-    assert exit_code == 0
-    assert (tmp_path / "prompted.cgs").exists()
 
 
 # ---------------------------------------------------------------------------

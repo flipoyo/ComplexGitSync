@@ -2752,41 +2752,6 @@ def test_freeze_snapshot_loaded_from_gts_creates_new_named_immutable_gts(tmp_pat
     assert snapshot_data["freeze_manifest"]["release-name"] == "20260708-v4"
 
 
-def test_client_launch_release_checkouts_release_tag_and_writes_gts(tmp_path, monkeypatch):
-    client, runner = _make_client_with_ready_registry(tmp_path)
-    captured_call: dict[str, object] = {}
-
-    def _spy_checkout(
-        self, git_runner, branch_name, *, ref_kind=RefKind.BRANCH, tree=None, scope=None
-    ):
-        captured_call["git_runner"] = git_runner
-        captured_call["branch_name"] = branch_name
-        captured_call["ref_kind"] = ref_kind
-        captured_call["tree"] = tree
-
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "checkout", _spy_checkout)
-
-    result = client.launch_release("v1.0.0")
-
-    assert result is client.registry
-    assert captured_call == {
-        "git_runner": runner,
-        "branch_name": "v1.0.0",
-        "ref_kind": RefKind.TAG,
-        "tree": None,
-    }
-    snapshot_path = _current_state_path(client.registry.get("root").absolute_path)
-    assert snapshot_path.exists()
-    assert _is_state_file(snapshot_path)
-    assert result.recompute_tree_state() == TreeLifecycleState.READY
-
-
-def test_client_launch_release_raises_when_no_registry_loaded():
-    client = ComplexGitSyncClient()
-    with pytest.raises(RuntimeError, match="No ComplexGitSync registry is loaded"):
-        client.launch_release("v1.0.0")
-
-
 def test_client_checkout_raises_when_no_registry_loaded():
     client = ComplexGitSyncClient()
     with pytest.raises(RuntimeError, match="No ComplexGitSync registry is loaded"):

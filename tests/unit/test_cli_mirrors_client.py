@@ -31,15 +31,14 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "ComplexGitSync"
 BUILDING_BLOCKS = frozenset(
     {
         "build_installed_from",
-        "clean_initialise_cgs",
         "clone_cgs",
         "describe_cgs",
         "discover_nested_configs",
         "fix_circularities",
         "format_project_tree",
+        "freeze",
         "load_cgs",
         "load_source",
-        "purge_cgs",
         "restart",
         "validate_branch_topology",
         "write_gts_snapshot",

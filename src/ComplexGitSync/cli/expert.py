@@ -1,8 +1,8 @@
 """cli.expert — the "Expert" cgitsync command group.
 
-Ring: 4. Contract: register, dispatch, and execute the 22 Expert-tier commands
-    (purge, validate, clone, pull, pull-force, fetch, autofix,
-    checkout, branch, close-branch, add, rm, commit, merge, push, tag, freeze,
+Ring: 4. Contract: register, dispatch, and execute the 19 Expert-tier commands
+    (validate, pull, pull-force, fetch, autofix,
+    checkout, branch, close-branch, add, rm, commit, merge, push, tag,
     import-submodules, init-from-submodules, verify, memory, self-history).
     Argument/prompt collection only — delegates all semantics to
     ComplexGitSyncClient; never touches Git.
@@ -51,9 +51,7 @@ from .fetch_command import handle as _handle_fetch_command
 from .help_text import SEARCH_DIR_HELP
 
 COMMANDS: dict[str, str] = {
-    "purge": "Remove generated clone state for a .cgs workspace.",
     "validate": "Parse, normalize, and validate a .cgs or validate a .gts topology.",
-    "clone": "Clone a nested project tree from .cgs.",
     "pull": "Resynchronise an existing project tree from .cgs or .gts.",
     "pull-force": "Destructively resynchronise an existing project tree from .cgs or .gts; refuses while commits exist only here.",
     "fetch": "Update every repository's view of its origin, without moving any branch.",
@@ -67,7 +65,6 @@ COMMANDS: dict[str, str] = {
     "merge": "Merge a project branch across a READY tree, leaf-first.",
     "push": "Push repositories from a READY tree.",
     "tag": "Create and push a tag across a READY tree.",
-    "freeze": "Freeze a versioned state and emit a .gts snapshot.",
     "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
     "init-from-submodules": "Adopt a submodule-based checkout: discover, initialise, then convert its submodules.",
     "verify": "Verify the hash-chained .cgitsync/lgr ledger for tamper-evidence.",
@@ -134,21 +131,6 @@ def _add_force_protocol_argument(subparser: argparse.ArgumentParser, *, command_
     )
 
 
-def _register_purge(subparser: argparse.ArgumentParser) -> None:
-    subparser.add_argument("source", help="Path to a .cgs spec")
-    subparser.add_argument(
-        "--output-path",
-        dest="output_path",
-        help=(
-            "CGSPATH: parent directory used to derive CGSHOME as "
-            "CGSPATH/<project-name> after the project definition is normalized "
-            "(.cgs or direct CLI mode). "
-            "Defaults to ../.. relative to CWD ($CGSHOME/ComplexGitSync)."
-        ),
-    )
-    subparser.set_defaults(handler=_handle_purge)
-
-
 def _register_validate(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("source", help="Path to the local .cgs or .gts file to validate.")
     subparser.add_argument(
@@ -157,23 +139,6 @@ def _register_validate(subparser: argparse.ArgumentParser) -> None:
         help="Resolve nested .cgs files for locally available child repos.",
     )
     subparser.set_defaults(handler=_handle_validate)
-
-
-def _register_clone(subparser: argparse.ArgumentParser) -> None:
-    subparser.add_argument("source", help="Path to the local .cgs file to clone from.")
-    subparser.add_argument(
-        "--target-dir",
-        help="Target directory for the cloned project root. Defaults to ./<project-name>.",
-    )
-    subparser.add_argument(
-        "--output-path",
-        dest="output_path",
-        help=(
-            "Base directory where the project folder is created. "
-            "The project name from the .cgs file is appended automatically."
-        ),
-    )
-    subparser.set_defaults(handler=_handle_clone)
 
 
 def _register_pull_source_and_search_dir(subparser: argparse.ArgumentParser) -> None:
@@ -488,15 +453,6 @@ def _register_tag(subparser: argparse.ArgumentParser) -> None:
     _add_search_dir_argument(subparser)
     _add_private_argument(subparser, verb="Tag")
     subparser.set_defaults(handler=_handle_tag)
-
-
-def _register_freeze(subparser: argparse.ArgumentParser) -> None:
-    subparser.add_argument("name", help="Version tag name used for commit, tag, and push.")
-    _add_gts_argument(subparser)
-    _add_search_dir_argument(subparser)
-    _add_dry_run_argument(subparser, help_text="Preview the freeze execution plan without mutating repositories.")
-    _add_private_argument(subparser, verb="Freeze")
-    subparser.set_defaults(handler=_handle_freeze)
 
 
 def _register_import_submodules(subparser: argparse.ArgumentParser) -> None:
@@ -839,9 +795,7 @@ def _register_verify(subparser: argparse.ArgumentParser) -> None:
 
 
 _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
-    "purge": _register_purge,
     "validate": _register_validate,
-    "clone": _register_clone,
     "pull": _register_pull,
     "pull-force": _register_pull_force,
     "fetch": _register_fetch,
@@ -855,7 +809,6 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "rm": _register_rm,
     "push": _register_push,
     "tag": _register_tag,
-    "freeze": _register_freeze,
     "import-submodules": _register_import_submodules,
     "init-from-submodules": _register_init_from_submodules,
     "verify": _register_verify,
@@ -864,50 +817,11 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
 }
 
 
-def _handle_purge(args: argparse.Namespace) -> int:
-    source_path = Path(args.source)
-    output_path = getattr(args, "output_path", None)
-    client = ComplexGitSyncClient()
-    project_root = client.resolve_initialise_cgshome(source_path, output_path=output_path)
-    return _run_with_logging(
-        command_name="purge",
-        source=source_path,
-        client=client,
-        project_root=project_root,
-        runner=lambda active_client, source: _execute_purge_cgs(
-            active_client,
-            source,
-            output_path=output_path,
-        ),
-    )
-
-
 def _handle_validate(args: argparse.Namespace) -> int:
     return _run_with_logging(
         command_name="validate",
         source=Path(args.source),
         runner=lambda client, source: _execute_validate(client, source, discover_nested=args.discover_nested),
-    )
-
-
-def _handle_clone(args: argparse.Namespace) -> int:
-    client = ComplexGitSyncClient()
-    project_root = client.resolve_clone_root(
-        Path(args.source),
-        target_dir=args.target_dir,
-        output_path=getattr(args, "output_path", None),
-    )
-    return _run_with_logging(
-        command_name="clone",
-        source=Path(args.source),
-        client=client,
-        project_root=project_root,
-        runner=lambda active_client, source: _execute_clone(
-            active_client,
-            source,
-            target_dir=args.target_dir,
-            output_path=getattr(args, "output_path", None),
-        ),
     )
 
 
@@ -920,7 +834,6 @@ def _handle_pull(args: argparse.Namespace) -> int:
             runner=lambda client, source: _execute_pull_private(client, source),
         )
     commit_gitignore = getattr(args, "commit_gitignore", False)
-    force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
     git_user_name = getattr(args, "git_user_name", None)
     git_user_email = getattr(args, "git_user_email", None)
     force_access_protocol = getattr(args, "force_access_protocol", None)
@@ -931,7 +844,6 @@ def _handle_pull(args: argparse.Namespace) -> int:
             client,
             source,
             commit_gitignore=commit_gitignore,
-            force_gitignore_sync=force_gitignore_sync,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
             force_access_protocol=force_access_protocol,
@@ -1094,17 +1006,6 @@ def _handle_tag(args: argparse.Namespace) -> int:
         source=gts_path,
         runner=lambda client, source: _execute_tag(
             client, source, name=args.name, private=args.private
-        ),
-    )
-
-
-def _handle_freeze(args: argparse.Namespace) -> int:
-    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
-    return _run_with_logging(
-        command_name="freeze",
-        source=gts_path,
-        runner=lambda client, source: _execute_freeze(
-            client, source, name=args.name, dry_run=args.dry_run, private=args.private
         ),
     )
 
@@ -1641,26 +1542,6 @@ def _handle_verify_json(args: argparse.Namespace) -> int:
     return exit_code
 
 
-def _execute_purge_cgs(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    output_path: str | None = None,
-) -> int:
-    if source_path.suffix != ".cgs":
-        raise ValueError("purge expects a .cgs source.")
-    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE")
-    print("workflow=load->expand->validate->purge")
-    removed = client.purge(source_path, output_path=output_path)
-    if removed:
-        print("removed:")
-        for path in removed:
-            print(path)
-    else:
-        print("removed: none")
-    return 0
-
-
 def _execute_validate(
     client: ComplexGitSyncClient,
     source_path: Path,
@@ -1760,23 +1641,6 @@ def _verify_exit_code(state: HistoryState) -> int:
     return EXIT_REFUSED
 
 
-def _execute_clone(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    target_dir: str | None,
-    output_path: str | None = None,
-) -> int:
-    print("git_command=git clone (executed per repo)")
-    registry = client.clone(source_path, target_dir=target_dir, output_path=output_path)
-    tree_state = client.get_tree_state()
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"root={registry.get('root').absolute_path}"
-    )
-    return 0
-
-
 def _execute_pull_private(client: ComplexGitSyncClient, source_path: Path) -> int:
     _load_ready_registry_source(client, source_path)
     scope = _resolve_write_scope(client, private=True, command="pull")
@@ -1796,7 +1660,6 @@ def _execute_pull(
     source_path: Path,
     *,
     commit_gitignore: bool = False,
-    force_gitignore_sync: bool = False,
     git_user_name: str | None = None,
     git_user_email: str | None = None,
     force_access_protocol: str | None = None,
@@ -1804,7 +1667,6 @@ def _execute_pull(
     registry = client.pull(
         source_path,
         commit_gitignore=commit_gitignore,
-        force_gitignore_sync=force_gitignore_sync,
         git_user_name=git_user_name,
         git_user_email=git_user_email,
         force_access_protocol=force_access_protocol,
@@ -2331,45 +2193,6 @@ def _execute_tag(
         f"name={name}"
     )
     _print_repo_tree_result(client)
-    return 0
-
-
-def _execute_freeze(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    name: str,
-    dry_run: bool = False,
-    private: bool = False,
-) -> int:
-    _load_ready_registry_source(client, source_path)
-    scope = _resolve_write_scope(
-        client, private=private, command="freeze", default=RepoScope.WRITABLE
-    )
-    print(f"git_command=git add --all && git commit -m {name!r} && git tag {name} && git push")
-    if dry_run:
-        actions = ("git add --all", f"git commit -m {name!r}", f"git tag {name}", "git push")
-        if _memory_declared_for_dry_run(client):
-            actions = ("cgitsync memory push", *actions)
-        _print_dry_run_plan(
-            client,
-            command_name="freeze",
-            actions=actions,
-            scope=scope,
-        )
-    else:
-        client.freeze(name, private=private)
-        _print_memory_fold_outcome(client)
-    tree_state = client.get_tree_state()
-    snapshot_path = getattr(client, "loaded_snapshot_path", None)
-    snapshot_suffix = f" snapshot={snapshot_path}" if snapshot_path is not None else ""
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"name={name}"
-        f"{snapshot_suffix}"
-    )
-    if not dry_run:
-        _print_repo_tree_result(client)
     return 0
 
 

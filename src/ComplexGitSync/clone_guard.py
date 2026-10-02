@@ -138,8 +138,8 @@ class CloneGuard:
         lines.extend(
             [
                 "",
-                "Nothing has been deleted. Either commit and push the work above, "
-                "or re-run with --force-reclone to delete it deliberately.",
+                "Nothing has been deleted. Commit and push the work above, or move those directories "
+                "aside yourself, then run initialise again. No flag deletes work that exists nowhere else.",
             ]
         )
         return "\n".join(lines)

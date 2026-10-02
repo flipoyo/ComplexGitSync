@@ -12,16 +12,16 @@ Imports: _shared, configuration, environment, exit_codes, expert, help_format, j
 Replaces the single 1,991-line cli.py (.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_
 DevPlanTicket.md, Wave 3, P6-cli-integrate) with a package of six modules,
 each under the ~400 LOC target except the two largest command groups
-(cli/expert.py, cli/minimalist.py — 14 and 8 commands respectively; kept
-whole rather than split further, since a command's parser registration,
+(cli/expert.py, cli/minimalist.py: 19 and 5 commands respectively;
+kept whole rather than split further, since a command's parser registration,
 handler, and executor are one cohesive unit that splitting mid-command
 would only obscure). See each submodule's own docstring for its slice of
 the command surface: cli._shared (helpers used across every group),
-cli.minimalist (initialise/bootstrap/clean-init/freeze-release(-force)/
-status/view-tree/launch-release), cli.expert (purge/validate/clone/
-pull(-force)/checkout/branch/close-branch/add/commit/push/tag/freeze/
-import-submodules/verify), cli.configuration (discover/configure/
-create-cgs), cli.suggest (the "did you mean ...?" hint on a typo).
+cli.minimalist (initialise/bootstrap/freeze-release/status/view-tree),
+cli.expert (validate/pull(-force)/fetch/autofix/checkout/branch/close-branch/
+add/rm/commit/merge/push/tag/import-submodules/init-from-submodules/verify/
+memory/self-history), cli.configuration (discover/repo), cli.suggest (the
+"did you mean ...?" hint on a typo).
 """
 
 from __future__ import annotations

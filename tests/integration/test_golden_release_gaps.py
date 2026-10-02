@@ -131,22 +131,15 @@ def ready_single_repo_snapshot(tmp_path: Path) -> dict[str, Path]:
 # ---------------------------------------------------------------------------
 
 
-class TestFreezeReleaseForceGoldenCoverage:
-    """freeze-release-force actually force-resolves a real diverged history.
+class TestFreezeReleaseDivergedHistoryGoldenCoverage:
+    """freeze-release stops on a real diverged history, and says so.
 
-    Confirmed gap: no existing test runs real git through the
-    ``add -> commit -> pull-force -> push -> freeze`` chain. This test
-    builds a genuine divergence — a local commit the remote has never seen,
-    while the remote has simultaneously received a *different* commit from
-    another contributor built on the same base — and proves:
-
-    * a plain (non-force) ``freeze-release`` on this exact setup fails,
-      because ``git pull --ff-only`` cannot fast-forward a diverged
-      history (this is asserted first, so the "genuine divergence" claim
-      is evidence-backed rather than assumed);
-    * ``freeze-release-force`` on the same setup succeeds, discards the
-      local-only commit, adopts the remote's diverged commit, and still
-      completes the release (tag pushed to the remote).
+    The setup is a genuine divergence: a local commit the remote has never
+    seen, while the remote has received a *different* commit from another
+    contributor built on the same base. ``freeze-release`` fails on it,
+    because ``git pull --ff-only`` cannot fast-forward a diverged history.
+    ``freeze-release-force`` used to discard the local-only commit here; it
+    was removed (GitLikeCli), and ``pull-force`` now refuses instead.
     """
 
     def _diverged_workspace(self, tmp_path: Path) -> dict[str, Path]:
@@ -211,35 +204,6 @@ class TestFreezeReleaseForceGoldenCoverage:
         assert exit_code == 1
         assert "fast-forward" in captured.err
         assert "Traceback" not in captured.err
-
-    def test_freeze_release_force_refuses_to_drop_a_local_only_commit(self, tmp_path, capsys):
-        """A genuine divergence holds a commit no remote has. ComplexGitSync rewrites
-        nothing (`AdditionalSpecs.md`, *The hard prohibitions*), so the forced pull
-        refuses instead of leaving that commit on no branch: nothing is tagged, nothing
-        is pushed, and the local commit is still there. (The command commits before it
-        pulls, so HEAD may carry its own commit on top; the old head stays an ancestor.)
-        """
-        workspace = self._diverged_workspace(tmp_path)
-        repo = workspace["repo"]
-        remote = workspace["remote"]
-        snapshot = workspace["snapshot"]
-        head_before = _run_git(repo, "rev-parse", "HEAD")
-
-        exit_code = cli_main(
-            ["freeze-release-force", "v1.0.0", "release commit", "--gts", str(snapshot)]
-        )
-        captured = capsys.readouterr()
-
-        assert exit_code == 1
-        assert "no remote holds them" in captured.err
-        assert "Traceback" not in captured.err
-        ancestry = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", head_before, "HEAD"], cwd=repo, capture_output=True
-        )
-        assert ancestry.returncode == 0
-        assert (repo / "local-only.txt").exists()
-        assert "v1.0.0" not in _run_git(remote, "tag").splitlines()
-
 
 # ---------------------------------------------------------------------------
 # 2. status — golden field set for a READY tree

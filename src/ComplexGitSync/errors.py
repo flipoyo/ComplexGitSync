@@ -40,8 +40,7 @@ class InstallFrontierError(GitSyncError):
     (``AdditionalSpecs.md``, *The install frontier*); each refuses, before it
     touches the disk, what belongs to the other and names it. A subclass of
     :class:`GitSyncError` so every existing catch still sweeps it up; the CLI
-    tells it apart only to stop suggesting ``clean-init``, which cannot cross
-    that line.
+    tells it apart from an ordinary failure.
     """
 
 

@@ -133,15 +133,11 @@ class CommandRunLogger:
             return "GT-CLONE"
         if event in {"circularity_fixed", "validate_branch_topology_start", "validate_branch_topology_end"}:
             return "GT-VALIDATE"
-        if event.startswith("fs_purge_"):
-            return "FS-PURGE"
         if event == "command_start" or event == "command_end":
             command = str(fields.get("command", "command")).replace("_", "-").upper()
             if command in {"VALIDATE", "VALIDATE-TOPOLOGY"}:
                 return "GT-VALIDATE"
-            if command == "PURGE":
-                return "FS-PURGE"
-            if command in {"INITIALISE", "CLEAN-INIT", "CLONE", "PULL"}:
+            if command in {"INITIALISE", "PULL"}:
                 return "GT-CLONE"
             return f"CGS-{command}"
         return "CGS-RUN"

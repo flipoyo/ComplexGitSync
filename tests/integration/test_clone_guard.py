@@ -219,8 +219,8 @@ def test_every_blocked_repository_is_named_in_one_message(tmp_path: Path, runner
     assert "dirty" in message and "unpushed" in message
     assert "clean" not in message.replace("cleared", "")
     assert "Nothing has been deleted" in message
-    assert "--force-reclone" in message
-    assert "commit and push" in message
+    assert "No flag deletes work" in message
+    assert "commit and push" in message.lower()
 
 
 def test_the_root_repository_is_never_a_candidate(pushed_clone: Path, runner: GitRunner):
@@ -237,7 +237,7 @@ def test_the_root_repository_is_never_a_candidate(pushed_clone: Path, runner: Gi
 
 
 # ---------------------------------------------------------------------------
-# The wiring: orchestre refuses before the first clone, --force-reclone does not
+# The wiring: orchestre refuses before the first clone, and no flag skips it
 # ---------------------------------------------------------------------------
 
 
@@ -254,18 +254,7 @@ def test_orchestre_refuses_the_whole_run_and_deletes_nothing(pushed_clone: Path,
         client._guard_clone_destinations([_entry(pushed_clone)])
 
     assert "uncommitted changes" in str(excinfo.value)
-    assert "--force-reclone" in str(excinfo.value)
+    assert "No flag deletes work" in str(excinfo.value)
     assert pushed_clone.exists()
     assert (pushed_clone / "file.txt").read_text(encoding="utf-8") == before
     assert (pushed_clone / ".git").exists()
-
-
-def test_force_reclone_skips_the_guard(pushed_clone: Path):
-    """The escape hatch reproduces the old behaviour: no refusal at all."""
-    from ComplexGitSync.orchestre import ComplexGitSyncClient
-
-    (pushed_clone / "file.txt").write_text("work that will be lost\n", encoding="utf-8")
-
-    client = ComplexGitSyncClient()
-    client._force_reclone = True
-    client._guard_clone_destinations([_entry(pushed_clone)])  # must not raise

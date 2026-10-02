@@ -183,10 +183,7 @@ class Installer:
         config_path: str | Path,
         *,
         output_path: str | Path | None = None,
-        clean_before_clone: bool = False,
-        force_reclone: bool = False,
         commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         force_access_protocol: str | None = None,
@@ -204,10 +201,10 @@ class Installer:
         destination and refuses the whole run -- naming every repository, and
         deleting none -- when one holds work that exists nowhere else:
         uncommitted changes, commits not pushed to its upstream, or a branch
-        with no upstream at all. A destination that is not a Git checkout (a
-        clone interrupted mid-run) is still cleared without a flag.
-        *force_reclone* (``--force-reclone``) skips that check and destroys
-        the work.
+        with no upstream at all. There is no flag that skips the check
+        (ComplexGitSync rewrites nothing); commit and push, or move the
+        directory aside. A destination that is not a Git checkout (a clone
+        interrupted mid-run) is still cleared.
 
         All ComplexGitSync state is stored under
         ``CGSHOME/.cgitsync/state(<hash>)_n/``.
@@ -216,12 +213,6 @@ class Installer:
         ----------
         config_path:
             Path to the ``.cgs`` authoring spec.
-        force_reclone:
-            Skip the unpushed-work check described above and clear every
-            populated destination, reproducing the pre-guard behaviour.
-            Destructive and unrecoverable: the old ``.git`` goes with the
-            directory. ``clean_before_clone`` implies it, since ``clean-init``
-            purges the workspace itself.
         output_path:
             CGSPATH — parent directory used to derive CGSHOME as
             ``CGSPATH/<project_name>``.  When *None*, defaults to ``../..``
@@ -231,10 +222,6 @@ class Installer:
             Explicit approval (``--commit-gitignore``) to stage, commit, and
             push any ``.gitignore`` the lifecycle sync updates. Default
             ``False``: the sync only writes the file and reports it.
-        force_gitignore_sync:
-            Opt-in (``--force-gitignore-sync``) fallback to pull-force
-            semantics for a repo whose safe pull fails before its
-            ``.gitignore`` is synced, instead of raising. Never force-pushes.
         git_user_name, git_user_email:
             Override the Git identity used for ComplexGitSync-authored
             commits (``--git-user-name``/``--git-user-email``). Persisted to
@@ -257,10 +244,7 @@ class Installer:
             document,
             source_path=source_path,
             output_path=output_path,
-            clean_before_clone=clean_before_clone,
-            force_reclone=force_reclone,
             commit_gitignore=commit_gitignore,
-            force_gitignore_sync=force_gitignore_sync,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
             force_access_protocol=force_access_protocol,
@@ -272,10 +256,7 @@ class Installer:
         *,
         source_path: str | Path,
         output_path: str | Path | None = None,
-        clean_before_clone: bool = False,
-        force_reclone: bool = False,
         commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         force_access_protocol: str | None = None,
@@ -285,7 +266,7 @@ class Installer:
         ``source_path`` is the logical origin used for relative paths, state
         metadata, and logging. It need not exist for direct CLI authoring.
         See :meth:`initialise_cgs` for ``commit_gitignore``/
-        ``force_gitignore_sync``/``git_user_name``/``git_user_email``/
+        ``git_user_name``/``git_user_email``/
         ``force_access_protocol``.
         """
         document.validate()
@@ -301,10 +282,6 @@ class Installer:
         self.client._forced_access_protocol = (
             AccessProtocol(force_access_protocol) if force_access_protocol else None
         )
-        # clean-init purges the workspace itself, so its destinations are
-        # already gone by the time the guard would look: it means
-        # --force-reclone and says so in its own name.
-        self.client._force_reclone = force_reclone or clean_before_clone
         project_root = cgshome
 
         self.client.registry = RegistryTranslator.from_cgs_document(document, source_path, project_root=project_root)
@@ -313,9 +290,6 @@ class Installer:
 
         root_entry = self.client.registry.get(ROOT_REPO_ID)
         self.client._attach_existing_root(root_entry, project_root)
-
-        if clean_before_clone:
-            self.client._purge_registry_workspace(self.client.registry)
 
         # Root is already checked out at CGSHOME; initialise clones only the
         # dependencies declared by the .cgs.
@@ -326,7 +300,6 @@ class Installer:
             self.client._log_circularity_fixes(fixed)
         self.client._assert_nested_discovery_complete()
         self.client._gitignore_sync._sync_gitignore_lifecycle(
-            force_pull_fallback=force_gitignore_sync,
             commit=commit_gitignore,
         )
         self.client.registry.recompute_tree_state()
@@ -345,75 +318,6 @@ class Installer:
         )
         self.client._warn_environment_drift()
         return self.client.registry
-
-    def clean_initialise_cgs(
-        self,
-        config_path: str | Path,
-        *,
-        output_path: str | Path | None = None,
-        commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
-        git_user_name: str | None = None,
-        git_user_email: str | None = None,
-        force_access_protocol: str | None = None,
-    ) -> WorkingGitTree:
-        """Initialise a .cgs workspace after purging generated clone state."""
-        return self.client.initialise_cgs(
-            config_path,
-            output_path=output_path,
-            clean_before_clone=True,
-            commit_gitignore=commit_gitignore,
-            force_gitignore_sync=force_gitignore_sync,
-            git_user_name=git_user_name,
-            git_user_email=git_user_email,
-            force_access_protocol=force_access_protocol,
-        )
-
-    def clean_init(
-        self,
-        config_path: str | Path,
-        *,
-        output_path: str | Path | None = None,
-        commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
-        git_user_name: str | None = None,
-        git_user_email: str | None = None,
-        force_access_protocol: str | None = None,
-    ) -> WorkingGitTree:
-        """Initialise a .cgs workspace after purging generated clone state."""
-        return self.client.clean_initialise_cgs(
-            config_path,
-            output_path=output_path,
-            commit_gitignore=commit_gitignore,
-            force_gitignore_sync=force_gitignore_sync,
-            git_user_name=git_user_name,
-            git_user_email=git_user_email,
-            force_access_protocol=force_access_protocol,
-        )
-
-    def purge_cgs(
-        self,
-        config_path: str | Path,
-        *,
-        output_path: str | Path | None = None,
-    ) -> tuple[Path, ...]:
-        """Remove immediate child repos and project ledgers from CGSHOME."""
-        source_path = Path(config_path).resolve()
-        document = CgsDocument.from_toml(source_path)
-        cgshome = self.client.resolve_cgshome(document, source_path, output_path=output_path)
-        self.client.registry = RegistryTranslator.from_cgs_document(document, source_path, project_root=cgshome)
-        self.client.orchestre.git_tree.git.bind_tree(self.client.registry)
-        self.client.source_path = source_path
-        return self.client._purge_registry_workspace(self.client.registry)
-
-    def purge(
-        self,
-        config_path: str | Path,
-        *,
-        output_path: str | Path | None = None,
-    ) -> tuple[Path, ...]:
-        """Remove generated clone state for a .cgs workspace."""
-        return self.client.purge_cgs(config_path, output_path=output_path)
 
     def resolve_cgshome(
         self,
@@ -434,22 +338,10 @@ class Installer:
         """Read a .cgs file and resolve the CGSHOME initialise will use."""
         return PathResolver.resolve_initialise_cgshome(config_path, output_path=output_path)
 
-    def resolve_clone_root(
-        self,
-        config_path: str | Path,
-        *,
-        target_dir: str | Path | None = None,
-        output_path: str | Path | None = None,
-    ) -> Path:
-        source_path = Path(config_path).resolve()
-        document = CgsDocument.from_toml(source_path)
-        return PathResolver.resolve_project_root(document, source_path, target_dir, output_path)
-
     def clone_cgs(
         self,
         config_path: str | Path,
         *,
-        force_reclone: bool = False,
         target_dir: str | Path | None = None,
         output_path: str | Path | None = None,
         force_access_protocol: str | None = None,
@@ -461,7 +353,6 @@ class Installer:
         self.client._forced_access_protocol = (
             AccessProtocol(force_access_protocol) if force_access_protocol else None
         )
-        self.client._force_reclone = force_reclone
 
         self.client.registry = RegistryTranslator.from_cgs_document(document, source_path, project_root=project_root)
         self.client.orchestre.git_tree.git.bind_tree(self.client.registry)
@@ -495,16 +386,6 @@ class Installer:
         self.client.state_store.record_snapshot(source_path, snapshot_path)
         self.client._log_tree_transition(previous_tree_state, self.client.registry.lifecycle_state, reason="clone_cgs")
         return self.client.registry
-
-    def clone(
-        self,
-        config_path: str | Path,
-        *,
-        target_dir: str | Path | None = None,
-        output_path: str | Path | None = None,
-    ) -> WorkingGitTree:
-        """Clone a project tree from a ``.cgs`` source."""
-        return self.client.clone_cgs(config_path, target_dir=target_dir, output_path=output_path)
 
     def resolve_bootstrap_root(
         self,
@@ -579,9 +460,7 @@ class Installer:
         snapshot_path: str | Path,
         *,
         output_path: str | Path | None = None,
-        force_reclone: bool = False,
         commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         force_access_protocol: str | None = None,
@@ -599,14 +478,13 @@ class Installer:
 
         A dependency is deleted and cloned again exactly as
         :meth:`initialise_cgs` does, under the same unpushed-work guard
-        (*force_reclone* skips it). The root stays where it is: if it is on a
+        (there is no flag that skips it). The root stays where it is: if it is on a
         different commit than the snapshot recorded, that is logged, not
         changed — it is the user's checkout.
 
-        *commit_gitignore* and *force_gitignore_sync* are accepted so the two
-        sources take one set of options; a pinned repository is never pulled,
-        so neither has a pull to force, and ``.gitignore`` files are written
-        but not committed.
+        *commit_gitignore* is accepted so the two sources take one set of
+        options; a pinned repository is never pulled, and ``.gitignore`` files
+        are written but not committed.
         """
         resolved = Path(snapshot_path).resolve()
         document = GtsDocument.from_toml(resolved)
@@ -620,7 +498,6 @@ class Installer:
             resolved,
             cgshome,
             root_is_checkout=True,
-            force_reclone=force_reclone,
             force_access_protocol=force_access_protocol,
             reason="initialise_gts",
         )
@@ -639,7 +516,6 @@ class Installer:
             snapshot_path,
             target_dir,
             root_is_checkout=False,
-            force_reclone=False,
             force_access_protocol=force_access_protocol,
             reason="clone_gts",
         )
@@ -651,7 +527,6 @@ class Installer:
         cgshome: Path,
         *,
         root_is_checkout: bool,
-        force_reclone: bool,
         force_access_protocol: str | None,
         reason: str,
     ) -> WorkingGitTree:
@@ -668,7 +543,6 @@ class Installer:
         client._forced_access_protocol = (
             AccessProtocol(force_access_protocol) if force_access_protocol else None
         )
-        client._force_reclone = force_reclone
         registry = RegistryTranslator.from_gts_document(document, tree_root=cgshome)
         client.registry = registry
         client.orchestre.git_tree.git.bind_tree(registry)
@@ -879,7 +753,6 @@ class Installer:
         config_path: str | Path,
         *,
         commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         force_access_protocol: str | None = None,
@@ -891,7 +764,7 @@ class Installer:
         parent-first.  Ends in ``READY`` or raises
         :exc:`~ComplexGitSync.errors.GitSyncError`. See
         :meth:`ComplexGitSyncClient.initialise_cgs` for
-        ``commit_gitignore``/``force_gitignore_sync``/``git_user_name``/
+        ``commit_gitignore``/``git_user_name``/
         ``git_user_email``, and :meth:`push` for ``force_access_protocol``.
         """
         previous_tree_state = self.client.registry.lifecycle_state if self.client.registry else TreeLifecycleState.UNLOADED
@@ -927,7 +800,6 @@ class Installer:
             raise
         self.client._gitignore_sync._sync_gitignore_lifecycle(
             pre_pull=False,
-            force_pull_fallback=force_gitignore_sync,
             commit=commit_gitignore,
         )
         if not registry.is_ready():

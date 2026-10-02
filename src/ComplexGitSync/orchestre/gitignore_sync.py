@@ -50,7 +50,6 @@ class GitignoreSync:
         self,
         *,
         pre_pull: bool = True,
-        force_pull_fallback: bool = False,
         commit: bool = False,
     ) -> tuple[GitignoreSyncEntry, ...]:
         """Run the ``.gitignore`` lifecycle sync (DevPlanTicket Milestones 1-2).
@@ -58,16 +57,11 @@ class GitignoreSync:
         Every repo with children is safely pulled (parent-first, via
         :func:`iter_tree`) before its ``.gitignore`` is written, so the
         write starts from an up-to-date base. If the safe pull fails for
-        any such repo:
-
-        - by default (*force_pull_fallback* False), no ``.gitignore`` is
-          written at all and this raises :exc:`~.errors.GitSyncError`
-          immediately — no forcing, no silent degradation;
-        - with *force_pull_fallback* True (``--force-gitignore-sync``),
-          that one repo falls back to :meth:`GitRunner.force_pull`
-          (fetch + ``checkout -B <branch> FETCH_HEAD`` + ``clean -fd``)
-          instead of erroring out. This never force-*pushes* — that
-          remains forbidden regardless of any flag.
+        any such repo, no ``.gitignore`` is written at all and this raises
+        :exc:`~.errors.GitSyncError` immediately — no forcing, no silent
+        degradation. (The ``--force-gitignore-sync`` fallback to
+        ``pull-force`` was removed: run ``pull-force`` yourself if a pull
+        cannot sync.)
 
         Returns one :class:`GitignoreSyncEntry` per repo whose
         ``.gitignore`` was actually created or modified, and also records
@@ -115,12 +109,10 @@ class GitignoreSync:
                 try:
                     self.client.git_runner.pull(entry.absolute_path, ref_name=current_branch)
                 except GitSyncError as exc:
-                    if not force_pull_fallback:
-                        raise GitSyncError(
-                            f"gitignore sync preflight failed: could not safely pull {entry.name!r} "
-                            f"({entry.absolute_path}) before writing its .gitignore: {exc}"
-                        ) from exc
-                    self.client.git_runner.force_pull(entry.absolute_path, ref_name=current_branch)
+                    raise GitSyncError(
+                        f"gitignore sync preflight failed: could not safely pull {entry.name!r} "
+                        f"({entry.absolute_path}) before writing its .gitignore: {exc}"
+                    ) from exc
 
         pending_paths: dict[str, tuple[str, ...]] = {}
         for entry in iter_tree(registry):

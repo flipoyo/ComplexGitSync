@@ -156,7 +156,6 @@ class ComplexGitSyncClient:
     memory_setup_due: bool = False
     run_logger: CommandRunLogger | None = None
     _forced_access_protocol: AccessProtocol | None = field(default=None, init=False, repr=False)
-    _force_reclone: bool = field(default=False, init=False, repr=False)
     #: Where a memory mounted before WorkingTransitionState sits: directly
     #: at the workspace's own state area, sharing it with the live-write
     #: content the new layout gives its own place. Migration's own source,
@@ -261,31 +260,26 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         output_path: str | Path | None = None,
-        clean_before_clone: bool = False,
-        force_reclone: bool = False,
         commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Initialise a workspace using CGSPATH/CGSHOME semantics."""
-        return self._installer.initialise_cgs(config_path, output_path=output_path, clean_before_clone=clean_before_clone, force_reclone=force_reclone, commit_gitignore=commit_gitignore, force_gitignore_sync=force_gitignore_sync, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
+        return self._installer.initialise_cgs(config_path, output_path=output_path, commit_gitignore=commit_gitignore, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
 
     def initialise_gts(
         self,
         snapshot_path: str | Path,
         *,
         output_path: str | Path | None = None,
-        force_reclone: bool = False,
         commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Initialise a workspace from a ``.gts`` snapshot, each repository at its recorded commit."""
-        return self._installer.initialise_gts(snapshot_path, output_path=output_path, force_reclone=force_reclone, commit_gitignore=commit_gitignore, force_gitignore_sync=force_gitignore_sync, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
+        return self._installer.initialise_gts(snapshot_path, output_path=output_path, commit_gitignore=commit_gitignore, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
 
     def initialise_cgs_document(
         self,
@@ -293,62 +287,13 @@ class ComplexGitSyncClient:
         *,
         source_path: str | Path,
         output_path: str | Path | None = None,
-        clean_before_clone: bool = False,
-        force_reclone: bool = False,
         commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Initialise from an already-normalized, validated ``CgsDocument``."""
-        return self._installer.initialise_cgs_document(document, source_path=source_path, output_path=output_path, clean_before_clone=clean_before_clone, force_reclone=force_reclone, commit_gitignore=commit_gitignore, force_gitignore_sync=force_gitignore_sync, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
-
-    def clean_initialise_cgs(
-        self,
-        config_path: str | Path,
-        *,
-        output_path: str | Path | None = None,
-        commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
-        git_user_name: str | None = None,
-        git_user_email: str | None = None,
-        force_access_protocol: str | None = None,
-    ) -> WorkingGitTree:
-        """Initialise a .cgs workspace after purging generated clone state."""
-        return self._installer.clean_initialise_cgs(config_path, output_path=output_path, commit_gitignore=commit_gitignore, force_gitignore_sync=force_gitignore_sync, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
-
-    def clean_init(
-        self,
-        config_path: str | Path,
-        *,
-        output_path: str | Path | None = None,
-        commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
-        git_user_name: str | None = None,
-        git_user_email: str | None = None,
-        force_access_protocol: str | None = None,
-    ) -> WorkingGitTree:
-        """Initialise a .cgs workspace after purging generated clone state."""
-        return self._installer.clean_init(config_path, output_path=output_path, commit_gitignore=commit_gitignore, force_gitignore_sync=force_gitignore_sync, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
-
-    def purge_cgs(
-        self,
-        config_path: str | Path,
-        *,
-        output_path: str | Path | None = None,
-    ) -> tuple[Path, ...]:
-        """Remove immediate child repos and project ledgers from CGSHOME."""
-        return self._installer.purge_cgs(config_path, output_path=output_path)
-
-    def purge(
-        self,
-        config_path: str | Path,
-        *,
-        output_path: str | Path | None = None,
-    ) -> tuple[Path, ...]:
-        """Remove generated clone state for a .cgs workspace."""
-        return self._installer.purge(config_path, output_path=output_path)
+        return self._installer.initialise_cgs_document(document, source_path=source_path, output_path=output_path, commit_gitignore=commit_gitignore, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
 
     def resolve_cgshome(
         self,
@@ -420,35 +365,15 @@ class ComplexGitSyncClient:
     ) -> WorkingGitTree:
         return self._document_loader.load_source(source_path, discover_nested=discover_nested, prefer_runtime_for_cgs=prefer_runtime_for_cgs)
 
-    def resolve_clone_root(
-        self,
-        config_path: str | Path,
-        *,
-        target_dir: str | Path | None = None,
-        output_path: str | Path | None = None,
-    ) -> Path:
-        return self._installer.resolve_clone_root(config_path, target_dir=target_dir, output_path=output_path)
-
     def clone_cgs(
         self,
         config_path: str | Path,
         *,
-        force_reclone: bool = False,
         target_dir: str | Path | None = None,
         output_path: str | Path | None = None,
         force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
-        return self._installer.clone_cgs(config_path, force_reclone=force_reclone, target_dir=target_dir, output_path=output_path, force_access_protocol=force_access_protocol)
-
-    def clone(
-        self,
-        config_path: str | Path,
-        *,
-        target_dir: str | Path | None = None,
-        output_path: str | Path | None = None,
-    ) -> WorkingGitTree:
-        """Clone a project tree from a ``.cgs`` source."""
-        return self._installer.clone(config_path, target_dir=target_dir, output_path=output_path)
+        return self._installer.clone_cgs(config_path, target_dir=target_dir, output_path=output_path, force_access_protocol=force_access_protocol)
 
     def resolve_bootstrap_root(
         self,
@@ -475,26 +400,24 @@ class ComplexGitSyncClient:
         config_path: str | Path,
         *,
         commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Resynchronize an already-cloned tree from a ``.cgs`` file."""
-        return self._installer.restart(config_path, commit_gitignore=commit_gitignore, force_gitignore_sync=force_gitignore_sync, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
+        return self._installer.restart(config_path, commit_gitignore=commit_gitignore, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
 
     def pull(
         self,
         source_path: str | Path,
         *,
         commit_gitignore: bool = False,
-        force_gitignore_sync: bool = False,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Resynchronize from a ``.cgs`` spec or restore from a ``.gts`` snapshot."""
-        return self._tree_commands.pull(source_path, commit_gitignore=commit_gitignore, force_gitignore_sync=force_gitignore_sync, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
+        return self._tree_commands.pull(source_path, commit_gitignore=commit_gitignore, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
 
     def pull_force(
         self,
@@ -702,11 +625,10 @@ class ComplexGitSyncClient:
         output_gts: str | Path | None = None,
         message: str | None = None,
         stage_all: bool = True,
-        force: bool = False,
         force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Run the minimalist release workflow from a READY tree."""
-        return self._memory_commands.freeze_release(release_name, commit_message, output_gts=output_gts, message=message, stage_all=stage_all, force=force, force_access_protocol=force_access_protocol)
+        return self._memory_commands.freeze_release(release_name, commit_message, output_gts=output_gts, message=message, stage_all=stage_all, force_access_protocol=force_access_protocol)
 
     def freeze_state(
         self,
@@ -718,10 +640,6 @@ class ComplexGitSyncClient:
     ) -> WorkingGitTree:
         """Freeze an internal development state from a ``READY`` tree."""
         return self._memory_commands.freeze_state(state_name, output_gts=output_gts, message=message, stage_all=stage_all)
-
-    def launch_release(self, release_name: str) -> WorkingGitTree:
-        """Check out a frozen release tag across the current READY tree."""
-        return self._memory_commands.launch_release(release_name)
 
     def launch_state(self, snapshot_path: str | Path) -> WorkingGitTree:
         """Restore an internal ``.gts`` state."""
@@ -1014,41 +932,6 @@ class ComplexGitSyncClient:
             return
         for mismatch in (*drift.missing, *drift.older):
             warnings.warn(f"environment drift: {mismatch}", stacklevel=4)
-
-    def _purge_registry_workspace(self, registry: WorkingGitTree) -> tuple[Path, ...]:
-        root_entry = registry.get(ROOT_REPO_ID)
-        root_path = root_entry.absolute_path
-        removed: list[Path] = []
-        self._log_event("fs_purge_start", root_path=root_path)
-
-        for entry in sorted(registry.values(), key=lambda candidate: candidate.name):
-            if entry.parent_id != ROOT_REPO_ID:
-                continue
-            if entry.absolute_path.parent != root_path:
-                continue
-            if entry.absolute_path == root_path:
-                continue
-            if self._remove_workspace_path(entry.absolute_path):
-                removed.append(entry.absolute_path)
-                self._log_event("fs_purge_removed", path=entry.absolute_path)
-
-        for lgr_path in sorted(root_path.glob("*.lgr")):
-            if self._remove_workspace_path(lgr_path):
-                removed.append(lgr_path)
-                self._log_event("fs_purge_removed", path=lgr_path)
-
-        self._log_event("fs_purge_end", root_path=root_path, removed_count=len(removed))
-        return tuple(removed)
-
-    @staticmethod
-    def _remove_workspace_path(path: Path) -> bool:
-        if path.is_dir():
-            shutil.rmtree(path)
-            return True
-        if path.exists():
-            path.unlink()
-            return True
-        return False
 
     def _write_scope(
         self, registry: WorkingGitTree, command: str, private: bool, all_writable: bool
@@ -1391,7 +1274,7 @@ class ComplexGitSyncClient:
                 raise GitSyncError(
                     f"{exc}\n"
                     f"hint: this clone used ssh and failed authentication — pass "
-                    f"--force-protocol https to 'initialise'/'bootstrap'/'clean-init' if "
+                    f"--force-protocol https to 'initialise'/'bootstrap' if "
                     f"{entry.name} is a public repo, or configure an SSH key/agent for "
                     f"this runner otherwise."
                 ) from exc
@@ -1435,10 +1318,8 @@ class ComplexGitSyncClient:
         """Refuse the whole run when any destination holds unpushed work.
 
         Runs before the first clone of each batch, so a refusal leaves every
-        repository on disk untouched. ``--force-reclone`` skips it.
+        repository on disk untouched. No flag skips it.
         """
-        if self._force_reclone:
-            return
         blocked = CloneGuard.blocked([entry for entry in entries if entry.parent_id is not None], self.git_runner)
         if blocked:
             raise GitSyncError(CloneGuard.format_error(blocked))

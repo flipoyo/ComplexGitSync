@@ -186,13 +186,12 @@ class MemoryCommands:
         output_gts: str | Path | None = None,
         message: str | None = None,
         stage_all: bool = True,
-        force: bool = False,
         force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
         """Run the minimalist release workflow from a READY tree.
 
         The workflow is intentionally composed from public tree operations:
-        ``add -> commit -> pull/pull-force -> push -> freeze``. The pull step
+        ``add -> commit -> pull -> push -> freeze``. The pull step
         is skipped (not attempted) when the current branch has no upstream
         yet — e.g. a branch just created and checked out this session, never
         pushed — since there is nothing to pull.
@@ -206,7 +205,7 @@ class MemoryCommands:
         branch made after the clone.
 
         ``force_access_protocol`` — see :meth:`push` — is forwarded to the
-        ``pull``/``pull-force`` and ``push`` steps above; the remote
+        ``pull`` and ``push`` steps above; the remote
         rewrite it makes persists (``git remote set-url``), so the
         ``freeze`` step's own tag push, further below, picks it up too
         without needing the parameter itself.
@@ -233,17 +232,13 @@ class MemoryCommands:
         self.client._log_event(
             "freeze_release_workflow_start",
             release_name=release_name,
-            force=force,
             stage_all=stage_all,
         )
         self.client.add()
         self.client.commit(resolved_message, stage_all=False)
         root_entry = self.client.get_dependency_registry().get(ROOT_REPO_ID)
         if self.client.git_runner.upstream_configured(root_entry.absolute_path):
-            if force:
-                self.client.pull_force(self.client.source_path, force_access_protocol=force_access_protocol)
-            else:
-                self.client.pull(self.client.source_path, force_access_protocol=force_access_protocol)
+            self.client.pull(self.client.source_path, force_access_protocol=force_access_protocol)
         else:
             self.client._log_event(
                 "freeze_release_pull_skipped",
@@ -269,7 +264,7 @@ class MemoryCommands:
             stage_all=stage_all,
             release=tuple(release),
         )
-        self.client._log_event("freeze_release_workflow_end", release_name=release_name, force=force)
+        self.client._log_event("freeze_release_workflow_end", release_name=release_name)
         return registry
 
     def freeze_state(
@@ -298,23 +293,6 @@ class MemoryCommands:
             message=message,
             stage_all=stage_all,
         )
-
-    def launch_release(self, release_name: str) -> WorkingGitTree:
-        """Check out a frozen release tag across the current READY tree."""
-        registry = self.client.get_dependency_registry()
-        previous_state = registry.lifecycle_state
-        self.client._log_event("launch_release_start", release_name=release_name)
-        self.client.orchestre.git_tree.git.checkout(
-            self.client.git_runner,
-            release_name,
-            ref_kind=RefKind.TAG,
-        )
-        snapshot_path = self.client.write_gts_snapshot(command_origin="launch_release")
-        if self.client.source_path is not None:
-            self.client.state_store.record_snapshot(self.client.source_path, snapshot_path)
-        self.client._log_tree_transition(previous_state, registry.lifecycle_state, reason="launch_release")
-        self.client._log_event("launch_release_end", release_name=release_name, output_gts=snapshot_path)
-        return registry
 
     def launch_state(self, snapshot_path: str | Path) -> WorkingGitTree:
         """Restore an internal ``.gts`` state."""
@@ -395,8 +373,8 @@ class MemoryCommands:
     ) -> dict[str, Any]:
         """Add this project's memory to a `.cgs` that already exists.
 
-        `create-cgs` writes a whole file from arguments and `configure`
-        builds one from scratch; both replace, and neither appends. This
+        `ComplexGitSyncClient.configure` writes a whole file from arguments
+        and replaces; it never appends. This
         appends — one entry, in the file's own layout, with every comment
         left where it was. §4 of the MemoryOnboarding ticket says why that
         matters more here than anywhere else.

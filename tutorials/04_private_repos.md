@@ -209,15 +209,16 @@ your own repositories on `multi-branch` and your settings repositories on
 command, one branch name, and `cgitsync` works out what each repository
 needs.
 
-**Eleven commands take `--private`:** `pull`, `pull-force`, `checkout`,
-`branch`, `add`, `rm`, `commit`, `merge`, `push`, `tag` and `freeze`.
+**Twelve commands take `--private`:** `pull`, `pull-force`, `fetch`,
+`checkout`, `branch`, `close-branch`, `add`, `rm`, `commit`, `merge`,
+`push` and `tag`.
 Four of them — `add`, `commit`, `push` and `merge` — also take `--all`,
 which does both halves at once (see *Or do both at once* below). It
 narrows the command to your writable configuration repositories alone — so
 you can commit, push, tag or check them out on their own without reaching
 for plain `git`. Read-only ones are never written to, with or without it.
-The whole-tree commands — `clone`, `initialise`, `freeze-release`,
-`launch-release` — do not take it.
+The whole-tree commands — `bootstrap`, `initialise`, `freeze-release` —
+do not take it.
 
 ### The whole cycle
 
