@@ -50,7 +50,8 @@ class FetchOperation:
                 try:
                     git_runner.fetch(path, remote=_REMOTE, prune=True)
                 except GitSyncError as error:
-                    outcomes.append(RepoOutcome(repo.name, False, f"fetch failed: {error}"))
+                    reason = (str(error).strip().splitlines() or ["no reason given"])[0]
+                    outcomes.append(RepoOutcome(repo.name, False, f"fetch failed: {reason}", failed=True))
                 else:
                     outcomes.append(RepoOutcome(repo.name, True, _REMOTE))
         return tuple(outcomes)

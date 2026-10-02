@@ -3,7 +3,7 @@
 Ring: 4. Contract: given the arguments `cli/expert.py` registered, call
     `ComplexGitSyncClient.fetch`, and print one line per repository.
     Argument collection and printing only.
-Imports: _shared, exit_codes, orchestre
+Imports: _shared, errors, exit_codes, orchestre
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from ..errors import GitSyncError
 from ..orchestre import ComplexGitSyncClient
 from ._shared import (
     _load_ready_registry_source,
@@ -18,7 +19,7 @@ from ._shared import (
     _resolve_gts_path,
     _run_with_logging,
 )
-from .exit_codes import EXIT_OK, EXIT_REFUSED
+from .exit_codes import EXIT_OK
 
 __all__ = ["handle"]
 
@@ -38,5 +39,8 @@ def _execute(client: ComplexGitSyncClient, source_path: Path, *, private: bool) 
     print("git_command=git fetch --prune origin")
     outcomes = client.fetch(private=private)
     _print_write_outcomes(client, verb="fetched", nothing_note="no repository has an origin to fetch from")
-    failed = any(o.detail.startswith("fetch failed") for o in outcomes)
-    return EXIT_REFUSED if failed else EXIT_OK
+    failed = [o.name for o in outcomes if o.failed]
+    if failed:
+        # Raised, not returned, so the run is logged and `autofix` can see it.
+        raise GitSyncError(f"fetch failed in: {', '.join(failed)}")
+    return EXIT_OK

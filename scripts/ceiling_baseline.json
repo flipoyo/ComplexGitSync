@@ -77,7 +77,7 @@
     },
     "cli/fetch_command.py": {
       "internal_imports": 7,
-      "loc": 33,
+      "loc": 36,
       "public_symbols": 1
     },
     "cli/help_format.py": {
@@ -277,7 +277,7 @@
     },
     "operations/fetch.py": {
       "internal_imports": 6,
-      "loc": 47,
+      "loc": 48,
       "public_symbols": 1
     },
     "operations/merge.py": {
@@ -287,7 +287,7 @@
     },
     "operations/outcome.py": {
       "internal_imports": 0,
-      "loc": 28,
+      "loc": 32,
       "public_symbols": 1
     },
     "operations/preflight.py": {

@@ -121,3 +121,25 @@ def test_cli_fetch_private_fetches_only_the_writable_configuration_repositories(
     assert code == 0
     assert "conf" in out
     assert "fetched demo" not in out
+
+
+def test_a_failed_fetch_is_flagged_and_its_reason_fits_one_line(tmp_path):
+    tree = _two_repo_workspace(tmp_path)
+    _git(tree["root"], "remote", "set-url", "origin", (tmp_path / "gone.git").as_posix())
+
+    outcomes = {o.name: o for o in _loaded(tree["snapshot"]).fetch()}
+
+    assert outcomes["demo"].failed and not outcomes["conf"].failed
+    assert "\n" not in outcomes["demo"].detail
+
+
+def test_a_failed_cli_fetch_leaves_a_run_log_autofix_can_read(tmp_path, capsys):
+    tree = _two_repo_workspace(tmp_path)
+    _git(tree["config"], "remote", "set-url", "origin", (tmp_path / "gone.git").as_posix())
+
+    code = main(["fetch", "--gts", str(tree["snapshot"])])
+
+    assert code != 0
+    logs = list((tree["root"] / ".cgitsync" / "logs").glob("fetch-*.log"))
+    assert logs
+    assert '"status": "error"' in logs[-1].read_text(encoding="utf-8")

@@ -27,11 +27,16 @@ class RepoOutcome:
     ``acted`` answers "did anything change here?". ``detail`` says what
     changed (a new commit's sha, the ref pushed, how many paths were
     staged) or, when ``acted`` is ``False``, why nothing did.
+
+    ``failed`` marks a repository where Git was asked and refused, as opposed
+    to one skipped because there was nothing to do; a caller that must exit
+    non-zero reads it instead of matching ``detail``'s wording.
     """
 
     name: str
     acted: bool
     detail: str
+    failed: bool = False
 
 
 __all__ = [
