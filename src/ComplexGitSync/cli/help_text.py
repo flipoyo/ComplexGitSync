@@ -146,8 +146,8 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
         "(33 + 33 + 34) — in this project's private accounting record.",
         (
             "cgitsync self-history add --ticket HelpErgonomy --goal \"Better --help\" --action \"Implemented it\" "
-            "--worker-role Dev --worker-vendor Anthropic --worker-model claude-opus-5-5 "
-            "--orchestrator-role Orchestration --orchestrator-vendor Anthropic --orchestrator-model claude-opus-5-5 "
+            "--worker-role Dev --worker-vendor vendor-name --worker-model model-name "
+            "--orchestrator-role Orchestration --orchestrator-vendor vendor-name --orchestrator-model model-name "
             "--spec-respect-score 30 --spec-respect-basis asserted --spec-respect-reasoning \"...\" "
             "--gating-score 33 --gating-basis measured --gating-reasoning \"...\" "
             "--quality-score 30 --quality-basis asserted --quality-reasoning \"...\"",

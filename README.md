@@ -1,4 +1,4 @@
-# ComplexGitSync v3.14.2
+# ComplexGitSync v3.14.4
 ## A distributed git-native Operating Space
 
 __Multi git-repo project management, synchronization, and persistance__
@@ -650,6 +650,11 @@ is the same fresh start for a mount being adopted for the very first time:
 it adopts the repository identity but starts its content empty instead of
 carrying forward whatever the fallback branch already holds. Appending —
 the ordinary `memory adopt` — stays the default either way.
+
+Adopting never discards the local memory ComplexGitSync made for a
+workspace: its commits are kept and published, joined to the repository's
+own history by one merge commit. If the two cannot be merged cleanly,
+nothing is adopted and the local memory is left exactly as it was.
 
 **What a memory carries off your machine.** One path: the tree's own root,
 with `$HOME` substituted. Everything else it records — every repository

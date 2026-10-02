@@ -13,8 +13,8 @@ import pytest
 from ComplexGitSync.memory.conformity import ConformityCriterion, ConformityScore
 from ComplexGitSync.memory.self_history import AgentInfo, SelfHistoryRecord
 
-_WORKER = AgentInfo(role="Dev", vendor="Anthropic", model="claude-sonnet-5")
-_ORCHESTRATOR = AgentInfo(role="Orchestration", vendor="Anthropic", model="claude-sonnet-5")
+_WORKER = AgentInfo(role="Dev", vendor="vendor-name", model="model-name")
+_ORCHESTRATOR = AgentInfo(role="Orchestration", vendor="vendor-name", model="model-name")
 _CONFORMITY = ConformityScore(
     spec_respect=ConformityCriterion(score=33, basis="measured", reasoning="lint/test/status all pass"),
     gating=ConformityCriterion(score=33, basis="measured", reasoning="nothing private pushed"),
@@ -104,7 +104,7 @@ def test_record_validates_its_own_fields(field, value, match):
 
 def test_agent_info_rejects_a_role_outside_the_roster():
     with pytest.raises(ValueError, match="role must be one of"):
-        AgentInfo(role="Manager", vendor="Anthropic", model="claude-sonnet-5")
+        AgentInfo(role="Manager", vendor="vendor-name", model="model-name")
 
 
 def test_conformity_criterion_rejects_an_unknown_basis():

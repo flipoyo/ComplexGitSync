@@ -156,8 +156,8 @@
       "public_symbols": 15
     },
     "git_runner.py": {
-      "internal_imports": 2,
-      "loc": 1256,
+      "internal_imports": 3,
+      "loc": 1275,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -231,8 +231,8 @@
       "public_symbols": 2
     },
     "memory/ledger_store.py": {
-      "internal_imports": 3,
-      "loc": 413,
+      "internal_imports": 4,
+      "loc": 416,
       "public_symbols": 7
     },
     "memory/pending.py": {
@@ -332,7 +332,7 @@
     },
     "orchestre/default_memory.py": {
       "internal_imports": 11,
-      "loc": 134,
+      "loc": 142,
       "public_symbols": 1
     },
     "orchestre/discovery_commands.py": {
@@ -367,7 +367,7 @@
     },
     "orchestre/memory_commands.py": {
       "internal_imports": 51,
-      "loc": 1582,
+      "loc": 1643,
       "public_symbols": 1
     },
     "orchestre/memory_facts.py": {
@@ -447,7 +447,7 @@
     },
     "universal_clock.py": {
       "internal_imports": 0,
-      "loc": 70,
+      "loc": 75,
       "public_symbols": 2
     }
   },

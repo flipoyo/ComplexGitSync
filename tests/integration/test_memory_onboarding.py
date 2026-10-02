@@ -251,11 +251,18 @@ def test_adopting_starts_the_branch_from_the_repositorys_own_history(tmp_path):
     workspace = _used_workspace(tmp_path / "demo")
     remote = _bare_remote(tmp_path / "memory.git")
 
+    mount = workspace / ".cgitsync" / ".memory"
+    local_before = _git(mount, "rev-parse", "HEAD") if (mount / ".git").exists() else None
+
     answer = _loaded(workspace).memory_adopt(workspace, remote=str(remote), branch="demo_x")
 
     assert answer["started_from"] == "main"
-    mount = workspace / ".cgitsync" / ".memory"
-    assert _git(mount, "rev-parse", "HEAD") == _git(mount, "rev-parse", "origin/main")
+    # Joined by a merge commit: the repository's own history is in it, and
+    # the local memory's commits are kept, not discarded (rewrites nothing).
+    origin_main = _git(mount, "rev-parse", "origin/main")
+    assert subprocess.run(["git", "merge-base", "--is-ancestor", origin_main, "HEAD"], cwd=mount).returncode == 0
+    if local_before is not None:
+        assert subprocess.run(["git", "merge-base", "--is-ancestor", local_before, "HEAD"], cwd=mount).returncode == 0
 
 
 def test_adopting_a_memory_that_is_already_a_repository_is_refused(tmp_path):
@@ -540,3 +547,34 @@ def test_merge_reaches_the_memory_with_no_exemption_needed(tmp_path, monkeypatch
     assert _git(workspace, "branch", "--show-current") == "feature"
     assert _git(workspace / ".cgitsync" / ".memory", "branch", "--show-current") == "demo"
     assert any(outcome.name == ".memory" for outcome in outcomes)
+
+
+def test_adopting_refuses_and_changes_nothing_when_the_memories_conflict(tmp_path):
+    workspace = _used_workspace(tmp_path / "demo")
+    client = _loaded(workspace)
+    mount = workspace / ".cgitsync" / ".memory"
+    _identify(mount)
+    client.memory_push(workspace)
+    tracked = [p for p in _git(mount, "ls-files").splitlines() if p]
+    assert tracked, "the local memory should have committed what it folded"
+    clash = tracked[0]
+    remote = _bare_remote(tmp_path / "memory.git", seed=False)
+    seeded = tmp_path / "clash-seed"
+    seeded.mkdir()
+    _git(seeded, "init", "-b", "main")
+    _identify(seeded)
+    (seeded / clash).parent.mkdir(parents=True, exist_ok=True)
+    (seeded / clash).write_text("another memory's entry\n", encoding="utf-8")
+    _git(seeded, "add", clash)
+    _git(seeded, "commit", "-m", "initial")
+    _git(seeded, "remote", "add", "origin", str(remote))
+    _git(seeded, "push", "-u", "origin", "main")
+    before = (_git(mount, "rev-parse", "HEAD"), _git(mount, "for-each-ref", "refs/heads"))
+
+    with pytest.raises(GitSyncError, match="cannot be merged cleanly"):
+        client.memory_adopt(workspace, remote=str(remote), branch="demo_x")
+
+    assert (_git(mount, "rev-parse", "HEAD"), _git(mount, "for-each-ref", "refs/heads")) == before
+    assert not (mount / ".git" / "MERGE_HEAD").exists()
+    assert (mount / ".git" / "cgitsync-defaulted").is_file()
+    assert subprocess.run(["git", "remote", "get-url", "origin"], cwd=mount, capture_output=True).returncode != 0

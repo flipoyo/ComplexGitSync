@@ -1212,11 +1212,11 @@ _SELF_HISTORY_ARGV = [
     "--goal", "Implement WP1.",
     "--action", "Wrote self_history.py and self_history_add.",
     "--worker-role", "Dev",
-    "--worker-vendor", "Anthropic",
-    "--worker-model", "claude-sonnet-5",
+    "--worker-vendor", "vendor-name",
+    "--worker-model", "model-name",
     "--orchestrator-role", "Orchestration",
-    "--orchestrator-vendor", "Anthropic",
-    "--orchestrator-model", "claude-sonnet-5",
+    "--orchestrator-vendor", "vendor-name",
+    "--orchestrator-model", "model-name",
     "--spec-respect-score", "33",
     "--spec-respect-basis", "measured",
     "--spec-respect-reasoning", "lint and test both pass",
@@ -1261,7 +1261,7 @@ def test_self_history_add_builds_the_record_and_calls_the_client(monkeypatch, ca
     kwargs = captured_call["kwargs"]
     assert kwargs["ticket"] == "AgentReport"
     assert kwargs["worker"].role == "Dev"
-    assert kwargs["worker"].vendor == "Anthropic"
+    assert kwargs["worker"].vendor == "vendor-name"
     assert kwargs["orchestrator"].role == "Orchestration"
     assert kwargs["conformity"].spec_respect.score == 33.0
     assert kwargs["conformity"].spec_respect.basis == "measured"

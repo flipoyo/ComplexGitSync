@@ -45,8 +45,8 @@ def _sample_record() -> SelfHistoryRecord:
         ticket="AgentReport",
         goal="Test the self-history pipeline.",
         action="Wrote a record and pushed it.",
-        worker=AgentInfo(role="Dev", vendor="Anthropic", model="claude-sonnet-5"),
-        orchestrator=AgentInfo(role="Orchestration", vendor="Anthropic", model="claude-sonnet-5"),
+        worker=AgentInfo(role="Dev", vendor="vendor-name", model="model-name"),
+        orchestrator=AgentInfo(role="Orchestration", vendor="vendor-name", model="model-name"),
         conformity=ConformityScore(
             spec_respect=ConformityCriterion(score=33, basis="measured", reasoning="ok"),
             gating=ConformityCriterion(score=33, basis="measured", reasoning="ok"),
@@ -481,8 +481,8 @@ def _add_self_history(client, root, **overrides):
         "ticket": "AgentReport",
         "goal": "Finish WP3.",
         "action": "Verify state_before/state_after against the ledger.",
-        "worker": AgentInfo(role="Dev", vendor="Anthropic", model="claude-sonnet-5"),
-        "orchestrator": AgentInfo(role="Orchestration", vendor="Anthropic", model="claude-sonnet-5"),
+        "worker": AgentInfo(role="Dev", vendor="vendor-name", model="model-name"),
+        "orchestrator": AgentInfo(role="Orchestration", vendor="vendor-name", model="model-name"),
         "conformity": ConformityScore(
             spec_respect=ConformityCriterion(score=33, basis="measured", reasoning="ok"),
             gating=ConformityCriterion(score=33, basis="measured", reasoning="ok"),

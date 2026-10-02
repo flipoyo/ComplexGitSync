@@ -11,11 +11,11 @@ from ComplexGitSync.memory.agent_contract import (
 )
 
 _RECORD = AgentContractRecord(
-    provider="anthropic",
-    terms_version="Anthropic Consumer Terms of Service, effective 2025-10-08 (consumer-subscription)",
+    provider="vendor-name",
+    terms_version="vendor-name terms of service, effective 2025-10-08 (consumer-subscription)",
     date="2026-09-23",
     legal_terms_sha256="a" * 64,
-    attested_by="Claude (Anthropic), model claude-sonnet-5",
+    attested_by="model-name (vendor-name)",
 )
 
 

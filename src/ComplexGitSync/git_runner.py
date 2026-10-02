@@ -7,7 +7,7 @@ Contract: given a repository path and a well-formed set of arguments, run
     — never mutates state beyond the git repository being operated on, and
     performs no validation of Git semantics beyond what the git binary itself
     enforces.
-Imports: errors, git_repo
+Imports: errors, git_repo, universal_clock
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -23,6 +22,7 @@ from urllib.parse import urlsplit
 
 from .errors import GitSyncError
 from .git_repo import SyncState
+from .universal_clock import SystemClock
 
 # Git output is bytes, not text. Most of it is UTF-8, but some of it is
 # whatever was in the files: ``git merge-tree``'s legacy form prints a diff of
@@ -255,6 +255,8 @@ class GitRunnerProtocol(Protocol):
 
     def configure_remote(self, repo_path: Path | str, remote_name: str, remote_url: str) -> None: ...
 
+    def remove_remote(self, repo_path: Path | str, remote_name: str) -> None: ...
+
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None: ...
 
     def remote_reachable(self, remote_url: str) -> bool: ...
@@ -379,6 +381,9 @@ class GitRunnerProtocol(Protocol):
         ff_only: bool = False,
         no_ff: bool = False,
         message: str | None = None,
+        allow_unrelated: bool = False,
+        user_name: str | None = None,
+        user_email: str | None = None,
     ) -> None: ...
 
     def can_merge_cleanly(
@@ -498,6 +503,10 @@ class GitRunner:
             return
         if existing != remote_url:
             self._run("remote", "set-url", remote_name, remote_url, cwd=repo_path)
+
+    def remove_remote(self, repo_path: Path | str, remote_name: str) -> None:
+        """Remove *remote_name* and its remote-tracking refs from *repo_path*; no commit is touched."""
+        self._run("remote", "remove", remote_name, cwd=repo_path)
 
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
         destination_path = Path(destination)
@@ -926,8 +935,14 @@ class GitRunner:
         no_ff: bool = False,
         message: str | None = None,
         remote: str = "origin",
+        allow_unrelated: bool = False,
+        user_name: str | None = None,
+        user_email: str | None = None,
     ) -> None:
         """Merge *ref_name* into the current branch of *repo_path* (``git merge``).
+
+        *allow_unrelated* lets two histories with no common commit meet in one
+        merge commit; it adds a commit and changes none.
 
         ``ff_only`` and ``no_ff`` map to Git's own flags and are mutually
         exclusive. With neither, Git's default applies: fast-forward when it
@@ -941,11 +956,18 @@ class GitRunner:
         if ff_only and no_ff:
             raise ValueError("merge: ff_only and no_ff are mutually exclusive")
         resolved_ref = self.resolve_merge_ref(repo_path, ref_name, remote=remote)
-        args = ["merge"]
+        args: list[str] = []
+        if user_name is not None:
+            args.extend(["-c", f"user.name={user_name}"])
+        if user_email is not None:
+            args.extend(["-c", f"user.email={user_email}"])
+        args.append("merge")
         if ff_only:
             args.append("--ff-only")
         if no_ff:
             args.append("--no-ff")
+        if allow_unrelated:
+            args.append("--allow-unrelated-histories")
         if message is not None:
             args.extend(["-m", message])
         args.append(resolved_ref)
@@ -1120,7 +1142,7 @@ class GitRunner:
             return False
         if any(line.split("\t", 1)[0] == sha for line in listed.stdout.splitlines()):
             return True
-        with tempfile.TemporaryDirectory(prefix="cgitsync-probe-") as scratch:
+        with SystemClock.scratch_directory("cgitsync-probe-") as scratch:
             if self._query("init", "--bare", "-q", scratch).returncode != 0:
                 return False
             args: list[str] = []

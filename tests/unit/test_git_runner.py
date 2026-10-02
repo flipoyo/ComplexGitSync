@@ -899,6 +899,9 @@ class _FakeGitRunner:
     def configure_remote(self, repo_path, remote_name: str, remote_url: str) -> None:
         return None
 
+    def remove_remote(self, repo_path, remote_name: str) -> None:
+        return None
+
     def clone(self, remote_url: str, destination, *, branch: str) -> None:
         return None
 
@@ -939,6 +942,9 @@ class _FakeGitRunner:
         ff_only: bool = False,
         no_ff: bool = False,
         message: str | None = None,
+        allow_unrelated: bool = False,
+        user_name: str | None = None,
+        user_email: str | None = None,
     ) -> None:
         return None
 

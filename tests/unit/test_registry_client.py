@@ -1010,11 +1010,11 @@ def test_client_freeze_release_names_the_signed_agent_contract(monkeypatch, tmp_
     client = _client_with_root_registry(tmp_path)
     client.source_path = tmp_path / "project.gts"
     record = AgentContractRecord(
-        provider="anthropic",
-        terms_version="Anthropic Consumer Terms of Service, effective 2025-10-08 (consumer-subscription)",
+        provider="vendor-name",
+        terms_version="vendor-name terms of service, effective 2025-10-08 (consumer-subscription)",
         date="2026-09-23",
         legal_terms_sha256="a" * 64,
-        attested_by="Claude (Anthropic), model claude-sonnet-5",
+        attested_by="model-name (vendor-name)",
     )
     record.write(tmp_path / "root" / ".agent" / ".distant" / "dev-sync")
 
@@ -1042,7 +1042,7 @@ def test_client_freeze_release_names_the_signed_agent_contract(monkeypatch, tmp_
 
 
 def _agent_info(role: str = "Dev") -> AgentInfo:
-    return AgentInfo(role=role, vendor="Anthropic", model="claude-sonnet-5")
+    return AgentInfo(role=role, vendor="vendor-name", model="model-name")
 
 
 def _conformity() -> ConformityScore:
@@ -1077,11 +1077,11 @@ def test_client_self_history_add_writes_to_the_pending_half(tmp_path):
 def test_client_self_history_add_cites_the_signed_agent_contract_by_hash(tmp_path):
     client = ComplexGitSyncClient()
     contract = AgentContractRecord(
-        provider="anthropic",
-        terms_version="Anthropic Consumer Terms of Service, effective 2025-10-08 (consumer-subscription)",
+        provider="vendor-name",
+        terms_version="vendor-name terms of service, effective 2025-10-08 (consumer-subscription)",
         date="2026-09-23",
         legal_terms_sha256="a" * 64,
-        attested_by="Claude (Anthropic), model claude-sonnet-5",
+        attested_by="model-name (vendor-name)",
     )
     contract.write(tmp_path / ".agent" / ".distant" / "dev-sync")
 

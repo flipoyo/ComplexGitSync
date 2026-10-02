@@ -92,14 +92,23 @@ class DefaultMemory:
         if self.is_defaulted(workspace):
             self.require_published(workspace, "self-history")
 
-    def retire(self, workspace: Path) -> None:
-        """Discard a defaulted memory's repository so `memory adopt` can make a real one.
+    def retire(self, workspace: Path) -> bool:
+        """Stop treating a defaulted memory as the tool's own, so `memory adopt` can publish it.
 
-        Only the repository goes: the folded States, ledger and logs stay in
-        the worktree exactly where they are, and adoption commits them as found.
+        Only the marker goes. The repository, its branch and every commit it
+        holds stay exactly as they are: ComplexGitSync rewrites nothing
+        (`AdditionalSpecs.md`, *The hard prohibitions*), and deleting a `.git`
+        would lose the commits a local memory already made. Returns whether
+        the memory was a defaulted one.
         """
-        if self.is_defaulted(workspace):
-            shutil.rmtree(MemoryRepository(workspace).mount_path() / ".git")
+        if not self.is_defaulted(workspace):
+            return False
+        (MemoryRepository(workspace).mount_path() / ".git" / self.MARKER).unlink()
+        return True
+
+    def unretire(self, workspace: Path) -> None:
+        """Mark the memory as the tool's own again, after an adoption that did not go through."""
+        (MemoryRepository(workspace).mount_path() / ".git" / self.MARKER).write_text("no .cgs declared this memory\n", encoding="utf-8")
 
     def has_unobeyed_remote(self, workspace: Path) -> bool:
         """Whether a defaulted memory has a remote added by hand — reported, never obeyed."""

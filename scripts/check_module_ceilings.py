@@ -88,6 +88,16 @@ _FORBIDDEN_CLOCK_ATTR_PATHS = {
     ("time", "time_ns"),
     ("os", "getpid"),
     ("secrets", "token_hex"),
+    ("uuid", "uuid1"),
+    ("uuid", "uuid4"),
+    ("os", "urandom"),
+    ("random", "random"),
+    ("random", "randint"),
+    ("random", "choice"),
+    ("tempfile", "mkstemp"),
+    ("tempfile", "mkdtemp"),
+    ("tempfile", "NamedTemporaryFile"),
+    ("tempfile", "TemporaryDirectory"),
 }
 _FORBIDDEN_PATH_WRITE_METHODS = {
     "write_text",

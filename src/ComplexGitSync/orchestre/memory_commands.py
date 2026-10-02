@@ -593,18 +593,36 @@ class MemoryCommands:
             )
 
         base = self._memory_base_branch(workspace, owner=owner)
-        default_memory.retire(workspace)
-        self.client.git_runner.init_repository(mount, branch=target_branch)
-        self.client.git_runner.configure_remote(mount, "origin", remote_url)
-        self.client.git_runner.fetch(mount)
-        started_from = ""
-        if not reboot and base and self.client.git_runner.remote_branch_exists(remote_url, base):
-            # Started from the repository's own default branch so the branch
-            # shares its history, which is what makes `fallback_branch` in
-            # the mount entry mean something.
-            self.client.git_runner.create_branch(mount, target_branch, start_point=f"origin/{base}")
-            self.client.git_runner.checkout(mount, target_branch)
-            started_from = base
+        git = self.client.git_runner
+        kept_history = default_memory.retire(workspace)
+        renamed_from: str | None = None
+        hand_added_remote = git.remote_get_url(mount, "origin") if kept_history else None
+        try:
+            if kept_history:
+                # The local memory's own commits are kept: adopting publishes them, it never discards them.
+                current = git.current_branch(mount)
+                if current is not None and current != target_branch:
+                    git.rename_branch(mount, current, target_branch)
+                    renamed_from = current
+            else:
+                git.init_repository(mount, branch=target_branch)
+            git.configure_remote(mount, "origin", remote_url)
+            git.fetch(mount)
+            started_from = ""
+            if kept_history and not reboot and base and git.remote_branch_exists(remote_url, base):
+                self._join_remote_base(workspace, mount, base)
+                started_from = base
+            elif not reboot and base and git.remote_branch_exists(remote_url, base):
+                # Started from the repository's own default branch so the branch
+                # shares its history, which is what makes `fallback_branch` in
+                # the mount entry mean something.
+                git.create_branch(mount, target_branch, start_point=f"origin/{base}")
+                git.checkout(mount, target_branch)
+                started_from = base
+        except GitSyncError:
+            if kept_history:
+                self._undo_adopt(workspace, mount, target_branch, renamed_from=renamed_from, hand_added_remote=hand_added_remote)
+            raise
         self.client._log_event(
             "memory_adopt", mount=mount, branch=target_branch, started_from=started_from
         )
@@ -616,6 +634,54 @@ class MemoryCommands:
             "started_from": started_from,
             "pending": len(MemoryRepository.uncommitted_paths(self.client.git_runner.status_porcelain(mount))),
         }
+
+    def _undo_adopt(
+        self, workspace: Path, mount: Path, target_branch: str, *, renamed_from: str | None, hand_added_remote: str | None
+    ) -> None:
+        """Undo this command's own steps, so a refused adoption leaves the local memory as it was."""
+        git = self.client.git_runner
+        if hand_added_remote:
+            git.configure_remote(mount, "origin", hand_added_remote)
+        elif git.remote_get_url(mount, "origin"):
+            git.remove_remote(mount, "origin")
+        if renamed_from is not None:
+            git.rename_branch(mount, target_branch, renamed_from)
+        DefaultMemory(self.client).unretire(workspace)
+
+    def _join_remote_base(self, workspace: Path, mount: Path, base: str) -> None:
+        """Merge the remote memory's *base* into a kept local memory, adding one merge commit.
+
+        The two histories share no commit, so the merge allows unrelated
+        histories. If it does not apply cleanly it is aborted, so the local
+        memory is left exactly as it was, and adopting is refused: which
+        side's entries are right is not something to guess. With no Git
+        identity configured, the merge signs as the tool, like the default
+        memory's own first commit.
+        """
+        git = self.client.git_runner
+        MasterConfig.load(workspace)
+        user_name, user_email = MasterConfig.resolve_identity(mount, git)
+        message = f"memory adopt: join origin/{base}"
+        try:
+            try:
+                git.merge(mount, f"origin/{base}", no_ff=True, allow_unrelated=True, message=message, user_name=user_name, user_email=user_email)
+            except GitSyncError as error:
+                if "identity unknown" not in str(error):
+                    raise
+                self._abort_merge_if_any(mount)
+                git.merge(mount, f"origin/{base}", no_ff=True, allow_unrelated=True, message=message, user_name="cgitsync", user_email="cgitsync@localhost")
+        except GitSyncError as error:
+            self._abort_merge_if_any(mount)
+            first_line = (str(error).strip().splitlines() or [str(error)])[0]
+            raise GitSyncError(
+                f"{mount}: the local memory and origin/{base} cannot be merged cleanly, so nothing was "
+                "adopted and the local memory is unchanged. Adopt with --reboot to publish the local "
+                f"memory on a branch of its own, or run 'cgitsync autofix'. Git said: {first_line}"
+            ) from error
+
+    def _abort_merge_if_any(self, mount: Path) -> None:
+        if (mount / ".git" / "MERGE_HEAD").exists():
+            self.client.git_runner.merge_abort(mount)
 
     def self_history_adopt(
         self, cgshome: str | Path, *, owner: str | None = None, branch: str | None = None

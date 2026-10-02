@@ -146,10 +146,14 @@ def test_adopting_is_the_opt_in_that_publishes_what_was_recorded_locally(tmp_pat
     remote = tmp_path / "remote.git"
     subprocess.run(["git", "init", "--bare", "-b", "demo", str(remote)], check=True, capture_output=True)
 
+    mount = workspace / ".cgitsync" / ".memory"
+    local_before = _git(mount, "rev-parse", "HEAD")
     client.memory_adopt(workspace, remote=str(remote), branch="demo")
     pushed = client.memory_push(workspace)
 
     assert pushed["pushed"] is True
+    # Adopting keeps every commit the local memory made (rewrites nothing).
+    assert subprocess.run(["git", "merge-base", "--is-ancestor", local_before, "HEAD"], cwd=mount).returncode == 0
     assert _git(remote, "rev-parse", "--verify", "refs/heads/demo")
     assert _git(remote, "ls-tree", "-r", "--name-only", "demo")
 

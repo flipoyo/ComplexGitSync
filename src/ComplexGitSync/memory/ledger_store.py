@@ -6,7 +6,7 @@ Contract: ``LedgerStore`` persists and loads ``LedgerEntry`` records as one
     secrets scrubbed before they are ever hashed or written, plus a
     best-effort, self-repairing ``HEAD`` cache. ``ArgvScrubber`` is the
     redaction rule the store applies to every argv it records.
-Imports: ledger_entry, paths
+Imports: ledger_entry, paths, universal_clock
 
 Design: ``AdditionalSpecs.md``'s hash-chained ledger and secret scrubbing.
 
@@ -51,14 +51,14 @@ from __future__ import annotations
 import os
 import re
 import tomllib
-import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
 
 import tomli_w
 
 from ..paths import PathResolver
+from ..universal_clock import SystemClock
 from .ledger_entry import ClockProtocol, LedgerEntry
 
 #: Filename of the HEAD cache, sibling to the numbered entry files.
@@ -216,6 +216,11 @@ class LedgerStore:
     """
 
     lgr_dir: Path
+    #: Names temporary files; injectable like every other source of entropy.
+    clock: ClockProtocol | None = field(default=None, compare=False)
+
+    def _tmp_token(self) -> str:
+        return (self.clock or SystemClock()).token_hex(16)
 
     # -- paths and directory setup -----------------------------------------
 
@@ -311,7 +316,7 @@ class LedgerStore:
         final_path = self.entry_path(entry.seq)
         content = tomli_w.dumps(self._entry_to_toml_payload(entry)).encode("utf-8")
 
-        tmp_path = self.lgr_dir / f".tmp-{entry.seq:06d}-{uuid.uuid4().hex}"
+        tmp_path = self.lgr_dir / f".tmp-{entry.seq:06d}-{self._tmp_token()}"
         fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             with os.fdopen(fd, "wb") as fh:
@@ -386,7 +391,7 @@ class LedgerStore:
         payload = {"head": {"seq": pointer.seq, "entry_hash": pointer.entry_hash}}
         content = tomli_w.dumps(payload).encode("utf-8")
 
-        tmp_path = self.lgr_dir / f".tmp-HEAD-{uuid.uuid4().hex}"
+        tmp_path = self.lgr_dir / f".tmp-HEAD-{self._tmp_token()}"
         with open(tmp_path, "wb") as fh:
             fh.write(content)
             fh.flush()
