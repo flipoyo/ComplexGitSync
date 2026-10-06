@@ -4,7 +4,7 @@
 
 ## Abstract — read this first
 
-**What this document is.** The first of four worked tutorials in
+**What this document is.** The first of five worked tutorials in
 [`tutorials/`](README.md): the complete `cgitsync` CLI lifecycle —
 validate, initialise, and the full git cycle (add → commit → push → tag →
 freeze) — on a small, synthetic, mixed-provider sandbox tree (`CGSil1`).
@@ -37,7 +37,7 @@ graph LR
 
 ---
 
-**Start here.** This is the easiest of the four tutorials in
+**Start here.** This is the easiest of the five tutorials in
 [`tutorials/`](README.md): it walks through the complete `cgitsync` CLI
 lifecycle — validate, initialise, and the full git cycle
 (add → commit → push → tag → freeze) — on a small, synthetic, mixed-provider
@@ -59,6 +59,11 @@ git operations, freeze/release — carries over unchanged to real projects.
 > `tests/integration/test_tuto_cgsi1.py` reproduces every step below using
 > local bare-repo remotes so that the tutorial can be verified in CI without
 > any network access.
+
+> **You can read CGSil1, not write to it.** Steps 1–6 work for anyone.
+> Steps 7–9 publish to the sandbox's remotes, which only their owners can
+> push to: run them with `--dry-run` to see the plan, or point the `.cgs`
+> at repositories of your own.
 
 **Next:** once you're comfortable with the lifecycle above, move on to
 [Tutorial 2 — Onboarding a Real Build Tree](02_onboarding_a_real_build_tree.md)
@@ -244,6 +249,22 @@ git_command=git clone (executed per repo)
 READY ready=true complete=true root=/path/to/CGSil1
 ```
 
+> **The same tree, standalone.** This tutorial installs ComplexGitSync
+> *inside* the tree it manages (the nested install). To keep one
+> ComplexGitSync clone outside your projects instead (the standalone
+> install, recommended in
+> [guide A](../guide/A-getting-started.md#3-standalone-or-nested-where-the-tool-sits)),
+> save `CGSil1.cgs` anywhere outside the clone, build the whole tree with
+> `bootstrap`, and point the following commands at it:
+>
+> ```bash
+> pixi run cgitsync bootstrap ~/CGSil1.cgs CGSil1   # no SSH key? add --force-protocol https
+> export CGSHOME=<the path bootstrap printed>
+> ```
+>
+> Every later step is identical. [Tutorial 2](02_onboarding_a_real_build_tree.md)
+> uses this install throughout.
+
 `GT-GITIGNORE` is the `.gitignore` lifecycle sync: every repo with children
 (root, or any nested repo with further nested children) is safely pulled
 and has its `.gitignore` updated with the relative path of each immediate
@@ -265,6 +286,13 @@ holds work that exists nowhere else (uncommitted changes, or commits no
 remote has), it stops, names the directories, and changes nothing. No flag
 overrides that. Commit and push the work, or move those directories aside
 yourself, then run `initialise` again. There is no clean-up command.
+
+> **Commit the `.gitignore` before branching.** Unless you passed
+> `--commit-gitignore`, the `.gitignore` written above is not committed.
+> Commit it on the main branch now (`add`, then `commit`), before any
+> feature branch. Otherwise it exists only on the branch where you first
+> commit, and back on `main` the child repositories look like untracked
+> files, so `merge` refuses.
 
 ---
 

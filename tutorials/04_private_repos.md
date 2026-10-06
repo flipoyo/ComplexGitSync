@@ -84,23 +84,40 @@ to something shared by accident, never the reverse. If you cannot write
 where you expected to, `cgitsync` names the repository and says what to add
 to the `.cgs`.
 
-Here is this repository's own tree, which uses both kinds:
+Here is a small tree that uses both kinds. `my-app` is the project, with
+its documentation in a second repository. `house-rules` is a team-wide
+document every project mounts, read-only. `notes` holds this project's own
+notes, and is writable:
+
+```toml
+project = { name = "my-app", default_branch = "main" }
+
+repos = [
+    "github:you/my-app",
+    { repository = "github:you/my-app-docs", relative_path = "docs" },
+
+    # shared with every project, read-only here
+    { repository = "github:team/house-rules", relative_path = ".shared/house-rules", default_branch = "main", private = true },
+
+    # this project's own notes, on a branch named after the project
+    { repository = "github:you/.notes", relative_path = ".local/notes", fallback_branch = "main", private = true, writable = true },
+]
+```
+
+Build it standalone (`bootstrap my-app.cgs my-app`, then the `export` line
+it prints; see [guide A](../guide/A-getting-started.md#4-your-first-tree-standalone)),
+start a feature branch, and look at it:
 
 ```bash
+pixi run cgitsync checkout faster-io
 pixi run cgitsync view-tree
 ```
 
 ```text
-ComplexGitSync (root) [ALIGNED] @9c9298a br=multi-branch fb=main
-├── .ticketing (leaf) [ALIGNED] @412759b br=main
-├── DevSpec (leaf) [ALIGNED] @a5d3432 br=main
-├── DocSpec (leaf) [ALIGNED] @02ee0b1 br=main
-├── .dev (leaf) [ALIGNED] @c85bb1d br=ComplexGitSync_multi-branch fb=main
-├── .versioning (leaf) [ALIGNED] @751182a br=ComplexGitSync_multi-branch fb=main
-├── .auto (leaf) [ALIGNED] @23de708 br=ComplexGitSync_multi-branch fb=main
-├── .claude (leaf) [ALIGNED] @df4221c br=ComplexGitSync_multi-branch fb=main
-├── .localSpec (leaf) [ALIGNED] @9f50519 br=ComplexGitSync_multi-branch fb=main
-└── DocComplexGitSync (parent) [ALIGNED] @ac1176e br=multi-branch fb=main
+my-app (root) [ALIGNED] @71e1fb0 br=faster-io fb=main
+├── .notes (leaf) [ALIGNED] @9b3ed18 br=my-app_faster-io fb=main
+├── house-rules (leaf) [ALIGNED] @cc07fb3 br=main
+└── my-app-docs (leaf) [ALIGNED] @ed5bc84 br=faster-io fb=main
 ```
 
 `br=` is the branch each repository is on, and it tells you which kind
@@ -108,15 +125,15 @@ each one is:
 
 | Repository | Branch | Kind |
 |---|---|---|
-| `ComplexGitSync`, `DocComplexGitSync` | `multi-branch` | the project's own — they followed the feature branch |
-| `.dev`, `.versioning`, `.auto`, `.localSpec`, `.claude` | `ComplexGitSync_multi-branch` | config, **read and write** — the branch is named after this project *and* the branch it is on |
-| `.ticketing`, `DevSpec`, `DocSpec` | `main` | config, **read-only** — `main` is what every other project reads |
+| `my-app`, `my-app-docs` | `faster-io` | the project's own: they followed the feature branch |
+| `.notes` | `my-app_faster-io` | config, **read and write**: the branch is named after this project *and* the branch it is on |
+| `house-rules` | `main` | config, **read-only**: `main` is what every other project reads |
 
 **The branch name is the whole tell.** A configuration repo sitting on a
 branch named after your project is yours. One sitting on `main` is
 everybody's.
 
-You do not have to read branch names to work this out. `cgitsync status`
+You don't have to read branch names to work this out. `cgitsync status`
 prints a `SCOPE` column that says it outright:
 
 ```bash
@@ -124,30 +141,15 @@ pixi run cgitsync status
 ```
 
 ```text
-REPOSITORY         PATH                           SCOPE            LOCAL_BRANCH
-DocComplexGitSync  docs                           project          multi-branch
-.ticketing         .agent/.distant/ticket         private/distant  main
-DevSpec            .agent/.distant/dev-sync       private/distant  main
-DocSpec            .agent/.distant/documentation  private/distant  main
-.dev               .agent/.local/.dev             private/local    ComplexGitSync_multi-branch
-.versioning        .agent/.local/.versioning      private/local    ComplexGitSync_multi-branch
-.auto              .agent/.local/.auto            private/local    ComplexGitSync_multi-branch
-.localSpec         .agent/.local/.localSpec       private/local    ComplexGitSync_multi-branch
-.claude            .agent/.local/.claude          private/local    ComplexGitSync_multi-branch
-ComplexGitSync     .                              project          multi-branch
-legend: SCOPE — project = this project's own; private = a configuration
-repository shared with other projects, local = this project may write to
-it, distant = read-only
+REPOSITORY   PATH                 SCOPE            LOCAL_BRANCH      UPSTREAM_BRANCH  LOCAL  SYNC
+my-app-docs  docs                 project          faster-io         -                clean  no-upstream
+house-rules  .shared/house-rules  private/distant  main              origin/main      clean  synced
+.notes       .local/notes         private/local    my-app_faster-io  -                clean  no-upstream
+my-app       .                    project          faster-io         -                clean  no-upstream
+legend: SCOPE — project = the work itself; private = a repository that configures the project, shared with your other projects; local = yours to write, distant = read-only
 ```
 
-Six independent skills (`AgentSkillsSplit`) sit under `.agent/.distant/`
-and `.agent/.local/` — but none of them declares an `.agent` entry of its
-own. `.agent/` is never itself a repository: it is
-a plain directory each entry's own `relative_path` happens to nest
-inside, so there is nothing there for a shared, read-only mount's
-privacy to cap a writable one through (a private/local repository
-nested under an actual private/distant *repository* would be forced
-read-only too — see `AgentMountSplit` if you want the reproduction).
+(`no-upstream` only means the new branch hasn't been pushed yet.)
 
 Three words, and they map onto the three things you can do:
 
@@ -160,25 +162,16 @@ Three words, and they map onto the three things you can do:
 **private** means shared with other projects. What separates the other two
 words is **who may commit**, not how far away anything is:
 
-- **distant** — the repository is private *to its owner*. You read it; only
+- **distant**: the repository is private *to its owner*. You read it; only
   that owner writes to it. Nothing you do moves it.
-- **local** — it holds settings that configure *your* project, and those
+- **local**: it holds settings that configure *your* project, and those
   settings are a contribution to your project, recorded on your own branch.
   You do commit to it.
 
-Nesting still propagates privacy when it happens — a repository declared
-inside another one's own nested `.cgs` is just as shared as its parent,
-with no `private` entry of its own needed. None of the six skills above
-nest, though: each is declared directly (`AgentSkillsSplit`), so this
-tree has no live example of it any more — see `AgentMountSplit` for why
-nesting a writable repository under a shared one specifically does not
-work, which is the reason.
-
 ### A branch per project branch
 
-Look again at the `LOCAL_BRANCH` column above. `.localSpec` and `.claude`
-are not on `ComplexGitSync`; they are on `ComplexGitSync_multi-branch`,
-because the project is on `multi-branch`.
+Look again at `.notes` above. It isn't on `my-app`; it is on
+`my-app_faster-io`, because the project is on `faster-io`.
 
 That is the rule, and it has one shape:
 
@@ -188,112 +181,99 @@ branch X  ->  project repos:   X
                                <your project's name>_X        otherwise
 ```
 
-The base is your **project's name**. `main` takes no suffix, because the
-project's main line's settings branch is simply the project's name — which
-is what every existing tree already has, so nothing has to move.
+The base is your **project's name**. `main` takes no suffix: the main
+line's settings branch is simply the project's name.
 
 The separator is an underscore. Hyphens already turn up inside branch names
-— `multi-branch` is one — so `ComplexGitSync-multi-branch` would leave you
-guessing where the project name stops.
+(`faster-io` is one), so `my-app-faster-io` would leave you guessing where
+the project name stops.
 
 **Why it has to work this way.** A private/local repo is where your notes
 and settings live. If it had one branch for every branch of your project,
 then the moment you documented an unfinished feature, that documentation
-would be live on `main` too, describing something that is not there yet.
+would be live on `main` too, describing something that isn't there yet.
 A branch per project branch keeps unmerged notes unmerged.
 
-**You never type the second name.** `cgitsync checkout multi-branch` puts
-your own repositories on `multi-branch` and your settings repositories on
-`ComplexGitSync_multi-branch`, creating that branch if it is not there.
-`cgitsync branch create multi-branch` does the same without moving anything. One
-command, one branch name, and `cgitsync` works out what each repository
+**You never type the second name.** `cgitsync checkout faster-io` puts
+your own repositories on `faster-io` and your settings repositories on
+`my-app_faster-io`, creating that branch if it isn't there.
+`cgitsync branch create faster-io` does the same without moving anything.
+One command, one branch name, and `cgitsync` works out what each repository
 needs.
 
 **Ten commands take `--private`:** `pull` (with or without `--force`),
 `fetch`, `checkout`, `branch` (on `create`, `list` and `close`), `add`,
 `rm`, `commit`, `merge`, `push` and `tag`.
-Four of them — `add`, `commit`, `push` and `merge` — also take `--all`,
-which does both halves at once (see *Or do both at once* below). It
-narrows the command to your writable configuration repositories alone — so
-you can commit, push, tag or check them out on their own without reaching
-for plain `git`. Read-only ones are never written to, with or without it.
-The whole-tree commands — `bootstrap`, `initialise`, `freeze-release` —
-do not take it.
+Four of them (`add`, `commit`, `push` and `merge`) also take `--all`,
+which does both halves at once (see *Or do both at once* below).
+`--private` narrows the command to your writable configuration
+repositories alone, so you can commit, push, tag or check them out on
+their own without reaching for plain `git`. Read-only ones are never
+written to, with or without it. The whole-tree commands (`bootstrap`,
+`initialise`, `freeze-release`) don't take it.
 
 ### The whole cycle
 
 ```bash
-# start the feature: one command, both kinds of branch
-pixi run cgitsync checkout multi-branch
+# once, right after bootstrap: commit the .gitignore it wrote, on main
+pixi run cgitsync add && pixi run cgitsync commit "ignore the child repositories" && pixi run cgitsync push
 
-# while you work: take updates from ComplexGitSync into
-# ComplexGitSync_multi-branch, so your settings do not drift behind
-pixi run cgitsync pull --private
+# start the feature: one command, both kinds of branch
+pixi run cgitsync checkout faster-io
+
+# work, then commit and push both halves in one go
+pixi run cgitsync commit --all -m "speed up file reading, and note why"
+pixi run cgitsync push --all
 
 # when it is done, go to the branch you are merging INTO first
 pixi run cgitsync checkout main
-pixi run cgitsync merge multi-branch
-pixi run cgitsync merge --private multi-branch
+pixi run cgitsync merge --all faster-io
+pixi run cgitsync push --all
+```
 
-# ...or both at once, which also checks both before merging either:
-pixi run cgitsync merge --all multi-branch
+```text
+pushed my-app-docs: origin/faster-io (upstream set)
+pushed .notes: origin/my-app_faster-io (upstream set)
+pushed my-app: origin/faster-io (upstream set)
+pushed=3 skipped=0
 ```
 
 **Check out the target before you merge.** `merge` brings a branch *into*
 the one you are on, exactly like `git merge`. Running
-`cgitsync merge multi-branch` while still on `multi-branch` merges it into
+`cgitsync merge faster-io` while still on `faster-io` merges it into
 itself, so `cgitsync` refuses and tells you to check out the target first.
 
-The last `merge` does **not** merge a branch called `multi-branch` — no
-configuration repo has one. You always name your *project's* branch, and
-each repository works out what that means for itself.
+`merge --all faster-io` does **not** look for a branch called `faster-io`
+in `.notes`, which has none. You always name your *project's* branch, and
+each repository works out what that means for itself: `.notes` merges
+`my-app_faster-io` into `my-app`.
+
+> **Why commit the `.gitignore` on `main` first.** `bootstrap` writes it
+> without committing. Left for your first feature commit, it would exist
+> only on that branch, and back on `main` the child repositories would look
+> like untracked files in the root. `merge` then refuses, because the
+> root's worktree isn't clean.
 
 ## 3. Declaring them
 
 Two fields. `private = true` says "shared, leave it on its own branch".
-`writable = true` adds "…but this project may write to it".
+`writable = true` adds "…but this project may write to it". Reading the
+`.cgs` above:
 
-```toml
-project = { name = "ComplexGitSync", default_branch = "main" }
+- `my-app` and `my-app-docs` have no `private`, so they are the project's own.
+- `house-rules` is `private` and nothing more: read-only.
+- `.notes` is `private, writable`: this project's, on its own branch.
 
-repos = [
-    { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
-    { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "auto" },
-
-    { repository = "github:flipoyo/.ticketing", relative_path = ".agent/.distant/ticket", default_branch = "main", fallback_branch = "main", private = true },
-    { repository = "github:flipoyo/DevSpec", relative_path = ".agent/.distant/dev-sync", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
-    { repository = "github:flipoyo/DocSpec", relative_path = ".agent/.distant/documentation", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
-
-    { repository = "github:flipoyo/.dev", relative_path = ".agent/.local/.dev", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
-    { repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
-    { repository = "github:flipoyo/.claude", relative_path = ".agent/.local/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
-]
-```
-
-That is an excerpt of
-[`examples/complexgitsync4dev.cgs`](../examples/complexgitsync4dev.cgs)
-(three of its nine private entries left out, same pattern), the spec
-this tree's own developer checkout is built from. (The root `install.cgs`
-is the user install and stops after the first two entries — it mounts no
-private repository at all.) Reading it:
-
-- The first two entries have no `private`, so they are the project's own.
-- `.ticketing`, `DevSpec`, `DocSpec` are `private` and nothing more —
-  read-only.
-- `.dev`, `.localSpec`, `.claude` are `private, writable` — this project's,
-  on its own branch.
-
-This is where ComplexGitSync's own planning lives: `.agent/.local/.localSpec/DevTickets/`
-holds every ticket for the project, so cloning the public repository gets
-you the tool and none of the paperwork. Privacy here is not only about
-secrets — it is about which half of the work you are publishing.
+A private repository is often there to keep work out of what you publish,
+not to hide secrets. Project notes, plans and agent instructions live in a
+`private, writable` repository, so the public project carries the product
+and not the workshop. ComplexGitSync's own developer tree does exactly
+this; see [CONTRIBUTING.md](../CONTRIBUTING.md#1-the-developer-tree).
 
 The other fields are ordinary `.cgs`. `default_branch` is the branch a
-private repository stays on, which is the field that decides §2's question,
-so always write it. `fallback_branch = "main"` lets a fresh clone work
-before the project-named branch exists. `relative_path` says where —
-every entry above states its own, since none of them nests inside
-another (`AgentMountSplit`).
+read-only private repository stays on, so always write it there.
+`fallback_branch = "main"` lets a fresh clone work before the
+project-named branch exists. `relative_path` says where each one goes.
 
 **For a `private, writable` entry the branch is computed, not chosen.** It is
 your project's name on `main` and `<project>_<branch>` on any other branch,
@@ -301,21 +281,22 @@ and it is worked out the same way at the first clone as at every later
 branch move. Writing `default_branch` there is optional; a value that is
 neither that name nor the project's own `default_branch` is refused as a
 near-certain copy-and-paste mistake. That branch is created by your first
-private commit, so a first `initialise` finds it missing and clones the
-entry's `fallback_branch`, then the shared repository's own active branch.
+private commit or branch move, so the first clone finds it missing and
+uses the entry's `fallback_branch` instead.
 
-**A repository nested inside another one's own nested `.cgs`** — none of
-these nine are, but the rule still matters if you ever declare one that
-is — inherits its parent's privacy with no entry of its own needed, and
-may lock itself down *further* than its parent (`private = true`, no
-`writable`, inside a writable parent) but never open itself up wider:
-`writable = true` inside a read-only configuration repo does nothing,
-because no repository can be more open than the one holding it. See
-`AgentMountSplit` for why that rule is also why none of these nine nest
-any more.
+**A repository declared inside another one's own nested `.cgs`** inherits
+its parent's privacy with no entry of its own needed. It may lock itself
+down *further* than its parent (`private = true`, no `writable`, inside a
+writable parent) but never open itself up wider: `writable = true` inside a
+read-only configuration repo does nothing, because no repository can be
+more open than the one holding it. That is why a writable private repo
+should be declared directly, never nested under a read-only one.
 
-**Adding one to your own project:** copy an entry, pick `default_branch`
-using §2, and run `pixi run cgitsync initialise <your.cgs>`.
+**Adding one to your own project:** copy an entry and pick
+`default_branch` using §2. `pull` does not clone a repository added to the
+`.cgs` after the tree was built. Commit and push your work, then rebuild:
+in standalone, `bootstrap` the updated `.cgs` into a new workspace; nested,
+run `initialise` again.
 
 ## 4. Working day to day
 
@@ -333,15 +314,9 @@ pixi run cgitsync commit -m "what you changed"
 pixi run cgitsync push
 ```
 
-`add` with no arguments is fine — it stages your project's repositories and
-skips every configuration repo. Each command says what it left out:
-
-```text
-scope=project skipped=5 configuration repo(s) (.claude, .localSpec with --private)
-```
-
-That line is the whole safety net. It tells you what was untouched, and
-names the ones you *could* have written to.
+`add` with no arguments is fine: it stages your project's repositories and
+skips every configuration repo. Its output names only the repositories it
+staged or skipped, and your configuration repos are not among them.
 
 ### Changing your own configuration repos
 
@@ -386,8 +361,8 @@ You still see the two halves separately, so giving up the typing does not
 mean giving up knowing:
 
 ```text
-scope=all project=ComplexGitSync, DocComplexGitSync private=.claude, .localSpec, .dev, .versioning, .auto
-scope=all never_written=3 read-only repo(s) (.ticketing, DevSpec, DocSpec)
+scope=all project=my-app, my-app-docs private=.notes
+scope=all never_written=1 read-only repo(s) (house-rules)
 ```
 
 If your tree has no writable configuration repository at all, `--all` simply
@@ -486,7 +461,7 @@ quietly:
 
 ```text
 commit --private: no writable configuration repository in this tree. The private
-repositories in this tree are read-only: .ticketing, DevSpec, DocSpec. A private
+repositories in this tree are read-only: house-rules. A private
 repository is read-only unless its .cgs entry also says writable = true.
 ```
 
@@ -499,10 +474,10 @@ with plain `git`, one repository at a time, after your project's own work
 has been reviewed and merged:
 
 ```bash
-git -C .agent/.distant/ticket status
-git -C .agent/.distant/ticket add TICKETLIFECYCLE.md
-git -C .agent/.distant/ticket commit -m "what you changed"
-git -C .agent/.distant/ticket push
+git -C .shared/house-rules status
+git -C .shared/house-rules add STYLE.md
+git -C .shared/house-rules commit -m "what you changed"
+git -C .shared/house-rules push
 ```
 
 Everyone mounting that repository sees the change on their next pull, so it
@@ -565,6 +540,9 @@ this way expecting these rules to fit unchanged.
 
 ---
 
-**More detail.** The full branch model — every `.cgs` field and how a
-branch is chosen — is in the user guide's "Branches in a `.cgs`" section
-([docs/MASTER.pdf](../docs/MASTER.pdf)).
+**More detail.** Private repos in daily use are summarised in
+[guide C](../guide/C-working-day-to-day.md#5-private-repos-in-daily-use).
+The full branch model (every `.cgs` field and how a branch is chosen) is in
+the user guide's "Branches in a `.cgs`" section of the reference manual,
+`docs/MASTER.pdf`, which comes with the `docs` repository a bootstrapped
+install mounts.

@@ -114,7 +114,7 @@ makes sense once you know which is which:
   stay on this machine, are never sent anywhere, and only the 200 most
   recent are kept.
 - **`.cgitsync/.memory`** is the git-tracked mount — an ordinary
-  private/local repository, exactly like `.localSpec` or `.claude` from
+  private/local repository, exactly like `.notes` from
   [Tutorial 4](04_private_repos.md). This is the **folded** half: what the
   last `memory push` actually committed and sent.
 
@@ -155,9 +155,9 @@ names the `.cgs` to edit when it is not the one your tree was built from.
 ### The long way — the five commands, one by one
 
 The steps `memory setup` runs for you, plus the two that follow it. Use
-them when you want to see or change each step. The example is
-ComplexGitSync's own tree. Substitute your own names and the sequence is
-identical.
+them when you want to see or change each step. The example is the
+`my-app` tree from [Tutorial 4](04_private_repos.md). Substitute your own
+names and the sequence is identical.
 
 #### Step 1 — create the repository
 
@@ -188,12 +188,12 @@ safe.
 #### Step 2 — tell your `.cgs` about it
 
 ```bash
-pixi run cgitsync memory mount --cgs examples/complexgitsync4dev.cgs
+pixi run cgitsync memory mount --cgs ~/my-app.cgs
 ```
 
 ```
-cgs=examples/complexgitsync4dev.cgs
-entry={ repository = "github:YOURNAME/.memory", relative_path = ".cgitsync/.memory", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
+cgs=/home/you/my-app.cgs
+entry={ repository = "github:YOURNAME/.memory", relative_path = ".cgitsync/.memory", default_branch = "my-app", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
 added=yes
 ```
 
@@ -295,8 +295,7 @@ pixi run cgitsync push --private && pixi run cgitsync push
 Nothing in those four lines is about memory. That is the point of §2: after
 it, the memory is carried by the commands you already use — `checkout`,
 `merge` and `push` reach `.cgitsync/.memory` exactly the way they reach
-`.localSpec` or `.claude`, because it is exactly the same kind of
-repository.
+`.notes`, because it is exactly the same kind of repository.
 
 > **If you are about to reboot the memory as part of this merge** (§5),
 > read the note in §5.1 before running the four lines above — the order
@@ -312,9 +311,12 @@ pixi run cgitsync memory explore        # published commits, newest push first �
 pixi run cgitsync memory push           # send what it has gained
 ```
 
-`memory push` is a command you type, never something that happens to you.
+Once the memory is adopted, `push`, `tag` and `freeze-release` fold and
+send it first, before anything else, so most days you never type
+`memory push`. It is there for when you have nothing else to publish.
 Working offline costs you nothing: a memory is complete and verifiable on a
-machine that has never seen a network, and it is pushed when you ask.
+machine that has never seen a network. The fold warns, and the command it
+was folding for finishes anyway.
 
 `memory show` needs a State's hash — useful once you already have one.
 `memory explore` is for when you do not: it reads as *what a colleague
@@ -325,7 +327,7 @@ checked out here.
 $ pixi run cgitsync memory explore
 branch=YourProject_memory-dev (current)
 2026-09-18  YourProject         memory-dev   9140e14  memory reboot closes a chapter and opens the next
-2026-09-17  .localSpec          memory-dev   881d5b1  (private) same commit, folded in
+2026-09-17  .notes              memory-dev   881d5b1  (private) same commit, folded in
 ```
 
 `--timeline` reads the ledger straight through instead — every entry, in
@@ -507,8 +509,9 @@ Four things worth remembering:
 - **A memory is an ordinary private repository.** Everything in
   [Tutorial 4](04_private_repos.md) applies to it, at `.cgitsync/.memory`
   (§1) rather than at the tree's own name.
-- **Nothing is automatic.** Every command above is one you type. A memory
-  that pushed itself would push itself from the wrong machine one day.
+- **It travels with what you publish.** Once adopted, the memory is
+  folded and sent by the commands that already reach a remote (`push`,
+  `tag`, `freeze-release`), never on its own.
 - **`cgitsync` holds no credentials.** Creating a repository runs the tool
   you already signed in to; everything else is plain Git.
 - **Nothing is ever force-pushed or deleted, reboot included.** The worst

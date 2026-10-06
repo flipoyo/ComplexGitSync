@@ -7,29 +7,26 @@
 **What this document is.** The index of ComplexGitSync's five worked
 tutorials, ordered from simplest to most advanced.
 
-**Why it exists.** The root [README.md](../README.md) covers the CLI
-command-by-command; these tutorials instead walk one topology end to end,
-so a first-time user sees the full lifecycle before hand-authoring their
-own `.cgs`.
+**Why it exists.** The [guides](../guide/A-getting-started.md) explain each
+topic. These tutorials instead walk one real tree end to end, command by
+command, so you see the whole lifecycle before running it on your own
+project.
 
-**What you will find.** Five tutorials, each building on the last, plus a
-reminder that every command shown is a Pixi task.
+**Who it is for.** Anyone new to `cgitsync`. Read
+[guide A](../guide/A-getting-started.md) for the vocabulary, then start at
+Tutorial 1 whatever your own project looks like.
 
-**Who it is for.** Anyone new to `cgitsync`. Start at Tutorial 1 regardless
-of your own project's shape — it establishes the vocabulary the other four
-assume.
-
-**What you need to do with it.** Work the tutorials in order, or jump
-straight to whichever matches your own project's situation.
+**What you need to do with it.** Work the tutorials in order, or jump to
+the one that matches your project's situation.
 
 ```mermaid
 graph LR
-    README["README.md<br/>quickstart"] --> T1["01<br/>first workspace"]
+    G1["guide A<br/>getting started"] --> T1["01<br/>first workspace"]
     T1 --> T2["02<br/>real build tree"]
     T2 --> T3["03<br/>adopting a real project"]
-    T3 --> T4["04<br/>private repos<br/>local and distant"]
+    T3 --> T4["04<br/>private repos"]
     T4 --> T5["05<br/>your project's memory"]
-    T5 --> REF["docs/MASTER.pdf<br/>full reference"]
+    T5 --> REF["guide E<br/>reference"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
     class T1,T2,T3,T4,T5 here;
@@ -37,37 +34,16 @@ graph LR
 
 ---
 
-Five worked examples, ordered from the simplest to the most advanced. Do
-them in order — each one builds on the last:
-
-1. **[01 — Your First Multi-Repo Workspace](01_first_multi_repo_workspace.md)**
-   The complete `cgitsync` lifecycle (validate → initialise → add → commit →
-   push → freeze → release) on a small synthetic sandbox topology
-   (`CGSil1`). Start here.
-2. **[02 — Onboarding a Real Build Tree](02_onboarding_a_real_build_tree.md)**
-   The same hand-authored `.cgs` style from Tutorial 1, applied to a real,
-   19-repository project (`cawaqs`) — and where `cgitsync` hands off to the
-   project's own build.
-3. **[03 — Adopting a Real Project: CaWaQS-Viz](03_adopting_a_real_project.md)**
-   The messiest starting point: a real project (`cawaqsviz`) with no `.cgs`
-   of its own that still uses git submodules — one real, verified, ten-step
-   procedure from `git clone` to a pushed, `READY` tree.
-4. **[04 — Private repos: the ones that configure your project](04_private_repos.md)**
-   Repositories you share between projects: how `private = true` declares
-   one, why branch moves skip it but commit and push do not, and the safe
-   order for shipping a change — run against ComplexGitSync's own tree.
-5. **[05 — Your project's memory](05_memory.md)**
-   What `cgitsync` remembers about your tree, and `cgitsync memory setup` —
-   one command, run at any time — or the five it stands for, that turn that memory into a repository of its own, so
-   it survives the disk it was made on and follows your project across
-   branches and machines. Also: reading it without a hash (`memory
-   explore`), and starting its history over on purpose without losing what
-   came before (`memory reboot`).
+| # | Tutorial | Install | Goes with |
+|---|---|---|---|
+| 1 | **[Your First Multi-Repo Workspace](01_first_multi_repo_workspace.md)**: the complete lifecycle (validate → initialise → add → commit → push → freeze → release) on a small synthetic tree (`CGSil1`), with the standalone variant alongside. Start here. | nested (standalone shown) | [guide A](../guide/A-getting-started.md) |
+| 2 | **[Onboarding a Real Build Tree](02_onboarding_a_real_build_tree.md)**: a hand-written `.cgs` for a real 19-repository project (`cawaqs`), a feature branch across all of it, then hand-off to its own build. | standalone | [guide B](../guide/B-bringing-in-a-project.md) |
+| 3 | **[Adopting a Real Project: CaWaQS-Viz](03_adopting_a_real_project.md)**: a real project with no `.cgs` that still uses git submodules, adopted in place, from `git clone` to a pushed `READY` tree. | **nested** (required to adopt in place) | [guide B](../guide/B-bringing-in-a-project.md#4-the-project-uses-git-submodules) |
+| 4 | **[Private repos](04_private_repos.md)**: the repositories that configure your project rather than being it: read-only shared ones, writable ones of your own, and how their branches follow yours. | standalone | [guide C](../guide/C-working-day-to-day.md#5-private-repos-in-daily-use) |
+| 5 | **[Your project's memory](05_memory.md)**: what `cgitsync` remembers, `memory setup` to give it a repository of its own, reading it without a hash, and starting it over on purpose. | either | [guide D](../guide/D-memory.md) |
 
 > **Every command in these tutorials is a Pixi task.** Run `pixi install`
-> once per checkout, then always invoke the CLI as `pixi run cgitsync ...`
-> — never as a bare `cgitsync ...`, which the shell will not find.
+> once per checkout, then always invoke the CLI as `pixi run cgitsync ...`.
+> A bare `cgitsync ...` won't be found by your shell.
 
-For full command-by-command reference (every flag, every document format),
-see [docs/MASTER.pdf](../docs/MASTER.pdf) (source: [docs/Text/](../docs/Text/))
-or the top-level [README.md](../README.md).
+For every command and option, see [guide E — Reference](../guide/E-reference.md).

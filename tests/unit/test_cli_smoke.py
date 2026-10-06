@@ -1542,25 +1542,25 @@ commit_sha = "abc123"
 
 
 def test_readme_documents_every_cli_command():
-    """README.md's command reference must list every _PLANNED_COMMANDS entry.
+    """guide/E-reference.md must list every _PLANNED_COMMANDS entry.
 
-    Guards against the CLI surface (cli.py) and the user-facing docs (README.md)
+    Guards against the CLI surface (cli.py) and the user-facing docs (guide/E-reference.md)
     drifting apart, as happened previously when configure/remember/memorize/
     retrieve/reload were added to cli.py but never documented.
     """
     from ComplexGitSync.cli import _PLANNED_COMMANDS
 
-    readme_path = Path(__file__).resolve().parents[2] / "README.md"
+    readme_path = Path(__file__).resolve().parents[2] / "guide" / "E-reference.md"
     readme_text = readme_path.read_text(encoding="utf-8")
 
     missing = [command for command in _PLANNED_COMMANDS if f"`{command}`" not in readme_text]
-    assert not missing, f"README.md command reference is missing: {missing}"
+    assert not missing, f"guide/E-reference.md is missing: {missing}"
 
 
 def test_readme_command_reference_lists_only_real_commands():
     """The reverse direction of the check above.
 
-    A command documented in README.md's ``## 3. `cgitsync` command list``
+    A command documented in guide/E-reference.md's ``## Commands``
     table that the parser cannot actually build is as much a drift bug as an
     undocumented command — build_parser() only ever creates a subparser for
     a name that is a _PLANNED_COMMANDS key (see
@@ -1569,20 +1569,20 @@ def test_readme_command_reference_lists_only_real_commands():
     """
     from ComplexGitSync.cli import _PLANNED_COMMANDS
 
-    readme_path = Path(__file__).resolve().parents[2] / "README.md"
+    readme_path = Path(__file__).resolve().parents[2] / "guide" / "E-reference.md"
     readme_text = readme_path.read_text(encoding="utf-8")
 
-    table_match = re.search(r"## 3\. `cgitsync` command list\n\n(.*?)\n\n##", readme_text, re.DOTALL)
-    assert table_match, "README.md's '## 3. `cgitsync` command list' table was not found."
+    table_match = re.search(r"## Commands\n\n(.*?)\n\n##", readme_text, re.DOTALL)
+    assert table_match, "guide/E-reference.md's '## Commands' table was not found."
     documented = re.findall(r"^\| \S[^|]*\| `([a-z][a-z-]*)` \|", table_match.group(1), re.MULTILINE)
-    assert documented, "No command rows parsed from README.md's command list table."
+    assert documented, "No command rows parsed from guide/E-reference.md's command table."
 
     phantom = [command for command in documented if command not in _PLANNED_COMMANDS]
-    assert not phantom, f"README.md documents commands the CLI cannot build: {phantom}"
+    assert not phantom, f"guide/E-reference.md documents commands the CLI cannot build: {phantom}"
 
 
 def test_readme_command_options_exist_on_their_command():
-    """Every flag README's command table shows must be real on that command.
+    """Every flag the reference's command table shows must be real on that command.
 
     The table gained an "Arguments and key options" column so a reader can
     see the shape of a call without running ``--help``. A column like that
@@ -1595,13 +1595,13 @@ def test_readme_command_options_exist_on_their_command():
     subparsers = next(a for a in parser._actions if getattr(a, "choices", None))
     real_options = {name: _subtree_options(sub) for name, sub in subparsers.choices.items()}
 
-    readme_text = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
+    readme_text = (Path(__file__).resolve().parents[2] / "guide" / "E-reference.md").read_text(encoding="utf-8")
     table = re.search(
-        r"## 3\. `cgitsync` command list\n\n(.*?)\n\n### Options that recur",
+        r"## Commands\n\n(.*?)\n\n## Options that recur",
         readme_text,
         re.DOTALL,
     )
-    assert table, "README.md's command list table was not found."
+    assert table, "guide/E-reference.md's command table was not found."
 
     phantom = []
     for row in table.group(1).splitlines():
@@ -1613,11 +1613,11 @@ def test_readme_command_options_exist_on_their_command():
             if flag not in real_options[command]:
                 phantom.append(f"{command} {flag}")
 
-    assert not phantom, f"README documents options that do not exist: {phantom}"
+    assert not phantom, f"guide/E-reference.md documents options that do not exist: {phantom}"
 
 
 def test_readme_lists_exactly_the_commands_that_accept_private():
-    """``--private`` is a safety rail, so README must name its reach exactly.
+    """``--private`` is a safety rail, so the reference must name its reach exactly.
 
     Claiming it on a command that lacks it teaches the reader that a
     tree-wide write can be narrowed when it cannot.
@@ -1632,13 +1632,13 @@ def test_readme_lists_exactly_the_commands_that_accept_private():
         if "--private" in _subtree_options(sub)
     }
 
-    readme_text = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
+    readme_text = (Path(__file__).resolve().parents[2] / "guide" / "E-reference.md").read_text(encoding="utf-8")
     row = re.search(r"^\| `--private` \|([^|]*)\|", readme_text, re.MULTILINE)
-    assert row, "README.md's `--private` row in 'Options that recur' was not found."
+    assert row, "guide/E-reference.md's `--private` row in 'Options that recur' was not found."
     documented = set(re.findall(r"`([a-z][a-z-]*)`", row.group(1)))
 
     assert documented == accepts_private, (
-        f"README's --private list is wrong: missing {sorted(accepts_private - documented)}, "
+        f"guide/E-reference.md's --private list is wrong: missing {sorted(accepts_private - documented)}, "
         f"claimed but absent {sorted(documented - accepts_private)}"
     )
 

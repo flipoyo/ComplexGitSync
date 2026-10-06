@@ -4,7 +4,7 @@
 
 ## Abstract — read this first
 
-**What this document is.** The second of four worked tutorials in
+**What this document is.** The second of five worked tutorials in
 [`tutorials/`](README.md): the hand-authored `.cgs` style from
 [Tutorial 1](01_first_multi_repo_workspace.md) applied to a real,
 19-repository hydrological simulation platform (`cawaqs`), then handed off
