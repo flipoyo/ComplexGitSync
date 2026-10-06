@@ -284,6 +284,49 @@ class TestTutoCGSil1CLI:
         root_tags = _run_git(project_root, "ls-remote", "--tags", "origin")
         assert "refs/tags/v1.1.0" in root_tags
 
+    # ── Tutorial 2 (working with a tree), standalone ───────────────────────
+
+    def test_tutorial_2_a_release_reloads_from_its_state(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
+        """Tutorial 2: add/commit/push, tag, freeze-release, then a later change
+        pushed from a fresh .cgs install does not reach a rebuild from the
+        release's .gts."""
+        sandbox = cgsi1_sandbox
+        _patch_remote_urls(monkeypatch, sandbox)
+        _patch_git_identity(monkeypatch)
+        cgs = str(sandbox["cgs_path"])
+
+        # Tutorial 1: standalone install
+        assert cli_main(["bootstrap", cgs, "CGSil1", "--cgs-path", str(tmp_path / "one")]) == 0
+        home = tmp_path / "one" / "CGSil1"
+        monkeypatch.setenv("CGSHOME", str(home))
+
+        # Steps 2-5: change, add, commit, push
+        (home / "CGSil2" / "notes.txt").write_text("a first note\n", encoding="utf-8")
+        assert cli_main(["add"]) == 0
+        assert cli_main(["commit", "tutorial: a first note"]) == 0
+        assert cli_main(["push"]) == 0
+        # Steps 6-7: tag, then release
+        assert cli_main(["tag", "v0.9"]) == 0
+        assert cli_main(["freeze-release", "v1.0", "first release of the sandbox"]) == 0
+        release = tmp_path / "CGSil1-v1.0.gts"
+        release.write_bytes(_current_lgr_snapshot_path(home, "CGSil1.lgr").read_bytes())
+        capsys.readouterr()
+
+        # Step 8: load the latest from the .cgs, and spoil it
+        assert cli_main(["bootstrap", cgs, "CGSil1-latest", "--cgs-path", str(tmp_path / "two")]) == 0
+        latest = tmp_path / "two" / "CGSil1-latest"
+        monkeypatch.setenv("CGSHOME", str(latest))
+        (latest / "CGSil2" / "notes.txt").write_text("a first note\nsomething we will regret\n", encoding="utf-8")
+        assert cli_main(["add"]) == 0
+        assert cli_main(["commit", "tutorial: a change we will regret"]) == 0
+        assert cli_main(["push"]) == 0
+        assert "regret" in _run_git(latest / "CGSil2", "show", "origin/main:notes.txt")
+
+        # Step 8: reload the release from the copied .gts
+        assert cli_main(["bootstrap", str(release), "CGSil1-v1.0", "--cgs-path", str(tmp_path / "three")]) == 0
+        restored = tmp_path / "three" / "CGSil1-v1.0" / "CGSil2" / "notes.txt"
+        assert restored.read_text(encoding="utf-8") == "a first note\n"
+
 
 # ---------------------------------------------------------------------------
 # Private helpers

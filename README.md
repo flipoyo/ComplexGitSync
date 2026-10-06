@@ -1,4 +1,4 @@
-# ComplexGitSync v4.2.1
+# ComplexGitSync v4.2.2
 ## A distributed git-native Operating Space
 
 *Created: 2026-05-12*
@@ -95,11 +95,12 @@ advanced.
 
 | Use case | Main commands | Tutorial |
 |---|---|---|
-| Discover the full lifecycle on a small sample tree, and the two install modes | `bootstrap` (or `initialise`), `add`, `commit`, `push`, `tag` | [01 — first workspace](tutorials/01_first_multi_repo_workspace.md) |
-| Install any project that provides a `.cgs` — the usual case | `bootstrap` | [02 — a real build tree](tutorials/02_onboarding_a_real_build_tree.md) |
-| Adopt an existing project with no `.cgs`, or built on git submodules | `discover`, `submodules init` | [03 — adopting a real project](tutorials/03_adopting_a_real_project.md) |
-| Couple public and private repositories | `private = true`, `--private` | [04 — private repositories](tutorials/04_private_repos.md) |
-| Give the project a persistent, verifiable memory | `memory setup` | [05 — memory](tutorials/05_memory.md) |
+| Install a small sample tree, and see the two install modes | `bootstrap` (or `initialise`) | [01 — first workspace](tutorials/01_first_multi_repo_workspace.md) |
+| Work on a tree: commit and push every repository at once, release it, go back to a release | `add`, `commit`, `push`, `tag`, `freeze-release` | [02 — working with a tree](tutorials/02_working_with_a_tree.md) |
+| Install any project that provides a `.cgs` — the usual case | `bootstrap` | [03 — a real build tree](tutorials/03_onboarding_a_real_build_tree.md) |
+| Adopt an existing project with no `.cgs`, or built on git submodules | `discover`, `submodules init` | [04 — adopting a real project](tutorials/04_adopting_a_real_project.md) |
+| Couple public and private repositories | `private = true`, `--private` | [05 — private repositories](tutorials/05_private_repos.md) |
+| Give the project a persistent, verifiable memory | `memory setup` | [06 — memory](tutorials/06_memory.md) |
 
 ## Installation: standalone or nested
 
@@ -158,7 +159,7 @@ pixi run cgitsync help --all        # every command and option on one page
 - [docs/MASTER.pdf](docs/MASTER.pdf) — the reference manual: every command
   and option, the `.cgs` and `.gts` formats, exit codes and `--json` output,
   and the stability promises between versions.
-- [tutorials/](tutorials/) — the five tutorials listed above.
+- [tutorials/](tutorials/) — the six tutorials listed above.
 - [docs/DevGuide/](docs/DevGuide/) — the architecture, for contributors.
 
 ## Authorship

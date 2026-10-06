@@ -1,4 +1,4 @@
-# Tutorial 5 of 5 — Your project's memory: keeping it, reading it, and starting it over
+# Tutorial 6 of 6 — Your project's memory: keeping it, reading it, and starting it over
 
 *Created: 2026-09-17*
 
@@ -25,7 +25,7 @@ without a hash (§4), starting a memory's history over on purpose (§5), what
 to do on a second machine (§6), and a summary (§7).
 
 **Who it is for.** Anyone who has a working `cgitsync` tree. Do
-[Tutorial 4](04_private_repos.md) first — a memory is a private repository,
+[Tutorial 5](05_private_repos.md) first — a memory is a private repository,
 and that tutorial is where private repositories are explained.
 
 **What you need to do with it.** Work §2 once, on a real project. After
@@ -33,13 +33,13 @@ that, §4 is all you need — until the day you need §5.
 
 ```mermaid
 graph LR
-    T4["04 — configuration repos"] --> T5["05 — your project's memory<br/>YOU ARE HERE"]
-    T5 --> ONCE["§2 — memory setup, or five commands<br/><i>once per project, any time</i>"]
-    T5 --> DAILY["§4 — memory push, explore<br/><i>whenever you like</i>"]
-    T5 --> REBOOT["§5 — memory reboot<br/><i>on purpose, rarely</i>"]
+    T5["05 — configuration repos"] --> T6["06 — your project's memory<br/>YOU ARE HERE"]
+    T6 --> ONCE["§2 — memory setup, or five commands<br/><i>once per project, any time</i>"]
+    T6 --> DAILY["§4 — memory push, explore<br/><i>whenever you like</i>"]
+    T6 --> REBOOT["§5 — memory reboot<br/><i>on purpose, rarely</i>"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
-    class T5 here;
+    class T6 here;
 ```
 
 ---
@@ -115,7 +115,7 @@ makes sense once you know which is which:
   recent are kept.
 - **`.cgitsync/.memory`** is the git-tracked mount — an ordinary
   private/local repository, exactly like `.localSpec` or `.claude` from
-  [Tutorial 4](04_private_repos.md). This is the **folded** half: what the
+  [Tutorial 5](05_private_repos.md). This is the **folded** half: what the
   last `memory push` actually committed and sent.
 
 Only `memory push` moves content from one to the other (§4). That is what
@@ -202,7 +202,7 @@ file is left exactly as it was**, comments included — the file is edited,
 not regenerated.
 
 Read that line and you will recognise most of it from
-[Tutorial 4](04_private_repos.md): it is an ordinary private, writable
+[Tutorial 5](05_private_repos.md): it is an ordinary private, writable
 repository, mounted at `.cgitsync/.memory` (§1) rather than at the tree's
 own name. `nested_config = "disabled"` is the one field a memory adds: it
 is a leaf that holds its own `.cgs/` directory of exported specs (§5), and
@@ -505,7 +505,7 @@ That is what the whole tutorial was for.
 Four things worth remembering:
 
 - **A memory is an ordinary private repository.** Everything in
-  [Tutorial 4](04_private_repos.md) applies to it, at `.cgitsync/.memory`
+  [Tutorial 5](05_private_repos.md) applies to it, at `.cgitsync/.memory`
   (§1) rather than at the tree's own name.
 - **Nothing is automatic.** Every command above is one you type. A memory
   that pushed itself would push itself from the wrong machine one day.

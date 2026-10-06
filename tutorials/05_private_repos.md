@@ -1,4 +1,4 @@
-# Tutorial 4 of 5 — Private repos: the ones that configure your project
+# Tutorial 5 of 6 — Private repos: the ones that configure your project
 
 *Created: 2026-09-07*
 
@@ -26,13 +26,13 @@ to memorise: the commands do the safe thing unless you ask otherwise.
 
 ```mermaid
 graph LR
-    T3["03 — adopting a project"] --> T4["04 — configuration repos<br/>YOU ARE HERE"]
-    T4 --> OWN["your project's repos<br/><i>change freely</i>"]
-    T4 --> MINE["your config repos<br/><i>--private</i>"]
-    T4 --> SHARED["shared config repos<br/><i>read-only</i>"]
+    T4["04 — adopting a project"] --> T5["05 — configuration repos<br/>YOU ARE HERE"]
+    T5 --> OWN["your project's repos<br/><i>change freely</i>"]
+    T5 --> MINE["your config repos<br/><i>--private</i>"]
+    T5 --> SHARED["shared config repos<br/><i>read-only</i>"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
-    class T4 here;
+    class T5 here;
 ```
 
 ---

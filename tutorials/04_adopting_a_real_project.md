@@ -1,4 +1,4 @@
-# Tutorial 3 of 5 — Adopting a Real Project: CaWaQS-Viz
+# Tutorial 4 of 6 — Adopting a Real Project: CaWaQS-Viz
 
 *Created: 2026-09-02*
 
@@ -24,8 +24,8 @@ adopt the tree with `submodules init`, then `branch create`, `checkout`,
 one; §3.1 opens it up and explains why their order cannot be changed.
 
 **Who it is for.** Anyone adopting a real project that both lacks a `.cgs`
-and still uses git submodules — the combination Tutorials 1 and 2 don't
-cover, and the messiest of the four tutorials' starting points.
+and still uses git submodules — the combination Tutorials 1 to 3 don't
+cover, and the messiest of the tutorials' starting points.
 
 **What you need to do with it.** Read it after Tutorials 1 and 2. Follow
 the steps in order — the directory-naming detail in step 1 is easy to get
@@ -33,12 +33,12 @@ wrong and is the one thing worth reading twice.
 
 ```mermaid
 graph LR
-    T2["02 — real build tree"] --> T3["03 — adopting a real project<br/>YOU ARE HERE"]
-    T3 --> T4["04 — private repos<br/>local and distant"]
-    T4 --> REF["docs/MASTER.pdf<br/>full reference"]
+    T3["03 — real build tree"] --> T4["04 — adopting a real project<br/>YOU ARE HERE"]
+    T4 --> T5["05 — private repos<br/>local and distant"]
+    T5 --> REF["docs/MASTER.pdf<br/>full reference"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
-    class T3 here;
+    class T4 here;
 ```
 
 ---
@@ -386,7 +386,7 @@ If your own project already has a `.cgs`, or you'd rather write one by
 hand than let step 3 draft it, pass it with `--cgs FILE` — the rest of the
 sequence is unchanged. See `examples/cawaqsviz.cgs` in this repository for
 a worked, hand-authored example of the same topology, and
-[Tutorial 2](02_onboarding_a_real_build_tree.md) for the habits behind it.
+[Tutorial 3](03_onboarding_a_real_build_tree.md) for the habits behind it.
 
 ## 9. Reusing this project owner's agent-facing documents
 
@@ -415,7 +415,7 @@ split its one thing (`TICKETLIFECYCLE.md`) into `.ticketing` directly.
 `.localSpec` and `.claude` answer only to their own `private`/`writable`
 flags — nothing nests them under anything, so there is nothing for a
 shared, read-only mount's privacy to cap them through. See
-`tutorials/04_private_repos.md` for what the two kinds mean.
+`tutorials/05_private_repos.md` for what the two kinds mean.
 
 `private = true` keeps each mount on its own branch when you run a tree-wide
 `branch create`, `checkout` or `pull`. Without it, a feature branch you create for
@@ -478,8 +478,8 @@ the project's own repository free of tickets, so what you publish is the
 product and not the workshop. Run `cgitsync initialise` and the mounts land
 alongside the ones above; `.gitignore` is updated for you.
 
-**Next:** [Tutorial 4 — Private repos: the ones that configure your
-project](04_private_repos.md) picks up exactly where
+**Next:** [Tutorial 5 — Private repos: the ones that configure your
+project](05_private_repos.md) picks up exactly where
 the three mounts above leave off: what `private = true` protects, what it
 does *not* protect, and the safe order for committing and pushing a change
 that touches a shared mount.

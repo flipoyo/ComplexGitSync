@@ -461,7 +461,7 @@ class TestNestedPinningThroughDiscovery:
 
 
 class TestThisTreesOwnDeclaration:
-    """`complexgitsync4dev.cgs` is tutorial 4's worked example.
+    """`complexgitsync4dev.cgs` is tutorial 5's worked example.
 
     The developer spec, not the root `install.cgs`: the user install
     deliberately mounts no private repository at all, which
