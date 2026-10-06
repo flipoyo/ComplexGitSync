@@ -1,94 +1,118 @@
 # ComplexGitSync v4.2.1
 ## A distributed git-native Operating Space
 
-__Multi git-repo project management, synchronization, and persistance__
-
-More than an alternative to git submodules
-
 *Created: 2026-05-12*
 
+Scientific projects are becoming more complex: beyond source code, they rely
+on documentation, tutorials, data, continuous integration and deployment, and
+the persistence of their results — each often held in a repository of its
+own. ComplexGitSync manages such a project as a distributed, git-native
+operating space, in the form of a **GitTree**: a tree of nested Git
+repositories that is synchronised, versioned and restored as one unit.
 
-## 1. Must Know
+A project can couple **public and private repositories**, so that
+intellectual property is preserved even when the project is developed
+collaboratively. Private repositories can also carry the configuration of
+**agentic assistance** for different parts of the project. Finally, every
+state the project goes through is recorded, which gives the project
+**persistence and reproducibility**: any recorded state can be rebuilt,
+exactly, on another machine.
 
-### 1.1 What is ComplexGitSync for?
+## The project lifecycle
 
-ComplexGitSync is a CLI (command-line tool) for synchronising a multi git-repository 
-operating space — in the form of a GitTree — from one local `.cgs`
-specification (ASCII file) or one tracked `.gts` workspace snapshot (ASCII file describing the GitTree State). It is a Python package for which the API is exposed through the CLI only.
+```mermaid
+flowchart LR
+    SRC["<b>1. Describe</b><br/>.cgs specification<br/>or .gts recorded State"]
+    SRC ==>|"<b>2. Materialise</b><br/>cgitsync bootstrap<br/>(nested: initialise)"| OS
 
-The CLI is used to operate the same git command on all repos that compose the project. It is a robust and convenient alternative to git submodules, offering a straightforward development experience.
+    subgraph OS["<b>3. Operating Space</b> — the project's local file system (CGSHOME)"]
+        direction TB
+        Root["my-project/<br/>root repo"] --> Src["src/<br/>repo"]
+        Root --> Doc["docs/<br/>repo"]
+        Root --> Data["data/<br/>repo"]
+        Root --> Agent[".agent/rules/<br/>private repo"]
+        Doc --> Tuto["docs/tutorials/<br/>nested repo"]
+    end
 
-### Two kinds of repository
+    OS ==>|"<b>4. Work</b><br/>edit, build, compute,<br/>analyse — any tool"| WORK["modified<br/>project files"]
+    WORK ==>|"<b>5. Persist</b><br/>cgitsync add · commit<br/>push · tag"| STATE["new State<br/>.gts snapshot<br/>+ memory ledger"]
+    STATE -.->|"restore, here or<br/>on another machine"| SRC
+```
 
-A tree holds two kinds of Git repos, and telling them apart is most of what you need to
-know:
+1. **Describe.** The project's topology — which repositories it is made of,
+   where each one sits, which are private — is written once in a `.cgs`
+   specification, a short TOML file. A `.gts` snapshot recorded earlier can
+   be used instead, to obtain the project exactly as it was.
+2. **Materialise.** `cgitsync bootstrap`, the generic command for any
+   kind of project, clones every repository and places it at its path in
+   the tree. In the nested mode, `initialise` does the same from inside the
+   project (see *Installation* below).
+3. **Operating Space.** The result is an ordinary directory tree on the
+   local disk, the project's `CGSHOME`, in which each sub-directory may be a
+   Git repository of its own, public or private.
+4. **Work.** The project files are used with any tool, as in any other
+   directory: editors, compilers, notebooks, simulation codes. ComplexGitSync
+   does not intervene.
+5. **Persist.** `cgitsync` runs each Git operation — `pull`, `checkout`,
+   `commit`, `push`, `merge`, `tag` — across the whole tree, in the right
+   order, checking every repository before changing any of them. Each
+   resulting State is recorded as a `.gts` snapshot holding the exact commit
+   of every repository, and logged in the project's memory, from which it can
+   be restored.
 
-- **Project repos** — the work itself. Whatever the project is for: the
-  code, the documents, public data. These follow the project's branch.
-- **Private repos** — how the project is run: the pipelines, the agent
-  instructions, the rules, private data. These are shared with your other projects, so
-  they stay on their own branch instead of following yours.
+ComplexGitSync is a robust alternative to git submodules: repositories are
+plain clones, each on its own branch, and nothing about Git itself is hidden.
 
-ComplexGitSync considers Private repos as read-only by default. Private repos come in two kinds, and the difference is who may write:
+## Public and private repositories, memory and persistence
 
-| | What it is | You may |
-|---|---|---|
-| **private/local** | your own settings, on a branch named after this project | read and write, with `--private` |
-| **private/distant** | someone else's repository | read only |
+A GitTree holds two kinds of repositories:
 
-`--private` points a command at your private/local repos instead of the
-project's own. Ten commands take it — `pull` (with or without `--force`),
-`fetch`, `checkout`, `branch` (on `create`, `list` and `close`), `add`,
-`rm`, `commit`, `merge`, `push` and `tag`; the table in section 3 marks each one. ComplexGitSync never
-writes to a private/distant repo.
+- **Project repositories** — the work itself: code, documents, public data.
+  They follow the project's branch.
+- **Private repositories** — how the project is run: pipelines, agent
+  instructions, internal rules, private data. They are often shared between
+  several projects, keep their own branch, and are read-only unless declared
+  writable.
 
 ```toml
 repos = [
     "github:you/my-app",                                                    # project
-    { repository = "github:you/.myRules",  private = true, writable = true },  # private/local
-    { repository = "github:them/.theirs",  private = true },                   # private/distant
+    { repository = "github:you/.myRules",  private = true, writable = true },  # private, yours to write
+    { repository = "github:them/.theirs",  private = true },                   # private, read-only
 ]
 ```
 
-### 1.2 How to run ComplexGitSync ?
+The project's **memory** records every state the tree goes through, the
+operations that produced it, and the environment it ran in, in a
+hash-chained ledger that can be verified. The memory can itself be kept in a
+private repository, so the project's history outlives any single machine
+and can be consulted at any past moment.
 
-ComplexGitSync is developed and run with [Pixi](https://pixi.sh) only —
-`pip install -e .` is not a supported workflow. There is no global install:
-every invocation is `pixi run cgitsync ...`, run from inside the clone below.
+## Use cases
 
-| Prerequisite | Why it is needed |
-|---|---|
-| Git | Clone the ComplexGitSync checkout and every repository in a tree. |
-| Pixi | Install the locked Python environment and run `cgitsync`. |
-| `gh`, `glab`, or `tea` | Create repositories on GitHub, GitLab, or Codeberg. Install only the provider tool you use. |
+Each use case is covered by a tutorial, from the simplest to the most
+advanced.
+
+| Use case | Main commands | Tutorial |
+|---|---|---|
+| Discover the full lifecycle on a small sample tree, and the two install modes | `bootstrap` (or `initialise`), `add`, `commit`, `push`, `tag` | [01 — first workspace](tutorials/01_first_multi_repo_workspace.md) |
+| Install any project that provides a `.cgs` — the usual case | `bootstrap` | [02 — a real build tree](tutorials/02_onboarding_a_real_build_tree.md) |
+| Adopt an existing project with no `.cgs`, or built on git submodules | `discover`, `submodules init` | [03 — adopting a real project](tutorials/03_adopting_a_real_project.md) |
+| Couple public and private repositories | `private = true`, `--private` | [04 — private repositories](tutorials/04_private_repos.md) |
+| Give the project a persistent, verifiable memory | `memory setup` | [05 — memory](tutorials/05_memory.md) |
+
+## Installation: standalone or nested
+
+ComplexGitSync requires [Git](https://git-scm.com) and
+[Pixi](https://pixi.sh), and runs only through Pixi:
 
 ```bash
 git clone https://github.com/flipoyo/ComplexGitSync.git
 cd ComplexGitSync
 pixi install
-pixi run cgitsync --help
 ```
 
-```mermaid
-flowchart LR
-    CGS[".cgs spec"] -->|initialise| CLI(("pixi run cgitsync"))
-    GTS[".gts snapshot"] -.->|restore| CLI
-
-    subgraph TREE["nested Git repo tree"]
-        direction TB
-        Root["root repo"] --> A["repo A"]
-        Root --> B["repo B"]
-        A --> A1["nested repo A.1"]
-    end
-
-    CLI ==>|sync as one unit| TREE
-    TREE ==>|freeze| GTS
-```
-
-
-## 2. Standalone or nested configuration for project management and sync
-
-ComplexGitSync manages a multi-repo project in two ways, among which the end user chooses:
+It can then manage a project in one of two ways:
 
 ```mermaid
 flowchart LR
@@ -96,736 +120,46 @@ flowchart LR
     CLONE -->|nested| NE["lives inside the<br/>tree it manages"]
 ```
 
-**Standalone (recommended):** user runs `pixi run cgitsync ...` from the
-ComplexGitSync clone. `cgitsync`  affects the project workspace (`CGSHOME`) elsewhere on
-disk.
-
-**Nested:** ComplexGitSync clones itself as one node inside the tree it
-manages, instead of standing outside it. Covered after standalone.
-
-### 2.1 Standalone configuration
-
-ComplexGitSync offers multiple possibilities for initiating the management of a project.
-
-### 2.1.1 The project already has a `.cgs`
-
-Initialising the project sync uses `bootstrap`, that clones the project's full tree, root included, into its own isolated `CGSHOME`. ComplexGitSync can check itself out as a multi-repo tree:
+**Standalone (recommended).** ComplexGitSync stays outside the project and
+clones the whole tree, root included, into a workspace of its own
+(`CGSHOME`):
 
 ```bash
-pixi run cgitsync bootstrap install.cgs ComplexGitSync
-```
-
-`bootstrap` is the *standalone install* and `initialise` (section 2.2) the
-*nested install*; each refuses the other's job by name before it touches the
-disk. `bootstrap` takes a `.cgs` (every repository at the branch the file
-names) or a `.gts` snapshot (every repository at the commit the snapshot
-recorded — the tree as it was). Its target must be empty or absent.
-
-`bootstrap` prints the workspace path and a `CGSHOME` export line at the end
-of its output. Since `pixi run` must be executed from the ComplexGitSync
-directory (where `pixi.lock` is), point subsequent commands at the new
-workspace by exporting it:
-
-```bash
-# Copy the export command from bootstrap output, or use:
-export CGSHOME=/home/user/.cgs/CGS<Timestamp>/ComplexGitSync
+pixi run cgitsync bootstrap <project.cgs> <ProjectName>
+export CGSHOME=...   # the exact line is printed by bootstrap
 pixi run cgitsync status
-pixi run cgitsync view-tree
-
-# Minimalist changes propagation sequence
-pixi run cgitsync add
-pixi run cgitsync commit "<MESSAGE>"
-pixi run cgitsync push
-```
-Run any command with `--help`: it says what the command does, shows its options and gives examples. A group such as `cgitsync memory --help` lists every subcommand with its options, and `cgitsync help --all` prints every command and option on one page, so `cgitsync help --all | grep timeline` finds which command takes an option.
-
-`CGSHOME` outranks the directory you are standing in. If you bootstrap a
-second workspace later, the export from the first one is still in that shell
-and every command keeps acting on the old tree — which looks fine, because
-both trees hold the same repositories. Every command that discovers its own
-workspace now prints which one it picked and where that choice came from:
-
-```text
-cgshome=/home/user/.cgs/CGS<Timestamp>/ComplexGitSync (from $CGSHOME) use_case=nested
-source=/home/user/.cgs/.../install.gts (from register)
 ```
 
-If that is not the workspace you meant, the command also warns and tells you
-the two ways out: `unset CGSHOME`, or `--search-dir <the directory you want>`.
-
-`use_case` says which of the two ways of running (§2) is in force:
-`nested` when the ComplexGitSync you are running lives inside the workspace
-it is managing, `standalone` otherwise. It is reported, never obeyed —
-nothing behaves differently because of it. It is there so that believing
-you are in one case while standing in the other does not go unnoticed.
-
-Full walkthrough: [tutorials/02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md)
-
-### 2.1.2 The project is checked out on disk, but has no `.cgs` yet
-
-Initialising the project sync requires `discover`, that scans a directory for git repositories and drafts a `.cgs` from what is already checked out:
+**Nested.** ComplexGitSync is cloned inside the project it manages, next to
+the project's own root, and `initialise` builds the rest of the tree from
+there. This suits projects that ship the tool along with their own content,
+such as digital twins:
 
 ```bash
-pixi run cgitsync discover ~/work/project --write draft.cgs
-pixi run cgitsync validate draft.cgs
-```
-
-Read-only until `--write` is passed — always review the draft before using
-it. 
-
-A repository found *inside* another repository is drafted as that
-repository's child, not the project root's: the report marks it
-`inside: <path>` and prints the tree it will write. Only what is checked
-out can be found. The scan has no depth limit by default; pass
-`--max-depth N` to bound it, and `discover` warns when that bound stopped
-the scan early, rather than presenting a partial answer as a complete one.
-
-Full walkthrough: [tutorials/03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md).
-
-### 2.1.3 The project uses git submodules
-
-A project may already use git submodules. ComplexGitSync converts them to plain nested repositories using
-`submodules report`, which says what converting would change, and `submodules import`, which turns
-each submodule's gitlink into a plain clone:
-
-```bash
-pixi run cgitsync submodules report ~/work/project   # change nothing
-pixi run cgitsync submodules import ~/work/project   # convert
-```
-
-That's the whole job — turning gitlinks into plain clones on disk. It does
-not also write a `.cgs`: `.gitmodules` never records the root's own
-identity, and a checkout worth converting already has a `.cgs` (hand-authored)
-or can get one from `discover`, run before or after `submodules import`.
-
-Add `--recursive` when a submodule has submodules of its own, so every
-level is converted rather than just the top one. The report prints each
-path from the directory you pointed the command at, and names the
-`.gitmodules` file that declared it.
-
-**Order matters: convert *after* `initialise`, never before.** `initialise`
-adopts the root in place but deletes and re-clones every other repository
-straight from its remote, and those remotes still declare submodules — so
-a conversion run first is undone for every repository except the root. A
-second `--recursive` pass cannot repair it either: that walk follows the
-submodule graph declared by the root's own `.gitmodules`, which the first
-pass removed.
-
-`submodules init` does the whole adoption in that one working order —
-`discover`, write the `.cgs`, `initialise`, then convert — against a
-checkout you cloned and `git submodule update --init --recursive`'d
-yourself:
-
-```bash
-pixi run cgitsync submodules init ~/work/project --dry-run  # show the plan
-pixi run cgitsync submodules init ~/work/project            # adopt and convert
-```
-
-It ends at a `READY` tree with the conversion staged but **not** committed
-— the conversion touches every repository that held a submodule, and some
-of those may not be yours — then prints the `branch create`/`checkout`/`add`/
-`commit` steps to run next. The directory must be named after the project
-(`discover` derives that from the root repository's own address), since
-`CGSHOME` is resolved as `<parent>/<project-name>`.
-
-Full walkthrough over `discover`, `initialise` and `submodules import`: [tutorials/03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md).
-
-
-
-### 2.1.4 When nothing has been set up yet
-
-`cgitsync status` typed on a machine that has never run the tool used to end
-in a Python traceback: no `.cgs`, no `.cgitsync` anywhere above you, nothing
-exported, and therefore nothing to stand on.
-
-There is now always somewhere to stand. When none of the three inputs finds a
-workspace, commands fall back to an empty one of their own under
-`$HOME/.cgs`, and `status` says so:
-
-```text
-cgshome=/home/user/.cgs/CGS<Timestamp>/cgitsync (from default workspace) use_case=standalone
-no living project yet use_case=standalone cgshome=/home/user/.cgs/CGS<Timestamp>/cgitsync
-nothing has been cloned into this workspace. To start a project:
-  cgitsync bootstrap <project.cgs> <ProjectName>  — clone a tree into a workspace of its own
-  cgitsync initialise <project.cgs>               — build the tree a .cgs describes, here
-  cgitsync discover <directory> --write           — draft a .cgs from repositories already on disk
-```
-
-An empty workspace is a project that has not started, not a failure: the
-command exits `0`.
-
-Three things about it are worth knowing:
-
-- **It is created once and reused.** The path is recorded in
-  `$HOME/.cgs/default`, so running `status` from the wrong directory four
-  times leaves you with one empty workspace, not four.
-- **It never guesses.** If you already have workspaces under `$HOME/.cgs`,
-  they are listed with the `export CGSHOME=...` line for each — and none of
-  them is selected for you.
-- **It never overrides `--search-dir`.** If you name a directory and it holds
-  no workspace, that is an error, not an invitation to work somewhere else.
-
-Set `CGSPATH` to keep workspaces somewhere other than `$HOME/.cgs`.
-
-### 2.2 Nested Configuration
-
-Run ComplexGitSync from *inside* the project tree it manages instead of
-standalone, using `initialise` in place of `bootstrap`, from
-`$CGSHOME/ComplexGitSync`. `CGSPATH` (the parent of `CGSHOME =
-CGSPATH/<project-name>`) then defaults to `../..` relative to the current
-directory, with no `export` needed. The example below uses the CGSil1
-reference topology (<https://gitlab.com/CGS_test/CGSil1>):
-
-`initialise` builds the *dependencies* of a project whose root is already
-checked out at `CGSHOME` with this ComplexGitSync inside it. If `CGSHOME` is
-not a Git checkout, or ComplexGitSync is running from outside it, it stops
-before cloning anything and tells you to use `bootstrap`. Given a `.gts`
-instead of a `.cgs`, it checks each dependency out at the commit the snapshot
-recorded, and refuses — listing every repository — if a remote no longer
-holds one.
-
-```bash
-git clone https://gitlab.com/CGS_test/CGSil1.git
-cd CGSil1
-git clone https://github.com/flipoyo/ComplexGitSync.git
-cd ComplexGitSync
-pixi install
-
-# Initialise: clone the tree from a .cgs spec, or restore it from a .gts snapshot
-pixi run cgitsync initialise ../CGSil1.cgs
+pixi run cgitsync initialise ../<project.cgs>
 pixi run cgitsync status
-pixi run cgitsync view-tree
 ```
 
-Full walkthrough: [tutorials/01_first_multi_repo_workspace.md](tutorials/01_first_multi_repo_workspace.md)
-
-## 3. `cgitsync` command list
-
-Every command below is a real subcommand of `cgitsync`; the list is
-complete. "Arguments and key options" gives the shape of the call — angle
-brackets are required, square brackets optional — and the flags that change
-what the command does. Run `cgitsync <command> --help` for the full set.
-
-| Group | Command | Arguments and key options | Description |
-|---|---|---|---|
-| Minimalist | `initialise` | `[source]` `--output-path` `--force-protocol` `--commit-gitignore` | Nested install: build the dependencies of a project whose root is already checked out here, from a .cgs (branch tips) or a .gts (recorded commits). Re-clones every dependency; refuses when one holds unpushed work, and refuses — naming `bootstrap` — when the root is not a checkout or this ComplexGitSync is not inside it. |
-| Minimalist | `bootstrap` | `<source> <project-name>` `--cgs-path` `--force-protocol` | Standalone install: clone a brand-new project tree, root included, into an isolated CGSHOME, from a .cgs or a .gts; run from a ComplexGitSync that is not inside the project. Refuses — naming `initialise` — a target that already holds a checkout. |
-| Minimalist | `freeze-release` | `<name> <message>` `--gts` `--dry-run` `--force-protocol` | Run add, commit, pull, push, and freeze from a READY tree. Its own `push` and `freeze` steps each fold and send the memory, same as running them separately. |
-| Minimalist | `status` | `--gts` `--search-dir` `--json` | Summarize tree readiness and sync state. |
-| Minimalist | `view-tree` | `[source]` `--depth` `--collapse` `--discover-nested` | Render a topology-focused tree view in terminal. |
-| Expert | `validate` | `<source>` `--discover-nested` | Parse, normalize, and validate a .cgs or validate a .gts topology. |
-| Expert | `pull` | `[source]` `--private` `--force` `--force-protocol` `--commit-gitignore` | Resynchronise an existing project tree from .cgs or .gts. With `--force`, reset every repository to its remote's tip instead: uncommitted changes and untracked files are set aside with `git stash push -u` (a warning names each; `git stash pop` brings them back), and the whole tree is refused, changing nothing, when any repository holds commits no remote has. Never force-pushes. |
-| Expert | `autofix` | `[source]` `--error` `--repo` | Diagnose and repair the situation named by the last failing command's error — reads `.cgitsync/logs/` when `--error` is omitted. Only repairs a situation a registered repair recognises; refuses rather than guessing otherwise. |
-| Expert | `fetch` | `--private` `--gts` | Update every repository's view of its origin (`git fetch --prune origin`), without moving any branch, `HEAD` or worktree, and writes no State. Prints one line per repository, fetched or skipped with the reason. Run it before `branch list` to see branches pushed or deleted elsewhere since the last fetch. |
-| Expert | `checkout` | `<branch>` `--private` `--ref-kind` `--gts` | Synchronize the tree to a branch or tag. A branch that exists on the remote is joined, not recreated — fetching it first if this workspace has never seen it, so a prior `pull` is not required. |
-| Expert | `branch` | `create <branch>` `list [--per-repo]` `close <branch>` `check <branch>` `delete <branch>`, each with `--private` `--gts` | `create` makes a branch across the full READY tree without checkout, joining one that already exists on the remote (fetching it on demand) instead of making a second one at HEAD. `list` prints the project's own branches (the root's, local and on origin as of the last fetch), marking the one the project is on and naming the repositories that lack each, and changes nothing; `--per-repo` prints each repository's own local branches instead. `close` renames a *project* branch to `closed/<branch>`, tree-wide, leaf-first, locally and on the remote: each repository closes the branch it follows (`<project>_<branch>` in a private/local one; a private/distant one is skipped), a branch that exists only on the remote included. Before renaming, `close` keeps every commit the branch alone holds on the project's permanent `ancestors` branch (`<project>_ancestors` in a private/local repository) with a merge that only adds a commit, records each move in the ledger, and checks the ledger still verifies; after that, deleting the closed branch with any tool, even plain Git, loses nothing. Run on a branch that is already closed, `close` keeps and records what it alone holds and renames nothing. It never forces, and refuses on the project's own default branch, on `ancestors`, or when a repository is on the branch it would close. `check` says, per repository, what deleting a branch would lose (the commits only it reaches, and the ledger entries and States only it holds) and whether `ancestors` already keeps it: `safe`, `recorded` or `needs ancestor`; it changes nothing but remote-tracking refs. `delete` deletes a closed branch on origin and locally, once everything it alone holds is kept and recorded, reusing what the close recorded rather than recording it twice; it refuses with nothing deleted if any step fails. `list` marks the closed branches `ancestors` keeps, and names deleted ones whose history it still holds. |
-| Expert | `add` | `[PATH ...]` `--private` `--dry-run` `--gts` | Stage all changes across a READY tree. |
-| Expert | `rm` | `<PATH ...>` `--private` `--dry-run` `--gts` | Remove one or more tracked files, each from the repo that owns it. |
-| Expert | `commit` | `[message]` `--message` `--private` `--no-stage` `--dry-run` | Commit dirty repositories from a READY tree. |
-| Expert | `merge` | `<branch>` `--into` `--private` `--ff-only` `--no-ff` `--dry-run` `--resolve` | Merge a project branch across a READY tree, leaf-first. Names every conflicting file when it refuses. `--into <target>` checks out the target and merges into it in one command. |
-| Expert | `push` | `--private` `--dry-run` `--force-protocol` `--gts` | Push repositories from a READY tree. Folds and sends this project's own memory first, when one is mounted and adopted. |
-| Expert | `tag` | `<name>` `--private` `--gts` | Create and push a tag across a READY tree. Folds and sends the memory first, same as `push`. |
-| Expert | `submodules` | `report <repo-root> [--recursive]` `import <repo-root> [--recursive]` `init <repo-root> [--cgs --max-depth --dry-run --force --force-protocol]` | Turn a checkout built on git submodules into a ComplexGitSync tree. `report` prints what converting would change and changes nothing; `import` converts each submodule to a plain nested repository (`git rm --cached`, its `.gitmodules` stanza, `.gitignore`); `init` adopts a submodule checkout end to end: discover, write the `.cgs`, initialise, convert. |
-| Expert | `verify` | `check [--json]` `repair [--json]`, each with `--search-dir` | `check` says whether this workspace's recorded history is verified, absent, legacy or corrupt. `repair` checks, then repairs a stale HEAD cache; it never rewrites or deletes a ledger entry. |
-| Expert | `env` | `show` `check [--cgs]`, each with `--search-dir` | `show` observes the machine, tool versions, credentials and tree manifests that make this workspace usable. `check` compares that with the requirements declared by the tree or an explicit `.cgs`, reports drift, and exits non-zero when requirements are not met. |
-| Expert | `memory` | `status` `list` `show <state>` `explore` `as-of <time>` `init` `setup [--provider --owner --name --cgs]` `mount` `adopt [--reboot]` `branch` `clone` `push` `reboot` | Look at what this workspace remembers, and keep it somewhere safer than one disk. Each subcommand takes `--search-dir`. `as-of <time>` answers *what was this tree at that time?*: the State the ledger recorded at or before it (UTC unless an offset is given; a bare date means the end of that day), with a warning when the chain does not verify or its clock ran backwards. `as-of`, `list` and `explore` take `--branch <chapter>` to read another chapter of the memory from Git: its branch, its closed name, or the copy `ancestors` keeps once the branch is deleted, and they say which one they read; `show` finds a State in any of those when it is not on disk. A workspace whose `.cgs` declares no memory gets a local one, created on the first recording command, which `memory push` folds into and never publishes; `memory adopt` (with the entry declared) is the opt-in. A developer tree (one holding a private repository) with no memory declared is offered `setup`, which creates the repository with `gh`, `glab` or `tea`, adds it to the `.cgs` and adopts the local memory in one step. |
-| Expert | `self-history` | `add --ticket --goal --action --worker-role --worker-vendor --worker-model --orchestrator-role --orchestrator-vendor --orchestrator-model --spec-respect-score --spec-respect-basis --spec-respect-reasoning --gating-score --gating-basis --gating-reasoning --quality-score --quality-basis --quality-reasoning --state-before --state-after --lint-passed --tests-passed --pushed --pushed-reason --conformity-explanation --search-dir` `adopt --owner --branch --search-dir` `list --search-dir` | Record one piece of agent work — who did it, for which ticket, and a three-part conformity score out of 100 (spec respect 33, gating 33, quality 34; the total is their sum and every score is shown with its maximum) — to the pending half of this project's own accounting record. Fills in the current signed AgentContract's hash and this workspace's `errors=` count itself; every other field is the orchestrator's own account. `adopt` retrofits self-history onto a `.memory` that was adopted before it existed — `memory adopt` already does this on its own for any `.memory` adopted from now on. `list` prints every self-history record this workspace holds, folded and pending. |
-| Configuration | `discover` | `[root]` `--write` `--max-depth` | Scan a directory for git repositories and draft a .cgs from what is checked out. |
-| Configuration | `repo` | `create <provider:owner/name>` | Create a repository on its provider, without leaving cgitsync. `create` takes `--public` and `--description`; repositories are private otherwise. |
-| Help | `help` | `[command ...]` `--all` | Help on one command (`cgitsync help memory explore`), or every command and option on one page (`cgitsync help --all`, which `grep` can search). |
-
-> **`initialise` re-clones your dependencies.** Only the root repository at
-> CGSHOME is kept as it is. Every repository below it whose directory already
-> holds files is **deleted and cloned again** — the old `.git` goes too, so
-> nothing in it can be recovered afterwards.
->
-> Before deleting anything, `initialise` checks each destination and stops the
-> whole run if one holds work that exists nowhere else: uncommitted changes,
-> commits you have not pushed, or a branch with no upstream. It names every
-> repository that blocked it and deletes none of them. Commit and push, or
-> move those directories aside yourself. No flag deletes work that exists
-> nowhere else.
->
-> A directory that is not a Git checkout — what a clone interrupted halfway
-> leaves behind — is still cleared with no flag needed.
-
-> **`merge` names the files that block it.** `merge` checks every repository
-> before it merges any, so a conflict anywhere leaves the whole tree
-> untouched. When it refuses, it now names each blocked repository and every
-> conflicting file under it, so you do not have to go looking:
->
-> ```text
-> merge refused; no repository was merged: ComplexGitSync: merging 'my-feature' conflicts in tests/unit/test_documents.py
-> ```
->
-> `merge --dry-run` shows the same list without merging anything.
->
-> `merge --resolve` is the way out when you want to fix the conflict rather
-> than read about it. It merges one repository at a time and stops at the
-> first that conflicts, then opens that repository in your merge tool. This
-> gives up the all-or-nothing guarantee: repositories merged before the
-> conflict stay merged, so the tree can be left partly merged. The command
-> says so before it writes anything, and names what it merged, where it
-> stopped, and what it never reached.
->
-> Your own `merge.tool` is used if you configured one. Otherwise VS Code is
-> suggested when it is available, for that one call only — your Git
-> configuration is never written. With no tool available, the command prints
-> what to run by hand instead of failing.
-
-### What `status` tells you
-
-#### Which branch you are on: `cgitsync_branch`
-
-The `summary` line starts with `cgitsync_branch=<branch>` — the branch your
-project is on, which is the branch its root repository is on. It is the one
-`cgitsync checkout` sets (`branch create` makes a branch without moving
-onto it), and the one every other
-repository follows.
-
-The table below it shows a branch per repository, and they are not all the
-same on purpose: a **private/local** repository keeps your settings on a
-branch named after your project, so with the project on `apoub` you will see
-`ComplexGitSync_apoub` there. That is the rule working, not a repository out
-of step. `cgitsync_branch` is the one line that answers "which branch am I
-on?" without you having to know which row to read. To see the project's
-*other* branches, and which repositories hold each, run
-`cgitsync branch list`. It reads origin as of the last fetch; run
-`cgitsync fetch` first to see what changed there since.
-
-Two values are not branch names:
-
-| Value | Meaning |
-|---|---|
-| `detached` | The root repository is parked on a commit rather than a branch. `cgitsync checkout <branch>` puts the tree back. |
-| `unknown` | There is no branch to report — no project has been loaded, or Git could not be asked. |
-
-#### One row per repository
-
-`cgitsync status` prints one row per repository. Two columns answer "is this
-repository up to date?", and they answer it against the branch each
-repository is actually on:
-
-| Column | Meaning |
-|---|---|
-| `UPSTREAM_BRANCH` | The remote branch this one tracks, e.g. `origin/main`. `-` means the branch tracks nothing. |
-| `LOCAL` | `clean`, `dirty`, `staged`, or `staged+dirty` — your working tree, independent of any remote. |
-| `SYNC` | How this branch stands against its upstream. |
-
-`SYNC` has six values:
-
-| Value | Meaning |
-|---|---|
-| `synced` | Level with the upstream. |
-| `ahead(+N)` | `N` commits here that the remote does not have. `push` sends them. |
-| `behind(-N)` | `N` commits on the remote that are not here. `pull` fetches them. |
-| `diverged(+N/-M)` | Both, from a common ancestor. `merge` or `autofix` resolves it; `pull --force` refuses while you hold commits no remote has. |
-| `no-upstream` | This branch was never pushed, so there is nothing to compare it to. Normal for a branch you just made, and for a **private/local** repository that only `push --private` ever sends. |
-| `unknown` | The branch names an upstream that does not resolve. `pull` or `push` repairs it; if it persists, the remote is unreachable or the ref was deleted. |
-
-`pull` fetches every branch of each remote before pulling your own, so
-`checkout <a branch a colleague pushed>` finds their work rather than
-starting a new branch of the same name where you happen to stand. `checkout`
-does not depend on a prior `pull` for this: a branch it has neither locally
-nor cached from the remote gets one on-demand check with the remote before
-it is treated as new — found, it is fetched and joined; not found, it is
-created fresh at HEAD, exactly as before.
-
-The `summary` line counts `no-upstream` and `unknown` rows as `unmeasured`,
-separately from `ahead` and `behind`. A repository nobody could measure is
-not the same as one that is level, and the summary never reports the second
-when it means the first.
-
-### Options that recur
-
-A few flags mean the same thing wherever they appear:
-
-| Option | Meaning |
-|---|---|
-| `--private` | Run on your **private/local** repos instead of the project's own. Exclusive, not additive. Available on `pull`, `fetch`, `checkout`, `branch`, `add`, `rm`, `commit`, `merge`, `push` and `tag` — and on nothing else. |
-| `--all` | Run on both halves at once — your own repos **and** your **private/local** ones, sharing one commit message. Available on `add`, `commit`, `push` and `merge`. Cannot be combined with `--private`. Read-only configuration repos are never written to. |
-| `--gts <snapshot.gts>` | Act on an explicit snapshot rather than the one found automatically. |
-| `--search-dir <dir>` | Where to start looking for the tree. Accepted by every command that finds a tree on its own. |
-| `--dry-run` | Print the plan and change nothing. |
-| `--force-protocol {ssh,https}` | Rewrite remotes to that protocol while cloning or pushing. Unrelated to `pull --force`, which is the destructive one. |
-
-`rm` is the one command you hand a path to rather than a scope, so
-`--private` works as a filter there: it refuses a path that belongs to one
-of your own repos, and removes only from your **private/local** ones.
-Without the flag, `rm` still reaches whatever repo owns the path — a
-configuration repo included — and now says so when it does, naming the repo
-so you can see that the file you removed is shared with other projects.
-
-### Git speaks English here
-
-If your machine runs in another language, you will notice one thing: when a
-Git command fails, the message `cgitsync` shows you is in English, even
-though running the same command yourself would show it in your own language.
-
-That is deliberate. `cgitsync` reads those messages to work out what went
-wrong and what to suggest — whether a failed `push` was an authentication
-problem, for instance, and whether switching to `--force-protocol ssh` would
-help. Git translates its messages, so on a French machine `cgitsync` could
-not recognise its own errors and the suggestion never appeared.
-
-Only the messages change language. Your file names, sorting and number
-formats are untouched, and nothing about your own shell changes — only what
-`cgitsync` asks Git for while it runs.
-
-### Merging into a branch you are not on
-
-`cgitsync merge <branch>` merges into whatever is checked out. `--into` names
-the target instead, and does both halves in one command:
+## Getting help
 
 ```bash
-cgitsync merge memory-dev --into main --dry-run   # what it would do, per repo
-cgitsync merge memory-dev --into main
+pixi run cgitsync --help            # every command, grouped by purpose
+pixi run cgitsync <command> --help  # one command: what it does, its options, examples
+pixi run cgitsync help --all        # every command and option on one page
 ```
 
-This matters most when the tree you are merging **contains the ComplexGitSync
-you are running** — the developer checkout, which installs itself editable. A
-separate `cgitsync checkout main` would replace that build, and the merge you
-typed next would run under the older one, against a workspace the newer one
-wrote. One command cannot be caught that way: it finishes under the build it
-started with.
+`-h` is accepted wherever `--help` is.
 
-Every repository is checked before any is touched, so a conflict or a missing
-target leaves the whole tree where it was — still on the source branch, with
-nothing checked out and nothing merged. A fast-forward is reported as one,
-which is usually why a repository looks untouched afterwards.
+## Further reading
 
-A `--private` or `--all` `--into` call is only ever about part of the tree
-until you run it; the branches it did not touch are meant to still be
-somewhere else. So a second scoped call — `--private` after the plain form,
-or `--all` after either — finishes the rest rather than refusing it for not
-having moved yet.
-
-`checkout` warns when it is about to install a different build of the tool and
-still does it: looking at an older branch is legitimate, being surprised by it
-is not.
-
-### What the workspace remembers
-
-`cgitsync` keeps a record of what it synchronised: a **State** per distinct
-tree it saw, and a **ledger** with one entry per operation. `memory` is how
-you look at it.
-
-```bash
-cgitsync memory status          # how much is remembered, and does it verify
-cgitsync memory list            # every State, newest recording first
-cgitsync memory show 2acdc98b   # one State, what was committed, who published it
-cgitsync memory show 2acdc98b --full   # whole commit messages, not first lines
-cgitsync memory show env=df9bc322      # one Environment record, in full
-```
-
-`memory status` prints the tool versions the records carry — cgitsync, git,
-pixi, and dvc or git-lfs where they were used. It shows the latest entry's,
-and the first entry's beside it when the two differ, so a chain that spans
-an upgrade says where the upgrade fell.
-
-A State named by `list` with no timestamp is one nobody recorded: history
-from before the ledger existed, or a file that arrived some other way.
-`verify` reports those, and does not call them corruption.
-
-`memory show <state>` prints the environment that State's own commits ran
-under as a bare reference, then that State's own topology — drawn exactly
-the way `view-tree` draws the live one, but as it was at that State, not as
-it is now — then what each `commit` wrote: the message, the repository, and
-whether anybody but this machine has ever seen it. A commit marked
-`unpushed` exists only here. That answer survives the repository itself: a
-deleted branch or an archived project takes `git log` with it, and this
-record stays. Editing one of these messages afterwards is something
-`verify` reports, because the ledger entry that recorded them carries their
-fingerprint.
-
-`memory show env=<ref>` is the full record behind that bare reference: the
-machine, tools, credentials and manifest digests it names — a State only
-ever cites which Environment it ran under, never the detail, since that is
-a different question ("what ran it", not "what was this tree").
-
-None of the three above is organised by branch, and a memory holds one
-branch per project. `memory explore` is the read for a person who does not
-already have a hash to give `memory show`:
-
-```bash
-cgitsync memory explore              # published commits on this memory's branch, newest push first
-cgitsync memory explore --timeline   # every ledger entry in order — checkout, merge, push included
-```
-
-`explore`'s default view is what a colleague pulling this branch would
-see: one row per commit this memory recorded as published, not every
-commit ever made here. `--timeline` reads the ledger straight through
-instead, so operations a commit-only view drops still show up.
-`--branch NAME` asks for a memory branch other than the one checked out on
-this disk; today that only works for the one actually checked out, and
-names `memory clone --branch NAME` when it is not.
-
-### Keeping a memory when the disk does not
-
-A memory lives at `.cgitsync/.memory`, which can be a repository of its
-own — the same kind of private mount `.localSpec` is. `.cgitsync` itself
-stays the workspace's own live state — States, the ledger, logs — and only
-what a `memory push` has folded in ever sits inside `.memory`, which is
-what lets that mount be checked out and merged like any other. One
-repository holds every project's memory, on a branch per project, so
-nothing new has to be learned to use it:
-
-```bash
-cgitsync memory init     # the .cgs entry to add, and the branch it uses
-cgitsync memory clone    # bring this project's memory onto a new machine
-cgitsync memory push     # fold what accumulated, commit it, and push it
-```
-
-`init` proposes and stops. **It never creates the repository for you**:
-`cgitsync` speaks Git and nothing else, so it prints the one command that
-creates it and waits.
-
-**User or developer.** `status` says which kind of tree you are in, as
-`profile=user` or `profile=dev`. A tree with no private repository is a
-user's: its memory is kept on this disk and never sent anywhere. A tree with
-at least one private repository is a developer's, and its memory is meant to
-be sent to a repository of its own. If a developer's `.cgs` names none, the
-first command that records something asks, in a terminal, which provider,
-owner and name to use (`github`, the owner of most of your private
-repositories, and `.memory` by default), shows the command that will create
-it, and on your yes runs `cgitsync memory setup`: it creates the repository,
-adds it to the `.cgs` with your comments kept, and adopts the memory already
-on this disk. Say no and it asks only once; after that, and whenever there is
-no terminal to ask in, it warns that your work has no memory back-up and
-names the command that fixes it. Tutorial 5 (`tutorials/05_memory.md`)
-walks through it.
-
-Once mounted and adopted, nothing needs to be pushed by hand any more:
-`push`, `tag`, and `freeze-release` each fold and send this project's own memory
-first, before doing anything else — the same frontier `memory push` always
-crossed, crossed automatically by every command that was already about to
-reach a remote for an unrelated reason. `cgitsync memory push` remains the
-way to settle the memory on its own, with nothing else to publish. A
-machine with no network, or a memory that cannot reach its remote for any
-other reason, still keeps a complete, verifiable memory: the fold warns
-and the command it was folding for finishes anyway, offline being the
-normal case, not a failure.
-
-A memory mounted before `cgitsync memory migrate` existed sat directly at
-`.cgitsync` instead. Running `cgitsync memory migrate` once moves it onto
-the layout above — nothing but the mount's own path changes.
-
-### Starting a memory's history over
-
-A project's shape changes — repositories added, removed, restructured —
-and a memory built for the old shape stops being a clean answer to "what
-does this project look like." `cgitsync memory reboot` closes the current
-chapter and opens an empty one, without losing the old one:
-
-```bash
-cgitsync memory reboot
-```
-
-```
-folded=12 pending record(s)
-archived=ComplexGitSync -> ComplexGitSync.archived-20260917
-exported=.cgitsync/.memory/.cgs/ComplexGitSync-v2.cgs
-branch=ComplexGitSync (fresh, empty)
-next: use the tool as normal — the next command writes this branch's first State
-```
-
-Nothing is ever deleted or force-pushed. The old branch is renamed —
-locally and on origin — to `<branch>.archived-<date>`, still fetchable
-with every State, ledger entry and commit message it ever held; a fresh,
-empty branch takes the original name, so nothing about how the memory is
-mounted changes. The tree's current shape is exported to a permanent,
-versioned `.cgs` (`.cgitsync/.memory/.cgs/<project>-v<N>.cgs`, `N`
-incrementing once per reboot — never overwritten, never reused) rather
-than read from any hand-authored file. `cgitsync memory adopt --reboot`
-is the same fresh start for a mount being adopted for the very first time:
-it adopts the repository identity but starts its content empty instead of
-carrying forward whatever the fallback branch already holds. Appending —
-the ordinary `memory adopt` — stays the default either way.
-
-Adopting never discards the local memory ComplexGitSync made for a
-workspace: its commits are kept and published, joined to the repository's
-own history by one merge commit. If the two cannot be merged cleanly,
-nothing is adopted and the local memory is left exactly as it was.
-
-**What a memory carries off your machine.** One path: the tree's own root,
-with `$HOME` substituted. Everything else it records — every repository
-path, every path in a command line it logged — is written against the tree
-as `$CGSTREE/...`, so nothing about your directory layout, and no user
-name, travels with it.
-
-## 3.1 What `cgitsync` promises a script
-
-### Exit codes
-
-Every command uses the same three, and they mean the same thing everywhere:
-
-| Code | Meaning |
-|---|---|
-| `0` | The command did what was asked. |
-| `1` | It ran, and the answer is no — a merge conflict, a tree that is not `READY`, a verification that found something. |
-| `2` | It could not run — bad arguments, no workspace, a missing or unreadable file. |
-
-The distinction that matters is between "I asked and the answer is no" and
-"I could not ask". A CI job treats those differently: the first is a result
-to act on, the second is an invocation to fix.
-
-One command reads a document rather than acting on one. `cgitsync validate`
-exits `1` when the document is invalid, because saying so is its job; every
-other command exits `2` on the same document, because it could not run at
-all.
-
-One failure exits `2` even under `validate`: a `.gts` written by a newer
-`cgitsync` than the one running. That is not a verdict this build can
-reach — it cannot check a format it has never seen — so it says so by name
-(`this snapshot was written by a newer ComplexGitSync ...`) rather than
-guessing and reporting a hash mismatch that reads as corruption. If you hit
-this on a self-managing checkout (this project's own workspace, for
-example) before this message existed, the fix is plain Git: `git checkout
-<the branch you were on>` in the repository that is the running tool, then
-try again — the snapshot was never corrupt, and deleting it loses history
-for nothing.
-
-A failure prints one line on stderr — `cgitsync status: Unable to locate
-CGSHOME` — and no traceback. **If you ever see a traceback, it is a bug in
-this tool, not a problem with your input.** That is deliberate: the errors
-the tool expects are reported as messages, so the ones it does not expect
-stay visible.
-
-### `--json`
-
-`status` and `verify check` accept `--json`. Each prints **one JSON object on
-stdout and nothing else**, so a pipe never has to strip a banner:
-
-```bash
-cgitsync status --json | jq -r '.cgitsync_branch'
-cgitsync verify check --json | jq -e '.status == "verified"'
-```
-
-Everything a person would read — the workspace that was resolved, the log
-file, any warning — goes to stderr instead. The exit code is the same as
-without the flag, so either signal may be used. A failure also prints one
-object, with `"status": "error"` and the exit code in it, rather than
-leaving your pipe with nothing to parse.
-
-Two exceptions, both deliberate: `--help` and `--version` print text, and a
-command line that does not parse is argparse's answer (usage on stderr, exit
-`2`, nothing on stdout) — `--json` cannot be honoured for an invocation that
-never parsed, since the flag itself may be what failed.
-
-### What is stable, and what is not
-
-This is the project's first SemVer release. Earlier builds were numbered
-`0002.01`–`0002.88` under a calendar scheme (`YYYY.XX`); that scheme is
-kept, but only for the internal build counter (`__build__` in
-`src/ComplexGitSync/__init__.py`), not for the version shown above.
-
-| Surface | Promise |
-|---|---|
-| Command names and their documented flags | Stable within a major version. |
-| Exit codes | Stable within a major version. |
-| `--json` output | **Additive only** — new fields may appear; existing ones do not change meaning and do not vanish. `schema_version` says which generation you are reading. |
-| `.cgs` and `.gts` grammar | Versioned in the file, and the version is read on load. |
-| Python modules under `src/ComplexGitSync/` | **Not a public interface.** `ComplexGitSyncClient` is the CLI's own implementation. Import it and a refactor may break you; no deprecation is owed. |
-| `verify` | **Experimental.** The ledger it reads is being rewritten, so its output and its findings may change. Everything else in the command table is covered by the promises above. |
-
-`cgitsync verify check` answers one of five things, and the difference matters if
-you gate a build on it:
-
-| Answer | Exit | Means |
-|---|---|---|
-| `verified` | `0` | A chain was read and every link held. |
-| `no-history` | `0` | Nothing recorded here yet. A new workspace is not a broken one. |
-| `legacy` | `1` | History exists, in the old single-file register, which carries no chain. Readable, not verifiable. |
-| `corrupt` | `1` | A chain was read and it does not hold. |
-| `time-inconsistent` | `1` | The chain held, but its own timestamps move backwards somewhere. Your history is intact; the clock that stamped it was not. |
-
-`legacy` exits non-zero on purpose: "I cannot tell" is not a yes.
-
-`time-inconsistent` is deliberately not `corrupt`. Every link checked out —
-nothing was rewritten — so the two answers send you to look at different
-things. A clock corrected mid-session, a restored virtual machine, or a
-machine that disagreed about the hour all read like this, and so does an
-entry someone backdated: a date cannot be moved backwards without
-contradicting the chain around it. It still exits non-zero, because
-something is wrong even though your history is not.
-
-Every command that writes a snapshot now records it in a hash-chained
-ledger under `.cgitsync/lgr/`, so a workspace you have used since then
-answers `verified`. Each record also carries the versions that produced it —
-cgitsync, git, pixi, and dvc or git-lfs where they were used — so a memory
-says what made it, not just when. A workspace whose only history predates
-that answers `legacy`: the older single-file register is still read, and is
-no longer written.
-
-The Python row is worth stating plainly: this project requires every
-capability to exist as a `ComplexGitSyncClient` method with a thin CLI pair,
-but that is a rule about where logic lives inside the project — not a
-promise to anyone importing the package. The CLI is the product.
-
-## 4. Further reading
-
-### Complete prerequisites
-
-ComplexGitSync records the environment that produced a State, but it does
-not install system tools or credentials. The tools needed depend on which
-parts of the tree and which commands you use:
-
-| Dependency | When it is needed | Version source |
-|---|---|---|
-| Git | Always: clone, inspect and synchronise repositories. | The observed version is recorded with the State. |
-| Pixi | Always for this installation: create the locked environment and run `cgitsync`. | `pixi.lock` pins the project environment; the observed Pixi version is recorded separately. |
-| Python | Runs ComplexGitSync inside the Pixi environment. | `pixi.toml` selects the interpreter; the exact observed interpreter is recorded. |
-| `gh`, `glab`, or `tea` | `repo create`, according to whether the provider is GitHub, GitLab, or Codeberg. | The matching provider CLI reports its observed version and whether it is authenticated. |
-| SSH client and agent | Any repository using an SSH remote. | Presence is observed; keys, user names and key paths are never recorded. |
-| DVC | Trees that use a DVC data backend. | The tree's manifest declares the package; the observed tool version is recorded when used. |
-| Git LFS | Trees that use Git Large File Storage. | The tree's manifest declares its use; the observed tool version is recorded when used. |
-| Compilers and system libraries | Only when a tree builds native code or relies on software outside Pixi. | Declare the requirements in the tree's `.cgs` `[environment]` table. |
-| `latexmk` and a TeX distribution | Developers rebuilding the manuals under `docs/`. | Declare as developer requirements for the tree; they are not end-user runtime dependencies. |
-
-The machine itself must also match the platforms supported by the tree's
-lock files. `pixi run cgitsync env show` prints the observed operating system,
-architecture, Pixi platform and libc. `pixi run cgitsync env check` compares
-that observation with the tree's declared requirements. It reports drift but
-does not change or install anything.
-
-The optional declaration names the repository where the environment is
-installed and the requirements that cannot be inferred from a lock file:
-
-```toml
-environment_root = "my-project"
-
-[environment]
-tools = { git = "2.43", pixi = "0.66" }
-compilers = ["cc"]
-system_libraries = ["libssl"]
-services = ["postgresql"]
-manifests = ["Cargo.lock"]
-```
-
-Manifest contents remain in Git. The Environment record stores only their
-tree-relative paths and digests. `initialise` and `pull` warn about declared
-drift and continue; `env check` exits non-zero for missing or older
-requirements so CI can enforce them.
-
-[tutorials/](tutorials/) — five tutorials, simplest to most advanced:
-
-1. [01_first_multi_repo_workspace.md](tutorials/01_first_multi_repo_workspace.md) — full CLI lifecycle walkthrough on a synthetic sandbox tree.
-2. [02_onboarding_a_real_build_tree.md](tutorials/02_onboarding_a_real_build_tree.md) — hand-author a `.cgs` for a real 19-repo project, then hand off to its existing `make` build.
-3. [03_adopting_a_real_project.md](tutorials/03_adopting_a_real_project.md) — a real project with no `.cgs` of its own that still uses git submodules: one `submodules init` command, what it runs underneath, and on to a pushed `READY` tree.
-4. [04_private_repos.md](tutorials/04_private_repos.md) — the repos that configure your project rather than being it: what `private = true` protects, when to add `writable = true`, and how their branches follow yours.
-5. [05_memory.md](tutorials/05_memory.md) — your project's memory: `cgitsync memory setup`, runnable at any time, or the five commands it stands for, that turn what `cgitsync` remembers into a repository of its own, so it outlives the disk it was made on.
-
-[docs/MASTER.pdf](docs/MASTER.pdf) (source: [docs/Text/](docs/Text/)) — reference
-book: full command details, expert-mode primitives (`add`/`commit`/`push`/...),
-safety/preflight checks, `--force-protocol` for CI, and the Python API
-(`ComplexGitSyncClient`).
-
-[docs/DevGuide/](docs/DevGuide/) — the Ring model and module architecture,
-for contributors changing `src/ComplexGitSync/` itself.
-
-[CLAUDE.md](CLAUDE.md) — developer commands (`pixi run test`/`lint`/
-`bump-version`), bootstrapping a live-editable checkout of ComplexGitSync
-itself, and the before-committing checklist, for contributors.
+- [docs/c_getting_started.pdf](docs/c_getting_started.pdf) — the getting
+  started guide: this page in more detail, from installation to a first
+  persisted State.
+- [docs/MASTER.pdf](docs/MASTER.pdf) — the reference manual: every command
+  and option, the `.cgs` and `.gts` formats, exit codes and `--json` output,
+  and the stability promises between versions.
+- [tutorials/](tutorials/) — the five tutorials listed above.
+- [docs/DevGuide/](docs/DevGuide/) — the architecture, for contributors.
 
 ## Authorship
 
@@ -841,9 +175,11 @@ here rather than credited as co-authors on commits, merges or pull
 requests, following the convention that paid assistance is acknowledged
 and not co-signed.
 
-- **Claude** (Anthropic) — including Claude Code with Claude Opus 5 and
+Main assistance as of august 2026:
+- **Claude** (Anthropic) —  including Claude Code with Claude Opus 5 and
   Claude Sonnet 5
-- **Codex** (OpenAI)
+
+Initial Assistance between may and august 2026:
 - **GitHub Copilot**
 - **ChatGPT** (OpenAI)
 - **Mistral Vibe** (mistralAI)
@@ -852,4 +188,19 @@ Responsibility for everything in this repository rests under the license terms.
 
 ## License
 
-Apache 2.0
+ComplexGitSync is open-source software, distributed under the
+[Apache License 2.0](LICENSE). In short:
+
+- **Free to use, modify and redistribute**, including for commercial
+  purposes, provided the license and copyright notices are kept and
+  modified files are marked as changed.
+- **Provided "as is", without warranty of any kind**, express or implied,
+  including any warranty that it is fit for a particular purpose
+  (sections 7 and 8 of the license).
+- **No liability.** The author and contributors are not accountable for any
+  damage, data loss or other consequence arising from its use. You are
+  responsible for how you use it, and for keeping your own backups.
+- **No trademark rights** are granted to the project's name.
+
+This summary is for convenience only; the [LICENSE](LICENSE) file is the
+binding text.

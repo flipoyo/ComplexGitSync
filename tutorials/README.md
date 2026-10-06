@@ -7,8 +7,10 @@
 **What this document is.** The index of ComplexGitSync's five worked
 tutorials, ordered from simplest to most advanced.
 
-**Why it exists.** The root [README.md](../README.md) covers the CLI
-command-by-command; these tutorials instead walk one topology end to end,
+**Why it exists.** The root [README.md](../README.md) says what the tool
+is for and which tutorial fits which case, and the user guide in
+[docs/MASTER.pdf](../docs/MASTER.pdf) covers every command; these
+tutorials instead walk one topology end to end,
 so a first-time user sees the full lifecycle before hand-authoring their
 own `.cgs`.
 
@@ -41,9 +43,10 @@ Five worked examples, ordered from the simplest to the most advanced. Do
 them in order — each one builds on the last:
 
 1. **[01 — Your First Multi-Repo Workspace](01_first_multi_repo_workspace.md)**
-   The complete `cgitsync` lifecycle (validate → initialise → add → commit →
-   push → freeze → release) on a small synthetic sandbox topology
-   (`CGSil1`). Start here.
+   The two install modes — standalone with `bootstrap`, the usual one, and
+   nested with `initialise` — then the complete `cgitsync` lifecycle
+   (validate → install → add → commit → push → freeze → release) on a small
+   synthetic sandbox topology (`CGSil1`). Start here.
 2. **[02 — Onboarding a Real Build Tree](02_onboarding_a_real_build_tree.md)**
    The same hand-authored `.cgs` style from Tutorial 1, applied to a real,
    19-repository project (`cawaqs`) — and where `cgitsync` hands off to the

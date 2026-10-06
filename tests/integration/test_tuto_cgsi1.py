@@ -15,11 +15,12 @@ nested-config discovery is attempted during the sandbox clone.  The real
 CGSil1 project uses ``"auto"`` to pull in CGSih2 transitively; that
 behaviour is covered by the full topology tests in ``test_cgsi_topology.py``.
 
-All seven tutorial CLI steps are validated:
+The tutorial CLI steps validated:
 
   1. ``cgitsync validate CGSil1.cgs``  – topology parses as DECLARED
-  2. ``cgitsync print    CGSil1.cgs``  – tree summary renders
-  3. ``cgitsync initialise CGSil1.cgs`` – workspace initialised, tree is READY
+  2. ``cgitsync view-tree CGSil1.cgs`` – tree summary renders
+  3. ``cgitsync bootstrap CGSil1.cgs CGSil1`` – standalone install, tree is READY
+     ``cgitsync initialise CGSil1.cgs`` – nested install, tree is READY
   4. ``cgitsync add``                  – changes staged
   5. ``cgitsync commit "…"``           – changes committed
   6. ``cgitsync push``                 – changes pushed
@@ -146,7 +147,28 @@ class TestTutoCGSil1CLI:
         assert exit_code == 0
         assert "CGSil1" in captured.out
 
-    # ── Tutorial step 3 ────────────────────────────────────────────────────
+    # ── Tutorial step 3, standalone (the usual path) ───────────────────────
+
+    def test_bootstrap_produces_ready_workspace(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
+        """cgitsync bootstrap CGSil1.cgs CGSil1 — root and children cloned into a fresh CGSHOME."""
+        sandbox = cgsi1_sandbox
+        _patch_remote_urls(monkeypatch, sandbox)
+
+        cgspath = tmp_path / "cgspath"
+        exit_code = cli_main(
+            ["bootstrap", str(sandbox["cgs_path"]), "CGSil1", "--cgs-path", str(cgspath)]
+        )
+        captured = capsys.readouterr()
+
+        project_root = cgspath / "CGSil1"
+        assert exit_code == 0
+        assert "READY" in captured.out
+        assert "export CGSHOME=" in captured.out
+        assert (project_root / ".git").exists()
+        assert (project_root / "CGSil2").exists()
+        assert (project_root / "CGSih1").exists()
+
+    # ── Tutorial step 3, nested ────────────────────────────────────────────
 
     def test_initialise_produces_ready_workspace(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
         """cgitsync initialise CGSil1.cgs — all repos cloned, tree is READY, .gts written."""
