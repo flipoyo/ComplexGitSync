@@ -240,6 +240,46 @@ class GitTreeBranches:
                 repo.target_ref_name = declared
                 repo.default_branch = declared
 
+    def settle_recorded_tags(self) -> tuple[str, ...]:
+        """Record the branch Git has checked out where a State recorded a tag.
+
+        The ``freeze-release`` before ReleaseTags wrote its tag into every
+        repository's current, resolved and target ref without checking it
+        out, so a State it recorded says the tree is on the tag while Git has
+        every repository on its branch. Read back, that sent the next
+        ``push`` to the tag. Git wins (ReleaseTags D4): such a repository is
+        recorded on its branch from here on. The State file itself is never
+        rewritten. A detached repository really is on its tag and is left as
+        it is, as is one not cloned yet. Only the old freeze's signature is
+        settled — the root's target recorded as a tag, which that freeze wrote
+        into every repository — so a ``.cgs`` that pins one repository to a
+        tag keeps its pin.
+
+        Returns the names of the repositories it settled.
+        """
+        root = self.root
+        if root is None or root.target_ref_kind is not RefKind.TAG:
+            return ()
+        settled: list[str] = []
+        for repo in iter_tree(self._tree):
+            if RefKind.TAG not in (repo.current_ref_kind, repo.resolved_ref_kind):
+                continue
+            if not (repo.absolute_path / ".git").exists():
+                continue
+            try:
+                branch = self.observed(repo)
+            except GitSyncError:
+                continue
+            if branch is None:
+                continue
+            recorded_tag = repo.resolved_ref_name or repo.current_ref_name
+            if repo.target_ref_kind is RefKind.TAG and repo.target_ref_name == recorded_tag:
+                repo.target_ref_kind, repo.target_ref_name = RefKind.BRANCH, branch
+            repo.current_ref_kind = repo.resolved_ref_kind = RefKind.BRANCH
+            repo.current_ref_name = repo.resolved_ref_name = branch
+            settled.append(repo.name)
+        return tuple(settled)
+
     def expected(self, repo: WorkingRepo) -> str | None:
         """The branch *repo* should be on right now, or ``None`` if unmeasurable.
 

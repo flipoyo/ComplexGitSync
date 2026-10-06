@@ -380,3 +380,39 @@ def test_freeze_release_folds_via_its_own_push_and_its_own_freeze_harmlessly(tmp
         "git_tag": "v-release-1",
         "artefact:src": complexgitsync_pkg.__build__,
     }
+
+
+# ---------------------------------------------------------------------------
+# ReleaseTags: checking out a release tag never rewinds the memory.
+# ---------------------------------------------------------------------------
+
+
+def test_checking_out_a_release_tag_leaves_the_memory_on_its_branch(tmp_path):
+    """Detaching the memory at the tag let the next fold commit onto a detached
+    HEAD that `checkout main` then orphaned, losing ledger entries."""
+    from ComplexGitSync.git_repo import RefKind
+    from ComplexGitSync.memory.pending import PendingMemory
+
+    ws = _memory_ready_workspace(tmp_path)
+    root, mount = ws["root"], ws["mount"]
+    client = _loaded(ws["snapshot"])
+    client.tag("v1")
+    _change(root, "after.txt", "after the release\n")
+    client.add()
+    client.commit("after the release")
+    client.push()
+    memory_head = _git(mount, "rev-parse", "HEAD")
+    memory_branch = _git(mount, "branch", "--show-current")
+    pending = PendingMemory(root / ".cgitsync")
+    entries = [entry.seq for entry in pending.read_ledger_entries()]
+
+    with pytest.warns(UserWarning, match="memory stays on its branch"):
+        client.checkout("v1", ref_kind=RefKind.TAG)
+
+    assert _git(root, "rev-parse", "HEAD") == _git(root, "rev-parse", "v1^{commit}")
+    assert _git(mount, "branch", "--show-current") == memory_branch
+    assert _git(mount, "rev-parse", "HEAD") == memory_head
+    assert [entry.seq for entry in pending.read_ledger_entries()][: len(entries)] == entries
+
+    client.checkout("main")
+    assert [entry.seq for entry in pending.read_ledger_entries()][: len(entries)] == entries

@@ -2,23 +2,22 @@
 
 Ring: 2
 Contract: Push, tag and release across the tree, leaf-first.
-Imports: git_repo, git_tree, orchestre, outcome, preflight, restart
+Imports: errors, git_repo, git_tree, orchestre, outcome, preflight, restart
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ..errors import GitSyncError
 from ..git_repo import (
     AccessProtocol,
     RefKind,
-    RepoLifecycleState,
     RepoScope,
-    SyncState,
+    WorkingRepo,
 )
 from ..git_tree import (
     WorkingGitTree,
-    iter_tree,
     iter_tree_leaf_first,
 )
 
@@ -48,7 +47,10 @@ class PushOperation:
 
         The remote and branch used for each push are taken from
         ``repo.remote_name`` (defaulting to ``"origin"``) and
-        ``repo.resolved_ref_name``.
+        ``repo.resolved_ref_name`` — unless that names a tag, which is never
+        pushed as a branch: the branch Git has checked out is pushed instead,
+        and a repository detached on a tag is refused before anything is
+        pushed (ReleaseTags WP4).
 
         *force_access_protocol*, when given, rewrites each repo's remote to
         that protocol before pushing (``--force-protocol`` on ``push``).
@@ -67,16 +69,20 @@ class PushOperation:
             scope=scope,
         )
 
+        # Every repository's branch is decided before any is pushed, so a
+        # refusal leaves the whole tree unpushed.
+        repos = list(iter_tree_leaf_first(tree, scope))
+        refs = {repo.repo_id: PushOperation._branch_to_push(repo, git_runner) for repo in repos}
+
         outcomes: list[RepoOutcome] = []
-        for repo in iter_tree_leaf_first(tree, scope):
+        for repo in repos:
             remote = repo.remote_name or "origin"
             RestartOperation.rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
             # Before the push, not after: ``push -u`` can only write the
             # remote-tracking ref the upstream resolves through if the refspec
             # already maps the branch being pushed.
             RestartOperation.repair_fetch_refspec(git_runner, repo, remote)
-            current_branch = git_runner.current_branch(repo.absolute_path)
-            ref_name = repo.resolved_ref_name or current_branch
+            current_branch, ref_name = refs[repo.repo_id]
             set_upstream = False
             if ref_name is not None and current_branch == ref_name:
                 set_upstream = not git_runner.has_upstream(repo.absolute_path)
@@ -113,6 +119,35 @@ class PushOperation:
         return tuple(outcomes)
 
     @staticmethod
+    def _branch_to_push(repo: WorkingRepo, git_runner: GitRunner) -> tuple[str | None, str | None]:
+        """``(current branch, ref to push)`` for *repo*; never a tag.
+
+        The recorded ref wins when it is a branch — ``push`` has always pushed
+        what the tree recorded. A recorded *tag* is what the old
+        ``freeze-release`` wrote into every repository it released
+        (ReleaseTags R1): pushing it sent nothing and reported success. The
+        branch Git has checked out is pushed instead; with none, there is no
+        branch to push and the repository is refused by name.
+        """
+        current_branch = git_runner.current_branch(repo.absolute_path)
+        recorded = repo.resolved_ref_name
+        recorded_is_tag = repo.resolved_ref_kind is RefKind.TAG or (
+            recorded is not None
+            and recorded != current_branch
+            and not git_runner.local_branch_exists(repo.absolute_path, recorded)
+            and git_runner.tag_exists(repo.absolute_path, recorded)
+        )
+        if recorded and not recorded_is_tag:
+            return current_branch, recorded
+        if current_branch is None:
+            raise GitSyncError(
+                f"push refused; no repository was pushed: {repo.name} is detached at "
+                f"{recorded or 'a commit'}, so there is no branch to push. "
+                "Check out a branch first (cgitsync checkout <branch>)."
+            )
+        return current_branch, current_branch
+
+    @staticmethod
     def tag_tree(
         tree: WorkingGitTree,
         git_runner: GitRunner,
@@ -120,7 +155,13 @@ class PushOperation:
         *,
         scope: RepoScope = RepoScope.WRITABLE,
     ) -> None:
-        """Create and push *tag_name* across the tree, leaf-first."""
+        """Create and push *tag_name* across the tree, leaf-first.
+
+        Tagging moves no ``HEAD``, so it changes no repository's recorded ref:
+        every repository stays on the branch it was on, and only its commit is
+        re-read (ReleaseTags D1). Writing the tag in as the current ref made
+        the next ``push`` push the tag instead of the branch.
+        """
         Preflight.assert_ready(tree)
         Preflight.run_preflight_checks(
             tree,
@@ -132,8 +173,6 @@ class PushOperation:
             # is not tagged, so its state cannot block this.
             scope=scope,
         )
-        PushOperation._propagate_tag(tree, tag_name)
-
         # WRITABLE, not ALL: a tag is created *and pushed* in the same step, and
         # a read-only configuration repo is one this project may not push to.
         # Reproducibility does not suffer -- the .gts snapshot records every
@@ -143,15 +182,7 @@ class PushOperation:
             git_runner.create_tag(repo.absolute_path, tag_name)
             remote = repo.remote_name or "origin"
             git_runner.push(repo.absolute_path, remote=remote, ref_name=tag_name)
-            repo.current_ref_kind = RefKind.TAG
-            repo.current_ref_name = tag_name
-            repo.resolved_ref_kind = RefKind.TAG
-            repo.resolved_ref_name = tag_name
             repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
-            repo.repo_lifecycle_state = RepoLifecycleState.READY
-            repo.sync_state = SyncState.ALIGNED
-            repo.fallback_applied = False
-            repo.fallback_reason = None
 
         tree.recompute_tree_state()
 
@@ -171,6 +202,12 @@ class PushOperation:
         what the bare command has always frozen. ``--private`` narrows it to
         the writable configuration repositories, so a settings branch can be
         frozen on its own without freezing the project with it.
+
+        Like :meth:`tag_tree`, it changes no repository's recorded ref: the
+        tree stays on its branches, and the release is named by the tag and
+        by the ledger's ``release`` row (ReleaseTags D1). When this step's own
+        commit made a new commit, the branch is pushed with the tag, so the
+        remote branch is never left behind the release it carries (R5).
         """
         Preflight.assert_ready(tree)
         Preflight.run_preflight_checks(
@@ -181,7 +218,6 @@ class PushOperation:
             operation_name="freeze_release",
             scope=scope,
         )
-        PushOperation._propagate_tag(tree, tag_name)
         commit_message = message or f"freeze release {tag_name}"
 
         # The default is WRITABLE for the same reason as tag_tree: this commits,
@@ -191,29 +227,25 @@ class PushOperation:
         for repo in iter_tree_leaf_first(tree, scope):
             if stage_all:
                 git_runner.stage_all(repo.absolute_path)
-            if git_runner.has_staged_changes(repo.absolute_path):
+            committed = git_runner.has_staged_changes(repo.absolute_path)
+            if committed:
                 git_runner.commit(repo.absolute_path, commit_message)
             git_runner.create_tag(repo.absolute_path, tag_name)
             remote = repo.remote_name or "origin"
+            if committed:
+                branch = git_runner.current_branch(repo.absolute_path)
+                if branch is not None:
+                    RestartOperation.repair_fetch_refspec(git_runner, repo, remote)
+                    git_runner.push(
+                        repo.absolute_path,
+                        remote=remote,
+                        ref_name=branch,
+                        set_upstream=not git_runner.has_upstream(repo.absolute_path),
+                    )
             git_runner.push(repo.absolute_path, remote=remote, ref_name=tag_name)
-            repo.current_ref_kind = RefKind.TAG
-            repo.current_ref_name = tag_name
-            repo.resolved_ref_kind = RefKind.TAG
-            repo.resolved_ref_name = tag_name
             repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
-            repo.repo_lifecycle_state = RepoLifecycleState.READY
-            repo.sync_state = SyncState.ALIGNED
-            repo.fallback_applied = False
-            repo.fallback_reason = None
 
         tree.recompute_tree_state()
-
-    @staticmethod
-    def _propagate_tag(tree: WorkingGitTree, tag_name: str) -> None:
-        """Propagate *tag_name* across *tree* from parent to leaves."""
-        for repo in iter_tree(tree):
-            repo.target_ref_kind = RefKind.TAG
-            repo.target_ref_name = tag_name
 
 
 __all__ = [

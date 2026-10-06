@@ -1,5 +1,28 @@
 # Changelog
 
+## 4.2.4 - 2026-10-06
+
+Working on after a release now works.
+
+- Fixed: after `freeze-release`, the next `push` pushed the release tag again
+  instead of the branch, so new commits never reached the remote, while it
+  reported `origin/<release> (+N)`. **If you pushed after a release, run
+  `cgitsync status`: a repository shown `ahead` still holds commits only on
+  your disk, and `cgitsync push` now sends them.** A workspace in this state
+  is put right on its next command, with a warning; nothing to do by hand.
+- Fixed: `tag` and `freeze-release` no longer record the tag as the branch
+  every repository is on. The tree stays on its branch; the State a release
+  records names that branch and the exact commit of every repository.
+- Fixed: `checkout <tag> --ref-kind tag` created a local branch named after
+  the tag and checked that out, so the release was not restored. It now
+  checks out the tag itself, detached, creates no branch, refuses before
+  changing anything when a writable repository lacks the tag, and leaves a
+  read-only repository, and the memory, where they are, with a warning.
+- Fixed: when `freeze-release`'s own last step makes a commit, it now pushes
+  the branch as well as the tag, so the remote branch is never behind its
+  release.
+- `push` never pushes a tag as if it were a branch.
+
 ## 4.2.1 - 2026-10-02
 
 - `branch delete` now refuses, with nothing deleted, when origin has moved a

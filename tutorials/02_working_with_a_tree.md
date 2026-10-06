@@ -216,6 +216,14 @@ that is what makes a release reproducible. Tutorial 6 shows how to keep
 every State in a memory repository of its own, so none of them depends on
 one disk.
 
+**Or look at the release in place.** In the workspace you already have,
+the tag does the same for every repository that carries it:
+
+```bash
+pixi run cgitsync checkout v1.0 --ref-kind tag    # every repository at the release
+pixi run cgitsync checkout main                   # back to work
+```
+
 ---
 
 ## Summary

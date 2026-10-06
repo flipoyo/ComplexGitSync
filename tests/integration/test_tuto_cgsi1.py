@@ -329,6 +329,151 @@ class TestTutoCGSil1CLI:
 
 
 # ---------------------------------------------------------------------------
+# ReleaseTags: working on after a release
+# ---------------------------------------------------------------------------
+
+
+def _released_workspace(sandbox, monkeypatch, tmp_path, *, cgs: Path | None = None) -> Path:
+    """Bootstrap, change, commit, push, then freeze-release v1.0; return CGSHOME."""
+    _patch_remote_urls(monkeypatch, sandbox)
+    _patch_git_identity(monkeypatch)
+    source = cgs or sandbox["cgs_path"]
+    assert cli_main(["bootstrap", str(source), "CGSil1", "--cgs-path", str(tmp_path / "ws")]) == 0
+    home = tmp_path / "ws" / "CGSil1"
+    monkeypatch.setenv("CGSHOME", str(home))
+    (home / "CGSil2" / "notes.txt").write_text("a first note\n", encoding="utf-8")
+    assert cli_main(["add"]) == 0
+    assert cli_main(["commit", "first note"]) == 0
+    assert cli_main(["push"]) == 0
+    assert cli_main(["freeze-release", "v1.0", "first release"]) == 0
+    return home
+
+
+def _change_and_push(home: Path, line: str, capsys) -> str:
+    with (home / "CGSil2" / "notes.txt").open("a", encoding="utf-8") as notes:
+        notes.write(line + "\n")
+    assert cli_main(["add"]) == 0
+    assert cli_main(["commit", line]) == 0
+    capsys.readouterr()
+    assert cli_main(["push"]) == 0
+    return capsys.readouterr().out
+
+
+class TestReleaseTags:
+    """ReleaseTags WP5: each of these failed before the ticket."""
+
+    def test_a_push_after_freeze_release_reaches_main(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
+        home = _released_workspace(cgsi1_sandbox, monkeypatch, tmp_path)
+
+        out = _change_and_push(home, "after the release", capsys)
+
+        assert "pushed CGSil2: origin/main (+1)" in out
+        assert "origin/v1.0" not in out
+        remote = cgsi1_sandbox["CGSil2_remote"]
+        assert "after the release" in _run_git(remote, "show", "main:notes.txt")
+        assert _run_git(remote, "rev-parse", "v1.0^{commit}") != _run_git(remote, "rev-parse", "main")
+
+    def test_checkout_of_the_tag_restores_the_release_and_creates_no_branch(
+        self, cgsi1_sandbox, monkeypatch, tmp_path, capsys
+    ):
+        home = _released_workspace(cgsi1_sandbox, monkeypatch, tmp_path)
+        _change_and_push(home, "after the release", capsys)
+
+        assert cli_main(["checkout", "v1.0", "--ref-kind", "tag"]) == 0
+
+        assert (home / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "a first note\n"
+        for repo in (home, home / "CGSil2", home / "CGSih1"):
+            assert _run_git(repo, "for-each-ref", "refs/heads/v1.0") == ""
+            assert _run_git(repo, "rev-parse", "HEAD") == _run_git(repo, "rev-parse", "v1.0^{commit}")
+
+        assert cli_main(["checkout", "main"]) == 0
+        assert "after the release" in (home / "CGSil2" / "notes.txt").read_text(encoding="utf-8")
+
+    def test_python_api_tag_then_push_pushes_the_branch(self, cgsi1_sandbox, monkeypatch, tmp_path):
+        from ComplexGitSync.orchestre import ComplexGitSyncClient
+
+        home = _released_workspace(cgsi1_sandbox, monkeypatch, tmp_path)
+        client = ComplexGitSyncClient()
+        client.load_gts(_current_lgr_snapshot_path(home, "CGSil1.lgr"))
+        client.tag("v1.1")
+        (home / "CGSil2" / "notes.txt").write_text("a first note\nafter v1.1\n", encoding="utf-8")
+        client.add()
+        client.commit("after v1.1")
+        client.push()
+
+        assert "after v1.1" in _run_git(cgsi1_sandbox["CGSil2_remote"], "show", "main:notes.txt")
+
+    def test_a_read_only_repository_is_left_alone_and_a_missing_tag_refuses(
+        self, cgsi1_sandbox, monkeypatch, tmp_path
+    ):
+        cgs = tmp_path / "CGSil1-private.cgs"
+        cgs.write_text(
+            _cgsi1_tutorial_cgs().replace(
+                '{ repository = "github:flipoyo/CGSih1", nested_config = "disabled" }',
+                '{ repository = "github:flipoyo/CGSih1", nested_config = "disabled", private = true }',
+            ),
+            encoding="utf-8",
+        )
+        home = _released_workspace(cgsi1_sandbox, monkeypatch, tmp_path, cgs=cgs)
+        assert _run_git(home / "CGSih1", "tag", "--list") == ""
+
+        with pytest.warns(UserWarning, match="left as they are.*CGSih1"):
+            assert cli_main(["checkout", "v1.0", "--ref-kind", "tag"]) == 0
+        assert _run_git(home / "CGSih1", "branch", "--show-current") == "main"
+        assert _run_git(home / "CGSil2", "branch", "--show-current") == ""
+
+        assert cli_main(["checkout", "main"]) == 0
+        _run_git(home / "CGSil2", "tag", "-d", "v1.0")
+        _run_git(cgsi1_sandbox["CGSil2_remote"], "tag", "-d", "v1.0")
+        before = _run_git(home, "rev-parse", "HEAD")
+        assert cli_main(["checkout", "v1.0", "--ref-kind", "tag"]) != 0
+        assert _run_git(home, "branch", "--show-current") == "main"
+        assert _run_git(home, "rev-parse", "HEAD") == before
+
+    def test_a_release_whose_own_step_commits_keeps_branch_and_tag_together(
+        self, cgsi1_sandbox, monkeypatch, tmp_path
+    ):
+        """R5 against a real remote: the freeze step's own commit reaches the
+        remote branch, not only through the tag."""
+        from ComplexGitSync.orchestre import ComplexGitSyncClient
+
+        home = _released_workspace(cgsi1_sandbox, monkeypatch, tmp_path)
+        client = ComplexGitSyncClient()
+        client.load_gts(_current_lgr_snapshot_path(home, "CGSil1.lgr"))
+        (home / "CGSil2" / "notes.txt").write_text("a first note\nin the release step\n", encoding="utf-8")
+
+        client.freeze("v2.0")
+
+        remote = cgsi1_sandbox["CGSil2_remote"]
+        assert _run_git(remote, "rev-parse", "main") == _run_git(remote, "rev-parse", "v2.0^{commit}")
+        assert "in the release step" in _run_git(remote, "show", "main:notes.txt")
+
+    def test_a_workspace_left_by_the_old_freeze_release_pushes_main(
+        self, cgsi1_sandbox, monkeypatch, tmp_path, capsys
+    ):
+        from ComplexGitSync.git_repo import RefKind
+        from ComplexGitSync.orchestre import ComplexGitSyncClient
+
+        home = _released_workspace(cgsi1_sandbox, monkeypatch, tmp_path)
+        # Recreate exactly what the old freeze-release recorded: every
+        # repository "on" the tag, while Git has it on main.
+        client = ComplexGitSyncClient()
+        client.load_gts(_current_lgr_snapshot_path(home, "CGSil1.lgr"))
+        for repo in client.get_dependency_registry().values():
+            repo.current_ref_kind = repo.resolved_ref_kind = repo.target_ref_kind = RefKind.TAG
+            repo.current_ref_name = repo.resolved_ref_name = repo.target_ref_name = "v1.0"
+        snapshot = client.write_gts_snapshot(command_origin="freeze_release", freeze_name="v1.0")
+        old_state = Path(snapshot).read_bytes()
+
+        with pytest.warns(UserWarning, match="older freeze-release"):
+            out = _change_and_push(home, "after the release", capsys)
+
+        assert "pushed CGSil2: origin/main (+1)" in out
+        assert "after the release" in _run_git(cgsi1_sandbox["CGSil2_remote"], "show", "main:notes.txt")
+        assert Path(snapshot).read_bytes() == old_state
+
+
+# ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
 

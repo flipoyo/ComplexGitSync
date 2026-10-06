@@ -243,7 +243,8 @@ class TreeCommands:
         1. :func:`~ComplexGitSync.operations.propagate_global_branch` — set
            the target ref on every entry.
         2. :func:`~ComplexGitSync.operations.create_global_branch` — create
-           the branch locally where missing.
+           the branch locally where missing; never for a tag, which is
+           checked out detached instead (``checkout_tag_tree``).
         3. ``git checkout`` on every repo, parent-first.
         """
         registry = self.client.get_dependency_registry()

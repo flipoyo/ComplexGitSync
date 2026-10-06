@@ -167,7 +167,7 @@
     },
     "git_tree_branch.py": {
       "internal_imports": 15,
-      "loc": 334,
+      "loc": 371,
       "public_symbols": 4
     },
     "gts_document.py": {
@@ -271,8 +271,8 @@
       "public_symbols": 4
     },
     "operations/branch.py": {
-      "internal_imports": 19,
-      "loc": 502,
+      "internal_imports": 20,
+      "loc": 589,
       "public_symbols": 4
     },
     "operations/commit.py": {
@@ -301,8 +301,8 @@
       "public_symbols": 3
     },
     "operations/push.py": {
-      "internal_imports": 12,
-      "loc": 179,
+      "internal_imports": 11,
+      "loc": 206,
       "public_symbols": 1
     },
     "operations/removal.py": {
@@ -346,8 +346,8 @@
       "public_symbols": 1
     },
     "orchestre/document_loader.py": {
-      "internal_imports": 18,
-      "loc": 345,
+      "internal_imports": 19,
+      "loc": 356,
       "public_symbols": 1
     },
     "orchestre/environment_commands.py": {
@@ -412,7 +412,7 @@
     },
     "orchestre/tree_commands.py": {
       "internal_imports": 35,
-      "loc": 1124,
+      "loc": 1125,
       "public_symbols": 1
     },
     "paths.py": {

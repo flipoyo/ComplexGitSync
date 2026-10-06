@@ -1579,6 +1579,8 @@ def test_tag_tree_tags_and_pushes_leaf_first(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
 
+    before = {entry.repo_id: (entry.current_ref_kind, entry.current_ref_name) for entry in registry.values()}
+
     tag_tree(registry, runner, "v1.0.0")
 
     root_path = registry.get("root").absolute_path
@@ -1587,9 +1589,12 @@ def test_tag_tree_tags_and_pushes_leaf_first(tmp_path):
     pushed_paths = [path for path, _, _ in runner.pushed]
     assert tagged_paths.index(leaf_path) < tagged_paths.index(root_path)
     assert pushed_paths.index(leaf_path) < pushed_paths.index(root_path)
+    # ReleaseTags D1: tagging moves no HEAD, so no repository's recorded ref
+    # changes; recording the tag there made the next push push the tag.
     for entry in registry.values():
-        assert entry.current_ref_kind == RefKind.TAG
-        assert entry.current_ref_name == "v1.0.0"
+        assert (entry.current_ref_kind, entry.current_ref_name) == before[entry.repo_id]
+        assert entry.resolved_ref_kind is not RefKind.TAG
+        assert entry.target_ref_kind is not RefKind.TAG
 
 
 def test_freeze_release_tree_commits_tags_and_pushes_leaf_first(tmp_path):
@@ -1607,6 +1612,58 @@ def test_freeze_release_tree_commits_tags_and_pushes_leaf_first(tmp_path):
     assert tagged_paths.index(leaf_path) < tagged_paths.index(root_path)
     assert pushed_paths.index(leaf_path) < pushed_paths.index(root_path)
     assert registry.recompute_tree_state() == TreeLifecycleState.READY
+
+
+def test_freeze_release_tree_pushes_the_branch_when_its_own_step_commits(tmp_path):
+    """ReleaseTags R5: a commit made by the freeze step reaches the remote
+    branch, not only through the tag."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    freeze_release_tree(registry, runner, "release-1")
+
+    for entry in registry.values():
+        pushed = [ref for path, _, ref in runner.pushed if path == entry.absolute_path]
+        assert pushed == ["main", "release-1"], entry.name
+        assert entry.current_ref_kind is not RefKind.TAG
+        assert entry.target_ref_kind is not RefKind.TAG
+
+
+def test_freeze_release_tree_pushes_only_the_tag_when_nothing_was_committed(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    freeze_release_tree(registry, runner, "release-1", stage_all=False)
+
+    assert [ref for _, _, ref in runner.pushed] == ["release-1"] * len(registry.repos)
+
+
+def test_push_tree_pushes_the_checked_out_branch_when_a_tag_was_recorded(tmp_path):
+    """ReleaseTags WP4: a State recorded by the old freeze-release named the tag
+    as every repository's ref; push sends the branch Git has checked out."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    for entry in registry.values():
+        entry.resolved_ref_kind = RefKind.TAG
+        entry.resolved_ref_name = "v1.0"
+
+    push_tree(registry, runner)
+
+    assert [ref for _, _, ref in runner.pushed] == ["main"] * len(registry.repos)
+
+
+def test_push_tree_refuses_a_repository_detached_on_a_tag_before_pushing_any(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    root = registry.get("root")
+    root.resolved_ref_kind = RefKind.TAG
+    root.resolved_ref_name = "v1.0"
+    runner._current_branches[root.absolute_path] = None
+
+    with pytest.raises(GitSyncError, match="detached"):
+        push_tree(registry, runner)
+
+    assert runner.pushed == []
 
 
 def test_tag_tree_preflight_fails_when_tag_exists(tmp_path):
