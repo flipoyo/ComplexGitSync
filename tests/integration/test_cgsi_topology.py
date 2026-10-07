@@ -1392,6 +1392,46 @@ class TestDiscoverRepos:
         tree = RegistryTranslator.from_cgs_document(document, output)
         assert tree.get("root").target_ref_name == "branch1"
 
+    def test_discover_write_puts_a_relative_file_inside_root(self, tmp_path, monkeypatch):
+        """A relative output belongs to the tree it describes, not to the
+        directory the command was typed from."""
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+
+        report = ComplexGitSyncClient().discover_repos(root, output="a.cgs")
+
+        assert report.written_to == (root / "a.cgs").resolve()
+        assert (root / "a.cgs").is_file()
+        assert not (elsewhere / "a.cgs").exists()
+
+    def test_discover_write_keeps_an_absolute_file_where_it_is(self, tmp_path, monkeypatch):
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
+        monkeypatch.chdir(root)
+        output = tmp_path / "drafts" / "a.cgs"
+        output.parent.mkdir()
+
+        report = ComplexGitSyncClient().discover_repos(root, output=output)
+
+        assert report.written_to == output.resolve()
+        assert output.is_file()
+
+    def test_cli_discover_write_reports_the_file_inside_root(self, tmp_path, monkeypatch, capsys):
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+
+        code = cli_main(["discover", str(root), "--write", "a.cgs"])
+
+        assert code == 0
+        assert f".cgs draft written to: {(root / 'a.cgs').resolve()}" in capsys.readouterr().out
+        assert not (elsewhere / "a.cgs").exists()
+
     def test_discover_write_only_drafts_a_per_repo_branch_where_it_differs(self, tmp_path):
         """A repository scanned on the same branch as the root inherits
         ``project.default_branch`` — no redundant per-entry field. One

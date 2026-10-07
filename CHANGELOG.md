@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.3.4 - 2026-10-07
+
+- The documentation's `discover --write` examples now validate the draft
+  where 4.3.3 writes it, inside the scanned directory, and the Python API
+  guide names `DiscoverReport.written_to`. The run log records the path
+  actually written.
+
+## 4.3.3 - 2026-10-07
+
+- Fixed: `discover ROOT --write FILE` with a relative `FILE` wrote it in the
+  current directory. It now writes it inside `ROOT`, the tree the draft
+  describes, and prints that path. An absolute `FILE` is unchanged.
+
 ## 4.3.2 - 2026-10-07
 
 - A bootstrapped workspace's name now has a dash between the project name and

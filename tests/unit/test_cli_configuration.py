@@ -117,6 +117,7 @@ def test_discover_command_uses_client_method(monkeypatch, capsys, tmp_path):
                 ),
                 cgs_entries=({"repository": "github:owner/demo", "relative_path": "."},),
                 warnings=(),
+                written_to=None,
             )
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
@@ -198,6 +199,7 @@ def test_discover_reports_warnings_and_unresolved_identifiers(capsys, tmp_path):
                 ),
                 cgs_entries=(),
                 warnings=("could not resolve remote for sub",),
+                written_to=None,
             )
 
     exit_code = configuration._execute_discover(StubClient(), tmp_path)
@@ -240,6 +242,7 @@ def test_discover_with_write_reports_written_path(capsys, tmp_path):
                     ),
                 ),
                 warnings=(),
+                written_to=Path(output).resolve(),
             )
 
     write_path = str(tmp_path / "draft.cgs")

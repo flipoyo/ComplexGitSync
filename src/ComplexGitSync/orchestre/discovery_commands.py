@@ -576,8 +576,9 @@ class DiscoveryCommands:
             Maximum directory depth to descend below *root_dir*. The root
             itself is depth 0. ``None`` (the default) scans with no bound.
         output:
-            Optional path to write the drafted ``.cgs`` to. When omitted,
-            the draft is only returned — matching the "report first, write
+            Optional path to write the drafted ``.cgs`` to; a relative path
+            is inside *root_dir*, which the draft describes, not the current
+            directory. When omitted, the draft is only returned — matching the "report first, write
             only when asked" posture of ``--commit-gitignore`` and
             ``submodules import``.
 
@@ -706,6 +707,7 @@ class DiscoveryCommands:
                 entry["private"] = True
             cgs_entries.append(entry)
 
+        written_to = (root / Path(output).expanduser()).resolve() if output is not None else None
         self.client._log_event(
             "discover_repos",
             root=str(root),
@@ -713,16 +715,16 @@ class DiscoveryCommands:
             entry_count=len(cgs_entries),
             warning_count=len(warnings),
             max_depth=max_depth,
-            output=str(output) if output is not None else None,
+            output=str(written_to) if written_to is not None else None,
         )
 
-        if output is not None:
+        if written_to is not None:
             if not cgs_entries:
                 raise GitSyncError(
                     f"discover: no resolvable git repository found under {root} — "
                     f"nothing to write."
                 )
-            self.client.configure(project, cgs_entries, output_path=output)
+            self.client.configure(project, cgs_entries, output_path=written_to)
 
         return DiscoverReport(
             root=root,
@@ -730,6 +732,7 @@ class DiscoveryCommands:
             cgs_entries=tuple(cgs_entries),
             warnings=tuple(warnings),
             project_name=project_name,
+            written_to=written_to,
         )
 
     def repo_create(

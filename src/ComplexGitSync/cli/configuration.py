@@ -59,8 +59,8 @@ def register_parsers(
                 metavar="FILE",
                 default=None,
                 help=(
-                    "Write the drafted .cgs to FILE. Without this flag the "
-                    "command only prints what it found (dry-run)."
+                    "Write the drafted .cgs to FILE; a relative FILE is inside ROOT. "
+                    "Without this flag the command only prints what it found (dry-run)."
                 ),
             )
             subparser.add_argument(
@@ -217,8 +217,8 @@ def _execute_discover(
             print(f"  ! {warning}")
         print()
 
-    if write:
-        print(f".cgs draft written to: {Path(write).resolve()}")
+    if report.written_to is not None:
+        print(f".cgs draft written to: {report.written_to}")
         print("Review it, then run: cgitsync validate <file>")
     else:
         print("Dry run — pass --write FILE to save this draft as a .cgs.")

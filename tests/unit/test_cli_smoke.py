@@ -1633,6 +1633,7 @@ def test_discover_command_uses_client_method(monkeypatch, capsys, tmp_path):
                 ),
                 cgs_entries=({"repository": "github:owner/demo", "relative_path": "."},),
                 warnings=(),
+                written_to=None,
             )
 
     monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)

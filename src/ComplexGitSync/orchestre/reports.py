@@ -89,6 +89,9 @@ class DiscoverReport:
     project_name:
         Name proposed for the draft document, taken from the root
         repository's own name when it is resolvable, else the directory name.
+    written_to:
+        Where the draft was written — a relative ``output`` resolved inside
+        ``root`` — or ``None`` when nothing was written.
     """
 
     root: Path
@@ -96,6 +99,7 @@ class DiscoverReport:
     cgs_entries: tuple[dict, ...]
     warnings: tuple[str, ...]
     project_name: str
+    written_to: Path | None = None
 
 @dataclass(frozen=True, slots=True)
 class InitFromSubmodulesReport:

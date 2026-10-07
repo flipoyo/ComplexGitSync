@@ -102,7 +102,7 @@
     },
     "cli/minimalist.py": {
       "internal_imports": 16,
-      "loc": 575,
+      "loc": 574,
       "public_symbols": 1
     },
     "cli/suggest.py": {
@@ -342,7 +342,7 @@
     },
     "orchestre/discovery_commands.py": {
       "internal_imports": 19,
-      "loc": 668,
+      "loc": 671,
       "public_symbols": 1
     },
     "orchestre/document_loader.py": {
@@ -402,7 +402,7 @@
     },
     "orchestre/reports.py": {
       "internal_imports": 4,
-      "loc": 150,
+      "loc": 154,
       "public_symbols": 4
     },
     "orchestre/runtime_state_store.py": {
@@ -417,7 +417,7 @@
     },
     "paths.py": {
       "internal_imports": 6,
-      "loc": 274,
+      "loc": 268,
       "public_symbols": 2
     },
     "provider.py": {
