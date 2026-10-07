@@ -377,14 +377,6 @@ def _repo_data_from_tree(
         else:
             data[attribute] = str(value)
 
-    repo_default_branch = str(
-        getattr(repo, "default_branch", None) or data.get("default_branch") or project_default_branch
-    )
-    data["default_branch"] = repo_default_branch
-    data["fallback_branch"] = str(
-        getattr(repo, "fallback_branch", None) or data.get("fallback_branch") or repo_default_branch
-    )
-
     relative_path = relative_path_from_root or getattr(repo, "relative_path", None)
     if relative_path is not None:
         data["relative_path"] = str(relative_path)
@@ -395,6 +387,11 @@ def _repo_data_from_tree(
         data["private"] = True
     if getattr(repo, "writable", False):
         data["writable"] = True
+
+    data["default_branch"] = getattr(repo, "default_branch", None) or data.get("default_branch")
+    data["fallback_branch"] = getattr(repo, "fallback_branch", None) or data.get("fallback_branch")
+    git_branch.apply_declared_defaults(data, project_default_branch)
+    repo_default_branch = data["default_branch"]
 
     if "branch" not in data and "tag" not in data:
         target_kind = _enum_text(getattr(repo, "target_ref_kind", None), "")
@@ -760,8 +757,16 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
             repo_default_branch = _resolve_override(
                 overrides, "default_branch", repo.get("default_branch"), project_default_branch
             )
+            # The fallback an entry would get by declaring none — asked of
+            # git_branch, the one owner of that default, not restated here.
+            implied = {
+                "default_branch": repo_default_branch,
+                "private": repo.get("private"),
+                "writable": repo.get("writable"),
+            }
+            git_branch.apply_declared_defaults(implied, project_default_branch)
             _resolve_override(
-                overrides, "fallback_branch", repo.get("fallback_branch"), repo_default_branch
+                overrides, "fallback_branch", repo.get("fallback_branch"), implied["fallback_branch"]
             )
             _resolve_override(
                 overrides, "access_protocol", repo.get("access_protocol"), DEFAULT_ACCESS_PROTOCOL

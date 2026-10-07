@@ -103,20 +103,43 @@ class TestDeclaredChain:
 
 
 class TestDeclaredDefaults:
-    def test_fallback_branch_defaults_to_the_repos_own_default_branch(self):
+    def test_fallback_branch_defaults_to_main_not_to_the_repos_default_branch(self):
+        """Target and fallback must not collapse into one branch (FallbackMain)."""
         repo: dict = {"default_branch": "release"}
 
         apply_declared_defaults(repo, "project-branch")
 
         assert repo["default_branch"] == "release"
-        assert repo["fallback_branch"] == "release"
+        assert repo["fallback_branch"] == DEFAULT_BRANCH
 
-    def test_both_default_to_the_project_branch_when_the_entry_names_neither(self):
+    def test_an_entry_naming_neither_targets_the_project_branch_and_falls_back_to_main(self):
         repo: dict = {}
 
-        apply_declared_defaults(repo, "project-branch")
+        apply_declared_defaults(repo, "lMOLO")
 
-        assert repo == {"default_branch": "project-branch", "fallback_branch": "project-branch"}
+        assert repo == {"default_branch": "lMOLO", "fallback_branch": DEFAULT_BRANCH}
+
+    def test_a_declared_fallback_branch_is_kept(self):
+        repo: dict = {"fallback_branch": "stable"}
+
+        apply_declared_defaults(repo, "lMOLO")
+
+        assert repo["fallback_branch"] == "stable"
+
+    def test_a_private_local_entry_falls_back_to_its_own_default_branch(self):
+        """A shared configuration repository must not land on another project's main."""
+        repo: dict = {"private": True, "writable": True, "default_branch": "lMOLO"}
+
+        apply_declared_defaults(repo, "lMOLO")
+
+        assert repo["fallback_branch"] == "lMOLO"
+
+    def test_a_private_read_only_entry_is_ordinary_here(self):
+        repo: dict = {"private": True, "default_branch": "lMOLO"}
+
+        apply_declared_defaults(repo, "lMOLO")
+
+        assert repo["fallback_branch"] == DEFAULT_BRANCH
 
     def test_the_chain_bottoms_out_at_the_builtin_default(self):
         repo: dict = {}
@@ -141,9 +164,51 @@ class TestDeclaredDefaults:
         by_name = {repo["project_name"]: repo for repo in document.repos}
 
         assert by_name["demo"]["default_branch"] == "trunk"
-        assert by_name["demo"]["fallback_branch"] == "trunk"
+        assert by_name["demo"]["fallback_branch"] == DEFAULT_BRANCH
         assert by_name["lib"]["default_branch"] == "release"
-        assert by_name["lib"]["fallback_branch"] == "release"
+        assert by_name["lib"]["fallback_branch"] == DEFAULT_BRANCH
+
+    def test_a_tree_written_back_to_a_cgs_keeps_each_fallback(self, tmp_path):
+        """_repo_data_from_tree asks the same rule, so a tree round-trips."""
+        cgs_path = tmp_path / "tree.cgs"
+        cgs_path.write_text(
+            'project = { name = "demo", default_branch = "lMOLO" }\n'
+            "repos = [\n"
+            '    { repository = "github:acme/demo", relative_path = "." },\n'
+            '    { repository = "github:acme/lib", fallback_branch = "stable" },\n'
+            '    { repository = "github:acme/conf", private = true, writable = true },\n'
+            '    "github:acme/plain",\n'
+            "]\n",
+            encoding="utf-8",
+        )
+
+        rewritten = CgsDocument.from_toml(cgs_path).to_git_tree().to_cgs()
+        fallback = {repo["project_name"]: repo["fallback_branch"] for repo in rewritten.repos}
+
+        assert fallback == {"demo": "main", "lib": "stable", "conf": "lMOLO", "plain": "main"}
+
+    def test_writing_a_document_back_omits_only_the_implied_fallback(self, tmp_path):
+        """The authoring form drops fallback_branch exactly when re-reading
+        it would give the same value back."""
+        cgs_path = tmp_path / "tree.cgs"
+        cgs_path.write_text(
+            'project = { name = "demo", default_branch = "trunk" }\n'
+            "repos = [\n"
+            '    "github:acme/demo",\n'
+            '    { repository = "github:acme/lib", fallback_branch = "trunk" },\n'
+            '    { repository = "github:acme/conf", private = true, writable = true },\n'
+            "]\n",
+            encoding="utf-8",
+        )
+
+        authoring = CgsDocument.from_toml(cgs_path).to_authoring_dict()
+        by_id = {
+            (r if isinstance(r, str) else r["repository"]): r for r in authoring["repos"]
+        }
+
+        assert by_id["github:acme/demo"] == "github:acme/demo"
+        assert by_id["github:acme/lib"]["fallback_branch"] == "trunk"
+        assert "fallback_branch" not in by_id["github:acme/conf"]
 
 
 # ---------------------------------------------------------------------------

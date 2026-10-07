@@ -390,7 +390,9 @@ class TestCgsDocumentValid:
         authoring = parse_cgs(output)
         child_authoring = authoring["repos"][1]
         assert child_authoring["default_branch"] == "ComplexGitSync"
-        assert child_authoring["fallback_branch"] == "main"
+        # `main` is the implied fallback (FallbackMain), so it is not written
+        # out; the reparsed entry above still carries it.
+        assert "fallback_branch" not in child_authoring
 
     def test_private_survives_toml_round_trip_as_a_boolean(self, tmp_path: Path):
         """`private` keeps a shared mount off the tree's global branch.

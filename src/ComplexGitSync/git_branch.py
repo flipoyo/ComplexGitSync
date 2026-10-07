@@ -9,12 +9,12 @@ Imports: git_repo
 
 Why this module exists
 ----------------------
-Four ``.cgs`` fields decide a branch and three of them fall back to each
-other:
+Three ``.cgs`` fields decide the branch a repository targets, and a fourth
+the branch it falls back to when that target is missing on the remote:
 
-    repos[].fallback_branch -> repos[].default_branch
-                            -> project.default_branch
-                            -> DEFAULT_BRANCH ("main")
+    target:    repos[].default_branch -> project.default_branch -> DEFAULT_BRANCH ("main")
+    fallback:  repos[].fallback_branch -> DEFAULT_BRANCH ("main")
+               (private/local: repos[].fallback_branch -> repos[].default_branch)
 
 Before this module, that chain was written out by hand in six places across
 five modules, and not one of them read :data:`DEFAULT_BRANCH` — each spelled
@@ -216,20 +216,20 @@ def apply_declared_defaults(repo: MutableMapping[str, Any], project_default: str
     repository entry states in full both the branch it targets and the
     branch it falls back to.
 
-    ``repos[].default_branch`` defaults to *project_default* (itself
-    defaulted to :data:`DEFAULT_BRANCH` by the caller), and
-    ``repos[].fallback_branch`` defaults to whatever ``default_branch``
-    just resolved to — the second and third links of the chain.
-
-    A private/local entry gets the same defaults here, though its real branch
-    is :func:`private_local_branch` of the *tree's* project: a document cannot
-    compute that (a nested ``.cgs`` names a project of its own), so
-    :meth:`~ComplexGitSync.git_tree_branch.GitTreeBranches.declare_targets`
-    does, once the tree exists.
+    ``default_branch`` defaults to *project_default* (itself defaulted to
+    :data:`DEFAULT_BRANCH`), ``fallback_branch`` to :data:`DEFAULT_BRANCH`, so
+    target and fallback never collapse into one branch (FallbackMain). A
+    private/local entry falls back to its own ``default_branch`` instead —
+    never another project's ``main`` — and its real target is computed later
+    from the *tree's* project, which a document cannot know, by
+    :meth:`~ComplexGitSync.git_tree_branch.GitTreeBranches.declare_targets`.
     """
     default_branch = str(repo.get("default_branch") or project_default or DEFAULT_BRANCH)
     repo["default_branch"] = default_branch
-    repo["fallback_branch"] = str(repo.get("fallback_branch") or default_branch)
+    private_local = repo.get("private") is True and repo.get("writable") is True
+    repo["fallback_branch"] = str(
+        repo.get("fallback_branch") or (default_branch if private_local else DEFAULT_BRANCH)
+    )
 
 
 def declared_private_local_mismatch(

@@ -100,6 +100,27 @@ def _load_registry(config_path, *, discover_nested: bool = False):
 class TestDiscoverNestedConfigs:
     """discover_nested_configs() — nested .cgs auto-discovery."""
 
+    def test_a_leaf_discovered_on_the_fly_falls_back_to_main(self, tmp_path):
+        """FallbackMain: a leaf read from a nested .cgs that names no branch
+        targets its document's project branch and falls back to main."""
+        config_path = _write_root_cgs(tmp_path, nested_child=True)
+        child_repo_root = tmp_path / "deps" / "child-repo"
+        child_repo_root.mkdir(parents=True)
+        (child_repo_root / "child.cgs").write_text(
+            'project = { name = "child-repo", default_branch = "lMOLO" }\n'
+            "repos = [\n"
+            '    { repository = "github:owner/child-repo", relative_path = "." },\n'
+            '    { repository = "github:owner/leaf", relative_path = "leaf", nested_config = "disabled" },\n'
+            "]\n",
+            encoding="utf-8",
+        )
+
+        registry = _load_registry(config_path, discover_nested=True)
+        leaf = registry.get("root:deps/child-repo:leaf")
+
+        assert leaf.target_ref_name == "lMOLO"
+        assert leaf.fallback_branch == "main"
+
     def test_promotes_parent_and_adds_descendants(self, tmp_path):
         config_path = _write_root_cgs(tmp_path, nested_child=True)
         child_repo_root = tmp_path / "deps" / "child-repo"

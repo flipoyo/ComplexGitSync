@@ -1,5 +1,22 @@
 # Changelog
 
+## 4.4.1 - 2026-10-07
+
+- The developer documentation and the code's own description of the branch
+  rule now state the 4.4.0 fallback default exactly: the target chain and the
+  fallback chain are drawn separately.
+
+## 4.4.0 - 2026-10-07
+
+- A repository that declares no `fallback_branch` now falls back to `main`
+  instead of to its own `default_branch`, so a missing branch lands on `main`
+  rather than failing with `expected one of ['x', 'x']`. A private, writable
+  repository still falls back to its own `default_branch`. A `.cgs` that
+  relied on falling back to its `default_branch` should now name it in
+  `fallback_branch`. A tree whose entries relied on that old default records
+  its next State under a new name once, because the fallback is part of what
+  a State records; States already written are unchanged.
+
 ## 4.3.4 - 2026-10-07
 
 - The documentation's `discover --write` examples now validate the draft
