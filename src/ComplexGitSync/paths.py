@@ -235,8 +235,7 @@ class PathResolver:
         """Read a ``.cgs`` or ``.gts`` file and resolve the CGSHOME initialise will use."""
         source_path = Path(config_path).resolve()
         if source_path.suffix == ".gts":
-            snapshot = GtsDocument.from_toml(source_path)
-            name = str(snapshot.read("project.name") or source_path.stem)
+            name = PathResolver.resolve_source_project_name(source_path)
             return PathResolver.resolve_named_cgshome(name, output_path=output_path)
         document = CgsDocument.from_toml(source_path)
         return PathResolver.resolve_cgshome(document, source_path, output_path=output_path)
@@ -273,6 +272,21 @@ class PathResolver:
         return PathResolver.resolve_project_root(document, source_path, target_dir, output_path)
 
     @staticmethod
+    def resolve_source_project_name(config_path: str | Path) -> str:
+        """The project name a ``.cgs`` or ``.gts`` source installs under.
+
+        The document's ``[project] name``, else the file's stem — the rule
+        ``initialise`` also follows, so the two install commands name a
+        project identically.
+        """
+        source_path = Path(config_path).resolve()
+        if source_path.suffix == ".gts":
+            name = GtsDocument.from_toml(source_path).read("project.name")
+        else:
+            name = CgsDocument.from_toml(source_path).project_name
+        return str(name or source_path.stem)
+
+    @staticmethod
     def resolve_bootstrap_root(
         project_name: str,
         *,
@@ -281,27 +295,31 @@ class PathResolver:
     ) -> Path:
         """Resolve the isolated CGSHOME a bootstrap run will clone into.
 
-        ``project_name`` always forms the final path segment, regardless of
-        the ``.cgs`` document's own ``project_name`` field, so the
-        destination is explicit rather than inferred. When *cgs_path* is
-        omitted, it defaults to a fresh ``$HOME/.cgs/CGS<timestamp>/``
-        directory (``$HOME/.cgs`` is created if missing) so a bootstrapped
-        project never lands inside the ComplexGitSync clone itself — running
-        ComplexGitSync standalone must never mix its own repo with the
-        project state it manages. ``clock`` names that timestamp — real by
-        default (:class:`~.universal_clock.SystemClock`); a caller that cares
-        about the exact directory name can inject a fixed one instead.
+        With *cgs_path*, CGSHOME is ``<cgs_path>/<project_name>``: the caller
+        named the place, so nothing is added to it. Without it, CGSHOME is a
+        fresh ``$HOME/.cgs/<project_name>-<timestamp>`` (``$HOME/.cgs`` is
+        created if missing), so each workspace says which project it holds
+        and a bootstrapped project never lands inside the ComplexGitSync
+        clone itself. ``clock`` names that timestamp — real by default
+        (:class:`~.universal_clock.SystemClock`); a caller that cares about
+        the exact directory name can inject a fixed one instead.
+
+        *project_name* must be one path segment: it may come from a document
+        rather than from what the user typed, and ``a/b`` or ``..`` would
+        put the workspace somewhere other than where this says.
         """
         if not project_name:
             raise ValueError("bootstrap requires a non-empty project_name.")
+        if project_name in {".", ".."} or Path(project_name).name != project_name or "\\" in project_name:
+            raise ConfigValidationError(
+                f"bootstrap project name must be a single directory name, got {project_name!r}."
+            )
         if cgs_path is not None:
-            cgspath = Path(cgs_path).expanduser().resolve()
-        else:
-            cgs_root = (Path.home() / ".cgs").expanduser().resolve()
-            cgs_root.mkdir(parents=True, exist_ok=True)
-            cgspath = cgs_root / f"CGS{(clock or SystemClock()).now():%Y%m%d%H%M%S}"
-        return (cgspath / project_name).resolve()
-
+            return (Path(cgs_path).expanduser().resolve() / project_name).resolve()
+        cgs_root = (Path.home() / ".cgs").expanduser().resolve()
+        cgs_root.mkdir(parents=True, exist_ok=True)
+        stamp = f"{(clock or SystemClock()).now():%Y%m%d%H%M%S}"
+        return (cgs_root / f"{project_name}-{stamp}").resolve()
 
 __all__ = [
     "TREE_MARKER",

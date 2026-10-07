@@ -1,4 +1,4 @@
-# ComplexGitSync v4.2.4
+# ComplexGitSync v4.3.2
 ## A distributed git-native Operating Space
 
 *Created: 2026-05-12*
@@ -126,7 +126,7 @@ clones the whole tree, root included, into a workspace of its own
 (`CGSHOME`):
 
 ```bash
-pixi run cgitsync bootstrap <project.cgs> <ProjectName>
+pixi run cgitsync bootstrap <project.cgs>
 export CGSHOME=...   # the exact line is printed by bootstrap
 pixi run cgitsync status
 ```

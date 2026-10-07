@@ -12,12 +12,14 @@ directly instead of going through the client.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from ComplexGitSync.cgs_format import CgsDocument
-from ComplexGitSync.errors import GitSyncError
+from ComplexGitSync.errors import ConfigValidationError, GitSyncError
+from ComplexGitSync.gts_document import GtsDocument
 from ComplexGitSync.paths import (
     PathResolver,
 )
@@ -307,13 +309,52 @@ def test_resolve_bootstrap_root_defaults_under_home_cgs(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
 
-    result = PathResolver.resolve_bootstrap_root("myproject")
+    result = PathResolver.resolve_bootstrap_root("myproject", clock=_FixedClock())
 
-    assert result.parent.parent == (tmp_path / ".cgs").resolve()
-    assert result.name == "myproject"
+    assert result == (tmp_path / ".cgs" / "myproject-20261007104123").resolve()
     assert (tmp_path / ".cgs").is_dir()
 
 
 def test_resolve_bootstrap_root_rejects_empty_project_name():
     with pytest.raises(ValueError, match="non-empty project_name"):
         PathResolver.resolve_bootstrap_root("")
+
+
+@pytest.mark.parametrize("name", ["a/b", "..", ".", "a\\b"])
+def test_resolve_bootstrap_root_rejects_a_name_that_is_not_one_directory(tmp_path, name):
+    with pytest.raises(ConfigValidationError, match="single directory name"):
+        PathResolver.resolve_bootstrap_root(name, cgs_path=tmp_path)
+
+
+class _FixedClock:
+    def now(self) -> datetime:
+        return datetime(2026, 10, 7, 10, 41, 23, tzinfo=timezone.utc)
+
+
+def _write_gts(path: Path, project: dict) -> Path:
+    GtsDocument(
+        {
+            "document": {
+                "format_version": GtsDocument.CURRENT_SCHEMA_VERSION,
+                "generated_at": "2026-10-07T10:41:23Z",
+                "command_origin": "test",
+            },
+            "project": project,
+            "tree_state": {"lifecycle_state": "UNLOADED", "is_ready": False, "registry_complete": False},
+            "repo_state": [],
+        }
+    ).to_toml(path)
+    return path
+
+
+def test_resolve_source_project_name_reads_a_cgs_project_name(tmp_path):
+    source = _write_root_cgs(tmp_path, "Demo")
+
+    assert PathResolver.resolve_source_project_name(source) == "Demo"
+
+
+def test_resolve_source_project_name_reads_a_gts_project_name(tmp_path):
+    source = _write_gts(tmp_path / "state.gts", {"name": "Recorded", "root_absolute_path": str(tmp_path)})
+
+    assert PathResolver.resolve_source_project_name(source) == "Recorded"
+

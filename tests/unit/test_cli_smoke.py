@@ -511,7 +511,7 @@ def test_bootstrap_command_uses_client_method(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
     class StubClient:
-        def resolve_bootstrap_root(self, project_name, *, cgs_path=None):
+        def resolve_bootstrap_root(self, project_name, *, source=None, cgs_path=None):
             captured_call["resolve_project_name"] = project_name
             captured_call["resolve_cgs_path"] = cgs_path
             return tmp_path / "cgspath" / project_name
@@ -548,7 +548,7 @@ def test_bootstrap_command_forwards_cgs_path(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
     class StubClient:
-        def resolve_bootstrap_root(self, project_name, *, cgs_path=None):
+        def resolve_bootstrap_root(self, project_name, *, source=None, cgs_path=None):
             captured_call["resolve_cgs_path"] = cgs_path
             return Path(cgs_path) / project_name
 

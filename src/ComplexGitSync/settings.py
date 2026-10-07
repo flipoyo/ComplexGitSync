@@ -161,8 +161,11 @@ class Settings:
         base = root if root is not None else Settings.cgs_root()
         excluded = exclude.resolve() if exclude is not None else None
         found: list[Path] = []
+        # One level is a bootstrapped workspace (`<name>-<timestamp>`), two the
+        # default workspace and those bootstrapped before it was named after
+        # its project (`CGS<timestamp>/<name>`).
         try:
-            candidates = sorted(base.glob(f"*/*/{_STATE_DIR_NAME}"))
+            candidates = sorted([*base.glob(f"*/{_STATE_DIR_NAME}"), *base.glob(f"*/*/{_STATE_DIR_NAME}")])
         except OSError:
             return []
         for state_dir in candidates:

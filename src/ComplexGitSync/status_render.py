@@ -102,11 +102,11 @@ def _render_empty_workspace(workspace: Path, use_case: str) -> str:
         [
             f"{EMPTY_WORKSPACE_LINE} use_case={use_case} cgshome={workspace}",
             "nothing has been cloned into this workspace. To start a project:",
-            "  cgitsync bootstrap <project.cgs> <ProjectName>  "
+            "  cgitsync bootstrap <project.cgs>        "
             "— clone a tree into a workspace of its own",
-            "  cgitsync initialise <project.cgs>               "
+            "  cgitsync initialise <project.cgs>       "
             "— build the tree a .cgs describes, here",
-            "  cgitsync discover <directory> --write           "
+            "  cgitsync discover <directory> --write   "
             "— draft a .cgs from repositories already on disk",
         ]
     )

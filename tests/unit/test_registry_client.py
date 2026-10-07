@@ -592,15 +592,47 @@ def test_resolve_bootstrap_root_defaults_under_home_cgs(tmp_path, monkeypatch):
 
     result = client.resolve_bootstrap_root("myproject")
 
-    assert result.parent.parent == (tmp_path / ".cgs").resolve()
-    assert result.name == "myproject"
+    assert result.parent == (tmp_path / ".cgs").resolve()
+    assert re.fullmatch(r"myproject-\d{14}", result.name)
     assert (tmp_path / ".cgs").is_dir()
+
+
+def test_resolve_bootstrap_root_names_the_workspace_after_the_source_project(tmp_path):
+    client = ComplexGitSyncClient()
+    source = tmp_path / "spec.cgs"
+    source.write_text(
+        '[document]\nformat_version = "1.0"\n\n[project]\nname = "Demo"\ndefault_branch = "main"\n\n'
+        '[[repos]]\ngitprovider = "github"\nproject_owner_name = "owner"\nproject_name = "Demo"\n'
+        'relative_path = "."\n',
+        encoding="utf-8",
+    )
+
+    result = client.resolve_bootstrap_root(source=source, cgs_path=tmp_path / "ws")
+
+    assert result == (tmp_path / "ws" / "Demo").resolve()
+
+
+def test_resolve_bootstrap_root_given_name_replaces_the_source_project(tmp_path):
+    client = ComplexGitSyncClient()
+    source = tmp_path / "spec.cgs"
+    source.write_text('[project]\nname = "Demo"\n', encoding="utf-8")
+
+    result = client.resolve_bootstrap_root("Other", source=source, cgs_path=tmp_path / "ws")
+
+    assert result == (tmp_path / "ws" / "Other").resolve()
+
+
+def test_resolve_bootstrap_root_needs_a_name_or_a_source():
+    client = ComplexGitSyncClient()
+
+    with pytest.raises(ValueError, match="project_name or a source"):
+        client.resolve_bootstrap_root()
 
 
 def test_resolve_bootstrap_root_rejects_empty_project_name():
     client = ComplexGitSyncClient()
 
-    with pytest.raises(ValueError, match="non-empty project_name"):
+    with pytest.raises(ValueError, match="project_name or a source"):
         client.resolve_bootstrap_root("")
 
 

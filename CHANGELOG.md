@@ -1,5 +1,29 @@
 # Changelog
 
+## 4.3.2 - 2026-10-07
+
+- A bootstrapped workspace's name now has a dash between the project name and
+  the time it was made, `$HOME/.cgs/<project name>-<timestamp>`, so a name
+  ending in a digit stays readable (`CGSil1-20261007104123`).
+
+## 4.3.1 - 2026-10-07
+
+- Fixed: `bootstrap` given a name that is not a single directory name (such
+  as `../x`, or a `.cgs` whose project name contains a `/`) now refuses in one
+  line and exits 2, instead of printing a traceback.
+
+## 4.3.0 - 2026-10-07
+
+A bootstrapped workspace is now named after its project.
+
+- `bootstrap` now names the workspace after the project: `cgitsync bootstrap
+  x.cgs` lands on `$HOME/.cgs/<project name><timestamp>`, where the project
+  name is the one the `.cgs` or `.gts` declares, instead of
+  `$HOME/.cgs/CGS<timestamp>/<name>`. The name argument is now optional; give
+  it to use a name of your own (`$HOME/.cgs/<name><timestamp>`).
+  `--cgs-path DIR` is unchanged and still gives `DIR/<name>`. Workspaces
+  made before keep working where they are.
+
 ## 4.2.4 - 2026-10-06
 
 Working on after a release now works.

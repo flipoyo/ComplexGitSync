@@ -327,7 +327,7 @@
     },
     "orchestre/client.py": {
       "internal_imports": 61,
-      "loc": 1318,
+      "loc": 1319,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -367,7 +367,7 @@
     },
     "orchestre/installer.py": {
       "internal_imports": 20,
-      "loc": 711,
+      "loc": 718,
       "public_symbols": 1
     },
     "orchestre/memory_chapters.py": {
@@ -417,7 +417,7 @@
     },
     "paths.py": {
       "internal_imports": 6,
-      "loc": 252,
+      "loc": 274,
       "public_symbols": 2
     },
     "provider.py": {

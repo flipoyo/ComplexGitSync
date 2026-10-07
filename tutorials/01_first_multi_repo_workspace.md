@@ -75,7 +75,7 @@ Standalone — bootstrap                       Nested — initialise
 
 ~/tools/ComplexGitSync/    the tool          ~/work/CGSil1/             the root = CGSHOME
                                                ├── ComplexGitSync/      the tool, inside
-~/.cgs/CGS<timestamp>/CGSil1/   CGSHOME        ├── CGSil2/
+~/.cgs/CGSil1-<timestamp>/   CGSHOME           ├── CGSil2/
   ├── CGSil2/                                  └── CGSih1/
   └── CGSih1/                                        └── CGSih2/
         └── CGSih2/
@@ -120,29 +120,31 @@ pixi run cgitsync view-tree ~/CGSil1.cgs
 **Build the tree:**
 
 ```bash
-pixi run cgitsync bootstrap ~/CGSil1.cgs CGSil1
+pixi run cgitsync bootstrap ~/CGSil1.cgs
 ```
 
-`CGSil1`, the second argument, names the workspace. `bootstrap` creates a
-new directory under `$HOME/.cgs/`, clones every repository into it, and
-ends with:
+`bootstrap` creates a new directory under `$HOME/.cgs/`, named after the
+project the `.cgs` declares (`CGSil1`) followed by the time it was made,
+clones every repository into it, and ends with:
 
 ```
-READY ready=true complete=true gittree_created=true gittree_active=true root=/home/you/.cgs/CGS<timestamp>/CGSil1
+READY ready=true complete=true gittree_created=true gittree_active=true root=/home/you/.cgs/CGSil1-<timestamp>
 
 To use this workspace, run:
-  export CGSHOME=/home/you/.cgs/CGS<timestamp>/CGSil1
+  export CGSHOME=/home/you/.cgs/CGSil1-<timestamp>
 ```
 
 **Point the tool at it**, with the line it printed:
 
 ```bash
-export CGSHOME=/home/you/.cgs/CGS<timestamp>/CGSil1
+export CGSHOME=/home/you/.cgs/CGSil1-<timestamp>
 pixi run cgitsync status
 ```
 
 Every command prints the workspace it is acting on. When you start another
-project in the same shell, export its `CGSHOME` too.
+project in the same shell, export its `CGSHOME` too. To give a workspace a
+name of your own, add it after the `.cgs`: `bootstrap ~/CGSil1.cgs trial`
+lands on `$HOME/.cgs/trial-<timestamp>`.
 
 ---
 
@@ -178,7 +180,7 @@ back to an earlier State.
 |---|---|
 | `pixi run cgitsync validate <file.cgs>` | Check a description, clone nothing |
 | `pixi run cgitsync view-tree <file.cgs>` | Draw the tree it describes |
-| `pixi run cgitsync bootstrap <file.cgs> <name>` | Standalone: clone the whole tree into a new workspace |
+| `pixi run cgitsync bootstrap <file.cgs> [name]` | Standalone: clone the whole tree into a new workspace, named after the project unless you give a name |
 | `pixi run cgitsync initialise <file.cgs>` | Nested: clone the tree around a root you cloned |
 | `pixi run cgitsync status` | Where every repository stands |
 

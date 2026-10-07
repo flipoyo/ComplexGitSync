@@ -60,7 +60,7 @@ pixi run cgitsync status
 ```
 
 ```
-cgshome=/home/you/.cgs/CGS<timestamp>/CGSil1 (from $CGSHOME) use_case=standalone
+cgshome=/home/you/.cgs/CGSil1-<timestamp> (from $CGSHOME) use_case=standalone
 summary ready=true complete=true use_case=standalone profile=user cgitsync_branch=main repos=3 dirty=0 staged=0 ahead=0 behind=0 unmeasured=0 recorded_mismatch=0 errors=0
 REPOSITORY  PATH    SCOPE    LOCAL_BRANCH  UPSTREAM_BRANCH  LOCAL  SYNC    HEAD      RECORDED
 CGSil2      CGSil2  project  main          origin/main      clean  synced  438b2956  438b2956
@@ -150,7 +150,7 @@ pixi run cgitsync freeze-release v1.0 "first release of the sandbox"
 ```
 
 ```
-READY ready=true complete=true ... name=v1.0 message='first release of the sandbox' snapshot=/home/you/.cgs/CGS<timestamp>/CGSil1/.cgitsync/state/b2149c25...
+READY ready=true complete=true ... name=v1.0 message='first release of the sandbox' snapshot=/home/you/.cgs/CGSil1-<timestamp>/.cgitsync/state/b2149c25...
 ```
 
 One command for a whole release: `add`, `commit`, `pull`, `push`, `tag
@@ -189,7 +189,7 @@ workspace, as a colleague would:
 
 ```bash
 pixi run cgitsync bootstrap ~/CGSil1.cgs CGSil1-latest
-export CGSHOME=/home/you/.cgs/CGS<timestamp>/CGSil1-latest   # printed by bootstrap
+export CGSHOME=/home/you/.cgs/CGSil1-latest-<timestamp>   # printed by bootstrap
 echo "something we will regret" >> "$CGSHOME/CGSil2/notes.txt"
 pixi run cgitsync add
 pixi run cgitsync commit "tutorial: a change we will regret"
@@ -203,7 +203,7 @@ The remotes now hold the regrettable line, and any new install from the
 
 ```bash
 pixi run cgitsync bootstrap ~/CGSil1-v1.0.gts CGSil1-v1.0
-cat /home/you/.cgs/CGS<timestamp>/CGSil1-v1.0/CGSil2/notes.txt
+cat /home/you/.cgs/CGSil1-v1.0-<timestamp>/CGSil2/notes.txt
 ```
 
 ```
@@ -238,7 +238,7 @@ pixi run cgitsync checkout main                   # back to work
 | 6 | `pixi run cgitsync tag <name>` | Tag every repository and push the tag |
 | 7 | `pixi run cgitsync freeze-release <name> "message"` | Add, commit, pull, push, tag and record the release's State |
 | 7 | `pixi run cgitsync memory list` | Every recorded State, newest first |
-| 8 | `pixi run cgitsync bootstrap <state.gts> <name>` | Rebuild the tree exactly as a State recorded it |
+| 8 | `pixi run cgitsync bootstrap <state.gts> [name]` | Rebuild the tree exactly as a State recorded it |
 
 Every command takes `--help`. Next:
 [Tutorial 3 — Onboarding a Real Build Tree](03_onboarding_a_real_build_tree.md)

@@ -128,6 +128,15 @@ def test_other_workspaces_ignores_directories_that_are_not_workspaces(tmp_path):
     assert [p.name for p in Settings.other_workspaces(tmp_path)] == ["alpha"]
 
 
+def test_other_workspaces_lists_a_workspace_named_after_its_project(tmp_path):
+    (tmp_path / "Demo-20261007104123" / ".cgitsync").mkdir(parents=True)
+    (tmp_path / "CGS111" / "alpha" / ".cgitsync").mkdir(parents=True)
+
+    found = Settings.other_workspaces(tmp_path)
+
+    assert sorted(p.name for p in found) == ["Demo-20261007104123", "alpha"]
+
+
 def test_other_workspaces_is_empty_when_the_root_does_not_exist(tmp_path):
     assert Settings.other_workspaces(tmp_path / "nothing-here") == []
 

@@ -389,27 +389,32 @@ class Installer:
 
     def resolve_bootstrap_root(
         self,
-        project_name: str,
+        project_name: str | None = None,
         *,
+        source: str | Path | None = None,
         cgs_path: str | Path | None = None,
     ) -> Path:
         """Resolve the isolated CGSHOME a :meth:`bootstrap` run will clone into.
 
-        ``project_name`` always forms the final path segment, regardless of
-        the ``.cgs`` document's own ``project_name`` field, so the
-        destination is explicit rather than inferred. When *cgs_path* is
-        omitted, it defaults to a fresh ``$HOME/.cgs/CGS<timestamp>/``
-        directory (``$HOME/.cgs`` is created if missing) so a bootstrapped
-        project never lands inside the ComplexGitSync clone itself — running
-        ComplexGitSync standalone must never mix its own repo with the
-        project state it manages.
+        The workspace is named after the project: *project_name* when given,
+        otherwise the ``[project] name`` *source* (a ``.cgs`` or ``.gts``)
+        declares, else that file's stem. When *cgs_path* is omitted, CGSHOME
+        is a fresh ``$HOME/.cgs/<name>-<timestamp>`` (``$HOME/.cgs`` is
+        created if missing), so a bootstrapped project never lands inside the
+        ComplexGitSync clone itself — running ComplexGitSync standalone must
+        never mix its own repo with the project state it manages. With
+        *cgs_path*, CGSHOME is ``<cgs_path>/<name>``.
         """
+        if not project_name:
+            if source is None:
+                raise ValueError("bootstrap requires a project_name or a source to read it from.")
+            project_name = PathResolver.resolve_source_project_name(source)
         return PathResolver.resolve_bootstrap_root(project_name, cgs_path=cgs_path)
 
     def bootstrap(
         self,
         config_path: str | Path,
-        project_name: str,
+        project_name: str | None = None,
         *,
         cgs_path: str | Path | None = None,
         force_access_protocol: str | None = None,
@@ -422,18 +427,18 @@ class Installer:
         run from its own clone (e.g. installed once, used across many
         projects) without ever writing project state into it. See
         :meth:`resolve_bootstrap_root` for how the destination is derived
-        from *project_name* and *cgs_path*.
+        from the source, *project_name* and *cgs_path*.
 
         Parameters
         ----------
         config_path:
-            Path to the ``.cgs`` authoring spec.
+            Path to the ``.cgs`` authoring spec or ``.gts`` snapshot.
         project_name:
-            Required name for the workspace; forms the last path segment of
-            CGSHOME regardless of the ``.cgs`` document's own project name.
+            Optional workspace name, replacing the project name the source
+            declares.
         cgs_path:
-            CGSPATH override. When *None*, defaults to a fresh
-            ``$HOME/.cgs/CGS<timestamp>/`` directory.
+            CGSPATH override; CGSHOME becomes ``<cgs_path>/<name>``. When
+            *None*, CGSHOME is a fresh ``$HOME/.cgs/<name>-<timestamp>``.
         force_access_protocol:
             ``"ssh"`` or ``"https"`` (``--force-protocol``). See
             :meth:`initialise_cgs` for the full description — applies here
@@ -445,7 +450,9 @@ class Installer:
             raise ValueError(
                 f"bootstrap requires a .cgs or .gts source, got '{source_path.suffix}' for {source_path!s}."
             )
-        target_dir = self.client.resolve_bootstrap_root(project_name, cgs_path=cgs_path)
+        target_dir = self.client.resolve_bootstrap_root(
+            project_name, source=source_path, cgs_path=cgs_path
+        )
         self._require_fresh_target(target_dir)
         if source_path.suffix == ".gts":
             return self._clone_gts(
@@ -715,13 +722,13 @@ class Installer:
             raise InstallFrontierError(
                 f"`initialise` is the nested install: it builds a workspace around the "
                 f"ComplexGitSync running it, and this one is not inside {cgshome}. To "
-                f"build a workspace from outside it, run `cgitsync bootstrap <spec> <name>`."
+                f"build a workspace from outside it, run `cgitsync bootstrap <spec>`."
             )
         if not self.client.git_runner.is_repository_root(cgshome):
             raise InstallFrontierError(
                 f"{cgshome} is not a git repository. `initialise` builds the dependencies of "
                 f"a project whose root is already checked out here. To clone the whole tree, "
-                f"root included, run `cgitsync bootstrap <spec> <name>`."
+                f"root included, run `cgitsync bootstrap <spec>`."
             )
 
     def _require_fresh_target(self, target_dir: Path) -> None:

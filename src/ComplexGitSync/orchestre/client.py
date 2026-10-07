@@ -386,17 +386,18 @@ class ComplexGitSyncClient:
 
     def resolve_bootstrap_root(
         self,
-        project_name: str,
+        project_name: str | None = None,
         *,
+        source: str | Path | None = None,
         cgs_path: str | Path | None = None,
     ) -> Path:
         """Resolve the isolated CGSHOME a :meth:`bootstrap` run will clone into."""
-        return self._installer.resolve_bootstrap_root(project_name, cgs_path=cgs_path)
+        return self._installer.resolve_bootstrap_root(project_name, source=source, cgs_path=cgs_path)
 
     def bootstrap(
         self,
         config_path: str | Path,
-        project_name: str,
+        project_name: str | None = None,
         *,
         cgs_path: str | Path | None = None,
         force_access_protocol: str | None = None,

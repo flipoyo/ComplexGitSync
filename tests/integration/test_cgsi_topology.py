@@ -774,9 +774,52 @@ class TestCloneAndLaunchReleaseLifecycle:
 
         assert registry.is_ready() is True
         root_clone = registry.get("root").absolute_path
-        assert root_clone.name == "demo-standalone"
-        assert root_clone.parent.parent == (fake_home / ".cgs").resolve()
+        assert re.fullmatch(r"demo-standalone-\d{14}", root_clone.name)
+        assert root_clone.parent == (fake_home / ".cgs").resolve()
         assert (root_clone / "deps" / "leaf" / ".git").exists()
+
+    def test_bootstrap_refuses_a_name_that_is_not_one_directory_in_one_line(
+        self, local_two_repo_remotes, monkeypatch, tmp_path, capsys
+    ):
+        fake_home = tmp_path / "fake-home"
+        fake_home.mkdir()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+        code = cli_main(["bootstrap", str(local_two_repo_remotes["clone_spec"]), "../evil"])
+
+        err = capsys.readouterr().err
+        assert code == 2
+        assert "single directory name" in err
+        assert "Traceback" not in err
+        assert not (fake_home / ".cgs").exists()
+
+    def test_bootstrap_without_a_name_lands_on_the_spec_project_name(
+        self, local_two_repo_remotes, monkeypatch, tmp_path
+    ):
+        clone_spec = local_two_repo_remotes["clone_spec"]
+        fake_home = tmp_path / "fake-home"
+        fake_home.mkdir()
+        client = ComplexGitSyncClient()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        monkeypatch.setattr(
+            client,
+            "_build_remote_url",
+            lambda entry: (
+                str(local_two_repo_remotes["root_remote"])
+                if entry.name == "RootRepo"
+                else str(local_two_repo_remotes["leaf_remote"])
+            ),
+        )
+        project_name = CgsDocument.from_toml(clone_spec).project_name
+
+        registry = client.bootstrap(clone_spec)
+
+        assert registry.is_ready() is True
+        root_clone = registry.get("root").absolute_path
+        assert re.fullmatch(re.escape(project_name) + r"-\d{14}", root_clone.name)
+        assert root_clone.parent == (fake_home / ".cgs").resolve()
 
     def test_pull_gts_clones_missing_local_repos(self, local_two_repo_remotes, monkeypatch, tmp_path):
         restore_root = tmp_path / "launch-workspace"

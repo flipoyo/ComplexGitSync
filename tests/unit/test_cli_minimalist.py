@@ -414,7 +414,7 @@ def test_bootstrap_command_uses_client_method(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
     class StubClient:
-        def resolve_bootstrap_root(self, project_name, *, cgs_path=None):
+        def resolve_bootstrap_root(self, project_name, *, source=None, cgs_path=None):
             captured_call["resolve_project_name"] = project_name
             captured_call["resolve_cgs_path"] = cgs_path
             return tmp_path / "cgspath" / project_name
@@ -451,7 +451,7 @@ def test_bootstrap_command_forwards_cgs_path(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
     class StubClient:
-        def resolve_bootstrap_root(self, project_name, *, cgs_path=None):
+        def resolve_bootstrap_root(self, project_name, *, source=None, cgs_path=None):
             captured_call["resolve_cgs_path"] = cgs_path
             return Path(cgs_path) / project_name
 
@@ -475,6 +475,38 @@ def test_bootstrap_command_forwards_cgs_path(monkeypatch, capsys, tmp_path):
     assert exit_code == 0
     assert captured_call["resolve_cgs_path"] == cgs_path
     assert captured_call["cgs_path"] == cgs_path
+
+
+def test_bootstrap_without_a_name_leaves_it_to_the_source(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def resolve_bootstrap_root(self, project_name, *, source=None, cgs_path=None):
+            captured_call["resolve_project_name"] = project_name
+            captured_call["resolve_source"] = source
+            return tmp_path / "Demo-20261007104123"
+
+        def bootstrap(self, source, project_name, *, cgs_path=None, force_access_protocol=None):
+            captured_call["project_name"] = project_name
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "Demo-20261007104123")
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr(minimalist, "ComplexGitSyncClient", StubClient)
+
+    exit_code = _dispatch(["bootstrap", "project.cgs"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured_call["resolve_project_name"] is None
+    assert captured_call["resolve_source"] == Path("project.cgs")
+    assert captured_call["project_name"] is None
+    assert "export CGSHOME=" + str(tmp_path / "Demo-20261007104123") in captured.out
 
 
 # ---------------------------------------------------------------------------

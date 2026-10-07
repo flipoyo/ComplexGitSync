@@ -43,8 +43,8 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
         "cgitsync initialise project.gts --force-protocol https",
     )),
     ("bootstrap",): (None, (
-        "cgitsync bootstrap install.cgs ComplexGitSync",
-        "cgitsync bootstrap release.gts MyProject --cgs-path ~/.cgs",
+        "cgitsync bootstrap install.cgs",
+        "cgitsync bootstrap release.gts MyProject --cgs-path ~/work",
     )),
     ("freeze-release",): (None, (
         'cgitsync freeze-release v1.2.0 "Release 1.2.0"',
@@ -179,7 +179,7 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
 #: The top-level "start here", printed under `cgitsync --help`.
 START_HERE = """\
 Start here:
-  cgitsync bootstrap install.cgs MyProject   clone a project tree into a workspace of its own
+  cgitsync bootstrap install.cgs             clone a project tree into a workspace of its own
   cgitsync status                            where every repository stands
   cgitsync add && cgitsync commit "<message>" && cgitsync push
 

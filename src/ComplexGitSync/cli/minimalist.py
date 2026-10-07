@@ -115,19 +115,19 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
             subparser.add_argument("source", help="Path to the local .cgs or .gts file to clone from.")
             subparser.add_argument(
                 "project_name",
+                nargs="?",
                 help=(
-                    "Required workspace name; forms the last path segment of CGSHOME "
-                    "regardless of the .cgs document's own project name."
+                    "Optional workspace name, replacing the project name the .cgs or "
+                    ".gts declares. Omitted, the workspace is named after the project."
                 ),
             )
             subparser.add_argument(
                 "--cgs-path",
                 dest="cgs_path",
                 help=(
-                    "CGSPATH override; CGSHOME becomes CGSPATH/<project_name>. Defaults "
-                    "to a fresh $HOME/.cgs/CGS<timestamp>/ directory (created if "
-                    "missing), so the project never lands inside the ComplexGitSync "
-                    "clone itself."
+                    "CGSPATH override; CGSHOME becomes CGSPATH/<name>. Defaults to a "
+                    "fresh $HOME/.cgs/<name>-<timestamp>/ directory, so the project never "
+                    "lands inside the ComplexGitSync clone itself."
                 ),
             )
             subparser.add_argument(
@@ -326,8 +326,7 @@ def _handle_initialise(args: argparse.Namespace) -> int:
 def _handle_bootstrap(args: argparse.Namespace) -> int:
     client = ComplexGitSyncClient()
     project_root = client.resolve_bootstrap_root(
-        args.project_name,
-        cgs_path=getattr(args, "cgs_path", None),
+        args.project_name, source=Path(args.source), cgs_path=getattr(args, "cgs_path", None)
     )
     return _run_with_logging(
         command_name="bootstrap",
@@ -543,7 +542,7 @@ def _execute_bootstrap(
     client: ComplexGitSyncClient,
     source_path: Path,
     *,
-    project_name: str,
+    project_name: str | None = None,
     cgs_path: str | None = None,
     force_access_protocol: str | None = None,
 ) -> int:
