@@ -6,4 +6,5 @@ repos = [
     { repository = "github:flipoyo/MOLONARI-gate", relative_path = "molonari.io", default_branch = "CGS-MOLO" },
     { repository = "github:flipoyo/MOLONARI-computo", relative_path = "pyheatmy", default_branch = "CGS-MOLO" },
     { repository = "github:flipoyo/ComplexGitSync", relative_path = "dev-hub", private = true, writable = true },
+    { repository = "github:flipoyo/.memory", relative_path = ".cgitsync/.memory", default_branch = "lMOLO", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
 ]
