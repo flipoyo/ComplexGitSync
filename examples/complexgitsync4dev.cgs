@@ -12,7 +12,7 @@
 #
 # install.cgs, beside it, is the USER install and mounts only the first two
 # entries. This file adds every agentic skill (AgentSkillsSplit) plus this
-# project's own private mounts, and is also tutorials/04_private_repos.md's
+# project's own private mounts, and is also tutorials/05_private_repos.md's
 # worked example, because it is the only checked-in spec using every kind
 # of private entry:
 #

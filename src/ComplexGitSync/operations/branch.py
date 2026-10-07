@@ -2,11 +2,12 @@
 
 Ring: 2
 Contract: Branch targets, branch creation, checkout, closing and topology inspection, tree-wide.
-Imports: errors, git_branch, git_repo, git_tree, git_tree_branch, orchestre, outcome, preflight
+Imports: errors, git_branch, git_repo, git_tree, git_tree_branch, memory, orchestre, outcome, preflight
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -32,6 +33,7 @@ from ..git_tree import (
     iter_tree_leaf_first,
 )
 from ..git_tree_branch import GitTreeBranches
+from ..memory.repository import MOUNT_PATH
 
 if TYPE_CHECKING:
     from ..orchestre import GitRunner
@@ -274,8 +276,14 @@ class BranchOperation:
         3. ``git checkout`` on every repo, parent-first; tree repos are
            updated to reflect the new current ref, resolved ref, commit SHA, and
            lifecycle / sync states.
+
+        A tag (``ref_kind=RefKind.TAG``) takes :meth:`checkout_tag_tree`
+        instead: it creates no branch (ReleaseTags R3).
         """
         Preflight.assert_ready(tree)
+        if ref_kind is RefKind.TAG:
+            BranchOperation.checkout_tag_tree(tree, git_runner, branch_name, scope=scope)
+            return
 
         # Step 1: propagate target ref across the whole tree. The runner is
         # passed because step 3 is about to `git checkout` what this decides:
@@ -292,6 +300,95 @@ class BranchOperation:
             ref = repo.target_ref_name or branch_name
             git_runner.checkout(repo.absolute_path, ref)
             BranchOperation.refresh_repo_after_checkout(repo, ref, repo.target_ref_kind or ref_kind, git_runner)
+
+        tree.recompute_tree_state()
+
+    @staticmethod
+    def checkout_tag_tree(
+        tree: WorkingGitTree,
+        git_runner: GitRunner,
+        tag_name: str,
+        *,
+        scope: RepoScope = RepoScope.ALL,
+    ) -> None:
+        """Check out the tag *tag_name*, detached, in every repository that holds it.
+
+        ReleaseTags D2/D3. No branch is created anywhere: the old path made a
+        branch named after the tag at ``HEAD``, and Git then checked out that
+        branch instead of the tag. ``refs/tags/<name>`` is checked out
+        explicitly, so a branch of the same name left by that old path cannot
+        capture it; such a branch is named in a warning and never deleted.
+
+        A read-only (private/distant) repository was never tagged — ``tag``
+        and ``freeze-release`` tag only what this project may push — so it is
+        left where it is, and a warning says so and points to the release's
+        ``.gts``, which records its exact commit.
+
+        The memory (everything under the root's ``.cgitsync/``) is left on its
+        branch too, although it is tagged: it records the tree's history, and
+        a release does not rewind history. Detached at the tag, the next fold
+        committed onto a detached ``HEAD`` that ``checkout <branch>`` then
+        orphaned, losing ledger entries.
+
+        Every writable repository is asked for the tag before any is checked
+        out: one missing it — after a fetch of that one tag — refuses the
+        whole command, naming each, with nothing changed.
+        """
+        repos = list(iter_tree(tree, scope))
+        root = tree.get(ROOT_REPO_ID)
+        memory_dir = (root.absolute_path / MOUNT_PATH).parent if root is not None else None
+        memory = [repo for repo in repos if memory_dir is not None and repo.absolute_path.is_relative_to(memory_dir)]
+        readonly = [repo for repo in repos if repo.effective_private and not repo.effective_writable]
+        writable = [repo for repo in repos if repo not in readonly and repo not in memory]
+
+        missing: list[str] = []
+        for repo in writable:
+            if git_runner.tag_exists(repo.absolute_path, tag_name):
+                continue
+            try:
+                git_runner.fetch(
+                    repo.absolute_path,
+                    remote=repo.remote_name or "origin",
+                    ref_name=f"refs/tags/{tag_name}:refs/tags/{tag_name}",
+                )
+            except GitSyncError:
+                pass
+            if not git_runner.tag_exists(repo.absolute_path, tag_name):
+                missing.append(repo.name)
+        if missing:
+            raise GitSyncError(
+                f"checkout refused; nothing was checked out: tag '{tag_name}' does not "
+                f"exist in {', '.join(missing)}, locally or on its remote."
+            )
+
+        stray = [repo.name for repo in writable if git_runner.local_branch_exists(repo.absolute_path, tag_name)]
+        if stray:
+            warnings.warn(
+                f"a branch named '{tag_name}' exists beside the tag in {', '.join(stray)}; "
+                "the tag was checked out, not the branch. It was probably made by an older "
+                f"'checkout {tag_name} --ref-kind tag'; check what it holds, then remove it "
+                "(cgitsync branch close, then branch delete, or plain git) when it holds nothing you need.",
+                stacklevel=2,
+            )
+        if readonly:
+            warnings.warn(
+                f"left as they are, because a tag is only created where this project may push: "
+                f"{', '.join(repo.name for repo in readonly)}. To rebuild the exact tree of a "
+                "release, bootstrap the .gts that release recorded.",
+                stacklevel=2,
+            )
+        if memory:
+            warnings.warn(
+                f"the memory stays on its branch ({', '.join(repo.name for repo in memory)}): "
+                "it records the tree's history, and a release does not rewind it.",
+                stacklevel=2,
+            )
+
+        branches = GitTreeBranches(tree)
+        for repo in writable:
+            branches.target(repo, tag_name, ref_kind=RefKind.TAG).apply_to(repo)
+            git_runner.checkout(repo.absolute_path, f"refs/tags/{tag_name}")
+            BranchOperation.refresh_repo_after_checkout(repo, tag_name, RefKind.TAG, git_runner)
 
         tree.recompute_tree_state()
 

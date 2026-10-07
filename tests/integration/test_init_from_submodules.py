@@ -1,4 +1,4 @@
-"""Integration tests for ``init-from-submodules`` — Tutorial 3's steps 3-5.
+"""Integration tests for ``init-from-submodules`` — Tutorial 4's steps 3-5.
 
 The fixture builds the same shape as ``cawaqsviz``: a root repository, a
 submodule inside it, and a submodule inside *that* one. Every remote is a
@@ -63,7 +63,7 @@ def _seed(tmp_path: Path, name: str) -> Path:
 
 @pytest.fixture()
 def submodule_tree(tmp_path: Path) -> dict[str, Path]:
-    """A two-level submodule tree, checked out the way Tutorial 3 step 2 leaves it."""
+    """A two-level submodule tree, checked out the way Tutorial 4 step 2 leaves it."""
     remotes = {name: _seed(tmp_path, name) for name in REPO_NAMES}
 
     _git(tmp_path / "seed-hta", "submodule", "add", "-q", remotes["twin"].as_posix(), "docs/twin")
@@ -74,7 +74,7 @@ def submodule_tree(tmp_path: Path) -> dict[str, Path]:
     _git(tmp_path / "seed-root", "commit", "-qm", "add hta submodule")
     _git(tmp_path / "seed-root", "push", "-q", "origin", "main")
 
-    # Tutorial 3 steps 1-2: the user's own clone, submodules checked out.
+    # Tutorial 4 steps 1-2: the user's own clone, submodules checked out.
     work = tmp_path / "work"
     work.mkdir()
     root = work / "root"

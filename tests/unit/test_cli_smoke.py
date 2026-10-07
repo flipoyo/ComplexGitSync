@@ -1541,83 +1541,29 @@ commit_sha = "abc123"
     return gts_path
 
 
-def test_readme_documents_every_cli_command():
-    """README.md's command reference must list every _PLANNED_COMMANDS entry.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_USER_GUIDE = _REPO_ROOT / "docs" / "Text" / "user_guide.tex"
 
-    Guards against the CLI surface (cli.py) and the user-facing docs (README.md)
-    drifting apart, as happened previously when configure/remember/memorize/
-    retrieve/reload were added to cli.py but never documented.
+
+def test_user_guide_documents_every_cli_command():
+    """The user guide must name every _PLANNED_COMMANDS entry.
+
+    Guards against the CLI surface and the user-facing reference drifting
+    apart, as happened previously when configure/remember/memorize/
+    retrieve/reload were added to cli.py but never documented. The guide is
+    the command reference; README.md is the front page and only says how to
+    reach ``--help`` (README-UX, 2026-10-06).
     """
     from ComplexGitSync.cli import _PLANNED_COMMANDS
 
-    readme_path = Path(__file__).resolve().parents[2] / "README.md"
-    readme_text = readme_path.read_text(encoding="utf-8")
+    guide_text = _USER_GUIDE.read_text(encoding="utf-8")
 
-    missing = [command for command in _PLANNED_COMMANDS if f"`{command}`" not in readme_text]
-    assert not missing, f"README.md command reference is missing: {missing}"
-
-
-def test_readme_command_reference_lists_only_real_commands():
-    """The reverse direction of the check above.
-
-    A command documented in README.md's ``## 3. `cgitsync` command list``
-    table that the parser cannot actually build is as much a drift bug as an
-    undocumented command — build_parser() only ever creates a subparser for
-    a name that is a _PLANNED_COMMANDS key (see
-    test_parser_choices_match_planned_commands), so a phantom row here would
-    silently promise a command that errors with "invalid choice".
-    """
-    from ComplexGitSync.cli import _PLANNED_COMMANDS
-
-    readme_path = Path(__file__).resolve().parents[2] / "README.md"
-    readme_text = readme_path.read_text(encoding="utf-8")
-
-    table_match = re.search(r"## 3\. `cgitsync` command list\n\n(.*?)\n\n##", readme_text, re.DOTALL)
-    assert table_match, "README.md's '## 3. `cgitsync` command list' table was not found."
-    documented = re.findall(r"^\| \S[^|]*\| `([a-z][a-z-]*)` \|", table_match.group(1), re.MULTILINE)
-    assert documented, "No command rows parsed from README.md's command list table."
-
-    phantom = [command for command in documented if command not in _PLANNED_COMMANDS]
-    assert not phantom, f"README.md documents commands the CLI cannot build: {phantom}"
+    missing = [command for command in _PLANNED_COMMANDS if f"\\texttt{{{command}" not in guide_text]
+    assert not missing, f"docs/Text/user_guide.tex does not document: {missing}"
 
 
-def test_readme_command_options_exist_on_their_command():
-    """Every flag README's command table shows must be real on that command.
-
-    The table gained an "Arguments and key options" column so a reader can
-    see the shape of a call without running ``--help``. A column like that
-    is only worth having if it cannot drift: a flag documented on the wrong
-    command sends the reader to an "unrecognized arguments" error.
-    """
-    from ComplexGitSync.cli import build_parser
-
-    parser = build_parser()
-    subparsers = next(a for a in parser._actions if getattr(a, "choices", None))
-    real_options = {name: _subtree_options(sub) for name, sub in subparsers.choices.items()}
-
-    readme_text = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
-    table = re.search(
-        r"## 3\. `cgitsync` command list\n\n(.*?)\n\n### Options that recur",
-        readme_text,
-        re.DOTALL,
-    )
-    assert table, "README.md's command list table was not found."
-
-    phantom = []
-    for row in table.group(1).splitlines():
-        match = re.match(r"^\| \S[^|]*\| `([a-z][a-z-]*)` \|([^|]*)\|", row)
-        if not match:
-            continue
-        command, arguments = match.group(1), match.group(2)
-        for flag in re.findall(r"`(--[a-z-]+)`", arguments):
-            if flag not in real_options[command]:
-                phantom.append(f"{command} {flag}")
-
-    assert not phantom, f"README documents options that do not exist: {phantom}"
-
-
-def test_readme_lists_exactly_the_commands_that_accept_private():
-    """``--private`` is a safety rail, so README must name its reach exactly.
+def test_user_guide_lists_exactly_the_commands_that_accept_private():
+    """``--private`` is a safety rail, so the guide must name its reach exactly.
 
     Claiming it on a command that lacks it teaches the reader that a
     tree-wide write can be narrowed when it cannot.
@@ -1632,15 +1578,36 @@ def test_readme_lists_exactly_the_commands_that_accept_private():
         if "--private" in _subtree_options(sub)
     }
 
-    readme_text = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
-    row = re.search(r"^\| `--private` \|([^|]*)\|", readme_text, re.MULTILINE)
-    assert row, "README.md's `--private` row in 'Options that recur' was not found."
-    documented = set(re.findall(r"`([a-z][a-z-]*)`", row.group(1)))
+    guide_text = _USER_GUIDE.read_text(encoding="utf-8")
+    paragraph = re.search(
+        r"\\textbf\{Which commands accept \\texttt\{--private\}\.\}(.*?)\n\n",
+        guide_text,
+        re.DOTALL,
+    )
+    assert paragraph, "The user guide's 'Which commands accept --private' paragraph was not found."
+    documented = set(re.findall(r"\\texttt\{([a-z][a-z-]*)\}", paragraph.group(1)))
 
     assert documented == accepts_private, (
-        f"README's --private list is wrong: missing {sorted(accepts_private - documented)}, "
+        f"The guide's --private list is wrong: missing {sorted(accepts_private - documented)}, "
         f"claimed but absent {sorted(documented - accepts_private)}"
     )
+
+
+def test_readme_stays_a_short_front_page():
+    """README.md is for a first-time user: what the tool is for, how to get help, where to go.
+
+    The owner's README-UX request (2026-10-06): a README that listed every
+    command and option lost its readers. The reference lives in the user
+    guide, so the README must stay short, point at ``--help``, and link
+    every tutorial — and must not grow a command table again.
+    """
+    readme_text = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert len(readme_text.splitlines()) <= 250, "README.md has grown past a front page; move detail to docs/."
+    assert "pixi run cgitsync --help" in readme_text
+    assert "pixi run cgitsync <command> --help" in readme_text
+    for tutorial in sorted((_REPO_ROOT / "tutorials").glob("0*.md")):
+        assert f"tutorials/{tutorial.name}" in readme_text, f"README.md does not link {tutorial.name}"
 
 
 def test_discover_command_uses_client_method(monkeypatch, capsys, tmp_path):

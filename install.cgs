@@ -22,7 +22,7 @@
 # A user install still has a memory. ComplexGitSync creates one itself, locally,
 # at .cgitsync/.memory the first time a command records something, with no
 # remote, and never publishes it: publishing a memory is a developer's
-# privilege, stated by declaring one in a .cgs (see tutorials/05_memory.md).
+# privilege, stated by declaring one in a .cgs (see tutorials/06_memory.md).
 
 project = { name = "ComplexGitSync", default_branch = "main" }
 

@@ -2,13 +2,14 @@
 
 Ring: 3
 Contract: Load, validate and snapshot the `.cgs`/`.gts` documents a tree is built from.
-Imports: cgs_format, client, command_run_logger, git_tree, gts_document, memory, memory_facts, paths, registry
+Imports: cgs_format, client, command_run_logger, git_tree, git_tree_branch, gts_document, memory, memory_facts, paths, registry
 """
 
 from __future__ import annotations
 
 import json
 import shutil
+import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -29,6 +30,7 @@ from ..git_tree import (
 from ..git_tree import (
     fix_circularities as _fix_circularities,
 )
+from ..git_tree_branch import GitTreeBranches
 from ..gts_document import GtsDocument
 from ..memory import Relocation
 from ..memory.commit_log import (
@@ -227,6 +229,17 @@ class DocumentLoader:
         tree_root = MemoryFacts.workspace_of_snapshot(resolved_snapshot_path)
         self.client.registry = RegistryTranslator.from_gts_document(document, tree_root=tree_root)
         self.client.orchestre.git_tree.git.bind_tree(self.client.registry)
+        settled = GitTreeBranches(self.client.registry, self.client.git_runner).settle_recorded_tags()
+        if settled:
+            # ReleaseTags D4: a State the old freeze-release recorded says
+            # these repositories are on its tag; Git has them on a branch.
+            self.client._log_event("recorded_tag_settled", repos=list(settled))
+            warnings.warn(
+                f"the State loaded records a tag as the branch of {', '.join(settled)}, which "
+                "an older freeze-release wrote by mistake; using the branch each one has "
+                "checked out instead. Run 'cgitsync status' and push any commit it shows ahead.",
+                stacklevel=2,
+            )
         recorded_source = document.read("project.source_cgs_path")
         self.client.source_path = (
             PathResolver.from_tree(str(recorded_source), tree_root)

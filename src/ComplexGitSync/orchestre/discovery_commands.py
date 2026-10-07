@@ -326,7 +326,7 @@ class DiscoveryCommands:
     ) -> InitFromSubmodulesReport:
         """Adopt a submodule-based checkout in one call: discover, initialise, convert.
 
-        This is the whole of Tutorial 3's steps 3-5, in the one order that
+        This is the whole of Tutorial 4's steps 3-5, in the one order that
         works. Point it at a checkout that was cloned and ``git submodule
         update --init --recursive``'d by hand, and it produces a ``READY``
         ComplexGitSync tree whose submodules have become plain nested
@@ -493,7 +493,7 @@ class DiscoveryCommands:
           (*reuse_existing*): the discovery is then only a report.
         * *project_name* and the directory name disagree, so ``initialise``
           would resolve CGSHOME to a sibling directory that does not exist
-          — Tutorial 3's easiest mistake.
+          — Tutorial 4's easiest mistake.
         * *root* has no ``.gitmodules``, meaning either an already-adopted
           tree or one that never used submodules. There would be nothing
           to convert, while the clone step would still re-clone (and so

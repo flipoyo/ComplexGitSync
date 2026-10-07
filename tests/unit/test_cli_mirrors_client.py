@@ -2,7 +2,7 @@
 
 `CLAUDE.md`: every capability exists in both layers -- a
 `ComplexGitSyncClient` method carrying the semantics, a thin CLI command
-calling it. `test_readme_documents_every_cli_command` checks the README half.
+calling it. `test_user_guide_documents_every_cli_command` checks the user-guide half.
 This checks the other half, statically:
 
 * every `_execute_*` function under `cli/` calls a client method, so no CLI
