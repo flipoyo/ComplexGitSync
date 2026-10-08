@@ -9,7 +9,7 @@ Contract: FromCliRepair.find_last_error()/run(). Owns the registry of
 Imports: base, repair_divergent_user, repair_merge_conflict, git_repo,
     git_runner, git_tree
 
-Design reference: .agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md §7-§9 (WP2).
+Design reference: .agent/.local/.dev/DevTickets/archive/20260923_Autofix_DevPlanTicket.md §7-§9 (WP2).
 """
 
 from __future__ import annotations

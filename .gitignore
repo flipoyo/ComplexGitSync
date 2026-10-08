@@ -225,8 +225,8 @@ apoub*
 
 # Nested repos declared in ComplexGitSync.cgs (plain clones, not submodules —
 # see README's "nested repos are plain clones" note). This repository tracks
-# no planning material at all: the tickets live in the private .localSpec
-# mount, at .agent/.local/.localSpec/DevTickets/, so a user install ships the
+# no planning material at all: the tickets live in the private .dev
+# mount, at .agent/.local/.dev/DevTickets/, so a user install ships the
 # tool and not the workshop. CLAUDE.md and AGENT.md at the root are symbolic
 # links into the .agent/.local/.claude/ mount, tracked as links, not as the
 # files they point to. .agent/.distant/ holds the read-only DevSpec/ticket/
@@ -250,6 +250,4 @@ ComplexGitSync.lgr
 .agent/.distant/ticket
 .agent/.local/.claude
 .agent/.local/.localSpec
-.agent/.local/.auto
 .agent/.local/.dev
-.agent/.local/.versioning

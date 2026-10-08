@@ -11,8 +11,8 @@ Imports: commit_log, environment, ledger_entry, ledger_store, repository, states
 
 Why this exists as its own module
 ----------------------------------
-WorkingTransitionState (`.agent/.local/.localSpec/DevTickets/openTickets/
-memory-dev_1-2_WorkingTransitionState_DevPlanTicket.md`) split what
+WorkingTransitionState (`.agent/.local/.dev/DevTickets/archive/
+20260917_WorkingTransitionState_DevPlanTicket.md`) split what
 `.cgitsync` holds into two directories so the mount's own git worktree
 stays clean between one `memory push` and the next. Two different Ring
 levels need the same "read both, merge" answer: `orchestre/`

@@ -196,7 +196,7 @@ class _StubClientWithTree:
     """A client that has got as far as loading a registry before failing.
 
     Which is where the merge in
-    ``.agent/.local/.localSpec/DevTickets/archive/20260927_MergeLogGap_DevPlanTicket.md``
+    ``.agent/.local/.dev/DevTickets/archive/20260927_MergeLogGap_DevPlanTicket.md``
     §1 failed: the tree was loaded and ``READY``, and the operation then
     refused. Nothing here stubs ``bind_log_file`` — see the tests below.
     """

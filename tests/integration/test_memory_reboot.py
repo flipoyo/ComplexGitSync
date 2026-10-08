@@ -35,8 +35,8 @@ repos = [
 class _FixedClock:
     """Deterministic stand-in for :class:`ClockProtocol` — one fixed date,
     for tests where "which day" is the whole point. See
-    `.agent/.local/.localSpec/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md` and
-    `.agent/.local/.localSpec/DevTickets/openTickets/main_1-1_UniversalClock_DevPlanTicket.md`:
+    `.agent/.local/.dev/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md` and
+    `.agent/.local/.dev/DevTickets/archive/20260920_UniversalClock_DevPlanTicket.md`:
     a test that asserts on a date injects the date, through this Protocol,
     rather than monkeypatching a module-level ``datetime``.
     """
@@ -367,8 +367,8 @@ def test_a_second_reboot_the_next_day_writes_v3(tmp_path):
     that are not today and never will be, injected through
     :class:`ComplexGitSyncClient`'s own ``clock`` field rather than
     monkeypatching a module-level ``datetime``, per
-    `.agent/.local/.localSpec/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md` §1
-    and `.agent/.local/.localSpec/DevTickets/openTickets/main_1-1_UniversalClock_DevPlanTicket.md`
+    `.agent/.local/.dev/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md` §1
+    and `.agent/.local/.dev/DevTickets/archive/20260920_UniversalClock_DevPlanTicket.md`
     — otherwise the "first" reboot silently races the real clock and the
     test goes red the day its fixed "next day" catches up to it.
     """

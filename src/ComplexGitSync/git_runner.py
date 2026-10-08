@@ -31,7 +31,7 @@ from .universal_clock import SystemClock
 # need not be UTF-8 either. Decoding that strictly — which is what
 # ``subprocess(text=True)`` does — raises UnicodeDecodeError *before* the
 # caller can look at the exit code, turning "are these branches mergeable?"
-# into a traceback (.agent/.local/.localSpec/DevTickets/archive/20260910_MergeOutputDecoding_
+# into a traceback (.agent/.local/.dev/DevTickets/archive/20260910_MergeOutputDecoding_
 # DevPlanTicket.md). Replacement decoding keeps every byte sequence readable
 # enough for the things this module actually looks for, all of which are
 # ASCII: exit codes, object ids, ref names, porcelain status codes, and
@@ -54,7 +54,7 @@ _BINARY_CONFLICT_WARNING = b"Cannot merge binary files"
 #: a branch-specific one instead and leaves it there forever, so a branch made
 #: afterwards can never resolve ``@{upstream}`` even straight after a
 #: successful ``push -u`` — see
-#: ``.agent/.local/.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``.
+#: ``.agent/.local/.dev/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``.
 _WIDE_FETCH_REFSPEC = "+refs/heads/*:refs/remotes/{remote}/*"
 
 #: What ``--single-branch`` writes in its place: one branch, mapped by name.
@@ -98,7 +98,7 @@ def _english_message_locale(env: dict[str, str]) -> None:
     English fragments of git's prose to decide whether to offer the
     ``--force-protocol`` recovery. On a French machine nothing matched, so the
     hint never fired for anyone whose shell was not English (see
-    ``.agent/.local/.localSpec/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md``). The
+    ``.agent/.local/.dev/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md``). The
     deliberate trade-off: a French user's git errors, quoted inside
     ``GitSyncError``, now read in English — the alternative was a French
     sentence inside an English one *and* a hint nobody ever saw.
@@ -1534,7 +1534,7 @@ class GitRunner:
         :func:`~ComplexGitSync.operations.create_global_branch` takes only
         for a branch this clone has neither locally nor as a cached
         remote-tracking ref — the exact ambiguity CheckoutForkGuard
-        (``.agent/.local/.localSpec/DevTickets/openTickets/main_1-1_CheckoutForkGuard_DevPlanTicket.md``)
+        (``.agent/.local/.dev/DevTickets/archive/20260918_CheckoutForkGuard_DevPlanTicket.md``)
         traces to a silent fork: "genuinely new" and "real, just never
         fetched here" look identical to :meth:`remote_tracking_branch_exists`
         alone.

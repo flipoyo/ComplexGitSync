@@ -291,10 +291,10 @@ _MANIFEST_TEXT = """\
 
 ## Spec files
 
-| file | mount | digest |
-|---|---|---|
-| [A.md](../.a/A.md) | `.agent/.local/.a` | cited |
-| [B.md](../../.distant/b/B.md) | `.agent/.distant/b` | exempt: a pointer |
+| file | mount | level | digest |
+|---|---|---|---|
+| [A.md](../.a/A.md) | `.agent/.local/.a` | fills in [B.md](../../.distant/b/B.md) | cited |
+| [B.md](../../.distant/b/B.md) | `.agent/.distant/b` | pattern | exempt: a pointer |
 """
 _CGS_MOUNTS = {".agent/.local/.a": "github:x/.a", ".agent/.distant/b": "github:x/b"}
 
@@ -321,6 +321,10 @@ def test_a_manifest_is_read_into_mounts_specs_and_exemptions():
     assert manifest.mounts == _CGS_MOUNTS
     assert manifest.specs == [".agent/.local/.a/A.md", ".agent/.distant/b/B.md"]
     assert manifest.exempt == {".agent/.distant/b/B.md": "a pointer"}
+    assert manifest.levels == {
+        ".agent/.local/.a/A.md": ".agent/.distant/b/B.md",
+        ".agent/.distant/b/B.md": "pattern",
+    }
     assert spec_tree.run_check_manifest(manifest, _CGS_MOUNTS) == []
 
 
@@ -340,7 +344,7 @@ def test_a_mount_whose_repository_differs_is_a_failure():
 
 
 def test_a_spec_file_outside_its_mount_is_a_failure():
-    text = _MANIFEST_TEXT.replace("`.agent/.local/.a` | cited", "`.agent/.distant/b` | cited")
+    text = _MANIFEST_TEXT.replace("`.agent/.local/.a` | fills in", "`.agent/.distant/b` | fills in")
     failures = spec_tree.run_check_manifest(_manifest(text), _CGS_MOUNTS)
     assert any("does not sit inside its mount" in f for f in failures)
 
@@ -366,3 +370,69 @@ def test_a_spec_file_listed_but_missing_on_disk_is_a_failure(fixture_root):
     report = spec_tree.analyse(universe=["root.md", "gone.md"], root="root.md")
 
     assert any("gone.md" in f and "does not exist" in f for f in spec_tree.run_check(report))
+
+
+# ---------------------------------------------------------------------------
+# The two levels — the AgenticTwoLevels ticket
+# ---------------------------------------------------------------------------
+
+
+def _levels_tree(root: Path, *, fills_in_line: str | None) -> None:
+    _write(root, ".agent/.distant/b/B.md", "# B\n")
+    head = "# A\n\n*Created: 2026-10-08*\n\n"
+    _write(root, ".agent/.local/.a/A.md", head + (fills_in_line + "\n\n" if fills_in_line else "") + "body\n")
+
+
+def test_a_fill_in_naming_the_manifests_pattern_passes(fixture_root):
+    _levels_tree(fixture_root, fills_in_line="*Fills in: ../../.distant/b/B.md*")
+
+    assert spec_tree.run_check_fills_in(_manifest()) == []
+
+
+def test_a_fill_in_with_no_fills_in_line_is_a_failure(fixture_root):
+    _levels_tree(fixture_root, fills_in_line=None)
+
+    failures = spec_tree.run_check_fills_in(_manifest())
+
+    assert len(failures) == 1 and "no '*Fills in: <path>*' line" in failures[0]
+
+
+def test_a_fills_in_line_naming_another_file_than_the_manifest_is_a_failure(fixture_root):
+    _levels_tree(fixture_root, fills_in_line="*Fills in: ../../.distant/b/Other.md*")
+
+    failures = spec_tree.run_check_fills_in(_manifest())
+
+    assert len(failures) == 1 and "the manifest says .agent/.distant/b/B.md" in failures[0]
+
+
+def test_a_standalone_file_must_not_carry_a_fills_in_line(fixture_root):
+    _levels_tree(fixture_root, fills_in_line="*Fills in: ../../.distant/b/B.md*")
+    text = _MANIFEST_TEXT.replace("fills in [B.md](../../.distant/b/B.md)", "standalone")
+
+    failures = spec_tree.run_check_fills_in(_manifest(text))
+
+    assert len(failures) == 1 and "standalone" in failures[0]
+
+
+def test_a_local_file_cannot_be_a_pattern_and_a_shared_one_cannot_fill_in(fixture_root):
+    _levels_tree(fixture_root, fills_in_line=None)
+    text = _MANIFEST_TEXT.replace("fills in [B.md](../../.distant/b/B.md)", "pattern").replace(
+        "| pattern | exempt", "| standalone | exempt"
+    )
+
+    failures = spec_tree.run_check_fills_in(_manifest(text))
+
+    assert any("local, so it cannot be a 'pattern'" in f for f in failures)
+    assert any("shared, so its level must be 'pattern'" in f for f in failures)
+
+
+def test_a_level_that_is_none_of_the_three_is_a_malformed_row():
+    text = _MANIFEST_TEXT.replace("| pattern |", "| sort of |")
+
+    assert any("level must be" in f for f in _manifest(text).problems)
+
+
+def test_every_local_spec_in_this_repo_fills_in_a_pattern_or_stands_alone():
+    failures = spec_tree.run_check_fills_in(spec_tree.load_manifest())
+
+    assert not failures, "\n".join(failures)

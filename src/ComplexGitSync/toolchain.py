@@ -15,7 +15,7 @@ less than "…by cgitsync 2.64 driving git 2.39.5", when the question two
 years later is why a restored release does not match.
 
 The owner asked for it in those words
-(``.agent/.local/.localSpec/DevTickets/archive/.closedUserTicket/20260916_memory-dependencies.md``):
+(``.agent/.local/.dev/DevTickets/archive/.closedUserTicket/20260916_memory-dependencies.md``):
 record the versions used at state genesis and at the time of each record.
 
 Three rules, settled with the owner on 2026-09-16 and stated in

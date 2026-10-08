@@ -476,18 +476,17 @@ class TestThisTreesOwnDeclaration:
         assert by_name[".claude"]["writable"] is True
 
     def test_this_projects_own_skills_are_writable(self):
-        """`.dev`, `.versioning`, `.auto` (`AgentSkillsSplit`).
+        """`.dev` (`AgentSkillsSplit`, then `AgenticTwoLevels`).
 
-        Dispatched from what used to be sections of `CLAUDE.md` and
-        `AdditionalSpecs.md` — this project's own, so writable, the same
-        as `.localSpec`/`.claude` above.
+        This project's own, so writable, the same as `.localSpec`/`.claude`
+        above. `.versioning` and `.auto` were folded into it and dropped.
         """
         document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync4dev.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
         assert by_name[".dev"]["writable"] is True
-        assert by_name[".versioning"]["writable"] is True
-        assert by_name[".auto"]["writable"] is True
+        assert ".versioning" not in by_name
+        assert ".auto" not in by_name
 
     def test_the_shared_skills_are_read_only(self):
         """`.ticketing`, `DevSpec`, `DocSpec` (`AgentSkillsSplit`) are
@@ -519,10 +518,10 @@ class TestThisTreesOwnDeclaration:
         # project branches the same way they reconcile the other two.
         # Nothing writes into its worktree except `memory push`'s own fold
         # (`memory-dev_WorkingTransitionState`), so no scope needs to route
-        # around it any more. .dev/.versioning/.auto (AgentSkillsSplit)
-        # join them the same way -- this project's own, writable.
+        # around it any more. .dev (AgentSkillsSplit)
+        # joins them the same way -- this project's own, writable.
         assert names(RepoScope.PRIVATE) == {
-            ".localSpec", ".claude", ".memory", ".dev", ".versioning", ".auto",
+            ".localSpec", ".claude", ".memory", ".dev",
         }
         # .ticketing/DevSpec/DocSpec are declared directly (AgentMountSplit)
         # and need no nested discovery to appear at all -- the tree built

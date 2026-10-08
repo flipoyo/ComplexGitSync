@@ -4,7 +4,7 @@
 ``repair_divergent_user``'s ``repair()`` is tested against real git
 repositories (a bare "origin" plus two independent working clones), the
 same shape as the real incident it generalises
-(``.agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md`` §5), because a hash-chain splice is
+(``.agent/.local/.dev/DevTickets/archive/20260923_Autofix_DevPlanTicket.md`` §5), because a hash-chain splice is
 exactly the kind of thing a mock could pass while the real algorithm still
 breaks.
 """
@@ -104,7 +104,7 @@ def diverged_memory(tmp_path: Path):
     """A bare "origin" plus a local clone, both holding the shared
     ancestor entry, then a *different* new entry appended independently
     on each side and pushed/left uncommitted-to-origin respectively —
-    the real incident's shape (the archived Autofix ticket (.agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md) §1), built fresh
+    the real incident's shape (the archived Autofix ticket (.agent/.local/.dev/DevTickets/archive/20260923_Autofix_DevPlanTicket.md) §1), built fresh
     each test so the two entries' real hashes are computed by the actual
     ledger code, never hand-typed."""
     origin = tmp_path / "origin.git"

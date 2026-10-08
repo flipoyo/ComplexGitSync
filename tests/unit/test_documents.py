@@ -89,7 +89,7 @@ class _ConfigDocumentWithIO(ConfigDocument, ConfigDocumentIOMixin):
     """Test-only stand-in for a concrete subclass with file I/O mixed in.
 
     ``ConfigDocument`` itself is Ring 0 (pure, no I/O) since WP-CFG
-    (.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md §0); every real subclass
+    (.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md §0); every real subclass
     (``CgsDocument``, ``GtsDocument``) picks up ``ConfigDocumentIOMixin``
     directly, but the base class round-trip tests below need a concrete
     combined class of their own rather than depending on either.
@@ -649,21 +649,21 @@ class TestCgsDocumentValid:
         doc = CgsDocument.from_toml(repo_root / "install.cgs")
         assert doc.project_name == "ComplexGitSync"
         # main, not a branch that never existed on the remote: see
-        # .agent/.local/.localSpec/DevTickets/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md D2.
+        # .agent/.local/.dev/DevTickets/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md D2.
         assert doc.default_branch == "main"
         assert doc.repos[0]["fallback_branch"] == "main"
         assert len(doc.repos) == 2
 
     def test_from_toml_parses_the_developer_install(self):
         """The developer install adds every agentic skill (AgentSkillsSplit:
-        ticket, dev-sync, documentation, .dev, .versioning, .auto),
+        ticket, dev-sync, documentation, .dev),
         plus .localSpec/.claude and the project's own memory
         (memory-dev_1-2_MemoryOnboarding, 2026-09-17)."""
         repo_root = Path(__file__).parent.parent.parent
         doc = CgsDocument.from_toml(repo_root / "examples" / "complexgitsync4dev.cgs")
         assert doc.project_name == "ComplexGitSync"
         assert doc.default_branch == "main"
-        assert len(doc.repos) == 11
+        assert len(doc.repos) == 9
 
     def test_from_toml_parses_doccomplexgitsync_example(self):
         examples = Path(__file__).parent.parent.parent / "examples"

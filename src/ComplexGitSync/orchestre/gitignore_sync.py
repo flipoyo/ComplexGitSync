@@ -42,7 +42,7 @@ class GitignoreSync:
         self.client = client
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # .agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # .agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of the .gitignore sync flow
     # risks behaviour change under time pressure. New code is enforced at
     # 12.

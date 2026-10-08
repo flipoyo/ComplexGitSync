@@ -18,7 +18,7 @@
 #
 #   ticket (.ticketing), dev-sync (DevSpec),
 #   documentation (DocSpec)         private, read-only  -> SCOPE private/distant
-#   .dev, .versioning, .auto, .localSpec, .claude
+#   .dev, .localSpec, .claude
 #                                   private, writable   -> SCOPE private/local
 #   ComplexGitSync, docs            the project's own   -> SCOPE project
 #
@@ -50,18 +50,19 @@
 # one level inside docs/ the way it used to be, for the same reason —
 # and is no longer declared in docs/DocCGS.cgs.
 #
-# .dev, .versioning and .auto are this project's own — private and
-# writable, dispatched from what used to be sections of CLAUDE.md and
-# AdditionalSpecs.md. Their relative_path is the repository's own name,
+# .dev, .localSpec and .claude are this project's own — private and
+# writable (AgenticTwoLevels: .versioning folded into .dev, .auto dropped,
+# its one rule being DevSpecs.md's "Two installs"). Their relative_path is
+# the repository's own name,
 # so what GitHub calls them and what this tree calls them agree;
 # .ticketing (repository) still mounts as "ticket" below, where the two
 # are free to differ.
 #
-# .localSpec also carries DevTickets/ — the whole planning surface: the
+# .dev carries DevTickets/ — the whole planning surface: the
 # owner's short tickets, the ranked open planning tickets, and the archive.
 # Mounting this file is therefore what gives you the tickets; install.cgs,
 # the user install, deliberately does not. See
-# .agent/.local/.localSpec/DevTickets/README.md.
+# .agent/.local/.dev/DevTickets/README.md.
 #
 # .memory's own nested_config ("config-memory.cgs", not "disabled") is what
 # makes .self-history (AgentReport WP2) a real, discovered child of .memory
@@ -88,8 +89,6 @@ repos = [
 
     # .local — this project's own, writable
     { repository = "github:flipoyo/.dev", relative_path = ".agent/.local/.dev", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
-    { repository = "github:flipoyo/.versioning", relative_path = ".agent/.local/.versioning", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
-    { repository = "github:flipoyo/.auto", relative_path = ".agent/.local/.auto", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
     { repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
     { repository = "github:flipoyo/.claude", relative_path = ".agent/.local/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
     { repository = "github:flipoyo/.memory", relative_path = ".cgitsync/.memory", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true, nested_config = "config-memory.cgs" },

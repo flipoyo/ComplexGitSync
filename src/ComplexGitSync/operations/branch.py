@@ -222,7 +222,7 @@ class BranchOperation:
         looks identical to a genuinely new name otherwise, and starting the
         former at HEAD forks it under a name the user believes they are joining
         (CheckoutForkGuard,
-        ``.agent/.local/.localSpec/DevTickets/openTickets/main_1-1_CheckoutForkGuard_DevPlanTicket.md``).
+        ``.agent/.local/.dev/DevTickets/archive/20260918_CheckoutForkGuard_DevPlanTicket.md``).
         A name truly unknown to the remote still costs nothing beyond that one
         round-trip and falls through to today's behaviour unchanged.
         """
@@ -238,7 +238,7 @@ class BranchOperation:
             # instead forked a second history under a name the user believed they
             # were joining, and `checkout` then reported success on the wrong
             # commits — a colleague's work simply was not there
-            # (.agent/.local/.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md §3).
+            # (.agent/.local/.dev/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md §3).
             remote = repo.remote_name or "origin"
             if git_runner.remote_tracking_branch_exists(repo.absolute_path, target, remote=remote):
                 git_runner.create_branch(

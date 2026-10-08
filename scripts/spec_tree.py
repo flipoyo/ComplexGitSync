@@ -42,6 +42,13 @@ checker cares about is specs — deliberately, exactly what D1 states.
 `CLAUDE.md` by any chain of edges (an **orphan**) or if a member's own
 path does not exist on disk.
 
+**The two levels** (`SpecTree.md` §2, shared; `AgenticTwoLevels`): the manifest
+gives each spec a level — `pattern` (shared), `standalone` (the product's own
+specification) or `fills in` a pattern. `--check` fails when a local file that
+fills in a pattern has no `*Fills in: <path>*` line, when that line names a
+different file than the manifest does, or when the level contradicts where the
+file sits.
+
 **The digest** (`digest.md`, ticket §5 D3/D5): a short, hand-written file
 — one rule per line, each citing its source — that a session loads in
 full, in place of eager-loading the whole discursive tree. `--check-digest`
@@ -94,6 +101,7 @@ class Manifest:
     specs: list[str] = field(default_factory=list)  # POSIX-relative to REPO_ROOT
     spec_mounts: dict[str, str] = field(default_factory=dict)  # spec file -> mount path
     exempt: dict[str, str] = field(default_factory=dict)  # spec file -> reason, "" if none given
+    levels: dict[str, str] = field(default_factory=dict)  # spec file -> "pattern" | "standalone" | pattern path
     problems: list[str] = field(default_factory=list)  # malformed rows, reported by `--check`
 
 
@@ -125,16 +133,31 @@ def parse_manifest(text: str, manifest_path: str = MANIFEST_PATH) -> Manifest:
     for cells in _table_rows(text, "Spec files"):
         link = _MD_LINK_RE.search(cells[0]) if cells else None
         target = _resolve_link_target(manifest_path, link.group(1)) if link else None
-        if len(cells) != 3 or target is None:
+        if len(cells) != 4 or target is None:
             manifest.problems.append(f"{manifest_path}: malformed spec-file row: {cells}")
             continue
         if target in manifest.spec_mounts:
             manifest.problems.append(f"{manifest_path}: spec file '{target}' is listed twice")
         manifest.specs.append(target)
         manifest.spec_mounts[target] = cells[1].strip("`")
-        if cells[2].startswith("exempt:"):
-            manifest.exempt[target] = cells[2][len("exempt:"):].strip()
-        elif cells[2] != "cited":
+        level = cells[2]
+        if level in ("pattern", "standalone"):
+            manifest.levels[target] = level
+        elif level.startswith("fills in"):
+            pattern = _MD_LINK_RE.search(level)
+            resolved = _resolve_link_target(manifest_path, pattern.group(1)) if pattern else None
+            if resolved is None:
+                manifest.problems.append(f"{manifest_path}: '{target}' says it fills in no resolvable file")
+            else:
+                manifest.levels[target] = resolved
+        else:
+            manifest.problems.append(
+                f"{manifest_path}: '{target}' level must be 'pattern', 'standalone' or "
+                f"'fills in [file](path)'"
+            )
+        if cells[3].startswith("exempt:"):
+            manifest.exempt[target] = cells[3][len("exempt:"):].strip()
+        elif cells[3] != "cited":
             manifest.problems.append(
                 f"{manifest_path}: '{target}' digest column must be 'cited' or 'exempt: <reason>'"
             )
@@ -173,6 +196,60 @@ def run_check_manifest(manifest: Manifest, cgs_mounts: dict[str, str]) -> list[s
             failures.append(f"{spec}: listed under mount '{mount}', which is not in the mounts table")
         elif not spec.startswith(mount + "/"):
             failures.append(f"{spec}: does not sit inside its mount '{mount}'")
+    return failures
+
+
+_FILLS_IN_RE = re.compile(r"^\*Fills in:\s*(\S+?)\s*\*\s*$", re.MULTILINE)
+_SHARED_PREFIX = ".agent/.distant/"
+_OWN_PREFIX = ".agent/.local/"
+
+
+def _check_fills_in_line(spec: str, level: str) -> list[str]:
+    """A local file that fills in *level* carries a Fills in line naming it."""
+    failures: list[str] = []
+    if not level.startswith(_SHARED_PREFIX):
+        failures.append(f"{spec}: fills in {level}, which is not a shared pattern")
+    path = REPO_ROOT / spec
+    line = _FILLS_IN_RE.search(path.read_text(encoding="utf-8")) if path.is_file() else None
+    if line is None:
+        failures.append(f"{spec}: fills in {level} but has no '*Fills in: <path>*' line")
+        return failures
+    named = (path.parent / line.group(1)).resolve()
+    try:
+        named_rel = named.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        named_rel = line.group(1)
+    if named_rel != level:
+        failures.append(f"{spec}: its Fills in line names {named_rel}, the manifest says {level}")
+    elif not named.is_file():
+        failures.append(f"{spec}: its Fills in line names {named_rel}, which does not exist")
+    return failures
+
+
+def run_check_fills_in(manifest: Manifest) -> list[str]:
+    """The two-level rule (SpecTree.md §2), checked against the manifest.
+
+    A shared file is a `pattern`; a local file is `standalone` or fills in a
+    shared one, and then carries a `*Fills in: <path>*` line that names the
+    same file the manifest does.
+    """
+    failures: list[str] = []
+    for spec in manifest.specs:
+        level = manifest.levels.get(spec)
+        if level is None:
+            continue  # already reported as a malformed row
+        shared = spec.startswith(_SHARED_PREFIX)
+        if level == "pattern":
+            if not shared:
+                failures.append(f"{spec}: is local, so it cannot be a 'pattern'")
+        elif shared:
+            failures.append(f"{spec}: is shared, so its level must be 'pattern', not '{level}'")
+        elif level == "standalone":
+            path = REPO_ROOT / spec
+            if path.is_file() and _FILLS_IN_RE.search(path.read_text(encoding="utf-8")):
+                failures.append(f"{spec}: is 'standalone' in the manifest but carries a Fills in line")
+        else:
+            failures.extend(_check_fills_in_line(spec, level))
     return failures
 
 
@@ -484,6 +561,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         failures.extend(run_check(report))
         failures.extend(run_check_manifest(_MANIFEST, dev_cgs_agent_mounts()))
+        failures.extend(run_check_fills_in(_MANIFEST))
     if args.check_digest:
         entries = parse_digest()
         failures.extend(run_check_digest(entries, report.reachable))

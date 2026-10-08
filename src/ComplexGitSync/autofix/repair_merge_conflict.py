@@ -8,7 +8,7 @@ Contract: MergeConflictRepair.matches()/repair(), per the Repair protocol in
     content conflict is resolved by a person, never guessed at.
 Imports: base, git_runner
 
-Design reference: .agent/.local/.localSpec/DevTickets/archive/20260927_MergeLogGap_DevPlanTicket.md §3 (WP3).
+Design reference: .agent/.local/.dev/DevTickets/archive/20260927_MergeLogGap_DevPlanTicket.md §3 (WP3).
 """
 
 from __future__ import annotations

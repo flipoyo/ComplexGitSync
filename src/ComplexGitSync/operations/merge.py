@@ -77,7 +77,7 @@ class ResolveOutcome:
     can actually find in the registry with (a bare name lookup there raised
     ``KeyError`` for any repo, `.memory` included, whose id is not simply
     its own name — see
-    `.agent/.local/.localSpec/DevTickets/archive/20260918_ResolveMergeToolCrash_DevPlanTicket.md`).
+    `.agent/.local/.dev/DevTickets/archive/20260918_ResolveMergeToolCrash_DevPlanTicket.md`).
     """
 
     merged: tuple[tuple[str, str], ...]
@@ -194,7 +194,7 @@ class MergeOperation:
         reconciled first, completely, before any shared configuration
         repository is touched at all — so a conflict in the private half can
         never again leave the project half only partly done
-        (`.agent/.local/.localSpec/DevTickets/archive/20260918_MergeProjectBeforePrivate_DevPlanTicket.md`).
+        (`.agent/.local/.dev/DevTickets/archive/20260918_MergeProjectBeforePrivate_DevPlanTicket.md`).
 
         ``PROJECT`` and ``PRIVATE`` never overlap (a repository is either not
         private, or private *and* writable), so this never yields one twice.
@@ -363,7 +363,7 @@ class MergeOperation:
         happens to the files underneath. **Nothing may be inserted between the
         checkout and the merge below that starts another process**, and the two
         must never be split into separate commands again. See
-        ``.agent/.local/.localSpec/DevTickets/…_SelfHostedMerge_DevPlanTicket.md`` §2.
+        ``.agent/.local/.dev/DevTickets/…_SelfHostedMerge_DevPlanTicket.md`` §2.
 
         Every repository in scope is checked before any is touched, so a refusal
         leaves the whole tree exactly where it was — still on the source branch,

@@ -83,7 +83,7 @@ class DocumentLoader:
         developer spec under ``examples/``, say) — for that caller, the
         `.cgs`'s own directory is not the tree's root and must not be
         guessed as one. See
-        ``.agent/.local/.localSpec/DevTickets/archive/…_PullOutsideRoot_DevPlanTicket.md``.
+        ``.agent/.local/.dev/DevTickets/archive/…_PullOutsideRoot_DevPlanTicket.md``.
         """
         previous_tree_state = self.client.registry.lifecycle_state if self.client.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()

@@ -203,7 +203,7 @@ class TreeCommands:
 
         With *error* omitted, reads the most recent
         ``.cgitsync/logs/*.log``'s failing command, the same one the
-        owner just saw fail — see ``.agent/.local/.localSpec/DevTickets/archive/20260923_Autofix_DevPlanTicket.md``.
+        owner just saw fail — see ``.agent/.local/.dev/DevTickets/archive/20260923_Autofix_DevPlanTicket.md``.
         *repo_name* narrows which mounted repository is diagnosed;
         omitted, it is guessed from the error text (a chain-shaped
         repository's name is normally visible in its own remote URL)
@@ -1105,7 +1105,7 @@ class TreeCommands:
         owned by a repository outside it is refused by name before anything
         is removed. Without it the reach is every repository, which is what
         this command has always done — see
-        ``.agent/.local/.localSpec/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
+        ``.agent/.local/.dev/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
 
         Each repository actually removed from is reported in
         :attr:`last_write_outcomes`.
@@ -1139,7 +1139,7 @@ class TreeCommands:
         ``--force-protocol``), when given, rewrites each repo's remote to
         that protocol before pushing, persisting the change (``git remote
         set-url``) rather than a one-off override — see
-        ``.agent/.local/.localSpec/DevTickets/archive/20260903_ProtocolSwitchOnPush_DevPlanTicket.md``. On a failure
+        ``.agent/.local/.dev/DevTickets/archive/20260903_ProtocolSwitchOnPush_DevPlanTicket.md``. On a failure
         that looks like an auth problem, the error gains an actionable
         hint naming ``--force-protocol <the other one>``.
         """

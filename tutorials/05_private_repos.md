@@ -96,8 +96,6 @@ ComplexGitSync (root) [ALIGNED] @9c9298a br=multi-branch fb=main
 ├── DevSpec (leaf) [ALIGNED] @a5d3432 br=main
 ├── DocSpec (leaf) [ALIGNED] @02ee0b1 br=main
 ├── .dev (leaf) [ALIGNED] @c85bb1d br=ComplexGitSync_multi-branch fb=main
-├── .versioning (leaf) [ALIGNED] @751182a br=ComplexGitSync_multi-branch fb=main
-├── .auto (leaf) [ALIGNED] @23de708 br=ComplexGitSync_multi-branch fb=main
 ├── .claude (leaf) [ALIGNED] @df4221c br=ComplexGitSync_multi-branch fb=main
 ├── .localSpec (leaf) [ALIGNED] @9f50519 br=ComplexGitSync_multi-branch fb=main
 └── DocComplexGitSync (parent) [ALIGNED] @ac1176e br=multi-branch fb=main
@@ -109,7 +107,7 @@ each one is:
 | Repository | Branch | Kind |
 |---|---|---|
 | `ComplexGitSync`, `DocComplexGitSync` | `multi-branch` | the project's own — they followed the feature branch |
-| `.dev`, `.versioning`, `.auto`, `.localSpec`, `.claude` | `ComplexGitSync_multi-branch` | config, **read and write** — the branch is named after this project *and* the branch it is on |
+| `.dev`, `.localSpec`, `.claude` | `ComplexGitSync_multi-branch` | config, **read and write** — the branch is named after this project *and* the branch it is on |
 | `.ticketing`, `DevSpec`, `DocSpec` | `main` | config, **read-only** — `main` is what every other project reads |
 
 **The branch name is the whole tell.** A configuration repo sitting on a
@@ -130,8 +128,6 @@ DocComplexGitSync  docs                           project          multi-branch
 DevSpec            .agent/.distant/dev-sync       private/distant  main
 DocSpec            .agent/.distant/documentation  private/distant  main
 .dev               .agent/.local/.dev             private/local    ComplexGitSync_multi-branch
-.versioning        .agent/.local/.versioning      private/local    ComplexGitSync_multi-branch
-.auto              .agent/.local/.auto            private/local    ComplexGitSync_multi-branch
 .localSpec         .agent/.local/.localSpec       private/local    ComplexGitSync_multi-branch
 .claude            .agent/.local/.claude          private/local    ComplexGitSync_multi-branch
 ComplexGitSync     .                              project          multi-branch
@@ -283,7 +279,7 @@ private repository at all.) Reading it:
 - `.dev`, `.localSpec`, `.claude` are `private, writable` — this project's,
   on its own branch.
 
-This is where ComplexGitSync's own planning lives: `.agent/.local/.localSpec/DevTickets/`
+This is where ComplexGitSync's own planning lives: `.agent/.local/.dev/DevTickets/`
 holds every ticket for the project, so cloning the public repository gets
 you the tool and none of the paperwork. Privacy here is not only about
 secrets — it is about which half of the work you are publishing.
@@ -386,7 +382,7 @@ You still see the two halves separately, so giving up the typing does not
 mean giving up knowing:
 
 ```text
-scope=all project=ComplexGitSync, DocComplexGitSync private=.claude, .localSpec, .dev, .versioning, .auto
+scope=all project=ComplexGitSync, DocComplexGitSync private=.claude, .localSpec, .dev
 scope=all never_written=3 read-only repo(s) (.ticketing, DevSpec, DocSpec)
 ```
 

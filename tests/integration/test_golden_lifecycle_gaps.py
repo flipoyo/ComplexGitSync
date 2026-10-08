@@ -1,7 +1,7 @@
 """Golden CLI-level characterisation tests for ``checkout``/``branch``/``pull-force``/``validate``.
 
 Work package G1-a of the Wave 0 characterisation net
-(``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``), covering exactly the
+(``.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``), covering exactly the
 four lifecycle commands ``checkout``, ``branch``, ``pull-force``
 and ``validate``. This is a *gap-filling* file, not a rewrite: before adding
 anything here the existing suites were audited command by command.

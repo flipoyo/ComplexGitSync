@@ -217,8 +217,8 @@ class MemoryCommands:
         ``release`` row on the ledger entry it writes: the installed
         package's own SemVer (``__version__``) and build counter
         (``__build__``), plus *release_name* as the tag actually applied.
-        See ``.agent/.local/.localSpec/AdditionalSpecs.md``, *Versioning* — *The release
-        ledger*. The orchestrator is expected to pass a SemVer-shaped
+        See ``.agent/.local/.dev/Versioning.md``, *The release register*.
+        The orchestrator is expected to pass a SemVer-shaped
         *release_name* (``v<semver>``, matching the tag this workflow
         pushes); that is a convention, not something this method enforces.
 
@@ -817,7 +817,7 @@ class MemoryCommands:
         A memory adopted before this milestone is mounted directly at
         `.cgitsync` — sharing it with States, the ledger, commit logs and
         run logs, the exact arrangement WorkingTransitionState exists to
-        end (`.agent/.local/.localSpec/DevTickets/openTickets/memory-dev_1-2_WorkingTransitionState_DevPlanTicket.md`).
+        end (`.agent/.local/.dev/DevTickets/archive/20260917_WorkingTransitionState_DevPlanTicket.md`).
         This is the one-time move: `.git` and every file `git ls-files`
         names travel down into `.cgitsync/.memory`, untouched — no re-clone,
         no rewritten history — and whatever was never tracked (this

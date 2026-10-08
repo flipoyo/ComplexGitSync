@@ -1,9 +1,9 @@
-"""Unit tests for .agent/.local/.versioning/scripts/bump_version.py.
+"""Unit tests for .agent/.local/.dev/scripts/bump_version.py.
 
-``bump_version.py`` lives in the ``.versioning`` mount (at
-``.agent/.local/.versioning``, ``AgentSkillsSplit``) — a plain checkout of
+``bump_version.py`` lives in the ``.dev`` mount (at
+``.agent/.local/.dev``, ``AgenticTwoLevels``) — a plain checkout of
 ``ComplexGitSync`` alone has no release tooling. This whole file needs
-``.versioning`` mounted, which a bootstrapped developer checkout has and a
+``.dev`` mounted, which a bootstrapped developer checkout has and a
 standalone checkout of the public repository does not, so it skips
 cleanly rather than failing when it is absent.
 """
@@ -20,14 +20,14 @@ _SCRIPT_PATH = (
     Path(__file__).resolve().parents[2]
     / ".agent"
     / ".local"
-    / ".versioning"
+    / ".dev"
     / "scripts"
     / "bump_version.py"
 )
 
 if not _SCRIPT_PATH.is_file():
     pytest.skip(
-        "bump_version.py lives in the .versioning mount (.agent/.local/.versioning) "
+        "bump_version.py lives in the .dev mount (.agent/.local/.dev) "
         "and is not mounted in this checkout. Bootstrap "
         "examples/complexgitsync4dev.cgs to run these. See "
         "AgentSkillsSplit.",
@@ -287,7 +287,7 @@ _DOCS_ABSENT_REASON = (
     "docs/ is a separate repository (DocComplexGitSync) and is not mounted in "
     "this checkout. Working on ComplexGitSync alone is legitimate; releasing "
     "from there is not -- bootstrap examples/complexgitsync4dev.cgs to run "
-    "these. See .agent/.local/.agent/.local/.localSpec/DevTickets/archive/20260911_ReleaseDocsDebt_DevPlanTicket.md."
+    "these. See .agent/.local/.dev/DevTickets/archive/20260911_ReleaseDocsDebt_DevPlanTicket.md."
 )
 _DOCS_TEX_PRESENT = all(path.is_file() for path in bump_version.DOCS_TEX_PATHS)
 _requires_docs = pytest.mark.skipif(not _DOCS_TEX_PRESENT, reason=_DOCS_ABSENT_REASON)
@@ -308,7 +308,7 @@ def test_real_docs_tex_files_have_a_matchable_cgsversion_macro(docs_path):
     assert bump_version._CGSVERSION_MACRO_RE.search(text) is not None, (
         f"{docs_path} no longer contains a "
         r"'\newcommand{\cgsversion}{<semver>}' definition that "
-        ".agent/.local/.versioning/scripts/bump_version.py can update."
+        ".agent/.local/.dev/scripts/bump_version.py can update."
     )
 
 

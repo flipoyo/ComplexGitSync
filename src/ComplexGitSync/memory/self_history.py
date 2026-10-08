@@ -12,7 +12,7 @@ Contract: own the ``SelfHistoryRecord`` shape and its atomic, content-addressed
     assume has landed.
 Imports: conformity, repository, states
 
-See ``.agent/.local/.localSpec/DevTickets/openTickets/main_1-1_AgentReport_DevPlanTicket.md``
+See ``.agent/.local/.dev/DevTickets/archive/20260924_AgentReport_DevPlanTicket.md``
 §1 for the record's field-by-field rationale (this module implements WP1
 and WP6 only — see that ticket's Status column for what is not yet built)
 and ``.agent/.local/.claude/CLAUDE.md``'s *Attribution* section for why this

@@ -1,6 +1,6 @@
 """The branch model, private down so it cannot drift back into six copies.
 
-``.agent/.local/.localSpec/DevTickets/archive/`` MultiBranchSync ticket §1 writes down which branch a
+``.agent/.local/.dev/DevTickets/archive/`` MultiBranchSync ticket §1 writes down which branch a
 repository lands on and why. A model documented without tests rots in one
 release, so every rule stated there has an assertion here:
 
@@ -703,11 +703,11 @@ def test_this_trees_own_cgs_pins_exactly_the_shared_mounts():
     # .memory joined the original three 2026-09-17 (memory-dev_1-2_MemoryOnboarding).
     # .agentSpec split into six independent skills 2026-09-22
     # (AgentSkillsSplit): .ticketing, DevSpec, DocSpec (shared) and
-    # .dev, .versioning, .auto (this project's own, alongside .localSpec
-    # and .claude).
+    # .dev (this project's own, alongside .localSpec and .claude;
+    # AgenticTwoLevels folded .versioning into it and dropped .auto).
     assert private == {
         ".ticketing", "DevSpec", "DocSpec",
-        ".dev", ".versioning", ".auto",
+        ".dev",
         ".localSpec", ".claude", ".memory",
     }
 
@@ -751,8 +751,6 @@ def test_the_workspace_mounts_sit_on_the_branches_their_cgs_names():
     }
     local = {
         ".agent/.local/.dev": "ComplexGitSync",
-        ".agent/.local/.versioning": "ComplexGitSync",
-        ".agent/.local/.auto": "ComplexGitSync",
         ".agent/.local/.localSpec": "ComplexGitSync",
         ".agent/.local/.claude": "ComplexGitSync",
         ".cgitsync/.memory": "ComplexGitSync",

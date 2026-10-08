@@ -63,7 +63,7 @@ class RestartOperation:
         than rebuilding a URL from *repo*'s stored identity fields. Those
         fields can be missing or stale for a repo loaded from an older
         ``.gts`` snapshot (gitprovider was not always recorded there — see
-        ``.agent/.local/.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md``), and
+        ``.agent/.local/.dev/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md``), and
         rebuilding from a wrong or absent provider silently aims the push at
         the wrong host. The URL actually configured on disk is never wrong in
         that way, so converting it in place is what stays correct regardless
@@ -88,7 +88,7 @@ class RestartOperation:
         """Widen *repo*'s fetch refspec if a ``--single-branch`` clone narrowed it.
 
         Every workspace cloned before that narrowing was fixed
-        (``.agent/.local/.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``)
+        (``.agent/.local/.dev/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``)
         carries a refspec mapping one branch only, and no re-clone should be
         needed to recover from it. Modelled on :func:`_rewrite_remote_if_forced`,
         beside which it is called: a config fix persisted once, idempotently, by

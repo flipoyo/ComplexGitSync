@@ -22,7 +22,7 @@ this reason — it stays scoped to modules with no I/O-adapter mixin at all,
 e.g. ``errors.py``, ``ledger_entry.py``, ``integrity.py``.
 
 Extracted verbatim from ``orchestre/`` (Wave 1, P2 of
-``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre/`` still
+``.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre/`` still
 carries its own copy of ``GtsDocument`` until the separate P2-integrate step
 deletes it there and re-points imports — this module does not change that
 file.
@@ -181,7 +181,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     )
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # .agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # .agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of .gts field validation
     # risks behaviour change under time pressure. New code is enforced at
     # 12.
@@ -346,7 +346,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         rules this build does not actually know produces a wrong digest
         that reads as "corrupt", which is what happened the one time this
         was allowed to fall through
-        (`.agent/.local/.localSpec/DevTickets/archive/20260918_SnapshotVersionGuard_DevPlanTicket.md`):
+        (`.agent/.local/.dev/DevTickets/archive/20260918_SnapshotVersionGuard_DevPlanTicket.md`):
         the workspace and the snapshot were both fine, and the tool reading
         them had gone backwards in time.
         """
@@ -432,7 +432,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 # gitprovider/group_name/gitprovider_url are the
                 # opposite: they say *which* repository this is, which
                 # is exactly why the round trip losing them was a bug
-                # (.agent/.local/.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
+                # (.agent/.local/.dev/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
                 # A frozen literal, not git_branch.DEFAULT_BRANCH: this
                 # dict is hashed into the canonical snapshot hash, so
                 # every value in it must stay fixed for the life of the

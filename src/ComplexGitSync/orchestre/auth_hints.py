@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 # a non-English machine. OpenSSH ships no translations, so anything ssh prints
 # is English everywhere; git translates its own prose, so a git-worded marker
 # matches only because git_runner.py pins the message locale
-# (.agent/.local/.localSpec/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md).
+# (.agent/.local/.dev/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md).
 _SSH_AUTH_FAILURE_MARKERS = (
     # OpenSSH's own wording — locale-proof.
     "Permission denied (publickey)",

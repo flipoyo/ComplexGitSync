@@ -1,7 +1,7 @@
 """What ``cgitsync autofix`` answers after a tree-wide merge has refused.
 
 The incident this covers is in
-``.agent/.local/.localSpec/DevTickets/archive/20260927_MergeLogGap_DevPlanTicket.md``
+``.agent/.local/.dev/DevTickets/archive/20260927_MergeLogGap_DevPlanTicket.md``
 §1: a real ``merge --all`` refused on two conflicting repositories, and
 ``autofix``, run immediately afterwards, said *"no failing command found in
 the run log"*. Two separate defects produced that one sentence — the refused

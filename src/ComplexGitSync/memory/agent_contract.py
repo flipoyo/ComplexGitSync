@@ -8,11 +8,11 @@ Contract: store and load one ``AgentContractRecord`` under
     provider's terms actually say — that is a project's own
     ``legalTerms/<provider>.md`` — and nothing about Git. The caller
     supplies every dated fact; this module reads no clock, per
-    ``universal_clock.py``'s seam (see AdditionalSpecs.md, *Versioning*).
+    ``universal_clock.py``'s seam (see AdditionalSpecs.md, *Ring model and import rules*, rule 5).
 Imports: (stdlib only, plus tomli_w/tomllib for the same TOML the .cgs/.gts
     documents already use)
 
-See ``.agent/.local/.localSpec/DevTickets/archive/20260923_AgentContract_DevPlanTicket.md``
+See ``.agent/.local/.dev/DevTickets/archive/20260923_AgentContract_DevPlanTicket.md``
 §3 for why this lives beside, not inside, ``.cgitsync/``: the record is
 signed once per provider and shared across every project the owner runs
 with that provider, not scoped to one workspace's own state area the way

@@ -11,7 +11,7 @@ Contract: convert between absolute, machine-specific paths and the portable
 Imports: cgs_format, errors, gts_document, universal_clock
 
 Extracted verbatim from ``orchestre/`` (Wave 2, P5-paths of
-``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre/`` still
+``.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre/`` still
 carries its own copy of every function below until a later, separate
 integration step deletes it there and re-points imports — this module does
 not change that file.

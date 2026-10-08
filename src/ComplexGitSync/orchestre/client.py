@@ -131,8 +131,8 @@ class ComplexGitSyncClient:
     #: here — `memory_push`'s commit moment, `memory_reboot`'s archive
     #: name — rather than `datetime.now(UTC)` directly, so a test can
     #: inject a fixed date instead of reaching for `monkeypatch`. Real by
-    #: default; see `.agent/.local/.localSpec/DevTickets/openTickets/
-    #: main_1-1_ClockSeam_DevPlanTicket.md` §2.
+    #: default; see `.agent/.local/.dev/DevTickets/archive/
+    #: 20260920_ClockSeam_DevPlanTicket.md` §2.
     clock: ClockProtocol = field(default_factory=SystemClock)
     registry: WorkingGitTree | None = None
     source_path: Path | None = None
@@ -1422,7 +1422,7 @@ class ComplexGitSyncClient:
             raise GitSyncError(
                 f"Cannot determine a remote URL for {entry.name}: it was loaded from a "
                 f".gts snapshot written before the provider was recorded there "
-                f"(.agent/.local/.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md). "
+                f"(.agent/.local/.dev/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md). "
                 f"Regenerate the snapshot from its .cgs — e.g. 'cgitsync initialise "
                 f"<the .cgs>' followed by a fresh 'freeze' — rather than cloning "
                 f"from a guessed host."

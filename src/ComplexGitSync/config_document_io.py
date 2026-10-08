@@ -6,8 +6,8 @@ Imports: config_document
 
 Home for the six ``open()`` call sites (plus ``print()``) that used to live
 on ``config_document.ConfigDocument`` itself before WP-CFG (see
-``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md`` §0 and
-``.agent/.local/.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``) reclassified them
+``.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md`` §0 and
+``.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``) reclassified them
 out of Ring 0.
 
 ``ConfigDocumentIOMixin`` is designed to be combined with

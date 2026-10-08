@@ -1,5 +1,24 @@
 # Changelog
 
+## 4.4.3 - 2026-10-08
+
+- No change to the tool's behaviour. `pixi run check-ceilings` now also finds a
+  dead `.agent/` path when the path is wrapped over two lines in a comment or
+  docstring, and the few it found are fixed. Wording and section citations
+  that still named the old locations of the planning tickets and the
+  versioning rule are corrected.
+
+## 4.4.2 - 2026-10-08
+
+- No change to the tool's behaviour. The developer install
+  (`examples/complexgitsync4dev.cgs`) now mounts six agentic repositories
+  instead of eight: `.versioning` is folded into `.dev` (which also receives
+  the planning tickets from `.localSpec`) and `.auto` is dropped. A checkout
+  bootstrapped from the earlier file keeps working, and its two old
+  directories can be deleted. `pixi run bump-version` now runs the script from
+  `.agent/.local/.dev/scripts/`, and `pixi run check-ceilings` also fails on a
+  dead `.agent/` path cited in the code.
+
 ## 4.4.1 - 2026-10-07
 
 - The developer documentation and the code's own description of the branch

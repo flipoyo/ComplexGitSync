@@ -470,10 +470,10 @@ child's writability at its parent's, with no override), so nothing here
 is nested under anything; each entry answers only to its own
 `private`/`writable` flags.
 
-Then create the `<ProjectName>` branch on `.localSpec` and on `.claude`
+Then create the `<ProjectName>` branch on `.localSpec`, `.claude` and `.dev`
 (from their shared `main`) and write that project's own
 `.agent/.local/.localSpec/AdditionalSpecs.md`, `AGENT.md`, and `audit.md`. Planning
-goes in the same private mount, at `.agent/.local/.localSpec/DevTickets/` — keeping
+goes in the private `.dev` mount, at `.agent/.local/.dev/DevTickets/` — keeping
 the project's own repository free of tickets, so what you publish is the
 product and not the workshop. Run `cgitsync initialise` and the mounts land
 alongside the ones above; `.gitignore` is updated for you.

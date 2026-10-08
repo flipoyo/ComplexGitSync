@@ -150,7 +150,7 @@ class GitProbes:
         is routinely dirty in exactly the tree ``submodules import`` is asked
         to convert — ``initialise`` writes it moments before, and refusing over
         it would deadlock the one working order (see
-        ``.agent/.local/.localSpec/DevTickets/archive/20260903_InitFromSubmodules_DevPlanTicket.md``). Exempting it is
+        ``.agent/.local/.dev/DevTickets/archive/20260903_InitFromSubmodules_DevPlanTicket.md``). Exempting it is
         safe: the conversion only runs ``git rm --cached`` in the *holding*
         repository, which never touches the child's working tree at all. The
         check exists to protect real, unsaved work in a child, and it still
