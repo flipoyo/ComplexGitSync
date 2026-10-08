@@ -108,7 +108,7 @@ def test_the_canonical_payload_holds_no_absolute_path(tmp_path):
     [state] = _state_files(tmp_path / "demo")
 
     document = GtsDocument.from_toml(state)
-    payload = document._build_canonical_payload()
+    payload = (document._repo_leaves(), document._state_payload(document.compute_gittree_root()))
 
     rendered = repr(payload)
     assert str(tmp_path) not in rendered

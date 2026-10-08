@@ -27,6 +27,7 @@ from ComplexGitSync.gts_document import (
     _repo_ref_name,
     _repo_ref_token,
 )
+from ComplexGitSync.gts_integrity import INTEGRITY_SCHEMA
 
 MINIMAL_GTS: dict = {
     "document": {
@@ -50,6 +51,7 @@ MINIMAL_GTS: dict = {
             "name": "repo-a",
             "node_type": "LeafRepo",
             "absolute_path": "/workspace/TestProject/repo-a",
+            "relative_path": "repo-a",
             "parent_absolute_path": "/workspace/TestProject",
             "repo_lifecycle_state": "READY",
             "sync_state": "ALIGNED",
@@ -117,10 +119,10 @@ class TestGtsDocumentValid:
         doc_b = GtsDocument.from_dict(data_with_extra)
         assert doc_a.compute_snapshot_hash() == doc_b.compute_snapshot_hash()
 
-    def test_ensure_snapshot_hash_stamps_the_current_canonicalisation(self):
+    def test_ensure_snapshot_hash_stamps_the_current_integrity_schema(self):
         doc = GtsDocument.from_dict(copy.deepcopy(MINIMAL_GTS))
         doc.ensure_snapshot_hash()
-        assert doc.hash_canonicalisation == GtsDocument.CURRENT_HASH_CANONICALISATION
+        assert doc.integrity_schema == INTEGRITY_SCHEMA
 
     def test_the_hash_does_not_depend_on_which_version_wrote_it(self):
         """memory-dev_1-2_StateVersionLeak: the bug, made permanent as a test.
@@ -149,7 +151,7 @@ class TestGtsDocumentValid:
         reads as corruption and invites deleting a perfectly good snapshot.
         """
         data = copy.deepcopy(MINIMAL_GTS)
-        data["document"]["hash_canonicalisation"] = GtsDocument.CURRENT_HASH_CANONICALISATION + 1
+        data["document"]["integrity_schema"] = INTEGRITY_SCHEMA + 1
         doc = GtsDocument.from_dict(data)
 
         with pytest.raises(UnsupportedSnapshotFormatError) as excinfo:
@@ -166,7 +168,7 @@ class TestGtsDocumentValid:
         ``compute_snapshot_hash`` directly. ``from_dict`` validates on
         construction, so the refusal fires there."""
         data = copy.deepcopy(MINIMAL_GTS)
-        data["document"]["hash_canonicalisation"] = GtsDocument.CURRENT_HASH_CANONICALISATION + 1
+        data["document"]["integrity_schema"] = INTEGRITY_SCHEMA + 1
         data["document"]["snapshot_hash"] = "0" * 64
 
         with pytest.raises(UnsupportedSnapshotFormatError) as excinfo:
@@ -192,7 +194,7 @@ class TestGtsDocumentValid:
         # over https (e.g. --force-protocol) must produce the identical
         # .gts snapshot hash: access_protocol is a clone-transport detail,
         # not part of what a .gts snapshot records about the tree's state.
-        # `_build_canonical_payload` never reads it, so this also guards
+        # `_repo_leaves` never reads it, so this also guards
         # against it (or gitprovider, another transport-only field) ever
         # being added to the hashed payload without a deliberate decision.
         data_ssh = copy.deepcopy(MINIMAL_GTS)
@@ -230,8 +232,7 @@ class TestGtsDocumentValid:
         repo["current_ref"] = "branch:main"
         doc = GtsDocument.from_dict(data)
         assert doc is not None
-        payload = doc._build_canonical_payload()
-        assert payload["repo_state"][0]["current_ref"] == "branch:main"
+        assert doc._repo_leaves()[0]["current_ref"] == "branch:main"
 
 
 # ===========================================================================

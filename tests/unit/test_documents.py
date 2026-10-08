@@ -68,6 +68,7 @@ MINIMAL_GTS: dict = {
             "name": "repo-a",
             "node_type": "LeafRepo",
             "absolute_path": "/workspace/TestProject/repo-a",
+            "relative_path": "repo-a",
             "parent_absolute_path": "/workspace/TestProject",
             "repo_lifecycle_state": "READY",
             "sync_state": "ALIGNED",

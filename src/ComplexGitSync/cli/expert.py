@@ -1537,7 +1537,7 @@ def _print_memory_show(state: dict, *, full: bool = False) -> int:
         print(f"commits_on_ancestors={', '.join(state['commits_on_ancestors'])} (their branches are gone; 'ancestors' keeps these commits)")
     print(
         f"project={state['project']} lifecycle_state={state['lifecycle_state']} "
-        f"repos={state['repos']} hash_canonicalisation={state['hash_canonicalisation']}"
+        f"repos={state['repos']} integrity_schema={state['integrity_schema']} gittree_root={state['gittree_root']}"
     )
     # The environment this State's own commits ran under, first — a bare
     # reference, not the full record: 'memory show env=<ref>' is where that

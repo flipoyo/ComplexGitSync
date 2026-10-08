@@ -126,17 +126,17 @@ def test_a_missing_snapshot_exits_two(tmp_path, capsys):
 def test_a_snapshot_from_a_newer_build_names_the_versions_not_corruption(tmp_path, capsys):
     """SnapshotVersionGuard end to end: the exact incident this ticket fixes.
 
-    A snapshot declaring a ``hash_canonicalisation`` this build has never
+    A snapshot declaring an ``integrity_schema`` this build has never
     heard of used to fail every command with "snapshot_hash does not match
     canonical .gts content hash" — a message that reads as corruption and
     invites deleting a perfectly good file. It must now name both versions
     and say what to do instead.
     """
-    from ComplexGitSync.gts_document import GtsDocument
+    from ComplexGitSync.gts_integrity import INTEGRITY_SCHEMA
 
     root = tmp_path / "demo"
     root.mkdir()
-    unsupported = GtsDocument.CURRENT_HASH_CANONICALISATION + 1
+    unsupported = INTEGRITY_SCHEMA + 1
     snapshot = tmp_path / "demo.gts"
     snapshot.write_text(
         f"""
@@ -144,7 +144,7 @@ def test_a_snapshot_from_a_newer_build_names_the_versions_not_corruption(tmp_pat
 format_version = "1.0"
 generated_at = "2026-01-01T00:00:00Z"
 command_origin = "checkout"
-hash_canonicalisation = {unsupported}
+integrity_schema = {unsupported}
 snapshot_hash = "{"0" * 64}"
 
 [project]

@@ -41,6 +41,7 @@ INTEGRITY_SCHEMA = 1
 class GtsIntegrity:
     """The pure hash functions of ``integrity_schema = 1``. Stateless."""
 
+    SCHEMA = INTEGRITY_SCHEMA
     REPO_TAG = b"CGS:REPO:v1\x00"
     NODE_TAG = b"CGS:NODE:v1\x00"
     STATE_TAG = b"CGS:STATE:v1\x00"
@@ -68,12 +69,9 @@ class GtsIntegrity:
     def ordered_leaves(cls, leaves: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
         """*leaves* in tree order: ``relative_path`` compared as UTF-8 bytes.
 
-        Refuses an empty tree (a tree always contains its root repository), a
-        leaf without a ``relative_path``, and two leaves sharing one — a
-        duplicate is an invalid State, never a tie broken by name.
+        Refuses a leaf without a ``relative_path`` and two leaves sharing one
+        — a duplicate is an invalid State, never a tie broken by name.
         """
-        if not leaves:
-            raise ConfigValidationError("a State must contain at least one repository")
         keyed: dict[bytes, Mapping[str, Any]] = {}
         for leaf in leaves:
             path = leaf.get("relative_path")
@@ -93,6 +91,10 @@ class GtsIntegrity:
 
     @classmethod
     def _subtree(cls, digests: Sequence[bytes]) -> bytes:
+        if not digests:
+            # RFC 6962 §2.1, MTH({}): only the default workspace's empty,
+            # never-READY State has no repository (GtsDocument.validate).
+            return hashlib.sha256(b"").digest()
         if len(digests) == 1:
             return digests[0]
         split = 1

@@ -4,7 +4,7 @@ Ring: 0 core + Ring-1 I/O adapter, co-located — see note below.
 Contract: parse, validate, and compute the canonical SHA-256 content hash of
     a ``.gts`` Git Tree State snapshot; the sole builder of that canonical
     payload (one hash code path, no fork).
-Imports: config_document, config_document_io, errors, git_repo
+Imports: config_document, config_document_io, errors, git_repo, gts_integrity
 
 Ring-classification note (found during P2-integrate, same shape as the
 config_document.py/config_document_io.py split from WP-CFG): every real
@@ -46,8 +46,6 @@ importing from here.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from typing import Any
 
@@ -55,7 +53,8 @@ from . import __version__ as CGS_VERSION
 from .config_document import ConfigDocument
 from .config_document_io import ConfigDocumentIOMixin
 from .errors import ConfigValidationError, UnsupportedSnapshotFormatError
-from .git_repo import DiscoveryState, NodeType, RefKind, RepoLifecycleState
+from .git_repo import NodeType, RefKind, RepoLifecycleState
+from .gts_integrity import GtsIntegrity
 
 # ============================================================
 #  Module-level constants and helpers GtsDocument depends on
@@ -134,14 +133,16 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     CURRENT_SCHEMA_VERSION = "1.1"
     HASH_ALGORITHM = "sha256"
 
-    #: Which canonicalisation a new snapshot's hash is computed with. Only
-    #: version 3 is read: it hashes what the workspace *is* (tree-relative
-    #: paths, refs, commits, who each repository is) and never the running
-    #: package's own version. See ``.agent/.local/.localSpec/AdditionalSpecs.md``,
-    #: *What a State's name is computed from*. A snapshot written under an
-    #: earlier version is refused, never re-measured: run ``memory reboot``.
-    CURRENT_HASH_CANONICALISATION = 3
+    #: The hash contract is ``document.integrity_schema`` (``gts_integrity``):
+    #: a hash per repository, a Merkle root over the tree, and the State hash
+    #: on top. A stamped snapshot without it predates schema 1 and is refused,
+    #: never re-measured; one declaring a higher schema came from a newer build.
     _SUPPORTED_HASH_ALGORITHMS = frozenset((HASH_ALGORITHM,))
+    _MISMATCH_MESSAGES = {
+        "repo_hash": "repo_state '{}' repo_hash does not match its recomputed hash",
+        "merkle_root": "[tree_integrity] merkle_root does not match the recomputed Merkle root",
+        "snapshot_hash": "[document] snapshot_hash does not match canonical .gts content hash",
+    }
 
     _REQUIRED_DOCUMENT_KEYS = ("generated_at", "command_origin")
     _REQUIRED_PROJECT_KEYS = ("name", "root_absolute_path")
@@ -225,11 +226,18 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
             )
 
         snapshot_hash = self.read("document.snapshot_hash")
-        if snapshot_hash is not None:
+        if isinstance(repo_states, list):
+            try:
+                GtsIntegrity.ordered_leaves(self._repo_leaves())
+            except ConfigValidationError as exc:
+                errors.append(f"[repo_state] {exc}")
+            if not repo_states and self.is_ready:
+                errors.append("[repo_state] a READY State must contain at least one repository")
+        if snapshot_hash is not None and not errors:
             if not isinstance(snapshot_hash, str) or _SHA256_HEX_RE.fullmatch(snapshot_hash) is None:
                 errors.append("[document] snapshot_hash must be a lowercase hexadecimal SHA-256 digest")
-            elif snapshot_hash != self.compute_snapshot_hash():
-                errors.append("[document] snapshot_hash does not match canonical .gts content hash")
+            else:
+                errors.extend(self._MISMATCH_MESSAGES[level].format(where) for level, where in self.integrity_mismatches())
 
         command_origin = self.read("document.command_origin")
         if command_origin in _FREEZE_COMMAND_ORIGINS:
@@ -293,76 +301,121 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         return value if isinstance(value, str) and value else None
 
     @property
-    def hash_canonicalisation(self) -> int | None:
-        """Which canonicalisation this document declares, or ``None``."""
-        declared = self.read("document.hash_canonicalisation")
-        return declared if isinstance(declared, int) and declared > 0 else None
+    def integrity_schema(self) -> int | None:
+        """The integrity schema this document declares, or ``None``."""
+        declared = self.read("document.integrity_schema")
+        return declared if isinstance(declared, int) and not isinstance(declared, bool) else None
 
-    def compute_snapshot_hash(self) -> str:
-        """The content hash of this document, under the current canonicalisation.
+    @property
+    def gittree_root(self) -> str | None:
+        """The stored ``[tree_integrity].merkle_root``, or ``None``."""
+        value = self.read("tree_integrity.merkle_root")
+        return value if isinstance(value, str) and value else None
 
-        Refuses, by name, before building any payload, a document written
-        under another version: a newer one, or a stamped one older than
-        this build reads. Recomputing a hash under rules the document was
-        never written under produces a wrong digest that reads as
-        "corrupt", which is what happened the one time this was allowed to
-        fall through
+    def _check_integrity_schema(self) -> None:
+        """Refuse, by name and before hashing, a schema this build does not read.
+
+        Recomputing a hash under rules a document was never written under
+        gives a wrong digest that reads as "corrupt" — what happened the one
+        time this was allowed to fall through
         (`.agent/.local/.dev/DevTickets/archive/20260918_SnapshotVersionGuard_DevPlanTicket.md`).
-        A document not yet stamped (no ``snapshot_hash``) is being built and
-        is hashed under the current version.
+        A document with no ``snapshot_hash`` is still being built and is
+        hashed under the current schema.
         """
-        version = self.hash_canonicalisation
-        if version is not None and version > self.CURRENT_HASH_CANONICALISATION:
+        declared = self.integrity_schema
+        if declared is not None and declared > GtsIntegrity.SCHEMA:
             raise UnsupportedSnapshotFormatError(
                 "this snapshot was written by a newer ComplexGitSync "
-                f"(snapshot format {version}; this build reads up to "
-                f"{self.CURRENT_HASH_CANONICALISATION}). Upgrade, or pass "
-                "--gts with a snapshot this build wrote."
+                f"(integrity schema {declared}; this build reads up to "
+                f"{GtsIntegrity.SCHEMA}). Upgrade, or pass --gts with a snapshot this build wrote."
             )
-        if self.snapshot_hash is not None and version != self.CURRENT_HASH_CANONICALISATION:
+        if self.snapshot_hash is not None and declared != GtsIntegrity.SCHEMA:
             raise UnsupportedSnapshotFormatError(
-                "this snapshot was written by an older ComplexGitSync, in a "
-                "format this build no longer reads — run `cgitsync memory reboot`."
+                f"this snapshot was written before integrity schema {GtsIntegrity.SCHEMA} "
+                "— run `cgitsync memory reboot`."
             )
-        canonical_json = json.dumps(
-            self._build_canonical_payload(),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+    def compute_gittree_root(self) -> str:
+        """``H_GITTREE``: the Merkle root over this document's repositories."""
+        self._check_integrity_schema()
+        return GtsIntegrity.merkle_root(self._repo_leaves())
+
+    def compute_snapshot_hash(self) -> str:
+        """``H_STATE``: the content hash that names this State."""
+        return GtsIntegrity.state_hash(self._state_payload(self.compute_gittree_root()))
 
     def ensure_snapshot_hash(self) -> str:
-        """Stamp this document with its canonicalisation and its hash.
+        """Stamp the schema, each ``repo_hash``, the Merkle root and the State hash.
 
-        Called on the way to disk, so every new snapshot carries the
-        current version: its name is a fact about the tree, not about the
-        directory the tree happens to sit in.
+        Called on the way to disk: the name is a fact about the tree, not
+        about the directory it sits in or the build that wrote it.
         """
         document = self._data.setdefault("document", {})
         document["CGS_VERSION"] = str(document.get("CGS_VERSION") or CGS_VERSION)
-        document["hash_canonicalisation"] = self.CURRENT_HASH_CANONICALISATION
-        digest = self.compute_snapshot_hash()
+        document["integrity_schema"] = GtsIntegrity.SCHEMA
+        for repo, leaf in zip(self._repo_dicts(), self._repo_leaves()):
+            repo["repo_hash"] = GtsIntegrity.repo_leaf_hash(leaf)
+        root = self.compute_gittree_root()
+        self._data["tree_integrity"] = {"merkle_root": root}
+        digest = GtsIntegrity.state_hash(self._state_payload(root))
         document["snapshot_hash"] = digest
         return digest
 
-    def _build_canonical_payload(self) -> dict[str, Any]:
-        """The fields a State's name is computed from.
+    def integrity_mismatches(self) -> list[tuple[str, str | None]]:
+        """Every stored checkpoint that disagrees with its recomputation, bottom-up.
 
-        No absolute path — the workspace's, each repository's, its
-        parent's, or the ``.cgs`` the snapshot came from — and no running
-        package version: those say where and by what a tree was
-        materialised, not what the tree *is*. Repositories are ordered by
-        their tree-relative path.
+        ``("repo_hash", relative_path)`` per repository, then
+        ``("merkle_root", None)``, then ``("snapshot_hash", None)``. Every
+        finding is reported, not only the first. Refuses an unsupported
+        schema or an invalid tree (``ConfigValidationError``) before comparing.
         """
-        project = self._data.get("project", {})
-        tree_state = self._data.get("tree_state", {})
+        self._check_integrity_schema()
+        found: list[tuple[str, str | None]] = []
+        for repo, leaf in zip(self._repo_dicts(), self._repo_leaves()):
+            if repo.get("repo_hash") != GtsIntegrity.repo_leaf_hash(leaf):
+                found.append(("repo_hash", str(leaf.get("relative_path"))))
+        root = self.compute_gittree_root()
+        if self.gittree_root != root:
+            found.append(("merkle_root", None))
+        if self.snapshot_hash != GtsIntegrity.state_hash(self._state_payload(root)):
+            found.append(("snapshot_hash", None))
+        return found
+
+    def _repo_dicts(self) -> list[dict[str, Any]]:
         repo_states = self._data.get("repo_state", [])
+        return [repo for repo in repo_states if isinstance(repo, dict)] if isinstance(repo_states, list) else []
+
+    def _state_payload(self, gittree_root: str) -> dict[str, Any]:
+        """The State payload: the project, the tree state, the root, the freeze manifest.
+
+        No absolute path and no running package version: those say where
+        and by what a tree was materialised, not what it *is*.
+        ``repo_state`` contributes only through *gittree_root*.
+        """
+        tree_state = self._data.get("tree_state", {})
         freeze_manifest = self._data.get("freeze_manifest", {})
+        freeze_manifest = freeze_manifest if isinstance(freeze_manifest, dict) else {}
+        return {
+            "project": {"name": self._data.get("project", {}).get("name")},
+            "tree_state": {
+                "lifecycle_state": tree_state.get("lifecycle_state"),
+                "is_ready": tree_state.get("is_ready"),
+                "registry_complete": tree_state.get("registry_complete"),
+            },
+            "gittree_root": gittree_root,
+            "freeze_manifest": {
+                key: freeze_manifest.get(key)
+                for key in (
+                    "schema_version", "immutable_snapshot", "workspace_validated", "ledger_checkpoint",
+                    "synchronized_ref_kind", "synchronized_ref_name", "release-name", "restore_operation",
+                )
+            },
+        }
+
+    def _repo_leaves(self) -> list[dict[str, Any]]:
+        """Each repository's canonical leaf (``repo_leaf``), in document order."""
         canonical_repo_states = []
-        for repo in repo_states if isinstance(repo_states, list) else []:
-            if not isinstance(repo, dict):
-                continue
+        for repo in self._repo_dicts():
             canonical_repo = {
                 "name": repo.get("name"),
                 "node_type": repo.get("node_type"),
@@ -402,41 +455,14 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 # actually attests to.
                 "fallback_applied": bool(repo.get("fallback_applied", False)),
                 "fallback_reason": repo.get("fallback_reason"),
-                "discovery_state": repo.get("discovery_state", DiscoveryState.RESOLVED.value),
+                # A frozen literal (DiscoveryState.RESOLVED), for the same
+                # reason as fallback_branch above: a hashed default never moves.
+                "discovery_state": repo.get("discovery_state", "RESOLVED"),
                 "worktree_state": repo.get("worktree_state"),
                 "is_reachable": bool(repo.get("is_reachable", True)),
             }
             canonical_repo_states.append(canonical_repo)
-
-        canonical_repo_states.sort(
-            key=lambda repo: (
-                str(repo.get("relative_path", "")),
-                str(repo.get("name", "")),
-            )
-        )
-        canonical_project = {"name": project.get("name")}
-        payload: dict[str, Any] = {}
-        payload.update({
-            "project": canonical_project,
-            "tree_state": {
-                "lifecycle_state": tree_state.get("lifecycle_state"),
-                "is_ready": tree_state.get("is_ready"),
-                "registry_complete": tree_state.get("registry_complete"),
-            },
-            "repo_state": canonical_repo_states,
-        })
-        if isinstance(freeze_manifest, dict):
-            payload["freeze_manifest"] = {
-                "schema_version": freeze_manifest.get("schema_version"),
-                "immutable_snapshot": freeze_manifest.get("immutable_snapshot"),
-                "workspace_validated": freeze_manifest.get("workspace_validated"),
-                "ledger_checkpoint": freeze_manifest.get("ledger_checkpoint"),
-                "synchronized_ref_kind": freeze_manifest.get("synchronized_ref_kind"),
-                "synchronized_ref_name": freeze_manifest.get("synchronized_ref_name"),
-                "release-name": freeze_manifest.get("release-name"),
-                "restore_operation": freeze_manifest.get("restore_operation"),
-            }
-        return payload
+        return canonical_repo_states
 
 
 __all__ = ["GtsDocument"]

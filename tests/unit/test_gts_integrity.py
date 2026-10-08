@@ -79,9 +79,9 @@ def test_the_domain_tags_separate_a_leaf_from_a_state():
     assert GtsIntegrity.repo_leaf_hash(leaf) != GtsIntegrity.state_hash(leaf)
 
 
-def test_an_empty_tree_is_refused():
-    with pytest.raises(ConfigValidationError, match="at least one repository"):
-        GtsIntegrity.merkle_root([])
+def test_an_empty_tree_has_the_rfc_6962_empty_root():
+    """MTH({}) = SHA-256 of the empty string; only a never-READY State has it."""
+    assert GtsIntegrity.merkle_root([]) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 
 def test_a_duplicate_relative_path_is_refused_not_tie_broken():

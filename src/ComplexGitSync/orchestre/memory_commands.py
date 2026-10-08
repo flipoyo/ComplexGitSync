@@ -1608,7 +1608,7 @@ class MemoryCommands:
             "project": document.read("project.name"),
             "lifecycle_state": document.read("tree_state.lifecycle_state"),
             "repos": len(document.repo_states),
-            "hash_canonicalisation": document.hash_canonicalisation,
+            "integrity_schema": document.integrity_schema, "gittree_root": document.gittree_root,
             "tree": tree,
             "environments": environments,
             "entries": [
