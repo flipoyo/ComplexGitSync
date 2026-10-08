@@ -24,3 +24,21 @@ jobs:
         run: pixi run lint
       - name: Run tests
         run: pixi run test
+
+  versioning:
+    # Verifies, never decides: a commit that moves __build__ must also raise
+    # __version__ (Versioning.md). Reads the pushed range and writes nothing.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: prefix-dev/setup-pixi@v0.8.1
+      - name: Every build bump comes with a version bump
+        env:
+          RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || format('{0}..{1}', github.event.before, github.sha) }}
+        run: |
+          case "$RANGE" in
+            0000000000000000000000000000000000000000..*) echo "new branch: no range to judge"; exit 0 ;;
+          esac
+          pixi run check-build-version "$RANGE"

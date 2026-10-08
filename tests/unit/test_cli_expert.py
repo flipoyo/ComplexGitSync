@@ -58,6 +58,9 @@ def _load_cli_expert():
     shared = sys.modules.get("ComplexGitSync.cli._shared") or _load_cli_module(
         "ComplexGitSync.cli._shared", "cli/_shared.py"
     )
+    # Loaded afresh, after ``_shared``, so it binds the same ``_shared`` the
+    # stubs below patch rather than one imported earlier in the session.
+    _load_cli_module("ComplexGitSync.cli.branch_command", "cli/branch_command.py")
     expert = _load_cli_module("ComplexGitSync.cli.expert", "cli/expert.py")
     return expert, shared
 
@@ -90,66 +93,17 @@ def test_commands_dict_matches_registered_parsers():
     subparsers = parser.add_subparsers(dest="command")
     expert.register_parsers(subparsers)
     assert set(subparsers.choices.keys()) == set(expert.COMMANDS.keys())
-    assert len(expert.COMMANDS) == 18
+    assert len(expert.COMMANDS) == 16
 
 
 def test_commands_dict_help_text_matches_source_of_truth():
-    assert expert.COMMANDS["purge"] == "Remove generated clone state for a .cgs workspace."
-    assert expert.COMMANDS["verify"] == "Verify the hash-chained .cgitsync/lgr register for tamper-evidence."
+    assert "purge" not in expert.COMMANDS
+    assert expert.COMMANDS["verify"] == "Check the hash-chained .cgitsync/lgr ledger, or repair its HEAD cache (check, repair)."
 
 
 # ---------------------------------------------------------------------------
 # purge
 # ---------------------------------------------------------------------------
-
-
-def test_purge_command_removes_generated_clone_state(monkeypatch, capsys, tmp_path):
-    removed = (tmp_path / "parent" / "project" / "child-repo", tmp_path / "parent" / "project" / ".gitmodules")
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_initialise_cgshome(self, source, *, output_path=None):
-            return Path(output_path) / "project"
-
-        def purge(self, source, *, output_path=None):
-            captured_call["source"] = Path(source)
-            captured_call["output_path"] = output_path
-            return removed
-
-    monkeypatch.setattr(expert, "ComplexGitSyncClient", StubClient)
-
-    config_path = tmp_path / "project.cgs"
-    config_path.touch()
-    output_path = str(tmp_path / "parent")
-    exit_code = _run(["purge", str(config_path), "--output-path", output_path])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["source"] == config_path.resolve()
-    assert captured_call["output_path"] == output_path
-    assert "operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE" in captured.out
-    assert "workflow=load->expand->validate->purge" in captured.out
-    assert str(removed[0]) in captured.out
-    assert str(removed[1]) in captured.out
-
-
-def test_purge_command_reports_none_removed(monkeypatch, capsys, tmp_path):
-    class StubClient:
-        def resolve_initialise_cgshome(self, source, *, output_path=None):
-            return Path(output_path) / "project"
-
-        def purge(self, source, *, output_path=None):
-            return ()
-
-    monkeypatch.setattr(expert, "ComplexGitSyncClient", StubClient)
-
-    config_path = tmp_path / "project.cgs"
-    config_path.touch()
-    exit_code = _run(["purge", str(config_path), "--output-path", str(tmp_path / "parent")])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "removed: none" in captured.out
 
 
 # ---------------------------------------------------------------------------
@@ -172,71 +126,6 @@ def test_validate_command_renders_lifecycle_state(tmp_path, capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_clone_command_uses_client_method(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_clone_root(self, source, *, target_dir=None, output_path=None):
-            captured_call["resolve_source"] = Path(source)
-            captured_call["resolve_target_dir"] = target_dir
-            captured_call["resolve_output_path"] = output_path
-            return Path(target_dir)
-
-        def clone(self, source, *, target_dir=None, output_path=None):
-            captured_call["source"] = Path(source)
-            captured_call["target_dir"] = target_dir
-            captured_call["output_path"] = output_path
-            return SimpleNamespace(
-                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "workspace" / "demo")
-            )
-
-        def get_tree_state(self):
-            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
-
-    monkeypatch.setattr(expert, "ComplexGitSyncClient", StubClient)
-
-    target_dir = str(tmp_path / "workspace" / "demo")
-    exit_code = _run(["clone", "project.cgs", "--target-dir", target_dir])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["resolve_source"] == Path("project.cgs")
-    assert captured_call["resolve_target_dir"] == target_dir
-    assert captured_call["source"] == Path("project.cgs").resolve()
-    assert captured_call["target_dir"] == target_dir
-    assert "READY ready=true complete=true" in captured.out
-
-
-def test_clone_command_output_path_is_forwarded(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_clone_root(self, source, *, target_dir=None, output_path=None):
-            captured_call["resolve_output_path"] = output_path
-            return tmp_path / "parent" / "demo"
-
-        def clone(self, source, *, target_dir=None, output_path=None):
-            captured_call["output_path"] = output_path
-            return SimpleNamespace(
-                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "parent" / "demo")
-            )
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-    monkeypatch.setattr(expert, "ComplexGitSyncClient", StubClient)
-
-    output_path = str(tmp_path / "parent")
-    exit_code = _run(["clone", "project.cgs", "--output-path", output_path])
-    capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["resolve_output_path"] == output_path
-    assert captured_call["output_path"] == output_path
-
-
 # ---------------------------------------------------------------------------
 # pull / pull-force
 # ---------------------------------------------------------------------------
@@ -249,18 +138,14 @@ def test_gitignore_sync_flags_documented_on_pull(capsys):
     captured = capsys.readouterr()
     assert exc_info.value.code == 0
     assert "--commit-gitignore" in captured.out
-    assert "--force-gitignore-sync" in captured.out
+    assert "--force-gitignore-sync" not in captured.out
     assert "--git-user-name" in captured.out
     assert "--git-user-email" in captured.out
 
 
-def test_gitignore_sync_flags_absent_on_pull_force(capsys):
-    with pytest.raises(SystemExit) as exc_info:
-        _run(["pull-force", "--commit-gitignore"])
-
-    captured = capsys.readouterr()
-    assert exc_info.value.code == 2
-    assert "unrecognized arguments" in captured.err
+def test_gitignore_sync_flags_refused_with_pull_force(capsys):
+    assert _run(["pull", "--force", "--commit-gitignore"]) == 2
+    assert "--force does not take --commit-gitignore" in capsys.readouterr().err
 
 
 def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
@@ -310,7 +195,7 @@ def test_pull_command_failure_suggests_pull_force(monkeypatch, tmp_path, capsys)
         _run(["pull", str(source_path)])
 
     captured = capsys.readouterr()
-    assert "You can try cgitsync pull-force command" in captured.err
+    assert "You can try cgitsync autofix" in captured.err
 
 
 def test_pull_force_command_uses_client_handler(monkeypatch, tmp_path, capsys):
@@ -331,7 +216,7 @@ def test_pull_force_command_uses_client_handler(monkeypatch, tmp_path, capsys):
 
     source_path = tmp_path / "project.gts"
     source_path.touch()
-    exit_code = _run(["pull-force", str(source_path)])
+    exit_code = _run(["pull", "--force", str(source_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -421,7 +306,7 @@ def test_branch_command_uses_client_handler(monkeypatch, capsys, tmp_path):
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
-    exit_code = _run(["branch", "feature-x", "--gts", str(gts_path)])
+    exit_code = _run(["branch", "create", "feature-x", "--gts", str(gts_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -722,61 +607,6 @@ def test_tag_command_uses_client_handler(monkeypatch, capsys, tmp_path):
     assert "name=v1.0" in captured.out
 
 
-def test_freeze_command_uses_client_handler(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        run_logger = None
-        loaded_snapshot_path = tmp_path / ".cgitsync" / "state" / "gts-000001-v1.0.gts"
-
-        def load_gts(self, path):
-            captured_call["gts_path"] = Path(path)
-
-        def freeze(self, name, **kwargs):
-            captured_call["name"] = name
-
-        def get_tree_state(self):
-            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
-
-    monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
-
-    gts_path = tmp_path / "project.gts"
-    gts_path.touch()
-    exit_code = _run(["freeze", "v1.0", "--gts", str(gts_path)])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["name"] == "v1.0"
-    assert "name=v1.0" in captured.out
-    assert "snapshot=" in captured.out
-    assert "gts-000001-v1.0.gts" in captured.out
-
-
-def test_freeze_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
-    class StubClient:
-        run_logger = None
-
-        def load_gts(self, path):
-            pass
-
-        def freeze(self, name, **kwargs):
-            raise AssertionError("freeze should not be called during --dry-run")
-
-        def get_tree_state(self):
-            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
-
-    monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
-
-    gts_path = tmp_path / "project.gts"
-    gts_path.touch()
-    exit_code = _run(["freeze", "v1.0", "--gts", str(gts_path), "--dry-run"])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "dry_run=true command=freeze" in captured.out
-    assert "plan_actions=git add --all -> git commit -m 'v1.0' -> git tag v1.0 -> git push" in captured.out
-
-
 # ---------------------------------------------------------------------------
 # import-submodules
 # ---------------------------------------------------------------------------
@@ -796,13 +626,13 @@ def test_import_submodules_dry_run_reports_without_apply(monkeypatch, capsys, tm
 
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    exit_code = _run(["import-submodules", str(repo_root)])
+    exit_code = _run(["submodules", "report", str(repo_root)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
     assert "Dry run" in captured.out
     assert "submodule: child" in captured.out
-    assert "Pass --apply to perform the conversion." in captured.out
+    assert "Run 'cgitsync submodules import' with the same arguments to perform the conversion." in captured.out
 
 
 def test_import_submodules_apply_converts(monkeypatch, capsys, tmp_path):
@@ -819,7 +649,7 @@ def test_import_submodules_apply_converts(monkeypatch, capsys, tmp_path):
 
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    exit_code = _run(["import-submodules", str(repo_root), "--apply"])
+    exit_code = _run(["submodules", "import", str(repo_root)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -836,7 +666,7 @@ def test_import_submodules_no_gitmodules_reports_nothing_to_import(monkeypatch, 
 
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    exit_code = _run(["import-submodules", str(repo_root)])
+    exit_code = _run(["submodules", "report", str(repo_root)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -885,7 +715,7 @@ def test_init_from_submodules_dry_run_reports_the_plan(monkeypatch, capsys, tmp_
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
-    exit_code = _run(["init-from-submodules", str(repo_root), "--dry-run"])
+    exit_code = _run(["submodules", "init", str(repo_root), "--dry-run"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -905,14 +735,14 @@ def test_init_from_submodules_prints_next_steps_after_adopting(monkeypatch, caps
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
-    exit_code = _run(["init-from-submodules", str(repo_root)])
+    exit_code = _run(["submodules", "init", str(repo_root)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
     assert "Converted 1 submodule(s) to plain nested clones" in captured.out
     # The conversion is staged only, so the commit sequence must be spelled out.
     assert "staged but not committed" in captured.out
-    assert "cgitsync branch <name>" in captured.out
+    assert "cgitsync branch create <name>" in captured.out
 
 
 def test_init_from_submodules_forwards_every_flag_to_the_client(monkeypatch, capsys, tmp_path):
@@ -928,17 +758,7 @@ def test_init_from_submodules_forwards_every_flag_to_the_client(monkeypatch, cap
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
     exit_code = _run(
-        [
-            "init-from-submodules",
-            str(repo_root),
-            "--cgs",
-            str(tmp_path / "hand.cgs"),
-            "--max-depth",
-            "3",
-            "--force",
-            "--force-protocol",
-            "https",
-        ]
+        ["submodules", "init", str(repo_root), "--cgs", str(tmp_path / "hand.cgs"), "--max-depth", "3", "--force", "--force-protocol", "https"]
     )
     capsys.readouterr()
 
@@ -957,14 +777,14 @@ def test_init_from_submodules_forwards_every_flag_to_the_client(monkeypatch, cap
 # ---------------------------------------------------------------------------
 
 
-def test_verify_command_says_no_history_for_an_unstarted_register(tmp_path, capsys):
-    """An empty register is "nothing recorded", never "chain clean".
+def test_verify_command_says_no_history_for_an_unstarted_ledger(tmp_path, capsys):
+    """An empty ledger is "nothing recorded", never "chain clean".
 
     Exit 0 all the same: a new workspace is not a broken one.
     """
     (tmp_path / ".cgitsync").mkdir()
 
-    exit_code = _run(["verify", "--search-dir", str(tmp_path)])
+    exit_code = _run(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -987,7 +807,7 @@ def test_verify_command_exits_nonzero_and_lists_findings_on_tamper(monkeypatch, 
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
-    exit_code = _run(["verify", "--search-dir", str(tmp_path)])
+    exit_code = _run(["verify", "check", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -1011,7 +831,7 @@ def test_verify_command_repair_flag_is_forwarded(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
 
-    exit_code = _run(["verify", "--search-dir", str(tmp_path), "--repair"])
+    exit_code = _run(["verify", "repair", "--search-dir", str(tmp_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -1022,7 +842,7 @@ def test_verify_command_repair_flag_is_forwarded(monkeypatch, tmp_path, capsys):
 def test_verify_command_requires_locatable_cgshome(monkeypatch, tmp_path):
     monkeypatch.delenv("CGSHOME", raising=False)
     with pytest.raises(FileNotFoundError, match=r"Unable to locate CGSHOME"):
-        _run(["verify", "--search-dir", str(tmp_path)])
+        _run(["verify", "check", "--search-dir", str(tmp_path)])
 
 
 # ---------------------------------------------------------------------------
@@ -1089,7 +909,7 @@ relative_path = "deps/child-repo"
 
 
 # ---------------------------------------------------------------------------
-# --all — .localSpec/DevTickets/archive/20260911_UnifiedProjectPrivateScope_DevPlanTicket.md
+# --all — .agent/.local/.dev/DevTickets/archive/20260911_UnifiedProjectPrivateScope_DevPlanTicket.md
 # ---------------------------------------------------------------------------
 
 
@@ -1122,10 +942,10 @@ def test_all_is_offered_on_every_command_that_writes_this_projects_history(comma
     assert args.all_writable is False, "the default must not move"
 
 
-@pytest.mark.parametrize("command", ["tag", "checkout", "branch"])
+@pytest.mark.parametrize("command", [["tag"], ["checkout"], ["branch", "create"]])
 def test_all_is_not_offered_where_it_would_mean_nothing(capsys, command):
     with pytest.raises(SystemExit) as excinfo:
-        _run([command, "x", "--all"])
+        _run([*command, "x", "--all"])
 
     assert excinfo.value.code == 2
     assert "unrecognized arguments: --all" in capsys.readouterr().err
@@ -1196,3 +1016,165 @@ def test_the_existing_two_forms_reach_the_client_exactly_as_before(
     assert _run(["add", *flags, "--gts", str(gts_path)]) == 0
     assert captured_call["private"] is expected["private"]
     assert captured_call["all_writable"] is expected["all_writable"]
+
+
+# ---------------------------------------------------------------------------
+# self-history add
+# ---------------------------------------------------------------------------
+
+_SELF_HISTORY_ARGV = [
+    "self-history",
+    "add",
+    "--ticket", "AgentReport",
+    "--goal", "Implement WP1.",
+    "--action", "Wrote self_history.py and self_history_add.",
+    "--worker-role", "Dev",
+    "--worker-vendor", "vendor-name",
+    "--worker-model", "model-name",
+    "--orchestrator-role", "Orchestration",
+    "--orchestrator-vendor", "vendor-name",
+    "--orchestrator-model", "model-name",
+    "--spec-respect-score", "33",
+    "--spec-respect-basis", "measured",
+    "--spec-respect-reasoning", "lint and test both pass",
+    "--gating-score", "33",
+    "--gating-basis", "measured",
+    "--gating-reasoning", "nothing private pushed",
+    "--quality-score", "30",
+    "--quality-basis", "asserted",
+    "--quality-reasoning", "a reasonable first pass",
+]
+
+
+def test_self_history_add_builds_the_record_and_calls_the_client(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+    written_path = tmp_path / "recorded.toml"
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            captured_call["gts_path"] = Path(path)
+
+        def self_history_add(self, cgshome, **kwargs):
+            captured_call["cgshome"] = Path(cgshome)
+            captured_call["kwargs"] = kwargs
+            return written_path
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr(expert, "_resolve_gts_path", lambda *_a, **_k: tmp_path / "project.gts")
+    (tmp_path / ".cgitsync").mkdir()
+
+    exit_code = _run([*_SELF_HISTORY_ARGV, "--search-dir", str(tmp_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert f"recorded={written_path}" in captured.out
+    kwargs = captured_call["kwargs"]
+    assert kwargs["ticket"] == "AgentReport"
+    assert kwargs["worker"].role == "Dev"
+    assert kwargs["worker"].vendor == "vendor-name"
+    assert kwargs["orchestrator"].role == "Orchestration"
+    assert kwargs["conformity"].spec_respect.score == 33.0
+    assert kwargs["conformity"].spec_respect.basis == "measured"
+    assert kwargs["conformity"].quality.basis == "asserted"
+    assert kwargs["state_before"] == ""
+    assert kwargs["lint_passed"] is None
+    assert kwargs["pushed"] is False
+
+
+def test_self_history_add_forwards_lint_tests_and_pushed_flags(monkeypatch, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        run_logger = None
+
+        def load_gts(self, path):
+            pass
+
+        def self_history_add(self, cgshome, **kwargs):
+            captured_call["kwargs"] = kwargs
+            return tmp_path / "r.toml"
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+    monkeypatch.setattr(_shared, "ComplexGitSyncClient", StubClient)
+    monkeypatch.setattr(expert, "_resolve_gts_path", lambda *_a, **_k: tmp_path / "project.gts")
+    (tmp_path / ".cgitsync").mkdir()
+
+    _run([
+        *_SELF_HISTORY_ARGV,
+        "--search-dir", str(tmp_path),
+        "--state-before", f"state({'a' * 64})",
+        "--state-after", f"state({'b' * 64})",
+        "--lint-passed",
+        "--tests-failed",
+        "--pushed",
+        "--pushed-reason", "owner asked",
+    ])
+
+    kwargs = captured_call["kwargs"]
+    assert kwargs["state_before"] == f"state({'a' * 64})"
+    assert kwargs["state_after"] == f"state({'b' * 64})"
+    assert kwargs["lint_passed"] is True
+    assert kwargs["tests_passed"] is False
+    assert kwargs["pushed"] is True
+    assert kwargs["pushed_reason"] == "owner asked"
+
+
+def test_self_history_add_rejects_an_unknown_role():
+    argv = [arg if arg != "Dev" else "Manager" for arg in _SELF_HISTORY_ARGV]
+    parser = _build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(argv)
+
+
+def test_environment_tree_renders_like_view_tree_not_a_raw_dict():
+    """`memory show`'s environment section used to print `record={...}` —
+    Python's own dict repr, unreadable at a glance. It now draws the same
+    box-drawing tree `view-tree` (`git_tree.format_view_tree`) uses for a
+    repo tree, applied to the Environment record's own nested shape."""
+    record = {
+        "format_version": 1,
+        "environment_root": "",
+        "machine": {"architecture": "x86_64", "os_name": "ubuntu"},
+        "tools": [{"name": "git", "raw": "git version 2.43.0", "version": "2.43.0"}],
+        "credentials": [
+            {"provider": "github", "tool": "gh", "available": False, "authenticated": False}
+        ],
+        "manifests": [
+            {
+                "repository": "root",
+                "path": "pixi.lock",
+                "digest": "sha256:" + "a" * 64,
+                "platforms": ["linux-64"],
+            }
+        ],
+    }
+
+    lines = expert._format_environment_tree(record)
+
+    assert lines[0] == "├── machine"
+    assert "│   ├── architecture: x86_64" in lines
+    assert "│   └── os_name: ubuntu" in lines
+    assert any(line.endswith("git: 2.43.0") for line in lines)
+    assert any("available=no authenticated=no" in line for line in lines)
+    assert "pixi.lock: sha256:" in lines[-1]
+    assert "[linux-64]" in lines[-1]
+    assert not any("record=" in line or "{" in line for line in lines)
+
+
+def test_environment_tree_drops_empty_sections():
+    lines = expert._format_environment_tree(
+        {"format_version": 1, "environment_root": "", "machine": {}, "tools": []}
+    )
+
+    assert lines == []

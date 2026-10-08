@@ -1,10 +1,10 @@
-# Tutorial 2 of 5 — Onboarding a Real Build Tree
+# Tutorial 3 of 6 — Onboarding a Real Build Tree
 
 *Created: 2026-08-25*
 
 ## Abstract — read this first
 
-**What this document is.** The second of four worked tutorials in
+**What this document is.** The third of six worked tutorials in
 [`tutorials/`](README.md): the hand-authored `.cgs` style from
 [Tutorial 1](01_first_multi_repo_workspace.md) applied to a real,
 19-repository hydrological simulation platform (`cawaqs`), then handed off
@@ -24,17 +24,17 @@ table.
 same habits applied to a real project of meaningful scale.
 
 **What you need to do with it.** Read it after Tutorial 1, then move on to
-[Tutorial 3](03_adopting_a_real_project.md) for a real project with no
+[Tutorial 4](04_adopting_a_real_project.md) for a real project with no
 `.cgs` of its own that still uses git submodules.
 
 ```mermaid
 graph LR
-    T1["01 — first workspace"] --> T2["02 — real build tree<br/>YOU ARE HERE"]
-    T2 --> T3["03 — adopting a real project"]
-    T2 -->|hands off to| BUILD["project's own build<br/>e.g. make -f Makefile"]
+    T2["02 — working with a tree"] --> T3["03 — real build tree<br/>YOU ARE HERE"]
+    T3 --> T4["04 — adopting a real project"]
+    T3 -->|hands off to| BUILD["project's own build<br/>e.g. make -f Makefile"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
-    class T2 here;
+    class T3 here;
 ```
 
 ---
@@ -59,7 +59,7 @@ scanning a checkout.
 > ...`, never a bare `cgitsync ...` — see the note in
 > [Tutorial 1](01_first_multi_repo_workspace.md) if this is new to you.
 
-**Next:** [Tutorial 3 — Adopting a Real Project: CaWaQS-Viz](03_adopting_a_real_project.md)
+**Next:** [Tutorial 4 — Adopting a Real Project: CaWaQS-Viz](04_adopting_a_real_project.md)
 covers a real project with **no** `.cgs` of its own that still uses git
 submodules, end to end.
 
@@ -116,7 +116,7 @@ naming explicitly, because they are the opposite of what Tutorial 1's
 `CGSil1` needed:
 
 - **No `relative_path` overrides anywhere.** Unlike `cawaqsviz` in
-  Tutorial 3, every library here installs at `$PATH_INST/<repo_name>/` —
+  Tutorial 4, every library here installs at `$PATH_INST/<repo_name>/` —
   exactly `cgitsync`'s unset-`relative_path` default (the bare repo name).
   At 19 repositories, this is what keeps the file readable.
 - **A shared branch name with a per-repo fallback.** `project.default_branch
@@ -130,11 +130,10 @@ naming explicitly, because they are the opposite of what Tutorial 1's
 
 ## 3. Step-by-step CLI walkthrough
 
-Unlike Tutorial 1, this example uses **standalone mode** (`bootstrap`): a
+Like Tutorial 1, this example uses **standalone mode** (`bootstrap`): a
 single `cgitsync` clone reused across projects, rather than nested inside
-the tree it manages. There is nothing project-specific about that choice —
-`cawaqs` works in nested mode too — it simply demonstrates the other entry
-point from the README's Quickstart.
+the tree it manages. `cawaqs` works in nested mode too; standalone is
+simply the usual choice.
 
 ### Step 1 — Validate the topology
 
@@ -192,7 +191,7 @@ make -f Makefile
 | 4 | `pixi run cgitsync checkout my-feature-branch` | Retarget the whole tree to a shared branch, with per-repo fallback |
 | hand-off | `make -f Makefile` (project's own build) | Out of scope for `cgitsync` — compiles the checked-out tree |
 
-`discover` (Tutorial 3) is **not** a route into this file: the 17 library
+`discover` (Tutorial 4) is **not** a route into this file: the 17 library
 repositories never coexist inside one directory tree until *after* a `.cgs`
 already lists them, so there is no single checkout for a filesystem walk to
 scan. Authoring `examples/cawaqs.cgs` from the project's own `Makefile` and

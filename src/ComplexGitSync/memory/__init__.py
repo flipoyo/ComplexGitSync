@@ -17,10 +17,10 @@ What lives here
 
 Why a package
 -------------
-Before this, a workspace's memory was spread across ``orchestre.py``,
+Before this, a workspace's memory was spread across ``orchestre/``,
 ``state_store.py`` and three ledger modules, with no single place to look.
 The next two milestones add a repository and a network protocol; adding
-those to code with no home means adding them to ``orchestre.py``, which is
+those to code with no home means adding them to ``orchestre/``, which is
 what every other extraction has been trying to empty. ``cli/`` earned its
 own package when it outgrew one file, and memory is a larger subject than
 the CLI.
@@ -29,7 +29,7 @@ The Git boundary, stated while it is still cheap to state
 ---------------------------------------------------------
 **Nothing in here runs Git, and nothing in here should learn to.** The next
 milestone makes a memory a repository that is committed and pushed; when it
-does, that Git work belongs to ``operations.py`` and ``git_runner.py``, as
+does, that Git work belongs to ``operations/`` and ``git_runner.py``, as
 it does for every other repository in the tree — driven *by* this package,
 never done inside it. A memory knows what it holds; it does not know how to
 push.
@@ -42,77 +42,51 @@ about a command line, not about what is remembered. It imports from here.
 from __future__ import annotations
 
 from .integrity import (
+    ChainVerifier,
     Finding,
     HistoryState,
     VerificationReport,
-    recompute_entry_hash,
-    verify_chain,
 )
 from .ledger_entry import (
     ClockProtocol,
     LedgerEntry,
-    TimeL0State,
-    build_next_entry,
-    compute_entry_hash,
-    new_time_l0_anchor,
+    Relocation,
 )
 from .ledger_store import (
+    ArgvScrubber,
     HeadPointer,
     LedgerSeqCollisionError,
+    LedgerStore,
     LedgerStoreCorruptionError,
     LedgerStoreError,
-    append_entry,
-    next_seq,
-    read_all_entries,
-    read_head,
-    recompute_head,
-    scrub_argv,
-    verify_and_repair_head,
-    write_entry,
-    write_head,
 )
 from .states import (
     STATE_DIR_NAME,
     MemoryStateDirectory,
-    state_path,
+    MemoryStates,
 )
 from .store import (
     LocalGitRegister,
     SyncLedger,
-    legacy_register_exists,
-    write_state,
 )
 
 __all__ = [
     "STATE_DIR_NAME",
+    "ArgvScrubber",
+    "ChainVerifier",
     "ClockProtocol",
     "Finding",
     "HeadPointer",
     "HistoryState",
     "LedgerEntry",
+    "Relocation",
     "LedgerSeqCollisionError",
+    "LedgerStore",
     "LedgerStoreCorruptionError",
     "LedgerStoreError",
     "LocalGitRegister",
     "MemoryStateDirectory",
+    "MemoryStates",
     "SyncLedger",
-    "TimeL0State",
     "VerificationReport",
-    "append_entry",
-    "next_seq",
-    "build_next_entry",
-    "compute_entry_hash",
-    "legacy_register_exists",
-    "new_time_l0_anchor",
-    "read_all_entries",
-    "read_head",
-    "recompute_entry_hash",
-    "recompute_head",
-    "scrub_argv",
-    "state_path",
-    "verify_and_repair_head",
-    "verify_chain",
-    "write_entry",
-    "write_head",
-    "write_state",
 ]

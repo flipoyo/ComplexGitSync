@@ -1,4 +1,4 @@
-"""Integration tests for ``init-from-submodules`` — Tutorial 3's steps 3-5.
+"""Integration tests for ``init-from-submodules`` — Tutorial 4's steps 3-5.
 
 The fixture builds the same shape as ``cawaqsviz``: a root repository, a
 submodule inside it, and a submodule inside *that* one. Every remote is a
@@ -63,7 +63,7 @@ def _seed(tmp_path: Path, name: str) -> Path:
 
 @pytest.fixture()
 def submodule_tree(tmp_path: Path) -> dict[str, Path]:
-    """A two-level submodule tree, checked out the way Tutorial 3 step 2 leaves it."""
+    """A two-level submodule tree, checked out the way Tutorial 4 step 2 leaves it."""
     remotes = {name: _seed(tmp_path, name) for name in REPO_NAMES}
 
     _git(tmp_path / "seed-hta", "submodule", "add", "-q", remotes["twin"].as_posix(), "docs/twin")
@@ -74,7 +74,7 @@ def submodule_tree(tmp_path: Path) -> dict[str, Path]:
     _git(tmp_path / "seed-root", "commit", "-qm", "add hta submodule")
     _git(tmp_path / "seed-root", "push", "-q", "origin", "main")
 
-    # Tutorial 3 steps 1-2: the user's own clone, submodules checked out.
+    # Tutorial 4 steps 1-2: the user's own clone, submodules checked out.
     work = tmp_path / "work"
     work.mkdir()
     root = work / "root"
@@ -227,60 +227,20 @@ class TestInitFromSubmodules:
 class TestOrderingRegression:
     """Why the conversion must come *after* initialise, not before.
 
-    Both halves of the ticket's §0, proved against real git rather than
-    argued: converting first is undone by the clone step, and a second
-    conversion pass cannot repair it.
+    Converting first leaves a local commit no remote has, and ``initialise``
+    refuses to re-clone over it. The two tests that once showed the clone
+    step undoing the conversion needed ``--force-reclone``, which was removed
+    (GitLikeCli: ComplexGitSync deletes no work that exists nowhere else).
     """
 
-    def test_converting_before_initialise_is_undone_by_the_clone_step(
+    def test_the_conversion_commit_is_protected_and_no_flag_deletes_it(
         self, submodule_tree, client
     ):
-        root = submodule_tree["root"]
-        hta = root / "external/HTA"
+        """The guard refuses, and undoes nothing.
 
-        # Tutorial 3's original order: convert first...
-        client.import_submodules(root, apply=True, recursive=True)
-        assert _gitmodules_under(root) == []
-
-        # ...then initialise, which re-clones every non-root repository.
-        # force_reclone is required now: the conversion above is a local
-        # commit no remote has, so the clone guard
-        # (.localSpec/DevTickets/ InitialiseDestroysExistingClones) refuses to delete it
-        # unless the caller says so. This test exists to characterise the
-        # destruction, so it opts in deliberately.
-        client.discover_repos(root, max_depth=5, output=root / "root.cgs")
-        client.initialise_cgs(root / "root.cgs", output_path=root.parent, force_reclone=True)
-
-        # HTA came back from its remote with its submodule wiring intact.
-        assert (hta / ".gitmodules").is_file()
-        assert _tracked_at(hta, "docs/twin") != ""
-
-    def test_a_second_conversion_pass_cannot_reach_the_deeper_level(
-        self, submodule_tree, client
-    ):
-        root = submodule_tree["root"]
-        hta = root / "external/HTA"
-
-        client.import_submodules(root, apply=True, recursive=True)
-        client.discover_repos(root, max_depth=5, output=root / "root.cgs")
-        # force_reclone: see the sibling test above.
-        client.initialise_cgs(root / "root.cgs", output_path=root.parent, force_reclone=True)
-
-        # The root has no .gitmodules any more, so the recursive walk has
-        # no submodule graph to follow and never descends into HTA.
-        repair = client.import_submodules(root, apply=True, recursive=True)
-
-        assert repair.submodules == ()
-        assert (hta / ".gitmodules").is_file()
-
-    def test_without_force_reclone_the_conversion_commit_is_protected(
-        self, submodule_tree, client
-    ):
-        """The other half: the guard refuses, and undoes nothing.
-
-        Same setup as the two tests above, minus the opt-in. The conversion
-        commit exists on no remote, so initialise must refuse the whole run
-        and leave HTA exactly as the conversion left it.
+        The conversion commit exists on no remote, so initialise must refuse
+        the whole run and leave HTA exactly as the conversion left it. There is
+        no flag that deletes it.
         """
         from ComplexGitSync.errors import GitSyncError
 
@@ -297,7 +257,7 @@ class TestOrderingRegression:
         message = str(excinfo.value)
         assert "hta" in message
         assert "holds work that exists nowhere else" in message
-        assert "--force-reclone" in message
+        assert "No flag deletes work" in message
 
         # Nothing was undone: the conversion survives untouched.
         assert _gitmodules_under(root) == []

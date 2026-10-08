@@ -2,28 +2,26 @@
 
 Ring: 4 (adapter — argument/prompt collection only; delegates all .cgs/.gts
     semantics to ComplexGitSyncClient, per CLAUDE.md's CLI-mirrors-Python-API
-    rule)
-Contract: build the top-level argparse parser from each command group's
-    own subparsers, dispatch parsed args to the matching handler, and
-    expose main()/build_parser()/_PLANNED_COMMANDS at the package root so
+    rule). Contract: build the parser from each command group's subparsers,
+    dispatch args, and expose main()/build_parser()/_PLANNED_COMMANDS so
     external callers (pyproject.toml's console-script entry point,
     __main__.py, every test) see the same surface cli.py used to.
-Imports: _shared, configuration, exit_codes, expert, json_render, minimalist,
-    suggest
+Imports: _shared, configuration, environment, exit_codes, expert, help_format, json_render,
+    minimalist, suggest
 
-Replaces the single 1,991-line cli.py (.localSpec/DevTickets/archive/20260828_Isolation_
+Replaces the single 1,991-line cli.py (.agent/.local/.dev/DevTickets/archive/20260828_Isolation_
 DevPlanTicket.md, Wave 3, P6-cli-integrate) with a package of six modules,
 each under the ~400 LOC target except the two largest command groups
-(cli/expert.py, cli/minimalist.py — 14 and 8 commands respectively; kept
-whole rather than split further, since a command's parser registration,
+(cli/expert.py, cli/minimalist.py: 19 and 5 commands respectively;
+kept whole rather than split further, since a command's parser registration,
 handler, and executor are one cohesive unit that splitting mid-command
 would only obscure). See each submodule's own docstring for its slice of
 the command surface: cli._shared (helpers used across every group),
-cli.minimalist (initialise/bootstrap/clean-init/freeze-release(-force)/
-status/view-tree/launch-release), cli.expert (purge/validate/clone/
-pull(-force)/checkout/branch/add/commit/push/tag/freeze/
-import-submodules/verify), cli.configuration (discover/configure/
-create-cgs), cli.suggest (the "did you mean ...?" hint on a typo).
+cli.minimalist (initialise/bootstrap/freeze-release/status/view-tree),
+cli.expert (validate/pull/fetch/autofix/checkout/branch/add/rm/commit/merge/
+push/tag/submodules/verify/
+memory/self-history), cli.configuration (discover/repo), cli.suggest (the
+"did you mean ...?" hint on a typo).
 """
 
 from __future__ import annotations
@@ -33,9 +31,8 @@ import sys
 from collections.abc import Sequence
 
 from .. import __version__
-from ..json_render import dumps as json_dumps
-from ..json_render import error_payload
-from . import _shared, configuration, expert, minimalist, suggest
+from ..json_render import JsonRender
+from . import _shared, configuration, environment, expert, help_format, minimalist, suggest
 from .exit_codes import EXIT_OK, diagnostic, exit_code_for
 from .minimalist import _validate_initialise_definition
 
@@ -43,6 +40,8 @@ _PLANNED_COMMANDS: dict[str, str] = {
     **minimalist.COMMANDS,
     **expert.COMMANDS,
     **configuration.COMMANDS,
+    **environment.COMMANDS,
+    **help_format.COMMANDS,
 }
 
 
@@ -50,11 +49,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cgitsync",
         description=(
-            "ComplexGitSync CLI — manage a nested Git repository tree. "
-            "Start with 'initialise' to clone or restore a project tree, "
-            "then use 'freeze-release' for the minimalist workflow or expert "
-            "'pull', 'checkout', 'add', 'commit', 'push', 'tag', and 'freeze' "
-            "to keep repositories in sync."
+            "ComplexGitSync — run one Git operation across a whole tree of nested "
+            "repositories, described by a .cgs file and recorded as .gts States."
         ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -66,6 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     expert.register_parsers(subparsers)
     configuration.register_parsers(subparsers, non_negative_int=_shared._non_negative_int)
+    environment.register_parsers(subparsers)
+    help_format.register(subparsers, parser)
+    help_format.apply(parser)
     return parser
 
 
@@ -104,14 +103,7 @@ def _report_expected_failure(exc: Exception, args: argparse.Namespace) -> int:
         # succeeded or not, rather than telling the two apart by whether
         # the parse failed.
         print(
-            json_dumps(
-                error_payload(
-                    command=args.command,
-                    exit_code=code,
-                    message=str(exc),
-                    error_type=type(exc).__name__,
-                )
-            )
+            JsonRender.dumps(JsonRender.error(command=args.command, exit_code=code, message=str(exc), error_type=type(exc).__name__))
         )
     print(diagnostic(exc, command=args.command), file=sys.stderr, flush=True)
     return code

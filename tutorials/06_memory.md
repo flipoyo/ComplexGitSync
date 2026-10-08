@@ -1,4 +1,4 @@
-# Tutorial 5 of 5 — Your project's memory: keeping it, reading it, and starting it over
+# Tutorial 6 of 6 — Your project's memory: keeping it, reading it, and starting it over
 
 *Created: 2026-09-17*
 
@@ -12,18 +12,20 @@ came before.
 
 **Why it exists.** Every `cgitsync` command already writes a memory into
 `.cgitsync/`. It lives on one disk, and a disk is one hard drive away from
-gone. Turning it into a repository takes five commands that you run **once
-per project, ever**. They are the only five in this tool most people meet
-exactly once, which is why they get a tutorial of their own.
+gone. Turning it into a repository takes **one command, `cgitsync memory
+setup`, which you can run at any time** — or the five it stands for, one by
+one, **once per project, ever**. They are the commands in this tool most
+people meet exactly once, which is why they get a tutorial of their own.
 
 **What you will find.** What a memory is, and the two directories it
-actually lives in (§1), the five commands in order (§2), how a memory
+actually lives in (§1), `memory setup` and the five commands it stands for
+(§2), how a memory
 follows your branches (§3), the day-to-day commands including reading it
 without a hash (§4), starting a memory's history over on purpose (§5), what
 to do on a second machine (§6), and a summary (§7).
 
 **Who it is for.** Anyone who has a working `cgitsync` tree. Do
-[Tutorial 4](04_private_repos.md) first — a memory is a private repository,
+[Tutorial 5](05_private_repos.md) first — a memory is a private repository,
 and that tutorial is where private repositories are explained.
 
 **What you need to do with it.** Work §2 once, on a real project. After
@@ -31,13 +33,13 @@ that, §4 is all you need — until the day you need §5.
 
 ```mermaid
 graph LR
-    T4["04 — configuration repos"] --> T5["05 — your project's memory<br/>YOU ARE HERE"]
-    T5 --> ONCE["§2 — five commands<br/><i>once per project</i>"]
-    T5 --> DAILY["§4 — memory push, explore<br/><i>whenever you like</i>"]
-    T5 --> REBOOT["§5 — memory reboot<br/><i>on purpose, rarely</i>"]
+    T5["05 — configuration repos"] --> T6["06 — your project's memory<br/>YOU ARE HERE"]
+    T6 --> ONCE["§2 — memory setup, or five commands<br/><i>once per project, any time</i>"]
+    T6 --> DAILY["§4 — memory push, explore<br/><i>whenever you like</i>"]
+    T6 --> REBOOT["§5 — memory reboot<br/><i>on purpose, rarely</i>"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
-    class T5 here;
+    class T6 here;
 ```
 
 ---
@@ -71,6 +73,28 @@ states=14 entries=31 verification=verified
 That memory is real, and it is on exactly one disk. The rest of this
 tutorial is about that.
 
+**You did not have to create it.** If your `.cgs` declares no memory — the
+normal case for an install from `install.cgs` — `cgitsync` makes one itself,
+the first time a command records something: a local repository at
+`.cgitsync/.memory` with no remote, on the branch a declared memory would use.
+`memory push` folds and commits into it and stops there; `memory status` says
+it is local and unpublished and prints the line to add to your `.cgs` to
+publish it. It is never pushed — not even if you add a remote by hand —
+until your `.cgs` declares it and you run `memory adopt` (§2). Publishing is
+the opt-in; the default keeps everything on your disk.
+
+**A user's tree or a developer's.** `cgitsync status` prints `profile=user`
+or `profile=dev`. A tree with no private repository is a user's, and the
+local memory above is all it ever needs. A tree with at least one private
+repository — like the one this tutorial uses — is a developer's, and its
+memory is meant to be sent somewhere. When such a tree's `.cgs` declares no
+memory, the first command that records something asks you, in a terminal,
+for a provider, an owner and a name, then runs the three steps of §2 for you
+as one command, `cgitsync memory setup`. Answer no and it asks only once;
+from then on, and wherever it cannot ask, it warns that the work has no
+memory back-up. You can run `cgitsync memory setup` yourself at any time
+(§2, *The short way*).
+
 **A memory is not a backup of your code.** It holds no source, no diffs and
 no files from your repositories — only what the tree *was* and what
 `cgitsync` *did*. Your code is already in your repositories.
@@ -85,10 +109,13 @@ makes sense once you know which is which:
 - **`.cgitsync/`** stays the workspace's own live state area — States, the
   ledger, commit logs, run logs — written by every command, whether or not
   a memory is mounted. This is the **pending** half: what has accumulated
-  since the last time anybody sent it anywhere.
+  since the last time anybody sent it anywhere. The one exception is the
+  **run logs** in `.cgitsync/logs/`: they are a local record of each run,
+  stay on this machine, are never sent anywhere, and only the 200 most
+  recent are kept.
 - **`.cgitsync/.memory`** is the git-tracked mount — an ordinary
   private/local repository, exactly like `.localSpec` or `.claude` from
-  [Tutorial 4](04_private_repos.md). This is the **folded** half: what the
+  [Tutorial 5](05_private_repos.md). This is the **folded** half: what the
   last `memory push` actually committed and sent.
 
 Only `memory push` moves content from one to the other (§4). That is what
@@ -104,12 +131,35 @@ halves deliberately, so it is worth knowing before you get there.
 > `memory adopt` never needs this: it mounts at `.cgitsync/.memory`
 > directly.
 
-## 2. The five commands, once per project
+## 2. Giving your memory a repository, once per project
 
-The example is ComplexGitSync's own tree. Substitute your own names and the
-sequence is identical.
+### The short way — one command, whenever you want
 
-### Step 1 — create the repository
+If your tree is a developer's (`cgitsync status` says `profile=dev`) and its
+`.cgs` declares no memory, this is the command, and you can run it at any
+time — right after installing, weeks later, or after saying no to the
+question `cgitsync` asked you:
+
+```bash
+pixi run cgitsync memory setup                      # asks provider, owner and name in a terminal
+pixi run cgitsync memory setup --provider github --owner you --name .memory
+```
+
+It does Steps 1 to 3 below in order: creates the repository with your
+provider's own tool (`gh`, `glab` or `tea`), adds its entry to your `.cgs`
+with your comments kept, and turns the memory already on this disk into
+that repository, keeping every record. It stops at the first step that
+fails and tells you which. Then run `memory push` (Step 4). `--cgs FILE`
+names the `.cgs` to edit when it is not the one your tree was built from.
+
+### The long way — the five commands, one by one
+
+The steps `memory setup` runs for you, plus the two that follow it. Use
+them when you want to see or change each step. The example is
+ComplexGitSync's own tree. Substitute your own names and the sequence is
+identical.
+
+#### Step 1 — create the repository
 
 One repository holds every project's memory, with one branch per project.
 So you create it once, ever, for all your projects:
@@ -135,7 +185,7 @@ and stops. If the repository is already there — because you created it by
 hand — it says `created=already-there` and carries on. Running it twice is
 safe.
 
-### Step 2 — tell your `.cgs` about it
+#### Step 2 — tell your `.cgs` about it
 
 ```bash
 pixi run cgitsync memory mount --cgs examples/complexgitsync4dev.cgs
@@ -152,13 +202,13 @@ file is left exactly as it was**, comments included — the file is edited,
 not regenerated.
 
 Read that line and you will recognise most of it from
-[Tutorial 4](04_private_repos.md): it is an ordinary private, writable
+[Tutorial 5](05_private_repos.md): it is an ordinary private, writable
 repository, mounted at `.cgitsync/.memory` (§1) rather than at the tree's
 own name. `nested_config = "disabled"` is the one field a memory adds: it
 is a leaf that holds its own `.cgs/` directory of exported specs (§5), and
 that must never be mistaken for a nested project to descend into.
 
-### Step 3 — make this memory *be* that repository
+#### Step 3 — make this memory *be* that repository
 
 Your `.cgitsync/` is not empty — it has been filling up since your first
 command. None of it may be lost, so you cannot clone over it:
@@ -190,7 +240,7 @@ itself, waiting for the next step to fold it in.
 > `init` made it. This is the one-time version of §5's `memory reboot`;
 > ordinary `memory adopt` — appending — stays the default.
 
-### Step 4 — push it
+#### Step 4 — push it
 
 ```bash
 pixi run cgitsync memory push
@@ -201,7 +251,7 @@ This is the command that performs the fold §1 described: everything
 committed, and is pushed. Your memory is now in two places. This is the
 point at which losing the disk stops mattering.
 
-### Step 5 — the branch your first merge will need
+#### Step 5 — the branch your first merge will need
 
 This step surprises people, so here is why it exists.
 
@@ -292,7 +342,22 @@ seq=32  2026-09-17T10:11:05Z  push
     push    YourProject         -> github:you/YourProject refs/heads/memory-dev
 ```
 
-`cgitsync verify` is the one to run if you ever doubt what you are holding.
+**What was this tree at a given time?** `memory as-of` answers that from the
+ledger: the State recorded at or before the moment you give, not the nearest
+and not the latest.
+
+```bash
+pixi run cgitsync memory as-of 2026-09-30            # a bare date: the end of that day
+pixi run cgitsync memory as-of 2026-09-30T17:00      # UTC, like the ledger; add +02:00 for another zone
+```
+
+It prints the entry and the `memory show <state>` to type next. A time before
+the first entry says nothing was recorded yet. If the chain does not verify,
+or a clock moved backwards in it (`verify check` calls that *time-inconsistent*),
+the answer comes with `answer_reliable=false` and a warning instead of
+passing as clean.
+
+`cgitsync verify check` is the one to run if you ever doubt what you are holding.
 It answers **verified**, **no-history**, **legacy** or **corrupt**, and it
 never repairs anything — a record that can be edited back into looking clean
 would be evidence of nothing.
@@ -334,9 +399,40 @@ In order:
    remote, never for less than an instant unreachable. Locally, the branch
    is renamed to match.
 4. **A fresh branch is created under the original name.** Its States, the
-   ledger, commit logs and run logs are cleared, so its first commit is a
+   ledger and commit logs are cleared (and any run logs an older version had
+   pushed), so its first commit is a
    true beginning — nothing is committed yet; the next ordinary command
    does that, exactly like a freshly adopted mount.
+
+**The fresh branch is local only until you push it.** A reboot never
+pushes the new branch — the same rule `memory push`'s own commit step
+follows. So `cgitsync status` straight after a reboot shows the memory
+with no upstream, and that is correct rather than broken:
+
+```
+REPOSITORY  PATH               SCOPE          LOCAL_BRANCH  UPSTREAM_BRANCH  SYNC
+.memory     .cgitsync/.memory  private/local  YourProject   -                no-upstream
+```
+
+`-` and `no-upstream` mean "this branch has never been pushed, so there is
+nothing to measure it against". One command settles it:
+
+```bash
+pixi run cgitsync memory push
+```
+
+That folds anything pending, commits it, pushes the branch **and sets its
+upstream**, after which the same row reads `origin/YourProject` and
+`synced`. It is worth running even when the reboot left nothing to commit:
+the push still sets the tracking the row is waiting for. `cgitsync push
+--private`, which pushes every private repository in the tree, sets it too
+and reports `(upstream set)` when it does.
+
+> **`memory branch` is not a substitute here.** It publishes the branch,
+> so the commits reach origin, but it does not set your local tracking —
+> `status` keeps showing `-` afterwards. Its job is to create the branch a
+> later merge will need (§2, Step 5), not to connect the branch you are
+> on. Run `memory push`.
 
 **Nothing is ever force-pushed or deleted.** The old branch is renamed and
 kept, reachable for as long as anyone wants it:
@@ -347,7 +443,7 @@ git -C .cgitsync/.memory checkout YourProject_memory-dev.archived-20260918
 pixi run cgitsync memory clone --branch YourProject_memory-dev.archived-20260918
 ```
 
-`cgitsync verify`, run against a checkout of the archived branch, answers
+`cgitsync verify check`, run against a checkout of the archived branch, answers
 exactly as it did the day before the reboot — archiving is a rename, not an
 edit.
 
@@ -396,11 +492,12 @@ That is what the whole tutorial was for.
 
 | When | Command | What it does |
 |---|---|---|
+| Once per project, all at once | `memory setup [--provider --owner --name]` | Steps 1–3 below in one command: creates, declares, adopts — offered on its own in a developer's tree |
 | Once, ever | `repo create <provider:owner/.memory>` | Creates the repository, through your provider's own tool |
 | Once per project | `memory mount --cgs FILE` | Adds one entry to your `.cgs`, keeping the rest of the file |
 | Once per project | `memory adopt [--reboot]` | Makes the memory you already have into that repository — fresh, or history inherited |
 | Once per project | `memory branch --project-branch main` | Makes the branch your first merge will need |
-| Whenever | `memory push` | Sends what the memory has gained |
+| Whenever | `memory push` | Sends what the memory has gained, and sets the branch's upstream — the command to run after a reboot (§5) |
 | Whenever | `memory explore [--timeline]` | Reads the memory by branch, or the whole ledger in order — no hash needed |
 | Rarely, on purpose | `memory reboot` | Archives the current branch, exports the current shape, starts a fresh empty branch under the same name |
 | On a new machine | `memory clone [--branch NAME]` | Brings it back — the live branch, or an archived one by name |
@@ -408,7 +505,7 @@ That is what the whole tutorial was for.
 Four things worth remembering:
 
 - **A memory is an ordinary private repository.** Everything in
-  [Tutorial 4](04_private_repos.md) applies to it, at `.cgitsync/.memory`
+  [Tutorial 5](05_private_repos.md) applies to it, at `.cgitsync/.memory`
   (§1) rather than at the tree's own name.
 - **Nothing is automatic.** Every command above is one you type. A memory
   that pushed itself would push itself from the wrong machine one day.

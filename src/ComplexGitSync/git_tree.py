@@ -13,6 +13,7 @@ in-memory tree structure, lifecycle, registry, and tree-level utilities.
 
 Classes defined here (Tier 1 — Core State):
     TreeLifecycleState      Tree-level lifecycle progression enum
+    TreeProfile             USER or DEV, read off what the tree holds
     GitTree                 In-memory dict of GitRepo nodes (MAIN class)
     WorkingGitTree          Runtime GitTree with WorkingRepo state
     ProjectTreeState        Frozen snapshot of tree readiness (read-only)
@@ -46,7 +47,7 @@ from pathlib import Path, PurePath, PurePosixPath
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from .errors import ConfigValidationError, GitSyncError
-from .git_branch import resolve_entry_ref
+from .git_branch import resolve_declared_ref, resolve_entry_ref
 from .git_repo import (
     AccessProtocol,
     DiscoveryState,
@@ -66,7 +67,7 @@ ROOT_REPO_ID = "root"
 
 if TYPE_CHECKING:
     from .cgs_format import CgsDocument
-    from .operations import RepoOutcome
+    from .operations import RepoBranches, RepoOutcome
     from .orchestre import GitRunner, GtsDocument
 
 
@@ -121,6 +122,29 @@ class GitTreeGitCommands:
         from .operations import branch_tree
 
         branch_tree(self._resolve_tree(tree), git_runner, branch_name, scope=scope)
+
+    def list_branches(
+        self,
+        git_runner: GitRunner,
+        *,
+        tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.ALL,
+    ) -> tuple[RepoBranches, ...]:
+        from .operations import list_branches
+
+        return list_branches(self._resolve_tree(tree), git_runner, scope=scope)
+
+    def close_branch(
+        self,
+        git_runner: GitRunner,
+        branch_name: str,
+        *,
+        tree: WorkingGitTree | None = None,
+        scope: RepoScope = RepoScope.ALL,
+    ) -> tuple[RepoOutcome, ...]:
+        from .operations import close_branch
+
+        return close_branch(self._resolve_tree(tree), git_runner, branch_name, scope=scope)
 
     def pull(
         self,
@@ -348,6 +372,17 @@ class TreeLifecycleState(StrEnum):
     ERROR = "ERROR"
 
 
+class TreeProfile(StrEnum):
+    """Whose tree this is: USER holds no private repository, DEV holds at least one.
+
+    Read off the tree, never configured (`AdditionalSpecs.md`, *The tree
+    profile*). Only a DEV tree's memory is synced to a remote.
+    """
+
+    USER = "user"
+    DEV = "dev"
+
+
 # ---------------------------------------------------------------------------
 # GitTree — core in-memory tree
 # ---------------------------------------------------------------------------
@@ -536,6 +571,15 @@ class WorkingGitTree(GitTree):
         return self.lifecycle_state
 
     @property
+    def profile(self) -> TreeProfile:
+        """DEV when any repository is effectively private, USER otherwise.
+
+        The one place this rule lives. Reads :attr:`WorkingRepo.effective_private`,
+        so a repository private only through :func:`propagate_privacy` counts.
+        """
+        return TreeProfile.DEV if any(repo.effective_private for repo in self.repos.values()) else TreeProfile.USER
+
+    @property
     def registry_complete(self) -> bool:
         """Return ``True`` when the runtime tree has all required repo paths."""
         return self.is_complete()
@@ -553,13 +597,9 @@ class WorkingGitTree(GitTree):
         source_cgs_path: Path | None = None,
     ) -> GtsDocument:
         """Convert the working tree to a ``.gts`` snapshot document."""
-        from .orchestre import build_gts_document_from_registry
+        from .orchestre import RegistryTranslator
 
-        return build_gts_document_from_registry(
-            self,
-            command_origin=command_origin,
-            source_cgs_path=source_cgs_path,
-        )
+        return RegistryTranslator.to_gts_document(self, command_origin=command_origin, source_cgs_path=source_cgs_path)
 
     def _root_project_name(self) -> str | None:
         root = self.repos.get(ROOT_REPO_ID)
@@ -862,8 +902,9 @@ def _select_scc_anchor(
 # ---------------------------------------------------------------------------
 
 
-# Pre-existing complexity debt from before C90 was enabled (P6, .localSpec/DevTickets/
-# 20260828_Isolation_DevPlanTicket.md) — flagged, not fixed under this
+# Pre-existing complexity debt from before C90 was enabled (P6,
+# .agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md)
+# — flagged, not fixed under this
 # ticket, since a real refactor of cycle-breaking logic risks behaviour
 # change under time pressure. New code is enforced at 12.
 def fix_circularities(registry: WorkingGitTree) -> tuple[str, ...]:  # noqa: C901
@@ -1332,7 +1373,7 @@ def resolve_repo_for_path(tree: WorkingGitTree, path: Path | str) -> tuple[Worki
     ``ROOT_REPO_ID`` entry's ``absolute_path``) — not the process's current
     working directory — so this resolves the same way regardless of where
     ``cgitsync`` happens to be invoked from, matching every other command's
-    CGSHOME-anchored addressing (see ``.localSpec/DevTickets/archive/20260902_AddRmCgshomeResolution_DevPlanTicket.md``).
+    CGSHOME-anchored addressing (see ``.agent/.local/.dev/DevTickets/archive/20260902_AddRmCgshomeResolution_DevPlanTicket.md``).
     An already-absolute *path* is used as-is. Symlinks/``..`` are collapsed
     either way. When the result falls under more than one repo's
     ``absolute_path`` (a nested child's directory is also under its
@@ -1392,14 +1433,14 @@ def cgitsync_managed_state_paths(repo: WorkingRepo) -> set[Path]:
     """Return paths ``cgitsync`` itself manages under *repo* — never real project content.
 
     Every repo gets its generated ``.cgitsync/`` runtime-state directory
-    (snapshots, register, run logs — see ``orchestre.py``'s
+    (snapshots, ledger, run logs — see ``orchestre/``'s
     ``write_gts_snapshot``) excluded. Only the tree's root additionally
     gets its own ``<name>.lgr`` hash-chained register file excluded — that
     loose file only ever exists at the root, never at a nested repo.
 
     Shared by three call sites that each need this concept for a
-    different reason: worktree-dirty preflight (``operations.py``),
-    status-line filtering (``orchestre.py``), and ``.gitignore``
+    different reason: worktree-dirty preflight (``operations/``),
+    status-line filtering (``orchestre/``), and ``.gitignore``
     generation (this module, :func:`sync_gitignore`) — one definition,
     reused, rather than three.
     """
@@ -1419,7 +1460,7 @@ def sync_gitignore(tree: WorkingGitTree, *, skip: Collection[str] = ()) -> tuple
     has children — that state is written under the root regardless of
     tree shape. Repo_ids in *skip* are left untouched this run — this call
     performs no Git operations of its own, so callers that need a repo to
-    be pulled before its ``.gitignore`` is written (see ``orchestre.py``)
+    be pulled before its ``.gitignore`` is written (see ``orchestre/``)
     are responsible for excluding any repo that couldn't be safely pulled.
 
     Returns the repo_ids whose ``.gitignore`` was actually created or
@@ -1470,7 +1511,7 @@ def _update_gitignore_file(repo_path: Path, relative_paths: Sequence[str]) -> bo
 
 
 # ---------------------------------------------------------------------------
-# Private helpers (also used by cgs_format.py validation and orchestre.py builders)
+# Private helpers (also used by cgs_format.py validation and orchestre/ builders)
 # ---------------------------------------------------------------------------
 
 
@@ -1536,11 +1577,29 @@ def _is_root_repo_spec(
     repo: dict[str, Any],
     project_name: str | None,
     root_identity_assigned: bool,
+    *,
+    is_sole_repo: bool = False,
 ) -> bool:
+    """Is *repo* the entry that identifies the project (or nested-config
+    parent) root — the single test both `registry.py` and `discovery.py`
+    now share (DiscoverRoundTrip F3), rather than each answering it by a
+    different rule.
+
+    *is_sole_repo*: a document naming exactly one repository has no other
+    candidate for its root, whatever that entry's own `relative_path` or
+    `project_name` says — the ordinary case for a hand-written single-repo
+    ``.cgs`` (a project is rarely named after its own repository) and for
+    a nested ``.cgs`` that only ever lists one child. Without this, that
+    lone entry named no root at all: DiscoverRoundTrip F2 at the top level,
+    and a phantom self-mount one level deeper for a nested document
+    (`<mount>/<name>`, per its own table's second row).
+    """
     relative_path = repo.get("relative_path")
     if isinstance(relative_path, str) and relative_path.strip() in {".", ""}:
         return True
-    return not root_identity_assigned and project_name is not None and repo.get("project_name") == project_name
+    if not root_identity_assigned and project_name is not None and repo.get("project_name") == project_name:
+        return True
+    return not root_identity_assigned and is_sole_repo
 
 
 def _normalise_relative_path(repo: dict[str, Any]) -> Path:
@@ -1565,6 +1624,21 @@ def _apply_repo_identity(
     repo: dict[str, Any],
     default_branch: str | None,
 ) -> None:
+    """Apply *repo*'s declared identity to *entry* — the root's own case,
+    at load time (`registry.py`) and at nested-config resolution
+    (`discovery.py`), the two places an entry's identity is filled in from
+    a *root* spec rather than an ordinary declared entry going through
+    :func:`~ComplexGitSync.registry.build_registry_from_cgs_document`'s own
+    per-repository loop.
+
+    `target_ref_kind`/`target_ref_name` are resolved here through
+    :func:`~ComplexGitSync.git_branch.resolve_declared_ref`, the same call
+    every non-root entry already goes through — before this, a root spec's
+    own ``branch``/``tag``/``default_branch`` were accepted by validation,
+    survived serialisation, and did nothing: the root's target came only
+    from the document's own ``default_branch``, set once before any entry
+    was even read (DiscoverRoundTrip F1).
+    """
     entry.gitprovider = _parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB)
     entry.project_owner_name = _as_optional_str(repo.get("project_owner_name"))
     entry.project_name = _as_optional_str(repo.get("project_name"))
@@ -1575,6 +1649,9 @@ def _apply_repo_identity(
     entry.default_branch = str(repo.get("default_branch") or default_branch)
     entry.fallback_branch = _as_optional_str(repo.get("fallback_branch"))
     entry.nested_config = _as_optional_str(repo.get("nested_config"))
+    target = resolve_declared_ref(repo, document_default_branch=default_branch)
+    entry.target_ref_kind = target.kind
+    entry.target_ref_name = target.name
     entry.discovery_state = _initial_discovery_state(entry.nested_config)
 
 
@@ -1611,3 +1688,34 @@ def _parse_enum(enum_type: type[_E], value: Any, default: _E) -> _E:
     if value is None:
         return default
     return enum_type(str(value))
+
+
+__all__ = [
+    "ROOT_REPO_ID",
+    "GitTree",
+    "GitTreeGitCommands",
+    "ProjectTreeState",
+    "TreeLifecycleState",
+    "TreeProfile",
+    "WorkingGitTree",
+    "build_tree_state",
+    "cgitsync_managed_state_paths",
+    "find_strongly_connected_components",
+    "fix_circularities",
+    "format_project_tree",
+    "format_registry_json",
+    "format_repo_tree_outline",
+    "format_view_operation",
+    "format_view_tree",
+    "innermost_containing_path",
+    "iter_tree",
+    "iter_tree_leaf_first",
+    "make_repo_id",
+    "normalize_node_types",
+    "promote_to_parent",
+    "propagate_privacy",
+    "register_relative_path",
+    "resolve_repo_for_path",
+    "sync_gitignore",
+    "topological_sort",
+]

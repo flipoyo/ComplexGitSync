@@ -9,12 +9,12 @@ Imports: git_repo
 
 Why this module exists
 ----------------------
-Four ``.cgs`` fields decide a branch and three of them fall back to each
-other:
+Three ``.cgs`` fields decide the branch a repository targets, and a fourth
+the branch it falls back to when that target is missing on the remote:
 
-    repos[].fallback_branch -> repos[].default_branch
-                            -> project.default_branch
-                            -> DEFAULT_BRANCH ("main")
+    target:    repos[].default_branch -> project.default_branch -> DEFAULT_BRANCH ("main")
+    fallback:  repos[].fallback_branch -> DEFAULT_BRANCH ("main")
+               (private/local: repos[].fallback_branch -> repos[].default_branch)
 
 Before this module, that chain was written out by hand in six places across
 five modules, and not one of them read :data:`DEFAULT_BRANCH` — each spelled
@@ -37,6 +37,9 @@ The public surface
     resolve_entry_ref         Target ref of a live WorkingRepo
     private_local_branch      <project>_<branch> for a private/local repo
     resolve_propagated_ref    Target ref under a tree-wide branch move (privacy)
+    closed_branch_name        closed/<branch> — the name a closed branch is renamed to
+    closed_branch_origin      The name a closed/<branch> was closed from, or None
+    closeable                 Whether a branch may be closed (false for the project default)
 """
 
 from __future__ import annotations
@@ -213,14 +216,47 @@ def apply_declared_defaults(repo: MutableMapping[str, Any], project_default: str
     repository entry states in full both the branch it targets and the
     branch it falls back to.
 
-    ``repos[].default_branch`` defaults to *project_default* (itself
-    defaulted to :data:`DEFAULT_BRANCH` by the caller), and
-    ``repos[].fallback_branch`` defaults to whatever ``default_branch``
-    just resolved to — the second and third links of the chain.
+    ``default_branch`` defaults to *project_default* (itself defaulted to
+    :data:`DEFAULT_BRANCH`), ``fallback_branch`` to :data:`DEFAULT_BRANCH`, so
+    target and fallback never collapse into one branch (FallbackMain). A
+    private/local entry falls back to its own ``default_branch`` instead —
+    never another project's ``main`` — and its real target is computed later
+    from the *tree's* project, which a document cannot know, by
+    :meth:`~ComplexGitSync.git_tree_branch.GitTreeBranches.declare_targets`.
     """
     default_branch = str(repo.get("default_branch") or project_default or DEFAULT_BRANCH)
     repo["default_branch"] = default_branch
-    repo["fallback_branch"] = str(repo.get("fallback_branch") or default_branch)
+    private_local = repo.get("private") is True and repo.get("writable") is True
+    repo["fallback_branch"] = str(
+        repo.get("fallback_branch") or (default_branch if private_local else DEFAULT_BRANCH)
+    )
+
+
+def declared_private_local_mismatch(
+    repo: Mapping[str, Any],
+    *,
+    project_name: str | None,
+    project_default: str | None,
+) -> str | None:
+    """The branch a private/local entry should carry, when its declared one disagrees.
+
+    ``None`` when the entry is not private/local, names no project to derive
+    from, or carries either the derived branch or the document's own
+    ``project.default_branch`` — the value normalisation gives an entry that
+    names none, which must keep passing so a document survives being written
+    out and read back. A private/local repository's branch is a function of
+    the project (:func:`private_local_branch`), so any other typed value is a
+    near-certain authoring error — a name copied from another project's file
+    and never updated is how ``molonari.cgs`` went stale — and is reported
+    rather than obeyed.
+    """
+    if not project_name or repo.get("private") is not True or repo.get("writable") is not True:
+        return None
+    declared = _as_optional_str(repo.get("default_branch"))
+    expected = private_local_branch(project_name, project_default or DEFAULT_BRANCH)
+    if declared is None or declared in {expected, project_default or DEFAULT_BRANCH}:
+        return None
+    return expected
 
 
 def resolve_declared_ref(
@@ -306,6 +342,68 @@ def private_local_branch(project_name: str, project_branch: str) -> str:
     return f"{project_name}{PRIVATE_LOCAL_SEPARATOR}{project_branch}"
 
 
+CLOSED_BRANCH_PREFIX = "closed/"
+"""Marks a branch as closed: renamed, not deleted, its history untouched.
+
+A ``/``, not :data:`PRIVATE_LOCAL_SEPARATOR`'s ``_`` — the two schemes name
+different things (which project a private/local branch belongs to, versus
+whether any branch is closed) and must never be mistaken for each other.
+Git permits ``/`` freely in branch names, and ``git branch -a`` already
+groups a prefix like this together the same way ``feature/*`` would.
+"""
+
+
+def closed_branch_name(branch_name: str) -> str:
+    """The name a closed branch is renamed to: ``closed/<branch_name>``.
+
+    Pure — computes a string, touches nothing. ``BranchOperation.close_branch``
+    performs the actual rename, via ``git_runner.py``'s ``rename_branch``,
+    ``push_ref_as``, and ``delete_remote_branch``
+    (`main_1-1_BranchClosing_DevPlanTicket.md` §1). Closing is a rename, not
+    a deletion: the commits stay exactly as reachable as before, under a
+    name that says what happened to them.
+    """
+    return f"{CLOSED_BRANCH_PREFIX}{branch_name}"
+
+
+def closed_branch_origin(branch_name: str) -> str | None:
+    """The name *branch_name* was closed from, or ``None`` if it is not a closed branch.
+
+    The inverse of :func:`closed_branch_name`; pure, and the only place the
+    ``closed/`` prefix is read back.
+    """
+    if not branch_name.startswith(CLOSED_BRANCH_PREFIX):
+        return None
+    return branch_name.removeprefix(CLOSED_BRANCH_PREFIX) or None
+
+
+ANCESTORS_BRANCH = "ancestors"
+"""The project branch that keeps every history a closed branch alone held.
+
+One per project (BranchAncestors, ruling 1), named in each repository by
+the same rule as any project branch: ``ancestors`` in a project repository,
+``<project>_ancestors`` in a private/local one. It is permanent: never
+checked out, never closed, never deleted, and it only ever gains commits.
+"""
+
+
+def closeable(branch_name: str, *, project_default_branch: str) -> bool:
+    """Whether *branch_name* may be closed at all.
+
+    ``False`` for the project's own default branch: every fallback chain
+    :func:`resolve_declared_ref` computes eventually lands on it, so
+    closing it would leave nothing for a repository with no branch of its
+    own to fall back to. ``False`` for :data:`ANCESTORS_BRANCH` too, which
+    holds what every closed branch alone held. ``True`` for every other name.
+
+    Says nothing about whether a repository is *currently* on
+    *branch_name* — that is tree state, which ``git_tree_branch.py`` owns,
+    not a fact this Ring-0 module can answer; ``BranchOperation.close_branch``
+    checks it separately before acting on any repository.
+    """
+    return branch_name not in (project_default_branch, ANCESTORS_BRANCH)
+
+
 def resolve_propagated_ref(
     entry: WorkingRepo,
     ref_name: str,
@@ -382,10 +480,16 @@ def _as_optional_str(value: Any) -> str | None:
 
 
 __all__ = [
+    "ANCESTORS_BRANCH",
+    "private_local_branch",
     "DEFAULT_BRANCH",
     "BranchResolution",
     "BranchSource",
     "apply_declared_defaults",
+    "closeable",
+    "closed_branch_name",
+    "closed_branch_origin",
+    "declared_private_local_mismatch",
     "resolve_declared_ref",
     "resolve_entry_ref",
     "resolve_propagated_ref",

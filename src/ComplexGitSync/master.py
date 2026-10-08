@@ -101,3 +101,8 @@ class MasterConfig:
     @staticmethod
     def _config_path(cgshome: Path) -> Path:
         return Path(cgshome).expanduser().resolve() / ".cgitsync" / "master.toml"
+
+
+__all__ = [
+    "MasterConfig",
+]

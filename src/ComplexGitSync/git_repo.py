@@ -365,7 +365,7 @@ def convert_remote_url_protocol(url: str, protocol: AccessProtocol) -> str:
     path is inferred, so this cannot rebuild the wrong address the way
     deriving one from identity can when that identity is stale, missing,
     or was never fully known — see
-    ``.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md``, where
+    ``.agent/.local/.dev/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md``, where
     a ``.gts`` snapshot with no recorded provider caused exactly that.
 
     A URL already in the requested form is returned unchanged (idempotent
@@ -483,10 +483,10 @@ def repo_remote_url(repo: WorkingRepo, protocol: AccessProtocol) -> str:
 
     The same :class:`RepoAddress` construction
     :meth:`ComplexGitSyncClient._build_remote_url` uses for cloning,
-    exposed as a free function so ``operations.py`` (which has no client
+    exposed as a free function so ``operations/`` (which has no client
     to call a method on) can compute a repo's URL under a *different*
     protocol than whatever its `origin` remote is currently configured
-    to — used by ``push``/``pull``/``pull-force``'s ``--force-protocol``
+    to — used by ``push``/``pull``/``pull --force``'s ``--force-protocol``
     to rewrite an already-cloned repo's remote in place.
     """
     address = RepoAddress(
@@ -498,3 +498,23 @@ def repo_remote_url(repo: WorkingRepo, protocol: AccessProtocol) -> str:
         gitprovider_url=repo.gitprovider_url,
     )
     return address.to_url(protocol)
+
+
+__all__ = [
+    "CANONICAL_GIT_PROVIDERS",
+    "KNOWN_PROVIDER_HOSTS",
+    "AccessProtocol",
+    "DiscoveryState",
+    "GitProvider",
+    "GitRepo",
+    "NodeType",
+    "RefKind",
+    "RepoAddress",
+    "RepoLifecycleState",
+    "RepoScope",
+    "SyncState",
+    "WorkingRepo",
+    "convert_remote_url_protocol",
+    "repo_remote_url",
+    "validate_git_provider",
+]

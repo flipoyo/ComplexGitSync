@@ -1,0 +1,9 @@
+{
+  "filesystem_writers": [],
+  "missing_all": [],
+  "no_behaviour_class": [],
+  "over_2000_lines": {
+    "cli/expert.py": 2501
+  },
+  "over_class_cap": []
+}

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ComplexGitSync import settings
 from ComplexGitSync.gts_document import GtsDocument
+from ComplexGitSync.settings import Settings
 
 # ---------------------------------------------------------------------------
 # cgs_root
@@ -18,13 +19,13 @@ from ComplexGitSync.gts_document import GtsDocument
 
 
 def test_cgs_root_defaults_to_home_dot_cgs():
-    assert settings.cgs_root() == (Path.home() / ".cgs").resolve()
+    assert Settings.cgs_root() == (Path.home() / ".cgs").resolve()
 
 
 def test_cgspath_overrides_the_root(monkeypatch, tmp_path):
     monkeypatch.setenv(settings.CGS_ROOT_ENV, str(tmp_path / "elsewhere"))
 
-    assert settings.cgs_root() == (tmp_path / "elsewhere").resolve()
+    assert Settings.cgs_root() == (tmp_path / "elsewhere").resolve()
 
 
 # ---------------------------------------------------------------------------
@@ -33,35 +34,35 @@ def test_cgspath_overrides_the_root(monkeypatch, tmp_path):
 
 
 def test_the_default_workspace_is_created_once_and_reused(tmp_path):
-    first = settings.default_workspace(tmp_path)
-    second = settings.default_workspace(tmp_path)
-    third = settings.default_workspace(tmp_path)
+    first = Settings.default_workspace(tmp_path)
+    second = Settings.default_workspace(tmp_path)
+    third = Settings.default_workspace(tmp_path)
 
     assert first == second == third
     assert len(list(tmp_path.glob("CGS*"))) == 1
 
 
 def test_the_default_workspace_records_itself_in_the_pointer_file(tmp_path):
-    workspace = settings.default_workspace(tmp_path)
+    workspace = Settings.default_workspace(tmp_path)
 
-    recorded = settings.pointer_file(tmp_path).read_text(encoding="utf-8").strip()
+    recorded = Settings.pointer_file(tmp_path).read_text(encoding="utf-8").strip()
     assert Path(recorded) == workspace
 
 
 def test_a_pointer_to_a_deleted_workspace_is_not_an_answer(tmp_path):
-    settings.pointer_file(tmp_path).parent.mkdir(parents=True, exist_ok=True)
-    settings.pointer_file(tmp_path).write_text(f"{tmp_path / 'gone'}\n", encoding="utf-8")
+    Settings.pointer_file(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    Settings.pointer_file(tmp_path).write_text(f"{tmp_path / 'gone'}\n", encoding="utf-8")
 
-    assert settings.read_default_workspace(tmp_path) is None
+    assert Settings.read_default_workspace(tmp_path) is None
 
     # …and asking for the default mints a real one rather than resolving to
     # a path that is not there.
-    workspace = settings.default_workspace(tmp_path)
+    workspace = Settings.default_workspace(tmp_path)
     assert (workspace / ".cgitsync").is_dir()
 
 
 def test_create_false_reports_without_writing(tmp_path):
-    assert settings.default_workspace(tmp_path, create=False) is None
+    assert Settings.default_workspace(tmp_path, create=False) is None
     assert list(tmp_path.glob("CGS*")) == []
 
 
@@ -71,7 +72,7 @@ def test_create_false_reports_without_writing(tmp_path):
 
 
 def test_the_default_workspace_holds_a_valid_empty_snapshot(tmp_path):
-    workspace = settings.default_workspace(tmp_path)
+    workspace = Settings.default_workspace(tmp_path)
 
     snapshots = list((workspace / ".cgitsync").rglob("*.gts"))
     assert len(snapshots) == 1
@@ -84,7 +85,7 @@ def test_the_default_workspace_holds_a_valid_empty_snapshot(tmp_path):
 
 
 def test_the_state_directory_is_named_by_the_documents_content(tmp_path):
-    workspace = settings.default_workspace(tmp_path)
+    workspace = Settings.default_workspace(tmp_path)
 
     snapshot = next((workspace / ".cgitsync").rglob("*.gts"))
     document = GtsDocument.from_toml(snapshot)
@@ -92,12 +93,12 @@ def test_the_state_directory_is_named_by_the_documents_content(tmp_path):
 
 
 def test_an_empty_snapshot_never_claims_to_be_ready(tmp_path):
-    from ComplexGitSync.registry import build_registry_from_gts_document
+    from ComplexGitSync.registry import RegistryTranslator
 
-    workspace = settings.default_workspace(tmp_path)
+    workspace = Settings.default_workspace(tmp_path)
     snapshot = next((workspace / ".cgitsync").rglob("*.gts"))
 
-    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot))
+    registry = RegistryTranslator.from_gts_document(GtsDocument.from_toml(snapshot))
 
     # Nothing has been cloned, so there is nothing to be ready. A command
     # that trusted `ready=true` here would report a workspace as good to go
@@ -115,7 +116,7 @@ def test_other_workspaces_lists_everything_but_the_one_excluded(tmp_path):
     for name in ("CGS111/alpha", "CGS222/beta", "CGS333/gamma"):
         (tmp_path / name / ".cgitsync").mkdir(parents=True)
 
-    found = settings.other_workspaces(tmp_path, exclude=tmp_path / "CGS222" / "beta")
+    found = Settings.other_workspaces(tmp_path, exclude=tmp_path / "CGS222" / "beta")
 
     assert [p.name for p in found] == ["alpha", "gamma"]
 
@@ -124,11 +125,20 @@ def test_other_workspaces_ignores_directories_that_are_not_workspaces(tmp_path):
     (tmp_path / "CGS111" / "alpha" / ".cgitsync").mkdir(parents=True)
     (tmp_path / "CGS222" / "not-a-workspace").mkdir(parents=True)
 
-    assert [p.name for p in settings.other_workspaces(tmp_path)] == ["alpha"]
+    assert [p.name for p in Settings.other_workspaces(tmp_path)] == ["alpha"]
+
+
+def test_other_workspaces_lists_a_workspace_named_after_its_project(tmp_path):
+    (tmp_path / "Demo-20261007104123" / ".cgitsync").mkdir(parents=True)
+    (tmp_path / "CGS111" / "alpha" / ".cgitsync").mkdir(parents=True)
+
+    found = Settings.other_workspaces(tmp_path)
+
+    assert sorted(p.name for p in found) == ["Demo-20261007104123", "alpha"]
 
 
 def test_other_workspaces_is_empty_when_the_root_does_not_exist(tmp_path):
-    assert settings.other_workspaces(tmp_path / "nothing-here") == []
+    assert Settings.other_workspaces(tmp_path / "nothing-here") == []
 
 
 # ---------------------------------------------------------------------------
@@ -139,16 +149,16 @@ def test_other_workspaces_is_empty_when_the_root_does_not_exist(tmp_path):
 def test_a_workspace_holding_this_installation_is_nested():
     installation = Path(settings.__file__).resolve().parents[2]
 
-    assert settings.resolve_use_case(installation) == settings.UseCase.NESTED
+    assert Settings.resolve_use_case(installation) == settings.UseCase.NESTED
 
 
 def test_a_workspace_elsewhere_is_standalone(tmp_path):
-    assert settings.resolve_use_case(tmp_path) == settings.UseCase.STANDALONE
+    assert Settings.resolve_use_case(tmp_path) == settings.UseCase.STANDALONE
 
 
 def test_the_default_workspace_is_standalone(tmp_path):
-    workspace = settings.default_workspace(tmp_path)
+    workspace = Settings.default_workspace(tmp_path)
 
     # By construction: it contains nothing at all, so it cannot contain the
     # installation that is running.
-    assert settings.resolve_use_case(workspace) == settings.UseCase.STANDALONE
+    assert Settings.resolve_use_case(workspace) == settings.UseCase.STANDALONE

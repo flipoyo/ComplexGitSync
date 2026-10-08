@@ -1,1 +1,1 @@
-.claude/CLAUDE.md
+.agent/.local/.claude/CLAUDE.md

@@ -16,7 +16,7 @@ from pathlib import Path
 import tomli_w
 
 from ComplexGitSync.memory.integrity import Finding, HistoryState
-from ComplexGitSync.memory.ledger_store import read_all_entries, read_head
+from ComplexGitSync.memory.ledger_store import LedgerStore
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 _CGS = """
@@ -35,7 +35,7 @@ def _workspace(root: Path) -> Path:
 
 
 def _entries(workspace: Path):
-    return read_all_entries(workspace / ".cgitsync" / "lgr")
+    return LedgerStore(workspace / ".cgitsync" / "lgr").read_all_entries()
 
 
 def _states(workspace: Path) -> list[Path]:
@@ -98,7 +98,7 @@ def test_the_parent_comes_from_head_not_from_a_timestamp(tmp_path):
     entries = _entries(tmp_path / "demo")
     assert entries[1].prev == entries[0].entry_hash
 
-    head = read_head(tmp_path / "demo" / ".cgitsync" / "lgr")
+    head = LedgerStore(tmp_path / "demo" / ".cgitsync" / "lgr").read_head()
     assert head is not None
     assert head.seq == entries[-1].seq
     assert head.entry_hash == entries[-1].entry_hash

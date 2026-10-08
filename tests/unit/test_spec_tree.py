@@ -1,0 +1,438 @@
+"""`scripts/spec_tree.py` — the spec-graph integrity checker.
+
+Backs `main_1-7_SpecTree_DevPlanTicket.md`: every spec reachable from
+`CLAUDE.md` (or genuinely orphaned), every markdown link real, and the
+digest's citations honest. Two halves: fixture tests over a small,
+synthetic tree (so a broken link, an orphan, a cross-link cycle and a
+stale digest citation can each be produced on purpose) and one real-repo
+test mirroring `test_module_ceilings.py`'s own shape — the thing CI
+actually enforces via `pixi run test`.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
+
+_SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "spec_tree.py"
+_SPEC = importlib.util.spec_from_file_location("spec_tree", _SCRIPT_PATH)
+spec_tree = importlib.util.module_from_spec(_SPEC)
+assert _SPEC.loader is not None
+sys.modules[_SPEC.name] = spec_tree
+_SPEC.loader.exec_module(spec_tree)
+
+
+# ---------------------------------------------------------------------------
+# Real repo — the shape `pixi run test` actually enforces
+# ---------------------------------------------------------------------------
+
+
+def test_no_declared_spec_is_orphaned_or_broken_in_this_repo():
+    report = spec_tree.analyse()
+    failures = spec_tree.run_check(report)
+    assert not failures, "\n".join(failures)
+
+
+def test_digest_citations_are_honest_in_this_repo():
+    report = spec_tree.analyse()
+    entries = spec_tree.parse_digest()
+    assert entries, "digest.md should have at least one parseable rule line"
+    failures = spec_tree.run_check_digest(entries, report.reachable)
+    assert not failures, "\n".join(failures)
+
+
+def test_devtickets_is_not_declared_spec_surface():
+    """D1: closing a ticket (openTickets/ -> archive/) must never trip
+    `--check` — the scope boundary holds structurally, not by luck,
+    because DevTickets/ content (besides its own README) was never added
+    to DECLARED_SPEC_FILES in the first place.
+    """
+    offenders = [
+        f
+        for f in spec_tree.DECLARED_SPEC_FILES
+        if "DevTickets/" in f and not f.endswith("DevTickets/README.md")
+    ]
+    assert offenders == []
+
+
+# ---------------------------------------------------------------------------
+# Fixture tree — one small, synthetic spec graph per behaviour
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fixture_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(spec_tree, "REPO_ROOT", tmp_path)
+    return tmp_path
+
+
+def _write(root: Path, relative: str, content: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def test_broken_link_is_reported(fixture_root):
+    _write(fixture_root, "root.md", "See [gone](missing.md) for details.")
+
+    report = spec_tree.analyse(universe=["root.md"], root="root.md")
+
+    assert len(report.broken_links) == 1
+    assert report.broken_links[0].target == "missing.md"
+    failures = spec_tree.run_check(report)
+    assert any("broken link" in f for f in failures)
+
+
+def test_orphan_is_reported(fixture_root):
+    _write(fixture_root, "root.md", "No links here.")
+    _write(fixture_root, "lonely.md", "Nothing points at me.")
+
+    report = spec_tree.analyse(universe=["root.md", "lonely.md"], root="root.md")
+
+    assert report.orphans == ["lonely.md"]
+    failures = spec_tree.run_check(report)
+    assert any("orphaned" in f for f in failures)
+
+
+def test_bare_filename_in_prose_becomes_an_edge_when_a_sibling_exists(fixture_root):
+    """The real gap found in ticket §2: `CLAUDE.md` names `AGENT.md` in
+    prose, never as a markdown link, and it must still be found.
+    """
+    _write(fixture_root, "mount/root.md", "`AGENT.md` is read next.")
+    _write(fixture_root, "mount/AGENT.md", "the roster")
+
+    report = spec_tree.analyse(universe=["mount/root.md", "mount/AGENT.md"], root="mount/root.md")
+
+    assert report.orphans == []
+    assert "mount/AGENT.md" in report.reachable
+
+
+def test_bare_filename_naming_a_different_mounts_file_is_not_resolved(fixture_root):
+    """The same word, `AGENT.md`, appearing in a mount that has no such
+    sibling must not guess at some other mount's file — no edge at all,
+    same as any other prose mention of a filename that happens to exist
+    elsewhere in a big tree.
+    """
+    _write(fixture_root, "mount_a/root.md", "`AGENT.md` is read next.")
+    _write(fixture_root, "mount_b/AGENT.md", "a different mount's roster")
+
+    edges = spec_tree.extract_edges("mount_a/root.md")
+
+    assert edges == []
+
+
+def test_cross_link_cycle_does_not_loop(fixture_root):
+    _write(fixture_root, "a.md", "[b](b.md)")
+    _write(fixture_root, "b.md", "[a](a.md)")
+
+    report = spec_tree.analyse(universe=["a.md", "b.md"], root="a.md")
+
+    assert report.reachable == {"a.md", "b.md"}
+    assert report.orphans == []
+    flattened = spec_tree.flatten(root="a.md", universe=["a.md", "b.md"])
+    assert flattened.count("# a.md") == 1
+    assert flattened.count("# b.md") == 1
+
+
+def test_upstream_broken_link_is_reported_but_does_not_fail_check(fixture_root):
+    _write(fixture_root, ".agent/.distant/ticket/root.md", "[gone](missing.md)")
+
+    report = spec_tree.analyse(
+        universe=[".agent/.distant/ticket/root.md"], root=".agent/.distant/ticket/root.md"
+    )
+
+    assert len(report.upstream_broken_links) == 1
+    assert report.broken_links == []
+    assert spec_tree.run_check(report) == []
+
+
+def test_writable_broken_link_still_fails_check(fixture_root):
+    _write(fixture_root, ".agent/.local/.claude/root.md", "[gone](missing.md)")
+
+    report = spec_tree.analyse(
+        universe=[".agent/.local/.claude/root.md"], root=".agent/.local/.claude/root.md"
+    )
+
+    assert len(report.broken_links) == 1
+    assert spec_tree.run_check(report) != []
+
+
+def test_digest_citation_pointing_at_a_deleted_spec_fails(fixture_root):
+    _write(fixture_root, "root.md", "no links")
+    _write(
+        fixture_root,
+        spec_tree.DIGEST_PATH,
+        "- a rule that used to live somewhere — `Deleted.md` §1\n",
+    )
+
+    entries = spec_tree.parse_digest()
+    report = spec_tree.analyse(universe=["root.md"], root="root.md")
+    failures = spec_tree.run_check_digest(entries, report.reachable, universe=["root.md"])
+
+    assert len(failures) == 1
+    assert "Deleted.md" in failures[0]
+
+
+def test_digest_citation_to_an_unreachable_spec_fails(fixture_root):
+    _write(fixture_root, "root.md", "no links")
+    _write(fixture_root, "unreachable.md", "nothing points at me")
+    _write(
+        fixture_root,
+        spec_tree.DIGEST_PATH,
+        "- a rule nobody can actually reach — `unreachable.md` §1\n",
+    )
+
+    entries = spec_tree.parse_digest()
+    report = spec_tree.analyse(universe=["root.md", "unreachable.md"], root="root.md")
+    failures = spec_tree.run_check_digest(
+        entries, report.reachable, universe=["root.md", "unreachable.md"]
+    )
+
+    assert len(failures) == 1
+    assert "not reachable" in failures[0]
+
+
+def test_ambiguous_digest_citation_fails(fixture_root):
+    _write(fixture_root, "root.md", "no links")
+    _write(fixture_root, "mount_a/AGENT.md", "roster a")
+    _write(fixture_root, "mount_b/AGENT.md", "roster b")
+    _write(
+        fixture_root,
+        spec_tree.DIGEST_PATH,
+        "- a rule citing a name that exists twice — `AGENT.md` §1\n",
+    )
+
+    entries = spec_tree.parse_digest()
+    universe = ["root.md", "mount_a/AGENT.md", "mount_b/AGENT.md"]
+    report = spec_tree.analyse(universe=universe, root="root.md")
+    failures = spec_tree.run_check_digest(entries, report.reachable, universe=universe)
+
+    assert len(failures) == 1
+    assert "ambiguous" in failures[0]
+
+
+def test_digest_line_not_matching_the_citation_shape_is_ignored(fixture_root):
+    _write(
+        fixture_root,
+        spec_tree.DIGEST_PATH,
+        "# Digest\n\nJust prose, no citation here.\n- also not a rule line, no dash-citation shape\n",
+    )
+
+    entries = spec_tree.parse_digest()
+
+    assert entries == []
+
+
+# ---------------------------------------------------------------------------
+# Digest coverage — every declared spec contributes a line, or is exempt
+# ---------------------------------------------------------------------------
+
+
+def _entry(citation: str) -> "spec_tree.DigestEntry":
+    return spec_tree.DigestEntry(line_no=1, text=f"- rule. — `{citation}`", citation=citation)
+
+
+def test_digest_coverage_holds_in_this_repo():
+    failures = spec_tree.run_check_digest_coverage(spec_tree.parse_digest())
+    assert not failures, "\n".join(failures)
+
+
+def test_a_declared_spec_cited_by_no_line_is_a_failure():
+    universe = ["a/Rules.md", "a/Other.md"]
+    failures = spec_tree.run_check_digest_coverage(
+        [_entry("Rules.md")], universe=universe, exempt={}
+    )
+    assert len(failures) == 1
+    assert "a/Other.md" in failures[0]
+    assert "cited by no digest line" in failures[0]
+
+
+def test_an_exempt_spec_needs_no_line_but_needs_a_reason():
+    universe = ["a/Rules.md", "a/Roster.md"]
+    entries = [_entry("Rules.md")]
+    ok = spec_tree.run_check_digest_coverage(
+        entries, universe=universe, exempt={"a/Roster.md": "a roster, no rules"}
+    )
+    assert ok == []
+    silent = spec_tree.run_check_digest_coverage(
+        entries, universe=universe, exempt={"a/Roster.md": "  "}
+    )
+    assert any("no reason given" in f for f in silent)
+
+
+def test_an_exemption_naming_a_file_outside_the_universe_is_a_failure():
+    failures = spec_tree.run_check_digest_coverage(
+        [_entry("Rules.md")], universe=["a/Rules.md"], exempt={"a/Gone.md": "was a roster"}
+    )
+    assert any("a/Gone.md" in f and "not a declared spec file" in f for f in failures)
+
+
+def test_devspecs_is_cited_by_the_real_digest():
+    """The regression this ticket exists for: DevSpecs.md sat in the universe,
+    reachable, and cited by nothing."""
+    cited = {e.citation for e in spec_tree.parse_digest()}
+    assert "DevSpecs.md" in cited
+
+
+# ---------------------------------------------------------------------------
+# The manifest — the SpecTreeManifest ticket
+# ---------------------------------------------------------------------------
+
+_MANIFEST_TEXT = """\
+## Mounts
+
+| mount | repository | side | role |
+|---|---|---|---|
+| `.agent/.local/.a` | `github:x/.a` | local | the a mount |
+| `.agent/.distant/b` | `github:x/b` | distant | the b mount |
+
+## Spec files
+
+| file | mount | level | digest |
+|---|---|---|---|
+| [A.md](../.a/A.md) | `.agent/.local/.a` | fills in [B.md](../../.distant/b/B.md) | cited |
+| [B.md](../../.distant/b/B.md) | `.agent/.distant/b` | pattern | exempt: a pointer |
+"""
+_CGS_MOUNTS = {".agent/.local/.a": "github:x/.a", ".agent/.distant/b": "github:x/b"}
+
+
+def _manifest(text: str = _MANIFEST_TEXT):
+    return spec_tree.parse_manifest(text, ".agent/.local/.localSpec/AgenticManifest.md")
+
+
+def test_the_manifest_holds_every_mount_and_spec_in_this_repo():
+    manifest = spec_tree.load_manifest()
+    failures = spec_tree.run_check_manifest(manifest, spec_tree.dev_cgs_agent_mounts())
+    assert not failures, "\n".join(failures)
+
+
+def test_the_script_holds_no_list_of_its_own():
+    manifest = spec_tree.load_manifest()
+    assert set(spec_tree.DECLARED_SPEC_FILES) == set(manifest.specs)
+    assert spec_tree.DIGEST_EXEMPT == manifest.exempt
+
+
+def test_a_manifest_is_read_into_mounts_specs_and_exemptions():
+    manifest = _manifest()
+
+    assert manifest.mounts == _CGS_MOUNTS
+    assert manifest.specs == [".agent/.local/.a/A.md", ".agent/.distant/b/B.md"]
+    assert manifest.exempt == {".agent/.distant/b/B.md": "a pointer"}
+    assert manifest.levels == {
+        ".agent/.local/.a/A.md": ".agent/.distant/b/B.md",
+        ".agent/.distant/b/B.md": "pattern",
+    }
+    assert spec_tree.run_check_manifest(manifest, _CGS_MOUNTS) == []
+
+
+def test_a_mount_in_the_cgs_and_not_the_manifest_is_a_failure():
+    failures = spec_tree.run_check_manifest(_manifest(), {**_CGS_MOUNTS, ".agent/.local/.new": "github:x/.new"})
+    assert any(".agent/.local/.new" in f and "not named" in f for f in failures)
+
+
+def test_a_mount_in_the_manifest_and_not_the_cgs_is_a_failure():
+    failures = spec_tree.run_check_manifest(_manifest(), {".agent/.local/.a": "github:x/.a"})
+    assert any(".agent/.distant/b" in f and "not mounted" in f for f in failures)
+
+
+def test_a_mount_whose_repository_differs_is_a_failure():
+    failures = spec_tree.run_check_manifest(_manifest(), {**_CGS_MOUNTS, ".agent/.local/.a": "github:x/other"})
+    assert any("github:x/other" in f for f in failures)
+
+
+def test_a_spec_file_outside_its_mount_is_a_failure():
+    text = _MANIFEST_TEXT.replace("`.agent/.local/.a` | fills in", "`.agent/.distant/b` | fills in")
+    failures = spec_tree.run_check_manifest(_manifest(text), _CGS_MOUNTS)
+    assert any("does not sit inside its mount" in f for f in failures)
+
+
+def test_an_exemption_with_no_reason_is_a_failure():
+    manifest = _manifest(_MANIFEST_TEXT.replace("a pointer", ""))
+    failures = spec_tree.run_check_digest_coverage(
+        [_entry("A.md")], universe=manifest.specs, exempt=manifest.exempt
+    )
+    assert any("no reason given" in f for f in failures)
+
+
+def test_a_malformed_row_is_reported_not_skipped():
+    failures = spec_tree.run_check_manifest(_manifest(_MANIFEST_TEXT.replace("| local |", "| sideways |")), _CGS_MOUNTS)
+    assert any("malformed mount row" in f for f in failures)
+    text = _MANIFEST_TEXT.replace("| cited |", "| mostly |")
+    assert any("digest column" in f for f in spec_tree.run_check_manifest(_manifest(text), _CGS_MOUNTS))
+
+
+def test_a_spec_file_listed_but_missing_on_disk_is_a_failure(fixture_root):
+    _write(fixture_root, "root.md", "No links.")
+
+    report = spec_tree.analyse(universe=["root.md", "gone.md"], root="root.md")
+
+    assert any("gone.md" in f and "does not exist" in f for f in spec_tree.run_check(report))
+
+
+# ---------------------------------------------------------------------------
+# The two levels — the AgenticTwoLevels ticket
+# ---------------------------------------------------------------------------
+
+
+def _levels_tree(root: Path, *, fills_in_line: str | None) -> None:
+    _write(root, ".agent/.distant/b/B.md", "# B\n")
+    head = "# A\n\n*Created: 2026-10-08*\n\n"
+    _write(root, ".agent/.local/.a/A.md", head + (fills_in_line + "\n\n" if fills_in_line else "") + "body\n")
+
+
+def test_a_fill_in_naming_the_manifests_pattern_passes(fixture_root):
+    _levels_tree(fixture_root, fills_in_line="*Fills in: ../../.distant/b/B.md*")
+
+    assert spec_tree.run_check_fills_in(_manifest()) == []
+
+
+def test_a_fill_in_with_no_fills_in_line_is_a_failure(fixture_root):
+    _levels_tree(fixture_root, fills_in_line=None)
+
+    failures = spec_tree.run_check_fills_in(_manifest())
+
+    assert len(failures) == 1 and "no '*Fills in: <path>*' line" in failures[0]
+
+
+def test_a_fills_in_line_naming_another_file_than_the_manifest_is_a_failure(fixture_root):
+    _levels_tree(fixture_root, fills_in_line="*Fills in: ../../.distant/b/Other.md*")
+
+    failures = spec_tree.run_check_fills_in(_manifest())
+
+    assert len(failures) == 1 and "the manifest says .agent/.distant/b/B.md" in failures[0]
+
+
+def test_a_standalone_file_must_not_carry_a_fills_in_line(fixture_root):
+    _levels_tree(fixture_root, fills_in_line="*Fills in: ../../.distant/b/B.md*")
+    text = _MANIFEST_TEXT.replace("fills in [B.md](../../.distant/b/B.md)", "standalone")
+
+    failures = spec_tree.run_check_fills_in(_manifest(text))
+
+    assert len(failures) == 1 and "standalone" in failures[0]
+
+
+def test_a_local_file_cannot_be_a_pattern_and_a_shared_one_cannot_fill_in(fixture_root):
+    _levels_tree(fixture_root, fills_in_line=None)
+    text = _MANIFEST_TEXT.replace("fills in [B.md](../../.distant/b/B.md)", "pattern").replace(
+        "| pattern | exempt", "| standalone | exempt"
+    )
+
+    failures = spec_tree.run_check_fills_in(_manifest(text))
+
+    assert any("local, so it cannot be a 'pattern'" in f for f in failures)
+    assert any("shared, so its level must be 'pattern'" in f for f in failures)
+
+
+def test_a_level_that_is_none_of_the_three_is_a_malformed_row():
+    text = _MANIFEST_TEXT.replace("| pattern |", "| sort of |")
+
+    assert any("level must be" in f for f in _manifest(text).problems)
+
+
+def test_every_local_spec_in_this_repo_fills_in_a_pattern_or_stands_alone():
+    failures = spec_tree.run_check_fills_in(spec_tree.load_manifest())
+
+    assert not failures, "\n".join(failures)

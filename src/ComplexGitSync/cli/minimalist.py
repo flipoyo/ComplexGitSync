@@ -2,13 +2,12 @@
 
 Ring: 4 (CLI adapter — the same ring cli.py and cli._shared occupy)
 Contract: register argparse subparsers for, and dispatch/execute, exactly
-    the eight Minimalist commands (``initialise``, ``bootstrap``,
-    ``clean-init``, ``freeze-release``, ``freeze-release-force``,
-    ``status``, ``view-tree``, ``launch-release``) per README.md's command
+    the Minimalist commands (``initialise``, ``bootstrap``,
+    ``freeze-release``, ``status``, ``view-tree``) per README.md's command
     table. Argument collection and printing only — every ``.cgs``/``.gts``
     semantic is delegated to ``ComplexGitSyncClient``; no ``subprocess``, no
     Git, no repository-identifier parsing.
-Imports: cgs_format, orchestre, _shared
+Imports: cgs_format, help_text, orchestre, _shared
 """
 
 from __future__ import annotations
@@ -33,24 +32,26 @@ from ._shared import (
     _resolve_visualization_source,
     _run_with_logging,
 )
+from .help_text import SEARCH_DIR_HELP
 
 COMMANDS: dict[str, str] = {
-    "initialise": "Initialise a project tree: clone(.cgs) or restore state(.gts).",
-    "bootstrap": (
-        "Clone a brand-new project tree into an isolated CGSHOME, for running "
-        "ComplexGitSync from its own standalone clone (not nested inside the project)."
+    "initialise": (
+        "Nested install: build the dependencies of a project whose root is already "
+        "checked out here, from a .cgs (branch tips) or a .gts (recorded commits)."
     ),
-    "clean-init": "Purge generated clone state, then initialise from a .cgs spec.",
+    "bootstrap": (
+        "Standalone install: clone a brand-new project tree, root included, into an "
+        "isolated CGSHOME, from a .cgs or a .gts; run from a ComplexGitSync that is "
+        "not inside the project."
+    ),
     "freeze-release": "Run add, commit, pull, push, and freeze from a READY tree.",
-    "freeze-release-force": "Run add, commit, pull-force, push, and freeze from a READY tree.",
     "status": "Summarize tree readiness and sync state.",
     "view-tree": "Render a topology-focused tree view in terminal.",
-    "launch-release": "Check out a frozen release tag from a READY tree.",
 }
 
 
 def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
-    """Register the Minimalist group's eight subparsers.
+    """Register the Minimalist group's subparsers.
 
     Mirrors cli.py's ``build_parser()`` if/elif chain for exactly these
     commands. *subparsers* is the ``argparse._SubParsersAction`` returned by
@@ -108,64 +109,25 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                     "each .cgs entry actually declares."
                 ),
             )
-            subparser.add_argument(
-                "--force-reclone",
-                dest="force_reclone",
-                action="store_true",
-                help=(
-                    "Delete and re-clone a dependency even when its checkout holds "
-                    "work that exists nowhere else. Without this flag, initialise "
-                    "refuses and names every repository with uncommitted changes, "
-                    "with unpushed commits, or on a branch that has no upstream — "
-                    "and deletes nothing. Destructive: the deleted work is not "
-                    "recoverable, since the old .git goes with it."
-                ),
-            )
             add_gitignore_sync_arguments(subparser)
             subparser.set_defaults(handler=_handle_initialise)
-        elif command_name == "clean-init":
-            subparser.add_argument("source", help="Path to a .cgs spec")
-            subparser.add_argument(
-                "--output-path",
-                dest="output_path",
-                help=(
-                    "CGSPATH: parent directory used to derive CGSHOME as "
-                    "CGSPATH/<project-name> after the project definition is normalized "
-                    "(.cgs or direct CLI mode). "
-                    "Defaults to ../.. relative to CWD ($CGSHOME/ComplexGitSync)."
-                ),
-            )
-            subparser.add_argument(
-                "--force-protocol",
-                dest="force_access_protocol",
-                choices=("ssh", "https"),
-                default=None,
-                help=(
-                    "Override access_protocol in memory for every repo this run clones, "
-                    "including ones discovered later from a nested .cgs in a different "
-                    "repo. No .cgs file is read differently or written. Expert option "
-                    "meant for CI — leave unset for normal use."
-                ),
-            )
-            add_gitignore_sync_arguments(subparser)
-            subparser.set_defaults(handler=_handle_clean_init)
         elif command_name == "bootstrap":
-            subparser.add_argument("source", help="Path to the local .cgs file to clone from.")
+            subparser.add_argument("source", help="Path to the local .cgs or .gts file to clone from.")
             subparser.add_argument(
                 "project_name",
+                nargs="?",
                 help=(
-                    "Required workspace name; forms the last path segment of CGSHOME "
-                    "regardless of the .cgs document's own project name."
+                    "Optional workspace name, replacing the project name the .cgs or "
+                    ".gts declares. Omitted, the workspace is named after the project."
                 ),
             )
             subparser.add_argument(
                 "--cgs-path",
                 dest="cgs_path",
                 help=(
-                    "CGSPATH override; CGSHOME becomes CGSPATH/<project_name>. Defaults "
-                    "to a fresh $HOME/.cgs/CGS<timestamp>/ directory (created if "
-                    "missing), so the project never lands inside the ComplexGitSync "
-                    "clone itself."
+                    "CGSPATH override; CGSHOME becomes CGSPATH/<name>. Defaults to a "
+                    "fresh $HOME/.cgs/<name>-<timestamp>/ directory, so the project never "
+                    "lands inside the ComplexGitSync clone itself."
                 ),
             )
             subparser.add_argument(
@@ -182,7 +144,7 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                 ),
             )
             subparser.set_defaults(handler=_handle_bootstrap)
-        elif command_name in {"freeze-release", "freeze-release-force"}:
+        elif command_name == "freeze-release":
             subparser.add_argument("name", help="Release tag name.")
             subparser.add_argument("message", help="Commit message used before release freezing.")
             subparser.add_argument(
@@ -198,11 +160,7 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
             subparser.add_argument(
                 "--search-dir",
                 metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
-                    "or walks up from the current working directory."
-                ),
+                help=SEARCH_DIR_HELP,
             )
             subparser.add_argument(
                 "--dry-run",
@@ -216,19 +174,13 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                 default=None,
                 help=(
                     "Rewrite every repo's remote to this protocol before the "
-                    "workflow's pull/pull-force and push steps, persisting "
+                    "workflow's pull and push steps, persisting "
                     "the change (git remote set-url) rather than a one-off "
                     "override. Same meaning as initialise/bootstrap's "
                     "--force-protocol, applied to an already-cloned tree."
                 ),
             )
-            subparser.set_defaults(
-                handler=(
-                    _handle_freeze_release_force
-                    if command_name == "freeze-release-force"
-                    else _handle_freeze_release
-                )
-            )
+            subparser.set_defaults(handler=_handle_freeze_release)
         elif command_name == "status":
             subparser.add_argument(
                 "--gts",
@@ -243,11 +195,7 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
             subparser.add_argument(
                 "--search-dir",
                 metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
-                    "or walks up from the current working directory."
-                ),
+                help=SEARCH_DIR_HELP,
             )
             _add_json_argument(subparser)
             subparser.set_defaults(handler=_handle_status)
@@ -282,37 +230,9 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
             subparser.add_argument(
                 "--search-dir",
                 metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
-                    "or walks up from the current working directory."
-                ),
+                help=SEARCH_DIR_HELP,
             )
             subparser.set_defaults(handler=_handle_view_tree)
-        elif command_name == "launch-release":
-            subparser.add_argument(
-                "release", help="Frozen release tag to check out across the READY tree."
-            )
-            subparser.add_argument(
-                "--gts",
-                metavar="FILE",
-                default=None,
-                help=(
-                    "Path to the .gts snapshot that holds the READY registry. "
-                    "When omitted the latest .gts snapshot is discovered automatically "
-                    "under CGSHOME/.cgitsync/."
-                ),
-            )
-            subparser.add_argument(
-                "--search-dir",
-                metavar="DIR",
-                help=(
-                    "Directory used to resolve CGSHOME before loading "
-                    "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
-                    "or walks up from the current working directory."
-                ),
-            )
-            subparser.set_defaults(handler=_handle_launch_release)
 
 
 def _validate_initialise_definition(
@@ -333,11 +253,9 @@ def _validate_initialise_definition(
 
 def _handle_initialise(args: argparse.Namespace) -> int:
     commit_gitignore = getattr(args, "commit_gitignore", False)
-    force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
     git_user_name = getattr(args, "git_user_name", None)
     git_user_email = getattr(args, "git_user_email", None)
     force_access_protocol = getattr(args, "force_access_protocol", None)
-    force_reclone = getattr(args, "force_reclone", False)
     if args.source is None:
         client = ComplexGitSyncClient()
         document = client.configure(args.project, args.repo)
@@ -359,7 +277,6 @@ def _handle_initialise(args: argparse.Namespace) -> int:
                 logical_source=logical_source,
                 output_path=output_path,
                 commit_gitignore=commit_gitignore,
-                force_gitignore_sync=force_gitignore_sync,
                 git_user_name=git_user_name,
                 git_user_email=git_user_email,
                 force_access_protocol=force_access_protocol,
@@ -380,42 +297,25 @@ def _handle_initialise(args: argparse.Namespace) -> int:
                 active_client,
                 source,
                 output_path=output_path,
-                force_reclone=force_reclone,
                 commit_gitignore=commit_gitignore,
-                force_gitignore_sync=force_gitignore_sync,
                 git_user_name=git_user_name,
                 git_user_email=git_user_email,
                 force_access_protocol=force_access_protocol,
             ),
         )
-    return _run_with_logging(
-        command_name="initialise",
-        source=source_path,
-        runner=lambda client, source: _execute_initialise_gts(client, source),
-    )
-
-
-def _handle_clean_init(args: argparse.Namespace) -> int:
-    source_path = Path(args.source)
     output_path = getattr(args, "output_path", None)
-    commit_gitignore = getattr(args, "commit_gitignore", False)
-    force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
-    git_user_name = getattr(args, "git_user_name", None)
-    git_user_email = getattr(args, "git_user_email", None)
-    force_access_protocol = getattr(args, "force_access_protocol", None)
     client = ComplexGitSyncClient()
     project_root = client.resolve_initialise_cgshome(source_path, output_path=output_path)
     return _run_with_logging(
-        command_name="clean-init",
+        command_name="initialise",
         source=source_path,
         client=client,
         project_root=project_root,
-        runner=lambda active_client, source: _execute_clean_init_cgs(
+        runner=lambda active_client, source: _execute_initialise_gts(
             active_client,
             source,
             output_path=output_path,
             commit_gitignore=commit_gitignore,
-            force_gitignore_sync=force_gitignore_sync,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
             force_access_protocol=force_access_protocol,
@@ -426,8 +326,7 @@ def _handle_clean_init(args: argparse.Namespace) -> int:
 def _handle_bootstrap(args: argparse.Namespace) -> int:
     client = ComplexGitSyncClient()
     project_root = client.resolve_bootstrap_root(
-        args.project_name,
-        cgs_path=getattr(args, "cgs_path", None),
+        args.project_name, source=Path(args.source), cgs_path=getattr(args, "cgs_path", None)
     )
     return _run_with_logging(
         command_name="bootstrap",
@@ -454,24 +353,6 @@ def _handle_freeze_release(args: argparse.Namespace) -> int:
             source,
             name=args.name,
             message=args.message,
-            force=False,
-            dry_run=args.dry_run,
-            force_access_protocol=getattr(args, "force_access_protocol", None),
-        ),
-    )
-
-
-def _handle_freeze_release_force(args: argparse.Namespace) -> int:
-    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
-    return _run_with_logging(
-        command_name="freeze-release-force",
-        source=gts_path,
-        runner=lambda client, source: _execute_freeze_release(
-            client,
-            source,
-            name=args.name,
-            message=args.message,
-            force=True,
             dry_run=args.dry_run,
             force_access_protocol=getattr(args, "force_access_protocol", None),
         ),
@@ -524,23 +405,12 @@ def _handle_view_tree(args: argparse.Namespace) -> int:
     )
 
 
-def _handle_launch_release(args: argparse.Namespace) -> int:
-    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
-    return _run_with_logging(
-        command_name="launch_release",
-        source=gts_path,
-        runner=lambda client, source: _execute_launch_release(client, source, release_name=args.release),
-    )
-
-
 def _execute_initialise_cgs(
     client: ComplexGitSyncClient,
     source_path: Path,
     *,
     output_path: str | None = None,
-    force_reclone: bool = False,
     commit_gitignore: bool = False,
-    force_gitignore_sync: bool = False,
     git_user_name: str | None = None,
     git_user_email: str | None = None,
     force_access_protocol: str | None = None,
@@ -551,9 +421,7 @@ def _execute_initialise_cgs(
     registry = client.initialise_cgs(
         source_path,
         output_path=output_path,
-        force_reclone=force_reclone,
         commit_gitignore=commit_gitignore,
-        force_gitignore_sync=force_gitignore_sync,
         git_user_name=git_user_name,
         git_user_email=git_user_email,
         force_access_protocol=force_access_protocol,
@@ -578,7 +446,6 @@ def _execute_initialise_cgs_document(
     logical_source: Path,
     output_path: str | None = None,
     commit_gitignore: bool = False,
-    force_gitignore_sync: bool = False,
     git_user_name: str | None = None,
     git_user_email: str | None = None,
     force_access_protocol: str | None = None,
@@ -591,45 +458,6 @@ def _execute_initialise_cgs_document(
         source_path=logical_source,
         output_path=output_path,
         commit_gitignore=commit_gitignore,
-        force_gitignore_sync=force_gitignore_sync,
-        git_user_name=git_user_name,
-        git_user_email=git_user_email,
-        force_access_protocol=force_access_protocol,
-    )
-    tree_state = client.get_tree_state()
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"root={registry.get('root').absolute_path}"
-    )
-    _print_gitignore_sync_report(client)
-    outline = _format_repo_tree_outline(client)
-    if outline:
-        print("tree:")
-        print(outline)
-    return 0
-
-
-def _execute_clean_init_cgs(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    output_path: str | None = None,
-    commit_gitignore: bool = False,
-    force_gitignore_sync: bool = False,
-    git_user_name: str | None = None,
-    git_user_email: str | None = None,
-    force_access_protocol: str | None = None,
-) -> int:
-    if source_path.suffix != ".cgs":
-        raise ValueError("clean-init expects a .cgs source.")
-    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE->GT-GITIGNORE")
-    print("workflow=load->expand->validate->purge->clone->gitignore")
-    print("git_command=git clone (executed per repo)")
-    registry = client.clean_init(
-        source_path,
-        output_path=output_path,
-        commit_gitignore=commit_gitignore,
-        force_gitignore_sync=force_gitignore_sync,
         git_user_name=git_user_name,
         git_user_email=git_user_email,
         force_access_protocol=force_access_protocol,
@@ -650,12 +478,25 @@ def _execute_clean_init_cgs(
 def _execute_initialise_gts(
     client: ComplexGitSyncClient,
     snapshot_path: Path,
+    *,
+    output_path: str | Path | None = None,
+    commit_gitignore: bool = False,
+    git_user_name: str | None = None,
+    git_user_email: str | None = None,
+    force_access_protocol: str | None = None,
 ) -> int:
-    print("operation_sequence=GT-LOAD->GT-VALIDATE")
-    print("workflow=load->validate")
-    client.load_gts(snapshot_path)
+    print("operation_sequence=GT-LOAD->GT-CLONE->GT-PIN->GT-VALIDATE")
+    print("git_command=git clone && git checkout -B <branch> <recorded commit> (executed per repo)")
+    registry = client.initialise_gts(
+        snapshot_path,
+        output_path=output_path,
+        commit_gitignore=commit_gitignore,
+        git_user_name=git_user_name,
+        git_user_email=git_user_email,
+        force_access_protocol=force_access_protocol,
+    )
     tree_state = client.get_tree_state()
-    print(_format_tree_state_line(tree_state))
+    print(f"{_format_tree_state_line(tree_state)} root={registry.get('root').absolute_path}")
     outline = _format_repo_tree_outline(client)
     if outline:
         print("tree:")
@@ -701,7 +542,7 @@ def _execute_bootstrap(
     client: ComplexGitSyncClient,
     source_path: Path,
     *,
-    project_name: str,
+    project_name: str | None = None,
     cgs_path: str | None = None,
     force_access_protocol: str | None = None,
 ) -> int:
@@ -732,12 +573,11 @@ def _execute_freeze_release(
     *,
     name: str,
     message: str,
-    force: bool = False,
     dry_run: bool = False,
     force_access_protocol: str | None = None,
 ) -> int:
     _load_ready_registry_source(client, source_path)
-    pull_action = "git fetch && git checkout -B <branch> FETCH_HEAD && git clean -fd" if force else "git pull --ff-only"
+    pull_action = "git pull --ff-only"
     print(
         "git_command="
         f"git add --all && git commit -m {message!r} && {pull_action} && "
@@ -747,19 +587,17 @@ def _execute_freeze_release(
     if dry_run:
         _print_dry_run_plan(
             client,
-            command_name="freeze-release-force" if force else "freeze-release",
+            command_name="freeze-release",
             actions=(
                 "git add --all",
                 f"git commit -m {message!r}",
-                "cgitsync pull-force" if force else "cgitsync pull",
+                "cgitsync pull",
                 "git push",
-                f"cgitsync freeze {name}",
+                f"freeze {name}",
             ),
         )
     else:
-        client.freeze_release(
-            name, message, force=force, force_access_protocol=force_access_protocol
-        )
+        client.freeze_release(name, message, force_access_protocol=force_access_protocol)
     tree_state = client.get_tree_state()
     snapshot_path = getattr(client, "loaded_snapshot_path", None)
     snapshot_suffix = f" snapshot={snapshot_path}" if snapshot_path is not None else ""
@@ -773,19 +611,7 @@ def _execute_freeze_release(
     return 0
 
 
-def _execute_launch_release(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    release_name: str,
-) -> int:
-    _load_ready_registry_source(client, source_path)
-    print(f"git_command=git checkout {release_name}")
-    client.launch_release(release_name)
-    tree_state = client.get_tree_state()
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"release={release_name}"
-    )
-    _print_repo_tree_result(client)
-    return 0
+__all__ = [
+    "COMMANDS",
+    "register_parsers",
+]

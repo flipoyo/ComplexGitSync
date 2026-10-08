@@ -81,12 +81,12 @@ def test_every_real_command_is_suggested_for_its_own_dropped_last_letter():
 
 def test_cli_prints_the_hint_after_argparse_and_keeps_exit_code_two(capsys):
     with pytest.raises(SystemExit) as exit_request:
-        main(["import-submodule", "/tmp/does-not-matter"])
+        main(["submodule", "report", "/tmp/does-not-matter"])
     captured = capsys.readouterr()
 
     assert exit_request.value.code == 2
     assert "invalid choice" in captured.err
-    assert "Did you mean 'import-submodules'?" in captured.err
+    assert "Did you mean 'submodules'?" in captured.err
     # argparse's own output is untouched, and the hint comes last.
     assert captured.err.index("invalid choice") < captured.err.index("Did you mean")
 
@@ -103,7 +103,7 @@ def test_cli_says_nothing_extra_for_an_unrelated_word(capsys):
 
 def test_the_hint_never_reaches_stdout_and_nothing_is_executed(capsys):
     with pytest.raises(SystemExit):
-        main(["import-submodule", "/tmp/does-not-matter"])
+        main(["submodule", "report", "/tmp/does-not-matter"])
     captured = capsys.readouterr()
 
     assert captured.out == ""
@@ -117,3 +117,59 @@ def test_a_missing_operand_on_a_real_command_gets_no_hint(capsys):
 
     assert exit_request.value.code == 2
     assert "Did you mean" not in captured.err
+
+
+@pytest.mark.parametrize(
+    "old, new",
+    [
+        ("close-branch", "branch close"),
+        ("pull-force", "pull --force"),
+        ("init-from-submodules", "submodules init"),
+    ],
+)
+def test_an_old_spelling_names_the_new_one_and_runs_nothing(old, new, capsys):
+    with pytest.raises(SystemExit) as exit_request:
+        main([old, "x"])
+    captured = capsys.readouterr()
+
+    assert exit_request.value.code == 2
+    assert f"'{old}' is now '{new}'." in captured.err
+
+
+@pytest.mark.parametrize("group, first", [("branch", "create"), ("verify", "check"), ("env", "show")])
+def test_a_group_typed_bare_names_its_subcommands(group, first, capsys):
+    with pytest.raises(SystemExit) as exit_request:
+        main([group])
+
+    assert exit_request.value.code == 2
+    err = capsys.readouterr().err
+    assert f"'{group}' takes a subcommand:" in err and first in err
+
+
+@pytest.mark.parametrize(
+    "argv, hint",
+    [
+        (["branch", "--list", "--per-repo"], "'branch --list' is now 'branch list'."),
+        (["verify", "--repair"], "'verify --repair' is now 'verify repair'."),
+        (["memory", "self-history"], "'memory self-history' is now 'self-history list'."),
+        (["import-submodules", "x", "--apply"], "'import-submodules' is now 'submodules report"),
+        (["branch", "feature-x"], "'branch' takes a subcommand: create, list, close, check, delete."),
+        (["verify", "--json"], "'verify' takes a subcommand: check, repair."),
+        (["env", "--search-dir", "x"], "'env' takes a subcommand: show, check."),
+    ],
+)
+def test_every_old_spelling_names_its_new_form_and_runs_nothing(argv, hint, capsys):
+    with pytest.raises(SystemExit) as exit_request:
+        main(argv)
+    captured = capsys.readouterr()
+
+    assert exit_request.value.code == 2
+    assert hint in captured.err
+    assert captured.out == ""
+
+
+def test_a_real_subcommand_missing_its_operand_gets_no_subcommand_hint(capsys):
+    with pytest.raises(SystemExit):
+        main(["branch", "create"])
+
+    assert "takes a subcommand" not in capsys.readouterr().err

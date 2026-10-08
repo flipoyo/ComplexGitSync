@@ -1,7 +1,7 @@
 """Module-size ratchet and Ring-0 purity checker for the Isolation Plan.
 
-Operationalises three checks that `.localSpec/DevTickets/IsolationPlan.md` §3.1/§3.2 and
-`.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md` call for but that no `ruff`
+Operationalises three checks that `.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md` §3.1/§3.2 and
+`.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md` call for but that no `ruff`
 selector covers natively:
 
 1. **Ratchet, not a fixed ceiling.** Each module's LOC/public-symbol/
@@ -27,6 +27,23 @@ selector covers natively:
    `Imports:` list matches the module's actual `from .<name> import ...`
    statements. A module without a contract header is skipped, not failed —
    the header is opt-in until P6 makes it universal.
+4. **Clock-seam check.** Every module except `universal_clock.py` is
+   scanned for a direct `datetime.now`/`datetime.utcnow`/`time.time_ns`/
+   `os.getpid`/`secrets.token_hex` reference. Unconditional, not
+   baseline-relative — a single hit anywhere outside that one module fails
+   `--check`, the way Ring-0 purity does. See
+   `.agent/.local/.dev/DevTickets/archive/20260920_UniversalClock_DevPlanTicket.md`
+   WP2: the whole point of a universal clock is that there is no tenth
+   direct reader.
+
+5. **Citation check.** Every `.agent/...` path cited in `src/` or
+   `scripts/` must exist, and a ticket still open must be cited by name,
+   not by path, because finishing it renames it (TICKETLIFECYCLE.md §2.2).
+   Tests are checked for `DevTickets/` paths only, since they carry
+   synthetic fixtures. The private mounts are optional: when a mount (or
+   `.agent/` itself) is not checked out, its citations are skipped, never
+   failed, so a user who installed from `install.cgs` still passes. Unlike
+   the ratchet, this check is absolute.
 
 Usage
 -----
@@ -44,6 +61,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -68,6 +86,29 @@ _FORBIDDEN_RING0_ATTR_PATHS = {
     ("datetime", "utcnow"),
 }
 _FORBIDDEN_RING0_CALL_NAMES = {"open"}
+
+# The one module allowed to read the real clock, PID or entropy source —
+# see universal_clock.py's own docstring. Every other module in src/ is
+# checked, not only a declared subset, because the whole point of a
+# universal clock is that nothing opts out.
+_CLOCK_SEAM_EXEMPT_MODULE = "universal_clock.py"
+_FORBIDDEN_CLOCK_ATTR_PATHS = {
+    ("datetime", "now"),
+    ("datetime", "utcnow"),
+    ("time", "time_ns"),
+    ("os", "getpid"),
+    ("secrets", "token_hex"),
+    ("uuid", "uuid1"),
+    ("uuid", "uuid4"),
+    ("os", "urandom"),
+    ("random", "random"),
+    ("random", "randint"),
+    ("random", "choice"),
+    ("tempfile", "mkstemp"),
+    ("tempfile", "mkdtemp"),
+    ("tempfile", "NamedTemporaryFile"),
+    ("tempfile", "TemporaryDirectory"),
+}
 _FORBIDDEN_PATH_WRITE_METHODS = {
     "write_text",
     "write_bytes",
@@ -81,6 +122,76 @@ _FORBIDDEN_PATH_WRITE_METHODS = {
 }
 
 
+_AGENT_CITATION = re.compile(r"\.agent/[A-Za-z0-9_./-]*[A-Za-z0-9_]\.(?:md|py|cgs|json|toml)")
+_DEVTICKETS_CITATION = re.compile(r"\.agent/[A-Za-z0-9_./-]*DevTickets/[A-Za-z0-9_./-]+\.md")
+_MARKDOWN_LINK = re.compile(r"\]\(([^)#\s]+)(?:#[^)]*)?\)")
+
+
+def _unwrapped(text: str) -> str:
+    """*text* with line breaks inside a path removed, so a wrapped citation is seen whole.
+
+    A docstring or comment wraps a long path at a `/`, with the next line's
+    indentation (and a `#` or `#:` in a comment) in front. Joining only after a
+    trailing `/`, `_` or `-` keeps ordinary prose from gluing onto the path
+    that precedes it.
+    """
+    return re.sub(r"([/_-])[ \t]*\n[ \t]*(?:#:?[ \t]*)?(?=[A-Za-z0-9_.])", r"\1", text)
+
+
+def _mount_present(repo_root: Path, citation: str) -> bool:
+    """Whether the mount a citation points into is checked out.
+
+    A citation is `.agent/<side>/<mount>/...`; the mount is the first three
+    components. A private mount that is absent means skip, not fail.
+    """
+    return (repo_root / Path(*Path(citation).parts[:3])).is_dir()
+
+
+def find_stale_citations(repo_root: Path = REPO_ROOT) -> list[str]:
+    """Dead `.agent/` paths cited in `src/` and `scripts/`, and open tickets cited by path."""
+    failures: list[str] = []
+    scans = (
+        (repo_root / "src", _AGENT_CITATION),
+        (repo_root / "scripts", _AGENT_CITATION),
+        (repo_root / "tests", _DEVTICKETS_CITATION),
+    )
+    for root, pattern in scans:
+        for path in sorted(root.rglob("*.py")) if root.is_dir() else []:
+            if path.resolve() == Path(__file__).resolve():
+                continue  # this file explains the rule with example paths
+            text = path.read_text(encoding="utf-8")
+            for citation in sorted(set(pattern.findall(text)) | set(pattern.findall(_unwrapped(text)))):
+                if not _mount_present(repo_root, citation):
+                    continue
+                where = path.relative_to(repo_root)
+                if "/openTickets/" in citation:
+                    failures.append(
+                        f"{where}: cites an open ticket by path ({citation}); "
+                        f"name the ticket instead, its path changes when it is ranked or archived"
+                    )
+                elif not (repo_root / citation).exists():
+                    failures.append(f"{where}: cites {citation}, which does not exist")
+    return failures
+
+
+def find_broken_ticket_links(repo_root: Path = REPO_ROOT) -> list[str]:
+    """Relative Markdown links in open tickets and the DevTickets README that resolve nowhere."""
+    failures: list[str] = []
+    for tickets in sorted((repo_root / ".agent" / ".local").glob("*/DevTickets")):
+        files = sorted((tickets / "openTickets").glob("*.md")) + [tickets / "README.md"]
+        for path in files:
+            if not path.is_file():
+                continue
+            for target in _MARKDOWN_LINK.findall(path.read_text(encoding="utf-8")):
+                if "://" in target or target.startswith(("mailto:", "/")):
+                    continue
+                if not (path.parent / target).exists():
+                    failures.append(
+                        f"{path.relative_to(repo_root)}: link {target} resolves nowhere"
+                    )
+    return failures
+
+
 @dataclass
 class ModuleReport:
     relative_path: str
@@ -88,6 +199,7 @@ class ModuleReport:
     public_symbols: list[str] = field(default_factory=list)
     internal_imports: list[str] = field(default_factory=list)
     ring0_violations: list[str] = field(default_factory=list)
+    clock_seam_violations: list[str] = field(default_factory=list)
     contract: dict[str, str] | None = None
     contract_import_mismatch: list[str] = field(default_factory=list)
 
@@ -168,6 +280,22 @@ def _check_ring0_purity(tree: ast.Module) -> list[str]:
     return violations
 
 
+def _check_clock_seam(tree: ast.Module) -> list[str]:
+    """Every direct clock/PID/entropy read outside `universal_clock.py`.
+
+    Same shape as `_check_ring0_purity`'s attribute-path scan, over a
+    different forbidden set and applied module-wide rather than only to a
+    declared ring0 subset.
+    """
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            path = _attribute_path(node)
+            if path is not None and tuple(path[:2]) in _FORBIDDEN_CLOCK_ATTR_PATHS:
+                violations.append(f"line {node.lineno}: direct clock read {'.'.join(path)}")
+    return violations
+
+
 def _attribute_path(node: ast.Attribute) -> list[str] | None:
     parts: list[str] = [node.attr]
     current: ast.expr = node.value
@@ -194,6 +322,8 @@ def analyse_module(path: Path, *, ring0_modules: set[str]) -> ModuleReport:
     module_stem = path.stem
     if module_stem in ring0_modules or relative in ring0_modules:
         report.ring0_violations = _check_ring0_purity(tree)
+    if path.name != _CLOCK_SEAM_EXEMPT_MODULE:
+        report.clock_seam_violations = _check_clock_seam(tree)
     if report.contract and "Imports" in report.contract and report.internal_imports:
         # Only cross-checked when the module has at least one real internal
         # import — a module with none is free to describe that fact in
@@ -247,6 +377,8 @@ def _print_report(reports: list[ModuleReport]) -> None:
             flags.append(f"imports>{INTERNAL_IMPORTS_HARD_CEILING}")
         if r.ring0_violations:
             flags.append(f"RING0:{len(r.ring0_violations)}")
+        if r.clock_seam_violations:
+            flags.append(f"CLOCK:{len(r.clock_seam_violations)}")
         if r.contract_import_mismatch:
             flags.append(f"CONTRACT-MISMATCH:{','.join(r.contract_import_mismatch)}")
         print(
@@ -260,6 +392,30 @@ def run_check(reports: list[ModuleReport], baseline: dict) -> list[str]:
     known = baseline.get("modules", {})
     for r in reports:
         prior = known.get(r.relative_path)
+
+        # Absolute violations — Ring-0 purity, the clock seam, and the
+        # docstring/import cross-check — are checked whether or not a
+        # baseline entry exists. A brand-new module born with a violation
+        # must fail on its first --check, not sail through unnoticed until
+        # someone happens to run --write-baseline; a ratchet only makes
+        # sense for the size counters below, which have nothing to compare
+        # against until a first baseline is recorded.
+        if r.ring0_violations:
+            failures.append(
+                f"{r.relative_path}: Ring-0 purity violated — "
+                + "; ".join(r.ring0_violations)
+            )
+        if r.clock_seam_violations:
+            failures.append(
+                f"{r.relative_path}: reads the clock directly, outside "
+                f"universal_clock.py — " + "; ".join(r.clock_seam_violations)
+            )
+        if r.contract_import_mismatch:
+            failures.append(
+                f"{r.relative_path}: docstring 'Imports:' header disagrees with actual "
+                f"imports — missing {r.contract_import_mismatch}"
+            )
+
         if prior is None:
             if r.loc > MODULE_LOC_HARD_CEILING:
                 failures.append(
@@ -277,16 +433,6 @@ def run_check(reports: list[ModuleReport], baseline: dict) -> list[str]:
             failures.append(
                 f"{r.relative_path}: public symbol count grew "
                 f"{prior.get('public_symbols')} -> {len(r.public_symbols)}"
-            )
-        if r.ring0_violations:
-            failures.append(
-                f"{r.relative_path}: Ring-0 purity violated — "
-                + "; ".join(r.ring0_violations)
-            )
-        if r.contract_import_mismatch:
-            failures.append(
-                f"{r.relative_path}: docstring 'Imports:' header disagrees with actual "
-                f"imports — missing {r.contract_import_mismatch}"
             )
     return failures
 
@@ -313,6 +459,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check:
         failures = run_check(reports, baseline)
+        failures += find_stale_citations() + find_broken_ticket_links()
         if failures:
             print("\nRATCHET FAILURES:")
             for f in failures:

@@ -8,7 +8,7 @@ Imports: config_document, config_document_io, errors, git_repo
 
 Ring-classification note (found during P2-integrate, same shape as the
 config_document.py/config_document_io.py split from WP-CFG): every real
-caller across the codebase — orchestre.py, tests/integration/, tests/unit/
+caller across the codebase — orchestre/, tests/integration/, tests/unit/
 — invokes ``GtsDocument.from_toml(path)``/``.from_json(path)`` directly on
 this class, so the class itself must carry ``ConfigDocumentIOMixin``
 (Ring 1) rather than staying strictly Ring-0-pure. This mirrors
@@ -21,26 +21,26 @@ is deliberately *not* applied to this module (or to ``cgs_format.py``) for
 this reason — it stays scoped to modules with no I/O-adapter mixin at all,
 e.g. ``errors.py``, ``ledger_entry.py``, ``integrity.py``.
 
-Extracted verbatim from ``orchestre.py`` (Wave 1, P2 of
-``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre.py`` still
+Extracted verbatim from ``orchestre/`` (Wave 1, P2 of
+``.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``). ``orchestre/`` still
 carries its own copy of ``GtsDocument`` until the separate P2-integrate step
 deletes it there and re-points imports — this module does not change that
 file.
 
 A handful of small, private, string-only helpers (``_repo_ref_name`` and
 friends, ``_parse_gts_node_type``, ``_SHA256_HEX_RE``,
-``_FREEZE_COMMAND_ORIGINS``) are also used elsewhere in ``orchestre.py`` by
+``_FREEZE_COMMAND_ORIGINS``) are also used elsewhere in ``orchestre/`` by
 code that is not part of ``GtsDocument`` (e.g. ``build_registry_from_gts_document``,
 future ``registry.py``). Per the Ring-0 rule that this module may import from
-rings below it only — ``orchestre.py`` is Ring 3, ``git_tree.py`` (where
+rings below it only — ``orchestre/`` is Ring 3, ``git_tree.py`` (where
 ``_parse_gts_node_type``/``_as_optional_str`` currently live) is Ring 1 —
 this module cannot import them from there without breaking Ring 0 purity and
-the "no dependency on the rest of orchestre.py" standalone requirement this
+the "no dependency on the rest of orchestre/" standalone requirement this
 extraction is built to satisfy. They are therefore duplicated here as tiny,
 stable, pure functions tied to a frozen wire format, not forked business
 logic; a later integration step (most naturally when the ref-token helpers'
 other caller becomes ``registry.py``, Ring 2, which *can* import downward
-from this Ring-0 module) can retire ``orchestre.py``'s copies in favour of
+from this Ring-0 module) can retire ``orchestre/``'s copies in favour of
 importing from here.
 """
 
@@ -54,13 +54,13 @@ from typing import Any
 from . import __version__ as CGS_VERSION
 from .config_document import ConfigDocument
 from .config_document_io import ConfigDocumentIOMixin
-from .errors import ConfigValidationError
+from .errors import ConfigValidationError, UnsupportedSnapshotFormatError
 from .git_repo import DiscoveryState, NodeType, RefKind, RepoLifecycleState
 
 # ============================================================
 #  Module-level constants and helpers GtsDocument depends on
 #
-#  Duplicated from orchestre.py / git_tree.py — see the module
+#  Duplicated from orchestre/ / git_tree.py — see the module
 #  docstring above for why these are copies, not imports.
 # ============================================================
 
@@ -144,7 +144,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     #:
     #: **2** hashes only what the workspace *is*: tree-relative paths, refs,
     #: commits, and who each repository is. See
-    #: ``.localSpec/AdditionalSpecs.md``, *What a State's name is computed
+    #: ``.agent/.local/.localSpec/AdditionalSpecs.md``, *What a State's name is computed
     #: from*, for the field-by-field decision.
     #:
     #: **3** drops the ``document`` block's ``CGS_VERSION`` from the
@@ -181,7 +181,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     )
 
     # Pre-existing complexity debt from before C90 was enabled (P6,
-    # .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
+    # .agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md) — flagged, not fixed
     # under this ticket, since a real refactor of .gts field validation
     # risks behaviour change under time pressure. New code is enforced at
     # 12.
@@ -339,8 +339,25 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         under a version it does not declare — the migration path uses it;
         ordinary callers must not, or an old snapshot gets measured with an
         algorithm it was never written under.
+
+        Refuses, by name, before building any payload, when *version* is
+        higher than :attr:`CURRENT_HASH_CANONICALISATION` — a snapshot
+        written by a build newer than this one. Recomputing a hash under
+        rules this build does not actually know produces a wrong digest
+        that reads as "corrupt", which is what happened the one time this
+        was allowed to fall through
+        (`.agent/.local/.dev/DevTickets/archive/20260918_SnapshotVersionGuard_DevPlanTicket.md`):
+        the workspace and the snapshot were both fine, and the tool reading
+        them had gone backwards in time.
         """
         version = canonicalisation or self.hash_canonicalisation
+        if version > self.CURRENT_HASH_CANONICALISATION:
+            raise UnsupportedSnapshotFormatError(
+                "this snapshot was written by a newer ComplexGitSync "
+                f"(snapshot format {version}; this build reads up to "
+                f"{self.CURRENT_HASH_CANONICALISATION}). Upgrade, or pass "
+                "--gts with a snapshot this build wrote."
+            )
         canonical_json = json.dumps(
             self._build_canonical_payload(version),
             sort_keys=True,
@@ -415,7 +432,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 # gitprovider/group_name/gitprovider_url are the
                 # opposite: they say *which* repository this is, which
                 # is exactly why the round trip losing them was a bug
-                # (.localSpec/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
+                # (.agent/.local/.dev/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
                 # A frozen literal, not git_branch.DEFAULT_BRANCH: this
                 # dict is hashed into the canonical snapshot hash, so
                 # every value in it must stay fixed for the life of the

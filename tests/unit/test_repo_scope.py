@@ -28,7 +28,7 @@ from ComplexGitSync.git_tree import (
     propagate_privacy,
 )
 from ComplexGitSync.orchestre import resolve_command_scope
-from ComplexGitSync.registry import build_registry_from_cgs_document
+from ComplexGitSync.registry import RegistryTranslator
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -200,7 +200,7 @@ class TestCgsDeclaration:
             encoding="utf-8",
         )
 
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+        tree = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(source), source)
         by_name = {entry.name: entry for entry in tree.values()}
 
         assert by_name["spec"].private is True
@@ -450,7 +450,7 @@ class TestNestedPinningThroughDiscovery:
             encoding="utf-8",
         )
 
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+        tree = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(source), source)
         discover_nested_configs(tree)
         by_name = {entry.name: entry for entry in tree.values()}
 
@@ -461,7 +461,7 @@ class TestNestedPinningThroughDiscovery:
 
 
 class TestThisTreesOwnDeclaration:
-    """`complexgitsync4dev.cgs` is tutorial 4's worked example.
+    """`complexgitsync4dev.cgs` is tutorial 5's worked example.
 
     The developer spec, not the root `install.cgs`: the user install
     deliberately mounts no private repository at all, which
@@ -475,21 +475,38 @@ class TestThisTreesOwnDeclaration:
         assert by_name[".localSpec"]["writable"] is True
         assert by_name[".claude"]["writable"] is True
 
-    def test_the_shared_config_repo_is_read_only(self):
-        """`.agentSpec` is private to main and read by every project.
+    def test_this_projects_own_skills_are_writable(self):
+        """`.dev` (`AgentSkillsSplit`, then `AgenticTwoLevels`).
 
-        It must not be writable here: that is the entry whose accidental
-        push publishes to everyone.
+        This project's own, so writable, the same as `.localSpec`/`.claude`
+        above. `.versioning` and `.auto` were folded into it and dropped.
         """
         document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync4dev.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
-        assert by_name[".agentSpec"]["private"] is True
-        assert by_name[".agentSpec"]["writable"] is False
+        assert by_name[".dev"]["writable"] is True
+        assert ".versioning" not in by_name
+        assert ".auto" not in by_name
+
+    def test_the_shared_skills_are_read_only(self):
+        """`.ticketing`, `DevSpec`, `DocSpec` (`AgentSkillsSplit`) are
+        private to `main` and read by every project.
+
+        None must be writable here: each is the entry whose accidental
+        push publishes to everyone. Each is declared directly (no
+        `.agent` repository nests them — `AgentMountSplit`), so its own
+        `private`/`writable` flags are exactly its effective ones.
+        """
+        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync4dev.cgs")
+        by_name = {r["project_name"]: r for r in document.repos}
+
+        for name in (".ticketing", "DevSpec", "DocSpec"):
+            assert by_name[name]["private"] is True
+            assert by_name[name]["writable"] is False
 
     def test_each_scope_selects_what_the_documentation_promises(self):
         source = _REPO_ROOT / "examples" / "complexgitsync4dev.cgs"
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+        tree = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(source), source)
 
         def names(scope: RepoScope) -> set[str]:
             return {entry.name for entry in iter_tree_leaf_first(tree, scope)}
@@ -501,10 +518,17 @@ class TestThisTreesOwnDeclaration:
         # project branches the same way they reconcile the other two.
         # Nothing writes into its worktree except `memory push`'s own fold
         # (`memory-dev_WorkingTransitionState`), so no scope needs to route
-        # around it any more.
-        assert names(RepoScope.PRIVATE) == {".localSpec", ".claude", ".memory"}
-        assert ".agentSpec" not in names(RepoScope.WRITABLE)
-        assert ".agentSpec" in names(RepoScope.ALL)
+        # around it any more. .dev (AgentSkillsSplit)
+        # joins them the same way -- this project's own, writable.
+        assert names(RepoScope.PRIVATE) == {
+            ".localSpec", ".claude", ".memory", ".dev",
+        }
+        # .ticketing/DevSpec/DocSpec are declared directly (AgentMountSplit)
+        # and need no nested discovery to appear at all -- the tree built
+        # from the document alone already has them, correctly read-only.
+        for name in (".ticketing", "DevSpec", "DocSpec"):
+            assert name not in names(RepoScope.WRITABLE)
+            assert name in names(RepoScope.ALL)
 
 
 class TestUserInstallDeclaration:
@@ -522,7 +546,7 @@ class TestUserInstallDeclaration:
 
     def test_it_mounts_only_the_tool_and_its_documentation(self):
         source = _REPO_ROOT / "install.cgs"
-        tree = build_registry_from_cgs_document(CgsDocument.from_toml(source), source)
+        tree = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(source), source)
         names = {entry.name for entry in iter_tree_leaf_first(tree, RepoScope.ALL)}
         assert names == {"ComplexGitSync", "DocComplexGitSync"}
 

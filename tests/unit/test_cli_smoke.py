@@ -1,6 +1,4 @@
 import re
-import socket
-import subprocess
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +9,7 @@ from ComplexGitSync import __version__
 from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.cli import main
 from ComplexGitSync.orchestre import DiscoveredRepo
+from ComplexGitSync.settings import UseCase
 
 
 def _is_state_file(path: Path) -> bool:
@@ -30,17 +29,7 @@ def test_main_without_command_prints_help(capsys):
     assert "cgitsync" in captured.out
 
 
-def test_configure_help_lists_all_canonical_providers(capsys):
-    with pytest.raises(SystemExit) as exc_info:
-        main(["configure", "--help"])
-
-    captured = capsys.readouterr()
-    assert exc_info.value.code == 0
-    for provider in ("GitHub", "GitLab", "Codeberg", "custom"):
-        assert provider in captured.out
-
-
-@pytest.mark.parametrize("command", ["initialise", "create-cgs"])
+@pytest.mark.parametrize("command", ["initialise"])
 def test_cli_project_definition_help_documents_repeatable_repos(command, capsys):
     with pytest.raises(SystemExit) as exc_info:
         main([command, "--help"])
@@ -52,7 +41,7 @@ def test_cli_project_definition_help_documents_repeatable_repos(command, capsys)
     assert "repeat" in captured.out
 
 
-@pytest.mark.parametrize("command", ["initialise", "clean-init", "pull"])
+@pytest.mark.parametrize("command", ["initialise", "pull"])
 def test_gitignore_sync_flags_documented_on_relevant_commands(command, capsys):
     """DevPlanTicket Milestone 2 (M2.0): flags registered on exactly these three."""
     with pytest.raises(SystemExit) as exc_info:
@@ -61,7 +50,7 @@ def test_gitignore_sync_flags_documented_on_relevant_commands(command, capsys):
     captured = capsys.readouterr()
     assert exc_info.value.code == 0
     assert "--commit-gitignore" in captured.out
-    assert "--force-gitignore-sync" in captured.out
+    assert "--force-gitignore-sync" not in captured.out
     assert "--git-user-name" in captured.out
     assert "--git-user-email" in captured.out
 
@@ -76,22 +65,40 @@ def test_gitignore_sync_flags_rejected_on_unrelated_command(capsys):
     assert "unrecognized arguments" in captured.err
 
 
-def test_initialise_command_restores_gts_snapshot(tmp_path, capsys):
+def test_initialise_command_builds_from_gts_snapshot(monkeypatch, capsys, tmp_path):
+    captured_call: dict[str, object] = {}
+
+    class StubClient:
+        def resolve_initialise_cgshome(self, source, *, output_path=None):
+            return tmp_path / "workspace" / "demo"
+
+        def initialise_gts(self, source, *, output_path=None, **kwargs):
+            captured_call["source"] = Path(source)
+            captured_call["output_path"] = output_path
+            captured_call["kwargs"] = kwargs
+            return SimpleNamespace(
+                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "workspace" / "demo")
+            )
+
+        def get_tree_state(self):
+            return SimpleNamespace(
+                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
+            )
+
+        def format_project_tree(self):
+            return "demo (project)"
+
+    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
     gts_path = _write_ready_gts(tmp_path)
 
-    exit_code = main(["initialise", str(gts_path)])
+    exit_code = main(["initialise", str(gts_path), "--output-path", str(tmp_path / "parent")])
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "log_file=" not in captured.out
-    assert "workflow=load->validate" in captured.out
+    assert captured_call["source"] == gts_path
+    assert captured_call["output_path"] == str(tmp_path / "parent")
+    assert "GT-CLONE" in captured.out
     assert "READY" in captured.out
-    assert "ready=true" in captured.out
-    assert "complete=true" in captured.out
-    assert "gittree_created=true" in captured.out
-    assert "gittree_active=true" in captured.out
-    assert "tree:" in captured.out
-    assert "demo (project)" in captured.out
 
 
 def test_load_command_is_not_registered(capsys):
@@ -249,157 +256,6 @@ def test_initialise_accepts_direct_cli_project_definition(
     assert "workflow=load->expand->validate->clone" in captured.out
 
 
-def test_create_cgs_writes_equivalent_validated_document(
-    monkeypatch, capsys, tmp_path
-):
-    def _forbid_runtime_access(*_args, **_kwargs):
-        raise AssertionError("create-cgs attempted Git or network access")
-
-    monkeypatch.setattr(subprocess, "run", _forbid_runtime_access)
-    monkeypatch.setattr(socket, "create_connection", _forbid_runtime_access)
-
-    output = tmp_path / "CGSil1.cgs"
-    repositories = [
-        "github:flipoyo/ComplexGitSync",
-        "codeberg:GX4G/GX4G",
-    ]
-    exit_code = main(
-        [
-            "create-cgs",
-            "--project",
-            "CGSil1",
-            "--repo",
-            repositories[0],
-            "--repo",
-            repositories[1],
-            "--output",
-            str(output),
-        ]
-    )
-    captured = capsys.readouterr()
-
-    generated = CgsDocument.from_toml(output)
-    equivalent_source = tmp_path / "equivalent.cgs"
-    equivalent_source.write_text(
-        'project = "CGSil1"\n\n'
-        'repos = [\n'
-        '    "github:flipoyo/ComplexGitSync",\n'
-        '    "codeberg:GX4G/GX4G",\n'
-        ']\n',
-        encoding="utf-8",
-    )
-    equivalent = CgsDocument.from_toml(equivalent_source)
-    assert exit_code == 0
-    assert generated.to_dict() == equivalent.to_dict()
-    assert "codeberg:GX4G/GX4G" in output.read_text(encoding="utf-8")
-    assert f".cgs file written to: {output.resolve()}" in captured.out
-
-
-def test_create_cgs_delegates_to_public_python_configuration_api(
-    monkeypatch, tmp_path
-):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def configure(self, project, repositories, *, output_path=None):
-            captured_call["project"] = project
-            captured_call["repositories"] = list(repositories)
-            captured_call["output_path"] = output_path
-            document = CgsDocument.from_dict(
-                {"project": project, "repos": list(repositories)}
-            )
-            document.to_toml(output_path)
-            return document
-
-    monkeypatch.setattr("ComplexGitSync.cli.configuration.ComplexGitSyncClient", StubClient)
-    output = tmp_path / "GX4G.cgs"
-
-    exit_code = main(
-        [
-            "create-cgs",
-            "--project",
-            "GX4G",
-            "--repo",
-            "codeberg:GX4G/GX4G",
-            "--output",
-            str(output),
-        ]
-    )
-
-    assert exit_code == 0
-    assert captured_call == {
-        "project": "GX4G",
-        "repositories": ["codeberg:GX4G/GX4G"],
-        "output_path": output,
-    }
-    assert CgsDocument.from_toml(output).project_name == "GX4G"
-
-
-def test_configure_collects_input_then_writes_validated_cgs(
-    monkeypatch, capsys, tmp_path
-):
-    responses = iter(
-        [
-            "demo",
-            "main",
-            "owner",
-            "",
-            "",
-            "1",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
-    output = tmp_path / "demo.cgs"
-
-    exit_code = main(["configure", "--output", str(output)])
-
-    document = CgsDocument.from_toml(output)
-    assert exit_code == 0
-    assert document.project_name == "demo"
-    assert document.repos[0]["gitprovider"] == "github"
-    assert document.to_authoring_dict() == {
-        "project": "demo",
-        "repos": ["github:owner/demo"],
-    }
-    assert "[project]" not in output.read_text(encoding="utf-8")
-    assert f".cgs file written to: {output.resolve()}" in capsys.readouterr().out
-
-
-def test_configure_collects_codeberg_as_first_class_provider(monkeypatch, tmp_path):
-    responses = iter(
-        [
-            "GX4G",
-            "main",
-            "GX4G",
-            "codeberg",
-            "ssh",
-            "1",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
-    output = tmp_path / "GX4G.cgs"
-
-    assert main(["configure", "--output", str(output)]) == 0
-
-    document = CgsDocument.from_toml(output)
-    assert document.to_dict() == CgsDocument.from_project_definition(
-        "GX4G", ["codeberg:GX4G/GX4G"]
-    ).to_dict()
-    assert "codeberg:GX4G/GX4G" in output.read_text(encoding="utf-8")
-
-
 def test_file_and_cli_codeberg_authoring_are_semantically_equivalent(tmp_path):
     source = tmp_path / "GX4G.cgs"
     source.write_text(
@@ -413,93 +269,6 @@ def test_file_and_cli_codeberg_authoring_are_semantically_equivalent(tmp_path):
     )
 
     assert from_file.to_dict() == from_cli.to_dict()
-
-
-def test_initialise_command_failure_suggests_clean_init(monkeypatch, capsys, tmp_path):
-    class StubClient:
-        def resolve_initialise_cgshome(self, source, *, output_path=None):
-            return tmp_path / "workspace" / "project"
-
-        def initialise_cgs(self, source, *, output_path=None, **_kwargs):
-            raise RuntimeError("clone failed")
-
-    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
-
-    config_path = tmp_path / "project.cgs"
-    config_path.touch()
-    with pytest.raises(RuntimeError, match="clone failed"):
-        main(["initialise", str(config_path)])
-
-    captured = capsys.readouterr()
-    assert "Try clean-init method" in captured.err
-
-
-def test_clean_init_command_purges_before_clone(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_initialise_cgshome(self, source, *, output_path=None):
-            return Path(output_path) / "project"
-
-        def clean_init(self, source, *, output_path=None, **_kwargs):
-            captured_call["source"] = Path(source)
-            captured_call["output_path"] = output_path
-            return SimpleNamespace(
-                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "parent" / "project")
-            )
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-        def format_repo_tree(self):
-            return "demo (project)\n└── child-repo (leaf)"
-
-    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
-
-    config_path = tmp_path / "project.cgs"
-    config_path.touch()
-    output_path = str(tmp_path / "parent")
-    exit_code = main(["clean-init", str(config_path), "--output-path", output_path])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["source"] == config_path.resolve()
-    assert captured_call["output_path"] == output_path
-    assert "operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE->GT-CLONE" in captured.out
-    assert "workflow=load->expand->validate->purge->clone" in captured.out
-    assert "READY ready=true" in captured.out
-
-
-def test_purge_command_removes_generated_clone_state(monkeypatch, capsys, tmp_path):
-    removed = (tmp_path / "parent" / "project" / "child-repo", tmp_path / "parent" / "project" / ".gitmodules")
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_initialise_cgshome(self, source, *, output_path=None):
-            return Path(output_path) / "project"
-
-        def purge(self, source, *, output_path=None):
-            captured_call["source"] = Path(source)
-            captured_call["output_path"] = output_path
-            return removed
-
-    monkeypatch.setattr("ComplexGitSync.cli.expert.ComplexGitSyncClient", StubClient)
-
-    config_path = tmp_path / "project.cgs"
-    config_path.touch()
-    output_path = str(tmp_path / "parent")
-    exit_code = main(["purge", str(config_path), "--output-path", output_path])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["source"] == config_path.resolve()
-    assert captured_call["output_path"] == output_path
-    assert "operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE" in captured.out
-    assert "workflow=load->expand->validate->purge" in captured.out
-    assert str(removed[0]) in captured.out
-    assert str(removed[1]) in captured.out
 
 
 def test_initialise_command_requires_source_or_project(capsys):
@@ -548,22 +317,6 @@ def test_initialise_rejects_source_and_cli_definition(capsys):
     assert "SOURCE or --project with --repo, not both" in captured.err
 
 
-@pytest.mark.parametrize(
-    "argv, missing_option",
-    [
-        (["create-cgs", "--repo", "github:owner/repository", "--output", "p.cgs"], "--project"),
-        (["create-cgs", "--project", "demo", "--output", "p.cgs"], "--repo"),
-    ],
-)
-def test_create_cgs_requires_project_and_repo(argv, missing_option, capsys):
-    with pytest.raises(SystemExit) as exc_info:
-        main(argv)
-
-    captured = capsys.readouterr()
-    assert exc_info.value.code == 2
-    assert missing_option in captured.err
-
-
 def test_validate_command_creates_state_local_log_file(monkeypatch, tmp_path, capsys):
     config_path = _write_project_cgs(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
@@ -589,65 +342,6 @@ def test_validate_command_creates_state_local_log_file(monkeypatch, tmp_path, ca
     assert log_content.splitlines()[0].startswith('{"operation": "GT-VALIDATE", "event": "command_start"')
     assert '"event": "command_start"' in log_content
     assert '"event": "command_end"' in log_content
-
-
-def test_freeze_command_uses_client_handler(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        run_logger = None
-        loaded_snapshot_path = tmp_path / ".cgitsync" / "state" / "gts-000001-v1.0.gts"
-
-        def load_gts(self, path):
-            captured_call["gts_path"] = Path(path)
-
-        def freeze(self, name, **kwargs):
-            captured_call["name"] = name
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
-
-    gts_path = tmp_path / "project.gts"
-    gts_path.touch()
-    exit_code = main(["freeze", "v1.0", "--gts", str(gts_path)])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["name"] == "v1.0"
-    assert "name=v1.0" in captured.out
-    assert "snapshot=" in captured.out
-    assert "gts-000001-v1.0.gts" in captured.out
-
-
-def test_freeze_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
-    class StubClient:
-        run_logger = None
-
-        def load_gts(self, path):
-            pass
-
-        def freeze(self, name, **kwargs):
-            raise AssertionError("freeze should not be called during --dry-run")
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
-
-    gts_path = tmp_path / "project.gts"
-    gts_path.touch()
-    exit_code = main(["freeze", "v1.0", "--gts", str(gts_path), "--dry-run"])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "dry_run=true command=freeze" in captured.out
-    assert "plan_actions=git add --all -> git commit -m 'v1.0' -> git tag v1.0 -> git push" in captured.out
 
 
 def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_path):
@@ -691,40 +385,6 @@ def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_pat
     assert "message='release commit'" in captured.out
     assert "snapshot=" in captured.out
     assert "repos:" in captured.out
-
-
-def test_freeze_release_force_command_uses_force_workflow(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        run_logger = None
-
-        def load_gts(self, path):
-            captured_call["gts_path"] = Path(path)
-
-        def freeze_release(self, name, message, *, force=False, **kwargs):
-            captured_call["name"] = name
-            captured_call["message"] = message
-            captured_call["force"] = force
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-        def view_tree(self):
-            return "ROOT project [main] clean synced"
-
-    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
-
-    gts_path = tmp_path / "project.gts"
-    gts_path.touch()
-    exit_code = main(["freeze-release-force", "v1.0", "release commit", "--gts", str(gts_path)])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["force"] is True
-    assert "git clean -fd" in captured.out
 
 
 def test_tag_command_uses_client_handler(monkeypatch, capsys, tmp_path):
@@ -847,77 +507,11 @@ def test_view_operation_command_is_not_registered(capsys):
     assert "invalid choice" in captured.err
 
 
-def test_clone_command_uses_client_method(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_clone_root(self, source, *, target_dir=None, output_path=None):
-            captured_call["resolve_source"] = Path(source)
-            captured_call["resolve_target_dir"] = target_dir
-            captured_call["resolve_output_path"] = output_path
-            return Path(target_dir)
-
-        def clone(self, source, *, target_dir=None, output_path=None):
-            captured_call["source"] = Path(source)
-            captured_call["target_dir"] = target_dir
-            captured_call["output_path"] = output_path
-            return SimpleNamespace(
-                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "workspace" / "demo")
-            )
-
-        def get_tree_state(self):
-            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
-
-    monkeypatch.setattr("ComplexGitSync.cli.expert.ComplexGitSyncClient", StubClient)
-
-    target_dir = str(tmp_path / "workspace" / "demo")
-    exit_code = main(["clone", "project.cgs", "--target-dir", target_dir])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["resolve_source"] == Path("project.cgs")
-    assert captured_call["resolve_target_dir"] == target_dir
-    assert captured_call["source"] == Path("project.cgs").resolve()
-    assert captured_call["target_dir"] == target_dir
-    assert "READY ready=true complete=true" in captured.out
-
-
-def test_clone_command_output_path_is_forwarded(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_clone_root(self, source, *, target_dir=None, output_path=None):
-            captured_call["resolve_output_path"] = output_path
-            return tmp_path / "parent" / "demo"
-
-        def clone(self, source, *, target_dir=None, output_path=None):
-            captured_call["source"] = Path(source)
-            captured_call["output_path"] = output_path
-            return SimpleNamespace(
-                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "parent" / "demo")
-            )
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-    monkeypatch.setattr("ComplexGitSync.cli.expert.ComplexGitSyncClient", StubClient)
-
-    output_path = str(tmp_path / "parent")
-    exit_code = main(["clone", "project.cgs", "--output-path", output_path])
-    capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["resolve_output_path"] == output_path
-    assert captured_call["output_path"] == output_path
-
-
 def test_bootstrap_command_uses_client_method(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
     class StubClient:
-        def resolve_bootstrap_root(self, project_name, *, cgs_path=None):
+        def resolve_bootstrap_root(self, project_name, *, source=None, cgs_path=None):
             captured_call["resolve_project_name"] = project_name
             captured_call["resolve_cgs_path"] = cgs_path
             return tmp_path / "cgspath" / project_name
@@ -954,7 +548,7 @@ def test_bootstrap_command_forwards_cgs_path(monkeypatch, capsys, tmp_path):
     captured_call: dict[str, object] = {}
 
     class StubClient:
-        def resolve_bootstrap_root(self, project_name, *, cgs_path=None):
+        def resolve_bootstrap_root(self, project_name, *, source=None, cgs_path=None):
             captured_call["resolve_cgs_path"] = cgs_path
             return Path(cgs_path) / project_name
 
@@ -1014,20 +608,22 @@ def test_initialise_command_output_path_is_forwarded(monkeypatch, capsys, tmp_pa
     assert captured_call["output_path"] == output_path
 
 
-def test_initialise_command_gts_does_not_write_external_log_file(monkeypatch, tmp_path, capsys):
+def test_initialise_command_gts_refusal_names_bootstrap_and_hints_nothing_about_clean_init(
+    monkeypatch, tmp_path, capsys
+):
+    """The nested install refuses a workspace that is not a checkout, by name."""
     gts_path = _write_ready_gts(tmp_path)
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
+    monkeypatch.setattr(
+        "ComplexGitSync.orchestre.installer.Installer._use_case_of",
+        lambda self, cgshome: UseCase.STANDALONE,
+    )
 
-    exit_code = main(["initialise", str(gts_path)])
+    exit_code = main(["initialise", str(gts_path), "--output-path", str(tmp_path / "parent")])
     captured = capsys.readouterr()
 
-    log_dir = tmp_path / "state-home" / "ComplexGitSync" / "logs"
-
-    assert exit_code == 0
-    assert "READY" in captured.out
-    assert "operation_sequence=GT-LOAD->GT-VALIDATE" in captured.out
-    assert "log_file=" not in captured.out
-    assert not log_dir.exists()
+    assert exit_code != 0
+    assert "bootstrap" in captured.err
+    assert "clean-init" not in captured.err
 
 
 def test_pull_command_creates_log_file(monkeypatch, tmp_path, capsys):
@@ -1089,7 +685,7 @@ def test_pull_command_failure_suggests_pull_force(monkeypatch, tmp_path, capsys)
         main(["pull", str(source_path)])
 
     captured = capsys.readouterr()
-    assert "You can try cgitsync pull-force command" in captured.err
+    assert "You can try cgitsync autofix" in captured.err
 
 
 def test_pull_force_command_uses_client_handler(monkeypatch, tmp_path, capsys):
@@ -1112,7 +708,7 @@ def test_pull_force_command_uses_client_handler(monkeypatch, tmp_path, capsys):
 
     source_path = tmp_path / "project.gts"
     source_path.touch()
-    exit_code = main(["pull-force", str(source_path)])
+    exit_code = main(["pull", "--force", str(source_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -1206,7 +802,7 @@ def test_branch_command_uses_client_handler(monkeypatch, capsys, tmp_path):
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
-    exit_code = main(["branch", "feature-x", "--gts", str(gts_path)])
+    exit_code = main(["branch", "create", "feature-x", "--gts", str(gts_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -1459,74 +1055,6 @@ def test_add_command_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
     assert exit_code == 0
     assert "dry_run=true command=add" in captured.out
     assert "plan_actions=git add --all" in captured.out
-
-
-def test_launch_release_command_uses_client_handler(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        run_logger = None
-
-        def load_gts(self, path):
-            captured_call["gts_path"] = Path(path)
-
-        def launch_release(self, release_name):
-            captured_call["release_name"] = release_name
-
-        def get_tree_state(self):
-            return SimpleNamespace(lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True)
-
-        def view_tree(self):
-            return "ROOT project [main] clean synced"
-
-    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
-
-    gts_path = tmp_path / "project.gts"
-    gts_path.touch()
-    exit_code = main(["launch-release", "v2.0", "--gts", str(gts_path)])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["release_name"] == "v2.0"
-    assert "release=v2.0" in captured.out
-
-
-def test_launch_release_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
-    """launch_release resolves its READY snapshot from CGSHOME when --gts is omitted."""
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        run_logger = None
-
-        def load_gts(self, path):
-            captured_call["gts_path"] = Path(path)
-
-        def launch_release(self, release_name):
-            captured_call["release_name"] = release_name
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-        def view_tree(self):
-            return "ROOT project [main] clean synced"
-
-    monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
-
-    workspace = tmp_path / "workspace"
-    state_dir = workspace / ".cgitsync" / "state"
-    state_dir.mkdir(parents=True)
-    gts_path = state_dir / "workspace.gts"
-    gts_path.touch()
-
-    monkeypatch.setenv("CGSHOME", str(workspace))
-    exit_code = main(["launch-release", "v2.0"])
-    capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["gts_path"] == gts_path.resolve()
-    assert captured_call["release_name"] == "v2.0"
 
 
 def test_gts_auto_discovery_from_parent_cgitsync(monkeypatch, capsys, tmp_path):
@@ -1839,7 +1367,7 @@ def test_branch_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
     gts_path.touch()
 
     monkeypatch.setenv("CGSHOME", str(workspace))
-    exit_code = main(["branch", "feature/demo"])
+    exit_code = main(["branch", "create", "feature/demo"])
     capsys.readouterr()
 
     assert exit_code == 0
@@ -2013,86 +1541,29 @@ commit_sha = "abc123"
     return gts_path
 
 
-def test_readme_documents_every_cli_command():
-    """README.md's command reference must list every _PLANNED_COMMANDS entry.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_USER_GUIDE = _REPO_ROOT / "docs" / "Text" / "user_guide.tex"
 
-    Guards against the CLI surface (cli.py) and the user-facing docs (README.md)
-    drifting apart, as happened previously when configure/remember/memorize/
-    retrieve/reload were added to cli.py but never documented.
+
+def test_user_guide_documents_every_cli_command():
+    """The user guide must name every _PLANNED_COMMANDS entry.
+
+    Guards against the CLI surface and the user-facing reference drifting
+    apart, as happened previously when configure/remember/memorize/
+    retrieve/reload were added to cli.py but never documented. The guide is
+    the command reference; README.md is the front page and only says how to
+    reach ``--help`` (README-UX, 2026-10-06).
     """
     from ComplexGitSync.cli import _PLANNED_COMMANDS
 
-    readme_path = Path(__file__).resolve().parents[2] / "README.md"
-    readme_text = readme_path.read_text(encoding="utf-8")
+    guide_text = _USER_GUIDE.read_text(encoding="utf-8")
 
-    missing = [command for command in _PLANNED_COMMANDS if f"`{command}`" not in readme_text]
-    assert not missing, f"README.md command reference is missing: {missing}"
-
-
-def test_readme_command_reference_lists_only_real_commands():
-    """The reverse direction of the check above.
-
-    A command documented in README.md's ``## 3. `cgitsync` command list``
-    table that the parser cannot actually build is as much a drift bug as an
-    undocumented command — build_parser() only ever creates a subparser for
-    a name that is a _PLANNED_COMMANDS key (see
-    test_parser_choices_match_planned_commands), so a phantom row here would
-    silently promise a command that errors with "invalid choice".
-    """
-    from ComplexGitSync.cli import _PLANNED_COMMANDS
-
-    readme_path = Path(__file__).resolve().parents[2] / "README.md"
-    readme_text = readme_path.read_text(encoding="utf-8")
-
-    table_match = re.search(r"## 3\. `cgitsync` command list\n\n(.*?)\n\n##", readme_text, re.DOTALL)
-    assert table_match, "README.md's '## 3. `cgitsync` command list' table was not found."
-    documented = re.findall(r"^\| \S[^|]*\| `([a-z][a-z-]*)` \|", table_match.group(1), re.MULTILINE)
-    assert documented, "No command rows parsed from README.md's command list table."
-
-    phantom = [command for command in documented if command not in _PLANNED_COMMANDS]
-    assert not phantom, f"README.md documents commands the CLI cannot build: {phantom}"
+    missing = [command for command in _PLANNED_COMMANDS if f"\\texttt{{{command}" not in guide_text]
+    assert not missing, f"docs/Text/user_guide.tex does not document: {missing}"
 
 
-def test_readme_command_options_exist_on_their_command():
-    """Every flag README's command table shows must be real on that command.
-
-    The table gained an "Arguments and key options" column so a reader can
-    see the shape of a call without running ``--help``. A column like that
-    is only worth having if it cannot drift: a flag documented on the wrong
-    command sends the reader to an "unrecognized arguments" error.
-    """
-    from ComplexGitSync.cli import build_parser
-
-    parser = build_parser()
-    subparsers = next(a for a in parser._actions if getattr(a, "choices", None))
-    real_options = {
-        name: {opt for action in sub._actions for opt in action.option_strings}
-        for name, sub in subparsers.choices.items()
-    }
-
-    readme_text = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
-    table = re.search(
-        r"## 3\. `cgitsync` command list\n\n(.*?)\n\n### Options that recur",
-        readme_text,
-        re.DOTALL,
-    )
-    assert table, "README.md's command list table was not found."
-
-    phantom = []
-    for row in table.group(1).splitlines():
-        match = re.match(r"^\| \S[^|]*\| `([a-z][a-z-]*)` \|([^|]*)\|", row)
-        if not match:
-            continue
-        command, arguments = match.group(1), match.group(2)
-        for flag in re.findall(r"`(--[a-z-]+)`", arguments):
-            if flag not in real_options[command]:
-                phantom.append(f"{command} {flag}")
-
-    assert not phantom, f"README documents options that do not exist: {phantom}"
-
-
-def test_readme_lists_exactly_the_commands_that_accept_private():
-    """``--private`` is a safety rail, so README must name its reach exactly.
+def test_user_guide_lists_exactly_the_commands_that_accept_private():
+    """``--private`` is a safety rail, so the guide must name its reach exactly.
 
     Claiming it on a command that lacks it teaches the reader that a
     tree-wide write can be narrowed when it cannot.
@@ -2104,18 +1575,39 @@ def test_readme_lists_exactly_the_commands_that_accept_private():
     accepts_private = {
         name
         for name, sub in subparsers.choices.items()
-        if any("--private" in action.option_strings for action in sub._actions)
+        if "--private" in _subtree_options(sub)
     }
 
-    readme_text = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
-    row = re.search(r"^\| `--private` \|([^|]*)\|", readme_text, re.MULTILINE)
-    assert row, "README.md's `--private` row in 'Options that recur' was not found."
-    documented = set(re.findall(r"`([a-z][a-z-]*)`", row.group(1)))
+    guide_text = _USER_GUIDE.read_text(encoding="utf-8")
+    paragraph = re.search(
+        r"\\textbf\{Which commands accept \\texttt\{--private\}\.\}(.*?)\n\n",
+        guide_text,
+        re.DOTALL,
+    )
+    assert paragraph, "The user guide's 'Which commands accept --private' paragraph was not found."
+    documented = set(re.findall(r"\\texttt\{([a-z][a-z-]*)\}", paragraph.group(1)))
 
     assert documented == accepts_private, (
-        f"README's --private list is wrong: missing {sorted(accepts_private - documented)}, "
+        f"The guide's --private list is wrong: missing {sorted(accepts_private - documented)}, "
         f"claimed but absent {sorted(documented - accepts_private)}"
     )
+
+
+def test_readme_stays_a_short_front_page():
+    """README.md is for a first-time user: what the tool is for, how to get help, where to go.
+
+    The owner's README-UX request (2026-10-06): a README that listed every
+    command and option lost its readers. The reference lives in the user
+    guide, so the README must stay short, point at ``--help``, and link
+    every tutorial — and must not grow a command table again.
+    """
+    readme_text = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert len(readme_text.splitlines()) <= 250, "README.md has grown past a front page; move detail to docs/."
+    assert "pixi run cgitsync --help" in readme_text
+    assert "pixi run cgitsync <command> --help" in readme_text
+    for tutorial in sorted((_REPO_ROOT / "tutorials").glob("0*.md")):
+        assert f"tutorials/{tutorial.name}" in readme_text, f"README.md does not link {tutorial.name}"
 
 
 def test_discover_command_uses_client_method(monkeypatch, capsys, tmp_path):
@@ -2141,6 +1633,7 @@ def test_discover_command_uses_client_method(monkeypatch, capsys, tmp_path):
                 ),
                 cgs_entries=({"repository": "github:owner/demo", "relative_path": "."},),
                 warnings=(),
+                written_to=None,
             )
 
     monkeypatch.setattr("ComplexGitSync.cli._shared.ComplexGitSyncClient", StubClient)
@@ -2179,3 +1672,15 @@ def test_discover_command_forwards_write_and_max_depth(monkeypatch, capsys, tmp_
     assert exit_code == 0
     assert captured_call["max_depth"] == 2
     assert captured_call["output"] == out
+
+
+def _subtree_options(sub) -> set[str]:
+    """Every option a command takes, its subcommands' included (``branch list --per-repo``)."""
+    import argparse
+
+    found = {opt for action in sub._actions for opt in action.option_strings}
+    for action in sub._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for child in action.choices.values():
+                found |= _subtree_options(child)
+    return found

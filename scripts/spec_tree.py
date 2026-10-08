@@ -1,0 +1,581 @@
+"""Spec-graph integrity checker — `main_1-7_SpecTree_DevPlanTicket.md`.
+
+The specs an agent is meant to follow (`CLAUDE.md`, `AdditionalSpecs.md`,
+`AgentConduct.md`, `DOCSTYLE.md`, `TICKETLIFECYCLE.md`, `DevSpecs.md`, ...)
+are not a flat pile — they are a graph, reached one link at a time from
+`CLAUDE.md`, the file an agent is actually handed at session start. A rule
+that exists but sits behind a broken link, or behind no link at all, is
+exactly as unreachable to an agent as a rule that was never written down.
+This script makes that graph checkable instead of trusted by eye.
+
+Two kinds of edge, both discovered by reading the files the same way an
+agent does:
+
+1. **Markdown links** — `[text](path.md)`, resolved relative to the
+   linking file's own directory. A link whose target does not exist is a
+   **broken link** (`--check` failure) — this is the primary, deliberate
+   way one spec points at another.
+2. **Bare filenames in prose** — a backtick-quoted `` `Name.md` `` with no
+   surrounding `[...]()`, found real and load-bearing while drafting this
+   ticket: `CLAUDE.md`'s own *Layout* section names `AGENT.md` this way,
+   and a pure link-crawler walks right past the one file whose entire job
+   is to be the second thing an agent reads. Resolved **only** against a
+   same-directory sibling — the conservative reading of "each mount's
+   declared root" (ticket §5 D2) — so an incidental mention of a
+   same-named file living in a different mount (`CLAUDE.md` says
+   `` `DevSpecs.md` `` in prose; no `DevSpecs.md` lives beside it) is
+   silently dropped rather than mis-resolved, and an illustrative,
+   non-existent filename in an example block (`README_prod.md`,
+   `CorPlan.md`) never becomes an edge at all, because it never matches an
+   existing sibling. Unlike a markdown link, an unresolved bare mention is
+   **not** a `--check` failure — there is no way to tell "meant as a
+   pointer, resolved wrong" from "just prose," so this direction only ever
+   adds edges, never reports them broken.
+
+**Universe:** `DECLARED_SPEC_FILES`, read from `AgenticManifest.md` (the one
+hand-written list, which this script also checks against the developer
+`.cgs`'s mounts) — not a glob over every `.md` under `.agent/`. Ticket §5 D1: globbing would pull
+in content that is not a spec at all (a mounted documentation repository's
+own theme/template docs, a planning ticket's own body) and the scope this
+checker cares about is specs — deliberately, exactly what D1 states.
+`--check` fails if a universe member is unreachable from
+`CLAUDE.md` by any chain of edges (an **orphan**) or if a member's own
+path does not exist on disk.
+
+**The two levels** (`SpecTree.md` §2, shared; `AgenticTwoLevels`): the manifest
+gives each spec a level — `pattern` (shared), `standalone` (the product's own
+specification) or `fills in` a pattern. `--check` fails when a local file that
+fills in a pattern has no `*Fills in: <path>*` line, when that line names a
+different file than the manifest does, or when the level contradicts where the
+file sits.
+
+**The digest** (`digest.md`, ticket §5 D3/D5): a short, hand-written file
+— one rule per line, each citing its source — that a session loads in
+full, in place of eager-loading the whole discursive tree. `--check-digest`
+verifies every citation still resolves inside the reachable universe, and
+that every declared spec is cited by a digest line or exempt by name with a
+reason; it does not, and cannot, verify that a digest line still accurately
+summarises its source — that is an editorial judgement, not a graph
+property.
+
+Usage
+-----
+    pixi run python scripts/spec_tree.py                 # report
+    pixi run python scripts/spec_tree.py --check          # broken links + orphans, exit 1
+    pixi run python scripts/spec_tree.py --check-digest    # digest citations, exit 1
+    pixi run python scripts/spec_tree.py --flatten         # one doc, depth-first from CLAUDE.md
+
+Exit code: 0 unless `--check`/`--check-digest` finds a failure.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# D1 (answered): the declared spec universe. Hand-written on purpose, in the manifest —
+# see the module docstring above for why a glob is the wrong tool here.
+# Paths are POSIX-relative to REPO_ROOT.
+ROOT_SPEC = ".agent/.local/.claude/CLAUDE.md"
+DIGEST_PATH = ".agent/.local/.localSpec/digest.md"
+
+#: Where the mounts and the spec files are written down (ticket
+#: the SpecTreeManifest ticket, D1): the manifest is the one list, and this
+#: script holds none of its own.
+MANIFEST_PATH = ".agent/.local/.localSpec/AgenticManifest.md"
+DEV_CGS_PATH = "examples/complexgitsync4dev.cgs"
+_AGENT_MOUNT_PREFIX = ".agent/"
+
+
+@dataclass
+class Manifest:
+    """What `AgenticManifest.md` says: the mounts, the spec files, the exemptions."""
+
+    mounts: dict[str, str] = field(default_factory=dict)  # mount path -> repository
+    specs: list[str] = field(default_factory=list)  # POSIX-relative to REPO_ROOT
+    spec_mounts: dict[str, str] = field(default_factory=dict)  # spec file -> mount path
+    exempt: dict[str, str] = field(default_factory=dict)  # spec file -> reason, "" if none given
+    levels: dict[str, str] = field(default_factory=dict)  # spec file -> "pattern" | "standalone" | pattern path
+    problems: list[str] = field(default_factory=list)  # malformed rows, reported by `--check`
+
+
+def _table_rows(text: str, heading: str) -> list[list[str]]:
+    """The cells of each body row of the table under the `## <heading>` section."""
+    rows: list[list[str]] = []
+    in_section = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            in_section = line[3:].strip() == heading
+            continue
+        stripped = line.strip()
+        if in_section and stripped.startswith("|") and not re.fullmatch(r"[|\s:\-]+", stripped):
+            rows.append([cell.strip() for cell in stripped.strip("|").split("|")])
+    return rows[1:]  # the first row is the header
+
+
+def parse_manifest(text: str, manifest_path: str = MANIFEST_PATH) -> Manifest:
+    """Read the manifest's two tables. Nothing is guessed: a malformed row is a problem, not a skip."""
+    manifest = Manifest()
+    for cells in _table_rows(text, "Mounts"):
+        if len(cells) != 4 or cells[2] not in ("local", "distant") or not cells[3]:
+            manifest.problems.append(f"{manifest_path}: malformed mount row: {cells}")
+            continue
+        mount = cells[0].strip("`")
+        if mount in manifest.mounts:
+            manifest.problems.append(f"{manifest_path}: mount '{mount}' is listed twice")
+        manifest.mounts[mount] = cells[1].strip("`")
+    for cells in _table_rows(text, "Spec files"):
+        link = _MD_LINK_RE.search(cells[0]) if cells else None
+        target = _resolve_link_target(manifest_path, link.group(1)) if link else None
+        if len(cells) != 4 or target is None:
+            manifest.problems.append(f"{manifest_path}: malformed spec-file row: {cells}")
+            continue
+        if target in manifest.spec_mounts:
+            manifest.problems.append(f"{manifest_path}: spec file '{target}' is listed twice")
+        manifest.specs.append(target)
+        manifest.spec_mounts[target] = cells[1].strip("`")
+        level = cells[2]
+        if level in ("pattern", "standalone"):
+            manifest.levels[target] = level
+        elif level.startswith("fills in"):
+            pattern = _MD_LINK_RE.search(level)
+            resolved = _resolve_link_target(manifest_path, pattern.group(1)) if pattern else None
+            if resolved is None:
+                manifest.problems.append(f"{manifest_path}: '{target}' says it fills in no resolvable file")
+            else:
+                manifest.levels[target] = resolved
+        else:
+            manifest.problems.append(
+                f"{manifest_path}: '{target}' level must be 'pattern', 'standalone' or "
+                f"'fills in [file](path)'"
+            )
+        if cells[3].startswith("exempt:"):
+            manifest.exempt[target] = cells[3][len("exempt:"):].strip()
+        elif cells[3] != "cited":
+            manifest.problems.append(
+                f"{manifest_path}: '{target}' digest column must be 'cited' or 'exempt: <reason>'"
+            )
+    return manifest
+
+
+def dev_cgs_agent_mounts(cgs_path: str = DEV_CGS_PATH) -> dict[str, str]:
+    """The mounts under `.agent/` that the developer `.cgs` declares: path -> repository."""
+    with open(REPO_ROOT / cgs_path, "rb") as handle:
+        document = tomllib.load(handle)
+    mounts: dict[str, str] = {}
+    for entry in document.get("repos", []):
+        if isinstance(entry, dict):
+            path = str(entry.get("relative_path", ""))
+            if path.startswith(_AGENT_MOUNT_PREFIX):
+                mounts[path] = str(entry.get("repository", ""))
+    return mounts
+
+
+def run_check_manifest(manifest: Manifest, cgs_mounts: dict[str, str]) -> list[str]:
+    """The manifest and the developer `.cgs` agree, and every spec file belongs to a mount."""
+    failures = list(manifest.problems)
+    for mount in sorted(set(cgs_mounts) - set(manifest.mounts)):
+        failures.append(f"{mount}: mounted by {DEV_CGS_PATH} but not named in {MANIFEST_PATH}")
+    for mount in sorted(set(manifest.mounts) - set(cgs_mounts)):
+        failures.append(f"{mount}: named in {MANIFEST_PATH} but not mounted by {DEV_CGS_PATH}")
+    for mount in sorted(set(manifest.mounts) & set(cgs_mounts)):
+        if manifest.mounts[mount] != cgs_mounts[mount]:
+            failures.append(
+                f"{mount}: {MANIFEST_PATH} says {manifest.mounts[mount]}, "
+                f"{DEV_CGS_PATH} says {cgs_mounts[mount]}"
+            )
+    for spec in manifest.specs:
+        mount = manifest.spec_mounts[spec]
+        if mount not in manifest.mounts:
+            failures.append(f"{spec}: listed under mount '{mount}', which is not in the mounts table")
+        elif not spec.startswith(mount + "/"):
+            failures.append(f"{spec}: does not sit inside its mount '{mount}'")
+    return failures
+
+
+_FILLS_IN_RE = re.compile(r"^\*Fills in:\s*(\S+?)\s*\*\s*$", re.MULTILINE)
+_SHARED_PREFIX = ".agent/.distant/"
+_OWN_PREFIX = ".agent/.local/"
+
+
+def _check_fills_in_line(spec: str, level: str) -> list[str]:
+    """A local file that fills in *level* carries a Fills in line naming it."""
+    failures: list[str] = []
+    if not level.startswith(_SHARED_PREFIX):
+        failures.append(f"{spec}: fills in {level}, which is not a shared pattern")
+    path = REPO_ROOT / spec
+    line = _FILLS_IN_RE.search(path.read_text(encoding="utf-8")) if path.is_file() else None
+    if line is None:
+        failures.append(f"{spec}: fills in {level} but has no '*Fills in: <path>*' line")
+        return failures
+    named = (path.parent / line.group(1)).resolve()
+    try:
+        named_rel = named.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        named_rel = line.group(1)
+    if named_rel != level:
+        failures.append(f"{spec}: its Fills in line names {named_rel}, the manifest says {level}")
+    elif not named.is_file():
+        failures.append(f"{spec}: its Fills in line names {named_rel}, which does not exist")
+    return failures
+
+
+def run_check_fills_in(manifest: Manifest) -> list[str]:
+    """The two-level rule (SpecTree.md §2), checked against the manifest.
+
+    A shared file is a `pattern`; a local file is `standalone` or fills in a
+    shared one, and then carries a `*Fills in: <path>*` line that names the
+    same file the manifest does.
+    """
+    failures: list[str] = []
+    for spec in manifest.specs:
+        level = manifest.levels.get(spec)
+        if level is None:
+            continue  # already reported as a malformed row
+        shared = spec.startswith(_SHARED_PREFIX)
+        if level == "pattern":
+            if not shared:
+                failures.append(f"{spec}: is local, so it cannot be a 'pattern'")
+        elif shared:
+            failures.append(f"{spec}: is shared, so its level must be 'pattern', not '{level}'")
+        elif level == "standalone":
+            path = REPO_ROOT / spec
+            if path.is_file() and _FILLS_IN_RE.search(path.read_text(encoding="utf-8")):
+                failures.append(f"{spec}: is 'standalone' in the manifest but carries a Fills in line")
+        else:
+            failures.extend(_check_fills_in_line(spec, level))
+    return failures
+
+
+def load_manifest(path: str = MANIFEST_PATH) -> Manifest:
+    full = REPO_ROOT / path
+    if not full.is_file():
+        raise SystemExit(f"spec tree: {path} does not exist — it is the one list of spec files")
+    return parse_manifest(full.read_text(encoding="utf-8"), path)
+
+
+_MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+_BACKTICK_MD_RE = re.compile(r"`([A-Za-z0-9_.\-]+\.md)`")
+
+
+@dataclass
+class Edge:
+    source: str  # POSIX-relative to REPO_ROOT
+    target: str  # POSIX-relative to REPO_ROOT, as resolved — may not exist
+    kind: str  # "link" or "bare"
+
+
+#: `.agent/.distant/` is shared, read-only (CLAUDE.md's own *Layout*
+#: section) — a broken link whose *source* lives there is a real problem,
+#: but not one this project can fix by editing its own tree, so it is
+#: reported, never a `--check` failure. An orphan is different: whether
+#: something reachable *from* CLAUDE.md reaches a given file is entirely
+#: this project's own linking, distant target included, so orphans stay a
+#: hard failure regardless of where the orphaned file lives.
+_READ_ONLY_PREFIX = ".agent/.distant/"
+
+
+def _is_writable_source(path: str) -> bool:
+    return not path.startswith(_READ_ONLY_PREFIX)
+
+
+@dataclass
+class GraphReport:
+    edges: list[Edge] = field(default_factory=list)
+    broken_links: list[Edge] = field(default_factory=list)
+    upstream_broken_links: list[Edge] = field(default_factory=list)
+    reachable: set[str] = field(default_factory=set)
+    orphans: list[str] = field(default_factory=list)
+    missing_universe_files: list[str] = field(default_factory=list)
+
+
+def _resolve_link_target(source: str, raw_target: str) -> str | None:
+    """A markdown link's target, resolved relative to *source*'s directory.
+
+    `None` for anything not worth treating as a spec edge: an external
+    URL, an in-page `#fragment`-only link, or a target that is not a
+    `.md` file (a link straight to a source file or a ticket, both real
+    and common in this tree, but not part of the spec graph itself).
+    """
+    target = raw_target.strip()
+    if not target or target.startswith("#"):
+        return None
+    if "://" in target:
+        return None
+    target = target.split("#", 1)[0].split(" ", 1)[0]
+    if not target.lower().endswith(".md"):
+        return None
+    source_dir = (REPO_ROOT / source).parent
+    resolved = (source_dir / target).resolve()
+    try:
+        return resolved.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return None  # escapes the repo entirely — not a spec edge
+
+
+_MANIFEST = load_manifest()
+DECLARED_SPEC_FILES: list[str] = [ROOT_SPEC, *[f for f in _MANIFEST.specs if f != ROOT_SPEC]]
+
+#: Declared specs that state no binding rule, so contribute no digest line —
+#: read from the manifest's *digest* column, where each carries its reason. A
+#: spec absent from both the digest and this table is the failure the
+#: AgentGuardrails ticket exists to prevent.
+DIGEST_EXEMPT: dict[str, str] = dict(_MANIFEST.exempt)
+
+
+def extract_edges(source: str) -> list[Edge]:
+    """Every spec edge `source` names, by markdown link or bare filename."""
+    path = REPO_ROOT / source
+    text = path.read_text(encoding="utf-8")
+    edges: list[Edge] = []
+
+    def _mask_link(match: re.Match[str]) -> str:
+        target = _resolve_link_target(source, match.group(1))
+        if target is not None:
+            edges.append(Edge(source=source, target=target, kind="link"))
+        return " " * len(match.group(0))
+
+    masked = _MD_LINK_RE.sub(_mask_link, text)
+
+    source_dir = (REPO_ROOT / source).parent
+    for match in _BACKTICK_MD_RE.finditer(masked):
+        sibling = source_dir / match.group(1)
+        if sibling.is_file():
+            target = sibling.resolve().relative_to(REPO_ROOT).as_posix()
+            edges.append(Edge(source=source, target=target, kind="bare"))
+    return edges
+
+
+def build_graph(universe: list[str]) -> list[Edge]:
+    """Every edge out of every file in *universe* — the universe is the
+    set of files *checked* for orphanhood, not the set of files a link may
+    point at (a link to a file outside the universe, e.g. a ticket, is a
+    real edge, just not one that can leave anything in the universe
+    unreached on its account).
+    """
+    edges: list[Edge] = []
+    for source in universe:
+        if (REPO_ROOT / source).is_file():
+            edges.extend(extract_edges(source))
+    return edges
+
+
+def reachable_from(root: str, edges: list[Edge]) -> set[str]:
+    adjacency: dict[str, list[str]] = {}
+    for edge in edges:
+        adjacency.setdefault(edge.source, []).append(edge.target)
+    seen = {root}
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        for target in adjacency.get(current, []):
+            if target not in seen:
+                seen.add(target)
+                stack.append(target)
+    return seen
+
+
+def analyse(universe: list[str] = DECLARED_SPEC_FILES, root: str = ROOT_SPEC) -> GraphReport:
+    report = GraphReport()
+    report.missing_universe_files = [f for f in universe if not (REPO_ROOT / f).is_file()]
+    report.edges = build_graph(universe)
+    all_broken = [
+        e for e in report.edges if e.kind == "link" and not (REPO_ROOT / e.target).is_file()
+    ]
+    report.broken_links = [e for e in all_broken if _is_writable_source(e.source)]
+    report.upstream_broken_links = [e for e in all_broken if not _is_writable_source(e.source)]
+    report.reachable = reachable_from(root, report.edges)
+    report.orphans = sorted(
+        f for f in universe if f not in report.reachable and f not in report.missing_universe_files
+    )
+    return report
+
+
+def run_check(report: GraphReport) -> list[str]:
+    failures: list[str] = []
+    for f in report.missing_universe_files:
+        failures.append(f"{f}: listed in the manifest but does not exist")
+    for edge in report.broken_links:
+        failures.append(f"{edge.source}: broken link -> {edge.target}")
+    for f in report.orphans:
+        failures.append(f"{f}: orphaned — no chain of links from {ROOT_SPEC} reaches it")
+    return failures
+
+
+@dataclass
+class DigestEntry:
+    line_no: int
+    text: str
+    citation: str
+
+
+_DIGEST_LINE_RE = re.compile(r"^-\s.*—\s*`([^`]+)`(?:\s*§.*)?\s*$")
+
+
+def parse_digest(path: str = DIGEST_PATH) -> list[DigestEntry]:
+    full = REPO_ROOT / path
+    if not full.is_file():
+        return []
+    entries: list[DigestEntry] = []
+    for i, line in enumerate(full.read_text(encoding="utf-8").splitlines(), start=1):
+        match = _DIGEST_LINE_RE.match(line)
+        if match:
+            entries.append(DigestEntry(line_no=i, text=line, citation=match.group(1)))
+    return entries
+
+
+def _resolve_citation(citation: str, universe: list[str]) -> list[str]:
+    """Every universe member *citation* could name — a relative path
+    matches exactly one (or zero); a bare filename may match several,
+    which `run_check_digest` treats as ambiguous rather than guessing.
+    """
+    if "/" in citation:
+        return [f for f in universe if f == citation]
+    return [f for f in universe if Path(f).name == citation]
+
+
+def run_check_digest(
+    entries: list[DigestEntry], reachable: set[str], universe: list[str] = DECLARED_SPEC_FILES
+) -> list[str]:
+    failures: list[str] = []
+    for entry in entries:
+        matches = _resolve_citation(entry.citation, universe)
+        if not matches:
+            failures.append(
+                f"digest.md:{entry.line_no}: citation '{entry.citation}' matches no "
+                f"declared spec file"
+            )
+        elif len(matches) > 1:
+            failures.append(
+                f"digest.md:{entry.line_no}: citation '{entry.citation}' is ambiguous "
+                f"({', '.join(matches)}) — cite a relative path instead"
+            )
+        elif matches[0] not in reachable:
+            failures.append(
+                f"digest.md:{entry.line_no}: citation '{entry.citation}' resolves to "
+                f"{matches[0]}, which is not reachable from {ROOT_SPEC}"
+            )
+    return failures
+
+
+def run_check_digest_coverage(
+    entries: list[DigestEntry],
+    universe: list[str] = DECLARED_SPEC_FILES,
+    exempt: dict[str, str] = DIGEST_EXEMPT,
+) -> list[str]:
+    """Every declared spec is cited by a digest line, or exempt with a reason.
+
+    The other half of `run_check_digest`: that one asks whether a citation
+    resolves, and cannot notice a spec nobody cites. Whether a cited line
+    still says what its source says stays editorial; "this spec contributes
+    no rule at all" is a graph property, and this checks it.
+    """
+    failures: list[str] = []
+    cited: set[str] = set()
+    for entry in entries:
+        matches = _resolve_citation(entry.citation, universe)
+        if len(matches) == 1:
+            cited.add(matches[0])
+    for stale in sorted(set(exempt) - set(universe)):
+        failures.append(f"DIGEST_EXEMPT names '{stale}', which is not a declared spec file")
+    for f in universe:
+        if f in cited:
+            continue
+        if f in exempt:
+            if not exempt[f].strip():
+                failures.append(f"{f}: exempt from the digest with no reason given")
+            continue
+        failures.append(
+            f"{f}: declared spec is cited by no digest line — add its rules to digest.md, "
+            f"or name it in DIGEST_EXEMPT with the reason it states none"
+        )
+    return failures
+
+
+def flatten(root: str = ROOT_SPEC, universe: list[str] = DECLARED_SPEC_FILES) -> str:
+    """One document, depth-first from *root*, each target inlined the
+    first time it is reached. A report for reading, not what a session
+    eager-loads by default (ticket §5 D3) — that is `digest.md`.
+    """
+    edges = build_graph(universe)
+    adjacency: dict[str, list[str]] = {}
+    for edge in edges:
+        adjacency.setdefault(edge.source, []).append(edge.target)
+
+    parts: list[str] = []
+    emitted: set[str] = set()
+
+    def _visit(path: str) -> None:
+        if path in emitted or not (REPO_ROOT / path).is_file():
+            return
+        emitted.add(path)
+        parts.append(f"\n\n{'=' * 72}\n# {path}\n{'=' * 72}\n\n")
+        parts.append((REPO_ROOT / path).read_text(encoding="utf-8"))
+        for target in adjacency.get(path, []):
+            _visit(target)
+
+    _visit(root)
+    return "".join(parts)
+
+
+def _print_report(report: GraphReport) -> None:
+    print(f"root: {ROOT_SPEC}")
+    print(f"universe: {len(DECLARED_SPEC_FILES)} files, {len(report.edges)} edges")
+    print(f"reachable: {len(report.reachable & set(DECLARED_SPEC_FILES))}/{len(DECLARED_SPEC_FILES)}")
+    if report.broken_links:
+        print("broken links:")
+        for e in report.broken_links:
+            print(f"  {e.source} -> {e.target}")
+    if report.upstream_broken_links:
+        print("broken links in shared, read-only mounts (reported, not a --check failure):")
+        for e in report.upstream_broken_links:
+            print(f"  {e.source} -> {e.target}")
+    if report.orphans:
+        print("orphans:")
+        for f in report.orphans:
+            print(f"  {f}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--check", action="store_true", help="exit 1 on broken link or orphan")
+    parser.add_argument("--check-digest", action="store_true", help="exit 1 on stale digest citation")
+    parser.add_argument("--flatten", action="store_true", help="print one depth-first document")
+    args = parser.parse_args(argv)
+
+    report = analyse()
+
+    if args.flatten:
+        print(flatten())
+        return 0
+
+    _print_report(report)
+
+    failures: list[str] = []
+    if args.check:
+        failures.extend(run_check(report))
+        failures.extend(run_check_manifest(_MANIFEST, dev_cgs_agent_mounts()))
+        failures.extend(run_check_fills_in(_MANIFEST))
+    if args.check_digest:
+        entries = parse_digest()
+        failures.extend(run_check_digest(entries, report.reachable))
+        failures.extend(run_check_digest_coverage(entries))
+
+    if args.check or args.check_digest:
+        if failures:
+            print("\nSPEC TREE FAILURES:")
+            for f in failures:
+                print(f"  - {f}")
+            return 1
+        print("\nSpec tree intact.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

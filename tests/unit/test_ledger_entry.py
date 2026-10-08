@@ -1,4 +1,4 @@
-"""Unit tests for ``ledger_entry`` — hash-chained register entry construction.
+"""Unit tests for ``ledger_entry`` — hash-chained ledger entry construction.
 
 Pure-unit, no filesystem, no real clock: every entry is built through a fake
 ``ClockProtocol`` so the tests are fully deterministic.
@@ -15,11 +15,6 @@ from hypothesis import strategies as st
 from ComplexGitSync.memory.ledger_entry import (
     ClockProtocol,
     LedgerEntry,
-    TimeL0State,
-    build_next_entry,
-    compute_entry_hash,
-    hash_time_l0_anchor,
-    new_time_l0_anchor,
 )
 
 _GENESIS_PREV = "sha256:" + "0" * 64
@@ -68,77 +63,19 @@ def test_fake_clock_satisfies_clock_protocol():
 
 
 # ---------------------------------------------------------------------------
-# TIME-L0 anchor generation (absorbed from L0.py, now clock-injectable)
-# ---------------------------------------------------------------------------
-
-
-class TestTimeL0Anchor:
-    def test_deterministic_with_fake_clock(self):
-        clock = FakeClock()
-        first = new_time_l0_anchor(clock)
-        second = new_time_l0_anchor(clock)
-        assert first == second
-        assert isinstance(first, TimeL0State)
-
-    def test_state_id_wraps_hash(self):
-        clock = FakeClock()
-        anchor = new_time_l0_anchor(clock)
-        assert anchor.state_id == f"state({anchor.state_hash})"
-
-    def test_different_clock_reads_produce_different_anchors(self):
-        first = new_time_l0_anchor(FakeClock(instant=datetime(2026, 1, 1, tzinfo=UTC)))
-        second = new_time_l0_anchor(FakeClock(instant=datetime(2026, 1, 2, tzinfo=UTC)))
-        assert first != second
-
-    def test_pid_alone_changes_anchor(self):
-        first = new_time_l0_anchor(FakeClock(pid=1))
-        second = new_time_l0_anchor(FakeClock(pid=2))
-        assert first != second
-
-    def test_token_alone_changes_anchor(self):
-        first = new_time_l0_anchor(FakeClock(token="aa" * 16))
-        second = new_time_l0_anchor(FakeClock(token="bb" * 16))
-        assert first != second
-
-    def test_hash_time_l0_anchor_is_pure_sha256_of_dot_prefixed_input(self):
-        import hashlib
-
-        anchor_text = "TIME-L0:example"
-        assert hash_time_l0_anchor(anchor_text) == hashlib.sha256(
-            f".{anchor_text}".encode()
-        ).hexdigest()
-
-
-# ---------------------------------------------------------------------------
 # LedgerEntry / build_next_entry — example-based
 # ---------------------------------------------------------------------------
 
 
 class TestBuildNextEntryGenesis:
     def test_genesis_entry_has_seq_one_and_zero_prev(self):
-        entry = build_next_entry(
-            None,
-            command="freeze",
-            argv=["freeze", "--message", "checkpoint"],
-            state_id="state(ab12)",
-            state_dir="state(ab12)_1",
-            outcome="ok",
-            clock=FakeClock(),
-        )
+        entry = LedgerEntry.build_next(None, command="freeze", argv=["freeze", "--message", "checkpoint"], state_id="state(ab12)", state_dir="state(ab12)_1", outcome="ok", clock=FakeClock())
         assert entry.seq == 1
         assert entry.prev == _GENESIS_PREV
 
     def test_genesis_entry_fields_round_trip(self):
         clock = FakeClock()
-        entry = build_next_entry(
-            None,
-            command="freeze",
-            argv=["freeze", "--message", "checkpoint"],
-            state_id="state(ab12)",
-            state_dir="state(ab12)_1",
-            outcome="ok",
-            clock=clock,
-        )
+        entry = LedgerEntry.build_next(None, command="freeze", argv=["freeze", "--message", "checkpoint"], state_id="state(ab12)", state_dir="state(ab12)_1", outcome="ok", clock=clock)
         assert entry.command == "freeze"
         assert entry.argv == ("freeze", "--message", "checkpoint")
         assert entry.state_id == "state(ab12)"
@@ -148,60 +85,20 @@ class TestBuildNextEntryGenesis:
 
     def test_deterministic_with_fake_clock(self):
         clock = FakeClock()
-        first = build_next_entry(
-            None,
-            command="freeze",
-            argv=["freeze"],
-            state_id="state(ab12)",
-            state_dir="state(ab12)_1",
-            outcome="ok",
-            clock=clock,
-        )
-        second = build_next_entry(
-            None,
-            command="freeze",
-            argv=["freeze"],
-            state_id="state(ab12)",
-            state_dir="state(ab12)_1",
-            outcome="ok",
-            clock=clock,
-        )
+        first = LedgerEntry.build_next(None, command="freeze", argv=["freeze"], state_id="state(ab12)", state_dir="state(ab12)_1", outcome="ok", clock=clock)
+        second = LedgerEntry.build_next(None, command="freeze", argv=["freeze"], state_id="state(ab12)", state_dir="state(ab12)_1", outcome="ok", clock=clock)
         assert first == second
 
     def test_argv_is_stored_as_tuple(self):
-        entry = build_next_entry(
-            None,
-            command="freeze",
-            argv=["freeze", "--message", "x"],
-            state_id="state(ab12)",
-            state_dir="state(ab12)_1",
-            outcome="ok",
-            clock=FakeClock(),
-        )
+        entry = LedgerEntry.build_next(None, command="freeze", argv=["freeze", "--message", "x"], state_id="state(ab12)", state_dir="state(ab12)_1", outcome="ok", clock=FakeClock())
         assert isinstance(entry.argv, tuple)
 
 
 class TestBuildNextEntryChaining:
     def test_second_entry_seq_and_prev_link_to_first(self):
         clock = FakeClock()
-        first = build_next_entry(
-            None,
-            command="freeze",
-            argv=["freeze"],
-            state_id="state(ab12)",
-            state_dir="state(ab12)_1",
-            outcome="ok",
-            clock=clock,
-        )
-        second = build_next_entry(
-            first,
-            command="checkout",
-            argv=["checkout", "main"],
-            state_id="state(cd34)",
-            state_dir="state(cd34)_1",
-            outcome="ok",
-            clock=clock,
-        )
+        first = LedgerEntry.build_next(None, command="freeze", argv=["freeze"], state_id="state(ab12)", state_dir="state(ab12)_1", outcome="ok", clock=clock)
+        second = LedgerEntry.build_next(first, command="checkout", argv=["checkout", "main"], state_id="state(cd34)", state_dir="state(cd34)_1", outcome="ok", clock=clock)
         assert second.seq == first.seq + 1
         assert second.prev == first.entry_hash
 
@@ -209,55 +106,22 @@ class TestBuildNextEntryChaining:
         # Two genesis entries with different downstream field values still
         # share the same genesis prev, but their hashes must differ.
         clock = FakeClock()
-        a = build_next_entry(
-            None,
-            command="freeze",
-            argv=["freeze"],
-            state_id="state(ab12)",
-            state_dir="state(ab12)_1",
-            outcome="ok",
-            clock=clock,
-        )
-        b = build_next_entry(
-            None,
-            command="checkout",
-            argv=["checkout"],
-            state_id="state(cd34)",
-            state_dir="state(cd34)_1",
-            outcome="ok",
-            clock=clock,
-        )
+        a = LedgerEntry.build_next(None, command="freeze", argv=["freeze"], state_id="state(ab12)", state_dir="state(ab12)_1", outcome="ok", clock=clock)
+        b = LedgerEntry.build_next(None, command="checkout", argv=["checkout"], state_id="state(cd34)", state_dir="state(cd34)_1", outcome="ok", clock=clock)
         assert a.prev == b.prev == _GENESIS_PREV
         assert a.entry_hash != b.entry_hash
 
 
 class TestLedgerEntryImmutability:
     def test_frozen_dataclass_rejects_mutation(self):
-        entry = build_next_entry(
-            None,
-            command="freeze",
-            argv=["freeze"],
-            state_id="state(ab12)",
-            state_dir="state(ab12)_1",
-            outcome="ok",
-            clock=FakeClock(),
-        )
+        entry = LedgerEntry.build_next(None, command="freeze", argv=["freeze"], state_id="state(ab12)", state_dir="state(ab12)_1", outcome="ok", clock=FakeClock())
         with pytest.raises((AttributeError, TypeError)):
             entry.outcome = "failed"  # type: ignore[misc]
 
 
 class TestComputeEntryHash:
     def test_hash_is_sha256_prefixed(self):
-        digest = compute_entry_hash(
-            seq=1,
-            prev=_GENESIS_PREV,
-            recorded_at="2026-08-27T10:14:22Z",
-            command="freeze",
-            argv=("freeze",),
-            state_id="state(ab12)",
-            state_dir="state(ab12)_1",
-            outcome="ok",
-        )
+        digest = LedgerEntry.compute_hash(seq=1, prev=_GENESIS_PREV, recorded_at="2026-08-27T10:14:22Z", command="freeze", argv=("freeze",), state_id="state(ab12)", state_dir="state(ab12)_1", outcome="ok")
         assert digest.startswith("sha256:")
         assert len(digest) == len("sha256:") + 64
 
@@ -272,7 +136,7 @@ class TestComputeEntryHash:
             state_dir="state(ab12)_1",
             outcome="ok",
         )
-        baseline = compute_entry_hash(**base_kwargs)
+        baseline = LedgerEntry.compute_hash(**base_kwargs)
         for field, new_value in [
             ("seq", 2),
             ("prev", "sha256:" + "1" * 64),
@@ -285,7 +149,7 @@ class TestComputeEntryHash:
         ]:
             mutated = dict(base_kwargs)
             mutated[field] = new_value
-            assert compute_entry_hash(**mutated) != baseline, field
+            assert LedgerEntry.compute_hash(**mutated) != baseline, field
 
 
 # ---------------------------------------------------------------------------
@@ -304,15 +168,7 @@ def _build_chain(n: int, clock: ClockProtocol, *, label: str = "s") -> list[Ledg
     chain: list[LedgerEntry] = []
     prev: LedgerEntry | None = None
     for i in range(n):
-        entry = build_next_entry(
-            prev,
-            command="freeze",
-            argv=["freeze", str(i)],
-            state_id=f"state({label}{i})",
-            state_dir=f"state({label}{i})_1",
-            outcome="ok",
-            clock=clock,
-        )
+        entry = LedgerEntry.build_next(prev, command="freeze", argv=["freeze", str(i)], state_id=f"state({label}{i})", state_dir=f"state({label}{i})_1", outcome="ok", clock=clock)
         chain.append(entry)
         prev = entry
     return chain
@@ -348,26 +204,9 @@ class TestChainProperties:
         self, command, argv, state_id, state_dir, outcome
     ):
         clock = FakeClock()
-        entry = build_next_entry(
-            None,
-            command=command,
-            argv=argv,
-            state_id=state_id,
-            state_dir=state_dir,
-            outcome=outcome,
-            clock=clock,
-        )
+        entry = LedgerEntry.build_next(None, command=command, argv=argv, state_id=state_id, state_dir=state_dir, outcome=outcome, clock=clock)
 
-        mutated_hash = compute_entry_hash(
-            seq=entry.seq,
-            prev=entry.prev,
-            recorded_at=entry.recorded_at,
-            command=entry.command + "!",
-            argv=entry.argv,
-            state_id=entry.state_id,
-            state_dir=entry.state_dir,
-            outcome=entry.outcome,
-        )
+        mutated_hash = LedgerEntry.compute_hash(seq=entry.seq, prev=entry.prev, recorded_at=entry.recorded_at, command=entry.command + "!", argv=entry.argv, state_id=entry.state_id, state_dir=entry.state_dir, outcome=entry.outcome)
         assert mutated_hash != entry.entry_hash
 
     @given(n=st.integers(min_value=2, max_value=20))
@@ -379,14 +218,5 @@ class TestChainProperties:
 
         # Recompute what entry 1 of chain_a *would* hash to if it claimed
         # chain_b's second entry as its predecessor instead of its own.
-        spliced_hash = compute_entry_hash(
-            seq=chain_a[1].seq,
-            prev=chain_b[0].entry_hash,
-            recorded_at=chain_a[1].recorded_at,
-            command=chain_a[1].command,
-            argv=chain_a[1].argv,
-            state_id=chain_a[1].state_id,
-            state_dir=chain_a[1].state_dir,
-            outcome=chain_a[1].outcome,
-        )
+        spliced_hash = LedgerEntry.compute_hash(seq=chain_a[1].seq, prev=chain_b[0].entry_hash, recorded_at=chain_a[1].recorded_at, command=chain_a[1].command, argv=chain_a[1].argv, state_id=chain_a[1].state_id, state_dir=chain_a[1].state_dir, outcome=chain_a[1].outcome)
         assert spliced_hash != chain_a[1].entry_hash

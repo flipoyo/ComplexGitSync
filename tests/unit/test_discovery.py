@@ -32,7 +32,7 @@ from ComplexGitSync.discovery import (
 )
 from ComplexGitSync.errors import NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import DiscoveryState, NodeType
-from ComplexGitSync.orchestre import build_registry_from_cgs_document
+from ComplexGitSync.orchestre import RegistryTranslator
 
 
 def _write_root_cgs(tmp_path, *, nested_child: bool = False, project_name: str = "demo"):
@@ -91,7 +91,7 @@ relative_path = "."
 def _load_registry(config_path, *, discover_nested: bool = False):
     """Build a WorkingGitTree the same way ``ComplexGitSyncClient.load_cgs`` does."""
     document = CgsDocument.from_toml(config_path)
-    registry = build_registry_from_cgs_document(document, config_path)
+    registry = RegistryTranslator.from_cgs_document(document, config_path)
     if discover_nested:
         discover_nested_configs(registry)
     return registry
@@ -99,6 +99,27 @@ def _load_registry(config_path, *, discover_nested: bool = False):
 
 class TestDiscoverNestedConfigs:
     """discover_nested_configs() — nested .cgs auto-discovery."""
+
+    def test_a_leaf_discovered_on_the_fly_falls_back_to_main(self, tmp_path):
+        """FallbackMain: a leaf read from a nested .cgs that names no branch
+        targets its document's project branch and falls back to main."""
+        config_path = _write_root_cgs(tmp_path, nested_child=True)
+        child_repo_root = tmp_path / "deps" / "child-repo"
+        child_repo_root.mkdir(parents=True)
+        (child_repo_root / "child.cgs").write_text(
+            'project = { name = "child-repo", default_branch = "lMOLO" }\n'
+            "repos = [\n"
+            '    { repository = "github:owner/child-repo", relative_path = "." },\n'
+            '    { repository = "github:owner/leaf", relative_path = "leaf", nested_config = "disabled" },\n'
+            "]\n",
+            encoding="utf-8",
+        )
+
+        registry = _load_registry(config_path, discover_nested=True)
+        leaf = registry.get("root:deps/child-repo:leaf")
+
+        assert leaf.target_ref_name == "lMOLO"
+        assert leaf.fallback_branch == "main"
 
     def test_promotes_parent_and_adds_descendants(self, tmp_path):
         config_path = _write_root_cgs(tmp_path, nested_child=True)
@@ -268,6 +289,68 @@ nested_config = "named.cgs"
 
         child_entry = registry.get("root:deps/child-repo")
         assert child_entry.discovery_state == DiscoveryState.MISSING
+
+    def test_config_memory_cgs_reasserts_memory_and_adds_self_history(self, tmp_path):
+        """AgentReport WP2: `memory.repository.config_memory_document`'s own
+        output, discovered for real — not a hand-written stand-in. `.memory`
+        keeps its outer identity (private/writable, its own branch); a new
+        `.self-history` leaf appears beside it, private/writable via
+        `propagate_privacy`, on the same branch (neither entry states one)."""
+        from ComplexGitSync.memory.repository import (
+    MOUNT_PATH,
+    MemoryRepository,
+)
+
+        root_cgs = tmp_path / "project.cgs"
+        root_cgs.write_text(
+            f"""
+[document]
+format_version = "1.0"
+
+[project]
+name = "Demo"
+default_branch = "main"
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "owner"
+project_name = "Demo"
+relative_path = "."
+
+[[repos]]
+gitprovider = "github"
+project_owner_name = "flipoyo"
+project_name = ".memory"
+relative_path = "{MOUNT_PATH}"
+default_branch = "Demo"
+fallback_branch = "main"
+private = true
+writable = true
+nested_config = "config-memory.cgs"
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+        memory_dir = tmp_path / MOUNT_PATH
+        memory_dir.mkdir(parents=True)
+        (memory_dir / "config-memory.cgs").write_text(
+            MemoryRepository.config_document("flipoyo", "Demo"), encoding="utf-8"
+        )
+
+        registry = _load_registry(root_cgs, discover_nested=True)
+
+        memory_entry = registry.get(f"root:{MOUNT_PATH}")
+        self_history_entry = registry.get(f"root:{MOUNT_PATH}:.self-history")
+        assert memory_entry.node_type == NodeType.PARENT
+        assert memory_entry.project_name == ".memory"
+        assert memory_entry.default_branch == "Demo"
+        assert memory_entry.private is True
+        assert memory_entry.writable is True
+        assert self_history_entry.node_type == NodeType.LEAF
+        assert self_history_entry.absolute_path == (memory_dir / ".self-history").resolve()
+        assert self_history_entry.default_branch == "Demo"
+        assert self_history_entry.private is True
+        assert self_history_entry.writable is True
 
 
 class TestResolveNestedConfigPath:

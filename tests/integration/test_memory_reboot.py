@@ -2,9 +2,10 @@
 
 `memory adopt` has one behaviour: carry the mount's history forward.
 `memory reboot` is the other one — close the current chapter, archive it
-under a new name nobody can lose, and open an empty one under the name the
-memory has always used. `memory adopt --reboot` is the same fresh start,
-for a mount being adopted for the first time.
+under a new name nobody can lose, and push a fresh, minimal one under the
+name the memory has always used, so that name is never missing from origin
+for longer than this command takes to run. `memory adopt --reboot` is the
+same fresh start, for a mount being adopted for the first time.
 
 Real Git throughout — a bare repository standing in for the memory's
 remote, exactly like `test_memory_onboarding.py`.
@@ -13,12 +14,14 @@ remote, exactly like `test_memory_onboarding.py`.
 from __future__ import annotations
 
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.universal_clock import ClockProtocol
 
 _CGS = """\
 project = "demo"
@@ -27,6 +30,31 @@ repos = [
   "github:owner/demo",
 ]
 """
+
+
+class _FixedClock:
+    """Deterministic stand-in for :class:`ClockProtocol` — one fixed date,
+    for tests where "which day" is the whole point. See
+    `.agent/.local/.dev/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md` and
+    `.agent/.local/.dev/DevTickets/archive/20260920_UniversalClock_DevPlanTicket.md`:
+    a test that asserts on a date injects the date, through this Protocol,
+    rather than monkeypatching a module-level ``datetime``.
+    """
+
+    def __init__(self, year: int, month: int, day: int) -> None:
+        self._instant = datetime(year, month, day, tzinfo=UTC)
+
+    def now(self) -> datetime:
+        return self._instant
+
+    def time_ns(self) -> int:
+        return 0
+
+    def pid(self) -> int:
+        return 0
+
+    def token_hex(self, nbytes: int) -> str:
+        return "0" * (nbytes * 2)
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -68,10 +96,10 @@ def _used_workspace(root: Path, *, operations: int = 2) -> Path:
     return root
 
 
-def _loaded(workspace: Path) -> ComplexGitSyncClient:
+def _loaded(workspace: Path, *, clock: ClockProtocol | None = None) -> ComplexGitSyncClient:
     from ComplexGitSync.snapshot_resolver import discover_gts_path
 
-    client = ComplexGitSyncClient()
+    client = ComplexGitSyncClient() if clock is None else ComplexGitSyncClient(clock=clock)
     client.load_gts(discover_gts_path(str(workspace)))
     return client
 
@@ -109,17 +137,34 @@ def test_reboot_archives_the_old_branch_under_a_dated_name(tmp_path):
     assert result["archived_to"] in remotes
 
 
-def test_the_fresh_branch_is_not_pushed_by_reboot_itself(tmp_path):
-    """§3 step 6: reboot stops at the fresh, empty branch; it never pushes it."""
+def test_the_fresh_branch_is_pushed_by_reboot_itself(tmp_path):
+    """The field failure: a second machine bootstrapping right after a
+    reboot, before anyone ran `memory push`, found no `demo_x` on origin
+    at all — the old name had already been removed as half of the
+    archive rename, and nothing had taken its place there yet. Reboot
+    must not leave that window open past its own return.
+    """
     tree = _memory_ready(tmp_path)
 
-    _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
+    result = _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
 
     remotes = _remote_branches(tree["remote"])
-    # "demo_x" was removed from origin as half of the rename, and reboot
-    # does not push the new, empty branch under that name either — so it
-    # is absent from the remote until the next ordinary `memory push`.
-    assert "demo_x" not in remotes
+    assert "demo_x" in remotes
+
+    # What a bootstrap on a second machine would actually clone: the
+    # versioned `.cgs/` export, plus the one genesis State/ledger entry
+    # reboot itself wrote and committed — never the archived history or
+    # its commit logs.
+    clone = tmp_path / "fresh-clone"
+    _git(tmp_path, "clone", "--branch", "demo_x", str(tree["remote"]), str(clone))
+    assert (clone / ".cgs" / "demo-v2.cgs").is_file()
+    tracked = set(_git(clone, "ls-files").splitlines())
+    assert not any(path.startswith("commit-logs/") for path in tracked)
+
+    from ComplexGitSync.memory.ledger_store import LedgerStore
+
+    assert [entry.seq for entry in LedgerStore(clone / "lgr").read_all_entries()] == [1]
+    assert result["branch"] == "demo_x"
 
 
 def test_the_archived_branch_still_holds_every_state_and_message(tmp_path):
@@ -157,33 +202,88 @@ def test_verify_on_the_archived_branch_still_answers_as_before(tmp_path):
     # Archiving is a rename, not an edit (D4): every State, ledger entry
     # and commit log on the old branch is untouched, so the chain a
     # checkout of it holds verifies exactly as it did before the reboot.
-    from ComplexGitSync.memory.integrity import verify_chain
-    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.integrity import ChainVerifier
+    from ComplexGitSync.memory.ledger_store import LedgerStore
 
-    entries = read_all_entries(clone / "lgr")
-    chain_report = verify_chain(entries)
+    entries = LedgerStore(clone / "lgr").read_all_entries()
+    chain_report = ChainVerifier.verify(entries)
     assert chain_report.findings == []
 
 
 # ---------------------------------------------------------------------------
-# The fresh branch: empty, under the original name, nothing committed
+# The fresh branch: a real, committed branch under the original name,
+# holding only its own genesis State — not the archived history
 # ---------------------------------------------------------------------------
 
 
-def test_reboot_clears_states_the_ledger_and_commit_logs(tmp_path):
+def test_reboot_clears_the_old_history_from_the_fresh_branch(tmp_path):
+    """Old chain, several entries deep, does not carry onto the fresh one.
+
+    A State's name is its content hash, so the fresh genesis State can
+    legitimately collide with an old one when nothing about the tree
+    actually changed in between (as here) — that is not history carrying
+    over, it is two moments producing the same fact. The ledger restarting
+    at exactly one entry is the meaningful, unambiguous claim: the old
+    chain's own multiple entries did not.
+    """
+    from ComplexGitSync.memory.ledger_store import LedgerStore
+
     tree = _memory_ready(tmp_path)
+    old_entry_count = len(LedgerStore(tree["mount"] / "lgr").read_all_entries())
+    assert old_entry_count > 1  # a real, multi-entry chain to clear
 
     result = _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
 
     assert result["branch"] == "demo_x"
     assert _git(tree["mount"], "branch", "--show-current") == "demo_x"
-    tracked = _git(tree["mount"], "ls-files").splitlines()
-    assert not any(path.startswith(("state/", "lgr/", "commit-logs/", "logs/")) for path in tracked)
-    # No commit at all yet — an orphan branch reboot leaves uncommitted.
+    tracked = set(_git(tree["mount"], "ls-files").splitlines())
+    assert not any(path.startswith("commit-logs/") for path in tracked)
+    entries = LedgerStore(tree["mount"] / "lgr").read_all_entries()
+    assert [entry.seq for entry in entries] == [1]
+
+
+def test_reboot_leaves_the_fresh_branch_committed_not_dead(tmp_path):
+    """The field failure: an uncommitted orphan branch reads as broken.
+
+    `cgitsync status` computes everything from `git rev-parse HEAD`; a
+    branch with nothing committed fails that call and the whole row
+    reported `error`/`error` instead of the healthy, just-rebooted branch
+    it actually was.
+    """
+    tree = _memory_ready(tmp_path)
+
+    _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
+
     rev_parse = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=tree["mount"], capture_output=True, text=True
     )
-    assert rev_parse.returncode != 0
+    assert rev_parse.returncode == 0
+    # Committed and pushed — nothing left for the worktree to report.
+    assert _git(tree["mount"], "status", "--porcelain") == ""
+    status = subprocess.run(
+        ["git", "status", "-sb"], cwd=tree["mount"], capture_output=True, text=True
+    ).stdout
+    assert "..." in status.splitlines()[0]  # upstream tracking set by the push
+
+
+def test_reboot_leaves_a_discoverable_gts_behind(tmp_path):
+    """The field failure: `cgitsync status` broke right after a reboot.
+
+    Clearing `state/` left nothing anywhere `discover_gts_path()` could
+    find — the pending half was already folded away by step 1 — so a
+    workspace rebooted this way could not even answer `cgitsync status`
+    until some other command happened to write a fresh State first.
+    """
+    from ComplexGitSync.snapshot_resolver import discover_gts_path
+
+    tree = _memory_ready(tmp_path)
+
+    _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
+
+    resolved = discover_gts_path(str(tree["workspace"]))
+    assert resolved.is_file()
+    status = ComplexGitSyncClient().memory_status(tree["workspace"])
+    assert status["states"] >= 1
 
 
 def test_reboot_keeps_every_versioned_cgs_across_the_fresh_branch(tmp_path):
@@ -231,7 +331,10 @@ def test_pending_content_is_folded_into_the_archive_first(tmp_path):
     result = client.memory_reboot(tree["workspace"])
 
     assert result["folded"] >= len(pending_entries_before)
-    assert not (tree["workspace"] / ".cgitsync" / "lgr").exists()
+    # Every pre-reboot entry was folded away — the only thing pending
+    # afterward is the fresh State reboot itself just wrote (below).
+    remaining = {path.stem for path in (tree["workspace"] / ".cgitsync" / "lgr").glob("*.toml")}
+    assert remaining.isdisjoint({path.stem for path in pending_entries_before})
 
 
 # ---------------------------------------------------------------------------
@@ -258,25 +361,28 @@ def test_reboot_exports_a_versioned_cgs_the_stable_copy_never_touches(tmp_path):
     assert (clone / ".cgs" / "demo-v2.cgs").is_file()
 
 
-def test_a_second_reboot_the_next_day_writes_v3(tmp_path, monkeypatch):
-    import ComplexGitSync.orchestre as orchestre_module
-
+def test_a_second_reboot_the_next_day_writes_v3(tmp_path):
+    """Both reboots own a fixed date — neither borrows one from the real
+    calendar. A test about "the next day" must own both days: fixed dates
+    that are not today and never will be, injected through
+    :class:`ComplexGitSyncClient`'s own ``clock`` field rather than
+    monkeypatching a module-level ``datetime``, per
+    `.agent/.local/.dev/DevTickets/archive/20260920_ClockSeam_DevPlanTicket.md` §1
+    and `.agent/.local/.dev/DevTickets/archive/20260920_UniversalClock_DevPlanTicket.md`
+    — otherwise the "first" reboot silently races the real clock and the
+    test goes red the day its fixed "next day" catches up to it.
+    """
     tree = _memory_ready(tmp_path)
-    _loaded(tree["workspace"]).memory_reboot(tree["workspace"])
-    client = ComplexGitSyncClient()
+    _loaded(tree["workspace"], clock=_FixedClock(2026, 1, 1)).memory_reboot(tree["workspace"])
+    client = ComplexGitSyncClient(clock=_FixedClock(2026, 1, 1))
     client.load(tree["workspace"] / "project.cgs")
     client.memory_push(tree["workspace"])
 
-    class _NextDay(orchestre_module.datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return orchestre_module.datetime(2026, 9, 19, tzinfo=tz)
-
-    monkeypatch.setattr(orchestre_module, "datetime", _NextDay)
+    client.clock = _FixedClock(2026, 1, 2)
     second = client.memory_reboot(tree["workspace"])
 
     assert Path(second["exported"]).name == "demo-v3.cgs"
-    assert second["archived_to"] == "demo_x.archived-20260919"
+    assert second["archived_to"] == "demo_x.archived-20260102"
 
 
 def test_rebooting_twice_the_same_day_refuses_rather_than_collide(tmp_path):
@@ -328,7 +434,7 @@ def test_adopt_without_reboot_still_inherits_as_before(tmp_path):
 def test_reboot_refuses_before_the_memory_is_a_repository(tmp_path):
     workspace = _used_workspace(tmp_path / "demo")
 
-    with pytest.raises(GitSyncError, match="not a repository yet"):
+    with pytest.raises(GitSyncError, match="local memory ComplexGitSync made itself"):
         _loaded(workspace).memory_reboot(workspace)
 
 
@@ -348,7 +454,7 @@ def test_cli_reboot_prints_the_archive_and_the_export(tmp_path, capsys):
     assert exit_code == 0
     assert "archived=demo_x ->" in captured.out
     assert "exported=" in captured.out
-    assert "branch=demo_x (fresh, empty)" in captured.out
+    assert "branch=demo_x (fresh, pushed)" in captured.out
 
 
 def test_cli_adopt_reboot_flag(tmp_path, capsys):

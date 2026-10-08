@@ -7,17 +7,17 @@ Contract: given already-computed values (a `WorkingRepo` entry plus a root
     never reads a file or the clock, and never mutates its input.
 Imports: git_repo
 
-Design reference: ``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``
+Design reference: ``.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``
 §1/§4 (`status_render.py`
-row) and ``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md`` §2 (P5-status,
+row) and ``.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md`` §2 (P5-status,
 Wave 2 Lane A). ``ComplexGitSyncClient.status()`` itself is **not** moved
 here — it calls ``self.git_runner.current_branch(...)``,
 ``.rev_parse_head(...)``, ``.upstream_ref(...)``, and
 ``.branch_tracking_counts(...)`` (real `git` subprocess calls) to build each
-row, so it stays Ring 3 orchestration in ``orchestre.py``. This module only
+row, so it stays Ring 3 orchestration in ``orchestre/``. This module only
 holds the pure formatting/parsing helpers that method calls once each row's
 raw values already exist. ``_unmanaged_gitlink_paths`` also stays in
-``orchestre.py`` for the same reason — despite living next to these
+``orchestre/`` for the same reason — despite living next to these
 functions there, it calls ``git_runner.tracked_gitlink_paths(...)``.
 """
 
@@ -102,11 +102,11 @@ def _render_empty_workspace(workspace: Path, use_case: str) -> str:
         [
             f"{EMPTY_WORKSPACE_LINE} use_case={use_case} cgshome={workspace}",
             "nothing has been cloned into this workspace. To start a project:",
-            "  cgitsync bootstrap <project.cgs> <ProjectName>  "
+            "  cgitsync bootstrap <project.cgs>        "
             "— clone a tree into a workspace of its own",
-            "  cgitsync initialise <project.cgs>               "
+            "  cgitsync initialise <project.cgs>       "
             "— build the tree a .cgs describes, here",
-            "  cgitsync discover <directory> --write           "
+            "  cgitsync discover <directory> --write   "
             "— draft a .cgs from repositories already on disk",
         ]
     )
@@ -121,7 +121,7 @@ SYNC_UNKNOWN = "unknown"
 #: created this session. Kept distinct from :data:`SYNC_UNKNOWN` because
 #: "nothing to compare against" and "the comparison failed" are different
 #: answers, and printing both as ``unknown`` taught readers to ignore the column
-#: (``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` §3).
+#: (``.agent/.local/.dev/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` §3).
 SYNC_NO_UPSTREAM = "no-upstream"
 
 SYNC_LEGEND = (
@@ -145,7 +145,7 @@ TREE_BRANCH_DETACHED = "detached"
 TREE_BRANCH_UNKNOWN = "unknown"
 
 
-def _tree_branch_label(tree_branch: str | None, *, detached: bool) -> str:
+def tree_branch_label(tree_branch: str | None, *, detached: bool) -> str:
     """Name the branch the whole tree is on, for the ``summary`` line.
 
     *tree_branch* is the root repository's branch, which is the tree's:
@@ -312,3 +312,19 @@ def _render_status_table(rows: list[tuple[str, str, str, str, str, str, str, str
     lines = [render_row(headers), "-" * (sum(widths) + 2 * (len(headers) - 1))]
     lines.extend(render_row(row) for row in rows)
     return "\n".join(lines)
+
+
+__all__ = [
+    "EMPTY_WORKSPACE_LINE",
+    "PRIVATE_DISTANT_SCOPE_LABEL",
+    "PRIVATE_LOCAL_SCOPE_LABEL",
+    "PROJECT_SCOPE_LABEL",
+    "SCOPE_LEGEND",
+    "SYNC_LEGEND",
+    "SYNC_NO_UPSTREAM",
+    "SYNC_UNKNOWN",
+    "TREE_BRANCH_DETACHED",
+    "TREE_BRANCH_UNKNOWN",
+    "tree_branch_label",
+    "StatusCounts",
+]

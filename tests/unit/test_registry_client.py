@@ -7,6 +7,7 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
+import ComplexGitSync
 from ComplexGitSync import MasterConfig
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
 from ComplexGitSync.git_repo import (
@@ -25,20 +26,20 @@ from ComplexGitSync.git_tree import (
     make_repo_id,
     normalize_node_types,
 )
-from ComplexGitSync.memory.ledger_entry import hash_time_l0_anchor, new_time_l0_anchor
+from ComplexGitSync.memory.agent_contract import AgentContractRecord
+from ComplexGitSync.memory.conformity import ConformityCriterion, ConformityScore
+from ComplexGitSync.memory.self_history import AgentInfo, SelfHistoryRecord
 from ComplexGitSync.memory.states import (
-    _resolve_memory_state_directory,
-    _state_directory_name,
+    MemoryStates,
 )
 from ComplexGitSync.orchestre import (
     ComplexGitSyncClient,
     GtsDocument,
+    RegistryTranslator,
     RuntimeStateStore,
-    SystemClock,
     _looks_like_https_auth_failure,
     _looks_like_ssh_auth_failure,
     _protocol_switch_hint,
-    build_registry_from_gts_document,
 )
 
 
@@ -128,22 +129,22 @@ def test_client_load_accepts_gts_source(tmp_path):
     assert client.get_tree_state().lifecycle_state == TreeLifecycleState.READY
 
 
-def test_client_initialise_dispatches_to_load_gts_for_gts_source(monkeypatch, tmp_path):
+def test_client_initialise_dispatches_to_initialise_gts_for_gts_source(monkeypatch, tmp_path):
     snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=(tmp_path / "workspace" / "demo").resolve())
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
-    original_load_gts = client.load_gts
 
-    def _fake_load_gts(path):
+    def _fake_initialise_gts(path, *, output_path=None):
         captured["path"] = path
-        return original_load_gts(path)
+        captured["output_path"] = output_path
+        return "ok"
 
-    monkeypatch.setattr(client, "load_gts", _fake_load_gts)
+    monkeypatch.setattr(client, "initialise_gts", _fake_initialise_gts)
 
-    registry = client.initialise(snapshot_path)
+    assert client.initialise(snapshot_path, output_path="somewhere") == "ok"
 
     assert captured["path"] == snapshot_path.resolve()
-    assert registry.lifecycle_state == TreeLifecycleState.READY
+    assert captured["output_path"] == "somewhere"
 
 
 def test_client_initialise_dispatches_to_initialise_cgs_for_cgs_source(monkeypatch):
@@ -450,7 +451,7 @@ def test_initialise_cgs_skips_the_gitignore_pre_pull_on_a_detached_head(tmp_path
     Guessing is wrong even when the branch does exist, because the pull would
     move the checkout off the exact commit under test. Reproduced from a real
     bootstrapped workspace first — see
-    .localSpec/DevTickets/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md.
+    .agent/.local/.dev/DevTickets/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md.
     """
     cgspath = tmp_path / "workspace"
     cgshome = cgspath / "demo"
@@ -480,166 +481,6 @@ def test_initialise_cgs_skips_the_gitignore_pre_pull_on_a_detached_head(tmp_path
     assert (root_path / ".gitignore").is_file()
 
 
-def test_initialise_cgs_force_gitignore_sync_recovers_from_blocked_pull(tmp_path, monkeypatch):
-    """DevPlanTicket Milestone 2: pull-force fallback is opt-in only."""
-    cgspath = tmp_path / "workspace"
-    cgshome = cgspath / "demo"
-    wcd = cgshome / "ComplexGitSync"
-    wcd.mkdir(parents=True)
-    monkeypatch.chdir(wcd)
-
-    config_path = _write_clone_ready_cgs(tmp_path)
-
-    class _FailingPullGitRunner(_FakeGitRunner):
-        def pull(self, repo_path, *, remote="origin", ref_name=None):
-            if Path(repo_path).resolve() == cgshome.resolve():
-                raise GitSyncError("simulated: local changes block a fast-forward pull")
-            super().pull(repo_path, remote=remote, ref_name=ref_name)
-
-    fake_runner = _FailingPullGitRunner(
-        {
-            "git@github.com:owner/child-repo.git": {"autoTest"},
-            "git@github.com:owner/docs.git": {"main"},
-        }
-    )
-    fake_runner.branch_overrides[cgshome.resolve()] = "autoTest"
-    client = ComplexGitSyncClient(git_runner=fake_runner, state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"))
-
-    registry = client.initialise_cgs(config_path, output_path=cgspath, force_gitignore_sync=True)
-
-    root_path = registry.get("root").absolute_path.resolve()
-    assert any(path == root_path for path, _, _ in fake_runner.force_pulled)
-    assert (root_path / ".gitignore").read_text(encoding="utf-8").splitlines() == [
-        ".cgitsync/",
-        "demo.lgr",
-        "deps/child-repo",
-    ]
-    # force_gitignore_sync only covers the pull step — it never implies
-    # --commit-gitignore, so nothing is staged/committed/pushed here.
-    assert fake_runner.staged_paths == []
-
-
-def test_purge_cgs_removes_top_level_repos_and_ledgers(tmp_path):
-    cgspath = tmp_path / "workspace"
-    cgshome = cgspath / "demo"
-    top_level_child = cgshome / "child-repo"
-    nested_child = cgshome / "deps" / "nested-repo"
-    top_level_child.mkdir(parents=True)
-    nested_child.mkdir(parents=True)
-    (cgshome / "demo.lgr").write_text("ledger\n", encoding="utf-8")
-
-    config_path = tmp_path / "project.cgs"
-    config_path.write_text(
-        """
-[document]
-format_version = "1.0"
-
-[project]
-name = "demo"
-default_branch = "main"
-
-[[repos]]
-gitprovider = "github"
-project_owner_name = "owner"
-project_name = "demo"
-relative_path = "."
-
-[[repos]]
-gitprovider = "github"
-project_owner_name = "owner"
-project_name = "child-repo"
-relative_path = "child-repo"
-
-[[repos]]
-gitprovider = "github"
-project_owner_name = "owner"
-project_name = "nested-repo"
-relative_path = "deps/nested-repo"
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-    client = ComplexGitSyncClient(git_runner=_FakeGitRunner({}))
-
-    removed = client.purge_cgs(config_path, output_path=cgspath)
-
-    assert top_level_child in removed
-    assert cgshome / "demo.lgr" in removed
-    assert not top_level_child.exists()
-    assert not (cgshome / "demo.lgr").exists()
-    assert nested_child.exists()
-
-
-def test_purge_cgs_keeps_workspace_master_config(tmp_path):
-    cgspath = tmp_path / "workspace"
-    cgshome = cgspath / "demo"
-    (cgshome / ".cgitsync").mkdir(parents=True)
-    master_config = cgshome / ".cgitsync" / "master.toml"
-    master_config.write_text("[master]\nuser_name = 'cgitsync-bot'\n", encoding="utf-8")
-
-    config_path = tmp_path / "project.cgs"
-    config_path.write_text(
-        """
-[document]
-format_version = "1.0"
-
-[project]
-name = "demo"
-default_branch = "main"
-
-[[repos]]
-gitprovider = "github"
-project_owner_name = "owner"
-project_name = "demo"
-relative_path = "."
-
-[[repos]]
-gitprovider = "github"
-project_owner_name = "owner"
-project_name = "child-repo"
-relative_path = "child-repo"
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-    client = ComplexGitSyncClient(git_runner=_FakeGitRunner({}))
-
-    client.purge_cgs(config_path, output_path=cgspath)
-
-    assert master_config.is_file()
-    assert "cgitsync-bot" in master_config.read_text(encoding="utf-8")
-
-
-def test_clean_init_keeps_workspace_master_config(tmp_path, monkeypatch):
-    cgspath = tmp_path / "workspace"
-    cgshome = cgspath / "demo"
-    wcd = cgshome / "ComplexGitSync"
-    wcd.mkdir(parents=True)
-    monkeypatch.chdir(wcd)
-
-    master_config = cgshome / ".cgitsync" / "master.toml"
-    master_config.parent.mkdir(parents=True, exist_ok=True)
-    master_config.write_text("[master]\nuser_email = 'bot@example.com'\n", encoding="utf-8")
-
-    config_path = _write_clone_ready_cgs(tmp_path)
-    fake_runner = _FakeGitRunner(
-        {
-            "git@github.com:owner/child-repo.git": {"autoTest"},
-            "git@github.com:owner/docs.git": {"main"},
-        }
-    )
-    client = ComplexGitSyncClient(
-        git_runner=fake_runner,
-        state_store=RuntimeStateStore(base_dir=tmp_path / "runtime-state"),
-    )
-
-    client.clean_init(config_path, output_path=cgspath)
-
-    assert master_config.is_file()
-    assert "bot@example.com" in master_config.read_text(encoding="utf-8")
-    assert MasterConfig.resolve_identity(cgshome, client.git_runner) == (None, "bot@example.com")
-
-
 def test_initialise_cgs_default_cgshome_is_cgspath_project_name(tmp_path, monkeypatch):
     # Build the CWD layout: tmp_path/cgspath/demo/ComplexGitSync
     wcd = tmp_path / "cgspath" / "demo" / "ComplexGitSync"
@@ -661,10 +502,13 @@ def test_initialise_cgs_default_cgshome_is_cgspath_project_name(tmp_path, monkey
 
     client.tree = None
 
+    from ComplexGitSync.registry import RegistryTranslator
+
+    _orig = RegistryTranslator.from_cgs_document
+
     def _fake_build_registry(*args, **kwargs):
         from ComplexGitSync.git_repo import RepoLifecycleState
         from ComplexGitSync.orchestre import ROOT_REPO_ID
-        from ComplexGitSync.orchestre import build_registry_from_cgs_document as _orig
         reg = _orig(*args, **kwargs)
         # Pre-mark root READY so the clone loop completes without git calls.
         root = reg.get(ROOT_REPO_ID)
@@ -674,8 +518,7 @@ def test_initialise_cgs_default_cgshome_is_cgspath_project_name(tmp_path, monkey
         root.resolved_ref_name = "main"
         return reg
 
-    import ComplexGitSync.orchestre as _mod
-    monkeypatch.setattr(_mod, "build_registry_from_cgs_document", _fake_build_registry)
+    monkeypatch.setattr(RegistryTranslator, "from_cgs_document", staticmethod(_fake_build_registry))
 
     try:
         client.initialise_cgs(config_path)
@@ -706,10 +549,13 @@ def test_initialise_cgs_default_cgshome_uses_environment(tmp_path, monkeypatch):
     monkeypatch.setattr(client, "write_gts_snapshot", _fake_write_gts)
     monkeypatch.setattr(client.state_store, "record_snapshot", lambda *a, **kw: None)
 
+    from ComplexGitSync.registry import RegistryTranslator
+
+    _orig = RegistryTranslator.from_cgs_document
+
     def _fake_build_registry(*args, **kwargs):
         from ComplexGitSync.git_repo import RepoLifecycleState
         from ComplexGitSync.orchestre import ROOT_REPO_ID
-        from ComplexGitSync.orchestre import build_registry_from_cgs_document as _orig
 
         reg = _orig(*args, **kwargs)
         root = reg.get(ROOT_REPO_ID)
@@ -719,9 +565,7 @@ def test_initialise_cgs_default_cgshome_uses_environment(tmp_path, monkeypatch):
         root.resolved_ref_name = "main"
         return reg
 
-    import ComplexGitSync.orchestre as _mod
-
-    monkeypatch.setattr(_mod, "build_registry_from_cgs_document", _fake_build_registry)
+    monkeypatch.setattr(RegistryTranslator, "from_cgs_document", staticmethod(_fake_build_registry))
 
     try:
         client.initialise_cgs(config_path)
@@ -730,17 +574,6 @@ def test_initialise_cgs_default_cgshome_uses_environment(tmp_path, monkeypatch):
 
     if captured.get("output_path") is not None:
         assert str(captured["output_path"]).startswith(str(env_cgshome.resolve()))
-
-
-def test_resolve_clone_root_uses_output_path_as_base(tmp_path):
-    config_path = _write_root_cgs(tmp_path)
-    client = ComplexGitSyncClient()
-    output_path = tmp_path / "parent"
-    output_path.mkdir()
-
-    result = client.resolve_clone_root(config_path, output_path=output_path)
-
-    assert result == (output_path / "demo").resolve()
 
 
 def test_resolve_bootstrap_root_uses_cgs_path_override(tmp_path):
@@ -759,24 +592,56 @@ def test_resolve_bootstrap_root_defaults_under_home_cgs(tmp_path, monkeypatch):
 
     result = client.resolve_bootstrap_root("myproject")
 
-    assert result.parent.parent == (tmp_path / ".cgs").resolve()
-    assert result.name == "myproject"
+    assert result.parent == (tmp_path / ".cgs").resolve()
+    assert re.fullmatch(r"myproject-\d{14}", result.name)
     assert (tmp_path / ".cgs").is_dir()
+
+
+def test_resolve_bootstrap_root_names_the_workspace_after_the_source_project(tmp_path):
+    client = ComplexGitSyncClient()
+    source = tmp_path / "spec.cgs"
+    source.write_text(
+        '[document]\nformat_version = "1.0"\n\n[project]\nname = "Demo"\ndefault_branch = "main"\n\n'
+        '[[repos]]\ngitprovider = "github"\nproject_owner_name = "owner"\nproject_name = "Demo"\n'
+        'relative_path = "."\n',
+        encoding="utf-8",
+    )
+
+    result = client.resolve_bootstrap_root(source=source, cgs_path=tmp_path / "ws")
+
+    assert result == (tmp_path / "ws" / "Demo").resolve()
+
+
+def test_resolve_bootstrap_root_given_name_replaces_the_source_project(tmp_path):
+    client = ComplexGitSyncClient()
+    source = tmp_path / "spec.cgs"
+    source.write_text('[project]\nname = "Demo"\n', encoding="utf-8")
+
+    result = client.resolve_bootstrap_root("Other", source=source, cgs_path=tmp_path / "ws")
+
+    assert result == (tmp_path / "ws" / "Other").resolve()
+
+
+def test_resolve_bootstrap_root_needs_a_name_or_a_source():
+    client = ComplexGitSyncClient()
+
+    with pytest.raises(ValueError, match="project_name or a source"):
+        client.resolve_bootstrap_root()
 
 
 def test_resolve_bootstrap_root_rejects_empty_project_name():
     client = ComplexGitSyncClient()
 
-    with pytest.raises(ValueError, match="non-empty project_name"):
+    with pytest.raises(ValueError, match="project_name or a source"):
         client.resolve_bootstrap_root("")
 
 
-def test_bootstrap_rejects_non_cgs_source(tmp_path):
+def test_bootstrap_rejects_a_source_that_is_neither_cgs_nor_gts(tmp_path):
     client = ComplexGitSyncClient()
-    gts_path = tmp_path / "demo.gts"
+    gts_path = tmp_path / "demo.txt"
     gts_path.write_text("{}", encoding="utf-8")
 
-    with pytest.raises(ValueError, match=r"\.cgs source"):
+    with pytest.raises(ValueError, match=r"\.cgs or \.gts source"):
         client.bootstrap(gts_path, "myproject")
 
 
@@ -808,26 +673,6 @@ def test_client_load_source_supports_gts(tmp_path):
 
     assert registry.lifecycle_state == TreeLifecycleState.READY
     assert client.get_tree_state().lifecycle_state == TreeLifecycleState.READY
-
-
-def test_client_clone_method_calls_clone_cgs(monkeypatch):
-    client = ComplexGitSyncClient()
-    captured: dict[str, object] = {}
-
-    def _fake_clone_cgs(path, *, target_dir=None, output_path=None):
-        captured["path"] = path
-        captured["target_dir"] = target_dir
-        captured["output_path"] = output_path
-        return "ok"
-
-    monkeypatch.setattr(client, "clone_cgs", _fake_clone_cgs)
-
-    result = client.clone("project.cgs", target_dir="workspace/demo", output_path="workspace")
-
-    assert result == "ok"
-    assert captured["path"] == "project.cgs"
-    assert captured["target_dir"] == "workspace/demo"
-    assert captured["output_path"] == "workspace"
 
 
 def test_client_branch_delegates_to_gittree_git_branch(monkeypatch):
@@ -911,12 +756,15 @@ def test_client_freeze_delegates_to_freeze_tag(monkeypatch):
     client = ComplexGitSyncClient()
     captured: dict[str, object] = {}
 
-    def _fake_freeze_tag(name, *, output_gts=None, message=None, stage_all=True, private=False):
+    def _fake_freeze_tag(
+        name, *, output_gts=None, message=None, stage_all=True, private=False, release=None
+    ):
         captured["name"] = name
         captured["output_gts"] = output_gts
         captured["message"] = message
         captured["stage_all"] = stage_all
         captured["private"] = private
+        captured["release"] = release
         return "ok"
 
     monkeypatch.setattr(client, "_freeze_tag", _fake_freeze_tag)
@@ -930,6 +778,7 @@ def test_client_freeze_delegates_to_freeze_tag(monkeypatch):
         "message": "msg",
         "stage_all": False,
         "private": False,
+        "release": None,
     }
 
 
@@ -973,6 +822,11 @@ def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path)
     result = client.freeze_release("v1.0", "release commit")
 
     assert result == "ok"
+    expected_release = (
+        ("semver", ComplexGitSync.__version__),
+        ("git_tag", "v1.0"),
+        ("artefact:src", ComplexGitSync.__build__),
+    )
     assert calls == [
         ("add", None),
         ("commit", ("release commit", False)),
@@ -982,29 +836,158 @@ def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path)
             "freeze",
             (
                 "v1.0",
-                {"output_gts": None, "message": "release commit", "stage_all": True},
+                {
+                    "output_gts": None,
+                    "message": "release commit",
+                    "stage_all": True,
+                    "release": expected_release,
+                },
             ),
         ),
     ]
 
 
-def test_client_freeze_release_force_uses_pull_force(monkeypatch, tmp_path):
+def test_client_freeze_release_names_the_signed_agent_contract(monkeypatch, tmp_path):
     client = _client_with_root_registry(tmp_path)
     client.source_path = tmp_path / "project.gts"
-    calls: list[str] = []
+    record = AgentContractRecord(
+        provider="vendor-name",
+        terms_version="vendor-name terms of service, effective 2025-10-08 (consumer-subscription)",
+        date="2026-09-23",
+        legal_terms_sha256="a" * 64,
+        attested_by="model-name (vendor-name)",
+    )
+    record.write(tmp_path / "root" / ".agent" / ".distant" / "dev-sync")
 
     monkeypatch.setattr(
         type(client.git_runner), "upstream_configured", lambda self, path: True
     )
-    monkeypatch.setattr(client, "add", lambda: calls.append("add"))
-    monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
-    monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))
-    monkeypatch.setattr(client, "pull_force", lambda source, **_kwargs: calls.append("pull-force"))
-    monkeypatch.setattr(client, "push", lambda **_kwargs: calls.append("push"))
-    monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
+    monkeypatch.setattr(client, "add", lambda: None)
+    monkeypatch.setattr(client, "commit", lambda message, *, stage_all=True: None)
+    monkeypatch.setattr(client, "pull", lambda source, **_kwargs: None)
+    monkeypatch.setattr(client, "push", lambda **_kwargs: None)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        client,
+        "freeze",
+        lambda name, **kwargs: captured.update(kwargs) or "ok",
+    )
 
-    assert client.freeze_release("v1.0", "release commit", force=True) == "ok"
-    assert calls == ["add", "commit", "pull-force", "push", "freeze"]
+    assert client.freeze_release("v1.0", "release commit") == "ok"
+    assert captured["release"] == (
+        ("semver", ComplexGitSync.__version__),
+        ("git_tag", "v1.0"),
+        ("artefact:src", ComplexGitSync.__build__),
+        ("artefact:agent_contract", record.terms_version),
+    )
+
+
+def _agent_info(role: str = "Dev") -> AgentInfo:
+    return AgentInfo(role=role, vendor="vendor-name", model="model-name")
+
+
+def _conformity() -> ConformityScore:
+    return ConformityScore(
+        spec_respect=ConformityCriterion(score=33, basis="measured", reasoning="lint/test pass"),
+        gating=ConformityCriterion(score=33, basis="measured", reasoning="nothing private pushed"),
+        quality=ConformityCriterion(score=30, basis="asserted", reasoning="a reasonable first pass"),
+    )
+
+
+def test_client_self_history_add_writes_to_the_pending_half(tmp_path):
+    client = ComplexGitSyncClient()
+
+    path = client.self_history_add(
+        tmp_path,
+        ticket="AgentReport",
+        goal="Implement WP1.",
+        action="Wrote self_history_add.",
+        worker=_agent_info("Dev"),
+        orchestrator=_agent_info("Orchestration"),
+        conformity=_conformity(),
+        lint_passed=True,
+        tests_passed=True,
+    )
+
+    assert path.parent == tmp_path / ".cgitsync" / ".self-history"
+    record = SelfHistoryRecord.read(path)
+    assert record.ticket == "AgentReport"
+    assert record.lint_passed is True
+
+
+def test_client_self_history_add_cites_the_signed_agent_contract_by_hash(tmp_path):
+    client = ComplexGitSyncClient()
+    contract = AgentContractRecord(
+        provider="vendor-name",
+        terms_version="vendor-name terms of service, effective 2025-10-08 (consumer-subscription)",
+        date="2026-09-23",
+        legal_terms_sha256="a" * 64,
+        attested_by="model-name (vendor-name)",
+    )
+    contract.write(tmp_path / ".agent" / ".distant" / "dev-sync")
+
+    path = client.self_history_add(
+        tmp_path,
+        ticket="AgentReport",
+        goal="Implement WP6.",
+        action="Wired the contract field.",
+        worker=_agent_info(),
+        orchestrator=_agent_info("Orchestration"),
+        conformity=_conformity(),
+    )
+
+    assert SelfHistoryRecord.read(path).contract == contract.digest()
+
+
+def test_client_self_history_add_has_no_contract_when_none_is_signed(tmp_path):
+    client = ComplexGitSyncClient()
+
+    path = client.self_history_add(
+        tmp_path,
+        ticket="AgentReport",
+        goal="Implement WP1.",
+        action="Wrote self_history_add.",
+        worker=_agent_info(),
+        orchestrator=_agent_info("Orchestration"),
+        conformity=_conformity(),
+    )
+
+    assert SelfHistoryRecord.read(path).contract == ""
+
+
+def test_client_self_history_add_observes_the_workspace_status_errors(tmp_path):
+    client = _client_with_root_registry(tmp_path)
+
+    path = client.self_history_add(
+        tmp_path,
+        ticket="AgentReport",
+        goal="Implement WP1.",
+        action="Wrote self_history_add.",
+        worker=_agent_info(),
+        orchestrator=_agent_info("Orchestration"),
+        conformity=_conformity(),
+    )
+
+    # The registry's one root entry has no .git of its own, which `status`
+    # already counts as an error row — the same fact `cgitsync status`
+    # would print, observed here rather than typed.
+    assert SelfHistoryRecord.read(path).status_errors == 1
+
+
+def test_client_self_history_add_has_no_status_errors_when_nothing_is_loaded(tmp_path):
+    client = ComplexGitSyncClient()
+
+    path = client.self_history_add(
+        tmp_path,
+        ticket="AgentReport",
+        goal="Implement WP1.",
+        action="Wrote self_history_add.",
+        worker=_agent_info(),
+        orchestrator=_agent_info("Orchestration"),
+        conformity=_conformity(),
+    )
+
+    assert SelfHistoryRecord.read(path).status_errors is None
 
 
 def test_client_freeze_release_skips_pull_when_branch_has_no_upstream(monkeypatch, tmp_path):
@@ -1040,7 +1023,7 @@ def test_client_freeze_release_pulls_a_branch_whose_upstream_does_not_resolve(
     ``has_upstream`` there skipped the pull and called it "nothing to pull",
     which was wrong twice over: there was something to pull, and the branch
     had been pushed. See
-    ``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` D4.
+    ``.agent/.local/.dev/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` D4.
     """
     client = _client_with_root_registry(tmp_path)
     client.source_path = tmp_path / "project.gts"
@@ -1058,25 +1041,6 @@ def test_client_freeze_release_pulls_a_branch_whose_upstream_does_not_resolve(
 
     assert client.freeze_release("v1.0", "release commit") == "ok"
     assert calls == ["add", "commit", "pull", "push", "freeze"]
-
-
-def test_client_freeze_release_force_also_skips_pull_when_no_upstream(monkeypatch, tmp_path):
-    client = _client_with_root_registry(tmp_path)
-    client.source_path = tmp_path / "project.gts"
-    calls: list[str] = []
-
-    monkeypatch.setattr(
-        type(client.git_runner), "upstream_configured", lambda self, path: False
-    )
-    monkeypatch.setattr(client, "add", lambda: calls.append("add"))
-    monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
-    monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))
-    monkeypatch.setattr(client, "pull_force", lambda source, **_kwargs: calls.append("pull-force"))
-    monkeypatch.setattr(client, "push", lambda **_kwargs: calls.append("push"))
-    monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
-
-    assert client.freeze_release("v1.0", "release commit", force=True) == "ok"
-    assert calls == ["add", "commit", "push", "freeze"]
 
 
 # ---------------------------------------------------------------------------
@@ -1100,7 +1064,7 @@ def test_looks_like_https_auth_failure_matches_known_markers():
 # Both lines below are verbatim from one real `git fetch` of a GitHub
 # repository the ambient credentials could not read, run twice on the same
 # machine under the two locales
-# (.localSpec/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md).
+# (.agent/.local/.dev/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md).
 _GITHUB_AUTH_FAILURE_SERVER_LINE = (
     "remote: Invalid username or token. Password authentication is not "
     "supported for Git operations."
@@ -1473,7 +1437,7 @@ def test_status_rendering_contains_live_git_summary(tmp_path):
     rendered_status = client.status()
 
     assert (
-        "summary ready=true complete=true use_case=standalone "
+        "summary ready=true complete=true use_case=standalone profile=user "
         "cgitsync_branch=main repos=1 dirty=1 staged=1 ahead=1" in rendered_status
     )
     assert "REPOSITORY" in rendered_status
@@ -1503,7 +1467,7 @@ def test_status_ignores_cgitsync_managed_generated_files(tmp_path):
     rendered_status = client.status()
 
     assert (
-        "summary ready=true complete=true use_case=standalone "
+        "summary ready=true complete=true use_case=standalone profile=user "
         "cgitsync_branch=main repos=1 dirty=0 staged=0" in rendered_status
     )
     assert "demo" in rendered_status
@@ -1746,7 +1710,7 @@ project_name = "leaf"
 
     empty_registry = WorkingGitTree()
     assert empty_registry.recompute_tree_state() == TreeLifecycleState.UNLOADED
-    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
+    registry = RegistryTranslator.from_gts_document(GtsDocument.from_toml(snapshot_path))
     assert registry.lifecycle_state == TreeLifecycleState.READY
 
     tree = GitTree()
@@ -1832,7 +1796,7 @@ commit_sha = "sha-leaf"
         encoding="utf-8",
     )
 
-    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
+    registry = RegistryTranslator.from_gts_document(GtsDocument.from_toml(snapshot_path))
     assert registry.get("root").absolute_path == workspace
     assert registry.get("root").source_cgs_path == (workspace / "project.cgs")
     assert registry.get("root:deps/leaf").absolute_path == leaf_path
@@ -1870,7 +1834,7 @@ commit_sha = "abc123"
         encoding="utf-8",
     )
 
-    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
+    registry = RegistryTranslator.from_gts_document(GtsDocument.from_toml(snapshot_path))
     root = registry.get("root")
 
     assert root.current_ref_kind == RefKind.BRANCH
@@ -1892,29 +1856,20 @@ def test_make_repo_id_only_collapses_explicit_dot_relative_path():
     assert make_repo_id("root", "", "") == "root:"
 
 
-def test_time_l0_anchor_hash_is_public_identity_only():
-    state = new_time_l0_anchor(SystemClock())
-
-    assert re.fullmatch(r"[0-9a-f]{64}", state.state_hash)
-    assert state.state_id == f"state({state.state_hash})"
-    assert hash_time_l0_anchor("local-test-anchor") == hash_time_l0_anchor("local-test-anchor")
-    assert not hasattr(state, "anchor")
-
-
 def test_state_directory_suffix_is_scoped_to_exact_state_hash(tmp_path):
     cgitsync_dir = tmp_path / ".cgitsync"
     state_hash = "a" * 64
     other_hash = "b" * 64
-    (cgitsync_dir / _state_directory_name(state_hash, 0)).mkdir(parents=True)
-    (cgitsync_dir / _state_directory_name(state_hash, 1)).mkdir()
+    (cgitsync_dir / MemoryStates.directory_name(state_hash, 0)).mkdir(parents=True)
+    (cgitsync_dir / MemoryStates.directory_name(state_hash, 1)).mkdir()
 
-    same_hash_state = _resolve_memory_state_directory(cgitsync_dir, state_hash)
-    other_hash_state = _resolve_memory_state_directory(cgitsync_dir, other_hash)
+    same_hash_state = MemoryStates(cgitsync_dir).resolve_directory(state_hash)
+    other_hash_state = MemoryStates(cgitsync_dir).resolve_directory(other_hash)
 
     assert same_hash_state.state_order == 2
-    assert same_hash_state.final_path.name == _state_directory_name(state_hash, 2)
+    assert same_hash_state.final_path.name == MemoryStates.directory_name(state_hash, 2)
     assert other_hash_state.state_order == 0
-    assert other_hash_state.final_path.name == _state_directory_name(other_hash, 0)
+    assert other_hash_state.final_path.name == MemoryStates.directory_name(other_hash, 0)
 
 
 def _current_state_path(workspace: Path) -> Path:
@@ -1924,19 +1879,19 @@ def _current_state_path(workspace: Path) -> Path:
     last wrote. It replaced the single-file register these tests used to
     read, which nothing writes any more.
     """
-    from ComplexGitSync.memory.ledger_store import read_all_entries
-    from ComplexGitSync.memory.states import _parse_state_hash, state_path
+    from ComplexGitSync.memory.ledger_store import LedgerStore
+    from ComplexGitSync.memory.states import MemoryStates
 
-    entries = read_all_entries(workspace / ".cgitsync" / "lgr")
+    entries = LedgerStore(workspace / ".cgitsync" / "lgr").read_all_entries()
     assert entries, "no ledger entry was written"
-    return state_path(workspace / ".cgitsync", _parse_state_hash(entries[-1].state_id)).resolve()
+    return MemoryStates(workspace / ".cgitsync").path(MemoryStates.parse_hash(entries[-1].state_id)).resolve()
 
 
 def _ledger_entries(workspace: Path):
     """Every entry in the workspace's chain, oldest first."""
-    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.ledger_store import LedgerStore
 
-    return read_all_entries(workspace / ".cgitsync" / "lgr")
+    return LedgerStore(workspace / ".cgitsync" / "lgr").read_all_entries()
 
 
 def test_client_load_cgs_writes_gts_snapshot(tmp_path):
@@ -1949,9 +1904,9 @@ def test_client_load_cgs_writes_gts_snapshot(tmp_path):
     states = sorted((tmp_path / ".cgitsync" / "state").glob("*.gts"))
     assert len(states) == 1
     assert re.fullmatch(r"[0-9a-f]{64}\.gts", states[0].name)
-    # The .cgs it was built from sits beside it, under the same name: it is
-    # part of what that State was.
-    assert states[0].with_suffix(".cgs").is_file()
+    # A State is the tree, not the spec that built it: no .cgs beside it.
+    assert not states[0].with_suffix(".cgs").exists()
+    assert not (tmp_path / ".cgitsync" / ".cgs").exists()
     # One ledger, hash-chained, one file per entry. The single-file
     # register this used to write is no longer written at all.
     assert (tmp_path / ".cgitsync" / "lgr" / "000001.toml").is_file()
@@ -2271,40 +2226,12 @@ def test_sync_ledger_actor_auto_detected_when_none(tmp_path):
     assert events[0]["actor"] != ""
 
 
-def test_write_gts_snapshot_writes_stable_per_branch_cgs_copy(tmp_path):
-    # BootstrapGitignoreSync's sibling ticket, FirstBranchTestWorkflow §0.3:
-    # a .cgs snapshot per run already existed, but only inside an opaque
-    # state(<hash>)_n/ directory -- nothing named "the .cgs for branch X".
+def test_write_gts_snapshot_stores_no_cgs_anywhere_in_the_state_area(tmp_path):
+    """A State is a .gts (InstallFrontier WP6): no spec copy beside it, no per-branch copy."""
     root_path = tmp_path / "root"
     root_path.mkdir()
     config_path = tmp_path / "project.cgs"
-    config_path.write_text(
-        '[project]\nname = "demo"\ndefault_branch = "main"\n\n'
-        'repos = [{ repository = "github:owner/demo", relative_path = "." }]\n',
-        encoding="utf-8",
-    )
-
-    client = ComplexGitSyncClient()
-    registry = WorkingGitTree()
-    root_entry = _make_entry("root", root_path)
-    root_entry.current_ref_kind = RefKind.BRANCH
-    root_entry.current_ref_name = "test-cgs"
-    registry.add(root_entry)
-    client.registry = registry
-    client.source_path = config_path
-
-    client.write_gts_snapshot(command_origin="branch")
-
-    stable_path = root_path / ".cgitsync" / ".cgs" / "root-test-cgs.cgs"
-    assert stable_path.is_file()
-    assert stable_path.read_text(encoding="utf-8") == config_path.read_text(encoding="utf-8")
-
-
-def test_write_gts_snapshot_stable_cgs_copy_sanitizes_branch_name(tmp_path):
-    root_path = tmp_path / "root"
-    root_path.mkdir()
-    config_path = tmp_path / "project.cgs"
-    config_path.write_text("[project]\nname = \"demo\"\n", encoding="utf-8")
+    config_path.write_text('[project]\nname = "demo"\n', encoding="utf-8")
 
     client = ComplexGitSyncClient()
     registry = WorkingGitTree()
@@ -2316,33 +2243,10 @@ def test_write_gts_snapshot_stable_cgs_copy_sanitizes_branch_name(tmp_path):
     client.source_path = config_path
 
     client.write_gts_snapshot(command_origin="branch")
-
-    stable_dir = root_path / ".cgitsync" / ".cgs"
-    [stable_path] = list(stable_dir.iterdir())
-    assert stable_path.name == "root-feature-my-thing.cgs"
-
-
-def test_write_gts_snapshot_refreshes_stable_cgs_copy_on_each_run(tmp_path):
-    root_path = tmp_path / "root"
-    root_path.mkdir()
-    config_path = tmp_path / "project.cgs"
-    config_path.write_text("[project]\nname = \"demo\"\n", encoding="utf-8")
-
-    client = ComplexGitSyncClient()
-    registry = WorkingGitTree()
-    root_entry = _make_entry("root", root_path)
-    root_entry.current_ref_kind = RefKind.BRANCH
-    root_entry.current_ref_name = "test-cgs"
-    registry.add(root_entry)
-    client.registry = registry
-    client.source_path = config_path
-
-    client.write_gts_snapshot(command_origin="branch")
-    config_path.write_text("[project]\nname = \"demo-v2\"\n", encoding="utf-8")
     client.write_gts_snapshot(command_origin="checkout")
 
-    stable_path = root_path / ".cgitsync" / ".cgs" / "root-test-cgs.cgs"
-    assert stable_path.read_text(encoding="utf-8") == config_path.read_text(encoding="utf-8")
+    assert not list((root_path / ".cgitsync").rglob("*.cgs"))
+    assert not (root_path / ".cgitsync" / ".cgs").exists()
 
 
 def test_write_gts_snapshot_skips_stable_cgs_copy_without_a_current_branch(tmp_path):
@@ -2740,6 +2644,10 @@ writable = true
 
 
 class _FakeGitRunner:
+    def init_repository(self, repo_path: Path | str, *, branch: str) -> None:
+        """Makes no repository, so the default memory is declined and recorded nothing."""
+        raise GitSyncError("the fake runner makes no repositories")
+
     def __init__(self, remote_branches: dict[str, set[str]]):
         self.remote_branches = remote_branches
         self.clones: list[tuple[str, Path, str]] = []
@@ -2757,6 +2665,12 @@ class _FakeGitRunner:
 
     def remote_branch_exists(self, remote_url: str, branch: str) -> bool:
         return branch in self.remote_branches.get(remote_url, set())
+
+    def remote_head_branch(self, remote_url: str) -> str | None:
+        return None
+
+    def is_repository_root(self, path) -> bool:
+        return True
 
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
         destination_path = Path(destination)
@@ -2796,6 +2710,9 @@ nested_config = "disabled"
     def rev_parse_head(self, repo_path: Path | str) -> str:
         repo_name = Path(repo_path).name
         return f"sha-{repo_name}"
+
+    def head_commit_sha_or_none(self, repo_path: Path | str) -> str | None:
+        return self.rev_parse_head(repo_path)
 
     def pull(
         self,
@@ -3007,7 +2924,7 @@ def test_resolve_repo_for_path_accepts_a_relative_path(tmp_path, monkeypatch):
 def test_resolve_repo_for_path_relative_path_anchors_at_tree_root_not_cwd(tmp_path, monkeypatch):
     """A relative path resolves against CGSHOME (the tree root), regardless
     of the process's CWD -- the standalone-mode invariant every other
-    command already honors (.localSpec/DevTickets/archive/20260902_AddRmCgshomeResolution_DevPlanTicket.md).
+    command already honors (.agent/.local/.dev/DevTickets/archive/20260902_AddRmCgshomeResolution_DevPlanTicket.md).
     """
     from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
 

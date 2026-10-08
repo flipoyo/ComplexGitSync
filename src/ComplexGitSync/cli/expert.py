@@ -1,13 +1,11 @@
 """cli.expert — the "Expert" cgitsync command group.
 
-Ring: 4 (CLI adapter — the same ring cli.py itself occupies)
-Contract: register argparse subparsers for, and dispatch/execute, the 16
-    Expert-tier commands (purge, validate, clone, pull, pull-force,
-    checkout, branch, add, rm, commit, push, tag, freeze, import-submodules,
-    init-from-submodules, verify). Argument/prompt collection only —
-    delegates all .cgs/.gts semantics to ComplexGitSyncClient; never
-    touches subprocess/Git or parses repository identifiers itself.
-Imports: _shared, errors, git_repo, orchestre
+Ring: 4. Contract: register, dispatch, and execute the Expert-tier commands
+    (validate, pull, fetch, autofix, checkout, branch, add, rm, commit,
+    merge, push, tag, submodules, verify, memory, self-history).
+    Argument/prompt collection only — delegates all semantics to
+    ComplexGitSyncClient; never touches Git.
+Imports: _shared, branch_command, errors, fetch_command, git_repo, help_text, memory, memory_asof, memory_prompt, orchestre
 """
 
 from __future__ import annotations
@@ -19,17 +17,24 @@ from pathlib import Path
 
 from ..errors import GitSyncError
 from ..git_repo import RefKind, RepoScope
+from ..memory.conformity import VALID_CONFORMITY_BASES, ConformityCriterion, ConformityScore
+from ..memory.conformity_scale import ConformityScale
 from ..memory.integrity import HistoryState
+from ..memory.self_history import VALID_AGENT_ROLES, AgentInfo
+from ..operations import MERGE_RESOLVE_HINT
 from ..orchestre import ComplexGitSyncClient
+from . import memory_asof, memory_prompt
 from ._shared import (
     _add_gitignore_sync_arguments,
     _add_json_argument,
     _format_tree_state_line,
     _json_stdout,
     _load_ready_registry_source,
+    _memory_declared_for_dry_run,
     _non_negative_int,
     _print_dry_run_plan,
     _print_gitignore_sync_report,
+    _print_memory_fold_outcome,
     _print_repo_tree_result,
     _print_write_outcomes,
     _resolve_cgshome,
@@ -39,39 +44,41 @@ from ._shared import (
     _run_with_logging,
     _warn_paths_reaching_configuration_repos,
 )
+from .branch_command import handle as _handle_branch_command
+from .branch_command import print_ancestry as _print_ancestry
 from .exit_codes import EXIT_OK, EXIT_REFUSED
+from .fetch_command import handle as _handle_fetch_command
+from .help_text import SEARCH_DIR_HELP
 
 COMMANDS: dict[str, str] = {
-    "purge": "Remove generated clone state for a .cgs workspace.",
     "validate": "Parse, normalize, and validate a .cgs or validate a .gts topology.",
-    "clone": "Clone a nested project tree from .cgs.",
-    "pull": "Resynchronise an existing project tree from .cgs or .gts.",
-    "pull-force": "Destructively resynchronise an existing project tree from .cgs or .gts.",
+    "pull": "Resynchronise an existing project tree from .cgs or .gts; --force resets it to the remote, refusing while commits exist only here.",
+    "fetch": "Update every repository's view of its origin, without moving any branch.",
+    "autofix": "Diagnose and repair the situation named by the last failing command's error.",
     "checkout": "Synchronize the tree to a branch or tag.",
-    "branch": "Create a branch across the full READY tree without checkout.",
+    "branch": "Create, list or close a project branch across the tree (create, list, close).",
     "add": "Stage all changes across a READY tree.",
     "rm": "Remove one or more tracked files, each from the repo that owns it.",
     "commit": "Commit dirty repositories from a READY tree.",
     "merge": "Merge a project branch across a READY tree, leaf-first.",
     "push": "Push repositories from a READY tree.",
     "tag": "Create and push a tag across a READY tree.",
-    "freeze": "Freeze a versioned state and emit a .gts snapshot.",
-    "import-submodules": "Report or convert git submodules to plain ComplexGitSync nested repositories.",
-    "init-from-submodules": "Adopt a submodule-based checkout: discover, initialise, then convert its submodules.",
-    "verify": "Verify the hash-chained .cgitsync/lgr register for tamper-evidence.",
-    "memory": "Look at what this workspace remembers: status, list, show <state>, explore, reboot.",
+    "submodules": "Turn a git-submodule checkout into a ComplexGitSync tree (report, import, init).",
+    "verify": "Check the hash-chained .cgitsync/lgr ledger, or repair its HEAD cache (check, repair).",
+    "memory": "What this workspace remembers: read it (status, list, show, explore, as-of), keep it in a repository.",
+    "self-history": "The private record of agent work on this project (add, adopt, list).",
 }
 
 
 def register_parsers(subparsers: argparse._SubParsersAction) -> None:
-    """Register this group's 16 subparsers.
+    """Register this group's subparsers.
 
     Mirrors cli.py's build_parser() if/elif chain for exactly the Expert
     command group, but dispatches to one small ``_register_*`` builder per
     command (via ``_PARSER_BUILDERS``) instead of a single long if/elif
     chain, to stay under the C90 complexity ceiling enabled alongside this
     split. One command's parser registration needs a numeric argument type
-    (``init-from-submodules --max-depth``); it uses ``_shared``'s own
+    (``submodules init --max-depth``); it uses ``_shared``'s own
     ``_non_negative_int`` directly, the same helper ``cli.configuration``
     has threaded in for ``view-tree``/``discover``.
     """
@@ -97,11 +104,7 @@ def _add_search_dir_argument(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--search-dir",
         metavar="DIR",
-        help=(
-            "Directory used to resolve CGSHOME before loading "
-            "CGSHOME/.cgitsync/state(<hash>)_n/*.gts. When omitted, uses $CGSHOME "
-            "or walks up from the current working directory."
-        ),
+        help=SEARCH_DIR_HELP,
     )
 
 
@@ -125,21 +128,6 @@ def _add_force_protocol_argument(subparser: argparse.ArgumentParser, *, command_
     )
 
 
-def _register_purge(subparser: argparse.ArgumentParser) -> None:
-    subparser.add_argument("source", help="Path to a .cgs spec")
-    subparser.add_argument(
-        "--output-path",
-        dest="output_path",
-        help=(
-            "CGSPATH: parent directory used to derive CGSHOME as "
-            "CGSPATH/<project-name> after the project definition is normalized "
-            "(.cgs or direct CLI mode). "
-            "Defaults to ../.. relative to CWD ($CGSHOME/ComplexGitSync)."
-        ),
-    )
-    subparser.set_defaults(handler=_handle_purge)
-
-
 def _register_validate(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("source", help="Path to the local .cgs or .gts file to validate.")
     subparser.add_argument(
@@ -148,23 +136,6 @@ def _register_validate(subparser: argparse.ArgumentParser) -> None:
         help="Resolve nested .cgs files for locally available child repos.",
     )
     subparser.set_defaults(handler=_handle_validate)
-
-
-def _register_clone(subparser: argparse.ArgumentParser) -> None:
-    subparser.add_argument("source", help="Path to the local .cgs file to clone from.")
-    subparser.add_argument(
-        "--target-dir",
-        help="Target directory for the cloned project root. Defaults to ./<project-name>.",
-    )
-    subparser.add_argument(
-        "--output-path",
-        dest="output_path",
-        help=(
-            "Base directory where the project folder is created. "
-            "The project name from the .cgs file is appended automatically."
-        ),
-    )
-    subparser.set_defaults(handler=_handle_clone)
 
 
 def _register_pull_source_and_search_dir(subparser: argparse.ArgumentParser) -> None:
@@ -186,6 +157,17 @@ def _register_pull(subparser: argparse.ArgumentParser) -> None:
     _add_gitignore_sync_arguments(subparser)
     _add_force_protocol_argument(subparser, command_name="pull")
     subparser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Reset every repository to its remote's tip instead of fast-forwarding. "
+            "Uncommitted and untracked work is set aside with git stash push -u, and "
+            "the whole tree is refused, changing nothing, while any repository holds "
+            "commits no remote has. Never force-pushes. Not combined with the "
+            ".gitignore options."
+        ),
+    )
+    subparser.add_argument(
         "--private",
         action="store_true",
         help=(
@@ -194,17 +176,33 @@ def _register_pull(subparser: argparse.ArgumentParser) -> None:
             "merge '<its default_branch>' into the derived branch it is on. Use it "
             "while a project feature branch is open, so its settings branch does not "
             "drift behind the project's. Read-only configuration repositories are "
-            "never touched."
+            "never touched. With --force, force-resynchronise only those repositories."
         ),
     )
     subparser.set_defaults(handler=_handle_pull)
 
 
-def _register_pull_force(subparser: argparse.ArgumentParser) -> None:
+def _register_autofix(subparser: argparse.ArgumentParser) -> None:
     _register_pull_source_and_search_dir(subparser)
-    _add_force_protocol_argument(subparser, command_name="pull-force")
-    _add_private_argument(subparser, verb="Force-resynchronise")
-    subparser.set_defaults(handler=_handle_pull_force)
+    subparser.add_argument(
+        "--error",
+        default=None,
+        help=(
+            "The error text to diagnose, instead of reading the most recent "
+            "failing command from .cgitsync/logs/ — the owner's own "
+            "'it takes the former error as an entry'."
+        ),
+    )
+    subparser.add_argument(
+        "--repo",
+        dest="repo_name",
+        default=None,
+        help=(
+            "The mounted repository to repair (e.g. .memory), instead of "
+            "guessing it from --error."
+        ),
+    )
+    subparser.set_defaults(handler=_handle_autofix)
 
 
 def _add_private_argument(subparser: argparse.ArgumentParser, *, verb: str) -> None:
@@ -283,11 +281,71 @@ def _register_checkout(subparser: argparse.ArgumentParser) -> None:
 
 
 def _register_branch(subparser: argparse.ArgumentParser) -> None:
-    subparser.add_argument("branch", help="Branch name to create across the READY tree.")
+    """``branch <subcommand>``: create, list or close a project branch."""
+    actions = subparser.add_subparsers(dest="branch_command", required=True)
+    create = actions.add_parser("create", help="Create a branch across the full READY tree without checkout.", description="Create a branch across the full READY tree without checkout.")
+    create.add_argument("branch", help="Branch name to create across the READY tree.")
+    _add_gts_argument(create)
+    _add_search_dir_argument(create)
+    _add_private_argument(create, verb="Create the branch in")
+    listing = actions.add_parser(
+        "list", help="List the project's branches and which repositories hold each; change nothing.", description="List the project's branches and which repositories hold each; change nothing."
+    )
+    listing.add_argument(
+        "--per-repo",
+        action="store_true",
+        help="One line per repository with its own local branches, instead of the project's branches.",
+    )
+    _add_gts_argument(listing)
+    _add_search_dir_argument(listing)
+    _add_private_argument(listing, verb="List the branches of")
+    close = actions.add_parser(
+        "close",
+        help="Close a project branch: keep what it alone holds on 'ancestors', then rename it to closed/<branch>.",
+        description=(
+            "Close a project branch: keep what it alone holds on the permanent 'ancestors' branch and record "
+            "that in the ledger, then rename it to closed/<branch>, tree-wide, leaf-first. Afterwards any tool "
+            "may delete the closed branch without losing a commit."
+        ),
+    )
+    close.add_argument("branch", help="Project branch to close (renamed to closed/<branch>).")
+    _add_gts_argument(close)
+    _add_search_dir_argument(close)
+    _add_private_argument(close, verb="Close the branch in")
+    check = actions.add_parser(
+        "check",
+        help="Say what deleting a branch would lose in each repository, and whether 'ancestors' keeps it; change nothing.",
+        description=(
+            "Say what deleting a branch would lose in each repository: the commits only it reaches and the "
+            "memory files only it holds, and whether 'ancestors' already keeps them (safe, recorded or "
+            "needs ancestor). Changes nothing."
+        ),
+    )
+    check.add_argument("branch", help="Branch to check: a live branch, closed/<branch>, or a closed branch by its old name.")
+    _add_gts_argument(check)
+    _add_search_dir_argument(check)
+    _add_private_argument(check, verb="Check the branch in")
+    delete = actions.add_parser(
+        "delete",
+        help="Delete a closed branch, tree-wide, once 'ancestors' keeps everything it alone held.",
+        description=(
+            "Delete a closed branch, tree-wide: keep on 'ancestors' and record in the ledger anything it alone "
+            "holds that is not kept yet, verify the ledger, then delete it on origin and locally, leaf-first. "
+            "Refuses with nothing deleted when any step fails."
+        ),
+    )
+    delete.add_argument("branch", help="Closed branch to delete: closed/<branch>, or its old name.")
+    _add_gts_argument(delete)
+    _add_search_dir_argument(delete)
+    _add_private_argument(delete, verb="Delete the branch in")
+    subparser.set_defaults(handler=_handle_branch)
+
+
+def _register_fetch(subparser: argparse.ArgumentParser) -> None:
     _add_gts_argument(subparser)
     _add_search_dir_argument(subparser)
-    _add_private_argument(subparser, verb="Create the branch in")
-    subparser.set_defaults(handler=_handle_branch)
+    _add_private_argument(subparser, verb="Fetch")
+    subparser.set_defaults(handler=_handle_fetch_command)
 
 
 def _register_commit(subparser: argparse.ArgumentParser) -> None:
@@ -363,6 +421,15 @@ def _register_merge(subparser: argparse.ArgumentParser) -> None:
             "conflict anywhere leaves the tree untouched."
         ),
     )
+    subparser.add_argument(
+        "--all-conflicts",
+        action="store_true",
+        help=(
+            "Used with --resolve: continue merging all repositories, resolving "
+            "each conflict in turn. Binary/generated files are regenerated automatically; "
+            "human-editable files open in a merge tool."
+        ),
+    )
     subparser.set_defaults(handler=_handle_merge)
 
 
@@ -420,32 +487,12 @@ def _register_tag(subparser: argparse.ArgumentParser) -> None:
     subparser.set_defaults(handler=_handle_tag)
 
 
-def _register_freeze(subparser: argparse.ArgumentParser) -> None:
-    subparser.add_argument("name", help="Version tag name used for commit, tag, and push.")
-    _add_gts_argument(subparser)
-    _add_search_dir_argument(subparser)
-    _add_dry_run_argument(subparser, help_text="Preview the freeze execution plan without mutating repositories.")
-    _add_private_argument(subparser, verb="Freeze")
-    subparser.set_defaults(handler=_handle_freeze)
-
-
-def _register_import_submodules(subparser: argparse.ArgumentParser) -> None:
+def _add_import_submodules_arguments(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "repo_root",
         help=(
             "Path to the local git repository whose .gitmodules file "
             "lists the submodules to import."
-        ),
-    )
-    subparser.add_argument(
-        "--apply",
-        action="store_true",
-        default=False,
-        help=(
-            "Perform the conversion: run 'git rm --cached' for each "
-            "submodule, remove its .gitmodules stanza, and update "
-            ".gitignore. Without this flag the command only prints "
-            "what would change (dry-run)."
         ),
     )
     subparser.add_argument(
@@ -459,10 +506,9 @@ def _register_import_submodules(subparser: argparse.ArgumentParser) -> None:
             "only REPO_ROOT's own .gitmodules is converted."
         ),
     )
-    subparser.set_defaults(handler=_handle_import_submodules)
 
 
-def _register_init_from_submodules(subparser: argparse.ArgumentParser) -> None:
+def _add_init_from_submodules_arguments(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "repo_root",
         help=(
@@ -528,16 +574,29 @@ def _register_init_from_submodules(subparser: argparse.ArgumentParser) -> None:
             "unaffected."
         ),
     )
-    subparser.set_defaults(handler=_handle_init_from_submodules)
+
+
+def _register_submodules(subparser: argparse.ArgumentParser) -> None:
+    """``submodules <subcommand>``: report, import, or init a submodule checkout."""
+    actions = subparser.add_subparsers(dest="submodules_command", required=True)
+    report = actions.add_parser(
+        "report", help="Print what converting the submodules would change; change nothing.", description="Print what converting the submodules would change; change nothing."
+    )
+    _add_import_submodules_arguments(report)
+    convert = actions.add_parser(
+        "import",
+        help="Convert git submodules to plain ComplexGitSync nested repositories: git rm --cached, .gitmodules and .gitignore.", description="Convert git submodules to plain ComplexGitSync nested repositories: git rm --cached, .gitmodules and .gitignore.",
+    )
+    _add_import_submodules_arguments(convert)
+    init = actions.add_parser(
+        "init", help="Adopt a submodule-based checkout: discover, initialise, then convert its submodules.", description="Adopt a submodule-based checkout: discover, initialise, then convert its submodules."
+    )
+    _add_init_from_submodules_arguments(init)
+    subparser.set_defaults(handler=_handle_submodules)
 
 
 def _register_memory(subparser: argparse.ArgumentParser) -> None:
-    """``memory status|list|show`` — read-only, for now.
-
-    A group rather than three flat commands: they answer one subject, and
-    the next milestones add more of them (a push, an adopt). Read-only
-    because there is nowhere to push a memory to yet.
-    """
+    """``memory <subcommand>`` — one group, because every subcommand answers one subject."""
     memory_commands = subparser.add_subparsers(dest="memory_command", required=True)
 
     status = memory_commands.add_parser(
@@ -547,6 +606,10 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
 
     listing = memory_commands.add_parser(
         "list", help="Every State this workspace holds, newest recording first."
+    )
+    listing.add_argument(
+        "--branch",
+        help="List another chapter's States instead, read from Git: its branch, closed/<branch>, or the copy 'ancestors' keeps once it is deleted.",
     )
     _add_search_dir_argument(listing)
 
@@ -613,6 +676,8 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
         "carrying forward whatever the fallback branch already holds.",
     )
     _add_search_dir_argument(adopt)
+    memory_prompt.register(memory_commands)
+    memory_asof.register(memory_commands)
 
     migrate = memory_commands.add_parser(
         "migrate",
@@ -671,27 +736,116 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     subparser.set_defaults(handler=_handle_memory)
 
 
-def _register_verify(subparser: argparse.ArgumentParser) -> None:
-    _add_search_dir_argument(subparser)
+_AGENT_ROLE_CHOICES = tuple(sorted(VALID_AGENT_ROLES))
+_CONFORMITY_BASIS_CHOICES = tuple(sorted(VALID_CONFORMITY_BASES))
+
+
+def _add_agent_arguments(subparser: argparse.ArgumentParser, prefix: str, label: str) -> None:
     subparser.add_argument(
-        "--repair",
-        action="store_true",
+        f"--{prefix}-role", required=True, choices=_AGENT_ROLE_CHOICES,
+        help=f"The {label}'s role, from .localSpec/AGENT.md's roster.",
+    )
+    subparser.add_argument(f"--{prefix}-vendor", required=True, help=f"The {label}'s vendor.")
+    subparser.add_argument(f"--{prefix}-model", required=True, help=f"The {label}'s model version.")
+
+
+def _add_conformity_arguments(subparser: argparse.ArgumentParser, prefix: str, label: str) -> None:
+    subparser.add_argument(
+        f"--{prefix}-score", required=True, type=ConformityScale.argument(prefix.replace("-", "_")),
+        help=f"{label} score, from 0 to its maximum {ConformityScale.MAXIMUM[prefix.replace('-', '_')]}.",
+    )
+    subparser.add_argument(
+        f"--{prefix}-basis", required=True, choices=_CONFORMITY_BASIS_CHOICES,
+        help=f"Whether {label} was measured by the tool or asserted by the orchestrator.",
+    )
+    subparser.add_argument(
+        f"--{prefix}-reasoning", required=True, help=f"One line: why this {label} score."
+    )
+
+
+def _register_self_history(subparser: argparse.ArgumentParser) -> None:
+    """``self-history add`` — one record of one piece of agent work.
+
+    A group of its own, not folded into ``memory``, because the ticket
+    that designed it (AgentReport) names the command ``cgitsync
+    self-history add`` explicitly and the mount it writes into is a
+    second, separate repository nested inside the memory mount, not the
+    memory mount itself.
+    """
+    self_history_commands = subparser.add_subparsers(dest="self_history_command", required=True)
+
+    add = self_history_commands.add_parser(
+        "add", help="Record one piece of agent work to the pending half."
+    )
+    add.add_argument("--ticket", required=True, help="The ticket served, by its short name.")
+    add.add_argument("--goal", required=True, help="The ticket's objective, at most 3 lines.")
+    add.add_argument("--action", required=True, help="The main action taken, at most 3 lines.")
+    _add_agent_arguments(add, "worker", "worker")
+    _add_agent_arguments(add, "orchestrator", "orchestrator")
+    _add_conformity_arguments(add, "spec-respect", "spec respect")
+    _add_conformity_arguments(add, "gating", ".PUBLIC/.PRIVATE gating")
+    _add_conformity_arguments(add, "quality", "quality of production")
+    add.add_argument("--conformity-explanation", default="", help="Optional: a short account of how the total out of 100 came about.")
+    add.add_argument(
+        "--state-before", default="", help="state(<hash>) before the work, if known."
+    )
+    add.add_argument("--state-after", default="", help="state(<hash>) after the work, if known.")
+    lint_group = add.add_mutually_exclusive_group()
+    lint_group.add_argument("--lint-passed", action="store_true", default=None, dest="lint_passed")
+    lint_group.add_argument("--lint-failed", action="store_false", dest="lint_passed")
+    tests_group = add.add_mutually_exclusive_group()
+    tests_group.add_argument("--tests-passed", action="store_true", default=None, dest="tests_passed")
+    tests_group.add_argument("--tests-failed", action="store_false", dest="tests_passed")
+    add.add_argument(
+        "--pushed", action="store_true", help="Something reached a remote this session."
+    )
+    add.add_argument(
+        "--pushed-reason", default="", help="On whose instruction, if --pushed was given."
+    )
+    _add_search_dir_argument(add)
+
+    adopt = self_history_commands.add_parser(
+        "adopt",
+        help="Retrofit self-history onto a .memory adopted before it existed.",
+    )
+    adopt.add_argument("--owner", help="Account the self-history repository belongs to.")
+    adopt.add_argument("--branch", help="Branch to adopt. Defaults to .memory's own current branch.")
+    _add_search_dir_argument(adopt)
+
+    listing = self_history_commands.add_parser(
+        "list", help="Every self-history record this workspace holds, folded and pending."
+    )
+    _add_search_dir_argument(listing)
+
+    subparser.set_defaults(handler=_handle_self_history)
+
+
+def _register_verify(subparser: argparse.ArgumentParser) -> None:
+    """``verify <subcommand>``: check the ledger, or repair its HEAD cache."""
+    actions = subparser.add_subparsers(dest="verify_command", required=True)
+    check = actions.add_parser("check", help="Say whether this workspace's recorded history is verified, absent, legacy or corrupt.", description="Say whether this workspace's recorded history is verified, absent, legacy or corrupt.")
+    _add_search_dir_argument(check)
+    _add_json_argument(check)
+    repair = actions.add_parser(
+        "repair",
         help=(
-            "Repair a stale HEAD cache to match the recomputed true "
-            "head. Never rewrites or deletes a register entry — a "
-            "broken chain is reported, not healed."
+            "Check, then repair a stale HEAD cache to match the recomputed true head. "
+            "Never rewrites or deletes a ledger entry: a broken chain is reported, not healed."
+        ), description=(
+            "Check, then repair a stale HEAD cache to match the recomputed true head. "
+            "Never rewrites or deletes a ledger entry: a broken chain is reported, not healed."
         ),
     )
-    _add_json_argument(subparser)
+    _add_search_dir_argument(repair)
+    _add_json_argument(repair)
     subparser.set_defaults(handler=_handle_verify)
 
 
 _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
-    "purge": _register_purge,
     "validate": _register_validate,
-    "clone": _register_clone,
     "pull": _register_pull,
-    "pull-force": _register_pull_force,
+    "fetch": _register_fetch,
+    "autofix": _register_autofix,
     "checkout": _register_checkout,
     "branch": _register_branch,
     "commit": _register_commit,
@@ -700,30 +854,11 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "rm": _register_rm,
     "push": _register_push,
     "tag": _register_tag,
-    "freeze": _register_freeze,
-    "import-submodules": _register_import_submodules,
-    "init-from-submodules": _register_init_from_submodules,
+    "submodules": _register_submodules,
     "verify": _register_verify,
     "memory": _register_memory,
+    "self-history": _register_self_history,
 }
-
-
-def _handle_purge(args: argparse.Namespace) -> int:
-    source_path = Path(args.source)
-    output_path = getattr(args, "output_path", None)
-    client = ComplexGitSyncClient()
-    project_root = client.resolve_initialise_cgshome(source_path, output_path=output_path)
-    return _run_with_logging(
-        command_name="purge",
-        source=source_path,
-        client=client,
-        project_root=project_root,
-        runner=lambda active_client, source: _execute_purge_cgs(
-            active_client,
-            source,
-            output_path=output_path,
-        ),
-    )
 
 
 def _handle_validate(args: argparse.Namespace) -> int:
@@ -734,28 +869,16 @@ def _handle_validate(args: argparse.Namespace) -> int:
     )
 
 
-def _handle_clone(args: argparse.Namespace) -> int:
-    client = ComplexGitSyncClient()
-    project_root = client.resolve_clone_root(
-        Path(args.source),
-        target_dir=args.target_dir,
-        output_path=getattr(args, "output_path", None),
-    )
-    return _run_with_logging(
-        command_name="clone",
-        source=Path(args.source),
-        client=client,
-        project_root=project_root,
-        runner=lambda active_client, source: _execute_clone(
-            active_client,
-            source,
-            target_dir=args.target_dir,
-            output_path=getattr(args, "output_path", None),
-        ),
-    )
-
-
 def _handle_pull(args: argparse.Namespace) -> int:
+    if getattr(args, "force", False):
+        if args.commit_gitignore or args.git_user_name or args.git_user_email:
+            print(
+                "cgitsync pull: error: --force does not take --commit-gitignore, "
+                "--git-user-name or --git-user-email",
+                file=sys.stderr,
+            )
+            return 2
+        return _handle_pull_force(args)
     source = _resolve_workspace_source(args.source, getattr(args, "search_dir", None))
     if getattr(args, "private", False):
         return _run_with_logging(
@@ -764,7 +887,6 @@ def _handle_pull(args: argparse.Namespace) -> int:
             runner=lambda client, source: _execute_pull_private(client, source),
         )
     commit_gitignore = getattr(args, "commit_gitignore", False)
-    force_gitignore_sync = getattr(args, "force_gitignore_sync", False)
     git_user_name = getattr(args, "git_user_name", None)
     git_user_email = getattr(args, "git_user_email", None)
     force_access_protocol = getattr(args, "force_access_protocol", None)
@@ -775,7 +897,6 @@ def _handle_pull(args: argparse.Namespace) -> int:
             client,
             source,
             commit_gitignore=commit_gitignore,
-            force_gitignore_sync=force_gitignore_sync,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
             force_access_protocol=force_access_protocol,
@@ -798,6 +919,17 @@ def _handle_pull_force(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_autofix(args: argparse.Namespace) -> int:
+    source = _resolve_workspace_source(args.source, getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name="autofix",
+        source=source,
+        runner=lambda client, source: _execute_autofix(
+            client, source, error=args.error, repo_name=args.repo_name
+        ),
+    )
+
+
 def _handle_checkout(args: argparse.Namespace) -> int:
     ref_kind = RefKind.TAG if args.ref_kind == "tag" else RefKind.BRANCH
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
@@ -811,11 +943,17 @@ def _handle_checkout(args: argparse.Namespace) -> int:
 
 
 def _handle_branch(args: argparse.Namespace) -> int:
+    if args.branch_command == "close":
+        return _handle_close_branch(args)
+    return _handle_branch_command(args)
+
+
+def _handle_close_branch(args: argparse.Namespace) -> int:
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     return _run_with_logging(
-        command_name="branch",
+        command_name="branch-close",
         source=gts_path,
-        runner=lambda client, source: _execute_branch(
+        runner=lambda client, source: _execute_close_branch(
             client, source, branch=args.branch, private=args.private
         ),
     )
@@ -866,6 +1004,7 @@ def _handle_merge(args: argparse.Namespace) -> int:
             no_ff=args.no_ff,
             dry_run=args.dry_run,
             resolve=args.resolve,
+            all_conflicts=getattr(args, "all_conflicts", False),
         ),
     )
 
@@ -926,23 +1065,18 @@ def _handle_tag(args: argparse.Namespace) -> int:
     )
 
 
-def _handle_freeze(args: argparse.Namespace) -> int:
-    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
-    return _run_with_logging(
-        command_name="freeze",
-        source=gts_path,
-        runner=lambda client, source: _execute_freeze(
-            client, source, name=args.name, dry_run=args.dry_run, private=args.private
-        ),
-    )
+def _handle_submodules(args: argparse.Namespace) -> int:
+    if args.submodules_command == "init":
+        return _handle_init_from_submodules(args)
+    return _handle_import_submodules(args)
 
 
 def _handle_import_submodules(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).resolve()
-    apply = args.apply
+    apply = args.submodules_command == "import"
     recursive = args.recursive
     return _run_with_logging(
-        command_name="import-submodules",
+        command_name=f"submodules-{args.submodules_command}",
         source=repo_root,
         runner=lambda client, source: _execute_import_submodules(
             client,
@@ -961,7 +1095,7 @@ def _handle_init_from_submodules(args: argparse.Namespace) -> int:
     force = args.force
     force_access_protocol = args.force_access_protocol
     return _run_with_logging(
-        command_name="init-from-submodules",
+        command_name="submodules-init",
         source=repo_root,
         runner=lambda client, source: _execute_init_from_submodules(
             client,
@@ -1016,10 +1150,9 @@ def _execute_memory(
     timeline: bool = False,
     reboot: bool = False,
 ) -> int:
-    if subcommand == "status":
-        return _print_memory_status(client.memory_status(cgshome))
-    if subcommand == "list":
-        return _print_memory_list(client.memory_list(cgshome))
+    if subcommand in _SIMPLE_MEMORY_SUBCOMMANDS:
+        fetch, render = _SIMPLE_MEMORY_SUBCOMMANDS[subcommand]
+        return render(fetch(client, cgshome, branch))
     if subcommand == "init":
         _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
         return _print_memory_init(client.memory_init(cgshome, owner=owner))
@@ -1062,7 +1195,73 @@ def _execute_memory(
         return _print_memory_explore(
             client.memory_explore(cgshome, branch=branch, timeline=timeline)
         )
+    # `env=<ref>` (the new argument this command's own environment=env(...)
+    # reference line asks for) or the full `env(<ref>)` form that reference
+    # is itself printed in — either routes to the full Environment record
+    # instead of a State.
+    if (state or "").startswith(("env=", "env(")):
+        return _print_memory_show_environment(
+            client.memory_show_environment(cgshome, state or "")
+        )
     return _print_memory_show(client.memory_show(cgshome, state or ""), full=full)
+
+
+def _handle_self_history(args: argparse.Namespace) -> int:
+    cgshome = _resolve_cgshome(getattr(args, "search_dir", None))
+    return _run_with_logging(
+        command_name=f"self-history-{args.self_history_command}",
+        source=cgshome,
+        runner=lambda client, source: _execute_self_history(client, source, args=args),
+    )
+
+
+def _execute_self_history(
+    client: ComplexGitSyncClient, cgshome: Path, *, args: argparse.Namespace
+) -> int:
+    if args.self_history_command == "list":
+        return _print_memory_self_history(client.memory_self_history(cgshome))
+    _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+    if args.self_history_command == "adopt":
+        result = client.self_history_adopt(
+            cgshome, owner=getattr(args, "owner", None), branch=getattr(args, "branch", None)
+        )
+        print(f"mount={result['mount']} branch={result['branch']} remote={result['remote']}")
+        return EXIT_OK
+    worker = AgentInfo(role=args.worker_role, vendor=args.worker_vendor, model=args.worker_model)
+    orchestrator = AgentInfo(
+        role=args.orchestrator_role, vendor=args.orchestrator_vendor, model=args.orchestrator_model
+    )
+    conformity = ConformityScore(
+        spec_respect=ConformityCriterion(
+            score=args.spec_respect_score,
+            basis=args.spec_respect_basis,
+            reasoning=args.spec_respect_reasoning,
+        ),
+        gating=ConformityCriterion(
+            score=args.gating_score, basis=args.gating_basis, reasoning=args.gating_reasoning
+        ),
+        quality=ConformityCriterion(
+            score=args.quality_score, basis=args.quality_basis, reasoning=args.quality_reasoning
+        ),
+        explanation=args.conformity_explanation,
+    )
+    path = client.self_history_add(
+        cgshome,
+        ticket=args.ticket,
+        goal=args.goal,
+        action=args.action,
+        worker=worker,
+        orchestrator=orchestrator,
+        conformity=conformity,
+        state_before=args.state_before,
+        state_after=args.state_after,
+        lint_passed=args.lint_passed,
+        tests_passed=args.tests_passed,
+        pushed=args.pushed,
+        pushed_reason=args.pushed_reason,
+    )
+    print(f"conformity: {ConformityScale.render(conformity.to_dict())}")
+    return _print_self_history_add(path)
 
 
 def _cgs_to_edit(client: ComplexGitSyncClient, cgs: str | None, cgshome: Path) -> Path:
@@ -1147,9 +1346,14 @@ def _print_memory_push(result: dict) -> int:
     else:
         print("committed=0 (nothing new to record)")
     print(
-        f"pushed branch={result['branch']} states={result['states']} "
-        f"entries={result['entries']}"
+        f"{'pushed' if result.get('pushed', True) else 'kept local, never published:'} "
+        f"branch={result['branch']} states={result['states']} entries={result['entries']}"
     )
+    return EXIT_OK
+
+
+def _print_self_history_add(path: Path) -> int:
+    print(f"recorded={path}")
     return EXIT_OK
 
 
@@ -1157,17 +1361,16 @@ def _print_memory_reboot(result: dict) -> int:
     print(f"folded={result['folded']} pending record(s)")
     print(f"archived={result['archived_from']} -> {result['archived_to']}")
     print(f"exported={result['exported']}")
-    print(f"branch={result['branch']} (fresh, empty)")
-    print("next: use the tool as normal — the next command writes this branch's first State")
+    print(f"branch={result['branch']} (fresh, pushed)")
+    print("next: use the tool as normal — the next command writes this branch's next State")
     return EXIT_OK
 
 
 def _print_memory_status(status: dict) -> int:
-    print(
-        f"states={status['states']} entries={status['entries']} "
-        f"verification={status['verification']} findings={status['findings']}"
-    )
+    print(f"states={status['states']} entries={status['entries']} verification={status['verification']} findings={status['findings']}")
     print(f"last_recorded_at={status['last_recorded_at'] or '(never)'}")
+    if status.get("notice"):
+        print(status["notice"])
     if not status["entries"]:
         print("nothing has been recorded here yet; the next command that writes a State starts the chain.")
         return EXIT_OK
@@ -1185,6 +1388,8 @@ def _print_memory_list(rows: list[dict]) -> int:
     if not rows:
         print("no States recorded in this workspace.")
         return EXIT_OK
+    if rows[0].get("read_from"):
+        print(f"read_from={rows[0]['read_from']}")
     print(f"{'STATE':<16}  {'RECORDED':<21}  COMMANDS")
     for row in rows:
         commands = ", ".join(row["commands"]) if row["commands"] else "(no entry records it)"
@@ -1211,7 +1416,10 @@ def _shorten(message: str, *, full: bool) -> str:
 
 def _print_memory_explore(answer: dict) -> int:
     branch = answer["branch"]
-    print(f"branch={branch} (current)" if branch else "branch=(no memory mounted here yet)")
+    if answer.get("read_from"):
+        print(f"branch={branch} read_from={answer['read_from']}")
+    else:
+        print(f"branch={branch} (current)" if branch else "branch=(no memory mounted here yet)")
     if "entries" in answer:
         return _print_memory_timeline(answer["entries"])
     return _print_memory_published(answer["commits"])
@@ -1235,7 +1443,8 @@ def _print_memory_timeline(rows: list[dict]) -> int:
         print("nothing recorded here yet.")
         return EXIT_OK
     for row in rows:
-        print(f"seq={row['seq']}  {row['recorded_at']}  {row['command']}")
+        state = row["state"][:12] if row["state"] else "-"
+        print(f"seq={row['seq']}  {row['recorded_at']}  {row['command']}  state={state}")
         for commit in row["commits"]:
             print(
                 f"    commit  {commit['repository']:<18} {commit['sha'][:8]}  "
@@ -1249,13 +1458,97 @@ def _print_memory_timeline(rows: list[dict]) -> int:
     return EXIT_OK
 
 
+def _print_memory_self_history(records: list[dict]) -> int:
+    if not records:
+        print("no self-history recorded here yet.")
+        return EXIT_OK
+    for record in records:
+        worker, orchestrator = record["worker"], record["orchestrator"]
+        conformity = record["conformity"]
+        print(
+            f"{record['recorded_at']}  ticket={record['ticket']}  "
+            f"worker={worker['role']}({worker['vendor']}/{worker['model']})  "
+            f"orchestrator={orchestrator['role']}({orchestrator['vendor']}/{orchestrator['model']})"
+        )
+        print(f"    goal: {record['goal']}")
+        print(f"    action: {record['action']}")
+        print(f"    conformity: {ConformityScale.render(conformity)}")
+        if conformity.get("explanation"):
+            print(f"    explanation: {conformity['explanation']}")
+        contract = record["contract"] or "(none signed)"
+        print(f"    contract={contract}")
+    return EXIT_OK
+
+
+def _tree_branches(count: int) -> list[str]:
+    """``├── `` for every item but the last, ``└── `` for it — the same
+    connectors `view-tree` (`git_tree.format_view_tree`) draws a repo tree
+    with, reused here for an environment record's own nested shape rather
+    than a second, differently-styled way of indenting a list."""
+    return ["├── "] * (count - 1) + ["└── "] if count else []
+
+
+def _format_environment_tree(record: dict) -> list[str]:
+    """Render one Environment record (`environment_spec.TreeEnvironment.to_dict()`)
+    the way `view-tree` draws a repo tree — box-drawing connectors, not a
+    raw ``record={...}`` dict dump nobody can read at a glance."""
+    lines: list[str] = []
+    machine = record.get("machine", {})
+    tools = record.get("tools", [])
+    credentials = record.get("credentials", [])
+    manifests = record.get("manifests", [])
+    sections = [
+        ("machine", [f"{key}: {value}" for key, value in machine.items()]),
+        ("tools", [f"{tool['name']}: {tool['version']}" for tool in tools]),
+        (
+            "credentials",
+            [
+                f"{cred['provider']} ({cred['tool']}): "
+                f"available={'yes' if cred['available'] else 'no'} "
+                f"authenticated={'yes' if cred['authenticated'] else 'no'}"
+                for cred in credentials
+            ],
+        ),
+        (
+            "manifests",
+            [
+                f"{manifest['path']}: {manifest['digest'][:15]}..."
+                + (f" [{', '.join(manifest['platforms'])}]" if manifest["platforms"] else "")
+                for manifest in manifests
+            ],
+        ),
+    ]
+    sections = [(name, rows) for name, rows in sections if rows]
+    root_branches = _tree_branches(len(sections))
+    for (name, rows), root_branch in zip(sections, root_branches):
+        lines.append(f"{root_branch}{name}")
+        child_prefix = "    " if root_branch == "└── " else "│   "
+        for row, branch in zip(rows, _tree_branches(len(rows))):
+            lines.append(f"{child_prefix}{branch}{row}")
+    return lines
+
+
 def _print_memory_show(state: dict, *, full: bool = False) -> int:
     print(f"state={state['state']}")
     print(f"path={state['path']}")
+    if state.get("read_from") and state["read_from"] != "this workspace":
+        print(f"read_from={state['read_from']}")
+    if state.get("commits_on_ancestors"):
+        print(f"commits_on_ancestors={', '.join(state['commits_on_ancestors'])} (their branches are gone; 'ancestors' keeps these commits)")
     print(
         f"project={state['project']} lifecycle_state={state['lifecycle_state']} "
         f"repos={state['repos']} hash_canonicalisation={state['hash_canonicalisation']}"
     )
+    # The environment this State's own commits ran under, first — a bare
+    # reference, not the full record: 'memory show env=<ref>' is where that
+    # detail lives, since a State answers "what was this tree", not "what
+    # ran it". The tree comes right after — this State's own topology, not
+    # the live one 'view-tree' shows, rendered exactly the same way.
+    for environment in state.get("environments", []):
+        print(f"environment={environment['id']} path={environment['path'] or 'missing'}")
+    if state.get("tree"):
+        print("[tree]")
+        print(state["tree"])
     if not state["entries"]:
         print("no ledger entry records this State.")
         return EXIT_OK
@@ -1282,19 +1575,27 @@ def _print_memory_show(state: dict, *, full: bool = False) -> int:
     return EXIT_OK
 
 
+def _print_memory_show_environment(answer: dict) -> int:
+    print(f"environment={answer['id']}")
+    print(f"path={answer['path']}")
+    for line in _format_environment_tree(answer["record"]):
+        print(line)
+    return EXIT_OK
+
+
 def _handle_verify(args: argparse.Namespace) -> int:
     if getattr(args, "json", False):
         return _handle_verify_json(args)
     cgshome = _resolve_cgshome(getattr(args, "search_dir", None))
     return _run_with_logging(
-        command_name="verify",
+        command_name=f"verify-{args.verify_command}",
         source=cgshome,
-        runner=lambda client, source: _execute_verify(client, source, repair=args.repair),
+        runner=lambda client, source: _execute_verify(client, source, repair=args.verify_command == "repair"),
     )
 
 
 def _handle_verify_json(args: argparse.Namespace) -> int:
-    """``verify --json``: the same chain check, rendered for a script.
+    """``verify check --json``: the same chain check, rendered for a script.
 
     Same exit code as the human form — ``0`` clean, ``1`` when the chain has
     findings — so a caller may read either signal.
@@ -1303,34 +1604,14 @@ def _handle_verify_json(args: argparse.Namespace) -> int:
     with _json_stdout():
         cgshome = _resolve_cgshome(getattr(args, "search_dir", None))
         exit_code = _run_with_logging(
-            command_name="verify",
+            command_name=f"verify-{args.verify_command}",
             source=cgshome,
             runner=lambda client, source: _execute_verify_json(
-                client, source, repair=args.repair, rendered=rendered
+                client, source, repair=args.verify_command == "repair", rendered=rendered
             ),
         )
     print(rendered["payload"])
     return exit_code
-
-
-def _execute_purge_cgs(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    output_path: str | None = None,
-) -> int:
-    if source_path.suffix != ".cgs":
-        raise ValueError("purge expects a .cgs source.")
-    print("operation_sequence=GT-LOAD->GT-DISCOVER->GT-VALIDATE->FS-PURGE")
-    print("workflow=load->expand->validate->purge")
-    removed = client.purge(source_path, output_path=output_path)
-    if removed:
-        print("removed:")
-        for path in removed:
-            print(path)
-    else:
-        print("removed: none")
-    return 0
 
 
 def _execute_validate(
@@ -1358,7 +1639,7 @@ def _execute_verify_json(
     return _verify_exit_code(report.state)
 
 
-#: What each of the four answers prints, and what it means for a reader who
+#: What each of the five answers prints, and what it means for a reader who
 #: has just been told it. The wording says what was actually checked: a
 #: command that answered "clean" over a directory nothing writes taught its
 #: users to ignore it.
@@ -1381,6 +1662,14 @@ _VERIFY_ANSWERS: dict[HistoryState, tuple[str, str]] = {
     HistoryState.CORRUPT: (
         "corrupt",
         "a chain was read and it does not hold.",
+    ),
+    HistoryState.TIME_INCONSISTENT: (
+        "time-inconsistent",
+        "the chain holds — every link checked out — but its own timestamps "
+        "move backwards somewhere. Your history is intact; the clock that "
+        "stamped it was not. A corrected clock, a restored snapshot, or a "
+        "machine that disagreed about the hour all look like this, and so "
+        "does a backdated entry.",
     ),
 }
 
@@ -1412,27 +1701,16 @@ def _verify_exit_code(state: HistoryState) -> int:
     intact?", and "I cannot tell" is not a yes — a build gating on
     ``verify`` must not pass because the evidence is in a format that cannot
     be checked.
+
+    ``time-inconsistent`` exits non-zero for the neighbouring reason: the
+    history holds, so it is not ``corrupt``, but something is wrong that a
+    caller gating on this command should not sail past. Which of the two it
+    is changes what the reader should go and look at, which is exactly why
+    it is its own answer rather than folded into the other.
     """
     if state in (HistoryState.VERIFIED, HistoryState.NO_HISTORY):
         return EXIT_OK
     return EXIT_REFUSED
-
-
-def _execute_clone(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    target_dir: str | None,
-    output_path: str | None = None,
-) -> int:
-    print("git_command=git clone (executed per repo)")
-    registry = client.clone(source_path, target_dir=target_dir, output_path=output_path)
-    tree_state = client.get_tree_state()
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"root={registry.get('root').absolute_path}"
-    )
-    return 0
 
 
 def _execute_pull_private(client: ComplexGitSyncClient, source_path: Path) -> int:
@@ -1454,7 +1732,6 @@ def _execute_pull(
     source_path: Path,
     *,
     commit_gitignore: bool = False,
-    force_gitignore_sync: bool = False,
     git_user_name: str | None = None,
     git_user_email: str | None = None,
     force_access_protocol: str | None = None,
@@ -1462,7 +1739,6 @@ def _execute_pull(
     registry = client.pull(
         source_path,
         commit_gitignore=commit_gitignore,
-        force_gitignore_sync=force_gitignore_sync,
         git_user_name=git_user_name,
         git_user_email=git_user_email,
         force_access_protocol=force_access_protocol,
@@ -1497,6 +1773,19 @@ def _execute_pull_force(
     return 0
 
 
+def _execute_autofix(
+    client: ComplexGitSyncClient,
+    source_path: Path,
+    *,
+    error: str | None,
+    repo_name: str | None,
+) -> int:
+    _load_ready_registry_source(client, source_path)
+    outcome = client.autofix(error=error, repo_name=repo_name)
+    print(f"repaired={outcome.repaired} detail={outcome.detail}")
+    return EXIT_OK if outcome.repaired else EXIT_REFUSED
+
+
 def _execute_checkout(
     client: ComplexGitSyncClient,
     source_path: Path,
@@ -1517,7 +1806,7 @@ def _execute_checkout(
     return 0
 
 
-def _execute_branch(
+def _execute_close_branch(
     client: ComplexGitSyncClient,
     source_path: Path,
     *,
@@ -1525,8 +1814,18 @@ def _execute_branch(
     private: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
-    print(f"git_command=git branch {branch}")
-    client.branch(branch, private=private)
+    print(f"git_command=git push <remote> <branch>:refs/heads/closed/{branch} "
+          f"&& git push <remote> --delete {branch} && git branch -m {branch} closed/{branch}")
+    client.close_branch(branch, private=private)
+    _print_ancestry(client)
+    if client.last_ancestry and not client.last_write_outcomes:
+        print(f"closed nothing: '{branch}' was already closed; what it alone holds is now kept on 'ancestors'.")
+    else:
+        _print_write_outcomes(
+            client,
+            verb="closed",
+            nothing_note=f"no repository in scope had a branch named '{branch}' to close.",
+        )
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
@@ -1594,6 +1893,7 @@ def _execute_merge(
     no_ff: bool = False,
     dry_run: bool = False,
     resolve: bool = False,
+    all_conflicts: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
     scope = _resolve_write_scope(
@@ -1638,6 +1938,7 @@ def _execute_merge(
             all_writable=all_writable,
             ff_only=ff_only,
             no_ff=no_ff,
+            all_conflicts=all_conflicts,
         )
     merged = client.merge(
         project_branch,
@@ -1730,22 +2031,37 @@ def _execute_merge_resolve(
     all_writable: bool,
     ff_only: bool,
     no_ff: bool,
+    all_conflicts: bool = False,
 ) -> int:
     # The warning prints before the writes, not after: this is the one merge
     # mode that can leave the tree half-merged.
-    print(
-        "note: --resolve merges one repository at a time and stops at the "
-        "first conflict. Repositories merged before it stay merged, so the "
-        "tree can be left partly merged. Plain 'cgitsync merge' merges "
-        "nothing when any repository conflicts."
-    )
-    outcome = client.merge_resolve(
-        project_branch,
-        private=private,
-        all_writable=all_writable,
-        ff_only=ff_only,
-        no_ff=no_ff,
-    )
+    if all_conflicts:
+        print(
+            "note: --resolve --all-conflicts merges all repositories, resolving "
+            "each conflict in turn. Binary/generated files are regenerated automatically. "
+            "This may leave the tree partly merged."
+        )
+        outcome = client.merge_resolve_all(
+            project_branch,
+            private=private,
+            all_writable=all_writable,
+            ff_only=ff_only,
+            no_ff=no_ff,
+        )
+    else:
+        print(
+            "note: --resolve merges one repository at a time and stops at the "
+            "first conflict. Repositories merged before it stay merged, so the "
+            "tree can be left partly merged. Plain 'cgitsync merge' merges "
+            "nothing when any repository conflicts."
+        )
+        outcome = client.merge_resolve(
+            project_branch,
+            private=private,
+            all_writable=all_writable,
+            ff_only=ff_only,
+            no_ff=no_ff,
+        )
     for repo_name, source in outcome.merged:
         print(f"merged {repo_name} <- {source}")
 
@@ -1764,7 +2080,7 @@ def _execute_merge_resolve(
     if outcome.not_reached:
         print(f"not reached: {', '.join(outcome.not_reached)}")
 
-    manual = client.open_merge_tool(outcome.stopped_at)
+    manual = client.open_merge_tool(outcome.stopped_at_id)
     if manual is None:
         print(f"merge tool closed. Review {outcome.stopped_at}, then commit.")
     else:
@@ -1808,8 +2124,8 @@ def _print_merge_plan(
             listed = ", ".join(str(path) for path in paths) or "(no file named)"
             print(f"  {name}: {listed}")
         print(
-            "note: merge would refuse and merge nothing. Resolve these files, "
-            "or run 'cgitsync merge --resolve' to merge one repository at a time."
+            "note: merge would refuse and merge nothing. Resolve these files, or"
+            + MERGE_RESOLVE_HINT
         )
     elif plan and all(status != "merge" for _, _, status, _ in plan):
         print(
@@ -1901,10 +2217,13 @@ def _execute_push(
     scope = _resolve_write_scope(client, private=private, command="push", all_writable=all_writable)
     print("git_command=git push (-u origin <branch> when upstream is missing)")
     if dry_run:
+        actions = ("git push", "git push -u origin <branch> when upstream is missing")
+        if _memory_declared_for_dry_run(client):
+            actions = ("cgitsync memory push", *actions)
         _print_dry_run_plan(
             client,
             command_name="push",
-            actions=("git push", "git push -u origin <branch> when upstream is missing"),
+            actions=actions,
             scope=scope,
         )
     else:
@@ -1913,6 +2232,7 @@ def _execute_push(
             private=private,
             all_writable=all_writable,
         )
+        _print_memory_fold_outcome(client)
         _print_write_outcomes(
             client,
             verb="pushed",
@@ -1939,47 +2259,13 @@ def _execute_tag(
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git tag {name} && git push origin {name}")
     client.tag(name, private=private)
+    _print_memory_fold_outcome(client)
     tree_state = client.get_tree_state()
     print(
         f"{_format_tree_state_line(tree_state)} "
         f"name={name}"
     )
     _print_repo_tree_result(client)
-    return 0
-
-
-def _execute_freeze(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    name: str,
-    dry_run: bool = False,
-    private: bool = False,
-) -> int:
-    _load_ready_registry_source(client, source_path)
-    scope = _resolve_write_scope(
-        client, private=private, command="freeze", default=RepoScope.WRITABLE
-    )
-    print(f"git_command=git add --all && git commit -m {name!r} && git tag {name} && git push")
-    if dry_run:
-        _print_dry_run_plan(
-            client,
-            command_name="freeze",
-            actions=("git add --all", f"git commit -m {name!r}", f"git tag {name}", "git push"),
-            scope=scope,
-        )
-    else:
-        client.freeze(name, private=private)
-    tree_state = client.get_tree_state()
-    snapshot_path = getattr(client, "loaded_snapshot_path", None)
-    snapshot_suffix = f" snapshot={snapshot_path}" if snapshot_path is not None else ""
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"name={name}"
-        f"{snapshot_suffix}"
-    )
-    if not dry_run:
-        _print_repo_tree_result(client)
     return 0
 
 
@@ -1990,7 +2276,7 @@ def _execute_import_submodules(
     apply: bool = False,
     recursive: bool = False,
 ) -> int:
-    """Execute the import-submodules command and print a human-readable report."""
+    """Execute submodules report/import and print a human-readable report."""
     report = client.import_submodules(source, apply=apply, recursive=recursive)
 
     if not report.submodules:
@@ -2003,7 +2289,7 @@ def _execute_import_submodules(
     # without saying which repository it was read from.
     if not apply:
         print(f"Dry run — {len(report.submodules)} submodule(s) under {source}")
-        print("Pass --apply to perform the conversion.\n")
+        print("Run 'cgitsync submodules import' with the same arguments to perform the conversion.\n")
         for sub in report.submodules:
             print(f"  submodule: {sub.name}")
             print(f"    path:        {report.path_from_scan_root(sub)}")
@@ -2033,7 +2319,7 @@ def _execute_init_from_submodules(
     force: bool = False,
     force_access_protocol: str | None = None,
 ) -> int:
-    """Execute init-from-submodules and print a human-readable report."""
+    """Execute submodules init and print a human-readable report."""
     report = client.init_from_submodules(
         source,
         cgs_path=cgs_path,
@@ -2076,7 +2362,24 @@ def _execute_init_from_submodules(
     print(
         "\nThe conversion is staged but not committed. Review it, then:\n"
         f"  export CGSHOME={report.root}\n"
-        "  cgitsync branch <name> && cgitsync checkout <name>\n"
+        "  cgitsync branch create <name> && cgitsync checkout <name>\n"
         '  cgitsync add && cgitsync commit "<message>"'
     )
     return 0
+
+
+#: Memory subcommands with no argument beyond `cgshome` and one call/print
+#: each — pulled out of `_execute_memory`'s if-chain as a single branch so
+#: that chain stays under the C90 complexity ceiling as new read-only
+#: subcommands are added. Defined last: every
+#: `_print_memory_*` function it references must already exist.
+_SIMPLE_MEMORY_SUBCOMMANDS: dict[str, tuple[Callable, Callable]] = {
+    "status": (lambda client, cgshome, branch: client.memory_status(cgshome), _print_memory_status),
+    "list": (lambda client, cgshome, branch: client.memory_list(cgshome, branch=branch), _print_memory_list),
+}
+
+
+__all__ = [
+    "COMMANDS",
+    "register_parsers",
+]

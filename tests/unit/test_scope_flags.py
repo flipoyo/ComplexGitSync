@@ -1,6 +1,6 @@
 """Scope flags: every one is read, and each one changes what is written.
 
-Backs ``.localSpec/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md``. Three
+Backs ``.agent/.local/.dev/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md``. Three
 flags were registered in the parser and never read — ``rm --private``,
 ``freeze --private`` and ``pull-force --private`` — so each reported
 success while writing to the repositories the user was trying to avoid.
@@ -255,41 +255,6 @@ def test_rm_forwards_private_to_the_client(monkeypatch, tmp_path, capsys, flags,
 
 
 @pytest.mark.parametrize("flags, expected", [([], False), (["--private"], True)])
-def test_freeze_forwards_private_to_the_client(monkeypatch, tmp_path, capsys, flags, expected):
-    captured: dict[str, object] = {}
-
-    class StubClient:
-        run_logger = None
-        loaded_snapshot_path = None
-
-        def load_gts(self, path):
-            pass
-
-        def get_dependency_registry(self):
-            raise RuntimeError("no registry in this stub")
-
-        def freeze(self, name, *, private=False, **kwargs):
-            captured["name"] = name
-            captured["private"] = private
-
-        def get_tree_state(self):
-            return _tree_state()
-
-        def view_tree(self):
-            return "ROOT project [main] clean synced"
-
-    _patch_client(monkeypatch, StubClient)
-    gts_path = tmp_path / "project.gts"
-    gts_path.touch()
-
-    assert _run(["freeze", "v1.0", "--gts", str(gts_path), *flags]) == 0
-    capsys.readouterr()
-
-    assert captured["name"] == "v1.0"
-    assert captured["private"] is expected
-
-
-@pytest.mark.parametrize("flags, expected", [([], False), (["--private"], True)])
 def test_pull_force_forwards_private_to_the_client(monkeypatch, tmp_path, capsys, flags, expected):
     captured: dict[str, object] = {}
 
@@ -310,7 +275,7 @@ def test_pull_force_forwards_private_to_the_client(monkeypatch, tmp_path, capsys
     source = tmp_path / "project.gts"
     source.touch()
 
-    assert _run(["pull-force", str(source), *flags]) == 0
+    assert _run(["pull", "--force", str(source), *flags]) == 0
     capsys.readouterr()
 
     assert captured["private"] is expected

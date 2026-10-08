@@ -8,7 +8,7 @@ Contract: dispatch a command handler under structured run-logging (with the
     standing in — and format/print the plan, tree-state, and
     .gitignore-sync reports every command group's _execute_* functions
     reuse — no group-specific handler logic.
-Imports: cgs_format, errors, git_repo, git_tree, orchestre, snapshot_resolver
+Imports: cgs_format, errors, git_repo, git_tree, memory_prompt, orchestre, snapshot_resolver
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from ..orchestre import (
     create_run_logger,
     resolve_command_scope,
 )
-from ..settings import other_workspaces, resolve_use_case
+from ..settings import Settings
 from ..snapshot_resolver import (
     CGSHOME_ORIGIN_CWD,
     CGSHOME_ORIGIN_DEFAULT,
@@ -74,9 +74,9 @@ def _json_stdout():
 def _add_gitignore_sync_arguments(subparser: argparse.ArgumentParser) -> None:
     """Register the DevPlanTicket Milestone 2/3 ``.gitignore``-sync flags.
 
-    Shared by ``initialise``/``clean-init``/``pull`` (the commands that run
-    discovery and can trigger the sync) so the three subparsers stay
-    identical rather than drifting. Not registered on any other command —
+    Shared by ``initialise`` and ``pull`` (the commands that run discovery
+    and can trigger the sync) so the two subparsers stay identical rather
+    than drifting. Not registered on any other command —
     a global/top-level flag would silently no-op on commands where it has
     no meaning (``view-tree``, ``status``, ...).
     """
@@ -87,16 +87,6 @@ def _add_gitignore_sync_arguments(subparser: argparse.ArgumentParser) -> None:
             "Explicit approval to stage, commit, and push any .gitignore "
             "the .gitignore lifecycle sync updates. Without this flag, the "
             "sync only writes the file and reports what changed."
-        ),
-    )
-    subparser.add_argument(
-        "--force-gitignore-sync",
-        action="store_true",
-        help=(
-            "If a repo's safe pull fails before its .gitignore is synced, "
-            "fall back to pull-force semantics (fetch, checkout -B <branch> "
-            "FETCH_HEAD, clean -fd) for that repo instead of erroring out. "
-            "Never force-pushes."
         ),
     )
     subparser.add_argument(
@@ -123,6 +113,62 @@ def _add_gitignore_sync_arguments(subparser: argparse.ArgumentParser) -> None:
     )
 
 
+def _pull_force_risk_hint(client: ComplexGitSyncClient) -> str:
+    """The hint printed when a `pull` fails, naming exactly what
+    `pull --force` would discard for each repository that has local-only
+    commits — the archived Autofix ticket (.agent/.local/.dev/DevTickets/archive/20260923_Autofix_DevPlanTicket.md) §3/WP6.
+
+    Best-effort: a repository whose tracking state cannot be read (no
+    remote configured, or the git query itself fails) is silently
+    skipped rather than letting a diagnostic query mask the original
+    failure this hint is printed alongside.
+    """
+    ahead: list[tuple[str, int]] = []
+    registry = getattr(client, "registry", None)
+    if registry is not None:
+        for repo in registry.values():
+            try:
+                counts = client.git_runner.branch_tracking_counts(repo.absolute_path)
+            except Exception:  # noqa: BLE001 — a diagnostic hint must not mask the real error
+                continue
+            if counts is not None and counts[0] > 0:
+                ahead.append((repo.name or repo.repo_id, counts[0]))
+
+    base = "You can try cgitsync autofix (diagnoses first)"
+    if not ahead:
+        return base
+    holding = ", ".join(f"{name} ahead(+{count})" for name, count in ahead)
+    return (
+        f"{base}. cgitsync pull --force refuses while commits exist only here ({holding}); "
+        "push or merge them first"
+    )
+
+
+def _run_logs_dir(client: ComplexGitSyncClient, resolved_source: Path) -> Path | None:
+    """Where this run's log belongs: ``<CGSHOME>/.cgitsync/logs``, or ``None``.
+
+    Two answers, most authoritative first, because a failure lands either
+    side of the registry loading: the loaded registry's own root (the same
+    directory `write_gts_snapshot` writes to, so every log `autofix` reads
+    sits together), else the source path when it is a snapshot inside a
+    ``.cgitsync/`` tree. ``None`` when neither answers — a ``.cgs`` need not
+    live inside the tree it describes (`CLAUDE.md`, *Layout*), and inventing
+    a directory to log into is worse than not logging.
+    """
+    registry = getattr(client, "registry", None)
+    if registry is not None:
+        try:
+            root = registry.get("root")
+        except Exception:  # noqa: BLE001 — resolving a log path must not mask the real error
+            root = None
+        if root is not None and getattr(root, "absolute_path", None) is not None:
+            return Path(root.absolute_path) / ".cgitsync" / "logs"
+    for parent in resolved_source.parents:
+        if parent.name == ".cgitsync":
+            return parent / "logs"
+    return None
+
+
 def _run_with_logging(
     *,
     command_name: str,
@@ -133,19 +179,18 @@ def _run_with_logging(
 ) -> int:
     resolved_source = source.resolve()
     active_client = client or ComplexGitSyncClient()
-    active_client.run_logger = _create_command_logger(
-        command_name,
-        resolved_source,
-        project_root=project_root,
-    )
+    active_client.run_logger = _create_command_logger(command_name, resolved_source)
     active_client.run_logger.log_event(
         "command_start",
         command=command_name,
         source_path=resolved_source,
         project_root=project_root,
     )
+    from . import memory_prompt  # imported here: memory_prompt builds on this module
+
     try:
-        exit_code = runner(active_client, resolved_source)
+        with memory_prompt.silenced_setup_warning():
+            exit_code = runner(active_client, resolved_source)
     except Exception as exc:
         if active_client.run_logger is not None:
             active_client.run_logger.log_event(
@@ -160,14 +205,38 @@ def _run_with_logging(
                     else None
                 ),
             )
+            # A failure writes no State, so `write_gts_snapshot` — until now
+            # the only thing that ever bound a log file — was never reached,
+            # and the error just recorded stayed in memory. `autofix` then
+            # read `.cgitsync/logs/*.log`, found the last run that
+            # *succeeded*, and reported "no failing command found". A log has
+            # to outlive the command that failed to be diagnosable at all.
+            logs_dir = _run_logs_dir(active_client, resolved_source)
+            if logs_dir is not None:
+                active_client.run_logger.ensure_log_file(logs_dir)
             if active_client.run_logger.log_path is not None:
                 print(f"log_file={active_client.run_logger.log_path}")
-        if command_name == "initialise":
-            print("Try clean-init method", file=sys.stderr, flush=True)
         if command_name == "pull":
-            print("You can try cgitsync pull-force command", file=sys.stderr, flush=True)
+            # `pull --force` is a hard reset to the remote's tip — safe for a
+            # repository whose content is prose, but it discards local-only
+            # commits outright for one whose content is not (the archived
+            # Autofix ticket,
+            # .agent/.local/.dev/DevTickets/archive/20260923_Autofix_DevPlanTicket.md,
+            # §3). `autofix` diagnoses first and only ever repairs a
+            # situation a registered repair recognises, so it is offered
+            # first; `pull --force` remains available for when the answer really
+            # is "the remote wins, unconditionally" — named here with exactly
+            # what it would discard, the same count `status` itself would
+            # print, so the risk is visible before it happens rather than
+            # only in `--help`.
+            print(
+                _pull_force_risk_hint(active_client),
+                file=sys.stderr,
+                flush=True,
+            )
         raise
 
+    memory_prompt.offer_after_command(active_client)
     if active_client.run_logger is not None:
         tree_state = active_client.get_tree_state() if getattr(active_client, "registry", None) is not None else None
         active_client.run_logger.log_event(
@@ -181,14 +250,8 @@ def _run_with_logging(
     return exit_code
 
 
-def _create_command_logger(
-    command_name: str,
-    source_path: Path,
-    *,
-    project_root: Path | None,
-):
+def _create_command_logger(command_name: str, source_path: Path):
     profile = "quiet"
-    project_log_dir = None
     if source_path.suffix == ".cgs" and source_path.is_file():
         try:
             document = CgsDocument.from_toml(source_path)
@@ -196,14 +259,7 @@ def _create_command_logger(
             document = None
         if document is not None:
             profile = str(document.runtime_setting("profile") or "quiet")
-            project_log_dir = document.read("project.log_dir")
-    return create_run_logger(
-        command_name,
-        profile=profile,
-        source_path=source_path,
-        project_root=project_root,
-        project_log_dir=project_log_dir,
-    )
+    return create_run_logger(command_name, profile=profile)
 
 
 def _load_ready_registry_source(
@@ -288,7 +344,7 @@ def _print_cgshome_line(cgshome: CgshomeResolution) -> None:
     """
     print(
         f"cgshome={cgshome.path} (from {cgshome.origin}) "
-        f"use_case={resolve_use_case(cgshome.path).value}"
+        f"use_case={Settings.resolve_use_case(cgshome.path).value}"
     )
 
 
@@ -303,7 +359,7 @@ def _print_workspace_hint(cgshome: CgshomeResolution) -> None:
     """
     if cgshome.origin != CGSHOME_ORIGIN_DEFAULT:
         return
-    existing = other_workspaces(exclude=cgshome.path)
+    existing = Settings.other_workspaces(exclude=cgshome.path)
     if not existing:
         return
     print(f"{len(existing)} other workspace(s) exist. To use one, export it:")
@@ -395,6 +451,42 @@ def _print_dry_run_plan(
     print(f"plan_actions={' -> '.join(actions)}")
     print(f"plan_order={_format_leaf_first_repo_order(client, scope)}")
     _print_scope_note(client, scope)
+
+
+def _memory_declared_for_dry_run(client: ComplexGitSyncClient) -> bool:
+    """Whether ``--dry-run`` should mention the memory fold the real run
+    would attempt. ``False`` for anything that is not the real client
+    (a CLI test double, most often) — same defensive shape as
+    :func:`_format_leaf_first_repo_order`."""
+    try:
+        return client.memory_declared()
+    except AttributeError:
+        return False
+
+
+def _print_memory_fold_outcome(client: ComplexGitSyncClient) -> None:
+    """Say what the command just folded into this project's own memory, if any.
+
+    Printed ahead of the command's own outcome lines
+    (`main_1-1_PushFoldsMemory_DevPlanTicket.md` WP-3): `push`/`tag`/
+    `freeze` now cross the `.cgitsync` → `.cgitsync/.memory` frontier
+    before doing their own work, and a person reading the output should
+    see that happen before whatever they actually ran. Prints nothing
+    when the tree declares no memory (`last_memory_fold` stays `None`) —
+    the common case, and not worth a line on every ordinary push — or when
+    *client* is a test double that carries no such attribute at all, the
+    same defensive shape :func:`_print_write_outcomes` already uses.
+    """
+    try:
+        fold = client.last_memory_fold
+    except AttributeError:
+        return
+    if fold is None:
+        return
+    print(
+        f"memory_fold branch={fold['branch']} committed={fold['committed']} "
+        f"recorded={fold['recorded']}"
+    )
 
 
 def _format_leaf_first_repo_order(
@@ -628,3 +720,7 @@ def _print_gitignore_sync_report(client: ComplexGitSyncClient) -> None:
         print(f".gitignore updated ({status}): {entry.name} ({entry.absolute_path})")
         for relative_path in entry.added_paths:
             print(f"  + {relative_path}")
+
+
+# Private helpers shared by the command modules of this package; nothing is public.
+__all__ = []

@@ -22,9 +22,7 @@ from ComplexGitSync.git_repo import AccessProtocol, GitProvider, RefKind, repo_r
 from ComplexGitSync.git_tree import GitTree, TreeLifecycleState, make_repo_id
 from ComplexGitSync.gts_document import GtsDocument
 from ComplexGitSync.registry import (
-    build_gts_document_from_registry,
-    build_registry_from_cgs_document,
-    build_registry_from_gts_document,
+    RegistryTranslator,
 )
 
 # ---------------------------------------------------------------------------
@@ -65,7 +63,7 @@ def test_build_registry_from_cgs_document_builds_reviewable_registry(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     document = CgsDocument.from_toml(config_path)
 
-    registry = build_registry_from_cgs_document(document, config_path)
+    registry = RegistryTranslator.from_cgs_document(document, config_path)
 
     assert registry.recompute_tree_state() == TreeLifecycleState.DECLARED
     assert registry.get("root").project_name == "demo"
@@ -80,7 +78,7 @@ def test_build_registry_from_cgs_document_supports_minimal_shorthand(tmp_path):
     )
     document = CgsDocument.from_toml(config_path)
 
-    registry = build_registry_from_cgs_document(document, config_path)
+    registry = RegistryTranslator.from_cgs_document(document, config_path)
 
     root = registry.get("root")
     child = registry.get("root:child")
@@ -118,7 +116,7 @@ tag = "v1.0.0"
     )
     document = CgsDocument.from_toml(config_path)
 
-    registry = build_registry_from_cgs_document(document, config_path)
+    registry = RegistryTranslator.from_cgs_document(document, config_path)
 
     tagged_entry = registry.get("root:deps/tagged-repo")
     assert tagged_entry.target_ref_kind == RefKind.TAG
@@ -183,7 +181,7 @@ def test_build_registry_from_cgs_document_own_guard_rejects_duplicate_relative_p
     )
 
     with pytest.raises(ConfigValidationError, match="duplicate relative_path"):
-        build_registry_from_cgs_document(document, tmp_path / "project.cgs")
+        RegistryTranslator.from_cgs_document(document, tmp_path / "project.cgs")
 
 
 def test_build_registry_from_cgs_document_uses_project_root_override(tmp_path):
@@ -191,7 +189,7 @@ def test_build_registry_from_cgs_document_uses_project_root_override(tmp_path):
     document = CgsDocument.from_toml(config_path)
     other_root = tmp_path / "elsewhere"
 
-    registry = build_registry_from_cgs_document(document, config_path, project_root=other_root)
+    registry = RegistryTranslator.from_cgs_document(document, config_path, project_root=other_root)
 
     assert registry.get("root").absolute_path == other_root.resolve()
 
@@ -265,7 +263,7 @@ project_name = "leaf"
         encoding="utf-8",
     )
 
-    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
+    registry = RegistryTranslator.from_gts_document(GtsDocument.from_toml(snapshot_path))
     assert registry.lifecycle_state == TreeLifecycleState.READY
 
     tree = GitTree()
@@ -351,7 +349,7 @@ commit_sha = "sha-leaf"
         encoding="utf-8",
     )
 
-    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
+    registry = RegistryTranslator.from_gts_document(GtsDocument.from_toml(snapshot_path))
     assert registry.get("root").absolute_path == workspace
     assert registry.get("root").source_cgs_path == (workspace / "project.cgs")
     assert registry.get("root:deps/leaf").absolute_path == leaf_path
@@ -389,7 +387,7 @@ commit_sha = "abc123"
         encoding="utf-8",
     )
 
-    registry = build_registry_from_gts_document(GtsDocument.from_toml(snapshot_path))
+    registry = RegistryTranslator.from_gts_document(GtsDocument.from_toml(snapshot_path))
     root = registry.get("root")
 
     assert root.current_ref_kind == RefKind.BRANCH
@@ -409,13 +407,9 @@ commit_sha = "abc123"
 def test_build_gts_document_from_registry_has_correct_command_origin_and_compact_ref(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     document = CgsDocument.from_toml(config_path)
-    registry = build_registry_from_cgs_document(document, config_path)
+    registry = RegistryTranslator.from_cgs_document(document, config_path)
 
-    gts_document = build_gts_document_from_registry(
-        registry,
-        command_origin="load",
-        source_cgs_path=config_path,
-    )
+    gts_document = RegistryTranslator.to_gts_document(registry, command_origin="load", source_cgs_path=config_path)
 
     assert gts_document.read("document.command_origin") == "load"
     assert gts_document.read("document.CGS_VERSION")
@@ -435,13 +429,9 @@ def test_build_gts_document_from_registry_has_correct_command_origin_and_compact
 def test_build_gts_document_from_registry_snapshot_hash_matches_recomputed_hash(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     document = CgsDocument.from_toml(config_path)
-    registry = build_registry_from_cgs_document(document, config_path)
+    registry = RegistryTranslator.from_cgs_document(document, config_path)
 
-    gts_document = build_gts_document_from_registry(
-        registry,
-        command_origin="expand",
-        source_cgs_path=config_path,
-    )
+    gts_document = RegistryTranslator.to_gts_document(registry, command_origin="expand", source_cgs_path=config_path)
 
     assert gts_document.snapshot_hash == gts_document.compute_snapshot_hash()
     # validate() must not raise: the document it just produced is self-consistent.
@@ -451,16 +441,10 @@ def test_build_gts_document_from_registry_snapshot_hash_matches_recomputed_hash(
 def test_build_gts_document_from_registry_round_trips_through_build_registry_from_gts_document(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     document = CgsDocument.from_toml(config_path)
-    original_registry = build_registry_from_cgs_document(document, config_path)
+    original_registry = RegistryTranslator.from_cgs_document(document, config_path)
 
-    gts_document = build_gts_document_from_registry(
-        original_registry,
-        command_origin="load",
-        source_cgs_path=config_path,
-    )
-    rebuilt_registry = build_registry_from_gts_document(
-        gts_document, tree_root=original_registry.get('root').absolute_path
-    )
+    gts_document = RegistryTranslator.to_gts_document(original_registry, command_origin="load", source_cgs_path=config_path)
+    rebuilt_registry = RegistryTranslator.from_gts_document(gts_document, tree_root=original_registry.get('root').absolute_path)
 
     assert rebuilt_registry.get("root").name == original_registry.get("root").name
     assert rebuilt_registry.get("root:deps/child-repo").absolute_path == original_registry.get(
@@ -501,13 +485,9 @@ relative_path = "."
 
 def _round_trip_root(config_path: Path):
     document = CgsDocument.from_toml(config_path)
-    original_registry = build_registry_from_cgs_document(document, config_path)
-    gts_document = build_gts_document_from_registry(
-        original_registry, command_origin="load", source_cgs_path=config_path
-    )
-    rebuilt_registry = build_registry_from_gts_document(
-        gts_document, tree_root=original_registry.get('root').absolute_path
-    )
+    original_registry = RegistryTranslator.from_cgs_document(document, config_path)
+    gts_document = RegistryTranslator.to_gts_document(original_registry, command_origin="load", source_cgs_path=config_path)
+    rebuilt_registry = RegistryTranslator.from_gts_document(gts_document, tree_root=original_registry.get('root').absolute_path)
     return original_registry.get("root"), rebuilt_registry.get("root")
 
 
@@ -595,10 +575,8 @@ def test_a_snapshot_predating_this_fix_is_flagged_as_undeclared(tmp_path):
         repo_toml=('gitprovider = "gitlab"\nproject_owner_name = "owner"\nproject_name = "demo"\n'),
     )
     document = CgsDocument.from_toml(config_path)
-    registry = build_registry_from_cgs_document(document, config_path)
-    gts_document = build_gts_document_from_registry(
-        registry, command_origin="load", source_cgs_path=config_path
-    )
+    registry = RegistryTranslator.from_cgs_document(document, config_path)
+    gts_document = RegistryTranslator.to_gts_document(registry, command_origin="load", source_cgs_path=config_path)
     stale_data = gts_document.to_dict()
     for repo in stale_data["repo_state"]:
         repo.pop("gitprovider", None)
@@ -607,9 +585,7 @@ def test_a_snapshot_predating_this_fix_is_flagged_as_undeclared(tmp_path):
     stale_data["document"].pop("snapshot_hash", None)
     stale_document = GtsDocument.from_dict(stale_data)
 
-    rebuilt = build_registry_from_gts_document(
-        stale_document, tree_root=registry.get("root").absolute_path
-    ).get("root")
+    rebuilt = RegistryTranslator.from_gts_document(stale_document, tree_root=registry.get("root").absolute_path).get("root")
 
     assert rebuilt.gitprovider_declared is False
     # The GITHUB fallback is a filled-in default here, not a recovered fact.
@@ -619,14 +595,9 @@ def test_a_snapshot_predating_this_fix_is_flagged_as_undeclared(tmp_path):
 def test_build_gts_document_from_registry_writes_freeze_manifest_for_freeze_origins(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     document = CgsDocument.from_toml(config_path)
-    registry = build_registry_from_cgs_document(document, config_path)
+    registry = RegistryTranslator.from_cgs_document(document, config_path)
 
-    gts_document = build_gts_document_from_registry(
-        registry,
-        command_origin="freeze",
-        source_cgs_path=config_path,
-        freeze_name="v1.2.3",
-    )
+    gts_document = RegistryTranslator.to_gts_document(registry, command_origin="freeze", source_cgs_path=config_path, freeze_name="v1.2.3")
 
     manifest = gts_document.read("freeze_manifest")
     assert manifest["schema_version"] == "1.0"
@@ -642,13 +613,9 @@ def test_build_gts_document_from_registry_writes_freeze_manifest_for_freeze_orig
 def test_build_gts_document_from_registry_omits_freeze_manifest_for_non_freeze_origins(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     document = CgsDocument.from_toml(config_path)
-    registry = build_registry_from_cgs_document(document, config_path)
+    registry = RegistryTranslator.from_cgs_document(document, config_path)
 
-    gts_document = build_gts_document_from_registry(
-        registry,
-        command_origin="load",
-        source_cgs_path=config_path,
-    )
+    gts_document = RegistryTranslator.to_gts_document(registry, command_origin="load", source_cgs_path=config_path)
 
     assert gts_document.read("freeze_manifest") is None
 

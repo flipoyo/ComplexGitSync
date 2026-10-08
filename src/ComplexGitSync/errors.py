@@ -14,8 +14,34 @@ class ConfigValidationError(ComplexGitSyncError):
     """Raised when a .cgs or .gts document is invalid."""
 
 
+class UnsupportedSnapshotFormatError(ConfigValidationError):
+    """A ``.gts`` declares a format newer than this build understands.
+
+    Distinct from an ordinary :class:`ConfigValidationError` because it is
+    not a verdict this build is capable of reaching — it cannot check
+    whether the document is well-formed under a canonicalisation it has
+    never seen, only that the number is higher than the one it knows
+    (`.agent/.local/.dev/DevTickets/archive/20260918_SnapshotVersionGuard_DevPlanTicket.md`).
+    A subclass of :class:`ConfigValidationError` so every existing catch of
+    that type still sweeps it up; the CLI still tells the two apart to exit
+    `2` unconditionally, even for ``validate``, whose job is normally to
+    judge a document rather than to be refused by one.
+    """
+
+
 class GitSyncError(ComplexGitSyncError):
     """Raised for irrecoverable Git synchronization failures."""
+
+
+class InstallFrontierError(GitSyncError):
+    """An install command was asked to do the other install command's job.
+
+    ``initialise`` is the nested install and ``bootstrap`` the standalone one
+    (``AdditionalSpecs.md``, *The install frontier*); each refuses, before it
+    touches the disk, what belongs to the other and names it. A subclass of
+    :class:`GitSyncError` so every existing catch still sweeps it up; the CLI
+    tells it apart from an ordinary failure.
+    """
 
 
 class NestedConfigDiscoveryError(ComplexGitSyncError):
@@ -24,3 +50,14 @@ class NestedConfigDiscoveryError(ComplexGitSyncError):
 
 class TreeNotReadyError(ComplexGitSyncError):
     """Raised when an operation requires a READY tree."""
+
+
+__all__ = [
+    "ComplexGitSyncError",
+    "ConfigValidationError",
+    "GitSyncError",
+    "InstallFrontierError",
+    "NestedConfigDiscoveryError",
+    "TreeNotReadyError",
+    "UnsupportedSnapshotFormatError",
+]

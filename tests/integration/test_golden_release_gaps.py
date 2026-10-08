@@ -1,4 +1,4 @@
-"""Characterisation net for G1-b (.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md, Wave 0).
+"""Characterisation net for G1-b (.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md, Wave 0).
 
 This file exists to pin down two things that were confirmed missing from the
 existing integration/CLI coverage before any part of ``orchestre.py`` gets
@@ -131,22 +131,15 @@ def ready_single_repo_snapshot(tmp_path: Path) -> dict[str, Path]:
 # ---------------------------------------------------------------------------
 
 
-class TestFreezeReleaseForceGoldenCoverage:
-    """freeze-release-force actually force-resolves a real diverged history.
+class TestFreezeReleaseDivergedHistoryGoldenCoverage:
+    """freeze-release stops on a real diverged history, and says so.
 
-    Confirmed gap: no existing test runs real git through the
-    ``add -> commit -> pull-force -> push -> freeze`` chain. This test
-    builds a genuine divergence — a local commit the remote has never seen,
-    while the remote has simultaneously received a *different* commit from
-    another contributor built on the same base — and proves:
-
-    * a plain (non-force) ``freeze-release`` on this exact setup fails,
-      because ``git pull --ff-only`` cannot fast-forward a diverged
-      history (this is asserted first, so the "genuine divergence" claim
-      is evidence-backed rather than assumed);
-    * ``freeze-release-force`` on the same setup succeeds, discards the
-      local-only commit, adopts the remote's diverged commit, and still
-      completes the release (tag pushed to the remote).
+    The setup is a genuine divergence: a local commit the remote has never
+    seen, while the remote has received a *different* commit from another
+    contributor built on the same base. ``freeze-release`` fails on it,
+    because ``git pull --ff-only`` cannot fast-forward a diverged history.
+    ``freeze-release-force`` used to discard the local-only commit here; it
+    was removed (GitLikeCli), and ``pull-force`` now refuses instead.
     """
 
     def _diverged_workspace(self, tmp_path: Path) -> dict[str, Path]:
@@ -212,60 +205,6 @@ class TestFreezeReleaseForceGoldenCoverage:
         assert "fast-forward" in captured.err
         assert "Traceback" not in captured.err
 
-    def test_freeze_release_force_resolves_genuine_divergence(self, tmp_path, capsys):
-        workspace = self._diverged_workspace(tmp_path)
-        repo = workspace["repo"]
-        remote = workspace["remote"]
-        snapshot = workspace["snapshot"]
-
-        exit_code = cli_main(
-            ["freeze-release-force", "v1.0.0", "release commit", "--gts", str(snapshot)]
-        )
-        captured = capsys.readouterr()
-
-        assert exit_code == 0
-
-        # The printed git_command line documents the force pull path
-        # (fetch + checkout -B <branch> FETCH_HEAD + clean -fd), not a plain
-        # fast-forward pull.
-        assert "git fetch" in captured.out
-        assert "checkout -B" in captured.out
-        assert "FETCH_HEAD" in captured.out
-        assert "clean -fd" in captured.out
-        assert "git commit -m 'release commit'" in captured.out
-        assert "git tag v1.0.0" in captured.out
-
-        # Tree-state summary line and repo tree are printed.
-        assert "READY" in captured.out
-        assert "ready=true" in captured.out
-        assert "name=v1.0.0" in captured.out
-        assert "repos:" in captured.out
-        assert "demo (root) [ALIGNED]" in captured.out
-
-        # The local-only divergent commit was genuinely discarded ...
-        assert not (repo / "local-only.txt").exists()
-        # ... while the remote's diverged commit was actually adopted.
-        assert (repo / "remote-only.txt").exists()
-        assert (repo / "remote-only.txt").read_text(encoding="utf-8") == "remote change\n"
-
-        # The remote-only commit is part of local history (not just the
-        # working tree) — a real force-checkout happened, not a merge.
-        log = _run_git(repo, "log", "--oneline", "--all")
-        assert "remote-only change" in log
-
-        # The release tag reached the remote, on top of the adopted history.
-        remote_tags = _run_git(remote, "tag")
-        assert "v1.0.0" in remote_tags.splitlines()
-        tagged_sha = _run_git(repo, "rev-parse", "v1.0.0")
-        remote_only_sha = _run_git(repo, "log", "--format=%H", "--all", "--grep=remote-only change").splitlines()[0]
-        ancestry = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", remote_only_sha, tagged_sha],
-            cwd=repo,
-            capture_output=True,
-        )
-        assert ancestry.returncode == 0, "release tag must descend from the adopted remote commit"
-
-
 # ---------------------------------------------------------------------------
 # 2. status — golden field set for a READY tree
 # ---------------------------------------------------------------------------
@@ -287,7 +226,7 @@ class TestStatusGoldenOutput:
 
         # Summary line: exact field set and values for a fresh, aligned, clean tree.
         assert lines[0] == (
-            "summary ready=true complete=true use_case=standalone "
+            "summary ready=true complete=true use_case=standalone profile=user "
             "cgitsync_branch=main repos=1 dirty=0 staged=0 ahead=0 behind=0 "
             "unmeasured=0 recorded_mismatch=0 errors=0"
         )
@@ -356,7 +295,7 @@ class TestStatusGoldenOutput:
         lines = captured.out.splitlines()
 
         assert lines[0] == (
-            "summary ready=true complete=true use_case=standalone "
+            "summary ready=true complete=true use_case=standalone profile=user "
             "cgitsync_branch=main repos=1 dirty=1 staged=0 ahead=1 behind=0 "
             "unmeasured=0 recorded_mismatch=1 errors=0"
         )

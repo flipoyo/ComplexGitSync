@@ -22,7 +22,7 @@ from ComplexGitSync.config_document_io import ConfigDocumentIOMixin
 from ComplexGitSync.errors import ConfigValidationError
 from ComplexGitSync.orchestre import (
     GtsDocument,
-    build_registry_from_cgs_document,
+    RegistryTranslator,
 )
 
 # ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ class _ConfigDocumentWithIO(ConfigDocument, ConfigDocumentIOMixin):
     """Test-only stand-in for a concrete subclass with file I/O mixed in.
 
     ``ConfigDocument`` itself is Ring 0 (pure, no I/O) since WP-CFG
-    (.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md §0); every real subclass
+    (.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md §0); every real subclass
     (``CgsDocument``, ``GtsDocument``) picks up ``ConfigDocumentIOMixin``
     directly, but the base class round-trip tests below need a concrete
     combined class of their own rather than depending on either.
@@ -390,7 +390,9 @@ class TestCgsDocumentValid:
         authoring = parse_cgs(output)
         child_authoring = authoring["repos"][1]
         assert child_authoring["default_branch"] == "ComplexGitSync"
-        assert child_authoring["fallback_branch"] == "main"
+        # `main` is the implied fallback (FallbackMain), so it is not written
+        # out; the reparsed entry above still carries it.
+        assert "fallback_branch" not in child_authoring
 
     def test_private_survives_toml_round_trip_as_a_boolean(self, tmp_path: Path):
         """`private` keeps a shared mount off the tree's global branch.
@@ -503,11 +505,7 @@ class TestCgsDocumentValid:
                 ],
             }
         )
-        tree = build_registry_from_cgs_document(
-            before,
-            tmp_path / "source.cgs",
-            project_root=tmp_path / "demo",
-        )
+        tree = RegistryTranslator.from_cgs_document(before, tmp_path / "source.cgs", project_root=tmp_path / "demo")
 
         output = tmp_path / "working-round-trip.cgs"
         tree.to_cgs().to_toml(output)
@@ -651,20 +649,21 @@ class TestCgsDocumentValid:
         doc = CgsDocument.from_toml(repo_root / "install.cgs")
         assert doc.project_name == "ComplexGitSync"
         # main, not a branch that never existed on the remote: see
-        # .localSpec/DevTickets/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md D2.
+        # .agent/.local/.dev/DevTickets/archive/20260906_DetachedHeadPreflight_DevPlanTicket.md D2.
         assert doc.default_branch == "main"
         assert doc.repos[0]["fallback_branch"] == "main"
         assert len(doc.repos) == 2
 
     def test_from_toml_parses_the_developer_install(self):
-        """The developer install adds the three configuration repositories,
-        plus the project's own memory (memory-dev_1-2_MemoryOnboarding,
-        2026-09-17)."""
+        """The developer install adds every agentic skill (AgentSkillsSplit:
+        ticket, dev-sync, documentation, .dev),
+        plus .localSpec/.claude and the project's own memory
+        (memory-dev_1-2_MemoryOnboarding, 2026-09-17)."""
         repo_root = Path(__file__).parent.parent.parent
         doc = CgsDocument.from_toml(repo_root / "examples" / "complexgitsync4dev.cgs")
         assert doc.project_name == "ComplexGitSync"
         assert doc.default_branch == "main"
-        assert len(doc.repos) == 6
+        assert len(doc.repos) == 9
 
     def test_from_toml_parses_doccomplexgitsync_example(self):
         examples = Path(__file__).parent.parent.parent / "examples"

@@ -371,6 +371,7 @@ def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch,
         calls.append((tuple(args), Path(cwd) if cwd is not None else None))
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
+    monkeypatch.setattr(GitRunner, "commits_force_pull_would_drop", lambda self, path, ref: 0)
     monkeypatch.setattr(GitRunner, "_run", _fake_run)
     repo_path = tmp_path / "repo"
 
@@ -378,6 +379,7 @@ def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch,
 
     assert calls == [
         (("fetch", "origin", "main"), repo_path),
+        (("status", "--porcelain"), repo_path),
         (("checkout", "-B", "main", "FETCH_HEAD"), repo_path),
         (("clean", "-fd"), repo_path),
     ]
@@ -787,6 +789,47 @@ def test_git_runner_upstream_configured_is_false_on_a_detached_head(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# current_branch / head_commit_sha_or_none — unborn branches degrade,
+# they do not raise (a real incident: AgentReport WP2's self-history mount,
+# freshly `init_repository`-d and never committed to, crashed both
+# `memory push` and `pull`'s post-discovery checkout before this was fixed)
+# ---------------------------------------------------------------------------
+
+
+def test_current_branch_answers_a_name_for_an_unborn_branch(tmp_path):
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    GitRunner().init_repository(repo_path, branch="demo")
+
+    assert GitRunner().current_branch(repo_path) == "demo"
+
+
+def test_head_commit_sha_or_none_is_none_for_an_unborn_branch(tmp_path):
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    GitRunner().init_repository(repo_path, branch="demo")
+
+    assert GitRunner().head_commit_sha_or_none(repo_path) is None
+
+
+def test_rev_parse_head_still_raises_for_an_unborn_branch(tmp_path):
+    """Unlike `head_commit_sha_or_none`, `rev_parse_head` keeps raising —
+    every other caller runs after an operation that guarantees a commit
+    exists, where an unresolved HEAD is a real bug, not a normal shape."""
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    GitRunner().init_repository(repo_path, branch="demo")
+
+    with pytest.raises(GitSyncError, match="rev-parse HEAD"):
+        GitRunner().rev_parse_head(repo_path)
+
+
+def test_current_branch_still_raises_when_repo_directory_is_gone(tmp_path):
+    with pytest.raises(GitSyncError, match="no such directory"):
+        GitRunner().current_branch(tmp_path / "deleted-repo")
+
+
+# ---------------------------------------------------------------------------
 # Ring-2 confinement — GitRunner is the only subprocess importer
 # ---------------------------------------------------------------------------
 
@@ -837,6 +880,18 @@ class _FakeGitRunner:
     def remote_branch_exists(self, remote_url: str, branch: str) -> bool:
         return False
 
+    def remote_head_branch(self, remote_url: str) -> str | None:
+        return None
+
+    def remote_holds_commit(self, remote_url: str, sha: str) -> bool:
+        return True
+
+    def is_repository_root(self, path) -> bool:
+        return True
+
+    def checkout_commit(self, repo_path, sha: str, *, branch=None) -> None:
+        return None
+
     def remote_tag_exists(self, remote_url: str, tag: str) -> bool:
         return False
 
@@ -844,6 +899,9 @@ class _FakeGitRunner:
         return None
 
     def configure_remote(self, repo_path, remote_name: str, remote_url: str) -> None:
+        return None
+
+    def remove_remote(self, repo_path, remote_name: str) -> None:
         return None
 
     def clone(self, remote_url: str, destination, *, branch: str) -> None:
@@ -855,8 +913,17 @@ class _FakeGitRunner:
     def rev_parse_head(self, repo_path) -> str:
         return "0" * 40
 
+    def head_commit_sha_or_none(self, repo_path):
+        return "0" * 40
+
     def current_branch(self, repo_path):
         return "main"
+
+    def local_branches(self, repo_path) -> list[str]:
+        return ["main"]
+
+    def remote_tracking_branches(self, repo_path, remote: str = "origin") -> list[str]:
+        return ["main"]
 
     def local_branch_exists(self, repo_path, branch: str) -> bool:
         return True
@@ -877,6 +944,9 @@ class _FakeGitRunner:
         ff_only: bool = False,
         no_ff: bool = False,
         message: str | None = None,
+        allow_unrelated: bool = False,
+        user_name: str | None = None,
+        user_email: str | None = None,
     ) -> None:
         return None
 
@@ -896,8 +966,15 @@ class _FakeGitRunner:
     ) -> None:
         return None
 
-    def fetch(self, repo_path, *, remote: str = "origin", ref_name: str | None = None) -> None:
+    def fetch(
+        self, repo_path, *, remote: str = "origin", ref_name: str | None = None, prune: bool = False
+    ) -> None:
         return None
+
+    def fetch_branch_if_remote_has_it(
+        self, repo_path, remote_url: str, branch: str, *, remote: str = "origin"
+    ) -> bool:
+        return False
 
     def create_branch(self, repo_path, branch: str, *, start_point: str | None = None) -> None:
         return None
@@ -953,8 +1030,44 @@ class _FakeGitRunner:
     def is_ancestor(self, repo_path, ancestor, descendant) -> bool:
         return False
 
+    def merge_base(self, repo_path, ref_a, ref_b) -> str | None:
+        return None
+
+    def added_paths(self, repo_path, ref_a, ref_b, *, subdir=None) -> list[str]:
+        return []
+
     def show_file(self, repo_path, ref, path) -> str | None:
         return None
+
+    def ref_sha(self, repo_path, ref) -> str | None:
+        return None
+
+    def remote_branch_sha(self, remote_url, branch) -> str | None:
+        return None
+
+    def branch_refs(self, repo_path) -> dict[str, str]:
+        return {}
+
+    def exclusive_commits(self, repo_path, tip, exclude) -> list[str]:
+        return []
+
+    def tree_blobs(self, repo_path, ref, prefix) -> dict[str, str]:
+        return {}
+
+    def create_root_commit(self, repo_path, message) -> str:
+        return "0" * 40
+
+    def commit_keeping_tree(self, repo_path, base, other, message) -> str:
+        return "0" * 40
+
+    def update_branch(self, repo_path, branch, new_sha, old_sha) -> None:
+        return None
+
+    def delete_local_branch(self, repo_path, branch, expected_sha) -> None:
+        return None
+
+    def preserved_tips(self, repo_path, ref) -> list[tuple[str, str]]:
+        return []
 
     def remote_reachable(self, remote_url) -> bool:
         return True
@@ -970,11 +1083,8 @@ class _FakeGitRunner:
     def pull(self, repo_path, *, remote="origin", ref_name=None) -> None:
         return None
 
-    def force_pull(self, repo_path, *, remote="origin", ref_name=None) -> None:
-        return None
-
-    def reset_hard(self, repo_path, ref_name: str = "HEAD") -> None:
-        return None
+    def force_pull(self, repo_path, *, remote="origin", ref_name=None) -> bool:
+        return False
 
     def clean_untracked(self, repo_path) -> None:
         return None
@@ -1012,7 +1122,10 @@ class _FakeGitRunner:
     def upstream_configured(self, repo_path) -> bool:
         return True
 
-    def local_only_commit_count(self, repo_path) -> int:
+    def local_only_commit_count(self, repo_path, ref: str = "HEAD") -> int:
+        return 0
+
+    def commits_force_pull_would_drop(self, repo_path, ref_name) -> int:
         return 0
 
 
@@ -1054,7 +1167,7 @@ def test_object_missing_methods_does_not_satisfy_protocol():
 # not merge. That content is whatever the repository holds — a PDF, an image,
 # a latin-1 source file — and decoding it strictly turned a preflight question
 # into a UnicodeDecodeError before the caller could read the exit code. See
-# .localSpec/DevTickets/archive/20260910_MergeOutputDecoding_DevPlanTicket.md.
+# .agent/.local/.dev/DevTickets/archive/20260910_MergeOutputDecoding_DevPlanTicket.md.
 # ---------------------------------------------------------------------------
 
 
@@ -1241,7 +1354,7 @@ class TestGitOutputDecodingPolicy:
 
 
 # ---------------------------------------------------------------------------
-# Message locale — .localSpec/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md
+# Message locale — .agent/.local/.dev/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md
 # ---------------------------------------------------------------------------
 
 _FRENCH = "fr_FR.UTF-8"

@@ -81,19 +81,19 @@ def _current_state_path(root_path: Path) -> Path:
     last wrote. It replaced the single-file register these tests used to
     read, which nothing writes any more.
     """
-    from ComplexGitSync.memory.ledger_store import read_all_entries
-    from ComplexGitSync.memory.states import _parse_state_hash, state_path
+    from ComplexGitSync.memory.ledger_store import LedgerStore
+    from ComplexGitSync.memory.states import MemoryStates
 
-    entries = read_all_entries(root_path / ".cgitsync" / "lgr")
+    entries = LedgerStore(root_path / ".cgitsync" / "lgr").read_all_entries()
     assert entries, "no ledger entry was written"
-    return state_path(root_path / ".cgitsync", _parse_state_hash(entries[-1].state_id)).resolve()
+    return MemoryStates(root_path / ".cgitsync").path(MemoryStates.parse_hash(entries[-1].state_id)).resolve()
 
 
 def _ledger_entries(root_path: Path):
     """Every entry in the root_path's chain, oldest first."""
-    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.ledger_store import LedgerStore
 
-    return read_all_entries(root_path / ".cgitsync" / "lgr")
+    return LedgerStore(root_path / ".cgitsync" / "lgr").read_all_entries()
 
 
 def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:
@@ -215,6 +215,10 @@ class _FakeGitRunnerForOperations:
     Tracks calls and simulates branch existence.
     """
 
+    def init_repository(self, repo_path: Path | str, *, branch: str) -> None:
+        """Makes no repository, so the default memory is declined and recorded nothing."""
+        raise GitSyncError("the fake runner makes no repositories")
+
     def __init__(self, *, existing_local_branches: dict[Path, set[str]] | None = None):
         # {path: set of branch names that exist locally}
         self._local_branches: dict[Path, set[str]] = existing_local_branches or {}
@@ -233,7 +237,6 @@ class _FakeGitRunnerForOperations:
         self.force_pulled: list[tuple[Path, str, str | None]] = []
         self.tagged: list[tuple[Path, str]] = []
         self.cloned: list[tuple[str, Path, str]] = []
-        self.reset_hard_paths: list[Path] = []
         self.cleaned_paths: list[Path] = []
         self.command_order: list[tuple[str, Path]] = []
         self._staged_changes: dict[Path, bool] = {}
@@ -247,6 +250,7 @@ class _FakeGitRunnerForOperations:
         self._tracking_states: dict[Path, SyncState | None] = {}
         self._has_upstream: dict[Path, bool] = {}
         self._merge_in_progress: dict[Path, bool] = {}
+        self._unmerged_paths: dict[Path, bool] = {}
         self._unmergeable: dict[Path, set[str]] = {}
         self._conflicting_paths: dict[Path, list[Path]] = {}
         self.mergetool_opened: list[Path] = []
@@ -254,6 +258,16 @@ class _FakeGitRunnerForOperations:
         self.merge_aborted: list[Path] = []
         self.fetched: list[tuple[Path, str, str | None]] = []
         self.refspecs_ensured: list[tuple[Path, str]] = []
+        # {path: url} a repo's configured remote answers with; a repo not
+        # listed here still answers with a synthesized, non-None URL, since
+        # every real repo this code runs against has one configured.
+        self._remote_urls: dict[Path, str] = {}
+        # {remote_url: set of branch names the remote actually has} — what
+        # an on-demand `git ls-remote --heads` would find. Empty by default,
+        # matching every existing test's "the remote has never heard of it"
+        # assumption.
+        self._remote_server_branches: dict[str, set[str]] = {}
+        self.fetched_on_demand: list[tuple[Path, str, str]] = []
         # Ordered log of the two calls whose *relative* order matters: a
         # refspec must be widened before the push that depends on it.
         self.write_order: list[tuple[str, Path]] = []
@@ -328,6 +342,28 @@ class _FakeGitRunnerForOperations:
     ) -> None:
         self.fetched.append((Path(repo_path), remote, ref_name))
 
+    def remote_get_url(self, repo_path: Path | str, remote_name: str = "origin") -> str | None:
+        path = Path(repo_path)
+        return self._remote_urls.get(path, f"fake://{remote_name}/{path.name}")
+
+    def remote_branch_exists(self, remote_url: str, branch: str) -> bool:
+        return branch in self._remote_server_branches.get(remote_url, set())
+
+    def fetch_branch_if_remote_has_it(
+        self,
+        repo_path: Path | str,
+        remote_url: str,
+        branch: str,
+        *,
+        remote: str = "origin",
+    ) -> bool:
+        if not self.remote_branch_exists(remote_url, branch):
+            return False
+        self.fetch(repo_path, remote=remote, ref_name=branch)
+        self.fetched_on_demand.append((Path(repo_path), remote_url, branch))
+        self._remote_tracking_branches.setdefault(Path(repo_path), set()).add(branch)
+        return True
+
     def create_branch(
         self, repo_path: Path | str, branch: str, *, start_point: str | None = None
     ) -> None:
@@ -345,6 +381,9 @@ class _FakeGitRunnerForOperations:
         self.cloned.append((remote_url, destination_path, branch))
 
     def rev_parse_head(self, repo_path: Path | str) -> str:
+        return self._shas.get(Path(repo_path), "abc123")
+
+    def head_commit_sha_or_none(self, repo_path: Path | str) -> str | None:
         return self._shas.get(Path(repo_path), "abc123")
 
     # --- commit ---
@@ -439,10 +478,8 @@ class _FakeGitRunnerForOperations:
         if ref_name is not None:
             self._current_branches[path] = ref_name
 
-    def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None:
-        path = Path(repo_path)
-        self.reset_hard_paths.append(path)
-        self.command_order.append(("reset_hard", path))
+    def commits_force_pull_would_drop(self, repo_path: Path | str, ref_name: str) -> int:
+        return 0
 
     def clean_untracked(self, repo_path: Path | str) -> None:
         path = Path(repo_path)
@@ -478,6 +515,9 @@ class _FakeGitRunnerForOperations:
     def has_unresolved_merge(self, repo_path: Path | str) -> bool:
         return self._merge_in_progress.get(Path(repo_path), False)
 
+    def has_unmerged_paths(self, repo_path: Path | str) -> bool:
+        return self._unmerged_paths.get(Path(repo_path), False)
+
     def branch_tracking_state(self, repo_path: Path | str) -> SyncState | None:
         return self._tracking_states.get(Path(repo_path), SyncState.ALIGNED)
 
@@ -506,6 +546,9 @@ class _FakeGitRunnerForOperations:
 
     def set_unresolved_merge(self, repo_path: Path | str, value: bool) -> None:
         self._merge_in_progress[Path(repo_path)] = value
+
+    def set_unmerged_paths(self, repo_path: Path | str, value: bool) -> None:
+        self._unmerged_paths[Path(repo_path)] = value
 
 
 # ---------------------------------------------------------------------------
@@ -626,6 +669,7 @@ def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch,
         calls.append((tuple(args), Path(cwd) if cwd is not None else None))
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
+    monkeypatch.setattr(GitRunner, "commits_force_pull_would_drop", lambda self, path, ref: 0)
     monkeypatch.setattr(GitRunner, "_run", _fake_run)
     repo_path = tmp_path / "repo"
 
@@ -633,6 +677,7 @@ def test_git_runner_force_pull_fetches_resets_fetch_head_and_cleans(monkeypatch,
 
     assert calls == [
         (("fetch", "origin", "main"), repo_path),
+        (("status", "--porcelain"), repo_path),
         (("checkout", "-B", "main", "FETCH_HEAD"), repo_path),
         (("clean", "-fd"), repo_path),
     ]
@@ -647,7 +692,12 @@ def test_restart_tree_pulls_root_and_children(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
     root_path = tmp_path / "project"
+    leaf_path = root_path / "deps" / "leaf"
     runner._current_branches[root_path] = "feature-restart"
+    # A pull needs something on the remote to pull from — see
+    # TestPullSkipsUnpushedBranches for the "nothing there yet" case.
+    runner._remote_tracking_branches[root_path] = {"feature-restart"}
+    runner._remote_tracking_branches[leaf_path] = {"feature-restart"}
 
     restart_tree(registry, runner)
 
@@ -665,6 +715,12 @@ def test_client_pull_gts_pulls_root_then_updates_parents_and_leaves(tmp_path):
 
     runner = _FakeGitRunnerForOperations()
     runner._current_branches[tmp_path / "deep"] = "main"
+    for path in (
+        tmp_path / "deep",
+        tmp_path / "deep" / "middle",
+        tmp_path / "deep" / "middle" / "sub",
+    ):
+        runner._remote_tracking_branches[path] = {"main"}
     client = ComplexGitSyncClient(
         git_runner=runner,
         state_store=RuntimeStateStore(tmp_path / "state-store"),
@@ -690,6 +746,8 @@ def test_restart_tree_propagates_branch_to_all_entries(tmp_path):
     runner = _FakeGitRunnerForOperations()
     root_path = tmp_path / "project"
     runner._current_branches[root_path] = "sync-branch"
+    runner._remote_tracking_branches[root_path] = {"sync-branch"}
+    runner._remote_tracking_branches[root_path / "deps" / "leaf"] = {"sync-branch"}
 
     restart_tree(registry, runner)
 
@@ -703,6 +761,8 @@ def test_restart_tree_runs_pull_parent_first(tmp_path):
     runner = _FakeGitRunnerForOperations()
     root_path = tmp_path / "deep"
     runner._current_branches[root_path] = "main"
+    for path in (root_path, root_path / "middle", root_path / "middle" / "sub"):
+        runner._remote_tracking_branches[path] = {"main"}
 
     restart_tree(registry, runner)
 
@@ -718,7 +778,7 @@ class TestABranchSomebodyElsePushedIsThatBranch:
 
     ``checkout`` then reported ``READY``/``ALIGNED`` on commits that shared
     nothing with the colleague's branch but its name — worse than failing to
-    find it (``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` §3).
+    find it (``.agent/.local/.dev/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md`` §3).
     """
 
     def test_a_known_remote_branch_is_the_start_point(self, tmp_path):
@@ -762,6 +822,51 @@ class TestABranchSomebodyElsePushedIsThatBranch:
 
         assert runner.created_from == []
 
+    def test_a_branch_never_fetched_here_but_real_on_the_remote_is_joined(self, tmp_path):
+        """CheckoutForkGuard: neither local nor cached does not mean new.
+
+        A branch pushed by another clone (or another machine) is a fact
+        this clone has simply never fetched — not a name to start fresh at
+        HEAD. One on-demand ``ls-remote`` (simulated here by
+        ``_remote_server_branches``) settles it before creating anything.
+        """
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            url = runner.remote_get_url(repo.absolute_path)
+            runner._remote_server_branches.setdefault(url, set()).add("never-fetched")
+
+        create_global_branch(registry, runner, "never-fetched")
+
+        for _, branch, start_point in runner.created_from:
+            assert (branch, start_point) == ("never-fetched", "origin/never-fetched")
+        assert len(runner.fetched_on_demand) == len(list(registry.values()))
+
+    def test_a_name_truly_unknown_to_the_remote_pays_the_round_trip_and_still_forks_fresh(
+        self, tmp_path
+    ):
+        """The on-demand check must not turn a real "new branch" request into
+        a no-op — it costs one lookup and then behaves exactly as before."""
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+
+        create_global_branch(registry, runner, "mine-alone")
+
+        assert runner.fetched_on_demand == []
+        assert [start_point for _, _, start_point in runner.created_from] == [None, None]
+
+    def test_a_branch_already_known_locally_or_from_a_cached_ref_never_asks_the_network(
+        self, tmp_path
+    ):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            runner._remote_tracking_branches[repo.absolute_path] = {"colleague"}
+
+        create_global_branch(registry, runner, "colleague")
+
+        assert runner.fetched_on_demand == []
+
 
 class TestPullBringsEveryBranchSRef:
     """``git pull origin <branch>`` fetches one branch; ``checkout`` reads all of them."""
@@ -786,10 +891,59 @@ class TestPullBringsEveryBranchSRef:
         registry = _make_ready_registry(tmp_path)
         runner = _RefusingFetch()
         runner._current_branches[registry.get("root").absolute_path] = "main"
+        # The fetch this test breaks would ordinarily be what makes the
+        # remote-tracking ref visible; simulate it already being known from
+        # an earlier, successful fetch, so the failure below is isolated to
+        # exactly what this test means to exercise.
+        for repo in registry.values():
+            runner._remote_tracking_branches[repo.absolute_path] = {"main"}
 
         restart_tree(registry, runner)
 
         assert [path for path, _, _ in runner.pulled]
+
+
+class TestPullSkipsUnpushedBranches:
+    """A branch nobody has pushed yet has nothing to pull — that is not a
+    pull failure.
+
+    Field failure: a memory freshly rebooted (a real, current, committed
+    branch that has simply never been pushed under this name) made
+    ``git pull --ff-only origin <branch>`` fail with "couldn't find remote
+    ref", which `_restart_tree` let escape and abort the *entire* tree-wide
+    pull — one repository's ordinary "nothing to pull yet" took every
+    other repository down with it.
+    """
+
+    def test_a_repo_with_no_remote_branch_is_skipped_not_failed(self, tmp_path):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root_path = tmp_path / "project"
+        runner._current_branches[root_path] = "main"
+        runner._remote_tracking_branches[root_path] = {"main"}
+        # The leaf's branch has never been pushed — nothing in
+        # `_remote_tracking_branches` for it.
+
+        restart_tree(registry, runner)
+
+        assert runner.pulled == [(root_path, "origin", "main")]
+        assert registry.is_ready()
+
+    def test_the_rest_of_the_tree_still_pulls_leaf_first(self, tmp_path):
+        registry = _make_deep_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        root_path = tmp_path / "deep"
+        middle_path = root_path / "middle"
+        sub_path = middle_path / "sub"
+        runner._current_branches[root_path] = "main"
+        # Only the middle repository was ever pushed under this name.
+        runner._remote_tracking_branches[middle_path] = {"main"}
+
+        restart_tree(registry, runner)
+
+        assert runner.pulled == [(middle_path, "origin", "main")]
+        assert root_path not in [path for path, _, _ in runner.pulled]
+        assert sub_path not in [path for path, _, _ in runner.pulled]
 
 
 class TestEveryWorkspaceRepairsItsOwnFetchRefspec:
@@ -800,7 +954,7 @@ class TestEveryWorkspaceRepairsItsOwnFetchRefspec:
     remote-tracking ref that ``@{upstream}`` resolves through. Pull and push
     are the commands that write to a repository anyway, so they are where the
     config is repaired — once, idempotently
-    (``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``).
+    (``.agent/.local/.dev/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``).
     """
 
     def test_pull_widens_the_refspec_of_every_repository(self, tmp_path):
@@ -859,6 +1013,8 @@ def test_restart_tree_force_pulls_parent_first(tmp_path):
     runner = _FakeGitRunnerForOperations()
     root_path = tmp_path / "deep"
     runner._current_branches[root_path] = "main"
+    for path in (root_path, root_path / "middle", root_path / "middle" / "sub"):
+        runner._remote_tracking_branches[path] = {"main"}
 
     restart_tree_force(registry, runner)
 
@@ -882,6 +1038,8 @@ def test_restart_tree_falls_back_to_resolved_ref_when_no_current_branch(tmp_path
     runner = _FakeGitRunnerForOperations()
     root_path = tmp_path / "project"
     runner._current_branches[root_path] = None
+    runner._remote_tracking_branches[root_path] = {"fallback-branch"}
+    runner._remote_tracking_branches[root_path / "deps" / "leaf"] = {"fallback-branch"}
     # Set a resolved ref name on the root entry as fallback
     registry.get("root").resolved_ref_name = "fallback-branch"
 
@@ -1421,6 +1579,8 @@ def test_tag_tree_tags_and_pushes_leaf_first(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
 
+    before = {entry.repo_id: (entry.current_ref_kind, entry.current_ref_name) for entry in registry.values()}
+
     tag_tree(registry, runner, "v1.0.0")
 
     root_path = registry.get("root").absolute_path
@@ -1429,9 +1589,12 @@ def test_tag_tree_tags_and_pushes_leaf_first(tmp_path):
     pushed_paths = [path for path, _, _ in runner.pushed]
     assert tagged_paths.index(leaf_path) < tagged_paths.index(root_path)
     assert pushed_paths.index(leaf_path) < pushed_paths.index(root_path)
+    # ReleaseTags D1: tagging moves no HEAD, so no repository's recorded ref
+    # changes; recording the tag there made the next push push the tag.
     for entry in registry.values():
-        assert entry.current_ref_kind == RefKind.TAG
-        assert entry.current_ref_name == "v1.0.0"
+        assert (entry.current_ref_kind, entry.current_ref_name) == before[entry.repo_id]
+        assert entry.resolved_ref_kind is not RefKind.TAG
+        assert entry.target_ref_kind is not RefKind.TAG
 
 
 def test_freeze_release_tree_commits_tags_and_pushes_leaf_first(tmp_path):
@@ -1449,6 +1612,58 @@ def test_freeze_release_tree_commits_tags_and_pushes_leaf_first(tmp_path):
     assert tagged_paths.index(leaf_path) < tagged_paths.index(root_path)
     assert pushed_paths.index(leaf_path) < pushed_paths.index(root_path)
     assert registry.recompute_tree_state() == TreeLifecycleState.READY
+
+
+def test_freeze_release_tree_pushes_the_branch_when_its_own_step_commits(tmp_path):
+    """ReleaseTags R5: a commit made by the freeze step reaches the remote
+    branch, not only through the tag."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    freeze_release_tree(registry, runner, "release-1")
+
+    for entry in registry.values():
+        pushed = [ref for path, _, ref in runner.pushed if path == entry.absolute_path]
+        assert pushed == ["main", "release-1"], entry.name
+        assert entry.current_ref_kind is not RefKind.TAG
+        assert entry.target_ref_kind is not RefKind.TAG
+
+
+def test_freeze_release_tree_pushes_only_the_tag_when_nothing_was_committed(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+
+    freeze_release_tree(registry, runner, "release-1", stage_all=False)
+
+    assert [ref for _, _, ref in runner.pushed] == ["release-1"] * len(registry.repos)
+
+
+def test_push_tree_pushes_the_checked_out_branch_when_a_tag_was_recorded(tmp_path):
+    """ReleaseTags WP4: a State recorded by the old freeze-release named the tag
+    as every repository's ref; push sends the branch Git has checked out."""
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    for entry in registry.values():
+        entry.resolved_ref_kind = RefKind.TAG
+        entry.resolved_ref_name = "v1.0"
+
+    push_tree(registry, runner)
+
+    assert [ref for _, _, ref in runner.pushed] == ["main"] * len(registry.repos)
+
+
+def test_push_tree_refuses_a_repository_detached_on_a_tag_before_pushing_any(tmp_path):
+    registry = _make_ready_registry(tmp_path)
+    runner = _FakeGitRunnerForOperations()
+    root = registry.get("root")
+    root.resolved_ref_kind = RefKind.TAG
+    root.resolved_ref_name = "v1.0"
+    runner._current_branches[root.absolute_path] = None
+
+    with pytest.raises(GitSyncError, match="detached"):
+        push_tree(registry, runner)
+
+    assert runner.pushed == []
 
 
 def test_tag_tree_preflight_fails_when_tag_exists(tmp_path):
@@ -1522,6 +1737,8 @@ def test_push_tree_preflight_fails_when_merge_is_unresolved(tmp_path):
     runner = _FakeGitRunnerForOperations()
     root_path = registry.get("root").absolute_path
     runner.set_unresolved_merge(root_path, True)
+    # Merge is in progress with unmerged paths (conflicts not yet resolved)
+    runner.set_unmerged_paths(root_path, True)
 
     with pytest.raises(GitSyncError, match="unresolved merge in progress"):
         push_tree(registry, runner)
@@ -1726,7 +1943,14 @@ class TestMergeTree:
         assert "leaf" in message and "project" in message
 
     def test_the_error_names_every_conflicting_file_under_its_repository(self, tmp_path):
-        """The reporting case: 'ComplexGitSync: tests/unit/test_documents.py'."""
+        """The reporting case: which repository, which branch, which files.
+
+        The branch used to be named only when git blamed no file, so a
+        refusal listing several repositories by path alone never said what
+        was being merged — unhelpful to a reader and unusable to
+        `autofix.repair_merge_conflict`, which re-checks the conflict before
+        reporting it (MergeLogGap, WP3).
+        """
         registry = _make_ready_registry(tmp_path)
         runner = _FakeGitRunnerForOperations()
         root = registry.get("root").absolute_path
@@ -1743,7 +1967,10 @@ class TestMergeTree:
             merge_tree(registry, runner, "multi-branch")
 
         message = str(excinfo.value)
-        assert "project: tests/unit/test_documents.py, docs/MASTER.pdf" in message
+        assert (
+            "project: merging 'multi-branch' conflicts in "
+            "tests/unit/test_documents.py, docs/MASTER.pdf"
+        ) in message
 
     def test_resolve_keeps_what_it_merged_and_names_where_it_stopped(self, tmp_path):
         """The trade --resolve makes: partial progress, reported exactly."""
@@ -1836,17 +2063,49 @@ class TestMergeTree:
         merged_paths = [path for path, _ in runner.merged]
         assert leaf.absolute_path not in merged_paths
 
-    def test_one_writable_pass_merges_both_halves(self, tmp_path):
-        """What ``merge --all`` runs: one pass, both halves, names translated."""
+    def test_one_writable_pass_merges_both_halves_project_first(self, tmp_path):
+        """What ``merge --all`` runs: one pass, both halves, names translated.
+
+        Project repositories merge completely before any private one is
+        touched — a leaf-first walk over the union would put this
+        private-repo leaf ahead of the project's own root purely because of
+        where it happens to be mounted, which is backwards: a conflict in
+        the private half must never again be able to leave the project half
+        only partly merged (`.agent/.local/.dev/DevTickets/archive/
+        20260918_MergeProjectBeforePrivate_DevPlanTicket.md`).
+        """
         registry = self._tree(tmp_path)
         runner = self._runner(registry)
 
         merge_tree(registry, runner, "multi-branch", scope=RepoScope.WRITABLE)
 
         assert runner.merged == [
-            (registry.get("root:deps/leaf").absolute_path, "project_multi-branch"),
             (registry.get("root").absolute_path, "multi-branch"),
+            (registry.get("root:deps/leaf").absolute_path, "project_multi-branch"),
         ]
+
+    def test_resolve_all_reaches_the_project_root_before_a_private_conflict(self, tmp_path):
+        """The field failure this ordering exists to prevent.
+
+        `cgitsync merge --all --resolve` stopping on a private/local repo
+        (`.memory`, in the field report) must never leave the project's own
+        root repository unmerged just because it happened to sit later in
+        a leaf-first walk over the whole tree. With project repositories
+        ordered first, the root is always merged (or correctly found to
+        need nothing) before a private conflict is ever reached.
+        """
+        registry = self._tree(tmp_path)
+        runner = self._runner(registry)
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._unmergeable[leaf] = {"project_multi-branch"}
+        runner._conflicting_paths[leaf] = [Path("settings.toml")]
+
+        outcome = merge_tree_one_at_a_time(registry, runner, "multi-branch", scope=RepoScope.WRITABLE)
+
+        root = registry.get("root").absolute_path
+        assert (root, "multi-branch") in runner.merged, "the project root must merge first"
+        assert outcome.stopped_at == "leaf"
+        assert outcome.not_reached == (), "the private leaf was the last repository in scope"
 
     def test_a_conflict_in_the_private_half_leaves_the_project_half_unmerged(self, tmp_path):
         """Why ``--all`` must be one pass and never two sequential ones.
@@ -2550,41 +2809,6 @@ def test_freeze_snapshot_loaded_from_gts_creates_new_named_immutable_gts(tmp_pat
     assert snapshot_data["freeze_manifest"]["release-name"] == "20260708-v4"
 
 
-def test_client_launch_release_checkouts_release_tag_and_writes_gts(tmp_path, monkeypatch):
-    client, runner = _make_client_with_ready_registry(tmp_path)
-    captured_call: dict[str, object] = {}
-
-    def _spy_checkout(
-        self, git_runner, branch_name, *, ref_kind=RefKind.BRANCH, tree=None, scope=None
-    ):
-        captured_call["git_runner"] = git_runner
-        captured_call["branch_name"] = branch_name
-        captured_call["ref_kind"] = ref_kind
-        captured_call["tree"] = tree
-
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "checkout", _spy_checkout)
-
-    result = client.launch_release("v1.0.0")
-
-    assert result is client.registry
-    assert captured_call == {
-        "git_runner": runner,
-        "branch_name": "v1.0.0",
-        "ref_kind": RefKind.TAG,
-        "tree": None,
-    }
-    snapshot_path = _current_state_path(client.registry.get("root").absolute_path)
-    assert snapshot_path.exists()
-    assert _is_state_file(snapshot_path)
-    assert result.recompute_tree_state() == TreeLifecycleState.READY
-
-
-def test_client_launch_release_raises_when_no_registry_loaded():
-    client = ComplexGitSyncClient()
-    with pytest.raises(RuntimeError, match="No ComplexGitSync registry is loaded"):
-        client.launch_release("v1.0.0")
-
-
 def test_client_checkout_raises_when_no_registry_loaded():
     client = ComplexGitSyncClient()
     with pytest.raises(RuntimeError, match="No ComplexGitSync registry is loaded"):
@@ -2951,7 +3175,7 @@ class TestRemovePathsHonoursItsScope:
 
     ``rm`` is handed its paths rather than sweeping for them, so its scope
     is a filter on the repository each path resolves to — see
-    ``.localSpec/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
+    ``.agent/.local/.dev/DevTickets/archive/20260912_DeadScopeFlags_DevPlanTicket.md`` §2.1.
     """
 
     @staticmethod

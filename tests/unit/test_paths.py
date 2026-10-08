@@ -12,23 +12,16 @@ directly instead of going through the client.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from ComplexGitSync.cgs_format import CgsDocument
-from ComplexGitSync.errors import GitSyncError
+from ComplexGitSync.errors import ConfigValidationError, GitSyncError
+from ComplexGitSync.gts_document import GtsDocument
 from ComplexGitSync.paths import (
-    _expand_environment_markers,
-    _get_path_environment_markers,
-    _path_to_environment_marker,
-    _preferred_path_separators,
-    _resolve_document_path,
-    _resolve_project_root,
-    resolve_bootstrap_root,
-    resolve_cgshome,
-    resolve_clone_root,
-    resolve_initialise_cgshome,
+    PathResolver,
 )
 
 
@@ -74,7 +67,7 @@ def test_path_to_environment_marker_uses_home_on_unix(monkeypatch, tmp_path):
     target = home / "workspace" / "demo"
     target.mkdir(parents=True)
 
-    marker = _path_to_environment_marker(target)
+    marker = PathResolver.to_environment_marker(target)
 
     assert marker == "$HOME/workspace/demo"
 
@@ -85,7 +78,7 @@ def test_path_to_environment_marker_returns_bare_token_for_home_itself(monkeypat
     home.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
 
-    assert _path_to_environment_marker(home) == "$HOME"
+    assert PathResolver.to_environment_marker(home) == "$HOME"
 
 
 def test_expand_environment_markers_round_trips_home(monkeypatch, tmp_path):
@@ -95,8 +88,8 @@ def test_expand_environment_markers_round_trips_home(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(home))
 
     target = home / "workspace" / "demo"
-    marker = _path_to_environment_marker(target)
-    expanded = _expand_environment_markers(marker)
+    marker = PathResolver.to_environment_marker(target)
+    expanded = PathResolver.expand_environment_markers(marker)
 
     assert Path(expanded) == target
 
@@ -107,7 +100,7 @@ def test_resolve_document_path_expands_home_marker(monkeypatch, tmp_path):
     home.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
 
-    resolved = _resolve_document_path("$HOME/workspace/demo")
+    resolved = PathResolver.resolve_document_path("$HOME/workspace/demo")
 
     assert resolved == (home / "workspace" / "demo").resolve()
 
@@ -117,7 +110,7 @@ def test_path_without_environment_prefix_is_returned_absolute(monkeypatch, tmp_p
     outside = tmp_path / "elsewhere"
     outside.mkdir()
 
-    marker = _path_to_environment_marker(outside)
+    marker = PathResolver.to_environment_marker(outside)
 
     assert marker == str(outside.resolve())
 
@@ -136,7 +129,7 @@ def test_path_to_environment_marker_uses_userprofile_on_windows(monkeypatch, tmp
     target = profile / "workspace" / "demo"
     target.mkdir(parents=True)
 
-    marker = _path_to_environment_marker(target)
+    marker = PathResolver.to_environment_marker(target)
 
     assert marker == "%USERPROFILE%/workspace/demo"
 
@@ -148,8 +141,8 @@ def test_expand_environment_markers_round_trips_userprofile(monkeypatch, tmp_pat
     monkeypatch.setenv("USERPROFILE", str(profile))
 
     target = profile / "workspace" / "demo"
-    marker = _path_to_environment_marker(target)
-    expanded = _expand_environment_markers(marker)
+    marker = PathResolver.to_environment_marker(target)
+    expanded = PathResolver.expand_environment_markers(marker)
 
     assert Path(expanded) == target
 
@@ -175,7 +168,7 @@ def test_path_to_environment_marker_uses_homedrive_homepath(monkeypatch, tmp_pat
     target = profile / "workspace"
     target.mkdir(parents=True)
 
-    marker = _path_to_environment_marker(target)
+    marker = PathResolver.to_environment_marker(target)
 
     assert marker == "%HOMEDRIVE%%HOMEPATH%/workspace"
 
@@ -187,8 +180,8 @@ def test_expand_environment_markers_round_trips_homedrive_homepath(monkeypatch, 
     _set_homedrive_homepath(monkeypatch, profile)
 
     target = profile / "workspace"
-    marker = _path_to_environment_marker(target)
-    expanded = _expand_environment_markers(marker)
+    marker = PathResolver.to_environment_marker(target)
+    expanded = PathResolver.expand_environment_markers(marker)
 
     assert Path(expanded) == target
 
@@ -198,7 +191,7 @@ def test_homedrive_homepath_requires_both_set(monkeypatch, tmp_path):
     monkeypatch.setenv("HOMEDRIVE", "C:")
     # HOMEPATH intentionally left unset.
 
-    markers = _get_path_environment_markers()
+    markers = PathResolver.environment_markers()
 
     assert markers == ()
 
@@ -210,7 +203,7 @@ def test_get_path_environment_markers_dedupes_identical_targets(monkeypatch, tmp
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
 
-    markers = _get_path_environment_markers()
+    markers = PathResolver.environment_markers()
 
     # Both env vars point at the same resolved directory, so only the first
     # (HOME) marker is kept.
@@ -219,7 +212,7 @@ def test_get_path_environment_markers_dedupes_identical_targets(monkeypatch, tmp
 
 
 def test_preferred_path_separators_includes_forward_and_back_slash():
-    separators = _preferred_path_separators()
+    separators = PathResolver.preferred_separators()
 
     assert "/" in separators
     assert "\\" in separators
@@ -235,7 +228,7 @@ def test_resolve_cgshome_uses_output_path_when_given(tmp_path):
     output_path = tmp_path / "out"
     output_path.mkdir()
 
-    result = resolve_cgshome(document, tmp_path / "project.cgs", output_path=output_path)
+    result = PathResolver.resolve_cgshome(document, tmp_path / "project.cgs", output_path=output_path)
 
     assert result == (output_path / "demo").resolve()
 
@@ -246,7 +239,7 @@ def test_resolve_cgshome_uses_cgshome_environment_variable(monkeypatch, tmp_path
     env_cgshome.mkdir()
     monkeypatch.setenv("CGSHOME", str(env_cgshome))
 
-    result = resolve_cgshome(document, tmp_path / "project.cgs")
+    result = PathResolver.resolve_cgshome(document, tmp_path / "project.cgs")
 
     assert result == env_cgshome.resolve()
 
@@ -258,7 +251,7 @@ def test_resolve_cgshome_defaults_to_cgspath_project_name(monkeypatch, tmp_path)
     monkeypatch.chdir(wcd)
     document = CgsDocument.from_toml(_write_root_cgs(tmp_path))
 
-    result = resolve_cgshome(document, tmp_path / "project.cgs")
+    result = PathResolver.resolve_cgshome(document, tmp_path / "project.cgs")
 
     expected = (wcd / "../..").resolve() / "demo"
     assert result == expected
@@ -270,7 +263,7 @@ def test_resolve_initialise_cgshome_reads_document_from_disk(monkeypatch, tmp_pa
     env_cgshome.mkdir()
     monkeypatch.setenv("CGSHOME", str(env_cgshome))
 
-    result = resolve_initialise_cgshome(config_path)
+    result = PathResolver.resolve_initialise_cgshome(config_path)
 
     assert result == env_cgshome.resolve()
 
@@ -280,7 +273,7 @@ def test_resolve_clone_root_uses_output_path_as_base(tmp_path):
     output_path = tmp_path / "parent"
     output_path.mkdir()
 
-    result = resolve_clone_root(config_path, output_path=output_path)
+    result = PathResolver.resolve_clone_root(config_path, output_path=output_path)
 
     assert result == (output_path / "demo").resolve()
 
@@ -289,7 +282,7 @@ def test_resolve_clone_root_uses_target_dir_when_given(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     target_dir = tmp_path / "explicit-target"
 
-    result = resolve_clone_root(config_path, target_dir=target_dir)
+    result = PathResolver.resolve_clone_root(config_path, target_dir=target_dir)
 
     assert result == target_dir.resolve()
 
@@ -301,13 +294,13 @@ def test_resolve_project_root_rejects_non_empty_destination(tmp_path):
     (destination / "existing.txt").write_text("x", encoding="utf-8")
 
     with pytest.raises(GitSyncError, match="already exists"):
-        _resolve_project_root(document, tmp_path / "project.cgs", None, tmp_path)
+        PathResolver.resolve_project_root(document, tmp_path / "project.cgs", None, tmp_path)
 
 
 def test_resolve_bootstrap_root_uses_cgs_path_override(tmp_path):
     cgs_path = tmp_path / "elsewhere"
 
-    result = resolve_bootstrap_root("myproject", cgs_path=cgs_path)
+    result = PathResolver.resolve_bootstrap_root("myproject", cgs_path=cgs_path)
 
     assert result == (cgs_path / "myproject").resolve()
 
@@ -316,13 +309,52 @@ def test_resolve_bootstrap_root_defaults_under_home_cgs(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
 
-    result = resolve_bootstrap_root("myproject")
+    result = PathResolver.resolve_bootstrap_root("myproject", clock=_FixedClock())
 
-    assert result.parent.parent == (tmp_path / ".cgs").resolve()
-    assert result.name == "myproject"
+    assert result == (tmp_path / ".cgs" / "myproject-20261007104123").resolve()
     assert (tmp_path / ".cgs").is_dir()
 
 
 def test_resolve_bootstrap_root_rejects_empty_project_name():
     with pytest.raises(ValueError, match="non-empty project_name"):
-        resolve_bootstrap_root("")
+        PathResolver.resolve_bootstrap_root("")
+
+
+@pytest.mark.parametrize("name", ["a/b", "..", ".", "a\\b"])
+def test_resolve_bootstrap_root_rejects_a_name_that_is_not_one_directory(tmp_path, name):
+    with pytest.raises(ConfigValidationError, match="single directory name"):
+        PathResolver.resolve_bootstrap_root(name, cgs_path=tmp_path)
+
+
+class _FixedClock:
+    def now(self) -> datetime:
+        return datetime(2026, 10, 7, 10, 41, 23, tzinfo=timezone.utc)
+
+
+def _write_gts(path: Path, project: dict) -> Path:
+    GtsDocument(
+        {
+            "document": {
+                "format_version": GtsDocument.CURRENT_SCHEMA_VERSION,
+                "generated_at": "2026-10-07T10:41:23Z",
+                "command_origin": "test",
+            },
+            "project": project,
+            "tree_state": {"lifecycle_state": "UNLOADED", "is_ready": False, "registry_complete": False},
+            "repo_state": [],
+        }
+    ).to_toml(path)
+    return path
+
+
+def test_resolve_source_project_name_reads_a_cgs_project_name(tmp_path):
+    source = _write_root_cgs(tmp_path, "Demo")
+
+    assert PathResolver.resolve_source_project_name(source) == "Demo"
+
+
+def test_resolve_source_project_name_reads_a_gts_project_name(tmp_path):
+    source = _write_gts(tmp_path / "state.gts", {"name": "Recorded", "root_absolute_path": str(tmp_path)})
+
+    assert PathResolver.resolve_source_project_name(source) == "Recorded"
+

@@ -1,8 +1,8 @@
-"""Golden CLI-level characterisation tests for ``checkout``/``branch``/``pull-force``/``purge``/``validate``.
+"""Golden CLI-level characterisation tests for ``checkout``/``branch``/``pull-force``/``validate``.
 
 Work package G1-a of the Wave 0 characterisation net
-(``.localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``), covering exactly the
-five lifecycle commands ``checkout``, ``branch``, ``pull-force``, ``purge``,
+(``.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``), covering exactly the
+four lifecycle commands ``checkout``, ``branch``, ``pull-force``
 and ``validate``. This is a *gap-filling* file, not a rewrite: before adding
 anything here the existing suites were audited command by command.
 
@@ -21,10 +21,6 @@ Audit findings (why each test below exists)
 - ``pull-force`` — ``test_cli_smoke.py::test_pull_force_command_uses_client_handler``
   is stub-only; ``pull_force`` is never exercised through the CLI against a
   real repository anywhere in the suite. **Gap — filled below.**
-- ``purge`` — ``test_cli_smoke.py::test_purge_command_removes_generated_clone_state``
-  is also stub-only (a ``StubClient.purge`` that just records the call and
-  returns a canned tuple); nothing actually clones and then purges a real
-  workspace. **Gap — filled below.**
 - ``validate`` — genuinely already covered end-to-end for the *valid* case:
   ``test_tuto_cgsi1.py::TestTutoCGSil1CLI::test_validate_topology`` and
   ``test_cli_smoke.py::test_validate_command_renders_lifecycle_state`` /
@@ -145,8 +141,7 @@ def ready_single_repo_snapshot(tmp_path: Path) -> dict[str, Path]:
 def direct_child_cgs_workspace(tmp_path: Path) -> dict[str, Path]:
     """A .cgs spec with a root repo and one *direct* child (``child-repo/``).
 
-    ``purge`` only removes children whose ``absolute_path.parent`` equals the
-    project root, so the child here is deliberately placed directly under
+    The child here is deliberately placed directly under
     root (not nested, unlike ``local_two_repo_remotes`` in
     ``test_cgsi_topology.py`` which nests its leaf under ``deps/``).
     """
@@ -210,7 +205,7 @@ def test_branch_creates_branch_without_switching_current_ref(ready_single_repo_s
     repo = ready_single_repo_snapshot["repo"]
     snapshot = ready_single_repo_snapshot["snapshot"]
 
-    exit_code = cli_main(["branch", "feature-x", "--gts", str(snapshot)])
+    exit_code = cli_main(["branch", "create", "feature-x", "--gts", str(snapshot)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -250,11 +245,12 @@ def test_checkout_switches_current_ref_across_workspace(ready_single_repo_snapsh
 # ---------------------------------------------------------------------------
 
 
-def test_pull_force_discards_local_changes_and_matches_remote(
+def test_pull_force_sets_untracked_files_aside_and_matches_remote(
     ready_single_repo_snapshot, tmp_path, capsys
 ):
-    """``cgitsync pull-force`` discards a diverging local commit + untracked
-    files and resynchronises the working tree to exactly match origin/main.
+    """``cgitsync pull-force`` sets untracked files aside (``git stash -u``) and
+    resynchronises the working tree to exactly match origin/main. It never discards a commit no
+    remote holds: that case is refused (``test_force_pull_guard.py``).
     """
     repo = ready_single_repo_snapshot["repo"]
     remote = ready_single_repo_snapshot["remote"]
@@ -270,15 +266,11 @@ def test_pull_force_discards_local_changes_and_matches_remote(
     _run_git(other_clone, "push", "origin", "main")
     remote_head = _run_git(other_clone, "rev-parse", "HEAD")
 
-    # Meanwhile the local workspace diverges: a local-only commit plus an
-    # untracked file that must both be discarded.
-    (repo / "local-only.txt").write_text("local only\n", encoding="utf-8")
-    _run_git(repo, "add", "local-only.txt")
-    _run_git(repo, "commit", "-m", "local only commit, never pushed")
+    # Meanwhile the local workspace holds an untracked file, which is set aside.
     (repo / "untracked.txt").write_text("junk\n", encoding="utf-8")
     assert _run_git(repo, "rev-parse", "HEAD") != remote_head
 
-    exit_code = cli_main(["pull-force", str(snapshot)])
+    exit_code = cli_main(["pull", "--force", str(snapshot)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -287,7 +279,7 @@ def test_pull_force_discards_local_changes_and_matches_remote(
 
     assert (repo / "README.md").read_text(encoding="utf-8") == "remote update\n"
     assert not (repo / "untracked.txt").exists()
-    assert not (repo / "local-only.txt").exists()
+    assert "pull --force" in _run_git(repo, "stash", "list")
     assert _run_git(repo, "rev-parse", "HEAD") == remote_head
     # ``.cgitsync/`` is ComplexGitSync's own generated state directory, not a
     # discarded local change; git clean -fd never touches it (see
@@ -296,40 +288,6 @@ def test_pull_force_discards_local_changes_and_matches_remote(
         line for line in _run_git(repo, "status", "--porcelain").splitlines() if ".cgitsync" not in line
     ]
     assert status_lines == []
-
-
-# ---------------------------------------------------------------------------
-# purge
-# ---------------------------------------------------------------------------
-
-
-def test_purge_removes_generated_clone_state(direct_child_cgs_workspace, monkeypatch, tmp_path, capsys):
-    """``cgitsync purge`` removes a direct child clone but keeps the root repo."""
-    workspace = direct_child_cgs_workspace
-    clone_spec = workspace["clone_spec"]
-    _patch_direct_child_remote_urls(monkeypatch, workspace)
-
-    output_path = tmp_path / "parent"
-    exit_code = cli_main(["clone", str(clone_spec), "--output-path", str(output_path)])
-    capsys.readouterr()
-    assert exit_code == 0
-
-    project_root = output_path / "demo"
-    child_repo = project_root / "child-repo"
-    assert project_root.is_dir()
-    assert (child_repo / ".git").is_dir()
-    assert (project_root / "README.md").is_file()
-
-    exit_code = cli_main(["purge", str(clone_spec), "--output-path", str(output_path)])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert str(child_repo) in captured.out
-    assert not child_repo.exists()
-    # The root repo itself is untouched by purge.
-    assert project_root.is_dir()
-    assert (project_root / "README.md").is_file()
-    assert (project_root / ".git").is_dir()
 
 
 # ---------------------------------------------------------------------------

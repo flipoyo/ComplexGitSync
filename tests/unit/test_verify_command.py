@@ -1,6 +1,6 @@
 """Tests for ComplexGitSyncClient.verify() and the `cgitsync verify` CLI command.
 
-Wave 2 work package P4.3 from .localSpec/DevTickets/archive/20260828_Isolation_DevPlanTicket.md —
+Wave 2 work package P4.3 from .agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md —
 wires ledger_entry.py/integrity.py/ledger_store.py (Wave 1/2, already unit
 tested in isolation) into the actual `verify` command. These tests exercise
 that wiring, not the underlying chain-math/storage logic again.
@@ -18,9 +18,7 @@ from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.memory.integrity import Finding, HistoryState
 from ComplexGitSync.memory.ledger_store import (
     HeadPointer,
-    append_entry,
-    read_head,
-    write_head,
+    LedgerStore,
 )
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
@@ -50,19 +48,11 @@ def _lgr_dir(cgshome: Path) -> Path:
 
 
 def _append(lgr_dir: Path, clock: _FixedClock, *, command: str, state_id: str):
-    return append_entry(
-        lgr_dir,
-        command=command,
-        argv=[command],
-        state_id=state_id,
-        state_dir=f"state({state_id})_0",
-        outcome="ok",
-        clock=clock,
-    )
+    return LedgerStore(lgr_dir).append_entry(command=command, argv=[command], state_id=state_id, state_dir=f"state({state_id})_0", outcome="ok", clock=clock)
 
 
 class TestClientVerify:
-    def test_an_empty_register_is_no_history_not_a_verified_chain(self, tmp_path: Path):
+    def test_an_empty_ledger_is_no_history_not_a_verified_chain(self, tmp_path: Path):
         """The bug this milestone exists for.
 
         Nothing writes ``.cgitsync/lgr`` yet, so reading it empty and
@@ -161,7 +151,7 @@ class TestClientVerify:
         # Corrupt the HEAD cache directly rather than through the writer that
         # keeps it consistent -- the untrusted-cache scenario IsolationPlan.md
         # §2.3 requires `verify` to catch, not silently paper over.
-        write_head(lgr_dir, HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64))
+        LedgerStore(lgr_dir).write_head(HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64))
 
         client = ComplexGitSyncClient()
         report = client.verify(tmp_path)
@@ -172,19 +162,19 @@ class TestClientVerify:
         assert report.state is HistoryState.CORRUPT
         assert any(finding is Finding.HEAD_STALE for _seq, finding, _detail in report.findings)
         # Without --repair, the corrupt cache file must be left exactly as-is.
-        assert read_head(lgr_dir) == HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64)
+        assert LedgerStore(lgr_dir).read_head() == HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64)
 
     def test_repair_fixes_stale_head_without_touching_entries(self, tmp_path: Path):
         lgr_dir = _lgr_dir(tmp_path)
         clock = _FixedClock()
         entry1 = _append(lgr_dir, clock, command="push", state_id="a" * 64)
-        write_head(lgr_dir, HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64))
+        LedgerStore(lgr_dir).write_head(HeadPointer(seq=99, entry_hash="sha256:" + "0" * 64))
 
         client = ComplexGitSyncClient()
         report = client.verify(tmp_path, repair=True)
 
         assert not report.is_clean, "the run that performed the repair still reports what it found"
-        repaired_head = read_head(lgr_dir)
+        repaired_head = LedgerStore(lgr_dir).read_head()
         assert repaired_head == HeadPointer(seq=entry1.seq, entry_hash=entry1.entry_hash)
 
         # A second run against the now-repaired cache is clean.
@@ -193,12 +183,12 @@ class TestClientVerify:
 
 
 class TestVerifyCli:
-    def test_verify_command_says_no_history_for_an_unstarted_register(
+    def test_verify_command_says_no_history_for_an_unstarted_ledger(
         self, tmp_path: Path, capsys
     ):
         (tmp_path / ".cgitsync").mkdir()
 
-        exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+        exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
         captured = capsys.readouterr()
 
         assert exit_code == 0
@@ -215,7 +205,7 @@ class TestVerifyCli:
         data["entry"]["command"] = "tampered-command"
         entry_path.write_text(tomli_w.dumps(data), encoding="utf-8")
 
-        exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+        exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
         captured = capsys.readouterr()
 
         assert exit_code == 1
@@ -229,7 +219,7 @@ class TestVerifyCli:
         workspace deliberately does not step in here — a directory the user
         named is never silently replaced.
         """
-        exit_code = cli_main(["verify", "--search-dir", str(tmp_path)])
+        exit_code = cli_main(["verify", "check", "--search-dir", str(tmp_path)])
         captured = capsys.readouterr()
 
         assert exit_code == 2

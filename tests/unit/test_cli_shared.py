@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import logging
 from pathlib import Path
 from types import SimpleNamespace
@@ -54,14 +55,13 @@ _shared = _load_cli_shared()
 # ---------------------------------------------------------------------------
 
 
-def test_add_gitignore_sync_arguments_registers_all_four_flags():
+def test_add_gitignore_sync_arguments_registers_all_three_flags():
     parser = argparse.ArgumentParser()
     _shared._add_gitignore_sync_arguments(parser)
 
     args = parser.parse_args(
         [
             "--commit-gitignore",
-            "--force-gitignore-sync",
             "--git-user-name",
             "Alice",
             "--git-user-email",
@@ -69,7 +69,6 @@ def test_add_gitignore_sync_arguments_registers_all_four_flags():
         ]
     )
     assert args.commit_gitignore is True
-    assert args.force_gitignore_sync is True
     assert args.git_user_name == "Alice"
     assert args.git_user_email == "alice@example.com"
 
@@ -80,7 +79,6 @@ def test_add_gitignore_sync_arguments_flags_default_off():
 
     args = parser.parse_args([])
     assert args.commit_gitignore is False
-    assert args.force_gitignore_sync is False
     assert args.git_user_name is None
     assert args.git_user_email is None
 
@@ -194,7 +192,108 @@ class _StubClient:
         self.run_logger = None
 
 
-def test_run_with_logging_initialise_failure_suggests_clean_init(capsys, tmp_path):
+class _StubClientWithTree:
+    """A client that has got as far as loading a registry before failing.
+
+    Which is where the merge in
+    ``.agent/.local/.dev/DevTickets/archive/20260927_MergeLogGap_DevPlanTicket.md``
+    §1 failed: the tree was loaded and ``READY``, and the operation then
+    refused. Nothing here stubs ``bind_log_file`` — see the tests below.
+    """
+
+    def __init__(self, root_path):
+        self.run_logger = None
+        self.registry = SimpleNamespace(
+            lifecycle_state=SimpleNamespace(value="READY"),
+            get=lambda repo_id: SimpleNamespace(absolute_path=root_path),
+        )
+
+
+def test_failed_command_persists_its_own_log_without_writing_a_state(tmp_path, capsys):
+    """WP2's regression test, and the whole point of the ticket.
+
+    A refused command writes no State, so nothing used to call
+    ``bind_log_file`` and the ``command_end``/``status="error"`` record
+    never reached disk — leaving ``autofix``, which reads
+    ``.cgitsync/logs/*.log``, with only older successful runs to find.
+
+    **This test must never stub ``bind_log_file``.** The two existing
+    ``test_pull_command_creates_log_file`` tests do exactly that, which is
+    why a green suite coexisted with this bug for as long as it did: they
+    prove the ``log_file=`` line is printed when *something* binds a path,
+    never that production binds one on a failure path. Here the only thing
+    that may bind it is the code under test.
+    """
+    root_path = tmp_path / "project"
+    root_path.mkdir()
+
+    def runner(client, source):
+        raise RuntimeError("merge refused; no repository was merged: demo: conflicts")
+
+    with pytest.raises(RuntimeError, match="merge refused"):
+        _shared._run_with_logging(
+            command_name="merge",
+            source=root_path / ".cgitsync" / "state" / "abc.gts",
+            runner=runner,
+            client=_StubClientWithTree(root_path),
+        )
+
+    logs = sorted((root_path / ".cgitsync" / "logs").glob("merge-*.log"))
+    assert len(logs) == 1, "a failed merge must leave exactly one log behind"
+
+    records = [
+        json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+    ends = [record for record in records if record.get("event") == "command_end"]
+    assert [record["status"] for record in ends] == ["error"]
+    assert "merge refused" in ends[0]["error"]
+    # The buffered command_start has to be in there too: a log holding only
+    # the failure says nothing about what was attempted.
+    assert any(record.get("event") == "command_start" for record in records)
+    assert f"log_file={logs[0]}" in capsys.readouterr().out
+
+
+def test_failed_command_log_falls_back_to_the_snapshot_path_without_a_registry(tmp_path):
+    """The failure happened before the registry loaded, so the source
+    answers instead — the ticket's §2.3 Finding 3, second branch."""
+    cgitsync_dir = tmp_path / "project" / ".cgitsync"
+
+    def runner(client, source):
+        raise RuntimeError("snapshot unreadable")
+
+    with pytest.raises(RuntimeError, match="snapshot unreadable"):
+        _shared._run_with_logging(
+            command_name="status",
+            source=cgitsync_dir / "state" / "abc.gts",
+            runner=runner,
+            client=_StubClient(),
+        )
+
+    assert len(sorted((cgitsync_dir / "logs").glob("status-*.log"))) == 1
+
+
+def test_failed_command_writes_no_log_when_no_cgshome_can_be_derived(tmp_path, capsys):
+    """A ``.cgs`` need not live inside the tree it describes, so there is no
+    CGSHOME to derive from it. Inventing a directory to log into would be
+    worse than not logging — nothing is written, and no ``log_file=`` line
+    claims otherwise."""
+
+    def runner(client, source):
+        raise RuntimeError("configure failed")
+
+    with pytest.raises(RuntimeError, match="configure failed"):
+        _shared._run_with_logging(
+            command_name="configure",
+            source=tmp_path / "loose.cgs",
+            runner=runner,
+            client=_StubClient(),
+        )
+
+    assert not list(tmp_path.rglob("*.log"))
+    assert "log_file=" not in capsys.readouterr().out
+
+
+def test_run_with_logging_initialise_failure_suggests_no_clean_init(capsys, tmp_path):
     def runner(client, source):
         raise RuntimeError("clone failed")
 
@@ -207,7 +306,7 @@ def test_run_with_logging_initialise_failure_suggests_clean_init(capsys, tmp_pat
         )
 
     captured = capsys.readouterr()
-    assert "Try clean-init method" in captured.err
+    assert "clean-init" not in captured.err
 
 
 def test_run_with_logging_pull_failure_suggests_pull_force(capsys, tmp_path):
@@ -223,7 +322,7 @@ def test_run_with_logging_pull_failure_suggests_pull_force(capsys, tmp_path):
         )
 
     captured = capsys.readouterr()
-    assert "You can try cgitsync pull-force command" in captured.err
+    assert "You can try cgitsync autofix" in captured.err
 
 
 def test_run_with_logging_other_command_failure_prints_no_hint(capsys, tmp_path):
@@ -240,7 +339,7 @@ def test_run_with_logging_other_command_failure_prints_no_hint(capsys, tmp_path)
 
     captured = capsys.readouterr()
     assert "Try clean-init method" not in captured.err
-    assert "You can try cgitsync pull-force command" not in captured.err
+    assert "You can try cgitsync autofix" not in captured.err
 
 
 def test_run_with_logging_success_returns_runner_exit_code(tmp_path):
@@ -314,18 +413,14 @@ def test_create_command_logger_reads_explicit_quiet_profile_from_cgs(tmp_path):
     # wall-clock second would reuse (and keep appending handlers to) the
     # very same cached Logger object.
     config_path = _write_cgs(tmp_path, profile="quiet")
-    logger = _shared._create_command_logger(
-        "quiet-profile-status", config_path, project_root=None
-    )
+    logger = _shared._create_command_logger("quiet-profile-status", config_path)
     console_handler = logger._logger.handlers[-1]
     assert console_handler.level == logging.WARNING
 
 
 def test_create_command_logger_reads_verbose_profile_from_cgs(tmp_path):
     config_path = _write_cgs(tmp_path, profile="verbose")
-    logger = _shared._create_command_logger(
-        "verbose-profile-status", config_path, project_root=None
-    )
+    logger = _shared._create_command_logger("verbose-profile-status", config_path)
     console_handler = logger._logger.handlers[-1]
     assert console_handler.level == logging.INFO
 
@@ -336,9 +431,7 @@ def test_create_command_logger_defaults_to_cgs_runtime_default_when_unset(tmp_pa
     # local "quiet" fallback — that fallback only applies when no .cgs
     # document could be read at all (see the missing-source test below).
     config_path = _write_cgs(tmp_path)
-    logger = _shared._create_command_logger(
-        "unset-profile-status", config_path, project_root=None
-    )
+    logger = _shared._create_command_logger("unset-profile-status", config_path)
     console_handler = logger._logger.handlers[-1]
     assert console_handler.level == logging.INFO
 
@@ -348,7 +441,7 @@ def test_create_command_logger_tolerates_missing_source(tmp_path):
     # directory for `verify`) fall back to the quiet default instead of
     # raising.
     logger = _shared._create_command_logger(
-        "missing-source-verify", tmp_path / "nonexistent.gts", project_root=None
+        "missing-source-verify", tmp_path / "nonexistent.gts"
     )
     console_handler = logger._logger.handlers[-1]
     assert console_handler.level == logging.WARNING
@@ -670,3 +763,73 @@ def test_write_outcomes_report_an_empty_scope_in_words(capsys):
     )
 
     assert "pushed nothing: no repository was in scope" in capsys.readouterr().out
+
+
+class _FakeRepo:
+    def __init__(self, *, repo_id, name, absolute_path):
+        self.repo_id = repo_id
+        self.name = name
+        self.absolute_path = absolute_path
+
+
+class _FakeRegistry:
+    def __init__(self, repos):
+        self._repos = repos
+
+    def values(self):
+        return list(self._repos)
+
+
+class _FakeGitRunnerForHint:
+    def __init__(self, counts_by_path):
+        self._counts_by_path = counts_by_path
+
+    def branch_tracking_counts(self, repo_path):
+        result = self._counts_by_path.get(repo_path)
+        if result is None:
+            raise RuntimeError(f"no upstream configured for {repo_path}")
+        return result
+
+
+def test_pull_force_risk_hint_names_what_would_be_discarded(tmp_path):
+    memory_path = tmp_path / ".memory"
+    clean_path = tmp_path / "docs"
+    client = SimpleNamespace(
+        registry=_FakeRegistry(
+            [
+                _FakeRepo(repo_id="mem", name=".memory", absolute_path=memory_path),
+                _FakeRepo(repo_id="docs", name="docs", absolute_path=clean_path),
+            ]
+        ),
+        git_runner=_FakeGitRunnerForHint(
+            {memory_path: (3, 0), clean_path: (0, 0)}
+        ),
+    )
+
+    hint = _shared._pull_force_risk_hint(client)
+
+    assert "cgitsync autofix" in hint
+    assert "pull --force refuses" in hint
+    assert ".memory ahead(+3)" in hint
+    assert "docs ahead" not in hint
+
+
+def test_pull_force_risk_hint_skips_a_repo_whose_tracking_state_cannot_be_read(tmp_path):
+    unreadable_path = tmp_path / "broken"
+    client = SimpleNamespace(
+        registry=_FakeRegistry(
+            [_FakeRepo(repo_id="broken", name="broken", absolute_path=unreadable_path)]
+        ),
+        git_runner=_FakeGitRunnerForHint({}),
+    )
+
+    hint = _shared._pull_force_risk_hint(client)
+
+    assert "this would discard" not in hint
+    assert "cgitsync autofix" in hint
+
+
+def test_pull_force_risk_hint_with_no_registry_is_the_bare_suggestion(tmp_path):
+    hint = _shared._pull_force_risk_hint(_StubClient())
+
+    assert hint == "You can try cgitsync autofix (diagnoses first)"

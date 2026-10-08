@@ -34,8 +34,7 @@ from ComplexGitSync.git_repo import GitProvider, NodeType, RefKind, RepoLifecycl
 from ComplexGitSync.git_tree import TreeLifecycleState, sync_gitignore
 from ComplexGitSync.orchestre import ComplexGitSyncClient, GtsDocument
 from ComplexGitSync.registry import (
-    build_gts_document_from_registry,
-    build_registry_from_cgs_document,
+    RegistryTranslator,
 )
 
 TEST_PLACEHOLDER_COMMIT_SHA = "f" * 40
@@ -67,9 +66,9 @@ def _run_git(repo_path: Path, *args: str) -> str:
 
 def _ledger_entries(repo_path: Path):
     """Every entry in the workspace's hash-chained ledger, oldest first."""
-    from ComplexGitSync.memory.ledger_store import read_all_entries
+    from ComplexGitSync.memory.ledger_store import LedgerStore
 
-    return read_all_entries(repo_path / ".cgitsync" / "lgr")
+    return LedgerStore(repo_path / ".cgitsync" / "lgr").read_all_entries()
 
 
 def _write_ready_gts(snapshot_path: Path, *, root_path: Path, commit_sha: str) -> Path:
@@ -523,12 +522,12 @@ class TestGitCommandCycleIntegration:
         assert cli_main(["push", "--gts", str(snapshot)]) == 0
 
         cycle_file.write_text("cli cycle 2\n", encoding="utf-8")
-        assert cli_main(["freeze", "v0.2.0", "--gts", str(snapshot)]) == 0
-        assert cli_main(["launch-release", "v0.2.0", "--gts", str(snapshot)]) == 0
+        assert cli_main(["freeze-release", "v0.2.0", "cli cycle freeze", "--gts", str(snapshot)]) == 0
+        assert cli_main(["checkout", "v0.2.0", "--ref-kind", "tag", "--gts", str(snapshot)]) == 0
 
         remote_tags = _run_git(repo, "ls-remote", "--tags", "origin")
         assert "refs/tags/v0.2.0" in remote_tags
-        # A full add/commit/push/freeze/launch-release cycle leaves a chain,
+        # A full add/commit/push/freeze-release/checkout cycle leaves a chain,
         # one entry per operation, each naming the State it wrote.
         entries = _ledger_entries(repo)
         assert len(entries) >= 1
@@ -653,7 +652,7 @@ class TestGtsSnapshotDeterminismIntegration:
 
 
 class TestCloneAndLaunchReleaseLifecycle:
-    """Complete local clone and launch_release scenarios for T18 / T29."""
+    """Complete local clone scenarios for T18 / T29."""
 
     def test_clone_cgs_supports_local_file_remotes(self, local_two_repo_remotes, monkeypatch, tmp_path):
         clone_spec = local_two_repo_remotes["clone_spec"]
@@ -699,10 +698,17 @@ class TestCloneAndLaunchReleaseLifecycle:
         examples_dir = Path(__file__).resolve().parents[2] / "examples"
         cawaqsviz_cgs = examples_dir / "cawaqsviz.cgs"
 
-        root_remote, _ = _seed_remote_repo(tmp_path, "cawaqsviz-root")
-        htas_remote, _ = _seed_remote_repo(tmp_path, "htas")
-        twin_remote, _ = _seed_remote_repo(tmp_path, "hydrological-twin")
-        guide_remote, _ = _seed_remote_repo(tmp_path, "user-guide")
+        root_remote, root_seed = _seed_remote_repo(tmp_path, "cawaqsviz-root")
+        htas_remote, htas_seed = _seed_remote_repo(tmp_path, "htas")
+        twin_remote, twin_seed = _seed_remote_repo(tmp_path, "hydrological-twin")
+        guide_remote, guide_seed = _seed_remote_repo(tmp_path, "user-guide")
+
+        # The example names the branch every repository is cloned on
+        # (project.default_branch); the remotes must have it, whatever it is
+        # today, or this test tracks the example's old value instead of the file.
+        example_branch = CgsDocument.from_toml(cawaqsviz_cgs).default_branch
+        for seed in (root_seed, htas_seed, twin_seed, guide_seed):
+            _run_git(seed, "push", "origin", f"main:refs/heads/{example_branch}")
 
         clone_target = tmp_path / "workspace"
         client = ComplexGitSyncClient()
@@ -768,9 +774,52 @@ class TestCloneAndLaunchReleaseLifecycle:
 
         assert registry.is_ready() is True
         root_clone = registry.get("root").absolute_path
-        assert root_clone.name == "demo-standalone"
-        assert root_clone.parent.parent == (fake_home / ".cgs").resolve()
+        assert re.fullmatch(r"demo-standalone-\d{14}", root_clone.name)
+        assert root_clone.parent == (fake_home / ".cgs").resolve()
         assert (root_clone / "deps" / "leaf" / ".git").exists()
+
+    def test_bootstrap_refuses_a_name_that_is_not_one_directory_in_one_line(
+        self, local_two_repo_remotes, monkeypatch, tmp_path, capsys
+    ):
+        fake_home = tmp_path / "fake-home"
+        fake_home.mkdir()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+        code = cli_main(["bootstrap", str(local_two_repo_remotes["clone_spec"]), "../evil"])
+
+        err = capsys.readouterr().err
+        assert code == 2
+        assert "single directory name" in err
+        assert "Traceback" not in err
+        assert not (fake_home / ".cgs").exists()
+
+    def test_bootstrap_without_a_name_lands_on_the_spec_project_name(
+        self, local_two_repo_remotes, monkeypatch, tmp_path
+    ):
+        clone_spec = local_two_repo_remotes["clone_spec"]
+        fake_home = tmp_path / "fake-home"
+        fake_home.mkdir()
+        client = ComplexGitSyncClient()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        monkeypatch.setattr(
+            client,
+            "_build_remote_url",
+            lambda entry: (
+                str(local_two_repo_remotes["root_remote"])
+                if entry.name == "RootRepo"
+                else str(local_two_repo_remotes["leaf_remote"])
+            ),
+        )
+        project_name = CgsDocument.from_toml(clone_spec).project_name
+
+        registry = client.bootstrap(clone_spec)
+
+        assert registry.is_ready() is True
+        root_clone = registry.get("root").absolute_path
+        assert re.fullmatch(re.escape(project_name) + r"-\d{14}", root_clone.name)
+        assert root_clone.parent == (fake_home / ".cgs").resolve()
 
     def test_pull_gts_clones_missing_local_repos(self, local_two_repo_remotes, monkeypatch, tmp_path):
         restore_root = tmp_path / "launch-workspace"
@@ -838,7 +887,7 @@ relative_path = "."
             encoding="utf-8",
         )
         document = CgsDocument.from_toml(config_path)
-        registry = build_registry_from_cgs_document(document, config_path)
+        registry = RegistryTranslator.from_cgs_document(document, config_path)
         root_entry = registry.get("root")
         root_entry.repo_lifecycle_state = RepoLifecycleState.READY
         root_entry.current_ref_kind = root_entry.target_ref_kind = root_entry.resolved_ref_kind = RefKind.BRANCH
@@ -849,9 +898,7 @@ relative_path = "."
         root_entry.absolute_path = restore_root
         registry.recompute_tree_state()
 
-        gts_document = build_gts_document_from_registry(
-            registry, command_origin="freeze_release", source_cgs_path=config_path
-        )
+        gts_document = RegistryTranslator.to_gts_document(registry, command_origin="freeze_release", source_cgs_path=config_path)
         snapshot_path = tmp_path / "demo.gts"
         gts_document.to_toml(snapshot_path)
 
@@ -1188,9 +1235,7 @@ class TestDiscoverRepos:
         out = tmp_path / "drafted.cgs"
 
         ComplexGitSyncClient().discover_repos(root, output=out)
-        registry = build_registry_from_cgs_document(
-            CgsDocument.from_toml(out), out, project_root=root
-        )
+        registry = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(out), out, project_root=root)
 
         holder = registry.get("root:external/HydrologicalTwinAlphaSeries")
         nested = registry.get(
@@ -1218,9 +1263,7 @@ class TestDiscoverRepos:
         root = self._cawaqsviz_checkout(tmp_path)
         out = tmp_path / "drafted.cgs"
         ComplexGitSyncClient().discover_repos(root, output=out)
-        registry = build_registry_from_cgs_document(
-            CgsDocument.from_toml(out), out, project_root=root
-        )
+        registry = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(out), out, project_root=root)
 
         sync_gitignore(registry)
 
@@ -1236,9 +1279,7 @@ class TestDiscoverRepos:
         root = self._cawaqsviz_checkout(tmp_path)
         out = tmp_path / "drafted.cgs"
         ComplexGitSyncClient().discover_repos(root, output=out)
-        registry = build_registry_from_cgs_document(
-            CgsDocument.from_toml(out), out, project_root=root
-        )
+        registry = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(out), out, project_root=root)
         sync_gitignore(registry)
 
         holder = root / "external" / "HydrologicalTwinAlphaSeries"
@@ -1328,6 +1369,99 @@ class TestDiscoverRepos:
         # discover reads the filesystem, never .gitmodules — that is
         # import-submodules' job.
         assert [r.relative_path for r in report.repos] == ["."]
+
+    def test_discover_write_drafts_the_branch_it_scanned(self, tmp_path):
+        """DiscoverRoundTrip WP2/D1/F4 — the whole point of the work
+        package: a tree scanned entirely on a non-``main`` branch must draft
+        a ``.cgs`` that reads back targeting that branch, not ``main``
+        wherever the remote happens to have it. Before this, the observed
+        branch was drafted only as ``fallback_branch``, which
+        ``_select_clone_ref`` consults only when the *target* is absent
+        from the remote — so the round trip silently did not reproduce the
+        tree it scanned."""
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git", branch="branch1")
+        output = tmp_path / "draft.cgs"
+
+        report = ComplexGitSyncClient().discover_repos(root, output=output)
+
+        assert report.cgs_entries[0]["fallback_branch"] == "branch1"
+        document = CgsDocument.from_toml(output)
+        assert document.read("project.default_branch") == "branch1"
+
+        tree = RegistryTranslator.from_cgs_document(document, output)
+        assert tree.get("root").target_ref_name == "branch1"
+
+    def test_discover_write_puts_a_relative_file_inside_root(self, tmp_path, monkeypatch):
+        """A relative output belongs to the tree it describes, not to the
+        directory the command was typed from."""
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+
+        report = ComplexGitSyncClient().discover_repos(root, output="a.cgs")
+
+        assert report.written_to == (root / "a.cgs").resolve()
+        assert (root / "a.cgs").is_file()
+        assert not (elsewhere / "a.cgs").exists()
+
+    def test_discover_write_keeps_an_absolute_file_where_it_is(self, tmp_path, monkeypatch):
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
+        monkeypatch.chdir(root)
+        output = tmp_path / "drafts" / "a.cgs"
+        output.parent.mkdir()
+
+        report = ComplexGitSyncClient().discover_repos(root, output=output)
+
+        assert report.written_to == output.resolve()
+        assert output.is_file()
+
+    def test_cli_discover_write_reports_the_file_inside_root(self, tmp_path, monkeypatch, capsys):
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git")
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+
+        code = cli_main(["discover", str(root), "--write", "a.cgs"])
+
+        assert code == 0
+        assert f".cgs draft written to: {(root / 'a.cgs').resolve()}" in capsys.readouterr().out
+        assert not (elsewhere / "a.cgs").exists()
+
+    def test_discover_write_only_drafts_a_per_repo_branch_where_it_differs(self, tmp_path):
+        """A repository scanned on the same branch as the root inherits
+        ``project.default_branch`` — no redundant per-entry field. One
+        scanned on a *different* branch gets its own explicit
+        ``default_branch``, since inheriting the root's would silently
+        retarget it."""
+        root = tmp_path / "proj"
+        self._init_repo_with_remote(root, "https://github.com/owner/proj.git", branch="branch1")
+        self._init_repo_with_remote(
+            root / "same", "https://github.com/owner/same.git", branch="branch1"
+        )
+        self._init_repo_with_remote(
+            root / "other", "https://github.com/owner/other.git", branch="branch2"
+        )
+        output = tmp_path / "draft.cgs"
+
+        ComplexGitSyncClient().discover_repos(root, output=output)
+
+        # `CgsDocument.repos` normalises every entry with the project's own
+        # default filled in, so whether an entry declared its own
+        # `default_branch` explicitly is only visible in the raw authoring
+        # TOML, not the parsed, normalised view.
+        raw = output.read_text(encoding="utf-8")
+        assert '"github:owner/same"' in raw
+        assert 'repository = "github:owner/other", default_branch = "branch2"' in raw
+
+        document = CgsDocument.from_toml(output)
+        tree = RegistryTranslator.from_cgs_document(document, output)
+        assert tree.get("root:same").target_ref_name == "branch1"
+        assert tree.get("root:other").target_ref_name == "branch2"
 
     def test_max_depth_bounds_the_walk(self, tmp_path):
         root = tmp_path / "proj"

@@ -7,7 +7,7 @@ Contract: given a repository path and a well-formed set of arguments, run
     — never mutates state beyond the git repository being operated on, and
     performs no validation of Git semantics beyond what the git binary itself
     enforces.
-Imports: errors, git_repo
+Imports: errors, git_repo, universal_clock
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 
 from .errors import GitSyncError
 from .git_repo import SyncState
+from .universal_clock import SystemClock
 
 # Git output is bytes, not text. Most of it is UTF-8, but some of it is
 # whatever was in the files: ``git merge-tree``'s legacy form prints a diff of
@@ -30,7 +31,7 @@ from .git_repo import SyncState
 # need not be UTF-8 either. Decoding that strictly — which is what
 # ``subprocess(text=True)`` does — raises UnicodeDecodeError *before* the
 # caller can look at the exit code, turning "are these branches mergeable?"
-# into a traceback (.localSpec/DevTickets/archive/20260910_MergeOutputDecoding_
+# into a traceback (.agent/.local/.dev/DevTickets/archive/20260910_MergeOutputDecoding_
 # DevPlanTicket.md). Replacement decoding keeps every byte sequence readable
 # enough for the things this module actually looks for, all of which are
 # ASCII: exit codes, object ids, ref names, porcelain status codes, and
@@ -53,7 +54,7 @@ _BINARY_CONFLICT_WARNING = b"Cannot merge binary files"
 #: a branch-specific one instead and leaves it there forever, so a branch made
 #: afterwards can never resolve ``@{upstream}`` even straight after a
 #: successful ``push -u`` — see
-#: ``.localSpec/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``.
+#: ``.agent/.local/.dev/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md``.
 _WIDE_FETCH_REFSPEC = "+refs/heads/*:refs/remotes/{remote}/*"
 
 #: What ``--single-branch`` writes in its place: one branch, mapped by name.
@@ -93,11 +94,11 @@ def _english_message_locale(env: dict[str, str]) -> None:
     """Pin *env* so git writes its own messages in English. Mutates in place.
 
     Git translates its messages and this module reads them: no exit code says
-    whether a fetch failed for want of credentials, so ``orchestre.py`` matches
+    whether a fetch failed for want of credentials, so ``orchestre/`` matches
     English fragments of git's prose to decide whether to offer the
     ``--force-protocol`` recovery. On a French machine nothing matched, so the
     hint never fired for anyone whose shell was not English (see
-    ``.localSpec/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md``). The
+    ``.agent/.local/.dev/DevTickets/archive/20260911_GitLocaleIndependence_DevPlanTicket.md``). The
     deliberate trade-off: a French user's git errors, quoted inside
     ``GitSyncError``, now read in English — the alternative was a French
     sentence inside an English one *and* a hint nobody ever saw.
@@ -130,7 +131,7 @@ def _non_interactive_git_env() -> dict[str, str]:
     """Environment for a git subprocess that must never block on a prompt.
 
     ComplexGitSync stores no credentials and has no private-repository
-    authentication story (see ``import-submodules``/``discover``'s own
+    authentication story (see ``submodules``/``discover``'s own
     docs) — every git operation is meant to succeed on ambient
     credentials already cached by the environment, or fail. Without this,
     a missing/expired credential makes ``git`` silently wait on a
@@ -232,8 +233,8 @@ class GitRunnerProtocol(Protocol):
     """Structural contract for anything that can stand in for :class:`GitRunner`.
 
     Lists every public method `GitRunner` exposes, with its exact signature,
-    so callers elsewhere in the codebase (``orchestre.py``'s `Orchestre` /
-    `ComplexGitSyncClient`, `operations.py`, `git_tree.py`, `master.py`) can
+    so callers elsewhere in the codebase (``orchestre/``'s `Orchestre` /
+    `ComplexGitSyncClient`, `operations/`, `git_tree.py`, `master.py`) can
     eventually type against this Protocol instead of the concrete class, and
     so tests can hand a hand-written fake instead of a `GitRunner` instance
     or a `unittest.mock.Mock`.
@@ -248,15 +249,29 @@ class GitRunnerProtocol(Protocol):
 
     def remote_branch_exists(self, remote_url: str, branch: str) -> bool: ...
 
+    def remote_branch_sha(self, remote_url: str, branch: str) -> str | None: ...
+
     def remote_tag_exists(self, remote_url: str, tag: str) -> bool: ...
 
     def remote_get_url(self, repo_path: Path | str, remote_name: str = "origin") -> str | None: ...
 
     def configure_remote(self, repo_path: Path | str, remote_name: str, remote_url: str) -> None: ...
 
+    def remove_remote(self, repo_path: Path | str, remote_name: str) -> None: ...
+
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None: ...
 
     def remote_reachable(self, remote_url: str) -> bool: ...
+
+    def remote_head_branch(self, remote_url: str) -> str | None: ...
+
+    def remote_holds_commit(self, remote_url: str, sha: str) -> bool: ...
+
+    def is_repository_root(self, path: Path | str) -> bool: ...
+
+    def checkout_commit(
+        self, repo_path: Path | str, sha: str, *, branch: str | None = None
+    ) -> None: ...
 
     def init_repository(self, repo_path: Path | str, *, branch: str) -> None: ...
 
@@ -266,11 +281,17 @@ class GitRunnerProtocol(Protocol):
 
     def rev_parse_head(self, repo_path: Path | str) -> str: ...
 
+    def head_commit_sha_or_none(self, repo_path: Path | str) -> str | None: ...
+
     def commit_authored_at(self, repo_path: Path | str, sha: str) -> str: ...
 
     def current_branch(self, repo_path: Path | str) -> str | None: ...
 
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool: ...
+
+    def local_branches(self, repo_path: Path | str) -> list[str]: ...
+
+    def remote_tracking_branches(self, repo_path: Path | str, remote: str = "origin") -> list[str]: ...
 
     def branch_known(
         self, repo_path: Path | str, branch: str, *, remote: str = "origin"
@@ -326,6 +347,7 @@ class GitRunnerProtocol(Protocol):
         *,
         user_name: str | None = None,
         user_email: str | None = None,
+        allow_empty: bool = False,
     ) -> None: ...
 
     def push(
@@ -351,7 +373,7 @@ class GitRunnerProtocol(Protocol):
         *,
         remote: str = "origin",
         ref_name: str | None = None,
-    ) -> None: ...
+    ) -> bool: ...
 
     def merge(
         self,
@@ -361,6 +383,9 @@ class GitRunnerProtocol(Protocol):
         ff_only: bool = False,
         no_ff: bool = False,
         message: str | None = None,
+        allow_unrelated: bool = False,
+        user_name: str | None = None,
+        user_email: str | None = None,
     ) -> None: ...
 
     def can_merge_cleanly(
@@ -369,7 +394,37 @@ class GitRunnerProtocol(Protocol):
 
     def is_ancestor(self, repo_path: Path | str, ancestor: str, descendant: str) -> bool: ...
 
+    def merge_base(self, repo_path: Path | str, ref_a: str, ref_b: str) -> str | None: ...
+
+    def added_paths(
+        self, repo_path: Path | str, ref_a: str, ref_b: str, *, subdir: str | None = None
+    ) -> list[str]: ...
+
     def show_file(self, repo_path: Path | str, ref: str, path: str) -> str | None: ...
+
+    def ref_sha(self, repo_path: Path | str, ref: str) -> str | None: ...
+
+    def branch_refs(self, repo_path: Path | str) -> dict[str, str]: ...
+
+    def exclusive_commits(
+        self, repo_path: Path | str, tip: str, exclude: list[str] | tuple[str, ...]
+    ) -> list[str]: ...
+
+    def tree_blobs(self, repo_path: Path | str, ref: str, prefix: str) -> dict[str, str]: ...
+
+    def create_root_commit(self, repo_path: Path | str, message: str) -> str: ...
+
+    def commit_keeping_tree(
+        self, repo_path: Path | str, base: str, other: str, message: str
+    ) -> str: ...
+
+    def update_branch(
+        self, repo_path: Path | str, branch: str, new_sha: str, old_sha: str | None
+    ) -> None: ...
+
+    def delete_local_branch(self, repo_path: Path | str, branch: str, expected_sha: str) -> None: ...
+
+    def preserved_tips(self, repo_path: Path | str, ref: str) -> list[tuple[str, str]]: ...
 
     def merge_abort(self, repo_path: Path | str) -> None: ...
 
@@ -384,10 +439,22 @@ class GitRunnerProtocol(Protocol):
     ) -> None: ...
 
     def fetch(
-        self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+        prune: bool = False,
     ) -> None: ...
 
-    def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None: ...
+    def fetch_branch_if_remote_has_it(
+        self,
+        repo_path: Path | str,
+        remote_url: str,
+        branch: str,
+        *,
+        remote: str = "origin",
+    ) -> bool: ...
 
     def clean_untracked(self, repo_path: Path | str) -> None: ...
 
@@ -409,7 +476,9 @@ class GitRunnerProtocol(Protocol):
 
     def branch_tracking_counts(self, repo_path: Path | str) -> tuple[int, int] | None: ...
 
-    def local_only_commit_count(self, repo_path: Path | str) -> int: ...
+    def local_only_commit_count(self, repo_path: Path | str, ref: str = "HEAD") -> int: ...
+
+    def commits_force_pull_would_drop(self, repo_path: Path | str, ref_name: str) -> int: ...
 
     def has_upstream(self, repo_path: Path | str) -> bool: ...
 
@@ -432,6 +501,14 @@ class GitRunner:
 
     def remote_tag_exists(self, remote_url: str, tag: str) -> bool:
         return self._remote_ref_exists(remote_url, "--tags", tag)
+
+    def remote_branch_sha(self, remote_url: str, branch: str) -> str | None:
+        """The commit *remote_url* holds *branch* at right now, or ``None`` when it has none."""
+        for line in self._run("ls-remote", "--heads", remote_url, f"refs/heads/{branch}").stdout.splitlines():
+            sha, _, ref = line.partition("\t")
+            if ref == f"refs/heads/{branch}":
+                return sha
+        return None
 
     def _remote_ref_exists(self, remote_url: str, ref_selector: str, ref_name: str) -> bool:
         completed = self._run("ls-remote", ref_selector, remote_url, ref_name)
@@ -460,6 +537,10 @@ class GitRunner:
             return
         if existing != remote_url:
             self._run("remote", "set-url", remote_name, remote_url, cwd=repo_path)
+
+    def remove_remote(self, repo_path: Path | str, remote_name: str) -> None:
+        """Remove *remote_name* and its remote-tracking refs from *repo_path*; no commit is touched."""
+        self._run("remote", "remove", remote_name, cwd=repo_path)
 
     def clone(self, remote_url: str, destination: Path | str, *, branch: str) -> None:
         destination_path = Path(destination)
@@ -524,6 +605,25 @@ class GitRunner:
     def rev_parse_head(self, repo_path: Path | str) -> str:
         return self._run("rev-parse", "HEAD", cwd=repo_path).stdout.strip()
 
+    def head_commit_sha_or_none(self, repo_path: Path | str) -> str | None:
+        """:meth:`rev_parse_head`, degrading to ``None`` for an unborn
+        branch instead of raising.
+
+        A question (:meth:`_query`, never raises for "no commit"), not an
+        operation: `_refresh_repo_after_checkout` calls this for *every*
+        repository a tree-wide checkout visits, including one freshly
+        discovered with no commit of its own yet (a just-adopted
+        self-history mount, most concretely) — a state `commit_sha: str |
+        None` (`git_repo.py`) already models, so answering `None` here is
+        not a new relaxation, only this method actually using it. Every
+        other caller of `rev_parse_head` runs after an operation that
+        guarantees a commit exists (a `commit`, a `checkout` of a branch
+        already known to have one); those keep raising on purpose, since
+        an unresolved HEAD there is a real bug, not a normal shape.
+        """
+        completed = self._query("rev-parse", "HEAD", cwd=repo_path)
+        return completed.stdout.strip() if completed.returncode == 0 else None
+
     def commit_authored_at(self, repo_path: Path | str, sha: str) -> str:
         """When a commit was authored, as the memory records it.
 
@@ -536,8 +636,55 @@ class GitRunner:
         return completed.stdout.strip() if completed.returncode == 0 else ""
 
     def current_branch(self, repo_path: Path | str) -> str | None:
-        branch = self._run("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_path).stdout.strip()
-        return None if branch == "HEAD" else branch
+        """The branch HEAD points at, or ``None`` for a detached HEAD.
+
+        A question (:meth:`_query`, never raises), not an operation — an
+        **unborn** branch (freshly `init_repository`-d, no commit yet, the
+        shape a just-adopted self-history mount has before its first
+        `self-history add`) still has a real name here, because
+        `symbolic-ref` reads which ref HEAD points *at*, not whether that
+        ref resolves to a commit. `git rev-parse --abbrev-ref HEAD` answers
+        a related but different question — what commit-ish does HEAD name
+        — and raises outright on an unborn branch instead of degrading,
+        which crashed both `memory push`/`memory reboot` (AgentReport WP2)
+        and `pull`'s post-discovery checkout on exactly this repository
+        shape before this method moved to `symbolic-ref`.
+
+        A deleted repository directory is a different, more severe
+        condition than "no branch name" and still raises, matching
+        :meth:`_run`'s own guard — `_query` has no cwd pre-check of its own
+        (its callers' questions are meant to fail soft), so this repeats it
+        rather than letting a bare ``FileNotFoundError`` escape.
+        """
+        if not Path(repo_path).is_dir():
+            command = " ".join([self.executable, "symbolic-ref", "--short", "-q", "HEAD"])
+            raise GitSyncError(f"Git command failed ({command}): no such directory '{repo_path}'.")
+        completed = self._query("symbolic-ref", "--short", "-q", "HEAD", cwd=repo_path)
+        return completed.stdout.strip() or None if completed.returncode == 0 else None
+
+    def local_branches(self, repo_path: Path | str) -> list[str]:
+        """Names of every local branch in *repo_path*, sorted; empty when it has none."""
+        completed = self._query(
+            "for-each-ref", "--format=%(refname:short)", "--sort=refname", "refs/heads", cwd=repo_path
+        )
+        if completed.returncode != 0:
+            return []
+        return [line for line in completed.stdout.splitlines() if line]
+
+    def remote_tracking_branches(self, repo_path: Path | str, remote: str = "origin") -> list[str]:
+        """Branches *remote* held at the last fetch, sorted; empty when there are none.
+
+        Reads ``refs/remotes/<remote>`` only — no network. The remote's own
+        ``HEAD`` pointer is not a branch and is left out.
+        """
+        prefix = f"refs/remotes/{remote}/"
+        completed = self._query(
+            "for-each-ref", "--format=%(refname)", "--sort=refname", prefix, cwd=repo_path
+        )
+        if completed.returncode != 0:
+            return []
+        names = (line.removeprefix(prefix) for line in completed.stdout.splitlines() if line)
+        return [name for name in names if name != "HEAD"]
 
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool:
         """Return ``True`` if *branch* exists as a local branch in *repo_path*."""
@@ -585,6 +732,26 @@ class GitRunner:
             ).returncode
             == 0
         )
+
+    def resolve_merge_ref(
+        self, repo_path: Path | str, ref_name: str, *, remote: str = "origin"
+    ) -> str:
+        """Resolve a merge ref to a name ``git merge`` can understand.
+
+        If *ref_name* is not a valid local branch but exists as a
+        remote-tracking ref (``refs/remotes/<remote>/<ref_name>``), return
+        the qualified ref ``<remote>/<ref_name>`` so that ``git merge-base``
+        and ``git merge`` can both resolve it. Otherwise return *ref_name*
+        unchanged.
+
+        Used by :meth:`can_merge_cleanly` and :meth:`merge` to handle branches
+        that exist only on the remote and have never been checked out locally.
+        """
+        if self.local_branch_exists(repo_path, ref_name):
+            return ref_name
+        if self.remote_tracking_branch_exists(repo_path, ref_name, remote=remote):
+            return f"{remote}/{ref_name}"
+        return ref_name
 
     def create_branch(
         self, repo_path: Path | str, branch: str, *, start_point: str | None = None
@@ -723,14 +890,25 @@ class GitRunner:
         *,
         user_name: str | None = None,
         user_email: str | None = None,
+        allow_empty: bool = False,
     ) -> None:
-        """Commit staged changes in *repo_path* with *message* (``git commit``)."""
+        """Commit staged changes in *repo_path* with *message* (``git commit``).
+
+        *allow_empty* (``--allow-empty``) is for a repository whose first
+        commit is meant to have no content of its own — self-history's own
+        "empty but initiated" mount (AgentReport WP2), given a real commit
+        the moment it is adopted so it is never an unborn branch for
+        `current_branch`/`head_commit_sha_or_none`/`is_ready()` to disagree
+        about later.
+        """
         args: list[str] = []
         if user_name is not None:
             args.extend(["-c", f"user.name={user_name}"])
         if user_email is not None:
             args.extend(["-c", f"user.email={user_email}"])
         args.extend(["commit", "-m", message])
+        if allow_empty:
+            args.append("--allow-empty")
         self._run(*args, cwd=repo_path)
 
     def push(
@@ -769,8 +947,12 @@ class GitRunner:
         *,
         remote: str = "origin",
         ref_name: str | None = None,
-    ) -> None:
-        """Force the local branch to match *remote/ref_name* and clean untracked files."""
+    ) -> bool:
+        """Force the local branch to match *remote/ref_name*; returns whether work was stashed first.
+
+        Uncommitted and untracked work is saved with ``git stash push -u``, so it can be
+        brought back with ``git stash pop``. A commit no remote holds is refused, never dropped.
+        """
         # Deliberately not git_branch.DEFAULT_BRANCH: this module knows
         # nothing about a .cgs and must stay usable on a bare repository
         # path with no tree behind it. Reaching a literal here means both
@@ -779,8 +961,25 @@ class GitRunner:
         # chain that git_branch.py owns.
         selected_ref = ref_name or self.current_branch(repo_path) or "main"
         self._run("fetch", remote, selected_ref, cwd=repo_path)
+        # ComplexGitSync rewrites nothing (AdditionalSpecs.md, *The hard prohibitions*): a
+        # forced pull never leaves a commit on no branch. Push or merge it first.
+        dropped = self.commits_force_pull_would_drop(repo_path, selected_ref)
+        if dropped:
+            raise GitSyncError(
+                f"{repo_path}: pull --force would leave {dropped} commit(s) on no branch, because no "
+                "remote holds them. Nothing was changed. Push them, or merge, and run it again."
+            )
+        # Uncommitted and untracked work is set aside, not discarded: `git stash push -u`.
+        stashed = bool(self.status_porcelain(repo_path))
+        if stashed:
+            self._run(
+                "-c", "user.name=cgitsync", "-c", "user.email=cgitsync@localhost",
+                "stash", "push", "-u", "-m", "cgitsync pull --force: work set aside before the resync",
+                cwd=repo_path,
+            )
         self._run("checkout", "-B", selected_ref, "FETCH_HEAD", cwd=repo_path)
         self.clean_untracked(repo_path)
+        return stashed
 
     def merge(
         self,
@@ -790,8 +989,15 @@ class GitRunner:
         ff_only: bool = False,
         no_ff: bool = False,
         message: str | None = None,
+        remote: str = "origin",
+        allow_unrelated: bool = False,
+        user_name: str | None = None,
+        user_email: str | None = None,
     ) -> None:
         """Merge *ref_name* into the current branch of *repo_path* (``git merge``).
+
+        *allow_unrelated* lets two histories with no common commit meet in one
+        merge commit; it adds a commit and changes none.
 
         ``ff_only`` and ``no_ff`` map to Git's own flags and are mutually
         exclusive. With neither, Git's default applies: fast-forward when it
@@ -804,18 +1010,26 @@ class GitRunner:
         """
         if ff_only and no_ff:
             raise ValueError("merge: ff_only and no_ff are mutually exclusive")
-        args = ["merge"]
+        resolved_ref = self.resolve_merge_ref(repo_path, ref_name, remote=remote)
+        args: list[str] = []
+        if user_name is not None:
+            args.extend(["-c", f"user.name={user_name}"])
+        if user_email is not None:
+            args.extend(["-c", f"user.email={user_email}"])
+        args.append("merge")
         if ff_only:
             args.append("--ff-only")
         if no_ff:
             args.append("--no-ff")
+        if allow_unrelated:
+            args.append("--allow-unrelated-histories")
         if message is not None:
             args.extend(["-m", message])
-        args.append(ref_name)
+        args.append(resolved_ref)
         self._run(*args, cwd=repo_path)
 
     def can_merge_cleanly(
-        self, repo_path: Path | str, ref_name: str, *, into: str | None = None
+        self, repo_path: Path | str, ref_name: str, *, into: str | None = None, remote: str = "origin"
     ) -> MergeCheckResult:
         """Whether merging *ref_name* would apply without a conflict.
 
@@ -852,9 +1066,10 @@ class GitRunner:
         conflicts without naming a file, so the path list comes back empty.
         """
         head = into or self.current_branch(repo_path) or "HEAD"
+        resolved_ref = self.resolve_merge_ref(repo_path, ref_name, remote=remote)
 
         modern = self._query(
-            "merge-tree", "--write-tree", "--name-only", head, ref_name, cwd=repo_path
+            "merge-tree", "--write-tree", "--name-only", head, resolved_ref, cwd=repo_path
         )
         if modern.returncode == 0:
             return MergeCheckResult(is_clean=True, conflicting_paths=[])
@@ -865,11 +1080,11 @@ class GitRunner:
         # Anything else from the modern form — a usage error on old Git
         # (exit 129 before 2.38, where --write-tree does not exist), a bad
         # ref — means fall through and ask the way old Git understands.
-        base = self._query("merge-base", head, ref_name, cwd=repo_path)
+        base = self._query("merge-base", head, resolved_ref, cwd=repo_path)
         if base.returncode != 0 or not base.stdout.strip():
             return MergeCheckResult(is_clean=False, conflicting_paths=[])
         legacy = self._query_bytes(
-            "merge-tree", base.stdout.strip(), head, ref_name, cwd=repo_path
+            "merge-tree", base.stdout.strip(), head, resolved_ref, cwd=repo_path
         )
         if legacy.returncode != 0:
             return MergeCheckResult(is_clean=False, conflicting_paths=[])
@@ -891,7 +1106,7 @@ class GitRunner:
         only ``import subprocess``, and a second importer would break the
         rule that makes the decoding and environment policies inescapable.
         The memory workstream records which tools produced each ledger entry
-        (``.localSpec/AdditionalSpecs.md``, *The hash-chained register*), and
+        (``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained ledger*), and
         that answer has to come from somewhere.
 
         ``None`` means "not installed" — a missing executable is an ordinary
@@ -951,6 +1166,76 @@ class GitRunner:
         answer ``False``: from here they are the same situation.
         """
         return self._query("ls-remote", remote_url).returncode == 0
+
+    def remote_head_branch(self, remote_url: str) -> str | None:
+        """The branch a remote's ``HEAD`` points at — its own active branch.
+
+        A question, never an error: ``None`` when the remote cannot be read,
+        is empty, or has a ``HEAD`` that names no branch. Asked with
+        ``ls-remote --symref``, so nothing is downloaded.
+        """
+        completed = self._query("ls-remote", "--symref", remote_url, "HEAD")
+        if completed.returncode != 0:
+            return None
+        for line in completed.stdout.splitlines():
+            match = re.match(r"^ref:\s+refs/heads/(?P<branch>\S+)\s+HEAD$", line)
+            if match:
+                return match.group("branch")
+        return None
+
+    def remote_holds_commit(self, remote_url: str, sha: str) -> bool:
+        """Whether the repository at *remote_url* can still hand out commit *sha*.
+
+        Two asks, cheapest first. ``ls-remote`` answers for a commit that is
+        the tip of some ref. Anything older needs the remote to be asked for
+        the object itself, which is done in a throwaway bare repository so
+        that no directory of the caller's is touched — the point of asking
+        *before* a clone is that a refusal leaves the disk as it was.
+        """
+        listed = self._query("ls-remote", remote_url)
+        if listed.returncode != 0:
+            return False
+        if any(line.split("\t", 1)[0] == sha for line in listed.stdout.splitlines()):
+            return True
+        with SystemClock.scratch_directory("cgitsync-probe-") as scratch:
+            if self._query("init", "--bare", "-q", scratch).returncode != 0:
+                return False
+            args: list[str] = []
+            if self._uses_file_transport(remote_url):
+                args.extend(["-c", "protocol.file.allow=always"])
+            args.extend(["fetch", "-q", "--depth=1", remote_url, sha])
+            return self._query(*args, cwd=scratch).returncode == 0
+
+    def is_repository_root(self, path: Path | str) -> bool:
+        """Whether *path* is itself the top level of a Git checkout.
+
+        A directory that merely sits inside some other repository is not one:
+        ``rev-parse --show-toplevel`` would answer with the outer path, which
+        is why the answer is compared instead of its exit code. A detached
+        ``HEAD`` and an unborn branch are both still a checkout.
+        """
+        target = Path(path)
+        if not target.is_dir():
+            return False
+        completed = self._query("rev-parse", "--show-toplevel", cwd=target)
+        if completed.returncode != 0:
+            return False
+        return Path(completed.stdout.strip()).resolve() == target.resolve()
+
+    def checkout_commit(
+        self, repo_path: Path | str, sha: str, *, branch: str | None = None
+    ) -> None:
+        """Put *repo_path* on commit *sha*.
+
+        With *branch*, that branch is (re)pointed at *sha* and checked out
+        (``git checkout -B``), so the repository is still on a branch — behind
+        its remote, which is a fact about the remote, not a detached state.
+        Without one, ``HEAD`` is detached at *sha*.
+        """
+        if branch:
+            self._run("checkout", "-B", branch, sha, cwd=repo_path)
+        else:
+            self._run("checkout", "--detach", sha, cwd=repo_path)
 
     def init_repository(self, repo_path: Path | str, *, branch: str) -> None:
         """Make *repo_path* a repository whose first branch is *branch*.
@@ -1035,6 +1320,147 @@ class GitRunner:
         answer = self._query("show", f"{ref}:{path}", cwd=repo_path)
         return answer.stdout if answer.returncode == 0 else None
 
+    def ref_sha(self, repo_path: Path | str, ref: str) -> str | None:
+        """The commit *ref* names, or ``None`` when it names none; read-only."""
+        answer = self._query("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}", cwd=repo_path)
+        return answer.stdout.strip() or None if answer.returncode == 0 else None
+
+    def branch_refs(self, repo_path: Path | str) -> dict[str, str]:
+        """Every local and remote-tracking branch, full ref name to commit; read-only.
+
+        A remote's symbolic ``HEAD`` is left out: it is another name for a
+        branch already listed, not a branch.
+        """
+        answer = self._query(
+            "for-each-ref", "--format=%(refname) %(objectname) %(symref)", "refs/heads", "refs/remotes",
+            cwd=repo_path,
+        )
+        refs: dict[str, str] = {}
+        for line in answer.stdout.splitlines():
+            name, sha, *symref = line.split(" ")
+            if not any(symref):
+                refs[name] = sha
+        return refs
+
+    def exclusive_commits(
+        self, repo_path: Path | str, tip: str, exclude: list[str] | tuple[str, ...]
+    ) -> list[str]:
+        """The commits *tip* reaches that none of *exclude* reaches (``git rev-list tip --not ...``).
+
+        What deleting *tip*'s only name would make unreachable, when
+        *exclude* is every other name in the repository. Raises when *tip*
+        names nothing: asking what an absent branch holds is a caller's mistake.
+        """
+        return self._run("rev-list", tip, "--not", *exclude, "--", cwd=repo_path).stdout.split()
+
+    def tree_blobs(self, repo_path: Path | str, ref: str, prefix: str) -> dict[str, str]:
+        """Every file under *prefix* as of *ref*, path to blob id; empty when there is none."""
+        answer = self._query("ls-tree", "-r", ref, "--", prefix, cwd=repo_path)
+        blobs: dict[str, str] = {}
+        for line in answer.stdout.splitlines():
+            meta, _, path = line.partition("\t")
+            parts = meta.split()
+            if len(parts) == 3 and parts[1] == "blob":
+                blobs[path] = parts[2]
+        return blobs
+
+    def create_root_commit(self, repo_path: Path | str, message: str) -> str:
+        """Write a commit with no parent and an empty tree, and return it.
+
+        No ref moves and no worktree is touched: the caller names it with
+        :meth:`update_branch`. This is how the ``ancestors`` branch starts.
+        """
+        empty_tree = self._run("hash-object", "-w", "-t", "tree", os.devnull, cwd=repo_path).stdout.strip()
+        return self._run("commit-tree", empty_tree, "-m", message, cwd=repo_path).stdout.strip()
+
+    def commit_keeping_tree(
+        self, repo_path: Path | str, base: str, other: str, message: str
+    ) -> str:
+        """A merge of *other* into *base* that keeps *base*'s tree, written without a checkout.
+
+        The same commit ``git merge -s ours --no-ff --allow-unrelated-histories``
+        makes on a checked-out *base*, built with ``commit-tree`` so the
+        branch it extends never has to be checked out. *other* becomes the
+        second parent, so its whole history is reachable from the result.
+        Moves no ref.
+        """
+        return self._run(
+            "commit-tree", f"{base}^{{tree}}", "-p", base, "-p", other, "-m", message, cwd=repo_path
+        ).stdout.strip()
+
+    def update_branch(
+        self, repo_path: Path | str, branch: str, new_sha: str, old_sha: str | None
+    ) -> None:
+        """Point *branch* at *new_sha*, only if it still points at *old_sha*.
+
+        ``old_sha=None`` means the branch must not exist yet. Git refuses
+        the update otherwise, so a branch someone else moved meanwhile is
+        never overwritten.
+        """
+        self._run("update-ref", f"refs/heads/{branch}", new_sha, old_sha or "", cwd=repo_path)
+
+    def delete_local_branch(self, repo_path: Path | str, branch: str, expected_sha: str) -> None:
+        """Remove the local *branch*, only if it still points at *expected_sha*.
+
+        ``update-ref -d`` with the expected value, rather than ``branch -D``:
+        the caller has checked that *expected_sha* is kept elsewhere, and a
+        branch that moved since then must not go with it.
+        """
+        self._run("update-ref", "-d", f"refs/heads/{branch}", expected_sha, cwd=repo_path)
+
+    def preserved_tips(self, repo_path: Path | str, ref: str) -> list[tuple[str, str]]:
+        """Each history *ref* preserves by a keep-tree merge: ``(second parent, subject)``.
+
+        Walks *ref*'s first-parent chain, newest first, so it reads the
+        ``ancestors`` branch exactly as :meth:`commit_keeping_tree` built
+        it. Empty when *ref* names nothing.
+        """
+        answer = self._query("log", "--first-parent", "--merges", "--format=%P%x09%s", ref, "--", cwd=repo_path)
+        if answer.returncode != 0:
+            return []
+        tips: list[tuple[str, str]] = []
+        for line in answer.stdout.splitlines():
+            parents, _, subject = line.partition("\t")
+            parent_list = parents.split()
+            if len(parent_list) >= 2:
+                tips.append((parent_list[1], subject))
+        return tips
+
+    def merge_base(self, repo_path: Path | str, ref_a: str, ref_b: str) -> str | None:
+        """The best common ancestor of *ref_a* and *ref_b* (``git
+        merge-base``), or ``None`` if the two share no history.
+
+        Read-only and worktree-free, unlike :meth:`merge` — a caller that
+        needs to know *what* changed on each side of a divergence before
+        deciding how to reconcile it asks this first, the same way
+        :meth:`can_merge_cleanly` already separates asking from acting.
+        """
+        answer = self._query("merge-base", ref_a, ref_b, cwd=repo_path)
+        if answer.returncode != 0:
+            return None
+        return answer.stdout.strip() or None
+
+    def added_paths(
+        self, repo_path: Path | str, ref_a: str, ref_b: str, *, subdir: str | None = None
+    ) -> list[str]:
+        """Paths that exist at *ref_b* but not at *ref_a* (``git diff
+        --name-only --diff-filter=A``), optionally restricted to *subdir*.
+
+        Used to find what a branch appended since a common ancestor to a
+        write-once, one-file-per-entry store (a ledger's ``lgr/``) without
+        assuming anything about how many entries there are or what they
+        are named — a plain rename or edit inside *subdir* is deliberately
+        excluded (``--diff-filter=A``, additions only), since anything
+        this project's own write-once stores do is an addition or nothing.
+        """
+        args = ["diff", "--name-only", "--diff-filter=A", ref_a, ref_b]
+        if subdir is not None:
+            args.extend(["--", subdir])
+        answer = self._query(*args, cwd=repo_path)
+        if answer.returncode != 0:
+            return []
+        return [line for line in answer.stdout.splitlines() if line]
+
     def merge_abort(self, repo_path: Path | str) -> None:
         """Abort a merge left in progress (``git merge --abort``)."""
         self._run("merge", "--abort", cwd=repo_path)
@@ -1072,23 +1498,63 @@ class GitRunner:
         self._run(*args, "mergetool", "--no-prompt", cwd=repo_path)
 
     def fetch(
-        self, repo_path: Path | str, *, remote: str = "origin", ref_name: str | None = None
+        self,
+        repo_path: Path | str,
+        *,
+        remote: str = "origin",
+        ref_name: str | None = None,
+        prune: bool = False,
     ) -> None:
         """Update remote-tracking refs from *remote* (``git fetch``).
+
+        *prune* also drops the remote-tracking ref of a branch deleted on
+        *remote*; local branches are never touched either way.
 
         Touches no branch and no worktree — only ``refs/remotes``. Separate
         from :meth:`pull`, which fetches *and* merges into the current
         branch; a caller that wants to decide what to merge for itself needs
         the two halves apart.
         """
-        args = ["fetch", remote]
+        args = ["fetch", "--prune", remote] if prune else ["fetch", remote]
         if ref_name:
             args.append(ref_name)
         self._run(*args, cwd=repo_path)
 
-    def reset_hard(self, repo_path: Path | str, ref_name: str = "HEAD") -> None:
-        """Discard local tracked changes in *repo_path*."""
-        self._run("reset", "--hard", ref_name, cwd=repo_path)
+    def fetch_branch_if_remote_has_it(
+        self,
+        repo_path: Path | str,
+        remote_url: str,
+        branch: str,
+        *,
+        remote: str = "origin",
+    ) -> bool:
+        """Fetch *branch* into *repo_path* if *remote_url* actually has it.
+
+        The one network round-trip
+        :func:`~ComplexGitSync.operations.create_global_branch` takes only
+        for a branch this clone has neither locally nor as a cached
+        remote-tracking ref — the exact ambiguity CheckoutForkGuard
+        (``.agent/.local/.dev/DevTickets/archive/20260918_CheckoutForkGuard_DevPlanTicket.md``)
+        traces to a silent fork: "genuinely new" and "real, just never
+        fetched here" look identical to :meth:`remote_tracking_branch_exists`
+        alone.
+
+        Asks the remote first with :meth:`remote_branch_exists`
+        (``git ls-remote --heads``, no download) so a caller creating a
+        genuinely new branch pays no network cost at all. Only when the
+        remote has it does this fetch that one ref — *repo_path*'s fetch
+        refspec is already widened by :meth:`ensure_fetch_refspec` at clone
+        time, so fetching a single named ref still populates
+        ``refs/remotes/<remote>/<branch>``, which
+        :meth:`remote_tracking_branch_exists` then finds.
+
+        Returns whether the remote had it — the caller decides what to do
+        with that fact; this method never creates or moves a branch itself.
+        """
+        if not self.remote_branch_exists(remote_url, branch):
+            return False
+        self.fetch(repo_path, remote=remote, ref_name=branch)
+        return True
 
     def clean_untracked(self, repo_path: Path | str) -> None:
         """Remove untracked files and directories in *repo_path*."""
@@ -1147,6 +1613,19 @@ class GitRunner:
         """Return ``True`` when *repo_path* has an in-progress merge conflict."""
         return self._ref_query("rev-parse", "--verify", "--quiet", "MERGE_HEAD", cwd=repo_path)
 
+    def has_unmerged_paths(self, repo_path: Path | str) -> bool:
+        """Return ``True`` when *repo_path* has unmerged paths in the index.
+
+        Used to distinguish between "merge in progress with conflicts" (this
+        returns True) and "merge in progress but all conflicts resolved and
+        staged" (this returns False). The latter is safe to commit.
+        """
+        # git diff --name-only --diff-filter=U lists unmerged paths
+        result = self._query(
+            "diff", "--name-only", "--diff-filter=U", cwd=repo_path
+        )
+        return bool(result.stdout.strip())
+
     def branch_tracking_state(self, repo_path: Path | str) -> SyncState | None:
         """Return upstream tracking state for the current branch in *repo_path*."""
         counts = self.branch_tracking_counts(repo_path)
@@ -1178,8 +1657,8 @@ class GitRunner:
         ahead_raw, behind_raw = counts.stdout.strip().split()
         return (int(ahead_raw), int(behind_raw))
 
-    def local_only_commit_count(self, repo_path: Path | str) -> int:
-        """Count commits reachable from HEAD that no remote-tracking ref holds.
+    def local_only_commit_count(self, repo_path: Path | str, ref: str = "HEAD") -> int:
+        """Count commits reachable from *ref* (``HEAD`` by default) that no remote-tracking ref holds.
 
         Read-only, and a sharper question than "is the branch ahead of its
         upstream": it is true of a branch with no upstream at all, and false
@@ -1190,11 +1669,26 @@ class GitRunner:
         Returns ``0`` for a repository with no commits yet, since an unborn
         HEAD holds nothing to lose.
         """
-        counted = self._query("rev-list", "--count", "HEAD", "--not", "--remotes", cwd=repo_path)
+        counted = self._query("rev-list", "--count", ref, "--not", "--remotes", cwd=repo_path)
         if counted.returncode != 0:
             return 0
         raw = counted.stdout.strip()
         return int(raw) if raw.isdigit() else 0
+
+    def commits_force_pull_would_drop(self, repo_path: Path | str, ref_name: str) -> int:
+        """Commits only this repository holds that :meth:`force_pull` would leave on no branch.
+
+        ``force_pull`` points the target branch at the remote's tip, and moves
+        ``HEAD`` off wherever it was. Commits reachable from the target branch
+        or from a detached ``HEAD`` that no remote-tracking ref holds would be left in
+        the reflog alone; another checked-out branch keeps its own ref. Read-only. ``0`` means nothing would be lost.
+        """
+        target = ref_name
+        dropped = self.local_only_commit_count(repo_path, f"refs/heads/{target}") if self.local_branch_exists(repo_path, target) else 0
+        # A different checked-out *branch* keeps its own ref; only a detached HEAD is left on no branch.
+        if self.current_branch(repo_path) is None:
+            dropped += self.local_only_commit_count(repo_path, "HEAD")
+        return dropped
 
     def upstream_configured(self, repo_path: Path | str) -> bool:
         """Return ``True`` when the current branch *names* an upstream.
@@ -1272,3 +1766,11 @@ class GitRunner:
         if parsed.scheme:
             return False
         return bool(remote_url) and not remote_url.startswith("git@")
+
+
+__all__ = [
+    "GitRunner",
+    "GitRunnerProtocol",
+    "MergeCheckResult",
+    "ToolRun",
+]
