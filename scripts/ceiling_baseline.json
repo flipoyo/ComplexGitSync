@@ -227,7 +227,7 @@
     },
     "memory/integrity.py": {
       "internal_imports": 2,
-      "loc": 318,
+      "loc": 322,
       "public_symbols": 7
     },
     "memory/ledger_entry.py": {
@@ -387,7 +387,7 @@
     },
     "orchestre/memory_facts.py": {
       "internal_imports": 19,
-      "loc": 383,
+      "loc": 400,
       "public_symbols": 1
     },
     "orchestre/memory_setup.py": {

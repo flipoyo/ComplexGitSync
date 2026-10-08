@@ -201,6 +201,35 @@ def test_an_edited_state_no_longer_hashes_to_its_name(tmp_path):
     )
 
 
+def test_one_edited_repository_is_named_by_its_path(tmp_path):
+    """GtsHashRepoPrecision: verify says *which* repository changed, bottom-up.
+
+    One repository edited in a three-repository State gives exactly one
+    REPO_HASH_MISMATCH naming it, then the tree root and the State's name;
+    the two untouched repositories report nothing.
+    """
+    root = tmp_path / "demo"
+    root.mkdir()
+    (root / "project.cgs").write_text(
+        'project = "demo"\n\nrepos = [\n  "github:owner/demo",\n  "github:owner/lib-a",\n  "github:owner/lib-b",\n]\n',
+        encoding="utf-8",
+    )
+    ComplexGitSyncClient().load(root / "project.cgs")
+    [state] = _states(root)
+    text = state.read_text(encoding="utf-8")
+    assert 'project_name = "lib-a"' in text
+    state.write_text(text.replace('project_name = "lib-a"', 'project_name = "stolen"'), encoding="utf-8")
+
+    report = ComplexGitSyncClient().verify(root)
+
+    assert report.state is HistoryState.CORRUPT
+    kinds = [finding for _s, finding, _d in report.findings]
+    assert kinds == [Finding.REPO_HASH_MISMATCH, Finding.GITTREE_ROOT_MISMATCH, Finding.STATE_DIGEST_MISMATCH]
+    [repo_detail] = [d for _s, finding, d in report.findings if finding is Finding.REPO_HASH_MISMATCH]
+    assert "'lib-a'" in repo_detail
+    assert "lib-b" not in repo_detail
+
+
 def test_a_state_no_entry_recorded_is_reported_but_is_not_corruption(tmp_path):
     """An orphan is reported, and the chain still verifies.
 

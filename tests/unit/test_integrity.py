@@ -134,7 +134,7 @@ def test_verification_report_is_clean_reflects_findings():
     assert not populated.is_clean
 
 
-def test_finding_has_exactly_twelve_members():
+def test_finding_has_exactly_fourteen_members():
     assert [f.name for f in Finding] == [
         "BROKEN_LINK",
         "BAD_ENTRY_HASH",
@@ -148,6 +148,8 @@ def test_finding_has_exactly_twelve_members():
         "COMMIT_LOG_MISMATCH",
         "TIME_REGRESSION",
         "UNRESOLVED_RELOCATION",
+        "REPO_HASH_MISMATCH",
+        "GITTREE_ROOT_MISMATCH",
     ]
 
 

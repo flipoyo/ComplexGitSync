@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from ..cgs_format import CgsDocument, parse_repo_id
 from ..errors import (
     ConfigValidationError,
+    UnsupportedSnapshotFormatError,
 )
 
 if TYPE_CHECKING:
@@ -75,7 +76,8 @@ class MemoryFacts:
         its content: an entry naming a State nobody can find
         (``MISSING_STATE``), a State nobody recorded (``ORPHAN_STATE``), and a
         stored snapshot whose content no longer hashes to the name it is filed
-        under (``STATE_DIGEST_MISMATCH``).
+        under (``STATE_DIGEST_MISMATCH``, with ``REPO_HASH_MISMATCH`` and
+        ``GITTREE_ROOT_MISMATCH`` naming the level that changed).
 
         The third is the one the naming change bought outright: before, a
         State's name was a timestamp, so its contents could be edited freely and
@@ -98,22 +100,7 @@ class MemoryFacts:
                     f"entry names {entry.state_id}, which is not on disk",
                 ))
                 continue
-            try:
-                document = GtsDocument.from_toml(snapshot)
-                digest = document.compute_snapshot_hash()
-            except (OSError, tomllib.TOMLDecodeError, ConfigValidationError) as exc:
-                findings.append((
-                    entry.seq,
-                    Finding.STATE_DIGEST_MISMATCH,
-                    f"{snapshot.name} could not be read: {exc}",
-                ))
-                continue
-            if digest != state_hash:
-                findings.append((
-                    entry.seq,
-                    Finding.STATE_DIGEST_MISMATCH,
-                    f"{snapshot.name} now hashes to {digest}",
-                ))
+            findings.extend((entry.seq, finding, detail) for finding, detail in MemoryFacts._verify_state(snapshot, state_hash))
 
         for snapshot in PendingMemory(cgitsync_dir).state_files():
             if snapshot.stem not in recorded:
@@ -123,6 +110,39 @@ class MemoryFacts:
                     f"{snapshot.name} is on disk and no entry records it",
                 ))
         return findings
+
+    _LEVEL_FINDINGS = {
+        "repo_hash": (Finding.REPO_HASH_MISMATCH, "repository '{}' no longer hashes to its repo_hash"),
+        "merkle_root": (Finding.GITTREE_ROOT_MISMATCH, "the tree no longer hashes to its merkle_root"),
+        "snapshot_hash": (Finding.STATE_DIGEST_MISMATCH, "its snapshot_hash no longer matches its content"),
+    }
+
+    @staticmethod
+    def _verify_state(snapshot: Path, state_hash: str) -> list[tuple[Finding, str]]:
+        """One stored State, bottom-up: each repository, the tree, then the State's name.
+
+        Every level that disagrees is reported, naming a repository by its
+        ``relative_path``; rewritten checkpoints still fail on the name.
+        """
+        try:
+            document = GtsDocument(tomllib.loads(snapshot.read_text(encoding="utf-8")))
+            mismatches = document.integrity_mismatches()
+            digest = document.compute_snapshot_hash()
+            if not mismatches and digest == state_hash:
+                document.validate()
+        except UnsupportedSnapshotFormatError as exc:
+            return [(Finding.STATE_DIGEST_MISMATCH, f"{snapshot.name} is in a format this build does not verify: {exc}")]
+        except (OSError, tomllib.TOMLDecodeError, ConfigValidationError) as exc:
+            return [(Finding.STATE_DIGEST_MISMATCH, f"{snapshot.name} could not be read: {exc}")]
+        found: list[tuple[Finding, str]] = []
+        for level, where in mismatches:
+            if level == "snapshot_hash" and digest != state_hash:
+                continue  # reported once, below, against the State's own name
+            finding, message = MemoryFacts._LEVEL_FINDINGS[level]
+            found.append((finding, f"{snapshot.name}: {message.format(where)}"))
+        if digest != state_hash:
+            found.append((Finding.STATE_DIGEST_MISMATCH, f"{snapshot.name} now hashes to {digest}"))
+        return found
 
     @staticmethod
     def normalise_state_argument(state: str) -> str:

@@ -63,7 +63,7 @@ class Finding(Enum):
 
     Listed in `.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained ledger*.
 
-    All twelve members are defined here because the type is shared with the
+    All fourteen members are defined here because the type is shared with the
     later `verify_store()` work (Ring 1, filesystem-backed, out of scope for
     this module). `verify_chain()` below — pure arithmetic over the entry
     sequence — only ever produces the first four and `TIME_REGRESSION`.
@@ -81,6 +81,8 @@ class Finding(Enum):
     COMMIT_LOG_MISMATCH = auto()  # commit rows edited since the entry vouched for them
     TIME_REGRESSION = auto()  # recorded_at moved backwards along the chain
     UNRESOLVED_RELOCATION = auto()  # a recorded move's asset is not at its new address
+    REPO_HASH_MISMATCH = auto()  # one repository no longer hashes to its repo_hash
+    GITTREE_ROOT_MISMATCH = auto()  # the tree no longer hashes to its merkle_root
 
 
 #: Findings that mean the history itself does not hold — the chain was
@@ -93,6 +95,8 @@ _STRUCTURAL_FINDINGS = frozenset({
     Finding.SEQ_DUPLICATE,
     Finding.MISSING_STATE,
     Finding.STATE_DIGEST_MISMATCH,
+    Finding.REPO_HASH_MISMATCH,
+    Finding.GITTREE_ROOT_MISMATCH,
     Finding.HEAD_STALE,
     Finding.ORPHAN_COMMIT_LOG,
     Finding.COMMIT_LOG_MISMATCH,
