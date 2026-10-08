@@ -4,7 +4,7 @@ A ledger is a hash chain of numbered files, so two memories that grew apart
 hold *different* entries under the *same* names: a file-by-file merge either
 collides or interleaves them into a chain that no longer verifies. Merging a
 project branch must therefore keep one side's memory whole and record the
-other as a second parent (UnrelatedHistoryMerge, ``main_1-1``).
+other as a second parent (UnrelatedHistoryMerge).
 
 Real Git throughout, a bare repository standing in for the memory's remote,
 like `test_memory_reboot.py`.

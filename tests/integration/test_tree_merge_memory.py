@@ -1,6 +1,6 @@
 """A tree-wide merge never merges the memory file by file, and says what it did.
 
-The owner's sequence of 2026-10-08, replayed (UnrelatedHistoryMerge, ``main_1-1``):
+The owner's sequence of 2026-10-08, replayed (UnrelatedHistoryMerge):
 after `memory reboot` on a project branch, `merge --all` reported the memory as
 "(conflicts — would block the merge)" with "(no file named)", offered
 `--resolve`, and blocked every other private repository. A ledger is a hash

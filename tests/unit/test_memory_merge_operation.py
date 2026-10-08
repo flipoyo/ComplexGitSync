@@ -1,7 +1,7 @@
 """The Ring-2 decision behind `memory merge` and the tree-wide `merge`.
 
 Plain Git in a temporary repository: three branches, one forked, one ahead,
-one with no common commit. UnrelatedHistoryMerge, ``main_1-1``.
+one with no common commit. UnrelatedHistoryMerge.
 """
 
 from __future__ import annotations
