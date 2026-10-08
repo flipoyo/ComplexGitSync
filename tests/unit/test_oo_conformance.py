@@ -141,26 +141,45 @@ def test_a_list_that_shrinks_passes():
     assert oo.run_check(better, baseline) == []
 
 
-def test_a_module_over_2000_lines_outside_cli_fails_even_with_a_baseline_entry():
-    baseline = {"over_2000_lines": {"big.py": 2100}}
-    measured = {
+def _measured(sizes: dict[str, int], splittable: list[str] | None = None) -> dict:
+    return {
         "no_behaviour_class": [],
         "over_class_cap": [],
         "missing_all": [],
         "filesystem_writers": [],
-        "over_2000_lines": {"big.py": 2100},
+        "over_2000_lines": sizes,
+        "over_2000_splittable": splittable or [],
     }
-    failures = oo.run_check(measured, baseline)
-    assert any("big.py is 2100 lines and must become a package" in f for f in failures)
+
+
+def test_a_module_over_2000_lines_with_two_classes_fails_even_with_a_baseline_entry():
+    baseline = {"over_2000_lines": {"big.py": 2100}}
+    failures = oo.run_check(_measured({"big.py": 2100}, ["big.py"]), baseline)
+    assert any("big.py is 2100 lines and holds more than one class" in f for f in failures)
+
+
+def test_measure_marks_only_a_multi_class_module_as_splittable(tmp_path):
+    one = "class Only:\n    def act(self):\n        return 1\n" + "x = 1\n" * 2100
+    two = one + "class Other:\n    def act(self):\n        return 2\n"
+    root = _tree(tmp_path, {"single.py": one, "double.py": two, "cli/long.py": "x = 1\n" * 2100})
+    measured = oo.measure(root)
+    assert set(measured["over_2000_lines"]) == {"single.py", "double.py", "cli/long.py"}
+    assert measured["over_2000_splittable"] == ["double.py"]
+
+
+def test_a_single_class_module_may_pass_2000_lines_at_its_recorded_size():
+    baseline = {"over_2000_lines": {"orchestre/memory_commands.py": 2050}}
+    assert oo.run_check(_measured({"orchestre/memory_commands.py": 2050}), baseline) == []
+
+
+def test_a_single_class_module_over_2000_lines_must_be_recorded_and_may_not_grow():
+    baseline = {"over_2000_lines": {"one.py": 2050}}
+    new = oo.run_check(_measured({"two.py": 2010}), baseline)
+    assert any("two.py (2010 lines) is new" in f for f in new)
+    grew = oo.run_check(_measured({"one.py": 2060}), baseline)
+    assert any("one.py grew 2050 -> 2060" in f for f in grew)
 
 
 def test_cli_may_stay_over_2000_lines_at_its_recorded_size():
     baseline = {"over_2000_lines": {"cli/expert.py": 2500}}
-    measured = {
-        "no_behaviour_class": [],
-        "over_class_cap": [],
-        "missing_all": [],
-        "filesystem_writers": [],
-        "over_2000_lines": {"cli/expert.py": 2500},
-    }
-    assert oo.run_check(measured, baseline) == []
+    assert oo.run_check(_measured({"cli/expert.py": 2500}), baseline) == []

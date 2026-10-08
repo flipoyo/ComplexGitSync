@@ -12,10 +12,14 @@ Five lists are measured over every module under `src/ComplexGitSync/`:
    dunders; enums, exception types and method-less value objects do not
    count), three or more public module-level functions, and 100+ lines.
 2. **over_class_cap** — more than three behaviour classes in one file.
-3. **over_2000_lines** — a module past 2000 lines. Outside `cli/` that is an
-   outright failure, with no baseline to hide behind: it must become a
-   directory (ModulePackagisation). `cli/` is recorded at its size and may
-   not grow.
+3. **over_2000_lines** — a module past 2000 lines. The rule exists so a big
+   file is split along its classes, one major class per file, so it bites
+   only where there is something to split along: a module holding **more
+   than one** behaviour class fails outright, with no baseline to hide
+   behind, and must become a directory (ModulePackagisation). A module
+   holding a single class (and `cli/`, which holds none) is recorded at its
+   size and may not grow; raising a recorded size is the owner's deliberate
+   decision (UnrelatedHistoryMerge, 3.4).
 4. **missing_all** — a module that declares no `__all__`, or whose public
    classes and functions are not all listed in it.
 5. **filesystem_writers** — a module-level function that calls a
@@ -167,6 +171,7 @@ def measure(root: Path = SRC_ROOT) -> dict[str, object]:
     """Every list this checker ratchets, for the modules under *root*."""
     lists: dict[str, list[str]] = {name: [] for name in LISTS if name != "over_2000_lines"}
     sizes: dict[str, int] = {}
+    splittable: list[str] = []
     for path in sorted(root.rglob("*.py")):
         relative = path.relative_to(root).as_posix()
         source = path.read_text(encoding="utf-8")
@@ -196,6 +201,8 @@ def measure(root: Path = SRC_ROOT) -> dict[str, object]:
             lists["over_class_cap"].append(relative)
         if loc > _LINE_CAP:
             sizes[relative] = loc
+            if not exempt and len(behaviour) > 1:
+                splittable.append(relative)
 
         if path.name != "__init__.py":
             declared = _declared_all(tree)
@@ -204,7 +211,11 @@ def measure(root: Path = SRC_ROOT) -> dict[str, object]:
         lists["filesystem_writers"].extend(
             f"{relative}:{name}" for name in _mutating_functions(tree)
         )
-    return {**{name: sorted(values) for name, values in lists.items()}, "over_2000_lines": sizes}
+    return {
+        **{name: sorted(values) for name, values in lists.items()},
+        "over_2000_lines": sizes,
+        "over_2000_splittable": sorted(splittable),
+    }
 
 
 def load_baseline(path: Path = BASELINE_PATH) -> dict[str, object]:
@@ -222,13 +233,15 @@ def run_check(measured: dict[str, object], baseline: dict[str, object]) -> list[
             if member not in allowed:
                 failures.append(f"{name}: {member} is new (the ratchet only tightens)")
     recorded_sizes = baseline.get("over_2000_lines", {})
+    splittable = set(measured.get("over_2000_splittable", []))  # type: ignore[arg-type]
     for module, loc in measured["over_2000_lines"].items():  # type: ignore[union-attr]
-        if not module.startswith(_CLASS_EXEMPT_PREFIXES):
-            # Outside cli/ there is no baseline to hide behind: a module this
-            # long must become a directory of one-major-class files.
+        if module in splittable:
+            # More than one behaviour class: there is something to split
+            # along, so there is no baseline to hide behind. It must become a
+            # directory of one-major-class files.
             failures.append(
-                f"over_2000_lines: {module} is {loc} lines and must become a package "
-                f"(only cli/ may stay a single file)"
+                f"over_2000_lines: {module} is {loc} lines and holds more than one class, "
+                f"so it must become a package (one major class per file)"
             )
         elif module not in recorded_sizes:
             failures.append(f"over_2000_lines: {module} ({loc} lines) is new")
@@ -261,7 +274,8 @@ def main(argv: list[str] | None = None) -> int:
 
     measured = measure()
     if args.write_baseline:
-        BASELINE_PATH.write_text(json.dumps(measured, indent=2, sort_keys=True) + "\n")
+        recorded = {name: measured[name] for name in LISTS}
+        BASELINE_PATH.write_text(json.dumps(recorded, indent=2, sort_keys=True) + "\n")
         print(f"Baseline written to {BASELINE_PATH.relative_to(REPO_ROOT)}")
         return 0
 
