@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import tomllib
 import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
@@ -218,10 +219,11 @@ class DocumentLoader:
             self.client.state_store.record_snapshot(resolved, snapshot_path)
         return self.client.get_tree_state()
 
-    def load_gts(self, snapshot_path: str | Path) -> WorkingGitTree:
+    def load_gts(self, snapshot_path: str | Path, *, unmeasured: bool = False) -> WorkingGitTree:
         previous_tree_state = self.client.registry.lifecycle_state if self.client.registry else TreeLifecycleState.UNLOADED
         resolved_snapshot_path = Path(snapshot_path).resolve()
-        document = GtsDocument.from_toml(resolved_snapshot_path)
+        # unmeasured: memory reboot only — see GtsDocument.unmeasured.
+        document = GtsDocument.unmeasured(tomllib.loads(resolved_snapshot_path.read_text(encoding="utf-8"))) if unmeasured else GtsDocument.from_toml(resolved_snapshot_path)
         # A snapshot records its paths against the tree, not against a
         # machine, so the reader supplies the tree: the workspace this
         # snapshot was found in. That is what lets a memory be cloned onto

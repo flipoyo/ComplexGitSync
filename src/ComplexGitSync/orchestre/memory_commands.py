@@ -1273,7 +1273,7 @@ class MemoryCommands:
         mount = MemoryRepository(workspace).mount_path()
         DefaultMemory(self.client).require_published(workspace, "memory reboot")
 
-        registry = self.client.load_gts(discover_gts_path(str(workspace)))
+        registry = self.client._document_loader.load_gts(discover_gts_path(str(workspace)), unmeasured=True)
         project_name = registry.get(ROOT_REPO_ID).name
 
         folded = self.client._fold_memory_pending(MemoryRepository(workspace).pending_path(), mount)

@@ -457,6 +457,27 @@ def test_cli_reboot_prints_the_archive_and_the_export(tmp_path, capsys):
     assert "branch=demo_x (fresh, pushed)" in captured.out
 
 
+def test_a_memory_from_before_integrity_schema_1_can_still_be_rebooted(tmp_path, capsys):
+    """GtsHashRepoPrecision §5: every other command refuses such a State and
+    names `memory reboot`, so reboot itself must not refuse it too."""
+    from ComplexGitSync.cli import main as cli_main
+    from ComplexGitSync.memory.integrity import HistoryState
+
+    tree = _memory_ready(tmp_path)
+    for state in (tree["workspace"] / ".cgitsync").rglob("*.gts"):
+        state.write_text(
+            "\n".join(line for line in state.read_text(encoding="utf-8").splitlines() if not line.startswith("integrity_schema")) + "\n",
+            encoding="utf-8",
+        )
+    assert cli_main(["status", "--search-dir", str(tree["workspace"])]) != 0
+    assert "memory reboot" in capsys.readouterr().err
+
+    assert cli_main(["memory", "reboot", "--search-dir", str(tree["workspace"])]) == 0
+
+    assert ComplexGitSyncClient().verify(tree["workspace"]).state is HistoryState.VERIFIED
+    assert cli_main(["status", "--search-dir", str(tree["workspace"])]) == 0
+
+
 def test_cli_adopt_reboot_flag(tmp_path, capsys):
     from ComplexGitSync.cli import main as cli_main
 

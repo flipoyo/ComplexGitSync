@@ -69,7 +69,7 @@ class GtsIntegrity:
     def ordered_leaves(cls, leaves: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
         """*leaves* in tree order: ``relative_path`` compared as UTF-8 bytes.
 
-        Refuses a leaf without a ``relative_path`` and two leaves sharing one
+        Refuses a leaf without a POSIX ``relative_path`` and two leaves sharing one
         — a duplicate is an invalid State, never a tie broken by name.
         """
         keyed: dict[bytes, Mapping[str, Any]] = {}
@@ -77,6 +77,8 @@ class GtsIntegrity:
             path = leaf.get("relative_path")
             if not isinstance(path, str) or not path:
                 raise ConfigValidationError(f"repository {leaf.get('name')!r} has no relative_path")
+            if "\\" in path:
+                raise ConfigValidationError(f"relative_path {path!r} must use forward slashes")
             key = path.encode("utf-8")
             if key in keyed:
                 raise ConfigValidationError(f"duplicate relative_path {path!r} in one State")

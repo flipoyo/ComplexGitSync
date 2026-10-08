@@ -172,12 +172,12 @@
     },
     "gts_document.py": {
       "internal_imports": 9,
-      "loc": 367,
+      "loc": 375,
       "public_symbols": 1
     },
     "gts_integrity.py": {
       "internal_imports": 1,
-      "loc": 87,
+      "loc": 89,
       "public_symbols": 2
     },
     "json_render.py": {
@@ -352,7 +352,7 @@
     },
     "orchestre/document_loader.py": {
       "internal_imports": 19,
-      "loc": 356,
+      "loc": 357,
       "public_symbols": 1
     },
     "orchestre/environment_commands.py": {

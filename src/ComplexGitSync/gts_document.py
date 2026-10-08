@@ -161,6 +161,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     # risks behaviour change under time pressure. New code is enforced at
     # 12.
     def validate(self) -> None:  # noqa: C901
+        self._check_integrity_schema()  # first: a refusal by name, never masked by a field error
         errors: list[str] = []
 
         for key in self._REQUIRED_DOCUMENT_KEYS:
@@ -300,6 +301,14 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         value = self.read("document.snapshot_hash")
         return value if isinstance(value, str) and value else None
 
+    @classmethod
+    def unmeasured(cls, data: dict[str, Any]) -> GtsDocument:
+        """*data* read for its topology only, its hashes set aside: ``memory reboot``
+        alone, the way out every other command names for a pre-schema State."""
+        document = {k: v for k, v in data.get("document", {}).items() if k not in ("snapshot_hash", "integrity_schema")}
+        repos = [{k: v for k, v in repo.items() if k != "repo_hash"} for repo in data.get("repo_state", [])]
+        return cls.from_dict({**{k: v for k, v in data.items() if k != "tree_integrity"}, "document": document, "repo_state": repos})
+
     @property
     def integrity_schema(self) -> int | None:
         """The integrity schema this document declares, or ``None``."""
@@ -350,12 +359,12 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         Called on the way to disk: the name is a fact about the tree, not
         about the directory it sits in or the build that wrote it.
         """
+        root = GtsIntegrity.merkle_root(self._repo_leaves())  # refuses before anything is stamped
         document = self._data.setdefault("document", {})
         document["CGS_VERSION"] = str(document.get("CGS_VERSION") or CGS_VERSION)
         document["integrity_schema"] = GtsIntegrity.SCHEMA
         for repo, leaf in zip(self._repo_dicts(), self._repo_leaves()):
             repo["repo_hash"] = GtsIntegrity.repo_leaf_hash(leaf)
-        root = self.compute_gittree_root()
         self._data["tree_integrity"] = {"merkle_root": root}
         digest = GtsIntegrity.state_hash(self._state_payload(root))
         document["snapshot_hash"] = digest

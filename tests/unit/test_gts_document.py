@@ -146,13 +146,13 @@ class TestGtsDocumentValid:
         wrong hash and call the result corrupt.
 
         `main`'s own incident: a workspace written by a build that declares
-        a canonicalisation this one has never heard of must not be silently
+        an integrity schema this one has never heard of must not be silently
         hashed under today's rules and reported as a mismatch — that message
         reads as corruption and invites deleting a perfectly good snapshot.
         """
         data = copy.deepcopy(MINIMAL_GTS)
         data["document"]["integrity_schema"] = INTEGRITY_SCHEMA + 1
-        doc = GtsDocument.from_dict(data)
+        doc = GtsDocument(data)  # unvalidated: validate() would refuse it already
 
         with pytest.raises(UnsupportedSnapshotFormatError) as excinfo:
             doc.compute_snapshot_hash()
@@ -336,6 +336,7 @@ class TestGtsDocumentInvalid:
 
     def test_snapshot_hash_must_be_hex_digest(self):
         data = copy.deepcopy(MINIMAL_GTS)
+        data["document"]["integrity_schema"] = INTEGRITY_SCHEMA
         data["document"]["snapshot_hash"] = "not-a-hex-digest"
         self._assert_validation_error(data, "hexadecimal SHA-256 digest")
 
@@ -511,3 +512,34 @@ class TestThreeLevelIdentity:
         document.ensure_snapshot_hash()
         assert document.integrity_mismatches() == []
         assert document.snapshot_hash != recorded
+
+    def test_a_newer_schema_is_refused_by_name_even_with_other_field_errors(self):
+        """The forward guard runs first: a field this build does not expect must
+        not turn "written by a newer ComplexGitSync" into a plain invalid document."""
+        data = _two_repo_document().to_dict()
+        data["document"]["integrity_schema"] = INTEGRITY_SCHEMA + 1
+        del data["repo_state"][0]["sync_state"]
+        with pytest.raises(UnsupportedSnapshotFormatError, match="newer ComplexGitSync"):
+            GtsDocument.from_dict(data)
+
+    def test_a_backslash_relative_path_is_invalid(self):
+        data = copy.deepcopy(MINIMAL_GTS)
+        data["repo_state"][0]["relative_path"] = "lib\\io"
+        with pytest.raises(ConfigValidationError, match="forward slashes"):
+            GtsDocument.from_dict(data)
+
+    def test_a_refused_stamp_leaves_the_document_untouched(self):
+        data = copy.deepcopy(MINIMAL_GTS)
+        data["repo_state"].append(dict(data["repo_state"][0], name="twin"))
+        document = GtsDocument(data)
+        before = copy.deepcopy(document.to_dict())
+        with pytest.raises(ConfigValidationError):
+            document.ensure_snapshot_hash()
+        assert document.to_dict() == before
+
+    def test_reboot_reads_a_pre_schema_state_for_its_topology_only(self):
+        data = _two_repo_document().to_dict()
+        del data["document"]["integrity_schema"]
+        document = GtsDocument.unmeasured(data)
+        assert document.snapshot_hash is None and document.gittree_root is None
+        assert [repo["relative_path"] for repo in document.repo_states] == [".", "repo-a"]
