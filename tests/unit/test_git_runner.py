@@ -1057,7 +1057,10 @@ class _FakeGitRunner:
     def create_root_commit(self, repo_path, message) -> str:
         return "0" * 40
 
-    def commit_keeping_tree(self, repo_path, base, other, message) -> str:
+    def commit_keeping_tree(self, repo_path, base, other, message, *, user_name=None, user_email=None) -> str:
+        return "0" * 40
+
+    def commit_taking_tree(self, repo_path, base, other, message, *, user_name=None, user_email=None) -> str:
         return "0" * 40
 
     def update_branch(self, repo_path, branch, new_sha, old_sha) -> None:

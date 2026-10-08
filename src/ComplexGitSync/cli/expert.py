@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from ..errors import GitSyncError
@@ -21,7 +21,7 @@ from ..memory.conformity import VALID_CONFORMITY_BASES, ConformityCriterion, Con
 from ..memory.conformity_scale import ConformityScale
 from ..memory.integrity import HistoryState
 from ..memory.self_history import VALID_AGENT_ROLES, AgentInfo
-from ..operations import MERGE_RESOLVE_HINT
+from ..operations import MERGE_RESOLVE_HINT, MemoryMergeOperation
 from ..orchestre import ComplexGitSyncClient
 from . import memory_asof, memory_prompt
 from ._shared import (
@@ -733,6 +733,20 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     )
     _add_search_dir_argument(reboot)
 
+    merge = memory_commands.add_parser(
+        "merge",
+        help="Keep one project branch's memory whole when it meets another's; the other stays as history.",
+    )
+    merge.add_argument("source", metavar="BRANCH", help="The project branch whose memory is merged from.")
+    merge.add_argument(
+        "--into", metavar="TARGET",
+        help="The project branch whose memory is merged into. Defaults to the one checked out here.",
+    )
+    keep = merge.add_mutually_exclusive_group(required=True)
+    keep.add_argument("--ours", dest="keep", action="store_const", const="ours", help="Keep the memory of the branch merged into (TARGET).")
+    keep.add_argument("--theirs", dest="keep", action="store_const", const="theirs", help="Keep the memory of BRANCH, the one merged from.")
+    _add_search_dir_argument(merge)
+
     subparser.set_defaults(handler=_handle_memory)
 
 
@@ -1129,6 +1143,9 @@ def _handle_memory(args: argparse.Namespace) -> int:
             no_push=getattr(args, "no_push", False),
             timeline=getattr(args, "timeline", False),
             reboot=getattr(args, "reboot", False),
+            source=getattr(args, "source", None),
+            into=getattr(args, "into", None),
+            keep=getattr(args, "keep", None),
         ),
     )
 
@@ -1149,6 +1166,9 @@ def _execute_memory(
     no_push: bool = False,
     timeline: bool = False,
     reboot: bool = False,
+    source: str | None = None,
+    into: str | None = None,
+    keep: str | None = None,
 ) -> int:
     if subcommand in _SIMPLE_MEMORY_SUBCOMMANDS:
         fetch, render = _SIMPLE_MEMORY_SUBCOMMANDS[subcommand]
@@ -1177,8 +1197,8 @@ def _execute_memory(
                 cgshome, owner=owner, branch=branch, remote=remote, reboot=reboot
             )
         )
-    if subcommand == "reboot":
-        return _print_memory_reboot(client.memory_reboot(cgshome))
+    if subcommand in ("reboot", "merge"):
+        return _execute_memory_branches(client, cgshome, subcommand, source=source, into=into, keep=keep)
     if subcommand == "migrate":
         _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
         return _print_memory_migrate(
@@ -1354,6 +1374,24 @@ def _print_memory_push(result: dict) -> int:
 
 def _print_self_history_add(path: Path) -> int:
     print(f"recorded={path}")
+    return EXIT_OK
+
+
+def _execute_memory_branches(
+    client: ComplexGitSyncClient, cgshome: Path, subcommand: str, *, source: str | None, into: str | None, keep: str | None
+) -> int:
+    """``memory reboot`` and ``memory merge``: the two commands that act on a memory's branches."""
+    if subcommand == "reboot":
+        return _print_memory_reboot(client.memory_reboot(cgshome))
+    _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+    return _print_memory_merge(client.memory_merge(cgshome, source or "", into=into, keep=keep or ""))
+
+
+def _print_memory_merge(result: dict) -> int:
+    print(f"source={result['source']} (project branch {result['source_project_branch']}) target={result['target']} (project branch {result['target_project_branch']}) keep={result['keep']}")
+    print(result["detail"])
+    if result["commit"]:
+        print(f"commit={str(result['commit'])[:12]} pushed={'yes' if result['pushed'] else 'no'}")
     return EXIT_OK
 
 
@@ -1718,8 +1756,7 @@ def _execute_pull_private(client: ComplexGitSyncClient, source_path: Path) -> in
     scope = _resolve_write_scope(client, private=True, command="pull")
     print(f"git_command=git fetch && git merge (scope={scope.value})")
     refreshed = client.refresh_private()
-    for repo_name, source in refreshed:
-        print(f"merged {repo_name} <- {source}")
+    _print_merged(client, refreshed)
     if not refreshed:
         print("merged nothing: every writable configuration repo is already current")
     print(_format_tree_state_line(client.get_tree_state()))
@@ -1947,13 +1984,19 @@ def _execute_merge(
         ff_only=ff_only,
         no_ff=no_ff,
     )
-    for repo_name, source in merged:
-        print(f"merged {repo_name} <- {source}")
+    _print_merged(client, merged)
     if not merged:
         print(f"merged nothing: every repository in scope already has {project_branch!r}")
     print(_format_tree_state_line(client.get_tree_state()))
     _print_repo_tree_result(client)
     return 0
+
+
+def _print_merged(client: ComplexGitSyncClient, merged: Sequence[tuple[str, str]]) -> None:
+    """One line per repository a merge moved. The memory is *kept*, never merged (UnrelatedHistoryMerge)."""
+    memory = {repo.name for repo in client.get_dependency_registry().values() if MemoryMergeOperation.is_memory(repo)}
+    for name, source in merged:
+        print(f"kept {name}: its own memory stays whole; {source} is kept as history" if name in memory else f"merged {name} <- {source}")
 
 
 def _execute_merge_into(
@@ -1976,6 +2019,8 @@ def _execute_merge_into(
         "no-source": " (no such branch here — skipped)",
         "no-target": " (no such branch here — would refuse)",
         "conflicts": " (conflicts — would block the merge)",
+        "kept": " (memory — its own side is kept whole, the source stays as history)",
+        "unrelated": " (no commit in common — would block the merge)",
     }
     plan = client.merge_into_plan(
         source_branch, target_branch, private=private, all_writable=all_writable
@@ -1993,12 +2038,12 @@ def _execute_merge_into(
     )
 
     if dry_run:
-        blocked = [row for row in plan if row.status in ("conflicts", "no-target")]
+        blocked = [row for row in plan if row.status in ("conflicts", "no-target", "unrelated")]
         if blocked:
             print("refused=true")
             for row in blocked:
                 listed = ", ".join(str(path) for path in row.conflicting_paths)
-                print(f"  {row.name}: {listed or f'no branch {row.target!r}'}")
+                print(f"  {row.name}: {'share no commit' if row.status == 'unrelated' else listed or f'no branch {row.target!r}'}")
             print("note: nothing would be checked out and nothing would be merged.")
         print(_format_tree_state_line(client.get_tree_state()))
         return EXIT_OK
@@ -2016,7 +2061,9 @@ def _execute_merge_into(
             print(f"fast-forwarded {row.name}: {row.target} <- {row.source}")
         elif row.status == "merge":
             print(f"merged {row.name}: {row.target} <- {row.source}")
-    if not any(row.status in ("fast-forward", "merge") for row in outcomes):
+        elif row.status == "kept":
+            print(f"kept {row.name}: the memory of {row.target} stays whole; {row.source} is kept as history")
+    if not any(row.status in ("fast-forward", "merge", "kept") for row in outcomes):
         print(f"merged nothing: every repository in scope already has {source_branch!r}")
     print(_format_tree_state_line(client.get_tree_state()))
     _print_repo_tree_result(client)
@@ -2062,8 +2109,7 @@ def _execute_merge_resolve(
             ff_only=ff_only,
             no_ff=no_ff,
         )
-    for repo_name, source in outcome.merged:
-        print(f"merged {repo_name} <- {source}")
+    _print_merged(client, outcome.merged)
 
     if outcome.stopped_at is None:
         if not outcome.merged:
@@ -2112,6 +2158,9 @@ def _print_merge_plan(
         "already-on-it": " (already on it — nothing to merge into)",
         "no-branch": " (no such branch here — skipped)",
         "conflicts": " (conflicts — would block the merge)",
+        "kept": " (memory — its own side is kept whole, the source stays as history)",
+        "up-to-date": " (already part of it — nothing to do)",
+        "unrelated": " (no commit in common — would block the merge)",
     }
     rows = [f"{name} <- {source}{labels[status]}" for name, source, status, _ in plan]
     print(f"dry_run=true command=merge scope={scope_value}")
@@ -2127,7 +2176,13 @@ def _print_merge_plan(
             "note: merge would refuse and merge nothing. Resolve these files, or"
             + MERGE_RESOLVE_HINT
         )
-    elif plan and all(status != "merge" for _, _, status, _ in plan):
+    unrelated = [name for name, _, status, _ in plan if status == "unrelated"]
+    if unrelated:
+        print("unrelated=true")
+        for name in unrelated:
+            print(f"  {name}: share no commit with the branch it would merge into")
+        print("note: merge would refuse and merge nothing. Git will not merge unrelated histories.")
+    elif not blocked and plan and all(status not in ("merge", "kept") for _, _, status, _ in plan):
         print(
             f"note: nothing would be merged. Check out the branch you want to merge "
             f"*into* first — 'cgitsync checkout <target>' — then merge {project_branch}."

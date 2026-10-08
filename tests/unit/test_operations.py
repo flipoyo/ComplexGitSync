@@ -252,6 +252,8 @@ class _FakeGitRunnerForOperations:
         self._merge_in_progress: dict[Path, bool] = {}
         self._unmerged_paths: dict[Path, bool] = {}
         self._unmergeable: dict[Path, set[str]] = {}
+        # {path: refs that share no commit with whatever is checked out there}
+        self._unrelated: dict[Path, set[str]] = {}
         self._conflicting_paths: dict[Path, list[Path]] = {}
         self.mergetool_opened: list[Path] = []
         self.merged: list[tuple[Path, str]] = []
@@ -312,6 +314,14 @@ class _FakeGitRunnerForOperations:
             raise GitSyncError(f"Git command failed (git merge {ref_name}): conflict")
         self.merged.append((path, ref_name))
         self.command_order.append(("merge", path))
+
+    def resolve_merge_ref(self, repo_path: Path | str, ref_name: str, *, remote: str = "origin") -> str:
+        return ref_name
+
+    def merge_base(self, repo_path: Path | str, ref_a: str, ref_b: str) -> str | None:
+        """Related by default: a test names the refs that share no commit in ``_unrelated``."""
+        unrelated = self._unrelated.get(Path(repo_path), set())
+        return None if ref_a in unrelated or ref_b in unrelated else "0" * 40
 
     def can_merge_cleanly(self, repo_path: Path | str, ref_name: str) -> MergeCheckResult:
         path = Path(repo_path)
@@ -2266,6 +2276,59 @@ class TestTheProjectNamesThePrivateLocalBranch:
         assert landed != "MyProject_multi-branch"
 
 
+class TestMergeNamesHistoriesWithNothingInCommon:
+    """UnrelatedHistoryMerge: no common commit is not a conflict, and never offers --resolve."""
+
+    @staticmethod
+    def _setup(tmp_path):
+        registry = _make_ready_registry(tmp_path)
+        runner = _FakeGitRunnerForOperations()
+        for repo in registry.values():
+            runner._current_branches[repo.absolute_path] = "main"
+            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+        return registry, runner
+
+    def test_the_plan_says_unrelated_not_conflicts(self, tmp_path):
+        registry, runner = self._setup(tmp_path)
+        root = registry.get("root")
+        runner._unrelated[root.absolute_path] = {"multi-branch"}
+        runner._unmergeable[root.absolute_path] = {"multi-branch"}  # what Git itself used to answer
+
+        _, status, paths = merge_status(root, runner, "multi-branch")
+
+        assert (status, paths) == ("unrelated", ())
+
+    def test_the_refusal_names_the_repository_and_the_cause_without_a_resolve_hint(self, tmp_path):
+        registry, runner = self._setup(tmp_path)
+        root = registry.get("root").absolute_path
+        runner._unrelated[root] = {"multi-branch"}
+
+        with pytest.raises(GitSyncError) as excinfo:
+            merge_tree(registry, runner, "multi-branch")
+
+        message = str(excinfo.value)
+        assert "'multi-branch' and 'main' share no commit; Git will not merge unrelated histories" in message
+        assert "no repository was merged" in message
+        assert "--resolve" not in message and "conflicts" not in message
+        assert runner.merged == []
+
+    def test_a_real_conflict_still_offers_resolve(self, tmp_path):
+        registry, runner = self._setup(tmp_path)
+        runner._unmergeable[registry.get("root").absolute_path] = {"multi-branch"}
+
+        with pytest.raises(GitSyncError, match="--resolve"):
+            merge_tree(registry, runner, "multi-branch")
+
+    def test_one_at_a_time_stops_at_an_unrelated_repository_as_it_did_when_this_was_a_conflict(self, tmp_path):
+        registry, runner = self._setup(tmp_path)
+        root = registry.get("root")
+        runner._unrelated[root.absolute_path] = {"multi-branch"}
+
+        outcome = merge_tree_one_at_a_time(registry, runner, "multi-branch")
+
+        assert outcome.stopped_at == root.name and outcome.stopped_paths == ()
+
+
 class TestMergeRefusesToMergeABranchIntoItself:
     """Merging a branch into itself succeeds and does nothing, which reads as
     "it worked" when the tree is simply still on the branch you meant to
@@ -2359,6 +2422,17 @@ class TestRefreshPrivateTree:
         refresh_private_tree(registry, runner)
 
         assert root not in [path for path, _ in runner.merged]
+
+    def test_it_checks_the_ref_it_merges_not_a_stale_local_copy_of_the_base(self, tmp_path):
+        """Only `origin/project` shares nothing with the settings branch; the local `project` is fine."""
+        registry, runner = self._tree_and_runner(tmp_path)
+        leaf = registry.get("root:deps/leaf").absolute_path
+        runner._unrelated[leaf] = {"origin/project"}
+
+        with pytest.raises(GitSyncError, match="'origin/project' and 'project_multi-branch' share no commit"):
+            refresh_private_tree(registry, runner)
+
+        assert runner.merged == []
 
     def test_a_conflict_leaves_nothing_merged(self, tmp_path):
         registry, runner = self._tree_and_runner(tmp_path)

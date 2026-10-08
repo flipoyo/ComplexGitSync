@@ -71,8 +71,8 @@
       "public_symbols": 5
     },
     "cli/expert.py": {
-      "internal_imports": 38,
-      "loc": 2099,
+      "internal_imports": 39,
+      "loc": 2147,
       "public_symbols": 1
     },
     "cli/fetch_command.py": {
@@ -87,7 +87,7 @@
     },
     "cli/help_text.py": {
       "internal_imports": 0,
-      "loc": 179,
+      "loc": 185,
       "public_symbols": 2
     },
     "cli/memory_asof.py": {
@@ -157,7 +157,7 @@
     },
     "git_runner.py": {
       "internal_imports": 3,
-      "loc": 1414,
+      "loc": 1449,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -266,8 +266,8 @@
       "public_symbols": 2
     },
     "operations/__init__.py": {
-      "internal_imports": 20,
-      "loc": 124,
+      "internal_imports": 22,
+      "loc": 130,
       "public_symbols": 24
     },
     "operations/ancestors.py": {
@@ -290,9 +290,14 @@
       "loc": 48,
       "public_symbols": 1
     },
+    "operations/memory_merge.py": {
+      "internal_imports": 4,
+      "loc": 194,
+      "public_symbols": 2
+    },
     "operations/merge.py": {
-      "internal_imports": 11,
-      "loc": 458,
+      "internal_imports": 12,
+      "loc": 494,
       "public_symbols": 5
     },
     "operations/outcome.py": {
@@ -316,8 +321,8 @@
       "public_symbols": 1
     },
     "operations/restart.py": {
-      "internal_imports": 17,
-      "loc": 295,
+      "internal_imports": 18,
+      "loc": 307,
       "public_symbols": 1
     },
     "orchestre/__init__.py": {
@@ -332,7 +337,7 @@
     },
     "orchestre/client.py": {
       "internal_imports": 61,
-      "loc": 1319,
+      "loc": 1322,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -381,8 +386,8 @@
       "public_symbols": 2
     },
     "orchestre/memory_commands.py": {
-      "internal_imports": 54,
-      "loc": 1684,
+      "internal_imports": 55,
+      "loc": 1739,
       "public_symbols": 1
     },
     "orchestre/memory_facts.py": {
@@ -417,7 +422,7 @@
     },
     "orchestre/tree_commands.py": {
       "internal_imports": 35,
-      "loc": 1125,
+      "loc": 1127,
       "public_symbols": 1
     },
     "paths.py": {

@@ -2,7 +2,7 @@
 
 Ring: 2
 Contract: re-export the package surface unchanged.
-Imports: ancestors, branch, commit, fetch, merge, outcome, preflight, push, removal, restart
+Imports: ancestors, branch, commit, fetch, memory_merge, merge, outcome, preflight, push, removal, restart
 """
 
 from __future__ import annotations
@@ -22,6 +22,10 @@ from .commit import (
 )
 from .fetch import (
     FetchOperation,
+)
+from .memory_merge import (
+    MemoryMergeOperation,
+    MemoryMergePlan,
 )
 from .merge import (
     MERGE_INTO_ACTS,
@@ -90,6 +94,8 @@ __all__ = [
     "CommitOperation",
     "MERGE_INTO_ACTS",
     "MERGE_RESOLVE_HINT",
+    "MemoryMergeOperation",
+    "MemoryMergePlan",
     "MergeIntoPlan",
     "MergeOperation",
     "Preflight",

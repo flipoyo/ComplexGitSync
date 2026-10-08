@@ -141,6 +141,12 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
         "Nothing is deleted.",
         ("cgitsync memory reboot",),
     ),
+    ("memory", "merge"): (
+        "Keep one project branch's memory whole when it meets another's, and the other as history. "
+        "A memory is a hash chain, so it is never merged file by file. With --ours the memory of the branch "
+        "merged into is kept; with --theirs, the memory of BRANCH. Nothing is rewritten or forced.",
+        ("cgitsync memory merge feature-x --into main --ours", "cgitsync memory merge feature-x --theirs"),
+    ),
     ("self-history", "add"): (
         "Record one piece of agent work — the ticket, who did it, and its conformity score out of 100 "
         "(33 + 33 + 34) — in this project's private accounting record.",

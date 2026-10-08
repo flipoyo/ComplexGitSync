@@ -119,8 +119,8 @@ makes sense once you know which is which:
   last `memory push` actually committed and sent.
 
 Only `memory push` moves content from one to the other (§4). That is what
-lets `.cgitsync/.memory` be checked out, merged and pulled like any other
-repository, with nothing about the workspace's own live writes getting in
+lets `.cgitsync/.memory` be checked out and pulled like any other
+repository (and merged, with one difference: §3), with nothing about the workspace's own live writes getting in
 its way — the day-to-day commands in this tutorial never mention the split
 because you never have to manage it, but `memory reboot` (§5) touches both
 halves deliberately, so it is worth knowing before you get there.
@@ -258,7 +258,7 @@ This step surprises people, so here is why it exists.
 Your memory's branch is named after the project branch you are on. Work on
 `memory-dev` and the memory lives on `YourProject_memory-dev`; work on
 `main` and it lives on `YourProject`. When you merge `memory-dev` into
-`main`, the memory merges too — but on a project whose memory was *born* on
+`main`, the memory is kept too (§3) — but on a project whose memory was *born* on
 a feature branch, the branch it would merge **into** has never existed.
 
 So make it, before the merge:
@@ -294,9 +294,34 @@ pixi run cgitsync push --private && pixi run cgitsync push
 
 Nothing in those four lines is about memory. That is the point of §2: after
 it, the memory is carried by the commands you already use — `checkout`,
-`merge` and `push` reach `.cgitsync/.memory` exactly the way they reach
-`.localSpec` or `.claude`, because it is exactly the same kind of
-repository.
+`merge` and `push` reach `.cgitsync/.memory` the way they reach
+`.localSpec` or `.claude`, with one difference that matters.
+
+**A memory is kept, never merged.** `.localSpec` and `.claude` are merged
+file by file. A memory is a hash chain — one numbered file per ledger entry —
+so two memories that grew apart hold *different* entries under the *same*
+numbers, and merging them file by file would collide or interleave them into a
+chain that no longer verifies. So `merge` keeps the memory of the branch you
+are merging *into* exactly as it was, and records the other as history:
+
+```
+kept .memory: its own memory stays whole; YourProject_memory-dev is kept as history
+```
+
+Nothing is lost: `memory-dev`'s whole memory is reachable from `main`'s, and
+`verify check` on `main`'s memory answers as before. `merge --dry-run` shows it
+beforehand as `(memory — its own side is kept whole, the source stays as
+history)`. When you would rather have `memory-dev`'s chain continue on `main`,
+say so explicitly:
+
+```bash
+pixi run cgitsync memory merge memory-dev --into main --theirs   # keep memory-dev's
+pixi run cgitsync memory merge memory-dev --into main --ours     # keep main's (what merge did)
+```
+
+Exactly one of `--ours` (the memory of the branch merged *into*) or `--theirs`
+(the memory of the branch merged *from*) is required: which chain continues is
+never guessed. The words are Git's.
 
 > **If you are about to reboot the memory as part of this merge** (§5),
 > read the note in §5.1 before running the four lines above — the order
@@ -455,15 +480,13 @@ only, not `main`'s own memory. That matters for the order you do things in:
 
 | Order | What you get |
 |---|---|
-| **Reboot `memory-dev` first, merge second (recommended only if you do not intend to merge the memory branches)** | `memory-dev`'s memory is fresh going forward. But its rebooted branch shares no history with `YourProject` any more — merging it into `main`'s memory afterward is merging two unrelated histories, which needs `--allow-unrelated-histories` and is rarely what you want. |
-| **Merge everything first, reboot `main` afterward (recommended)** | Run §3's four lines exactly as they stand today — `merge memory-dev --private` and `merge memory-dev` bring the *whole* memory-dev history into `main`'s memory branch, same as any other day. Once that is done and pushed, `checkout main` and run `memory reboot` there. `main`'s memory now holds everything up to and including the merge, archived under one name, and starts the next chapter clean. |
+| **Reboot `memory-dev` first, merge second** | `memory-dev`'s memory is fresh going forward, and shares no commit with `YourProject`'s. That no longer blocks the merge: `merge` keeps `main`'s memory whole and records the fresh `memory-dev` branch as history (§3), and the other private repositories merge as usual. To make the fresh chain the one `main` continues, run `memory merge memory-dev --into main --theirs`. |
+| **Merge everything first, reboot `main` afterward (recommended)** | Run §3's four lines exactly as they stand — `merge memory-dev --private` and `merge memory-dev` keep `main`'s memory and make the *whole* memory-dev history reachable from it. Once that is done and pushed, `checkout main` and run `memory reboot` there. `main`'s memory now holds everything up to and including the merge, archived under one name, and starts the next chapter clean. |
 
 The second order is the one to reach for before folding a long-running
 branch like `memory-dev` into `main`: it keeps the full, real history of
 the work that just landed, in one archived branch, and gives `main`'s
-memory a fresh start exactly at the milestone the merge represents —
-rather than discarding memory-dev's own accumulated history from ever
-reaching `main` at all.
+memory a fresh start exactly at the milestone the merge represents.
 
 ### 5.2 Adopting fresh instead of rebooting later
 
@@ -499,6 +522,7 @@ That is what the whole tutorial was for.
 | Once per project | `memory branch --project-branch main` | Makes the branch your first merge will need |
 | Whenever | `memory push` | Sends what the memory has gained, and sets the branch's upstream — the command to run after a reboot (§5) |
 | Whenever | `memory explore [--timeline]` | Reads the memory by branch, or the whole ledger in order — no hash needed |
+| When two project branches meet | `memory merge BRANCH [--into TARGET] --ours\|--theirs` | Keeps one branch's memory whole and the other as history — `merge` does this for you, keeping the target's (§3) |
 | Rarely, on purpose | `memory reboot` | Archives the current branch, exports the current shape, starts a fresh empty branch under the same name |
 | On a new machine | `memory clone [--branch NAME]` | Brings it back — the live branch, or an archived one by name |
 
@@ -506,7 +530,8 @@ Four things worth remembering:
 
 - **A memory is an ordinary private repository.** Everything in
   [Tutorial 5](05_private_repos.md) applies to it, at `.cgitsync/.memory`
-  (§1) rather than at the tree's own name.
+  (§1) rather than at the tree's own name — except that it is kept, never
+  merged file by file (§3).
 - **Nothing is automatic.** Every command above is one you type. A memory
   that pushed itself would push itself from the wrong machine one day.
 - **`cgitsync` holds no credentials.** Creating a repository runs the tool

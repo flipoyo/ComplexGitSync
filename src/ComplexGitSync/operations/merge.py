@@ -2,7 +2,7 @@
 
 Ring: 2
 Contract: Merge a branch across the tree, with a preflight over every repository first.
-Imports: branch, errors, git_branch, git_repo, git_tree, git_tree_branch, orchestre, preflight
+Imports: branch, errors, git_branch, git_repo, git_tree, git_tree_branch, memory_merge, orchestre, preflight
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from ..orchestre import GitRunner
 
 from .branch import BranchOperation
+from .memory_merge import MemoryMergeOperation
 from .preflight import Preflight
 
 
@@ -51,10 +52,12 @@ class MergeIntoPlan:
     status: str
     conflicting_paths: tuple[Path, ...] = ()
 
-#: What a repository's fate can be. ``fast-forward`` and ``merge`` both act;
-#: the rest do not. They are told apart because a fast-forward makes no
-#: commit and explains why a repository looks untouched afterwards.
-MERGE_INTO_ACTS = ("fast-forward", "merge")
+#: What a repository's fate can be. ``fast-forward``, ``merge`` and ``kept``
+#: act; the rest do not. They are told apart because a fast-forward makes no
+#: commit and explains why a repository looks untouched afterwards, and
+#: ``kept`` is the memory: its own side is kept whole and the other recorded
+#: as history, never merged file by file (UnrelatedHistoryMerge).
+MERGE_INTO_ACTS = ("fast-forward", "merge", "kept")
 
 #: Hint shown when a merge is refused due to conflicts.
 MERGE_RESOLVE_HINT = (
@@ -122,8 +125,11 @@ class MergeOperation:
         The one place a repository's fate is decided, so the dry run and the
         merge itself cannot disagree. ``status`` is ``"merge"``,
         ``"already-on-it"`` (nothing to merge into), ``"no-branch"`` (nothing to
-        merge from) or ``"conflicts"``. ``paths`` is empty for every status but
-        the last, and empty for that one too when git blamed no file.
+        merge from), ``"conflicts"``, or one of the three that
+        :meth:`MemoryMergeOperation.tree_status` decides: ``"kept"`` and ``"up-to-date"`` (the
+        memory) and ``"unrelated"`` (no commit in common). ``paths`` is empty
+        for every status but ``"conflicts"``, and empty for that one too when
+        git blamed no file.
         """
         source = MergeOperation.merge_source_ref(repo, project_branch, project_name=project_name)
         if git_runner.current_branch(repo.absolute_path) == source:
@@ -132,10 +138,18 @@ class MergeOperation:
             repo.absolute_path, source, remote=repo.remote_name or "origin"
         ):
             return source, "no-branch", ()
+        history = MemoryMergeOperation.tree_status(repo, git_runner, source)
+        if history is not None:
+            return source, history, ()
         check = git_runner.can_merge_cleanly(repo.absolute_path, source)
         if not check.is_clean:
             return source, "conflicts", tuple(check.conflicting_paths)
         return source, "merge", ()
+
+    @staticmethod
+    def describe_unrelated(repo_name: str, source: str, target: str | None) -> str:
+        """One repository's entry in a refusal for histories with nothing in common."""
+        return f"{repo_name}: {source!r} and {target or 'HEAD'!r} share no commit; Git will not merge unrelated histories"
 
     @staticmethod
     def _warn_branch_missing(repo: WorkingRepo, source: str, project_branch: str) -> None:
@@ -243,14 +257,20 @@ class MergeOperation:
             scope=scope,
         )
 
-        planned: list[tuple[WorkingRepo, str]] = []
+        planned: list[tuple[WorkingRepo, str, bool]] = []
         blocked: list[str] = []
+        unrelated: list[str] = []
         on_source: list[str] = []
         project_name = tree_project_name(tree)
         for repo in MergeOperation._iter_merge_scope_project_first(tree, scope):
             source, status, conflicts = MergeOperation.merge_status(
                 repo, git_runner, project_branch, project_name=project_name
             )
+            if status == "up-to-date":
+                continue
+            if status == "unrelated":
+                unrelated.append(MergeOperation.describe_unrelated(repo.name, source, git_runner.current_branch(repo.absolute_path)))
+                continue
             if status == "already-on-it":
                 # Merging a branch into itself does nothing and reports success,
                 # which reads as "it worked" when the tree is simply still on the
@@ -263,11 +283,12 @@ class MergeOperation:
             if status == "conflicts":
                 blocked.append(MergeOperation.describe_merge_conflict(repo.name, source, conflicts))
                 continue
-            planned.append((repo, source))
+            planned.append((repo, source, status == "kept"))
 
-        if blocked:
+        if blocked or unrelated:
             raise GitSyncError(
-                "merge refused; no repository was merged: " + "; ".join(blocked) + MERGE_RESOLVE_HINT
+                "merge refused; no repository was merged: " + "; ".join(blocked + unrelated)
+                + (MERGE_RESOLVE_HINT if blocked else "")
             )
         if on_source and not planned:
             raise GitSyncError(
@@ -278,9 +299,12 @@ class MergeOperation:
             )
 
         merged: list[tuple[str, str]] = []
-        for repo, source in planned:
+        for repo, source, kept in planned:
             before = git_runner.rev_parse_head(repo.absolute_path)
-            git_runner.merge(repo.absolute_path, source, ff_only=ff_only, no_ff=no_ff)
+            if kept:
+                MemoryMergeOperation.keep_in_tree(repo, git_runner, source)
+            else:
+                git_runner.merge(repo.absolute_path, source, ff_only=ff_only, no_ff=no_ff)
             after = git_runner.rev_parse_head(repo.absolute_path)
             repo.commit_sha = after
             if before != after:
@@ -305,7 +329,7 @@ class MergeOperation:
         private/local repository merges ``<base>_<source>`` into ``<base>``
         while the project's own repositories take both names literally.
 
-        Five answers:
+        Seven answers:
 
         - ``no-source`` / ``no-target`` — that branch is not here and not on the
           remote. Neither is invented: a branch that is missing is as likely to
@@ -316,6 +340,10 @@ class MergeOperation:
           has to move.
         - ``merge`` — a real merge that applies cleanly.
         - ``conflicts`` — with the paths git blamed, empty when it blamed none.
+        - ``kept`` — the memory: its own side stays whole and the source is
+          recorded as history (:meth:`MemoryMergeOperation.tree_status`); never a file-by-file
+          merge, so never a conflict.
+        - ``unrelated`` — the two branches share no commit.
         """
         source = MergeOperation.merge_source_ref(repo, source_branch, project_name=project_name)
         target = MergeOperation.merge_source_ref(repo, target_branch, project_name=project_name)
@@ -328,7 +356,10 @@ class MergeOperation:
             return plan("no-source")
         if not git_runner.branch_known(repo.absolute_path, target, remote=remote):
             return plan("no-target")
-        if git_runner.is_ancestor(repo.absolute_path, source, target):
+        history = MemoryMergeOperation.tree_status(repo, git_runner, source, target)
+        if history in ("kept", "unrelated"):
+            return plan(history)
+        if history == "up-to-date" or git_runner.is_ancestor(repo.absolute_path, source, target):
             return plan("already-merged")
         if git_runner.is_ancestor(repo.absolute_path, target, source):
             return plan("fast-forward")
@@ -409,10 +440,13 @@ class MergeOperation:
             for plan in plans
             if plan.status == "conflicts"
         ]
-        if blocked:
+        unrelated = [
+            MergeOperation.describe_unrelated(plan.name, plan.source, plan.target) for plan in plans if plan.status == "unrelated"
+        ]
+        if blocked or unrelated:
             raise GitSyncError(
                 "merge refused; nothing was checked out and nothing was merged: "
-                + "; ".join(blocked) + MERGE_RESOLVE_HINT
+                + "; ".join(blocked + unrelated) + (MERGE_RESOLVE_HINT if blocked else "")
             )
 
         missing = [plan for plan in plans if plan.status == "no-target"]
@@ -446,7 +480,9 @@ class MergeOperation:
             # Checkout and merge, in that order, in this process. See the
             # docstring: splitting these is the bug this function exists to fix.
             git_runner.checkout(repo.absolute_path, plan.target)
-            if plan.status in MERGE_INTO_ACTS:
+            if plan.status == "kept":
+                MemoryMergeOperation.keep_in_tree(repo, git_runner, plan.source, plan.target)
+            elif plan.status in MERGE_INTO_ACTS:
                 git_runner.merge(repo.absolute_path, plan.source, ff_only=ff_only, no_ff=no_ff)
             BranchOperation.refresh_repo_after_checkout(repo, plan.target, RefKind.BRANCH, git_runner)
             outcomes.append(plan)
@@ -484,11 +520,13 @@ class MergeOperation:
             source, status, conflicts = MergeOperation.merge_status(
                 repo, git_runner, project_branch, project_name=project_name
             )
-            if status in ("already-on-it", "no-branch"):
+            if status in ("already-on-it", "no-branch", "up-to-date"):
                 if status == "no-branch":
                     MergeOperation._warn_branch_missing(repo, source, project_branch)
                 continue
-            if status == "conflicts":
+            if status in ("conflicts", "unrelated"):
+                # ("unrelated" stops here as it did when it was reported as a
+                # conflict; what a stop there does next is MergeErgonomics.)
                 # Let the merge run and fail: that is what writes the conflict
                 # markers a merge tool needs. The error is swallowed on purpose —
                 # the caller is told where the run stopped instead, because it
@@ -508,7 +546,10 @@ class MergeOperation:
                     not_reached=tuple(r.name for r in repos[position + 1 :]),
                 )
             before = git_runner.rev_parse_head(repo.absolute_path)
-            git_runner.merge(repo.absolute_path, source, ff_only=ff_only, no_ff=no_ff)
+            if status == "kept":
+                MemoryMergeOperation.keep_in_tree(repo, git_runner, source)
+            else:
+                git_runner.merge(repo.absolute_path, source, ff_only=ff_only, no_ff=no_ff)
             after = git_runner.rev_parse_head(repo.absolute_path)
             repo.commit_sha = after
             if before != after:

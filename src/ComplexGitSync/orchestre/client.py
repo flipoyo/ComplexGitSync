@@ -807,6 +807,10 @@ class ComplexGitSyncClient:
         """Close this memory's current chapter and open a fresh one, keeping the old."""
         return self._memory_commands.memory_reboot(cgshome)
 
+    def memory_merge(self, cgshome: str | Path, source: str, *, into: str | None = None, keep: str) -> dict[str, Any]:
+        """Merge one project branch's memory into another's, keeping one side whole (``"ours"`` or ``"theirs"``)."""
+        return self._memory_commands.memory_merge(cgshome, source, into=into, keep=keep)
+
     def memory_status(self, cgshome: str | Path) -> dict[str, Any]:
         """What this workspace remembers, in one answer."""
         return self._memory_commands.memory_status(cgshome)

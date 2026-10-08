@@ -2,7 +2,7 @@
 
 Ring: 2
 Contract: Resync the tree from its remotes, gently or destructively.
-Imports: branch, errors, git_branch, git_repo, git_tree, git_tree_branch, merge, orchestre, preflight
+Imports: branch, errors, git_branch, git_repo, git_tree, git_tree_branch, memory_merge, merge, orchestre, preflight
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from ..orchestre import GitRunner
 
 from .branch import BranchOperation
+from .memory_merge import MemoryMergeOperation
 from .merge import MergeOperation
 from .preflight import Preflight
 
@@ -304,7 +305,7 @@ class RestartOperation:
             scope=RepoScope.PRIVATE,
         )
 
-        planned: list[tuple[WorkingRepo, str]] = []
+        planned: list[tuple[WorkingRepo, str, bool]] = []
         blocked: list[str] = []
         branches = GitTreeBranches(tree, git_runner)
         for repo in iter_tree_leaf_first(tree, RepoScope.PRIVATE):
@@ -323,13 +324,25 @@ class RestartOperation:
             source = f"{remote}/{base}"
             if not git_runner.branch_known(repo.absolute_path, base, remote=remote):
                 continue
-            merge_check = git_runner.can_merge_cleanly(repo.absolute_path, source)
-            if not merge_check.is_clean:
+            # The memory keeps its own side and an unrelated history is named
+            # as such, exactly as `merge` decides (MemoryMergeOperation.tree_status).
+            # The memory is judged by branch name (it takes the newest copy of the branch);
+            # any other repository by the very ref the merge below will use.
+            history = MemoryMergeOperation.tree_status(
+                repo, git_runner, base if MemoryMergeOperation.is_memory(repo) else source
+            )
+            if history == "up-to-date":
+                continue
+            if history == "unrelated":
+                blocked.append(MergeOperation.describe_unrelated(repo.name, source, current))
+                continue
+            merge_check = git_runner.can_merge_cleanly(repo.absolute_path, source) if history is None else None
+            if merge_check is not None and not merge_check.is_clean:
                 blocked.append(
                     MergeOperation.describe_merge_conflict(repo.name, source, merge_check.conflicting_paths)
                 )
                 continue
-            planned.append((repo, source))
+            planned.append((repo, base if history == "kept" else source, history == "kept"))
 
         if blocked:
             raise GitSyncError(
@@ -337,9 +350,12 @@ class RestartOperation:
             )
 
         refreshed: list[tuple[str, str]] = []
-        for repo, source in planned:
+        for repo, source, kept in planned:
             before = git_runner.rev_parse_head(repo.absolute_path)
-            git_runner.merge(repo.absolute_path, source)
+            if kept:
+                MemoryMergeOperation.keep_in_tree(repo, git_runner, source)
+            else:
+                git_runner.merge(repo.absolute_path, source)
             after = git_runner.rev_parse_head(repo.absolute_path)
             repo.commit_sha = after
             if before != after:

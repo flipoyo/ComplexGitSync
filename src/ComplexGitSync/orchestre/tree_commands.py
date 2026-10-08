@@ -1019,9 +1019,11 @@ class TreeCommands:
         is derived from *project_branch* rather than equal to it — seeing that
         translation before it runs is the point of a merge dry run.
 
-        ``status`` is ``"merge"``, ``"already-on-it"``, ``"no-branch"`` or
-        ``"conflicts"``, decided by the same function :meth:`merge` uses, so a
-        dry run cannot promise something the merge then refuses.
+        ``status`` is ``"merge"``, ``"already-on-it"``, ``"no-branch"``,
+        ``"conflicts"``, ``"kept"`` or ``"up-to-date"`` (the memory: its own
+        side is kept whole, never merged file by file) or ``"unrelated"`` (no
+        commit in common), decided by the same function :meth:`merge` uses, so
+        a dry run cannot promise something the merge then refuses.
         """
         from ..operations import merge_status
 

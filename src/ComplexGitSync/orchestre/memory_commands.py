@@ -2,7 +2,7 @@
 
 Ring: 3
 Contract: Everything the client does with a workspace's memory, its ledger and its releases.
-Imports: __build__, __version__, cgs_format, client, errors, git_branch, git_repo, git_tree, git_tree_branch, gts_document, master, memory, memory_facts, memory_setup, registry, snapshot_resolver, toolchain
+Imports: __build__, __version__, cgs_format, client, errors, git_branch, git_repo, git_tree, git_tree_branch, gts_document, master, memory, memory_facts, memory_setup, operations, registry, snapshot_resolver, toolchain
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from ..errors import (
     GitSyncError,
 )
 from ..git_branch import DEFAULT_BRANCH
-from ..operations import AncestorOperation
+from ..operations import AncestorOperation, MemoryMergeOperation
 from .memory_chapters import MemoryChapters
 
 if TYPE_CHECKING:
@@ -921,6 +921,64 @@ class MemoryCommands:
             "branch": target,
             "created": not existed,
             "pushed": push,
+        }
+
+    def memory_merge(
+        self,
+        cgshome: str | Path,
+        source_branch: str,
+        *,
+        into: str | None = None,
+        keep: str,
+    ) -> dict[str, Any]:
+        """Merge one project branch's memory into another's by keeping one side whole.
+
+        *source_branch* and *into* name **project** branches (*into* defaults
+        to the one checked out); the memories merged are their derived
+        branches. A memory is never merged file by file — a ledger is a hash
+        chain, and two of them collide or interleave — so one commit takes
+        one side's files whole and keeps the other reachable as its second
+        parent. *keep* is Git's meaning for merging *source* into *into*:
+        ``"ours"`` keeps *into*'s memory, ``"theirs"`` keeps *source_branch*'s.
+        Nothing is rewritten, and nothing is spliced.
+
+        What is pending in `.cgitsync` is folded and committed first, so the
+        merge loses nothing recorded. The result is pushed, without force,
+        unless the memory is a defaulted one or has no remote.
+        """
+        if keep not in MemoryMergeOperation.KEEPS:
+            raise GitSyncError("memory merge: say which memory to keep, --ours (the one merged into) or --theirs (the one merged from).")
+        workspace = Path(cgshome)
+        git = self.client.git_runner
+        registry = self.client.get_dependency_registry()
+        project = registry.get(ROOT_REPO_ID).name
+        target_project = into or GitTreeBranches(registry, git).tree_branch or DEFAULT_BRANCH
+        source, target = MemoryRepository.branch(project, source_branch), MemoryRepository.branch(project, target_project)
+        recorded = self.memory_push(workspace, message=f"{project} memory merge: recording before {source_branch} into {target_project}")
+        mount = Path(str(recorded["mount"]))
+        plan = MemoryMergeOperation.plan(git, mount, source, target, keep)
+        if plan.status == "no-source":
+            raise GitSyncError(f"project branch '{source_branch}' has no memory branch '{source}' here or on its remote; nothing was merged.")
+        if plan.status == "no-target":
+            raise GitSyncError(f"project branch '{target_project}' has no memory branch '{target}'; 'cgitsync memory branch --project-branch {target_project}' creates it. Nothing was merged.")
+        MasterConfig.load(workspace)
+        user_name, user_email = MasterConfig.resolve_identity(mount, git)
+        commit = MemoryMergeOperation.apply(git, mount, plan, user_name=user_name, user_email=user_email)
+        pushed = bool(commit) and not DefaultMemory(self.client).is_defaulted(workspace) and bool(git.remote_get_url(mount, "origin"))
+        if pushed:
+            try:
+                git.push(mount, ref_name=target, set_upstream=True)
+            except GitSyncError as error:
+                first_line = (str(error).strip().splitlines() or [str(error)])[0]
+                raise GitSyncError(
+                    f"the memory of '{target_project}' was merged here, but pushing '{target}' was refused ({first_line}). "
+                    "Nothing was forced. Fetch and look at what the remote holds, then run 'cgitsync memory push'."
+                ) from error
+        self.client._log_event("memory_merge", mount=mount, source=source, target=target, keep=keep, status=plan.status, pushed=pushed)
+        return {
+            "mount": str(mount), "source": source, "target": target, "source_project_branch": source_branch,
+            "target_project_branch": target_project, "keep": keep, "status": plan.status, "commit": commit,
+            "pushed": pushed, "detail": MemoryMergeOperation.describe(plan),
         }
 
     def _memory_base_branch(self, workspace: Path, *, owner: str | None) -> str:

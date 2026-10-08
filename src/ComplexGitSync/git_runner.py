@@ -414,9 +414,9 @@ class GitRunnerProtocol(Protocol):
 
     def create_root_commit(self, repo_path: Path | str, message: str) -> str: ...
 
-    def commit_keeping_tree(
-        self, repo_path: Path | str, base: str, other: str, message: str
-    ) -> str: ...
+    def commit_keeping_tree(self, repo_path: Path | str, base: str, other: str, message: str, *, user_name: str | None = None, user_email: str | None = None) -> str: ...
+
+    def commit_taking_tree(self, repo_path: Path | str, base: str, other: str, message: str, *, user_name: str | None = None, user_email: str | None = None) -> str: ...
 
     def update_branch(
         self, repo_path: Path | str, branch: str, new_sha: str, old_sha: str | None
@@ -1374,7 +1374,14 @@ class GitRunner:
         return self._run("commit-tree", empty_tree, "-m", message, cwd=repo_path).stdout.strip()
 
     def commit_keeping_tree(
-        self, repo_path: Path | str, base: str, other: str, message: str
+        self,
+        repo_path: Path | str,
+        base: str,
+        other: str,
+        message: str,
+        *,
+        user_name: str | None = None,
+        user_email: str | None = None,
     ) -> str:
         """A merge of *other* into *base* that keeps *base*'s tree, written without a checkout.
 
@@ -1382,10 +1389,42 @@ class GitRunner:
         makes on a checked-out *base*, built with ``commit-tree`` so the
         branch it extends never has to be checked out. *other* becomes the
         second parent, so its whole history is reachable from the result.
-        Moves no ref.
+        Moves no ref. *user_name* and *user_email* sign the commit when Git
+        has no identity of its own.
         """
+        return self._commit_merge(repo_path, base, base, other, message, user_name, user_email)
+
+    def commit_taking_tree(
+        self,
+        repo_path: Path | str,
+        base: str,
+        other: str,
+        message: str,
+        *,
+        user_name: str | None = None,
+        user_email: str | None = None,
+    ) -> str:
+        """:meth:`commit_keeping_tree`'s mirror: *base* first parent, but *other*'s tree.
+
+        What a merge that keeps the incoming side whole looks like — both
+        histories reachable, one side's files, nothing spliced and nothing
+        rewritten. Moves no ref.
+        """
+        return self._commit_merge(repo_path, other, base, other, message, user_name, user_email)
+
+    def _commit_merge(
+        self,
+        repo_path: Path | str,
+        tree_of: str,
+        base: str,
+        other: str,
+        message: str,
+        user_name: str | None,
+        user_email: str | None,
+    ) -> str:
+        identity = ["-c", f"user.name={user_name}", "-c", f"user.email={user_email}"] if user_name and user_email else []
         return self._run(
-            "commit-tree", f"{base}^{{tree}}", "-p", base, "-p", other, "-m", message, cwd=repo_path
+            *identity, "commit-tree", f"{tree_of}^{{tree}}", "-p", base, "-p", other, "-m", message, cwd=repo_path
         ).stdout.strip()
 
     def update_branch(
