@@ -137,39 +137,7 @@ class TestGtsDocumentValid:
         data_b["document"]["CGS_VERSION"] = "0002.70"
         doc_b = GtsDocument.from_dict(data_b)
 
-        current = GtsDocument.CURRENT_HASH_CANONICALISATION
-        assert doc_a.compute_snapshot_hash(
-            canonicalisation=current
-        ) == doc_b.compute_snapshot_hash(canonicalisation=current)
-
-    def test_version_2_keeps_hashing_the_leak_it_was_written_with(self):
-        """A document that declares v2 is never silently upgraded to v3.
-
-        Its hash must go on meaning exactly what it meant when it was
-        written — leak included — or every v2 State on disk today would
-        stop matching its own recorded name the moment this module changes.
-        """
-        # schema_version reads document.schema_version first, so it has
-        # to be absent here -- exactly as a real written document has it
-        # absent, and .CGS_VERSION only, which is where the leak lives.
-        data_a = copy.deepcopy(MINIMAL_GTS)
-        del data_a["document"]["schema_version"]
-        del data_a["document"]["format_version"]
-        data_a["document"]["hash_canonicalisation"] = 2
-        data_a["document"]["CGS_VERSION"] = "0002.69"
-        doc_a = GtsDocument.from_dict(data_a)
-
-        data_b = copy.deepcopy(MINIMAL_GTS)
-        del data_b["document"]["schema_version"]
-        del data_b["document"]["format_version"]
-        data_b["document"]["hash_canonicalisation"] = 2
-        data_b["document"]["CGS_VERSION"] = "0002.70"
-        doc_b = GtsDocument.from_dict(data_b)
-
-        # Both read their own declared canonicalisation (2), not the
-        # module's current one -- this is what "never corrected on an old
-        # one" means in practice.
-        assert doc_a.compute_snapshot_hash() != doc_b.compute_snapshot_hash()
+        assert doc_a.compute_snapshot_hash() == doc_b.compute_snapshot_hash()
 
     def test_a_snapshot_from_a_newer_build_is_refused_by_name(self):
         """SnapshotVersionGuard: this build must say so, not recompute a
@@ -262,7 +230,7 @@ class TestGtsDocumentValid:
         repo["current_ref"] = "branch:main"
         doc = GtsDocument.from_dict(data)
         assert doc is not None
-        payload = doc._build_canonical_payload(doc.hash_canonicalisation)
+        payload = doc._build_canonical_payload()
         assert payload["repo_state"][0]["current_ref"] == "branch:main"
 
 

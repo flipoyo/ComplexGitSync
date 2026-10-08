@@ -134,39 +134,13 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     CURRENT_SCHEMA_VERSION = "1.1"
     HASH_ALGORITHM = "sha256"
 
-    #: Which canonicalisation a new snapshot's hash is computed with.
-    #:
-    #: **1** hashed absolute paths — the workspace's own directory, each
-    #: repository's, and the ``.cgs`` it came from — so the same tree in two
-    #: directories produced two different hashes. That is a location, not an
-    #: identity, and it made the digest useless as a name two machines could
-    #: agree on.
-    #:
-    #: **2** hashes only what the workspace *is*: tree-relative paths, refs,
-    #: commits, and who each repository is. See
-    #: ``.agent/.local/.localSpec/AdditionalSpecs.md``, *What a State's name is computed
-    #: from*, for the field-by-field decision.
-    #:
-    #: **3** drops the ``document`` block's ``CGS_VERSION`` from the
-    #: payload. Version 2 put it there meaning to fix the payload's own
-    #: format — the same job ``hash_canonicalisation`` itself already does,
-    #: correctly, by being read *before* the payload is built rather than
-    #: hashed inside it. Nothing ever wrote a real fixed value for it, so it
-    #: fell through to the running package's own version — provenance,
-    #: hashed by accident, so two machines running different builds against
-    #: the identical tree got two different names for it
-    #: (``memory-dev_1-2_StateVersionLeak_DevPlanTicket.md``). Every other
-    #: field in this payload is unchanged from version 2.
-    #:
-    #: A document declares its own version in ``document.hash_canonicalisation``
-    #: and is always checked with the one it declares. A snapshot written
-    #: before this field existed is a version-1 document: it keeps validating
-    #: under version 1 for ever, and is never silently rewritten. The same
-    #: rule protects every version-2 snapshot from version 3: its hash is
-    #: never recomputed under the newer rule, so closing this leak for new
-    #: snapshots costs nothing already on disk.
+    #: Which canonicalisation a new snapshot's hash is computed with. Only
+    #: version 3 is read: it hashes what the workspace *is* (tree-relative
+    #: paths, refs, commits, who each repository is) and never the running
+    #: package's own version. See ``.agent/.local/.localSpec/AdditionalSpecs.md``,
+    #: *What a State's name is computed from*. A snapshot written under an
+    #: earlier version is refused, never re-measured: run ``memory reboot``.
     CURRENT_HASH_CANONICALISATION = 3
-    LEGACY_HASH_CANONICALISATION = 1
     _SUPPORTED_HASH_ALGORITHMS = frozenset((HASH_ALGORITHM,))
 
     _REQUIRED_DOCUMENT_KEYS = ("generated_at", "command_origin")
@@ -319,47 +293,39 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         return value if isinstance(value, str) and value else None
 
     @property
-    def hash_canonicalisation(self) -> int:
-        """Which canonicalisation this document's hash was computed with.
-
-        A document that does not say is a version-1 document — every
-        snapshot written before the field existed — and is checked with
-        version 1 for ever. Upgrading it silently would make its recorded
-        hash wrong and its file fail validation.
-        """
+    def hash_canonicalisation(self) -> int | None:
+        """Which canonicalisation this document declares, or ``None``."""
         declared = self.read("document.hash_canonicalisation")
-        if isinstance(declared, int) and declared > 0:
-            return declared
-        return self.LEGACY_HASH_CANONICALISATION
+        return declared if isinstance(declared, int) and declared > 0 else None
 
-    def compute_snapshot_hash(self, *, canonicalisation: int | None = None) -> str:
-        """The content hash of this document, under its own canonicalisation.
+    def compute_snapshot_hash(self) -> str:
+        """The content hash of this document, under the current canonicalisation.
 
-        Pass *canonicalisation* only to ask what a document's hash would be
-        under a version it does not declare — the migration path uses it;
-        ordinary callers must not, or an old snapshot gets measured with an
-        algorithm it was never written under.
-
-        Refuses, by name, before building any payload, when *version* is
-        higher than :attr:`CURRENT_HASH_CANONICALISATION` — a snapshot
-        written by a build newer than this one. Recomputing a hash under
-        rules this build does not actually know produces a wrong digest
-        that reads as "corrupt", which is what happened the one time this
-        was allowed to fall through
-        (`.agent/.local/.dev/DevTickets/archive/20260918_SnapshotVersionGuard_DevPlanTicket.md`):
-        the workspace and the snapshot were both fine, and the tool reading
-        them had gone backwards in time.
+        Refuses, by name, before building any payload, a document written
+        under another version: a newer one, or a stamped one older than
+        this build reads. Recomputing a hash under rules the document was
+        never written under produces a wrong digest that reads as
+        "corrupt", which is what happened the one time this was allowed to
+        fall through
+        (`.agent/.local/.dev/DevTickets/archive/20260918_SnapshotVersionGuard_DevPlanTicket.md`).
+        A document not yet stamped (no ``snapshot_hash``) is being built and
+        is hashed under the current version.
         """
-        version = canonicalisation or self.hash_canonicalisation
-        if version > self.CURRENT_HASH_CANONICALISATION:
+        version = self.hash_canonicalisation
+        if version is not None and version > self.CURRENT_HASH_CANONICALISATION:
             raise UnsupportedSnapshotFormatError(
                 "this snapshot was written by a newer ComplexGitSync "
                 f"(snapshot format {version}; this build reads up to "
                 f"{self.CURRENT_HASH_CANONICALISATION}). Upgrade, or pass "
                 "--gts with a snapshot this build wrote."
             )
+        if self.snapshot_hash is not None and version != self.CURRENT_HASH_CANONICALISATION:
+            raise UnsupportedSnapshotFormatError(
+                "this snapshot was written by an older ComplexGitSync, in a "
+                "format this build no longer reads — run `cgitsync memory reboot`."
+            )
         canonical_json = json.dumps(
-            self._build_canonical_payload(version),
+            self._build_canonical_payload(),
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,
@@ -369,9 +335,9 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     def ensure_snapshot_hash(self) -> str:
         """Stamp this document with its canonicalisation and its hash.
 
-        Called on the way to disk, so **every new snapshot is version 2**:
-        its name is a fact about the tree, not about the directory the tree
-        happens to sit in.
+        Called on the way to disk, so every new snapshot carries the
+        current version: its name is a fact about the tree, not about the
+        directory the tree happens to sit in.
         """
         document = self._data.setdefault("document", {})
         document["CGS_VERSION"] = str(document.get("CGS_VERSION") or CGS_VERSION)
@@ -380,26 +346,14 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         document["snapshot_hash"] = digest
         return digest
 
-    def _build_canonical_payload(self, version: int) -> dict[str, Any]:
-        """The fields a State's name is computed from, under *version*.
+    def _build_canonical_payload(self) -> dict[str, Any]:
+        """The fields a State's name is computed from.
 
-        Version 2 drops every absolute path — the workspace's, each
-        repository's, its parent's, and the ``.cgs`` the snapshot came from
-        — and orders repositories by their tree-relative path instead. Those
-        values say where a tree was materialised on one machine, which is
-        not what the tree *is*: hashing them meant the same tree cloned into
-        two directories carried two names, and a distributed memory is a set
-        of names two parties can agree on.
-
-        Version 3 additionally drops the ``document`` block: version 2 put
-        the running package's own ``CGS_VERSION`` there, provenance hashed
-        by accident rather than the fixed format marker it was meant to be
-        — see :attr:`CURRENT_HASH_CANONICALISATION`'s docstring. Every other
-        field is identical to version 2's.
-
-        Versions 1 and 2 are kept, unchanged, for documents that declare
-        them. Neither is ever applied to a new snapshot or "corrected" on
-        an old one.
+        No absolute path — the workspace's, each repository's, its
+        parent's, or the ``.cgs`` the snapshot came from — and no running
+        package version: those say where and by what a tree was
+        materialised, not what the tree *is*. Repositories are ordered by
+        their tree-relative path.
         """
         project = self._data.get("project", {})
         tree_state = self._data.get("tree_state", {})
@@ -452,37 +406,16 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 "worktree_state": repo.get("worktree_state"),
                 "is_reachable": bool(repo.get("is_reachable", True)),
             }
-            if version == self.LEGACY_HASH_CANONICALISATION:
-                # Where this tree sat on one machine, hashed into its name.
-                # Kept exactly as it was so a version-1 snapshot keeps
-                # validating; never added to a new one.
-                canonical_repo["absolute_path"] = repo.get("absolute_path")
-                canonical_repo["parent_absolute_path"] = repo.get("parent_absolute_path")
-                canonical_repo["source_cgs_path"] = repo.get("source_cgs_path")
             canonical_repo_states.append(canonical_repo)
 
-        if version == self.LEGACY_HASH_CANONICALISATION:
-            # Ordering by absolute path is ordering by where the tree was
-            # materialised; version 2 orders by the tree's own shape.
-            sort_key = "absolute_path"
-        else:
-            sort_key = "relative_path"
         canonical_repo_states.sort(
             key=lambda repo: (
-                str(repo.get(sort_key, "")),
+                str(repo.get("relative_path", "")),
                 str(repo.get("name", "")),
             )
         )
         canonical_project = {"name": project.get("name")}
-        if version == self.LEGACY_HASH_CANONICALISATION:
-            canonical_project["root_absolute_path"] = project.get("root_absolute_path")
-            canonical_project["source_cgs_path"] = project.get("source_cgs_path")
         payload: dict[str, Any] = {}
-        if version < 3:
-            # Kept exactly as versions 1 and 2 always hashed it — including
-            # the leak version 3 exists to close. Never applied to a new
-            # snapshot; see CURRENT_HASH_CANONICALISATION's docstring.
-            payload["document"] = {"CGS_VERSION": self.schema_version}
         payload.update({
             "project": canonical_project,
             "tree_state": {

@@ -13,7 +13,6 @@ changed, and no two machines ever agreed on anything.
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 
 from ComplexGitSync.gts_document import GtsDocument
@@ -109,7 +108,7 @@ def test_the_canonical_payload_holds_no_absolute_path(tmp_path):
     [state] = _state_files(tmp_path / "demo")
 
     document = GtsDocument.from_toml(state)
-    payload = document._build_canonical_payload(document.hash_canonicalisation)
+    payload = document._build_canonical_payload()
 
     rendered = repr(payload)
     assert str(tmp_path) not in rendered
@@ -142,27 +141,6 @@ def test_a_toolchain_version_would_not_change_the_name(tmp_path):
 # ---------------------------------------------------------------------------
 # The old layout keeps working
 # ---------------------------------------------------------------------------
-
-
-def test_a_version_one_snapshot_still_validates_under_version_one(tmp_path):
-    """An existing snapshot is never re-measured with the new algorithm."""
-    config = _workspace(tmp_path / "demo")
-    ComplexGitSyncClient().load(config)
-    [state] = _state_files(tmp_path / "demo")
-
-    data = tomllib.loads(state.read_text(encoding="utf-8"))
-    legacy = tmp_path / "legacy.gts"
-    del data["document"]["hash_canonicalisation"]
-    data["document"]["snapshot_hash"] = GtsDocument(dict(data)).compute_snapshot_hash(
-        canonicalisation=1
-    )
-    import tomli_w
-
-    legacy.write_text(tomli_w.dumps(data), encoding="utf-8")
-
-    document = GtsDocument.from_toml(legacy)
-    assert document.hash_canonicalisation == 1
-    document.validate()  # raises if the old hash is measured the new way
 
 
 def test_a_snapshot_in_the_old_directory_layout_is_still_found(tmp_path):
