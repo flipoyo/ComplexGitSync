@@ -56,6 +56,29 @@ def test_the_same_tree_in_two_directories_gets_one_name(tmp_path):
     assert first_state.name == second_state.name
 
 
+def test_the_same_tree_in_two_directories_agrees_at_all_three_levels(tmp_path):
+    """GtsHashRepoPrecision: every repo_hash, the merkle_root and the snapshot_hash."""
+    configs = []
+    for where in ("alice/work/demo", "srv/elsewhere/demo"):
+        root = tmp_path / where
+        root.mkdir(parents=True)
+        (root / "project.cgs").write_text(
+            'project = "demo"\n\nrepos = [\n  "github:owner/demo",\n  "github:owner/lib-a",\n  "github:owner/lib-b",\n]\n',
+            encoding="utf-8",
+        )
+        configs.append(root / "project.cgs")
+        ComplexGitSyncClient().load(configs[-1])
+
+    first, second = (GtsDocument.from_toml(_state_files(config.parent)[0]) for config in configs)
+
+    assert [(r["relative_path"], r["repo_hash"]) for r in first.repo_states] == [
+        (r["relative_path"], r["repo_hash"]) for r in second.repo_states
+    ]
+    assert first.gittree_root == second.gittree_root
+    assert first.snapshot_hash == second.snapshot_hash
+    assert len(first.repo_states) == 3
+
+
 def test_two_writes_over_an_unchanged_workspace_produce_one_state(tmp_path):
     config = _workspace(tmp_path / "demo")
 

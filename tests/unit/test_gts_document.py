@@ -417,3 +417,97 @@ class TestModuleHelpers:
     def test_repo_ref_token_round_trips_kind_and_name(self):
         repo = {"current_ref_kind": "branch", "current_ref_name": "main"}
         assert _repo_ref_token(repo, "current") == "branch:main"
+
+
+# ===========================================================================
+# GtsHashRepoPrecision — what each of the three levels does and does not see
+# ===========================================================================
+
+
+def _two_repo_document(**root_changes) -> GtsDocument:
+    data = copy.deepcopy(MINIMAL_GTS)
+    root = dict(
+        data["repo_state"][0],
+        name="TestProject",
+        node_type="RootRepo",
+        absolute_path="/workspace/TestProject",
+        relative_path=".",
+        commit_sha="def456def456def456def456def456def456def4",
+    )
+    del root["parent_absolute_path"]
+    root.update(root_changes)
+    data["repo_state"].insert(0, root)
+    document = GtsDocument.from_dict(data)
+    document.ensure_snapshot_hash()
+    return document
+
+
+def _levels(document: GtsDocument) -> tuple[list[str], str, str]:
+    repo_hashes = sorted(repo["repo_hash"] for repo in document.repo_states)
+    return repo_hashes, document.gittree_root, document.snapshot_hash
+
+
+class TestThreeLevelIdentity:
+    def test_the_stamped_document_carries_all_three_levels_and_verifies(self):
+        document = _two_repo_document()
+        assert document.integrity_schema == INTEGRITY_SCHEMA
+        assert all(len(repo["repo_hash"]) == 64 for repo in document.repo_states)
+        assert document.integrity_mismatches() == []
+        document.validate()
+
+    def test_the_input_order_of_repositories_does_not_change_the_root(self):
+        document = _two_repo_document()
+        reordered = GtsDocument(copy.deepcopy(document.to_dict()))
+        reordered._data["repo_state"].reverse()
+        reordered.ensure_snapshot_hash()
+        assert reordered.gittree_root == document.gittree_root
+        assert reordered.snapshot_hash == document.snapshot_hash
+
+    def test_transport_and_location_change_no_level(self):
+        """ssh vs https, and two different absolute paths: the same tree."""
+        ssh = _two_repo_document(access_protocol="ssh")
+        https = _two_repo_document(access_protocol="https", absolute_path="/srv/elsewhere/TestProject")
+        assert _levels(ssh) == _levels(https)
+
+    def test_a_new_commit_on_the_same_branch_changes_every_level(self):
+        before = _two_repo_document()
+        after = _two_repo_document(commit_sha="0" * 40)
+        changed = set(_levels(before)[0]) ^ set(_levels(after)[0])
+        assert len(changed) == 2  # exactly one repository's hash moved
+        assert after.gittree_root != before.gittree_root
+        assert after.snapshot_hash != before.snapshot_hash
+
+    def test_a_project_level_change_moves_the_state_but_not_the_tree(self):
+        before = _two_repo_document()
+        after = GtsDocument(copy.deepcopy(before.to_dict()))
+        after._data["tree_state"]["is_ready"] = False
+        after.ensure_snapshot_hash()
+        assert after.gittree_root == before.gittree_root
+        assert after.snapshot_hash != before.snapshot_hash
+
+    def test_a_duplicate_relative_path_is_invalid(self):
+        data = copy.deepcopy(MINIMAL_GTS)
+        data["repo_state"].append(dict(data["repo_state"][0], name="twin"))
+        with pytest.raises(ConfigValidationError, match="duplicate relative_path"):
+            GtsDocument.from_dict(data)
+
+    def test_a_ready_state_with_no_repository_is_invalid(self):
+        data = copy.deepcopy(MINIMAL_GTS)
+        data["repo_state"] = []
+        with pytest.raises(ConfigValidationError, match="READY State must contain"):
+            GtsDocument.from_dict(data)
+
+    def test_a_stamped_snapshot_without_an_integrity_schema_is_refused(self):
+        data = _two_repo_document().to_dict()
+        del data["document"]["integrity_schema"]
+        with pytest.raises(UnsupportedSnapshotFormatError, match="memory reboot"):
+            GtsDocument.from_dict(data)
+
+    def test_rewriting_a_checkpoint_still_fails_on_the_state(self):
+        """An edit that also rewrites repo_hash and merkle_root is still caught."""
+        document = _two_repo_document()
+        recorded = document.snapshot_hash
+        document._data["repo_state"][1]["commit_sha"] = "0" * 40
+        document.ensure_snapshot_hash()
+        assert document.integrity_mismatches() == []
+        assert document.snapshot_hash != recorded

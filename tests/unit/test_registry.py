@@ -645,3 +645,20 @@ def test_build_gts_document_from_registry_omits_freeze_manifest_for_non_freeze_o
 def test_make_repo_id_collapses_dot_relative_path():
     assert make_repo_id("root", ".", "child-repo") == "root"
     assert make_repo_id("root", "", "child-repo") == "root:child-repo"
+
+
+def test_a_tree_built_from_windows_paths_has_the_posix_digests(tmp_path):
+    """The same tree, its paths built as Windows paths, gives the same three levels (P8)."""
+    from pathlib import PurePosixPath, PureWindowsPath
+
+    config_path = _write_root_cgs(tmp_path)
+
+    def digests(path_type):
+        registry = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(config_path), config_path)
+        for entry in registry.values():
+            if entry.relative_path is not None:
+                entry.relative_path = path_type(*PurePosixPath(entry.relative_path.as_posix()).parts)
+        document = RegistryTranslator.to_gts_document(registry, command_origin="load", source_cgs_path=config_path)
+        return [repo["repo_hash"] for repo in document.repo_states], document.gittree_root, document.snapshot_hash
+
+    assert digests(PureWindowsPath) == digests(PurePosixPath)
