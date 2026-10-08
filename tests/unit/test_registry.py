@@ -438,6 +438,22 @@ def test_build_gts_document_from_registry_snapshot_hash_matches_recomputed_hash(
     gts_document.validate()
 
 
+def test_a_windows_relative_path_is_written_with_forward_slashes(tmp_path):
+    """relative_path is part of a State's identity, so it is POSIX on every
+    platform: ``str()`` of a Windows path would write ``lib\\io`` and give the
+    same tree another name on win-64."""
+    from pathlib import PureWindowsPath
+
+    config_path = _write_root_cgs(tmp_path)
+    registry = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(config_path), config_path)
+    entry = next(iter(registry.values()))
+    entry.relative_path = PureWindowsPath("lib", "io")
+
+    gts_document = RegistryTranslator.to_gts_document(registry, command_origin="load", source_cgs_path=config_path)
+
+    assert gts_document.repo_states[0]["relative_path"] == "lib/io"
+
+
 def test_build_gts_document_from_registry_round_trips_through_build_registry_from_gts_document(tmp_path):
     config_path = _write_root_cgs(tmp_path)
     document = CgsDocument.from_toml(config_path)

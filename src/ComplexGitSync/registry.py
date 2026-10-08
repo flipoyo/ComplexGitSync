@@ -471,7 +471,7 @@ class RegistryTranslator:
                 "name": entry.name,
                 "node_type": entry.node_type.value,
                 "absolute_path": PathResolver.against_tree(entry.absolute_path, tree_root),
-                "relative_path": str(entry.relative_path) if entry.relative_path is not None else None,
+                "relative_path": entry.relative_path.as_posix() if entry.relative_path is not None else None,
                 "repo_lifecycle_state": entry.repo_lifecycle_state.value,
                 "sync_state": entry.sync_state.value,
                 "commit_sha": entry.commit_sha,

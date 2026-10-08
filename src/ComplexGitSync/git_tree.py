@@ -515,7 +515,7 @@ class WorkingGitTree(GitTree):
         """Return direct children of *parent_id*, sorted by path then name."""
         return sorted(
             [repo for repo in self.repos.values() if repo.parent_id == parent_id],
-            key=lambda repo: (str(repo.relative_path or ""), repo.name),
+            key=lambda repo: (repo.relative_path.as_posix() if repo.relative_path else "", repo.name),
         )
 
     def is_complete(self) -> bool:
@@ -1310,7 +1310,7 @@ def format_registry_json(registry: WorkingGitTree) -> str:
                 "node_type": entry.node_type.value,
                 "parent_id": entry.parent_id,
                 "absolute_path": str(entry.absolute_path),
-                "relative_path": str(entry.relative_path) if entry.relative_path else None,
+                "relative_path": entry.relative_path.as_posix() if entry.relative_path else None,
                 "current_ref_kind": entry.current_ref_kind.value if entry.current_ref_kind else None,
                 "current_ref_name": entry.current_ref_name,
                 "target_ref_kind": entry.target_ref_kind.value if entry.target_ref_kind else None,
