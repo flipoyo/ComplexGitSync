@@ -137,6 +137,14 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     #: a hash per repository, a Merkle root over the tree, and the State hash
     #: on top. A stamped snapshot without it predates schema 1 and is refused,
     #: never re-measured; one declaring a higher schema came from a newer build.
+    #:
+    #: ``hash_canonicalisation = 4`` is also written, and never read here: a
+    #: fence for builds before schema 1, which read only that field and
+    #: would otherwise measure a schema-1 State as version 1 and call it
+    #: corrupt. Above their 3, they refuse it as "written by a newer
+    #: ComplexGitSync" instead — after `checkout main` swapped this checkout
+    #: back to such a build, that is what happened (owner, 2026-10-08).
+    LEGACY_READER_FENCE = 4
     _SUPPORTED_HASH_ALGORITHMS = frozenset((HASH_ALGORITHM,))
     _MISMATCH_MESSAGES = {
         "repo_hash": "repo_state '{}' repo_hash does not match its recomputed hash",
@@ -363,6 +371,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         document = self._data.setdefault("document", {})
         document["CGS_VERSION"] = str(document.get("CGS_VERSION") or CGS_VERSION)
         document["integrity_schema"] = GtsIntegrity.SCHEMA
+        document["hash_canonicalisation"] = self.LEGACY_READER_FENCE
         for repo, leaf in zip(self._repo_dicts(), self._repo_leaves()):
             repo["repo_hash"] = GtsIntegrity.repo_leaf_hash(leaf)
         self._data["tree_integrity"] = {"merkle_root": root}

@@ -172,7 +172,7 @@
     },
     "gts_document.py": {
       "internal_imports": 9,
-      "loc": 375,
+      "loc": 377,
       "public_symbols": 1
     },
     "gts_integrity.py": {

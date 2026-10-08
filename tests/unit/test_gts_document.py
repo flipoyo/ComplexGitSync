@@ -543,3 +543,11 @@ class TestThreeLevelIdentity:
         document = GtsDocument.unmeasured(data)
         assert document.snapshot_hash is None and document.gittree_root is None
         assert [repo["relative_path"] for repo in document.repo_states] == [".", "repo-a"]
+
+    def test_a_build_before_schema_1_is_fenced_out_by_name(self):
+        """After checkout swaps to an older build, that build reads only
+        hash_canonicalisation (it knew up to 3). A schema-1 State must carry a
+        higher one, so it refuses as "newer" instead of reporting corruption."""
+        document = _two_repo_document()
+        assert document.read("document.hash_canonicalisation") == GtsDocument.LEGACY_READER_FENCE > 3
+        document.validate()  # and this build ignores it
