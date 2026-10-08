@@ -175,6 +175,11 @@
       "loc": 377,
       "public_symbols": 1
     },
+    "gts_integrity.py": {
+      "internal_imports": 1,
+      "loc": 87,
+      "public_symbols": 2
+    },
     "json_render.py": {
       "internal_imports": 0,
       "loc": 206,
@@ -462,6 +467,7 @@
     }
   },
   "ring0_modules": [
-    "errors"
+    "errors",
+    "gts_integrity"
   ]
 }
