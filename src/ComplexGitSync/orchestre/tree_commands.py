@@ -2,7 +2,7 @@
 
 Ring: 3
 Contract: The tree-wide Git commands: pull, checkout, commit, merge, push and their kin.
-Imports: __version__, auth_hints, autofix, client, commit_message, errors, git_probes, git_repo, git_tree, git_tree_branch, operations, snapshot_resolver
+Imports: __version__, auth_hints, autofix, client, commit_message, errors, git_probes, git_repo, git_tree, git_tree_branch, operations, snapshot_resolver, ticket_gate
 """
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ from ..operations import (
 )
 from ..snapshot_resolver import discover_cgshome
 from ..status_render import tree_branch_label
+from ..ticket_gate import TicketGate
 from .auth_hints import AuthFailureHints
 from .git_probes import GitProbes
 
@@ -548,13 +549,24 @@ class TreeCommands:
         ``AgentConduct.md`` §2 first and a message that breaks it raises
         :exc:`~ComplexGitSync.errors.GitSyncError` naming the rule, before
         anything is staged or committed.  Any other tree is not checked.
+
+        In the same trees, a commit that would add a planning ticket to
+        ``DevTickets/archive/`` without its orchestrator's self-history
+        record is refused the same way, naming the ticket
+        (:class:`~ComplexGitSync.ticket_gate.TicketGate`, the pair rule).
         """
         registry = self.client.get_dependency_registry()
-        policy = CommitMessagePolicy.for_tree(registry.get(ROOT_REPO_ID).absolute_path)
+        root_path = registry.get(ROOT_REPO_ID).absolute_path
+        policy = CommitMessagePolicy.for_tree(root_path)
         if policy is not None:
             policy.require(message)
         previous_state = registry.lifecycle_state
         scope = self.client._write_scope(registry, "commit", private, all_writable)
+        gate = TicketGate.for_tree(root_path)
+        owner = gate.owning_path(repo.absolute_path for repo in iter_tree_leaf_first(registry, scope)) if gate else None
+        if gate is not None and owner is not None:
+            porcelain = self.client.git_runner.status_porcelain(owner)
+            gate.require(TicketGate.added_paths(owner, porcelain, stage_all=stage_all))
         self.client._log_event("commit_start", message=message, stage_all=stage_all, scope=scope.value)
         self.client.last_write_outcomes = GitProbes.as_write_outcomes(
             self.client.orchestre.git_tree.git.commit(

@@ -1,6 +1,6 @@
 [workspace]
 name = "ComplexGitSync"
-version = "5.1.3"
+version = "5.2.1"
 channels = ["conda-forge"]
 platforms = ["linux-64", "win-64", "osx-arm64"]
 
@@ -12,6 +12,7 @@ bump-build = "python scripts/bump_build.py"
 check-ceilings = "python scripts/check_module_ceilings.py --check"
 check-oo = "python scripts/check_oo_conformance.py --check"
 check-spectree = "python scripts/spec_tree.py --check --check-digest"
+check-tickets = "python scripts/ticket_gate.py --check"
 check-build-version = "python scripts/check_build_version.py --range"
 
 [dependencies]
