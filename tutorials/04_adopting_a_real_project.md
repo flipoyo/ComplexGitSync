@@ -20,7 +20,7 @@ one path, verified against the live repositories.
 
 **What you will find.** Seven steps: clone, check out the submodules,
 adopt the tree with `submodules init`, then `branch create`, `checkout`,
-`add`/`commit`, and `push`/`freeze-release`. Step 3 is three commands in
+`add`/`commit`, and `push`/`release freeze`. Step 3 is three commands in
 one; §3.1 opens it up and explains why their order cannot be changed.
 
 **Who it is for.** Anyone adopting a real project that both lacks a `.cgs`
@@ -349,16 +349,18 @@ pixi run cgitsync push
 > token](https://gitlab.com/-/user_settings/personal_access_tokens) used
 > as the HTTPS password works too.) `--force-protocol` persists the
 > rewrite, so it applies to every command after this one too — no need to
-> repeat the flag on `freeze-release` below.
+> repeat the flag on `release freeze` below.
 
 For a versioned snapshot instead of a plain push, use the minimalist
 cycle:
 
 ```bash
-pixi run cgitsync freeze-release retire-submodules-v1 "retire git submodules"
+pixi run cgitsync release freeze "retire git submodules" --force-tag retire-submodules-v1
 ```
 
-`freeze-release` (`add → commit → pull → push → freeze`) skips the `pull`
+It is tagged `<project-name>-retire-submodules-v1`: without `--force-tag`, the
+release would take the version in the root's `pixi.toml`, or the next
+number. `release freeze` (`add → commit → pull → push → freeze`) skips the `pull`
 step when the current branch has no upstream — there is nothing to pull
 for a branch that was never published — so no manual `push` beforehand is
 needed either way.
@@ -380,7 +382,7 @@ needed either way.
 | 4 | `pixi run cgitsync branch create retire-submodules` | Create a local branch |
 | 5 | `pixi run cgitsync checkout retire-submodules` | Switch to it |
 | 6 | `pixi run cgitsync add` / `commit "..."` | Stage and commit the conversion |
-| 7 | `pixi run cgitsync push` (or `freeze-release NAME MSG`) | Publish the branch, or cut a versioned release |
+| 7 | `pixi run cgitsync push` (or `release freeze MSG`) | Publish the branch, or cut a versioned release |
 
 If your own project already has a `.cgs`, or you'd rather write one by
 hand than let step 3 draft it, pass it with `--cgs FILE` — the rest of the

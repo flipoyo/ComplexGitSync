@@ -15,12 +15,12 @@ from ComplexGitSync.cli import build_parser
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 REMOVED_COMMANDS = {
-    "clean-init", "purge", "clone", "freeze", "freeze-release-force",
+    "clean-init", "purge", "clone", "freeze", "freeze-release", "freeze-release-force",
     "launch-release", "configure", "create-cgs",
 }
 REMOVED_OPTIONS = {"--force-reclone", "--force-gitignore-sync"}
 KEPT_COMMANDS = {
-    "initialise", "bootstrap", "freeze-release", "status", "view-tree",
+    "initialise", "bootstrap", "release", "status", "view-tree",
     "validate", "pull", "fetch", "autofix", "checkout", "branch",
     "add", "rm", "commit", "merge", "push", "tag",
     "submodules", "verify", "memory",
@@ -61,10 +61,10 @@ def test_init_from_submodules_keeps_every_option_including_force():
     assert {"--cgs", "--max-depth", "--dry-run", "--force", "--force-protocol"} <= _options(sub)
 
 
-def test_view_tree_and_freeze_release_keep_their_options():
+def test_view_tree_and_release_freeze_keep_their_options():
     parsers = _subparsers(build_parser())
     assert {"--depth", "--collapse", "--discover-nested"} <= _options(parsers["view-tree"])
-    assert {"--dry-run", "--gts", "--force-protocol"} <= _options(parsers["freeze-release"])
+    assert {"--dry-run", "--gts", "--force-protocol", "--force-tag"} <= _options(_subparsers(parsers["release"])["freeze"])
 
 
 def test_initialise_still_authors_a_cgs_from_project_and_repo():

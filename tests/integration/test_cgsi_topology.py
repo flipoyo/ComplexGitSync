@@ -522,12 +522,14 @@ class TestGitCommandCycleIntegration:
         assert cli_main(["push", "--gts", str(snapshot)]) == 0
 
         cycle_file.write_text("cli cycle 2\n", encoding="utf-8")
-        assert cli_main(["freeze-release", "v0.2.0", "cli cycle freeze", "--gts", str(snapshot)]) == 0
-        assert cli_main(["checkout", "v0.2.0", "--ref-kind", "tag", "--gts", str(snapshot)]) == 0
+        assert cli_main(["release", "freeze", "cli cycle freeze", "--force-tag", "v0.2.0", "--gts", str(snapshot)]) == 0
+        tag = _run_git(repo, "tag", "--list", "*-v0.2.0")  # <project-name>-v0.2.0
+        assert tag.endswith("-v0.2.0")
+        assert cli_main(["checkout", tag, "--ref-kind", "tag", "--gts", str(snapshot)]) == 0
 
         remote_tags = _run_git(repo, "ls-remote", "--tags", "origin")
-        assert "refs/tags/v0.2.0" in remote_tags
-        # A full add/commit/push/freeze-release/checkout cycle leaves a chain,
+        assert f"refs/tags/{tag}" in remote_tags
+        # A full add/commit/push/release freeze/checkout cycle leaves a chain,
         # one entry per operation, each naming the State it wrote.
         entries = _ledger_entries(repo)
         assert len(entries) >= 1

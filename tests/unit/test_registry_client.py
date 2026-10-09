@@ -795,6 +795,13 @@ def _client_with_root_registry(tmp_path) -> ComplexGitSyncClient:
     return client
 
 
+def _fake_release_plan(monkeypatch, client, *, tag="root-1", version=""):
+    """Skip the tag lookup, which needs real repositories: the plan is given."""
+    plan = {"tag": tag, "project": "root", "version": version, "source": "next number"}
+    monkeypatch.setattr(client._release_commands, "next_release_tag", lambda force_tag=None: plan)
+    monkeypatch.setattr(client._release_commands, "_refuse_taken", lambda tag, source: None)
+
+
 def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path):
     client = _client_with_root_registry(tmp_path)
     client.source_path = tmp_path / "project.gts"
@@ -815,18 +822,22 @@ def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path)
     monkeypatch.setattr(client, "push", lambda **_kwargs: calls.append(("push", None)))
     monkeypatch.setattr(
         client,
-        "freeze",
+        "_freeze_tag",
         lambda name, **kwargs: calls.append(("freeze", (name, kwargs))) or "ok",
     )
+    _fake_release_plan(monkeypatch, client, tag="root-2.0.0", version="2.0.0")
 
-    result = client.freeze_release("v1.0", "release commit")
+    result = client.freeze_release("release commit")
 
     assert result == "ok"
     expected_release = (
         ("semver", ComplexGitSync.__version__),
-        ("git_tag", "v1.0"),
+        ("git_tag", "root-2.0.0"),
         ("artefact:src", ComplexGitSync.__build__),
+        ("project", "root"),
+        ("project:version", "2.0.0"),
     )
+    assert callable(calls[-1][1][1].pop("root_tag_message"))
     assert calls == [
         ("add", None),
         ("commit", ("release commit", False)),
@@ -835,7 +846,7 @@ def test_client_freeze_release_chains_minimalist_workflow(monkeypatch, tmp_path)
         (
             "freeze",
             (
-                "v1.0",
+                "root-2.0.0",
                 {
                     "output_gts": None,
                     "message": "release commit",
@@ -869,15 +880,17 @@ def test_client_freeze_release_names_the_signed_agent_contract(monkeypatch, tmp_
     captured: dict[str, object] = {}
     monkeypatch.setattr(
         client,
-        "freeze",
+        "_freeze_tag",
         lambda name, **kwargs: captured.update(kwargs) or "ok",
     )
+    _fake_release_plan(monkeypatch, client)
 
-    assert client.freeze_release("v1.0", "release commit") == "ok"
+    assert client.freeze_release("release commit") == "ok"
     assert captured["release"] == (
         ("semver", ComplexGitSync.__version__),
-        ("git_tag", "v1.0"),
+        ("git_tag", "root-1"),
         ("artefact:src", ComplexGitSync.__build__),
+        ("project", "root"),
         ("artefact:agent_contract", record.terms_version),
     )
 
@@ -992,7 +1005,7 @@ def test_client_self_history_add_has_no_status_errors_when_nothing_is_loaded(tmp
 
 def test_client_freeze_release_skips_pull_when_branch_has_no_upstream(monkeypatch, tmp_path):
     # Reproduces this ticket's exact scenario: a branch created and checked
-    # out this same session, never pushed. freeze-release must succeed by
+    # out this same session, never pushed. release freeze must succeed by
     # skipping the pull step (nothing to pull yet), not crash with git's
     # "couldn't find remote ref" error.
     client = _client_with_root_registry(tmp_path)
@@ -1007,9 +1020,10 @@ def test_client_freeze_release_skips_pull_when_branch_has_no_upstream(monkeypatc
     monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))
     monkeypatch.setattr(client, "pull_force", lambda source, **_kwargs: calls.append("pull-force"))
     monkeypatch.setattr(client, "push", lambda **_kwargs: calls.append("push"))
-    monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
+    monkeypatch.setattr(client, "_freeze_tag", lambda *args, **kwargs: calls.append("freeze") or "ok")
+    _fake_release_plan(monkeypatch, client)
 
-    assert client.freeze_release("v1.0", "release commit") == "ok"
+    assert client.freeze_release("release commit") == "ok"
     assert calls == ["add", "commit", "push", "freeze"]
 
 
@@ -1037,9 +1051,10 @@ def test_client_freeze_release_pulls_a_branch_whose_upstream_does_not_resolve(
     monkeypatch.setattr(client, "commit", lambda *args, **kwargs: calls.append("commit"))
     monkeypatch.setattr(client, "pull", lambda source, **_kwargs: calls.append("pull"))
     monkeypatch.setattr(client, "push", lambda **_kwargs: calls.append("push"))
-    monkeypatch.setattr(client, "freeze", lambda *args, **kwargs: calls.append("freeze") or "ok")
+    monkeypatch.setattr(client, "_freeze_tag", lambda *args, **kwargs: calls.append("freeze") or "ok")
+    _fake_release_plan(monkeypatch, client)
 
-    assert client.freeze_release("v1.0", "release commit") == "ok"
+    assert client.freeze_release("release commit") == "ok"
     assert calls == ["add", "commit", "pull", "push", "freeze"]
 
 

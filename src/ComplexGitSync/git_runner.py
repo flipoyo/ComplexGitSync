@@ -464,6 +464,12 @@ class GitRunnerProtocol(Protocol):
 
     def create_tag(self, repo_path: Path | str, tag_name: str) -> None: ...
 
+    def create_annotated_tag(self, repo_path: Path | str, tag_name: str, message: str) -> None: ...
+
+    def fetch_tags(self, repo_path: Path | str, pattern: str, *, remote: str = "origin") -> None: ...
+
+    def tag_records(self, repo_path: Path | str, pattern: str) -> list[tuple[str, str, str, str, str]]: ...
+
     def remote_exists(self, repo_path: Path | str, remote: str = "origin") -> bool: ...
 
     def tag_exists(self, repo_path: Path | str, tag_name: str) -> bool: ...
@@ -1618,6 +1624,34 @@ class GitRunner:
     def create_tag(self, repo_path: Path | str, tag_name: str) -> None:
         """Create *tag_name* in *repo_path*."""
         self._run("tag", tag_name, cwd=repo_path)
+
+    def create_annotated_tag(self, repo_path: Path | str, tag_name: str, message: str) -> None:
+        """Create the annotated tag *tag_name* carrying *message* exactly as given."""
+        self._run("tag", "-a", "--cleanup=verbatim", "-m", message, tag_name, cwd=repo_path)
+
+    def fetch_tags(self, repo_path: Path | str, pattern: str, *, remote: str = "origin") -> None:
+        """Bring *remote*'s tags matching *pattern* into *repo_path*, and nothing else.
+
+        No branch, no worktree and no remote-tracking ref moves; a tag that
+        already exists here is never overwritten.
+        """
+        self._run("fetch", "--no-tags", remote, f"refs/tags/{pattern}:refs/tags/{pattern}", cwd=repo_path)
+
+    def tag_records(self, repo_path: Path | str, pattern: str) -> list[tuple[str, str, str, str, str]]:
+        """``(name, object type, tagger, tagger date, message)`` for each tag matching *pattern*.
+
+        The object type is ``tag`` for an annotated tag and ``commit`` for a
+        lightweight one, whose message and tagger are left empty.
+        """
+        fields = "%(refname:lstrip=2)%1f%(objecttype)%1f%(taggername)%1f%(taggerdate:iso-strict)%1f%(contents)%1e"
+        output = self._run("for-each-ref", f"--format={fields}", f"refs/tags/{pattern}", cwd=repo_path).stdout
+        records: list[tuple[str, str, str, str, str]] = []
+        for raw in output.split("\x1e"):
+            parts = raw.lstrip("\n").split("\x1f")
+            if len(parts) == 5 and parts[0]:
+                name, kind, tagger, date, message = parts
+                records.append((name, kind, tagger, date, message if kind == "tag" else ""))
+        return records
 
     def remote_exists(self, repo_path: Path | str, remote: str = "origin") -> bool:
         """Return ``True`` when *remote* exists in *repo_path*."""

@@ -3,9 +3,10 @@
 Ring: 1
 Contract: decide whether a message a person or an agent wrote by hand keeps
     the shape ``AgentConduct.md`` §2 gives it, and say which rule it broke.
-    Reads one file (the tree's ``pyproject.toml``) and runs no Git; never
-    rewrites a message -- a validator that rewrites is a second author.
-Imports: errors
+    Reads the tree's ``pyproject.toml`` and, for the version, its
+    ``pixi.toml`` (``ProjectVersion``); runs no Git; never rewrites a
+    message -- a validator that rewrites is a second author.
+Imports: errors, project_version
 
 Commit ``701a98f`` reached this project's public remote with every
 backtick-quoted phrase replaced by whatever the shell had substituted for it,
@@ -13,7 +14,7 @@ including the live output of ``git rev-parse --abbrev-ref HEAD``. The rule
 existed and the violation was mechanical; the only check between the two was
 a person reading carefully at the end of a long session.
 
-**Whose rule this is.** ``<project-name><version>`` and the three-line cap are
+**Whose rule this is.** ``<project-name>-<version>`` and the three-line cap are
 DevSpec's convention for the messages a project's own contributors write, not
 a law of Git and not something an arbitrary user of ``cgitsync`` has agreed
 to. So the policy binds only a tree that has adopted DevSpec: one whose root
@@ -21,7 +22,9 @@ holds both a ``pyproject.toml`` naming a project and version, and the
 ``AgentConduct.md`` that states the rule. Any other tree gets ``None`` and
 commits exactly as before. The prefix is accepted under the project's
 packaging name *or* its console-script name, because ``pyproject.toml`` says
-``ComplexGitSync`` and the rule's own worked example is ``cgitsync3.3.0``.
+``ComplexGitSync`` and this project writes ``cgitsync-5.2.1``. The version is
+the one a release is tagged with (``project_version.py``), read from
+``pixi.toml`` first and from ``pyproject.toml`` only when that declares none.
 
 **What it can and cannot see.** A message the shell has already mangled
 arrives here as an ordinary, well-formed string -- the substituted text is
@@ -46,6 +49,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .errors import GitSyncError
+from .project_version import ProjectVersion
 
 __all__ = ["CommitMessagePolicy"]
 
@@ -92,7 +96,7 @@ class CommitMessagePolicy:
         except (OSError, tomllib.TOMLDecodeError):
             return None
         name = project.get("name")
-        version = project.get("version")
+        version = ProjectVersion.read(root) or project.get("version")
         if not isinstance(name, str) or not isinstance(version, str) or not name or not version:
             return None
         scripts = project.get("scripts", {})
@@ -107,8 +111,8 @@ class CommitMessagePolicy:
             return ["the message is empty"]
         if not self._has_prefix(body):
             broken.append(
-                f"it must start with '<project-name><version>' -- for example "
-                f"'{self.stems[-1]}{self.version}' -- with no space and no 'v'"
+                f"it must start with '<project-name>-<version>' -- for example "
+                f"'{self.stems[-1]}-{self.version}' -- one dash, no space and no 'v'"
             )
         lines = body.splitlines()
         if len(lines) > _MAX_LINES:
@@ -143,10 +147,10 @@ class CommitMessagePolicy:
     def _has_prefix(self, body: str) -> bool:
         lowered = body.lower()
         for stem in self.stems:
-            prefix = f"{stem}{self.version}".lower()
+            prefix = f"{stem}-{self.version}".lower()
             if lowered.startswith(prefix):
                 rest = body[len(prefix) :]
-                # `cgitsync3.3.01` is another version, not this one.
+                # `cgitsync-3.3.01` is another version, not this one.
                 if not rest or not (rest[0].isalnum() or rest[0] == "."):
                     return True
         return False

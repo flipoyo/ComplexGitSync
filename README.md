@@ -1,4 +1,4 @@
-# ComplexGitSync v5.2.1
+# ComplexGitSync v6.0.1
 ## A distributed git-native Operating Space
 
 *Created: 2026-05-12*
@@ -96,7 +96,7 @@ advanced.
 | Use case | Main commands | Tutorial |
 |---|---|---|
 | Install a small sample tree, and see the two install modes | `bootstrap` (or `initialise`) | [01 — first workspace](tutorials/01_first_multi_repo_workspace.md) |
-| Work on a tree: commit and push every repository at once, release it, go back to a release | `add`, `commit`, `push`, `tag`, `freeze-release` | [02 — working with a tree](tutorials/02_working_with_a_tree.md) |
+| Work on a tree: commit and push every repository at once, release it, load a release anyone made | `add`, `commit`, `push`, `tag`, `release` | [02 — working with a tree](tutorials/02_working_with_a_tree.md) |
 | Install any project that provides a `.cgs` — the usual case | `bootstrap` | [03 — a real build tree](tutorials/03_onboarding_a_real_build_tree.md) |
 | Adopt an existing project with no `.cgs`, or built on git submodules | `discover`, `submodules init` | [04 — adopting a real project](tutorials/04_adopting_a_real_project.md) |
 | Couple public and private repositories | `private = true`, `--private` | [05 — private repositories](tutorials/05_private_repos.md) |

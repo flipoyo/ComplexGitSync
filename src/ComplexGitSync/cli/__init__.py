@@ -17,7 +17,7 @@ kept whole rather than split further, since a command's parser registration,
 handler, and executor are one cohesive unit that splitting mid-command
 would only obscure). See each submodule's own docstring for its slice of
 the command surface: cli._shared (helpers used across every group),
-cli.minimalist (initialise/bootstrap/freeze-release/status/view-tree),
+cli.minimalist (initialise/bootstrap/release/status/view-tree),
 cli.expert (validate/pull/fetch/autofix/checkout/branch/add/rm/commit/merge/
 push/tag/submodules/verify/
 memory/self-history), cli.configuration (discover/repo), cli.suggest (the

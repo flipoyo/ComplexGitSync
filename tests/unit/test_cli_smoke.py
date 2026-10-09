@@ -354,10 +354,12 @@ def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_pat
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def freeze_release(self, name, message, *, force=False, **kwargs):
-            captured_call["name"] = name
+        def next_release_tag(self, force_tag=None):
+            return {"tag": f"demo-{force_tag or 1}", "project": "demo", "version": "", "source": "--force-tag" if force_tag else "next number"}
+
+        def freeze_release(self, message, *, force_tag=None, **kwargs):
             captured_call["message"] = message
-            captured_call["force"] = force
+            captured_call["force_tag"] = force_tag
 
         def get_tree_state(self):
             return SimpleNamespace(
@@ -371,17 +373,16 @@ def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_pat
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
-    exit_code = main(["freeze-release", "v1.0", "release commit", "--gts", str(gts_path)])
+    exit_code = main(["release", "freeze", "release commit", "--force-tag", "v1.0", "--gts", str(gts_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
     assert captured_call == {
         "gts_path": gts_path.resolve(),
-        "name": "v1.0",
         "message": "release commit",
-        "force": False,
+        "force_tag": "v1.0",
     }
-    assert "name=v1.0" in captured.out
+    assert "release=demo-v1.0" in captured.out
     assert "message='release commit'" in captured.out
     assert "snapshot=" in captured.out
     assert "repos:" in captured.out

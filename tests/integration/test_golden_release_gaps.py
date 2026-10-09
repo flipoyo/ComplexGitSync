@@ -192,9 +192,11 @@ class TestFreezeReleaseDivergedHistoryGoldenCoverage:
 
         exit_code = cli_main(
             [
-                "freeze-release",
-                "v0.9.0",
+                "release",
+                "freeze",
                 "release commit",
+                "--force-tag",
+                "v0.9.0",
                 "--gts",
                 str(workspace["snapshot"]),
             ]

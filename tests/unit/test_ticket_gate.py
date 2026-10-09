@@ -179,7 +179,7 @@ def test_commit_refuses_to_add_an_unrecorded_ticket_and_commits_nothing(tmp_path
     before = _git(root, "rev-parse", "HEAD")
 
     with pytest.raises(GitSyncError, match="Gated"):
-        client.commit("ComplexGitSync3.3.0 Archives the Gated ticket.")
+        client.commit("ComplexGitSync-3.3.0 Archives the Gated ticket.")
 
     assert _git(root, "rev-parse", "HEAD") == before
     assert _GATED not in _git(root, "diff", "--cached", "--name-only")
@@ -192,7 +192,7 @@ def test_commit_adds_a_recorded_ticket(tmp_path):
     _RECORD.write(root / ".cgitsync" / ".self-history")
     before = _git(root, "rev-parse", "HEAD")
 
-    client.commit("ComplexGitSync3.3.0 Archives the Gated ticket.")
+    client.commit("ComplexGitSync-3.3.0 Archives the Gated ticket.")
 
     assert _git(root, "rev-parse", "HEAD") != before
 
@@ -207,7 +207,7 @@ def test_commit_ignores_an_unrecorded_ticket_it_does_not_add(tmp_path):
     (root / "work.txt").write_text("one")
     before = _git(root, "rev-parse", "HEAD")
 
-    client.commit("ComplexGitSync3.3.0 Adds some work.")
+    client.commit("ComplexGitSync-3.3.0 Adds some work.")
 
     assert _git(root, "rev-parse", "HEAD") != before
 
@@ -270,11 +270,11 @@ def test_commit_private_refuses_an_unrecorded_ticket_in_the_nested_private_repos
     before = _git(archive, "rev-parse", "HEAD")
 
     with pytest.raises(GitSyncError, match="Gated"):
-        client.commit("ComplexGitSync3.3.0 Archives the Gated ticket.", private=True)
+        client.commit("ComplexGitSync-3.3.0 Archives the Gated ticket.", private=True)
 
     assert _git(archive, "rev-parse", "HEAD") == before
     _RECORD.write(root / ".cgitsync" / ".self-history")
-    client.commit("ComplexGitSync3.3.0 Archives the Gated ticket.", private=True)
+    client.commit("ComplexGitSync-3.3.0 Archives the Gated ticket.", private=True)
     assert _git(archive, "rev-parse", "HEAD") != before
 
 
@@ -284,7 +284,7 @@ def test_a_project_scope_commit_never_looks_at_the_private_archive(tmp_path):
     (root / "work.txt").write_text("one")
     before = _git(root, "rev-parse", "HEAD")
 
-    client.commit("ComplexGitSync3.3.0 Adds some work.")
+    client.commit("ComplexGitSync-3.3.0 Adds some work.")
 
     assert _git(root, "rev-parse", "HEAD") != before
     assert _GATED in _git(archive, "status", "--porcelain")  # left for the private commit

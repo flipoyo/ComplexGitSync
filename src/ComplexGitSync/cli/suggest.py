@@ -47,6 +47,7 @@ RESPELLED: dict[str, str] = {
     "branch --list": "branch list",
     "verify --repair": "verify repair",
     "memory self-history": "self-history list",
+    "freeze-release": "release freeze <message> (tagged <project-name>-<version>; --force-tag names it)",
 }
 
 

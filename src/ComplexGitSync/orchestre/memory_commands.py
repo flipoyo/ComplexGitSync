@@ -1,8 +1,9 @@
-"""memory_commands — Everything the client does with a workspace's memory, its ledger and its releases.
+"""memory_commands — Everything the client does with a workspace's memory and its ledger.
 
 Ring: 3
-Contract: Everything the client does with a workspace's memory, its ledger and its releases.
-Imports: __build__, __version__, cgs_format, client, errors, git_branch, git_repo, git_tree, git_tree_branch, gts_document, master, memory, memory_facts, memory_setup, operations, registry, snapshot_resolver, toolchain
+Contract: Everything the client does with a workspace's memory and its ledger; a
+    release's own workflow is ``release_commands.py``'s.
+Imports: cgs_format, client, errors, git_branch, git_repo, git_tree, git_tree_branch, gts_document, master, memory, memory_facts, memory_setup, operations, registry, snapshot_resolver, toolchain
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .. import __build__, __version__
 from ..cgs_format import CgsDocument, repo_identifier
 from ..errors import (
     ComplexGitSyncError,
@@ -181,95 +181,6 @@ class MemoryCommands:
                 )
         return published
 
-    def freeze_release(
-        self,
-        release_name: str,
-        commit_message: str | None = None,
-        *,
-        output_gts: str | Path | None = None,
-        message: str | None = None,
-        stage_all: bool = True,
-        force_access_protocol: str | None = None,
-    ) -> WorkingGitTree:
-        """Run the minimalist release workflow from a READY tree.
-
-        The workflow is intentionally composed from public tree operations:
-        ``add -> commit -> pull -> push -> freeze``. The pull step
-        is skipped (not attempted) when the current branch has no upstream
-        yet — e.g. a branch just created and checked out this session, never
-        pushed — since there is nothing to pull.
-
-        The question asked is :meth:`GitRunner.upstream_configured`, not
-        :meth:`GitRunner.has_upstream`: ``git pull`` follows
-        ``branch.<name>.merge``, so a branch that names an upstream is
-        pullable whether or not its remote-tracking ref resolves. Asking the
-        stronger question skipped the pull for every branch whose ref was
-        missing — and before the fetch refspec was widened, that was every
-        branch made after the clone.
-
-        ``force_access_protocol`` — see :meth:`push` — is forwarded to the
-        ``pull`` and ``push`` steps above; the remote
-        rewrite it makes persists (``git remote set-url``), so the
-        ``freeze`` step's own tag push, further below, picks it up too
-        without needing the parameter itself.
-
-        Unlike :meth:`freeze`/:meth:`freeze_state`, this records a
-        ``release`` row on the ledger entry it writes: the installed
-        package's own SemVer (``__version__``) and build counter
-        (``__build__``), plus *release_name* as the tag actually applied.
-        See ``.agent/.local/.dev/Versioning.md``, *The release register*.
-        The orchestrator is expected to pass a SemVer-shaped
-        *release_name* (``v<semver>``, matching the tag this workflow
-        pushes); that is a convention, not something this method enforces.
-
-        When ``.agent/.distant/dev-sync/agent-contracts/current`` names a
-        signed :class:`~ComplexGitSync.memory.agent_contract.AgentContractRecord`,
-        the row also carries ``artefact:agent_contract`` naming that
-        record's terms version — absent, not fatal, when none has been
-        signed (AgentContract ticket, D4).
-        """
-        resolved_message = commit_message or message or release_name
-        if self.client.source_path is None:
-            raise GitSyncError("freeze-release requires a loaded .cgs/.gts source path.")
-
-        self.client._log_event(
-            "freeze_release_workflow_start",
-            release_name=release_name,
-            stage_all=stage_all,
-        )
-        self.client.add()
-        self.client.commit(resolved_message, stage_all=False)
-        root_entry = self.client.get_dependency_registry().get(ROOT_REPO_ID)
-        if self.client.git_runner.upstream_configured(root_entry.absolute_path):
-            self.client.pull(self.client.source_path, force_access_protocol=force_access_protocol)
-        else:
-            self.client._log_event(
-                "freeze_release_pull_skipped",
-                reason="current branch has no upstream yet — nothing to pull",
-                absolute_path=root_entry.absolute_path,
-            )
-        self.client.push(force_access_protocol=force_access_protocol)
-        release = [
-            ("semver", __version__),
-            ("git_tag", release_name),
-            ("artefact:src", __build__),
-        ]
-        dev_sync_dir = root_entry.absolute_path / ".agent" / ".distant" / "dev-sync"
-        contract = AgentContractRecord.read_current(dev_sync_dir)
-        if contract is not None:
-            release.append(("artefact:agent_contract", contract.terms_version))
-        else:
-            self.client._log_event("freeze_release_agent_contract_missing", dev_sync_dir=str(dev_sync_dir))
-        registry = self.client.freeze(
-            release_name,
-            output_gts=output_gts,
-            message=resolved_message,
-            stage_all=stage_all,
-            release=tuple(release),
-        )
-        self.client._log_event("freeze_release_workflow_end", release_name=release_name)
-        return registry
-
     def freeze_state(
         self,
         state_name: str,
@@ -280,7 +191,7 @@ class MemoryCommands:
     ) -> WorkingGitTree:
         """Freeze an internal development state from a ``READY`` tree.
 
-        Parameters mirror :meth:`freeze_release`:
+        Parameters mirror :meth:`freeze`:
 
         - ``state_name``: shared tag name applied across all repositories.
         - ``output_gts``: optional snapshot path for the emitted ``.gts`` file.
@@ -316,7 +227,7 @@ class MemoryCommands:
         ``private`` freezes the writable configuration repositories alone.
         Without it every repository this project may write is frozen, which
         is what this command has always done. ``release`` is
-        :meth:`freeze_release`'s own parameter, threaded through rather than
+        ``release freeze``'s own parameter, threaded through rather than
         duplicated; every other caller leaves it ``None``.
         """
         return self.client._freeze_tag(

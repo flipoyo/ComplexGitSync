@@ -50,8 +50,8 @@ them in order — each one builds on the last:
    — and see the difference. Start here.
 2. **[02 — Working with a Tree](02_working_with_a_tree.md)**
    The everyday commands on a READY tree: change files, then `add`,
-   `commit`, `push`, `tag` and `freeze-release` across every repository at
-   once, and go back to a release from its `.gts` State.
+   `commit`, `push`, `tag` and `release freeze` across every repository at
+   once, then list and load that release from a workspace that never saw it.
 3. **[03 — Onboarding a Real Build Tree](03_onboarding_a_real_build_tree.md)**
    The same hand-authored `.cgs` style from Tutorial 1, applied to a real,
    19-repository project (`cawaqs`) — and where `cgitsync` hands off to the

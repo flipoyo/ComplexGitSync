@@ -355,7 +355,7 @@ def test_freeze_release_folds_via_its_own_push_and_its_own_freeze_harmlessly(tmp
     client = _loaded(tree["snapshot"])
     _change(tree["root"], "work.txt", "one")
 
-    client.freeze_release("v-release-1")
+    client.freeze_release("release one", force_tag="v-release-1")
 
     after = _memory_head(tree["memory_remote"], branch="demo")
     assert after != before
@@ -375,10 +375,12 @@ def test_freeze_release_folds_via_its_own_push_and_its_own_freeze_harmlessly(tmp
     release_entry = entries[-1]
     assert release_entry.command == "freeze_release"
     release = dict(release_entry.release)
+    project = release["project"]
     assert release == {
         "semver": complexgitsync_pkg.__version__,
-        "git_tag": "v-release-1",
+        "git_tag": f"{project}-v-release-1",
         "artefact:src": complexgitsync_pkg.__build__,
+        "project": project,
     }
 
 
@@ -416,3 +418,27 @@ def test_checking_out_a_release_tag_leaves_the_memory_on_its_branch(tmp_path):
 
     client.checkout("main")
     assert [entry.seq for entry in pending.read_ledger_entries()][: len(entries)] == entries
+
+
+def test_a_release_in_a_dev_tree_is_listed_and_loaded_and_the_memory_stays_on_its_branch(tmp_path):
+    """ReleaseCommand: a DEV tree's release lists from its ledger and its tag;
+    loading it detaches the project, never the memory, which records history."""
+    tree = _memory_ready_workspace(tmp_path)
+    client = _loaded(tree["snapshot"])
+    _change(tree["root"], "work.txt", "one")
+    client.freeze_release("release one", force_tag="r1")
+    released = _git(tree["root"], "rev-parse", "HEAD")
+    _change(tree["root"], "work.txt", "two")
+    client.commit("after the release")
+    client.push()
+    memory_branch = _git(tree["mount"], "branch", "--show-current")
+
+    rows = {row["tag"]: row for row in client.list_releases()}
+    tag = next(name for name in rows if name.endswith("-r1"))
+    assert rows[tag]["source"] == "ledger+tag"
+
+    client.load_release("r1")
+
+    assert _git(tree["root"], "rev-parse", "HEAD") == released
+    assert _git(tree["root"], "branch", "--show-current") == ""
+    assert _git(tree["mount"], "branch", "--show-current") == memory_branch

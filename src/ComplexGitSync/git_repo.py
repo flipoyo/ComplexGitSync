@@ -128,7 +128,7 @@ class RepoScope(StrEnum):
         branch of its own. What ``--private`` selects.
     ``WRITABLE``
         ``PROJECT`` and ``PRIVATE`` together — every repository ComplexGitSync
-        may write to at all. What ``tag`` and ``freeze-release`` reach.
+        may write to at all. What ``tag`` and ``release freeze`` reach.
     ``ALL``
         Every repository, read-only configuration repos included. What
         ``clone``, ``pull``, ``status`` and ``view-tree`` reach, because

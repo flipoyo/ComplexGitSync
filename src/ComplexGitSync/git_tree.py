@@ -40,7 +40,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import deque
-from collections.abc import Collection, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path, PurePath, PurePosixPath
@@ -332,6 +332,7 @@ class GitTreeGitCommands:
         stage_all: bool = True,
         tree: WorkingGitTree | None = None,
         scope: RepoScope = RepoScope.WRITABLE,
+        root_tag_message: Callable[[], str] | None = None,
     ) -> None:
         from .operations import freeze_release_tree
 
@@ -342,6 +343,7 @@ class GitTreeGitCommands:
             message=message,
             stage_all=stage_all,
             scope=scope,
+            root_tag_message=root_tag_message,
         )
 
     def clone(

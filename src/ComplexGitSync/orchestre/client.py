@@ -5,7 +5,7 @@ Contract: hold one client's state (registry, runner, clock, the last results a
     caller reads back) and expose every public method unchanged, each
     delegating to the collaborator that owns it; keep the private helpers that
     several collaborators share, and the ones tests reach through the client.
-Imports: auth_hints, autofix, cgs_format, clone_guard, command_run_logger, discovery, discovery_commands, document_loader, environment_commands, errors, git_branch, git_probes, git_repo, git_runner, git_tree, git_tree_branch, gitignore_sync, installer, memory, memory_commands, memory_setup, operations, orchestre, reporting, reports, runtime_state_store, status_render, tree_commands, tree_env, universal_clock
+Imports: auth_hints, autofix, cgs_format, clone_guard, command_run_logger, discovery, discovery_commands, document_loader, environment_commands, errors, git_branch, git_probes, git_repo, git_runner, git_tree, git_tree_branch, gitignore_sync, installer, memory, memory_commands, memory_setup, operations, orchestre, release_commands, reporting, reports, runtime_state_store, status_render, tree_commands, tree_env, universal_clock
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import shutil
 import warnings
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -89,6 +89,7 @@ from .installer import Installer
 from .memory_commands import MemoryCommands
 from .memory_setup import MemorySetup
 from .orchestre import Orchestre
+from .release_commands import ReleaseCommands
 from .reporting import Reporting
 from .reports import (
     DiscoverReport,
@@ -185,6 +186,7 @@ class ComplexGitSyncClient:
         self._document_loader = DocumentLoader(self)
         self._tree_commands = TreeCommands(self)
         self._memory_commands = MemoryCommands(self)
+        self._release_commands = ReleaseCommands(self)
         self._discovery_commands = DiscoveryCommands(self)
         self._reporting = Reporting(self)
         self._environment_commands = EnvironmentCommands(self)
@@ -641,16 +643,27 @@ class ComplexGitSyncClient:
 
     def freeze_release(
         self,
-        release_name: str,
-        commit_message: str | None = None,
+        commit_message: str,
         *,
+        force_tag: str | None = None,
         output_gts: str | Path | None = None,
-        message: str | None = None,
         stage_all: bool = True,
         force_access_protocol: str | None = None,
     ) -> WorkingGitTree:
-        """Run the minimalist release workflow from a READY tree."""
-        return self._memory_commands.freeze_release(release_name, commit_message, output_gts=output_gts, message=message, stage_all=stage_all, force_access_protocol=force_access_protocol)
+        """Release the tree, tagged ``<project-name>-<version or number>`` or ``--force-tag``'s."""
+        return self._release_commands.freeze_release(commit_message, force_tag=force_tag, output_gts=output_gts, stage_all=stage_all, force_access_protocol=force_access_protocol)
+
+    def next_release_tag(self, force_tag: str | None = None) -> dict[str, str]:
+        """The tag ``release freeze`` would use now, and where its suffix came from."""
+        return self._release_commands.next_release_tag(force_tag)
+
+    def list_releases(self) -> list[dict[str, Any]]:
+        """Every release of this project, newest first, whoever made it."""
+        return self._release_commands.list_releases()
+
+    def load_release(self, name: str, *, workspace: str | None = None, cgs_path: str | Path | None = None) -> WorkingGitTree:
+        """Put the tree back at release *name*, in place or into a new *workspace*."""
+        return self._release_commands.load_release(name, workspace=workspace, cgs_path=cgs_path)
 
     def freeze_state(
         self,
@@ -977,6 +990,7 @@ class ComplexGitSyncClient:
         stage_all: bool = True,
         private: bool = False,
         release: tuple[tuple[str, str], ...] | None = None,
+        root_tag_message: Callable[[], str] | None = None,
     ) -> WorkingGitTree:
         """Freeze a release by committing, tagging, and pushing leaf-first.
 
@@ -1007,6 +1021,7 @@ class ComplexGitSyncClient:
             message=message,
             stage_all=stage_all,
             scope=scope,
+            root_tag_message=root_tag_message,
         )
         snapshot_path = self.write_gts_snapshot(
             command_origin="freeze_release",

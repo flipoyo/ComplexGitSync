@@ -18,20 +18,20 @@ from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 POLICY = CommitMessagePolicy(stems=("ComplexGitSync", "cgitsync"), version="3.3.0")
-# 701a98f was written when the project stood at 3.1.1.
+# 701a98f was written when the project stood at 3.1.1; respelled with the dash prefix of ReleaseCommand.
 POLICY_AT_701A98F = CommitMessagePolicy(stems=("ComplexGitSync", "cgitsync"), version="3.1.1")
 
 # What the agent actually drafted for commit 701a98f, reconstructed from the
 # phrases the incident ticket names: inline code spans, as technical prose
 # ordinarily marks up a command.
 INTENDED_701A98F = (
-    "cgitsync3.1.1 Fixes a live crash: `git rev-parse --abbrev-ref HEAD` on an unborn "
+    "cgitsync-3.1.1 Fixes a live crash: `git rev-parse --abbrev-ref HEAD` on an unborn "
     "branch made main raise, and repoints the `bump-version` task at `release/`."
 )
 # What the shell turned it into: every span substituted, the live output of
 # `git rev-parse --abbrev-ref HEAD` ("main") in place of the first.
 AS_COMMITTED_701A98F = (
-    "cgitsync3.1.1 Fixes a live crash: main on an unborn branch made main raise, "
+    "cgitsync-3.1.1 Fixes a live crash: main on an unborn branch made main raise, "
     "and repoints the  task at ."
 )
 
@@ -42,22 +42,23 @@ AS_COMMITTED_701A98F = (
 
 
 def test_a_conforming_message_passes():
-    assert POLICY.violations("cgitsync3.3.0 Adds a refusal before a bad commit message.") == []
+    assert POLICY.violations("cgitsync-3.3.0 Adds a refusal before a bad commit message.") == []
 
 
 def test_either_the_package_name_or_the_script_name_is_accepted():
-    assert POLICY.violations("ComplexGitSync3.3.0 Fixes a thing.") == []
-    assert POLICY.violations("complexgitsync3.3.0 Fixes a thing.") == []
+    assert POLICY.violations("ComplexGitSync-3.3.0 Fixes a thing.") == []
+    assert POLICY.violations("complexgitsync-3.3.0 Fixes a thing.") == []
 
 
 @pytest.mark.parametrize(
     "message",
     [
         "Fixes a thing.",  # no prefix at all
+        "cgitsync3.3.0 Fixes a thing.",  # no dash: the form before ReleaseCommand
         "cgitsync 3.3.0 Fixes a thing.",  # a space
         "cgitsync v3.3.0 Fixes a thing.",  # a 'v'
-        "cgitsync3.2.0 Fixes a thing.",  # a stale version
-        "cgitsync3.3.01 Fixes a thing.",  # another version that shares the prefix
+        "cgitsync-3.2.0 Fixes a thing.",  # a stale version
+        "cgitsync-3.3.01 Fixes a thing.",  # another version that shares the prefix
     ],
 )
 def test_a_wrong_prefix_is_refused(message):
@@ -67,22 +68,22 @@ def test_a_wrong_prefix_is_refused(message):
 
 
 def test_more_than_three_lines_is_refused():
-    broken = POLICY.violations("cgitsync3.3.0 One.\nTwo.\nThree.\nFour.")
+    broken = POLICY.violations("cgitsync-3.3.0 One.\nTwo.\nThree.\nFour.")
     assert broken == ["it must be 3 lines at most, and is 4"]
 
 
 def test_exactly_three_lines_is_allowed():
-    assert POLICY.violations("cgitsync3.3.0 One.\nTwo.\nThree.") == []
+    assert POLICY.violations("cgitsync-3.3.0 One.\nTwo.\nThree.") == []
 
 
 def test_a_backtick_is_refused():
-    broken = POLICY.violations("cgitsync3.3.0 Renames `bump-version` for clarity.")
+    broken = POLICY.violations("cgitsync-3.3.0 Renames `bump-version` for clarity.")
     assert len(broken) == 1
     assert "backtick" in broken[0]
 
 
 def test_command_substitution_is_refused():
-    broken = POLICY.violations("cgitsync3.3.0 Runs $(git rev-parse HEAD) first.")
+    broken = POLICY.violations("cgitsync-3.3.0 Runs $(git rev-parse HEAD) first.")
     assert len(broken) == 1
     assert "$(" in broken[0]
 
@@ -97,13 +98,13 @@ def test_command_substitution_is_refused():
     ],
 )
 def test_an_agent_credit_trailer_is_refused(trailer):
-    broken = POLICY.violations(f"cgitsync3.3.0 Fixes a thing.\n{trailer}")
+    broken = POLICY.violations(f"cgitsync-3.3.0 Fixes a thing.\n{trailer}")
     assert len(broken) == 1
     assert "never credited" in broken[0]
 
 
 def test_ordinary_prose_that_mentions_generating_is_not_a_trailer():
-    assert POLICY.violations("cgitsync3.3.0 Fixes how a report is generated with a template.") == []
+    assert POLICY.violations("cgitsync-3.3.0 Fixes how a report is generated with a template.") == []
 
 
 def test_every_broken_rule_is_named_at_once():
@@ -159,6 +160,16 @@ def test_a_tree_that_adopted_devspec_is_bound(tmp_path):
     assert policy is not None
     assert policy.version == "3.3.0"
     assert policy.stems == ("ComplexGitSync", "cgitsync")
+
+
+def test_the_version_comes_from_pixi_toml_before_pyproject(tmp_path):
+    """The same number a release is tagged with (ReleaseCommand D6)."""
+    _adopt_devspec(tmp_path)
+    (tmp_path / "pixi.toml").write_text('[workspace]\nname = "ComplexGitSync"\nversion = "6.0.0"\n')
+    policy = CommitMessagePolicy.for_tree(tmp_path)
+    assert policy is not None and policy.version == "6.0.0"
+    assert policy.violations("cgitsync-6.0.0 Releases.") == []
+    assert len(policy.violations("cgitsync6.0.0 Releases.")) == 1
 
 
 def test_a_tree_without_agentconduct_is_not_bound(tmp_path):
@@ -265,7 +276,7 @@ def test_commit_accepts_a_conforming_message_in_a_devspec_tree(tmp_path):
     (root / "work.txt").write_text("one")
     before = _git(root, "rev-parse", "HEAD")
 
-    client.commit("cgitsync3.3.0 Adds a work file.")
+    client.commit("cgitsync-3.3.0 Adds a work file.")
 
     assert _git(root, "rev-parse", "HEAD") != before
 

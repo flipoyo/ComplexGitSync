@@ -46,10 +46,17 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
         "cgitsync bootstrap install.cgs",
         "cgitsync bootstrap release.gts MyProject --cgs-path ~/work",
     )),
-    ("freeze-release",): (None, (
-        'cgitsync freeze-release v1.2.0 "Release 1.2.0"',
-        'cgitsync freeze-release v1.2.0 "Release 1.2.0" --dry-run',
-    )),
+    ("release",): (None, ("cgitsync release list", 'cgitsync release freeze "Release notes"', "cgitsync release load 1.2.0")),
+    ("release", "freeze"): (
+        "Tagged <project-name>-<version> from the root's pixi.toml, or the next number when it declares none; "
+        "--force-tag names it <project-name>-TAG. A version already released is refused.",
+        ('cgitsync release freeze "Release 1.2.0"', 'cgitsync release freeze "Beta" --force-tag beta', 'cgitsync release freeze "Release" --dry-run'),
+    ),
+    ("release", "list"): (
+        "Read from this workspace's ledger and from the root repository's tags, so a release another user made is listed too.",
+        ("cgitsync release list", "cgitsync release list --json"),
+    ),
+    ("release", "load"): (None, ("cgitsync release load 1.2.0", "cgitsync release load MyProject-3", "cgitsync release load 1.2.0 --workspace MyProject-1.2.0")),
     ("status",): (None, ("cgitsync status", "cgitsync status --json")),
     ("view-tree",): (None, ("cgitsync view-tree", "cgitsync view-tree install.cgs --depth 1")),
     ("validate",): (None, ("cgitsync validate project.cgs", "cgitsync validate project.cgs --discover-nested")),

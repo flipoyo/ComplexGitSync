@@ -2,55 +2,29 @@
 
 Adapted from the end-to-end ``main([...])`` coverage in
 ``tests/unit/test_cli_smoke.py`` for the eight Minimalist commands
-(``initialise``, ``bootstrap``, ``clean-init``, ``freeze-release``,
-``freeze-release-force``, ``status``, ``view-tree``, ``launch-release``),
+(``initialise``, ``bootstrap``, ``clean-init``, ``release`` (formerly
+``freeze-release``), ``status``, ``view-tree``, ``launch-release``),
 so this module's ``register_parsers``/``_handle_*``/``_execute_*`` surface
 is covered directly rather than only through the not-yet-integrated
 ``cli.py`` -> ``cli/`` package split.
 
-``cli/minimalist.py`` cannot yet be imported as
-``ComplexGitSync.cli.minimalist`` via a normal ``import`` statement, for the
-same reason documented in ``tests/unit/test_cli_shared.py``:
-``ComplexGitSync/cli.py`` (the file) and ``ComplexGitSync/cli/`` (the new
-package-in-progress, still missing ``__init__.py`` on purpose — see the
-P6-cli-author work package) coexist, and Python resolves
-``ComplexGitSync.cli`` to the existing module file, not the new package
-directory. Both ``cli/_shared.py`` and ``cli/minimalist.py`` are loaded
-directly from their file paths instead; ``minimalist.py``'s own
-``from ._shared import ...`` resolves correctly because ``_shared`` is
-pre-registered in ``sys.modules`` under ``ComplexGitSync.cli._shared``
-before ``minimalist.py`` is executed.
+Both modules are imported normally: the ``cli.py`` file that once shadowed
+the ``cli/`` package is gone, and loading them by path made second copies
+that a patch on one could not reach.
 """
 
 from __future__ import annotations
 
 import argparse
-import importlib.util
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from ComplexGitSync.cgs_format import CgsDocument
+from ComplexGitSync.cli import _shared, minimalist
 from ComplexGitSync.errors import InstallFrontierError
 from ComplexGitSync.settings import UseCase
-
-
-def _load_module(name: str, relative_parts: tuple[str, ...]):
-    module_path = Path(__file__).resolve().parents[2].joinpath(
-        "src", "ComplexGitSync", *relative_parts
-    )
-    spec = importlib.util.spec_from_file_location(name, module_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
-
-
-_shared = _load_module("ComplexGitSync.cli._shared", ("cli", "_shared.py"))
-minimalist = _load_module("ComplexGitSync.cli.minimalist", ("cli", "minimalist.py"))
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -83,7 +57,7 @@ def test_commands_dict_has_exactly_the_five_minimalist_commands():
     assert set(minimalist.COMMANDS) == {
         "initialise",
         "bootstrap",
-        "freeze-release",
+        "release",
         "status",
         "view-tree",
     }
@@ -94,8 +68,8 @@ def test_commands_help_text_matches_readme_command_table():
         "Nested install: build the dependencies of a project whose root is already "
         "checked out here, from a .cgs (branch tips) or a .gts (recorded commits)."
     )
-    assert minimalist.COMMANDS["freeze-release"] == (
-        "Run add, commit, pull, push, and freeze from a READY tree."
+    assert minimalist.COMMANDS["release"] == (
+        "Freeze, list or load a release of the project (freeze, list, load)."
     )
     assert minimalist.COMMANDS["status"] == "Summarize tree readiness and sync state."
     assert minimalist.COMMANDS["view-tree"] == "Render a topology-focused tree view in terminal."
@@ -510,7 +484,7 @@ def test_bootstrap_without_a_name_leaves_it_to_the_source(monkeypatch, capsys, t
 
 
 # ---------------------------------------------------------------------------
-# freeze-release / freeze-release-force
+# release freeze (formerly freeze-release)
 # ---------------------------------------------------------------------------
 
 
@@ -524,10 +498,12 @@ def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_pat
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def freeze_release(self, name, message, *, force=False, **kwargs):
-            captured_call["name"] = name
+        def next_release_tag(self, force_tag=None):
+            return {"tag": f"demo-{force_tag or 1}", "project": "demo", "version": "", "source": "--force-tag" if force_tag else "next number"}
+
+        def freeze_release(self, message, *, force_tag=None, **kwargs):
             captured_call["message"] = message
-            captured_call["force"] = force
+            captured_call["force_tag"] = force_tag
 
         def get_tree_state(self):
             return SimpleNamespace(
@@ -541,17 +517,16 @@ def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_pat
 
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
-    exit_code = _dispatch(["freeze-release", "v1.0", "release commit", "--gts", str(gts_path)])
+    exit_code = _dispatch(["release", "freeze", "release commit", "--force-tag", "v1.0", "--gts", str(gts_path)])
     captured = capsys.readouterr()
 
     assert exit_code == 0
     assert captured_call == {
         "gts_path": gts_path.resolve(),
-        "name": "v1.0",
         "message": "release commit",
-        "force": False,
+        "force_tag": "v1.0",
     }
-    assert "name=v1.0" in captured.out
+    assert "release=demo-v1.0" in captured.out
     assert "message='release commit'" in captured.out
     assert "snapshot=" in captured.out
     assert "repos:" in captured.out
@@ -564,7 +539,10 @@ def test_freeze_release_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def freeze_release(self, name, message, *, force=False, **kwargs):
+        def next_release_tag(self, force_tag=None):
+            return {"tag": "demo-1", "project": "demo", "version": "", "source": "next number"}
+
+        def freeze_release(self, message, **kwargs):
             raise AssertionError("freeze_release should not be called during --dry-run")
 
         def get_tree_state(self):
@@ -577,14 +555,14 @@ def test_freeze_release_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
     gts_path = tmp_path / "project.gts"
     gts_path.touch()
     exit_code = _dispatch(
-        ["freeze-release", "v1.0", "release commit", "--gts", str(gts_path), "--dry-run"]
+        ["release", "freeze", "release commit", "--gts", str(gts_path), "--dry-run"]
     )
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "dry_run=true command=freeze-release" in captured.out
+    assert "dry_run=true command=release-freeze" in captured.out
     assert "cgitsync pull" in captured.out
-    assert "freeze v1.0" in captured.out
+    assert "tag demo-1 and record the State" in captured.out
 
 
 # ---------------------------------------------------------------------------

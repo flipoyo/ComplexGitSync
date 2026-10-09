@@ -213,7 +213,7 @@ which does both halves at once (see *Or do both at once* below). It
 narrows the command to your writable configuration repositories alone — so
 you can commit, push, tag or check them out on their own without reaching
 for plain `git`. Read-only ones are never written to, with or without it.
-The whole-tree commands — `bootstrap`, `initialise`, `freeze-release` —
+The whole-tree commands — `bootstrap`, `initialise`, `release freeze` —
 do not take it.
 
 ### The whole cycle

@@ -24,7 +24,7 @@ The tutorial CLI steps validated:
   4. ``cgitsync add``                  – changes staged
   5. ``cgitsync commit "…"``           – changes committed
   6. ``cgitsync push``                 – changes pushed
-  7. ``cgitsync freeze-release v1.1.0 "…"`` – release commit + tag + snapshot
+  7. ``cgitsync release freeze "…" --force-tag v1.1.0`` – release commit + CGSil1-v1.1.0 + snapshot
 """
 
 from __future__ import annotations
@@ -228,7 +228,7 @@ class TestTutoCGSil1CLI:
     # ── Tutorial steps 4-8 (end-to-end git cycle) ──────────────────────────
 
     def test_complete_git_cycle(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
-        """Steps 4-7: initialise -> add -> commit -> push -> freeze-release."""
+        """Steps 4-7: initialise -> add -> commit -> push -> release freeze."""
         sandbox = cgsi1_sandbox
         _patch_remote_urls(monkeypatch, sandbox)
         _patch_git_identity(monkeypatch)
@@ -265,16 +265,16 @@ class TestTutoCGSil1CLI:
         assert exit_code == 0
         assert "READY" in captured.out
 
-        # Step 7: freeze-release (add, commit, pull, push, freeze; needs a change to commit)
+        # Step 7: release freeze (add, commit, pull, push, freeze; needs a change to commit)
         (project_root / "release.txt").write_text("release 1.1.0\n", encoding="utf-8")
-        exit_code = cli_main(["freeze-release", "v1.1.0", "release 1.1.0", "--gts", str(gts_path)])
+        exit_code = cli_main(["release", "freeze", "release 1.1.0", "--force-tag", "v1.1.0", "--gts", str(gts_path)])
         captured = capsys.readouterr()
         assert exit_code == 0
         assert "READY" in captured.out
         assert "v1.1.0" in captured.out
 
         # Step 8: return to the frozen release (checkout of its tag)
-        exit_code = cli_main(["checkout", "v1.1.0", "--ref-kind", "tag", "--gts", str(gts_path)])
+        exit_code = cli_main(["checkout", "CGSil1-v1.1.0", "--ref-kind", "tag", "--gts", str(gts_path)])
         captured = capsys.readouterr()
         assert exit_code == 0
         assert "READY" in captured.out
@@ -282,14 +282,13 @@ class TestTutoCGSil1CLI:
 
         # Verify the tags reached the root remote
         root_tags = _run_git(project_root, "ls-remote", "--tags", "origin")
-        assert "refs/tags/v1.1.0" in root_tags
+        assert "refs/tags/CGSil1-v1.1.0" in root_tags
 
     # ── Tutorial 2 (working with a tree), standalone ───────────────────────
 
-    def test_tutorial_2_a_release_reloads_from_its_state(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
-        """Tutorial 2: add/commit/push, tag, freeze-release, then a later change
-        pushed from a fresh .cgs install does not reach a rebuild from the
-        release's .gts."""
+    def test_tutorial_2_a_colleague_lists_and_loads_a_release_made_elsewhere(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
+        """Tutorial 2, Steps 6-8: a release made in one workspace is listed and
+        loaded in another that never saw it, whatever was pushed since."""
         sandbox = cgsi1_sandbox
         _patch_remote_urls(monkeypatch, sandbox)
         _patch_git_identity(monkeypatch)
@@ -305,14 +304,12 @@ class TestTutoCGSil1CLI:
         assert cli_main(["add"]) == 0
         assert cli_main(["commit", "tutorial: a first note"]) == 0
         assert cli_main(["push"]) == 0
-        # Steps 6-7: tag, then release
+        # Steps 6-7: tag, then release: no pixi.toml here, so it is numbered
         assert cli_main(["tag", "v0.9"]) == 0
-        assert cli_main(["freeze-release", "v1.0", "first release of the sandbox"]) == 0
-        release = tmp_path / "CGSil1-v1.0.gts"
-        release.write_bytes(_current_lgr_snapshot_path(home, "CGSil1.lgr").read_bytes())
-        capsys.readouterr()
+        assert cli_main(["release", "freeze", "first release of the sandbox"]) == 0
+        assert "release=CGSil1-1" in capsys.readouterr().out
 
-        # Step 8: load the latest from the .cgs, and spoil it
+        # Step 8: a colleague installs from the .cgs, and spoils main
         assert cli_main(["bootstrap", cgs, "CGSil1-latest", "--cgs-path", str(tmp_path / "two")]) == 0
         latest = tmp_path / "two" / "CGSil1-latest"
         monkeypatch.setenv("CGSHOME", str(latest))
@@ -320,12 +317,17 @@ class TestTutoCGSil1CLI:
         assert cli_main(["add"]) == 0
         assert cli_main(["commit", "tutorial: a change we will regret"]) == 0
         assert cli_main(["push"]) == 0
-        assert "regret" in _run_git(latest / "CGSil2", "show", "origin/main:notes.txt")
+        capsys.readouterr()
 
-        # Step 8: reload the release from the copied .gts
-        assert cli_main(["bootstrap", str(release), "CGSil1-v1.0", "--cgs-path", str(tmp_path / "three")]) == 0
-        restored = tmp_path / "three" / "CGSil1-v1.0" / "CGSil2" / "notes.txt"
-        assert restored.read_text(encoding="utf-8") == "a first note\n"
+        # Step 8: the colleague finds the release and loads it, in place
+        assert cli_main(["release", "list"]) == 0
+        assert "CGSil1-1" in capsys.readouterr().out
+        assert cli_main(["release", "load", "1"]) == 0
+        assert (latest / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "a first note\n"
+
+        # And back to work
+        assert cli_main(["checkout", "main"]) == 0
+        assert "regret" in (latest / "CGSil2" / "notes.txt").read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +336,7 @@ class TestTutoCGSil1CLI:
 
 
 def _released_workspace(sandbox, monkeypatch, tmp_path, *, cgs: Path | None = None) -> Path:
-    """Bootstrap, change, commit, push, then freeze-release v1.0; return CGSHOME."""
+    """Bootstrap, change, commit, push, then release CGSil1-v1.0; return CGSHOME."""
     _patch_remote_urls(monkeypatch, sandbox)
     _patch_git_identity(monkeypatch)
     source = cgs or sandbox["cgs_path"]
@@ -345,7 +347,7 @@ def _released_workspace(sandbox, monkeypatch, tmp_path, *, cgs: Path | None = No
     assert cli_main(["add"]) == 0
     assert cli_main(["commit", "first note"]) == 0
     assert cli_main(["push"]) == 0
-    assert cli_main(["freeze-release", "v1.0", "first release"]) == 0
+    assert cli_main(["release", "freeze", "first release", "--force-tag", "v1.0"]) == 0
     return home
 
 
@@ -368,10 +370,10 @@ class TestReleaseTags:
         out = _change_and_push(home, "after the release", capsys)
 
         assert "pushed CGSil2: origin/main (+1)" in out
-        assert "origin/v1.0" not in out
+        assert "origin/CGSil1-v1.0" not in out
         remote = cgsi1_sandbox["CGSil2_remote"]
         assert "after the release" in _run_git(remote, "show", "main:notes.txt")
-        assert _run_git(remote, "rev-parse", "v1.0^{commit}") != _run_git(remote, "rev-parse", "main")
+        assert _run_git(remote, "rev-parse", "CGSil1-v1.0^{commit}") != _run_git(remote, "rev-parse", "main")
 
     def test_checkout_of_the_tag_restores_the_release_and_creates_no_branch(
         self, cgsi1_sandbox, monkeypatch, tmp_path, capsys
@@ -379,12 +381,12 @@ class TestReleaseTags:
         home = _released_workspace(cgsi1_sandbox, monkeypatch, tmp_path)
         _change_and_push(home, "after the release", capsys)
 
-        assert cli_main(["checkout", "v1.0", "--ref-kind", "tag"]) == 0
+        assert cli_main(["checkout", "CGSil1-v1.0", "--ref-kind", "tag"]) == 0
 
         assert (home / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "a first note\n"
         for repo in (home, home / "CGSil2", home / "CGSih1"):
-            assert _run_git(repo, "for-each-ref", "refs/heads/v1.0") == ""
-            assert _run_git(repo, "rev-parse", "HEAD") == _run_git(repo, "rev-parse", "v1.0^{commit}")
+            assert _run_git(repo, "for-each-ref", "refs/heads/CGSil1-v1.0") == ""
+            assert _run_git(repo, "rev-parse", "HEAD") == _run_git(repo, "rev-parse", "CGSil1-v1.0^{commit}")
 
         assert cli_main(["checkout", "main"]) == 0
         assert "after the release" in (home / "CGSil2" / "notes.txt").read_text(encoding="utf-8")
@@ -418,15 +420,15 @@ class TestReleaseTags:
         assert _run_git(home / "CGSih1", "tag", "--list") == ""
 
         with pytest.warns(UserWarning, match="left as they are.*CGSih1"):
-            assert cli_main(["checkout", "v1.0", "--ref-kind", "tag"]) == 0
+            assert cli_main(["checkout", "CGSil1-v1.0", "--ref-kind", "tag"]) == 0
         assert _run_git(home / "CGSih1", "branch", "--show-current") == "main"
         assert _run_git(home / "CGSil2", "branch", "--show-current") == ""
 
         assert cli_main(["checkout", "main"]) == 0
-        _run_git(home / "CGSil2", "tag", "-d", "v1.0")
-        _run_git(cgsi1_sandbox["CGSil2_remote"], "tag", "-d", "v1.0")
+        _run_git(home / "CGSil2", "tag", "-d", "CGSil1-v1.0")
+        _run_git(cgsi1_sandbox["CGSil2_remote"], "tag", "-d", "CGSil1-v1.0")
         before = _run_git(home, "rev-parse", "HEAD")
-        assert cli_main(["checkout", "v1.0", "--ref-kind", "tag"]) != 0
+        assert cli_main(["checkout", "CGSil1-v1.0", "--ref-kind", "tag"]) != 0
         assert _run_git(home, "branch", "--show-current") == "main"
         assert _run_git(home, "rev-parse", "HEAD") == before
 

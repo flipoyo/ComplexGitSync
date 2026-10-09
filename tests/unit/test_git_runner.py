@@ -1101,6 +1101,15 @@ class _FakeGitRunner:
     def create_tag(self, repo_path, tag_name: str) -> None:
         return None
 
+    def create_annotated_tag(self, repo_path, tag_name: str, message: str) -> None:
+        return None
+
+    def fetch_tags(self, repo_path, pattern: str, *, remote: str = "origin") -> None:
+        return None
+
+    def tag_records(self, repo_path, pattern: str) -> list[tuple[str, str, str, str, str]]:
+        return []
+
     def remote_exists(self, repo_path, remote: str = "origin") -> bool:
         return True
 

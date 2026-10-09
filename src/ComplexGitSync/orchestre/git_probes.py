@@ -266,7 +266,7 @@ class GitProbes:
         ``--private``, only the **writable** configuration repos — the ones the
         ``.cgs`` declares ``private = true, writable = true``. With ``--all``,
         both in a single pass, sharing one commit message the way
-        ``freeze-release`` already does.
+        ``release freeze`` already does.
 
         ``--private`` raises rather than silently doing nothing when no
         repository qualifies, since a command that quietly touched nothing is

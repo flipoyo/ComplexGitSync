@@ -320,7 +320,7 @@ class BranchOperation:
         capture it; such a branch is named in a warning and never deleted.
 
         A read-only (private/distant) repository was never tagged — ``tag``
-        and ``freeze-release`` tag only what this project may push — so it is
+        and ``release freeze`` tag only what this project may push — so it is
         left where it is, and a warning says so and points to the release's
         ``.gts``, which records its exact commit.
 

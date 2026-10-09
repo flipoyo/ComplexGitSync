@@ -7,6 +7,7 @@ Imports: errors, git_repo, git_tree, orchestre, outcome, preflight, restart
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from ..errors import GitSyncError
@@ -17,6 +18,7 @@ from ..git_repo import (
     WorkingRepo,
 )
 from ..git_tree import (
+    ROOT_REPO_ID,
     WorkingGitTree,
     iter_tree_leaf_first,
 )
@@ -195,6 +197,7 @@ class PushOperation:
         message: str | None = None,
         stage_all: bool = True,
         scope: RepoScope = RepoScope.WRITABLE,
+        root_tag_message: Callable[[], str] | None = None,
     ) -> None:
         """Freeze a release by committing, tagging, and pushing leaf-first.
 
@@ -208,6 +211,11 @@ class PushOperation:
         by the ledger's ``release`` row (ReleaseTags D1). When this step's own
         commit made a new commit, the branch is pushed with the tag, so the
         remote branch is never left behind the release it carries (R5).
+
+        With *root_tag_message* (``release freeze``), the root is tagged last,
+        once every commit is final, with an annotated tag whose message the
+        callable writes: it reads the commits this loop recorded, and tagging
+        moves none of them (ReleaseCommand D2).
         """
         Preflight.assert_ready(tree)
         Preflight.run_preflight_checks(
@@ -230,7 +238,9 @@ class PushOperation:
             committed = git_runner.has_staged_changes(repo.absolute_path)
             if committed:
                 git_runner.commit(repo.absolute_path, commit_message)
-            git_runner.create_tag(repo.absolute_path, tag_name)
+            annotated_root = root_tag_message is not None and repo.repo_id == ROOT_REPO_ID
+            if not annotated_root:
+                git_runner.create_tag(repo.absolute_path, tag_name)
             remote = repo.remote_name or "origin"
             if committed:
                 branch = git_runner.current_branch(repo.absolute_path)
@@ -242,10 +252,15 @@ class PushOperation:
                         ref_name=branch,
                         set_upstream=not git_runner.has_upstream(repo.absolute_path),
                     )
-            git_runner.push(repo.absolute_path, remote=remote, ref_name=tag_name)
+            if not annotated_root:
+                git_runner.push(repo.absolute_path, remote=remote, ref_name=tag_name)
             repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
 
         tree.recompute_tree_state()
+        root = tree.repos.get(ROOT_REPO_ID)
+        if root_tag_message is not None and root is not None and scope.includes(root):
+            git_runner.create_annotated_tag(root.absolute_path, tag_name, root_tag_message())
+            git_runner.push(root.absolute_path, remote=root.remote_name or "origin", ref_name=tag_name)
 
 
 __all__ = [

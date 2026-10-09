@@ -2708,8 +2708,9 @@ def test_client_freeze_release_delegates_to_gittree_git_freeze(tmp_path, monkeyp
     captured_call: dict[str, object] = {}
 
     def _spy_freeze(
-        self, git_runner, tag_name, *, message=None, stage_all=True, tree=None, scope=None
+        self, git_runner, tag_name, *, message=None, stage_all=True, tree=None, scope=None, root_tag_message=None
     ):
+        captured_call["root_tag_message"] = root_tag_message
         captured_call["git_runner"] = git_runner
         captured_call["tag_name"] = tag_name
         captured_call["message"] = message
@@ -2730,6 +2731,8 @@ def test_client_freeze_release_delegates_to_gittree_git_freeze(tmp_path, monkeyp
         "tree": None,
         # Bare freeze still reaches every repository this project may write.
         "scope": RepoScope.WRITABLE,
+        # Only a release annotates the root's tag.
+        "root_tag_message": None,
     }
 
 

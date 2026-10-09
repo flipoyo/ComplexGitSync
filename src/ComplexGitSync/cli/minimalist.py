@@ -2,12 +2,11 @@
 
 Ring: 4 (CLI adapter — the same ring cli.py and cli._shared occupy)
 Contract: register argparse subparsers for, and dispatch/execute, exactly
-    the Minimalist commands (``initialise``, ``bootstrap``,
-    ``freeze-release``, ``status``, ``view-tree``) per README.md's command
-    table. Argument collection and printing only — every ``.cgs``/``.gts``
+    the Minimalist commands (``initialise``, ``bootstrap``, ``release``
+    (whose group is ``release_command.py``), ``status``, ``view-tree``). Argument collection and printing only — every ``.cgs``/``.gts``
     semantic is delegated to ``ComplexGitSyncClient``; no ``subprocess``, no
     Git, no repository-identifier parsing.
-Imports: cgs_format, help_text, orchestre, _shared
+Imports: cgs_format, help_text, orchestre, release_command, _shared
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ from pathlib import Path
 
 from ..cgs_format import CgsDocument
 from ..orchestre import ComplexGitSyncClient
+from . import release_command
 from ._shared import (
     _add_json_argument,
     _format_repo_tree_outline,
@@ -25,9 +25,7 @@ from ._shared import (
     _load_ready_registry_source,
     _load_visualization_source,
     _non_negative_int,
-    _print_dry_run_plan,
     _print_gitignore_sync_report,
-    _print_repo_tree_result,
     _resolve_gts_path,
     _resolve_visualization_source,
     _run_with_logging,
@@ -44,7 +42,7 @@ COMMANDS: dict[str, str] = {
         "isolated CGSHOME, from a .cgs or a .gts; run from a ComplexGitSync that is "
         "not inside the project."
     ),
-    "freeze-release": "Run add, commit, pull, push, and freeze from a READY tree.",
+    "release": release_command.HELP,
     "status": "Summarize tree readiness and sync state.",
     "view-tree": "Render a topology-focused tree view in terminal.",
 }
@@ -144,43 +142,8 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                 ),
             )
             subparser.set_defaults(handler=_handle_bootstrap)
-        elif command_name == "freeze-release":
-            subparser.add_argument("name", help="Release tag name.")
-            subparser.add_argument("message", help="Commit message used before release freezing.")
-            subparser.add_argument(
-                "--gts",
-                metavar="FILE",
-                default=None,
-                help=(
-                    "Path to the .gts snapshot that holds the READY registry. "
-                    "When omitted the latest .gts snapshot is discovered automatically "
-                    "under CGSHOME/.cgitsync/."
-                ),
-            )
-            subparser.add_argument(
-                "--search-dir",
-                metavar="DIR",
-                help=SEARCH_DIR_HELP,
-            )
-            subparser.add_argument(
-                "--dry-run",
-                action="store_true",
-                help="Preview the release workflow without mutating repositories.",
-            )
-            subparser.add_argument(
-                "--force-protocol",
-                dest="force_access_protocol",
-                choices=("ssh", "https"),
-                default=None,
-                help=(
-                    "Rewrite every repo's remote to this protocol before the "
-                    "workflow's pull and push steps, persisting "
-                    "the change (git remote set-url) rather than a one-off "
-                    "override. Same meaning as initialise/bootstrap's "
-                    "--force-protocol, applied to an already-cloned tree."
-                ),
-            )
-            subparser.set_defaults(handler=_handle_freeze_release)
+        elif command_name == "release":
+            release_command.register(subparser)
         elif command_name == "status":
             subparser.add_argument(
                 "--gts",
@@ -338,22 +301,6 @@ def _handle_bootstrap(args: argparse.Namespace) -> int:
             source,
             project_name=args.project_name,
             cgs_path=getattr(args, "cgs_path", None),
-            force_access_protocol=getattr(args, "force_access_protocol", None),
-        ),
-    )
-
-
-def _handle_freeze_release(args: argparse.Namespace) -> int:
-    gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
-    return _run_with_logging(
-        command_name="freeze-release",
-        source=gts_path,
-        runner=lambda client, source: _execute_freeze_release(
-            client,
-            source,
-            name=args.name,
-            message=args.message,
-            dry_run=args.dry_run,
             force_access_protocol=getattr(args, "force_access_protocol", None),
         ),
     )
@@ -564,50 +511,6 @@ def _execute_bootstrap(
     print(f"  export CGSHOME={root_path}")
     print("\nOr for the current command:")
     print(f"  CGSHOME={root_path} pixi run cgitsync <command>")
-    return 0
-
-
-def _execute_freeze_release(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    name: str,
-    message: str,
-    dry_run: bool = False,
-    force_access_protocol: str | None = None,
-) -> int:
-    _load_ready_registry_source(client, source_path)
-    pull_action = "git pull --ff-only"
-    print(
-        "git_command="
-        f"git add --all && git commit -m {message!r} && {pull_action} && "
-        "git push && "
-        f"git add --all && git commit -m {message!r} && git tag {name} && git push"
-    )
-    if dry_run:
-        _print_dry_run_plan(
-            client,
-            command_name="freeze-release",
-            actions=(
-                "git add --all",
-                f"git commit -m {message!r}",
-                "cgitsync pull",
-                "git push",
-                f"freeze {name}",
-            ),
-        )
-    else:
-        client.freeze_release(name, message, force_access_protocol=force_access_protocol)
-    tree_state = client.get_tree_state()
-    snapshot_path = getattr(client, "loaded_snapshot_path", None)
-    snapshot_suffix = f" snapshot={snapshot_path}" if snapshot_path is not None else ""
-    print(
-        f"{_format_tree_state_line(tree_state)} "
-        f"name={name} message={message!r}"
-        f"{snapshot_suffix}"
-    )
-    if not dry_run:
-        _print_repo_tree_result(client)
     return 0
 
 
