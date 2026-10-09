@@ -1,4 +1,4 @@
-# Tutorial 4 of 6 — Adopting a Real Project: CaWaQS-Viz
+# Tutorial 4 of 7 — Adopting a Real Project: CaWaQS-Viz
 
 *Created: 2026-09-02*
 

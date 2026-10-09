@@ -1,4 +1,4 @@
-# Tutorial 6 of 6 — Your project's memory: keeping it, reading it, and starting it over
+# Tutorial 6 of 7 — Your project's memory: keeping it, reading it, and starting it over
 
 *Created: 2026-09-17*
 
@@ -34,6 +34,7 @@ that, §4 is all you need — until the day you need §5.
 ```mermaid
 graph LR
     T5["05 — configuration repos"] --> T6["06 — your project's memory<br/>YOU ARE HERE"]
+    T6 --> T7["07 — merging a tree"]
     T6 --> ONCE["§2 — memory setup, or five commands<br/><i>once per project, any time</i>"]
     T6 --> DAILY["§4 — memory push, explore<br/><i>whenever you like</i>"]
     T6 --> REBOOT["§5 — memory reboot<br/><i>on purpose, rarely</i>"]
@@ -319,6 +320,8 @@ pixi run cgitsync memory merge memory-dev --into main --theirs   # keep memory-d
 pixi run cgitsync memory merge memory-dev --into main --ours     # keep main's (what merge did)
 ```
 
+[Tutorial 7](07_merge.md) §5 puts this in the context of a whole tree merge.
+
 Exactly one of `--ours` (the memory of the branch merged *into*) or `--theirs`
 (the memory of the branch merged *from*) is required: which chain continues is
 never guessed. The words are Git's.
@@ -487,6 +490,8 @@ The second order is the one to reach for before folding a long-running
 branch like `memory-dev` into `main`: it keeps the full, real history of
 the work that just landed, in one archived branch, and gives `main`'s
 memory a fresh start exactly at the milestone the merge represents.
+[Tutorial 7](07_merge.md) §5 and §6 cover the memory and branches with no
+common commit in a whole tree merge.
 
 ### 5.2 Adopting fresh instead of rebooting later
 

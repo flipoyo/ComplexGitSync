@@ -1,4 +1,4 @@
-# Tutorial 5 of 6 — Private repos: the ones that configure your project
+# Tutorial 5 of 7 — Private repos: the ones that configure your project
 
 *Created: 2026-09-07*
 
@@ -243,6 +243,8 @@ itself, so `cgitsync` refuses and tells you to check out the target first.
 The last `merge` does **not** merge a branch called `multi-branch` — no
 configuration repo has one. You always name your *project's* branch, and
 each repository works out what that means for itself.
+[Tutorial 7](07_merge.md) teaches merging a whole tree end to end: the
+preview, conflicts and `--resolve`, the memory, and closing the branch.
 
 ## 3. Declaring them
 

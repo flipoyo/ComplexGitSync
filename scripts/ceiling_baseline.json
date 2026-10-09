@@ -72,7 +72,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 39,
-      "loc": 2147,
+      "loc": 2165,
       "public_symbols": 1
     },
     "cli/fetch_command.py": {
@@ -297,7 +297,7 @@
     },
     "operations/merge.py": {
       "internal_imports": 12,
-      "loc": 494,
+      "loc": 516,
       "public_symbols": 5
     },
     "operations/outcome.py": {

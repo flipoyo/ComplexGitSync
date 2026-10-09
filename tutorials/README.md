@@ -4,7 +4,7 @@
 
 ## Abstract — read this first
 
-**What this document is.** The index of ComplexGitSync's six worked
+**What this document is.** The index of ComplexGitSync's seven worked
 tutorials, ordered from simplest to most advanced.
 
 **Why it exists.** The root [README.md](../README.md) says what the tool
@@ -14,11 +14,11 @@ tutorials instead walk one topology end to end,
 so a first-time user sees the full lifecycle before hand-authoring their
 own `.cgs`.
 
-**What you will find.** Six tutorials, each building on the last, plus a
+**What you will find.** Seven tutorials, each building on the last, plus a
 reminder that every command shown is a Pixi task.
 
 **Who it is for.** Anyone new to `cgitsync`. Start at Tutorial 1 regardless
-of your own project's shape — it establishes the vocabulary the other five
+of your own project's shape — it establishes the vocabulary the other six
 assume.
 
 **What you need to do with it.** Work the tutorials in order, or jump
@@ -32,15 +32,16 @@ graph LR
     T3 --> T4["04<br/>adopting a real project"]
     T4 --> T5["05<br/>private repos<br/>local and distant"]
     T5 --> T6["06<br/>your project's memory"]
-    T6 --> REF["docs/MASTER.pdf<br/>full reference"]
+    T6 --> T7["07<br/>merging a tree"]
+    T7 --> REF["docs/MASTER.pdf<br/>full reference"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
-    class T1,T2,T3,T4,T5,T6 here;
+    class T1,T2,T3,T4,T5,T6,T7 here;
 ```
 
 ---
 
-Six worked examples, ordered from the simplest to the most advanced. Do
+Seven worked examples, ordered from the simplest to the most advanced. Do
 them in order — each one builds on the last:
 
 1. **[01 — Your First Multi-Repo Workspace](01_first_multi_repo_workspace.md)**
@@ -70,6 +71,11 @@ them in order — each one builds on the last:
    branches and machines. Also: reading it without a hash (`memory
    explore`), and starting its history over on purpose without losing what
    came before (`memory reboot`).
+7. **[07 — Merging a tree](07_merge.md)**
+   `cgitsync merge` end to end: the preview, the three scopes, `--into`,
+   what `--resolve` and `--all-conflicts` do and never do, why the memory is
+   kept rather than merged, branches with no common commit, and closing the
+   branch afterwards.
 
 > **Every command in these tutorials is a Pixi task.** Run `pixi install`
 > once per checkout, then always invoke the CLI as `pixi run cgitsync ...`

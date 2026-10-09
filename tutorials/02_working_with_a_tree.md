@@ -1,10 +1,10 @@
-# Tutorial 2 of 6 — Working with a Tree
+# Tutorial 2 of 7 — Working with a Tree
 
 *Created: 2026-10-06*
 
 ## Abstract — read this first
 
-**What this document is.** The second of six tutorials in
+**What this document is.** The second of seven tutorials in
 [`tutorials/`](README.md): the commands you use on a READY tree, every
 day. Change a few files in the `CGSil1` tree from Tutorial 1, then `add`,
 `commit` and `push` them across every repository at once, mark the result

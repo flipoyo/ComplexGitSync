@@ -7,6 +7,7 @@ Imports: __version__, auth_hints, autofix, client, commit_message, errors, git_p
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import shutil
 import warnings
@@ -810,18 +811,26 @@ class TreeCommands:
         ff_only: bool = False,
         no_ff: bool = False,
     ) -> ResolveOutcome:
-        """Merge all repositories, resolving conflicts one at a time until done.
+        """Merge all repositories, going on past a text conflict once it is resolved.
 
-        Repeatedly calls :meth:`merge_resolve`, continuing past conflicts after
-        either opening a merge tool (for human-editable files) or regenerating
-        (for binary/generated files). Stops only when all repositories are merged
-        or when a human-editable conflict requires manual resolution.
+        Repeats :meth:`merge_resolve`. A text conflict opens the configured
+        merge tool; when the tool leaves no unmerged file, the merge is
+        committed (``Merge branch '<source>'``) and reported as merged, and the
+        run goes on. It stops, by name, on anything else: a repository whose
+        branches share no commit, a binary conflict (nothing is staged for you;
+        Git keeps the target's version), no merge tool (``hand_command`` says
+        what to run), or a file left unresolved. No file is ever resolved,
+        regenerated or staged in silence.
 
-        Returns the outcome of the last merge_resolve call. If all conflicts were
-        resolved, ``stopped_at`` will be None.
+        Always terminates: each pass must finish one more repository, so there
+        are never more passes than repositories. ``merged`` gathers every pass;
+        ``stopped_at`` is ``None`` when everything was merged.
         """
-        outcome = None
-        while True:
+        registry = self.client.get_dependency_registry()
+        runner = self.client.git_runner
+        merged: list[tuple[str, str]] = []
+        hand_command = None
+        for _ in range(len(registry.repos) + 1):
             outcome = self.client.merge_resolve(
                 project_branch,
                 private=private,
@@ -829,106 +838,20 @@ class TreeCommands:
                 ff_only=ff_only,
                 no_ff=no_ff,
             )
-            # If nothing is left to merge, we're done
-            if outcome.stopped_at is None:
+            merged.extend(outcome.merged)
+            if (
+                outcome.stopped_status != "conflicts"
+                or outcome.binary_paths
+                or outcome.stopped_at_id is None
+            ):
                 break
-
-            stopped_repo_path = None
-            try:
-                registry = self.client.get_dependency_registry()
-                repo = registry.get(outcome.stopped_at_id)
-                stopped_repo_path = repo.absolute_path
-            except (KeyError, AttributeError):
-                # If we can't find the repo, break to avoid infinite loop
+            hand_command = self.client.open_merge_tool(outcome.stopped_at_id)
+            repo_path = registry.get(outcome.stopped_at_id).absolute_path
+            if hand_command is not None or runner.has_unmerged_paths(repo_path):
                 break
-
-            # Check if conflicting files are all binary or generated
-            # If so, regenerate them and continue; otherwise, let user resolve
-            should_continue = self._handle_conflicted_files(
-                outcome.stopped_paths, stopped_repo_path
-            )
-            if not should_continue:
-                # User needs to resolve manually; open merge tool and stop
-                if outcome.stopped_at_id:
-                    self.client.open_merge_tool(outcome.stopped_at_id)
-                break
-
-        return outcome
-
-    def _handle_conflicted_files(self, paths: tuple[Path, ...], repo_path: Path) -> bool:
-        """Check if conflicted files are binary/generated; regenerate if so.
-
-        Returns True if all conflicts were auto-resolved (regenerated), False if
-        human resolution is needed.
-        """
-        if not paths:
-            return True  # No paths means unmergeable (no shared history), skip
-
-        # Patterns for files that should be regenerated rather than merged
-        generated_patterns = {
-            "scripts/ceiling_baseline.json",
-            "docs/MASTER.pdf",
-            "docs/c_*.pdf",
-        }
-
-        binary_extensions = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".ico"}
-
-        def is_generated(path: Path) -> bool:
-            path_str = str(path).replace("\\", "/")
-            # Check exact matches
-            if path_str in generated_patterns:
-                return True
-            # Check pattern matches (c_*.pdf)
-            if "docs/" in path_str and path_str.endswith(".pdf"):
-                return True
-            return False
-
-        def is_binary(path: Path) -> bool:
-            return path.suffix.lower() in binary_extensions
-
-        # Check if all conflicts are binary/generated
-        all_regenerable = all(is_generated(p) or is_binary(p) for p in paths)
-
-        if not all_regenerable:
-            return False  # Has human-editable files; need merge tool
-
-        # Regenerate all binary/generated files
-        for path in paths:
-            if is_generated(path):
-                self._regenerate_file(path, repo_path)
-            # For other binary files, just mark as resolved (user will regenerate)
-            # Add the file to mark conflict as resolved
-            self.client.git_runner._run("add", str(path), cwd=repo_path)
-
-        return True
-
-    def _regenerate_file(self, path: Path, repo_path: Path) -> None:
-        """Regenerate a known generated file.
-
-        Prints the regeneration command and executes it.
-        """
-        path_str = str(path).replace("\\", "/")
-
-        if path_str == "scripts/ceiling_baseline.json":
-            print(
-                f"Regenerating {path_str}...\n"
-                "  pixi run python scripts/check_module_ceilings.py --write-baseline"
-            )
-            self.client.git_runner._run(
-                "python",
-                "scripts/check_module_ceilings.py",
-                "--write-baseline",
-                cwd=repo_path,
-            )
-        elif path_str.endswith(".pdf") and "docs/" in path_str:
-            print(
-                f"Regenerating {path_str}...\n"
-                f"  cd {repo_path}/docs && latexmk -pdf {path.stem}.tex"
-            )
-            docs_path = repo_path / "docs"
-            self.client.git_runner._run(
-                "latexmk", "-pdf", f"{path.stem}.tex", cwd=docs_path
-            )
+            runner.commit(repo_path, f"Merge branch '{outcome.stopped_source}'")
+            merged.append((outcome.stopped_at, outcome.stopped_source))
+        return dataclasses.replace(outcome, merged=tuple(merged), hand_command=hand_command)
 
     def open_merge_tool(self, repo_id: str) -> str | None:
         """Open one repository's conflicts in a merge tool.

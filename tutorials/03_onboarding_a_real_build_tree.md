@@ -1,10 +1,10 @@
-# Tutorial 3 of 6 — Onboarding a Real Build Tree
+# Tutorial 3 of 7 — Onboarding a Real Build Tree
 
 *Created: 2026-08-25*
 
 ## Abstract — read this first
 
-**What this document is.** The third of six worked tutorials in
+**What this document is.** The third of seven worked tutorials in
 [`tutorials/`](README.md): the hand-authored `.cgs` style from
 [Tutorial 1](01_first_multi_repo_workspace.md) applied to a real,
 19-repository hydrological simulation platform (`cawaqs`), then handed off

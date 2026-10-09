@@ -81,6 +81,11 @@ class ResolveOutcome:
     ``KeyError`` for any repo, `.memory` included, whose id is not simply
     its own name — see
     `.agent/.local/.dev/DevTickets/archive/20260918_ResolveMergeToolCrash_DevPlanTicket.md`).
+
+    ``stopped_status``: ``"conflicts"``, ``"unrelated"`` (nothing attempted)
+    or ``None``; ``stopped_source``: the branch it was merging;
+    ``binary_paths``: conflicting non-text files, never staged;
+    ``hand_command``: what to run when no merge tool could be opened.
     """
 
     merged: tuple[tuple[str, str], ...]
@@ -88,6 +93,10 @@ class ResolveOutcome:
     stopped_at_id: str | None
     stopped_paths: tuple[Path, ...]
     not_reached: tuple[str, ...]
+    stopped_status: str | None = None
+    stopped_source: str | None = None
+    binary_paths: tuple[Path, ...] = ()
+    hand_command: str | None = None
 
 
 class MergeOperation:
@@ -145,6 +154,14 @@ class MergeOperation:
         if not check.is_clean:
             return source, "conflicts", tuple(check.conflicting_paths)
         return source, "merge", ()
+
+    @staticmethod
+    def _binary_paths(repo_path: Path, paths: tuple[Path, ...]) -> tuple[Path, ...]:
+        """The conflicting *paths* that are not text (a NUL byte in the first 8 KiB, as Git judges)."""
+        root = Path(repo_path)
+        return tuple(
+            path for path in paths if (root / path).is_file() and b"\0" in (root / path).read_bytes()[:8000]
+        )
 
     @staticmethod
     def describe_unrelated(repo_name: str, source: str, target: str | None) -> str:
@@ -525,18 +542,17 @@ class MergeOperation:
                     MergeOperation._warn_branch_missing(repo, source, project_branch)
                 continue
             if status in ("conflicts", "unrelated"):
-                # ("unrelated" stops here as it did when it was reported as a
-                # conflict; what a stop there does next is MergeErgonomics.)
-                # Let the merge run and fail: that is what writes the conflict
-                # markers a merge tool needs. The error is swallowed on purpose —
-                # the caller is told where the run stopped instead, because it
-                # also has to be told what was merged before that.
-                try:
-                    git_runner.merge(
-                        repo.absolute_path, source, ff_only=ff_only, no_ff=no_ff
-                    )
-                except GitSyncError:
-                    pass
+                # "unrelated" stops by name: Git refuses it, so nothing is tried.
+                # "conflicts" lets the merge fail, which writes the markers a
+                # merge tool needs; the error is swallowed because the caller is
+                # told where the run stopped and what was merged before that.
+                if status == "conflicts":
+                    try:
+                        git_runner.merge(
+                            repo.absolute_path, source, ff_only=ff_only, no_ff=no_ff
+                        )
+                    except GitSyncError:
+                        pass
                 tree.recompute_tree_state()
                 return ResolveOutcome(
                     merged=tuple(merged),
@@ -544,6 +560,9 @@ class MergeOperation:
                     stopped_at_id=repo.repo_id,
                     stopped_paths=conflicts,
                     not_reached=tuple(r.name for r in repos[position + 1 :]),
+                    stopped_status=status,
+                    stopped_source=source,
+                    binary_paths=MergeOperation._binary_paths(repo.absolute_path, conflicts),
                 )
             before = git_runner.rev_parse_head(repo.absolute_path)
             if status == "kept":

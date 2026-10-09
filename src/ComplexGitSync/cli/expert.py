@@ -416,18 +416,20 @@ def _register_merge(subparser: argparse.ArgumentParser) -> None:
         "--resolve",
         action="store_true",
         help=(
-            "Merge one repository at a time and stop at the first conflict, "
-            "then open it in a merge tool. Gives up the guarantee that a "
-            "conflict anywhere leaves the tree untouched."
+            "Merge one repository at a time and stop at the first that cannot "
+            "merge: a text conflict opens in a merge tool; a binary conflict or "
+            "histories with no common commit are named. Gives up the guarantee "
+            "that a conflict anywhere leaves the tree untouched."
         ),
     )
     subparser.add_argument(
         "--all-conflicts",
         action="store_true",
         help=(
-            "Used with --resolve: continue merging all repositories, resolving "
-            "each conflict in turn. Binary/generated files are regenerated automatically; "
-            "human-editable files open in a merge tool."
+            "Used with --resolve: once the merge tool leaves no conflict, commit "
+            "that merge and keep going. Stops, naming the repository, on histories "
+            "with no common commit, a binary conflict, a file left unresolved, or "
+            "no merge tool; no file is resolved or staged for you."
         ),
     )
     subparser.set_defaults(handler=_handle_merge)
@@ -2084,9 +2086,9 @@ def _execute_merge_resolve(
     # mode that can leave the tree half-merged.
     if all_conflicts:
         print(
-            "note: --resolve --all-conflicts merges all repositories, resolving "
-            "each conflict in turn. Binary/generated files are regenerated automatically. "
-            "This may leave the tree partly merged."
+            "note: --resolve --all-conflicts goes on past each text conflict once "
+            "the merge tool has resolved it, and stops by name on anything else. "
+            "No file is resolved or staged for you. This may leave the tree partly merged."
         )
         outcome = client.merge_resolve_all(
             project_branch,
@@ -2121,16 +2123,33 @@ def _execute_merge_resolve(
         _print_repo_tree_result(client)
         return 0
 
-    listed = ", ".join(str(path) for path in outcome.stopped_paths)
-    print(f"stopped at {outcome.stopped_at}: {listed or '(no file named)'}")
+    if outcome.stopped_status == "unrelated":
+        print(f"stopped at {outcome.stopped_at}: its branches share no commit; Git will "
+              "not merge unrelated histories, and nothing was attempted there.")
+    else:
+        listed = ", ".join(str(path) for path in outcome.stopped_paths)
+        print(f"stopped at {outcome.stopped_at}: {listed or '(no file named)'}")
+    for path in outcome.binary_paths:
+        print(
+            f"binary file {path}: Git left this branch's version in place; the "
+            f"other version is on {outcome.stopped_source!r}. Nothing was staged for you."
+        )
     if outcome.not_reached:
         print(f"not reached: {', '.join(outcome.not_reached)}")
 
-    manual = client.open_merge_tool(outcome.stopped_at_id)
-    if manual is None:
-        print(f"merge tool closed. Review {outcome.stopped_at}, then commit.")
+    if outcome.stopped_status == "unrelated":
+        print(f"Check the branch name, or leave {outcome.stopped_at} out of the scope.")
+    elif outcome.hand_command is not None:
+        print(f"no merge tool available. Resolve by hand:\n  {outcome.hand_command}")
+    elif all_conflicts or outcome.binary_paths:
+        # --all-conflicts already opened the tool; a binary file cannot be merged in one.
+        print(f"Resolve {outcome.stopped_at} by hand, then 'cgitsync add' and 'cgitsync commit'.")
     else:
-        print(f"no merge tool available. Resolve by hand:\n  {manual}")
+        manual = client.open_merge_tool(outcome.stopped_at_id)
+        if manual is None:
+            print(f"merge tool closed. Review {outcome.stopped_at}, then commit.")
+        else:
+            print(f"no merge tool available. Resolve by hand:\n  {manual}")
     print(_format_tree_state_line(client.get_tree_state()))
     return 1
 

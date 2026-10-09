@@ -1,10 +1,10 @@
-# Tutorial 1 of 6 — Your First Multi-Repo Workspace
+# Tutorial 1 of 7 — Your First Multi-Repo Workspace
 
 *Created: 2026-06-30*
 
 ## Abstract — read this first
 
-**What this document is.** The first of six tutorials in
+**What this document is.** The first of seven tutorials in
 [`tutorials/`](README.md): how to install a small sample project,
 `CGSil1`, as a GitTree — standalone with `bootstrap`, the usual way, or
 nested with `initialise` — and what the difference is.
