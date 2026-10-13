@@ -47,7 +47,7 @@
     },
     "cli/_shared.py": {
       "internal_imports": 21,
-      "loc": 604,
+      "loc": 610,
       "public_symbols": 0
     },
     "cli/branch_command.py": {
@@ -101,13 +101,13 @@
       "public_symbols": 4
     },
     "cli/minimalist.py": {
-      "internal_imports": 15,
-      "loc": 481,
+      "internal_imports": 16,
+      "loc": 479,
       "public_symbols": 1
     },
     "cli/release_command.py": {
-      "internal_imports": 8,
-      "loc": 99,
+      "internal_imports": 11,
+      "loc": 118,
       "public_symbols": 3
     },
     "cli/suggest.py": {
@@ -162,7 +162,7 @@
     },
     "git_runner.py": {
       "internal_imports": 3,
-      "loc": 1475,
+      "loc": 1484,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -282,7 +282,7 @@
     },
     "operations/branch.py": {
       "internal_imports": 20,
-      "loc": 589,
+      "loc": 606,
       "public_symbols": 4
     },
     "operations/commit.py": {
@@ -341,8 +341,8 @@
       "public_symbols": 1
     },
     "orchestre/client.py": {
-      "internal_imports": 62,
-      "loc": 1334,
+      "internal_imports": 63,
+      "loc": 1335,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -382,7 +382,7 @@
     },
     "orchestre/installer.py": {
       "internal_imports": 20,
-      "loc": 718,
+      "loc": 738,
       "public_symbols": 1
     },
     "orchestre/memory_chapters.py": {
@@ -412,8 +412,8 @@
     },
     "orchestre/release_commands.py": {
       "internal_imports": 19,
-      "loc": 273,
-      "public_symbols": 1
+      "loc": 306,
+      "public_symbols": 2
     },
     "orchestre/reporting.py": {
       "internal_imports": 31,

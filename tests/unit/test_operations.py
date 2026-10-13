@@ -285,6 +285,9 @@ class _FakeGitRunnerForOperations:
     # --- branch / checkout ---
     def current_branch(self, repo_path: Path | str) -> str | None:
         return self._current_branches.get(Path(repo_path), "main")
+    def unnamed_head_commits(self, repo_path: Path | str) -> list[str]:
+        return []
+
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool:
         return branch in self._local_branches.get(Path(repo_path), set())
 
@@ -3363,3 +3366,25 @@ class TestPathsOutsideScopeIsAReadOnlyQuestion:
         registry = _make_registry_with_config_repo(tmp_path)
 
         assert paths_outside_scope(registry, ["/nowhere/at/all"], scope=RepoScope.PRIVATE) == ()
+
+
+def test_checkout_tree_refuses_a_detached_commit_no_name_holds_and_moves_nothing(tmp_path):
+    """ReleaseErgonomy D5: every repository is checked first, so a refusal leaves the tree where it was."""
+    import pytest
+
+    from ComplexGitSync.errors import GitSyncError
+
+    registry = _make_ready_registry(tmp_path)
+    leaf_path = registry.get("root:deps/leaf").absolute_path
+
+    class _Holding(_FakeGitRunnerForOperations):
+        def unnamed_head_commits(self, repo_path):
+            return ["a" * 40] if Path(repo_path) == leaf_path else []
+
+    runner = _Holding()
+    with pytest.raises(GitSyncError) as refused:
+        checkout_tree(registry, runner, "feature-x")
+
+    message = str(refused.value)
+    assert "leaf" in message and "aaaaaaaaaaaa" in message and "branch create" in message
+    assert runner.checked_out == [] and runner.created == []

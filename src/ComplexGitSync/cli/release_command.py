@@ -15,11 +15,13 @@ import json
 from pathlib import Path
 
 from ..orchestre import ComplexGitSyncClient
+from ..orchestre.release_commands import ReleaseCommands, ReleaseLoad
 from ._shared import (
     _format_tree_state_line,
     _load_ready_registry_source,
     _print_dry_run_plan,
     _print_repo_tree_result,
+    _print_workspace_instructions,
     _resolve_gts_path,
     _run_with_logging,
 )
@@ -81,6 +83,7 @@ def _execute_freeze(client: ComplexGitSyncClient, source: Path, args: argparse.N
     plan = client.next_release_tag(args.force_tag)
     print(f"release={plan['tag']} from={plan['source']}")
     if args.dry_run:
+        print(f"tag_subject={plan['tag']}: {ReleaseCommands.subject(args.message, plan['project'])}")
         actions = ("git add --all", f"git commit -m {args.message!r}", "cgitsync pull", "git push", f"tag {plan['tag']} and record the State")
         _print_dry_run_plan(client, command_name="release-freeze", actions=actions)
         return 0
@@ -109,9 +112,27 @@ def _execute_list(client: ComplexGitSyncClient, source: Path, args: argparse.Nam
 
 def _execute_load(client: ComplexGitSyncClient, source: Path, args: argparse.Namespace) -> int:
     _load_ready_registry_source(client, source)
-    client.load_release(args.name, workspace=args.workspace, cgs_path=args.cgs_path)
+    registry = client.load_release(args.name, workspace=args.workspace, cgs_path=args.cgs_path)
     print(f"{_format_tree_state_line(client.get_tree_state())} release={args.name}")
-    if not args.workspace:
-        print("Every repository is detached at the release; 'cgitsync checkout <branch>' goes back to work.")
     _print_repo_tree_result(client)
+    if args.workspace:
+        _print_workspace_instructions(registry.get("root").absolute_path)
+    else:
+        _print_leaving_the_release(client.last_release_load)
     return 0
+
+
+def _print_leaving_the_release(load: ReleaseLoad | None) -> None:
+    """Say what the load did beyond moving, and the two ways off a detached tree."""
+    if load is None:
+        return
+    if load.cloned:
+        print(f"Cloned, being missing: {', '.join(load.cloned)}.")
+    if load.left_alone:
+        print(f"Not in the release, left as they were: {', '.join(load.left_alone)}.")
+    back = load.previous_branch or "<branch>"
+    print(
+        f"Every repository is detached at {load.tag}. To leave it:\n"
+        f"  cgitsync checkout {back}                              back to work, the release left behind\n"
+        "  cgitsync branch create <name> && cgitsync checkout <name>   work from the release, keeping any commit made here"
+    )

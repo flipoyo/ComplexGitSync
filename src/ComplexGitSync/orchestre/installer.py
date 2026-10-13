@@ -7,7 +7,7 @@ Imports: auth_hints, cgs_format, client, errors, git_repo, git_tree, gts_documen
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -678,6 +678,28 @@ class Installer:
             client._log_nested_discovery(discovered)
             if not cloned_any and not discovered:
                 return
+
+    def clone_recorded(self, document: GtsDocument, names: Collection[str]) -> list[str]:
+        """Clone the repositories of *document* named in *names* into the live tree, each at its recorded commit.
+
+        ``release load`` in place (ReleaseErgonomy §3.2): a repository the
+        release records but the tree lacks. The pinned clone path is the
+        installer's own, so a commit its remote no longer holds is refused
+        by name before anything is cloned. Returns the names it cloned,
+        parents first; the caller moves them on to the release afterwards.
+        """
+        live = self.client.get_dependency_registry()
+        snapshot = RegistryTranslator.from_gts_document(document, tree_root=live.get(ROOT_REPO_ID).absolute_path)
+        pins = {repo_id: pin for repo_id, pin in self._pins_for(snapshot, skip_root=True).items() if snapshot.get(repo_id).name in names}
+        wanted = sorted((snapshot.get(repo_id) for repo_id in pins), key=lambda entry: (len(entry.absolute_path.parts), str(entry.absolute_path)))
+        self._require_commits_held(snapshot, pins)
+        for entry in wanted:
+            live.repos[entry.repo_id] = entry
+        self.client._guard_clone_destinations(wanted)
+        for entry in wanted:
+            self.client._clone_registry_entry(entry)
+            self._apply_pin(entry, pins[entry.repo_id])
+        return [entry.name for entry in wanted]
 
     def _apply_pin(self, entry: WorkingRepo, pin: _Pin) -> None:
         """Put a freshly cloned repository on its recorded commit, and back to its record."""

@@ -56,6 +56,18 @@ def test_the_annotation_is_read_back_and_any_other_message_is_not():
     assert ReleaseCommands.parse_annotation("[cgitsync_release]\nthis is [not toml") == {}
 
 
+def test_both_layouts_of_a_tag_message_give_the_same_state():
+    state = '[document]\nsnapshot_hash = "abc"\n\n[[repo_state]]\nname = "a"\n'
+    legacy = f'P-1: release of P\n\n[cgitsync_release]\nproject = "P"\nstate = {state!r}\n'.replace("'", '"""')
+    current = 'P-1: first\n\n[cgitsync_release]\nproject = "P"\nmessage = "first"\n\n' + state
+    for message in (legacy, current):
+        table, tables = ReleaseCommands.parse_release(message)
+        assert table["project"] == "P" and "state" not in table and "cgitsync_release" not in tables
+        assert tables["document"]["snapshot_hash"] == "abc" and tables["repo_state"][0]["name"] == "a"
+    assert ReleaseCommands.parse_release(current)[0]["message"] == "first"
+    assert ReleaseCommands.parse_release("a subject mentioning [cgitsync_release] in passing") == ({}, {})
+
+
 def test_the_project_tree_drops_every_private_repository(tmp_path):
     tree = WorkingGitTree()
     tree.add(WorkingRepo(repo_id="root", name="root", absolute_path=tmp_path))

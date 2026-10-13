@@ -89,7 +89,7 @@ from .installer import Installer
 from .memory_commands import MemoryCommands
 from .memory_setup import MemorySetup
 from .orchestre import Orchestre
-from .release_commands import ReleaseCommands
+from .release_commands import ReleaseCommands, ReleaseLoad
 from .reporting import Reporting
 from .reports import (
     DiscoverReport,
@@ -162,6 +162,8 @@ class ComplexGitSyncClient:
     #: ``last_write_outcomes``.
     last_ancestry: tuple[RepoAncestry, ...] = ()
     last_kept_outcomes: tuple[RepoOutcome, ...] = ()
+    #: What the last in-place ``release load`` cloned, left alone and left the tree detached from.
+    last_release_load: ReleaseLoad | None = None
     #: Set when this run recorded a State in a DEV tree whose ``.cgs`` declares no memory (`MemorySetup`).
     memory_setup_due: bool = False
     run_logger: CommandRunLogger | None = None

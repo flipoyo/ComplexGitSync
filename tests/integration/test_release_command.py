@@ -258,3 +258,162 @@ def test_a_repository_git_cannot_move_puts_every_other_one_back(sandbox, monkeyp
     for repo, sha in before.items():
         assert _run_git(home / repo, "rev-parse", "HEAD") == sha
         assert _run_git(home / repo, "branch", "--show-current") == "main"
+
+
+def _released_then_loaded(sandbox, monkeypatch, tmp_path) -> Path:
+    """A workspace that released ``CGSil1-1``, moved on, and loaded the release in place."""
+    home = _workspace(sandbox, monkeypatch, tmp_path, "one")
+    _note(home, "a first note\n")
+    assert cli_main(["release", "freeze", "first"]) == 0
+    _note(home, "later\n")
+    assert cli_main(["release", "load", "1"]) == 0
+    return home
+
+
+def _commit_by_hand(repo: Path, text: str) -> str:
+    """A commit made with plain Git on a detached ``HEAD``: ``cgitsync commit`` refuses one."""
+    (repo / "notes.txt").write_text(text, encoding="utf-8")
+    _run_git(repo, "add", "notes.txt")
+    _run_git(repo, "commit", "-m", "made while detached")
+    return _run_git(repo, "rev-parse", "HEAD")
+
+
+def test_checkout_a_branch_re_attaches_a_loaded_release(sandbox, monkeypatch, tmp_path, capsys):
+    home = _released_then_loaded(sandbox, monkeypatch, tmp_path)
+    assert _run_git(home / "CGSil2", "branch", "--show-current") == ""
+
+    assert cli_main(["checkout", "main"]) == 0
+
+    assert _run_git(home / "CGSil2", "branch", "--show-current") == "main"
+    assert (home / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "later\n"
+    capsys.readouterr()
+    assert cli_main(["status"]) == 0
+    assert "errors=0" in capsys.readouterr().out
+
+
+def test_a_branch_made_from_a_loaded_release_keeps_a_commit_made_while_detached(sandbox, monkeypatch, tmp_path, capsys):
+    home = _released_then_loaded(sandbox, monkeypatch, tmp_path)
+    release = _run_git(home / "CGSil2", "rev-parse", "HEAD")
+    _commit_by_hand(home / "CGSil2", "a fix to the release\n")
+
+    assert cli_main(["branch", "create", "fix"]) == 0
+    assert cli_main(["checkout", "fix"]) == 0
+
+    assert _run_git(home / "CGSil2", "branch", "--show-current") == "fix"
+    assert _run_git(home / "CGSil2", "rev-parse", "fix~1") == release
+    assert (home / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "a fix to the release\n"
+    assert _run_git(home / "CGSil2", "show", "main:notes.txt") == "later"
+    assert cli_main(["push"]) == 0
+    assert _run_git(sandbox["CGSil2_remote"], "show", "fix:notes.txt") == "a fix to the release"
+    assert _run_git(sandbox["CGSil2_remote"], "show", "main:notes.txt") == "later"
+
+
+def test_checkout_refuses_to_leave_a_commit_made_while_detached(sandbox, monkeypatch, tmp_path, capsys):
+    home = _released_then_loaded(sandbox, monkeypatch, tmp_path)
+    kept = _commit_by_hand(home / "CGSil2", "a fix to the release\n")
+    capsys.readouterr()
+
+    assert cli_main(["checkout", "main"]) != 0
+
+    error = capsys.readouterr().err
+    assert "CGSil2" in error and kept[:12] in error and "branch create" in error
+    assert _run_git(home / "CGSil2", "rev-parse", "HEAD") == kept
+    assert _run_git(home / "CGSil2", "branch", "--show-current") == ""
+    assert cli_main(["branch", "create", "fix"]) == 0
+    assert cli_main(["checkout", "fix"]) == 0
+
+
+def test_the_freeze_message_is_in_the_root_tag_and_the_tag_reads_like_a_gts(sandbox, monkeypatch, tmp_path, capsys):
+    import tomllib
+
+    home = _workspace(sandbox, monkeypatch, tmp_path, "one")
+    _note(home, "a first note\n")
+    assert cli_main(["release", "freeze", "first release of the sandbox"]) == 0
+    capsys.readouterr()
+
+    tag = _run_git(sandbox["CGSil1_remote"], "cat-file", "-p", "CGSil1-1")
+    assert "CGSil1-1: first release of the sandbox" in tag
+    body = tag[tag.index("[cgitsync_release]") :]
+    document = tomllib.loads(body)
+    assert document["cgitsync_release"]["message"] == "first release of the sandbox"
+    assert {"document", "project", "tree_state", "repo_state"} <= set(document)
+    assert max(len(line) for line in tag.splitlines()) < 200
+    from ComplexGitSync.gts_document import GtsDocument
+
+    state = {key: value for key, value in document.items() if key != "cgitsync_release"}
+    assert GtsDocument.from_dict(state).ensure_snapshot_hash() == state["document"]["snapshot_hash"]
+    assert cli_main(["release", "list", "--json"]) == 0
+    assert '"message": "first release of the sandbox"' in capsys.readouterr().out
+
+
+def test_a_freeze_that_commits_nothing_still_writes_its_message_into_the_tag(sandbox, monkeypatch, tmp_path):
+    home = _workspace(sandbox, monkeypatch, tmp_path, "one")
+    _note(home, "a first note\n")
+    assert cli_main(["release", "freeze", "nothing new here"]) == 0
+    assert "CGSil1-1: nothing new here" in _run_git(sandbox["CGSil1_remote"], "cat-file", "-p", "CGSil1-1")
+
+
+def test_a_tag_in_the_6_0_1_layout_still_loads(sandbox, monkeypatch, tmp_path):
+    import tomllib
+
+    import tomli_w
+
+    one = _workspace(sandbox, monkeypatch, tmp_path, "one")
+    _note(one, "a first note\n")
+    assert cli_main(["release", "freeze", "first"]) == 0
+    _note(one, "later\n")
+    # Rewrite the release tag the way 6.0.1 wrote it: the State as one escaped string.
+    old = _run_git(one, "cat-file", "-p", "CGSil1-1")
+    document = tomllib.loads(old[old.index("[cgitsync_release]") :])
+    table = document.pop("cgitsync_release")
+    table.pop("message")
+    table["state"] = tomli_w.dumps(document)
+    legacy = "CGSil1-1: release of CGSil1\n\n" + tomli_w.dumps({"cgitsync_release": table})
+    _run_git(one, "tag", "-f", "-a", "--cleanup=verbatim", "-m", legacy, "CGSil1-1", "CGSil1-1^{commit}")
+    _run_git(one, "push", "--force", "origin", "CGSil1-1")
+    # A second workspace never saw the release: its State can only come from the tag.
+    two = _workspace(sandbox, monkeypatch, tmp_path, "two")
+    assert cli_main(["release", "load", "1"]) == 0
+    assert (two / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "a first note\n"
+
+
+def test_dry_run_shows_the_subject_the_tag_will_carry(sandbox, monkeypatch, tmp_path, capsys):
+    _workspace(sandbox, monkeypatch, tmp_path, "one")
+    capsys.readouterr()
+    assert cli_main(["release", "freeze", "a release\nwith a second line", "--dry-run"]) == 0
+    assert "tag_subject=CGSil1-1: a release" in capsys.readouterr().out
+
+
+def test_load_into_a_workspace_prints_the_export_line_bootstrap_prints(sandbox, monkeypatch, tmp_path, capsys):
+    one = _workspace(sandbox, monkeypatch, tmp_path, "one")
+    _note(one, "a first note\n")
+    assert cli_main(["release", "freeze", "first"]) == 0
+    capsys.readouterr()
+
+    assert cli_main(["release", "load", "1", "--workspace", "r1", "--cgs-path", str(tmp_path / "r")]) == 0
+
+    out = capsys.readouterr().out
+    assert f"export CGSHOME={tmp_path / 'r' / 'r1'}" in out and "To use this workspace, run:" in out
+
+
+def test_load_in_place_clones_a_repository_the_tree_lacks_and_says_how_to_leave(sandbox, monkeypatch, tmp_path, capsys):
+    import shutil
+
+    one = _workspace(sandbox, monkeypatch, tmp_path, "one")
+    _note(one, "a first note\n")
+    assert cli_main(["release", "freeze", "first"]) == 0
+    _note(one, "later\n")
+    shutil.rmtree(one / "CGSih1")
+    capsys.readouterr()
+
+    assert cli_main(["release", "load", "1"]) == 0
+
+    out = capsys.readouterr().out
+    assert "Cloned, being missing: CGSih1" in out
+    assert "cgitsync checkout main" in out and "branch create" in out
+    for name in ("CGSih1", "CGSil2"):
+        assert _run_git(one / name, "branch", "--show-current") == ""
+    assert _run_git(one / "CGSih1", "rev-parse", "HEAD") == _run_git(sandbox["CGSih1_remote"], "rev-parse", "CGSil1-1^{commit}")
+    assert (one / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "a first note\n"
+    assert cli_main(["checkout", "main"]) == 0
+    assert _run_git(one / "CGSih1", "branch", "--show-current") == "main"

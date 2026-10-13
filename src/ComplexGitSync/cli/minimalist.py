@@ -26,6 +26,7 @@ from ._shared import (
     _load_visualization_source,
     _non_negative_int,
     _print_gitignore_sync_report,
+    _print_workspace_instructions,
     _resolve_gts_path,
     _resolve_visualization_source,
     _run_with_logging,
@@ -506,11 +507,7 @@ def _execute_bootstrap(
         f"{_format_tree_state_line(tree_state)} "
         f"root={root_path}"
     )
-    # Print CGSHOME setup instructions for user convenience
-    print("\nTo use this workspace, run:")
-    print(f"  export CGSHOME={root_path}")
-    print("\nOr for the current command:")
-    print(f"  CGSHOME={root_path} pixi run cgitsync <command>")
+    _print_workspace_instructions(root_path)
     return 0
 
 

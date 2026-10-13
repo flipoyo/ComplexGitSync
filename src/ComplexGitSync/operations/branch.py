@@ -256,6 +256,24 @@ class BranchOperation:
             git_runner.create_branch(repo.absolute_path, target)
 
     @staticmethod
+    def refuse_unnamed_commits(tree: WorkingGitTree, git_runner: GitRunner, *, scope: RepoScope = RepoScope.ALL) -> None:
+        """Refuse, before anything moves, to leave a detached commit that no branch or tag names.
+
+        A commit made on a detached ``HEAD`` (a loaded release, a checked-out
+        tag) is held by the reflog alone once ``HEAD`` moves. Every
+        repository is checked first and all are named, so nothing is left half
+        moved; ``branch create`` and ``checkout`` of the new name keep the work.
+        """
+        held = [(repo.name, git_runner.unnamed_head_commits(repo.absolute_path)) for repo in iter_tree(tree, scope) if repo.absolute_path.is_dir()]
+        held = [(name, commits) for name, commits in held if commits]
+        if held:
+            listing = "; ".join(f"{name}: {len(commits)} commit(s), newest {commits[0][:12]}" for name, commits in held)
+            raise GitSyncError(
+                f"checkout was refused: commits made while detached are on no branch ({listing}). Nothing was moved. "
+                "Keep them with 'cgitsync branch create <name>' then 'cgitsync checkout <name>'."
+            )
+
+    @staticmethod
     def checkout_tree(
         tree: WorkingGitTree,
         git_runner: GitRunner,
@@ -281,6 +299,7 @@ class BranchOperation:
         instead: it creates no branch (ReleaseTags R3).
         """
         Preflight.assert_ready(tree)
+        BranchOperation.refuse_unnamed_commits(tree, git_runner, scope=scope)
         if ref_kind is RefKind.TAG:
             BranchOperation.checkout_tag_tree(tree, git_runner, branch_name, scope=scope)
             return

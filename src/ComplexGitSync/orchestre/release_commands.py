@@ -48,10 +48,20 @@ from .memory_chapters import MemoryChapters
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .client import ComplexGitSyncClient
 
-__all__ = ["ReleaseCommands"]
+__all__ = ["ReleaseCommands", "ReleaseLoad"]
 
 #: The table a release tag's message carries, after its one-line subject.
 _ANNOTATION_TABLE = "cgitsync_release"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ReleaseLoad:
+    """What an in-place ``release load`` did, for the command to say."""
+
+    tag: str
+    previous_branch: str | None
+    cloned: tuple[str, ...] = ()
+    left_alone: tuple[str, ...] = ()
 
 
 class ReleaseCommands:
@@ -143,7 +153,7 @@ class ReleaseCommands:
             message=commit_message,
             stage_all=stage_all,
             release=tuple(release),
-            root_tag_message=lambda: self._annotation(tag, plan),
+            root_tag_message=lambda: self._annotation(tag, plan, commit_message),
         )
         self.client._log_event("freeze_release_workflow_end", release_name=tag)
         return registry
@@ -168,13 +178,23 @@ class ReleaseCommands:
         """*registry* without its private repositories: what a release tag may carry."""
         return dataclasses.replace(registry, repos={key: repo for key, repo in registry.repos.items() if not repo.effective_private})
 
-    def _annotation(self, tag: str, plan: dict[str, str]) -> str:
-        """The root tag's message: a subject line, then the release table with its State."""
+    @staticmethod
+    def subject(message: str, project: str) -> str:
+        """The first line of the freeze *message*, which titles the tag on a Git provider's page."""
+        return next((line.strip() for line in message.splitlines() if line.strip()), f"release of {project}")
+
+    def _annotation(self, tag: str, plan: dict[str, str], message: str) -> str:
+        """The root tag's message: a subject line with the freeze message, then one TOML document.
+
+        The document is the release table followed by the State's own tables,
+        laid out as a ``.gts`` file writes them, so a person reads the tag on
+        the Git provider's page (ReleaseErgonomy D1, D2).
+        """
         document = RegistryTranslator.to_gts_document(self.project_tree(self.client.get_dependency_registry()), command_origin="freeze_release", source_cgs_path=None, freeze_name=tag)
-        table = {"project": plan["project"], "tag": tag, "made_with": __version__, "state": tomli_w.dumps(document.to_dict())}
+        table = {"project": plan["project"], "tag": tag, "message": message, "made_with": __version__}
         if plan["version"]:
             table["version"] = plan["version"]
-        return f"{tag}: release of {plan['project']}\n\n" + tomli_w.dumps({_ANNOTATION_TABLE: table})
+        return f"{tag}: {self.subject(message, plan['project'])}\n\n" + tomli_w.dumps({_ANNOTATION_TABLE: table, **document.to_dict()})
 
     @staticmethod
     def utc(moment: str) -> str:
@@ -185,16 +205,30 @@ class ReleaseCommands:
             return moment
 
     @staticmethod
-    def parse_annotation(message: str) -> dict[str, Any]:
-        """The release table a tag message carries, or ``{}`` for any other message."""
-        start = message.find(f"[{_ANNOTATION_TABLE}]")
+    def parse_release(message: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        """The release table and the State tables a tag message carries; two empty dicts for any other message.
+
+        Reads both layouts: the State tables beside the release table
+        (ReleaseErgonomy D2) and the 6.0.1 one, a ``state`` string inside it.
+        """
+        text = f"\n{message}"
+        start = text.find(f"\n[{_ANNOTATION_TABLE}]\n")
         if start < 0:
-            return {}
+            return {}, {}
         try:
-            table = tomllib.loads(message[start:]).get(_ANNOTATION_TABLE, {})
+            body = tomllib.loads(text[start + 1 :])
+            table = body.pop(_ANNOTATION_TABLE, {})
+            if not isinstance(table, dict):
+                return {}, {}
+            legacy = table.pop("state", None)
+            return table, (tomllib.loads(legacy) if isinstance(legacy, str) else body)
         except tomllib.TOMLDecodeError:
-            return {}
-        return table if isinstance(table, dict) else {}
+            return {}, {}
+
+    @classmethod
+    def parse_annotation(cls, message: str) -> dict[str, Any]:
+        """The release table a tag message carries, or ``{}`` for any other message."""
+        return cls.parse_release(message)[0]
 
     # -- list ---------------------------------------------------------------
 
@@ -207,7 +241,7 @@ class ReleaseCommands:
             release = dict(entry.release)
             tag = release.get("git_tag")
             if tag and release.get("project", project) == project:
-                rows[tag] = {"tag": tag, "version": release.get("project:version", ""), "recorded_at": self.utc(entry.recorded_at), "by": "", "state": MemoryStates.parse_hash(entry.state_id) or "", "made_with": release.get("semver", ""), "source": "ledger", "loadable": True}
+                rows[tag] = {"tag": tag, "version": release.get("project:version", ""), "recorded_at": self.utc(entry.recorded_at), "by": "", "state": MemoryStates.parse_hash(entry.state_id) or "", "made_with": release.get("semver", ""), "source": "ledger", "message": "", "loadable": True}
         try:
             self.client.git_runner.fetch_tags(root.absolute_path, f"{project}-*", remote=root.remote_name or "origin")
         except GitSyncError as error:
@@ -217,9 +251,9 @@ class ReleaseCommands:
             if table and table.get("project") != project:
                 continue
             if name in rows:
-                rows[name].update(by=tagger, source="ledger+tag" if table else "ledger")
+                rows[name].update(by=tagger, source="ledger+tag" if table else "ledger", message=table.get("message", ""))
                 continue
-            rows[name] = {"tag": name, "version": table.get("version", ""), "recorded_at": self.utc(date) if date else "", "by": tagger, "state": "", "made_with": table.get("made_with", ""), "source": "tag" if table else "tag only", "loadable": bool(table)}
+            rows[name] = {"tag": name, "version": table.get("version", ""), "recorded_at": self.utc(date) if date else "", "by": tagger, "state": "", "made_with": table.get("made_with", ""), "source": "tag" if table else "tag only", "message": table.get("message", ""), "loadable": bool(table)}
         return sorted(rows.values(), key=lambda row: row["recorded_at"] or "", reverse=True)
 
     # -- load ---------------------------------------------------------------
@@ -256,33 +290,38 @@ class ReleaseCommands:
             if found is not None:
                 return MemoryStates(cgitsync_dir).write(found[0], found[1].to_toml)
         message = next((record[4] for record in self.client.git_runner.tag_records(self._root().absolute_path, row["tag"])), "")
-        text = self.parse_annotation(message).get("state")
-        if not text:
+        state = self.parse_release(message)[1]
+        if not state:
             raise GitSyncError(f"The State of {row['tag']} is neither on this disk, nor in the memory, nor on its tag.")
-        document = GtsDocument.from_dict(tomllib.loads(text))
+        document = GtsDocument.from_dict(state)
         return MemoryStates(cgitsync_dir).write(document.ensure_snapshot_hash(), document.to_toml)
 
     def _load_in_place(self, tag: str, state_path: Path) -> WorkingGitTree:
-        """Detach every recorded repository at its commit; all of them or none.
+        """Detach every recorded repository at its commit, cloning any the tree lacks; all of them or none.
 
         The memory (everything under the root's ``.cgitsync/``) stays on its
         branch, as ``checkout <tag>`` leaves it: it records the tree's
-        history, and a release does not rewind history. A repository Git
-        cannot move puts back every one already moved before the refusal.
+        history, and a release does not rewind history. A repository the
+        release does not record is left alone and named. A repository Git
+        cannot move puts back every one already moved before the refusal; one
+        this load cloned stays, named, since a fresh clone holds nothing to lose.
         """
         registry = self.client.get_dependency_registry()
         runner = self.client.git_runner
         memory_dir = (self._root().absolute_path / MOUNT_PATH).parent
         by_name = {repo.name: repo for repo in registry.values()}
-        states = tomllib.loads(state_path.read_text(encoding="utf-8")).get("repo_state", [])
-        recorded = [(str(repo["name"]), str(repo["commit_sha"])) for repo in states if repo.get("commit_sha")]
+        document = GtsDocument.from_toml(state_path)
+        recorded = [(str(repo["name"]), str(repo["commit_sha"])) for repo in document.repo_states if repo.get("commit_sha")]
         recorded = [(name, sha) for name, sha in recorded if name not in by_name or not by_name[name].absolute_path.is_relative_to(memory_dir)]
         missing = [name for name, _ in recorded if name not in by_name or not by_name[name].absolute_path.is_dir()]
-        if missing:
-            raise GitSyncError(f"{tag} records repositories this tree does not hold: {', '.join(missing)}. Load it into a new workspace with --workspace.")
-        dirty = [name for name, _ in recorded if any(not line.startswith("??") for line in runner.status_porcelain(by_name[name].absolute_path))]
+        dirty = [name for name, _ in recorded if name not in missing and any(not line.startswith("??") for line in runner.status_porcelain(by_name[name].absolute_path))]
         if dirty:
             raise GitSyncError(f"{tag} was not loaded: uncommitted changes in {', '.join(dirty)}. Commit or stash them first; nothing was moved.")
+        previous_branch = runner.current_branch(self._root().absolute_path)
+        cloned = self.client._installer.clone_recorded(document, missing) if missing else []
+        by_name = {repo.name: repo for repo in registry.values()}
+        named = {name for name, _ in recorded}
+        left_alone = tuple(name for name, repo in by_name.items() if name not in named and not repo.absolute_path.is_relative_to(memory_dir) and repo.repo_id != ROOT_REPO_ID)
         previous_state = registry.lifecycle_state
         moved: list[tuple[Any, str, bool]] = []
         for name, sha in recorded:
@@ -308,6 +347,7 @@ class ReleaseCommands:
             on_tag = runner.tag_exists(repo.absolute_path, tag)
             BranchOperation.refresh_repo_after_checkout(repo, tag if on_tag else sha, RefKind.TAG if on_tag else RefKind.DETACHED, runner)
         registry.recompute_tree_state()
+        self.client.last_release_load = ReleaseLoad(tag, previous_branch, tuple(cloned), left_alone)
         self.client.write_gts_snapshot(command_origin="release_load")
         self.client._log_tree_transition(previous_state, registry.lifecycle_state, reason="release_load")
         return registry

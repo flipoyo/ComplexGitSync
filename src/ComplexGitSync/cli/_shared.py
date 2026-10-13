@@ -367,6 +367,14 @@ def _print_workspace_hint(cgshome: CgshomeResolution) -> None:
         print(f"  export CGSHOME={workspace}")
 
 
+def _print_workspace_instructions(root_path: Path) -> None:
+    """Say how to work in a workspace a command has just built: `bootstrap` and `release load --workspace`."""
+    print("\nTo use this workspace, run:")
+    print(f"  export CGSHOME={root_path}")
+    print("\nOr for the current command:")
+    print(f"  CGSHOME={root_path} pixi run cgitsync <command>")
+
+
 def _announce_source_resolution(resolution: SnapshotResolution) -> None:
     """Say which workspace and snapshot an auto-discovered command will act on.
 

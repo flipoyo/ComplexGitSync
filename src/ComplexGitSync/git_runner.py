@@ -410,6 +410,8 @@ class GitRunnerProtocol(Protocol):
         self, repo_path: Path | str, tip: str, exclude: list[str] | tuple[str, ...]
     ) -> list[str]: ...
 
+    def unnamed_head_commits(self, repo_path: Path | str) -> list[str]: ...
+
     def tree_blobs(self, repo_path: Path | str, ref: str, prefix: str) -> dict[str, str]: ...
 
     def create_root_commit(self, repo_path: Path | str, message: str) -> str: ...
@@ -1358,6 +1360,16 @@ class GitRunner:
         names nothing: asking what an absent branch holds is a caller's mistake.
         """
         return self._run("rev-list", tip, "--not", *exclude, "--", cwd=repo_path).stdout.split()
+
+    def unnamed_head_commits(self, repo_path: Path | str) -> list[str]:
+        """The commits ``HEAD`` reaches that no branch, remote-tracking branch or tag names.
+
+        What moving a detached ``HEAD`` away would leave in the reflog alone.
+        Read-only; empty on a branch, which is itself a name.
+        """
+        if self.current_branch(repo_path) is not None:
+            return []
+        return self._run("rev-list", "HEAD", "--not", "--branches", "--remotes", "--tags", "--", cwd=repo_path).stdout.split()
 
     def tree_blobs(self, repo_path: Path | str, ref: str, prefix: str) -> dict[str, str]:
         """Every file under *prefix* as of *ref*, path to blob id; empty when there is none."""

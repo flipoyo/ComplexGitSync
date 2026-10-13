@@ -232,13 +232,30 @@ command takes you back to work:
 pixi run cgitsync checkout main
 ```
 
+`release load` ends by naming the branch you were on, so you know what to
+check out. To fix something *in* the release instead, start a branch from it
+and keep working there:
+
+```bash
+pixi run cgitsync branch create fix-1
+pixi run cgitsync checkout fix-1
+```
+
+Each repository's new branch starts at the release commit, so nothing you
+do next is lost. If you committed on the detached tree with plain `git`,
+`checkout main` refuses, by name, until you have done this.
+
 A repository with uncommitted changes stops the load, by name, before
-anything moves. To keep your workspace as it is and look at the release
+anything moves. A repository the release records and your workspace lacks is
+cloned for you. To keep your workspace as it is and look at the release
 beside it, load it into a new one instead:
 
 ```bash
 pixi run cgitsync release load 1 --workspace CGSil1-1
 ```
+
+It prints the `export CGSHOME=...` line for the new workspace, the same one
+`bootstrap` prints.
 
 Tutorial 6 shows how to keep every State in a memory repository of its own.
 

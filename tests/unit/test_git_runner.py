@@ -1051,6 +1051,9 @@ class _FakeGitRunner:
     def exclusive_commits(self, repo_path, tip, exclude) -> list[str]:
         return []
 
+    def unnamed_head_commits(self, repo_path) -> list[str]:
+        return []
+
     def tree_blobs(self, repo_path, ref, prefix) -> dict[str, str]:
         return {}
 
