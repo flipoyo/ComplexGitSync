@@ -27,6 +27,14 @@ agent: one agent can write a record naming two roles. The gate turns
 "forgot" into "refused"; it does not stop someone who means to lie, and
 nothing that calls it should claim otherwise.
 
+**What it exempts.** A ticket the owner dropped was never built, so there is
+no work for an orchestrator to quote. Its history ticket opens, within
+:data:`_DROPPED_WITHIN` lines, with a line starting :data:`_DROPPED`
+(``> **Dropped — YYYY-MM-DD, owner's decision.**``). Like everything here it
+turns "forgot" into "named": nothing stops someone adding the marker to a
+ticket that was built, and the banner stays in the history and deep copies
+for the owner to read (DroppedTicketGate).
+
 **Whom it binds.** A tree that adopted DevSpec (its root holds
 ``AgentConduct.md``) and keeps a ``DevTickets/archive`` in one of its
 ``.agent/.local`` mounts. Any other tree gets ``None``, as with
@@ -51,6 +59,9 @@ CUTOFF = "20261009"
 _CONDUCT_PATH = Path(".agent") / ".distant" / "dev-sync" / "AgentConduct.md"
 _ARCHIVED = re.compile(r"^(?P<stamp>\d{8})_(?P<name>.+)_DevPlanTicket\.md$")
 _ORCHESTRATION = "Orchestration"
+#: The banner a dropped ticket opens with, and how far down it is looked for.
+_DROPPED = "> **Dropped — "
+_DROPPED_WITHIN = 30
 #: ``git status --porcelain`` index codes for a path the next commit adds.
 _ADDED_CODES = frozenset("ARC")
 
@@ -92,9 +103,18 @@ class TicketGate:
         names: list[str] = []
         for path in candidates:
             match = _ARCHIVED.match(path.name)
-            if match and match["stamp"] >= self.cutoff:
+            if match and match["stamp"] >= self.cutoff and not self._dropped(path):
                 names.append(match["name"])
         return names
+
+    @staticmethod
+    def _dropped(path: Path) -> bool:
+        """Whether the ticket at *path* opens with the owner's dropped-ticket banner."""
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()[:_DROPPED_WITHIN]
+        except (OSError, UnicodeDecodeError):
+            return False
+        return any(line.startswith(_DROPPED) for line in lines)
 
     def unrecorded(self, paths: Iterable[Path] | None = None) -> list[str]:
         """The gated tickets no orchestrator's record names, in archive order."""

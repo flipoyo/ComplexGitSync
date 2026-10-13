@@ -108,6 +108,35 @@ def test_a_ticket_archived_before_the_cutoff_is_exempt(tmp_path):
     assert _gate(tmp_path).unrecorded() == []
 
 
+_DROPPED_BANNER = "> **Dropped — 2026-10-13, owner's decision.** Not wanted.\n"
+
+
+def test_a_dropped_ticket_needs_no_record_and_one_that_is_not_does(tmp_path):
+    archive = _devspec_tree(tmp_path)
+    (archive / _GATED).write_text(f"# Gated\n\n{_DROPPED_BANNER}")
+
+    assert _gate(tmp_path).gated() == []
+    assert _gate(tmp_path).unrecorded() == []
+
+    (archive / _GATED).write_text("# Gated\n\nbuilt, with no banner\n")
+    assert _gate(tmp_path).unrecorded() == ["Gated"]
+
+
+def test_the_dropped_banner_is_read_only_near_the_top(tmp_path):
+    archive = _devspec_tree(tmp_path)
+    (archive / _GATED).write_text("# Gated\n" + "filler\n" * 40 + _DROPPED_BANNER)
+
+    assert _gate(tmp_path).unrecorded() == ["Gated"]
+
+
+def test_a_dropped_ticket_that_also_has_a_record_is_not_an_error(tmp_path):
+    archive = _devspec_tree(tmp_path)
+    (archive / _GATED).write_text(f"# Gated\n\n{_DROPPED_BANNER}")
+    _RECORD.write(tmp_path / ".cgitsync" / ".self-history")
+
+    assert _gate(tmp_path).unrecorded() == []
+
+
 def test_a_deep_archived_copy_and_a_closed_short_ticket_are_not_candidates(tmp_path):
     archive = _devspec_tree(tmp_path)
     for sub in (".deepArchive", ".closedUserTicket"):
@@ -193,6 +222,17 @@ def test_commit_adds_a_recorded_ticket(tmp_path):
     before = _git(root, "rev-parse", "HEAD")
 
     client.commit("ComplexGitSync-3.3.0 Archives the Gated ticket.")
+
+    assert _git(root, "rev-parse", "HEAD") != before
+
+
+def test_commit_adds_a_dropped_ticket_with_no_record(tmp_path):
+    client, root = _tree(tmp_path, devspec=True)
+    archive = _archive_in(root)
+    (archive / _GATED).write_text(f"# Gated\n\n{_DROPPED_BANNER}")
+    before = _git(root, "rev-parse", "HEAD")
+
+    client.commit("ComplexGitSync-3.3.0 Archives the dropped Gated ticket.")
 
     assert _git(root, "rev-parse", "HEAD") != before
 

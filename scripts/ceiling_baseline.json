@@ -477,7 +477,7 @@
     },
     "ticket_gate.py": {
       "internal_imports": 2,
-      "loc": 137,
+      "loc": 154,
       "public_symbols": 2
     },
     "toolchain.py": {
