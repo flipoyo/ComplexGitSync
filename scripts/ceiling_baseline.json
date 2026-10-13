@@ -16,9 +16,14 @@
       "public_symbols": 0
     },
     "autofix/base.py": {
-      "internal_imports": 2,
-      "loc": 67,
+      "internal_imports": 3,
+      "loc": 74,
       "public_symbols": 4
+    },
+    "autofix/repair_commit_message.py": {
+      "internal_imports": 3,
+      "loc": 56,
+      "public_symbols": 1
     },
     "autofix/repair_divergent_user.py": {
       "internal_imports": 12,
@@ -26,8 +31,8 @@
       "public_symbols": 1
     },
     "autofix/repair_from_cli.py": {
-      "internal_imports": 9,
-      "loc": 118,
+      "internal_imports": 12,
+      "loc": 151,
       "public_symbols": 2
     },
     "autofix/repair_merge_conflict.py": {
@@ -162,7 +167,7 @@
     },
     "git_runner.py": {
       "internal_imports": 3,
-      "loc": 1484,
+      "loc": 1500,
       "public_symbols": 4
     },
     "git_tree.py": {

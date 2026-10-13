@@ -1054,6 +1054,12 @@ class _FakeGitRunner:
     def unnamed_head_commits(self, repo_path) -> list[str]:
         return []
 
+    def tip_commit(self, repo_path):
+        return None
+
+    def configured_email(self, repo_path):
+        return None
+
     def tree_blobs(self, repo_path, ref, prefix) -> dict[str, str]:
         return {}
 

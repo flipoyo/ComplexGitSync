@@ -283,6 +283,10 @@ class GitRunnerProtocol(Protocol):
 
     def head_commit_sha_or_none(self, repo_path: Path | str) -> str | None: ...
 
+    def tip_commit(self, repo_path: Path | str) -> tuple[str, str, str] | None: ...
+
+    def configured_email(self, repo_path: Path | str) -> str | None: ...
+
     def commit_authored_at(self, repo_path: Path | str, sha: str) -> str: ...
 
     def current_branch(self, repo_path: Path | str) -> str | None: ...
@@ -612,6 +616,23 @@ class GitRunner:
 
     def rev_parse_head(self, repo_path: Path | str) -> str:
         return self._run("rev-parse", "HEAD", cwd=repo_path).stdout.strip()
+
+    def tip_commit(self, repo_path: Path | str) -> tuple[str, str, str] | None:
+        """``(sha, author email, message)`` of ``HEAD``, or ``None`` on an unborn branch.
+
+        Read-only. The message is exactly what Git stored, so a caller can
+        judge it as it is and never as a shell would have rewritten it.
+        """
+        completed = self._query("log", "-1", "--format=%H%x00%ae%x00%B", cwd=repo_path)
+        if completed.returncode != 0 or not completed.stdout.strip():
+            return None
+        sha, email, message = completed.stdout.split("\x00", 2)
+        return sha.strip(), email.strip(), message.rstrip("\n")
+
+    def configured_email(self, repo_path: Path | str) -> str | None:
+        """The ``user.email`` Git would commit with in *repo_path*, or ``None`` when none is set."""
+        completed = self._query("config", "user.email", cwd=repo_path)
+        return completed.stdout.strip() or None if completed.returncode == 0 else None
 
     def head_commit_sha_or_none(self, repo_path: Path | str) -> str | None:
         """:meth:`rev_parse_head`, degrading to ``None`` for an unborn

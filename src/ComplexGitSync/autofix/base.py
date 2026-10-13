@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from ..commit_message import CommitMessagePolicy
     from ..git_repo import WorkingRepo
     from ..git_runner import GitRunnerProtocol
 
@@ -34,16 +35,22 @@ class RepairOutcome:
 
 @dataclass(frozen=True, slots=True)
 class Situation:
-    """One already-raised error, paired with the repository it named.
+    """One thing wrong with a repository: an already-raised error, or a tip commit.
 
-    Carries nothing else — a :class:`Repair`'s own ``matches``/``repair``
-    decide everything from ``repo`` and ``source_error`` themselves, so a
-    new repair module never has to ask this dataclass to grow a field for
-    its own purposes.
+    Two sources, and a :class:`Repair` reads the one it knows. An error
+    comes from the run log (``source_error``). A commit made outside
+    ``cgitsync`` raises nothing, so ``autofix`` reads the repository's tip
+    commit itself (``commit`` and ``commit_message``, with the tree's
+    ``rules`` when it adopted DevSpec) and leaves ``source_error`` empty. A
+    repair that does not know a source ignores it, so existing repairs did
+    not change when the second one was added.
     """
 
     repo: "WorkingRepo"
     source_error: str
+    commit: str | None = None
+    commit_message: str | None = None
+    rules: "CommitMessagePolicy | None" = None
 
 
 class Repair(Protocol):
