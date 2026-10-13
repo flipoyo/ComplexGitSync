@@ -305,7 +305,8 @@ def _register_branch(subparser: argparse.ArgumentParser) -> None:
         description=(
             "Close a project branch: keep what it alone holds on the permanent 'ancestors' branch and record "
             "that in the ledger, then rename it to closed/<branch>, tree-wide, leaf-first. Afterwards any tool "
-            "may delete the closed branch without losing a commit."
+            "may delete the closed branch without losing a commit. Developer trees only: refused in a tree "
+            "that declares no private repository."
         ),
     )
     close.add_argument("branch", help="Project branch to close (renamed to closed/<branch>).")
@@ -331,7 +332,8 @@ def _register_branch(subparser: argparse.ArgumentParser) -> None:
         description=(
             "Delete a closed branch, tree-wide: keep on 'ancestors' and record in the ledger anything it alone "
             "holds that is not kept yet, verify the ledger, then delete it on origin and locally, leaf-first. "
-            "Refuses with nothing deleted when any step fails."
+            "Refuses with nothing deleted when any step fails. Developer trees only: refused in a tree that "
+            "declares no private repository."
         ),
     )
     delete.add_argument("branch", help="Closed branch to delete: closed/<branch>, or its old name.")

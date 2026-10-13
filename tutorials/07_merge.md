@@ -165,6 +165,10 @@ pixi run cgitsync branch close feature    # keeps what only feature held, rename
 pixi run cgitsync branch delete feature   # deletes nothing until every repository is safe or recorded
 ```
 
+Both commands remove the branch on the remote, so they work only in a
+developer's tree, one with a private repository, which is what this tutorial
+built. In a tree with none they are refused and change nothing.
+
 A closed branch's memory is safe once merged: it is reachable from the target,
 and `branch close` records anything it alone holds before renaming it.
 

@@ -344,6 +344,7 @@ class TreeCommands:
         before ``ancestors`` existed is made safe to delete with any tool.
         """
         registry = self.client.get_dependency_registry()
+        registry.require_dev("branch close")
         previous_state = registry.lifecycle_state
         self.client._log_event("close_branch_start", branch_name=branch_name)
         scope = GitProbes.scope_for(registry, private=private, command="branch close")
@@ -404,6 +405,7 @@ class TreeCommands:
         Any failure before the deletion refuses with nothing deleted.
         """
         registry = self.client.get_dependency_registry()
+        registry.require_dev("branch delete")
         previous_state = registry.lifecycle_state
         scope = GitProbes.scope_for(registry, private=private, command="branch delete")
         name, closed = self._closed_or_live(registry, branch_name)

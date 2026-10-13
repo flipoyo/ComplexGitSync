@@ -581,6 +581,22 @@ class WorkingGitTree(GitTree):
         """
         return TreeProfile.DEV if any(repo.effective_private for repo in self.repos.values()) else TreeProfile.USER
 
+    def require_dev(self, command: str) -> None:
+        """Refuse *command* in a USER tree, before it touches anything (DevOnlyClosure).
+
+        An accident guard, not a lock: the profile comes from the `.cgs` the
+        user holds, and `git` or the provider's page needs no `cgitsync`.
+        Only the provider's branch protection stops a determined user.
+        """
+        if self.profile is TreeProfile.DEV:
+            return
+        raise GitSyncError(
+            f"{command} was refused: this tree holds no private repository, so it is a user's tree, "
+            "and closing or deleting a branch removes it on the remote for everyone. A developer's tree "
+            "(one that declares a private repository) can. Ask a maintainer, or close it on the "
+            "provider's page. Nothing was changed."
+        )
+
     @property
     def registry_complete(self) -> bool:
         """Return ``True`` when the runtime tree has all required repo paths."""
