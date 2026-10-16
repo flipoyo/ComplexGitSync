@@ -802,16 +802,16 @@ class GitRunner:
         self._checkout_past_twins(repo_path, branch, branch)
 
     def _checkout_past_twins(self, repo_path: Path | str, ref: str, *args: str) -> None:
-        """``git checkout <args>``, past any untracked file *ref* holds byte for byte.
+        """``git checkout <args>``, past any untracked file *ref* holds as Git would store it.
 
         Git refuses to overwrite an untracked file even when the checkout
-        writes back the same bytes. ``bootstrap`` leaves one in every root,
-        the ``.gitignore`` naming its children: a branch commits it and a
-        protected ``main`` never receives it, so a second install could not
-        reach that branch, nor a release made on it. Each file Git names is
-        set aside and the checkout retried only when all of them are such
-        twins; any other file is Git's refusal, unchanged, and a retry that
-        fails puts every twin back.
+        writes back the same content. ``bootstrap`` leaves one in every
+        root, the ``.gitignore`` naming its children: a branch commits it and
+        a protected ``main`` never receives it, so a second install could not
+        reach that branch. Git's named files are set aside and the checkout
+        retried only when each is a twin by blob id (``hash-object --path``
+        applies ``core.autocrlf``; Windows copies are CRLF, blobs LF); any
+        other file is Git's refusal, and a failed retry puts every twin back.
         """
         root = Path(repo_path)
         try:
@@ -822,8 +822,8 @@ class GitRunner:
             twins = {name: (root / name).read_bytes() for name in named if (root / name).is_file()}
             if "would be overwritten by checkout" not in str(error) or not named or len(twins) < len(named):
                 raise
-            shown = {name: self._query_bytes("show", f"{ref}:{name}", cwd=root) for name in twins}
-            if any(shown[name].returncode != 0 or shown[name].stdout != kept for name, kept in twins.items()):
+            ids = {name: (self._query("hash-object", f"--path={name}", name, cwd=root).stdout.strip(), self._query("rev-parse", f"{ref}:{name}", cwd=root).stdout.strip()) for name in twins}
+            if any(not mine or mine != theirs for mine, theirs in ids.values()):
                 raise
         for name in twins:
             (root / name).unlink()

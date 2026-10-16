@@ -45,6 +45,7 @@ The public surface
 from __future__ import annotations
 
 import os
+import re
 from enum import StrEnum
 from pathlib import Path
 
@@ -97,15 +98,24 @@ class Settings:
     def cgs_root(environ: dict[str, str] | None = None) -> Path:
         """The directory every workspace lives under.
 
-        ``$CGSPATH`` when set, otherwise ``$HOME/.cgs`` — the same root
-        ``bootstrap`` has always written into. Reads the environment, so a test
-        that moves ``HOME`` moves this with it.
+        ``$CGSPATH`` when set, otherwise ``$HOME/.cgs``, as a shell's ``~``
+        names it. ``$HOME`` comes first on every platform: ``Path.home()``
+        reads ``USERPROFILE`` on Windows, so under Git Bash the shell's
+        ``~/.cgs`` and the tool's were two directories wherever those differ.
+        Reads the environment, so a test that moves ``HOME`` moves this.
         """
         env = environ if environ is not None else os.environ
         override = env.get(CGS_ROOT_ENV)
         if override:
             return Path(override).expanduser().resolve()
-        return (Path.home() / ".cgs").expanduser().resolve()
+        return (Settings.home_directory(env) / ".cgs").expanduser().resolve()
+
+    @staticmethod
+    def home_directory(env: dict[str, str], windows: bool = os.name == "nt") -> Path:
+        """What ``~`` is: ``$HOME`` as set (``/c/Users/x`` read as ``C:/Users/x`` on Windows), else ``Path.home()``."""
+        home = env.get("HOME") or ""
+        drive = re.match(r"^/([A-Za-z])(?:/|$)", home) if windows else None
+        return Path(f"{drive.group(1).upper()}:{home[2:] or '/'}") if drive else Path(home) if home else Path.home()
 
     @staticmethod
     def pointer_file(root: Path | None = None) -> Path:

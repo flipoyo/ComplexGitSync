@@ -74,7 +74,7 @@ def test_status_display_path_outside_root_with_no_relative_path_falls_back_to_ab
     root = Path("/workspace/root")
     entry = WorkingRepo(absolute_path=Path("/elsewhere/repo"))
 
-    assert _status_display_path(entry, root) == str(Path("/elsewhere/repo"))
+    assert _status_display_path(entry, root) == Path("/elsewhere/repo").as_posix()
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,8 @@ Tutorial 2 now teaches.
 
 from __future__ import annotations
 
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -19,6 +21,12 @@ from test_tuto_cgsi1 import (  # noqa: F401  (cgsi1_sandbox is a fixture)
 )
 
 from ComplexGitSync.cli import main as cli_main
+
+
+def _clear_readonly(func, path, _exc_info):
+    """``shutil.rmtree`` ``onerror``: Git for Windows writes ``.git/objects`` read-only."""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 
 def _workspace(sandbox, monkeypatch, tmp_path: Path, name: str) -> Path:
@@ -393,7 +401,7 @@ def test_load_into_a_workspace_prints_the_export_line_bootstrap_prints(sandbox, 
     assert cli_main(["release", "load", "1", "--workspace", "r1", "--cgs-path", str(tmp_path / "r")]) == 0
 
     out = capsys.readouterr().out
-    assert f"export CGSHOME={tmp_path / 'r' / 'r1'}" in out and "To use this workspace, run:" in out
+    assert f"export CGSHOME={(tmp_path / 'r' / 'r1').as_posix()}" in out and "To use this workspace, run:" in out
 
 
 def test_load_in_place_clones_a_repository_the_tree_lacks_and_says_how_to_leave(sandbox, monkeypatch, tmp_path, capsys):
@@ -403,7 +411,7 @@ def test_load_in_place_clones_a_repository_the_tree_lacks_and_says_how_to_leave(
     _note(one, "a first note\n")
     assert cli_main(["release", "freeze", "first"]) == 0
     _note(one, "later\n")
-    shutil.rmtree(one / "CGSih1")
+    shutil.rmtree(one / "CGSih1", onerror=_clear_readonly)
     capsys.readouterr()
 
     assert cli_main(["release", "load", "1"]) == 0

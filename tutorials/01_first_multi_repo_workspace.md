@@ -102,8 +102,8 @@ Each command refuses the other's job and names the right one.
 **Install the tool**, once, anywhere outside the project:
 
 ```bash
-git clone https://github.com/flipoyo/ComplexGitSync.git ~/tools/ComplexGitSync
-cd ~/tools/ComplexGitSync
+git clone https://github.com/flipoyo/ComplexGitSync.git "$HOME/tools/ComplexGitSync"
+cd "$HOME/tools/ComplexGitSync"
 pixi install
 ```
 
@@ -112,15 +112,15 @@ Every `pixi run cgitsync ...` is typed from this directory.
 **Get the project's `.cgs`**, and check it without cloning anything:
 
 ```bash
-curl -L -o ~/CGSil1.cgs https://gitlab.com/CGS_test/CGSil1/-/raw/main/CGSil1.cgs
-pixi run cgitsync validate ~/CGSil1.cgs
-pixi run cgitsync view-tree ~/CGSil1.cgs
+curl -L -o "$HOME/CGSil1.cgs" https://gitlab.com/CGS_test/CGSil1/-/raw/main/CGSil1.cgs
+pixi run cgitsync validate "$HOME/CGSil1.cgs"
+pixi run cgitsync view-tree "$HOME/CGSil1.cgs"
 ```
 
 **Build the tree:**
 
 ```bash
-pixi run cgitsync bootstrap ~/CGSil1.cgs
+pixi run cgitsync bootstrap "$HOME/CGSil1.cgs"
 ```
 
 `bootstrap` creates a new directory under `$HOME/.cgs/`, named after the
@@ -143,7 +143,7 @@ pixi run cgitsync status
 
 Every command prints the workspace it is acting on. When you start another
 project in the same shell, export its `CGSHOME` too. To give a workspace a
-name of your own, add it after the `.cgs`: `bootstrap ~/CGSil1.cgs trial`
+name of your own, add it after the `.cgs`: `bootstrap "$HOME/CGSil1.cgs" trial`
 lands on `$HOME/.cgs/trial-<timestamp>`.
 
 ---

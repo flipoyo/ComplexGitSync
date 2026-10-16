@@ -762,6 +762,7 @@ class TestCloneAndLaunchReleaseLifecycle:
         client = ComplexGitSyncClient()
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        monkeypatch.setenv("HOME", str(fake_home))  # $HOME decides, as a shell's ~ does
         monkeypatch.setattr(
             client,
             "_build_remote_url",
@@ -787,6 +788,7 @@ class TestCloneAndLaunchReleaseLifecycle:
         fake_home.mkdir()
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        monkeypatch.setenv("HOME", str(fake_home))  # $HOME decides, as a shell's ~ does
 
         code = cli_main(["bootstrap", str(local_two_repo_remotes["clone_spec"]), "../evil"])
 
@@ -805,6 +807,7 @@ class TestCloneAndLaunchReleaseLifecycle:
         client = ComplexGitSyncClient()
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        monkeypatch.setenv("HOME", str(fake_home))  # $HOME decides, as a shell's ~ does
         monkeypatch.setattr(
             client,
             "_build_remote_url",

@@ -1562,24 +1562,45 @@ class TestCheckoutPastAnUntrackedTwin:
         assert (repo_path / ".gitignore").read_text(encoding="utf-8") == "CGSil2/\n"
         assert (repo_path / "notes.txt").read_text(encoding="utf-8") == "a note of mine\n"
 
-    def test_a_file_git_cannot_show_at_the_ref_is_not_a_twin(self, tmp_path, monkeypatch):
-        """A failed ``git show`` prints nothing; an empty untracked file must not pass for its twin."""
+    def test_a_file_git_cannot_resolve_at_the_ref_is_not_a_twin(self, tmp_path, monkeypatch):
+        """A failed lookup prints nothing; an empty untracked file must not pass for its twin."""
         repo_path = _repo_whose_feature_tracks_a_gitignore_main_lacks(tmp_path)
         (repo_path / ".gitignore").write_bytes(b"")
-        real_query_bytes = GitRunner._query_bytes
+        real_query = GitRunner._query
 
-        def show_failing(self, *args, cwd=None):
-            if args[:1] == ("show",):
-                return subprocess.CompletedProcess(args, 128, b"", b"fatal: invalid object name")
-            return real_query_bytes(self, *args, cwd=cwd)
+        def rev_parse_failing(self, *args, cwd=None):
+            if args[:1] == ("rev-parse",):
+                return subprocess.CompletedProcess(args, 128, "", "fatal: invalid object name")
+            return real_query(self, *args, cwd=cwd)
 
-        monkeypatch.setattr(GitRunner, "_query_bytes", show_failing)
+        monkeypatch.setattr(GitRunner, "_query", rev_parse_failing)
 
         with pytest.raises(GitSyncError, match="would be overwritten by checkout"):
             GitRunner().checkout(repo_path, "feature")
 
         assert GitRunner().current_branch(repo_path) == "main"
         assert (repo_path / ".gitignore").read_bytes() == b""
+
+    def test_a_crlf_copy_is_a_twin_when_git_would_store_it_as_lf(self, tmp_path):
+        """What Windows has: ``core.autocrlf=true`` commits LF, and the worktree copy has CRLF."""
+        repo_path = _repo_whose_feature_tracks_a_gitignore_main_lacks(tmp_path)
+        subprocess.run(["git", "config", "core.autocrlf", "true"], cwd=repo_path, check=True)
+        (repo_path / ".gitignore").write_bytes(b"CGSil2/\r\n")
+        runner = GitRunner()
+
+        runner.checkout(repo_path, "feature")
+
+        assert runner.current_branch(repo_path) == "feature"
+
+    def test_a_crlf_copy_with_other_content_is_still_refused(self, tmp_path):
+        repo_path = _repo_whose_feature_tracks_a_gitignore_main_lacks(tmp_path)
+        subprocess.run(["git", "config", "core.autocrlf", "true"], cwd=repo_path, check=True)
+        (repo_path / ".gitignore").write_bytes(b"mine/\r\n")
+
+        with pytest.raises(GitSyncError, match="would be overwritten by checkout"):
+            GitRunner().checkout(repo_path, "feature")
+
+        assert (repo_path / ".gitignore").read_bytes() == b"mine/\r\n"
 
     def test_a_twin_is_put_back_when_the_retry_fails(self, tmp_path, monkeypatch):
         repo_path = _repo_whose_feature_tracks_a_gitignore_main_lacks(tmp_path)

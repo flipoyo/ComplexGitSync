@@ -11,7 +11,9 @@ Imports: auth_hints, autofix, cgs_format, clone_guard, command_run_logger, disco
 from __future__ import annotations
 
 import logging
+import os
 import shutil
+import stat
 import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -1290,7 +1292,7 @@ class ComplexGitSyncClient:
         selected_ref, selected_ref_kind = self._select_clone_ref(entry, remote_url)
         if self._is_populated_nested_destination(entry):
             try:
-                shutil.rmtree(entry.absolute_path)
+                shutil.rmtree(entry.absolute_path, onerror=lambda func, path, _: (os.chmod(path, stat.S_IWRITE), func(path)))
             except OSError as exc:
                 raise GitSyncError(
                     f"Unable to clear nested clone destination for {entry.name} at {entry.absolute_path}: {exc}"

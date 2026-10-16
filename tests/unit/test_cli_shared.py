@@ -833,3 +833,20 @@ def test_pull_force_risk_hint_with_no_registry_is_the_bare_suggestion(tmp_path):
     hint = _shared._pull_force_risk_hint(_StubClient())
 
     assert hint == "You can try cgitsync autofix (diagnoses first)"
+
+
+# ---------------------------------------------------------------------------
+# The line a Windows user pastes into bash
+# ---------------------------------------------------------------------------
+
+
+def test_the_export_line_is_printed_in_the_form_bash_and_python_both_read(capsys):
+    """``C:\\Users\\you`` pasted into bash loses every backslash; ``C:/Users/you`` works."""
+    from pathlib import PureWindowsPath
+
+    _shared._print_workspace_instructions(PureWindowsPath(r"C:\Users\you\.cgs\CGSil1-20261016"))
+
+    out = capsys.readouterr().out
+    assert "  export CGSHOME=C:/Users/you/.cgs/CGSil1-20261016\n" in out
+    assert "  CGSHOME=C:/Users/you/.cgs/CGSil1-20261016 pixi run cgitsync <command>" in out
+    assert "\\" not in out

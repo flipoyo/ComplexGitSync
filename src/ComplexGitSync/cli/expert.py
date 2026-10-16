@@ -2437,7 +2437,7 @@ def _execute_init_from_submodules(
     # that held a submodule, and some of those belong to other people.
     print(
         "\nThe conversion is staged but not committed. Review it, then:\n"
-        f"  export CGSHOME={report.root}\n"
+        f"  export CGSHOME={Path(report.root).as_posix()}\n"
         "  cgitsync branch create <name> && cgitsync checkout <name>\n"
         '  cgitsync add && cgitsync commit "<message>"'
     )

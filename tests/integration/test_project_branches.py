@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import stat
+
 from test_close_branch import (
     _git,
     _loaded,
@@ -10,6 +13,12 @@ from test_close_branch import (
 )
 
 from ComplexGitSync.cli import main
+
+
+def _clear_readonly(func, path, _exc_info):
+    """``shutil.rmtree`` ``onerror``: Git for Windows writes ``.git/objects`` read-only."""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 
 def _by_name(tree):
@@ -126,7 +135,7 @@ def test_a_repository_not_cloned_yet_is_named_not_counted_missing(tmp_path):
 
     tree = _two_repo_workspace(tmp_path)
     _push_new_branch(tree["root"], "feature-x")
-    shutil.rmtree(tree["config"])
+    shutil.rmtree(tree["config"], onerror=_clear_readonly)
 
     found = _by_name(tree)["feature-x"]
 

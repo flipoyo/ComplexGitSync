@@ -347,7 +347,7 @@
     },
     "orchestre/client.py": {
       "internal_imports": 63,
-      "loc": 1335,
+      "loc": 1337,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -441,8 +441,8 @@
       "public_symbols": 1
     },
     "paths.py": {
-      "internal_imports": 6,
-      "loc": 268,
+      "internal_imports": 7,
+      "loc": 269,
       "public_symbols": 2
     },
     "project_version.py": {
@@ -462,7 +462,7 @@
     },
     "settings.py": {
       "internal_imports": 3,
-      "loc": 212,
+      "loc": 221,
       "public_symbols": 5
     },
     "snapshot_resolver.py": {

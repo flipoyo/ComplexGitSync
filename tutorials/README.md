@@ -14,8 +14,9 @@ tutorials instead walk one topology end to end,
 so a first-time user sees the full lifecycle before hand-authoring their
 own `.cgs`.
 
-**What you will find.** Seven tutorials, each building on the last, plus a
-reminder that every command shown is a Pixi task.
+**What you will find.** Seven tutorials, each building on the last, a
+reminder that every command shown is a Pixi task, and which shell they
+assume (bash, which on Windows is Git Bash) and how to adapt another.
 
 **Who it is for.** Anyone new to `cgitsync`. Start at Tutorial 1 regardless
 of your own project's shape — it establishes the vocabulary the other six
@@ -82,6 +83,35 @@ them in order — each one builds on the last:
 > **Every command in these tutorials is a Pixi task.** Run `pixi install`
 > once per checkout, then always invoke the CLI as `pixi run cgitsync ...`
 > — never as a bare `cgitsync ...`, which the shell will not find.
+
+## Which shell
+
+The tutorials are written for **bash**, and `cgitsync` itself is Linux-like:
+it reads paths with `/`, prints the lines you are meant to paste with `/`,
+and `~` and `$HOME` mean the same directory to the shell and to the tool. On Windows, use **Git Bash** (it
+comes with Git for Windows). There:
+
+- `export CGSHOME=...` is the line `bootstrap` prints, and it works as
+  printed: `cgitsync` writes the path in it, and in the `CGSHOME=... pixi run`
+  line, as `C:/Users/you/...`, with no backslash. Other messages may still
+  show a Windows path with backslashes; they are for reading, not pasting.
+  Do not double a backslash anywhere.
+- `~` is `$HOME`, and the default workspace root is `$HOME/.cgs`. If your
+  `HOME` is not your profile directory, `cd ~/.cgs` still lands in the right
+  place, because the tool follows `$HOME` too.
+
+If your shell is not bash, only the lines that are shell syntax change; every
+`pixi run cgitsync ...` line stays as it is:
+
+| In the tutorial (bash) | PowerShell | `cmd` |
+|---|---|---|
+| `export CGSHOME=C:/Users/you/.cgs/X` | `$env:CGSHOME = "C:/Users/you/.cgs/X"` | `set CGSHOME=C:/Users/you/.cgs/X` |
+| `"$CGSHOME/CGSil2/notes.txt"` | `"$env:CGSHOME/CGSil2/notes.txt"` | `"%CGSHOME%/CGSil2/notes.txt"` |
+| `"$HOME/CGSil1.cgs"` or `~/CGSil1.cgs` | `"$HOME/CGSil1.cgs"` | `"%USERPROFILE%/CGSil1.cgs"` |
+| `curl -L -o FILE URL` | `curl.exe -L -o FILE URL` (plain `curl` is a PowerShell alias) | `curl -L -o FILE URL` |
+| `echo "text" >> FILE`, `cat FILE` | `Add-Content FILE "text"`, `Get-Content FILE` | `echo text>> FILE`, `type FILE` |
+
+The repository identifiers and the Git steps are the same everywhere.
 
 For full command-by-command reference (every flag, every document format),
 see [docs/MASTER.pdf](../docs/MASTER.pdf) (source: [docs/Text/](../docs/Text/))

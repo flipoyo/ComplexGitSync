@@ -364,15 +364,15 @@ def _print_workspace_hint(cgshome: CgshomeResolution) -> None:
         return
     print(f"{len(existing)} other workspace(s) exist. To use one, export it:")
     for workspace in existing:
-        print(f"  export CGSHOME={workspace}")
+        print(f"  export CGSHOME={workspace.as_posix()}")
 
 
 def _print_workspace_instructions(root_path: Path) -> None:
     """Say how to work in a workspace a command has just built: `bootstrap` and `release load --workspace`."""
     print("\nTo use this workspace, run:")
-    print(f"  export CGSHOME={root_path}")
+    print(f"  export CGSHOME={root_path.as_posix()}")
     print("\nOr for the current command:")
-    print(f"  CGSHOME={root_path} pixi run cgitsync <command>")
+    print(f"  CGSHOME={root_path.as_posix()} pixi run cgitsync <command>")
 
 
 def _announce_source_resolution(resolution: SnapshotResolution) -> None:
@@ -725,7 +725,7 @@ def _print_gitignore_sync_report(client: ComplexGitSyncClient) -> None:
         return
     for entry in synced_entries:
         status = "committed and pushed" if entry.committed else "not committed"
-        print(f".gitignore updated ({status}): {entry.name} ({entry.absolute_path})")
+        print(f".gitignore updated ({status}): {entry.name} ({entry.absolute_path.as_posix()})")
         for relative_path in entry.added_paths:
             print(f"  + {relative_path}")
 

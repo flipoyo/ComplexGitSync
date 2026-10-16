@@ -42,6 +42,7 @@ from pathlib import Path
 from .cgs_format import CgsDocument
 from .errors import ConfigValidationError, GitSyncError
 from .gts_document import GtsDocument
+from .settings import Settings
 from .universal_clock import ClockProtocol, SystemClock
 
 # ============================================================
@@ -316,7 +317,7 @@ class PathResolver:
             )
         if cgs_path is not None:
             return (Path(cgs_path).expanduser().resolve() / project_name).resolve()
-        cgs_root = (Path.home() / ".cgs").expanduser().resolve()
+        cgs_root = Settings.cgs_root()
         cgs_root.mkdir(parents=True, exist_ok=True)
         stamp = f"{(clock or SystemClock()).now():%Y%m%d%H%M%S}"
         return (cgs_root / f"{project_name}-{stamp}").resolve()

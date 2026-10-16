@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import os
 import shutil
+import stat
 
 from test_close_branch import _git, _identify, _loaded, _two_repo_workspace
 
 from ComplexGitSync.cli import main
+
+
+def _clear_readonly(func, path, _exc_info):
+    """``shutil.rmtree`` ``onerror``: Git for Windows writes ``.git/objects`` read-only."""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 
 def _colleague_pushes(tmp_path, remote, branch):
@@ -59,7 +67,7 @@ def test_a_repository_without_origin_or_not_cloned_is_skipped_with_its_reason(tm
     client = _loaded(tree["snapshot"])
     assert {o.name: o.detail for o in client.fetch()}["conf"] == "no 'origin' remote"
 
-    shutil.rmtree(tree["config"])
+    shutil.rmtree(tree["config"], onerror=_clear_readonly)
     assert {o.name: o.detail for o in client.fetch()}["conf"] == "not cloned yet"
 
 

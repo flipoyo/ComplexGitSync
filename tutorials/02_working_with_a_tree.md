@@ -43,7 +43,9 @@ graph LR
 ## Before you start
 
 You need the READY `CGSil1` tree from Tutorial 1, and `CGSHOME` exported
-in your shell. Every command is typed from your ComplexGitSync clone.
+in your shell. Every command is typed from your ComplexGitSync clone, in
+bash (on Windows, Git Bash: [the tutorials index](README.md) says how to
+adapt another shell).
 
 > **You need write access to push.** `push`, `tag` and `release freeze`
 > write to the remote repositories, and the `CGS_test` sandbox is read-only
@@ -243,7 +245,7 @@ pixi run cgitsync push
 second workspace:
 
 ```bash
-pixi run cgitsync bootstrap ~/CGSil1.cgs CGSil1-latest
+pixi run cgitsync bootstrap "$HOME/CGSil1.cgs" CGSil1-latest
 export CGSHOME=/home/you/.cgs/CGSil1-latest-<timestamp>   # printed by bootstrap
 cat "$CGSHOME/CGSil2/notes.txt"
 ```

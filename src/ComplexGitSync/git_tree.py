@@ -1521,7 +1521,7 @@ def _update_gitignore_file(repo_path: Path, relative_paths: Sequence[str]) -> bo
         return False
 
     prefix = "" if not existing_content or existing_content.endswith("\n") else "\n"
-    with gitignore_path.open("a", encoding="utf-8") as handle:
+    with gitignore_path.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(prefix)
         handle.write("\n".join(missing_entries))
         handle.write("\n")

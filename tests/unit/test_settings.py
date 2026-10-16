@@ -28,6 +28,33 @@ def test_cgspath_overrides_the_root(monkeypatch, tmp_path):
     assert Settings.cgs_root() == (tmp_path / "elsewhere").resolve()
 
 
+def test_home_decides_the_root_before_the_profile_directory(monkeypatch, tmp_path):
+    """Windows' ``Path.home()`` reads ``USERPROFILE`` and ignores ``HOME``; a shell's ``~`` is ``$HOME``."""
+    monkeypatch.delenv(settings.CGS_ROOT_ENV, raising=False)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "profile"))
+    monkeypatch.setenv("HOME", str(tmp_path / "shell-home"))
+
+    assert Settings.cgs_root() == (tmp_path / "shell-home" / ".cgs").resolve()
+
+
+def test_an_unset_or_empty_home_falls_back_to_the_profile_directory(monkeypatch, tmp_path):
+    monkeypatch.delenv(settings.CGS_ROOT_ENV, raising=False)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "profile"))
+
+    assert Settings.home_directory({}) == tmp_path / "profile"
+    assert Settings.home_directory({"HOME": ""}) == tmp_path / "profile"
+
+
+def test_git_bash_hands_over_home_as_a_drive_path_and_it_is_read_as_one():
+    assert Settings.home_directory({"HOME": "/c/Users/you"}, windows=True).as_posix() == "C:/Users/you"
+    assert Settings.home_directory({"HOME": "/d"}, windows=True) == Path("D:/")
+
+
+def test_a_home_that_looks_like_a_drive_path_is_left_alone_off_windows():
+    """``/c/Users/you`` is a perfectly good Linux directory."""
+    assert Settings.home_directory({"HOME": "/c/Users/you"}, windows=False).as_posix() == "/c/Users/you"
+
+
 # ---------------------------------------------------------------------------
 # default_workspace — minted once, then reused
 # ---------------------------------------------------------------------------

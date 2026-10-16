@@ -39,7 +39,7 @@ def _status_display_path(entry: WorkingRepo, root_path: Path) -> str:
     try:
         relative = entry.absolute_path.relative_to(root_path)
     except ValueError:
-        return str(entry.relative_path or entry.absolute_path)
+        return Path(entry.relative_path or entry.absolute_path).as_posix()
     if relative == Path("."):
         return "."
     return relative.as_posix()
