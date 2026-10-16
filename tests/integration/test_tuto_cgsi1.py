@@ -286,48 +286,102 @@ class TestTutoCGSil1CLI:
 
     # ── Tutorial 2 (working with a tree), standalone ───────────────────────
 
-    def test_tutorial_2_a_colleague_lists_and_loads_a_release_made_elsewhere(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
-        """Tutorial 2, Steps 6-8: a release made in one workspace is listed and
-        loaded in another that never saw it, whatever was pushed since."""
+    def test_tutorial_2_works_on_a_branch_and_a_colleague_loads_its_release(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
+        """Tutorial 2, Steps 2-9, against remotes whose ``main`` refuses a push, as GitLab's does.
+
+        The work happens on ``feature``, so ``main`` never receives the
+        ``.gitignore`` ``bootstrap`` writes: the colleague's install still
+        joins the branch and loads a release made on it.
+        """
         sandbox = cgsi1_sandbox
         _patch_remote_urls(monkeypatch, sandbox)
         _patch_git_identity(monkeypatch)
         cgs = str(sandbox["cgs_path"])
+        for name in ("CGSil1", "CGSil2", "CGSih1"):
+            _protect_main(sandbox[f"{name}_remote"])
 
         # Tutorial 1: standalone install
         assert cli_main(["bootstrap", cgs, "CGSil1", "--cgs-path", str(tmp_path / "one")]) == 0
         home = tmp_path / "one" / "CGSil1"
         monkeypatch.setenv("CGSHOME", str(home))
+        capsys.readouterr()
 
-        # Steps 2-5: change, add, commit, push
+        # Step 2: a branch of your own
+        assert cli_main(["branch", "create", "feature"]) == 0
+        assert cli_main(["branch", "list"]) == 0
+        assert "  feature  local          all 3 repositories" in capsys.readouterr().out
+        assert cli_main(["checkout", "feature"]) == 0
+        assert cli_main(["branch", "list"]) == 0
+        assert "* feature" in capsys.readouterr().out
+
+        # Steps 3-6: change, add, commit, push: the branch is published
         (home / "CGSil2" / "notes.txt").write_text("a first note\n", encoding="utf-8")
+        with (home / "CGSih1" / "README.md").open("a", encoding="utf-8") as readme:
+            readme.write("A line added in the tutorial.\n")
         assert cli_main(["add"]) == 0
-        assert cli_main(["commit", "tutorial: a first note"]) == 0
+        assert cli_main(["commit", "tutorial: a first note and a README line"]) == 0
+        capsys.readouterr()
         assert cli_main(["push"]) == 0
-        # Steps 6-7: tag, then release: no pixi.toml here, so it is numbered
+        assert "pushed CGSil2: origin/feature (upstream set)" in capsys.readouterr().out
+        refused = subprocess.run(["git", "push", "origin", "HEAD:main"], cwd=home, capture_output=True, text=True)
+        assert refused.returncode != 0 and "protected branches" in refused.stderr
+
+        # Steps 7-8: tag, then release: no pixi.toml here, so it is numbered
         assert cli_main(["tag", "v0.9"]) == 0
         assert cli_main(["release", "freeze", "first release of the sandbox"]) == 0
         assert "release=CGSil1-1" in capsys.readouterr().out
 
-        # Step 8: a colleague installs from the .cgs, and spoils main
+        # Step 9: the branch moves on after the release
+        with (home / "CGSil2" / "notes.txt").open("a", encoding="utf-8") as notes:
+            notes.write("something we will regret\n")
+        assert cli_main(["add"]) == 0
+        assert cli_main(["commit", "tutorial: a change we will regret"]) == 0
+        capsys.readouterr()
+        assert cli_main(["push"]) == 0
+        assert "pushed CGSil2: origin/feature (+1)" in capsys.readouterr().out
+
+        # Step 9: a colleague installs from the .cgs: main never got the work
         assert cli_main(["bootstrap", cgs, "CGSil1-latest", "--cgs-path", str(tmp_path / "two")]) == 0
         latest = tmp_path / "two" / "CGSil1-latest"
         monkeypatch.setenv("CGSHOME", str(latest))
-        (latest / "CGSil2" / "notes.txt").write_text("a first note\nsomething we will regret\n", encoding="utf-8")
-        assert cli_main(["add"]) == 0
-        assert cli_main(["commit", "tutorial: a change we will regret"]) == 0
-        assert cli_main(["push"]) == 0
+        assert not (latest / "CGSil2" / "notes.txt").exists()
+        assert (latest / ".gitignore").is_file()  # bootstrap's, untracked: main never received it
+
+        # ... joins the branch, past the .gitignore its own install wrote
+        assert cli_main(["checkout", "feature"]) == 0
+        assert (latest / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "a first note\nsomething we will regret\n"
         capsys.readouterr()
 
-        # Step 8: the colleague finds the release and loads it, in place
+        # ... finds the release and loads it, in place
         assert cli_main(["release", "list"]) == 0
         assert "CGSil1-1" in capsys.readouterr().out
         assert cli_main(["release", "load", "1"]) == 0
         assert (latest / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "a first note\n"
 
         # And back to work
-        assert cli_main(["checkout", "main"]) == 0
+        assert cli_main(["checkout", "feature"]) == 0
         assert "regret" in (latest / "CGSil2" / "notes.txt").read_text(encoding="utf-8")
+
+    def test_tutorial_2_a_fresh_install_loads_a_release_made_off_main(self, cgsi1_sandbox, monkeypatch, tmp_path, capsys):
+        """Straight from ``main`` to the release, without joining the branch first."""
+        sandbox = cgsi1_sandbox
+        _patch_remote_urls(monkeypatch, sandbox)
+        _patch_git_identity(monkeypatch)
+        cgs = str(sandbox["cgs_path"])
+        assert cli_main(["bootstrap", cgs, "CGSil1", "--cgs-path", str(tmp_path / "one")]) == 0
+        home = tmp_path / "one" / "CGSil1"
+        monkeypatch.setenv("CGSHOME", str(home))
+        assert cli_main(["checkout", "feature"]) == 0
+        (home / "CGSil2" / "notes.txt").write_text("a first note\n", encoding="utf-8")
+        assert cli_main(["release", "freeze", "first release of the sandbox"]) == 0
+
+        assert cli_main(["bootstrap", cgs, "CGSil1-latest", "--cgs-path", str(tmp_path / "two")]) == 0
+        latest = tmp_path / "two" / "CGSil1-latest"
+        monkeypatch.setenv("CGSHOME", str(latest))
+        assert cli_main(["release", "load", "1"]) == 0
+
+        assert (latest / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "a first note\n"
+        assert (latest / ".gitignore").is_file()
 
 
 # ---------------------------------------------------------------------------
@@ -478,6 +532,22 @@ class TestReleaseTags:
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+
+def _protect_main(remote: Path) -> None:
+    """Make *remote* refuse any push to ``main``, with the words GitLab uses for a protected branch."""
+    hook = remote / "hooks" / "pre-receive"
+    hook.write_text(
+        "#!/bin/sh\n"
+        "while read old new ref; do\n"
+        '  if [ "$ref" = refs/heads/main ]; then\n'
+        "    echo 'GitLab: You are not allowed to push code to protected branches on this project.'\n"
+        "    exit 1\n"
+        "  fi\n"
+        "done\n",
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
 
 
 def _patch_remote_urls(monkeypatch, sandbox: dict[str, Path]) -> None:

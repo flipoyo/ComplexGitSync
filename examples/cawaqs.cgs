@@ -1,26 +1,27 @@
 # CaWaQS tracks a shared branch name across the whole tree and falls back to
 # main when a dependency repo does not carry that branch.
 
-project = { name = "cawaqs", default_branch = "main" }
+project = { name = "cawaqs", default_branch = "C365" }
 
 repos = [
     { repository = "gitlab:cawaqs/cawaqs", relative_path = ".", fallback_branch = "main" },
-    { repository = "gitlab:gutil/libgc", fallback_branch = "main" },
-    { repository = "gitlab:gutil/libpc", fallback_branch = "main" },
-    { repository = "gitlab:gutil/libts", fallback_branch = "main" },
-    { repository = "gitlab:gutil/libprint", fallback_branch = "main" },
-    { repository = "gitlab:gutil/libio", fallback_branch = "main" },
-    { repository = "gitlab:gutil/libchronos", fallback_branch = "main" },
-    { repository = "gitlab:gutil/libspa", fallback_branch = "main" },
-    { repository = "gitlab:ghydro/libfp", fallback_branch = "main" },
-    { repository = "gitlab:ghydro/libnsat", fallback_branch = "main" },
-    { repository = "gitlab:ghydro/libhyd", fallback_branch = "main" },
-    { repository = "gitlab:ghydro/libaq", fallback_branch = "main" },
-    { repository = "gitlab:ghydro/libwet", fallback_branch = "main" },
-    { repository = "gitlab:gmesh/librsv", fallback_branch = "main" },
-    { repository = "gitlab:gmesh/libmesh", fallback_branch = "main" },
-    { repository = "gitlab:gtransp/libttc", fallback_branch = "main" },
-    { repository = "gitlab:gtransp/libseb", fallback_branch = "main" },
-    { repository = "gitlab:gmanagement/libap", fallback_branch = "main" },
-    { repository = "gitlab:gutil/scripts", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libgc", relative_path = "./src/libgc", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libpc", relative_path = "./src/libpc", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libts", relative_path = "./src/libts", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libprint", relative_path = "./src/libprint", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libio", relative_path = "./src/libio", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libchronos", relative_path = "./src/libchronos", fallback_branch = "main" },
+    { repository = "gitlab:gutil/libspa", relative_path = "./src/libspa", fallback_branch = "main" },
+    { repository = "gitlab:ghydro/libfp", relative_path = "./src/libfp", fallback_branch = "main" },
+    { repository = "gitlab:ghydro/libnsat", relative_path = "./src/libnsat", fallback_branch = "main" },
+    { repository = "gitlab:ghydro/libhyd", relative_path = "./src/libhyd
+    ", fallback_branch = "main" },
+    { repository = "gitlab:ghydro/libaq", relative_path = "./src/libaq", fallback_branch = "main" },
+    { repository = "gitlab:ghydro/libwet", relative_path = "./src/libwet", fallback_branch = "main" },
+    { repository = "gitlab:gmesh/librsv", relative_path = "./src/librsv", fallback_branch = "main" },
+    { repository = "gitlab:gmesh/libmesh", relative_path = "./src/libmesh", fallback_branch = "main" },
+    { repository = "gitlab:gtransp/libttc", relative_path = "./src/libttc", fallback_branch = "main" },
+    { repository = "gitlab:gtransp/libseb", relative_path = "./src/libseb", fallback_branch = "main" },
+    { repository = "gitlab:gmanagement/libap", relative_path = "./src/libap", fallback_branch = "main" },
+    { repository = "gitlab:gutil/scripts", relative_path = "./src/scripts", fallback_branch = "main" },
 ]

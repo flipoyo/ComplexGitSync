@@ -42,7 +42,8 @@ graph LR
 > **Every command below is a Pixi task.** Run `pixi install` once per
 > checkout, then always call the CLI as `pixi run cgitsync ...`.
 
-The examples merge the project branch `feature` into `main`.
+The examples merge the project branch `feature` into `main`: a branch
+started as in [Tutorial 2](02_working_with_a_tree.md), step 2.
 
 ## 1. What a tree merge is
 

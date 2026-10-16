@@ -167,7 +167,7 @@
     },
     "git_runner.py": {
       "internal_imports": 3,
-      "loc": 1500,
+      "loc": 1531,
       "public_symbols": 4
     },
     "git_tree.py": {

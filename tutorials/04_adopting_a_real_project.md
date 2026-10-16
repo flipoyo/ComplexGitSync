@@ -270,7 +270,9 @@ pixi run cgitsync submodules import "$WORK/cawaqsviz" --recursive
 pixi run cgitsync branch create retire-submodules
 ```
 
-Creates a purely local branch across the whole tree — nothing pushed yet.
+Creates a purely local branch across the whole tree — nothing pushed yet —
+as in [Tutorial 2](02_working_with_a_tree.md), step 2; `branch list` shows
+it.
 
 One repository can opt out. A repository marked `private = true` in the
 `.cgs` is one you **share with other projects**, so a tree-wide branch move

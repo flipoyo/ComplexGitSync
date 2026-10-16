@@ -798,8 +798,41 @@ class GitRunner:
         self._run("branch", "--track", branch, start_point, cwd=repo_path)
 
     def checkout(self, repo_path: Path | str, branch: str) -> None:
-        """Switch *repo_path* to *branch* (``git checkout``)."""
-        self._run("checkout", branch, cwd=repo_path)
+        """Switch *repo_path* to *branch* (``git checkout``), past an untracked twin (:meth:`_checkout_past_twins`)."""
+        self._checkout_past_twins(repo_path, branch, branch)
+
+    def _checkout_past_twins(self, repo_path: Path | str, ref: str, *args: str) -> None:
+        """``git checkout <args>``, past any untracked file *ref* holds byte for byte.
+
+        Git refuses to overwrite an untracked file even when the checkout
+        writes back the same bytes. ``bootstrap`` leaves one in every root,
+        the ``.gitignore`` naming its children: a branch commits it and a
+        protected ``main`` never receives it, so a second install could not
+        reach that branch, nor a release made on it. Each file Git names is
+        set aside and the checkout retried only when all of them are such
+        twins; any other file is Git's refusal, unchanged, and a retry that
+        fails puts every twin back.
+        """
+        root = Path(repo_path)
+        try:
+            self._run("checkout", *args, cwd=root)
+            return
+        except GitSyncError as error:
+            named = [line.strip() for line in str(error).splitlines() if line.startswith("\t")]
+            twins = {name: (root / name).read_bytes() for name in named if (root / name).is_file()}
+            if "would be overwritten by checkout" not in str(error) or not named or len(twins) < len(named):
+                raise
+            shown = {name: self._query_bytes("show", f"{ref}:{name}", cwd=root) for name in twins}
+            if any(shown[name].returncode != 0 or shown[name].stdout != kept for name, kept in twins.items()):
+                raise
+        for name in twins:
+            (root / name).unlink()
+        try:
+            self._run("checkout", *args, cwd=root)
+        except GitSyncError:
+            for name, kept in twins.items():
+                (root / name).write_bytes(kept)
+            raise
 
     def create_orphan_branch(self, repo_path: Path | str, branch: str) -> None:
         """Switch to a brand-new *branch* with no parent commit (``git checkout --orphan``).
@@ -1262,9 +1295,9 @@ class GitRunner:
         Without one, ``HEAD`` is detached at *sha*.
         """
         if branch:
-            self._run("checkout", "-B", branch, sha, cwd=repo_path)
+            self._checkout_past_twins(repo_path, sha, "-B", branch, sha)
         else:
-            self._run("checkout", "--detach", sha, cwd=repo_path)
+            self._checkout_past_twins(repo_path, sha, "--detach", sha)
 
     def init_repository(self, repo_path: Path | str, *, branch: str) -> None:
         """Make *repo_path* a repository whose first branch is *branch*.

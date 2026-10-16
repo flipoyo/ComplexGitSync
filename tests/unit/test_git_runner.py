@@ -1477,3 +1477,127 @@ def test_git_errors_reach_callers_in_english_under_a_french_locale(
 
     assert "fast-forward" in str(excinfo.value)
     assert "avancer rapidement" not in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# checkout past an untracked twin — the .gitignore a protected main never gets
+# ---------------------------------------------------------------------------
+
+
+def _repo_whose_feature_tracks_a_gitignore_main_lacks(tmp_path) -> Path:
+    """A repository on ``main``, whose ``feature`` branch committed a ``.gitignore``.
+
+    What a second install meets when ``main`` is protected: ``bootstrap``
+    writes the root's ``.gitignore`` untracked, a branch commits it, and
+    ``main`` never receives it.
+    """
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=repo_path, check=True, capture_output=True)
+
+    git("init", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Test")
+    (repo_path / "a.txt").write_text("base\n", encoding="utf-8")
+    (repo_path / "b.txt").write_text("base\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "base")
+    git("checkout", "-b", "feature")
+    (repo_path / ".gitignore").write_text("CGSil2/\n", encoding="utf-8")
+    (repo_path / "notes.txt").write_text("a first note\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "feature")
+    git("checkout", "main")
+    return repo_path
+
+
+class TestCheckoutPastAnUntrackedTwin:
+    """Git refuses to overwrite an untracked file even with the same bytes; ComplexGitSync does not."""
+
+    def test_a_twin_does_not_stop_a_branch_checkout(self, tmp_path):
+        repo_path = _repo_whose_feature_tracks_a_gitignore_main_lacks(tmp_path)
+        (repo_path / ".gitignore").write_text("CGSil2/\n", encoding="utf-8")
+        runner = GitRunner()
+
+        runner.checkout(repo_path, "feature")
+
+        assert runner.current_branch(repo_path) == "feature"
+        assert (repo_path / ".gitignore").read_text(encoding="utf-8") == "CGSil2/\n"
+
+    def test_a_twin_does_not_stop_a_detached_checkout(self, tmp_path):
+        """What ``release load`` runs: ``checkout --detach <sha>``."""
+        repo_path = _repo_whose_feature_tracks_a_gitignore_main_lacks(tmp_path)
+        (repo_path / ".gitignore").write_text("CGSil2/\n", encoding="utf-8")
+        runner = GitRunner()
+        sha = runner.ref_sha(repo_path, "feature")
+
+        runner.checkout_commit(repo_path, sha)
+
+        assert runner.rev_parse_head(repo_path) == sha
+        assert runner.current_branch(repo_path) is None
+
+    def test_a_file_that_differs_is_refused_and_kept(self, tmp_path):
+        repo_path = _repo_whose_feature_tracks_a_gitignore_main_lacks(tmp_path)
+        (repo_path / ".gitignore").write_text("my own rules\n", encoding="utf-8")
+        runner = GitRunner()
+
+        with pytest.raises(GitSyncError, match="would be overwritten by checkout"):
+            runner.checkout(repo_path, "feature")
+
+        assert runner.current_branch(repo_path) == "main"
+        assert (repo_path / ".gitignore").read_text(encoding="utf-8") == "my own rules\n"
+
+    def test_one_file_that_differs_keeps_every_twin_where_it_was(self, tmp_path):
+        repo_path = _repo_whose_feature_tracks_a_gitignore_main_lacks(tmp_path)
+        (repo_path / ".gitignore").write_text("CGSil2/\n", encoding="utf-8")
+        (repo_path / "notes.txt").write_text("a note of mine\n", encoding="utf-8")
+        runner = GitRunner()
+
+        with pytest.raises(GitSyncError, match="notes.txt"):
+            runner.checkout(repo_path, "feature")
+
+        assert runner.current_branch(repo_path) == "main"
+        assert (repo_path / ".gitignore").read_text(encoding="utf-8") == "CGSil2/\n"
+        assert (repo_path / "notes.txt").read_text(encoding="utf-8") == "a note of mine\n"
+
+    def test_a_file_git_cannot_show_at_the_ref_is_not_a_twin(self, tmp_path, monkeypatch):
+        """A failed ``git show`` prints nothing; an empty untracked file must not pass for its twin."""
+        repo_path = _repo_whose_feature_tracks_a_gitignore_main_lacks(tmp_path)
+        (repo_path / ".gitignore").write_bytes(b"")
+        real_query_bytes = GitRunner._query_bytes
+
+        def show_failing(self, *args, cwd=None):
+            if args[:1] == ("show",):
+                return subprocess.CompletedProcess(args, 128, b"", b"fatal: invalid object name")
+            return real_query_bytes(self, *args, cwd=cwd)
+
+        monkeypatch.setattr(GitRunner, "_query_bytes", show_failing)
+
+        with pytest.raises(GitSyncError, match="would be overwritten by checkout"):
+            GitRunner().checkout(repo_path, "feature")
+
+        assert GitRunner().current_branch(repo_path) == "main"
+        assert (repo_path / ".gitignore").read_bytes() == b""
+
+    def test_a_twin_is_put_back_when_the_retry_fails(self, tmp_path, monkeypatch):
+        repo_path = _repo_whose_feature_tracks_a_gitignore_main_lacks(tmp_path)
+        (repo_path / ".gitignore").write_text("CGSil2/\n", encoding="utf-8")
+        real_run = GitRunner._run
+        checkouts: list[tuple[str, ...]] = []
+
+        def run_failing_the_retry(self, *args, cwd=None):
+            if args[:1] == ("checkout",):
+                checkouts.append(args)
+                if len(checkouts) == 2:
+                    raise GitSyncError("Git command failed (git checkout feature): the disk is full")
+            return real_run(self, *args, cwd=cwd)
+
+        monkeypatch.setattr(GitRunner, "_run", run_failing_the_retry)
+
+        with pytest.raises(GitSyncError, match="the disk is full"):
+            GitRunner().checkout(repo_path, "feature")
+
+        assert len(checkouts) == 2
+        assert (repo_path / ".gitignore").read_text(encoding="utf-8") == "CGSil2/\n"
