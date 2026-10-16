@@ -14,8 +14,7 @@ repos = [
     { repository = "gitlab:gutil/libspa", relative_path = "./src/libspa", fallback_branch = "main" },
     { repository = "gitlab:ghydro/libfp", relative_path = "./src/libfp", fallback_branch = "main" },
     { repository = "gitlab:ghydro/libnsat", relative_path = "./src/libnsat", fallback_branch = "main" },
-    { repository = "gitlab:ghydro/libhyd", relative_path = "./src/libhyd
-    ", fallback_branch = "main" },
+    { repository = "gitlab:ghydro/libhyd", relative_path = "./src/libhyd", fallback_branch = "main" },
     { repository = "gitlab:ghydro/libaq", relative_path = "./src/libaq", fallback_branch = "main" },
     { repository = "gitlab:ghydro/libwet", relative_path = "./src/libwet", fallback_branch = "main" },
     { repository = "gitlab:gmesh/librsv", relative_path = "./src/librsv", fallback_branch = "main" },
