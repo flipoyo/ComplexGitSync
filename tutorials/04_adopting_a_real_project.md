@@ -111,16 +111,20 @@ a repository that is not checked out is a repository it cannot find.
 > `error: RPC failed; HTTP 401` / `expected flush after ref listing`:**
 > the submodules are genuinely public repositories, but GitHub can still
 > `401` the anonymous object-fetch a real clone needs. The reliable fix is
-> to authenticate the request. If you already have an SSH key registered
-> with GitHub (check with `ssh -T git@github.com`), rewrite the submodule
-> URLs to SSH for this clone only:
+> to authenticate the request over HTTPS, once, with GitHub's own tool:
+> ```bash
+> gh auth login
+> gh auth setup-git
+> git submodule update --init --recursive
+> ```
+> `gh auth setup-git` makes `gh` Git's credential helper for GitHub, so
+> nothing asks for a password again (GitHub dropped account passwords for
+> Git in 2021). If you already have an SSH key registered with GitHub
+> (check with `ssh -T git@github.com`), you can instead rewrite the
+> submodule URLs to SSH for this clone only:
 > ```bash
 > git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 > ```
-> Otherwise, create a GitHub [personal access
-> token](https://github.com/settings/tokens) and use it as the password
-> when prompted — GitHub dropped account-password auth for git operations
-> in 2021.
 
 Back at the ComplexGitSync clone for every command from here on:
 
@@ -134,8 +138,8 @@ One command does the whole adoption: draft the `.cgs`, build the tree,
 and convert every submodule at both levels.
 
 ```bash
-pixi run cgitsync submodules init "$WORK/cawaqsviz" --dry-run   # show the plan
-pixi run cgitsync submodules init "$WORK/cawaqsviz"             # do it
+pixi run cgitsync submodules init "$WORK/cawaqsviz" --force-protocol https --dry-run   # show the plan
+pixi run cgitsync submodules init "$WORK/cawaqsviz" --force-protocol https             # do it
 ```
 
 The dry run prints what it found and what it would convert, touching
@@ -207,7 +211,7 @@ pixi run cgitsync status
 
 ```bash
 pixi run cgitsync discover "$WORK/cawaqsviz" --write "$WORK/cawaqsviz/cawaqsviz.cgs"
-pixi run cgitsync initialise "$WORK/cawaqsviz/cawaqsviz.cgs" --output-path "$WORK"
+pixi run cgitsync initialise "$WORK/cawaqsviz/cawaqsviz.cgs" --output-path "$WORK" --force-protocol https
 pixi run cgitsync submodules import "$WORK/cawaqsviz" --recursive
 ```
 
@@ -337,21 +341,20 @@ pixi run cgitsync push
 
 > **If `push` fails with `could not read Username` / `terminal prompts
 > disabled` (or, on an older `cgitsync` build, hangs until you `Ctrl+C`
-> it):** the root was cloned over HTTPS in step 1, and pushing needs write
-> credentials that plain HTTPS anonymous access doesn't have. `push` prints
-> this exact fix itself the moment it hits the failure — `hint: this looks
-> like an HTTPS authentication failure — pass --force-protocol ssh to
-> 'push' if you have an SSH key registered with the provider, or configure
-> an HTTPS credential helper otherwise.` Follow it:
+> it):** the tree was cloned over HTTPS, and pushing needs write
+> credentials that anonymous HTTPS access doesn't have. Give Git an HTTPS
+> credential helper, once, with the provider's own tool, then push again:
 > ```bash
-> pixi run cgitsync push --force-protocol ssh
+> glab auth login      # answer yes when it offers to set Git up for HTTPS
+> pixi run cgitsync push
 > ```
-> (only if you have an SSH key registered with GitLab — check with `ssh -T
-> git@gitlab.com`; otherwise, a GitLab [personal access
-> token](https://gitlab.com/-/user_settings/personal_access_tokens) used
-> as the HTTPS password works too.) `--force-protocol` persists the
-> rewrite, so it applies to every command after this one too — no need to
-> repeat the flag on `release freeze` below.
+> (`gh auth login` then `gh auth setup-git` for a GitHub repository.)
+> `cgitsync` never reads or stores the token. Its own hint also names the
+> other way: if you have an SSH key registered with GitLab (check with
+> `ssh -T git@gitlab.com`), `pixi run cgitsync push --force-protocol ssh`
+> switches the remotes to SSH. That rewrite persists, so every command
+> after it uses SSH too. More in the user guide (`docs/MASTER.pdf`,
+> *SSH or HTTPS*).
 
 For a versioned snapshot instead of a plain push, use the minimalist
 cycle:
@@ -380,7 +383,7 @@ needed either way.
 |------|---------|-------------|
 | 1 | `git clone .../cawaqsviz.git "$WORK/cawaqsviz"` | Clone, named to match the project name `discover` will derive |
 | 2 | `git submodule update --init --recursive` | Check out all three submodules, both levels |
-| 3 | `pixi run cgitsync submodules init "$WORK/cawaqsviz"` | Draft the `.cgs`, adopt the root in place, clone the rest, convert every submodule |
+| 3 | `pixi run cgitsync submodules init "$WORK/cawaqsviz" --force-protocol https` | Draft the `.cgs`, adopt the root in place, clone the rest, convert every submodule |
 | 4 | `pixi run cgitsync branch create retire-submodules` | Create a local branch |
 | 5 | `pixi run cgitsync checkout retire-submodules` | Switch to it |
 | 6 | `pixi run cgitsync add` / `commit "..."` | Stage and commit the conversion |

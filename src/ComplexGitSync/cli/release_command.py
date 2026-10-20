@@ -68,6 +68,7 @@ def register(subparser: argparse.ArgumentParser) -> None:
     load.add_argument("name", help="The release: its version or number (1.2.0, 3) or its whole tag.")
     load.add_argument("--workspace", metavar="NAME", help="Load it into a new workspace of this name instead, as bootstrap does.")
     load.add_argument("--cgs-path", dest="cgs_path", help="With --workspace: CGSPATH, so the workspace is CGSPATH/NAME.")
+    load.add_argument("--force-protocol", dest="force_access_protocol", choices=("ssh", "https"), default=None, help="Clone every repository this load clones over this protocol, as bootstrap's --force-protocol does; repositories already cloned keep their remote.")
     _add_source_arguments(load)
     subparser.set_defaults(handler=handle)
 
@@ -112,7 +113,7 @@ def _execute_list(client: ComplexGitSyncClient, source: Path, args: argparse.Nam
 
 def _execute_load(client: ComplexGitSyncClient, source: Path, args: argparse.Namespace) -> int:
     _load_ready_registry_source(client, source)
-    registry = client.load_release(args.name, workspace=args.workspace, cgs_path=args.cgs_path)
+    registry = client.load_release(args.name, workspace=args.workspace, cgs_path=args.cgs_path, force_access_protocol=args.force_access_protocol)
     print(f"{_format_tree_state_line(client.get_tree_state())} release={args.name}")
     _print_repo_tree_result(client)
     if args.workspace:

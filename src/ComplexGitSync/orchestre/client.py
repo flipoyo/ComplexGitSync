@@ -665,9 +665,9 @@ class ComplexGitSyncClient:
         """Every release of this project, newest first, whoever made it."""
         return self._release_commands.list_releases()
 
-    def load_release(self, name: str, *, workspace: str | None = None, cgs_path: str | Path | None = None) -> WorkingGitTree:
+    def load_release(self, name: str, *, workspace: str | None = None, cgs_path: str | Path | None = None, force_access_protocol: str | None = None) -> WorkingGitTree:
         """Put the tree back at release *name*, in place or into a new *workspace*."""
-        return self._release_commands.load_release(name, workspace=workspace, cgs_path=cgs_path)
+        return self._release_commands.load_release(name, workspace=workspace, cgs_path=cgs_path, force_access_protocol=force_access_protocol)
 
     def freeze_state(
         self,

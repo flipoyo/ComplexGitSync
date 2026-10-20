@@ -91,9 +91,10 @@ Standalone — bootstrap                       Nested — initialise
 
 Each command refuses the other's job and names the right one.
 
-> **SSH or HTTPS.** Repositories are cloned over SSH by default. Without an
-> SSH key on GitLab and GitHub, add `--force-protocol https` to `bootstrap`
-> or `initialise`.
+> **SSH or HTTPS.** A `.cgs` clones over SSH by default. These tutorials add
+> `--force-protocol https` to every command that clones, so they work without
+> an SSH key. Why, and how to switch to SSH later: the user guide
+> (`docs/MASTER.pdf`, *SSH or HTTPS*).
 
 ---
 
@@ -120,7 +121,7 @@ pixi run cgitsync view-tree "$HOME/CGSil1.cgs"
 **Build the tree:**
 
 ```bash
-pixi run cgitsync bootstrap "$HOME/CGSil1.cgs"
+pixi run cgitsync bootstrap "$HOME/CGSil1.cgs" --force-protocol https
 ```
 
 `bootstrap` creates a new directory under `$HOME/.cgs/`, named after the
@@ -143,8 +144,8 @@ pixi run cgitsync status
 
 Every command prints the workspace it is acting on. When you start another
 project in the same shell, export its `CGSHOME` too. To give a workspace a
-name of your own, add it after the `.cgs`: `bootstrap "$HOME/CGSil1.cgs" trial`
-lands on `$HOME/.cgs/trial-<timestamp>`.
+name of your own, add it after the `.cgs`: `bootstrap "$HOME/CGSil1.cgs" trial
+--force-protocol https` lands on `$HOME/.cgs/trial-<timestamp>`.
 
 ---
 
@@ -159,7 +160,7 @@ cd CGSil1
 git clone https://github.com/flipoyo/ComplexGitSync
 cd ComplexGitSync
 pixi install
-pixi run cgitsync initialise ../CGSil1.cgs
+pixi run cgitsync initialise ../CGSil1.cgs --force-protocol https
 pixi run cgitsync status
 ```
 
@@ -180,8 +181,9 @@ back to an earlier State.
 |---|---|
 | `pixi run cgitsync validate <file.cgs>` | Check a description, clone nothing |
 | `pixi run cgitsync view-tree <file.cgs>` | Draw the tree it describes |
-| `pixi run cgitsync bootstrap <file.cgs> [name]` | Standalone: clone the whole tree into a new workspace, named after the project unless you give a name |
-| `pixi run cgitsync initialise <file.cgs>` | Nested: clone the tree around a root you cloned |
+| `pixi run cgitsync bootstrap <file.cgs> [name] --force-protocol https` | Standalone: clone the whole tree into a new workspace, named after the project unless you give a name |
+| `pixi run cgitsync initialise <file.cgs> --force-protocol https` | Nested: clone the tree around a root you cloned |
+| `--force-protocol https` | Clone over HTTPS instead of the `.cgs` default, SSH |
 | `pixi run cgitsync status` | Where every repository stands |
 
 `tests/integration/test_tuto_cgsi1.py` runs both installs against local

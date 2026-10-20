@@ -683,7 +683,7 @@ class TestCgsDocumentValid:
         doc = CgsDocument.from_toml(examples / "cawaqs.cgs")
 
         assert doc.project_name == "cawaqs"
-        assert doc.default_branch == "main"
+        assert doc.default_branch == "C365"
         assert len(doc.repos) == 19
         assert doc.repos[0]["gitprovider"] == "gitlab"
         assert doc.repos[0]["project_owner_name"] == "cawaqs"

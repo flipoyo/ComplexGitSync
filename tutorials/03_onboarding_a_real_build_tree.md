@@ -148,7 +148,7 @@ pixi run cgitsync validate examples/cawaqs.cgs
 Clones all 19 repositories into a fresh, isolated `CGSHOME`:
 
 ```bash
-pixi run cgitsync bootstrap examples/cawaqs.cgs cawaqs-smoke-test
+pixi run cgitsync bootstrap examples/cawaqs.cgs cawaqs-smoke-test --force-protocol https
 ```
 
 `bootstrap` prints the resolved `CGSHOME` path on success; keep it for the
@@ -186,7 +186,7 @@ make -f Makefile
 | Step | Command | Description |
 |------|---------|-------------|
 | 1 | `pixi run cgitsync validate examples/cawaqs.cgs` | Parse and check the topology |
-| 2 | `pixi run cgitsync bootstrap examples/cawaqs.cgs cawaqs-smoke-test` | Clone all 19 repos into an isolated `CGSHOME` |
+| 2 | `pixi run cgitsync bootstrap examples/cawaqs.cgs cawaqs-smoke-test --force-protocol https` | Clone all 19 repos into an isolated `CGSHOME` |
 | 3 | `pixi run cgitsync view-tree --search-dir <path>` | Render the tree summary |
 | 4 | `pixi run cgitsync checkout my-feature-branch` | Retarget the whole tree to a shared branch, with per-repo fallback |
 | hand-off | `make -f Makefile` (project's own build) | Out of scope for `cgitsync` — compiles the checked-out tree |

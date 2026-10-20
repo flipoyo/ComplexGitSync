@@ -134,6 +134,16 @@ halves deliberately, so it is worth knowing before you get there.
 
 ## 2. Giving your memory a repository, once per project
 
+> **The memory's repository is reached over SSH.** Every other tutorial
+> clones over HTTPS, but `cgitsync` always gives the memory an SSH remote
+> (`git@github.com:...`, below), whatever protocol the tree uses. So this is
+> where you need an SSH key registered with the memory's provider: check
+> with `ssh -T git@github.com` (or `git@gitlab.com`). This is also a good
+> moment to switch the whole tree to SSH: `pixi run cgitsync pull
+> --force-protocol ssh` rewrites every remote and changes no State. How to
+> make a key, and the switch in full: the user guide (`docs/MASTER.pdf`,
+> *SSH or HTTPS*).
+
 ### The short way — one command, whenever you want
 
 If your tree is a developer's (`cgitsync status` says `profile=dev`) and its

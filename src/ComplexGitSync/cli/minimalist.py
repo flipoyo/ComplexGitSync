@@ -102,10 +102,10 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                 help=(
                     "Override access_protocol in memory for every repo this run clones, "
                     "including ones discovered later from a nested .cgs in a different "
-                    "repo. No .cgs file is read differently or written. Expert option "
-                    "meant for CI (e.g. forcing https so no SSH key/agent is required on "
-                    "the runner) — leave unset for normal use, which follows whatever "
-                    "each .cgs entry actually declares."
+                    "repo. No .cgs file is read differently or written. Use https without "
+                    "an SSH key (CI, and the tutorials); unset follows what each .cgs "
+                    "entry declares, ssh by default. User guide: 'SSH or HTTPS'. "
+                    "Later pull and push use the protocol each clone got."
                 ),
             )
             add_gitignore_sync_arguments(subparser)
@@ -138,8 +138,8 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                     "Override access_protocol in memory for every repo this run clones "
                     "(including the root, which bootstrap clones from scratch) and any "
                     "discovered later from a nested .cgs in a different repo. No .cgs "
-                    "file is read differently or written. Expert option meant for CI — "
-                    "leave unset for normal use."
+                    "file is read differently or written. Use https without an SSH key "
+                    "(CI, and the tutorials); user guide: 'SSH or HTTPS'."
                 ),
             )
             subparser.set_defaults(handler=_handle_bootstrap)

@@ -54,6 +54,13 @@ adapt another shell).
 > your account's name in your copy of `CGSil1.cgs`, and bootstrap that.
 > Without a fork, steps 1 to 5 work unchanged, `push --dry-run` shows what
 > step 6 would send, and steps 7 to 9 can only be read.
+>
+> **Pushing over HTTPS.** The tree was cloned over HTTPS, so Git asks for
+> your credentials when you push. Let the provider's own command-line tool
+> give them, once: `glab auth login` (it offers to set Git up for HTTPS) for
+> the GitLab forks, and `gh auth login` then `gh auth setup-git` for the
+> GitHub one. `cgitsync` never reads or stores a token. More in the user
+> guide (`docs/MASTER.pdf`, *SSH or HTTPS*).
 
 ---
 
@@ -245,7 +252,7 @@ pixi run cgitsync push
 second workspace:
 
 ```bash
-pixi run cgitsync bootstrap "$HOME/CGSil1.cgs" CGSil1-latest
+pixi run cgitsync bootstrap "$HOME/CGSil1.cgs" CGSil1-latest --force-protocol https
 export CGSHOME=/home/you/.cgs/CGSil1-latest-<timestamp>   # printed by bootstrap
 cat "$CGSHOME/CGSil2/notes.txt"
 ```
@@ -289,7 +296,7 @@ that made it, the same row reads `ledger+tag`: that disk recorded it too.
 **Load it.**
 
 ```bash
-pixi run cgitsync release load 1
+pixi run cgitsync release load 1 --force-protocol https
 cat "$CGSHOME/CGSil2/notes.txt"
 ```
 
@@ -323,11 +330,12 @@ do next is lost. If you committed on the detached tree with plain `git`,
 
 A repository with uncommitted changes stops the load, by name, before
 anything moves. A repository the release records and your workspace lacks is
-cloned for you. To keep your workspace as it is and look at the release
-beside it, load it into a new one instead:
+cloned for you, over HTTPS because of `--force-protocol https`. To keep
+your workspace as it is and look at the release beside it, load it into a
+new one instead:
 
 ```bash
-pixi run cgitsync release load 1 --workspace CGSil1-1
+pixi run cgitsync release load 1 --workspace CGSil1-1 --force-protocol https
 ```
 
 It prints the `export CGSHOME=...` line for the new workspace, the same one
@@ -356,7 +364,7 @@ repository of its own.
 | 7 | `pixi run cgitsync tag <name>` | Tag every repository and push the tag |
 | 8 | `pixi run cgitsync release freeze "message"` | Add, commit, pull, push, tag `<project>-<version>` and record the release's State |
 | 9 | `pixi run cgitsync release list` | Every release of the project, whoever made it |
-| 9 | `pixi run cgitsync release load <version>` | Put the tree back at a release; `--workspace NAME` in a new one |
+| 9 | `pixi run cgitsync release load <version> --force-protocol https` | Put the tree back at a release; `--workspace NAME` in a new one |
 
 Every command takes `--help`. Next:
 [Tutorial 3 — Onboarding a Real Build Tree](03_onboarding_a_real_build_tree.md)

@@ -32,7 +32,7 @@ import tomli_w
 
 from .. import __build__, __version__
 from ..errors import GitSyncError
-from ..git_repo import RefKind, RepoScope
+from ..git_repo import AccessProtocol, RefKind, RepoScope
 from ..git_tree import ROOT_REPO_ID, WorkingGitTree
 from ..git_tree_branch import tree_project_name
 from ..gts_document import GtsDocument
@@ -258,14 +258,14 @@ class ReleaseCommands:
 
     # -- load ---------------------------------------------------------------
 
-    def load_release(self, name: str, *, workspace: str | None = None, cgs_path: str | Path | None = None) -> WorkingGitTree:
+    def load_release(self, name: str, *, workspace: str | None = None, cgs_path: str | Path | None = None, force_access_protocol: str | None = None) -> WorkingGitTree:
         """Put the tree back at release *name*: in place, or into a new *workspace*.
 
         *name* is the whole tag or what follows ``<project>-`` (``1``,
         ``2.0.0``, ``beta``). In place, every repository the release
         recorded is left detached at its recorded commit and no branch
         moves; a tree with uncommitted changes to tracked files is refused
-        first, naming each repository.
+        first, naming each repository. *force_access_protocol*: as bootstrap's, for every clone it makes.
         """
         project = self.project_name()
         rows = {row["tag"]: row for row in self.list_releases()}
@@ -276,7 +276,8 @@ class ReleaseCommands:
             raise GitSyncError(f"{row['tag']} is a tag with no recorded State, so it cannot be loaded; 'cgitsync checkout {row['tag']} --ref-kind tag' looks at it.")
         state_path = self._state_file(row)
         if workspace:
-            return self.client.bootstrap(state_path, workspace, cgs_path=cgs_path)
+            return self.client.bootstrap(state_path, workspace, cgs_path=cgs_path, force_access_protocol=force_access_protocol)
+        self.client._forced_access_protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
         return self._load_in_place(row["tag"], state_path)
 
     def _state_file(self, row: dict[str, Any]) -> Path:

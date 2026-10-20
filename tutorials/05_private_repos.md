@@ -41,6 +41,21 @@ graph LR
 > checkout, then always write `pixi run cgitsync ...`, never a bare
 > `cgitsync ...`.
 
+> **This tutorial stays on SSH.** It works on ComplexGitSync's own
+> developer tree, whose private repositories need a developer's credentials
+> whatever the protocol, and real developer work is better done over SSH.
+> To work through the tutorial without an SSH key, add `--force-protocol
+> https` to the clone, with HTTPS credentials that reach the private
+> repositories:
+>
+> ```bash
+> pixi run cgitsync initialise <your.cgs>                          # SSH, the default
+> pixi run cgitsync initialise <your.cgs> --force-protocol https   # the tutorial only
+> ```
+>
+> The user guide (`docs/MASTER.pdf`, *SSH or HTTPS*) says how to switch
+> back to SSH.
+
 ---
 
 ## 1. Project repos and private repos

@@ -112,7 +112,7 @@
     },
     "cli/release_command.py": {
       "internal_imports": 11,
-      "loc": 118,
+      "loc": 119,
       "public_symbols": 3
     },
     "cli/suggest.py": {
@@ -417,7 +417,7 @@
     },
     "orchestre/release_commands.py": {
       "internal_imports": 19,
-      "loc": 306,
+      "loc": 307,
       "public_symbols": 2
     },
     "orchestre/reporting.py": {
@@ -437,7 +437,7 @@
     },
     "orchestre/tree_commands.py": {
       "internal_imports": 36,
-      "loc": 1091,
+      "loc": 1092,
       "public_symbols": 1
     },
     "paths.py": {

@@ -15,8 +15,9 @@ so a first-time user sees the full lifecycle before hand-authoring their
 own `.cgs`.
 
 **What you will find.** Seven tutorials, each building on the last, a
-reminder that every command shown is a Pixi task, and which shell they
-assume (bash, which on Windows is Git Bash) and how to adapt another.
+reminder that every command shown is a Pixi task, which shell they
+assume (bash, which on Windows is Git Bash) and how to adapt another, and
+why they clone over HTTPS.
 
 **Who it is for.** Anyone new to `cgitsync`. Start at Tutorial 1 regardless
 of your own project's shape — it establishes the vocabulary the other six
@@ -112,6 +113,16 @@ If your shell is not bash, only the lines that are shell syntax change; every
 | `echo "text" >> FILE`, `cat FILE` | `Add-Content FILE "text"`, `Get-Content FILE` | `echo text>> FILE`, `type FILE` |
 
 The repository identifiers and the Git steps are the same everywhere.
+
+## SSH or HTTPS
+
+The tutorials clone over **HTTPS**, so they work for a reader who has no SSH
+key on GitLab or GitHub: every command that clones carries
+`--force-protocol https`. Copy it as it is. SSH stays the default for your
+own `.cgs`. Pushing over HTTPS, why the tutorials do this and how to switch a
+tree to SSH later are in the user guide ([docs/MASTER.pdf](../docs/MASTER.pdf),
+*SSH or HTTPS*). Tutorial 5 is the one exception: it works on a developer's
+tree and stays on SSH.
 
 For full command-by-command reference (every flag, every document format),
 see [docs/MASTER.pdf](../docs/MASTER.pdf) (source: [docs/Text/](../docs/Text/))

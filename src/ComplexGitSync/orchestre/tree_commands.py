@@ -105,6 +105,7 @@ class TreeCommands:
             registry = self.client.load_gts(resolved_source)
             registry_values = registry.values() if hasattr(registry, "values") else ()
             if any(not entry.absolute_path.exists() for entry in registry_values):
+                self.client._forced_access_protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
                 registry = self.client._restore_gts_snapshot(resolved_source)
             else:
                 protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
