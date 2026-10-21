@@ -94,3 +94,22 @@ def test_a_root_named_otherwise_on_its_provider_is_warned_about(tmp_path):
 
     with pytest.warns(UserWarning, match="'demo-repo' on its provider"):
         _loaded(tree["snapshot"])
+
+
+def test_a_proof_from_the_tree_verifies_against_what_its_gts_recorded(tmp_path):
+    """Every repository's proof, made from the tree, checks against the stored leaf hash, root and size."""
+    tree = _workspace(tmp_path)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        client = _loaded(tree["snapshot"])
+        registry = client.get_dependency_registry()
+        stored = GtsDocument.from_toml(client.write_gts_snapshot(command_origin="validate"))
+    space = OperatingSpace(registry)
+    recorded = {repo["relative_path"]: repo["repo_hash"] for repo in stored.repo_states}
+
+    assert len(recorded) == len(registry.values()) == 2
+    for entry in registry.values():
+        proof = space.inclusion_proof(entry.repo_id)
+        leaf_hash = recorded[entry.relative_path.as_posix()]
+        assert proof.verify(leaf_hash, stored.gittree_root, len(recorded))
+        assert not proof.verify(leaf_hash, stored.gittree_root, len(recorded) + 1)

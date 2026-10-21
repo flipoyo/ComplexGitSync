@@ -498,6 +498,7 @@
   },
   "ring0_modules": [
     "errors",
-    "gts_integrity"
+    "gts_integrity",
+    "inclusion_proof"
   ]
 }
