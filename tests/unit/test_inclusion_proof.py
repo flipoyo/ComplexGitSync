@@ -1,7 +1,7 @@
 """Tests for inclusion_proof — one repository's audit path to ``H_GITTREE``.
 
 Every proof is checked three ways: it verifies against ``merkle_root``, its
-siblings equal those of an independent from-scratch RFC 6962 audit path built
+siblings equal those of an independent from-scratch RFC 9162 audit path built
 here on ``hashlib`` alone, and any one altered field makes it fail. The
 schema-1 golden vectors stay in ``test_gts_integrity.py``, untouched.
 """
@@ -30,7 +30,7 @@ def _leaf(index: int) -> dict:
     }
 
 
-# -- an independent RFC 6962 implementation, on hashlib alone ----------------
+# -- an independent RFC 9162 implementation, on hashlib alone ----------------
 
 
 def _leaf_digest(leaf: dict) -> bytes:

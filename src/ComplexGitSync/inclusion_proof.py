@@ -1,7 +1,7 @@
 """inclusion_proof — prove one repository is in a GitTree without showing the others.
 
 Ring: 0 (pure — no I/O, no clock, no environment)
-Contract: an RFC 6962 (RFC 9162 §2.1.3) audit path from one repository's
+Contract: an RFC 9162 §2.1.3 (formerly RFC 6962) audit path from one repository's
     leaf to ``H_GITTREE`` under ``integrity_schema = 1``, and its check
     against a trusted root. Private: no client method and no command uses it
     yet; OmniscienceQuery is where a proof reaches a user.
@@ -62,7 +62,7 @@ class InclusionProof:
 
     @staticmethod
     def _path(index: int, ordered: Sequence[Mapping[str, Any]]) -> list[str]:
-        """RFC 6962 ``PATH(m, D[n])``, leaf first, each sibling a subtree root from ``merkle_root``."""
+        """RFC 9162 §2.1.3.1 ``PATH(m, D[n])``, leaf first, each sibling a subtree root from ``merkle_root``."""
         if len(ordered) <= 1:
             return []
         split = 1

@@ -15,10 +15,10 @@ an inner tree node, over two raw 32-byte digests), so a mismatch can be
 traced down to the one repository that changed instead of only "this State
 is wrong".
 
-The tree follows RFC 6962 §2.1: no leaf is ever duplicated, so an inclusion
-proof could be added later without changing any digest. The specification
-is the GtsHashRepoPrecision ticket, §3, and ``AdditionalSpecs.md``, *What a
-State's name is computed from*.
+The tree follows RFC 9162 §2.1.1, the same tree as the RFC 6962 it obsoletes:
+no leaf is ever duplicated, so an inclusion proof (``inclusion_proof.py``)
+adds no digest. The specification is the GtsHashRepoPrecision ticket, §3,
+and ``AdditionalSpecs.md``, *What a State's name is computed from*.
 
 **A released integrity schema is immutable.** Any change to what is hashed
 or how is ``INTEGRITY_SCHEMA = 2``, with schema 1 still verifiable. The
@@ -94,7 +94,7 @@ class GtsIntegrity:
     @classmethod
     def _subtree(cls, digests: Sequence[bytes]) -> bytes:
         if not digests:
-            # RFC 6962 §2.1, MTH({}): only the default workspace's empty,
+            # RFC 9162 §2.1.1 (RFC 6962 §2.1), MTH({}): only the default workspace's empty,
             # never-READY State has no repository (GtsDocument.validate).
             return hashlib.sha256(b"").digest()
         if len(digests) == 1:
