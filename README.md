@@ -168,7 +168,6 @@ pixi run cgitsync help --all        # every command and option on one page
 
 - Contact: nicolas.flipo@minesparis.psl.eu
 - AUTH: Nicolas Flipo
-<!-- - Contributors (ongoing): Simone Mazzarelli, Tristan Bourgeois, Nicolas Gallois, Pierre Guillou, Fabien Ors -->
 
 ## LLM assistance
 
@@ -178,13 +177,13 @@ here rather than credited as co-authors on commits, merges or pull
 requests, following the convention that paid assistance is acknowledged
 and not co-signed.
 
-Main assistance as of august 2026:
+Main assistance:
 - **Claude** (Anthropic) —  including Claude Code with Claude Opus 5 and
   Claude Sonnet 5
 
-Initial Assistance between may and august 2026:
+Secondary Assistance:
+- **ChatGPT** (OpenAI) —  GPT-6 and chatGPT-5.4
 - **GitHub Copilot**
-- **ChatGPT** (OpenAI)
 - **Mistral Vibe** (mistralAI)
 
 Responsibility for everything in this repository rests under the license terms.
