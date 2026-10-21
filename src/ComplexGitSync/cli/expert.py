@@ -24,7 +24,7 @@ from ..memory.integrity import HistoryState
 from ..memory.self_history import VALID_AGENT_ROLES, AgentInfo
 from ..operations import MERGE_RESOLVE_HINT, MemoryMergeOperation
 from ..orchestre import ComplexGitSyncClient
-from . import memory_asof, memory_prompt
+from . import memory_asof, memory_prompt, omniscience_command
 from ._shared import (
     _add_gitignore_sync_arguments,
     _add_json_argument,
@@ -68,6 +68,7 @@ COMMANDS: dict[str, str] = {
     "verify": "Check the hash-chained .cgitsync/lgr ledger, or repair its HEAD cache (check, repair).",
     "memory": "What this workspace remembers: read it (status, list, show, explore, as-of), keep it in a repository.",
     "self-history": "The private record of agent work on this project (add, adopt, list).",
+    "omniscience": omniscience_command.HELP,
 }
 
 
@@ -230,18 +231,11 @@ def _add_private_argument(subparser: argparse.ArgumentParser, *, verb: str) -> N
 def _add_scope_arguments(subparser: argparse.ArgumentParser) -> None:
     """Add ``--private`` and ``--all``: the two ways to move off the default.
 
-    For the commands that write this project's own history --- ``add``,
-    ``commit``, ``push``, ``merge`` --- the bare form has always meant "the
-    repositories this project owns" and still does. ``--private`` swaps that
-    for the writable configuration repositories; ``--all`` takes both in one
-    pass. They are mutually exclusive because ``--all`` already includes what
-    ``--private`` selects.
-
-    ``--all`` is the user's word, not the code's: internally it maps to
-    ``RepoScope.WRITABLE``, which is narrower than ``RepoScope.ALL``. No form
-    of either flag ever writes to a read-only configuration repository, which
-    is why the help text says so rather than leaving "all" to be read
-    literally.
+    For ``add``, ``commit``, ``push`` and ``merge``, the bare form means the
+    repositories this project owns. ``--private`` swaps that for the writable
+    configuration repositories; ``--all`` takes both, so the two are mutually
+    exclusive. ``--all`` maps to ``RepoScope.WRITABLE``, narrower than
+    ``RepoScope.ALL``: neither flag ever writes to a read-only repository.
     """
     group = subparser.add_mutually_exclusive_group()
     group.add_argument(
@@ -893,6 +887,7 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "verify": _register_verify,
     "memory": _register_memory,
     "self-history": _register_self_history,
+    "omniscience": omniscience_command.register,
 }
 
 

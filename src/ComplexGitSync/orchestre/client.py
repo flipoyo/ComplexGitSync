@@ -91,6 +91,7 @@ from .gitignore_sync import GitignoreSync
 from .installer import Installer
 from .memory_commands import MemoryCommands
 from .memory_setup import MemorySetup
+from .omniscience_commands import OmniscienceCommands
 from .orchestre import Orchestre
 from .release_commands import ReleaseCommands, ReleaseLoad
 from .reporting import Reporting
@@ -192,6 +193,7 @@ class ComplexGitSyncClient:
         self._tree_commands = TreeCommands(self)
         self._memory_commands = MemoryCommands(self)
         self._release_commands = ReleaseCommands(self)
+        self._omniscience_commands = OmniscienceCommands(self)
         self._discovery_commands = DiscoveryCommands(self)
         self._reporting = Reporting(self)
         self._environment_commands = EnvironmentCommands(self)
@@ -662,6 +664,14 @@ class ComplexGitSyncClient:
         """The tag ``release freeze`` would use now, and where its suffix came from."""
         return self._release_commands.next_release_tag(force_tag)
 
+    def omniscience_mount(self, cgs_path: str | Path | None, cgshome: str | Path, *, repository: str | None = None, contribute: bool = False) -> dict[str, Any]:
+        """Declare the shared Omniscience repository in the .cgs and clone it at .omniscience (developer trees only)."""
+        return self._omniscience_commands.mount(cgs_path, cgshome, contribute=contribute, **({"repository": repository} if repository else {}))
+
+    def omniscience_record(self, cgshome: str | Path, state: str) -> dict[str, Any]:
+        """The registration record a State would make, with its hashes; nothing is written."""
+        return self._omniscience_commands.record(cgshome, state)
+
     def list_releases(self) -> list[dict[str, Any]]:
         """Every release of this project, newest first, whoever made it."""
         return self._release_commands.list_releases()
@@ -1129,7 +1139,7 @@ class ComplexGitSyncClient:
         if commit_logs_source.is_dir():
             for path in sorted(commit_logs_source.glob("*.toml")):
                 state_hash = path.stem
-                log = CommitLog(commit_logs_source).read(state_hash)
+                log = CommitLog(pending_dir).read(state_hash)
                 if log["commit"]:
                     CommitLog(mount).append_commits(state_hash, [CommitRecord(**row) for row in log["commit"]])
                 if log["published"]:

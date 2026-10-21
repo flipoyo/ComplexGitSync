@@ -2,15 +2,12 @@
 
 Ring: 4. Contract: for each command path, one sentence on what it does and one
     to three real invocations. Data only: `cli/help_format.py` applies it to the
-    parser after `build_parser()` assembles it, so the command modules — `cli/expert.py`
-    is past its 2000-line ratchet — never grow to carry help text. Lists of
-    commands and options are never written here: they are generated from the
-    parser, so they cannot go stale.
+    parser, so command modules never carry help text. Lists of commands and
+    options are generated from the parser, never written here.
 Imports: none
 
-Every example is parsed by `tests/unit/test_help_ergonomy.py`; an example that
-no longer parses fails the suite. Examples are spelled `cgitsync ...`; from a
-clone, prefix them with `pixi run` (said once, in the top-level help).
+Every example is parsed by `tests/unit/test_help_ergonomy.py`. Examples are
+spelled `cgitsync ...`; from a clone, prefix them with `pixi run`.
 """
 
 from __future__ import annotations
@@ -26,6 +23,7 @@ SEARCH_DIR_HELP = (
 GROUP_DESCRIPTIONS: dict[tuple[str, ...], str] = {
     ("memory",): "What this workspace remembers, how to read it, and how to keep it in a repository.",
     ("self-history",): "The private record of agent work on this project.",
+    ("omniscience",): "The shared register of projects: join it, and see what a State would register.",
     ("repo",): "Create a repository on its provider, without leaving cgitsync.",
     ("env",): (
         "Observe this tree's reproducibility environment (show), "
@@ -149,6 +147,8 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
         "Read-only; a moved push is reported, never repaired.",
         ("cgitsync memory verify", "cgitsync memory verify --published"),
     ),
+    ("omniscience", "mount"): ("For a developer tree: read-only unless --contribute; clones this project's branch, else the index branch. Registers nothing.", ("cgitsync omniscience mount", "cgitsync omniscience mount --contribute")),
+    ("omniscience", "record"): ("The State must be in the committed memory ('cgitsync memory push'). Writes nothing.", ("cgitsync omniscience record 3f9a", "cgitsync omniscience record 3f9a --json")),
     ("memory", "reboot"): (
         "Archive this memory's branch under a dated name and start a fresh, empty one under the same name. "
         "Nothing is deleted.",

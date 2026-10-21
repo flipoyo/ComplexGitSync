@@ -442,3 +442,23 @@ def test_a_release_in_a_dev_tree_is_listed_and_loaded_and_the_memory_stays_on_it
     assert _git(tree["root"], "rev-parse", "HEAD") == released
     assert _git(tree["root"], "branch", "--show-current") == ""
     assert _git(tree["mount"], "branch", "--show-current") == memory_branch
+
+
+def test_a_fold_keeps_the_commit_log_it_moves_into_the_memory(tmp_path):
+    """The fold copied commit logs out of the wrong directory and deleted the originals, so a push lost every message and every publication row."""
+    from ComplexGitSync.memory.commit_log import CommitLog
+
+    tree = _memory_ready_workspace(tmp_path)
+    client = _loaded(tree["snapshot"])
+    _change(tree["root"], "work.txt", "one")
+    client.commit("work worth keeping")
+    client.push()
+    client.memory_push(tree["root"])  # the rows the push wrote are pending until this fold
+
+    assert not (tree["root"] / ".cgitsync" / "commit-logs").exists()
+    kept = {state.stem: CommitLog(tree["mount"]).read(state.stem) for state in (tree["mount"] / "state").glob("*.gts")}
+    commits = [row for log in kept.values() for row in log["commit"]]
+    published = [row for log in kept.values() for row in log["published"]]
+    assert [row["message"] for row in commits] == ["work worth keeping"]
+    assert len(published) == 1 and published[0]["sha"] == commits[0]["sha"]
+    assert _git(tree["mount"], "ls-files", "commit-logs")  # and it is committed, so a reader can fetch it

@@ -498,7 +498,10 @@
   },
   "ring0_modules": [
     "errors",
+    "global_index",
+    "global_integrity",
     "gts_integrity",
-    "inclusion_proof"
+    "inclusion_proof",
+    "omniscience_record"
   ]
 }
