@@ -107,7 +107,8 @@ def test_gittree_rename_updates_repo_key_for_new_name():
 
 
 def test_gittree_to_cgs_returns_valid_reference_document():
-    tree = GitTree(project_name="demo", default_branch="develop")
+    tree = GitTree(default_branch="develop")
+    tree._name_project("demo")
     root = GitRepo(project_owner_name="owner", project_name="demo")
     child = GitRepo(project_owner_name="owner", project_name="child")
     tree.add_repo(root)

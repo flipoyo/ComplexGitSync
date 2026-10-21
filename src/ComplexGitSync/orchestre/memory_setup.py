@@ -126,7 +126,7 @@ class MemorySetup:
         provider = provider or self.DEFAULT_PROVIDER
         owner = owner or self.guess_owner(registry)
         name = name or DEFAULT_MEMORY_REPOSITORY
-        entry = MemoryRepository.mount_entry(owner, root.name, provider=provider, name=name) if owner else None
+        entry = MemoryRepository.mount_entry(owner, registry.project_name, provider=provider, name=name) if owner else None
         plan = creation_plan(parse_repo_id(str(entry["repository"]))) if entry else None
         source = root.source_cgs_path
         answer: dict[str, Any] = {

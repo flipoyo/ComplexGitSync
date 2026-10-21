@@ -332,12 +332,9 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     def _check_integrity_schema(self) -> None:
         """Refuse, by name and before hashing, a schema this build does not read.
 
-        Recomputing a hash under rules a document was never written under
-        gives a wrong digest that reads as "corrupt" — what happened the one
-        time this was allowed to fall through
-        (`.agent/.local/.dev/DevTickets/archive/20260918_SnapshotVersionGuard_DevPlanTicket.md`).
-        A document with no ``snapshot_hash`` is still being built and is
-        hashed under the current schema.
+        Hashing under rules a document was never written under reads as
+        "corrupt" (SnapshotVersionGuard). A document with no ``snapshot_hash``
+        is still being built and is hashed under the current schema.
         """
         declared = self.integrity_schema
         if declared is not None and declared > GtsIntegrity.SCHEMA:
@@ -432,55 +429,56 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
 
     def _repo_leaves(self) -> list[dict[str, Any]]:
         """Each repository's canonical leaf (``repo_leaf``), in document order."""
-        canonical_repo_states = []
-        for repo in self._repo_dicts():
-            canonical_repo = {
-                "name": repo.get("name"),
-                "node_type": repo.get("node_type"),
-                "relative_path": repo.get("relative_path"),
-                "repo_lifecycle_state": repo.get("repo_lifecycle_state"),
-                "sync_state": repo.get("sync_state"),
-                "current_ref": _repo_ref_token(repo, "current"),
-                "target_ref": _repo_ref_token(repo, "target"),
-                "resolved_ref": _repo_ref_token(repo, "resolved"),
-                "commit_sha": repo.get("commit_sha"),
-                "project_owner_name": repo.get("project_owner_name"),
-                "project_name": repo.get("project_name"),
-                "repo_name": repo.get("repo_name"),
-                "gitprovider": repo.get("gitprovider"),
-                "group_name": repo.get("group_name"),
-                "gitprovider_url": repo.get("gitprovider_url"),
-                # access_protocol is deliberately NOT here: it is a
-                # clone-transport preference (ssh vs https), not part
-                # of what a snapshot says about the tree's state --
-                # see test_compute_snapshot_hash_ignores_access_protocol.
-                # gitprovider/group_name/gitprovider_url are the
-                # opposite: they say *which* repository this is, which
-                # is exactly why the round trip losing them was a bug
-                # (.agent/.local/.dev/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
-                # A frozen literal, not git_branch.DEFAULT_BRANCH: this
-                # dict is hashed into the canonical snapshot hash, so
-                # every value in it must stay fixed for the life of the
-                # wire format. Tying it to a constant that could move
-                # would silently rehash every snapshot ever written.
-                "fallback_branch": repo.get("fallback_branch", "main"),
-                # private/writable are deliberately NOT here, for the same
-                # reason as access_protocol above: they say what commands
-                # are *allowed* to touch a repository, not what state the
-                # tree is in. They round-trip through repo_state either
-                # way; hashing them would rewrite the hash of every
-                # snapshot ever written, for no gain in what a snapshot
-                # actually attests to.
-                "fallback_applied": bool(repo.get("fallback_applied", False)),
-                "fallback_reason": repo.get("fallback_reason"),
-                # A frozen literal (DiscoveryState.RESOLVED), for the same
-                # reason as fallback_branch above: a hashed default never moves.
-                "discovery_state": repo.get("discovery_state", "RESOLVED"),
-                "worktree_state": repo.get("worktree_state"),
-                "is_reachable": bool(repo.get("is_reachable", True)),
-            }
-            canonical_repo_states.append(canonical_repo)
-        return canonical_repo_states
+        return [GtsDocument.repo_leaf(repo) for repo in self._repo_dicts()]
 
+    @staticmethod
+    def repo_leaf(repo: dict[str, Any]) -> dict[str, Any]:
+        """The schema-1 leaf of one ``[[repo_state]]`` table, read from a file or built from a tree."""
+        canonical_repo = {
+            "name": repo.get("name"),
+            "node_type": repo.get("node_type"),
+            "relative_path": repo.get("relative_path"),
+            "repo_lifecycle_state": repo.get("repo_lifecycle_state"),
+            "sync_state": repo.get("sync_state"),
+            "current_ref": _repo_ref_token(repo, "current"),
+            "target_ref": _repo_ref_token(repo, "target"),
+            "resolved_ref": _repo_ref_token(repo, "resolved"),
+            "commit_sha": repo.get("commit_sha"),
+            "project_owner_name": repo.get("project_owner_name"),
+            "project_name": repo.get("project_name"),
+            "repo_name": repo.get("repo_name"),
+            "gitprovider": repo.get("gitprovider"),
+            "group_name": repo.get("group_name"),
+            "gitprovider_url": repo.get("gitprovider_url"),
+            # access_protocol is deliberately NOT here: it is a
+            # clone-transport preference (ssh vs https), not part
+            # of what a snapshot says about the tree's state --
+            # see test_compute_snapshot_hash_ignores_access_protocol.
+            # gitprovider/group_name/gitprovider_url are the
+            # opposite: they say *which* repository this is, which
+            # is exactly why the round trip losing them was a bug
+            # (.agent/.local/.dev/DevTickets/archive/20260904_GtsProviderLoss_DevPlanTicket.md).
+            # A frozen literal, not git_branch.DEFAULT_BRANCH: this
+            # dict is hashed into the canonical snapshot hash, so
+            # every value in it must stay fixed for the life of the
+            # wire format. Tying it to a constant that could move
+            # would silently rehash every snapshot ever written.
+            "fallback_branch": repo.get("fallback_branch", "main"),
+            # private/writable are deliberately NOT here, for the same
+            # reason as access_protocol above: they say what commands
+            # are *allowed* to touch a repository, not what state the
+            # tree is in. They round-trip through repo_state either
+            # way; hashing them would rewrite the hash of every
+            # snapshot ever written, for no gain in what a snapshot
+            # actually attests to.
+            "fallback_applied": bool(repo.get("fallback_applied", False)),
+            "fallback_reason": repo.get("fallback_reason"),
+            # A frozen literal (DiscoveryState.RESOLVED), for the same
+            # reason as fallback_branch above: a hashed default never moves.
+            "discovery_state": repo.get("discovery_state", "RESOLVED"),
+            "worktree_state": repo.get("worktree_state"),
+            "is_reachable": bool(repo.get("is_reachable", True)),
+        }
+        return canonical_repo
 
 __all__ = ["GtsDocument"]

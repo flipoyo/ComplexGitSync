@@ -123,7 +123,7 @@ class DefaultMemory:
         owner, project = "<owner>", "<project>"
         if registry is not None and ROOT_REPO_ID in registry.repos:
             root = registry.get(ROOT_REPO_ID)
-            owner, project = root.project_owner_name or owner, root.name
+            owner, project = root.project_owner_name or owner, registry.project_name
         text = self.publish_hint(owner, project)
         if self.has_unobeyed_remote(workspace):
             text += " A remote is set on this memory, but the .cgs does not declare it, so it is never pushed."
@@ -149,12 +149,12 @@ class DefaultMemory:
         if (mount / ".git").exists():
             return
         git = self.client.git_runner
-        branch = MemoryRepository.branch(root.name, GitTreeBranches(registry, git).tree_branch or DEFAULT_BRANCH)
+        branch = MemoryRepository.branch(registry.project_name, GitTreeBranches(registry, git).tree_branch or DEFAULT_BRANCH)
         try:
             mount.mkdir(parents=True, exist_ok=True)
             git.init_repository(mount, branch=branch)
             MasterConfig.load(workspace)
-            message = self.commit_message(root.name)
+            message = self.commit_message(registry.project_name)
             try:
                 user_name, user_email = MasterConfig.resolve_identity(mount, git)
                 git.commit(mount, message, user_name=user_name, user_email=user_email, allow_empty=True)

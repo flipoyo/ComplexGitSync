@@ -31,6 +31,7 @@ from ComplexGitSync.git_tree import (
     iter_tree_leaf_first,
     propagate_privacy,
 )
+from ComplexGitSync.operating_space import OperatingSpace
 from ComplexGitSync.operations import (
     BranchTopologyReport,
     add_tree,
@@ -1324,26 +1325,20 @@ def test_checkout_tree_deep_hierarchy_parent_first(tmp_path):
     assert root_idx < mid_idx < sub_idx
 
 
-def test_gittree_git_checkout_allows_direct_tree_manipulation(tmp_path):
+def test_operating_space_checkout_allows_direct_tree_manipulation(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    git_tree = GitTree()
-    git_tree.git.bind_tree(registry)
-
-    git_tree.git.checkout(runner, "feature-direct")
+    OperatingSpace(registry).checkout(runner, "feature-direct")
 
     for entry in registry.values():
         assert entry.current_ref_name == "feature-direct"
     assert registry.recompute_tree_state() == TreeLifecycleState.READY
 
 
-def test_branch_tree_via_gittree_git_facade_creates_branch_without_checkout(tmp_path):
+def test_branch_tree_via_operating_space_creates_branch_without_checkout(tmp_path):
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    git_tree = GitTree()
-    git_tree.git.bind_tree(registry)
-
-    git_tree.git.branch(runner, "feature-branch")
+    OperatingSpace(registry).branch(runner, "feature-branch")
 
     assert runner.checked_out == []
     assert len(runner.created) == len(registry.values())
@@ -2574,49 +2569,49 @@ def test_client_checkout_updates_registry_and_writes_gts(tmp_path):
     assert _is_state_file(snapshot_path)
 
 
-def test_client_checkout_delegates_to_gittree_git_checkout(tmp_path, monkeypatch):
+def test_client_checkout_delegates_to_operating_space_checkout(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
     def _spy_checkout(
         self, git_runner, branch_name, *, ref_kind=RefKind.BRANCH, tree=None, scope=None
     ):
-        captured_call["tree"] = tree
+        captured_call["tree"] = self.tree
         captured_call["git_runner"] = git_runner
         captured_call["branch_name"] = branch_name
         captured_call["ref_kind"] = ref_kind
 
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "checkout", _spy_checkout)
+    monkeypatch.setattr(OperatingSpace, "checkout", _spy_checkout)
 
     result = client.checkout("feature-x")
 
     assert result is client.registry
-    assert captured_call["tree"] is None
+    assert captured_call["tree"] is client.registry
     assert captured_call["git_runner"] is runner
     assert captured_call["branch_name"] == "feature-x"
     assert captured_call["ref_kind"] == RefKind.BRANCH
 
 
-def test_client_branch_delegates_to_gittree_git_branch(tmp_path, monkeypatch):
+def test_client_branch_delegates_to_operating_space_branch(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
     def _spy_branch(self, git_runner, branch_name, *, tree=None, scope=None):
-        captured_call["tree"] = tree
+        captured_call["tree"] = self.tree
         captured_call["git_runner"] = git_runner
         captured_call["branch_name"] = branch_name
 
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "branch", _spy_branch)
+    monkeypatch.setattr(OperatingSpace, "branch", _spy_branch)
 
     result = client.branch("feature-x")
 
     assert result is client.registry
-    assert captured_call["tree"] is None
+    assert captured_call["tree"] is client.registry
     assert captured_call["git_runner"] is runner
     assert captured_call["branch_name"] == "feature-x"
 
 
-def test_client_commit_delegates_to_gittree_git_commit(tmp_path, monkeypatch):
+def test_client_commit_delegates_to_operating_space_commit(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
@@ -2624,9 +2619,9 @@ def test_client_commit_delegates_to_gittree_git_commit(tmp_path, monkeypatch):
         captured_call["git_runner"] = git_runner
         captured_call["message"] = message
         captured_call["stage_all"] = stage_all
-        captured_call["tree"] = tree
+        captured_call["tree"] = self.tree
 
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "commit", _spy_commit)
+    monkeypatch.setattr(OperatingSpace, "commit", _spy_commit)
 
     result = client.commit("my-message", stage_all=False)
 
@@ -2635,66 +2630,66 @@ def test_client_commit_delegates_to_gittree_git_commit(tmp_path, monkeypatch):
         "git_runner": runner,
         "message": "my-message",
         "stage_all": False,
-        "tree": None,
+        "tree": client.registry,
     }
 
 
-def test_client_add_delegates_to_gittree_git_add(tmp_path, monkeypatch):
+def test_client_add_delegates_to_operating_space_add(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
     def _spy_add(self, git_runner, *, tree=None, paths=None, scope=None):
         captured_call["git_runner"] = git_runner
-        captured_call["tree"] = tree
+        captured_call["tree"] = self.tree
 
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "add", _spy_add)
+    monkeypatch.setattr(OperatingSpace, "add", _spy_add)
 
     result = client.add()
 
     assert result is client.registry
-    assert captured_call == {"git_runner": runner, "tree": None}
+    assert captured_call == {"git_runner": runner, "tree": client.registry}
 
 
-def test_client_add_forwards_paths_to_gittree_git_add(tmp_path, monkeypatch):
+def test_client_add_forwards_paths_to_operating_space_add(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
     def _spy_add(self, git_runner, *, tree=None, paths=None, scope=None):
         captured_call["paths"] = paths
 
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "add", _spy_add)
+    monkeypatch.setattr(OperatingSpace, "add", _spy_add)
 
     client.add(paths=["a.txt", "sub/b.txt"])
 
     assert captured_call == {"paths": ["a.txt", "sub/b.txt"]}
 
 
-def test_client_push_delegates_to_gittree_git_push(tmp_path, monkeypatch):
+def test_client_push_delegates_to_operating_space_push(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
     def _spy_push(self, git_runner, *, tree=None, force_access_protocol=None, scope=None):
         captured_call["git_runner"] = git_runner
-        captured_call["tree"] = tree
+        captured_call["tree"] = self.tree
 
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "push", _spy_push)
+    monkeypatch.setattr(OperatingSpace, "push", _spy_push)
 
     result = client.push()
 
     assert result is client.registry
-    assert captured_call == {"git_runner": runner, "tree": None}
+    assert captured_call == {"git_runner": runner, "tree": client.registry}
 
 
-def test_client_tag_delegates_to_gittree_git_tag(tmp_path, monkeypatch):
+def test_client_tag_delegates_to_operating_space_tag(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
     def _spy_tag(self, git_runner, tag_name, *, tree=None, scope=None):
         captured_call["git_runner"] = git_runner
         captured_call["tag_name"] = tag_name
-        captured_call["tree"] = tree
+        captured_call["tree"] = self.tree
 
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "tag", _spy_tag)
+    monkeypatch.setattr(OperatingSpace, "tag", _spy_tag)
 
     result = client.tag("v1.2.3")
 
@@ -2702,11 +2697,11 @@ def test_client_tag_delegates_to_gittree_git_tag(tmp_path, monkeypatch):
     assert captured_call == {
         "git_runner": runner,
         "tag_name": "v1.2.3",
-        "tree": None,
+        "tree": client.registry,
     }
 
 
-def test_client_freeze_release_delegates_to_gittree_git_freeze(tmp_path, monkeypatch):
+def test_client_freeze_release_delegates_to_operating_space_freeze(tmp_path, monkeypatch):
     client, runner = _make_client_with_ready_registry(tmp_path)
     captured_call: dict[str, object] = {}
 
@@ -2718,10 +2713,10 @@ def test_client_freeze_release_delegates_to_gittree_git_freeze(tmp_path, monkeyp
         captured_call["tag_name"] = tag_name
         captured_call["message"] = message
         captured_call["stage_all"] = stage_all
-        captured_call["tree"] = tree
+        captured_call["tree"] = self.tree
         captured_call["scope"] = scope
 
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "freeze", _spy_freeze)
+    monkeypatch.setattr(OperatingSpace, "freeze", _spy_freeze)
 
     result = client.freeze("release-1", message="msg", stage_all=False)
 
@@ -2731,7 +2726,7 @@ def test_client_freeze_release_delegates_to_gittree_git_freeze(tmp_path, monkeyp
         "tag_name": "release-1",
         "message": "msg",
         "stage_all": False,
-        "tree": None,
+        "tree": client.registry,
         # Bare freeze still reaches every repository this project may write.
         "scope": RepoScope.WRITABLE,
         # Only a release annotates the root's tag.

@@ -466,7 +466,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
         Owns the configuration-field mapping; the tree supplies normalized state
         but never constructs TOML or interprets the repository-identifier grammar.
         """
-        project_name = tree.project_name or _root_tree_value(tree, "project_name", "name")
+        project_name = tree.project_name
         if not project_name:
             raise ValueError("GitTree.project_name is required to generate .cgs")
 
@@ -516,10 +516,8 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
         """Build a reference :class:`GitTree` from this canonical document."""
         from .git_tree import GitTree
 
-        tree = GitTree(
-            project_name=self.project_name,
-            default_branch=self.default_branch,
-        )
+        tree = GitTree(default_branch=self.default_branch)
+        tree._name_project(self.project_name)
         for repo_data in self.repos:
             repo = GitRepo(
                 project_owner_name=str(repo_data["project_owner_name"]),

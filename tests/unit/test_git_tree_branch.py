@@ -351,23 +351,42 @@ def test_refresh_asks_git_again(tree, tmp_path):
     assert runner.reads.count(tmp_path) == 2
 
 
-def test_the_tree_id_comes_from_the_root_name_only(tree):
-
+def test_the_tree_id_comes_from_the_tree_name_only(tree):
+    assert tree.project_name == "Demo"
     assert OperatingSpace(tree).os_id == OperatingSpace.id_of("Demo")
     tree.repos["root:docs"].project_name = "somethingelse"
+    tree.repos["root"].project_name = "the-root-repository-on-its-provider"
     assert OperatingSpace(tree).os_id == OperatingSpace.id_of("Demo")
     assert OperatingSpace(tree).problem is None
 
 
-def test_a_rejected_root_name_leaves_no_id_and_names_the_rule(tree):
-    tree.repos["root"].project_name = " Demo"
+def test_the_project_name_cannot_be_assigned(tree):
+    with pytest.raises(AttributeError):
+        tree.project_name = "Other"
+    assert tree.project_name == "Demo"
+
+
+def test_naming_a_tree_twice_with_another_name_is_refused(tree):
+    with pytest.raises(GitSyncError, match="renamed only on purpose"):
+        tree._name_project("Other")
+
+
+def test_only_the_explicit_rename_changes_the_name_and_the_id_follows(tree):
+    tree._rename_project("Renamed")
+
+    assert tree.project_name == "Renamed"
+    assert tree.repos["root"].name == "Renamed"
+    assert OperatingSpace(tree).os_id == OperatingSpace.id_of("Renamed")
+
+
+def test_a_rejected_name_leaves_no_id_and_names_the_rule(tree):
+    tree._rename_project(" Demo")
 
     assert OperatingSpace(tree).os_id is None
     assert "whitespace" in OperatingSpace(tree).problem
 
 
 def test_a_tree_with_no_root_has_no_id():
-
     assert OperatingSpace(WorkingGitTree()).os_id is None
     assert OperatingSpace(WorkingGitTree()).problem is None
 
@@ -375,17 +394,21 @@ def test_a_tree_with_no_root_has_no_id():
 def test_a_rejected_name_warns_and_an_accepted_one_does_not(tree):
     import warnings
 
-    tree.repos["root"].project_name = "Demo "
+    tree._rename_project("Demo ")
     with pytest.warns(UserWarning, match="whitespace"):
         OperatingSpace(tree).warn_if_rejected()
 
-    tree.repos["root"].project_name = "Demo"
+    tree._rename_project("Demo")
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         OperatingSpace(tree).warn_if_rejected()
 
 
-def test_the_id_shown_for_a_state_is_the_one_the_tree_computes(tree):
-    assert OperatingSpace.id_of_state("Demo") == OperatingSpace(tree).os_id
-    assert OperatingSpace.id_of_state("") is None
-    assert OperatingSpace.id_of_state(None) is None
+def test_a_git_operation_refuses_a_tree_that_is_not_ready(tree):
+    from ComplexGitSync.errors import TreeNotReadyError
+
+    tree.repos["root"].commit_sha = None
+    tree.recompute_tree_state()
+
+    with pytest.raises(TreeNotReadyError):
+        OperatingSpace(tree).push(object())

@@ -32,6 +32,7 @@ from ComplexGitSync.memory.self_history import AgentInfo, SelfHistoryRecord
 from ComplexGitSync.memory.states import (
     MemoryStates,
 )
+from ComplexGitSync.operating_space import OperatingSpace
 from ComplexGitSync.orchestre import (
     ComplexGitSyncClient,
     GtsDocument,
@@ -675,7 +676,7 @@ def test_client_load_source_supports_gts(tmp_path):
     assert client.get_tree_state().lifecycle_state == TreeLifecycleState.READY
 
 
-def test_client_branch_delegates_to_gittree_git_branch(monkeypatch):
+def test_client_branch_delegates_to_operating_space_branch(monkeypatch):
     client = ComplexGitSyncClient()
     client.registry = WorkingGitTree()
     captured: dict[str, object] = {}
@@ -683,16 +684,16 @@ def test_client_branch_delegates_to_gittree_git_branch(monkeypatch):
     def _spy_branch(self, git_runner, branch_name, *, tree=None, scope=None):
         captured["git_runner"] = git_runner
         captured["branch_name"] = branch_name
-        captured["tree"] = tree
+        captured["tree"] = self.tree
 
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "branch", _spy_branch)
+    monkeypatch.setattr(OperatingSpace, "branch", _spy_branch)
 
     result = client.branch("feature/test")
 
     assert result is client.registry
     assert captured["git_runner"] is client.git_runner
     assert captured["branch_name"] == "feature/test"
-    assert captured["tree"] is None
+    assert captured["tree"] is client.registry
 
 
 def test_client_git_dispatches_extended_commands(monkeypatch):
@@ -740,10 +741,10 @@ def test_client_git_binds_provided_registry(monkeypatch):
     captured: dict[str, object] = {}
 
     def _spy_add(self, git_runner, *, tree=None, paths=None, scope=None):
-        captured["bound_tree"] = self.working_tree
+        captured["bound_tree"] = self.tree
         captured["tree_arg"] = tree
 
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "add", _spy_add)
+    monkeypatch.setattr(OperatingSpace, "add", _spy_add)
 
     client.git(registry, "add")
     assert client.registry is registry
@@ -1140,7 +1141,7 @@ def test_push_wraps_matching_failure_with_protocol_hint(monkeypatch, tmp_path):
     def _raise(self, git_runner, *, tree=None, force_access_protocol=None, scope=None):
         raise GitSyncError("git push origin main: Permission denied (publickey).")
 
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "push", _raise)
+    monkeypatch.setattr(OperatingSpace, "push", _raise)
 
     with pytest.raises(GitSyncError, match=r"--force-protocol https to 'push'") as excinfo:
         client.push()
@@ -1153,7 +1154,7 @@ def test_push_leaves_unrelated_failure_unwrapped(monkeypatch, tmp_path):
     def _raise(self, git_runner, *, tree=None, force_access_protocol=None, scope=None):
         raise GitSyncError("fatal: repository 'x' does not exist")
 
-    monkeypatch.setattr(type(client.orchestre.git_tree.git), "push", _raise)
+    monkeypatch.setattr(OperatingSpace, "push", _raise)
 
     with pytest.raises(GitSyncError, match=r"^fatal: repository 'x' does not exist$"):
         client.push()

@@ -45,7 +45,7 @@ from typing import Any
 
 from . import __version__ as CGS_VERSION
 from .cgs_format import CgsDocument
-from .errors import ConfigValidationError
+from .errors import ConfigValidationError, GitSyncError
 from .git_branch import DEFAULT_BRANCH, resolve_declared_ref
 from .git_repo import (
     AccessProtocol,
@@ -282,12 +282,8 @@ class RegistryTranslator:
     def _tree_root_of(document: GtsDocument, tree_root: Path | None) -> Path | None:
         """Which workspace this document's paths are written against.
 
-        An explicit *tree_root* wins: the caller found the snapshot and knows
-        the workspace it was in, which is the answer that stays right when a
-        memory is cloned onto another machine. Otherwise the document's own
-        ``project.root_absolute_path`` answers, which is what lets a loose
-        snapshot — one handed to ``pull`` from outside any workspace — still
-        say where its tree belongs.
+        *tree_root* wins, so a cloned memory stays right on another machine;
+        otherwise ``project.root_absolute_path``, for a snapshot handed to ``pull``.
         """
         if tree_root is not None:
             return tree_root
@@ -302,17 +298,14 @@ class RegistryTranslator:
         *,
         tree_root: Path | None = None,
     ) -> WorkingGitTree:
-        """Build a :class:`WorkingGitTree` from a ``.gts`` snapshot document.
+        """Build a :class:`WorkingGitTree` from a ``.gts`` snapshot document, named by its ``[project] name``.
 
-        *tree_root* is the workspace the snapshot describes. A document written
-        against :data:`TREE_MARKER` — every one written since a memory became
-        something that gets pushed — records no machine paths at all, so the
-        reader supplies the tree and the same snapshot rebuilds correctly in
-        whatever directory it was restored into. Older documents carry their
-        own absolute paths and are read exactly as before, so *tree_root* is
-        optional and unused for them.
+        *tree_root* is the workspace the snapshot describes: a document written
+        against :data:`TREE_MARKER` records no machine path, so the reader
+        supplies it. Older documents carry their own paths and ignore it.
         """
         registry = WorkingGitTree()
+        registry._name_project(_as_optional_str(document.read("project.name")))
         path_to_repo_id: dict[Path, str] = {}
         project_source_cgs_path = document.read("project.source_cgs_path")
         tree_root = RegistryTranslator._tree_root_of(document, tree_root)
@@ -405,7 +398,7 @@ class RegistryTranslator:
         return registry
 
     @staticmethod
-    def _project_block(root_entry: WorkingRepo, source_cgs_path: Path | None) -> dict[str, Any]:
+    def _project_block(registry: WorkingGitTree, source_cgs_path: Path | None) -> dict[str, Any]:
         """The ``[project]`` table of a snapshot, carrying no machine path.
 
         The tree names itself, never its place on a disk — see
@@ -414,8 +407,9 @@ class RegistryTranslator:
         nothing on another machine, and it is exactly the directory layout a
         pushed memory must not publish.
         """
+        root_entry = registry.get(ROOT_REPO_ID)
         block: dict[str, Any] = {
-            "name": root_entry.name,
+            "name": registry.project_name,
             # The one path a snapshot keeps, and the only one G5 allows: the
             # tree root itself, so a snapshot handed to `pull` from outside any
             # workspace can still say where its tree goes. Every *other* path is
@@ -427,6 +421,59 @@ class RegistryTranslator:
             if recorded is not None:
                 block["source_cgs_path"] = recorded
         return block
+
+    @staticmethod
+    def repo_state_dict(registry: WorkingGitTree, entry: WorkingRepo) -> dict[str, Any]:
+        """One repository's ``[[repo_state]]`` table; the one builder, for the writer and ``OperatingSpace``."""
+        tree_root = registry.get(ROOT_REPO_ID).absolute_path
+        repo_data: dict[str, Any] = {
+            "name": entry.name,
+            "node_type": entry.node_type.value,
+            "absolute_path": PathResolver.against_tree(entry.absolute_path, tree_root),
+            "relative_path": entry.relative_path.as_posix() if entry.relative_path is not None else None,
+            "repo_lifecycle_state": entry.repo_lifecycle_state.value,
+            "sync_state": entry.sync_state.value,
+            "commit_sha": entry.commit_sha,
+            "fallback_reason": entry.fallback_reason,
+            "worktree_state": entry.worktree_state,
+            "source_cgs_path": (
+                PathResolver.against_tree(entry.source_cgs_path, tree_root)
+                if entry.source_cgs_path
+                else None
+            ),
+            "project_owner_name": entry.project_owner_name,
+            "project_name": entry.project_name,
+            "repo_name": entry.repo_name,
+            "gitprovider": entry.gitprovider.value,
+            "group_name": entry.group_name,
+            "gitprovider_url": entry.gitprovider_url,
+            "access_protocol": entry.access_protocol.value,
+        }
+        RegistryTranslator._write_compact_refs(repo_data, entry)
+        if entry.discovery_state != DiscoveryState.RESOLVED:
+            repo_data["discovery_state"] = entry.discovery_state.value
+        if entry.fallback_branch and entry.fallback_branch != DEFAULT_BRANCH:
+            repo_data["fallback_branch"] = entry.fallback_branch
+        if entry.private:
+            repo_data["private"] = True
+        if entry.writable:
+            repo_data["writable"] = True
+        # The branch this entry *declares*, recorded separately from the ref
+        # it currently sits on. Without it, reloading a snapshot re-derives
+        # default_branch from the target ref -- which for a private/local
+        # repository is already a derived branch, so the declared base is
+        # lost and the next derivation compounds it. Not in the canonical
+        # hash, for the same reason private/writable are not: it says what
+        # the document declared, not what state the tree is in.
+        if entry.default_branch and entry.default_branch != entry.target_ref_name:
+            repo_data["default_branch"] = entry.default_branch
+        if entry.fallback_applied:
+            repo_data["fallback_applied"] = entry.fallback_applied
+        if not entry.is_reachable:
+            repo_data["is_reachable"] = entry.is_reachable
+        if entry.parent_id is not None:
+            repo_data["parent_absolute_path"] = PathResolver.against_tree(registry.get(entry.parent_id).absolute_path, tree_root)
+        return {key: value for key, value in repo_data.items() if value is not None}
 
     @staticmethod
     def to_gts_document(
@@ -443,7 +490,6 @@ class RegistryTranslator:
         (:class:`~.universal_clock.SystemClock`); metadata, never part of the
         document's canonical hash.
         """
-        root_entry = registry.get(ROOT_REPO_ID)
         tree_state = build_tree_state(registry)
         data: dict[str, Any] = {
             "document": {
@@ -451,7 +497,7 @@ class RegistryTranslator:
                 "generated_at": f"{(clock or SystemClock()).now():%Y-%m-%dT%H:%M:%SZ}",
                 "command_origin": command_origin,
             },
-            "project": RegistryTranslator._project_block(root_entry, source_cgs_path),
+            "project": RegistryTranslator._project_block(registry, source_cgs_path),
             "tree_state": {
                 "lifecycle_state": tree_state.lifecycle_state.value,
                 "is_ready": tree_state.is_ready,
@@ -462,63 +508,18 @@ class RegistryTranslator:
             },
             "repo_state": [],
         }
-        tree_root = root_entry.absolute_path
         if command_origin in _FREEZE_COMMAND_ORIGINS:
             data["freeze_manifest"] = RegistryTranslator._build_freeze_manifest(registry, freeze_name=freeze_name)
 
         for entry in sorted(registry.values(), key=lambda item: item.repo_id):
-            repo_data: dict[str, Any] = {
-                "name": entry.name,
-                "node_type": entry.node_type.value,
-                "absolute_path": PathResolver.against_tree(entry.absolute_path, tree_root),
-                "relative_path": entry.relative_path.as_posix() if entry.relative_path is not None else None,
-                "repo_lifecycle_state": entry.repo_lifecycle_state.value,
-                "sync_state": entry.sync_state.value,
-                "commit_sha": entry.commit_sha,
-                "fallback_reason": entry.fallback_reason,
-                "worktree_state": entry.worktree_state,
-                "source_cgs_path": (
-                    PathResolver.against_tree(entry.source_cgs_path, tree_root)
-                    if entry.source_cgs_path
-                    else None
-                ),
-                "project_owner_name": entry.project_owner_name,
-                "project_name": entry.project_name,
-                "repo_name": entry.repo_name,
-                "gitprovider": entry.gitprovider.value,
-                "group_name": entry.group_name,
-                "gitprovider_url": entry.gitprovider_url,
-                "access_protocol": entry.access_protocol.value,
-            }
-            RegistryTranslator._write_compact_refs(repo_data, entry)
-            if entry.discovery_state != DiscoveryState.RESOLVED:
-                repo_data["discovery_state"] = entry.discovery_state.value
-            if entry.fallback_branch and entry.fallback_branch != DEFAULT_BRANCH:
-                repo_data["fallback_branch"] = entry.fallback_branch
-            if entry.private:
-                repo_data["private"] = True
-            if entry.writable:
-                repo_data["writable"] = True
-            # The branch this entry *declares*, recorded separately from the ref
-            # it currently sits on. Without it, reloading a snapshot re-derives
-            # default_branch from the target ref -- which for a private/local
-            # repository is already a derived branch, so the declared base is
-            # lost and the next derivation compounds it. Not in the canonical
-            # hash, for the same reason private/writable are not: it says what
-            # the document declared, not what state the tree is in.
-            if entry.default_branch and entry.default_branch != entry.target_ref_name:
-                repo_data["default_branch"] = entry.default_branch
-            if entry.fallback_applied:
-                repo_data["fallback_applied"] = entry.fallback_applied
-            if not entry.is_reachable:
-                repo_data["is_reachable"] = entry.is_reachable
-            if entry.parent_id is not None:
-                repo_data["parent_absolute_path"] = PathResolver.against_tree(registry.get(entry.parent_id).absolute_path, tree_root)
-            data["repo_state"].append({key: value for key, value in repo_data.items() if value is not None})
+            data["repo_state"].append(RegistryTranslator.repo_state_dict(registry, entry))
 
         document = GtsDocument.from_dict(data)
         document.ensure_snapshot_hash()
         document.validate()
+        from .operating_space import OperatingSpace  # it builds on this module
+        if document.gittree_root != OperatingSpace(registry).gittree_root:
+            raise GitSyncError("the snapshot's Merkle root differs from the tree's; nothing was written.")
         return document
 
     @staticmethod

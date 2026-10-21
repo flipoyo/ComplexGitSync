@@ -40,7 +40,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import deque
-from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
+from collections.abc import Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path, PurePath, PurePosixPath
@@ -67,16 +67,16 @@ ROOT_REPO_ID = "root"
 
 if TYPE_CHECKING:
     from .cgs_format import CgsDocument
-    from .operations import RepoBranches, RepoOutcome
     from .orchestre import GitRunner, GtsDocument
 
 
 @dataclass(slots=True)
 class GitTreeGitCommands:
-    """Git command facade bound to :class:`GitTree` operations.
+    """The git operations that make a tree READY: clone, and pull, which clones what is missing.
 
-    ``working_tree`` stores the currently bound :class:`WorkingGitTree` used
-    when callers omit an explicit tree argument.
+    Every other git operation runs on a READY tree and belongs to
+    :class:`~.operating_space.OperatingSpace`. ``working_tree`` is the bound
+    :class:`WorkingGitTree` used when callers omit an explicit tree argument.
     """
 
     working_tree: WorkingGitTree | None = field(default=None)
@@ -96,56 +96,6 @@ class GitTreeGitCommands:
             return self.working_tree
         raise RuntimeError("No ComplexGitSync working tree is bound to GitTree.git.")
 
-    def checkout(
-        self,
-        git_runner: GitRunner,
-        branch_name: str,
-        *,
-        ref_kind: RefKind = RefKind.BRANCH,
-        scope: RepoScope = RepoScope.ALL,
-        tree: WorkingGitTree | None = None,
-    ) -> None:
-        from .operations import checkout_tree
-
-        checkout_tree(
-            self._resolve_tree(tree), git_runner, branch_name, ref_kind=ref_kind, scope=scope
-        )
-
-    def branch(
-        self,
-        git_runner: GitRunner,
-        branch_name: str,
-        *,
-        tree: WorkingGitTree | None = None,
-        scope: RepoScope = RepoScope.ALL,
-    ) -> None:
-        from .operations import branch_tree
-
-        branch_tree(self._resolve_tree(tree), git_runner, branch_name, scope=scope)
-
-    def list_branches(
-        self,
-        git_runner: GitRunner,
-        *,
-        tree: WorkingGitTree | None = None,
-        scope: RepoScope = RepoScope.ALL,
-    ) -> tuple[RepoBranches, ...]:
-        from .operations import list_branches
-
-        return list_branches(self._resolve_tree(tree), git_runner, scope=scope)
-
-    def close_branch(
-        self,
-        git_runner: GitRunner,
-        branch_name: str,
-        *,
-        tree: WorkingGitTree | None = None,
-        scope: RepoScope = RepoScope.ALL,
-    ) -> tuple[RepoOutcome, ...]:
-        from .operations import close_branch
-
-        return close_branch(self._resolve_tree(tree), git_runner, branch_name, scope=scope)
-
     def pull(
         self,
         git_runner: GitRunner,
@@ -163,16 +113,6 @@ class GitTreeGitCommands:
             scope=scope,
         )
 
-    def refresh_private(
-        self,
-        git_runner: GitRunner,
-        *,
-        tree: WorkingGitTree | None = None,
-    ) -> tuple[tuple[str, str], ...]:
-        from .operations import refresh_private_tree
-
-        return refresh_private_tree(self._resolve_tree(tree), git_runner)
-
     def pull_force(
         self,
         git_runner: GitRunner,
@@ -188,162 +128,6 @@ class GitTreeGitCommands:
             git_runner,
             force_access_protocol=force_access_protocol,
             scope=scope,
-        )
-
-    def add(
-        self,
-        git_runner: GitRunner,
-        *,
-        tree: WorkingGitTree | None = None,
-        paths: Sequence[str | Path] | None = None,
-        scope: RepoScope = RepoScope.PROJECT,
-    ) -> tuple[RepoOutcome, ...]:
-        from .operations import add_tree
-
-        return add_tree(self._resolve_tree(tree), git_runner, paths=paths, scope=scope)
-
-    def rm(
-        self,
-        git_runner: GitRunner,
-        paths: Sequence[str | Path],
-        *,
-        tree: WorkingGitTree | None = None,
-        scope: RepoScope = RepoScope.ALL,
-    ) -> tuple[RepoOutcome, ...]:
-        from .operations import remove_paths
-
-        return remove_paths(self._resolve_tree(tree), git_runner, paths, scope=scope)
-
-    def commit(
-        self,
-        git_runner: GitRunner,
-        message: str,
-        *,
-        stage_all: bool = True,
-        tree: WorkingGitTree | None = None,
-        scope: RepoScope = RepoScope.PROJECT,
-    ) -> tuple[RepoOutcome, ...]:
-        from .operations import commit_tree
-
-        return commit_tree(
-            self._resolve_tree(tree), git_runner, message, stage_all=stage_all, scope=scope
-        )
-
-    def merge(
-        self,
-        git_runner: GitRunner,
-        project_branch: str,
-        *,
-        tree: WorkingGitTree | None = None,
-        scope: RepoScope = RepoScope.PROJECT,
-        ff_only: bool = False,
-        no_ff: bool = False,
-    ) -> tuple[tuple[str, str], ...]:
-        from .operations import merge_tree
-
-        return merge_tree(
-            self._resolve_tree(tree),
-            git_runner,
-            project_branch,
-            scope=scope,
-            ff_only=ff_only,
-            no_ff=no_ff,
-        )
-
-    def merge_into(
-        self,
-        git_runner: GitRunner,
-        source_branch: str,
-        target_branch: str,
-        *,
-        tree: WorkingGitTree | None = None,
-        scope: RepoScope = RepoScope.PROJECT,
-        ff_only: bool = False,
-        no_ff: bool = False,
-    ):
-        from .operations import merge_into_tree
-
-        return merge_into_tree(
-            self._resolve_tree(tree),
-            git_runner,
-            source_branch,
-            target_branch,
-            scope=scope,
-            ff_only=ff_only,
-            no_ff=no_ff,
-        )
-
-    def merge_one_at_a_time(
-        self,
-        git_runner: GitRunner,
-        project_branch: str,
-        *,
-        tree: WorkingGitTree | None = None,
-        scope: RepoScope = RepoScope.PROJECT,
-        ff_only: bool = False,
-        no_ff: bool = False,
-    ):
-        from .operations import merge_tree_one_at_a_time
-
-        return merge_tree_one_at_a_time(
-            self._resolve_tree(tree),
-            git_runner,
-            project_branch,
-            scope=scope,
-            ff_only=ff_only,
-            no_ff=no_ff,
-        )
-
-    def push(
-        self,
-        git_runner: GitRunner,
-        *,
-        tree: WorkingGitTree | None = None,
-        force_access_protocol: AccessProtocol | None = None,
-        scope: RepoScope = RepoScope.PROJECT,
-    ) -> tuple[RepoOutcome, ...]:
-        from .operations import push_tree
-
-        return push_tree(
-            self._resolve_tree(tree),
-            git_runner,
-            force_access_protocol=force_access_protocol,
-            scope=scope,
-        )
-
-    def tag(
-        self,
-        git_runner: GitRunner,
-        tag_name: str,
-        *,
-        tree: WorkingGitTree | None = None,
-        scope: RepoScope = RepoScope.WRITABLE,
-    ) -> None:
-        from .operations import tag_tree
-
-        tag_tree(self._resolve_tree(tree), git_runner, tag_name, scope=scope)
-
-    def freeze(
-        self,
-        git_runner: GitRunner,
-        tag_name: str,
-        *,
-        message: str | None = None,
-        stage_all: bool = True,
-        tree: WorkingGitTree | None = None,
-        scope: RepoScope = RepoScope.WRITABLE,
-        root_tag_message: Callable[[], str] | None = None,
-    ) -> None:
-        from .operations import freeze_release_tree
-
-        freeze_release_tree(
-            self._resolve_tree(tree),
-            git_runner,
-            tag_name,
-            message=message,
-            stage_all=stage_all,
-            scope=scope,
-            root_tag_message=root_tag_message,
         )
 
     def clone(
@@ -406,15 +190,33 @@ class GitTree:
 
     repos: dict[str, GitRepo] = field(default_factory=dict)
     git: GitTreeGitCommands = field(default_factory=GitTreeGitCommands)
-    
-    # Project metadata - unique to GitTree
-    project_name: str | None = None
     default_branch: str | None = None
+    # The project's one name. Read through `project_name`; set once when the
+    # tree is built (`_name_project`), changed only by `_rename_project`.
+    _project_name: str | None = field(default=None, repr=False)
     
     # Opaque metadata retained by format adapters during model round-trips.
     # GitTree does not interpret authoring syntax or serialize file formats.
     format_metadata: dict[str, Any] = field(default_factory=dict, repr=False)
     _repo_metadata: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
+
+    @property
+    def project_name(self) -> str | None:
+        """The project's name: the one source every other reader of it uses. Read-only."""
+        return self._project_name
+
+    def _name_project(self, name: str | None) -> None:
+        """Name the project once, while the tree is built; a second, different name is refused."""
+        if self._project_name is not None and name != self._project_name:
+            raise GitSyncError(
+                f"this tree is already the project {self._project_name!r}; it cannot also be {name!r}. "
+                "A project is renamed only on purpose."
+            )
+        self._project_name = name
+
+    def _rename_project(self, name: str) -> None:
+        """The one explicit way to change the project's name. Internal: no API or command calls it yet."""
+        self._project_name = name
 
     def add_repo(self, repo: GitRepo) -> None:
         self.repos[repo.project_name] = repo
@@ -494,9 +296,17 @@ class WorkingGitTree(GitTree):
     lifecycle_state: TreeLifecycleState = TreeLifecycleState.UNLOADED
 
     def add(self, repo: WorkingRepo) -> WorkingRepo:
-        """Register *repo* and return it."""
+        """Register *repo* and return it. The root names the project, once."""
+        if repo.repo_id == ROOT_REPO_ID and self._project_name is None:
+            self._name_project(repo.name)
         self.repos[repo.repo_id] = repo
         return repo
+
+    def _rename_project(self, name: str) -> None:
+        """Rename the project, and the root entry that serialises it."""
+        GitTree._rename_project(self, name)
+        if ROOT_REPO_ID in self.repos:
+            self.repos[ROOT_REPO_ID].name = name
 
     def add_repo(self, repo: WorkingRepo) -> None:
         """Register *repo* using the runtime ``repo_id`` key."""
@@ -618,12 +428,6 @@ class WorkingGitTree(GitTree):
         from .orchestre import RegistryTranslator
 
         return RegistryTranslator.to_gts_document(self, command_origin=command_origin, source_cgs_path=source_cgs_path)
-
-    def _root_project_name(self) -> str | None:
-        root = self.repos.get(ROOT_REPO_ID)
-        if root is None:
-            return None
-        return root.project_name or root.name
 
     def _root_default_branch(self) -> str | None:
         root = self.repos.get(ROOT_REPO_ID)

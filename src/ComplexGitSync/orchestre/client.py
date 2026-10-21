@@ -66,6 +66,7 @@ from ..memory.commit_log import (
     CommitRecord,
     PublicationRecord,
 )
+from ..operating_space import OperatingSpace
 from ..operations import (
     BranchTopologyReport,
     RepoAncestry,
@@ -1023,7 +1024,7 @@ class ComplexGitSyncClient:
             scope=scope.value,
         )
         self._memory_commands._fold_memory_before_push()
-        self.orchestre.git_tree.git.freeze(
+        OperatingSpace(self.get_dependency_registry()).freeze(
             self.git_runner,
             tag_name,
             message=message,
@@ -1105,25 +1106,12 @@ class ComplexGitSyncClient:
     def _fold_memory_pending(self, pending_dir: Path, mount: Path) -> int:
         """Move `.cgitsync`'s pending content into the memory mount.
 
-        The heart of `memory push`, since WorkingTransitionState:
-        everything a command wrote since the last fold — `lgr/`, `state/`,
-        `env/`, `.cgs/`, plus the legacy single-file `.lgr` register if
-        one is still there (not `logs/`, which stays local) — moves one level down, into the mount, so the
-        commit this method makes next has something of its own to commit.
-        A plain move is safe for all of these: entries and States are
-        named uniquely (a seq never repeats; a State's name is its own
-        content hash, so a name that does repeat is identical content),
-        and `HEAD`/the legacy register's stable copies are meant to be
-        overwritten with the newer answer.
-
-        Commit logs are the one exception — a State committed against
-        again after a fold would otherwise have its already-folded rows
-        silently discarded by a plain overwrite — so those go through
-        `append_commits`/`append_publications`, the same merge-on-append
-        logic every other write to a commit log already uses.
-
-        Returns how many files moved, across every subdirectory — 0 means
-        there was nothing pending to fold.
+        The heart of `memory push`: `lgr/`, `state/`, `env/`, `.cgs/` and any
+        legacy `.lgr` (not `logs/`, which stays local) move into the mount. A
+        plain move is safe, because entries and States are named uniquely and
+        `HEAD` is meant to be overwritten. Commit logs are merged instead, with
+        `append_commits`/`append_publications`, so folded rows are never lost.
+        Returns how many files moved; 0 means nothing was pending.
         """
         moved = 0
         for name in self._FOLD_SUBDIRS:

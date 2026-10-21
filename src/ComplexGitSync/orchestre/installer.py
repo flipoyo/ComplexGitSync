@@ -307,7 +307,7 @@ class Installer:
             raise GitSyncError("Initialise did not produce a READY tree.")
 
         # Write the snapshot under CGSHOME.
-        snapshot_name = f"{self.client.source_path.stem if self.client.source_path else root_entry.name}.gts"
+        snapshot_name = f"{self.client.source_path.stem if self.client.source_path else self.client.registry.project_name}.gts"
         snapshot_output = cgshome / ".cgitsync" / "state" / snapshot_name
         snapshot_path = self.client.write_gts_snapshot(
             command_origin="clone", output_path=snapshot_output

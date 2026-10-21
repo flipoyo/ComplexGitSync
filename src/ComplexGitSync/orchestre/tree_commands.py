@@ -38,6 +38,7 @@ from ..git_tree import (
 from ..git_tree_branch import GitTreeBranches, ProjectBranch, tree_project_name
 from ..memory import HistoryState, Relocation
 from ..memory.pending import PendingMemory
+from ..operating_space import OperatingSpace
 from ..operations import (
     MERGE_INTO_ACTS,
     AncestorOperation,
@@ -256,7 +257,7 @@ class TreeCommands:
         # Said before the tree moves, because afterwards the build that
         # would say it is gone.
         self._warn_if_build_changes(branch_name)
-        self.client.orchestre.git_tree.git.checkout(
+        OperatingSpace(self.client.get_dependency_registry()).checkout(
             self.client.git_runner,
             branch_name,
             ref_kind=ref_kind,
@@ -280,7 +281,7 @@ class TreeCommands:
         previous_state = registry.lifecycle_state
         self.client._log_event("branch_start", branch_name=branch_name)
         scope = GitProbes.scope_for(registry, private=private, command="branch")
-        self.client.orchestre.git_tree.git.branch(self.client.git_runner, branch_name, scope=scope)
+        OperatingSpace(self.client.get_dependency_registry()).branch(self.client.git_runner, branch_name, scope=scope)
         if ROOT_REPO_ID in registry.repos:
             snapshot_path = self.client.write_gts_snapshot(command_origin="branch")
             if self.client.source_path is not None:
@@ -299,7 +300,7 @@ class TreeCommands:
         """
         registry = self.client.get_dependency_registry()
         scope = GitProbes.scope_for(registry, private=private, command="branch list")
-        return self.client.orchestre.git_tree.git.list_branches(self.client.git_runner, scope=scope)
+        return OperatingSpace(self.client.get_dependency_registry()).list_branches(self.client.git_runner, scope=scope)
 
     def project_branches(self, *, private: bool = False) -> tuple[ProjectBranch, ...]:
         """Every branch of the project, with the repositories that hold or lack it; read-only.
@@ -362,7 +363,7 @@ class TreeCommands:
         self.client.last_kept_outcomes = self._keep_on_ancestors(
             registry, self.client.last_ancestry, preserved=name, command_origin="branch_close_keep"
         )
-        self.client.last_write_outcomes = () if already_closed else self.client.orchestre.git_tree.git.close_branch(
+        self.client.last_write_outcomes = () if already_closed else OperatingSpace(self.client.get_dependency_registry()).close_branch(
             self.client.git_runner, name, scope=scope
         )
         if ROOT_REPO_ID in registry.repos:
@@ -572,7 +573,7 @@ class TreeCommands:
             gate.require(TicketGate.added_paths(owner, porcelain, stage_all=stage_all))
         self.client._log_event("commit_start", message=message, stage_all=stage_all, scope=scope.value)
         self.client.last_write_outcomes = GitProbes.as_write_outcomes(
-            self.client.orchestre.git_tree.git.commit(
+            OperatingSpace(self.client.get_dependency_registry()).commit(
                 self.client.git_runner,
                 message,
                 stage_all=stage_all,
@@ -641,7 +642,7 @@ class TreeCommands:
             into_branch=into_branch,
             scope=scope.value,
         )
-        merged = self.client.orchestre.git_tree.git.merge(
+        merged = OperatingSpace(self.client.get_dependency_registry()).merge(
             self.client.git_runner,
             project_branch,
             scope=scope,
@@ -699,7 +700,7 @@ class TreeCommands:
             scope=scope.value,
         )
         self._warn_if_build_changes(target_branch, offer_remedy=False)
-        outcomes = self.client.orchestre.git_tree.git.merge_into(
+        outcomes = OperatingSpace(self.client.get_dependency_registry()).merge_into(
             self.client.git_runner,
             source_branch,
             target_branch,
@@ -799,7 +800,7 @@ class TreeCommands:
         self.client._log_event(
             "merge_resolve_start", project_branch=project_branch, scope=scope.value
         )
-        outcome = self.client.orchestre.git_tree.git.merge_one_at_a_time(
+        outcome = OperatingSpace(self.client.get_dependency_registry()).merge_one_at_a_time(
             self.client.git_runner,
             project_branch,
             scope=scope,
@@ -935,7 +936,7 @@ class TreeCommands:
         registry = self.client.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self.client._log_event("refresh_private_start")
-        refreshed = self.client.orchestre.git_tree.git.refresh_private(self.client.git_runner)
+        refreshed = OperatingSpace(self.client.get_dependency_registry()).refresh_private(self.client.git_runner)
         self.client._log_tree_transition(
             previous_state, registry.lifecycle_state, reason="pull --private"
         )
@@ -1005,7 +1006,7 @@ class TreeCommands:
             scope=scope.value,
         )
         self.client.last_write_outcomes = GitProbes.as_write_outcomes(
-            self.client.orchestre.git_tree.git.add(self.client.git_runner, paths=paths, scope=scope)
+            OperatingSpace(self.client.get_dependency_registry()).add(self.client.git_runner, paths=paths, scope=scope)
         )
         self.client._log_tree_transition(previous_state, registry.lifecycle_state, reason="add")
         self.client._log_event("add_end", staged=sum(1 for o in self.client.last_write_outcomes if o.acted))
@@ -1055,7 +1056,7 @@ class TreeCommands:
         scope = GitProbes.scope_for(registry, private=private, command="rm", default=RepoScope.ALL)
         self.client._log_event("rm_start", paths=[str(p) for p in paths], scope=scope.value)
         self.client.last_write_outcomes = GitProbes.as_write_outcomes(
-            self.client.orchestre.git_tree.git.rm(self.client.git_runner, paths, scope=scope)
+            OperatingSpace(self.client.get_dependency_registry()).rm(self.client.git_runner, paths, scope=scope)
         )
         self.client._log_tree_transition(previous_state, registry.lifecycle_state, reason="rm")
         self.client._log_event("rm_end")
@@ -1091,7 +1092,7 @@ class TreeCommands:
         protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
         try:
             self.client.last_write_outcomes = GitProbes.as_write_outcomes(
-                self.client.orchestre.git_tree.git.push(
+                OperatingSpace(self.client.get_dependency_registry()).push(
                     self.client.git_runner, force_access_protocol=protocol, scope=scope
                 )
             )
@@ -1125,7 +1126,7 @@ class TreeCommands:
             if private
             else GitProbes.scope_for(registry, private=False, command="tag", default=RepoScope.WRITABLE)
         )
-        self.client.orchestre.git_tree.git.tag(self.client.git_runner, tag_name, scope=scope)
+        OperatingSpace(self.client.get_dependency_registry()).tag(self.client.git_runner, tag_name, scope=scope)
         self.client._log_tree_transition(previous_state, registry.lifecycle_state, reason="tag")
         self.client._log_event("tag_end", tag_name=tag_name)
         return registry
@@ -1138,42 +1139,13 @@ class TreeCommands:
     ) -> WorkingGitTree:
         """Dispatch a git command across the full tree (lifecycle step 5).
 
-        This is the unified git interface.  It dispatches *command* to the
-        appropriate tree-wide operation and returns the updated registry.
-        Ordering is command-specific (for example, ``pull``/``branch``/``checkout``
-        run parent-first while ``push`` runs leaf-first).
-
-        Parameters
-        ----------
-        gittree:
-            The :class:`~.git_tree.WorkingGitTree` to operate on.
-            Pass ``None`` to use the currently loaded registry.  Passing a
-            registry replaces the active registry for the duration of the call.
-        command:
-            One of ``"pull"``, ``"checkout"``, ``"branch"``, ``"add"``,
-            ``"commit"``, ``"push"``, ``"tag"``, or ``"freeze"``.
-        *args:
-            Command-specific positional arguments:
-
-            - ``"pull"``: one argument — path to ``.cgs`` or ``.gts`` source.
-            - ``"checkout"``: one argument — branch/tag name to switch to.
-            - ``"branch"``: one argument — branch name to create (no checkout).
-            - ``"add"``: no arguments.  Stages all changes tree-wide.
-            - ``"commit"``: one argument — the commit message.  The message
-              conventionally ends with ``CGS#VERSION``.
-            - ``"push"``: no arguments.  Updates the stored hash in the
-              ``GitTree`` for each repository.
-            - ``"tag"``: one argument — the tag name.  Updates the stored tag
-              in the ``GitTree`` for each repository.
-            - ``"freeze"``: one argument — state/release tag name.
-
-        Examples
-        --------
-        ::
-
-            client.git(registry, "commit", "release: v1.0 CGS#1")
-            client.git(registry, "push")
-            client.git(registry, "tag", "v1.0")
+        *gittree* replaces the loaded registry when given (``None`` keeps it).
+        *command* is ``pull`` (a ``.cgs`` or ``.gts`` path), ``checkout``,
+        ``branch`` (a name), ``add`` (nothing), ``commit`` (a message),
+        ``push`` (nothing), ``tag`` or ``freeze`` (a tag name); ``checkout`` takes
+        a branch or tag name. ``pull``, ``branch`` and ``checkout`` run parent-first,
+        ``push`` leaf-first. Returns the updated registry, as in
+        ``client.git(registry, "commit", "msg")``.
         """
         if isinstance(gittree, WorkingGitTree):
             self.client.registry = gittree

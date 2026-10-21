@@ -71,14 +71,10 @@ if TYPE_CHECKING:
 def tree_project_name(tree: WorkingGitTree) -> str | None:
     """The project's name, which is what a private/local branch is named after.
 
-    Read from the root entry, the one place a tree records what project it
-    is. Returns ``None`` for a tree with no root, where the private/local
-    rule cannot apply anyway.
+    ``GitTree.project_name``, the one source of it. ``None`` for a tree with
+    no root, where the private/local rule cannot apply anyway.
     """
-    root = tree.repos.get(ROOT_REPO_ID)
-    if root is None:
-        return None
-    return _as_optional_str(root.project_name) or _as_optional_str(root.name)
+    return _as_optional_str(tree.project_name)
 
 
 @dataclass(frozen=True, slots=True)

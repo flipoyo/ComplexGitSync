@@ -327,12 +327,12 @@ class MemoryCommands:
                 "the project's root repository declares no owner, so no memory "
                 "repository name can be proposed. Pass one explicitly."
             )
-        entry = MemoryRepository.mount_entry(repository_owner, root.name)
+        entry = MemoryRepository.mount_entry(repository_owner, registry.project_name)
         branches = GitTreeBranches(registry, self.client.git_runner)
         return {
             "entry": entry,
             "line": CgsEntryEditor.format_entry(entry),
-            "branch": MemoryRepository.branch(root.name, branches.tree_branch or DEFAULT_BRANCH),
+            "branch": MemoryRepository.branch(registry.project_name, branches.tree_branch or DEFAULT_BRANCH),
             "mount_path": str(MemoryRepository(workspace).mount_path()),
             "create_with": MemoryRepository.creation_command(entry),
             "mounted": DefaultMemory(self.client).is_published(workspace),
@@ -880,7 +880,7 @@ class MemoryCommands:
         mount = MemoryRepository(workspace).mount_path()
         DefaultMemory(self.client).require_published(workspace, "memory branch")
         registry = self.client.get_dependency_registry()
-        target = MemoryRepository.branch(registry.get(ROOT_REPO_ID).name, project_branch)
+        target = MemoryRepository.branch(registry.project_name, project_branch)
         existed = self.client.git_runner.local_branch_exists(mount, target)
         if not existed:
             self.client.git_runner.create_branch(mount, target)
@@ -923,7 +923,7 @@ class MemoryCommands:
         workspace = Path(cgshome)
         git = self.client.git_runner
         registry = self.client.get_dependency_registry()
-        project = registry.get(ROOT_REPO_ID).name
+        project = registry.project_name
         target_project = into or GitTreeBranches(registry, git).tree_branch or DEFAULT_BRANCH
         source, target = MemoryRepository.branch(project, source_branch), MemoryRepository.branch(project, target_project)
         recorded = self.memory_push(workspace, message=f"{project} memory merge: recording before {source_branch} into {target_project}")
@@ -1299,7 +1299,7 @@ class MemoryCommands:
         DefaultMemory(self.client).require_published(workspace, "memory reboot")
 
         registry = self.client._document_loader.load_gts(discover_gts_path(str(workspace)), unmeasured=True)
-        project_name = registry.get(ROOT_REPO_ID).name
+        project_name = registry.project_name
 
         folded = self.client._fold_memory_pending(MemoryRepository(workspace).pending_path(), mount)
 
@@ -1614,8 +1614,10 @@ class MemoryCommands:
         published_shas = {str(row.get("sha", "")) for row in log["published"]}
         environments = EnvironmentStore.resolve_references(PendingMemory(cgitsync_dir).dirs(), (entry.environment for entry in recorded))
         kept_on_ancestors: list[str] = []
+        os_id = None
         try:
             state_tree = RegistryTranslator.from_gts_document(document, tree_root=workspace)
+            os_id = OperatingSpace(state_tree).os_id
             tree = format_view_tree(state_tree)
             kept_on_ancestors = chapters.commits_only_on_ancestors(workspace, list(state_tree.values()))
         except (ValueError, KeyError, TypeError):
@@ -1633,7 +1635,7 @@ class MemoryCommands:
             "project": document.read("project.name"),
             "lifecycle_state": document.read("tree_state.lifecycle_state"),
             "repos": len(document.repo_states),
-            "integrity_schema": document.integrity_schema, "gittree_root": document.gittree_root, "os_id": OperatingSpace.id_of_state(document.read("project.name")),
+            "integrity_schema": document.integrity_schema, "gittree_root": document.gittree_root, "os_id": os_id,
             "tree": tree,
             "environments": environments,
             "entries": [

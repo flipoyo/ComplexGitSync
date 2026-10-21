@@ -98,6 +98,7 @@ class DocumentLoader:
             discovered = self.client.discover_nested_configs()
             self.client._log_nested_discovery(discovered)
         self.client._log_tree_transition(previous_tree_state, self.client.registry.lifecycle_state, reason="load_cgs")
+        OperatingSpace(self.client.registry).warn_if_names_differ()
         return self.client.registry
 
     def load(
@@ -249,6 +250,7 @@ class DocumentLoader:
             source_cgs_path=self.client.source_path if self.client.source_path.suffix == ".cgs" else None,
         )
         self.client._log_tree_transition(previous_tree_state, self.client.registry.lifecycle_state, reason="load_gts")
+        OperatingSpace(self.client.registry).warn_if_names_differ()
         return self.client.registry
 
     def load_runtime_or_cgs(
@@ -341,7 +343,7 @@ class DocumentLoader:
         # operation and the parent was picked by modification time. With a
         # flat state area there is nowhere to copy it to, and nothing to
         # gain: the register is a single growing file.
-        register_filename = f"{root_entry.name}.lgr"
+        register_filename = f"{registry.project_name}.lgr"
         final_register_path = cgitsync_dir / register_filename
         if not final_register_path.is_file():
             previous_register_path = MemoryStates(cgitsync_dir).latest_artifact(register_filename)
