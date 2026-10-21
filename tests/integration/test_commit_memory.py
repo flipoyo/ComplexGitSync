@@ -413,3 +413,115 @@ def test_a_commit_log_holds_no_absolute_path_and_no_user_name(tmp_path):
 
     assert str(tmp_path) not in everything
     assert str(Path.home()) not in everything
+
+
+# ---------------------------------------------------------------------------
+# The push witness: the remote's own word, asked again later
+# ---------------------------------------------------------------------------
+
+
+def _pushed_once(tmp_path: Path):
+    tree = _workspace(tmp_path)
+    client = _loaded(tree["snapshot"])
+    _change(tree["root"], "one")
+    client.commit("work to witness")
+    client.push()
+    return tree, client
+
+
+def test_a_push_records_what_the_remote_then_held(tmp_path):
+    tree, _ = _pushed_once(tmp_path)
+
+    [publication] = _published(tree["root"])
+    assert publication["remote_commit"] == publication["sha"]
+    assert publication["observed_at"]
+    report = _loaded(tree["snapshot"]).memory_verify_published(tree["root"])
+    assert [row["verdict"] for row in report["rows"]] == ["attested"]
+    # The chain still verifies with the new fields in the rows.
+    assert _loaded(tree["snapshot"]).verify(tree["root"]).state == HistoryState.VERIFIED
+
+
+def test_a_remote_that_moved_on_fast_forward_is_still_attested(tmp_path):
+    tree, _ = _pushed_once(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    _git(tmp_path, "clone", "-b", "main", tree["project_remote"].as_posix(), elsewhere.as_posix())
+    _identify(elsewhere)
+    (elsewhere / "later.txt").write_text("later\n", encoding="utf-8")
+    _git(elsewhere, "add", "later.txt")
+    _git(elsewhere, "commit", "-m", "later")
+    _git(elsewhere, "push", "origin", "main")
+
+    report = _loaded(tree["snapshot"]).memory_verify_published(tree["root"])
+
+    assert [row["verdict"] for row in report["rows"]] == ["attested"]
+
+
+def test_a_rewritten_remote_is_moved_and_nothing_is_changed(tmp_path):
+    tree, _ = _pushed_once(tmp_path)
+    pushed = _git(tree["root"], "rev-parse", "HEAD")
+    rewritten = tmp_path / "rewritten"
+    _git(tmp_path, "clone", "-b", "main", tree["project_remote"].as_posix(), rewritten.as_posix())
+    _identify(rewritten)
+    _git(rewritten, "reset", "--hard", "HEAD~1")
+    (rewritten / "other.txt").write_text("other\n", encoding="utf-8")
+    _git(rewritten, "add", "other.txt")
+    _git(rewritten, "commit", "-m", "a different history")
+    _git(rewritten, "push", "--force", "origin", "main")
+    before = (_git(tree["root"], "rev-parse", "HEAD"), _published(tree["root"]))
+
+    report = _loaded(tree["snapshot"]).memory_verify_published(tree["root"])
+
+    assert [row["verdict"] for row in report["rows"]] == ["moved"]
+    assert report["moved"] == 1
+    assert report["rows"][0]["sha"] == pushed
+    assert (_git(tree["root"], "rev-parse", "HEAD"), _published(tree["root"])) == before
+
+
+def test_an_unreachable_remote_is_not_reported_as_moved(tmp_path):
+    tree, _ = _pushed_once(tmp_path)
+    tree["project_remote"].rename(tmp_path / "gone.git")
+
+    report = _loaded(tree["snapshot"]).memory_verify_published(tree["root"])
+
+    assert [row["verdict"] for row in report["rows"]] == ["unreachable"]
+    assert report["moved"] == 0
+
+
+def test_a_row_written_before_the_witness_existed_is_unchanged():
+    """The digest of an old row is the one computed before the witness existed."""
+    import hashlib
+
+    from ComplexGitSync.memory.commit_log import CommitLog, PublicationRecord
+
+    old = PublicationRecord(entry=1, repository="demo", sha="a" * 40, remote="github:o/demo", ref="refs/heads/main", at="2026-01-01T00:00:00+00:00")
+    before_the_witness = (
+        '[{"at":"2026-01-01T00:00:00+00:00","entry":1,"ref":"refs/heads/main",'
+        '"remote":"github:o/demo","repository":"demo","sha":"' + "a" * 40 + '"}]'
+    )
+
+    assert "remote_commit" not in old.to_row()
+    assert CommitLog.digest_of([old]) == f"sha256:{hashlib.sha256(before_the_witness.encode()).hexdigest()}"
+
+
+def test_a_user_tree_records_the_witness_for_its_project_repositories(tmp_path):
+    """No private repository, so the tree is a USER tree; the project repository is still witnessed."""
+    tree = _workspace(tmp_path)
+    text = tree["snapshot"].read_text(encoding="utf-8")
+    tree["snapshot"].write_text(text[: text.index('[[repo_state]]\nname = "conf"')], encoding="utf-8")
+    client = _loaded(tree["snapshot"])
+    _change(tree["root"], "one")
+    client.commit("user tree work")
+    client.push()
+
+    assert client.get_dependency_registry().profile.name == "USER"
+    [publication] = _published(tree["root"])
+    assert publication["remote_commit"] == publication["sha"]
+
+
+def test_memory_verify_published_is_on_the_command_line(tmp_path, capsys):
+    tree, _ = _pushed_once(tmp_path)
+
+    code = cli_main(["memory", "verify", "--published", "--search-dir", tree["root"].as_posix()])
+
+    assert code == 0
+    assert "attested" in capsys.readouterr().out

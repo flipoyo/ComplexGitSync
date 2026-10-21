@@ -77,7 +77,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 39,
-      "loc": 2167,
+      "loc": 2210,
       "public_symbols": 1
     },
     "cli/fetch_command.py": {
@@ -92,7 +92,7 @@
     },
     "cli/help_text.py": {
       "internal_imports": 0,
-      "loc": 192,
+      "loc": 198,
       "public_symbols": 2
     },
     "cli/memory_asof.py": {
@@ -167,7 +167,7 @@
     },
     "git_runner.py": {
       "internal_imports": 3,
-      "loc": 1531,
+      "loc": 1567,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -217,7 +217,7 @@
     },
     "memory/commit_log.py": {
       "internal_imports": 0,
-      "loc": 241,
+      "loc": 258,
       "public_symbols": 6
     },
     "memory/conformity.py": {
@@ -347,7 +347,7 @@
     },
     "orchestre/client.py": {
       "internal_imports": 63,
-      "loc": 1337,
+      "loc": 1340,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -397,7 +397,7 @@
     },
     "orchestre/memory_commands.py": {
       "internal_imports": 53,
-      "loc": 1657,
+      "loc": 1711,
       "public_symbols": 1
     },
     "orchestre/memory_facts.py": {

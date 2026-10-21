@@ -143,6 +143,12 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
         "or with --timeline every ledger entry in order.",
         ("cgitsync memory explore", "cgitsync memory explore --timeline", "cgitsync memory explore --branch MyProject_feature-x"),
     ),
+    ("memory", "verify"): (
+        "Check this workspace's recorded history. With --published, also ask each remote again about every push "
+        "that was recorded with its answer: attested, moved (the ref no longer holds the commit) or unreachable. "
+        "Read-only; a moved push is reported, never repaired.",
+        ("cgitsync memory verify", "cgitsync memory verify --published"),
+    ),
     ("memory", "reboot"): (
         "Archive this memory's branch under a dated name and start a fresh, empty one under the same name. "
         "Nothing is deleted.",

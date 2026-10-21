@@ -14,6 +14,7 @@ import argparse
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 from ..errors import GitSyncError
 from ..git_repo import RefKind, RepoScope
@@ -731,6 +732,22 @@ def _register_memory(subparser: argparse.ArgumentParser) -> None:
     )
     _add_search_dir_argument(explore)
 
+    verify = memory_commands.add_parser(
+        "verify",
+        help="Check the recorded history; with --published, ask each remote whether it still agrees with what a push recorded.",
+    )
+    verify.add_argument(
+        "--published",
+        action="store_true",
+        help="Also ask each remote again, per push recorded with its answer: attested, moved or unreachable. Read-only.",
+    )
+    verify.add_argument(
+        "--state",
+        metavar="HASH",
+        help="Only the pushes filed under this State. Defaults to the whole memory.",
+    )
+    _add_search_dir_argument(verify)
+
     reboot = memory_commands.add_parser(
         "reboot",
         help="Archive this memory's current branch and start a fresh, empty one under its name.",
@@ -1150,8 +1167,38 @@ def _handle_memory(args: argparse.Namespace) -> int:
             source=getattr(args, "source", None),
             into=getattr(args, "into", None),
             keep=getattr(args, "keep", None),
+            published=getattr(args, "published", False),
         ),
     )
+
+
+def _print_memory_verify_published(report: dict[str, Any]) -> int:
+    """``memory verify --published``: one line per witnessed push, then the exit code."""
+    for row in report["rows"]:
+        print(f"{row['verdict']} {row['repository']} {row['ref']} {row['sha'][:12]} state={row['state'][:12]}")
+    print(f"checked={len(report['rows'])} moved={report['moved']}")
+    return EXIT_OK if report["moved"] == 0 else EXIT_REFUSED
+
+
+def _execute_memory_reading(
+    client: ComplexGitSyncClient,
+    cgshome: Path,
+    subcommand: str,
+    *,
+    branch: str | None,
+    timeline: bool,
+    published: bool,
+    state: str | None,
+) -> int:
+    """``memory explore``, and ``memory verify``: the chain check, with ``--published`` the remotes' word too."""
+    if subcommand == "explore":
+        return _print_memory_explore(client.memory_explore(cgshome, branch=branch, timeline=timeline))
+    if not published:
+        if state is not None:
+            raise GitSyncError("--state only narrows --published; add --published.")
+        return _execute_verify(client, cgshome, repair=False)
+    _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+    return _print_memory_verify_published(client.memory_verify_published(cgshome, state=state))
 
 
 def _execute_memory(
@@ -1173,6 +1220,7 @@ def _execute_memory(
     source: str | None = None,
     into: str | None = None,
     keep: str | None = None,
+    published: bool = False,
 ) -> int:
     if subcommand in _SIMPLE_MEMORY_SUBCOMMANDS:
         fetch, render = _SIMPLE_MEMORY_SUBCOMMANDS[subcommand]
@@ -1215,9 +1263,9 @@ def _execute_memory(
         )
     if subcommand == "push":
         return _print_memory_push(client.memory_push(cgshome, message=message))
-    if subcommand == "explore":
-        return _print_memory_explore(
-            client.memory_explore(cgshome, branch=branch, timeline=timeline)
+    if subcommand in ("verify", "explore"):
+        return _execute_memory_reading(
+            client, cgshome, subcommand, branch=branch, timeline=timeline, published=published, state=state
         )
     # `env=<ref>` (the new argument this command's own environment=env(...)
     # reference line asks for) or the full `env(<ref>)` form that reference

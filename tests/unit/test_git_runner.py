@@ -898,6 +898,12 @@ class _FakeGitRunner:
     def remote_get_url(self, repo_path, remote_name: str = "origin"):
         return None
 
+    def remote_ref_commit(self, repo_path, remote: str, ref: str):
+        return None
+
+    def remote_ref_contains(self, repo_path, remote: str, ref: str, sha: str):
+        return None
+
     def configure_remote(self, repo_path, remote_name: str, remote_url: str) -> None:
         return None
 

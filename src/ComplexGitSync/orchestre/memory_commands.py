@@ -37,6 +37,7 @@ from ..git_tree import (
     WorkingGitTree,
     _update_gitignore_file,
     format_view_tree,
+    iter_tree,
     iter_tree_leaf_first,
 )
 from ..git_tree_branch import GitTreeBranches
@@ -58,6 +59,7 @@ from ..memory.commit_log import (
     COMMIT_LOG_DIR_NAME,
     SCOPE_PRIVATE,
     SCOPE_PROJECT,
+    CommitLog,
     CommitRecord,
     PublicationRecord,
 )
@@ -168,18 +170,76 @@ class MemoryCommands:
             if not outcome.acted or not entry.repo_id:
                 continue
             branch = branches.observed(entry)
-            for state_hash, sha in PendingMemory(cgitsync_dir).unpublished_commits(entry.repo_id):
+            ref = f"refs/heads/{branch}" if branch else ""
+            pending = PendingMemory(cgitsync_dir).unpublished_commits(entry.repo_id)
+            # One question per repository, asked right after its push: the
+            # remote's own word on what it now holds at the pushed ref.
+            remote_name = getattr(entry, "remote_name", None) or "origin"
+            witness = (
+                self.client.git_runner.remote_ref_commit(entry.absolute_path, remote_name, ref)
+                if pending and ref
+                else None
+            )
+            for state_hash, sha in pending:
                 published.setdefault(state_hash, []).append(
                     PublicationRecord(
                         entry=0,  # replaced with the real seq in write_gts_snapshot
                         repository=entry.name,
                         sha=sha,
                         remote=repo_identifier(entry),
-                        ref=f"refs/heads/{branch}" if branch else "",
+                        ref=ref,
                         at=moment,
+                        remote_commit=witness,
+                        observed_at=moment if witness is not None else None,
                     )
                 )
         return published
+
+    def memory_verify_published(self, cgshome: str | Path, *, state: str | None = None) -> dict[str, Any]:
+        """Ask each remote whether it still agrees with what a push recorded.
+
+        Read-only: nothing in the memory or the tree is written. Every
+        publication row that carries a witness (``remote_commit``) is asked
+        again, in *state*'s commit log or in the whole memory, and answered:
+
+        - ``attested``: the remote still holds that commit at that ref, or has
+          moved on from it fast-forward;
+        - ``moved``: the ref no longer contains it (a rewrite, or a deletion).
+          A finding, never repaired;
+        - ``unreachable``: no answer, or the repository is not in this tree.
+          Never reported as ``moved``.
+
+        A row written before the witness existed has none and is left out.
+        """
+        registry = self.client.get_dependency_registry()
+        by_identifier = {repo_identifier(entry): entry for entry in iter_tree(registry, RepoScope.ALL) if entry.repo_id}
+        pending = PendingMemory(Path(cgshome) / ".cgitsync")
+        hashes = sorted(pending.state_hashes_with_logs()) if state is None else [state]
+        rows: list[dict[str, Any]] = []
+        for state_hash in hashes:
+            for directory in pending.dirs():
+                for row in CommitLog(directory).read(state_hash)["published"]:
+                    if row.get("remote_commit") is None:
+                        continue
+                    entry = by_identifier.get(row["remote"])
+                    answer = None
+                    if entry is not None and row["ref"]:
+                        answer = self.client.git_runner.remote_ref_contains(
+                            entry.absolute_path,
+                            getattr(entry, "remote_name", None) or "origin",
+                            row["ref"],
+                            row["sha"],
+                        )
+                    rows.append({
+                        "state": state_hash,
+                        "repository": row["repository"],
+                        "ref": row["ref"],
+                        "sha": row["sha"],
+                        "remote_commit": row["remote_commit"],
+                        "observed_at": row.get("observed_at", ""),
+                        "verdict": "unreachable" if answer is None else "attested" if answer else "moved",
+                    })
+        return {"rows": rows, "moved": sum(1 for r in rows if r["verdict"] == "moved")}
 
     def freeze_state(
         self,

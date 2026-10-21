@@ -79,6 +79,13 @@ class PublicationRecord:
     A commit with no publication row was never pushed. That difference is
     the reason this file exists at all: it cannot be answered from the
     ledger, and it cannot be answered from Git once the repository is gone.
+
+    **The witness.** ``remote_commit`` and ``observed_at`` are the remote's own
+    word, asked with ``ls-remote`` right after the push: the commit it then
+    held at ``ref`` (an empty string when it held no such ref) and the local
+    time it was asked. Both are absent on a row written before the witness
+    existed, or when the remote could not be asked, and an absent field is
+    never serialised or hashed, so every older row verifies byte for byte.
     """
 
     entry: int
@@ -87,6 +94,12 @@ class PublicationRecord:
     remote: str
     ref: str
     at: str
+    remote_commit: str | None = None
+    observed_at: str | None = None
+
+    def to_row(self) -> dict[str, Any]:
+        """The row as it is stored and hashed: absent witness fields left out."""
+        return {name: value for name, value in asdict(self).items() if value is not None}
 
 
 @dataclass(frozen=True)
@@ -113,7 +126,10 @@ class CommitLog:
         this, so a row added or edited after the fact no longer matches what the
         chain committed to, and `verify` says so.
         """
-        payload = [asdict(record) for record in records]
+        payload = [
+            record.to_row() if isinstance(record, PublicationRecord) else asdict(record)
+            for record in records
+        ]
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
 
@@ -154,7 +170,10 @@ class CommitLog:
         path = self.path(state_hash)
         path.parent.mkdir(parents=True, exist_ok=True)
         existing = self.read(state_hash)
-        existing[table].extend(asdict(record) for record in records)
+        existing[table].extend(
+            record.to_row() if isinstance(record, PublicationRecord) else asdict(record)
+            for record in records
+        )
         payload = {name: rows for name, rows in existing.items() if rows}
         temporary = path.with_name(f".{path.name}.tmp")
         try:

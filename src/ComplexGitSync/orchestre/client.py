@@ -863,6 +863,10 @@ class ComplexGitSyncClient:
         """A memory a person can actually read, by branch or in ledger order."""
         return self._memory_commands.memory_explore(cgshome, branch=branch, timeline=timeline)
 
+    def memory_verify_published(self, cgshome: str | Path, *, state: str | None = None) -> dict[str, Any]:
+        """Ask each remote whether it still agrees with what a push recorded: ``attested``, ``moved`` or ``unreachable`` per row."""
+        return self._memory_commands.memory_verify_published(cgshome, state=state)
+
     def verify(self, cgshome: str | Path, *, repair: bool = False) -> VerificationReport:
         """Say which of the four answers this workspace's history deserves."""
         return self._memory_commands.verify(cgshome, repair=repair)

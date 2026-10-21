@@ -251,6 +251,10 @@ class GitRunnerProtocol(Protocol):
 
     def remote_branch_sha(self, remote_url: str, branch: str) -> str | None: ...
 
+    def remote_ref_commit(self, repo_path: Path | str, remote: str, ref: str) -> str | None: ...
+
+    def remote_ref_contains(self, repo_path: Path | str, remote: str, ref: str, sha: str) -> bool | None: ...
+
     def remote_tag_exists(self, remote_url: str, tag: str) -> bool: ...
 
     def remote_get_url(self, repo_path: Path | str, remote_name: str = "origin") -> str | None: ...
@@ -521,6 +525,44 @@ class GitRunner:
             if ref == f"refs/heads/{branch}":
                 return sha
         return None
+
+    def remote_ref_commit(self, repo_path: Path | str, remote: str, ref: str) -> str | None:
+        """The commit *remote* holds *ref* at right now, asked from *repo_path*.
+
+        Three answers, kept apart on purpose: a commit id; ``""`` when the
+        remote answered and holds no such ref; ``None`` when it could not be
+        asked at all. A question, never an error — ``ls-remote`` downloads
+        nothing, and it runs in the repository so the remote is reached the
+        way the push reached it.
+        """
+        completed = self._query("ls-remote", remote, ref, cwd=repo_path)
+        if completed.returncode != 0:
+            return None
+        for line in completed.stdout.splitlines():
+            sha, _, name = line.partition("\t")
+            if name == ref:
+                return sha
+        return ""
+
+    def remote_ref_contains(self, repo_path: Path | str, remote: str, ref: str, sha: str) -> bool | None:
+        """Whether *remote*'s *ref* is *sha* or has moved on from it fast-forward.
+
+        ``None`` when the remote cannot be asked. When the remote's tip is not
+        in *repo_path* yet it is fetched into ``FETCH_HEAD`` alone, so no
+        branch or remote-tracking ref of the caller's moves.
+        """
+        tip = self.remote_ref_commit(repo_path, remote, ref)
+        if tip is None:
+            return None
+        if tip == "":
+            return False
+        if tip == sha:
+            return True
+        if self._query("cat-file", "-e", f"{tip}^{{commit}}", cwd=repo_path).returncode != 0 and (
+            self._query("fetch", "-q", remote, ref, cwd=repo_path).returncode != 0
+        ):
+            return None
+        return self._query("merge-base", "--is-ancestor", sha, tip, cwd=repo_path).returncode == 0
 
     def _remote_ref_exists(self, remote_url: str, ref_selector: str, ref_name: str) -> bool:
         completed = self._run("ls-remote", ref_selector, remote_url, ref_name)
