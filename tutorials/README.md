@@ -4,7 +4,7 @@
 
 ## Abstract — read this first
 
-**What this document is.** The index of ComplexGitSync's seven worked
+**What this document is.** The index of ComplexGitSync's eight worked
 tutorials, ordered from simplest to most advanced.
 
 **Why it exists.** The root [README.md](../README.md) says what the tool
@@ -14,13 +14,13 @@ tutorials instead walk one topology end to end,
 so a first-time user sees the full lifecycle before hand-authoring their
 own `.cgs`.
 
-**What you will find.** Seven tutorials, each building on the last, a
+**What you will find.** Eight tutorials, each building on the last, a
 reminder that every command shown is a Pixi task, which shell they
 assume (bash, which on Windows is Git Bash) and how to adapt another, and
 why they clone over HTTPS.
 
 **Who it is for.** Anyone new to `cgitsync`. Start at Tutorial 1 regardless
-of your own project's shape — it establishes the vocabulary the other six
+of your own project's shape — it establishes the vocabulary the other seven
 assume.
 
 **What you need to do with it.** Work the tutorials in order, or jump
@@ -35,15 +35,16 @@ graph LR
     T4 --> T5["05<br/>private repos<br/>local and distant"]
     T5 --> T6["06<br/>your project's memory"]
     T6 --> T7["07<br/>merging a tree"]
-    T7 --> REF["docs/MASTER.pdf<br/>full reference"]
+    T7 --> T8["08<br/>Omniscience"]
+    T8 --> REF["docs/MASTER.pdf<br/>full reference"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
-    class T1,T2,T3,T4,T5,T6,T7 here;
+    class T1,T2,T3,T4,T5,T6,T7,T8 here;
 ```
 
 ---
 
-Seven worked examples, ordered from the simplest to the most advanced. Do
+Eight worked examples, ordered from the simplest to the most advanced. Do
 them in order — each one builds on the last:
 
 1. **[01 — Your First Multi-Repo Workspace](01_first_multi_repo_workspace.md)**
@@ -80,6 +81,14 @@ them in order — each one builds on the last:
    what `--resolve` and `--all-conflicts` do and never do, why the memory is
    kept rather than merged, branches with no common commit, and closing the
    branch afterwards.
+8. **[08 — Omniscience](08_omniscience.md)**
+   The shared register of projects: register a State with `omniscience
+   register`, then ask for it by name from anywhere — `get`, `branches`,
+   `history`, a checked `proof`, `verify` (is the register itself intact?),
+   `memory` and `state` (read the registered `.memory` at its exact commit,
+   and write a State to restore on another machine), and `observe` / `status`
+   / `report` (is it still there?). What `verified`, `invalid`,
+   `unavailable`, `unauthorized` and `not_registered` each mean.
 
 > **Every command in these tutorials is a Pixi task.** Run `pixi install`
 > once per checkout, then always invoke the CLI as `pixi run cgitsync ...`

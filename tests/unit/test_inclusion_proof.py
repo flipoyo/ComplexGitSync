@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import asdict, replace
 
 import pytest
 
 from ComplexGitSync.errors import ConfigValidationError
+from ComplexGitSync.global_integrity import GLOBAL_SCHEMA, GlobalIntegrity
 from ComplexGitSync.gts_integrity import GtsIntegrity
-from ComplexGitSync.inclusion_proof import InclusionProof
+from ComplexGitSync.inclusion_proof import GlobalInclusionProof, InclusionProof
 
 
 def _leaf(index: int) -> dict:
@@ -145,3 +147,71 @@ def test_a_proof_round_trips_through_its_table():
 def test_a_path_not_in_the_tree_is_refused():
     with pytest.raises(ConfigValidationError, match="no repository at 'lib/none'"):
         InclusionProof.of([_leaf(i) for i in range(3)], "lib/none")
+
+
+# -- the global proof: the same path over registrations, with the global tags -------
+
+
+def _global_digests(size: int) -> list[bytes]:
+    return [hashlib.sha256(b"CGS:GLEAF:v1\x00" + bytes([index])).digest() for index in range(size)]
+
+
+def _independent_global_root(digests: list[bytes]) -> bytes:
+    """RFC 9162 §2.1.1 on hashlib alone, with the global inner-node tag."""
+    if not digests:
+        return hashlib.sha256(b"").digest()
+    if len(digests) == 1:
+        return digests[0]
+    split = 1
+    while split * 2 < len(digests):
+        split *= 2
+    return hashlib.sha256(b"CGS:GNODE:v1\x00" + _independent_global_root(digests[:split]) + _independent_global_root(digests[split:])).digest()
+
+
+@pytest.mark.parametrize("size", range(1, 18))
+def test_every_global_leaf_of_every_small_index_has_a_proof_that_verifies(size):
+    digests = _global_digests(size)
+    root = _independent_global_root(digests).hex()
+
+    for index, digest in enumerate(digests):
+        proof = GlobalInclusionProof.of_digests(digests, index)
+        assert proof.root == root and proof.tree_size == size and proof.schema == GLOBAL_SCHEMA
+        assert proof.verify(digest.hex(), root, size)
+
+
+def test_a_global_proof_fails_for_another_leaf_root_size_or_altered_sibling():
+    digests = _global_digests(5)
+    root = GlobalIntegrity.global_root(digests)
+    proof = GlobalInclusionProof.of_digests(digests, 2)
+
+    assert not proof.verify(digests[3].hex(), root, 5)
+    assert not proof.verify(digests[2].hex(), "0" * 64, 5)
+    assert not proof.verify(digests[2].hex(), root, 6)
+    forged = replace(proof, siblings=("0" * 64, *proof.siblings[1:]))
+    assert not forged.verify(digests[2].hex(), root, 5)
+    assert not replace(proof, leaf_index=7).verify(digests[2].hex(), root, 5)
+    assert not replace(proof, siblings=("not hex", *proof.siblings[1:])).verify(digests[2].hex(), root, 5)
+
+
+def test_a_global_proof_and_a_gittree_proof_never_verify_as_each_other():
+    leaves = [_leaf(index) for index in range(4)]
+    tree_proof = InclusionProof.of(leaves, "lib/r02")
+    digests = _global_digests(4)
+    global_proof = GlobalInclusionProof.of_digests(digests, 2)
+
+    assert not GlobalInclusionProof(**{**asdict(tree_proof)}).verify(GtsIntegrity.repo_leaf_hash(leaves[2]), tree_proof.root, 4)
+    assert not InclusionProof(**{**asdict(global_proof)}).verify(digests[2].hex(), global_proof.root, 4)
+    assert not replace(global_proof, schema=2).verify(digests[2].hex(), global_proof.root, 4)
+
+
+def test_a_global_proof_round_trips_through_its_table_and_refuses_an_index_that_is_not_there():
+    digests = _global_digests(6)
+    proof = GlobalInclusionProof.of_digests(digests, 4)
+
+    assert GlobalInclusionProof.from_dict(proof.to_dict()) == proof
+    assert isinstance(GlobalInclusionProof.from_dict(proof.to_dict()), GlobalInclusionProof)
+    for bad in (-1, 6):
+        with pytest.raises(ConfigValidationError, match="no leaf at index"):
+            GlobalInclusionProof.of_digests(digests, bad)
+    with pytest.raises(ConfigValidationError):
+        GlobalInclusionProof.of_digests([], 0)

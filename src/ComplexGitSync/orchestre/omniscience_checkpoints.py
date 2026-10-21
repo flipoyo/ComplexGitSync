@@ -67,6 +67,10 @@ class GlobalCheckpoints:
             seen = ""
         return seen or self.client.git_runner.ref_sha(self.mount, f"refs/remotes/origin/{GLOBAL_BRANCH}")
 
+    def last_seen(self) -> str | None:
+        """What this tree last found sound, for a reader that only compares and never remembers."""
+        return self._seen()
+
     def _remember(self, sha: str | None) -> None:
         if sha:
             try:

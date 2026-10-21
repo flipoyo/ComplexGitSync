@@ -42,7 +42,7 @@
     },
     "cgs_format.py": {
       "internal_imports": 12,
-      "loc": 685,
+      "loc": 683,
       "public_symbols": 9
     },
     "cli/__init__.py": {
@@ -76,8 +76,8 @@
       "public_symbols": 5
     },
     "cli/expert.py": {
-      "internal_imports": 39,
-      "loc": 2210,
+      "internal_imports": 40,
+      "loc": 2206,
       "public_symbols": 1
     },
     "cli/fetch_command.py": {
@@ -92,7 +92,7 @@
     },
     "cli/help_text.py": {
       "internal_imports": 0,
-      "loc": 200,
+      "loc": 209,
       "public_symbols": 2
     },
     "cli/memory_asof.py": {
@@ -109,6 +109,11 @@
       "internal_imports": 16,
       "loc": 479,
       "public_symbols": 1
+    },
+    "cli/omniscience_command.py": {
+      "internal_imports": 6,
+      "loc": 226,
+      "public_symbols": 3
     },
     "cli/release_command.py": {
       "internal_imports": 11,
@@ -167,27 +172,42 @@
     },
     "git_runner.py": {
       "internal_imports": 3,
-      "loc": 1585,
+      "loc": 1590,
       "public_symbols": 4
     },
     "git_tree.py": {
-      "internal_imports": 38,
-      "loc": 1381,
+      "internal_imports": 22,
+      "loc": 1210,
       "public_symbols": 27
     },
     "git_tree_branch.py": {
       "internal_imports": 15,
-      "loc": 371,
+      "loc": 367,
       "public_symbols": 4
+    },
+    "global_index.py": {
+      "internal_imports": 3,
+      "loc": 49,
+      "public_symbols": 1
+    },
+    "global_integrity.py": {
+      "internal_imports": 1,
+      "loc": 73,
+      "public_symbols": 2
     },
     "gts_document.py": {
       "internal_imports": 9,
-      "loc": 377,
+      "loc": 375,
       "public_symbols": 1
     },
     "gts_integrity.py": {
       "internal_imports": 1,
       "loc": 89,
+      "public_symbols": 2
+    },
+    "inclusion_proof.py": {
+      "internal_imports": 4,
+      "loc": 164,
       "public_symbols": 2
     },
     "json_render.py": {
@@ -275,6 +295,36 @@
       "loc": 315,
       "public_symbols": 2
     },
+    "omniscience_answer.py": {
+      "internal_imports": 0,
+      "loc": 60,
+      "public_symbols": 5
+    },
+    "omniscience_completeness.py": {
+      "internal_imports": 2,
+      "loc": 80,
+      "public_symbols": 3
+    },
+    "omniscience_observation.py": {
+      "internal_imports": 2,
+      "loc": 118,
+      "public_symbols": 3
+    },
+    "omniscience_record.py": {
+      "internal_imports": 3,
+      "loc": 183,
+      "public_symbols": 1
+    },
+    "omniscience_repository.py": {
+      "internal_imports": 2,
+      "loc": 48,
+      "public_symbols": 4
+    },
+    "operating_space.py": {
+      "internal_imports": 30,
+      "loc": 265,
+      "public_symbols": 1
+    },
     "operations/__init__.py": {
       "internal_imports": 22,
       "loc": 130,
@@ -346,8 +396,8 @@
       "public_symbols": 1
     },
     "orchestre/client.py": {
-      "internal_imports": 63,
-      "loc": 1348,
+      "internal_imports": 68,
+      "loc": 1376,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -366,8 +416,8 @@
       "public_symbols": 1
     },
     "orchestre/document_loader.py": {
-      "internal_imports": 19,
-      "loc": 357,
+      "internal_imports": 20,
+      "loc": 354,
       "public_symbols": 1
     },
     "orchestre/environment_commands.py": {
@@ -396,8 +446,8 @@
       "public_symbols": 2
     },
     "orchestre/memory_commands.py": {
-      "internal_imports": 53,
-      "loc": 1711,
+      "internal_imports": 56,
+      "loc": 1710,
       "public_symbols": 1
     },
     "orchestre/memory_facts.py": {
@@ -410,18 +460,63 @@
       "loc": 206,
       "public_symbols": 2
     },
+    "orchestre/omniscience.py": {
+      "internal_imports": 11,
+      "loc": 265,
+      "public_symbols": 1
+    },
+    "orchestre/omniscience_appender.py": {
+      "internal_imports": 3,
+      "loc": 73,
+      "public_symbols": 3
+    },
+    "orchestre/omniscience_checkpoints.py": {
+      "internal_imports": 12,
+      "loc": 174,
+      "public_symbols": 3
+    },
+    "orchestre/omniscience_commands.py": {
+      "internal_imports": 22,
+      "loc": 169,
+      "public_symbols": 1
+    },
+    "orchestre/omniscience_control.py": {
+      "internal_imports": 15,
+      "loc": 119,
+      "public_symbols": 1
+    },
+    "orchestre/omniscience_memory.py": {
+      "internal_imports": 18,
+      "loc": 146,
+      "public_symbols": 1
+    },
+    "orchestre/omniscience_observer.py": {
+      "internal_imports": 13,
+      "loc": 165,
+      "public_symbols": 1
+    },
+    "orchestre/omniscience_reader.py": {
+      "internal_imports": 5,
+      "loc": 74,
+      "public_symbols": 4
+    },
+    "orchestre/omniscience_view.py": {
+      "internal_imports": 18,
+      "loc": 168,
+      "public_symbols": 2
+    },
     "orchestre/orchestre.py": {
       "internal_imports": 2,
       "loc": 28,
       "public_symbols": 1
     },
     "orchestre/release_commands.py": {
-      "internal_imports": 19,
+      "internal_imports": 20,
       "loc": 307,
       "public_symbols": 2
     },
     "orchestre/reporting.py": {
-      "internal_imports": 31,
+      "internal_imports": 32,
       "loc": 288,
       "public_symbols": 1
     },
@@ -436,8 +531,8 @@
       "public_symbols": 1
     },
     "orchestre/tree_commands.py": {
-      "internal_imports": 36,
-      "loc": 1092,
+      "internal_imports": 37,
+      "loc": 1068,
       "public_symbols": 1
     },
     "paths.py": {
@@ -456,7 +551,7 @@
       "public_symbols": 4
     },
     "registry.py": {
-      "internal_imports": 41,
+      "internal_imports": 43,
       "loc": 459,
       "public_symbols": 1
     },
@@ -492,7 +587,7 @@
     },
     "universal_clock.py": {
       "internal_imports": 0,
-      "loc": 75,
+      "loc": 77,
       "public_symbols": 2
     }
   },

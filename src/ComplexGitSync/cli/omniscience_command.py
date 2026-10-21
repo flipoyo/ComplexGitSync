@@ -1,9 +1,11 @@
-"""cli.omniscience_command — `cgitsync omniscience mount|record|register|observe`.
+"""cli.omniscience_command — `cgitsync omniscience mount|record|register|observe|get|branches|history|state|proof|verify|status|report|memory`.
 
 Ring: 4. Contract: register the ``omniscience`` group, and for each subcommand
     call the matching ``ComplexGitSyncClient.omniscience_*`` method and print
     the answer. Only ``register`` and ``observe`` write to the register, and
-    only by appending. Argument collection and printing only.
+    only by appending; the nine query subcommands only read, each with
+    ``--json``, and exit 0 for a ``verified`` answer and 1 for any other.
+    Argument collection and printing only.
 Imports: _shared, help_text, orchestre
 """
 
@@ -12,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 import tomli_w
 
@@ -26,7 +29,10 @@ from .help_text import SEARCH_DIR_HELP
 
 __all__ = ["HELP", "handle", "register"]
 
-HELP = "The shared register of projects: join it, register a State, and watch what disappears (mount, record, register, observe)."
+_SCALARS = ("project", "os_id", "checkpoint", "global_root", "project_branch", "state_id", "record", "repository", "availability", "proof_verified", "registration_proof_verified", "written")
+_QUERIES = ("get", "branches", "history", "state", "proof", "verify", "status", "report", "memory")
+
+HELP = "The shared register of projects: join it, register a State, watch what disappears, and ask it (mount, record, register, observe, get, branches, history, state, proof, verify, status, report, memory)."
 
 
 def register(subparser: argparse.ArgumentParser) -> None:
@@ -81,14 +87,46 @@ def register(subparser: argparse.ArgumentParser) -> None:
     observe.add_argument("--confirm-deleted", metavar="REPOSITORY", help="Record the owner's signed note that REPOSITORY was deleted. Only when the host still says it is not there; needs --reason.")
     observe.add_argument("--reason", metavar="TEXT", help="Why the deletion is confirmed.")
     observe.add_argument("--json", action="store_true", help="Print one JSON object.")
-    for parser in (mount, record, register_, observe):
+    queries = [_register_queries(actions)]
+    for parser in (mount, record, register_, observe, *queries[0]):
         parser.add_argument("--search-dir", metavar="DIR", help=SEARCH_DIR_HELP)
     subparser.set_defaults(handler=handle)
 
 
+def _register_queries(actions: Any) -> list[argparse.ArgumentParser]:
+    """The nine read-only subcommands; each takes the project, may take ``--checkpoint``, and prints ``--json`` on request."""
+    made: list[argparse.ArgumentParser] = []
+
+    def add(name: str, summary: str, *positional: tuple[str, str], checkpoint: bool = True) -> argparse.ArgumentParser:
+        parser = actions.add_parser(name, help=summary, description=summary + " Reads only: it writes nothing to the register or to any memory.")
+        parser.add_argument("project", help="The project's name, as registered.")
+        for argument, text in positional:
+            parser.add_argument(argument, help=text)
+        if checkpoint:
+            parser.add_argument("--checkpoint", metavar="NAME", help="Answer from this checkpoint (any unambiguous prefix of its name) instead of the newest.")
+        parser.add_argument("--json", action="store_true", help="Print one JSON object.")
+        made.append(parser)
+        return parser
+
+    add("get", "Whether a project is registered, under which os_id, on which branches.")
+    add("branches", "Each registered branch of a project and its newest registered State.")
+    add("history", "Every registration of a project, oldest first.").add_argument("--branch", metavar="NAME", help="Only this project branch.")
+    state = add("state", "A registered State with its proof, read from the registered .memory.", ("state", "A State's id or any unambiguous prefix."))
+    state.add_argument("--out", metavar="FILE", help="Write the verified State here as a .gts, for 'cgitsync bootstrap --gts'. Never overwrites a file.")
+    add("proof", "The checked inclusion proof of a State's registration (it proves registration, never availability).", ("state", "A State's id or any unambiguous prefix."))
+    add("verify", "A State's proof, and whether the register is intact, attested, rewritten or contradicted.", ("state", "A State's id or any unambiguous prefix."))
+    add("status", "A registered repository (or 'memory'): its registration and the newest observation of it.", ("repository", "A repository identifier as the record names it, or 'memory'."))
+    add("report", "The register's state, the project's proofs, what is only proposed, and completeness.", checkpoint=False)
+    add("memory", "The .memory registered for a branch, read at its immutable commit and checked against the record.", ("branch", "The project branch."))
+    return made
+
+
 def handle(args: argparse.Namespace) -> int:
     cgshome = _resolve_cgshome(getattr(args, "search_dir", None))
-    run = {"mount": _execute_mount, "record": _execute_record, "register": _execute_register, "observe": _execute_observe}[args.omniscience_command]
+    run = {
+        "mount": _execute_mount, "record": _execute_record, "register": _execute_register, "observe": _execute_observe,
+        **dict.fromkeys(_QUERIES, _execute_query),
+    }[args.omniscience_command]
     return _run_with_logging(command_name=f"omniscience-{args.omniscience_command}", source=cgshome, runner=lambda client, source: run(client, source, args))
 
 
@@ -146,3 +184,93 @@ def _execute_observe(client: ComplexGitSyncClient, cgshome: Path, args: argparse
         for line in report["failures"]:
             print(f"failure: {line}")
     return 1 if report["verdict"] == "failure" else 0
+
+
+def _execute_query(client: ComplexGitSyncClient, cgshome: Path, args: argparse.Namespace) -> int:
+    _load_ready_registry_source(client, _resolve_gts_path(None, str(cgshome)))
+    name, project, checkpoint = args.omniscience_command, args.project, getattr(args, "checkpoint", None)
+    answer = {
+        "get": lambda: client.omniscience_get(cgshome, project, checkpoint=checkpoint),
+        "branches": lambda: client.omniscience_branches(cgshome, project, checkpoint=checkpoint),
+        "history": lambda: client.omniscience_history(cgshome, project, branch=args.branch, checkpoint=checkpoint),
+        "state": lambda: client.omniscience_state(cgshome, project, args.state, checkpoint=checkpoint, destination=args.out),
+        "proof": lambda: client.omniscience_proof(cgshome, project, args.state, checkpoint=checkpoint),
+        "verify": lambda: client.omniscience_verify(cgshome, project, args.state, checkpoint=checkpoint),
+        "status": lambda: client.omniscience_status(cgshome, project, args.repository, checkpoint=checkpoint),
+        "report": lambda: client.omniscience_report(cgshome, project),
+        "memory": lambda: client.omniscience_memory(cgshome, project, args.branch, checkpoint=checkpoint),
+    }[name]()
+    if args.json:
+        print(json.dumps(answer, indent=2))
+    else:
+        _print_answer(answer)
+    return 0 if answer["status"] == "verified" else 1
+
+
+def _print_answer(answer: dict[str, Any]) -> None:
+    """Every answer starts with its status line and its reason; each section after it prints only when the answer has its data."""
+    print(f"status={answer['status']}" + (f" ({answer['detail']})" if answer.get("detail") else ""))
+    print(answer["reason"])
+    for key in _SCALARS:
+        if key in answer:
+            print(f"{key}={answer[key]}")
+    for section in _SECTIONS:
+        for line in section(answer):
+            print(line)
+
+
+def _lines_branches(answer: dict[str, Any]) -> list[str]:
+    branches = answer.get("branches") if isinstance(answer.get("branches"), list) else []
+    if branches and isinstance(branches[0], dict):
+        return [f"branch {item['project_branch']}: states={item['states']} latest={item['latest_state_id']}" for item in branches]
+    counts = [f"states={answer['states']} records={answer.get('records', '')}"] if isinstance(answer.get("states"), int) else []
+    return [*counts, "branches=" + ",".join(branches)] if branches else counts
+
+
+def _lines_history(answer: dict[str, Any]) -> list[str]:
+    return [f"{i['checkpoint_number']:>3} {i['project_branch']} {i['state_id']} record={i['record'][:12]} at={i['recorded_at']} by={i['contributor']}" for i in answer.get("history", ())]
+
+
+def _lines_proof(answer: dict[str, Any]) -> list[str]:
+    proof = answer.get("proof")
+    if not isinstance(proof, dict):
+        return []
+    return [f"proof: leaf {proof['leaf_index']} of {proof['tree_size']}, {len(proof['siblings'])} sibling(s), root {proof['root']}"]
+
+
+def _lines_register(answer: dict[str, Any]) -> list[str]:
+    register = answer.get("register")
+    if not register:
+        return []
+    return [f"register={register['state']} protections={register['protections']}", *([f"register: {register['reason']}"] if register["reason"] else [])]
+
+
+def _lines_memory(answer: dict[str, Any]) -> list[str]:
+    lines = []
+    if "ledger" in answer:
+        lines += [f"ledger: {answer['ledger']['entries']} entries, tip {answer['ledger']['tip']}", f"states in the memory: {', '.join(s[:12] for s in answer['states'])}"]
+    if isinstance(answer.get("state"), dict):
+        lines += [f"  {repo['relative_path']}: {repo['ref']} @ {str(repo['commit'])[:12]}" for repo in answer["state"]["repositories"]]
+    if answer.get("diagnosis"):
+        lines.append(f"diagnosis={answer['diagnosis']}" + (f" located={','.join(answer['located'])}" if answer.get("located") else ""))
+    return lines
+
+
+def _lines_observation(answer: dict[str, Any]) -> list[str]:
+    found = answer.get("observation")
+    return [f"observation: {found['status']} at {found['observed_at']} by {found['method']}"] if found else []
+
+
+def _lines_completeness(answer: dict[str, Any]) -> list[str]:
+    completeness = answer.get("completeness")
+    if isinstance(completeness, dict):
+        return [f"completeness={completeness['verdict']}", *(f"  {line}" for line in (*completeness["warnings"], *completeness["failures"]))]
+    return [f"completeness={completeness}"] if completeness else []
+
+
+def _lines_proposed(answer: dict[str, Any]) -> list[str]:
+    proposed = answer.get("proposed")
+    return [f"proposed: {i['branch']}:{i['path']}: {i['reason']}" for i in proposed] if isinstance(proposed, list) else []
+
+
+_SECTIONS = (_lines_branches, _lines_history, _lines_proof, _lines_register, _lines_memory, _lines_observation, _lines_completeness, _lines_proposed)

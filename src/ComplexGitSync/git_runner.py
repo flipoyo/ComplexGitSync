@@ -415,6 +415,8 @@ class GitRunnerProtocol(Protocol):
 
     def ref_sha(self, repo_path: Path | str, ref: str) -> str | None: ...
 
+    def commit_signature(self, repo_path: Path | str, sha: str) -> str: ...
+
     def branch_refs(self, repo_path: Path | str) -> dict[str, str]: ...
 
     def exclusive_commits(
@@ -1446,6 +1448,11 @@ class GitRunner:
         """The commit *ref* names, or ``None`` when it names none; read-only."""
         answer = self._query("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}", cwd=repo_path)
         return answer.stdout.strip() or None if answer.returncode == 0 else None
+
+    def commit_signature(self, repo_path: Path | str, sha: str) -> str:
+        """Git's one-letter verdict on *sha*'s signature (``%G?``): ``G`` good, ``N`` none, ``B`` bad; ``N`` when Git cannot say. Read-only."""
+        answer = self._query("log", "-1", "--format=%G?", sha, "--", cwd=repo_path)
+        return answer.stdout.strip() or "N" if answer.returncode == 0 else "N"
 
     def branch_refs(self, repo_path: Path | str) -> dict[str, str]:
         """Every local and remote-tracking branch, full ref name to commit; read-only.

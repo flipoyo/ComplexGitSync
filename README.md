@@ -1,4 +1,4 @@
-# ComplexGitSync v6.9.0
+# ComplexGitSync v6.10.0
 ## A distributed git-native Operating Space
 
 *Created: 2026-05-12*
@@ -102,6 +102,7 @@ advanced.
 | Couple public and private repositories | `private = true`, `--private` | [05 — private repositories](tutorials/05_private_repos.md) |
 | Give the project a persistent, verifiable memory | `memory setup` | [06 — memory](tutorials/06_memory.md) |
 | Merge a project branch across a whole tree, memory and conflicts included | `merge`, `merge --resolve` | [07 — merging a tree](tutorials/07_merge.md) |
+| Register a project's history in the shared register, prove a State, read it from anywhere | `omniscience register`, `omniscience get`, `omniscience verify` | [08 — Omniscience](tutorials/08_omniscience.md) |
 
 ## Installation: standalone or nested
 
@@ -160,7 +161,7 @@ pixi run cgitsync help --all        # every command and option on one page
 - [docs/MASTER.pdf](docs/MASTER.pdf) — the reference manual: every command
   and option, the `.cgs` and `.gts` formats, exit codes and `--json` output,
   and the stability promises between versions.
-- [tutorials/](tutorials/) — the seven tutorials listed above.
+- [tutorials/](tutorials/) — the eight tutorials listed above.
 - [docs/DevGuide/](docs/DevGuide/) — the architecture, for contributors.
 
 ## Authorship

@@ -91,6 +91,7 @@ from .gitignore_sync import GitignoreSync
 from .installer import Installer
 from .memory_commands import MemoryCommands
 from .memory_setup import MemorySetup
+from .omniscience import Omniscience
 from .omniscience_commands import OmniscienceCommands
 from .omniscience_control import IntegrityControl
 from .omniscience_observer import OmniscienceObserver
@@ -683,6 +684,42 @@ class ComplexGitSyncClient:
     def omniscience_observe(self, cgshome: str | Path, project: str | None = None, *, confirm_deleted: str | None = None, reason: str | None = None) -> dict[str, Any]:
         """Probe the repositories a project's records name and append one observation per finding. Removes and rewrites nothing."""
         return self._omniscience_observer.observe(cgshome, project, confirm_deleted=confirm_deleted, reason=reason)
+
+    def omniscience_get(self, cgshome: str | Path, project: str, *, checkpoint: str | None = None) -> dict[str, Any]:
+        """Whether *project* is registered in the shared register, its ``os_id``, branches and States, as one answer."""
+        return Omniscience(self, cgshome).get(project, checkpoint).to_dict()
+
+    def omniscience_branches(self, cgshome: str | Path, project: str, *, checkpoint: str | None = None) -> dict[str, Any]:
+        """Each registered branch of *project* and its newest registered State."""
+        return Omniscience(self, cgshome).branches(project, checkpoint).to_dict()
+
+    def omniscience_history(self, cgshome: str | Path, project: str, *, branch: str | None = None, checkpoint: str | None = None) -> dict[str, Any]:
+        """Every registration of *project*, oldest first, in the order the checkpoints accepted them."""
+        return Omniscience(self, cgshome).history(project, branch, checkpoint).to_dict()
+
+    def omniscience_state(self, cgshome: str | Path, project: str, state: str, *, checkpoint: str | None = None, destination: str | Path | None = None) -> dict[str, Any]:
+        """A registered State with its proof, read from the registered ``.memory``; *destination* receives its ``.gts``."""
+        return Omniscience(self, cgshome).get_state(project, state, checkpoint, destination=destination).to_dict()
+
+    def omniscience_proof(self, cgshome: str | Path, project: str, state: str, *, checkpoint: str | None = None) -> dict[str, Any]:
+        """The checked inclusion proof of a State's registration. Proves registration, never availability."""
+        return Omniscience(self, cgshome).get_proof(project, state, checkpoint).to_dict()
+
+    def omniscience_verify(self, cgshome: str | Path, project: str, state: str, *, checkpoint: str | None = None) -> dict[str, Any]:
+        """A State's proof, and whether the register is intact, attested, rewritten or contradicted."""
+        return Omniscience(self, cgshome).verify(project, state, checkpoint).to_dict()
+
+    def omniscience_status(self, cgshome: str | Path, project: str, repository: str, *, checkpoint: str | None = None) -> dict[str, Any]:
+        """A registered repository (or ``memory``): its registration and the newest observation of it."""
+        return Omniscience(self, cgshome).repository_status(project, repository, checkpoint).to_dict()
+
+    def omniscience_report(self, cgshome: str | Path, project: str) -> dict[str, Any]:
+        """The register's state, the project's proofs, what is only proposed, and completeness."""
+        return Omniscience(self, cgshome).integrity_report(project).to_dict()
+
+    def omniscience_memory(self, cgshome: str | Path, project: str, branch: str, *, checkpoint: str | None = None) -> dict[str, Any]:
+        """The ``.memory`` registered for *branch*, read at its immutable commit and checked against the record."""
+        return Omniscience(self, cgshome).memory(project, branch, checkpoint).to_dict()
 
     def list_releases(self) -> list[dict[str, Any]]:
         """Every release of this project, newest first, whoever made it."""

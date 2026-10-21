@@ -88,9 +88,12 @@ class SystemClock:
         return secrets.token_hex(nbytes)
 
     @staticmethod
-    def scratch_directory(prefix: str) -> tempfile.TemporaryDirectory[str]:
-        """A throwaway directory, removed on exit; its name is the OS's entropy, so it lives here."""
-        return tempfile.TemporaryDirectory(prefix=prefix)
+    def scratch_directory(prefix: str, parent: str | None = None) -> tempfile.TemporaryDirectory[str]:
+        """A throwaway directory, removed on exit; its name is the OS's entropy, so it lives here.
+
+        It is made under *parent* when one is given (which must exist), else under the OS's temporary directory.
+        """
+        return tempfile.TemporaryDirectory(prefix=prefix, dir=parent)
 
 
 __all__ = ["ClockProtocol", "SystemClock"]

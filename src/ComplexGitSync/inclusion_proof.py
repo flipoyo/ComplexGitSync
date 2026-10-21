@@ -3,9 +3,11 @@
 Ring: 0 (pure — no I/O, no clock, no environment)
 Contract: an RFC 9162 §2.1.3 (formerly RFC 6962) audit path from one repository's
     leaf to ``H_GITTREE`` under ``integrity_schema = 1``, and its check
-    against a trusted root. Private: no client method and no command uses it
-    yet; OmniscienceQuery is where a proof reaches a user.
-Imports: errors, gts_integrity
+    against a trusted root; and the same path from one registration's leaf to
+    ``H_GLOBAL`` under ``GLOBAL_SCHEMA = 1`` (:class:`GlobalInclusionProof`).
+    The GitTree proof stays private; the global one reaches a user through
+    ``Omniscience.get_proof``.
+Imports: errors, global_integrity, gts_integrity
 
 There is no second hashing implementation here. Every digest comes from
 :class:`~.gts_integrity.GtsIntegrity`: a leaf's ``repo_leaf_hash``, an inner
@@ -22,6 +24,13 @@ from the leaf up. A proof is stored as a TOML-ready table of hex strings
 (:meth:`InclusionProof.to_dict`), the way a ``.gts`` stores its digests. Only
 the GitTree level is proved: ``H_GITTREE`` to ``H_STATE`` is one hash, carried
 by the record that holds the proof.
+
+The global proof walks the same path with ``GlobalIntegrity``'s inner-node tag
+and roots its sibling subtrees with ``global_root``; it adds no hashing of its
+own. It dispatches on ``GLOBAL_SCHEMA``, so a schema-1 GitTree proof never
+verifies as a global one and the reverse (the tags differ). It proves that a
+registration is in the register's index and nothing about whether the
+repositories it names are still there.
 """
 
 from __future__ import annotations
@@ -31,6 +40,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .errors import ConfigValidationError
+from .global_integrity import GLOBAL_SCHEMA, GlobalIntegrity
 from .gts_integrity import GtsIntegrity
 
 
@@ -87,6 +97,10 @@ class InclusionProof:
 
     def _verify_schema_1(self, leaf_hash: str, trusted_root: str, trusted_size: int) -> bool:
         """RFC 9162 §2.1.3.2, with ``GtsIntegrity.node_hash`` as the inner hash."""
+        return self._walk(GtsIntegrity, leaf_hash, trusted_root, trusted_size)
+
+    def _walk(self, integrity: type[GtsIntegrity], leaf_hash: str, trusted_root: str, trusted_size: int) -> bool:
+        """The audit-path check, with *integrity*'s inner-node hash; a malformed proof is ``False``."""
         if self.root != trusted_root or self.tree_size != trusted_size:
             return False
         if not 0 <= self.leaf_index < self.tree_size:
@@ -101,11 +115,11 @@ class InclusionProof:
             if last == 0:
                 return False
             if index & 1 or index == last:
-                node = GtsIntegrity.node_hash(sibling, node)
+                node = integrity.node_hash(sibling, node)
                 while not index & 1 and index != 0:
                     index, last = index >> 1, last >> 1
             else:
-                node = GtsIntegrity.node_hash(node, sibling)
+                node = integrity.node_hash(node, sibling)
             index, last = index >> 1, last >> 1
         return last == 0 and node.hex() == trusted_root
 
@@ -131,4 +145,46 @@ class InclusionProof:
         )
 
 
-__all__ = ["InclusionProof"]
+@dataclass(frozen=True, slots=True)
+class GlobalInclusionProof(InclusionProof):
+    """One registration's audit path to ``H_GLOBAL``: the proof is over digests the index already holds, in index order."""
+
+    @classmethod
+    def of_digests(cls, leaf_digests: Sequence[bytes], index: int) -> GlobalInclusionProof:
+        """The proof that the digest at *index* is in ``global_root(leaf_digests)``, which must already be in leaf order."""
+        if not 0 <= index < len(leaf_digests):
+            raise ConfigValidationError(f"no leaf at index {index} in an index of {len(leaf_digests)}")
+        return cls(
+            schema=GLOBAL_SCHEMA,
+            leaf_index=index,
+            tree_size=len(leaf_digests),
+            siblings=tuple(cls._global_path(index, leaf_digests)),
+            root=GlobalIntegrity.global_root(leaf_digests),
+        )
+
+    @staticmethod
+    def _global_path(index: int, digests: Sequence[bytes]) -> list[str]:
+        """RFC 9162 §2.1.3.1 ``PATH(m, D[n])`` over raw digests, leaf first."""
+        if len(digests) <= 1:
+            return []
+        split = 1
+        while split * 2 < len(digests):
+            split *= 2
+        if index < split:
+            return [*GlobalInclusionProof._global_path(index, digests[:split]), GlobalIntegrity.global_root(digests[split:])]
+        return [*GlobalInclusionProof._global_path(index - split, digests[split:]), GlobalIntegrity.global_root(digests[:split])]
+
+    def verify(self, leaf_hash: str, trusted_root: str, trusted_size: int) -> bool:
+        """Whether *leaf_hash* is in the register's index of *trusted_size* leaves rooted at *trusted_root*; ``False`` for any other schema."""
+        if self.schema == GLOBAL_SCHEMA:
+            return self._walk(GlobalIntegrity, leaf_hash, trusted_root, trusted_size)
+        return False
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> GlobalInclusionProof:
+        """A proof read back from :meth:`to_dict`'s table."""
+        base = InclusionProof.from_dict(data)
+        return cls(base.schema, base.leaf_index, base.tree_size, base.siblings, base.root)
+
+
+__all__ = ["GlobalInclusionProof", "InclusionProof"]

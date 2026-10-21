@@ -1045,6 +1045,9 @@ class _FakeGitRunner:
     def show_file(self, repo_path, ref, path) -> str | None:
         return None
 
+    def commit_signature(self, repo_path, sha) -> str:
+        return "N"
+
     def ref_sha(self, repo_path, ref) -> str | None:
         return None
 
