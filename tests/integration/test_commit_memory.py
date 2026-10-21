@@ -525,3 +525,16 @@ def test_memory_verify_published_is_on_the_command_line(tmp_path, capsys):
 
     assert code == 0
     assert "attested" in capsys.readouterr().out
+
+
+def test_memory_show_prints_the_project_id(tmp_path, capsys):
+    from ComplexGitSync.operating_space import OperatingSpace
+
+    tree = _workspace(tmp_path)
+    _change(tree["root"], "one")
+    _loaded(tree["snapshot"]).commit("work")
+    [state_hash] = list(_logs(tree["root"]))
+
+    cli_main(["memory", "show", state_hash, "--search-dir", str(tree["root"])])
+
+    assert f"os_id={OperatingSpace.id_of('demo')}" in capsys.readouterr().out

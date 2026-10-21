@@ -37,6 +37,7 @@ from ..memory.pending import (
 from ..memory.repository import (
     MOUNT_PATH,
 )
+from ..operating_space import OperatingSpace
 from ..settings import Settings
 from ..status_render import (
     PROJECT_SCOPE_LABEL,
@@ -161,15 +162,14 @@ class Reporting:
     def status_json(self) -> str:
         """``status`` as one JSON object — the same answer, for a script.
 
-        The shape lives in ``json_render.py``, not here and not in ``cli/``,
-        so every command's machine-readable output is decided in one place.
+        The shape lives in ``json_render.py``, so every JSON output is decided in one place.
         """
         view = self._collect_status()
         if view.is_empty:
             payload = JsonRender.empty_status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value, profile=view.profile)
         else:
             payload = JsonRender.status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value, is_ready=view.tree_state.is_ready, registry_complete=view.tree_state.registry_complete, rows=view.rows, counts=view.counts, warnings=view.incoherent, profile=view.profile)
-        return JsonRender.dumps(payload)
+        return JsonRender.dumps(OperatingSpace(self.client.get_dependency_registry()).stamp(payload))
 
     def verify_json(self, cgshome: str | Path, *, repair: bool = False) -> str:
         """``verify`` as one JSON object, from the same report ``verify`` returns.

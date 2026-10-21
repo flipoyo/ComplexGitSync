@@ -445,3 +445,15 @@ def test_a_recording_command_in_a_terminal_asks_once(dev_tree, monkeypatch, caps
     assert cli_main(["branch", "create", "other", "--search-dir", str(dev_tree)]) == 0
     assert len(asked) == 4  # declined once: only the warning now
     assert "no memory back-up" in capsys.readouterr().err
+
+
+def test_status_json_carries_the_operating_space_id(tmp_path, capsys):
+    from ComplexGitSync.operating_space import OperatingSpace
+
+    workspace = tmp_path / "u"
+    _loaded(workspace, _cgs())
+
+    cli_main(["status", "--json", "--search-dir", str(workspace)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["os_id"] == OperatingSpace.id_of("demo")

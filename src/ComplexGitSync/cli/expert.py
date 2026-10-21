@@ -1626,7 +1626,7 @@ def _print_memory_show(state: dict, *, full: bool = False) -> int:
     if state.get("commits_on_ancestors"):
         print(f"commits_on_ancestors={', '.join(state['commits_on_ancestors'])} (their branches are gone; 'ancestors' keeps these commits)")
     print(
-        f"project={state['project']} lifecycle_state={state['lifecycle_state']} "
+        f"project={state['project']} os_id={state['os_id'] or 'none'} lifecycle_state={state['lifecycle_state']} "
         f"repos={state['repos']} integrity_schema={state['integrity_schema']} gittree_root={state['gittree_root']}"
     )
     # The environment this State's own commits ran under, first — a bare

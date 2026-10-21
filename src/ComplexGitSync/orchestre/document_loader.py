@@ -43,6 +43,7 @@ from ..memory.pending import (
 from ..memory.states import (
     MemoryStates,
 )
+from ..operating_space import OperatingSpace
 from ..paths import PathResolver
 from ..registry import (
     RegistryTranslator,
@@ -198,17 +199,9 @@ class DocumentLoader:
     ) -> ProjectTreeState:
         """Validate the dependency tree state (lifecycle step 3: PENDING → READY).
 
-        Loads the source (``.cgs`` or ``.gts``), recomputes the tree lifecycle
-        state, and returns a :class:`~.git_tree.ProjectTreeState` describing
-        readiness.  Every :class:`~.git_repo.GitRepo` must be in ``READY``
-        state for the tree to be considered ``READY``.
-
-        Parameters
-        ----------
-        source_path:
-            Path to the ``.cgs`` specification or a ``.gts`` snapshot.
-        discover_nested:
-            When ``True``, run nested ``.cgs`` discovery for ``.cgs`` sources.
+        Loads *source_path* (a ``.cgs``, or a ``.gts``) and returns whether the
+        tree is ``READY``: every repository must be. ``discover_nested`` also
+        discovers nested ``.cgs`` files. Warns when the project name breaks a rule.
         """
         resolved = Path(source_path).resolve()
         if resolved.suffix == ".gts":
@@ -217,6 +210,7 @@ class DocumentLoader:
             self.client.load_cgs(resolved, discover_nested=discover_nested)
             snapshot_path = self.client.write_gts_snapshot(command_origin="validate")
             self.client.state_store.record_snapshot(resolved, snapshot_path)
+        OperatingSpace(self.client.get_dependency_registry()).warn_if_rejected()
         return self.client.get_tree_state()
 
     def load_gts(self, snapshot_path: str | Path, *, unmeasured: bool = False) -> WorkingGitTree:

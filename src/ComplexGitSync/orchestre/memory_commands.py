@@ -79,6 +79,7 @@ from ..memory.self_history import SelfHistoryRecord
 from ..memory.states import (
     MemoryStates,
 )
+from ..operating_space import OperatingSpace
 from ..registry import (
     RegistryTranslator,
 )
@@ -1073,15 +1074,10 @@ class MemoryCommands:
     def memory_push(self, cgshome: str | Path, *, message: str | None = None) -> dict[str, Any]:
         """Fold what has accumulated since the last push, commit it, and send it.
 
-        Offline is not a failure mode, it is the normal case: everything a
-        memory records is written locally first and pushed when somebody
-        asks. So this is a command, never automatic, and a machine with no
-        network keeps a complete, valid, verifiable memory without it.
-
-        Folding (:meth:`_fold_memory_pending`) is part of what "send what
-        the memory gained" already means, not a step the caller has to
-        remember to run first — `.cgitsync`'s pending content only ever
-        moves into the mount here, and only here.
+        Offline is the normal case: a memory is written locally and pushed only
+        when asked, so a machine with no network keeps a complete memory.
+        Folding (:meth:`_fold_memory_pending`) is part of this command, and the
+        only place pending content moves into the mount.
 
         When self-history has been adopted (AgentReport WP2), its own fold
         and push run **first** — leaf before parent, as every tree-wide
@@ -1637,7 +1633,7 @@ class MemoryCommands:
             "project": document.read("project.name"),
             "lifecycle_state": document.read("tree_state.lifecycle_state"),
             "repos": len(document.repo_states),
-            "integrity_schema": document.integrity_schema, "gittree_root": document.gittree_root,
+            "integrity_schema": document.integrity_schema, "gittree_root": document.gittree_root, "os_id": OperatingSpace.id_of_state(document.read("project.name")),
             "tree": tree,
             "environments": environments,
             "entries": [
