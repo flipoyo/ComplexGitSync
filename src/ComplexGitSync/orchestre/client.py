@@ -92,6 +92,8 @@ from .installer import Installer
 from .memory_commands import MemoryCommands
 from .memory_setup import MemorySetup
 from .omniscience_commands import OmniscienceCommands
+from .omniscience_control import IntegrityControl
+from .omniscience_observer import OmniscienceObserver
 from .orchestre import Orchestre
 from .release_commands import ReleaseCommands, ReleaseLoad
 from .reporting import Reporting
@@ -194,6 +196,8 @@ class ComplexGitSyncClient:
         self._memory_commands = MemoryCommands(self)
         self._release_commands = ReleaseCommands(self)
         self._omniscience_commands = OmniscienceCommands(self)
+        self._integrity_control = IntegrityControl(self)
+        self._omniscience_observer = OmniscienceObserver(self)
         self._discovery_commands = DiscoveryCommands(self)
         self._reporting = Reporting(self)
         self._environment_commands = EnvironmentCommands(self)
@@ -671,6 +675,14 @@ class ComplexGitSyncClient:
     def omniscience_record(self, cgshome: str | Path, state: str) -> dict[str, Any]:
         """The registration record a State would make, with its hashes; nothing is written."""
         return self._omniscience_commands.record(cgshome, state)
+
+    def omniscience_register(self, cgshome: str | Path, state: str | None = None) -> dict[str, Any]:
+        """Register a State (default: the memory's newest) in the shared register, and extend its global checkpoint. Developer trees only; never forces."""
+        return self._integrity_control.register(cgshome, state)
+
+    def omniscience_observe(self, cgshome: str | Path, project: str | None = None, *, confirm_deleted: str | None = None, reason: str | None = None) -> dict[str, Any]:
+        """Probe the repositories a project's records name and append one observation per finding. Removes and rewrites nothing."""
+        return self._omniscience_observer.observe(cgshome, project, confirm_deleted=confirm_deleted, reason=reason)
 
     def list_releases(self) -> list[dict[str, Any]]:
         """Every release of this project, newest first, whoever made it."""

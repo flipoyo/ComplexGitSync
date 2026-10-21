@@ -1090,6 +1090,9 @@ class _FakeGitRunner:
     def remote_reachable(self, remote_url) -> bool:
         return True
 
+    def remote_refs(self, remote_url) -> tuple[dict[str, str] | None, str]:
+        return {}, ""
+
     def init_repository(self, repo_path, *, branch) -> None:
         return None
 
@@ -1105,6 +1108,9 @@ class _FakeGitRunner:
         return False
 
     def clean_untracked(self, repo_path) -> None:
+        return None
+
+    def reset_hard(self, repo_path) -> None:
         return None
 
     def rm_cached(self, repo_path, path: str) -> None:

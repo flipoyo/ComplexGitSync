@@ -92,7 +92,7 @@
     },
     "cli/help_text.py": {
       "internal_imports": 0,
-      "loc": 198,
+      "loc": 200,
       "public_symbols": 2
     },
     "cli/memory_asof.py": {
@@ -167,7 +167,7 @@
     },
     "git_runner.py": {
       "internal_imports": 3,
-      "loc": 1567,
+      "loc": 1585,
       "public_symbols": 4
     },
     "git_tree.py": {
@@ -347,7 +347,7 @@
     },
     "orchestre/client.py": {
       "internal_imports": 63,
-      "loc": 1340,
+      "loc": 1348,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {

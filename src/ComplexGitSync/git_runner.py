@@ -267,6 +267,8 @@ class GitRunnerProtocol(Protocol):
 
     def remote_reachable(self, remote_url: str) -> bool: ...
 
+    def remote_refs(self, remote_url: str) -> tuple[dict[str, str] | None, str]: ...
+
     def remote_head_branch(self, remote_url: str) -> str | None: ...
 
     def remote_holds_commit(self, remote_url: str, sha: str) -> bool: ...
@@ -356,6 +358,7 @@ class GitRunnerProtocol(Protocol):
         user_name: str | None = None,
         user_email: str | None = None,
         allow_empty: bool = False,
+        sign: bool = False,
     ) -> None: ...
 
     def push(
@@ -467,6 +470,8 @@ class GitRunnerProtocol(Protocol):
     ) -> bool: ...
 
     def clean_untracked(self, repo_path: Path | str) -> None: ...
+
+    def reset_hard(self, repo_path: Path | str) -> None: ...
 
     def rm_cached(self, repo_path: Path | str, path: str) -> None: ...
 
@@ -995,6 +1000,7 @@ class GitRunner:
         user_name: str | None = None,
         user_email: str | None = None,
         allow_empty: bool = False,
+        sign: bool = False,
     ) -> None:
         """Commit staged changes in *repo_path* with *message* (``git commit``).
 
@@ -1004,6 +1010,8 @@ class GitRunner:
         the moment it is adopted so it is never an unborn branch for
         `current_branch`/`head_commit_sha_or_none`/`is_ready()` to disagree
         about later.
+
+        *sign* signs it (``--gpg-sign``); with no usable key the commit is refused, never made unsigned.
         """
         args: list[str] = []
         if user_name is not None:
@@ -1013,6 +1021,8 @@ class GitRunner:
         args.extend(["commit", "-m", message])
         if allow_empty:
             args.append("--allow-empty")
+        if sign:
+            args.append("--gpg-sign")
         self._run(*args, cwd=repo_path)
 
     def push(
@@ -1270,6 +1280,14 @@ class GitRunner:
         answer ``False``: from here they are the same situation.
         """
         return self._query("ls-remote", remote_url).returncode == 0
+
+    def remote_refs(self, remote_url: str) -> tuple[dict[str, str] | None, str]:
+        """Every ref *remote_url* lists (name to commit), or ``(None, <what Git said>)`` when it cannot be read."""
+        answer = self._query("ls-remote", remote_url)
+        if answer.returncode != 0:
+            return None, (answer.stderr.strip() or answer.stdout.strip() or "unknown git error")
+        pairs = (line.partition("\t") for line in answer.stdout.splitlines())
+        return {name: sha for sha, _, name in pairs if name}, ""
 
     def remote_head_branch(self, remote_url: str) -> str | None:
         """The branch a remote's ``HEAD`` points at — its own active branch.
@@ -1711,6 +1729,11 @@ class GitRunner:
 
     def clean_untracked(self, repo_path: Path | str) -> None:
         """Remove untracked files and directories in *repo_path*."""
+        self._run("clean", "-fd", cwd=repo_path)
+
+    def reset_hard(self, repo_path: Path | str) -> None:
+        """Index and worktree back to ``HEAD``, untracked files removed: a scratch worktree after a failed commit."""
+        self._run("reset", "--hard", cwd=repo_path)
         self._run("clean", "-fd", cwd=repo_path)
 
     def rm_cached(self, repo_path: Path | str, path: str) -> None:

@@ -79,6 +79,11 @@ class OmniscienceRecord:
         for name in ("project", "project_branch", "memory_repository", "memory_mount", "memory_ref"):
             if not getattr(self, name):
                 raise ConfigValidationError(f"record {name} must not be empty")
+        # The rows are evidence outside the hash, so anyone can write them by hand; they reach Git commands later.
+        for row in self.published_rows:
+            ref, repository, commit = (str(row.get(key, "")) for key in ("ref", "repository", "commit"))
+            if not _COMMIT.fullmatch(commit) or not ref or not repository or ref.startswith("-") or repository.startswith("-"):
+                raise ConfigValidationError(f"record published row {dict(row)!r} needs a repository, a ref and a hex commit, none starting with '-'")
 
     # -- what is committed --------------------------------------------------
 

@@ -40,6 +40,7 @@ class GlobalIntegrity(GtsIntegrity):
     LEAF_TAG = b"CGS:GLEAF:v1\x00"
     NODE_TAG = b"CGS:GNODE:v1\x00"
     CHECKPOINT_TAG = b"CGS:CHECKPOINT:v1\x00"
+    OBSERVATION_TAG = b"CGS:OBSERVATION:v1\x00"
 
     @classmethod
     def merkle_root(cls, leaves: Sequence[Mapping[str, Any]]) -> str:
@@ -84,6 +85,11 @@ class GlobalIntegrity(GtsIntegrity):
     def checkpoint_hash(cls, body: Mapping[str, Any]) -> str:
         """The name of a checkpoint: the hash of its body, which never contains its own name, as hex."""
         return cls._tagged(cls.CHECKPOINT_TAG, body).hex()
+
+    @classmethod
+    def observation_hash(cls, table: Mapping[str, Any]) -> str:
+        """The name of an observation: the hash of everything it says, as hex. Not a leaf: no ``H_GLOBAL`` covers it."""
+        return cls._tagged(cls.OBSERVATION_TAG, table).hex()
 
 
 __all__ = ["GLOBAL_SCHEMA", "GlobalIntegrity"]

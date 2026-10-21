@@ -23,7 +23,7 @@ SEARCH_DIR_HELP = (
 GROUP_DESCRIPTIONS: dict[tuple[str, ...], str] = {
     ("memory",): "What this workspace remembers, how to read it, and how to keep it in a repository.",
     ("self-history",): "The private record of agent work on this project.",
-    ("omniscience",): "The shared register of projects: join it, and see what a State would register.",
+    ("omniscience",): "The shared register of projects: join it, register a State, and watch what disappears.",
     ("repo",): "Create a repository on its provider, without leaving cgitsync.",
     ("env",): (
         "Observe this tree's reproducibility environment (show), "
@@ -149,6 +149,8 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
     ),
     ("omniscience", "mount"): ("For a developer tree: read-only unless --contribute; clones this project's branch, else the index branch. Registers nothing.", ("cgitsync omniscience mount", "cgitsync omniscience mount --contribute")),
     ("omniscience", "record"): ("The State must be in the committed memory ('cgitsync memory push'). Writes nothing.", ("cgitsync omniscience record 3f9a", "cgitsync omniscience record 3f9a --json")),
+    ("omniscience", "register"): ("Developer trees only, register mounted writable. Appends one record, never forces, retries a push another contributor beat; extends the global checkpoint.", ("cgitsync omniscience register", "cgitsync omniscience register --state 3f9a")),
+    ("omniscience", "observe"): ("Only when typed, never as a side effect. Appends findings and removes nothing; a repository the host says is gone is a warning, a permanent failure only when repeated for long.", ("cgitsync omniscience observe", "cgitsync omniscience observe --json")),
     ("memory", "reboot"): (
         "Archive this memory's branch under a dated name and start a fresh, empty one under the same name. "
         "Nothing is deleted.",

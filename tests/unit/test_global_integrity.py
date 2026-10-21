@@ -327,3 +327,17 @@ def test_the_schema_one_entry_points_a_global_class_inherits_are_refused():
     with pytest.raises(TypeError, match="GtsIntegrity"):
         GlobalIntegrity.state_hash({})
     assert GtsIntegrity.merkle_root([{"relative_path": "."}])  # schema 1 itself is untouched
+
+
+def test_an_observations_name_has_a_tag_of_its_own_and_so_is_never_a_record_a_leaf_or_a_checkpoint():
+    table = {"finding": {"status": "AVAILABLE"}}
+
+    names = {
+        GlobalIntegrity.observation_hash(table),
+        GlobalIntegrity.record_hash(table),
+        GlobalIntegrity.leaf_digest(table).hex(),
+        GlobalIntegrity.checkpoint_hash(table),
+        GlobalIntegrity.os_state_hash(table),
+    }
+
+    assert len(names) == 5
