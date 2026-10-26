@@ -19,8 +19,9 @@ tutorial teaches the checking as much as the asking.
 
 **What you will find.** What it is (§1), joining and registering (§2, §3),
 asking by name (§4), proofs (§5), reading the memory and restoring (§6),
-whether things are still there (§7), the five answers (§8), and a summary
-table (§9).
+whether things are still there (§7), the five answers (§8), a summary
+table (§9), and how a gate, [GX4G](https://codeberg.org/gx4g/gx4g), holds
+the register for readers who cannot mount it (§10).
 
 **Who it is for.** A developer with a tree that has private repositories
 ([Tutorial 5](05_private_repos.md)) and a memory published to a remote
@@ -256,3 +257,35 @@ Everything in §4 to §7 only reads. The only commands that write to the registe
 are `register` and `observe`, and they only add: no command rewrites, removes,
 forces or repairs anything in it. The full reference is in
 [docs/MASTER.pdf](../docs/MASTER.pdf).
+
+## 10. Behind a gate: GX4G
+
+Two rules above leave a gap. `mount` is refused on a user's tree (§2), and
+every query in §4 to §7 reads the mount's own Git objects. So a user, or
+anyone outside the project, cannot ask the register through `cgitsync` at
+all, even though a registration and its proof are public (§6).
+
+[GX4G](https://codeberg.org/gx4g/gx4g) fills that gap. It is the gate of a
+ComplexGitSync Operating Space, and it uses the register rather than
+replacing it. There is still one register, and these commands remain its
+mechanism. In a GX4G Operating Space, the gate mounts the register itself.
+Its developer spec declares it at the tree's root, beside `.cgitsync`:
+
+```toml
+{ repository = "github:flipoyo/omniscience", relative_path = ".omniscience", default_branch = "gx4g", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
+```
+
+It is the entry `mount --contribute` would write (§2). Being private and
+writable (private/local), `register` (§3) appends to it by the ordinary
+mechanism, and every query reads it. The gate then answers for the
+register. A user gets the registration and its proof (`proof`, `verify`),
+and a developer the `.gts` (`state --out`) to `bootstrap` from. Neither
+ever needs a mount of their own. Changing `repository` in that entry lets
+a project use another register. The gate adds no command to `cgitsync`
+and changes none of the answers in §8.
+
+What the gate adds is outside this tool: which ring a request reaches,
+and who may read or push each repository on its host. That is in GX4G's
+[README](https://codeberg.org/gx4g/gx4g/src/branch/main/README.md) and
+its tutorial
+[05 — Omniscience behind GX4G](https://codeberg.org/gx4g/gx4g/src/branch/main/tutorials/05_omniscience.md).
