@@ -213,6 +213,21 @@ def test_a_plain_push_folds_and_sends_pending_memory(tmp_path):
     assert client.last_memory_fold["recorded"] >= 1
 
 
+def test_memory_status_counts_the_pending_entries_and_a_fold_empties_them(tmp_path):
+    """WorkingAreaRename D1: the two halves are named *folded* and *pending*, and `memory status` says how many entries sit in each."""
+    tree = _memory_ready_workspace(tmp_path)
+    client = _loaded(tree["snapshot"])
+    _change(tree["root"], "work.txt", "one")
+    client.commit("work worth remembering")
+    waiting = client.memory_status(tree["root"])
+    assert 0 < waiting["pending_entries"] <= waiting["entries"]
+
+    client.memory_push(tree["root"])
+
+    folded = client.memory_status(tree["root"])
+    assert folded["pending_entries"] == 0 and folded["entries"] >= waiting["entries"]
+
+
 def test_a_plain_push_reaches_the_project_remote_as_before(tmp_path):
     """The fold is additional behaviour, not a replacement for the push."""
     tree = _memory_ready_workspace(tmp_path)

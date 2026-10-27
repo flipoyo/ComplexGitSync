@@ -1453,7 +1453,7 @@ def _print_memory_reboot(result: dict) -> int:
 
 
 def _print_memory_status(status: dict) -> int:
-    print(f"states={status['states']} entries={status['entries']} verification={status['verification']} findings={status['findings']}")
+    print(f"states={status['states']} entries={status['entries']} verification={status['verification']} findings={status['findings']} folded={status['entries'] - status['pending_entries']} pending={status['pending_entries']}")
     print(f"last_recorded_at={status['last_recorded_at'] or '(never)'}")
     if status.get("notice"):
         print(status["notice"])

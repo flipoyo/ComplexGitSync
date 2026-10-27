@@ -1431,16 +1431,15 @@ class MemoryCommands:
     def memory_status(self, cgshome: str | Path) -> dict[str, Any]:
         """What this workspace remembers, in one answer.
 
-        How many States it holds, how long its chain is, when it was last
-        written, which of the four verification answers it is in, and the
-        toolchain its first and last entries record — the interesting
-        question being whether those two differ.
+        States held, chain length (``pending_entries`` of them not yet folded), last write,
+        the verification answer, and the first and last entries' toolchain.
         """
         workspace = Path(cgshome)
         entries = PendingMemory(workspace / ".cgitsync").read_ledger_entries()
         report = self.client.verify(workspace)
         states = PendingMemory(workspace / ".cgitsync").state_files()
         return {
+            "pending_entries": len(LedgerStore(workspace / ".cgitsync" / "lgr").read_all_entries()),
             "cgshome": str(workspace.resolve()),
             "notice": MemorySetup(self.client).notice(workspace),
             "verification": report.state.name.lower().replace("_", "-"),

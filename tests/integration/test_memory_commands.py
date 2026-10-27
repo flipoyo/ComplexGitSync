@@ -198,6 +198,7 @@ def test_the_client_methods_mirror_the_commands(tmp_path):
 
     status = client.memory_status(workspace)
     assert status["entries"] == 2
+    assert status["pending_entries"] == 2  # no mount yet: every entry is still pending
     assert status["states"] == 1
     assert status["verification"] == "verified"
 

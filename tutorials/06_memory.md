@@ -68,8 +68,13 @@ pixi run cgitsync memory status
 ```
 
 ```
-states=14 entries=31 verification=verified
+states=14 entries=31 verification=verified findings=0 folded=28 pending=3
 ```
+
+`entries` is the whole chain. `folded` is how much of it is already in the
+git-tracked memory; `pending` is what has accumulated since the last
+`memory push` and is still only in `.cgitsync/` (§1 below says which half is
+which). With no repository mounted yet, everything is pending.
 
 That memory is real, and it is on exactly one disk. The rest of this
 tutorial is about that.
@@ -520,10 +525,11 @@ pixi run cgitsync memory status
 ```
 
 ```
-states=14 entries=31 verification=verified
+states=14 entries=31 verification=verified findings=0 folded=31 pending=0
 ```
 
-The same numbers as §1, on a machine that has never seen your first one.
+The same numbers as §1, on a machine that has never seen your first one,
+except that everything is folded: a clone brings only what was pushed.
 That is what the whole tutorial was for.
 
 ## 7. Summary
