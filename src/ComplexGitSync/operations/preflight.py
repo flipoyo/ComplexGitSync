@@ -176,16 +176,16 @@ class Preflight:
         tag_name: str,
         scope: RepoScope = RepoScope.ALL,
     ) -> list[PreflightDiagnostic]:
+        # A tag is judged by what it points at, not by existing: one already at HEAD is an
+        # earlier run of this same operation, cut short, so the retry may go on (Robustness D5).
         duplicates: list[PreflightDiagnostic] = []
         for repo in iter_tree_leaf_first(tree, scope):
-            if git_runner.tag_exists(repo.absolute_path, tag_name):
-                duplicates.append(
-                    PreflightDiagnostic(
-                        PreflightSeverity.BLOCKING_ERROR,
-                        repo.name,
-                        f"ERROR tag already taken: {tag_name!r}.",
-                    )
-                )
+            if not git_runner.tag_exists(repo.absolute_path, tag_name):
+                continue
+            held, head = git_runner.ref_sha(repo.absolute_path, f"refs/tags/{tag_name}"), git_runner.rev_parse_head(repo.absolute_path)
+            if held != head:
+                message = f"ERROR tag already taken: {tag_name!r} points at {(held or 'another object')[:12]}, not at HEAD {head[:12]}."
+                duplicates.append(PreflightDiagnostic(PreflightSeverity.BLOCKING_ERROR, repo.name, message))
         return duplicates
 
     @staticmethod

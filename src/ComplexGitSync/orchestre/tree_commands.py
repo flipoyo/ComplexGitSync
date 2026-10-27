@@ -1101,8 +1101,8 @@ class TreeCommands:
             )
         except GitSyncError as exc:
             hint = AuthFailureHints.protocol_switch_hint(str(exc), command="push")
-            if hint:
-                raise GitSyncError(f"{exc}\n{hint}") from exc
+            if hint:  # a partial-failure report keeps its structure and gains the hint
+                raise (exc.with_hint(hint) if hasattr(exc, "with_hint") else GitSyncError(f"{exc}\n{hint}")) from exc
             raise
         snapshot_path = self.client.write_gts_snapshot(
             command_origin="push",

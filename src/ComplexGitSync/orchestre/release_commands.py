@@ -162,7 +162,10 @@ class ReleaseCommands:
         """Refuse, before anything moves, a tag some repository already holds."""
         registry = self.client.get_dependency_registry()
         runner = self.client.git_runner
-        holders = [repo.name for repo in registry.values() if RepoScope.WRITABLE.includes(repo) and repo.absolute_path.is_dir() and runner.tag_exists(repo.absolute_path, tag)]
+        # The root's annotated tag is made last, so it says a release is complete; another repository's
+        # tag at its own HEAD, with nothing left to commit there, is an earlier run of this release cut
+        # short, and is resumed (Robustness D5). A repository about to commit would move HEAD off the tag.
+        holders = [repo.name for repo in registry.values() if RepoScope.WRITABLE.includes(repo) and repo.absolute_path.is_dir() and runner.tag_exists(repo.absolute_path, tag) and (repo.repo_id == ROOT_REPO_ID or runner.status_porcelain(repo.absolute_path) or runner.ref_sha(repo.absolute_path, f"refs/tags/{tag}") != runner.rev_parse_head(repo.absolute_path))]
         if not holders:
             return
         owner = next((self.parse_annotation(message).get("project") for _, _, _, _, message in runner.tag_records(self._root().absolute_path, tag) if self.parse_annotation(message)), None)

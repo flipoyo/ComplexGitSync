@@ -2,7 +2,7 @@
 
 Ring: 2
 Contract: Push, tag and release across the tree, leaf-first.
-Imports: errors, git_repo, git_tree, orchestre, outcome, preflight, restart
+Imports: errors, git_repo, git_tree, orchestre, outcome, partial_failure, preflight, restart
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from ..orchestre import GitRunner
 
 from .outcome import RepoOutcome
+from .partial_failure import TreeSweep
 from .preflight import Preflight
 from .restart import RestartOperation
 
@@ -76,8 +77,7 @@ class PushOperation:
         repos = list(iter_tree_leaf_first(tree, scope))
         refs = {repo.repo_id: PushOperation._branch_to_push(repo, git_runner) for repo in repos}
 
-        outcomes: list[RepoOutcome] = []
-        for repo in repos:
+        def push_one(repo: WorkingRepo) -> RepoOutcome:
             remote = repo.remote_name or "origin"
             RestartOperation.rewrite_remote_if_forced(git_runner, repo, remote, force_access_protocol)
             # Before the push, not after: ``push -u`` can only write the
@@ -101,24 +101,16 @@ class PushOperation:
             repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
             target = f"{remote}/{ref_name}" if ref_name else remote
             if set_upstream:
-                outcomes.append(
-                    RepoOutcome(name=repo.name, acted=True, detail=f"{target} (upstream set)")
-                )
-            elif ahead is None:
-                outcomes.append(RepoOutcome(name=repo.name, acted=True, detail=target))
-            elif ahead == 0:
-                outcomes.append(
-                    RepoOutcome(
-                        name=repo.name, acted=False, detail=f"{target} already up to date"
-                    )
-                )
-            else:
-                outcomes.append(
-                    RepoOutcome(name=repo.name, acted=True, detail=f"{target} (+{ahead})")
-                )
+                return RepoOutcome(name=repo.name, acted=True, detail=f"{target} (upstream set)")
+            if ahead is None:
+                return RepoOutcome(name=repo.name, acted=True, detail=target)
+            if ahead == 0:
+                return RepoOutcome(name=repo.name, acted=False, detail=f"{target} already up to date")
+            return RepoOutcome(name=repo.name, acted=True, detail=f"{target} (+{ahead})")
 
+        outcomes = TreeSweep.run("push", repos, push_one, retry="cgitsync push")
         tree.recompute_tree_state()
-        return tuple(outcomes)
+        return outcomes
 
     @staticmethod
     def _branch_to_push(repo: WorkingRepo, git_runner: GitRunner) -> tuple[str | None, str | None]:
@@ -180,12 +172,17 @@ class PushOperation:
         # Reproducibility does not suffer -- the .gts snapshot records every
         # repo's exact commit_sha, read-only ones included, so the tree is
         # rebuilt from the snapshot rather than from tags.
-        for repo in iter_tree_leaf_first(tree, scope):
-            git_runner.create_tag(repo.absolute_path, tag_name)
-            remote = repo.remote_name or "origin"
-            git_runner.push(repo.absolute_path, remote=remote, ref_name=tag_name)
+        def tag_one(repo: WorkingRepo) -> RepoOutcome:
+            # Preflight let through only a tag that already points at HEAD (an earlier
+            # run of this same command): it is kept, and pushed again, which is a no-op.
+            held = git_runner.tag_exists(repo.absolute_path, tag_name)
+            if not held:
+                git_runner.create_tag(repo.absolute_path, tag_name)
+            git_runner.push(repo.absolute_path, remote=repo.remote_name or "origin", ref_name=tag_name)
             repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
+            return RepoOutcome(name=repo.name, acted=not held, detail=f"{tag_name} already tagged" if held else tag_name)
 
+        TreeSweep.run("tag", list(iter_tree_leaf_first(tree, scope)), tag_one, retry=f"cgitsync tag {tag_name}")
         tree.recompute_tree_state()
 
     @staticmethod
@@ -232,14 +229,17 @@ class PushOperation:
         # tags *and* pushes, none of which this project may do to a read-only
         # configuration repo. Their exact SHAs are still recorded in the
         # snapshot this freeze writes.
-        for repo in iter_tree_leaf_first(tree, scope):
+        def freeze_one(repo: WorkingRepo) -> RepoOutcome:
             if stage_all:
                 git_runner.stage_all(repo.absolute_path)
             committed = git_runner.has_staged_changes(repo.absolute_path)
             if committed:
                 git_runner.commit(repo.absolute_path, commit_message)
             annotated_root = root_tag_message is not None and repo.repo_id == ROOT_REPO_ID
-            if not annotated_root:
+            # A tag already at HEAD is an earlier run of this same release, cut short:
+            # kept and pushed again. Preflight refused any tag that points elsewhere.
+            held = not annotated_root and git_runner.tag_exists(repo.absolute_path, tag_name)
+            if not annotated_root and not held:
                 git_runner.create_tag(repo.absolute_path, tag_name)
             remote = repo.remote_name or "origin"
             if committed:
@@ -255,12 +255,16 @@ class PushOperation:
             if not annotated_root:
                 git_runner.push(repo.absolute_path, remote=remote, ref_name=tag_name)
             repo.commit_sha = git_runner.rev_parse_head(repo.absolute_path)
+            if annotated_root:
+                # The root is last, so every commit it names is final; its tag is what
+                # says the release is complete.
+                tree.recompute_tree_state()
+                git_runner.create_annotated_tag(repo.absolute_path, tag_name, root_tag_message())
+                git_runner.push(repo.absolute_path, remote=remote, ref_name=tag_name)
+            return RepoOutcome(name=repo.name, acted=committed or not held, detail=f"{tag_name} already tagged" if held else tag_name)
 
+        TreeSweep.run("freeze release", list(iter_tree_leaf_first(tree, scope)), freeze_one, retry="cgitsync release freeze")
         tree.recompute_tree_state()
-        root = tree.repos.get(ROOT_REPO_ID)
-        if root_tag_message is not None and root is not None and scope.includes(root):
-            git_runner.create_annotated_tag(root.absolute_path, tag_name, root_tag_message())
-            git_runner.push(root.absolute_path, remote=root.remote_name or "origin", ref_name=tag_name)
 
 
 __all__ = [

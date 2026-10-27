@@ -247,6 +247,7 @@ class _FakeGitRunnerForOperations:
         self._current_branches: dict[Path, str | None] = {}
         self._existing_remotes: dict[Path, set[str]] = {}
         self._existing_tags: dict[Path, set[str]] = {}
+        self._tag_targets: dict[tuple[Path, str], str] = {}
         self._gitlinks: dict[Path, set[Path]] = {}
         self._tracking_states: dict[Path, SyncState | None] = {}
         self._has_upstream: dict[Path, bool] = {}
@@ -515,6 +516,10 @@ class _FakeGitRunnerForOperations:
         path = Path(repo_path)
         self.tagged.append((path, tag_name))
         self._existing_tags.setdefault(path, set()).add(tag_name)
+        self._tag_targets[(path, tag_name)] = self.rev_parse_head(path)
+
+    def ref_sha(self, repo_path: Path | str, ref: str) -> str | None:
+        return self._tag_targets.get((Path(repo_path), ref.removeprefix("refs/tags/")))
 
     def remote_exists(self, repo_path: Path | str, remote: str = "origin") -> bool:
         path = Path(repo_path)
@@ -543,8 +548,10 @@ class _FakeGitRunnerForOperations:
         else:
             remotes.discard(remote)
 
-    def add_existing_tag(self, repo_path: Path | str, tag_name: str) -> None:
+    def add_existing_tag(self, repo_path: Path | str, tag_name: str, *, at: str = "elsewhere") -> None:
+        """A tag the repository already holds, pointing at *at* (HEAD's sha makes it an earlier run's)."""
         self._existing_tags.setdefault(Path(repo_path), set()).add(tag_name)
+        self._tag_targets[(Path(repo_path), tag_name)] = at
 
     def add_gitlink(self, repo_path: Path | str, relative_path: Path | str) -> None:
         self._gitlinks.setdefault(Path(repo_path), set()).add(Path(relative_path))
