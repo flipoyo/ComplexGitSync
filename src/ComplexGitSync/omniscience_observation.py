@@ -6,7 +6,7 @@ Contract: the statuses an observation can carry, how a failed Git answer is
     one observation. Probing and storing are the observer's
     (``orchestre/omniscience_observer.py``); this module only decides what a
     given answer means.
-Imports: errors, global_integrity
+Imports: errors, merkle
 
 An observation is an event, not a registration. It is appended, named by the
 hash of everything it says (so two findings made at different moments are two
@@ -31,7 +31,7 @@ from enum import Enum
 from typing import Any
 
 from .errors import ConfigValidationError
-from .global_integrity import GlobalIntegrity
+from .merkle import MerkleRoot
 
 #: What an observation's ``target.kind`` can be.
 TARGET_KINDS = ("memory", "repository")
@@ -101,7 +101,7 @@ class Observation:
     def to_dict(self) -> dict[str, Any]:
         """The observation as a TOML-ready table."""
         data: dict[str, Any] = {
-            "observation": {"schema": GlobalIntegrity.GLOBAL_SCHEMA, "project": self.project, "observed_at": self.observed_at, "observer": self.observer},
+            "observation": {"schema": MerkleRoot.GLOBAL_SCHEMA, "project": self.project, "observed_at": self.observed_at, "observer": self.observer},
             "target": {"os_id": self.os_id, "kind": self.target_kind, "repository": self.target, "commit": self.commit, "record": self.record_hash},
             "finding": {"status": self.status.value, "method": self.method},
         }
@@ -133,7 +133,7 @@ class Observation:
     @property
     def observation_hash(self) -> str:
         """The observation's name: the hash of everything it says."""
-        return GlobalIntegrity.observation_hash(self.to_dict())
+        return MerkleRoot.observation_hash(self.to_dict())
 
     @property
     def filename(self) -> str:

@@ -27,7 +27,9 @@ from ComplexGitSync.gts_document import (
     _repo_ref_name,
     _repo_ref_token,
 )
-from ComplexGitSync.gts_integrity import INTEGRITY_SCHEMA
+from ComplexGitSync.merkle import MerkleRoot
+
+INTEGRITY_SCHEMA = MerkleRoot.SCHEMA
 
 MINIMAL_GTS: dict = {
     "document": {

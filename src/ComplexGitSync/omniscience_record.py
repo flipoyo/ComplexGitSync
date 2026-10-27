@@ -6,7 +6,7 @@ Contract: the canonical form of one registration of one Operating Space
     addressing or claims and are not, ``H_OS_STATE``, the record's own hash
     (its file name), and its leaf in the global tree. Specified in
     ``AdditionalSpecs.md``, *The Omniscience register*.
-Imports: errors, global_integrity
+Imports: errors, merkle
 
 A registration commits to the project's name and ``os_id``, the branch, the
 State (``state_id``, ``gittree_root``), the local ledger tip, and the
@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .errors import ConfigValidationError
-from .global_integrity import GLOBAL_SCHEMA, GlobalIntegrity
+from .merkle import MerkleRoot
 
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
@@ -59,11 +59,11 @@ class OmniscienceRecord:
     contributor: str = ""
     remote_locator: str | None = None
     published_rows: tuple[Mapping[str, Any], ...] = field(default=(), compare=False)
-    schema: int = GLOBAL_SCHEMA
+    schema: int = MerkleRoot.GLOBAL_SCHEMA
 
     def __post_init__(self) -> None:
-        if self.schema != GLOBAL_SCHEMA:
-            raise ConfigValidationError(f"record schema {self.schema} is not one this build reads (it reads {GLOBAL_SCHEMA})")
+        if self.schema != MerkleRoot.GLOBAL_SCHEMA:
+            raise ConfigValidationError(f"record schema {self.schema} is not one this build reads (it reads {MerkleRoot.GLOBAL_SCHEMA})")
         for name, pattern in (
             ("os_id", _HEX64),
             ("gittree_root", _HEX64),
@@ -121,12 +121,12 @@ class OmniscienceRecord:
     def os_state_hash(self) -> str:
         """``H_OS_STATE``: the Operating Space State commitment: os_id, branch, State, root, ledger tip, memory commit."""
         memory = {key: value for key, value in self._memory().items() if key != "mount"}
-        return GlobalIntegrity.os_state_hash({**self._operating_space(), "memory_repo": memory})
+        return MerkleRoot.os_state_hash({**self._operating_space(), "memory_repo": memory})
 
     @property
     def record_hash(self) -> str:
         """The record's own hash, which is its file name."""
-        return GlobalIntegrity.record_hash(self.preimage())
+        return MerkleRoot.record_hash(self.preimage())
 
     @property
     def filename(self) -> str:
@@ -143,7 +143,7 @@ class OmniscienceRecord:
     @property
     def leaf_digest(self) -> bytes:
         """The registration's global leaf: one branch head, one State commitment, one record."""
-        return GlobalIntegrity.leaf_digest(
+        return MerkleRoot.leaf_digest(
             {
                 "os_id": self.os_id,
                 "project_branch": self.project_branch,

@@ -4,7 +4,7 @@ Ring: 0 core + Ring-1 I/O adapter, co-located — see note below.
 Contract: parse, validate, and compute the canonical SHA-256 content hash of
     a ``.gts`` Git Tree State snapshot; the sole builder of that canonical
     payload (one hash code path, no fork).
-Imports: config_document, config_document_io, errors, git_repo, gts_integrity
+Imports: config_document, config_document_io, errors, git_repo, merkle
 
 Ring-classification note (found during P2-integrate, same shape as the
 config_document.py/config_document_io.py split from WP-CFG): every real
@@ -54,7 +54,7 @@ from .config_document import ConfigDocument
 from .config_document_io import ConfigDocumentIOMixin
 from .errors import ConfigValidationError, UnsupportedSnapshotFormatError
 from .git_repo import NodeType, RefKind, RepoLifecycleState
-from .gts_integrity import GtsIntegrity
+from .merkle import MerkleError, MerkleRoot
 
 # ============================================================
 #  Module-level constants and helpers GtsDocument depends on
@@ -133,7 +133,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
     CURRENT_SCHEMA_VERSION = "1.1"
     HASH_ALGORITHM = "sha256"
 
-    #: The hash contract is ``document.integrity_schema`` (``gts_integrity``):
+    #: The hash contract is ``document.integrity_schema`` (``merkle``):
     #: a hash per repository, a Merkle root over the tree, and the State hash
     #: on top. A stamped snapshot without it predates schema 1 and is refused,
     #: never re-measured; one declaring a higher schema came from a newer build.
@@ -216,28 +216,22 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
                     for prefix in ("current", "target", "resolved")
                 )
                 if not has_ref_name:
-                    errors.append(
-                        f"repo_state[{idx}] must include at least one ref ('ref', 'current_ref', 'target_ref', or 'resolved_ref')"
-                    )
+                    errors.append(f"repo_state[{idx}] must include at least one ref ('ref', 'current_ref', 'target_ref', or 'resolved_ref')")
                 lifecycle = str(repo.get("repo_lifecycle_state", ""))
                 if lifecycle in {
                     RepoLifecycleState.READY.value,
                     RepoLifecycleState.FALLBACK_READY.value,
                 } and not repo.get("commit_sha"):
-                    errors.append(
-                        f"repo_state[{idx}] missing required key for READY repository: 'commit_sha'"
-                    )
+                    errors.append(f"repo_state[{idx}] missing required key for READY repository: 'commit_sha'")
 
         hash_algorithm = self.read("document.hash_algorithm", self.HASH_ALGORITHM)
         if not isinstance(hash_algorithm, str) or hash_algorithm not in self._SUPPORTED_HASH_ALGORITHMS:
-            errors.append(
-                f"[document] unsupported hash_algorithm '{hash_algorithm}' (supported: {', '.join(sorted(self._SUPPORTED_HASH_ALGORITHMS))})"
-            )
+            errors.append(f"[document] unsupported hash_algorithm '{hash_algorithm}' (supported: {', '.join(sorted(self._SUPPORTED_HASH_ALGORITHMS))})")
 
         snapshot_hash = self.read("document.snapshot_hash")
         if isinstance(repo_states, list):
             try:
-                GtsIntegrity.ordered_leaves(self._repo_leaves())
+                self._repo_leaves()
             except ConfigValidationError as exc:
                 errors.append(f"[repo_state] {exc}")
             if not repo_states and self.is_ready:
@@ -337,26 +331,23 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         is still being built and is hashed under the current schema.
         """
         declared = self.integrity_schema
-        if declared is not None and declared > GtsIntegrity.SCHEMA:
+        if declared is not None and declared > MerkleRoot.SCHEMA:
             raise UnsupportedSnapshotFormatError(
                 "this snapshot was written by a newer ComplexGitSync "
                 f"(integrity schema {declared}; this build reads up to "
-                f"{GtsIntegrity.SCHEMA}). Upgrade, or pass --gts with a snapshot this build wrote."
+                f"{MerkleRoot.SCHEMA}). Upgrade, or pass --gts with a snapshot this build wrote."
             )
-        if self.snapshot_hash is not None and declared != GtsIntegrity.SCHEMA:
-            raise UnsupportedSnapshotFormatError(
-                f"this snapshot was written before integrity schema {GtsIntegrity.SCHEMA} "
-                "— run `cgitsync memory reboot`."
-            )
+        if self.snapshot_hash is not None and declared != MerkleRoot.SCHEMA:
+            raise UnsupportedSnapshotFormatError(f"this snapshot was written before integrity schema {MerkleRoot.SCHEMA} — run `cgitsync memory reboot`.")
 
     def compute_gittree_root(self) -> str:
         """``H_GITTREE``: the Merkle root over this document's repositories."""
         self._check_integrity_schema()
-        return GtsIntegrity.merkle_root(self._repo_leaves())
+        return MerkleRoot.gittree_root(self._repo_leaves())
 
     def compute_snapshot_hash(self) -> str:
         """``H_STATE``: the content hash that names this State."""
-        return GtsIntegrity.state_hash(self._state_payload(self.compute_gittree_root()))
+        return MerkleRoot.state_hash(self._state_payload(self.compute_gittree_root()))
 
     def ensure_snapshot_hash(self) -> str:
         """Stamp the schema, each ``repo_hash``, the Merkle root and the State hash.
@@ -364,15 +355,15 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         Called on the way to disk: the name is a fact about the tree, not
         about the directory it sits in or the build that wrote it.
         """
-        root = GtsIntegrity.merkle_root(self._repo_leaves())  # refuses before anything is stamped
+        root = MerkleRoot.gittree_root(self._repo_leaves())  # refuses before anything is stamped
         document = self._data.setdefault("document", {})
         document["CGS_VERSION"] = str(document.get("CGS_VERSION") or CGS_VERSION)
-        document["integrity_schema"] = GtsIntegrity.SCHEMA
+        document["integrity_schema"] = MerkleRoot.SCHEMA
         document["hash_canonicalisation"] = self.LEGACY_READER_FENCE
         for repo, leaf in zip(self._repo_dicts(), self._repo_leaves()):
-            repo["repo_hash"] = GtsIntegrity.repo_leaf_hash(leaf)
+            repo["repo_hash"] = MerkleRoot.repo_leaf_hash(leaf)
         self._data["tree_integrity"] = {"merkle_root": root}
-        digest = GtsIntegrity.state_hash(self._state_payload(root))
+        digest = MerkleRoot.state_hash(self._state_payload(root))
         document["snapshot_hash"] = digest
         return digest
 
@@ -387,12 +378,12 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         self._check_integrity_schema()
         found: list[tuple[str, str | None]] = []
         for repo, leaf in zip(self._repo_dicts(), self._repo_leaves()):
-            if repo.get("repo_hash") != GtsIntegrity.repo_leaf_hash(leaf):
+            if repo.get("repo_hash") != MerkleRoot.repo_leaf_hash(leaf):
                 found.append(("repo_hash", str(leaf.get("relative_path"))))
         root = self.compute_gittree_root()
         if self.gittree_root != root:
             found.append(("merkle_root", None))
-        if self.snapshot_hash != GtsIntegrity.state_hash(self._state_payload(root)):
+        if self.snapshot_hash != MerkleRoot.state_hash(self._state_payload(root)):
             found.append(("snapshot_hash", None))
         return found
 
@@ -429,7 +420,16 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
 
     def _repo_leaves(self) -> list[dict[str, Any]]:
         """Each repository's canonical leaf (``repo_leaf``), in document order."""
-        return [GtsDocument.repo_leaf(repo) for repo in self._repo_dicts()]
+        return GtsDocument.checked([GtsDocument.repo_leaf(repo) for repo in self._repo_dicts()])
+
+    @staticmethod
+    def checked(leaves: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        # Leaves that cannot be one tree (no path, a path twice) make the document invalid, not the hash.
+        try:
+            MerkleRoot.check_leaves(leaves)
+        except MerkleError as exc:
+            raise ConfigValidationError(str(exc)) from exc
+        return leaves
 
     @staticmethod
     def repo_leaf(repo: dict[str, Any]) -> dict[str, Any]:

@@ -10,7 +10,7 @@ Contract: own the ``SelfHistoryRecord`` shape and its atomic, content-addressed
     gitignored directory today; folding it into a repository of its own is
     a separate work package (AgentReport ticket, WP2) this module does not
     assume has landed.
-Imports: conformity, repository, states
+Imports: conformity, merkle, repository, states
 
 See ``.agent/.local/.dev/DevTickets/archive/20260924_AgentReport_DevPlanTicket.md``
 §1 for the record's field-by-field rationale (this module implements WP1
@@ -21,8 +21,6 @@ content is private and never published.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 import re
 import tomllib
@@ -31,6 +29,7 @@ from pathlib import Path
 
 import tomli_w
 
+from ..merkle import MerkleRoot
 from .conformity import ConformityScore
 from .repository import MEMORY_SUBDIR_NAME
 from .states import MemoryStates
@@ -181,10 +180,7 @@ class SelfHistoryRecord:
         )
 
     def digest(self) -> str:
-        canonical = json.dumps(
-            self.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        )
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return MerkleRoot.digest(self.to_dict())
 
     @staticmethod
     def path_in(base_dir: Path, record_hash: str) -> Path:

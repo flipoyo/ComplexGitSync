@@ -1,6 +1,6 @@
 """Tests for the Omniscience register's schema: the record, H_OS_STATE, the global tree.
 
-``GLOBAL_SCHEMA = 1`` is frozen by the golden vectors below. The reference
+``MerkleRoot.GLOBAL_SCHEMA = 1`` is frozen by the golden vectors below. The reference
 here (``_ref_*``) is a from-scratch implementation on ``hashlib`` and
 ``json`` alone, written from the specification (``AdditionalSpecs.md``, *The
 Omniscience register*), not from the modules under test. A change that moves
@@ -16,8 +16,7 @@ import pytest
 
 from ComplexGitSync.errors import ConfigValidationError
 from ComplexGitSync.global_index import GlobalIndex
-from ComplexGitSync.global_integrity import GLOBAL_SCHEMA, GlobalIntegrity
-from ComplexGitSync.gts_integrity import GtsIntegrity
+from ComplexGitSync.merkle import MerkleRoot
 from ComplexGitSync.omniscience_record import OmniscienceRecord
 
 OS_ID = hashlib.sha256(b"demo").hexdigest()
@@ -142,9 +141,9 @@ GOLDEN_EMPTY_ROOT = hashlib.sha256(b"").hexdigest()
 
 
 def test_the_schema_is_one_and_apart_from_schema_one():
-    assert GLOBAL_SCHEMA == 1
-    tags = {GlobalIntegrity.OS_STATE_TAG, GlobalIntegrity.RECORD_TAG, GlobalIntegrity.LEAF_TAG, GlobalIntegrity.NODE_TAG, GlobalIntegrity.CHECKPOINT_TAG}
-    schema_one = {GtsIntegrity.REPO_TAG, GtsIntegrity.NODE_TAG, GtsIntegrity.STATE_TAG}
+    assert MerkleRoot.GLOBAL_SCHEMA == 1
+    tags = {MerkleRoot._OS_STATE_TAG, MerkleRoot._RECORD_TAG, MerkleRoot._LEAF_TAG, MerkleRoot._GNODE_TAG, MerkleRoot._CHECKPOINT_TAG}
+    schema_one = {MerkleRoot._REPO_TAG, MerkleRoot._NODE_TAG, MerkleRoot._STATE_TAG}
     assert len(tags) == 5 and not tags & schema_one
 
 
@@ -319,25 +318,25 @@ def test_a_table_that_is_not_a_record_is_refused():
         OmniscienceRecord.from_dict({"record": {}})
 
 
-def test_the_schema_one_entry_points_a_global_class_inherits_are_refused():
-    with pytest.raises(TypeError, match="global_root"):
-        GlobalIntegrity.merkle_root([{"relative_path": "."}])
-    with pytest.raises(TypeError, match="GtsIntegrity"):
-        GlobalIntegrity.repo_leaf_hash({"relative_path": "."})
-    with pytest.raises(TypeError, match="GtsIntegrity"):
-        GlobalIntegrity.state_hash({})
-    assert GtsIntegrity.merkle_root([{"relative_path": "."}])  # schema 1 itself is untouched
+def test_the_two_schemas_cannot_be_mixed_because_no_entry_point_serves_both():
+    """One class now holds both schemas, so each hash has its own entry point and its own tag (no inherited, refused ones)."""
+    leaf = {"relative_path": "."}
+
+    assert MerkleRoot.gittree_root([leaf]) == MerkleRoot.repo_leaf_hash(leaf)  # schema 1 over one leaf is its leaf hash
+    assert MerkleRoot.global_root([bytes.fromhex(MerkleRoot.repo_leaf_hash(leaf))]) == MerkleRoot.repo_leaf_hash(leaf)
+    two = [bytes.fromhex(MerkleRoot.repo_leaf_hash({"relative_path": str(i)})) for i in range(2)]
+    assert MerkleRoot.global_root(two) != MerkleRoot._subtree(two, MerkleRoot._NODE_TAG).hex()  # the inner tags differ
 
 
 def test_an_observations_name_has_a_tag_of_its_own_and_so_is_never_a_record_a_leaf_or_a_checkpoint():
     table = {"finding": {"status": "AVAILABLE"}}
 
     names = {
-        GlobalIntegrity.observation_hash(table),
-        GlobalIntegrity.record_hash(table),
-        GlobalIntegrity.leaf_digest(table).hex(),
-        GlobalIntegrity.checkpoint_hash(table),
-        GlobalIntegrity.os_state_hash(table),
+        MerkleRoot.observation_hash(table),
+        MerkleRoot.record_hash(table),
+        MerkleRoot.leaf_digest(table).hex(),
+        MerkleRoot.checkpoint_hash(table),
+        MerkleRoot.os_state_hash(table),
     }
 
     assert len(names) == 5

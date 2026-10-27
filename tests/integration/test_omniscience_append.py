@@ -24,7 +24,7 @@ from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.git_runner import GitRunner
 from ComplexGitSync.global_index import GlobalIndex
-from ComplexGitSync.global_integrity import GlobalIntegrity
+from ComplexGitSync.merkle import MerkleRoot
 from ComplexGitSync.omniscience_observation import ObservationStatus
 from ComplexGitSync.omniscience_record import OmniscienceRecord
 
@@ -92,7 +92,7 @@ def _checkpoint(remote: Path) -> dict:
     """The head of the chain: the checkpoint no other names as its parent."""
     bodies = [tomllib.loads(_git(remote, "show", f"_global:{path}")) for path in _blobs(remote, "_global", "checkpoints/")]
     parents = {body["parent"] for body in bodies}
-    [head] = [body for body in bodies if GlobalIntegrity.checkpoint_hash(body) not in parents]
+    [head] = [body for body in bodies if MerkleRoot.checkpoint_hash(body) not in parents]
     return head
 
 

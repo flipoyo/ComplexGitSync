@@ -5,7 +5,7 @@ Contract: write one State to disk atomically, answer whether a workspace
     holds history in the old single-file format, and read that format for
     the callers that still expose it. Builds no document and decides no
     tree: what to write is handed in.
-Imports: errors, gts_document, paths, states, universal_clock
+Imports: errors, gts_document, merkle, paths, states, universal_clock
 
 Two things live here, and it is worth saying why they are together.
 
@@ -23,7 +23,6 @@ and ``get_ledger_history``/``replay_ledger`` still answer from it.
 
 from __future__ import annotations
 
-import hashlib
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -32,6 +31,7 @@ import tomli_w
 
 from ..errors import ConfigValidationError
 from ..gts_document import GtsDocument
+from ..merkle import MerkleRoot
 from ..paths import PathResolver
 from ..universal_clock import ClockProtocol, SystemClock
 from .states import (
@@ -161,11 +161,8 @@ class LocalGitRegister:
         try:
             document = GtsDocument.from_toml(snapshot_path)
         except (OSError, tomllib.TOMLDecodeError, ConfigValidationError):
-            digest = hashlib.sha256()
             with snapshot_path.open("rb") as handle:
-                for chunk in iter(lambda: handle.read(self._HASH_CHUNK_SIZE), b""):
-                    digest.update(chunk)
-            return digest.hexdigest()
+                return MerkleRoot.stream_digest(iter(lambda: handle.read(self._HASH_CHUNK_SIZE), b""))
         if document.snapshot_hash:
             return document.snapshot_hash
         return document.compute_snapshot_hash()

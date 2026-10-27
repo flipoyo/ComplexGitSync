@@ -7,7 +7,7 @@ Contract: the private half of ``Omniscience.memory`` and ``get_state``. From
     the State at the registered commit from Git's objects, check them against
     the record, remove the clone, and answer. Writes nothing to the source
     memory or to the register.
-Imports: errors, gts_document, gts_integrity, memory, memory_facts, omniscience_answer, omniscience_observation, omniscience_record, universal_clock
+Imports: errors, gts_document, memory, merkle, memory_facts, omniscience_answer, omniscience_observation, omniscience_record, universal_clock
 
 The order is the one the design fixed: the address, the clone (a refusal is
 ``unauthorized`` when the provider said so, else ``remote_unavailable``), the
@@ -27,10 +27,10 @@ from typing import TYPE_CHECKING, Any
 
 from ..errors import ConfigValidationError, GitSyncError
 from ..gts_document import GtsDocument
-from ..gts_integrity import GtsIntegrity
 from ..memory.integrity import ChainVerifier, HistoryState
 from ..memory.ledger_store import LedgerStore, LedgerStoreError
 from ..memory.states import STATE_DIR_NAME, MemoryStates
+from ..merkle import MerkleRoot
 from ..omniscience_answer import Answer, MemoryDetail, OmniscienceStatus
 from ..omniscience_observation import ObservationStatus
 from ..omniscience_record import OmniscienceRecord
@@ -151,11 +151,11 @@ class MemoryReading:
         """The repositories of a State whose own ``repo_hash`` is no longer the hash of what the State says of them; empty when the text cannot be read that far.
 
         A State that does not hash cannot be loaded as a document, so this reads the table directly and hashes each
-        repository with the one leaf hash there is (``GtsIntegrity``).
+        repository with the one leaf hash there is (``MerkleRoot``).
         """
         try:
             rows = tomllib.loads(text).get("repo_state", [])
-            return sorted(str(row["relative_path"]) for row in rows if row.get("repo_hash") != GtsIntegrity.repo_leaf_hash(GtsDocument.repo_leaf(row)))
+            return sorted(str(row["relative_path"]) for row in rows if row.get("repo_hash") != MerkleRoot.repo_leaf_hash(GtsDocument.repo_leaf(row)))
         except (tomllib.TOMLDecodeError, KeyError, TypeError, ValueError, ConfigValidationError):
             return []
 

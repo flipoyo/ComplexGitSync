@@ -4,7 +4,7 @@ Ring: 1 (filesystem; no subprocess, no Git)
 Contract: one file per State, holding the commits that State contains and
     the pushes that published them, plus the digest an entry carries so the
     file cannot be edited without trace.
-Imports: none
+Imports: merkle
 
 Why a memory records this
 -------------------------
@@ -36,8 +36,6 @@ That is the same rule the ledger itself follows, for the same reason.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import tomllib
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
@@ -45,6 +43,8 @@ from pathlib import Path
 from typing import Any
 
 import tomli_w
+
+from ..merkle import MerkleRoot
 
 #: Where the commit logs live, beside the States they describe.
 COMMIT_LOG_DIR_NAME = "commit-logs"
@@ -130,8 +130,7 @@ class CommitLog:
             record.to_row() if isinstance(record, PublicationRecord) else asdict(record)
             for record in records
         ]
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+        return MerkleRoot.prefixed(MerkleRoot.digest(payload))
 
     def read(self, state_hash: str) -> dict[str, list[dict[str, Any]]]:
         """Every row filed under *state_hash*, or empty tables when there are none."""

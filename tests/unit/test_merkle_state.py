@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from ComplexGitSync.errors import ConfigValidationError
-from ComplexGitSync.gts_integrity import INTEGRITY_SCHEMA, GtsIntegrity
+from ComplexGitSync.merkle import MerkleError, MerkleRoot
 
 
 def _leaf(index: int) -> dict:
@@ -40,58 +39,58 @@ GOLDEN_STATE_1 = "431ad6b9108e7ddac03e40043c72a9381b6d1a6e8a133d6c79a25d974d3a99
 
 
 def test_the_schema_is_one():
-    assert INTEGRITY_SCHEMA == 1
+    assert MerkleRoot.SCHEMA == 1
 
 
 def test_golden_leaf():
-    assert GtsIntegrity.repo_leaf_hash(_leaf(0)) == GOLDEN_LEAF_0
+    assert MerkleRoot.repo_leaf_hash(_leaf(0)) == GOLDEN_LEAF_0
 
 
 @pytest.mark.parametrize("count", sorted(GOLDEN_ROOTS))
 def test_golden_merkle_roots(count):
     leaves = [_leaf(index) for index in range(count)]
-    assert GtsIntegrity.merkle_root(leaves) == GOLDEN_ROOTS[count]
+    assert MerkleRoot.gittree_root(leaves) == GOLDEN_ROOTS[count]
 
 
 def test_golden_state():
     payload = {
         "project": {"name": "demo"},
         "tree_state": {"lifecycle_state": "READY", "is_ready": True, "registry_complete": True},
-        "gittree_root": GtsIntegrity.merkle_root([_leaf(0)]),
+        "gittree_root": MerkleRoot.gittree_root([_leaf(0)]),
         "freeze_manifest": None,
     }
-    assert GtsIntegrity.state_hash(payload) == GOLDEN_STATE_1
+    assert MerkleRoot.state_hash(payload) == GOLDEN_STATE_1
 
 
 def test_one_leaf_is_its_own_root():
-    assert GtsIntegrity.merkle_root([_leaf(0)]) == GtsIntegrity.repo_leaf_hash(_leaf(0))
+    assert MerkleRoot.gittree_root([_leaf(0)]) == MerkleRoot.repo_leaf_hash(_leaf(0))
 
 
 def test_three_leaves_split_two_then_one_with_no_duplicated_leaf():
     """RFC 9162 §2.1.1 (RFC 6962 §2.1): k = 2 for N = 3, and the last leaf is promoted as is."""
-    digests = [bytes.fromhex(GtsIntegrity.repo_leaf_hash(_leaf(index))) for index in range(3)]
-    expected = GtsIntegrity.node_hash(GtsIntegrity.node_hash(digests[0], digests[1]), digests[2])
-    assert GtsIntegrity.merkle_root([_leaf(index) for index in range(3)]) == expected.hex()
+    digests = [bytes.fromhex(MerkleRoot.repo_leaf_hash(_leaf(index))) for index in range(3)]
+    expected = MerkleRoot._inner(MerkleRoot._NODE_TAG, MerkleRoot._inner(MerkleRoot._NODE_TAG, digests[0], digests[1]), digests[2])
+    assert MerkleRoot.gittree_root([_leaf(index) for index in range(3)]) == expected.hex()
 
 
 def test_the_domain_tags_separate_a_leaf_from_a_state():
     leaf = _leaf(0)
-    assert GtsIntegrity.repo_leaf_hash(leaf) != GtsIntegrity.state_hash(leaf)
+    assert MerkleRoot.repo_leaf_hash(leaf) != MerkleRoot.state_hash(leaf)
 
 
 def test_an_empty_tree_has_the_rfc_6962_empty_root():
     """MTH({}) = SHA-256 of the empty string; only a never-READY State has it."""
-    assert GtsIntegrity.merkle_root([]) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    assert MerkleRoot.gittree_root([]) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 
 def test_a_duplicate_relative_path_is_refused_not_tie_broken():
     twin = dict(_leaf(1), name="other")
-    with pytest.raises(ConfigValidationError, match="duplicate relative_path"):
-        GtsIntegrity.merkle_root([_leaf(0), _leaf(1), twin])
+    with pytest.raises(MerkleError, match="duplicate relative_path"):
+        MerkleRoot.gittree_root([_leaf(0), _leaf(1), twin])
 
 
 def test_a_leaf_without_a_relative_path_is_refused():
     leaf = _leaf(1)
     del leaf["relative_path"]
-    with pytest.raises(ConfigValidationError, match="no relative_path"):
-        GtsIntegrity.merkle_root([_leaf(0), leaf])
+    with pytest.raises(MerkleError, match="no relative_path"):
+        MerkleRoot.gittree_root([_leaf(0), leaf])

@@ -7,7 +7,7 @@ Contract: DivergentUserRepair.matches()/repair(), per the Repair protocol in
     base.py. Diagnoses and repairs a repository registered in
     CHAIN_SHAPED_REPOS (today: .memory's lgr/) whose git history carries a
     seq/prev chain a plain merge cannot see (memory/ledger_entry.py).
-Imports: base, errors, memory, git_repo, git_runner
+Imports: base, errors, git_repo, git_runner, memory, merkle
 
 Design reference: .agent/.local/.dev/DevTickets/archive/20260923_Autofix_DevPlanTicket.md, sections 5-7. The
 algorithm below is the hand-run rescue
@@ -26,6 +26,7 @@ from ..memory import integrity
 from ..memory.integrity import ChainVerifier
 from ..memory.ledger_entry import LedgerEntry, Relocation
 from ..memory.ledger_store import LedgerStore
+from ..merkle import MerkleRoot
 from .base import CHAIN_SHAPED_REPOS, RepairOutcome, Situation, is_chain_shaped
 
 if TYPE_CHECKING:
@@ -40,12 +41,6 @@ _DIVERGENCE_MARKERS = (
     "diverging branches",
     "not possible to fast-forward",
 )
-
-#: AdditionalSpecs.md's ledger schema: "the genesis entry carries prev =
-#: 'sha256:' + '0' * 64" — duplicated here (ledger_entry._GENESIS_PREV is
-#: private to that module) only for the empty-chain-at-the-merge-base edge
-#: case; every real incident so far has had entries to chain from instead.
-_GENESIS_PREV = "sha256:" + "0" * 64
 
 
 class DivergentUserRepair:
@@ -206,7 +201,7 @@ class DivergentUserRepair:
             prev_hash = head_toml["entry_hash"]
             next_seq = head_toml["seq"] + 1
         else:
-            prev_hash = _GENESIS_PREV
+            prev_hash = MerkleRoot.GENESIS_PREV
             next_seq = 1
         first_new_seq = next_seq
 

@@ -3,15 +3,15 @@
 Ring: 0 (pure validation and value objects; no I/O)
 Contract: own the pure Environment record/Drift values and canonical digest,
     plus optional environment-root and dependency declarations from ``.cgs``.
-Imports: none
+Imports: merkle
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Mapping
+
+from .merkle import MerkleRoot
 
 if TYPE_CHECKING:
     from .cgs_format import CgsDocument
@@ -149,10 +149,7 @@ class TreeEnvironment:
         )
 
     def digest(self) -> str:
-        canonical = json.dumps(
-            self.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        )
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return MerkleRoot.digest(self.to_dict())
 
 
 @dataclass(frozen=True, slots=True)

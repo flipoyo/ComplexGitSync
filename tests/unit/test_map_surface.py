@@ -117,27 +117,28 @@ def test_no_provider_call_site_is_added(modules):
     assert sites == KNOWN_PROVIDER_CALLS
 
 
-#: Rule 3. Modules outside the hashing modules that name a Merkle node, root or leaf. MerkleRoot empties it.
-KNOWN_MERKLE_TOUCHERS = {
-    "cli/omniscience_command",
-    "omniscience_record",
-    "orchestre/memory_facts",
-    "orchestre/omniscience",
-    "orchestre/omniscience_checkpoints",
-    "orchestre/omniscience_commands",
-    "orchestre/omniscience_memory",
-    "orchestre/omniscience_view",
-}
-MERKLE_NAMES = {"node_hash", "merkle_root", "leaf_digest", "global_root", "ordered_leaves", "repo_leaf_hash", "siblings", "of_digests"}
+#: Rule 3, after MerkleRoot (owner, Minimalism D3 and D4). An inner node is a name only the Merkle package may use:
+#: the audit path (``_path``), the inner-node hash and the subtree walk. A root, a leaf or a name is a hash, and is
+#: handed out by the door; an inner node never is.
+INNER_NODE_NAMES = {"siblings", "_path", "_inner", "_subtree", "node_hash", "of_digests", "ordered_leaves"}
 
 
-def test_no_module_outside_the_hashing_modules_starts_touching_a_merkle_node(modules):
+def test_no_module_outside_the_merkle_package_touches_an_inner_node(modules):
     touchers = {
         key for key, module in modules.items()
-        if key.split("/")[-1] not in map_surface.HASH_MODULES and MERKLE_NAMES & map_surface.references([module.text])
+        if not key.startswith("merkle/") and INNER_NODE_NAMES & map_surface.references([module.text])
     }
 
-    assert touchers == KNOWN_MERKLE_TOUCHERS
+    assert touchers == set()
+
+
+#: Every hash is MerkleRoot's, bar two that name and prove nothing recorded: a tie-break among candidate paths in
+#: `git_tree`, and the key of a cache file in `runtime_state_store` (owner, 2026-10-27).
+KNOWN_LOCAL_HASHES = {"git_tree", "orchestre/runtime_state_store"}
+
+
+def test_no_module_computes_a_hash_outside_merkle_except_the_two_local_ones(modules):
+    assert set(map_surface.hashlib_outside(modules)) == KNOWN_LOCAL_HASHES
 
 
 #: Rule 7. What the proposed GitRepo set still imports from the rest of the package. SrcLayout empties it.

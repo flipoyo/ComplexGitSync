@@ -5,7 +5,7 @@ Contract: from a set of registration records, the ordered unique leaves of
     the global tree, ``H_GLOBAL`` over them, and the checkpoint body that
     names that root. Reading or writing any file of the ``_global`` branch is
     OmniscienceAppend's; this module only computes.
-Imports: global_integrity, omniscience_record
+Imports: merkle, omniscience_record
 
 Ordering and duplicates are frozen here. A leaf is one registered branch head
 and one State commitment (never ``os_id`` alone), ordered by the UTF-8 bytes
@@ -26,7 +26,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from .global_integrity import GLOBAL_SCHEMA, GlobalIntegrity
+from .merkle import MerkleRoot
 from .omniscience_record import OmniscienceRecord
 
 
@@ -45,12 +45,12 @@ class GlobalIndex:
     @property
     def root(self) -> str:
         """``H_GLOBAL``, as hex."""
-        return GlobalIntegrity.global_root([record.leaf_digest for record in self.records])
+        return MerkleRoot.global_root([record.leaf_digest for record in self.records])
 
     def checkpoint_body(self, parent: str = "") -> dict[str, Any]:
         """What a checkpoint says: its schema, its parent's name (empty for the first), the root and the covered record hashes."""
         return {
-            "schema": GLOBAL_SCHEMA,
+            "schema": MerkleRoot.GLOBAL_SCHEMA,
             "parent": parent,
             "global_root": self.root,
             "records": sorted(record.record_hash for record in self.records),
@@ -58,7 +58,7 @@ class GlobalIndex:
 
     def checkpoint_hash(self, parent: str = "") -> str:
         """The checkpoint's name, which is its file name under ``checkpoints/``."""
-        return GlobalIntegrity.checkpoint_hash(self.checkpoint_body(parent))
+        return MerkleRoot.checkpoint_hash(self.checkpoint_body(parent))
 
 
 __all__ = ["GlobalIndex"]

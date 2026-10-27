@@ -55,7 +55,7 @@ def test_sections_3_to_7_register_ask_prove_read_restore_and_check(tmp_path, add
 
     # §5 prove
     code, out = run("proof", "demo", state[:4])
-    assert code == 0 and "proof_verified=True" in out and "of 2, 1 sibling(s)" in out
+    assert code == 0 and "proof_verified=True" in out and "of 2, root" in out
     code, out = run("verify", "demo", state[:4])
     assert code == 0 and "register=intact" in out and "last_seen_tip_known" in out
 

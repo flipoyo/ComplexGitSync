@@ -6,7 +6,7 @@ Contract: read the chain of checkpoints the remote holds, decide which
     each proposed one that validates), and append one checkpoint covering them
     when the set grew. Reports, and never repairs, a chain that was rewritten,
     forked or broken, and lists every file it did not accept with the reason.
-Imports: errors, global_index, global_integrity, memory_facts, omniscience_appender, omniscience_reader, omniscience_record, omniscience_repository, operating_space
+Imports: errors, global_index, memory_facts, merkle, omniscience_appender, omniscience_reader, omniscience_record, omniscience_repository, operating_space
 
 A record somebody added with plain ``git`` is only *proposed*. It is accepted
 when it parses, is named by its own hash, sits on the branch its project and
@@ -30,7 +30,7 @@ import tomli_w
 
 from ..errors import ConfigValidationError, GitSyncError
 from ..global_index import GlobalIndex
-from ..global_integrity import GlobalIntegrity
+from ..merkle import MerkleRoot
 from ..omniscience_record import OmniscienceRecord
 from ..omniscience_repository import GLOBAL_BRANCH, OmniscienceRepository
 from ..operating_space import OperatingSpace
@@ -94,7 +94,7 @@ class GlobalCheckpoints:
                 body = tomllib.loads(text)
             except tomllib.TOMLDecodeError as exc:
                 raise ConfigValidationError(f"checkpoint {path} is not TOML: {exc}") from exc
-            name = GlobalIntegrity.checkpoint_hash(body)
+            name = MerkleRoot.checkpoint_hash(body)
             if path != f"{CHECKPOINT_DIR}{name}.toml":
                 raise ConfigValidationError(f"checkpoint {path} is not named by its own hash ({name[:12]})")
             found[name] = body

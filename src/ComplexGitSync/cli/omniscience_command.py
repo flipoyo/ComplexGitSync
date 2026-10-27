@@ -235,7 +235,7 @@ def _lines_proof(answer: dict[str, Any]) -> list[str]:
     proof = answer.get("proof")
     if not isinstance(proof, dict):
         return []
-    return [f"proof: leaf {proof['leaf_index']} of {proof['tree_size']}, {len(proof['siblings'])} sibling(s), root {proof['root']}"]
+    return [f"proof: leaf {proof['leaf_index']} of {proof['tree_size']}, root {proof['root']}"]
 
 
 def _lines_register(answer: dict[str, Any]) -> list[str]:

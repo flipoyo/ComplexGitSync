@@ -9,8 +9,7 @@ Contract: store and load one ``AgentContractRecord`` under
     ``legalTerms/<provider>.md`` — and nothing about Git. The caller
     supplies every dated fact; this module reads no clock, per
     ``universal_clock.py``'s seam (see AdditionalSpecs.md, *Ring model and import rules*, rule 5).
-Imports: (stdlib only, plus tomli_w/tomllib for the same TOML the .cgs/.gts
-    documents already use)
+Imports: merkle
 
 See ``.agent/.local/.dev/DevTickets/archive/20260923_AgentContract_DevPlanTicket.md``
 §3 for why this lives beside, not inside, ``.cgitsync/``: the record is
@@ -21,8 +20,6 @@ an Environment record (``environment.py``) is.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 import re
 import tomllib
@@ -30,6 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import tomli_w
+
+from ..merkle import MerkleRoot
 
 AGENT_CONTRACTS_DIR_NAME = "agent-contracts"
 CURRENT_POINTER_NAME = "current"
@@ -72,10 +71,7 @@ class AgentContractRecord:
         )
 
     def digest(self) -> str:
-        canonical = json.dumps(
-            self.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        )
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return MerkleRoot.digest(self.to_dict())
 
     @staticmethod
     def path_in(dev_sync_dir: Path, contract_hash: str) -> Path:

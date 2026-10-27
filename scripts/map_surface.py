@@ -40,7 +40,7 @@ TESTS = ROOT / "tests"
 #: Folder proposed per module (SrcLayout, Minimalism D6): the owner edits this column.
 FOLDERS = {
     "GitRepo": ("git_repo", "git_branch", "git_runner", "provider", "clone_guard"),
-    "Merkle": ("gts_integrity", "global_integrity", "inclusion_proof", "global_index"),
+    "Merkle": ("merkle/",),
     "Tree": (
         "git_tree", "git_tree_branch", "registry", "discovery", "tree_env", "environment_spec", "toolchain",
         "cgs_format", "gts_document", "config_document", "config_document_io", "paths", "snapshot_resolver",
@@ -48,7 +48,7 @@ FOLDERS = {
         "operations/", "memory/", "autofix/",
     ),
     "OperatingSpace": ("operating_space",),
-    "Omniscience (gx4g's register)": ("omniscience_", "orchestre/omniscience"),
+    "Omniscience (gx4g's register)": ("omniscience_", "orchestre/omniscience", "global_index"),
     "Above OperatingSpace": ("cli/", "orchestre/", "json_render", "status_render", "universal_clock", "errors", "__init__", "__main__"),
 }
 
@@ -66,7 +66,8 @@ UNLOCKED_WRITERS = {
 LEAF_WRITES = {"verify repair": "writes", "submodules report": "reads"}
 
 HASH_NAME = re.compile(r"(merkle|leaf|node_hash|_root$|^root$|digest|proof|gittree_root|os_id|state_hash|compute_.*hash)", re.I)
-HASH_MODULES = ("gts_integrity", "global_integrity", "inclusion_proof", "global_index", "gts_document", "operating_space")
+#: The module that computes a hash, and the two adapters that hand it the State's leaves (`gts_document`, `operating_space`).
+HASH_MODULES = ("merkle/merkle_root", "gts_document", "operating_space")
 
 
 @dataclass
@@ -360,7 +361,7 @@ def merkle(modules: dict[str, Module]) -> list[tuple[str, str, str]]:
 
 
 def hashlib_outside(modules: dict[str, Module]) -> list[str]:
-    return sorted(m.key for m in modules.values() if "hashlib" in m.text and m.key.split("/")[-1] not in HASH_MODULES)
+    return sorted(m.key for m in modules.values() if "hashlib" in m.text and m.key != "merkle/merkle_root")
 
 
 def users_of(modules: dict[str, Module], target: str) -> list[tuple[str, str]]:

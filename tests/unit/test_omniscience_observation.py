@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from ComplexGitSync.errors import ConfigValidationError
-from ComplexGitSync.global_integrity import GlobalIntegrity
+from ComplexGitSync.merkle import MerkleRoot
 from ComplexGitSync.omniscience_completeness import PERMANENT_AFTER_COUNT, CompletenessReport
 from ComplexGitSync.omniscience_observation import Observation, ObservationStatus
 
@@ -41,7 +41,7 @@ def test_an_observation_round_trips_and_is_named_by_everything_it_says():
 
     assert Observation.from_dict(first.to_dict()) == first
     assert first.observation_hash != later.observation_hash
-    assert first.filename == f"observations/{GlobalIntegrity.observation_hash(first.to_dict())}.toml"
+    assert first.filename == f"observations/{MerkleRoot.observation_hash(first.to_dict())}.toml"
 
 
 def test_a_malformed_observation_is_refused():

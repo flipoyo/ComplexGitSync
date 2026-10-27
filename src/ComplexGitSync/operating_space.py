@@ -7,8 +7,8 @@ Contract: an ``OperatingSpace`` holds a :class:`~.git_tree.WorkingGitTree`, not
     tree, and a ``.gts`` written from it must agree. Every git operation on a
     READY tree runs here; clone and pull, which make a tree READY, stay with
     ``GitTree.git``.
-Imports: errors, git_tree, git_tree_branch, gts_document, gts_integrity,
-    inclusion_proof, operations, registry
+Imports: errors, git_tree, git_tree_branch, gts_document, merkle,
+    operations, registry
 
 ``OS_ID = SHA256(UTF8(canonical(project_name)))``, as 64 lowercase hex
 characters with no domain prefix; domain separation happens one level up, in
@@ -31,7 +31,6 @@ except the read-only ``list_branches`` (owner, 2026-10-21).
 
 from __future__ import annotations
 
-import hashlib
 import unicodedata
 import warnings
 from collections.abc import Callable, Sequence
@@ -44,8 +43,7 @@ from .git_repo import AccessProtocol, RefKind, RepoScope
 from .git_tree import ROOT_REPO_ID, WorkingGitTree
 from .git_tree_branch import tree_project_name
 from .gts_document import GtsDocument
-from .gts_integrity import GtsIntegrity
-from .inclusion_proof import InclusionProof
+from .merkle import InclusionProof, MerkleRoot
 
 if TYPE_CHECKING:
     from .git_runner import GitRunner
@@ -83,7 +81,7 @@ class OperatingSpace:
     @staticmethod
     def id_of(name: str) -> str:
         """The ``os_id`` of the project called *name*: SHA-256 hex of its canonical UTF-8 bytes."""
-        return hashlib.sha256(OperatingSpace.canonical(name).encode("utf-8")).hexdigest()
+        return MerkleRoot.content_digest(OperatingSpace.canonical(name).encode("utf-8"))
 
     @property
     def project_name(self) -> str | None:
@@ -126,21 +124,21 @@ class OperatingSpace:
     @property
     def gittree_root(self) -> str:
         """``H_GITTREE`` (schema 1), computed from the tree: what its ``.gts`` must record."""
-        return GtsIntegrity.merkle_root(self._leaves())
+        return MerkleRoot.gittree_root(self._leaves())
 
     def inclusion_proof(self, repo_id: str) -> InclusionProof:
         """The proof that repository *repo_id* is in this tree's ``H_GITTREE``. Private: no command uses it yet."""
         from .registry import RegistryTranslator  # the writer builds on this class
 
         table = RegistryTranslator.repo_state_dict(self.tree, self.tree.get(repo_id))
-        return InclusionProof.of(self._leaves(), str(table["relative_path"]))
+        return MerkleRoot.inclusion_proof(self._leaves(), str(table["relative_path"]))
 
     def _leaves(self) -> list[dict[str, Any]]:
         """Each repository's schema-1 leaf, built from the tree by the code a ``.gts`` is written and hashed with."""
         from .registry import RegistryTranslator  # the writer builds on this class
 
         entries = sorted(self.tree.values(), key=lambda item: item.repo_id)
-        return [GtsDocument.repo_leaf(RegistryTranslator.repo_state_dict(self.tree, entry)) for entry in entries]
+        return GtsDocument.checked([GtsDocument.repo_leaf(RegistryTranslator.repo_state_dict(self.tree, entry)) for entry in entries])
 
     # -- git operations on a READY tree -------------------------------------
 

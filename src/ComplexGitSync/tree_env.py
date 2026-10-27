@@ -4,12 +4,11 @@ Ring: 2 (filesystem reads and non-Git tools through git_runner; no writes)
 Contract: observe non-secret machine, tool, manifest, and authentication facts,
     give them a stable content digest, and compare them with declarations from
     a ``.cgs`` document; never install a tool or expose credential material.
-Imports: cgs_format, environment_spec, errors, git_runner, provider, toolchain
+Imports: cgs_format, environment_spec, errors, git_runner, merkle, provider, toolchain
 """
 
 from __future__ import annotations
 
-import hashlib
 import platform
 import re
 import sys
@@ -28,6 +27,7 @@ from .environment_spec import (
     TreeEnvironment,
 )
 from .errors import ComplexGitSyncError
+from .merkle import MerkleRoot
 from .provider import PROVIDER_TOOLS
 from .toolchain import ABSENT, Toolchain
 
@@ -244,7 +244,7 @@ class TreeObserver:
                     found[relative] = Manifest(
                         repository=str(getattr(repo, "repo_id", "") or repo.project_name),
                         path=relative,
-                        digest="sha256:" + hashlib.sha256(content).hexdigest(),
+                        digest=MerkleRoot.prefixed(MerkleRoot.content_digest(content)),
                         platforms=TreeObserver._lock_platforms(candidate, content),
                     )
         return tuple(found[path] for path in sorted(found))

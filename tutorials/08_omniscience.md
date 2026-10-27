@@ -137,11 +137,11 @@ pixi run cgitsync omniscience proof MyProject 3f9a
 pixi run cgitsync omniscience verify MyProject 3f9a
 ```
 
-`proof` prints the State's **inclusion proof**: its position among the
-checkpoint's leaves, the sibling hashes up to the root, and the root. The tool
-recomputes the path itself and reports `proof_verified=True` only if it ends at
-the checkpoint's root and size. You can do the same with any independent
-implementation of RFC 9162.
+`proof` prints where the State's registration sits: its position among the
+checkpoint's leaves, and the root. The tool checks the inclusion proof itself
+and reports `proof_verified=True` only if it ends at the checkpoint's root and
+size. It does not print the proof's path (the sibling hashes up to the root):
+those are nodes of the Merkle tree, which `cgitsync` never shows (from 8.0.1).
 
 `verify` does that, and also asks about the register itself:
 

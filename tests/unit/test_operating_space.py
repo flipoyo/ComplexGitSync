@@ -1,6 +1,6 @@
 """OperatingSpace — the golden vectors that freeze a project's identity.
 
-Like the schema-1 vectors in test_gts_integrity.py, these literals are the
+Like the schema-1 vectors in test_merkle_state.py, these literals are the
 cross-platform contract: if one changes, every id ever recorded changes.
 """
 

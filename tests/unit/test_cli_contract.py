@@ -132,7 +132,8 @@ def test_a_snapshot_from_a_newer_build_names_the_versions_not_corruption(tmp_pat
     invites deleting a perfectly good file. It must now name both versions
     and say what to do instead.
     """
-    from ComplexGitSync.gts_integrity import INTEGRITY_SCHEMA
+    from ComplexGitSync.merkle import MerkleRoot
+    INTEGRITY_SCHEMA = MerkleRoot.SCHEMA
 
     root = tmp_path / "demo"
     root.mkdir()

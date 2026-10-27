@@ -190,25 +190,10 @@
       "loc": 49,
       "public_symbols": 1
     },
-    "global_integrity.py": {
-      "internal_imports": 1,
-      "loc": 73,
-      "public_symbols": 2
-    },
     "gts_document.py": {
       "internal_imports": 9,
       "loc": 375,
       "public_symbols": 1
-    },
-    "gts_integrity.py": {
-      "internal_imports": 1,
-      "loc": 89,
-      "public_symbols": 2
-    },
-    "inclusion_proof.py": {
-      "internal_imports": 4,
-      "loc": 164,
-      "public_symbols": 2
     },
     "json_render.py": {
       "internal_imports": 0,
@@ -594,9 +579,6 @@
   "ring0_modules": [
     "errors",
     "global_index",
-    "global_integrity",
-    "gts_integrity",
-    "inclusion_proof",
     "omniscience_record"
   ]
 }

@@ -8,7 +8,7 @@ Contract: the private half of the query side. Fetch the mounted register
     inclusion proof of one of them, the observations beside them, and whether
     the register itself is ``intact``, ``attested``, ``rewritten`` or
     ``contradicted``. Writes nothing, remembers nothing.
-Imports: errors, global_index, inclusion_proof, omniscience_answer, omniscience_observation, omniscience_record, omniscience_repository, operating_space, omniscience_checkpoints, omniscience_reader
+Imports: errors, global_index, merkle, omniscience_answer, omniscience_observation, omniscience_record, omniscience_repository, operating_space, omniscience_checkpoints, omniscience_reader
 
 A reader trusts a checkpoint, never a file lying beside it: a record is
 registered at a checkpoint only if that checkpoint's body names it, and the
@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..errors import ConfigValidationError, GitSyncError
 from ..global_index import GlobalIndex
-from ..inclusion_proof import GlobalInclusionProof
+from ..merkle import MerkleRoot
 from ..omniscience_answer import Answer, OmniscienceStatus, Stop
 from ..omniscience_observation import Observation, ObservationStatus
 from ..omniscience_record import OmniscienceRecord
@@ -147,13 +147,13 @@ class RegisterView:
     def proof(self, checkpoint: str, accepted: list[Registered], record: OmniscienceRecord) -> dict[str, Any]:
         """The inclusion proof of *record* in *checkpoint*, checked against the checkpoint's stated root and size."""
         digests = [item.record.leaf_digest for item in accepted]
-        proof = GlobalInclusionProof.of_digests(digests, digests.index(record.leaf_digest))
+        proof = MerkleRoot.global_inclusion_proof(digests, digests.index(record.leaf_digest))
         body = self.chain[checkpoint]
         return {
             "checkpoint": checkpoint,
             "global_root": body["global_root"],
             "leaves": len(digests),
-            "proof": proof.to_dict(),
+            "proof": proof.summary(),
             "proof_verified": proof.verify(record.leaf_digest.hex(), str(body["global_root"]), len(digests)),
             "scope": "this registration is in the register's index; it says nothing of whether the repositories it names are still there",
         }

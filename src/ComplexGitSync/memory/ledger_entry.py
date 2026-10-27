@@ -6,7 +6,7 @@ Contract: given the previous chain entry (or none, for genesis) and the
     ``LedgerEntry`` — computing ``prev``/``entry_hash`` correctly. Chain
     *verification* across many entries is ``integrity.py``'s contract, not
     this module's.
-Imports: none
+Imports: merkle
 
 Design reference: ``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained
 ledger* (hash-chained ledger schema) and §3.3 (``ClockProtocol``).
@@ -18,17 +18,17 @@ its pre-image and use a distinct id.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol, Sequence
+
+from ..merkle import MerkleRoot
 
 # Genesis predecessor hash — the fixed all-zero sentinel a chain's first
 # entry points at, per AdditionalSpecs.md's ledger schema ("the genesis
 # entry carries prev =
 # 'sha256:' + '0' * 64").
-_GENESIS_PREV = "sha256:" + "0" * 64
+_GENESIS_PREV = MerkleRoot.GENESIS_PREV
 
 
 class ClockProtocol(Protocol):
@@ -187,17 +187,6 @@ class LedgerEntry:
         return payload
 
     @staticmethod
-    def _canonical_json(payload: dict[str, Any]) -> str:
-        """Same canonicalisation discipline ``GtsDocument.compute_snapshot_hash``
-        already uses in ``orchestre/`` — stable key ordering, compact
-        separators, no ASCII escaping. One canonicalisation idea, two users
-        (AdditionalSpecs.md's ledger schema); reimplemented here rather than imported,
-        since Ring 0 cannot depend on Ring 3.
-        """
-
-        return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-    @staticmethod
     def compute_hash(
         *,
         seq: int,
@@ -234,8 +223,7 @@ class LedgerEntry:
             release=release,
             relocations=relocations,
         )
-        digest = hashlib.sha256(LedgerEntry._canonical_json(payload).encode("utf-8")).hexdigest()
-        return f"sha256:{digest}"
+        return MerkleRoot.prefixed(MerkleRoot.digest(payload))
 
     @staticmethod
     def build_next(

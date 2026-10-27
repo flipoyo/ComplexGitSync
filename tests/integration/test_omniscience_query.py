@@ -229,9 +229,9 @@ def test_a_forked_chain_is_contradicted(tmp_path, addresses, monkeypatch):
     state = _newest(tree)[:10]
     body = _checkpoint(omni)
     fork = {**body, "parent": "", "records": [], "global_root": GlobalIndex.of([]).root}
-    from ComplexGitSync.global_integrity import GlobalIntegrity
+    from ComplexGitSync.merkle import MerkleRoot
 
-    name = GlobalIntegrity.checkpoint_hash(fork)
+    name = MerkleRoot.checkpoint_hash(fork)
     _hand_push(tmp_path, omni, "_global", {f"checkpoints/{name}.toml": tomli_w.dumps(fork)})
 
     answer = client.omniscience_verify(tree["root"], "demo", state)
