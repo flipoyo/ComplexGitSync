@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -134,7 +135,7 @@ def test_verification_report_is_clean_reflects_findings():
     assert not populated.is_clean
 
 
-def test_finding_has_exactly_fourteen_members():
+def test_finding_has_exactly_fifteen_members():
     assert [f.name for f in Finding] == [
         "BROKEN_LINK",
         "BAD_ENTRY_HASH",
@@ -146,6 +147,7 @@ def test_finding_has_exactly_fourteen_members():
         "HEAD_STALE",
         "ORPHAN_COMMIT_LOG",
         "COMMIT_LOG_MISMATCH",
+        "COMMIT_LOG_LOST",
         "TIME_REGRESSION",
         "UNRESOLVED_RELOCATION",
         "REPO_HASH_MISMATCH",
@@ -153,13 +155,14 @@ def test_finding_has_exactly_fourteen_members():
     ]
 
 
-def test_history_state_has_exactly_five_answers():
+def test_history_state_has_exactly_six_answers():
     assert [s.name for s in HistoryState] == [
         "VERIFIED",
         "NO_HISTORY",
         "LEGACY",
         "CORRUPT",
         "TIME_INCONSISTENT",
+        "INCOMPLETE",
     ]
 
 
@@ -319,3 +322,22 @@ def test_duplicating_a_seq_always_produces_seq_duplicate(n):
 
     assert any(finding is Finding.SEQ_DUPLICATE for _, finding, _ in report.findings)
     assert any(seq == duplicate.seq for seq, _, _ in report.findings)
+
+
+# CommitLogLoss: the commit messages the pre-6.8.1 fold deleted
+
+
+@pytest.mark.parametrize(
+    ("version", "older"),
+    [("6.7.3", True), ("5.0.0", True), ("0002.88", True), ("6.8", True), ("6.8.0", True),
+     ("6.8.1", False), ("6.8.1rc1", False), ("7.0.0", False), ("", False), ("unknown", False)],
+)
+def test_written_before_fold_fix(version, older):
+    assert ChainVerifier.written_before_fold_fix(version) is older
+
+
+def test_a_recorded_loss_alone_is_incomplete_and_corruption_still_wins():
+    lost = (3, Finding.COMMIT_LOG_LOST, "deleted by the old fold")
+    assert ChainVerifier.resolve_state([lost]) is HistoryState.INCOMPLETE
+    assert ChainVerifier.resolve_state([lost, (5, Finding.COMMIT_LOG_MISMATCH, "edited")]) is HistoryState.CORRUPT
+    assert ChainVerifier.resolve_state([lost, (6, Finding.TIME_REGRESSION, "clock")]) is HistoryState.TIME_INCONSISTENT

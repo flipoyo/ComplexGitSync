@@ -1787,11 +1787,11 @@ class MemoryCommands:
         return {"branch": resolved_branch, "commits": PendingMemory(cgitsync_dir).published_commits()}
 
     def verify(self, cgshome: str | Path, *, repair: bool = False) -> VerificationReport:
-        """Say which of the four answers this workspace's history deserves.
+        """Say which of the six answers this workspace's history deserves.
 
         ``report.state`` is the answer — **verified**, **no history**,
-        **legacy** or **corrupt** — and ``report.findings`` says why when it
-        is the last one. The four are fixed by
+        **legacy**, **corrupt**, **time-inconsistent** or **incomplete** — and
+        ``report.findings`` says why. The six are fixed by
         ``.agent/.local/.localSpec/AdditionalSpecs.md``, *The hash-chained ledger*.
 
         The distinction this method exists to make: an empty

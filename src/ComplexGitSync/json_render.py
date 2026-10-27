@@ -170,8 +170,8 @@ class JsonRender:
     ) -> dict[str, Any]:
         """What ``cgitsync verify check --json`` prints.
 
-        ``status`` is one of the five answers — ``verified``, ``no-history``,
-        ``legacy``, ``corrupt``, ``time-inconsistent`` — never a blur of two. An
+        ``status`` is one of the six answers (``verified``, ``no-history``, ``legacy``,
+        ``corrupt``, ``time-inconsistent``, ``incomplete``), never a blur of two. An
         empty ledger reads as ``no-history`` rather than as a clean chain,
         because a check that cannot fail is not a check; and a chain whose links
         all held but whose timestamps move backwards reads as

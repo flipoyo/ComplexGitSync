@@ -1725,7 +1725,7 @@ def _execute_verify_json(
     return _verify_exit_code(report.state)
 
 
-#: What each of the five answers prints, and what it means for a reader who
+#: What each of the six answers prints, and what it means for a reader who
 #: has just been told it. The wording says what was actually checked: a
 #: command that answered "clean" over a directory nothing writes taught its
 #: users to ignore it.
@@ -1757,6 +1757,14 @@ _VERIFY_ANSWERS: dict[HistoryState, tuple[str, str]] = {
         "machine that disagreed about the hour all look like this, and so "
         "does a backdated entry.",
     ),
+    HistoryState.INCOMPLETE: (
+        "incomplete",
+        "the chain holds — every link checked out — but some commit messages "
+        "are gone: the memory push fold before cgitsync 6.8.1 deleted them, and "
+        "6.8.1 said they are not recovered. Each entry that lost its messages is "
+        "listed as COMMIT_LOG_LOST below. Your history is intact; nothing here "
+        "is corruption, and nothing is repaired.",
+    ),
 }
 
 
@@ -1772,6 +1780,7 @@ def _execute_verify(
     label, explanation = _VERIFY_ANSWERS[report.state]
     print(f"status={label}")
     print(f"findings={len(report.findings)}")
+    print(f"lost_commit_logs={sum(finding.name == 'COMMIT_LOG_LOST' for _seq, finding, _detail in report.findings)}")
     print(explanation)
     for seq, finding, detail in report.findings:
         print(f"seq={seq} finding={finding.name} detail={detail}")
@@ -1793,8 +1802,12 @@ def _verify_exit_code(state: HistoryState) -> int:
     caller gating on this command should not sail past. Which of the two it
     is changes what the reader should go and look at, which is exactly why
     it is its own answer rather than folded into the other.
+
+    ``incomplete`` exits ``0`` (owner, 2026-10-27, CommitLogLoss D1): the
+    history holds, and the loss is one 6.8.1 already recorded as permanent, so
+    a gate that refused it would refuse that tree for ever.
     """
-    if state in (HistoryState.VERIFIED, HistoryState.NO_HISTORY):
+    if state in (HistoryState.VERIFIED, HistoryState.NO_HISTORY, HistoryState.INCOMPLETE):
         return EXIT_OK
     return EXIT_REFUSED
 

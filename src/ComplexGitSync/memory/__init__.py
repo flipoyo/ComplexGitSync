@@ -11,7 +11,7 @@ What lives here
     states.py        Where a State is written, and how its path is spelled
     ledger_entry.py  One chain entry: its fields, and the hash over them
     ledger_store.py  One file per entry, atomically, with an untrusted HEAD
-    integrity.py     Whether a chain holds, and the four answers `verify` owes
+    integrity.py     Whether a chain holds, and the six answers `verify` owes
     store.py         The legacy single-file register (read-only) and the
                      State-writing mechanics the orchestrator used to carry
 

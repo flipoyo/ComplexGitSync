@@ -22,6 +22,7 @@ from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.memory.integrity import Finding, HistoryState
 from ComplexGitSync.memory.ledger_store import LedgerStore
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.toolchain import Toolchain
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -342,6 +343,91 @@ def test_a_commit_log_whose_state_is_gone_is_reported_and_kept(tmp_path):
     assert Finding.ORPHAN_COMMIT_LOG in findings
     # Reported, never repaired: the evidence is still there afterwards.
     assert (tree["root"] / ".cgitsync" / "commit-logs" / f"{state_hash}.toml").is_file()
+
+
+def _committed_by(monkeypatch, tree: dict[str, Path], version: str) -> Path:
+    """One commit recorded as if the build *version* wrote it; returns its commit log."""
+    monkeypatch.setitem(Toolchain._cache, "cgitsync", version)
+    _change(tree["root"], "one")
+    _loaded(tree["snapshot"]).commit("work whose messages a fold will lose")
+    [state_hash] = list(_logs(tree["root"]))
+    return tree["root"] / ".cgitsync" / "commit-logs" / f"{state_hash}.toml"
+
+
+def _kinds(report) -> set:
+    return {finding for _seq, finding, _detail in report.findings}
+
+
+def test_a_log_the_pre_681_fold_deleted_is_a_recorded_loss(tmp_path, monkeypatch):
+    """CommitLogLoss: every row gone, from an entry 6.7.3 wrote — incomplete, not corrupt."""
+    tree = _workspace(tmp_path)
+    _committed_by(monkeypatch, tree, "6.7.3").unlink()
+
+    report = ComplexGitSyncClient().verify(tree["root"])
+
+    assert report.state is HistoryState.INCOMPLETE
+    assert _kinds(report) == {Finding.COMMIT_LOG_LOST}
+    assert "6.7.3, fixed in 6.8.1" in report.findings[0][2]
+
+
+def test_a_log_lost_after_the_fix_is_still_corruption(tmp_path, monkeypatch):
+    tree = _workspace(tmp_path)
+    _committed_by(monkeypatch, tree, "6.8.1").unlink()
+
+    report = ComplexGitSyncClient().verify(tree["root"])
+
+    assert report.state is HistoryState.CORRUPT
+    assert _kinds(report) == {Finding.COMMIT_LOG_MISMATCH}
+
+
+def test_rows_left_but_changed_on_an_old_build_entry_are_still_corruption(tmp_path, monkeypatch):
+    """Only a log whose rows are all gone is the fold's loss; anything else still on disk is checked."""
+    tree = _workspace(tmp_path)
+    path = _committed_by(monkeypatch, tree, "6.7.3")
+    log = tomllib.loads(path.read_text(encoding="utf-8"))
+    log["commit"][0]["message"] = "a nicer story"
+    path.write_text(tomli_w.dumps(log), encoding="utf-8")
+
+    report = ComplexGitSyncClient().verify(tree["root"])
+
+    assert report.state is HistoryState.CORRUPT
+    assert _kinds(report) == {Finding.COMMIT_LOG_MISMATCH}
+
+
+def test_an_entry_edited_down_to_an_old_version_is_corrupt(tmp_path, monkeypatch):
+    """The version is inside the entry's hash, so claiming an old build to excuse a loss fails."""
+    tree = _workspace(tmp_path)
+    _committed_by(monkeypatch, tree, "7.0.0").unlink()
+    lgr = tree["root"] / ".cgitsync" / "lgr"
+    entry = max(lgr.glob("0*.toml"))
+    entry.write_text(entry.read_text(encoding="utf-8").replace('cgitsync = "7.0.0"', 'cgitsync = "6.7.3"'), encoding="utf-8")
+
+    report = ComplexGitSyncClient().verify(tree["root"])
+
+    assert report.state is HistoryState.CORRUPT
+    assert Finding.BAD_ENTRY_HASH in _kinds(report)
+
+
+def test_a_recorded_loss_does_not_stop_branch_close_or_delete_guard(tmp_path, monkeypatch):
+    """The guard refuses only CORRUPT, so a tree whose only damage is the recorded loss passes it."""
+    tree = _workspace(tmp_path)
+    _committed_by(monkeypatch, tree, "6.7.3").unlink()
+    client = _loaded(tree["snapshot"])
+
+    client._tree_commands._assert_history_holds(client.get_dependency_registry())
+
+
+def test_the_cli_says_incomplete_and_exits_zero(tmp_path, monkeypatch, capsys):
+    tree = _workspace(tmp_path)
+    _committed_by(monkeypatch, tree, "6.7.3").unlink()
+
+    code = cli_main(["verify", "check", "--search-dir", str(tree["root"])])
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "status=incomplete" in out
+    assert "finding=COMMIT_LOG_LOST" in out
+    assert "lost_commit_logs=1" in out
 
 
 def test_an_untouched_commit_log_verifies(tmp_path):

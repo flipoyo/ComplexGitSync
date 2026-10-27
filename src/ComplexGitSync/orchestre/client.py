@@ -922,7 +922,7 @@ class ComplexGitSyncClient:
         return self._memory_commands.memory_verify_published(cgshome, state=state)
 
     def verify(self, cgshome: str | Path, *, repair: bool = False) -> VerificationReport:
-        """Say which of the four answers this workspace's history deserves."""
+        """Say which of the six answers this workspace's history deserves."""
         return self._memory_commands.verify(cgshome, repair=repair)
 
     def get_tree_state(self) -> ProjectTreeState:

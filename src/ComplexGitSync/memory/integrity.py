@@ -20,6 +20,7 @@ The protocol below is still the contract — nothing here imports
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Callable, Protocol, Sequence
@@ -63,7 +64,7 @@ class Finding(Enum):
 
     Listed in `.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained ledger*.
 
-    All fourteen members are defined here because the type is shared with the
+    All fifteen members are defined here because the type is shared with the
     later `verify_store()` work (Ring 1, filesystem-backed, out of scope for
     this module). `verify_chain()` below — pure arithmetic over the entry
     sequence — only ever produces the first four and `TIME_REGRESSION`.
@@ -79,6 +80,7 @@ class Finding(Enum):
     HEAD_STALE = auto()  # cached HEAD disagrees with recomputed chain
     ORPHAN_COMMIT_LOG = auto()  # commit messages kept for a State that is gone
     COMMIT_LOG_MISMATCH = auto()  # commit rows edited since the entry vouched for them
+    COMMIT_LOG_LOST = auto()  # every row deleted by the fold fixed in 6.8.1: a recorded loss, not damage
     TIME_REGRESSION = auto()  # recorded_at moved backwards along the chain
     UNRESOLVED_RELOCATION = auto()  # a recorded move's asset is not at its new address
     REPO_HASH_MISMATCH = auto()  # one repository no longer hashes to its repo_hash
@@ -113,7 +115,7 @@ class HistoryState(Enum):
     was nothing to verify" are now different answers, and so is "there is
     history here that this format cannot verify".
 
-    The five are fixed by `.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained
+    The six are fixed by `.agent/.local/.localSpec/AdditionalSpecs.md`, *The hash-chained
     ledger*.
     """
 
@@ -122,6 +124,7 @@ class HistoryState(Enum):
     LEGACY = auto()  # single-file register: readable, not verifiable
     CORRUPT = auto()  # a chain was read and it does not hold
     TIME_INCONSISTENT = auto()  # the chain holds; its own timestamps do not
+    INCOMPLETE = auto()  # the chain holds; some commit messages were lost to the pre-6.8.1 fold
 
 
 @dataclass
@@ -137,7 +140,7 @@ class VerificationReport:
 
         Deliberately **not** the same question as "is this history
         verified". An empty ledger has no findings and is not evidence of
-        anything; :attr:`state` is what says which of the four answers this
+        anything; :attr:`state` is what says which of the six answers this
         pass reached.
         """
         return not self.findings
@@ -146,6 +149,10 @@ class VerificationReport:
     def is_verified(self) -> bool:
         """True only when a real chain was read and it held."""
         return self.state is HistoryState.VERIFIED
+
+
+#: The leading ``major[.minor[.patch]]`` of a recorded version string.
+_LEADING_VERSION = re.compile(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?")
 
 
 class ChainVerifier:
@@ -175,7 +182,12 @@ class ChainVerifier:
            worst answer available, because it invites deleting the one thing
            that was fine. Its own verdict, exiting non-zero, says "something is
            wrong here and it is not your history".
-        3. **`ORPHAN_STATE`** — no verdict change. Every workspace used before
+        3. **`COMMIT_LOG_LOST`** — `INCOMPLETE` (BeforeBeta S0,
+           CommitLogLoss). The history holds; what is missing is commit
+           messages the fold before 6.8.1 deleted, which that release said
+           are not recovered. Calling it corrupt would refuse `branch close`
+           and `branch delete` in that tree for ever.
+        4. **`ORPHAN_STATE`** — no verdict change. Every workspace used before
            the ledger existed holds States no entry records; they are history,
            not damage. Reported, never fatal.
         """
@@ -184,7 +196,26 @@ class ChainVerifier:
             return HistoryState.CORRUPT
         if Finding.TIME_REGRESSION in kinds:
             return HistoryState.TIME_INCONSISTENT
+        if Finding.COMMIT_LOG_LOST in kinds:
+            return HistoryState.INCOMPLETE
         return HistoryState.VERIFIED
+
+    #: The release whose fold stopped deleting pending commit logs.
+    COMMIT_LOG_FOLD_FIXED_IN = (6, 8, 1)
+
+    @staticmethod
+    def written_before_fold_fix(version: str) -> bool:
+        """Whether a ledger entry's ``toolchain.cgitsync`` predates 6.8.1's fold fix.
+
+        The version is the one the entry's own hash covers, so it cannot be
+        edited without ``BAD_ENTRY_HASH``. Its leading dotted numbers are
+        compared (``6.7.3``, ``5.0.0``, the old ``0002.88``); a version with
+        no leading number is not older, so its loss stays corruption.
+        """
+        match = _LEADING_VERSION.match(version.strip())
+        if match is None:
+            return False
+        return tuple(int(part) for part in match.groups() if part is not None) < ChainVerifier.COMMIT_LOG_FOLD_FIXED_IN
 
     @staticmethod
     def recompute_hash(entry: LedgerEntryLike) -> str:

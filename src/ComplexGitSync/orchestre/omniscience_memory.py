@@ -93,7 +93,8 @@ class MemoryReading:
                 return self._fail(OmniscienceStatus.INVALID, MemoryDetail.LEDGER_CORRUPT, f"ledger entry {path} cannot be read ({exc}).")
         entries.sort(key=lambda entry: entry.seq)
         report = ChainVerifier.verify(entries)
-        if report.state is not HistoryState.VERIFIED:
+        # INCOMPLETE holds as a chain (CommitLogLoss D2); a chain-only pass never yields it today.
+        if report.state not in (HistoryState.VERIFIED, HistoryState.INCOMPLETE):
             return self._fail(OmniscienceStatus.INVALID, MemoryDetail.LEDGER_CORRUPT, f"the ledger at commit {commit[:12]} is {report.state.name.lower().replace('_', ' ')}: it does not hold.", ledger_findings=len(report.findings))
         if entries[-1].entry_hash != record.local_ledger_tip:
             return self._fail(OmniscienceStatus.INVALID, MemoryDetail.INVALID_PROOF, "the ledger tip at the registered commit is not the tip the record names.")

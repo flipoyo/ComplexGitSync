@@ -29,6 +29,7 @@ from ..git_repo import (
 )
 from ..gts_document import GtsDocument
 from ..memory import (
+    ChainVerifier,
     Finding,
 )
 from ..memory.commit_log import (
@@ -351,11 +352,21 @@ class MemoryFacts:
             committed, published = grouped.get(entry.seq, ([], []))
             if not committed and not published:
                 if entry.commit_log:
-                    findings.append((
-                        entry.seq,
-                        Finding.COMMIT_LOG_MISMATCH,
-                        "entry records a commit log whose rows are gone",
-                    ))
+                    # Every row gone, from an entry the buggy fold wrote: the loss
+                    # 6.8.1 recorded (CommitLogLoss). A partial loss stays damage.
+                    version = dict(getattr(entry, "toolchain", ())).get("cgitsync", "")
+                    if ChainVerifier.written_before_fold_fix(version):
+                        findings.append((
+                            entry.seq,
+                            Finding.COMMIT_LOG_LOST,
+                            f"commit messages deleted by the fold of cgitsync {version}, fixed in 6.8.1; not recoverable",
+                        ))
+                    else:
+                        findings.append((
+                            entry.seq,
+                            Finding.COMMIT_LOG_MISMATCH,
+                            "entry records a commit log whose rows are gone",
+                        ))
                 continue
             if not entry.commit_log:
                 findings.append((
