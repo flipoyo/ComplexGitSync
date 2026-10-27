@@ -5,7 +5,7 @@ Contract: hold one client's state (registry, runner, clock, the last results a
     caller reads back) and expose every public method unchanged, each
     delegating to the collaborator that owns it; keep the private helpers that
     several collaborators share, and the ones tests reach through the client.
-Imports: auth_hints, autofix, cgs_format, clone_guard, command_run_logger, discovery, discovery_commands, document_loader, environment_commands, errors, git_branch, git_probes, git_repo, git_runner, git_tree, git_tree_branch, gitignore_sync, installer, memory, memory_commands, memory_setup, operations, orchestre, release_commands, reporting, reports, runtime_state_store, status_render, tree_commands, tree_env, universal_clock
+Imports: auth_hints, autofix, cgs_format, clone_guard, command_run_logger, discovery, discovery_commands, document_loader, environment_commands, errors, git_branch, git_probes, git_repo, git_runner, git_tree, git_tree_branch, gitignore_sync, installer, memory, memory_commands, memory_setup, operations, orchestre, release_commands, reporting, reports, runtime_state_store, status_render, tree_commands, tree_env, universal_clock, workspace_locking
 """
 
 from __future__ import annotations
@@ -106,8 +106,10 @@ from .reports import (
 )
 from .runtime_state_store import RuntimeStateStore
 from .tree_commands import TreeCommands
+from .workspace_locking import locks_writes
 
 
+@locks_writes
 @dataclass
 class ComplexGitSyncClient:
     """Client facade exposing the documented lifecycle surface.
@@ -1039,9 +1041,7 @@ class ComplexGitSyncClient:
         self, registry: WorkingGitTree, command: str, private: bool, all_writable: bool
     ) -> RepoScope:
         """Which repositories this write command may touch. One rule, six callers."""
-        return GitProbes.resolve_command_scope(
-            registry, private=private, command=command, all_writable=all_writable
-        )
+        return GitProbes.resolve_command_scope(registry, private=private, command=command, all_writable=all_writable)
 
     def _freeze_tag(
         self,

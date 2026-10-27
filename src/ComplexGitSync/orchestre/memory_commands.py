@@ -1902,12 +1902,8 @@ class MemoryCommands:
             entry = LedgerEntry.build_next(existing_entries[-1] if existing_entries else None, command=command_origin, argv=ArgvScrubber.scrub(sys.argv[1:], tree_root=tree_root), state_id=MemoryStates.format_id(state_hash), state_dir=str(state_path.parent.name), outcome="ok", clock=self.client.clock, toolchain=tuple(sorted(Toolchain.read(self.client.git_runner).items())), commit_log=commit_log, environment=environment_id, release=release or (), relocations=relocations)
             LedgerStore(cgitsync_dir / "lgr").write_entry(entry)
         except (LedgerStoreError, OSError) as exc:
-            self.client._log_event(
-                "ledger_append_failed",
-                level=logging.WARNING,
-                register_path=cgitsync_dir / "lgr",
-                error=str(exc),
-            )
+            self.client._log_event("ledger_append_failed", level=logging.WARNING, register_path=cgitsync_dir / "lgr", error=str(exc))
+            warnings.warn(f"this run's State was written but its ledger entry was not: {exc} Run the command again to record it.", stacklevel=4)
             return
         self.client._log_event(
             "ledger_append",

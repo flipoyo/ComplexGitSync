@@ -25,10 +25,7 @@ GROUP_DESCRIPTIONS: dict[tuple[str, ...], str] = {
     ("self-history",): "The private record of agent work on this project.",
     ("omniscience",): "The shared register of projects: join it, register a State, and watch what disappears.",
     ("repo",): "Create a repository on its provider, without leaving cgitsync.",
-    ("env",): (
-        "Observe this tree's reproducibility environment (show), "
-        "or compare it with the .cgs requirements (check)."
-    ),
+    ("env",): "Observe this tree's reproducibility environment (show), or compare it with the .cgs requirements (check).",
     ("branch",): "Create, list, close, check or delete a project branch across the whole tree.",
     ("submodules",): "Turn a checkout built on git submodules into a ComplexGitSync tree.",
     ("verify",): "Check this workspace's hash-chained ledger, or repair its HEAD cache.",
@@ -203,6 +200,7 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
         "Compare what 'cgitsync env show' observes with the requirements the .cgs declares.",
         ("cgitsync env check", "cgitsync env check --cgs project.cgs"),
     ),
+    ("unlock",): (None, ("cgitsync unlock", "cgitsync unlock --force")),
     ("help",): (None, ("cgitsync help memory explore", "cgitsync help --all", "cgitsync help --all | grep timeline")),
 }
 

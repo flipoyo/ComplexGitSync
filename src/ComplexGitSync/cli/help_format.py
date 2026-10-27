@@ -5,7 +5,7 @@ Ring: 4. Contract: after `build_parser()` assembles every command, apply the
     their options on one line, group the top level under the README's headings,
     and offer `cgitsync help [--all] [<command> ...]`. Presentation only: it adds
     no capability, so it calls no client method.
-Imports: configuration, environment, exit_codes, expert, help_text, minimalist
+Imports: configuration, environment, exit_codes, expert, help_text, minimalist, unlock
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import sys
 import textwrap
 from collections.abc import Iterator
 
-from . import configuration, environment, expert, minimalist
+from . import configuration, environment, expert, minimalist, unlock
 from .exit_codes import EXIT_OK, EXIT_UNUSABLE
 from .help_text import COMMAND_HELP, GROUP_DESCRIPTIONS, START_HERE
 
@@ -28,7 +28,7 @@ COMMANDS: dict[str, str] = {
 #: The top level's headings, in the README's own order, each with the commands it holds.
 _HEADINGS: tuple[tuple[str, dict[str, str]], ...] = (
     ("Minimalist — the everyday workflow", minimalist.COMMANDS),
-    ("Expert — one Git operation across the whole tree", expert.COMMANDS),
+    ("Expert — one Git operation across the whole tree", {**expert.COMMANDS, **unlock.COMMANDS}),
     ("Configuration — write or check a .cgs", configuration.COMMANDS),
     ("Environment", environment.COMMANDS),
     ("Help", COMMANDS),
