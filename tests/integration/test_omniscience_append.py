@@ -136,6 +136,52 @@ def test_register_appends_the_record_and_the_first_checkpoint_and_twice_does_not
     assert (_git(omni, "rev-parse", "demo"), _git(omni, "rev-parse", "_global")) == tips
 
 
+def test_a_file_the_register_holds_with_other_content_is_never_rewritten(tmp_path, addresses):
+    """Omniscience §10, item 8: the same content-addressed name with other bytes is refused, not overwritten."""
+    from ComplexGitSync.orchestre.omniscience_appender import RegisterAppender
+
+    omni = _omniscience_remote(tmp_path, "_global")
+    tree, client = _workspace(tmp_path, "a", "alice", omni, addresses)
+    first = client.omniscience_register(tree["root"])
+    held = _git(omni, "show", f"demo:{first['filename']}")
+    tip = _git(omni, "rev-parse", "demo")
+
+    with pytest.raises(GitSyncError, match="never rewritten"):
+        RegisterAppender(client, tree["omni"]).append("demo", lambda _tip: {first["filename"]: held + "# other bytes\n"}, "collide")
+
+    assert _git(omni, "rev-parse", "demo") == tip
+    assert _git(omni, "show", f"demo:{first['filename']}") == held
+    # The same bytes again, as the runner reads them, are no change at all, not a refusal.
+    exact = client.git_runner.show_file(tree["omni"], tip, first["filename"])
+    assert RegisterAppender(client, tree["omni"]).append("demo", lambda _tip: {first["filename"]: exact}, "same")["appended"] is False
+
+
+def test_a_push_the_provider_refuses_with_nobody_else_appending_is_the_callers_error_unretried(tmp_path, addresses, monkeypatch):
+    """Omniscience §10, items 4 and 8: an unauthorized append reaches the caller unchanged, moves nothing and is never retried."""
+    from ComplexGitSync.orchestre.omniscience_appender import RegisterAppender
+
+    omni = _omniscience_remote(tmp_path, "_global")
+    tree, client = _workspace(tmp_path, "a", "alice", omni, addresses)
+    client.omniscience_register(tree["root"])
+    tip = _git(omni, "rev-parse", "demo")
+    pushes: list = []
+    events: list = []
+
+    def refused(self, repo, local_ref, remote_ref, **kwargs):
+        pushes.append(remote_ref)
+        raise GitSyncError("remote: Permission denied to alice.\nfatal: unable to access the register")
+
+    monkeypatch.setattr(GitRunner, "push_ref_as", refused)
+    monkeypatch.setattr(client, "_log_event", lambda name, **fields: events.append(name))
+
+    with pytest.raises(GitSyncError, match="Permission denied to alice"):
+        RegisterAppender(client, tree["omni"]).append("demo", lambda _tip: {"register/unauthorized.toml": "x = 1\n"}, "unauthorized")
+
+    assert pushes == ["demo"]
+    assert _git(omni, "rev-parse", "demo") == tip
+    assert "omniscience_retry" not in events
+
+
 def test_two_workspaces_registering_at_once_both_land_and_the_second_retries_without_forcing(tmp_path, addresses, monkeypatch):
     omni = _omniscience_remote(tmp_path, "_global")
     a_tree, a = _workspace(tmp_path, "a", "alice", omni, addresses)

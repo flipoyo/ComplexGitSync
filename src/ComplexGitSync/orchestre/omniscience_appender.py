@@ -58,6 +58,7 @@ class RegisterAppender:
             files = build(tip)
             if not files:
                 return {"appended": False, "commit": tip, "attempts": attempt, "retries": attempt - 1}
+            self._refuse_rewrites(tip, files)
             git.checkout_commit(self.mount, tip or git.create_root_commit(self.mount, f"start {branch}"))
             try:
                 for relative, text in files.items():
@@ -81,6 +82,24 @@ class RegisterAppender:
                 continue
             return {"appended": True, "commit": git.rev_parse_head(self.mount), "attempts": attempt, "retries": attempt - 1}
         raise GitSyncError(f"the register's {branch!r} branch moved under {MAX_ATTEMPTS} attempts in a row; nothing was forced. Try again.")
+
+    def _refuse_rewrites(self, tip: str | None, files: dict[str, str]) -> None:
+        """Refuse, before anything is written, a file the tip already holds with other content.
+
+        Every register file is named by its content, so the same name with other bytes is a
+        collision or a hostile register (Omniscience §10, item 8): it is never overwritten.
+        TODO: bytes are compared as Git returns them, so a Windows line-ending conversion could
+        refuse a rewrite of the same record; no caller rewrites an existing file yet.
+        """
+        if tip is None:
+            return
+        for relative, text in files.items():
+            held = self.client.git_runner.show_file(self.mount, tip, relative)
+            if held is not None and held != text:
+                raise GitSyncError(
+                    f"{relative} is already in the register with other content, and a register file is never "
+                    "rewritten (a content-address collision, or a register edited by hand). Nothing was appended."
+                )
 
     def settle(self, branch: str) -> None:
         """Leave the mount on *branch* at its remote tip, so it is on a branch and not on a detached commit."""

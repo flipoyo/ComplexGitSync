@@ -351,3 +351,27 @@ def test_the_cli_names_the_repository_warns_and_prints_the_command(tmp_path, mon
     assert "warning: .memory has no branch 'ComplexGitSync_demo' yet, so it was cloned on 'main'" in err
     assert "Do not commit to it there" in err
     assert "to create it, run: cgitsync memory branch --project-branch main" in err
+
+
+def test_os_id_survives_every_way_the_tree_is_materialised(tmp_path, monkeypatch):
+    """Omniscience §10, item 1: one project name, one os_id, however the tree is installed or restored."""
+    from ComplexGitSync.operating_space import OperatingSpace
+
+    remotes = _tree(tmp_path, memory_branches=("main", "demo", "ComplexGitSync_demo"))
+    cgs = _write_cgs(tmp_path / "demo.cgs")
+    expected = OperatingSpace.id_of("demo")
+    ids = {"bootstrap .cgs": OperatingSpace(_client(monkeypatch, remotes).bootstrap(cgs, "demo", cgs_path=tmp_path / "one")).os_id}
+    state = _snapshot_of(tmp_path / "one" / "demo")
+    ids["bootstrap .gts"] = OperatingSpace(_client(monkeypatch, remotes).bootstrap(state, "demo", cgs_path=tmp_path / "two")).os_id
+    nested_home = tmp_path / "ws" / "demo"
+    nested_home.parent.mkdir(parents=True)
+    _git(nested_home.parent, "clone", remotes["demo"].as_posix(), nested_home.as_posix())
+    ids["initialise .cgs"] = OperatingSpace(_client(monkeypatch, remotes).initialise_cgs(cgs, output_path=tmp_path / "ws")).os_id
+    loader = _client(monkeypatch, remotes)
+    loader.load(state)
+    ids["release load <State hash>"] = OperatingSpace(loader.load_release(state.stem)).os_id
+    with monkeypatch.context() as standalone:
+        _standalone(standalone)
+        ids["twin bootstrap"] = OperatingSpace(_client(monkeypatch, remotes).bootstrap(cgs, "demo", cgs_path=tmp_path / "three")).os_id
+
+    assert ids == dict.fromkeys(ids, expected)

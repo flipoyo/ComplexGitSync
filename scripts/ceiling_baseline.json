@@ -467,7 +467,7 @@
     },
     "orchestre/omniscience_appender.py": {
       "internal_imports": 3,
-      "loc": 73,
+      "loc": 90,
       "public_symbols": 3
     },
     "orchestre/omniscience_checkpoints.py": {
