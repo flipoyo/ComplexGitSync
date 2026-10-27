@@ -65,40 +65,16 @@ def test_gitignore_sync_flags_rejected_on_unrelated_command(capsys):
     assert "unrecognized arguments" in captured.err
 
 
-def test_initialise_command_builds_from_gts_snapshot(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_initialise_cgshome(self, source, *, output_path=None):
-            return tmp_path / "workspace" / "demo"
-
-        def initialise_gts(self, source, *, output_path=None, **kwargs):
-            captured_call["source"] = Path(source)
-            captured_call["output_path"] = output_path
-            captured_call["kwargs"] = kwargs
-            return SimpleNamespace(
-                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "workspace" / "demo")
-            )
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-        def format_project_tree(self):
-            return "demo (project)"
-
-    monkeypatch.setattr("ComplexGitSync.cli.minimalist.ComplexGitSyncClient", StubClient)
+def test_initialise_command_refuses_a_gts_snapshot_by_name(capsys, tmp_path):
+    """EnvConnect D1: a .gts is restored by bootstrap or release load, never by initialise."""
     gts_path = _write_ready_gts(tmp_path)
 
     exit_code = main(["initialise", str(gts_path), "--output-path", str(tmp_path / "parent")])
     captured = capsys.readouterr()
 
-    assert exit_code == 0
-    assert captured_call["source"] == gts_path
-    assert captured_call["output_path"] == str(tmp_path / "parent")
-    assert "GT-CLONE" in captured.out
-    assert "READY" in captured.out
+    assert exit_code != 0
+    assert "bootstrap" in captured.err
+    assert "release load" in captured.err
 
 
 def test_load_command_is_not_registered(capsys):

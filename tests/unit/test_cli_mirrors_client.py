@@ -53,7 +53,6 @@ PENDING_OWNER_DECISION = frozenset(
         "freeze_state",
         "get_ledger_history",
         "git",
-        "initialise",
         "is_loaded",
         "launch_state",
         "load",

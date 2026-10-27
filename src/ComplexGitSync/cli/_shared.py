@@ -237,6 +237,7 @@ def _run_with_logging(
         raise
 
     memory_prompt.offer_after_command(active_client)
+    memory_prompt.offer_missing_branches(active_client)
     if active_client.run_logger is not None:
         tree_state = active_client.get_tree_state() if getattr(active_client, "registry", None) is not None else None
         active_client.run_logger.log_event(

@@ -318,7 +318,8 @@ def test_the_branch_a_merge_will_need_can_be_made_before_the_merge(tmp_path):
     assert "refs/heads/demo" in _git(remote, "for-each-ref", "--format=%(refname)")
 
 
-def test_making_a_branch_that_is_already_there_says_so(tmp_path):
+def test_making_a_branch_that_is_already_there_is_refused_by_name(tmp_path):
+    """EnvConnect C8: a memory branch is created once, never again."""
     workspace = _used_workspace(tmp_path / "demo")
     remote = _bare_remote(tmp_path / "memory.git")
     client = _loaded(workspace)
@@ -327,9 +328,8 @@ def test_making_a_branch_that_is_already_there_says_so(tmp_path):
     client.memory_push(workspace)
     client.memory_branch(workspace, "main")
 
-    again = client.memory_branch(workspace, "main")
-
-    assert again["created"] is False
+    with pytest.raises(GitSyncError, match="'demo' already exists"):
+        client.memory_branch(workspace, "main")
 
 
 def test_the_branch_command_refuses_before_the_memory_is_a_repository(tmp_path):

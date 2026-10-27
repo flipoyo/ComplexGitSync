@@ -262,7 +262,8 @@ class ReleaseCommands:
         """Put the tree back at release *name*: in place, or into a new *workspace*.
 
         *name* is the whole tag or what follows ``<project>-`` (``1``,
-        ``2.0.0``, ``beta``). In place, every repository the release
+        ``2.0.0``, ``beta``), or a State's full hash, its name, when no
+        release is called that (EnvConnect D2). In place, every repository the release
         recorded is left detached at its recorded commit and no branch
         moves; a tree with uncommitted changes to tracked files is refused
         first, naming each repository. *force_access_protocol*: as bootstrap's, for every clone it makes.
@@ -270,6 +271,12 @@ class ReleaseCommands:
         project = self.project_name()
         rows = {row["tag"]: row for row in self.list_releases()}
         row = rows.get(name) or rows.get(f"{project}-{name}")
+        if row is None and self._is_state_hash(name):
+            state_path = self._named_state_file(name)
+            if workspace:
+                return self.client.bootstrap(state_path, workspace, cgs_path=cgs_path, force_access_protocol=force_access_protocol)
+            self.client._forced_access_protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
+            return self._load_in_place(f"State {name[:12]}", state_path)
         if row is None:
             raise GitSyncError(f"No release {project}-{name} (or {name}) in this project; 'cgitsync release list' shows them.")
         if not row["loadable"]:
@@ -280,16 +287,50 @@ class ReleaseCommands:
         self.client._forced_access_protocol = AccessProtocol(force_access_protocol) if force_access_protocol else None
         return self._load_in_place(row["tag"], state_path)
 
+    @staticmethod
+    def _is_state_hash(name: str) -> bool:
+        """Whether *name* is written as a State's name: a full SHA-256, lowercase hex."""
+        try:
+            MemoryStates.format_id(name)
+        except ValueError:
+            return False
+        return True
+
+    def _held_state(self, state_hash: str) -> Path | None:
+        """The file holding the State *state_hash*: on disk, else from a memory chapter, else ``None``."""
+        cgitsync_dir = self._root().absolute_path / ".cgitsync"
+        for path in (MemoryStates(cgitsync_dir).path(state_hash), MemoryStates(cgitsync_dir / MEMORY_SUBDIR_NAME).path(state_hash)):
+            if path.is_file():
+                return path
+        if not (self._root().absolute_path / MOUNT_PATH / ".git").exists():
+            return None
+        found = MemoryChapters(self.client).find_state(self._root().absolute_path, state_hash)
+        if found is None or found[0] != state_hash:
+            return None
+        return MemoryStates(cgitsync_dir).write(found[0], found[1].to_toml)
+
+    def _named_state_file(self, state_hash: str) -> Path:
+        """The State *state_hash* names, found here or in the memory, refused unless its content names it.
+
+        A Git tag can be moved and a State's name cannot (EnvConnect D2): a
+        file found under the name is loaded only when its content still
+        hashes to it. Nothing is moved before either refusal.
+        """
+        path = self._held_state(state_hash)
+        if path is None:
+            raise GitSyncError(f"No State {state_hash[:12]} on this disk or in the memory, so it cannot be loaded; nothing was moved.")
+        named = GtsDocument.from_toml(path).compute_snapshot_hash()
+        if named != state_hash:
+            raise GitSyncError(f"{path} does not hold the State {state_hash[:12]}: its content is the State {named[:12]}. Nothing was moved.")
+        return path
+
     def _state_file(self, row: dict[str, Any]) -> Path:
         """A file holding the release's State: on disk, in a memory chapter, or from the root tag."""
         cgitsync_dir = self._root().absolute_path / ".cgitsync"
         if row["state"]:
-            for path in (MemoryStates(cgitsync_dir).path(row["state"]), MemoryStates(cgitsync_dir / MEMORY_SUBDIR_NAME).path(row["state"])):
-                if path.is_file():
-                    return path
-            found = MemoryChapters(self.client).find_state(self._root().absolute_path, row["state"])
+            found = self._held_state(row["state"])
             if found is not None:
-                return MemoryStates(cgitsync_dir).write(found[0], found[1].to_toml)
+                return found
         message = next((record[4] for record in self.client.git_runner.tag_records(self._root().absolute_path, row["tag"])), "")
         state = self.parse_release(message)[1]
         if not state:

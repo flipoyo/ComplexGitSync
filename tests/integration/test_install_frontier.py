@@ -294,32 +294,6 @@ def test_bootstrap_from_a_gts_rebuilds_the_tree_with_the_same_state_name(tmp_pat
     assert _snapshot_of(tmp_path / "two" / "demo").name == original.name
 
 
-def test_initialise_from_a_gts_pins_each_dependency_to_its_recorded_commit(tmp_path, monkeypatch):
-    root_remote, _ = _seed(tmp_path, "demo")
-    leaf_remote, leaf_seed = _seed(tmp_path, "leaf")
-    cgs = _write_cgs(tmp_path / "demo.cgs")
-    remotes = {"demo": root_remote, "leaf": leaf_remote}
-    first = _client(monkeypatch, remotes)
-    first.bootstrap(cgs, "demo", cgs_path=tmp_path / "one")
-    original = _snapshot_of(tmp_path / "one" / "demo")
-    recorded = _git(tmp_path / "one" / "demo" / "deps" / "leaf", "rev-parse", "HEAD")
-
-    (leaf_seed / "later.txt").write_text("later\n", encoding="utf-8")
-    _git(leaf_seed, "add", "later.txt")
-    _git(leaf_seed, "commit", "-m", "later")
-    _git(leaf_seed, "push", "origin", "main")
-
-    cgshome = tmp_path / "ws" / "demo"
-    _checkout_root(cgshome, root_remote)
-    nested = _client(monkeypatch, remotes)
-
-    registry = nested.initialise(original, output_path=tmp_path / "ws")
-
-    assert registry.is_ready()
-    assert _git(cgshome / "deps" / "leaf", "rev-parse", "HEAD") == recorded
-    assert _snapshot_of(cgshome).name == original.name
-
-
 def test_a_gts_whose_commit_the_remote_no_longer_holds_is_refused_before_cloning(tmp_path, monkeypatch):
     root_remote, _ = _seed(tmp_path, "demo")
     leaf_remote, leaf_seed = _seed(tmp_path, "leaf")

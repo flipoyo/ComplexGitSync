@@ -66,7 +66,8 @@ def test_commands_dict_has_exactly_the_five_minimalist_commands():
 def test_commands_help_text_matches_readme_command_table():
     assert minimalist.COMMANDS["initialise"] == (
         "Nested install: build the dependencies of a project whose root is already "
-        "checked out here, from a .cgs (branch tips) or a .gts (recorded commits)."
+        "checked out here, from a .cgs (branch tips). A .gts is restored by bootstrap "
+        "or release load."
     )
     assert minimalist.COMMANDS["release"] == (
         "Freeze, list or load a release of the project (freeze, list, load)."
@@ -123,40 +124,12 @@ def test_initialise_help_documents_repeatable_repos(capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_initialise_command_builds_from_gts_snapshot(monkeypatch, capsys, tmp_path):
-    captured_call: dict[str, object] = {}
-
-    class StubClient:
-        def resolve_initialise_cgshome(self, source, *, output_path=None):
-            return tmp_path / "workspace" / "demo"
-
-        def initialise_gts(self, source, *, output_path=None, **kwargs):
-            captured_call["source"] = Path(source)
-            captured_call["output_path"] = output_path
-            captured_call["kwargs"] = kwargs
-            return SimpleNamespace(
-                get=lambda repo_id: SimpleNamespace(absolute_path=tmp_path / "workspace" / "demo")
-            )
-
-        def get_tree_state(self):
-            return SimpleNamespace(
-                lifecycle_state=SimpleNamespace(value="READY"), is_ready=True, registry_complete=True
-            )
-
-        def format_project_tree(self):
-            return "demo (project)"
-
-    monkeypatch.setattr(minimalist, "ComplexGitSyncClient", StubClient)
+def test_initialise_command_refuses_a_gts_snapshot_by_name(tmp_path):
+    """EnvConnect D1: a .gts is restored by bootstrap or release load, never by initialise."""
     gts_path = _write_ready_gts(tmp_path)
 
-    exit_code = _dispatch(["initialise", str(gts_path), "--output-path", str(tmp_path / "parent")])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured_call["source"] == gts_path
-    assert captured_call["output_path"] == str(tmp_path / "parent")
-    assert "GT-CLONE" in captured.out
-    assert "READY" in captured.out
+    with pytest.raises(InstallFrontierError, match="release load"):
+        _dispatch(["initialise", str(gts_path), "--output-path", str(tmp_path / "parent")])
 
 
 def test_initialise_command_clones_from_cgs(monkeypatch, capsys, tmp_path):

@@ -2,7 +2,7 @@
 
 Ring: 3
 Contract: The tree-wide Git commands: pull, checkout, commit, merge, push and their kin.
-Imports: __version__, auth_hints, autofix, client, commit_message, errors, git_probes, git_repo, git_tree, git_tree_branch, operations, snapshot_resolver, ticket_gate
+Imports: __version__, auth_hints, autofix, client, commit_message, errors, git_branch, git_probes, git_repo, git_tree, git_tree_branch, operations, snapshot_resolver, ticket_gate
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from ..errors import (
 
 if TYPE_CHECKING:
     from ..autofix import RepairOutcome
-from ..git_branch import closed_branch_origin
+from ..git_branch import closed_branch_origin, structural_name_problem
 from ..git_repo import (
     AccessProtocol,
     RefKind,
@@ -276,7 +276,10 @@ class TreeCommands:
         *,
         private: bool = False,
     ) -> WorkingGitTree:
-        """Create *branch_name* across the full tree without checkout."""
+        """Create *branch_name* across the full tree without checkout; a name holding ``_`` is refused (EnvConnect C8)."""
+        broken = structural_name_problem(branch_name, what="branch")
+        if broken is not None:
+            raise GitSyncError(f"the branch {branch_name!r} was not created: {broken}. Nothing was changed.")
         registry = self.client.get_dependency_registry()
         previous_state = registry.lifecycle_state
         self.client._log_event("branch_start", branch_name=branch_name)

@@ -65,7 +65,7 @@ def register(subparser: argparse.ArgumentParser) -> None:
             "'cgitsync checkout <branch>' goes back to work. Refused when a repository has uncommitted changes."
         ),
     )
-    load.add_argument("name", help="The release: its version or number (1.2.0, 3) or its whole tag.")
+    load.add_argument("name", help="The release: its version or number (1.2.0, 3), its whole tag, or a State's full hash, found on this disk or in the memory.")
     load.add_argument("--workspace", metavar="NAME", help="Load it into a new workspace of this name instead, as bootstrap does.")
     load.add_argument("--cgs-path", dest="cgs_path", help="With --workspace: CGSPATH, so the workspace is CGSPATH/NAME.")
     load.add_argument("--force-protocol", dest="force_access_protocol", choices=("ssh", "https"), default=None, help="Clone every repository this load clones over this protocol, as bootstrap's --force-protocol does; repositories already cloned keep their remote.")

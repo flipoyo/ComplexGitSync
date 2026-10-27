@@ -92,6 +92,7 @@ class DocumentLoader:
         document = CgsDocument.from_toml(source_path)
         self.client.registry = RegistryTranslator.from_cgs_document(document, source_path, project_root=project_root)
         self.client.orchestre.git_tree.git.bind_tree(self.client.registry)
+        GitTreeBranches(self.client.registry, self.client.git_runner).settle_memory_twin()
         self.client.source_path = source_path
         self.client.loaded_snapshot_path = None
         if discover_nested:
@@ -226,7 +227,9 @@ class DocumentLoader:
         tree_root = MemoryFacts.workspace_of_snapshot(resolved_snapshot_path)
         self.client.registry = RegistryTranslator.from_gts_document(document, tree_root=tree_root)
         self.client.orchestre.git_tree.git.bind_tree(self.client.registry)
-        settled = GitTreeBranches(self.client.registry, self.client.git_runner).settle_recorded_tags()
+        branches = GitTreeBranches(self.client.registry, self.client.git_runner)
+        branches.settle_memory_twin()
+        settled = branches.settle_recorded_tags()
         if settled:
             # ReleaseTags D4: a State the old freeze-release recorded says
             # these repositories are on its tag; Git has them on a branch.

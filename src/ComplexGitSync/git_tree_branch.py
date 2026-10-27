@@ -6,7 +6,7 @@ Contract: given a WorkingGitTree — and a GitRunner, for anything that reads
     disk — answer which branch the tree is on, which branch a repository
     targets when the tree moves, which branch it is actually on, and where
     those two disagree. Holds no branch *rule* of its own.
-Imports: errors, git_branch, git_repo, git_tree
+Imports: errors, git_branch, git_repo, git_tree, memory
 
 Why this module exists
 ----------------------
@@ -51,6 +51,7 @@ from .git_branch import (
     DEFAULT_BRANCH,
     BranchResolution,
     closed_branch_origin,
+    is_twin_branch,
     resolve_propagated_ref,
 )
 from .git_repo import RefKind, RepoLifecycleState, RepoScope, WorkingRepo
@@ -61,6 +62,7 @@ from .git_tree import (
     iter_tree,
     iter_tree_leaf_first,
 )
+from .memory.repository import MOUNT_PATH
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -198,11 +200,58 @@ class GitTreeBranches:
         with this tree's project name filled in — the privacy rule itself
         stays there. This is the one place the two are paired, so no caller
         has to remember that a private/local repository needs the project's
-        name to resolve at all.
+        name to resolve at all. A twin tree's memory, and what it nests
+        (``.self-history``), is filed under ComplexGitSync
+        (:attr:`WorkingGitTree.memory_twin`); no other repository ever is.
         """
+        twin = self._tree.memory_twin and self.in_memory(repo)
         return resolve_propagated_ref(
-            repo, ref_name, ref_kind=ref_kind, project_name=self._project_name
+            repo, ref_name, ref_kind=ref_kind, project_name=self._project_name, twin=twin
         )
+
+    def in_memory(self, repo: WorkingRepo) -> bool:
+        """Whether *repo* is the tree's memory or a repository it nests (``.self-history``)."""
+        memory = self.memory
+        return memory is not None and repo.absolute_path is not None and (
+            repo is memory or repo.absolute_path.is_relative_to(memory.absolute_path)
+        )
+
+    @property
+    def memory(self) -> WorkingRepo | None:
+        """The tree's own memory, mounted at the root's ``.cgitsync/.memory``, or ``None``.
+
+        A memory a nested project mounts inside its own directory is that
+        project's, not this tree's, and is never a twin's.
+        """
+        root = self.root
+        if root is None or root.absolute_path is None:
+            return None
+        mount = root.absolute_path / MOUNT_PATH
+        return next((repo for repo in self._tree.values() if repo is not root and repo.absolute_path == mount), None)
+
+    def settle_memory_twin(self) -> bool:
+        """Read back whether this tree is a twin, from the branch its memory is on.
+
+        A standalone install decides it once, when it first installs the
+        memory; afterwards the memory's branch is the record, so the answer
+        never depends on which ComplexGitSync runs the next command. The
+        branch Git has checked out wins, else the one the State recorded.
+        A not-yet-cloned memory is given its twin target here.
+        """
+        memory = self.memory
+        if memory is None or self._project_name is None:
+            return self._tree.memory_twin
+        branch = None
+        if self._git_runner is not None and (memory.absolute_path / ".git").exists():
+            try:
+                branch = self.observed(memory)
+            except GitSyncError:
+                branch = None
+        branch = branch or _as_optional_str(memory.current_ref_name) or _as_optional_str(memory.resolved_ref_name)
+        if branch and is_twin_branch(self._project_name, branch):
+            self._tree.memory_twin = True
+            self.declare_targets()
+        return self._tree.memory_twin
 
     def declare_targets(self) -> None:
         """Give every private/local repository the branch it targets *now*.

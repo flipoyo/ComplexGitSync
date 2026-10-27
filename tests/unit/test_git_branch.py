@@ -31,10 +31,12 @@ from ComplexGitSync.git_branch import (
     apply_declared_defaults,
     closeable,
     closed_branch_name,
+    is_twin_branch,
     private_local_branch,
     resolve_declared_ref,
     resolve_entry_ref,
     resolve_propagated_ref,
+    structural_name_problem,
 )
 from ComplexGitSync.git_repo import RefKind, WorkingRepo
 from ComplexGitSync.git_tree import WorkingGitTree, propagate_privacy
@@ -501,6 +503,35 @@ class TestPrivateLocalBranchFollowsTheProject:
             resolve_propagated_ref(leaf, "feature-x", project_name="MyProject").name
             == "MyProject_feature-x"
         )
+
+
+class TestTwinMemoryBranch:
+    """EnvConnect C8: a twin's memory is filed under ComplexGitSync."""
+
+    def test_a_twin_memory_is_complexgitsync_underscore_project(self):
+        assert private_local_branch("gx4g", "main", twin=True) == "ComplexGitSync_gx4g"
+        assert private_local_branch("gx4g", "alpha-rust", twin=True) == "ComplexGitSync_gx4g_alpha-rust"
+        assert private_local_branch("ComplexGitSync", "main", twin=True) == "ComplexGitSync_ComplexGitSync"
+
+    def test_the_nested_project_keeps_its_own_name(self):
+        assert private_local_branch("gx4g", "main") == "gx4g"
+
+    def test_only_the_twin_reading_counts_as_a_twin(self):
+        assert is_twin_branch("gx4g", "ComplexGitSync_gx4g")
+        assert is_twin_branch("gx4g", "ComplexGitSync_gx4g_alpha-rust")
+        assert not is_twin_branch("gx4g", "gx4g")
+        assert not is_twin_branch("gx4g", "ComplexGitSync_gx4g-old")
+        assert not is_twin_branch("memory-dev", "ComplexGitSync_memory")
+
+    def test_the_resolver_files_only_a_twin_memory_under_complexgitsync(self):
+        entry = WorkingRepo(repo_id="m", name=".memory", private=True, writable=True, default_branch="gx4g")
+
+        assert resolve_propagated_ref(entry, "main", project_name="gx4g", twin=True).name == "ComplexGitSync_gx4g"
+        assert resolve_propagated_ref(entry, "main", project_name="gx4g").name == "gx4g"
+
+    def test_a_new_name_holding_an_underscore_is_refused_and_a_hyphen_is_not(self):
+        assert "use '-' instead ('data-import')" in structural_name_problem("data_import", what="branch")
+        assert structural_name_problem("memory-dev", what="project") is None
 
 
 class TestClosedBranchNaming:

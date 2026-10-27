@@ -294,6 +294,11 @@ class WorkingGitTree(GitTree):
 
     repos: dict[str, WorkingRepo] = field(default_factory=dict)
     lifecycle_state: TreeLifecycleState = TreeLifecycleState.UNLOADED
+    #: Whether this tree's memory is a twin's, filed under ``ComplexGitSync_<project>``
+    #: (EnvConnect C8). Set when a standalone install first installs the memory,
+    #: and read back afterwards from the branch the memory is on
+    #: (``GitTreeBranches.settle_memory_twin``); never stored anywhere else.
+    memory_twin: bool = False
 
     def add(self, repo: WorkingRepo) -> WorkingRepo:
         """Register *repo* and return it. The root names the project, once."""

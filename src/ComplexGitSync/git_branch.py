@@ -35,7 +35,10 @@ The public surface
     apply_declared_defaults   Fill one entry's declared branch fields in place
     resolve_declared_ref      Target ref of one repository entry in a document
     resolve_entry_ref         Target ref of a live WorkingRepo
-    private_local_branch      <project>_<branch> for a private/local repo
+    private_local_branch      <project>_<branch> for a private/local repo,
+                              ComplexGitSync_<project>[_<branch>] for a twin's memory
+    is_twin_branch            Whether a branch is a twin's memory branch for a project
+    structural_name_problem   Why a new project or branch name may not be created, or None
     resolve_propagated_ref    Target ref under a tree-wide branch move (privacy)
     closed_branch_name        closed/<branch> — the name a closed branch is renamed to
     closed_branch_origin      The name a closed/<branch> was closed from, or None
@@ -314,17 +317,35 @@ PRIVATE_LOCAL_SEPARATOR = "_"
 An underscore, not a hyphen: hyphens already occur inside branch names —
 ``multi-branch`` is itself hyphenated — so ``ComplexGitSync-multi-branch``
 is ambiguous about where the base stops and ``ComplexGitSync_multi-branch``
-is not.
+is not. It is the only structural separator in a branch name: a project or
+branch name created from here on holds ``-`` and never ``_``
+(:func:`structural_name_problem`).
+"""
+
+TWIN_BRANCH_OWNER = "ComplexGitSync"
+"""Who a twin's memory is filed under: ``ComplexGitSync_<project>`` (EnvConnect C8).
+
+A standalone tree (``bootstrap``) is a twin of its project, run by a
+ComplexGitSync outside it, and its memory belongs to ComplexGitSync, not to
+the project: the nested tree keeps ``<project>``, the twin gets
+``ComplexGitSync_<project>``, and the two never share a memory branch. The
+one reading left ambiguous — ComplexGitSync's own branch ``<project>`` — is
+prevented where a memory branch is created, which refuses a name that
+already exists.
 """
 
 
-def private_local_branch(project_name: str, project_branch: str) -> str:
+def private_local_branch(project_name: str, project_branch: str, *, twin: bool = False) -> str:
     """The branch a private/local repository uses for *project_branch*.
 
     The one place the naming rule lives::
 
         X == "main"   ->  <project_name>
         otherwise     ->  <project_name>_<X>
+
+    *twin* is true only for the memory of a twin tree, whose base is
+    ``ComplexGitSync_<project_name>`` instead (:data:`TWIN_BRANCH_OWNER`);
+    the suffix rule is the same.
 
     The base is the **project's name**, not anything the entry declares:
     a private/local repository holds one project's settings, filed on a
@@ -337,9 +358,39 @@ def private_local_branch(project_name: str, project_branch: str) -> str:
     settings branch is simply ``<project_name>``, which is what every tree
     already has. Nothing else in the codebase composes these two strings.
     """
+    base = f"{TWIN_BRANCH_OWNER}{PRIVATE_LOCAL_SEPARATOR}{project_name}" if twin else project_name
     if project_branch == DEFAULT_BRANCH:
-        return project_name
-    return f"{project_name}{PRIVATE_LOCAL_SEPARATOR}{project_branch}"
+        return base
+    return f"{base}{PRIVATE_LOCAL_SEPARATOR}{project_branch}"
+
+
+def is_twin_branch(project_name: str, branch_name: str) -> bool:
+    """Whether *branch_name* is a twin's memory branch for *project_name*.
+
+    The inverse of :func:`private_local_branch` with ``twin=True``:
+    ``ComplexGitSync_<project_name>`` itself, or that base followed by
+    ``_<branch>``. This is how a tree already installed remembers that it is a
+    twin: the branch its memory is on says so, and nothing else is stored.
+    """
+    base = private_local_branch(project_name, DEFAULT_BRANCH, twin=True)
+    return branch_name == base or branch_name.startswith(f"{base}{PRIVATE_LOCAL_SEPARATOR}")
+
+
+def structural_name_problem(name: str, *, what: str) -> str | None:
+    """Why a new project or branch *name* may not be created, or ``None``.
+
+    ``_`` is the only structural separator in a branch name, so a name created
+    from here on holds ``-`` and never ``_``: then ``ComplexGitSync_P_X`` reads
+    one way only, twin of ``P``, branch ``X``. *what* is ``"project"`` or
+    ``"branch"``, for the message. Only creation asks: a name that already
+    exists is never renamed and keeps working.
+    """
+    if PRIVATE_LOCAL_SEPARATOR in name:
+        return (
+            f"a {what} name may not contain '{PRIVATE_LOCAL_SEPARATOR}', which separates the parts of "
+            f"a private branch name; use '-' instead ({name.replace(PRIVATE_LOCAL_SEPARATOR, '-')!r})"
+        )
+    return None
 
 
 CLOSED_BRANCH_PREFIX = "closed/"
@@ -410,6 +461,7 @@ def resolve_propagated_ref(
     *,
     ref_kind: RefKind = RefKind.BRANCH,
     project_name: str | None = None,
+    twin: bool = False,
 ) -> BranchResolution:
     """Resolve what *entry* targets when the whole tree moves to *ref_name*.
 
@@ -435,6 +487,7 @@ def resolve_propagated_ref(
     *project_name* is the tree's project, and only the private/local case
     needs it. Without it that case cannot be resolved at all, so it falls
     back to behaving like private/distant rather than guessing a name.
+    *twin* is true only for a twin tree's memory (:data:`TWIN_BRANCH_OWNER`).
 
     For any private entry the returned ``kind`` is ``None``: the move must not
     rewrite the kind of ref that entry already carries.
@@ -443,7 +496,7 @@ def resolve_propagated_ref(
         declared = _as_optional_str(entry.default_branch) or DEFAULT_BRANCH
         if entry.effective_writable and project_name:
             return BranchResolution(
-                name=private_local_branch(project_name, ref_name),
+                name=private_local_branch(project_name, ref_name, twin=twin),
                 kind=None,
                 source=BranchSource.PRIVATE_LOCAL,
             )
@@ -481,7 +534,10 @@ def _as_optional_str(value: Any) -> str | None:
 
 __all__ = [
     "ANCESTORS_BRANCH",
+    "TWIN_BRANCH_OWNER",
     "private_local_branch",
+    "is_twin_branch",
+    "structural_name_problem",
     "DEFAULT_BRANCH",
     "BranchResolution",
     "BranchSource",

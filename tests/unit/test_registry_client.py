@@ -9,7 +9,12 @@ import pytest
 
 import ComplexGitSync
 from ComplexGitSync import MasterConfig
-from ComplexGitSync.errors import ConfigValidationError, GitSyncError, NestedConfigDiscoveryError
+from ComplexGitSync.errors import (
+    ConfigValidationError,
+    GitSyncError,
+    InstallFrontierError,
+    NestedConfigDiscoveryError,
+)
 from ComplexGitSync.git_repo import (
     AccessProtocol,
     GitRepo,
@@ -130,22 +135,12 @@ def test_client_load_accepts_gts_source(tmp_path):
     assert client.get_tree_state().lifecycle_state == TreeLifecycleState.READY
 
 
-def test_client_initialise_dispatches_to_initialise_gts_for_gts_source(monkeypatch, tmp_path):
-    snapshot_path = _write_ready_gts(tmp_path / "snapshot.gts", root_path=(tmp_path / "workspace" / "demo").resolve())
+def test_client_initialise_refuses_a_gts_source_by_name(tmp_path):
+    """EnvConnect D1: `initialise` is branch-based and takes a .cgs; it reads nothing of a .gts."""
     client = ComplexGitSyncClient()
-    captured: dict[str, object] = {}
 
-    def _fake_initialise_gts(path, *, output_path=None):
-        captured["path"] = path
-        captured["output_path"] = output_path
-        return "ok"
-
-    monkeypatch.setattr(client, "initialise_gts", _fake_initialise_gts)
-
-    assert client.initialise(snapshot_path, output_path="somewhere") == "ok"
-
-    assert captured["path"] == snapshot_path.resolve()
-    assert captured["output_path"] == "somewhere"
+    with pytest.raises(InstallFrontierError, match="release load"):
+        client.initialise(tmp_path / "absent.gts", output_path="somewhere")
 
 
 def test_client_initialise_dispatches_to_initialise_cgs_for_cgs_source(monkeypatch):

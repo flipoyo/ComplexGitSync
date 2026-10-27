@@ -332,7 +332,7 @@ class MemoryCommands:
         return {
             "entry": entry,
             "line": CgsEntryEditor.format_entry(entry),
-            "branch": MemoryRepository.branch(registry.project_name, branches.tree_branch or DEFAULT_BRANCH),
+            "branch": MemoryRepository.branch(registry.project_name, branches.tree_branch or DEFAULT_BRANCH, twin=registry.memory_twin),
             "mount_path": str(MemoryRepository(workspace).mount_path()),
             "create_with": MemoryRepository.creation_command(entry),
             "mounted": DefaultMemory(self.client).is_published(workspace),
@@ -667,14 +667,29 @@ class MemoryCommands:
         """
         workspace = Path(cgshome)
         memory_mount = MemoryRepository(workspace).mount_path()
-        DefaultMemory(self.client).require_published(workspace, "self-history adopt")
+        repository_owner, remote_url = self._self_history_remote(workspace, owner, "self-history adopt")
+        resolved_branch = branch or self.client.git_runner.current_branch(memory_mount)
+        config_path = MemoryRepository(workspace).config_path()
+        if not config_path.is_file():
+            config_path.write_text(
+                MemoryRepository.config_document(repository_owner, resolved_branch), encoding="utf-8"
+            )
+        return self._finish_self_history_adopt(workspace, branch=resolved_branch, remote_url=remote_url)
+
+    def _self_history_remote(self, workspace: Path, owner: str | None, command: str) -> tuple[str, str]:
+        """Who self-history is adopted under and its reachable remote, or a refusal naming why.
+
+        Every precondition of :meth:`self_history_adopt`, checked before it
+        changes anything, so :meth:`memory_branch` can ask first and create
+        nothing when one fails.
+        """
+        DefaultMemory(self.client).require_published(workspace, command)
         mount = MemoryRepository(workspace).self_history_mount_path()
         if (mount / ".git").exists():
             raise GitSyncError(
                 f"{mount} is already a repository. 'cgitsync memory push' sends what "
                 "it has gained."
             )
-        resolved_branch = branch or self.client.git_runner.current_branch(memory_mount)
         registry = self.client.registry
         root = registry.get(ROOT_REPO_ID) if registry is not None else None
         repository_owner = owner or (root.project_owner_name if root is not None else None)
@@ -686,12 +701,7 @@ class MemoryCommands:
                 f"{remote_url} is not there, or these credentials cannot see it. "
                 f"Create it with 'cgitsync repo create {MemoryFacts.identifier_of(remote_url)}'."
             )
-        config_path = MemoryRepository(workspace).config_path()
-        if not config_path.is_file():
-            config_path.write_text(
-                MemoryRepository.config_document(repository_owner, resolved_branch), encoding="utf-8"
-            )
-        return self._finish_self_history_adopt(workspace, branch=resolved_branch, remote_url=remote_url)
+        return repository_owner, remote_url
 
     def _adopt_self_history_if_declared(
         self, workspace: Path, *, branch: str
@@ -874,24 +884,50 @@ class MemoryCommands:
         cannot tell a new project branch from a mistyped one.
 
         The new branch starts at the memory's current head and is pushed, so
-        the merge has something to merge into on both sides.
+        the merge has something to merge into on both sides. A name that
+        already exists, here or on the remote, is refused by name and nothing
+        is created (EnvConnect C8): a memory branch is created once, which is
+        what keeps a twin's ``ComplexGitSync_<project>`` from being read as
+        ComplexGitSync's own branch ``<project>``.
+
+        When the memory's entry names a nested config the memory does not
+        hold — a DEV bootstrap that fell back to ``main`` because this branch
+        was missing (EnvConnect C7) — the new branch is checked out and given
+        its ``config-memory.cgs`` and ``.self-history`` (:meth:`self_history_adopt`)
+        before it is committed and pushed.
         """
         workspace = Path(cgshome)
         mount = MemoryRepository(workspace).mount_path()
         DefaultMemory(self.client).require_published(workspace, "memory branch")
         registry = self.client.get_dependency_registry()
-        target = MemoryRepository.branch(registry.project_name, project_branch)
-        existed = self.client.git_runner.local_branch_exists(mount, target)
-        if not existed:
-            self.client.git_runner.create_branch(mount, target)
-        if push:
-            self.client.git_runner.push(mount, ref_name=target)
-        self.client._log_event("memory_branch", mount=mount, branch=target, created=not existed)
+        git = self.client.git_runner
+        target = MemoryRepository.branch(registry.project_name, project_branch, twin=registry.memory_twin)
+        remote_url = git.remote_get_url(mount, "origin")
+        on_remote = bool(remote_url) and git.remote_branch_exists(remote_url, target)
+        if on_remote or git.local_branch_exists(mount, target):
+            where, fix = ("", "'cgitsync checkout' puts the memory on it") if on_remote else (" here but not on the remote", "put the memory on it and run 'cgitsync memory push' to send it")
+            raise GitSyncError(f"the memory branch {target!r} already exists{where}, so it is not created again: a memory branch is created once; {fix}. Nothing was created.")
+        memory = GitTreeBranches(registry).memory
+        config = memory.nested_config if memory is not None and memory.nested_config not in (None, "disabled", "auto") else None
+        set_up = config is not None and not (mount / str(config)).is_file()
+        if set_up:
+            # Every precondition first: a refusal leaves no half-made branch behind.
+            self._self_history_remote(workspace, None, "memory branch")
+        git.create_branch(mount, target)
+        if set_up:
+            git.checkout(mount, target)
+            self.self_history_adopt(workspace, branch=target)
+            if push:
+                self.memory_push(workspace, message=f"{registry.project_name} memory: branch {target} set up with its {config}")
+        elif push:
+            git.push(mount, ref_name=target)
+        self.client._log_event("memory_branch", mount=mount, branch=target, created=True, set_up=set_up)
         return {
             "mount": str(mount),
             "project_branch": project_branch,
             "branch": target,
-            "created": not existed,
+            "created": True,
+            "set_up": set_up,
             "pushed": push,
         }
 
@@ -925,7 +961,7 @@ class MemoryCommands:
         registry = self.client.get_dependency_registry()
         project = registry.project_name
         target_project = into or GitTreeBranches(registry, git).tree_branch or DEFAULT_BRANCH
-        source, target = MemoryRepository.branch(project, source_branch), MemoryRepository.branch(project, target_project)
+        source, target = (MemoryRepository.branch(project, branch, twin=registry.memory_twin) for branch in (source_branch, target_project))
         recorded = self.memory_push(workspace, message=f"{project} memory merge: recording before {source_branch} into {target_project}")
         mount = Path(str(recorded["mount"]))
         plan = MemoryMergeOperation.plan(git, mount, source, target, keep)

@@ -440,7 +440,7 @@ class DiscoveryCommands:
             )
 
         if not reuse_existing:
-            self.client.configure(report.project_name, list(report.cgs_entries), output_path=target_cgs)
+            self.client.configure(report.project_name, list(report.cgs_entries), output_path=target_cgs, new_name=False)
 
         tree = self.client.initialise_cgs(
             target_cgs,
@@ -724,7 +724,7 @@ class DiscoveryCommands:
                     f"discover: no resolvable git repository found under {root} — "
                     f"nothing to write."
                 )
-            self.client.configure(project, cgs_entries, output_path=written_to)
+            self.client.configure(project, cgs_entries, output_path=written_to, new_name=False)
 
         return DiscoverReport(
             root=root,

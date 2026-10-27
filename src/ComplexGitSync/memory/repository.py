@@ -104,7 +104,7 @@ class MemoryRepository:
         return f"{provider}:{owner}/{DEFAULT_SELF_HISTORY_REPOSITORY}"
 
     @staticmethod
-    def branch(project_name: str, project_branch: str) -> str:
+    def branch(project_name: str, project_branch: str, *, twin: bool = False) -> str:
         """Which branch of the memory repository this project's memory is on.
 
         The ordinary private/local rule, asked of the one module that owns it:
@@ -113,8 +113,10 @@ class MemoryRepository:
         forks when the project branches and merges back when the branch does —
         the same behaviour `.localSpec` has, with the same consequence that work
         recorded on one branch is invisible from the other until the merge.
+        A twin tree's memory (*twin*, ``WorkingGitTree.memory_twin``) is filed
+        under ``ComplexGitSync_<project>`` instead (EnvConnect C8).
         """
-        return private_local_branch(project_name, project_branch)
+        return private_local_branch(project_name, project_branch, twin=twin)
 
     @staticmethod
     def mount_entry(

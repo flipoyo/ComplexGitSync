@@ -36,7 +36,8 @@ from .help_text import SEARCH_DIR_HELP
 COMMANDS: dict[str, str] = {
     "initialise": (
         "Nested install: build the dependencies of a project whose root is already "
-        "checked out here, from a .cgs (branch tips) or a .gts (recorded commits)."
+        "checked out here, from a .cgs (branch tips). A .gts is restored by bootstrap "
+        "or release load."
     ),
     "bootstrap": (
         "Standalone install: clone a brand-new project tree, root included, into an "
@@ -66,7 +67,7 @@ def register_parsers(subparsers, add_gitignore_sync_arguments) -> None:
                 "source",
                 nargs="?",
                 help=(
-                    "Path to a .cgs spec or .gts snapshot. Omit when using "
+                    "Path to a .cgs spec. Omit when using "
                     "--project with one or more --repo options."
                 ),
             )
@@ -267,24 +268,9 @@ def _handle_initialise(args: argparse.Namespace) -> int:
                 force_access_protocol=force_access_protocol,
             ),
         )
-    output_path = getattr(args, "output_path", None)
-    client = ComplexGitSyncClient()
-    project_root = client.resolve_initialise_cgshome(source_path, output_path=output_path)
-    return _run_with_logging(
-        command_name="initialise",
-        source=source_path,
-        client=client,
-        project_root=project_root,
-        runner=lambda active_client, source: _execute_initialise_gts(
-            active_client,
-            source,
-            output_path=output_path,
-            commit_gitignore=commit_gitignore,
-            git_user_name=git_user_name,
-            git_user_email=git_user_email,
-            force_access_protocol=force_access_protocol,
-        ),
-    )
+    # A .gts is refused by name before anything is read (EnvConnect D1).
+    ComplexGitSyncClient().initialise(source_path, output_path=getattr(args, "output_path", None))
+    return 0
 
 
 def _handle_bootstrap(args: argparse.Namespace) -> int:
@@ -416,35 +402,6 @@ def _execute_initialise_cgs_document(
         f"root={registry.get('root').absolute_path}"
     )
     _print_gitignore_sync_report(client)
-    outline = _format_repo_tree_outline(client)
-    if outline:
-        print("tree:")
-        print(outline)
-    return 0
-
-
-def _execute_initialise_gts(
-    client: ComplexGitSyncClient,
-    snapshot_path: Path,
-    *,
-    output_path: str | Path | None = None,
-    commit_gitignore: bool = False,
-    git_user_name: str | None = None,
-    git_user_email: str | None = None,
-    force_access_protocol: str | None = None,
-) -> int:
-    print("operation_sequence=GT-LOAD->GT-CLONE->GT-PIN->GT-VALIDATE")
-    print("git_command=git clone && git checkout -B <branch> <recorded commit> (executed per repo)")
-    registry = client.initialise_gts(
-        snapshot_path,
-        output_path=output_path,
-        commit_gitignore=commit_gitignore,
-        git_user_name=git_user_name,
-        git_user_email=git_user_email,
-        force_access_protocol=force_access_protocol,
-    )
-    tree_state = client.get_tree_state()
-    print(f"{_format_tree_state_line(tree_state)} root={registry.get('root').absolute_path}")
     outline = _format_repo_tree_outline(client)
     if outline:
         print("tree:")

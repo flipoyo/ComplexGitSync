@@ -51,6 +51,7 @@ from ..git_tree import (
     ROOT_REPO_ID,
     ProjectTreeState,
     TreeLifecycleState,
+    TreeProfile,
     WorkingGitTree,
     iter_tree,
 )
@@ -118,8 +119,9 @@ class ComplexGitSyncClient:
     The canonical user-facing lifecycle is::
 
         configure(project, repositories) → CgsDocument  (offline)
-        initialise(.cgs)  → clone all repos → READY  (new project)
-        initialise(.gts)  → restore snapshot → READY  (existing project)
+        initialise(.cgs)  → clone all repos → READY  (nested, branch-based)
+        bootstrap(.gts)   → restore snapshot → READY  (standalone, tag-based)
+        load_release(name or State hash) → restore in place
         pull(.cgs/.gts)   → resync existing tree
         checkout(branch)
         add()
@@ -173,6 +175,10 @@ class ComplexGitSyncClient:
     last_release_load: ReleaseLoad | None = None
     #: Set when this run recorded a State in a DEV tree whose ``.cgs`` declares no memory (`MemorySetup`).
     memory_setup_due: bool = False
+    #: The private/local repositories the last install left on their fallback
+    #: branch with their nested config missing for that reason (EnvConnect C7):
+    #: reported by name, each with the command that creates its branch.
+    missing_private_branches: list[dict[str, Any]] = field(default_factory=list)
     run_logger: CommandRunLogger | None = None
     _forced_access_protocol: AccessProtocol | None = field(default=None, init=False, repr=False)
     #: Where a memory mounted before WorkingTransitionState sits: directly
@@ -222,9 +228,10 @@ class ComplexGitSyncClient:
         repositories: Sequence[str | dict[str, Any]],
         *,
         output_path: str | Path | None = None,
+        new_name: bool = True,
     ) -> CgsDocument:
         """Create a canonical ``.cgs`` document without interactive input."""
-        return self._installer.configure(project, repositories, output_path=output_path)
+        return self._installer.configure(project, repositories, output_path=output_path, new_name=new_name)
 
     def import_submodules(
         self,
@@ -275,7 +282,7 @@ class ComplexGitSyncClient:
         *,
         output_path: str | Path | None = None,
     ) -> WorkingGitTree:
-        """The nested install (lifecycle step 1): a ``.cgs`` or a ``.gts``."""
+        """The nested install (lifecycle step 1), from a ``.cgs``; a ``.gts`` is refused by name."""
         return self._installer.initialise(source, output_path=output_path)
 
     def initialise_cgs(
@@ -290,19 +297,6 @@ class ComplexGitSyncClient:
     ) -> WorkingGitTree:
         """Initialise a workspace using CGSPATH/CGSHOME semantics."""
         return self._installer.initialise_cgs(config_path, output_path=output_path, commit_gitignore=commit_gitignore, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
-
-    def initialise_gts(
-        self,
-        snapshot_path: str | Path,
-        *,
-        output_path: str | Path | None = None,
-        commit_gitignore: bool = False,
-        git_user_name: str | None = None,
-        git_user_email: str | None = None,
-        force_access_protocol: str | None = None,
-    ) -> WorkingGitTree:
-        """Initialise a workspace from a ``.gts`` snapshot, each repository at its recorded commit."""
-        return self._installer.initialise_gts(snapshot_path, output_path=output_path, commit_gitignore=commit_gitignore, git_user_name=git_user_name, git_user_email=git_user_email, force_access_protocol=force_access_protocol)
 
     def initialise_cgs_document(
         self,
@@ -1516,13 +1510,44 @@ class ComplexGitSyncClient:
         return ref_name
 
     def _assert_nested_discovery_complete(self) -> None:
-        for entry in self.get_dependency_registry().values():
-            if entry.nested_config in {None, "disabled"}:
-                continue
-            if entry.discovery_state != DiscoveryState.RESOLVED:
+        """Refuse a nested config that did not resolve, except one missing for want of its branch.
+
+        In a DEV tree, a private/local repository whose branch for this
+        project does not exist yet falls back, and the fallback branch need
+        not hold the nested config the entry names. That is expected on a
+        first install (EnvConnect C7): it is recorded in
+        :attr:`missing_private_branches`, logged, and the install goes on. So
+        is every other writable private repository that fell back, nested
+        config or not, since committing to it there would write to the
+        fallback branch. A nested config missing on the branch a repository
+        really targets is still refused.
+        """
+        registry = self.get_dependency_registry()
+        self.missing_private_branches = []
+        branches = GitTreeBranches(registry, self.git_runner)
+        dev = registry.profile is TreeProfile.DEV
+        for entry in registry.values():
+            fell_back = dev and entry.effective_private and entry.effective_writable and entry.fallback_applied
+            unresolved = entry.nested_config not in {None, "disabled"} and entry.discovery_state != DiscoveryState.RESOLVED
+            if unresolved and not (fell_back and entry.discovery_state == DiscoveryState.MISSING):
                 raise GitSyncError(
                     f"Nested configuration for {entry.name} is not resolved: {entry.discovery_state.value}"
                 )
+            if not fell_back:
+                continue
+            is_memory = entry is branches.memory
+            project_branch = branches.tree_branch or DEFAULT_BRANCH
+            missing = {
+                "repo": entry.name,
+                "path": str(entry.absolute_path),
+                "wanted": entry.target_ref_name,
+                "landed": entry.resolved_ref_name,
+                "config": entry.nested_config if unresolved else None,
+                "command": f"cgitsync memory branch --project-branch {project_branch}" if is_memory else None,
+                "project_branch": project_branch if is_memory else None,
+            }
+            self.missing_private_branches.append(missing)
+            self._log_event("private_branch_missing", level=logging.WARNING, **missing)
 
     def _log_event(self, event: str, *, level: int = logging.INFO, **fields: object) -> None:
         if self.run_logger is None:

@@ -38,7 +38,7 @@ GROUP_DESCRIPTIONS: dict[tuple[str, ...], str] = {
 COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
     ("initialise",): (None, (
         "cgitsync initialise install.cgs",
-        "cgitsync initialise project.gts --force-protocol https",
+        "cgitsync initialise install.cgs --force-protocol https",
     )),
     ("bootstrap",): (None, (
         "cgitsync bootstrap install.cgs",
@@ -54,7 +54,7 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
         "Read from this workspace's ledger and from the root repository's tags, so a release another user made is listed too.",
         ("cgitsync release list", "cgitsync release list --json"),
     ),
-    ("release", "load"): (None, ("cgitsync release load 1.2.0", "cgitsync release load MyProject-3", "cgitsync release load 1.2.0 --workspace MyProject-1.2.0")),
+    ("release", "load"): (None, ("cgitsync release load 1.2.0", "cgitsync release load MyProject-3", "cgitsync release load 1.2.0 --workspace MyProject-1.2.0", "cgitsync release load 9f2c4e1a0b7d3c5e8f6a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f5a6")),
     ("status",): (None, ("cgitsync status", "cgitsync status --json")),
     ("view-tree",): (None, ("cgitsync view-tree", "cgitsync view-tree install.cgs --depth 1")),
     ("validate",): (None, ("cgitsync validate project.cgs", "cgitsync validate project.cgs --discover-nested")),

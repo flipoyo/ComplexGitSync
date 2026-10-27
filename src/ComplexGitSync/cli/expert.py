@@ -1384,7 +1384,8 @@ def _print_memory_adopt(answer: dict) -> int:
 def _print_memory_branch(answer: dict) -> int:
     print(f"branch={answer['branch']}")
     print(f"for_project_branch={answer['project_branch']}")
-    print(f"created={'yes' if answer['created'] else 'already-there'}")
+    print("created=yes")
+    print(f"set_up={'yes' if answer.get('set_up') else 'no'}")
     print(f"pushed={'yes' if answer['pushed'] else 'no'}")
     return EXIT_OK
 

@@ -132,4 +132,32 @@ def offer_after_command(client: ComplexGitSyncClient) -> None:
         print(f"\n{proposal['warning']}", file=sys.stderr)
 
 
-__all__ = ["interactive", "offer_after_command", "register", "silenced_setup_warning"]
+def offer_missing_branches(client: ComplexGitSyncClient) -> None:
+    """After an install that left a private/local repository on its fallback branch: say so by name, offer the fix (EnvConnect C7)."""
+    for missing in getattr(client, "missing_private_branches", None) or []:
+        lacking = f", which does not hold its {missing['config']}" if missing["config"] else ""
+        print(
+            f"warning: {missing['repo']} has no branch {missing['wanted']!r} yet, so it was cloned on "
+            f"{missing['landed']!r}{lacking}. Do not commit to it there: "
+            "a writable repository left on a fallback branch would write to that branch.",
+            file=sys.stderr,
+        )
+        if missing["command"] is None:
+            print(f"create the branch {missing['wanted']!r} in {missing['path']} to finish the install.", file=sys.stderr)
+            continue
+        print(f"to create it, run: {missing['command']}", file=sys.stderr)
+        if not interactive():
+            continue
+        try:
+            if _ask("Run it now? (y/N)", "n").lower() not in ("y", "yes"):
+                continue
+            root = client.get_dependency_registry().get("root").absolute_path
+            answer = client.memory_branch(root, missing["project_branch"])
+        except (EOFError, KeyboardInterrupt):
+            # The install itself already succeeded; an unanswered question must not cost it that.
+            print("", file=sys.stderr)
+            continue
+        print(f"branch={answer['branch']} set_up={'yes' if answer['set_up'] else 'no'} pushed={'yes' if answer['pushed'] else 'no'}")
+
+
+__all__ = ["interactive", "offer_after_command", "offer_missing_branches", "register", "silenced_setup_warning"]
