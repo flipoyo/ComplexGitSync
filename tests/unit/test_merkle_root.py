@@ -53,16 +53,16 @@ def test_the_public_surface_of_merkle_root_is_one_list():
     public = {name for name in dir(MerkleRoot) if not name.startswith("_")}
 
     assert public == {
-        "ALGORITHM", "GENESIS_PREV", "GLOBAL_SCHEMA", "SCHEMA",
+        "ALGORITHM", "GENESIS_PREV", "GLOBAL_SCHEMA", "SCHEMA", "SCHEMAS", "TREE_PATH_SCHEMA",
         "canonical_json", "check_leaves", "checkpoint_hash", "content_digest", "digest", "gittree_root",
         "global_inclusion_proof", "global_root", "inclusion_proof", "leaf_digest", "observation_hash",
-        "os_state_hash", "prefixed", "record_hash", "repo_leaf_hash", "state_hash", "stream_digest",
+        "os_state_hash", "prefixed", "record_hash", "repo_leaf_hash", "schema_of", "state_hash", "stream_digest",
     }
 
 
 def test_no_public_method_returns_a_node_a_level_or_a_sibling():
-    """What a public method may return: a hex string, a leaf's raw digest, canonical bytes, a proof object, nothing."""
-    allowed = {"str", "bytes", "None", "InclusionProof", "GlobalInclusionProof"}
+    """What a public method may return: a hex string, a leaf's raw digest, canonical bytes, a proof object, the schema number, nothing."""
+    allowed = {"str", "bytes", "None", "int", "InclusionProof", "GlobalInclusionProof"}
     returns = {
         name: str(inspect.signature(member).return_annotation)
         for name, member in inspect.getmembers(MerkleRoot, inspect.isroutine)

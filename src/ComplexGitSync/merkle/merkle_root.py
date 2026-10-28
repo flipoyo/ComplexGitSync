@@ -41,8 +41,13 @@ class MerkleError(ValueError):
 class MerkleRoot:
     """Every hash, as stateless class methods. See the module docstring."""
 
-    #: The hash contract a new ``.gts`` declares in ``document.integrity_schema``.
+    #: The hash contract a ``.gts`` declares in ``document.integrity_schema`` unless its tree needs schema 2.
     SCHEMA = 1
+    #: Schema 2 keys every leaf by ``tree_path`` (from the tree's root), not by ``relative_path`` (from its
+    #: parent), which two nested specs can share. A State is written under it when, and only when, its leaves
+    #: carry a ``tree_path``, so every State written under schema 1 keeps its name and keeps verifying.
+    TREE_PATH_SCHEMA = 2
+    SCHEMAS = (SCHEMA, TREE_PATH_SCHEMA)
     #: The hash contract a register record declares in ``record.schema``.
     GLOBAL_SCHEMA = 1
     ALGORITHM = "sha256"
@@ -103,6 +108,11 @@ class MerkleRoot:
         return cls._subtree(digests, cls._NODE_TAG).hex()
 
     @classmethod
+    def schema_of(cls, leaves: Sequence[Mapping[str, Any]]) -> int:
+        """The integrity schema *leaves* are written under: 2 when they carry a ``tree_path``, else 1."""
+        return cls.TREE_PATH_SCHEMA if any("tree_path" in leaf for leaf in leaves) else cls.SCHEMA
+
+    @classmethod
     def check_leaves(cls, leaves: Sequence[Mapping[str, Any]]) -> None:
         """Raise :class:`MerkleError` when *leaves* cannot be one tree; return nothing."""
         cls._ordered(leaves)
@@ -154,12 +164,12 @@ class MerkleRoot:
     def inclusion_proof(cls, leaves: Sequence[Mapping[str, Any]], relative_path: str) -> InclusionProof:
         """The proof that the leaf at *relative_path* is in ``gittree_root(leaves)``."""
         ordered = cls._ordered(leaves)
-        paths = [leaf["relative_path"] for leaf in ordered]
+        paths = [leaf.get("tree_path", leaf["relative_path"]) for leaf in ordered]
         if relative_path not in paths:
             raise MerkleError(f"no repository at {relative_path!r} in this GitTree")
         index = paths.index(relative_path)
         digests = [bytes.fromhex(cls.repo_leaf_hash(leaf)) for leaf in ordered]
-        return InclusionProof(cls.SCHEMA, index, len(ordered), cls.gittree_root(ordered), tuple(cls._path(index, digests, cls._NODE_TAG)))
+        return InclusionProof(cls.schema_of(ordered), index, len(ordered), cls.gittree_root(ordered), tuple(cls._path(index, digests, cls._NODE_TAG)))
 
     @classmethod
     def global_inclusion_proof(cls, leaf_digests: Sequence[bytes], index: int) -> GlobalInclusionProof:
@@ -172,17 +182,22 @@ class MerkleRoot:
 
     @classmethod
     def _ordered(cls, leaves: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
-        """*leaves* in tree order: ``relative_path`` compared as UTF-8 bytes; a duplicate is an invalid State."""
+        """*leaves* in tree order: the key compared as UTF-8 bytes; a duplicate is an invalid State.
+
+        The key is ``tree_path`` when the leaves carry one (schema 2, every leaf then must) and
+        ``relative_path`` otherwise (schema 1).
+        """
+        field = "tree_path" if any("tree_path" in leaf for leaf in leaves) else "relative_path"
         keyed: dict[bytes, Mapping[str, Any]] = {}
         for leaf in leaves:
-            path = leaf.get("relative_path")
+            path = leaf.get(field)
             if not isinstance(path, str) or not path:
-                raise MerkleError(f"repository {leaf.get('name')!r} has no relative_path")
+                raise MerkleError(f"repository {leaf.get('name')!r} has no {field}")
             if "\\" in path:
-                raise MerkleError(f"relative_path {path!r} must use forward slashes")
+                raise MerkleError(f"{field} {path!r} must use forward slashes")
             key = path.encode("utf-8")
             if key in keyed:
-                raise MerkleError(f"duplicate relative_path {path!r} in one State")
+                raise MerkleError(f"duplicate {field} {path!r} in one State")
             keyed[key] = leaf
         return [keyed[key] for key in sorted(keyed)]
 
@@ -230,7 +245,7 @@ class InclusionProof:
 
     __slots__ = ("schema", "leaf_index", "tree_size", "root", "_path")
     _TAG = MerkleRoot._NODE_TAG
-    _SCHEMA = MerkleRoot.SCHEMA
+    _SCHEMAS = MerkleRoot.SCHEMAS
 
     def __init__(self, schema: int, leaf_index: int, tree_size: int, root: str, path: tuple[str, ...]) -> None:
         for name, value in zip(InclusionProof.__slots__, (schema, leaf_index, tree_size, root, tuple(path))):
@@ -259,7 +274,7 @@ class InclusionProof:
         ``schema``: a later schema adds a branch and never reinterprets this one. A malformed
         proof is ``False``, never an error.
         """
-        if self.schema != self._SCHEMA:
+        if self.schema not in self._SCHEMAS:
             return False
         if self.root != trusted_root or self.tree_size != trusted_size or not 0 <= self.leaf_index < self.tree_size:
             return False

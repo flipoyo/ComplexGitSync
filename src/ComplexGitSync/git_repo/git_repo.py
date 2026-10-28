@@ -440,6 +440,8 @@ class WorkingRepo(GitRepo):
     propagated_writable: bool | None = None
     remote_name: str | None = None
     is_external_reference: bool = False
+    #: Where else in the tree a nested spec named this same repository: tree-relative paths linked to this mount, never cloned (NestedAgentMaster).
+    aliases: tuple[str, ...] = ()
 
     @property
     def effective_private(self) -> bool:

@@ -331,13 +331,13 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         is still being built and is hashed under the current schema.
         """
         declared = self.integrity_schema
-        if declared is not None and declared > MerkleRoot.SCHEMA:
+        if declared is not None and declared > max(MerkleRoot.SCHEMAS):
             raise UnsupportedSnapshotFormatError(
                 "this snapshot was written by a newer ComplexGitSync "
                 f"(integrity schema {declared}; this build reads up to "
-                f"{MerkleRoot.SCHEMA}). Upgrade, or pass --gts with a snapshot this build wrote."
+                f"{max(MerkleRoot.SCHEMAS)}). Upgrade, or pass --gts with a snapshot this build wrote."
             )
-        if self.snapshot_hash is not None and declared != MerkleRoot.SCHEMA:
+        if self.snapshot_hash is not None and declared not in MerkleRoot.SCHEMAS:
             raise UnsupportedSnapshotFormatError(f"this snapshot was written before integrity schema {MerkleRoot.SCHEMA} — run `cgitsync memory reboot`.")
 
     def compute_gittree_root(self) -> str:
@@ -355,12 +355,13 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         Called on the way to disk: the name is a fact about the tree, not
         about the directory it sits in or the build that wrote it.
         """
-        root = MerkleRoot.gittree_root(self._repo_leaves())  # refuses before anything is stamped
+        leaves = self._repo_leaves()
+        root = MerkleRoot.gittree_root(leaves)  # refuses before anything is stamped
         document = self._data.setdefault("document", {})
         document["CGS_VERSION"] = str(document.get("CGS_VERSION") or CGS_VERSION)
-        document["integrity_schema"] = MerkleRoot.SCHEMA
+        document["integrity_schema"] = MerkleRoot.schema_of(leaves)
         document["hash_canonicalisation"] = self.LEGACY_READER_FENCE
-        for repo, leaf in zip(self._repo_dicts(), self._repo_leaves()):
+        for repo, leaf in zip(self._repo_dicts(), leaves):
             repo["repo_hash"] = MerkleRoot.repo_leaf_hash(leaf)
         self._data["tree_integrity"] = {"merkle_root": root}
         digest = MerkleRoot.state_hash(self._state_payload(root))
@@ -433,8 +434,8 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
 
     @staticmethod
     def repo_leaf(repo: dict[str, Any]) -> dict[str, Any]:
-        """The schema-1 leaf of one ``[[repo_state]]`` table, read from a file or built from a tree."""
-        canonical_repo = {
+        """The leaf of one ``[[repo_state]]`` table, read from a file or built from a tree (schema 1, or 2 with a ``tree_path``)."""
+        canonical_repo: dict[str, Any] = {
             "name": repo.get("name"),
             "node_type": repo.get("node_type"),
             "relative_path": repo.get("relative_path"),
@@ -479,6 +480,8 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
             "worktree_state": repo.get("worktree_state"),
             "is_reachable": bool(repo.get("is_reachable", True)),
         }
+        # Schema 2 (NestedAgentMaster): present only when the tree needs it, so no older State is rehashed.
+        canonical_repo.update({key: repo[key] for key in ("tree_path", "aliases") if repo.get(key)})
         return canonical_repo
 
 __all__ = ["GtsDocument"]

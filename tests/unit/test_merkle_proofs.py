@@ -130,7 +130,7 @@ def test_any_altered_field_fails():
     assert not _replaced(proof, tree_size=proof.tree_size + 1).verify(leaf_hash, root, 5)
     assert not _replaced(proof, tree_size=proof.tree_size - 1).verify(leaf_hash, root, 5)
     assert not proof.verify(leaf_hash, root, 6)  # the size is trusted with the root
-    assert not _replaced(proof, schema=2).verify(leaf_hash, root, 5)
+    assert not _replaced(proof, schema=3).verify(leaf_hash, root, 5)
     assert not proof.verify(leaf_hash, other_root, 5)
     assert not _replaced(proof, root=other_root).verify(leaf_hash, other_root, 6)
     assert not proof.verify(MerkleRoot.repo_leaf_hash(_leaf(4)), root, 5)
@@ -207,7 +207,7 @@ def test_a_global_proof_and_a_gittree_proof_never_verify_as_each_other():
 
     assert not GlobalInclusionProof(tree_proof.schema, tree_proof.leaf_index, tree_proof.tree_size, tree_proof.root, tree_proof._path).verify(MerkleRoot.repo_leaf_hash(leaves[2]), tree_proof.root, 4)
     assert not InclusionProof(global_proof.schema, global_proof.leaf_index, global_proof.tree_size, global_proof.root, global_proof._path).verify(digests[2].hex(), global_proof.root, 4)
-    assert not _replaced(global_proof, schema=2).verify(digests[2].hex(), global_proof.root, 4)
+    assert not _replaced(global_proof, schema=3).verify(digests[2].hex(), global_proof.root, 4)
 
 
 def test_a_global_proof_refuses_an_index_that_is_not_there_and_shows_no_node():

@@ -86,6 +86,7 @@ from .gts_document import (
     _repo_ref_name,
     _repo_ref_pair,
 )
+from .mount_alias import MountAlias
 from .paths import TREE_MARKER, PathResolver
 
 # ============================================================
@@ -337,15 +338,7 @@ class RegistryTranslator:
                 parent_id=parent_id,
                 absolute_path=absolute_path,
                 relative_path=(Path(str(repo_state["relative_path"])) if repo_state.get("relative_path") is not None else None),
-                source_cgs_path=(
-                    PathResolver.from_tree(str(repo_state["source_cgs_path"]), tree_root)
-                    if repo_state.get("source_cgs_path")
-                    else (
-                        PathResolver.from_tree(str(project_source_cgs_path), tree_root)
-                        if project_source_cgs_path
-                        else None
-                    )
-                ),
+                source_cgs_path=(PathResolver.from_tree(str(repo_state["source_cgs_path"]), tree_root) if repo_state.get("source_cgs_path") else (PathResolver.from_tree(str(project_source_cgs_path), tree_root) if project_source_cgs_path else None)),
                 current_ref_kind=_parse_optional_enum(RefKind, RegistryTranslator._repo_ref_kind(repo_state, "current")),
                 current_ref_name=_repo_ref_name(repo_state, "current"),
                 target_ref_kind=_parse_optional_enum(RefKind, RegistryTranslator._repo_ref_kind(repo_state, "target")),
@@ -363,11 +356,7 @@ class RegistryTranslator:
                 is_reachable=bool(repo_state.get("is_reachable", True)),
                 project_owner_name=_as_optional_str(repo_state.get("project_owner_name")),
                 project_name=_as_optional_str(repo_state.get("project_name")),
-                repo_name=(
-                    _as_optional_str(repo_state.get("repo_name"))
-                    if repo_state.get("repo_name") is not None
-                    else _as_optional_str(repo_state.get("project_name"))
-                ),
+                repo_name=(_as_optional_str(repo_state.get("repo_name")) if repo_state.get("repo_name") is not None else _as_optional_str(repo_state.get("project_name"))),
                 # A snapshot written before this field existed has no
                 # "gitprovider" key at all -- GITHUB below is then a filled-in
                 # default, not a recorded fact, so gitprovider_declared says
@@ -376,9 +365,7 @@ class RegistryTranslator:
                 gitprovider_declared=repo_state.get("gitprovider") is not None,
                 group_name=_as_optional_str(repo_state.get("group_name")),
                 gitprovider_url=_as_optional_str(repo_state.get("gitprovider_url")),
-                access_protocol=_parse_enum(
-                    AccessProtocol, repo_state.get("access_protocol"), AccessProtocol.SSH
-                ),
+                access_protocol=_parse_enum(AccessProtocol, repo_state.get("access_protocol"), AccessProtocol.SSH),
                 # A snapshot written before default_branch was recorded has no
                 # such key; the target ref was the only thing to fall back to
                 # and stays the answer for those.
@@ -388,6 +375,7 @@ class RegistryTranslator:
                 ),
                 private=bool(repo_state.get("private", False)),
                 writable=bool(repo_state.get("writable", False)),
+                aliases=tuple(repo_state.get("aliases", ())),
             )
             registry.add(entry)
             path_to_repo_id[absolute_path] = repo_id
@@ -471,6 +459,10 @@ class RegistryTranslator:
             repo_data["fallback_applied"] = entry.fallback_applied
         if not entry.is_reachable:
             repo_data["is_reachable"] = entry.is_reachable
+        if MountAlias.needs_tree_path(registry):  # integrity schema 2: a key no two leaves share
+            repo_data["tree_path"] = MountAlias.tree_path(registry, entry)
+        if entry.aliases:
+            repo_data["aliases"] = list(entry.aliases)
         if entry.parent_id is not None:
             repo_data["parent_absolute_path"] = PathResolver.against_tree(registry.get(entry.parent_id).absolute_path, tree_root)
         return {key: value for key, value in repo_data.items() if value is not None}

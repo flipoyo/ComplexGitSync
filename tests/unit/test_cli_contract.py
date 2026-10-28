@@ -134,11 +134,10 @@ def test_a_snapshot_from_a_newer_build_names_the_versions_not_corruption(tmp_pat
     and say what to do instead.
     """
     from ComplexGitSync.merkle import MerkleRoot
-    INTEGRITY_SCHEMA = MerkleRoot.SCHEMA
 
     root = tmp_path / "demo"
     root.mkdir()
-    unsupported = INTEGRITY_SCHEMA + 1
+    unsupported = max(MerkleRoot.SCHEMAS) + 1
     snapshot = tmp_path / "demo.gts"
     snapshot.write_text(
         f"""

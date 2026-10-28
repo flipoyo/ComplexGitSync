@@ -30,6 +30,7 @@ from ComplexGitSync.tree.gts_document import (
 )
 
 INTEGRITY_SCHEMA = MerkleRoot.SCHEMA
+NEWER_SCHEMA = max(MerkleRoot.SCHEMAS) + 1  # one no build reads yet
 
 MINIMAL_GTS: dict = {
     "document": {
@@ -153,7 +154,7 @@ class TestGtsDocumentValid:
         reads as corruption and invites deleting a perfectly good snapshot.
         """
         data = copy.deepcopy(MINIMAL_GTS)
-        data["document"]["integrity_schema"] = INTEGRITY_SCHEMA + 1
+        data["document"]["integrity_schema"] = NEWER_SCHEMA
         doc = GtsDocument(data)  # unvalidated: validate() would refuse it already
 
         with pytest.raises(UnsupportedSnapshotFormatError) as excinfo:
@@ -170,7 +171,7 @@ class TestGtsDocumentValid:
         ``compute_snapshot_hash`` directly. ``from_dict`` validates on
         construction, so the refusal fires there."""
         data = copy.deepcopy(MINIMAL_GTS)
-        data["document"]["integrity_schema"] = INTEGRITY_SCHEMA + 1
+        data["document"]["integrity_schema"] = NEWER_SCHEMA
         data["document"]["snapshot_hash"] = "0" * 64
 
         with pytest.raises(UnsupportedSnapshotFormatError) as excinfo:
@@ -519,7 +520,7 @@ class TestThreeLevelIdentity:
         """The forward guard runs first: a field this build does not expect must
         not turn "written by a newer ComplexGitSync" into a plain invalid document."""
         data = _two_repo_document().to_dict()
-        data["document"]["integrity_schema"] = INTEGRITY_SCHEMA + 1
+        data["document"]["integrity_schema"] = NEWER_SCHEMA
         del data["repo_state"][0]["sync_state"]
         with pytest.raises(UnsupportedSnapshotFormatError, match="newer ComplexGitSync"):
             GtsDocument.from_dict(data)
