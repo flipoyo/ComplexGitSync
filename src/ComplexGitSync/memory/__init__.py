@@ -62,7 +62,6 @@ from .ledger_store import (
 )
 from .states import (
     STATE_DIR_NAME,
-    MemoryStateDirectory,
     MemoryStates,
 )
 from .store import (
@@ -85,7 +84,6 @@ __all__ = [
     "LedgerStoreCorruptionError",
     "LedgerStoreError",
     "LocalGitRegister",
-    "MemoryStateDirectory",
     "MemoryStates",
     "SyncLedger",
     "VerificationReport",

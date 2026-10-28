@@ -9,8 +9,7 @@ this code (as module-level functions) inside ``orchestre.py`` via
 untouched; this file re-derives equivalent coverage against the new
 ``state_store`` module.
 
-Note on ``MemoryStateDirectory``/``_resolve_memory_state_directory``: despite
-the name, this is unrelated to the deleted Memory SSH-Git transport
+Note on ``MemoryStates``: despite the name, this is unrelated to the deleted Memory SSH-Git transport
 (``CleanupPass2_DevPlanTicket.md`` D1) — it is the general state-directory
 allocator every lifecycle command uses. See ``state_store.py``'s module
 docstring.
@@ -124,11 +123,6 @@ def test_next_state_directory_order_ignores_other_hashes_and_files(tmp_path):
 
     assert MemoryStates(cgitsync_dir).next_directory_order(_HASH_A) == 0
     assert MemoryStates(cgitsync_dir).next_directory_order(_HASH_B) == 6
-
-
-# ---------------------------------------------------------------------------
-# MemoryStateDirectory / _resolve_memory_state_directory
-# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------

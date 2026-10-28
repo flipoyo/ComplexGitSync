@@ -9,8 +9,7 @@ Contract: given a ``.cgitsync`` directory and a state hash, format/parse the
     named files) — no Git, no subprocess, no network.
 Imports: none
 
-Despite the ``MemoryStateDirectory``/``_resolve_memory_state_directory``
-naming, this has **nothing to do with** the deleted Memory SSH-Git transport
+Despite the ``MemoryStates`` name, this has **nothing to do with** the deleted Memory SSH-Git transport
 (removed by ``CleanupPass2_DevPlanTicket.md`` D1). This is the general,
 content-addressed directory allocator every lifecycle command (``initialise``,
 ``pull``, ``checkout``, ``push``, ``commit``, ``branch``, ``freeze_release``) uses, via
@@ -57,14 +56,6 @@ _STATE_DIR_RE = re.compile(r"^state\(([0-9a-f]{64})\)_(\d+)$")
 
 
 
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryStateDirectory:
-    state_hash: str
-    state_order: int
-    final_path: Path
-    temporary_path: Path
 
 
 @dataclass(frozen=True)
@@ -194,6 +185,5 @@ class MemoryStates:
 
 
 __all__ = [
-    "MemoryStateDirectory",
     "MemoryStates",
 ]
