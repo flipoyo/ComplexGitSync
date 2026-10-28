@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_runner import GitRunner
-from ComplexGitSync.operations import MemoryMergeOperation
+from ComplexGitSync.tree.git_runner import GitRunner
+from ComplexGitSync.tree.operations import MemoryMergeOperation
 
 KEEP_TARGET, KEEP_SOURCE = MemoryMergeOperation.KEEP_TARGET, MemoryMergeOperation.KEEP_SOURCE
 

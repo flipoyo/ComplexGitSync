@@ -19,12 +19,12 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.orchestre import ComplexGitSyncClient
-from ComplexGitSync.provider import (
+from ComplexGitSync.git_repo.provider import (
     creation_plan,
     looks_like_already_exists,
     looks_like_not_signed_in,
 )
+from ComplexGitSync.orchestre import ComplexGitSyncClient
 
 _CGS = """\
 # A project, with a comment nobody may lose.
@@ -80,7 +80,7 @@ def _identify(mount: Path) -> None:
 
 
 def _loaded(workspace: Path) -> ComplexGitSyncClient:
-    from ComplexGitSync.snapshot_resolver import discover_gts_path
+    from ComplexGitSync.tree.snapshot_resolver import discover_gts_path
 
     client = ComplexGitSyncClient()
     client.load_gts(discover_gts_path(str(workspace)))
@@ -94,7 +94,7 @@ def _loaded(workspace: Path) -> ComplexGitSyncClient:
 
 def test_the_creation_command_comes_from_the_identifier(tmp_path):
     """Owner or group, read by the one parser this project has."""
-    from ComplexGitSync.cgs_format import parse_repo_id
+    from ComplexGitSync.tree.cgs_format import parse_repo_id
 
     github = creation_plan(parse_repo_id("github:flipoyo/.memory"))
     gitlab = creation_plan(parse_repo_id("gitlab:some/group/project"))
@@ -110,7 +110,7 @@ def test_a_repository_that_is_already_there_is_an_ordinary_success(monkeypatch):
     tool is never run at all — which is why creating a repository twice
     costs nothing and cannot fail.
     """
-    from ComplexGitSync.git_runner import GitRunner
+    from ComplexGitSync.tree.git_runner import GitRunner
 
     monkeypatch.setattr(GitRunner, "remote_reachable", lambda self, url: True)
 
@@ -120,7 +120,7 @@ def test_a_repository_that_is_already_there_is_an_ordinary_success(monkeypatch):
 
 
 def test_a_missing_tool_returns_the_command_to_run(monkeypatch):
-    from ComplexGitSync.git_runner import GitRunner
+    from ComplexGitSync.tree.git_runner import GitRunner
 
     monkeypatch.setattr(GitRunner, "remote_reachable", lambda self, url: False)
     monkeypatch.setattr(GitRunner, "run_tool", lambda self, *a: _ToolRun(ran=False))
@@ -182,7 +182,7 @@ def test_the_edited_spec_still_loads(tmp_path):
     config = workspace / "project.cgs"
     _loaded(workspace).add_memory_repo_cgs(config, cgshome=workspace)
 
-    from ComplexGitSync.cgs_format import CgsDocument
+    from ComplexGitSync.tree.cgs_format import CgsDocument
 
     document = CgsDocument.from_toml(config)
     mounts = [repo for repo in document.repos if repo.get("repo_name") == ".memory"]

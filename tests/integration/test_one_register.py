@@ -15,9 +15,9 @@ from pathlib import Path
 
 import tomli_w
 
-from ComplexGitSync.memory.integrity import Finding, HistoryState
-from ComplexGitSync.memory.ledger_store import LedgerStore
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.tree.memory.integrity import Finding, HistoryState
+from ComplexGitSync.tree.memory.ledger_store import LedgerStore
 
 _CGS = """
 project = "demo"
@@ -265,7 +265,7 @@ def test_a_state_no_entry_recorded_is_reported_but_is_not_corruption(tmp_path):
 
 def test_a_workspace_with_only_a_legacy_register_still_resolves(tmp_path):
     """Nothing writes the single-file register, and everything still reads it."""
-    from ComplexGitSync.snapshot_resolver import discover_gts_path
+    from ComplexGitSync.tree.snapshot_resolver import discover_gts_path
 
     workspace = tmp_path / "old"
     state_dir = workspace / ".cgitsync" / f"state({'a' * 64})_0"
@@ -279,7 +279,7 @@ def test_a_workspace_with_only_a_legacy_register_still_resolves(tmp_path):
 
 def test_the_current_snapshot_comes_from_the_chain(tmp_path):
     """Resolution asks the ledger, not a filesystem timestamp."""
-    from ComplexGitSync.snapshot_resolver import describe_gts_path
+    from ComplexGitSync.tree.snapshot_resolver import describe_gts_path
 
     config = _workspace(tmp_path / "demo")
     ComplexGitSyncClient().load(config)

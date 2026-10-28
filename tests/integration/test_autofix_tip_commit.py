@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 from test_close_branch import _git, _loaded, _two_repo_workspace
 
-from ComplexGitSync.autofix import NoMatchingRepairError
 from ComplexGitSync.cli import main as cli_main
+from ComplexGitSync.tree.autofix import NoMatchingRepairError
 
 #: What 701a98f became: every backticked phrase gone, the live output of
 #: `git rev-parse --abbrev-ref HEAD` in its place, all on one line.

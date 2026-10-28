@@ -19,14 +19,14 @@ from ..errors import (
 
 if TYPE_CHECKING:
     pass
-from ..git_repo import (
+from ..git_repo.git_repo import (
     RepoScope,
     WorkingRepo,
 )
-from ..git_tree import (
+from ..tree.git_tree import (
     WorkingGitTree,
 )
-from ..operations import (
+from ..tree.operations import (
     RepoOutcome,
 )
 
@@ -100,7 +100,7 @@ class GitProbes:
 
         Supports HTTPS and SSH URL forms for GitHub and GitLab.  Custom-host
         URLs are passed through as-is (using the bare hostname as the provider
-        token), which will fail :func:`~ComplexGitSync.cgs_format.parse_repo_id`
+        token), which will fail :func:`~ComplexGitSync.tree.cgs_format.parse_repo_id`
         validation downstream if the provider is not registered — the caller is
         responsible for handling that case.
 
@@ -146,7 +146,7 @@ class GitProbes:
 
         Everything blocks except the repository's own ``.gitignore``. That one
         file is written by ComplexGitSync itself, in every repository that
-        holds a child (:func:`~ComplexGitSync.git_tree.sync_gitignore`), so it
+        holds a child (:func:`~ComplexGitSync.tree.git_tree.sync_gitignore`), so it
         is routinely dirty in exactly the tree ``submodules import`` is asked
         to convert — ``initialise`` writes it moments before, and refusing over
         it would deadlock the one working order (see

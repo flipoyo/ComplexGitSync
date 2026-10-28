@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`ComplexGitSync.paths`.
+"""Unit tests for :mod:`ComplexGitSync.tree.paths`.
 
 Adapted from the env-marker and CGSHOME-resolution coverage already
 exercising these functions through ``orchestre.py``/``ComplexGitSyncClient``
@@ -17,10 +17,10 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError
-from ComplexGitSync.gts_document import GtsDocument
-from ComplexGitSync.paths import (
+from ComplexGitSync.tree.cgs_format import CgsDocument
+from ComplexGitSync.tree.gts_document import GtsDocument
+from ComplexGitSync.tree.paths import (
     PathResolver,
 )
 

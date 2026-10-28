@@ -310,7 +310,7 @@ def test_the_merge_records_a_state(tmp_path):
 
 
 def test_the_ledger_names_the_command_that_did_it(tmp_path):
-    from ComplexGitSync.memory.ledger_store import LedgerStore
+    from ComplexGitSync.tree.memory.ledger_store import LedgerStore
 
     tree = _tree(tmp_path)
     _loaded(tree["snapshot"]).merge_into("feature", "main")

@@ -34,8 +34,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ComplexGitSync.discovery import ImportSubmodulesReport, SubmoduleEntry
-from ComplexGitSync.memory.integrity import HistoryState
+from ComplexGitSync.tree.discovery import ImportSubmodulesReport, SubmoduleEntry
+from ComplexGitSync.tree.memory.integrity import HistoryState
 
 _SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "ComplexGitSync"
 
@@ -261,7 +261,7 @@ def test_checkout_command_uses_client_handler(monkeypatch, capsys, tmp_path):
 
 
 def test_checkout_command_with_tag_ref_kind(monkeypatch, capsys, tmp_path):
-    from ComplexGitSync.git_repo import RefKind
+    from ComplexGitSync.git_repo.git_repo import RefKind
 
     captured_call: dict[str, object] = {}
 

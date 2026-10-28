@@ -5,7 +5,7 @@ Contract: hold one client's state (registry, runner, clock, the last results a
     caller reads back) and expose every public method unchanged, each
     delegating to the collaborator that owns it; keep the private helpers that
     several collaborators share, and the ones tests reach through the client.
-Imports: auth_hints, autofix, cgs_format, clone_guard, command_run_logger, discovery, discovery_commands, document_loader, environment_commands, errors, git_branch, git_probes, git_repo, git_runner, git_tree, git_tree_branch, gitignore_sync, installer, memory, memory_commands, memory_setup, operations, orchestre, release_commands, reporting, reports, runtime_state_store, status_render, tree_commands, tree_env, universal_clock, workspace_locking
+Imports: auth_hints, autofix, cgs_format, clone_guard, command_run_logger, discovery, discovery_commands, document_loader, environment_commands, errors, git_branch, git_probes, git_repo, git_runner, git_tree, git_tree_branch, gitignore_sync, installer, memory, memory_commands, memory_setup, operations, orchestre, release_commands, reporting, reports, runtime_state_store, status_render, tree_commands, tree, universal_clock, workspace_locking
 """
 
 from __future__ import annotations
@@ -20,19 +20,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .. import tree_env
-from ..cgs_format import CgsDocument
-from ..clone_guard import CloneGuard
-from ..discovery import ImportSubmodulesReport
 from ..errors import (
     ComplexGitSyncError,
     GitSyncError,
 )
-from ..git_branch import DEFAULT_BRANCH, BranchResolution, resolve_entry_ref
+from ..git_repo.clone_guard import CloneGuard
+from ..git_repo.git_branch import DEFAULT_BRANCH, BranchResolution, resolve_entry_ref
+from ..tree import tree_env
+from ..tree.cgs_format import CgsDocument
+from ..tree.discovery import ImportSubmodulesReport
 
 if TYPE_CHECKING:
-    from ..autofix import RepairOutcome
-from ..git_repo import (
+    from ..tree.autofix import RepairOutcome
+from ..git_repo.git_repo import (
     AccessProtocol,
     DiscoveryState,
     RefKind,
@@ -42,8 +42,19 @@ from ..git_repo import (
     WorkingRepo,
     repo_remote_url,
 )
-from ..git_runner import GitRunner
-from ..git_tree import (
+from ..omniscience.omniscience import Omniscience
+from ..omniscience.omniscience_commands import OmniscienceCommands
+from ..omniscience.omniscience_control import IntegrityControl
+from ..omniscience.omniscience_observer import OmniscienceObserver
+from ..operating_space.operating_space import OperatingSpace
+from ..status_render import (
+    TREE_BRANCH_DETACHED,
+    _status_display_path,
+    _status_scope_label,
+    _status_tracking_label,
+)
+from ..tree.git_runner import GitRunner
+from ..tree.git_tree import (
     ROOT_REPO_ID,
     ProjectTreeState,
     TreeLifecycleState,
@@ -51,32 +62,25 @@ from ..git_tree import (
     WorkingGitTree,
     iter_tree,
 )
-from ..git_tree_branch import GitTreeBranches, ProjectBranch
-from ..memory import (
+from ..tree.git_tree_branch import GitTreeBranches, ProjectBranch
+from ..tree.memory import (
     Relocation,
     VerificationReport,
 )
-from ..memory import self_history as self_history_store
-from ..memory.commit_log import (
+from ..tree.memory import self_history as self_history_store
+from ..tree.memory.commit_log import (
     COMMIT_LOG_DIR_NAME,
     CommitLog,
     CommitRecord,
     PublicationRecord,
 )
-from ..operating_space import OperatingSpace
-from ..operations import (
+from ..tree.operations import (
     BranchTopologyReport,
     MemoryMergeOperation,
     RepoAncestry,
     RepoBranches,
     RepoOutcome,
     ResolveOutcome,
-)
-from ..status_render import (
-    TREE_BRANCH_DETACHED,
-    _status_display_path,
-    _status_scope_label,
-    _status_tracking_label,
 )
 from ..universal_clock import ClockProtocol, SystemClock
 from .auth_hints import AuthFailureHints
@@ -89,10 +93,6 @@ from .gitignore_sync import GitignoreSync
 from .installer import Installer
 from .memory_commands import MemoryCommands
 from .memory_setup import MemorySetup
-from .omniscience import Omniscience
-from .omniscience_commands import OmniscienceCommands
-from .omniscience_control import IntegrityControl
-from .omniscience_observer import OmniscienceObserver
 from .orchestre import Orchestre
 from .release_commands import ReleaseCommands, ReleaseLoad
 from .reporting import Reporting
@@ -453,7 +453,7 @@ class ComplexGitSyncClient:
         repo_name: str | None = None,
     ) -> "RepairOutcome":
         """Read "the former error" — or *error*, if given directly — and
-        run whichever registered repair in :mod:`ComplexGitSync.autofix`
+        run whichever registered repair in :mod:`ComplexGitSync.tree.autofix`
         matches it."""
         return self._tree_commands.autofix(error=error, repo_name=repo_name)
 
@@ -1434,7 +1434,7 @@ class ComplexGitSyncClient:
         """The branch to clone a private/local repository on, three rungs deep.
 
         The first clone must decide what every later branch move already
-        decides — :class:`~ComplexGitSync.git_tree_branch.GitTreeBranches`, and
+        decides — :class:`~ComplexGitSync.tree.git_tree_branch.GitTreeBranches`, and
         through it ``git_branch.resolve_propagated_ref`` — from the branch the
         tree's root is on, so that both agree on the name however the ``.cgs``
         was written. That name is created lazily by a private commit, so on a

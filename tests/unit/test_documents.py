@@ -10,20 +10,20 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.cgs_format import (
+from ComplexGitSync.errors import ConfigValidationError
+from ComplexGitSync.orchestre import (
+    GtsDocument,
+    RegistryTranslator,
+)
+from ComplexGitSync.tree.cgs_format import (
     CgsDocument,
     normalize_cgs,
     parse_cgs,
     parse_repo_id,
     parse_repository_identifier,
 )
-from ComplexGitSync.config_document import ConfigDocument
-from ComplexGitSync.config_document_io import ConfigDocumentIOMixin
-from ComplexGitSync.errors import ConfigValidationError
-from ComplexGitSync.orchestre import (
-    GtsDocument,
-    RegistryTranslator,
-)
+from ComplexGitSync.tree.config_document import ConfigDocument
+from ComplexGitSync.tree.config_document_io import ConfigDocumentIOMixin
 
 # ---------------------------------------------------------------------------
 # Fixtures – minimal valid raw dicts
@@ -187,10 +187,10 @@ class TestConfigDocumentBase:
 
 class TestCgsDocumentValid:
     def test_cgs_document_is_owned_by_cgs_format_module(self):
-        assert CgsDocument.__module__ == "ComplexGitSync.cgs_format"
+        assert CgsDocument.__module__ == "ComplexGitSync.tree.cgs_format"
 
     def test_repository_identifier_parser_is_owned_by_cgs(self):
-        assert parse_repo_id.__module__ == "ComplexGitSync.cgs_format"
+        assert parse_repo_id.__module__ == "ComplexGitSync.tree.cgs_format"
         assert parse_repository_identifier is parse_repo_id
 
     @pytest.mark.parametrize(

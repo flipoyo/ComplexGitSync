@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from ComplexGitSync.errors import ConfigValidationError
-from ComplexGitSync.operating_space import OperatingSpace
+from ComplexGitSync.operating_space.operating_space import OperatingSpace
 
 GOLDEN = {
     "demo": "2a97516c354b68848cdbd8f54a226a0a55b21ed138e207ad6c5cbb9c00aa5aea",

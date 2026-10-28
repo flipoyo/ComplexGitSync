@@ -18,9 +18,9 @@ from pathlib import Path
 import pytest
 from support.ledgers import append_entry
 
-from ComplexGitSync.memory.integrity import ChainVerifier
-from ComplexGitSync.memory.ledger_entry import LedgerEntry
-from ComplexGitSync.memory.ledger_store import (
+from ComplexGitSync.tree.memory.integrity import ChainVerifier
+from ComplexGitSync.tree.memory.ledger_entry import LedgerEntry
+from ComplexGitSync.tree.memory.ledger_store import (
     ArgvScrubber,
     HeadPointer,
     LedgerSeqCollisionError,

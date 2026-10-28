@@ -22,7 +22,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypeVar
 
-from ..workspace_lock import WorkspaceLock
+from ..tree.workspace_lock import WorkspaceLock
 
 #: Every client method that changes a repository or the workspace's state area.
 WRITING_METHODS = (

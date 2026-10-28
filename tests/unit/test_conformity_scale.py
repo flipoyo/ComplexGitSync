@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from ComplexGitSync.memory.conformity import ConformityCriterion, ConformityScore
-from ComplexGitSync.memory.conformity_scale import ConformityScale
+from ComplexGitSync.tree.memory.conformity import ConformityCriterion, ConformityScore
+from ComplexGitSync.tree.memory.conformity_scale import ConformityScale
 
 
 def _criterion(score: float, basis: str = "asserted") -> ConformityCriterion:

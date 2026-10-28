@@ -10,11 +10,11 @@ Imports: auth_hints, client, command_run_logger, git_probes, git_runner, git_tre
 from __future__ import annotations
 
 # Names other modules and callers have always imported from ``ComplexGitSync.orchestre``.
-from ..git_runner import GitRunner
-from ..git_tree import ROOT_REPO_ID
-from ..gts_document import GtsDocument
-from ..memory import SyncLedger
-from ..registry import RegistryTranslator
+from ..tree.git_runner import GitRunner
+from ..tree.git_tree import ROOT_REPO_ID
+from ..tree.gts_document import GtsDocument
+from ..tree.memory import SyncLedger
+from ..tree.registry import RegistryTranslator
 from ..universal_clock import SystemClock
 from .auth_hints import (
     AuthFailureHints,

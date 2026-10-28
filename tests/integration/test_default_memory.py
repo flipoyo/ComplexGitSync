@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_runner import GitRunner
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.tree.git_runner import GitRunner
 
 _USER_CGS = """
 project = "demo"

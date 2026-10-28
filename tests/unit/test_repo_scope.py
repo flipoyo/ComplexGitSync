@@ -18,17 +18,17 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.cgs_format import CgsDocument, normalize_cgs
-from ComplexGitSync.discovery import discover_nested_configs
 from ComplexGitSync.errors import ConfigValidationError, GitSyncError
-from ComplexGitSync.git_repo import RepoScope, WorkingRepo
-from ComplexGitSync.git_tree import (
+from ComplexGitSync.git_repo.git_repo import RepoScope, WorkingRepo
+from ComplexGitSync.orchestre import resolve_command_scope
+from ComplexGitSync.tree.cgs_format import CgsDocument, normalize_cgs
+from ComplexGitSync.tree.discovery import discover_nested_configs
+from ComplexGitSync.tree.git_tree import (
     WorkingGitTree,
     iter_tree_leaf_first,
     propagate_privacy,
 )
-from ComplexGitSync.orchestre import resolve_command_scope
-from ComplexGitSync.registry import RegistryTranslator
+from ComplexGitSync.tree.registry import RegistryTranslator
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 

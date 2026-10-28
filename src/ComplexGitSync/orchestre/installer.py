@@ -12,37 +12,37 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ..cgs_format import CgsDocument
 from ..errors import (
     ConfigValidationError,
     GitSyncError,
     InstallFrontierError,
 )
+from ..tree.cgs_format import CgsDocument
 
 if TYPE_CHECKING:
     pass
-from ..git_branch import DEFAULT_BRANCH, is_twin_branch, structural_name_problem
-from ..git_repo import (
+from ..git_repo.git_branch import DEFAULT_BRANCH, is_twin_branch, structural_name_problem
+from ..git_repo.git_repo import (
     AccessProtocol,
     RefKind,
     RepoLifecycleState,
     SyncState,
     WorkingRepo,
 )
-from ..git_tree import (
+from ..tree.git_tree import (
     ROOT_REPO_ID,
     TreeLifecycleState,
     WorkingGitTree,
 )
-from ..git_tree_branch import GitTreeBranches
-from ..gts_document import GtsDocument
-from ..master import MasterConfig
-from ..paths import PathResolver
-from ..registry import (
+from ..tree.git_tree_branch import GitTreeBranches
+from ..tree.gts_document import GtsDocument
+from ..tree.master import MasterConfig
+from ..tree.paths import PathResolver
+from ..tree.registry import (
     RegistryTranslator,
 )
-from ..settings import Settings, UseCase
-from ..snapshot_resolver import discover_cgshome
+from ..tree.settings import Settings, UseCase
+from ..tree.snapshot_resolver import discover_cgshome
 from .auth_hints import AuthFailureHints
 
 if TYPE_CHECKING:  # pragma: no cover - typing only

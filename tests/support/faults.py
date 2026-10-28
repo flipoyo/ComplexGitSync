@@ -52,7 +52,7 @@ def run_cgitsync_killed(argv: list[str], target: str, nth: int, *, cwd: Path) ->
     """Run ``cgitsync <argv>`` in a child that dies with ``os._exit(137)`` at the nth call of *target*.
 
     *target* is a dotted path to a callable, such as
-    ``ComplexGitSync.git_runner.GitRunner.create_tag``.
+    ``ComplexGitSync.git_repo.git_runner.GitRunner.create_tag``.
     """
     program = textwrap.dedent(
         """

@@ -23,10 +23,10 @@ from ComplexGitSync import (
     parse_repository_identifier,
     validate_git_provider,
 )
-from ComplexGitSync.cgs_format import CgsDocument
-from ComplexGitSync.git_repo import NodeType, WorkingRepo
-from ComplexGitSync.git_tree import WorkingGitTree
+from ComplexGitSync.git_repo.git_repo import NodeType, WorkingRepo
 from ComplexGitSync.orchestre import GitRunner
+from ComplexGitSync.tree.cgs_format import CgsDocument
+from ComplexGitSync.tree.git_tree import WorkingGitTree
 
 
 def test_package_root_exports_refactor_guard_symbols():

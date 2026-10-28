@@ -2,7 +2,7 @@
 
 Ring: 3
 Contract: Say whether a loaded tree is a DEV tree with no declared memory, propose the repository and `.cgs` entry that fix it, run the fix through the three existing steps, remember a refusal, and word the warning shown when the fix cannot or may not run.
-Imports: cgs_format, client, default_memory, errors, git_tree, memory, memory_facts, provider, snapshot_resolver
+Imports: cgs_format, client, default_memory, errors, git_tree, tree, memory_facts, provider, snapshot_resolver
 """
 
 from __future__ import annotations
@@ -13,12 +13,12 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ..cgs_format import parse_repo_id
 from ..errors import ComplexGitSyncError, GitSyncError
-from ..git_tree import ROOT_REPO_ID, TreeProfile, WorkingGitTree
-from ..memory.repository import DEFAULT_MEMORY_REPOSITORY, CgsEntryEditor, MemoryRepository
-from ..provider import creation_plan
-from ..snapshot_resolver import discover_gts_path
+from ..git_repo.provider import creation_plan
+from ..tree.cgs_format import parse_repo_id
+from ..tree.git_tree import ROOT_REPO_ID, TreeProfile, WorkingGitTree
+from ..tree.memory.repository import DEFAULT_MEMORY_REPOSITORY, CgsEntryEditor, MemoryRepository
+from ..tree.snapshot_resolver import discover_gts_path
 from .default_memory import DefaultMemory
 from .memory_facts import MemoryFacts
 

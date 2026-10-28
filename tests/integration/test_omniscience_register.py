@@ -19,11 +19,11 @@ from test_push_folds_memory import _change, _git, _identify, _loaded, _memory_re
 from ComplexGitSync import orchestre
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.memory.commit_log import CommitLog
-from ComplexGitSync.omniscience_record import OmniscienceRecord
-from ComplexGitSync.operating_space import OperatingSpace
+from ComplexGitSync.omniscience.omniscience_record import OmniscienceRecord
+from ComplexGitSync.operating_space.operating_space import OperatingSpace
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 from ComplexGitSync.orchestre.memory_setup import MemorySetupWarning
+from ComplexGitSync.tree.memory.commit_log import CommitLog
 
 
 def _committed_states(tree: dict[str, Path]) -> list[Path]:

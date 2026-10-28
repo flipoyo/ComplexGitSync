@@ -1,7 +1,7 @@
 """Pair-rule gate: every archived planning ticket has its orchestrator's record.
 
 The PairRuleGate ticket. A planning ticket archived on or after the cut-off
-(``ComplexGitSync.ticket_gate.CUTOFF``) must be named by a self-history
+(``ComplexGitSync.tree.ticket_gate.CUTOFF``) must be named by a self-history
 record, pending or folded, whose orchestrator's role is ``Orchestration``
 and differs from its worker's. This script runs the check over the whole
 archive; ``cgitsync commit`` runs the same check, from the same class, on the
@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.ticket_gate import TicketGate
+from ComplexGitSync.tree.ticket_gate import TicketGate
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

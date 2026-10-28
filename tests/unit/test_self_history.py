@@ -10,8 +10,8 @@ from dataclasses import replace
 
 import pytest
 
-from ComplexGitSync.memory.conformity import ConformityCriterion, ConformityScore
-from ComplexGitSync.memory.self_history import AgentInfo, SelfHistoryRecord
+from ComplexGitSync.tree.memory.conformity import ConformityCriterion, ConformityScore
+from ComplexGitSync.tree.memory.self_history import AgentInfo, SelfHistoryRecord
 
 _WORKER = AgentInfo(role="Dev", vendor="vendor-name", model="model-name")
 _ORCHESTRATOR = AgentInfo(role="Orchestration", vendor="vendor-name", model="model-name")

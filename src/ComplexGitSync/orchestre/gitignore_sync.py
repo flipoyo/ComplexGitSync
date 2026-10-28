@@ -15,12 +15,12 @@ from ..errors import (
 
 if TYPE_CHECKING:
     pass
-from ..git_tree import (
+from ..tree.git_tree import (
     cgitsync_managed_state_paths,
     iter_tree,
     sync_gitignore,
 )
-from ..master import MasterConfig
+from ..tree.master import MasterConfig
 from .reports import (
     GitignoreSyncEntry,
 )

@@ -21,10 +21,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.cli import _shared, minimalist
 from ComplexGitSync.errors import InstallFrontierError
-from ComplexGitSync.settings import UseCase
+from ComplexGitSync.tree.cgs_format import CgsDocument
+from ComplexGitSync.tree.settings import UseCase
 
 
 def _build_parser() -> argparse.ArgumentParser:

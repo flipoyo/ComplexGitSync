@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.discovery import ImportSubmodulesReport, SubmoduleEntry, _parse_gitmodules
 from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.orchestre import (
     ComplexGitSyncClient,
@@ -16,6 +15,7 @@ from ComplexGitSync.orchestre import (
     _blocking_worktree_dirt,
     _url_to_repo_identifier,
 )
+from ComplexGitSync.tree.discovery import ImportSubmodulesReport, SubmoduleEntry, _parse_gitmodules
 
 
 class TestParseGitmodules:

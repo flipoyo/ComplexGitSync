@@ -314,8 +314,8 @@ def test_verify_json_reports_findings_and_exits_one(tmp_path, capsys):
 
     import tomli_w
 
-    from ComplexGitSync.memory.ledger_store import LedgerStore
     from ComplexGitSync.orchestre import SystemClock
+    from ComplexGitSync.tree.memory.ledger_store import LedgerStore
 
     (tmp_path / ".cgitsync").mkdir()
     lgr_dir = tmp_path / ".cgitsync" / "lgr"

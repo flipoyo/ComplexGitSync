@@ -5,7 +5,7 @@ from __future__ import annotations
 from ComplexGitSync.cli import build_parser
 from ComplexGitSync.cli.environment import _execute_environment
 from ComplexGitSync.cli.exit_codes import EXIT_OK, EXIT_REFUSED
-from ComplexGitSync.tree_env import Drift, ToolVersion, TreeEnvironment
+from ComplexGitSync.tree.tree_env import Drift, ToolVersion, TreeEnvironment
 
 
 def _record() -> TreeEnvironment:

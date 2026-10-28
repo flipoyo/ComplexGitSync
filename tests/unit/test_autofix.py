@@ -18,15 +18,15 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.autofix.base import CHAIN_SHAPED_REPOS, Situation, is_chain_shaped
-from ComplexGitSync.autofix.repair_divergent_user import DivergentUserRepair
-from ComplexGitSync.autofix.repair_from_cli import FromCliRepair, NoMatchingRepairError
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_repo import WorkingRepo
-from ComplexGitSync.git_runner import GitRunner
-from ComplexGitSync.memory.integrity import ChainVerifier
-from ComplexGitSync.memory.ledger_entry import LedgerEntry
-from ComplexGitSync.memory.ledger_store import LedgerStore
+from ComplexGitSync.git_repo.git_repo import WorkingRepo
+from ComplexGitSync.tree.autofix.base import CHAIN_SHAPED_REPOS, Situation, is_chain_shaped
+from ComplexGitSync.tree.autofix.repair_divergent_user import DivergentUserRepair
+from ComplexGitSync.tree.autofix.repair_from_cli import FromCliRepair, NoMatchingRepairError
+from ComplexGitSync.tree.git_runner import GitRunner
+from ComplexGitSync.tree.memory.integrity import ChainVerifier
+from ComplexGitSync.tree.memory.ledger_entry import LedgerEntry
+from ComplexGitSync.tree.memory.ledger_store import LedgerStore
 
 _PUSH_REJECTED = (
     "Git command failed (git push origin ComplexGitSync): "
@@ -270,7 +270,7 @@ class TestFromCliRepairFindLastError:
 
 class TestFromCliRepairRun:
     def test_run_with_no_registered_match_refuses(self) -> None:
-        from ComplexGitSync.git_tree import WorkingGitTree
+        from ComplexGitSync.tree.git_tree import WorkingGitTree
 
         tree = WorkingGitTree()
         with pytest.raises(NoMatchingRepairError, match="did not match"):
@@ -279,14 +279,14 @@ class TestFromCliRepairRun:
             )
 
     def test_run_with_no_error_and_no_logs_dir_raises_value_error(self) -> None:
-        from ComplexGitSync.git_tree import WorkingGitTree
+        from ComplexGitSync.tree.git_tree import WorkingGitTree
 
         tree = WorkingGitTree()
         with pytest.raises(ValueError, match="logs_dir"):
             FromCliRepair().run(tree, GitRunner())
 
     def test_run_dispatches_to_the_matching_repair(self, diverged_memory) -> None:
-        from ComplexGitSync.git_tree import WorkingGitTree
+        from ComplexGitSync.tree.git_tree import WorkingGitTree
 
         local, remote_side = diverged_memory
         _diverge(
@@ -304,7 +304,7 @@ class TestFromCliRepairRun:
         assert outcome.repaired is True
 
     def test_run_guesses_the_repo_name_from_the_error_text(self, diverged_memory) -> None:
-        from ComplexGitSync.git_tree import WorkingGitTree
+        from ComplexGitSync.tree.git_tree import WorkingGitTree
 
         local, remote_side = diverged_memory
         _diverge(

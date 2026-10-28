@@ -5,7 +5,7 @@ Ring: 4. Contract: register, dispatch, and execute the Expert-tier commands
     merge, push, tag, submodules, verify, memory, self-history).
     Argument/prompt collection only — delegates all semantics to
     ComplexGitSyncClient; never touches Git.
-Imports: _shared, branch_command, errors, fetch_command, git_repo, help_text, memory, memory_asof, memory_prompt, orchestre
+Imports: _shared, branch_command, errors, fetch_command, git_repo, help_text, tree, memory_asof, memory_prompt, orchestre
 """
 
 from __future__ import annotations
@@ -17,13 +17,13 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import GitSyncError
-from ..git_repo import RefKind, RepoScope
-from ..memory.conformity import VALID_CONFORMITY_BASES, ConformityCriterion, ConformityScore
-from ..memory.conformity_scale import ConformityScale
-from ..memory.integrity import HistoryState
-from ..memory.self_history import VALID_AGENT_ROLES, AgentInfo
-from ..operations import MERGE_RESOLVE_HINT
+from ..git_repo.git_repo import RefKind, RepoScope
 from ..orchestre import ComplexGitSyncClient
+from ..tree.memory.conformity import VALID_CONFORMITY_BASES, ConformityCriterion, ConformityScore
+from ..tree.memory.conformity_scale import ConformityScale
+from ..tree.memory.integrity import HistoryState
+from ..tree.memory.self_history import VALID_AGENT_ROLES, AgentInfo
+from ..tree.operations import MERGE_RESOLVE_HINT
 from . import memory_asof, memory_prompt, omniscience_command
 from ._shared import (
     _add_gitignore_sync_arguments,

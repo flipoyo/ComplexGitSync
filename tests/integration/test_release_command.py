@@ -346,7 +346,7 @@ def test_the_freeze_message_is_in_the_root_tag_and_the_tag_reads_like_a_gts(sand
     assert document["cgitsync_release"]["message"] == "first release of the sandbox"
     assert {"document", "project", "tree_state", "repo_state"} <= set(document)
     assert max(len(line) for line in tag.splitlines()) < 200
-    from ComplexGitSync.gts_document import GtsDocument
+    from ComplexGitSync.tree.gts_document import GtsDocument
 
     state = {key: value for key, value in document.items() if key != "cgitsync_release"}
     assert GtsDocument.from_dict(state).ensure_snapshot_hash() == state["document"]["snapshot_hash"]

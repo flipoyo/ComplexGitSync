@@ -2,7 +2,7 @@
 
 Ring: 3
 Contract: What the client says about the tree: status, verification output, trees drawn as text.
-Imports: client, git_probes, git_repo, git_tree, git_tree_branch, gts_document, json_render, memory, reports, settings, status_render
+Imports: client, git_probes, git_repo, git_tree, git_tree_branch, gts_document, json_render, tree, reports, settings, status_render
 """
 
 from __future__ import annotations
@@ -13,32 +13,11 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     pass
-from ..git_repo import (
+from ..git_repo.git_repo import (
     WorkingRepo,
 )
-from ..git_tree import (
-    ROOT_REPO_ID,
-    ProjectTreeState,
-    WorkingGitTree,
-    build_tree_state,
-    cgitsync_managed_state_paths,
-    format_project_tree,
-    format_repo_tree_outline,
-    format_view_operation,
-    format_view_tree,
-    iter_tree_leaf_first,
-)
-from ..git_tree_branch import GitTreeBranches
-from ..gts_document import GtsDocument
 from ..json_render import JsonRender
-from ..memory.pending import (
-    PendingMemory,
-)
-from ..memory.repository import (
-    MOUNT_PATH,
-)
-from ..operating_space import OperatingSpace
-from ..settings import Settings
+from ..operating_space.operating_space import OperatingSpace
 from ..status_render import (
     PROJECT_SCOPE_LABEL,
     SCOPE_LEGEND,
@@ -52,6 +31,27 @@ from ..status_render import (
     _status_summary_counts,
     tree_branch_label,
 )
+from ..tree.git_tree import (
+    ROOT_REPO_ID,
+    ProjectTreeState,
+    WorkingGitTree,
+    build_tree_state,
+    cgitsync_managed_state_paths,
+    format_project_tree,
+    format_repo_tree_outline,
+    format_view_operation,
+    format_view_tree,
+    iter_tree_leaf_first,
+)
+from ..tree.git_tree_branch import GitTreeBranches
+from ..tree.gts_document import GtsDocument
+from ..tree.memory.pending import (
+    PendingMemory,
+)
+from ..tree.memory.repository import (
+    MOUNT_PATH,
+)
+from ..tree.settings import Settings
 from .git_probes import GitProbes
 from .reports import (
     _StatusView,

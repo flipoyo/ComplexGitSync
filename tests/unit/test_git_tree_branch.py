@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_repo import (
+from ComplexGitSync.git_repo.git_repo import (
     AccessProtocol,
     DiscoveryState,
     GitProvider,
@@ -25,9 +25,9 @@ from ComplexGitSync.git_repo import (
     SyncState,
     WorkingRepo,
 )
-from ComplexGitSync.git_tree import WorkingGitTree, propagate_privacy
-from ComplexGitSync.git_tree_branch import GitTreeBranches, tree_project_name
-from ComplexGitSync.operating_space import OperatingSpace
+from ComplexGitSync.operating_space.operating_space import OperatingSpace
+from ComplexGitSync.tree.git_tree import WorkingGitTree, propagate_privacy
+from ComplexGitSync.tree.git_tree_branch import GitTreeBranches, tree_project_name
 
 # ---------------------------------------------------------------------------
 # Fixtures

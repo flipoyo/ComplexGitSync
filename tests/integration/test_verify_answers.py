@@ -24,9 +24,9 @@ import tomli_w
 from support.ledgers import append_entry
 
 from ComplexGitSync.cli import main as cli_main
-from ComplexGitSync.memory.integrity import HistoryState
-from ComplexGitSync.memory.ledger_store import LedgerStore
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.tree.memory.integrity import HistoryState
+from ComplexGitSync.tree.memory.ledger_store import LedgerStore
 from ComplexGitSync.universal_clock import SystemClock
 
 

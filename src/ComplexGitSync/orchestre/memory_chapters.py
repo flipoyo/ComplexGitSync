@@ -21,13 +21,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..errors import GitSyncError
-from ..git_branch import closed_branch_name
-from ..gts_document import GtsDocument
-from ..memory import LedgerEntry, Relocation
-from ..memory.ledger_store import LedgerStore
-from ..memory.pending import PendingMemory
-from ..memory.repository import MemoryRepository
-from ..operations import AncestorOperation
+from ..git_repo.git_branch import closed_branch_name
+from ..tree.gts_document import GtsDocument
+from ..tree.memory import LedgerEntry, Relocation
+from ..tree.memory.ledger_store import LedgerStore
+from ..tree.memory.pending import PendingMemory
+from ..tree.memory.repository import MemoryRepository
+from ..tree.operations import AncestorOperation
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .client import ComplexGitSyncClient

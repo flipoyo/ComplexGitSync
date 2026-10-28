@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     pass
-from ..git_tree import (
+from ..tree.git_tree import (
     GitTree,
 )
 

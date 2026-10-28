@@ -4,7 +4,7 @@ Ports the `GitRunner`-specific coverage that used to live in
 `tests/unit/test_operations.py` and `tests/unit/test_master.py` (those files
 still import `GitRunner` from `ComplexGitSync.orchestre` and are left
 untouched — this file exercises the same behaviour against the new
-`ComplexGitSync.git_runner` module directly), plus a Protocol-conformance
+`ComplexGitSync.git_repo.git_runner` module directly), plus a Protocol-conformance
 check for `GitRunnerProtocol`.
 """
 
@@ -17,14 +17,14 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_repo import SyncState
-from ComplexGitSync.git_runner import (
+from ComplexGitSync.git_repo.git_repo import SyncState
+from ComplexGitSync.git_repo.git_runner import (
     _PRESERVED_LOCALE_CATEGORIES,
-    GitRunner,
     GitRunnerProtocol,
     MergeCheckResult,
     _non_interactive_git_env,
 )
+from ComplexGitSync.tree.git_runner import GitRunner
 
 # ---------------------------------------------------------------------------
 # stage_all / force_pull — real subprocess behaviour
@@ -845,7 +845,7 @@ def test_git_runner_module_is_the_only_subprocess_boundary_in_itself():
     import ast
     import inspect
 
-    import ComplexGitSync.git_runner as git_runner_module
+    import ComplexGitSync.git_repo.git_runner as git_runner_module
 
     source = inspect.getsource(git_runner_module)
     tree = ast.parse(source)
@@ -1100,7 +1100,7 @@ class _FakeGitRunner:
         return None
 
     def run_tool(self, executable, *args):
-        from ComplexGitSync.git_runner import ToolRun
+        from ComplexGitSync.tree.git_runner import ToolRun
 
         return ToolRun(ran=False)
 

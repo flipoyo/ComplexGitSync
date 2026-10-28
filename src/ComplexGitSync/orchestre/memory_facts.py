@@ -13,45 +13,45 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ..cgs_format import CgsDocument, parse_repo_id
 from ..errors import (
     ConfigValidationError,
     UnsupportedSnapshotFormatError,
 )
+from ..tree.cgs_format import CgsDocument, parse_repo_id
 
 if TYPE_CHECKING:
     pass
-from ..git_repo import (
+from ..git_repo.git_repo import (
     AccessProtocol,
     GitProvider,
     WorkingRepo,
     repo_remote_url,
 )
-from ..gts_document import GtsDocument
-from ..memory import (
+from ..status_render import (
+    _status_scope_label,
+)
+from ..tree.gts_document import GtsDocument
+from ..tree.memory import (
     ChainVerifier,
     Finding,
 )
-from ..memory.commit_log import (
+from ..tree.memory.commit_log import (
     COMMIT_LOG_DIR_NAME,
     CommitLog,
 )
-from ..memory.environment import EnvironmentStore
-from ..memory.pending import (
+from ..tree.memory.environment import EnvironmentStore
+from ..tree.memory.pending import (
     PendingMemory,
 )
-from ..memory.repository import (
+from ..tree.memory.repository import (
     SELF_HISTORY_SUBDIR_NAME,
     MemoryRepository,
 )
-from ..memory.states import (
+from ..tree.memory.states import (
     MemoryStates,
 )
-from ..registry import (
+from ..tree.registry import (
     RegistryTranslator,
-)
-from ..status_render import (
-    _status_scope_label,
 )
 
 _FREEZE_COMMAND_ORIGINS = frozenset({"freeze", "freeze_release", "freeze_state"})

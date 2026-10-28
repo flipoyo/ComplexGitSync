@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_repo import WorkingRepo
-from ComplexGitSync.operations.outcome import RepoOutcome
-from ComplexGitSync.operations.partial_failure import TreePartialFailure, TreeSweep
+from ComplexGitSync.git_repo.git_repo import WorkingRepo
+from ComplexGitSync.tree.operations.outcome import RepoOutcome
+from ComplexGitSync.tree.operations.partial_failure import TreePartialFailure, TreeSweep
 
 
 def _repo(name: str, repo_id: str, relative: str | None) -> WorkingRepo:

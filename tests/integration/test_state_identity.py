@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ComplexGitSync.gts_document import GtsDocument
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.tree.gts_document import GtsDocument
 
 _CGS = """
 project = "demo"
@@ -168,7 +168,7 @@ def test_a_toolchain_version_would_not_change_the_name(tmp_path):
 
 def test_a_snapshot_in_the_old_directory_layout_is_still_found(tmp_path):
     """A workspace written before the flat layout keeps resolving."""
-    from ComplexGitSync.snapshot_resolver import discover_gts_path
+    from ComplexGitSync.tree.snapshot_resolver import discover_gts_path
 
     config = _workspace(tmp_path / "demo")
     ComplexGitSyncClient().load(config)

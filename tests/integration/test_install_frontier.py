@@ -15,7 +15,7 @@ import pytest
 
 from ComplexGitSync import ComplexGitSyncClient
 from ComplexGitSync.errors import InstallFrontierError
-from ComplexGitSync.settings import Settings, UseCase
+from ComplexGitSync.tree.settings import Settings, UseCase
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -220,8 +220,8 @@ def test_a_private_writable_dependency_takes_the_computed_branch_when_it_exists(
 
 
 def test_a_hand_typed_branch_that_disagrees_with_the_computed_one_is_rejected(tmp_path):
-    from ComplexGitSync.cgs_format import CgsDocument
     from ComplexGitSync.errors import ConfigValidationError
+    from ComplexGitSync.tree.cgs_format import CgsDocument
 
     cgs = tmp_path / "demo.cgs"
     cgs.write_text(

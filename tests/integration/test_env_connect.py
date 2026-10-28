@@ -23,7 +23,7 @@ import pytest
 from ComplexGitSync import ComplexGitSyncClient
 from ComplexGitSync.errors import GitSyncError, InstallFrontierError
 from ComplexGitSync.orchestre.installer import Installer
-from ComplexGitSync.settings import UseCase
+from ComplexGitSync.tree.settings import UseCase
 
 MEMORY = ".memory"
 
@@ -355,7 +355,7 @@ def test_the_cli_names_the_repository_warns_and_prints_the_command(tmp_path, mon
 
 def test_os_id_survives_every_way_the_tree_is_materialised(tmp_path, monkeypatch):
     """Omniscience §10, item 1: one project name, one os_id, however the tree is installed or restored."""
-    from ComplexGitSync.operating_space import OperatingSpace
+    from ComplexGitSync.operating_space.operating_space import OperatingSpace
 
     remotes = _tree(tmp_path, memory_branches=("main", "demo", "ComplexGitSync_demo"))
     cgs = _write_cgs(tmp_path / "demo.cgs")

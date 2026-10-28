@@ -20,8 +20,8 @@ from pathlib import Path
 import pytest
 
 import ComplexGitSync as complexgitsync_pkg
-from ComplexGitSync.memory.ledger_store import LedgerStore
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.tree.memory.ledger_store import LedgerStore
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -407,8 +407,8 @@ def test_freeze_release_folds_via_its_own_push_and_its_own_freeze_harmlessly(tmp
 def test_checking_out_a_release_tag_leaves_the_memory_on_its_branch(tmp_path):
     """Detaching the memory at the tag let the next fold commit onto a detached
     HEAD that `checkout main` then orphaned, losing ledger entries."""
-    from ComplexGitSync.git_repo import RefKind
-    from ComplexGitSync.memory.pending import PendingMemory
+    from ComplexGitSync.git_repo.git_repo import RefKind
+    from ComplexGitSync.tree.memory.pending import PendingMemory
 
     ws = _memory_ready_workspace(tmp_path)
     root, mount = ws["root"], ws["mount"]
@@ -461,7 +461,7 @@ def test_a_release_in_a_dev_tree_is_listed_and_loaded_and_the_memory_stays_on_it
 
 def test_a_fold_keeps_the_commit_log_it_moves_into_the_memory(tmp_path):
     """The fold copied commit logs out of the wrong directory and deleted the originals, so a push lost every message and every publication row."""
-    from ComplexGitSync.memory.commit_log import CommitLog
+    from ComplexGitSync.tree.memory.commit_log import CommitLog
 
     tree = _memory_ready_workspace(tmp_path)
     client = _loaded(tree["snapshot"])

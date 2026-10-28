@@ -27,13 +27,13 @@ from pathlib import Path
 import pytest
 import tomli_w
 
-from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_repo import GitProvider, NodeType, RefKind, RepoLifecycleState
-from ComplexGitSync.git_tree import TreeLifecycleState, sync_gitignore
+from ComplexGitSync.git_repo.git_repo import GitProvider, NodeType, RefKind, RepoLifecycleState
 from ComplexGitSync.orchestre import ComplexGitSyncClient, GtsDocument
-from ComplexGitSync.registry import (
+from ComplexGitSync.tree.cgs_format import CgsDocument
+from ComplexGitSync.tree.git_tree import TreeLifecycleState, sync_gitignore
+from ComplexGitSync.tree.registry import (
     RegistryTranslator,
 )
 
@@ -66,7 +66,7 @@ def _run_git(repo_path: Path, *args: str) -> str:
 
 def _ledger_entries(repo_path: Path):
     """Every entry in the workspace's hash-chained ledger, oldest first."""
-    from ComplexGitSync.memory.ledger_store import LedgerStore
+    from ComplexGitSync.tree.memory.ledger_store import LedgerStore
 
     return LedgerStore(repo_path / ".cgitsync" / "lgr").read_all_entries()
 
@@ -471,7 +471,7 @@ class TestExampleFiles:
         self.examples = Path(__file__).parent.parent.parent / "examples"
 
     def test_every_example_has_a_semantic_tree_and_toml_round_trip(self, tmp_path):
-        from ComplexGitSync.cgs_format import CgsDocument, parse_cgs
+        from ComplexGitSync.tree.cgs_format import CgsDocument, parse_cgs
 
         for source in sorted(self.examples.glob("*.cgs")):
             before = CgsDocument.from_toml(source)

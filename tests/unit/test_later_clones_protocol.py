@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from ComplexGitSync.cli import release_command
-from ComplexGitSync.git_repo import AccessProtocol
+from ComplexGitSync.git_repo.git_repo import AccessProtocol
 from ComplexGitSync.orchestre.release_commands import ReleaseCommands
 from ComplexGitSync.orchestre.tree_commands import TreeCommands
 

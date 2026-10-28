@@ -5,7 +5,7 @@ Contract: name a release ``<project-name>-<suffix>``, freeze it across the
     tree with the root's annotated tag carrying the project-scope State, list
     the project's releases from the ledger and the root's tags, and put a
     tree back at one, in place or in a new workspace.
-Imports: __build__, __version__, client, errors, git_repo, git_tree, git_tree_branch, gts_document, memory, operations, project_version, registry
+Imports: __build__, __version__, client, errors, git_repo, git_tree, git_tree_branch, gts_document, tree, operations, project_version, registry
 
 **Where a release lives** (ReleaseCommand D1, D2). The ledger is the
 release register and holds the full State, but a USER tree's ledger never
@@ -32,17 +32,17 @@ import tomli_w
 
 from .. import __build__, __version__
 from ..errors import GitSyncError
-from ..git_repo import AccessProtocol, RefKind, RepoScope
-from ..git_tree import ROOT_REPO_ID, WorkingGitTree
-from ..git_tree_branch import tree_project_name
-from ..gts_document import GtsDocument
-from ..memory.agent_contract import AgentContractRecord
-from ..memory.pending import PendingMemory
-from ..memory.repository import MEMORY_SUBDIR_NAME, MOUNT_PATH
-from ..memory.states import MemoryStates
-from ..operations import BranchOperation
-from ..project_version import ProjectVersion
-from ..registry import RegistryTranslator
+from ..git_repo.git_repo import AccessProtocol, RefKind, RepoScope
+from ..tree.git_tree import ROOT_REPO_ID, WorkingGitTree
+from ..tree.git_tree_branch import tree_project_name
+from ..tree.gts_document import GtsDocument
+from ..tree.memory.agent_contract import AgentContractRecord
+from ..tree.memory.pending import PendingMemory
+from ..tree.memory.repository import MEMORY_SUBDIR_NAME, MOUNT_PATH
+from ..tree.memory.states import MemoryStates
+from ..tree.operations import BranchOperation
+from ..tree.project_version import ProjectVersion
+from ..tree.registry import RegistryTranslator
 from .memory_chapters import MemoryChapters
 
 if TYPE_CHECKING:  # pragma: no cover - typing only

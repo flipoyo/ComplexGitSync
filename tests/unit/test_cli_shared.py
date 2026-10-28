@@ -29,7 +29,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ComplexGitSync.git_tree import ProjectTreeState
+from ComplexGitSync.tree.git_tree import ProjectTreeState
 
 
 def _load_cli_shared():
@@ -725,7 +725,7 @@ def _client_with_outcomes(*outcomes):
 
 
 def test_write_outcomes_name_each_repository_and_summarise(capsys):
-    from ComplexGitSync.operations import RepoOutcome
+    from ComplexGitSync.tree.operations import RepoOutcome
 
     client = _client_with_outcomes(
         RepoOutcome(name="leaf", acted=True, detail="abc1234"),
@@ -742,7 +742,7 @@ def test_write_outcomes_name_each_repository_and_summarise(capsys):
 
 
 def test_write_outcomes_explain_a_sweep_that_wrote_nothing(capsys):
-    from ComplexGitSync.operations import RepoOutcome
+    from ComplexGitSync.tree.operations import RepoOutcome
 
     client = _client_with_outcomes(
         RepoOutcome(name="leaf", acted=False, detail="nothing staged"),

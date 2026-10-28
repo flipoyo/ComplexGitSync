@@ -20,8 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.git_repo import SyncState, WorkingRepo
-from ComplexGitSync.git_tree import WorkingGitTree, propagate_privacy
+from ComplexGitSync.git_repo.git_repo import SyncState, WorkingRepo
 from ComplexGitSync.status_render import (
     SCOPE_LEGEND,
     SYNC_LEGEND,
@@ -40,6 +39,7 @@ from ComplexGitSync.status_render import (
     _status_tracking_label,
     tree_branch_label,
 )
+from ComplexGitSync.tree.git_tree import WorkingGitTree, propagate_privacy
 
 # ---------------------------------------------------------------------------
 # _status_display_path

@@ -11,9 +11,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ..cgs_format import CgsDocument
 from ..orchestre import ComplexGitSyncClient
-from ..tree_env import Drift, TreeEnvironment
+from ..tree.cgs_format import CgsDocument
+from ..tree.tree_env import Drift, TreeEnvironment
 from ._shared import _resolve_gts_path, _run_with_logging
 from .exit_codes import EXIT_OK, EXIT_REFUSED
 from .help_text import SEARCH_DIR_HELP

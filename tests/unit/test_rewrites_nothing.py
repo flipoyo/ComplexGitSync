@@ -4,7 +4,7 @@
 amends, rebases, squashes, filters or force-pushes. The rule was only prose
 until RuleConformity G3, so an agent could plan and build a rewrite without a
 test noticing; the `tmpAutoFix` branch did exactly that. This reads every
-string literal in `git_runner.py` and fails on a Git argument that rewrites
+string literal in `git_repo/git_runner.py` and fails on a Git argument that rewrites
 history.
 
 Why only that file: it is the one module allowed to run Git (`subprocess`
@@ -19,7 +19,7 @@ import ast
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "ComplexGitSync"
-GIT_RUNNER = SRC / "git_runner.py"
+GIT_RUNNER = SRC / "git_repo/git_runner.py"
 
 #: Exact literals: each is a Git subcommand or flag that rewrites or force-pushes.
 FORBIDDEN = {
@@ -45,7 +45,7 @@ def _literals(path: Path):
 
 def test_no_git_argument_in_src_rewrites_history():
     found = [
-        f"git_runner.py:{line}: {value!r}"
+        f"git_repo/git_runner.py:{line}: {value!r}"
         for line, value in _literals(GIT_RUNNER)
         if value in FORBIDDEN
     ]
@@ -54,7 +54,7 @@ def test_no_git_argument_in_src_rewrites_history():
 
 def test_no_push_refspec_starts_with_plus():
     found = [
-        f"git_runner.py:{line}: {value!r}"
+        f"git_repo/git_runner.py:{line}: {value!r}"
         for line, value in _literals(GIT_RUNNER)
         if value.startswith("+refs/") and value not in ALLOWED_PLUS_REFSPECS
     ]
@@ -77,4 +77,4 @@ def test_git_runner_is_the_only_module_that_runs_git():
             for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
         )
     ]
-    assert importers == ["git_runner.py"], importers
+    assert importers == ["git_repo/git_runner.py"], importers

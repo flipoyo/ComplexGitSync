@@ -16,23 +16,24 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ..cgs_format import CgsDocument, repo_identifier
 from ..errors import (
     ComplexGitSyncError,
     ConfigValidationError,
     GitSyncError,
 )
-from ..git_branch import DEFAULT_BRANCH
-from ..operations import AncestorOperation, MemoryMergeOperation
+from ..git_repo.git_branch import DEFAULT_BRANCH
+from ..tree.cgs_format import CgsDocument, repo_identifier
+from ..tree.operations import AncestorOperation, MemoryMergeOperation
 from .memory_chapters import MemoryChapters
 
 if TYPE_CHECKING:
     pass
-from ..git_repo import (
+from ..git_repo.git_repo import (
     RefKind,
     RepoScope,
 )
-from ..git_tree import (
+from ..operating_space.operating_space import OperatingSpace
+from ..tree.git_tree import (
     ROOT_REPO_ID,
     WorkingGitTree,
     _update_gitignore_file,
@@ -40,10 +41,10 @@ from ..git_tree import (
     iter_tree,
     iter_tree_leaf_first,
 )
-from ..git_tree_branch import GitTreeBranches
-from ..gts_document import GtsDocument
-from ..master import MasterConfig
-from ..memory import (
+from ..tree.git_tree_branch import GitTreeBranches
+from ..tree.gts_document import GtsDocument
+from ..tree.master import MasterConfig
+from ..tree.memory import (
     ChainVerifier,
     Finding,
     HistoryState,
@@ -52,10 +53,10 @@ from ..memory import (
     SyncLedger,
     VerificationReport,
 )
-from ..memory import self_history as self_history_store
-from ..memory.agent_contract import AgentContractRecord
-from ..memory.as_of import AsOf
-from ..memory.commit_log import (
+from ..tree.memory import self_history as self_history_store
+from ..tree.memory.agent_contract import AgentContractRecord
+from ..tree.memory.as_of import AsOf
+from ..tree.memory.commit_log import (
     COMMIT_LOG_DIR_NAME,
     SCOPE_PRIVATE,
     SCOPE_PROJECT,
@@ -63,28 +64,27 @@ from ..memory.commit_log import (
     CommitRecord,
     PublicationRecord,
 )
-from ..memory.environment import EnvironmentStore
-from ..memory.ledger_entry import LedgerEntry
-from ..memory.ledger_store import ArgvScrubber, LedgerStore, LedgerStoreError
-from ..memory.pending import (
+from ..tree.memory.environment import EnvironmentStore
+from ..tree.memory.ledger_entry import LedgerEntry
+from ..tree.memory.ledger_store import ArgvScrubber, LedgerStore, LedgerStoreError
+from ..tree.memory.pending import (
     PendingMemory,
 )
-from ..memory.repository import (
+from ..tree.memory.repository import (
     MOUNT_PATH,
     SELF_HISTORY_SUBDIR_NAME,
     CgsEntryEditor,
     MemoryRepository,
 )
-from ..memory.self_history import SelfHistoryRecord
-from ..memory.states import (
+from ..tree.memory.self_history import SelfHistoryRecord
+from ..tree.memory.states import (
     MemoryStates,
 )
-from ..operating_space import OperatingSpace
-from ..registry import (
+from ..tree.registry import (
     RegistryTranslator,
 )
-from ..snapshot_resolver import discover_gts_path
-from ..toolchain import Toolchain
+from ..tree.snapshot_resolver import discover_gts_path
+from ..tree.toolchain import Toolchain
 from .default_memory import DefaultMemory
 from .memory_facts import MemoryFacts
 from .memory_setup import MemorySetup
@@ -1191,7 +1191,7 @@ class MemoryCommands:
         should not have to (or be trusted to) type them by hand:
 
         - ``contract`` — the current signed
-          :class:`~ComplexGitSync.memory.agent_contract.AgentContractRecord`'s
+          :class:`~ComplexGitSync.tree.memory.agent_contract.AgentContractRecord`'s
           own hash, from ``.agent/.distant/dev-sync/agent-contracts/current``;
           empty when nothing is signed (AgentContract D4: absent, not fatal).
         - ``checks.status_errors`` — this workspace's own ``errors=`` count,

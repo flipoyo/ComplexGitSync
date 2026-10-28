@@ -11,18 +11,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..discovery import (
+from ..tree.discovery import (
     ImportSubmodulesReport,
 )
 
 if TYPE_CHECKING:
     pass
-from ..git_tree import (
-    ProjectTreeState,
-    WorkingGitTree,
-)
 from ..status_render import (
     StatusCounts,
+)
+from ..tree.git_tree import (
+    ProjectTreeState,
+    WorkingGitTree,
 )
 
 
@@ -120,7 +120,7 @@ class InitFromSubmodulesReport:
         ``True`` when *cgs_path* was authored by this call, ``False`` when
         an existing file was reused.
     import_report:
-        The :class:`~ComplexGitSync.discovery.ImportSubmodulesReport` from
+        The :class:`~ComplexGitSync.tree.discovery.ImportSubmodulesReport` from
         the conversion step, or ``None`` on a dry run that never reached it.
     tree:
         The ``READY`` tree ``initialise`` produced, or ``None`` on a dry run.

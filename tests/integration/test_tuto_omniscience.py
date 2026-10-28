@@ -20,7 +20,7 @@ from test_omniscience_query import _identity, _one, addresses  # noqa: F401
 from test_push_folds_memory import _git
 
 from ComplexGitSync.cli import main as cli_main
-from ComplexGitSync.gts_document import GtsDocument
+from ComplexGitSync.tree.gts_document import GtsDocument
 
 
 def test_sections_3_to_7_register_ask_prove_read_restore_and_check(tmp_path, addresses, monkeypatch, capsys):  # noqa: F811

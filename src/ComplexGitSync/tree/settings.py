@@ -1,0 +1,271 @@
+"""settings — the answers no workspace can give, because no workspace is open yet.
+
+Ring: 1 (reads the environment, the filesystem, and the clock via
+    universal_clock; no subprocess)
+Contract: where ComplexGitSync keeps its workspaces, which one it falls back
+    to when nothing else resolves (creating it once, then reusing it), which
+    other workspaces exist there, and whether this installation is running
+    standalone or nested. Answers all of that before any `.gts` has been
+    found, which is what separates it from `master.py`.
+Imports: gts_document, universal_clock
+
+Why this module exists
+----------------------
+Workspace discovery has three inputs — ``--search-dir``, ``$CGSHOME``, the
+current directory — and every one of them is supplied by the user. When none
+lands on a ``.cgitsync`` directory the tool has no state at all, and "no
+state" used to be spelled as an unhandled ``FileNotFoundError``. A tool that
+manages state should have a valid empty state: an empty tree is not an
+error, it is a project that has not started.
+
+So there is always a fourth answer: a real, empty workspace under the
+default root, holding a valid `.gts` with no repositories in it.
+
+**Minted once, then reused.** The first run that needs the default creates
+``<root>/CGS<timestamp>/cgitsync`` and records it in the pointer file
+``<root>/default``; every later run reads the pointer. Minting a fresh
+timestamp per run would leave a user who mistyped a directory three times
+owning three empty workspaces, indistinguishable by name from real ones.
+
+**Not master.py.** That module holds the Git identity ComplexGitSync commits
+under, persisted per workspace in ``.cgitsync/master.toml``. A per-workspace
+file cannot be read before a workspace has been found, which is the whole
+problem this module solves.
+
+The public surface
+------------------
+    CGS_ROOT_ENV        The variable that overrides the default root
+    UseCase             STANDALONE / NESTED — decides which install command may run
+    cgs_root            Where workspaces live: $CGSPATH, else $HOME/.cgs
+    default_workspace   The fallback workspace, created once and reused
+    other_workspaces    Every other workspace under the root — a hint only
+    resolve_use_case    Whether this installation runs inside the workspace
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from enum import StrEnum
+from pathlib import Path
+
+from ..universal_clock import ClockProtocol, SystemClock
+from .gts_document import GtsDocument
+
+#: Overrides the root every workspace is created under. ``CGSPATH`` already
+#: exists as a concept — the parent of ``CGSHOME`` — but only as the
+#: ``--cgs-path``/``--output-path`` options. Reading it here makes the same
+#: idea available to a user who never passes an option, and it stays out of
+#: `.cgs`/`.gts` documents, which must remain machine-independent.
+CGS_ROOT_ENV = "CGSPATH"
+
+#: The project-name segment of the default workspace: no project chosen yet.
+DEFAULT_WORKSPACE_NAME = "cgitsync"
+
+#: Holds the path of the default workspace, so it is minted once.
+POINTER_FILE_NAME = "default"
+
+_STATE_DIR_NAME = ".cgitsync"
+
+
+class UseCase(StrEnum):
+    """Which of README §2's two ways of running is in force.
+
+    **Obeyed by the two install commands, observed everywhere else.**
+    ``initialise`` is the *nested* install and ``bootstrap`` the
+    *standalone* one, and which applies is this fact — where the running
+    ComplexGitSync sits relative to the workspace — not a choice between two
+    ways of doing the same thing (``AdditionalSpecs.md``, *The install
+    frontier*). ``initialise`` therefore refuses a standalone use case and
+    names ``bootstrap``. Every other command still only prints it: a flag that
+    changes behaviour needs its own ticket and its own tests.
+    """
+
+    STANDALONE = "standalone"
+    NESTED = "nested"
+
+
+class Settings:
+    """Where workspaces live, and which one a command falls back to.
+
+    Answers all of it before a workspace is open, which ``master.py`` cannot:
+    the root (``$CGSPATH``, else ``$HOME/.cgs``), the default workspace, the
+    other workspaces offered as a hint, and the ``STANDALONE``/``NESTED`` use
+    case derived from where the running installation sits.
+    """
+
+    @staticmethod
+    def cgs_root(environ: dict[str, str] | None = None) -> Path:
+        """The directory every workspace lives under.
+
+        ``$CGSPATH`` when set, otherwise ``$HOME/.cgs``, as a shell's ``~``
+        names it. ``$HOME`` comes first on every platform: ``Path.home()``
+        reads ``USERPROFILE`` on Windows, so under Git Bash the shell's
+        ``~/.cgs`` and the tool's were two directories wherever those differ.
+        Reads the environment, so a test that moves ``HOME`` moves this.
+        """
+        env = environ if environ is not None else os.environ
+        override = env.get(CGS_ROOT_ENV)
+        if override:
+            return Path(override).expanduser().resolve()
+        return (Settings.home_directory(env) / ".cgs").expanduser().resolve()
+
+    @staticmethod
+    def home_directory(env: dict[str, str], windows: bool = os.name == "nt") -> Path:
+        """What ``~`` is: ``$HOME`` as set (``/c/Users/x`` read as ``C:/Users/x`` on Windows), else ``Path.home()``."""
+        home = env.get("HOME") or ""
+        drive = re.match(r"^/([A-Za-z])(?:/|$)", home) if windows else None
+        return Path(f"{drive.group(1).upper()}:{home[2:] or '/'}") if drive else Path(home) if home else Path.home()
+
+    @staticmethod
+    def pointer_file(root: Path | None = None) -> Path:
+        """Where the default workspace's path is recorded."""
+        return (root if root is not None else Settings.cgs_root()) / POINTER_FILE_NAME
+
+    @staticmethod
+    def read_default_workspace(root: Path | None = None) -> Path | None:
+        """The recorded default workspace, or ``None`` if there is not one yet.
+
+        ``None`` also covers a pointer naming a workspace that has since been
+        deleted: a pointer to nothing is not an answer, and the caller mints a
+        new workspace rather than resolving to a path that is gone.
+        """
+        pointer = Settings.pointer_file(root)
+        try:
+            recorded = pointer.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        if not recorded:
+            return None
+        candidate = Path(recorded).expanduser()
+        return candidate if (candidate / _STATE_DIR_NAME).is_dir() else None
+
+    @staticmethod
+    def default_workspace(
+        root: Path | None = None, *, create: bool = True, clock: ClockProtocol | None = None
+    ) -> Path | None:
+        """The workspace to fall back on when nothing else resolves.
+
+        Reuse before create: an existing pointer wins. With *create* false this
+        only reports what is already there, which is what a caller that must not
+        write to disk — a dry run, a test — needs. ``clock`` names a freshly
+        minted workspace's directory — real by default
+        (:class:`~.universal_clock.SystemClock`).
+        """
+        base = root if root is not None else Settings.cgs_root()
+        recorded = Settings.read_default_workspace(base)
+        if recorded is not None:
+            return recorded
+        if not create:
+            return None
+        return Settings._mint_default_workspace(base, clock=clock)
+
+    @staticmethod
+    def other_workspaces(root: Path | None = None, *, exclude: Path | None = None) -> list[Path]:
+        """Every workspace under *root*, except *exclude*, sorted by path.
+
+        A **hint**, never an answer. "The tool never fails" and "the user
+        probably meant one of these seven" are different problems, and merging
+        them is how a command ends up acting on the wrong tree.
+        """
+        base = root if root is not None else Settings.cgs_root()
+        excluded = exclude.resolve() if exclude is not None else None
+        found: list[Path] = []
+        # One level is a bootstrapped workspace (`<name>-<timestamp>`), two the
+        # default workspace and those bootstrapped before it was named after
+        # its project (`CGS<timestamp>/<name>`).
+        try:
+            candidates = sorted([*base.glob(f"*/{_STATE_DIR_NAME}"), *base.glob(f"*/*/{_STATE_DIR_NAME}")])
+        except OSError:
+            return []
+        for state_dir in candidates:
+            workspace = state_dir.parent.resolve()
+            if workspace != excluded and workspace not in found:
+                found.append(workspace)
+        return found
+
+    @staticmethod
+    def resolve_use_case(cgshome: Path, *, installation: Path | None = None) -> UseCase:
+        """Whether the running installation lives inside *cgshome*.
+
+        *installation* is where the running ComplexGitSync is; ``None`` (every
+        real caller) reads it from this module's own location. A test that
+        needs to stand a ComplexGitSync inside a workspace injects it here —
+        there is deliberately no flag a user can pass to override the answer.
+
+        **Nested** is the case where the ComplexGitSync being executed sits
+        inside the workspace it is managing — the developer tree, where the tool
+        manages itself. **Standalone** is every other case, the default
+        workspace included, since that workspace contains nothing at all.
+
+        Derived, never stored. Two callers in one process cannot disagree, and
+        the answer cannot go stale when a later command resolves a different
+        workspace.
+        """
+        installation = (installation or Path(__file__)).resolve()
+        if installation.is_file():
+            installation = installation.parent
+        workspace = Path(cgshome).expanduser().resolve()
+        if workspace == installation or workspace in installation.parents:
+            return UseCase.NESTED
+        return UseCase.STANDALONE
+
+    @staticmethod
+    def _mint_default_workspace(root: Path, *, clock: ClockProtocol | None = None) -> Path:
+        """Create the default workspace, record it, and return it."""
+        root.mkdir(parents=True, exist_ok=True)
+        clock = clock or SystemClock()
+        workspace = root / f"CGS{clock.now():%Y%m%d%H%M%S}" / DEFAULT_WORKSPACE_NAME
+        workspace.mkdir(parents=True, exist_ok=True)
+        Settings.write_empty_snapshot(workspace, clock=clock)
+        Settings.pointer_file(root).write_text(f"{workspace}\n", encoding="utf-8")
+        return workspace
+
+    @staticmethod
+    def write_empty_snapshot(workspace: Path, *, clock: ClockProtocol | None = None) -> Path:
+        """Write a valid `.gts` recording a workspace with no repositories.
+
+        ``UNLOADED`` and ``is_ready = false``, because an empty tree must never
+        claim to be ready — a command that trusted `ready=true` over zero
+        repositories would report a workspace as good to go when nothing has
+        been cloned into it.
+
+        The state directory is named by the document's **content** hash, which
+        is what a State's name is supposed to mean, and which a document with no
+        repositories computes as well as any other. ``clock`` names
+        ``generated_at`` — real by default (:class:`~.universal_clock.SystemClock`).
+        """
+        clock = clock or SystemClock()
+        document = GtsDocument(
+            {
+                "document": {
+                    "format_version": GtsDocument.CURRENT_SCHEMA_VERSION,
+                    "generated_at": f"{clock.now():%Y-%m-%dT%H:%M:%SZ}",
+                    "command_origin": "default-workspace",
+                },
+                "project": {
+                    "name": DEFAULT_WORKSPACE_NAME,
+                    "root_absolute_path": str(workspace),
+                },
+                "tree_state": {
+                    "lifecycle_state": "UNLOADED",
+                    "is_ready": False,
+                    "registry_complete": False,
+                },
+                "repo_state": [],
+            }
+        )
+        digest = document.ensure_snapshot_hash()
+        state_dir = workspace / _STATE_DIR_NAME / f"state({digest})_0"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_path = state_dir / f"{DEFAULT_WORKSPACE_NAME}.gts"
+        document.to_toml(snapshot_path)
+        return snapshot_path
+
+
+__all__ = [
+    "Settings",
+    "CGS_ROOT_ENV",
+    "DEFAULT_WORKSPACE_NAME",
+    "UseCase",
+]

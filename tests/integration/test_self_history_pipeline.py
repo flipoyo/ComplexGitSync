@@ -30,12 +30,12 @@ import pytest
 
 import ComplexGitSync.orchestre as orchestre_module
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.memory.conformity import ConformityCriterion, ConformityScore
-from ComplexGitSync.memory.pending import PendingMemory
-from ComplexGitSync.memory.repository import MemoryRepository
-from ComplexGitSync.memory.self_history import AgentInfo, SelfHistoryRecord
-from ComplexGitSync.memory.states import MemoryStates
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.tree.memory.conformity import ConformityCriterion, ConformityScore
+from ComplexGitSync.tree.memory.pending import PendingMemory
+from ComplexGitSync.tree.memory.repository import MemoryRepository
+from ComplexGitSync.tree.memory.self_history import AgentInfo, SelfHistoryRecord
+from ComplexGitSync.tree.memory.states import MemoryStates
 
 _ORIGINAL_REMOTE_URL_FOR_IDENTIFIER = orchestre_module._remote_url_for_identifier
 

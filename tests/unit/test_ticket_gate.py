@@ -16,10 +16,10 @@ import pytest
 from test_commit_message import _git, _tree
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.memory.conformity import ConformityCriterion, ConformityScore
-from ComplexGitSync.memory.self_history import AgentInfo, SelfHistoryRecord
 from ComplexGitSync.orchestre import ComplexGitSyncClient
-from ComplexGitSync.ticket_gate import CUTOFF, TicketGate
+from ComplexGitSync.tree.memory.conformity import ConformityCriterion, ConformityScore
+from ComplexGitSync.tree.memory.self_history import AgentInfo, SelfHistoryRecord
+from ComplexGitSync.tree.ticket_gate import CUTOFF, TicketGate
 
 _DEV = AgentInfo(role="Dev", vendor="vendor-name", model="model-name")
 _ORCHESTRATOR = AgentInfo(role="Orchestration", vendor="vendor-name", model="model-name")

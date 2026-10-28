@@ -9,8 +9,8 @@ import hashlib
 import json
 from datetime import UTC, datetime
 
-from ComplexGitSync.memory import ChainVerifier, Finding, HistoryState, LedgerEntry, Relocation
-from ComplexGitSync.memory.ledger_store import LedgerStore
+from ComplexGitSync.tree.memory import ChainVerifier, Finding, HistoryState, LedgerEntry, Relocation
+from ComplexGitSync.tree.memory.ledger_store import LedgerStore
 from ComplexGitSync.universal_clock import SystemClock
 
 

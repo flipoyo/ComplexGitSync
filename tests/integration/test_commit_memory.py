@@ -19,10 +19,10 @@ from pathlib import Path
 import tomli_w
 
 from ComplexGitSync.cli import main as cli_main
-from ComplexGitSync.memory.integrity import Finding, HistoryState
-from ComplexGitSync.memory.ledger_store import LedgerStore
 from ComplexGitSync.orchestre import ComplexGitSyncClient
-from ComplexGitSync.toolchain import Toolchain
+from ComplexGitSync.tree.memory.integrity import Finding, HistoryState
+from ComplexGitSync.tree.memory.ledger_store import LedgerStore
+from ComplexGitSync.tree.toolchain import Toolchain
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -577,7 +577,7 @@ def test_a_row_written_before_the_witness_existed_is_unchanged():
     """The digest of an old row is the one computed before the witness existed."""
     import hashlib
 
-    from ComplexGitSync.memory.commit_log import CommitLog, PublicationRecord
+    from ComplexGitSync.tree.memory.commit_log import CommitLog, PublicationRecord
 
     old = PublicationRecord(entry=1, repository="demo", sha="a" * 40, remote="github:o/demo", ref="refs/heads/main", at="2026-01-01T00:00:00+00:00")
     before_the_witness = (
@@ -614,7 +614,7 @@ def test_memory_verify_published_is_on_the_command_line(tmp_path, capsys):
 
 
 def test_memory_show_prints_the_project_id(tmp_path, capsys):
-    from ComplexGitSync.operating_space import OperatingSpace
+    from ComplexGitSync.operating_space.operating_space import OperatingSpace
 
     tree = _workspace(tmp_path)
     _change(tree["root"], "one")

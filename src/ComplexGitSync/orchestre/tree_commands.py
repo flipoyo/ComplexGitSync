@@ -16,30 +16,31 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .. import __version__
-from ..commit_message import CommitMessagePolicy
 from ..errors import (
     GitSyncError,
 )
+from ..tree.commit_message import CommitMessagePolicy
 
 if TYPE_CHECKING:
-    from ..autofix import RepairOutcome
-from ..git_branch import closed_branch_origin, structural_name_problem
-from ..git_repo import (
+    from ..tree.autofix import RepairOutcome
+from ..git_repo.git_branch import closed_branch_origin, structural_name_problem
+from ..git_repo.git_repo import (
     AccessProtocol,
     RefKind,
     RepoScope,
 )
-from ..git_tree import (
+from ..operating_space.operating_space import OperatingSpace
+from ..status_render import tree_branch_label
+from ..tree.git_tree import (
     ROOT_REPO_ID,
     TreeLifecycleState,
     WorkingGitTree,
     iter_tree_leaf_first,
 )
-from ..git_tree_branch import GitTreeBranches, ProjectBranch, tree_project_name
-from ..memory import HistoryState, Relocation
-from ..memory.pending import PendingMemory
-from ..operating_space import OperatingSpace
-from ..operations import (
+from ..tree.git_tree_branch import GitTreeBranches, ProjectBranch, tree_project_name
+from ..tree.memory import HistoryState, Relocation
+from ..tree.memory.pending import PendingMemory
+from ..tree.operations import (
     MERGE_INTO_ACTS,
     AncestorOperation,
     BranchOperation,
@@ -50,9 +51,8 @@ from ..operations import (
     fetch_tree,
     paths_outside_scope,
 )
-from ..snapshot_resolver import discover_cgshome
-from ..status_render import tree_branch_label
-from ..ticket_gate import TicketGate
+from ..tree.snapshot_resolver import discover_cgshome
+from ..tree.ticket_gate import TicketGate
 from .auth_hints import AuthFailureHints
 from .git_probes import GitProbes
 
@@ -202,7 +202,7 @@ class TreeCommands:
         repo_name: str | None = None,
     ) -> "RepairOutcome":
         """Read "the former error" — or *error*, if given directly — and
-        run whichever registered repair in :mod:`ComplexGitSync.autofix`
+        run whichever registered repair in :mod:`ComplexGitSync.tree.autofix`
         matches it.
 
         With *error* omitted, reads the most recent
@@ -213,7 +213,7 @@ class TreeCommands:
         repository's name is normally visible in its own remote URL)
         before falling back to every repository in the tree.
         """
-        from ..autofix import FromCliRepair
+        from ..tree.autofix import FromCliRepair
 
         if self.client.registry is None:
             raise GitSyncError("autofix: no workspace loaded.")
@@ -242,11 +242,11 @@ class TreeCommands:
         Requires a ``READY`` registry.  After a successful execution the
         registry remains ``READY`` and a ``.gts`` snapshot is written.
 
-        Steps delegated to :meth:`~ComplexGitSync.git_tree.GitTreeGitCommands.checkout`:
+        Steps delegated to :meth:`~ComplexGitSync.tree.git_tree.GitTreeGitCommands.checkout`:
 
-        1. :func:`~ComplexGitSync.operations.propagate_global_branch` — set
+        1. :func:`~ComplexGitSync.tree.operations.propagate_global_branch` — set
            the target ref on every entry.
-        2. :func:`~ComplexGitSync.operations.create_global_branch` — create
+        2. :func:`~ComplexGitSync.tree.operations.create_global_branch` — create
            the branch locally where missing; never for a tag, which is
            checked out detached instead (``checkout_tag_tree``).
         3. ``git checkout`` on every repo, parent-first.
@@ -334,8 +334,8 @@ class TreeCommands:
 
         Renames, never deletes
         (`main_1-1_BranchClosing_DevPlanTicket.md` D1) —
-        :func:`~ComplexGitSync.git_branch.closed_branch_name` names the
-        target, and :func:`~ComplexGitSync.operations.close_branch` performs
+        :func:`~ComplexGitSync.git_repo.git_branch.closed_branch_name` names the
+        target, and :func:`~ComplexGitSync.tree.operations.close_branch` performs
         it. Refuses before touching any repository when *branch_name* is
         the project's own default branch, or when any repository in scope
         is currently checked out on it (D5) — see that function's own
@@ -560,7 +560,7 @@ class TreeCommands:
         In the same trees, a commit that would add a planning ticket to
         ``DevTickets/archive/`` without its orchestrator's self-history
         record is refused the same way, naming the ticket
-        (:class:`~ComplexGitSync.ticket_gate.TicketGate`, the pair rule).
+        (:class:`~ComplexGitSync.tree.ticket_gate.TicketGate`, the pair rule).
         """
         registry = self.client.get_dependency_registry()
         root_path = registry.get(ROOT_REPO_ID).absolute_path
@@ -736,7 +736,7 @@ class TreeCommands:
         Decided by the same function the merge uses, so a dry run cannot
         promise something the merge then refuses.
         """
-        from ..operations import merge_into_status
+        from ..tree.operations import merge_into_status
 
         self._warn_if_build_changes(target_branch, offer_remedy=False)
         registry = self.client.get_dependency_registry()
@@ -967,7 +967,7 @@ class TreeCommands:
         commit in common), decided by the same function :meth:`merge` uses, so
         a dry run cannot promise something the merge then refuses.
         """
-        from ..operations import merge_status
+        from ..tree.operations import merge_status
 
         registry = self.client.get_dependency_registry()
         scope = self.client._write_scope(registry, "merge", private, all_writable)

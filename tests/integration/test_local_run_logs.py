@@ -16,10 +16,10 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.autofix.repair_from_cli import FromCliRepair
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 from ComplexGitSync.orchestre.command_run_logger import CommandRunLogger
-from ComplexGitSync.snapshot_resolver import discover_gts_path
+from ComplexGitSync.tree.autofix.repair_from_cli import FromCliRepair
+from ComplexGitSync.tree.snapshot_resolver import discover_gts_path
 
 _CGS = 'project = "demo"\n\nrepos = [\n  "github:owner/demo",\n]\n'
 

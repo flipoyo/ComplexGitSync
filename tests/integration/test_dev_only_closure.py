@@ -112,8 +112,8 @@ def test_every_caller_of_delete_remote_branch_is_known_and_gated():
         path.relative_to(source).as_posix()
         for path in source.rglob("*.py")
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
-        if isinstance(node, ast.Attribute) and node.attr == "delete_remote_branch" and path.name != "git_runner.py"
+        if isinstance(node, ast.Attribute) and node.attr == "delete_remote_branch" and path.name != "git_repo/git_runner.py"
     }
-    assert callers == {"operations/branch.py", "operations/ancestors.py", "orchestre/memory_commands.py"}
+    assert callers == {"tree/operations/branch.py", "tree/operations/ancestors.py", "orchestre/memory_commands.py"}
     tree_commands = (source / "orchestre" / "tree_commands.py").read_text(encoding="utf-8")
     assert 'registry.require_dev("branch close")' in tree_commands and 'registry.require_dev("branch delete")' in tree_commands

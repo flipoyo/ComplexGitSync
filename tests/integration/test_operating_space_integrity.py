@@ -17,10 +17,10 @@ from pathlib import Path
 import pytest
 from test_commit_memory import _change, _loaded, _workspace
 
-from ComplexGitSync.cgs_format import CgsDocument
-from ComplexGitSync.gts_document import GtsDocument
-from ComplexGitSync.operating_space import OperatingSpace
-from ComplexGitSync.registry import RegistryTranslator
+from ComplexGitSync.operating_space.operating_space import OperatingSpace
+from ComplexGitSync.tree.cgs_format import CgsDocument
+from ComplexGitSync.tree.gts_document import GtsDocument
+from ComplexGitSync.tree.registry import RegistryTranslator
 
 
 def _user_tree(tree: dict[str, Path]) -> None:

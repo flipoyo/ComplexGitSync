@@ -2,7 +2,7 @@
 
 Ring: 3
 Contract: Create, recognise and describe the local, unpublished memory a workspace gets by default; never push it.
-Imports: client, errors, git_branch, git_tree, git_tree_branch, master, memory
+Imports: client, errors, git_branch, git_tree, git_tree_branch, master, tree
 """
 
 from __future__ import annotations
@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..errors import ComplexGitSyncError, GitSyncError
-from ..git_branch import DEFAULT_BRANCH
-from ..git_tree import ROOT_REPO_ID, WorkingGitTree
-from ..git_tree_branch import GitTreeBranches
-from ..master import MasterConfig
-from ..memory.repository import MOUNT_PATH, CgsEntryEditor, MemoryRepository
+from ..git_repo.git_branch import DEFAULT_BRANCH
+from ..tree.git_tree import ROOT_REPO_ID, WorkingGitTree
+from ..tree.git_tree_branch import GitTreeBranches
+from ..tree.master import MasterConfig
+from ..tree.memory.repository import MOUNT_PATH, CgsEntryEditor, MemoryRepository
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .client import ComplexGitSyncClient

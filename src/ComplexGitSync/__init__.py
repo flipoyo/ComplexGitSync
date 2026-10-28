@@ -1,6 +1,6 @@
 """ComplexGitSync package: deterministic distributed workspace synchronization over Git trees."""
 
-__version__ = "8.0.3"
+__version__ = "8.0.4"
 
 #: The build counter: bumped by `pixi run bump-build` on every change to
 #: `src/`, independently of `__version__`. See .agent/.local/.dev/Versioning.md
@@ -8,19 +8,10 @@ __version__ = "8.0.3"
 #: says which build produced a given ledger entry. Carried over unchanged from the
 #: pre-SemVer `YYYY.XX` counter, not reset, when SemVer was cut over at
 #: `__version__` 3.0.0.
-__build__ = "0004.11"
+__build__ = "0004.13"
 
 # --- Tier 1 — Public Errors (errors.py) ---
 # --- Cross-cutting document definitions ---
-from .cgs_format import (
-    CgsDocument,
-    normalize_cgs,
-    parse_cgs,
-    parse_repo_id,
-    parse_repository_identifier,
-    repo_identifier,
-)
-from .config_document import ConfigDocument
 from .errors import (
     ComplexGitSyncError,
     ConfigValidationError,
@@ -31,7 +22,7 @@ from .errors import (
 )
 
 # --- Tier 1 — Core State (git_repo.py) ---
-from .git_repo import (
+from .git_repo.git_repo import (
     CANONICAL_GIT_PROVIDERS,
     KNOWN_PROVIDER_HOSTS,
     AccessProtocol,
@@ -46,10 +37,20 @@ from .git_repo import (
     WorkingRepo,
     validate_git_provider,
 )
-from .git_runner import GitRunner
+from .orchestre import ComplexGitSyncClient, Orchestre
+from .tree.cgs_format import (
+    CgsDocument,
+    normalize_cgs,
+    parse_cgs,
+    parse_repo_id,
+    parse_repository_identifier,
+    repo_identifier,
+)
+from .tree.config_document import ConfigDocument
+from .tree.git_runner import GitRunner
 
 # --- Tier 1 — Core State + Tree Utilities (git_tree.py) ---
-from .git_tree import (
+from .tree.git_tree import (
     ROOT_REPO_ID,
     GitTree,
     ProjectTreeState,
@@ -61,15 +62,15 @@ from .git_tree import (
     iter_tree_leaf_first,
     topological_sort,
 )
-from .gts_document import GtsDocument
-from .master import MasterConfig
+from .tree.gts_document import GtsDocument
+from .tree.master import MasterConfig
 
 # --- Tier 2/3 — Actions + Client (orchestre/) ---
-from .memory import LocalGitRegister, SyncLedger
-from .memory.integrity import Finding, VerificationReport
+from .tree.memory import LocalGitRegister, SyncLedger
+from .tree.memory.integrity import Finding, VerificationReport
 
 # --- Tier 2 — Actions (operations/) ---
-from .operations import (
+from .tree.operations import (
     BranchTopologyConflict,
     BranchTopologyReport,
     add_tree,
@@ -82,10 +83,6 @@ from .operations import (
     restart_tree_force,
     tag_tree,
     validate_branch_topology,
-)
-from .orchestre import (
-    ComplexGitSyncClient,
-    Orchestre,
 )
 
 __all__ = [
@@ -156,3 +153,8 @@ __all__ = [
     "Orchestre",
     "SyncLedger",
 ]
+
+# The paths SrcLayout moved keep answering for one release (see legacy_paths.py).
+from ComplexGitSync import legacy_paths  # noqa: E402
+
+legacy_paths.install()

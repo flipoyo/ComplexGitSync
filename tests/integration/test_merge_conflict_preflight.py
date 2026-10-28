@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_repo import (
+from ComplexGitSync.git_repo.git_repo import (
     AccessProtocol,
     DiscoveryState,
     GitProvider,
@@ -31,9 +31,9 @@ from ComplexGitSync.git_repo import (
     SyncState,
     WorkingRepo,
 )
-from ComplexGitSync.git_runner import GitRunner
-from ComplexGitSync.git_tree import WorkingGitTree
-from ComplexGitSync.operations import merge_tree, merge_tree_one_at_a_time
+from ComplexGitSync.tree.git_runner import GitRunner
+from ComplexGitSync.tree.git_tree import WorkingGitTree
+from ComplexGitSync.tree.operations import merge_tree, merge_tree_one_at_a_time
 
 # Invalid UTF-8, starting with the byte from the reported traceback.
 _INVALID_UTF8 = b"\xdb!\xfe\xff"

@@ -14,8 +14,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ..cgs_format import CgsDocument
 from ..orchestre import ComplexGitSyncClient
+from ..tree.cgs_format import CgsDocument
 from . import release_command
 from ._shared import (
     _add_json_argument,

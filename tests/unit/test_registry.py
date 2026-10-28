@@ -1,4 +1,4 @@
-"""Direct unit tests for :mod:`ComplexGitSync.registry`.
+"""Direct unit tests for :mod:`ComplexGitSync.tree.registry`.
 
 Ported/adapted from ``tests/unit/test_registry_client.py`` (which, despite
 its name, carries most of this module's original coverage indirectly
@@ -16,12 +16,12 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.errors import ConfigValidationError
-from ComplexGitSync.git_repo import AccessProtocol, GitProvider, RefKind, repo_remote_url
-from ComplexGitSync.git_tree import GitTree, TreeLifecycleState, make_repo_id
-from ComplexGitSync.gts_document import GtsDocument
-from ComplexGitSync.registry import (
+from ComplexGitSync.git_repo.git_repo import AccessProtocol, GitProvider, RefKind, repo_remote_url
+from ComplexGitSync.tree.cgs_format import CgsDocument
+from ComplexGitSync.tree.git_tree import GitTree, TreeLifecycleState, make_repo_id
+from ComplexGitSync.tree.gts_document import GtsDocument
+from ComplexGitSync.tree.registry import (
     RegistryTranslator,
 )
 
@@ -200,7 +200,7 @@ def test_build_registry_from_cgs_document_uses_project_root_override(tmp_path):
 
 
 def test_build_registry_from_gts_document_discovers_gitrepos_and_propagates_tag(tmp_path):
-    from ComplexGitSync.git_repo import GitRepo
+    from ComplexGitSync.git_repo.git_repo import GitRepo
 
     root_path = (tmp_path / "workspace" / "demo").resolve()
     leaf_path = (root_path / "deps" / "leaf").resolve()

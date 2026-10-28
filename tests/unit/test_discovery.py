@@ -1,9 +1,9 @@
-"""Unit tests for ``ComplexGitSync.discovery``.
+"""Unit tests for ``ComplexGitSync.tree.discovery``.
 
 Covers the two pieces of discovery logic the module owns:
 
 * ``discover_nested_configs()`` — nested ``.cgs`` auto-discovery, exercised
-  directly against a :class:`~ComplexGitSync.git_tree.WorkingGitTree` built
+  directly against a :class:`~ComplexGitSync.tree.git_tree.WorkingGitTree` built
   with ``build_registry_from_cgs_document`` (still defined in
   ``orchestre.py`` at the time this module was authored — used here only as
   a read-only registry-construction helper, no orchestration/client
@@ -15,24 +15,24 @@ These tests are adapted from ``tests/unit/test_registry_client.py`` (the
 ``discover_nested_configs`` cases, previously exercised indirectly through
 ``ComplexGitSyncClient.load_cgs(discover_nested=True)``) and
 ``tests/unit/test_import_submodules.py`` (the ``.gitmodules`` parsing
-cases), rewritten to import from :mod:`ComplexGitSync.discovery` directly.
+cases), rewritten to import from :mod:`ComplexGitSync.tree.discovery` directly.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from ComplexGitSync.cgs_format import CgsDocument
-from ComplexGitSync.discovery import (
+from ComplexGitSync.errors import NestedConfigDiscoveryError
+from ComplexGitSync.git_repo.git_repo import DiscoveryState, NodeType
+from ComplexGitSync.orchestre import RegistryTranslator
+from ComplexGitSync.tree.cgs_format import CgsDocument
+from ComplexGitSync.tree.discovery import (
     ImportSubmodulesReport,
     SubmoduleEntry,
     _parse_gitmodules,
     _resolve_nested_config_path,
     discover_nested_configs,
 )
-from ComplexGitSync.errors import NestedConfigDiscoveryError
-from ComplexGitSync.git_repo import DiscoveryState, NodeType
-from ComplexGitSync.orchestre import RegistryTranslator
 
 
 def _write_root_cgs(tmp_path, *, nested_child: bool = False, project_name: str = "demo"):
@@ -296,7 +296,7 @@ nested_config = "named.cgs"
         keeps its outer identity (private/writable, its own branch); a new
         `.self-history` leaf appears beside it, private/writable via
         `propagate_privacy`, on the same branch (neither entry states one)."""
-        from ComplexGitSync.memory.repository import (
+        from ComplexGitSync.tree.memory.repository import (
     MOUNT_PATH,
     MemoryRepository,
 )

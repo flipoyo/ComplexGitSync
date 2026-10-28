@@ -14,8 +14,8 @@ import pytest
 
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.memory.as_of import AsOf
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.tree.memory.as_of import AsOf
 
 _CGS = 'project = "demo"\n\nrepos = [\n  "github:owner/demo",\n]\n'
 

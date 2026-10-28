@@ -21,8 +21,8 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.memory.repository import MemoryRepository
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.tree.memory.repository import MemoryRepository
 
 _CGS = """
 project = "demo"
@@ -62,7 +62,7 @@ def _bare_remote(path: Path) -> Path:
 
 
 def _loaded_client(workspace: Path) -> ComplexGitSyncClient:
-    from ComplexGitSync.snapshot_resolver import discover_gts_path
+    from ComplexGitSync.tree.snapshot_resolver import discover_gts_path
 
     client = ComplexGitSyncClient()
     client.load_gts(discover_gts_path(str(workspace)))

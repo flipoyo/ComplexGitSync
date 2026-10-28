@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from ComplexGitSync.memory.integrity import ChainVerifier, Finding, HistoryState
-from ComplexGitSync.memory.ledger_entry import LedgerEntry
-from ComplexGitSync.memory.ledger_store import LedgerStore
+from ComplexGitSync.tree.memory.integrity import ChainVerifier, Finding, HistoryState
+from ComplexGitSync.tree.memory.ledger_entry import LedgerEntry
+from ComplexGitSync.tree.memory.ledger_store import LedgerStore
 
 
 class Clock:

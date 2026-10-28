@@ -37,19 +37,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "ComplexGitSync"
 TESTS = ROOT / "tests"
 
-#: Folder proposed per module (SrcLayout, Minimalism D6): the owner edits this column.
+#: The folder each module sits in (SrcLayout); what stays at the top is "above".
 FOLDERS = {
-    "GitRepo": ("git_repo", "git_branch", "git_runner", "provider", "clone_guard"),
-    "Merkle": ("merkle/",),
-    "Tree": (
-        "git_tree", "git_tree_branch", "registry", "discovery", "tree_env", "environment_spec", "toolchain",
-        "cgs_format", "gts_document", "config_document", "config_document_io", "paths", "snapshot_resolver",
-        "settings", "master", "project_version", "commit_message", "ticket_gate", "workspace_lock",
-        "operations/", "memory/", "autofix/",
-    ),
-    "OperatingSpace": ("operating_space",),
-    "Omniscience (gx4g's register)": ("omniscience_", "orchestre/omniscience", "global_index"),
-    "Above OperatingSpace": ("cli/", "orchestre/", "json_render", "status_render", "universal_clock", "errors", "__init__", "__main__"),
+    "git_repo": ("git_repo/",),
+    "merkle": ("merkle/",),
+    "tree": ("tree/",),
+    "operating_space": ("operating_space/",),
+    "omniscience (gx4g's register)": ("omniscience/",),
+    "above": ("cli/", "orchestre/", "json_render", "status_render", "universal_clock", "errors", "legacy_paths", "__init__", "__main__"),
 }
 
 #: Hand-listed client methods that write and do not take the workspace lock (StateLocking).
@@ -67,7 +62,7 @@ LEAF_WRITES = {"verify repair": "writes"}
 
 HASH_NAME = re.compile(r"(merkle|leaf|node_hash|_root$|^root$|digest|proof|gittree_root|os_id|state_hash|compute_.*hash)", re.I)
 #: The module that computes a hash, and the two adapters that hand it the State's leaves (`gts_document`, `operating_space`).
-HASH_MODULES = ("merkle/merkle_root", "gts_document", "operating_space")
+HASH_MODULES = ("merkle/merkle_root", "tree/gts_document", "operating_space/operating_space")
 
 
 @dataclass
@@ -334,7 +329,7 @@ def _client_table(modules: dict[str, Module], found: list[Leaf]) -> str:
 def provider_sites(modules: dict[str, Module]) -> list[tuple[str, int, str]]:
     rows = []
     for module in modules.values():
-        if module.key in ("git_runner", "provider"):
+        if module.key in ("git_repo/git_runner", "git_repo/provider"):
             continue
         for node in ast.walk(module.tree):
             if isinstance(node, ast.Call):
@@ -368,7 +363,7 @@ def users_of(modules: dict[str, Module], target: str) -> list[tuple[str, str]]:
 
 
 def gitrepo_leaks(modules: dict[str, Module], extra: tuple[str, ...] = ()) -> list[tuple[str, str]]:
-    members = {m.key for m in modules.values() if m.folder == "GitRepo"} | set(extra)
+    members = {m.key for m in modules.values() if m.folder == "git_repo"} | set(extra)
     return sorted((key, imported) for key in members for imported in modules[key].imports if imported not in members)
 
 
@@ -419,15 +414,15 @@ def sections(modules: dict[str, Module], *, full: bool) -> dict[str, str]:
     )
     result["rings"] = "\n\n".join(
         f"**{label}** (`{target}`) is imported by:\n\n" + render(users_of(modules, target), ("module", "ring"))
-        for label, target in (("`.cgs`, the API of USER", "cgs_format"), ("`.gts`, the API of DEV", "gts_document"), ("OperatingSpace, the API of OPX", "operating_space"))
+        for label, target in (("`.cgs`, the API of USER", "tree/cgs_format"), ("`.gts`, the API of DEV", "tree/gts_document"), ("OperatingSpace, the API of OPX", "operating_space/operating_space"))
     )
     leaks = gitrepo_leaks(modules)
     result["gitrepo"] = (
-        "Modules proposed for `GitRepo/`: " + ", ".join(f"`{m.key}`" for m in modules.values() if m.folder == "GitRepo")
+        "Modules proposed for `GitRepo/`: " + ", ".join(f"`{m.key}`" for m in modules.values() if m.folder == "git_repo")
         + ".\n\nWhat they import from outside that set (each row would have to go, or move in):\n\n"
         + (render([(f"`{a}`", f"`{b}`") for a, b in leaks], ("module", "imports")) if leaks else "nothing: the set imports nothing back.")
         + "\n\nWith the graph of repositories (`git_tree`, `git_tree_branch`) added to it, the set would also import:\n\n"
-        + render([(f"`{a}`", f"`{b}`") for a, b in gitrepo_leaks(modules, ("git_tree", "git_tree_branch")) if (a, b) not in leaks], ("module", "imports"))
+        + render([(f"`{a}`", f"`{b}`") for a, b in gitrepo_leaks(modules, ("tree/git_tree", "tree/git_tree_branch")) if (a, b) not in leaks], ("module", "imports"))
     )
     result["folders"] = render(
         sorted((m.folder, f"`{m.key}`", m.ring) for m in modules.values()), ("folder", "module", "ring")

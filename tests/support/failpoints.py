@@ -11,13 +11,13 @@ import importlib
 
 #: name -> dotted path of the callable a fault is injected into.
 FAILPOINTS: dict[str, str] = {
-    "push.repo": "ComplexGitSync.git_runner.GitRunner.push",
-    "tag.create": "ComplexGitSync.git_runner.GitRunner.create_tag",
-    "tag.annotated": "ComplexGitSync.git_runner.GitRunner.create_annotated_tag",
-    "commit.repo": "ComplexGitSync.git_runner.GitRunner.commit",
-    "state.write": "ComplexGitSync.memory.states.MemoryStates.write_atomically",
-    "ledger.entry": "ComplexGitSync.memory.ledger_store.LedgerStore.write_entry",
-    "ledger.head": "ComplexGitSync.memory.ledger_store.LedgerStore.write_head",
+    "push.repo": "ComplexGitSync.git_repo.git_runner.GitRunner.push",
+    "tag.create": "ComplexGitSync.git_repo.git_runner.GitRunner.create_tag",
+    "tag.annotated": "ComplexGitSync.git_repo.git_runner.GitRunner.create_annotated_tag",
+    "commit.repo": "ComplexGitSync.git_repo.git_runner.GitRunner.commit",
+    "state.write": "ComplexGitSync.tree.memory.states.MemoryStates.write_atomically",
+    "ledger.entry": "ComplexGitSync.tree.memory.ledger_store.LedgerStore.write_entry",
+    "ledger.head": "ComplexGitSync.tree.memory.ledger_store.LedgerStore.write_head",
 }
 
 

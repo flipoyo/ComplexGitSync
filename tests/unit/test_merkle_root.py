@@ -20,15 +20,15 @@ from pathlib import Path
 import pytest
 
 import ComplexGitSync
-from ComplexGitSync.gts_document import GtsDocument
-from ComplexGitSync.memory.agent_contract import AgentContractRecord
-from ComplexGitSync.memory.commit_log import CommitLog, CommitRecord
-from ComplexGitSync.memory.environment import EnvironmentStore
-from ComplexGitSync.memory.integrity import ChainVerifier
-from ComplexGitSync.memory.ledger_entry import LedgerEntry
-from ComplexGitSync.memory.ledger_store import LedgerStore
 from ComplexGitSync.merkle import GlobalInclusionProof, InclusionProof, MerkleRoot
-from ComplexGitSync.tree_env import ToolVersion, TreeEnvironment
+from ComplexGitSync.tree.gts_document import GtsDocument
+from ComplexGitSync.tree.memory.agent_contract import AgentContractRecord
+from ComplexGitSync.tree.memory.commit_log import CommitLog, CommitRecord
+from ComplexGitSync.tree.memory.environment import EnvironmentStore
+from ComplexGitSync.tree.memory.integrity import ChainVerifier
+from ComplexGitSync.tree.memory.ledger_entry import LedgerEntry
+from ComplexGitSync.tree.memory.ledger_store import LedgerStore
+from ComplexGitSync.tree.tree_env import ToolVersion, TreeEnvironment
 
 MERKLE = Path(ComplexGitSync.__file__).parent / "merkle"
 

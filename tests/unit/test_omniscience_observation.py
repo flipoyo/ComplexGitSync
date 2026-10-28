@@ -6,8 +6,11 @@ import pytest
 
 from ComplexGitSync.errors import ConfigValidationError
 from ComplexGitSync.merkle import MerkleRoot
-from ComplexGitSync.omniscience_completeness import PERMANENT_AFTER_COUNT, CompletenessReport
-from ComplexGitSync.omniscience_observation import Observation, ObservationStatus
+from ComplexGitSync.omniscience.omniscience_completeness import (
+    PERMANENT_AFTER_COUNT,
+    CompletenessReport,
+)
+from ComplexGitSync.omniscience.omniscience_observation import Observation, ObservationStatus
 
 OS_ID = "a" * 64
 
@@ -99,7 +102,7 @@ def test_each_target_is_judged_on_its_own():
 
 
 def test_a_hostile_published_row_is_refused_when_a_record_is_read():
-    from ComplexGitSync.omniscience_record import OmniscienceRecord
+    from ComplexGitSync.omniscience.omniscience_record import OmniscienceRecord
 
     good = {"repository": "github:o/r", "ref": "refs/heads/main", "commit": "a" * 40}
     base = dict(project="demo", os_id="a" * 64, project_branch="main", state_id=f"state({'b' * 64})", gittree_root="c" * 64,

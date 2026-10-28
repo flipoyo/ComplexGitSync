@@ -63,8 +63,8 @@ def config_repo_tree(tmp_path):
     Backed by real directories, because path resolution answers "which
     repository owns this file?" against the filesystem.
     """
-    from ComplexGitSync.git_repo import WorkingRepo
-    from ComplexGitSync.git_tree import ROOT_REPO_ID, WorkingGitTree, propagate_privacy
+    from ComplexGitSync.git_repo.git_repo import WorkingRepo
+    from ComplexGitSync.tree.git_tree import ROOT_REPO_ID, WorkingGitTree, propagate_privacy
 
     root_path = tmp_path / "project"
     private_path = root_path / "deps" / "settings"

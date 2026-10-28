@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError, TreeNotReadyError
-from ComplexGitSync.git_branch import resolve_propagated_ref
-from ComplexGitSync.git_repo import (
+from ComplexGitSync.git_repo.git_branch import resolve_propagated_ref
+from ComplexGitSync.git_repo.git_repo import (
     NodeType,
     RefKind,
     RepoLifecycleState,
@@ -22,8 +22,14 @@ from ComplexGitSync.git_repo import (
     SyncState,
     WorkingRepo,
 )
-from ComplexGitSync.git_runner import MergeCheckResult
-from ComplexGitSync.git_tree import (
+from ComplexGitSync.operating_space.operating_space import OperatingSpace
+from ComplexGitSync.orchestre import (
+    ComplexGitSyncClient,
+    GitRunner,
+    RuntimeStateStore,
+)
+from ComplexGitSync.tree.git_runner import MergeCheckResult
+from ComplexGitSync.tree.git_tree import (
     GitTree,
     TreeLifecycleState,
     WorkingGitTree,
@@ -31,8 +37,7 @@ from ComplexGitSync.git_tree import (
     iter_tree_leaf_first,
     propagate_privacy,
 )
-from ComplexGitSync.operating_space import OperatingSpace
-from ComplexGitSync.operations import (
+from ComplexGitSync.tree.operations import (
     BranchTopologyReport,
     add_tree,
     branch_tree,
@@ -53,11 +58,6 @@ from ComplexGitSync.operations import (
     restart_tree_force,
     tag_tree,
     validate_branch_topology,
-)
-from ComplexGitSync.orchestre import (
-    ComplexGitSyncClient,
-    GitRunner,
-    RuntimeStateStore,
 )
 
 
@@ -82,8 +82,8 @@ def _current_state_path(root_path: Path) -> Path:
     last wrote. It replaced the single-file register these tests used to
     read, which nothing writes any more.
     """
-    from ComplexGitSync.memory.ledger_store import LedgerStore
-    from ComplexGitSync.memory.states import MemoryStates
+    from ComplexGitSync.tree.memory.ledger_store import LedgerStore
+    from ComplexGitSync.tree.memory.states import MemoryStates
 
     entries = LedgerStore(root_path / ".cgitsync" / "lgr").read_all_entries()
     assert entries, "no ledger entry was written"
@@ -92,14 +92,14 @@ def _current_state_path(root_path: Path) -> Path:
 
 def _ledger_entries(root_path: Path):
     """Every entry in the root_path's chain, oldest first."""
-    from ComplexGitSync.memory.ledger_store import LedgerStore
+    from ComplexGitSync.tree.memory.ledger_store import LedgerStore
 
     return LedgerStore(root_path / ".cgitsync" / "lgr").read_all_entries()
 
 
 def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:
     """Build a minimal 3-entry READY registry backed by real directories."""
-    from ComplexGitSync.git_repo import (
+    from ComplexGitSync.git_repo.git_repo import (
         AccessProtocol,
         DiscoveryState,
         GitProvider,
@@ -157,7 +157,7 @@ def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:
 
 def _make_deep_ready_registry(tmp_path: Path) -> WorkingGitTree:
     """Build a 3-level READY registry: root → middle → sub-leaf."""
-    from ComplexGitSync.git_repo import (
+    from ComplexGitSync.git_repo.git_repo import (
         AccessProtocol,
         DiscoveryState,
         GitProvider,
@@ -1788,7 +1788,7 @@ def _make_registry_with_config_repo(tmp_path: Path) -> WorkingGitTree:
     Shaped like a real tree: the project's own root on a feature branch, and
     a private mount sitting on a branch named after the project.
     """
-    from ComplexGitSync.git_repo import WorkingRepo
+    from ComplexGitSync.git_repo.git_repo import WorkingRepo
 
     registry = _make_ready_registry(tmp_path)
     # The root of _make_ready_registry is named "project", so that is what a

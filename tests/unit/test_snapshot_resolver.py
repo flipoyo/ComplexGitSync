@@ -1,4 +1,4 @@
-"""Unit tests for ``ComplexGitSync.snapshot_resolver``.
+"""Unit tests for ``ComplexGitSync.tree.snapshot_resolver``.
 
 Adapted from the direct-function coverage in ``tests/unit/test_cli_smoke.py``
 (the ``test_gts_auto_discovery_*`` tests that call ``_discover_gts_path``
@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-from ComplexGitSync.snapshot_resolver import (
+from ComplexGitSync.tree.snapshot_resolver import (
     discover_cgshome,
     discover_gts_path,
     resolve_gts_path,

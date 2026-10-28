@@ -22,11 +22,11 @@ from test_push_folds_memory import _git, _identify, _loaded, _memory_ready_works
 from ComplexGitSync import orchestre
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_runner import GitRunner
-from ComplexGitSync.global_index import GlobalIndex
 from ComplexGitSync.merkle import MerkleRoot
-from ComplexGitSync.omniscience_observation import ObservationStatus
-from ComplexGitSync.omniscience_record import OmniscienceRecord
+from ComplexGitSync.omniscience.global_index import GlobalIndex
+from ComplexGitSync.omniscience.omniscience_observation import ObservationStatus
+from ComplexGitSync.omniscience.omniscience_record import OmniscienceRecord
+from ComplexGitSync.tree.git_runner import GitRunner
 
 _OMNISCIENCE = "github:flipoyo/omniscience"
 
@@ -138,7 +138,7 @@ def test_register_appends_the_record_and_the_first_checkpoint_and_twice_does_not
 
 def test_a_file_the_register_holds_with_other_content_is_never_rewritten(tmp_path, addresses):
     """Omniscience §10, item 8: the same content-addressed name with other bytes is refused, not overwritten."""
-    from ComplexGitSync.orchestre.omniscience_appender import RegisterAppender
+    from ComplexGitSync.omniscience.omniscience_appender import RegisterAppender
 
     omni = _omniscience_remote(tmp_path, "_global")
     tree, client = _workspace(tmp_path, "a", "alice", omni, addresses)
@@ -158,7 +158,7 @@ def test_a_file_the_register_holds_with_other_content_is_never_rewritten(tmp_pat
 
 def test_a_push_the_provider_refuses_with_nobody_else_appending_is_the_callers_error_unretried(tmp_path, addresses, monkeypatch):
     """Omniscience §10, items 4 and 8: an unauthorized append reaches the caller unchanged, moves nothing and is never retried."""
-    from ComplexGitSync.orchestre.omniscience_appender import RegisterAppender
+    from ComplexGitSync.omniscience.omniscience_appender import RegisterAppender
 
     omni = _omniscience_remote(tmp_path, "_global")
     tree, client = _workspace(tmp_path, "a", "alice", omni, addresses)
@@ -312,7 +312,7 @@ def test_a_read_only_or_dirty_mount_is_refused(tmp_path, addresses):
 
 
 def test_the_reserved_name_cannot_be_registered(tmp_path, addresses):
-    from ComplexGitSync.omniscience_repository import OmniscienceRepository
+    from ComplexGitSync.omniscience.omniscience_repository import OmniscienceRepository
 
     assert OmniscienceRepository.branch("_global", "main") == "_global"  # the case the register refuses, by name
 
@@ -444,7 +444,7 @@ def test_a_network_outage_is_unreachable_and_never_a_deletion(tmp_path, addresse
 def test_a_closed_branch_comes_from_the_ledger_and_never_from_a_failed_fetch(tmp_path, addresses):
     omni = _omniscience_remote(tmp_path, "_global")
     tree, client = _workspace(tmp_path, "a", "alice", omni, addresses)
-    from ComplexGitSync.orchestre.omniscience_observer import OmniscienceObserver
+    from ComplexGitSync.omniscience.omniscience_observer import OmniscienceObserver
 
     remote = tree["memory_remote"]
     commit = _git(remote, "rev-parse", "demo")

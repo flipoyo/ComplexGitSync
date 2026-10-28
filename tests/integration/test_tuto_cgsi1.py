@@ -507,7 +507,7 @@ class TestReleaseTags:
     def test_a_workspace_left_by_the_old_freeze_release_pushes_main(
         self, cgsi1_sandbox, monkeypatch, tmp_path, capsys
     ):
-        from ComplexGitSync.git_repo import RefKind
+        from ComplexGitSync.git_repo.git_repo import RefKind
         from ComplexGitSync.orchestre import ComplexGitSyncClient
 
         home = _released_workspace(cgsi1_sandbox, monkeypatch, tmp_path)
@@ -582,8 +582,8 @@ def _current_lgr_snapshot_path(project_root: Path, register_name: str) -> Path:
     named is no longer written, and the hash-chained ledger answers the same
     question with better evidence.
     """
-    from ComplexGitSync.memory.ledger_store import LedgerStore
-    from ComplexGitSync.memory.states import MemoryStates
+    from ComplexGitSync.tree.memory.ledger_store import LedgerStore
+    from ComplexGitSync.tree.memory.states import MemoryStates
 
     cgitsync_dir = project_root / ".cgitsync"
     entries = LedgerStore(cgitsync_dir / "lgr").read_all_entries()

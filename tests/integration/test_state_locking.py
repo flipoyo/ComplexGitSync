@@ -16,9 +16,9 @@ import pytest
 from test_push_folds_memory import _change, _git, _loaded, _memory_ready_workspace
 
 from ComplexGitSync.cli import main as cli_main
-from ComplexGitSync.memory.ledger_store import LedgerStore, LedgerStoreError
 from ComplexGitSync.orchestre import ComplexGitSyncClient
-from ComplexGitSync.workspace_lock import LOCK_FILE_NAME, WorkspaceBusyError
+from ComplexGitSync.tree.memory.ledger_store import LedgerStore, LedgerStoreError
+from ComplexGitSync.tree.workspace_lock import LOCK_FILE_NAME, WorkspaceBusyError
 
 
 @pytest.fixture

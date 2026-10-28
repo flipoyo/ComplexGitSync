@@ -15,7 +15,7 @@ from ComplexGitSync.errors import (
     InstallFrontierError,
     NestedConfigDiscoveryError,
 )
-from ComplexGitSync.git_repo import (
+from ComplexGitSync.git_repo.git_repo import (
     AccessProtocol,
     GitRepo,
     NodeType,
@@ -24,20 +24,7 @@ from ComplexGitSync.git_repo import (
     SyncState,
     WorkingRepo,
 )
-from ComplexGitSync.git_tree import (
-    GitTree,
-    TreeLifecycleState,
-    WorkingGitTree,
-    make_repo_id,
-    normalize_node_types,
-)
-from ComplexGitSync.memory.agent_contract import AgentContractRecord
-from ComplexGitSync.memory.conformity import ConformityCriterion, ConformityScore
-from ComplexGitSync.memory.self_history import AgentInfo, SelfHistoryRecord
-from ComplexGitSync.memory.states import (
-    MemoryStates,
-)
-from ComplexGitSync.operating_space import OperatingSpace
+from ComplexGitSync.operating_space.operating_space import OperatingSpace
 from ComplexGitSync.orchestre import (
     ComplexGitSyncClient,
     GtsDocument,
@@ -46,6 +33,19 @@ from ComplexGitSync.orchestre import (
     _looks_like_https_auth_failure,
     _looks_like_ssh_auth_failure,
     _protocol_switch_hint,
+)
+from ComplexGitSync.tree.git_tree import (
+    GitTree,
+    TreeLifecycleState,
+    WorkingGitTree,
+    make_repo_id,
+    normalize_node_types,
+)
+from ComplexGitSync.tree.memory.agent_contract import AgentContractRecord
+from ComplexGitSync.tree.memory.conformity import ConformityCriterion, ConformityScore
+from ComplexGitSync.tree.memory.self_history import AgentInfo, SelfHistoryRecord
+from ComplexGitSync.tree.memory.states import (
+    MemoryStates,
 )
 
 
@@ -498,12 +498,12 @@ def test_initialise_cgs_default_cgshome_is_cgspath_project_name(tmp_path, monkey
 
     client.tree = None
 
-    from ComplexGitSync.registry import RegistryTranslator
+    from ComplexGitSync.tree.registry import RegistryTranslator
 
     _orig = RegistryTranslator.from_cgs_document
 
     def _fake_build_registry(*args, **kwargs):
-        from ComplexGitSync.git_repo import RepoLifecycleState
+        from ComplexGitSync.git_repo.git_repo import RepoLifecycleState
         from ComplexGitSync.orchestre import ROOT_REPO_ID
         reg = _orig(*args, **kwargs)
         # Pre-mark root READY so the clone loop completes without git calls.
@@ -545,12 +545,12 @@ def test_initialise_cgs_default_cgshome_uses_environment(tmp_path, monkeypatch):
     monkeypatch.setattr(client, "write_gts_snapshot", _fake_write_gts)
     monkeypatch.setattr(client.state_store, "record_snapshot", lambda *a, **kw: None)
 
-    from ComplexGitSync.registry import RegistryTranslator
+    from ComplexGitSync.tree.registry import RegistryTranslator
 
     _orig = RegistryTranslator.from_cgs_document
 
     def _fake_build_registry(*args, **kwargs):
-        from ComplexGitSync.git_repo import RepoLifecycleState
+        from ComplexGitSync.git_repo.git_repo import RepoLifecycleState
         from ComplexGitSync.orchestre import ROOT_REPO_ID
 
         reg = _orig(*args, **kwargs)
@@ -1874,7 +1874,7 @@ def _current_state_path(workspace: Path) -> Path:
     last wrote. It replaced the single-file register these tests used to
     read, which nothing writes any more.
     """
-    from ComplexGitSync.memory.ledger_store import LedgerStore
+    from ComplexGitSync.tree.memory.ledger_store import LedgerStore
 
     entries = LedgerStore(workspace / ".cgitsync" / "lgr").read_all_entries()
     assert entries, "no ledger entry was written"
@@ -1883,7 +1883,7 @@ def _current_state_path(workspace: Path) -> Path:
 
 def _ledger_entries(workspace: Path):
     """Every entry in the workspace's chain, oldest first."""
-    from ComplexGitSync.memory.ledger_store import LedgerStore
+    from ComplexGitSync.tree.memory.ledger_store import LedgerStore
 
     return LedgerStore(workspace / ".cgitsync" / "lgr").read_all_entries()
 
@@ -2747,7 +2747,7 @@ class _StrictCloneGitRunner(_FakeGitRunner):
 
 def _make_entry(repo_id: str, abs_path: Path, *, parent_id: str | None = None):
     """Create a minimal WorkingRepo for circularity testing."""
-    from ComplexGitSync.git_repo import (
+    from ComplexGitSync.git_repo.git_repo import (
         NodeType,
         WorkingRepo,
     )
@@ -2770,7 +2770,7 @@ def _make_entry(repo_id: str, abs_path: Path, *, parent_id: str | None = None):
 
 
 def test_resolve_repo_for_path_finds_owning_leaf(tmp_path):
-    from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, resolve_repo_for_path
 
     root_path = tmp_path / "root"
     leaf_path = root_path / "deps" / "leaf"
@@ -2786,7 +2786,7 @@ def test_resolve_repo_for_path_finds_owning_leaf(tmp_path):
 
 
 def test_resolve_repo_for_path_falls_back_to_root(tmp_path):
-    from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, resolve_repo_for_path
 
     root_path = tmp_path / "root"
     leaf_path = root_path / "deps" / "leaf"
@@ -2804,7 +2804,7 @@ def test_resolve_repo_for_path_falls_back_to_root(tmp_path):
 def test_resolve_repo_for_path_prefers_the_deepest_nested_owner(tmp_path):
     # deps/leaf sits physically inside root's own directory tree -- the
     # child, not the parent, must win.
-    from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, resolve_repo_for_path
 
     root_path = tmp_path / "root"
     leaf_path = root_path / "deps" / "leaf"
@@ -2820,7 +2820,7 @@ def test_resolve_repo_for_path_prefers_the_deepest_nested_owner(tmp_path):
 
 
 def test_resolve_repo_for_path_accepts_a_relative_path(tmp_path, monkeypatch):
-    from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, resolve_repo_for_path
 
     root_path = tmp_path / "root"
     root_path.mkdir()
@@ -2839,7 +2839,7 @@ def test_resolve_repo_for_path_relative_path_anchors_at_tree_root_not_cwd(tmp_pa
     of the process's CWD -- the standalone-mode invariant every other
     command already honors (.agent/.local/.dev/DevTickets/archive/20260902_AddRmCgshomeResolution_DevPlanTicket.md).
     """
-    from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, resolve_repo_for_path
 
     root_path = tmp_path / "root"
     root_path.mkdir()
@@ -2857,7 +2857,7 @@ def test_resolve_repo_for_path_relative_path_anchors_at_tree_root_not_cwd(tmp_pa
 
 def test_resolve_repo_for_path_rejects_a_path_outside_every_repo(tmp_path):
     from ComplexGitSync.errors import GitSyncError
-    from ComplexGitSync.git_tree import WorkingGitTree, resolve_repo_for_path
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, resolve_repo_for_path
 
     root_path = tmp_path / "root"
     root_path.mkdir()
@@ -2871,7 +2871,7 @@ def test_resolve_repo_for_path_rejects_a_path_outside_every_repo(tmp_path):
 
 def test_fix_circularities_removes_duplicate_leaf_when_parent_exists(tmp_path):
     """A leaf entry whose absolute_path matches an existing parent is removed."""
-    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, fix_circularities
 
     parent2_path = tmp_path / "parent2"
     registry = WorkingGitTree()
@@ -2891,7 +2891,7 @@ def test_fix_circularities_removes_duplicate_leaf_when_parent_exists(tmp_path):
 
 def test_fix_circularities_no_changes_when_no_duplicates(tmp_path):
     """Returns empty tuple when there are no duplicate absolute paths."""
-    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, fix_circularities
 
     registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
@@ -2906,7 +2906,7 @@ def test_fix_circularities_no_changes_when_no_duplicates(tmp_path):
 
 def test_fix_circularities_handles_cascading_duplicates(tmp_path):
     """Both a leaf and its child duplicate are removed when all share the same paths."""
-    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, fix_circularities
 
     parent2_path = tmp_path / "parent2"
     leaf_path = parent2_path / "leaf"
@@ -2930,7 +2930,7 @@ def test_fix_circularities_handles_cascading_duplicates(tmp_path):
 
 def test_fix_circularities_multiple_parents_sharing_leaf(tmp_path):
     """Multiple parents referencing the same leaf: only one canonical entry survives."""
-    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, fix_circularities
 
     shared_path = tmp_path / "shared"
     registry = WorkingGitTree()
@@ -2950,8 +2950,8 @@ def test_fix_circularities_multiple_parents_sharing_leaf(tmp_path):
 
 
 def test_fix_circularities_keeps_duplicates_when_commit_or_status_conflict(tmp_path):
-    from ComplexGitSync.git_repo import RepoLifecycleState, SyncState
-    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
+    from ComplexGitSync.git_repo.git_repo import RepoLifecycleState, SyncState
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, fix_circularities
 
     shared_path = tmp_path / "shared"
     registry = WorkingGitTree()
@@ -2977,8 +2977,8 @@ def test_fix_circularities_keeps_duplicates_when_commit_or_status_conflict(tmp_p
 
 
 def test_fix_circularities_keeps_duplicates_when_declared_refs_conflict(tmp_path):
-    from ComplexGitSync.git_repo import RefKind
-    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
+    from ComplexGitSync.git_repo.git_repo import RefKind
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, fix_circularities
 
     shared_path = tmp_path / "shared"
     registry = WorkingGitTree()
@@ -3184,7 +3184,7 @@ def _parse_change(change: str) -> tuple[str, str]:
 
 def test_find_scc_no_cycle_returns_trivial_sccs(tmp_path):
     """A simple linear chain has only trivial SCCs (size 1)."""
-    from ComplexGitSync.git_tree import find_strongly_connected_components
+    from ComplexGitSync.tree.git_tree import find_strongly_connected_components
 
     a, b, c = tmp_path / "a", tmp_path / "b", tmp_path / "c"
     graph = {a: {b}, b: {c}, c: set()}
@@ -3196,7 +3196,7 @@ def test_find_scc_no_cycle_returns_trivial_sccs(tmp_path):
 
 def test_find_scc_two_node_cycle(tmp_path):
     """A two-node cycle is detected as one non-trivial SCC."""
-    from ComplexGitSync.git_tree import find_strongly_connected_components
+    from ComplexGitSync.tree.git_tree import find_strongly_connected_components
 
     a, b = tmp_path / "a", tmp_path / "b"
     graph = {a: {b}, b: {a}}
@@ -3208,7 +3208,7 @@ def test_find_scc_two_node_cycle(tmp_path):
 
 def test_find_scc_three_node_cycle(tmp_path):
     """A three-node mutual cycle is detected as one SCC."""
-    from ComplexGitSync.git_tree import find_strongly_connected_components
+    from ComplexGitSync.tree.git_tree import find_strongly_connected_components
 
     a, b, c = tmp_path / "a", tmp_path / "b", tmp_path / "c"
     graph = {a: {b}, b: {c}, c: {a}}
@@ -3220,7 +3220,7 @@ def test_find_scc_three_node_cycle(tmp_path):
 
 def test_find_scc_disconnected_graph(tmp_path):
     """Disconnected nodes each form their own trivial SCC."""
-    from ComplexGitSync.git_tree import find_strongly_connected_components
+    from ComplexGitSync.tree.git_tree import find_strongly_connected_components
 
     a, b, c = tmp_path / "a", tmp_path / "b", tmp_path / "c"
     graph = {a: set(), b: set(), c: set()}
@@ -3231,7 +3231,7 @@ def test_find_scc_disconnected_graph(tmp_path):
 
 def test_find_scc_self_loop_node_appears_in_result(tmp_path):
     """A self-loop node is included in the SCC result (as a trivial size-1 SCC)."""
-    from ComplexGitSync.git_tree import find_strongly_connected_components
+    from ComplexGitSync.tree.git_tree import find_strongly_connected_components
 
     a = tmp_path / "a"
     graph = {a: {a}}
@@ -3248,7 +3248,7 @@ def test_find_scc_self_loop_node_appears_in_result(tmp_path):
 
 def test_topological_sort_linear_chain(tmp_path):
     """Root -> parent -> leaf is returned in parent-first order."""
-    from ComplexGitSync.git_tree import WorkingGitTree, topological_sort
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, topological_sort
 
     registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
@@ -3266,7 +3266,7 @@ def test_topological_sort_linear_chain(tmp_path):
 
 def test_topological_sort_all_entries_returned(tmp_path):
     """Every registry entry is returned exactly once."""
-    from ComplexGitSync.git_tree import WorkingGitTree, topological_sort
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, topological_sort
 
     registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
@@ -3281,7 +3281,7 @@ def test_topological_sort_all_entries_returned(tmp_path):
 
 def test_topological_sort_parent_before_all_children(tmp_path):
     """Root always comes before all other entries."""
-    from ComplexGitSync.git_tree import WorkingGitTree, topological_sort
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, topological_sort
 
     registry = WorkingGitTree()
     registry.add(_make_entry("root", tmp_path))
@@ -3300,7 +3300,7 @@ def test_topological_sort_parent_before_all_children(tmp_path):
 
 def test_fix_circularities_detects_true_two_node_cycle(tmp_path):
     """Phase 1 removes the back-edge entry that creates an A<->B cycle."""
-    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, fix_circularities
 
     # Registry: root -> a -> b -> a (a's path reappears as a child of b)
     path_a = tmp_path / "a"
@@ -3325,7 +3325,7 @@ def test_fix_circularities_detects_true_two_node_cycle(tmp_path):
 
 def test_fix_circularities_back_edge_marked_is_external_reference(tmp_path):
     """The back-edge entry has is_external_reference=True set before removal."""
-    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, fix_circularities
 
     path_a = tmp_path / "a"
     path_b = tmp_path / "a" / "b"
@@ -3346,7 +3346,7 @@ def test_fix_circularities_back_edge_marked_is_external_reference(tmp_path):
 
 def test_fix_circularities_anchor_heuristic_most_external_edges(tmp_path):
     """When two nodes tie on depth, the one with more external edges wins."""
-    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, fix_circularities
 
     # Build: root -> a -> c -> a (cycle); root -> b -> c -> b (cycle)
     # path_a and path_b are both at depth 1 (1 colon in repo_id).
@@ -3377,7 +3377,7 @@ def test_fix_circularities_anchor_heuristic_most_external_edges(tmp_path):
 
 def test_fix_circularities_no_duplicate_changes_for_same_entry(tmp_path):
     """Each removed entry appears exactly once in the returned changes tuple."""
-    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, fix_circularities
 
     path_a = tmp_path / "a"
     path_b = tmp_path / "a" / "b"
@@ -3397,7 +3397,7 @@ def test_fix_circularities_no_duplicate_changes_for_same_entry(tmp_path):
 
 def test_fix_circularities_phase1_and_phase2_together(tmp_path):
     """Phase 1 (SCC) and Phase 2 (path dedup) both fire when needed."""
-    from ComplexGitSync.git_tree import WorkingGitTree, fix_circularities
+    from ComplexGitSync.tree.git_tree import WorkingGitTree, fix_circularities
 
     path_a = tmp_path / "a"
     path_b = tmp_path / "a" / "b"
@@ -3425,7 +3425,7 @@ def test_fix_circularities_phase1_and_phase2_together(tmp_path):
 
 def test_fix_circularities_pending_clone_skips_external_reference(tmp_path):
     """_pending_clone_entries excludes entries with is_external_reference=True."""
-    from ComplexGitSync.git_repo import RepoLifecycleState
+    from ComplexGitSync.git_repo.git_repo import RepoLifecycleState
 
     # Manually set is_external_reference on a DECLARED entry and verify it
     # is filtered out by _pending_clone_entries.
@@ -3455,7 +3455,7 @@ def test_fix_circularities_pending_clone_skips_external_reference(tmp_path):
 
 
 def test_sync_gitignore_writes_children_at_every_parent_bearing_level(tmp_path):
-    from ComplexGitSync.git_tree import sync_gitignore
+    from ComplexGitSync.tree.git_tree import sync_gitignore
 
     root_path = tmp_path / "root"
     middle_path = root_path / "middle"
@@ -3485,7 +3485,7 @@ def test_sync_gitignore_writes_children_at_every_parent_bearing_level(tmp_path):
 
 
 def test_sync_gitignore_preserves_existing_lines_and_only_appends_missing(tmp_path):
-    from ComplexGitSync.git_tree import sync_gitignore
+    from ComplexGitSync.tree.git_tree import sync_gitignore
 
     root_path = tmp_path / "root"
     child_path = root_path / "child-repo"
@@ -3514,7 +3514,7 @@ def test_sync_gitignore_preserves_existing_lines_and_only_appends_missing(tmp_pa
 
 
 def test_sync_gitignore_second_call_is_a_no_op(tmp_path):
-    from ComplexGitSync.git_tree import sync_gitignore
+    from ComplexGitSync.tree.git_tree import sync_gitignore
 
     root_path = tmp_path / "root"
     child_path = root_path / "child-repo"
@@ -3535,7 +3535,7 @@ def test_sync_gitignore_second_call_is_a_no_op(tmp_path):
 
 
 def test_sync_gitignore_skip_leaves_repo_untouched(tmp_path):
-    from ComplexGitSync.git_tree import sync_gitignore
+    from ComplexGitSync.tree.git_tree import sync_gitignore
 
     root_path = tmp_path / "root"
     child_path = root_path / "child-repo"
@@ -3557,7 +3557,7 @@ def test_sync_gitignore_writes_root_managed_state_even_without_children(tmp_path
     cgitsync-managed state (.cgitsync/, <name>.lgr) gitignored — that state
     is written under the root regardless of whether the tree has any
     nested repos at all."""
-    from ComplexGitSync.git_tree import sync_gitignore
+    from ComplexGitSync.tree.git_tree import sync_gitignore
 
     leaf_path = tmp_path / "leaf"
     leaf_path.mkdir()

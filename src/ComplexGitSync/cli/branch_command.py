@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ..git_branch import ANCESTORS_BRANCH
+from ..git_repo.git_branch import ANCESTORS_BRANCH
 from ..orchestre import ComplexGitSyncClient
 from ._shared import (
     _format_tree_state_line,

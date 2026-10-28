@@ -8,13 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.errors import ConfigValidationError
-from ComplexGitSync.git_repo import GitProvider
-from ComplexGitSync.git_runner import ToolRun
-from ComplexGitSync.memory.environment import EnvironmentStore
-from ComplexGitSync.toolchain import Toolchain
-from ComplexGitSync.tree_env import (
+from ComplexGitSync.git_repo.git_repo import GitProvider
+from ComplexGitSync.tree.cgs_format import CgsDocument
+from ComplexGitSync.tree.git_runner import ToolRun
+from ComplexGitSync.tree.memory.environment import EnvironmentStore
+from ComplexGitSync.tree.toolchain import Toolchain
+from ComplexGitSync.tree.tree_env import (
     CredentialFact,
     Manifest,
     Requirements,

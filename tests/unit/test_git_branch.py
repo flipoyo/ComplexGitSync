@@ -21,8 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.cgs_format import CgsDocument
-from ComplexGitSync.git_branch import (
+from ComplexGitSync.git_repo.git_branch import (
     CLOSED_BRANCH_PREFIX,
     DEFAULT_BRANCH,
     PRIVATE_LOCAL_SEPARATOR,
@@ -38,10 +37,11 @@ from ComplexGitSync.git_branch import (
     resolve_propagated_ref,
     structural_name_problem,
 )
-from ComplexGitSync.git_repo import RefKind, WorkingRepo
-from ComplexGitSync.git_tree import WorkingGitTree, propagate_privacy
-from ComplexGitSync.operations import propagate_global_branch
+from ComplexGitSync.git_repo.git_repo import RefKind, WorkingRepo
 from ComplexGitSync.orchestre import ComplexGitSyncClient, _is_dot_named_mount
+from ComplexGitSync.tree.cgs_format import CgsDocument
+from ComplexGitSync.tree.git_tree import WorkingGitTree, propagate_privacy
+from ComplexGitSync.tree.operations import propagate_global_branch
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SRC_ROOT = _REPO_ROOT / "src" / "ComplexGitSync"
@@ -562,18 +562,18 @@ class TestClosedBranchNaming:
 
 
 def test_the_private_local_naming_rule_has_exactly_one_owner():
-    """Nothing outside ``git_branch.py`` composes ``<base>_<branch>``.
+    """Nothing outside ``git_repo/git_branch.py`` composes ``<base>_<branch>``.
 
     Two ways it could spread, both checked. A module could import the
     separator constant, or it could inline the underscore in an f-string
     joining two names. The branch fallback chain was six private copies
-    across five modules before ``git_branch.py`` existed; this stops the
+    across five modules before ``git_repo/git_branch.py`` existed; this stops the
     naming rule going the same way.
     """
     allowed = {
         # Not a branch name: the state directory's "state(<hash>)_<n>"
         # suffix, which numbers a workspace state, not a project branch.
-        "memory/states.py": 1,
+        "tree/memory/states.py": 1,
     }
     inline = {
         path.relative_to(_SRC_ROOT).as_posix(): hits
@@ -590,7 +590,7 @@ def test_the_private_local_naming_rule_has_exactly_one_owner():
         for path in sorted(_SRC_ROOT.rglob("*.py"))
         if "PRIVATE_LOCAL_SEPARATOR" in path.read_text(encoding="utf-8")
     }
-    assert users == {"git_branch.py"}, (
+    assert users == {"git_repo/git_branch.py"}, (
         "the private/local separator escaped its module. "
         "git_branch.private_local_branch is its only owner."
     )
@@ -603,15 +603,15 @@ def test_the_private_local_naming_rule_has_exactly_one_owner():
 
 _ALLOWED_MAIN_LITERALS = {
     # The one definition of the .cgs fallback chain's last link.
-    "git_branch.py": 1,
+    "git_repo/git_branch.py": 1,
     # Git's own .gitmodules default for a submodule that names no branch —
     # read on one line, written back on another.
-    "discovery.py": 2,
+    "tree/discovery.py": 2,
     "orchestre/discovery_commands.py": 1,
     # Last resort on a bare repository path with no tree behind it.
-    "git_runner.py": 1,
+    "git_repo/git_runner.py": 1,
     # Frozen input to the canonical .gts snapshot hash.
-    "gts_document.py": 1,
+    "tree/gts_document.py": 1,
     # Not a branch at all: the CLI entry-point function's name in __all__.
     "cli/__init__.py": 1,
 }
@@ -645,14 +645,14 @@ def test_the_main_literal_does_not_spread_back_through_the_source():
     }
 
     assert counts == _ALLOWED_MAIN_LITERALS, (
-        'the literal "main" moved. git_branch.py owns the .cgs fallback chain '
+        'the literal "main" moved. git_repo/git_branch.py owns the .cgs fallback chain '
         "(DEFAULT_BRANCH); anything else spelling it must be a different "
         "decision, carry a comment saying so, and be listed here."
     )
 
 
 def test_git_branch_is_ring_zero_and_imports_only_git_repo():
-    source = (_SRC_ROOT / "git_branch.py").read_text(encoding="utf-8")
+    source = (_SRC_ROOT / "git_repo/git_branch.py").read_text(encoding="utf-8")
 
     assert "Ring: 0" in source
     internal_imports = set(re.findall(r"^from \.(\w+) import", source, flags=re.MULTILINE))
@@ -691,7 +691,7 @@ def test_every_cgs_in_this_tree_states_its_branch_explicitly(cgs_path):
     ``project.default_branch`` defaults to ``DEFAULT_BRANCH`` for other
     people's files, and that stays. But a reader of *this* tree must be able
     to open any of its ``.cgs`` files and see which branch it lands on
-    without reading ``git_branch.py`` — which is precisely what
+    without reading ``git_repo/git_branch.py`` — which is precisely what
     ``docs/DocCGS.cgs`` could not offer before the MultiBranchSync ticket.
     """
     raw = tomllib_loads(cgs_path)

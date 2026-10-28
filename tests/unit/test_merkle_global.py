@@ -15,9 +15,9 @@ import json
 import pytest
 
 from ComplexGitSync.errors import ConfigValidationError
-from ComplexGitSync.global_index import GlobalIndex
 from ComplexGitSync.merkle import MerkleRoot
-from ComplexGitSync.omniscience_record import OmniscienceRecord
+from ComplexGitSync.omniscience.global_index import GlobalIndex
+from ComplexGitSync.omniscience.omniscience_record import OmniscienceRecord
 
 OS_ID = hashlib.sha256(b"demo").hexdigest()
 STATE = "state(" + "ab" * 32 + ")"

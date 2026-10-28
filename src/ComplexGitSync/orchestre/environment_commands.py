@@ -10,25 +10,25 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from .. import tree_env
-from ..cgs_format import CgsDocument
 from ..errors import (
     GitSyncError,
 )
-from ..tree_env import TreeObserver
+from ..tree import tree_env
+from ..tree.cgs_format import CgsDocument
+from ..tree.tree_env import TreeObserver
 
 if TYPE_CHECKING:
     pass
-from ..git_tree import (
+from ..tree.git_tree import (
     ROOT_REPO_ID,
 )
-from ..operations import (
+from ..tree.operations import (
     BranchTopologyReport,
 )
-from ..operations import (
+from ..tree.operations import (
     validate_branch_topology as _validate_branch_topology,
 )
-from ..settings import Settings, UseCase
+from ..tree.settings import Settings, UseCase
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .client import ComplexGitSyncClient
@@ -104,8 +104,8 @@ class EnvironmentCommands:
         1. **Reference branch**: The root repository's current branch is the
            canonical reference for all repos in the tree.
         2. **Leaf-to-root inheritance**: Branch targeting flows root-first via
-           :func:`~ComplexGitSync.operations.propagate_global_branch` and
-           :func:`~ComplexGitSync.operations.create_global_branch`.  This
+           :func:`~ComplexGitSync.tree.operations.propagate_global_branch` and
+           :func:`~ComplexGitSync.tree.operations.create_global_branch`.  This
            method verifies that the on-disk state is coherent with that rule.
         3. **Allowed divergence**: Repos whose ``resolved_ref_kind`` is
            ``TAG`` are flagged as ``tag_divergence`` but are considered

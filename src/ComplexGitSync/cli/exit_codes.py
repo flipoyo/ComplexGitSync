@@ -5,7 +5,7 @@ Contract: three documented exit codes, and one function saying which code an
     expected failure gets. Returns ``None`` for anything it does not
     recognise, so a programming defect still reaches the user as a traceback
     instead of being disguised as a tidy failure.
-Imports: autofix, errors
+Imports: tree, errors
 
 The distinction that matters to a script is between **"I asked and the
 answer is no"** and **"I could not ask"**. A CI job treats those
@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import tomllib
 
-from ..autofix.repair_from_cli import NoMatchingRepairError
 from ..errors import (
     ConfigValidationError,
     GitSyncError,
@@ -25,6 +24,7 @@ from ..errors import (
     TreeNotReadyError,
     UnsupportedSnapshotFormatError,
 )
+from ..tree.autofix.repair_from_cli import NoMatchingRepairError
 
 #: The command did what was asked.
 EXIT_OK = 0

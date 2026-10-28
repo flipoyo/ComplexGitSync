@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from ComplexGitSync.omniscience_answer import Answer, MemoryDetail, OmniscienceStatus, Stop
+from ComplexGitSync.omniscience.omniscience_answer import (
+    Answer,
+    MemoryDetail,
+    OmniscienceStatus,
+    Stop,
+)
 
 
 def test_the_five_outcomes_and_the_four_memory_reasons_are_exactly_the_documented_words():

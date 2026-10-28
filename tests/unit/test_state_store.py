@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 
-from ComplexGitSync.memory.states import (
+from ComplexGitSync.tree.memory.states import (
     MemoryStates,
 )
 

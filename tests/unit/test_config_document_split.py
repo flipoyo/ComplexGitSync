@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.config_document import ConfigDocument
-from ComplexGitSync.config_document_io import ConfigDocumentIOMixin
+from ComplexGitSync.tree.config_document import ConfigDocument
+from ComplexGitSync.tree.config_document_io import ConfigDocumentIOMixin
 
 
 class _TestDocument(ConfigDocument, ConfigDocumentIOMixin):

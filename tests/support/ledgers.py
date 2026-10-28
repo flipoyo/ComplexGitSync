@@ -10,8 +10,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from ComplexGitSync.memory.ledger_entry import LedgerEntry, Relocation
-from ComplexGitSync.memory.ledger_store import ArgvScrubber, LedgerStore
+from ComplexGitSync.tree.memory.ledger_entry import LedgerEntry, Relocation
+from ComplexGitSync.tree.memory.ledger_store import ArgvScrubber, LedgerStore
 
 
 def append_entry(

@@ -21,9 +21,9 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.cli import main as cli_main
-from ComplexGitSync.git_runner import GitRunner
-from ComplexGitSync.operations import restart_tree
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.tree.git_runner import GitRunner
+from ComplexGitSync.tree.operations import restart_tree
 
 WIDE_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
 

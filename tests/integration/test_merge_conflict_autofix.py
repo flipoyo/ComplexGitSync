@@ -25,10 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.autofix.repair_from_cli import FromCliRepair, NoMatchingRepairError
-from ComplexGitSync.autofix.repair_merge_conflict import MergeConflictRepair
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_repo import (
+from ComplexGitSync.git_repo.git_repo import (
     AccessProtocol,
     DiscoveryState,
     GitProvider,
@@ -38,9 +36,11 @@ from ComplexGitSync.git_repo import (
     SyncState,
     WorkingRepo,
 )
-from ComplexGitSync.git_runner import GitRunner
-from ComplexGitSync.git_tree import WorkingGitTree
-from ComplexGitSync.operations import merge_tree
+from ComplexGitSync.tree.autofix.repair_from_cli import FromCliRepair, NoMatchingRepairError
+from ComplexGitSync.tree.autofix.repair_merge_conflict import MergeConflictRepair
+from ComplexGitSync.tree.git_runner import GitRunner
+from ComplexGitSync.tree.git_tree import WorkingGitTree
+from ComplexGitSync.tree.operations import merge_tree
 
 _MERGE_BRANCH = "feature"
 
@@ -185,7 +185,7 @@ def test_repair_declines_a_merge_refusal_that_named_another_repository(refused_m
     tree, runner, _error = refused_merge
     repair = MergeConflictRepair()
     leaf = tree.get("root:deps/leaf")
-    from ComplexGitSync.autofix.base import Situation
+    from ComplexGitSync.tree.autofix.base import Situation
 
     named_elsewhere = "merge refused; no repository was merged: project: merging 'feature' conflicts"
     assert repair.matches(Situation(repo=tree.get("root"), source_error=named_elsewhere))

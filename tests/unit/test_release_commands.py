@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from ComplexGitSync.git_repo import WorkingRepo
-from ComplexGitSync.git_tree import WorkingGitTree
+from ComplexGitSync.git_repo.git_repo import WorkingRepo
 from ComplexGitSync.orchestre.release_commands import ReleaseCommands
-from ComplexGitSync.project_version import ProjectVersion
+from ComplexGitSync.tree.git_tree import WorkingGitTree
+from ComplexGitSync.tree.project_version import ProjectVersion
 
 
 @pytest.mark.parametrize(

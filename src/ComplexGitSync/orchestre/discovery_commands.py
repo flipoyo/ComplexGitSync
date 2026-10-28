@@ -12,29 +12,29 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ..cgs_format import CgsDocument, parse_repo_id
-from ..discovery import (
+from ..errors import (
+    GitSyncError,
+)
+from ..tree.cgs_format import CgsDocument, parse_repo_id
+from ..tree.discovery import (
     ImportSubmodulesReport,
     SubmoduleEntry,
     _parse_gitmodules,
     discover_nested_configs,
 )
-from ..errors import (
-    GitSyncError,
-)
 
 if TYPE_CHECKING:
     pass
-from ..git_tree import (
-    _update_gitignore_file,
-    innermost_containing_path,
-)
-from ..git_tree_branch import GitTreeBranches
-from ..provider import (
+from ..git_repo.provider import (
     creation_plan,
     looks_like_already_exists,
     looks_like_not_signed_in,
 )
+from ..tree.git_tree import (
+    _update_gitignore_file,
+    innermost_containing_path,
+)
+from ..tree.git_tree_branch import GitTreeBranches
 from .git_probes import GitProbes
 from .memory_facts import MemoryFacts
 from .reports import (
@@ -107,7 +107,7 @@ class DiscoveryCommands:
           3. Removes the submodule's stanza from ``.gitmodules`` (deletes
              the file entirely when all stanzas are removed), then stages
              the updated file.
-          4. Calls the existing :func:`~ComplexGitSync.git_tree._update_gitignore_file`
+          4. Calls the existing :func:`~ComplexGitSync.tree.git_tree._update_gitignore_file`
              helper (``git_tree.py``) to append ``<path>`` to
              ``<repo_root>/.gitignore`` — the same step the ``.gitignore``
              lifecycle sync performs for every parent-child relationship.
@@ -551,7 +551,7 @@ class DiscoveryCommands:
 
         For each repository found, ``origin``'s URL is read and converted to
         the canonical ``provider:owner/repository`` shorthand through the
-        *existing* :func:`~ComplexGitSync.cgs_format.parse_repo_id` grammar —
+        *existing* :func:`~ComplexGitSync.tree.cgs_format.parse_repo_id` grammar —
         this method adds no second parser. ``relative_path`` comes straight
         from the walk rather than from a repository name, so a child mounted
         at ``external/Thing`` is recorded there and not at ``Thing``.

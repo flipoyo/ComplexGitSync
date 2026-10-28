@@ -16,11 +16,11 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.cgs_format import CgsDocument
-from ComplexGitSync.discovery import discover_nested_configs
 from ComplexGitSync.errors import ConfigValidationError
-from ComplexGitSync.git_branch import RefKind
-from ComplexGitSync.registry import RegistryTranslator
+from ComplexGitSync.git_repo.git_branch import RefKind
+from ComplexGitSync.tree.cgs_format import CgsDocument
+from ComplexGitSync.tree.discovery import discover_nested_configs
+from ComplexGitSync.tree.registry import RegistryTranslator
 
 # ---------------------------------------------------------------------------
 # F1 — the root repository's declared branch used to be ignored

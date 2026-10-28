@@ -27,7 +27,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from .git_repo import SyncState, WorkingRepo
+from .git_repo.git_repo import SyncState, WorkingRepo
 
 
 def _status_display_path(entry: WorkingRepo, root_path: Path) -> str:

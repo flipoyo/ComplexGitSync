@@ -2,7 +2,7 @@
 
 BeforeBeta §2.5 binds every step from the map on: no new provider call (rule 2), no new
 code touching Merkle nodes outside the hashing modules (rule 3), and nothing new in
-what a future ``GitRepo/`` folder would import (rule 7). Each is a snapshot here, so a
+what the ``git_repo`` folder imports (rule 7: nothing). Each is a snapshot here, so a
 change that adds one fails by name, and one that removes one (CliReduction, ProviderMigration,
 MerkleRoot, SrcLayout) shrinks the snapshot in the same change.
 """
@@ -119,7 +119,7 @@ KNOWN_PROVIDER_CALLS = {
     ("orchestre/discovery_commands", "creation_plan"): 1,
     ("orchestre/discovery_commands", "run_tool"): 1,
     ("orchestre/memory_setup", "creation_plan"): 1,
-    ("tree_env", "run_tool"): 2,
+    ("tree/tree_env", "run_tool"): 2,
 }
 
 
@@ -148,19 +148,16 @@ def test_no_module_outside_the_merkle_package_touches_an_inner_node(modules):
 
 #: Every hash is MerkleRoot's, bar two that name and prove nothing recorded: a tie-break among candidate paths in
 #: `git_tree`, and the key of a cache file in `runtime_state_store` (owner, 2026-10-27).
-KNOWN_LOCAL_HASHES = {"git_tree", "orchestre/runtime_state_store"}
+KNOWN_LOCAL_HASHES = {"tree/git_tree", "orchestre/runtime_state_store"}
 
 
 def test_no_module_computes_a_hash_outside_merkle_except_the_two_local_ones(modules):
     assert set(map_surface.hashlib_outside(modules)) == KNOWN_LOCAL_HASHES
 
 
-#: Rule 7. What the proposed GitRepo set still imports from the rest of the package. SrcLayout empties it.
-KNOWN_GITREPO_LEAKS = {("git_runner", "errors"), ("git_runner", "universal_clock")}
-
-
-def test_the_proposed_gitrepo_set_imports_nothing_new_from_the_rest_of_the_package(modules):
-    assert set(map_surface.gitrepo_leaks(modules)) == KNOWN_GITREPO_LEAKS
+#: Rule 7. What the ``git_repo`` folder imports from the rest of the package: nothing (SrcLayout, D4).
+def test_the_git_repo_folder_imports_nothing_from_the_rest_of_the_package(modules):
+    assert map_surface.gitrepo_leaks(modules) == []
 
 
 def test_every_section_renders():

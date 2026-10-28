@@ -20,10 +20,10 @@ import pytest
 from ComplexGitSync import orchestre
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.cli import memory_prompt
-from ComplexGitSync.git_runner import GitRunner
-from ComplexGitSync.git_tree import TreeProfile
 from ComplexGitSync.orchestre import ComplexGitSyncClient
 from ComplexGitSync.orchestre.memory_setup import MemorySetup, MemorySetupWarning
+from ComplexGitSync.tree.git_runner import GitRunner
+from ComplexGitSync.tree.git_tree import TreeProfile
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -448,7 +448,7 @@ def test_a_recording_command_in_a_terminal_asks_once(dev_tree, monkeypatch, caps
 
 
 def test_status_json_carries_the_operating_space_id(tmp_path, capsys):
-    from ComplexGitSync.operating_space import OperatingSpace
+    from ComplexGitSync.operating_space.operating_space import OperatingSpace
 
     workspace = tmp_path / "u"
     _loaded(workspace, _cgs())

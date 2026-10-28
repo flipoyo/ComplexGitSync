@@ -18,10 +18,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from ComplexGitSync.clone_guard import (
+from ComplexGitSync.git_repo.clone_guard import (
     CloneGuard,
 )
-from ComplexGitSync.git_runner import GitRunner
+from ComplexGitSync.tree.git_runner import GitRunner
 
 
 def _run_git(repo_path: Path, *args: str) -> str:

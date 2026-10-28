@@ -16,9 +16,9 @@ from test_tuto_cgsi1 import _run_git, cgsi1_sandbox  # noqa: F401  (a fixture th
 
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_runner import GitRunner
-from ComplexGitSync.memory.pending import PendingMemory
-from ComplexGitSync.operations.partial_failure import TreePartialFailure
+from ComplexGitSync.tree.git_runner import GitRunner
+from ComplexGitSync.tree.memory.pending import PendingMemory
+from ComplexGitSync.tree.operations.partial_failure import TreePartialFailure
 
 # ---------------------------------------------------------------------------
 # D1: the harness

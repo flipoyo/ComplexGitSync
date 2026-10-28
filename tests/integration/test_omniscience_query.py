@@ -33,12 +33,12 @@ from test_push_folds_memory import _git, _identify
 
 from ComplexGitSync import orchestre
 from ComplexGitSync.cli import main as cli_main
-from ComplexGitSync.git_runner import GitRunner
-from ComplexGitSync.global_index import GlobalIndex
-from ComplexGitSync.gts_document import GtsDocument
-from ComplexGitSync.omniscience_record import OmniscienceRecord
-from ComplexGitSync.operating_space import OperatingSpace
-from ComplexGitSync.registry import RegistryTranslator
+from ComplexGitSync.omniscience.global_index import GlobalIndex
+from ComplexGitSync.omniscience.omniscience_record import OmniscienceRecord
+from ComplexGitSync.operating_space.operating_space import OperatingSpace
+from ComplexGitSync.tree.git_runner import GitRunner
+from ComplexGitSync.tree.gts_document import GtsDocument
+from ComplexGitSync.tree.registry import RegistryTranslator
 
 _ORIGINAL_SNAPSHOT = fixtures._root_snapshot  # patched per workspace below, always from the original
 

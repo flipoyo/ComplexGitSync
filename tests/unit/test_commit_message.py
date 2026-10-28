@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.commit_message import CommitMessagePolicy
 from ComplexGitSync.errors import GitSyncError
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.tree.commit_message import CommitMessagePolicy
 
 POLICY = CommitMessagePolicy(stems=("ComplexGitSync", "cgitsync"), version="3.3.0")
 # 701a98f was written when the project stood at 3.1.1; respelled with the dash prefix of ReleaseCommand.

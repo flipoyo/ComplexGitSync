@@ -19,9 +19,9 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.memory.integrity import HistoryState
 from ComplexGitSync.orchestre import ComplexGitSyncClient
-from ComplexGitSync.snapshot_resolver import discover_gts_path
+from ComplexGitSync.tree.memory.integrity import HistoryState
+from ComplexGitSync.tree.snapshot_resolver import discover_gts_path
 
 _CGS = 'project = "demo"\n\nrepos = [\n  "github:owner/demo",\n]\n'
 # The project is "demo"; project branch "x" keeps its memory on "demo_x" and

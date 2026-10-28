@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from ComplexGitSync.git_runner import GitRunner
+from ComplexGitSync.tree.git_runner import GitRunner
 from ComplexGitSync.universal_clock import SystemClock
 
 

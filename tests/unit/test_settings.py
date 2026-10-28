@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ComplexGitSync import settings
-from ComplexGitSync.gts_document import GtsDocument
-from ComplexGitSync.settings import Settings
+from ComplexGitSync.tree import settings
+from ComplexGitSync.tree.gts_document import GtsDocument
+from ComplexGitSync.tree.settings import Settings
 
 # ---------------------------------------------------------------------------
 # cgs_root
@@ -120,7 +120,7 @@ def test_the_state_directory_is_named_by_the_documents_content(tmp_path):
 
 
 def test_an_empty_snapshot_never_claims_to_be_ready(tmp_path):
-    from ComplexGitSync.registry import RegistryTranslator
+    from ComplexGitSync.tree.registry import RegistryTranslator
 
     workspace = Settings.default_workspace(tmp_path)
     snapshot = next((workspace / ".cgitsync").rglob("*.gts"))

@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ComplexGitSync.cli import main as cli_main
-from ComplexGitSync.settings import Settings
+from ComplexGitSync.tree.settings import Settings
 
 
 def _cgs_root() -> Path:

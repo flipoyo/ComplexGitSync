@@ -15,12 +15,12 @@ import pytest
 
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.git_runner import GitRunner
-from ComplexGitSync.memory import Finding, HistoryState, LedgerEntry
-from ComplexGitSync.memory.ledger_store import LedgerStore
-from ComplexGitSync.memory.pending import PendingMemory
-from ComplexGitSync.operations import AncestorOperation
 from ComplexGitSync.orchestre import ComplexGitSyncClient
+from ComplexGitSync.tree.git_runner import GitRunner
+from ComplexGitSync.tree.memory import Finding, HistoryState, LedgerEntry
+from ComplexGitSync.tree.memory.ledger_store import LedgerStore
+from ComplexGitSync.tree.memory.pending import PendingMemory
+from ComplexGitSync.tree.operations import AncestorOperation
 from ComplexGitSync.universal_clock import SystemClock
 
 

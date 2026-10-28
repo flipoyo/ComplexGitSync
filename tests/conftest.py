@@ -60,6 +60,6 @@ def _nested_use_case(request, monkeypatch):
     if request.node.get_closest_marker("real_use_case"):
         return
     from ComplexGitSync.orchestre.installer import Installer
-    from ComplexGitSync.settings import UseCase
+    from ComplexGitSync.tree.settings import UseCase
 
     monkeypatch.setattr(Installer, "_use_case_of", lambda self, cgshome: UseCase.NESTED)

@@ -16,11 +16,12 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ..cgs_format import CgsDocument
+from ..tree.cgs_format import CgsDocument
 
 if TYPE_CHECKING:
     pass
-from ..git_tree import (
+from ..operating_space.operating_space import OperatingSpace
+from ..tree.git_tree import (
     ProjectTreeState,
     TreeLifecycleState,
     WorkingGitTree,
@@ -28,24 +29,23 @@ from ..git_tree import (
     normalize_node_types,
     propagate_privacy,
 )
-from ..git_tree import (
+from ..tree.git_tree import (
     fix_circularities as _fix_circularities,
 )
-from ..git_tree_branch import GitTreeBranches
-from ..gts_document import GtsDocument
-from ..memory import Relocation
-from ..memory.commit_log import (
+from ..tree.git_tree_branch import GitTreeBranches
+from ..tree.gts_document import GtsDocument
+from ..tree.memory import Relocation
+from ..tree.memory.commit_log import (
     CommitLog,
 )
-from ..memory.pending import (
+from ..tree.memory.pending import (
     PendingMemory,
 )
-from ..memory.states import (
+from ..tree.memory.states import (
     MemoryStates,
 )
-from ..operating_space import OperatingSpace
-from ..paths import PathResolver
-from ..registry import (
+from ..tree.paths import PathResolver
+from ..tree.registry import (
     RegistryTranslator,
 )
 from .command_run_logger import CommandRunLogger

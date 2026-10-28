@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import pytest
 
-from ComplexGitSync.memory.agent_contract import (
+from ComplexGitSync.tree.memory.agent_contract import (
     AgentContractRecord,
 )
 

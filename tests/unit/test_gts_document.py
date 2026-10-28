@@ -1,6 +1,6 @@
 """Standalone tests for the extracted ``gts_document`` module.
 
-These import directly from ``ComplexGitSync.gts_document`` — never from
+These import directly from ``ComplexGitSync.tree.gts_document`` — never from
 ``ComplexGitSync.orchestre`` — to prove the extraction (P2 of
 ``.agent/.local/.dev/DevTickets/archive/20260828_Isolation_DevPlanTicket.md``) actually stands on its
 own: importable and fully testable with no Git binary, no filesystem beyond
@@ -19,15 +19,15 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import ConfigValidationError, UnsupportedSnapshotFormatError
-from ComplexGitSync.git_repo import NodeType
-from ComplexGitSync.gts_document import (
+from ComplexGitSync.git_repo.git_repo import NodeType
+from ComplexGitSync.merkle import MerkleRoot
+from ComplexGitSync.tree.gts_document import (
     GtsDocument,
     _as_optional_str,
     _parse_gts_node_type,
     _repo_ref_name,
     _repo_ref_token,
 )
-from ComplexGitSync.merkle import MerkleRoot
 
 INTEGRITY_SCHEMA = MerkleRoot.SCHEMA
 

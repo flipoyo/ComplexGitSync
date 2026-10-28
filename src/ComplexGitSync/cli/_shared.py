@@ -20,18 +20,18 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ..cgs_format import CgsDocument
 from ..errors import GitSyncError
-from ..git_repo import RepoScope
-from ..git_tree import ProjectTreeState, iter_tree_leaf_first, resolve_repo_for_path
+from ..git_repo.git_repo import RepoScope
 from ..orchestre import (
     ComplexGitSyncClient,
     _scope_for,
     create_run_logger,
     resolve_command_scope,
 )
-from ..settings import Settings
-from ..snapshot_resolver import (
+from ..tree.cgs_format import CgsDocument
+from ..tree.git_tree import ProjectTreeState, iter_tree_leaf_first, resolve_repo_for_path
+from ..tree.settings import Settings
+from ..tree.snapshot_resolver import (
     CGSHOME_ORIGIN_CWD,
     CGSHOME_ORIGIN_DEFAULT,
     CGSHOME_ORIGIN_ENVIRONMENT,
@@ -423,7 +423,7 @@ def _resolve_workspace_source(source: str | None, search_dir: str | None) -> Pat
 
     The explicit source path, or the latest workspace snapshot under
     ``CGSHOME/.cgitsync`` when *source* is omitted (see
-    :func:`~ComplexGitSync.snapshot_resolver.describe_workspace_source`).
+    :func:`~ComplexGitSync.tree.snapshot_resolver.describe_workspace_source`).
     An auto-discovered one is announced first (see
     :func:`_announce_source_resolution`).
     """

@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from ComplexGitSync.memory.environment import EnvironmentStore
-from ComplexGitSync.memory.ledger_store import LedgerStore
 from ComplexGitSync.orchestre import ComplexGitSyncClient
-from ComplexGitSync.tree_env import ToolVersion, TreeEnvironment, TreeObserver
+from ComplexGitSync.tree.memory.environment import EnvironmentStore
+from ComplexGitSync.tree.memory.ledger_store import LedgerStore
+from ComplexGitSync.tree.tree_env import ToolVersion, TreeEnvironment, TreeObserver
 
 _CGS = 'project = "demo"\nenvironment_root = "demo"\nrepos = ["github:owner/demo"]\n'
 

@@ -6,10 +6,10 @@ from types import SimpleNamespace
 import pytest
 
 from ComplexGitSync import __version__
-from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.cli import main
 from ComplexGitSync.orchestre import ComplexGitSyncClient, DiscoveredRepo
-from ComplexGitSync.settings import UseCase
+from ComplexGitSync.tree.cgs_format import CgsDocument
+from ComplexGitSync.tree.settings import UseCase
 
 
 def _is_state_file(path: Path) -> bool:
@@ -789,7 +789,7 @@ def test_branch_command_uses_client_handler(monkeypatch, capsys, tmp_path):
 
 
 def test_checkout_command_with_tag_ref_kind(monkeypatch, capsys, tmp_path):
-    from ComplexGitSync.git_repo import RefKind
+    from ComplexGitSync.git_repo.git_repo import RefKind
 
     captured_call: dict[str, object] = {}
 
@@ -1188,7 +1188,7 @@ def test_gts_auto_discovery_search_dir_option(monkeypatch, capsys, tmp_path):
 
 def test_gts_auto_discovery_no_snapshot_raises_error(monkeypatch, tmp_path):
     """When CGSHOME cannot be found, auto-discovery raises FileNotFoundError."""
-    from ComplexGitSync.snapshot_resolver import discover_gts_path as _discover_gts_path
+    from ComplexGitSync.tree.snapshot_resolver import discover_gts_path as _discover_gts_path
 
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
@@ -1202,7 +1202,7 @@ def test_gts_auto_discovery_no_snapshot_raises_error(monkeypatch, tmp_path):
 
 def test_gts_auto_discovery_no_snapshot_under_cgshome_raises_error(monkeypatch, tmp_path):
     """When CGSHOME exists but has no snapshots, auto-discovery raises FileNotFoundError."""
-    from ComplexGitSync.snapshot_resolver import discover_gts_path as _discover_gts_path
+    from ComplexGitSync.tree.snapshot_resolver import discover_gts_path as _discover_gts_path
 
     workspace = tmp_path / "workspace"
     (workspace / ".cgitsync" / "state").mkdir(parents=True)
@@ -1216,7 +1216,7 @@ def test_gts_auto_discovery_falls_back_to_most_recent(tmp_path):
     """_discover_gts_path returns the most recently modified .gts without a .lgr."""
     import os
 
-    from ComplexGitSync.snapshot_resolver import discover_gts_path as _discover_gts_path
+    from ComplexGitSync.tree.snapshot_resolver import discover_gts_path as _discover_gts_path
 
     state_dir = tmp_path / ".cgitsync" / "state"
     state_dir.mkdir(parents=True)
@@ -1235,7 +1235,7 @@ def test_gts_auto_discovery_falls_back_to_most_recent(tmp_path):
 def test_gts_auto_discovery_falls_back_to_canonical_state_dirs(tmp_path):
     import os
 
-    from ComplexGitSync.snapshot_resolver import discover_gts_path as _discover_gts_path
+    from ComplexGitSync.tree.snapshot_resolver import discover_gts_path as _discover_gts_path
 
     old_state = tmp_path / ".cgitsync" / ("state(" + "a" * 64 + ")_0")
     new_state = tmp_path / ".cgitsync" / ("state(" + "b" * 64 + ")_1")
@@ -1255,7 +1255,7 @@ def test_gts_auto_discovery_falls_back_to_canonical_state_dirs(tmp_path):
 def test_gts_auto_discovery_prefers_lgr_current_snapshot(tmp_path):
     import os
 
-    from ComplexGitSync.snapshot_resolver import discover_gts_path as _discover_gts_path
+    from ComplexGitSync.tree.snapshot_resolver import discover_gts_path as _discover_gts_path
 
     state_dir = tmp_path / ".cgitsync" / "state"
     state_dir.mkdir(parents=True)

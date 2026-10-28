@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError
-from ComplexGitSync.workspace_lock import (
+from ComplexGitSync.tree.workspace_lock import (
     LOCK_FILE_NAME,
     LockHolder,
     WorkspaceBusyError,
@@ -153,7 +153,7 @@ def test_two_real_processes_one_holds_the_lock_and_the_other_is_refused_then_get
                 """
                 import sys, time
                 from pathlib import Path
-                from ComplexGitSync.workspace_lock import WorkspaceLock
+                from ComplexGitSync.tree.workspace_lock import WorkspaceLock
                 state, ready, release = map(Path, sys.argv[1:])
                 with WorkspaceLock(state).hold("push"):
                     ready.write_text("held")

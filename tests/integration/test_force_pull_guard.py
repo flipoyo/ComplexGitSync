@@ -43,7 +43,7 @@ def test_pull_force_still_works_when_every_commit_is_on_a_remote(tmp_path):
 
 
 def test_the_runner_counts_what_a_forced_pull_would_drop(tmp_path):
-    from ComplexGitSync.git_runner import GitRunner
+    from ComplexGitSync.tree.git_runner import GitRunner
 
     tree = _two_repo_workspace(tmp_path)
     runner = GitRunner()
@@ -80,7 +80,7 @@ def test_pull_force_on_a_clean_tree_stashes_nothing(tmp_path):
 
 
 def test_the_runner_counts_a_detached_head_but_not_another_branch_that_keeps_its_ref(tmp_path):
-    from ComplexGitSync.git_runner import GitRunner
+    from ComplexGitSync.tree.git_runner import GitRunner
 
     tree = _two_repo_workspace(tmp_path)
     runner = GitRunner()
