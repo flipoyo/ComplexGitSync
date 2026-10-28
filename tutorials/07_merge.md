@@ -173,6 +173,13 @@ built. In a tree with none they are refused and change nothing.
 A closed branch's memory is safe once merged: it is reachable from the target,
 and `branch close` records anything it alone holds before renaming it.
 
+Afterwards `branch list` (and `status`) end with a line for each branch that ended
+some other way than this one: `error: vanished` for a branch pushed once and since
+gone from origin without a trace in the ledger, say after someone deleted it with
+plain Git. `info: closed branch 'feature'` is the healthy end you just made. Nothing
+is recorded by the listing; `branch list --json` hands each finding over for gx4g
+to record.
+
 ## 8. Summary
 
 | Situation | Command |

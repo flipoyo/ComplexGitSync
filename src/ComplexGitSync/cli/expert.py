@@ -286,11 +286,8 @@ def _register_branch(subparser: argparse.ArgumentParser) -> None:
     listing = actions.add_parser(
         "list", help="List the project's branches and which repositories hold each; change nothing.", description="List the project's branches and which repositories hold each; change nothing."
     )
-    listing.add_argument(
-        "--per-repo",
-        action="store_true",
-        help="One line per repository with its own local branches, instead of the project's branches.",
-    )
+    listing.add_argument("--per-repo", action="store_true", help="One line per repository with its own local branches, instead of the project's branches.")
+    listing.add_argument("--json", action="store_true", help="Print one JSON object: the project's branches and the findings about dead ones.")
     _add_gts_argument(listing)
     _add_search_dir_argument(listing)
     _add_private_argument(listing, verb="List the branches of")

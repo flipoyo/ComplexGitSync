@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     pass
+from ..errors import GitSyncError
 from ..git_repo.git_repo import (
     WorkingRepo,
 )
@@ -58,6 +59,7 @@ from .reports import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..tree.branch_findings import BranchFinding
     from .client import ComplexGitSyncClient
 
 
@@ -169,6 +171,7 @@ class Reporting:
             payload = JsonRender.empty_status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value, profile=view.profile)
         else:
             payload = JsonRender.status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value, is_ready=view.tree_state.is_ready, registry_complete=view.tree_state.registry_complete, rows=view.rows, counts=view.counts, warnings=view.incoherent, profile=view.profile)
+        payload["branch_findings"] = [finding.to_record() for finding in self._findings()]
         return JsonRender.dumps(OperatingSpace(self.client.get_dependency_registry()).stamp(payload))
 
     def verify_json(self, cgshome: str | Path, *, repair: bool = False) -> str:
@@ -183,6 +186,13 @@ class Reporting:
         cgitsync_dir = Path(cgshome) / ".cgitsync"
         return JsonRender.dumps(JsonRender.verify(cgshome=str(Path(cgshome).resolve()), state=report.state.name.lower().replace("_", "-"), entries=len(PendingMemory(cgitsync_dir).read_ledger_entries()), findings=report.findings, repair=repair))
 
+    def _findings(self) -> tuple[BranchFinding, ...]:
+        """The dead and dying branches, for a report: one that cannot be read costs the reader nothing."""
+        try:
+            return self.client.branch_findings()
+        except GitSyncError:
+            return ()
+
     def status(self) -> str:
         view = self._collect_status()
         if view.is_empty:
@@ -193,20 +203,10 @@ class Reporting:
         tree_state = view.tree_state
         lines = [
             (
-                "summary "
-                f"ready={str(tree_state.is_ready).lower()} "
-                f"complete={str(tree_state.registry_complete).lower()} "
-                f"use_case={use_case} "
-                f"profile={view.profile} "
-                f"cgitsync_branch={view.branch_label} "
-                f"repos={len(rows)} "
-                f"dirty={counts.dirty} "
-                f"staged={counts.staged} "
-                f"ahead={counts.ahead} "
-                f"behind={counts.behind} "
-                f"unmeasured={counts.unmeasured} "
-                f"recorded_mismatch={counts.recorded_mismatch} "
-                f"errors={counts.errors}"
+                f"summary ready={str(tree_state.is_ready).lower()} complete={str(tree_state.registry_complete).lower()} "
+                f"use_case={use_case} profile={view.profile} cgitsync_branch={view.branch_label} repos={len(rows)} "
+                f"dirty={counts.dirty} staged={counts.staged} ahead={counts.ahead} behind={counts.behind} "
+                f"unmeasured={counts.unmeasured} recorded_mismatch={counts.recorded_mismatch} errors={counts.errors}"
             )
         ]
         lines.append(_render_status_table(rows))
@@ -217,6 +217,7 @@ class Reporting:
                 + "; ".join(incoherent)
                 + ". Run 'cgitsync checkout <branch>' to put it back."
             )
+        lines.extend(f"{finding.kind.severity}: {finding.describe()}" for finding in self._findings())
         if any(row[2] != PROJECT_SCOPE_LABEL for row in rows):
             lines.append(SCOPE_LEGEND)
         if counts.unmeasured:

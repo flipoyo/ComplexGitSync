@@ -32,41 +32,15 @@ def handle(args: argparse.Namespace) -> int:
     """``branch create <name>`` or ``branch list [--per-repo]``."""
     gts_path = _resolve_gts_path(args.gts, getattr(args, "search_dir", None))
     if args.branch_command == "list":
-        return _run_with_logging(
-            command_name="branch-list",
-            source=gts_path,
-            runner=lambda client, source: _execute_list(
-                client, source, private=args.private, per_repo=args.per_repo
-            ),
-        )
+        return _run_with_logging(command_name="branch-list", source=gts_path, runner=lambda client, source: _execute_list(client, source, private=args.private, per_repo=args.per_repo, as_json=args.json))
     if args.branch_command == "check":
-        return _run_with_logging(
-            command_name="branch-check",
-            source=gts_path,
-            runner=lambda client, source: _execute_check(client, source, branch=args.branch, private=args.private),
-        )
+        return _run_with_logging(command_name="branch-check", source=gts_path, runner=lambda client, source: _execute_check(client, source, branch=args.branch, private=args.private))
     if args.branch_command == "delete":
-        return _run_with_logging(
-            command_name="branch-delete",
-            source=gts_path,
-            runner=lambda client, source: _execute_delete(client, source, branch=args.branch, private=args.private),
-        )
-    return _run_with_logging(
-        command_name="branch-create",
-        source=gts_path,
-        runner=lambda client, source: _execute_create(
-            client, source, branch=args.branch, private=args.private
-        ),
-    )
+        return _run_with_logging(command_name="branch-delete", source=gts_path, runner=lambda client, source: _execute_delete(client, source, branch=args.branch, private=args.private))
+    return _run_with_logging(command_name="branch-create", source=gts_path, runner=lambda client, source: _execute_create(client, source, branch=args.branch, private=args.private))
 
 
-def _execute_create(
-    client: ComplexGitSyncClient,
-    source_path: Path,
-    *,
-    branch: str,
-    private: bool = False,
-) -> int:
+def _execute_create(client: ComplexGitSyncClient, source_path: Path, *, branch: str, private: bool = False) -> int:
     _load_ready_registry_source(client, source_path)
     print(f"git_command=git branch {branch}")
     client.branch(branch, private=private)
@@ -133,8 +107,11 @@ def _execute_list(
     *,
     private: bool = False,
     per_repo: bool = False,
+    as_json: bool = False,
 ) -> int:
     _load_ready_registry_source(client, source_path)
+    if as_json:
+        return _print_branches_json(client, private=private)
     if not per_repo:
         return _print_project_branches(client, private=private)
     print("git_command=git for-each-ref refs/heads")
@@ -144,6 +121,11 @@ def _execute_list(
             continue
         names = ", ".join(f"*{b}" if b == repo.current else b for b in repo.branches)
         print(f"{repo.name}: {names}")
+    return 0
+
+
+def _print_branches_json(client: ComplexGitSyncClient, *, private: bool) -> int:
+    print(client.branch_list_json(private=private))
     return 0
 
 
@@ -167,6 +149,8 @@ def _print_project_branches(client: ComplexGitSyncClient, *, private: bool) -> i
             where = ", ".join(w for w, held in (("local", b.local), ("origin", b.on_origin)) if held)
             note = "  kept on ancestors" if b.name in kept else ""
             print(f"  {b.name:<{width}}  {where:<13}  closed/{b.name}{note}")
+    for finding in client.branch_findings():
+        print(f"{finding.kind.severity}: {finding.describe()}")
     deleted = sorted(kept - {b.name for b in branches})
     if deleted:
         print("deleted, history kept on ancestors:")

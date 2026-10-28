@@ -42,6 +42,7 @@ from ..git_repo.git_repo import (
     WorkingRepo,
     repo_remote_url,
 )
+from ..json_render import JsonRender
 from ..omniscience.omniscience import Omniscience
 from ..omniscience.omniscience_commands import OmniscienceCommands
 from ..omniscience.omniscience_control import IntegrityControl
@@ -53,6 +54,7 @@ from ..status_render import (
     _status_scope_label,
     _status_tracking_label,
 )
+from ..tree.branch_findings import BranchFinding, BranchWatch
 from ..tree.git_runner import GitRunner
 from ..tree.git_tree import (
     ROOT_REPO_ID,
@@ -483,6 +485,15 @@ class ComplexGitSyncClient:
     def project_branches(self, *, private: bool = False) -> tuple[ProjectBranch, ...]:
         """List the project's own branches and which repositories hold each, without changing anything."""
         return self._tree_commands.project_branches(private=private)
+
+    def branch_list_json(self, *, private: bool = False) -> str:
+        """``branch list`` as one JSON object: the project's branches and the findings about dead ones."""
+        rows = [{"name": b.name, "local": b.local, "on_origin": b.on_origin, "closed": b.closed, "current": b.current, "following": b.following, "missing": list(b.missing)} for b in self.project_branches(private=private)]
+        return JsonRender.dumps({"command": "branch list", "branches": rows, "branch_findings": [f.to_record() for f in self.branch_findings()]})
+
+    def branch_findings(self) -> tuple[BranchFinding, ...]:
+        """The project branches that ended outside cgitsync or are ending badly (a report for gx4g to record); changes nothing."""
+        return BranchWatch(self.get_dependency_registry(), self.git_runner).findings()
 
     def fetch(self, *, private: bool = False) -> tuple[RepoOutcome, ...]:
         """Fetch origin, pruned, into every repository in the tree, without moving any branch."""
