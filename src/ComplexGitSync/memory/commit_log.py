@@ -246,19 +246,6 @@ class CommitLog:
             return []
         return sorted(path.stem for path in directory.glob("*.toml"))
 
-    def find_state_for_commit(self, sha: str) -> str | None:
-        """Which State's log holds a commit, so a push can record publishing it.
-
-        ``None`` when no log mentions it — a commit made outside `cgitsync`, or
-        one from before this existed. A push records nothing for those rather
-        than inventing a row, because the memory only speaks for what it saw.
-        """
-        for state_hash in self.state_hashes_with_logs():
-            for row in self.read(state_hash)["commit"]:
-                if row.get("sha") == sha:
-                    return state_hash
-        return None
-
     @staticmethod
     def is_published(log: dict[str, list[dict[str, Any]]], sha: str) -> bool:
         """Whether this log records that *sha* was pushed."""

@@ -1,7 +1,8 @@
 """workspace_locking — the client's writing methods each hold the workspace lock for their whole run.
 
 Ring: 3
-Contract: ``locks_writes`` wraps every method named in ``WRITING_METHODS`` so it
+Contract: ``locks_writes`` wraps every method named in ``WRITING_METHODS`` (and ``WRITING_WHEN``'s, only when
+    its flag is true) so it
     takes ``.cgitsync/.lock`` (``WorkspaceLock``) before it runs and gives it
     back after, which is how the CLI and a Python caller are covered by the
     same code. A workspace with no ``.cgitsync`` yet has nothing to protect, so
@@ -31,6 +32,10 @@ WRITING_METHODS = (
     "memory_adopt", "memory_migrate", "memory_branch", "memory_setup", "self_history_add", "self_history_adopt",
 )
 
+#: Methods that write only when one argument is true: ``verify(repair=True)`` rewrites the ``HEAD`` cache,
+#: ``verify()`` reads and never waits for the lock (CliReduction, ``verify repair``).
+WRITING_WHEN = {"verify": "repair"}
+
 T = TypeVar("T", bound=type)
 
 
@@ -38,6 +43,8 @@ def locks_writes(cls: T) -> T:
     """Class decorator: take the workspace lock around each of ``WRITING_METHODS``."""
     for name in WRITING_METHODS:
         setattr(cls, name, _locked(getattr(cls, name)))
+    for name, flag in WRITING_WHEN.items():
+        setattr(cls, name, _locked(getattr(cls, name), only_when=flag))
     return cls
 
 
@@ -54,14 +61,14 @@ def _workspace(client: Any, given: dict[str, Any]) -> Path:
     return client._workspace_root()
 
 
-def _locked(method: Callable[..., Any]) -> Callable[..., Any]:
+def _locked(method: Callable[..., Any], *, only_when: str | None = None) -> Callable[..., Any]:
     signature = inspect.signature(method)
 
     @functools.wraps(method)
     def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         given = signature.bind_partial(self, *args, **kwargs).arguments
         state_dir = _workspace(self, given) / ".cgitsync"
-        if not state_dir.is_dir():
+        if not state_dir.is_dir() or (only_when is not None and not given.get(only_when)):
             return method(self, *args, **kwargs)
         with WorkspaceLock(state_dir, self.clock).hold(method.__name__):
             return method(self, *args, **kwargs)
@@ -69,4 +76,9 @@ def _locked(method: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-__all__ = ["WRITING_METHODS", "locks_writes"]
+def unlock_workspace(cgshome: str | Path, clock: Any, *, force: bool = False) -> Any:
+    """Clear the lock a killed command left in *cgshome*; the holder it had, or ``None`` when there was none."""
+    return WorkspaceLock(Path(cgshome) / ".cgitsync", clock).clear(force=force)
+
+
+__all__ = ["WRITING_METHODS", "WRITING_WHEN", "locks_writes", "unlock_workspace"]

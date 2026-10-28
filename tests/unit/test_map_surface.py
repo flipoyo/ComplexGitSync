@@ -63,7 +63,7 @@ def test_every_leaf_command_of_the_real_parser_has_one_row(found):
         sub = subparsers(child)
         expected += len(sub.choices) if sub else 1
 
-    assert len(found) == expected == 66
+    assert len(found) == expected == 65  # 66 before CliReduction merged submodules report into import --dry-run
     assert len({leaf.path for leaf in found}) == len(found)
 
 
@@ -81,7 +81,7 @@ def test_a_leaf_that_writes_is_marked_a_writer_even_when_its_client_method_is_no
 
     assert by_path["memory mount"].writes == "writes"  # appends an entry to a `.cgs`; unlocked
     assert by_path["verify repair"].writes == "writes" and by_path["verify check"].writes == "reads"  # one method, a flag
-    assert by_path["submodules report"].writes == "reads" and by_path["submodules import"].writes == "writes"
+    assert "submodules report" not in by_path and by_path["submodules import"].writes == "writes"  # one command, --dry-run or --now
 
 
 def test_a_write_command_has_a_client_method_that_is_a_known_writer(found):
@@ -97,6 +97,20 @@ def test_every_module_is_given_a_folder(modules):
 
 
 # --- BeforeBeta §2.5, held as snapshots --------------------------------------------------
+
+#: CliReduction (owner, 2026-10-27): a CLI command reaches no class below the client for its behaviour. What it
+#: still names is plumbing every command shares to find a workspace (``_shared``: ``CgsDocument.from_toml``,
+#: ``Settings.*``, the snapshot resolution), and one formatter of a ring-1 record. The values it prints or builds
+#: (``RepoScope``, ``Drift``, ``AgentInfo``…) are data, not behaviour. This set only shrinks.
+PLUMBING = {"CgsDocument.from_toml", "Settings.other_workspaces", "Settings.resolve_use_case"}
+KNOWN_CLI_BEHAVIOUR_BELOW_THE_CLIENT = {"ConformityScale.render"}
+
+
+def test_no_command_reaches_behaviour_below_the_client_beyond_the_known_formatter(found):
+    reached = {name for leaf in found for name in leaf.below_client if "." in name} - PLUMBING
+
+    assert reached == KNOWN_CLI_BEHAVIOUR_BELOW_THE_CLIENT
+
 
 #: Rule 2, counted per module and call, so a second `run_tool` in a module that already has one is caught.
 #: `tree_env` has two: the sign-in probe of a provider's tool, and `ssh -V` (a tool probe, not a provider API).

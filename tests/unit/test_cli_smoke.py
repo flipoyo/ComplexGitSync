@@ -8,7 +8,7 @@ import pytest
 from ComplexGitSync import __version__
 from ComplexGitSync.cgs_format import CgsDocument
 from ComplexGitSync.cli import main
-from ComplexGitSync.orchestre import DiscoveredRepo
+from ComplexGitSync.orchestre import ComplexGitSyncClient, DiscoveredRepo
 from ComplexGitSync.settings import UseCase
 
 
@@ -240,9 +240,7 @@ def test_file_and_cli_codeberg_authoring_are_semantically_equivalent(tmp_path):
     )
 
     from_file = CgsDocument.from_toml(source)
-    from_cli = CgsDocument.from_project_definition(
-        "GX4G", ["codeberg:GX4G/GX4G"]
-    )
+    from_cli = ComplexGitSyncClient().configure("GX4G", ["codeberg:GX4G/GX4G"], new_name=False)
 
     assert from_file.to_dict() == from_cli.to_dict()
 
@@ -330,8 +328,8 @@ def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_pat
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def next_release_tag(self, force_tag=None):
-            return {"tag": f"demo-{force_tag or 1}", "project": "demo", "version": "", "source": "--force-tag" if force_tag else "next number"}
+        def next_release_tag(self, force_tag=None, message=None):
+            return {"tag": f"demo-{force_tag or 1}", "project": "demo", "version": "", "source": "--force-tag" if force_tag else "next number", "subject": (message or "").splitlines()[0] if message else "release of demo"}
 
         def freeze_release(self, message, *, force_tag=None, **kwargs):
             captured_call["message"] = message

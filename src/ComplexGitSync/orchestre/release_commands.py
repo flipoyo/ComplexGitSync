@@ -92,13 +92,13 @@ class ReleaseCommands:
         numbers = [int(tag[len(project) + 1 :]) for tag in tags if tag.startswith(f"{project}-") and tag[len(project) + 1 :].isdigit()]
         return str(max(numbers, default=0) + 1), "next number"
 
-    def next_release_tag(self, force_tag: str | None = None) -> dict[str, str]:
-        """The tag ``release freeze`` would use now: ``tag``, ``version``, ``source``."""
+    def next_release_tag(self, force_tag: str | None = None, message: str | None = None) -> dict[str, str]:
+        """The tag ``release freeze`` would use now: ``tag``, ``version``, ``source``, and the ``subject`` of *message* when given."""
         project = self.project_name()
         version = ProjectVersion.read(self._root().absolute_path)
         tags = [row["tag"] for row in self.list_releases()]
         suffix, source = self.suffix(project, force_tag=force_tag, version=version, tags=tags)
-        return {"tag": f"{project}-{suffix}", "project": project, "version": version or "", "source": source}
+        return {"tag": f"{project}-{suffix}", "project": project, "version": version or "", "source": source, **({"subject": self.subject(message, project)} if message else {})}
 
     # -- freeze -------------------------------------------------------------
 

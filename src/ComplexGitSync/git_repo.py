@@ -230,10 +230,6 @@ class GitRepo:
     access_protocol: AccessProtocol = AccessProtocol.SSH
     commit_sha: str | None = None
 
-    @property
-    def resolved_group_name(self) -> str:
-        return self.group_name or self.project_name
-
 # ---------------------------------------------------------------------------
 # RepoAddress — URL derivation from GitRepo
 # ---------------------------------------------------------------------------
@@ -243,15 +239,13 @@ class GitRepo:
 class RepoAddress:
     """Encapsulates the identity fields required to compose a Git remote URL.
 
-    Build an instance directly or use :meth:`from_repo` to derive one from a
-    :class:`GitRepo`.
+    Build an instance from the identity fields.
 
     Building methods
     ~~~~~~~~~~~~~~~~
     * :meth:`to_ssh`  – return ``git@host:namespace/repo_name.git``
     * :meth:`to_https` – return ``https://host/namespace/repo_name.git``
     * :meth:`to_url`  – return the URL for an explicit :class:`AccessProtocol`
-    * :meth:`from_repo` – class-method factory from a :class:`GitRepo`
     """
 
     gitprovider: GitProvider
@@ -260,18 +254,6 @@ class RepoAddress:
     project_owner_name: str | None = None
     group_name: str | None = None
     gitprovider_url: str | None = None
-
-    @classmethod
-    def from_repo(cls, repo: GitRepo) -> RepoAddress:
-        """Derive a :class:`RepoAddress` from an existing :class:`GitRepo`."""
-        return cls(
-            gitprovider=repo.gitprovider,
-            project_name=repo.project_name,
-            repo_name=repo.repo_name,
-            project_owner_name=repo.project_owner_name,
-            group_name=repo.group_name,
-            gitprovider_url=repo.gitprovider_url,
-        )
 
     def _resolve_host(self) -> str:
         if self.gitprovider_url:

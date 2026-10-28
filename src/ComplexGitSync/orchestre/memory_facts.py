@@ -61,12 +61,6 @@ class MemoryFacts:
     """Read-only facts the memory commands compute: what a State's ledger says, and who a memory belongs to."""
 
     @staticmethod
-    def release_snapshot_slug(release_name: str) -> str:
-        """Return a filesystem-friendly release suffix for immutable .gts files."""
-        slug = re.sub(r"[^A-Za-z0-9._-]+", "-", release_name.strip()).strip(".-_")
-        return slug or "release"
-
-    @staticmethod
     def verify_states_on_disk(
         workspace: Path,
         entries: Sequence[Any],

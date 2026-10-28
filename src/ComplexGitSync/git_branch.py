@@ -147,11 +147,6 @@ class BranchResolution:
         """Why this ref was chosen, in one sentence fit for a log line."""
         return _SOURCE_REASONS[self.source]
 
-    @property
-    def is_default(self) -> bool:
-        """True when nothing in the document named this branch."""
-        return self.source is BranchSource.BUILTIN_DEFAULT
-
     def apply_to(self, entry: WorkingRepo) -> None:
         """Record this resolution as *entry*'s target ref.
 

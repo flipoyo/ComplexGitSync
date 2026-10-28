@@ -168,3 +168,38 @@ def test_a_pull_from_a_fresh_client_locks_the_workspace_its_source_sits_in_not_t
             call(source)
 
     assert not (elsewhere / ".cgitsync").exists()  # nothing was locked, or made, where the command was typed
+
+
+def test_verify_repair_takes_the_lock_and_verify_check_never_does(tmp_path, other_process):
+    """CliReduction: ``verify repair`` rewrites the ``HEAD`` cache, so it waits for no one and is refused while another writes;
+    ``verify check`` only reads and runs."""
+    tree = _memory_ready_workspace(tmp_path)
+    client = _loaded(tree["snapshot"])
+    _held_by(tree, other_process.pid)
+
+    assert not client.verify(tree["root"]).findings  # a read runs while the lock is held
+    with pytest.raises(WorkspaceBusyError, match=rf"process {other_process.pid}"):
+        client.verify(tree["root"], repair=True)
+
+
+def test_unlock_is_a_client_method_and_the_command_only_calls_it(tmp_path, other_process):
+    tree = _memory_ready_workspace(tmp_path)
+    client = _loaded(tree["snapshot"])
+    finished = subprocess.Popen([sys.executable, "-c", "pass"])
+    finished.wait()
+    _held_by(tree, finished.pid, command="merge")
+
+    holder = client.unlock(tree["root"])
+
+    assert (holder.pid, holder.command) == (finished.pid, "merge") and not _lock_file(tree).exists()
+    assert client.unlock(tree["root"]) is None  # nothing left to clear
+    _held_by(tree, other_process.pid)
+    with pytest.raises(WorkspaceBusyError, match="still running"):
+        client.unlock(tree["root"])
+    assert client.unlock(tree["root"], force=True).pid == other_process.pid
+
+
+def test_the_client_names_the_repository_that_is_the_memory_mount(tmp_path):
+    tree = _memory_ready_workspace(tmp_path)
+
+    assert _loaded(tree["snapshot"]).memory_repo_names() == {"memory"}

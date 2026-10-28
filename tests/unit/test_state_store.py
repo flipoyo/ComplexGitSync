@@ -21,7 +21,6 @@ from __future__ import annotations
 import pytest
 
 from ComplexGitSync.memory.states import (
-    MemoryStateDirectory,
     MemoryStates,
 )
 
@@ -70,20 +69,10 @@ def test_state_directory_name_appends_order_suffix():
     assert MemoryStates.directory_name(_HASH_A, 7) == f"state({_HASH_A})_7"
 
 
-def test_temporary_state_directory_name_prefixes_dot_tmp():
-    assert MemoryStates.temporary_directory_name(_HASH_A, 3) == f".tmp-state({_HASH_A})_3"
-
-
 @pytest.mark.parametrize("bad_order", [-1, -100])
 def test_state_directory_name_rejects_negative_order(bad_order):
     with pytest.raises(ValueError):
         MemoryStates.directory_name(_HASH_A, bad_order)
-
-
-@pytest.mark.parametrize("bad_order", [-1, -100])
-def test_temporary_state_directory_name_rejects_negative_order(bad_order):
-    with pytest.raises(ValueError):
-        MemoryStates.temporary_directory_name(_HASH_A, bad_order)
 
 
 # ---------------------------------------------------------------------------
@@ -142,49 +131,6 @@ def test_next_state_directory_order_ignores_other_hashes_and_files(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_state_directory_suffix_is_scoped_to_exact_state_hash(tmp_path):
-    """Equivalent of test_registry_client.py's test of the same name, ported
-    to the extracted module rather than orchestre.py.
-    """
-
-    cgitsync_dir = tmp_path / ".cgitsync"
-    (cgitsync_dir / MemoryStates.directory_name(_HASH_A, 0)).mkdir(parents=True)
-    (cgitsync_dir / MemoryStates.directory_name(_HASH_A, 1)).mkdir()
-
-    same_hash_state = MemoryStates(cgitsync_dir).resolve_directory(_HASH_A)
-    other_hash_state = MemoryStates(cgitsync_dir).resolve_directory(_HASH_B)
-
-    assert same_hash_state.state_order == 2
-    assert same_hash_state.final_path.name == MemoryStates.directory_name(_HASH_A, 2)
-    assert other_hash_state.state_order == 0
-    assert other_hash_state.final_path.name == MemoryStates.directory_name(_HASH_B, 0)
-
-
-def test_resolve_memory_state_directory_returns_a_frozen_dataclass(tmp_path):
-    cgitsync_dir = tmp_path / ".cgitsync"
-
-    resolved = MemoryStates(cgitsync_dir).resolve_directory(_HASH_A)
-
-    assert isinstance(resolved, MemoryStateDirectory)
-    assert resolved.final_path == cgitsync_dir / f"state({_HASH_A})_0"
-    assert resolved.temporary_path == cgitsync_dir / f".tmp-state({_HASH_A})_0"
-    with pytest.raises(AttributeError):
-        resolved.state_order = 99  # type: ignore[misc]
-
-
-def test_resolve_memory_state_directory_skips_orders_with_a_stray_temporary_path(tmp_path):
-    """A crashed-mid-write leftover .tmp- directory must not be reused, even
-    if the final path for that order was never created.
-    """
-
-    cgitsync_dir = tmp_path / ".cgitsync"
-    (cgitsync_dir / MemoryStates.temporary_directory_name(_HASH_A, 0)).mkdir(parents=True)
-
-    resolved = MemoryStates(cgitsync_dir).resolve_directory(_HASH_A)
-
-    assert resolved.state_order == 1
-
-
 # ---------------------------------------------------------------------------
 # _state_snapshot_candidates / _state_snapshot_candidates_for_id
 # ---------------------------------------------------------------------------
@@ -215,27 +161,6 @@ def test_state_snapshot_candidates_includes_legacy_state_directory(tmp_path):
 
 def test_state_snapshot_candidates_returns_empty_list_when_directory_missing(tmp_path):
     assert MemoryStates(tmp_path / ".cgitsync").snapshot_candidates() == []
-
-
-def test_state_snapshot_candidates_for_id_matches_only_the_requested_hash(tmp_path):
-    cgitsync_dir = tmp_path / ".cgitsync"
-    state_dir_a = cgitsync_dir / MemoryStates.directory_name(_HASH_A, 0)
-    state_dir_a.mkdir(parents=True)
-    (state_dir_a / "a.gts").write_text("x")
-    state_dir_b = cgitsync_dir / MemoryStates.directory_name(_HASH_B, 0)
-    state_dir_b.mkdir(parents=True)
-    (state_dir_b / "b.gts").write_text("x")
-
-    candidates = MemoryStates(cgitsync_dir).snapshot_candidates_for_id(MemoryStates.format_id(_HASH_A))
-
-    assert candidates == [state_dir_a / "a.gts"]
-
-
-def test_state_snapshot_candidates_for_id_returns_empty_for_malformed_id(tmp_path):
-    cgitsync_dir = tmp_path / ".cgitsync"
-    cgitsync_dir.mkdir()
-
-    assert MemoryStates(cgitsync_dir).snapshot_candidates_for_id("not-a-state-id") == []
 
 
 # ---------------------------------------------------------------------------

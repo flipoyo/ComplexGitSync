@@ -42,7 +42,7 @@ _USAGE_ERROR_EXIT_CODE = 2
 RESPELLED: dict[str, str] = {
     "close-branch": "branch close",
     "pull-force": "pull --force",
-    "import-submodules": "submodules report (or submodules import to convert)",
+    "import-submodules": "submodules import --dry-run (or submodules import --now to convert)",
     "init-from-submodules": "submodules init",
     "branch --list": "branch list",
     "verify --repair": "verify repair",

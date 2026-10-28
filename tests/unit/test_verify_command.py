@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import tomli_w
+from support.ledgers import append_entry
 
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.memory.integrity import Finding, HistoryState
@@ -48,7 +49,7 @@ def _lgr_dir(cgshome: Path) -> Path:
 
 
 def _append(lgr_dir: Path, clock: _FixedClock, *, command: str, state_id: str):
-    return LedgerStore(lgr_dir).append_entry(command=command, argv=[command], state_id=state_id, state_dir=f"state({state_id})_0", outcome="ok", clock=clock)
+    return append_entry(LedgerStore(lgr_dir), command=command, argv=[command], state_id=state_id, state_dir=f"state({state_id})_0", outcome="ok", clock=clock)
 
 
 class TestClientVerify:

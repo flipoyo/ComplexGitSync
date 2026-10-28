@@ -212,7 +212,7 @@ pixi run cgitsync status
 ```bash
 pixi run cgitsync discover "$WORK/cawaqsviz" --write "$WORK/cawaqsviz/cawaqsviz.cgs"
 pixi run cgitsync initialise "$WORK/cawaqsviz/cawaqsviz.cgs" --output-path "$WORK" --force-protocol https
-pixi run cgitsync submodules import "$WORK/cawaqsviz" --recursive
+pixi run cgitsync submodules import "$WORK/cawaqsviz" --recursive --now
 ```
 
 1. **`discover`** reads the filesystem and drafts the `.cgs`. It sees
@@ -243,7 +243,7 @@ pixi run cgitsync submodules import "$WORK/cawaqsviz" --recursive
    else would send it looking for a sibling that doesn't exist. That is the
    step-1 naming rule, and `submodules init` checks it up front rather
    than letting `initialise` fail halfway.
-3. **`submodules import --recursive`** turns each submodule's
+3. **`submodules import --recursive --now`** turns each submodule's
    gitlink into a plain, independent clone: `git rm --cached <path>`,
    remove its `.gitmodules` stanza (deleting the file once every stanza is
    gone), and append `<path>` to that repository's own `.gitignore`.
@@ -256,7 +256,7 @@ pixi run cgitsync submodules import "$WORK/cawaqsviz" --recursive
 > submodules, since the conversion is a local, uncommitted change. Convert
 > first and `HydrologicalTwinAlphaSeries` comes back from GitHub with its
 > `.gitmodules` and its gitlink intact: a half-converted tree that looks
-> finished. Running `submodules import` again afterwards does **not** fix
+> finished. Running `submodules import --now` again afterwards does **not** fix
 > it either — the recursive walk follows the submodule graph declared by
 > the *root's* `.gitmodules`, which the first pass deleted, so it reports
 > "nothing to import" and never reaches the second level.

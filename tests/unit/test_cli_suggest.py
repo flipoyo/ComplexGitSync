@@ -152,7 +152,7 @@ def test_a_group_typed_bare_names_its_subcommands(group, first, capsys):
         (["branch", "--list", "--per-repo"], "'branch --list' is now 'branch list'."),
         (["verify", "--repair"], "'verify --repair' is now 'verify repair'."),
         (["memory", "self-history"], "'memory self-history' is now 'self-history list'."),
-        (["import-submodules", "x", "--apply"], "'import-submodules' is now 'submodules report"),
+        (["import-submodules", "x", "--apply"], "'import-submodules' is now 'submodules import --dry-run"),
         (["branch", "feature-x"], "'branch' takes a subcommand: create, list, close, check, delete."),
         (["verify", "--json"], "'verify' takes a subcommand: check, repair."),
         (["env", "--search-dir", "x"], "'env' takes a subcommand: show, check."),

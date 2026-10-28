@@ -21,9 +21,9 @@ The five env-marker functions (``_get_path_environment_markers`` through
 ``orchestre/``: pure string/``Path`` manipulation that only reads
 environment-variable *values*, never mutates anything.
 
-The four ``resolve_*`` functions mirror ``ComplexGitSyncClient``'s
-``resolve_cgshome``/``resolve_initialise_cgshome``/``resolve_clone_root``/
-``resolve_bootstrap_root`` methods. Reading those methods showed none of
+The ``resolve_*`` functions mirror ``ComplexGitSyncClient``'s
+``resolve_cgshome``/``resolve_initialise_cgshome``/
+``resolve_bootstrap_root`` methods (``resolve_clone_root`` was removed unused, CliReduction). Reading those methods showed none of
 them reference ``self`` for anything beyond calling another one of the same
 four (or the private ``_resolve_project_root`` helper, also duplicated here
 for the same reason) — every one is already a pure function of its explicit
@@ -259,18 +259,6 @@ class PathResolver:
             f"Clone destination already exists and is not empty: {default_root}\n"
             f"Choose a different --target-dir or ensure the directory is empty."
         )
-
-    @staticmethod
-    def resolve_clone_root(
-        config_path: str | Path,
-        *,
-        target_dir: str | Path | None = None,
-        output_path: str | Path | None = None,
-    ) -> Path:
-        """Resolve the destination directory a clone_cgs run will clone into."""
-        source_path = Path(config_path).resolve()
-        document = CgsDocument.from_toml(source_path)
-        return PathResolver.resolve_project_root(document, source_path, target_dir, output_path)
 
     @staticmethod
     def resolve_source_project_name(config_path: str | Path) -> str:

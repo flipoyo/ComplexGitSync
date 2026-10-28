@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from support.ledgers import append_entry
 
 from ComplexGitSync.memory.integrity import ChainVerifier
 from ComplexGitSync.memory.ledger_entry import LedgerEntry
@@ -229,7 +230,7 @@ class TestSecretScrubbing:
             secret,
         ]
 
-        entry = LedgerStore(lgr_dir).append_entry(command="clone", argv=argv, state_id="state(cafe)", state_dir="state(cafe)_1", outcome="ok", clock=FakeClock())
+        entry = append_entry(LedgerStore(lgr_dir), command="clone", argv=argv, state_id="state(cafe)", state_dir="state(cafe)_1", outcome="ok", clock=FakeClock())
 
         # The secret must not appear anywhere in the in-memory entry either —
         # proves scrubbing ran before build_next_entry, not after.
@@ -247,7 +248,7 @@ class TestSecretScrubbing:
     def test_head_file_never_contains_the_secret_either(self, tmp_path):
         lgr_dir = _lgr_dir(tmp_path)
         secret = "another-super-secret-value-zz"
-        LedgerStore(lgr_dir).append_entry(command="clone", argv=["clone", "--password", secret], state_id="state(a)", state_dir="state(a)_1", outcome="ok", clock=FakeClock())
+        append_entry(LedgerStore(lgr_dir), command="clone", argv=["clone", "--password", secret], state_id="state(a)", state_dir="state(a)_1", outcome="ok", clock=FakeClock())
         head_bytes = (lgr_dir / "HEAD").read_bytes()
         assert secret.encode() not in head_bytes
 

@@ -1867,22 +1867,6 @@ def test_make_repo_id_only_collapses_explicit_dot_relative_path():
     assert make_repo_id("root", "", "") == "root:"
 
 
-def test_state_directory_suffix_is_scoped_to_exact_state_hash(tmp_path):
-    cgitsync_dir = tmp_path / ".cgitsync"
-    state_hash = "a" * 64
-    other_hash = "b" * 64
-    (cgitsync_dir / MemoryStates.directory_name(state_hash, 0)).mkdir(parents=True)
-    (cgitsync_dir / MemoryStates.directory_name(state_hash, 1)).mkdir()
-
-    same_hash_state = MemoryStates(cgitsync_dir).resolve_directory(state_hash)
-    other_hash_state = MemoryStates(cgitsync_dir).resolve_directory(other_hash)
-
-    assert same_hash_state.state_order == 2
-    assert same_hash_state.final_path.name == MemoryStates.directory_name(state_hash, 2)
-    assert other_hash_state.state_order == 0
-    assert other_hash_state.final_path.name == MemoryStates.directory_name(other_hash, 0)
-
-
 def _current_state_path(workspace: Path) -> Path:
     """The State the newest ledger entry names.
 
@@ -1891,7 +1875,6 @@ def _current_state_path(workspace: Path) -> Path:
     read, which nothing writes any more.
     """
     from ComplexGitSync.memory.ledger_store import LedgerStore
-    from ComplexGitSync.memory.states import MemoryStates
 
     entries = LedgerStore(workspace / ".cgitsync" / "lgr").read_all_entries()
     assert entries, "no ledger entry was written"
@@ -2109,80 +2092,24 @@ def test_client_validate_gts_snapshot_has_correct_command_origin(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_sync_ledger_record_event_creates_first_entry(tmp_path):
-    import tomllib
-
-    from ComplexGitSync.orchestre import SyncLedger
-
-    lgr_path = tmp_path / "demo.lgr"
-    ledger = SyncLedger(lgr_path)
-
-    sync_id = ledger.record_event(
-        operation="clone",
-        workspace_hash="a" * 64,
-        gts_snapshot_id="gts-000001",
-        affected_repos=["demo", "child"],
-        actor="test-user",
+def _legacy_lgr(path, operations):
+    """A single-file ``.lgr`` register as the legacy writer left it: one ``[[ledger]]`` event per operation, each
+    parented on the one before. ``SyncLedger.record_event`` wrote these until CliReduction removed it unused; the
+    reader (``history``, ``replay``) stays, so the fixture is written by hand."""
+    events = "".join(
+        f'[[ledger]]\nsync_id = "lgr-{i + 1:06d}"\nparent_sync_ids = {[f"lgr-{i:06d}"] if i else []}\n'
+        f'operation = "{op}"\ntimestamp = "2026-05-20T19:48:5{i}.000Z"\nactor = "user"\n'
+        f'workspace_hash = "{str(i) * 64}"\ngts_snapshot_id = "gts-{i + 1:06d}"\naffected_repos = ["demo"]\n\n'
+        for i, op in enumerate(operations)
     )
-
-    assert sync_id == "lgr-000001"
-    data = tomllib.loads(lgr_path.read_text(encoding="utf-8"))
-    events = data["ledger"]
-    assert len(events) == 1
-    event = events[0]
-    assert event["sync_id"] == "lgr-000001"
-    assert event["parent_sync_ids"] == []
-    assert event["operation"] == "clone"
-    assert event["actor"] == "test-user"
-    assert event["workspace_hash"] == "a" * 64
-    assert event["gts_snapshot_id"] == "gts-000001"
-    assert event["affected_repos"] == ["demo", "child"]
-    assert "timestamp" in event
-
-
-def test_sync_ledger_second_event_links_to_first(tmp_path):
-    from ComplexGitSync.orchestre import SyncLedger
-
-    lgr_path = tmp_path / "demo.lgr"
-    ledger = SyncLedger(lgr_path)
-
-    id1 = ledger.record_event(
-        operation="clone",
-        workspace_hash="a" * 64,
-        gts_snapshot_id="gts-000001",
-        affected_repos=["demo"],
-        actor="user",
-    )
-    id2 = ledger.record_event(
-        operation="freeze_release",
-        workspace_hash="b" * 64,
-        gts_snapshot_id="gts-000002",
-        affected_repos=["demo"],
-        actor="user",
-    )
-
-    assert id1 == "lgr-000001"
-    assert id2 == "lgr-000002"
-
-    events = SyncLedger(lgr_path).history()
-    assert [e["sync_id"] for e in events] == ["lgr-000001", "lgr-000002"]
-    assert events[1]["parent_sync_ids"] == ["lgr-000001"]
+    path.write_text(events, encoding="utf-8")
+    return path
 
 
 def test_sync_ledger_history_returns_topological_order(tmp_path):
     from ComplexGitSync.orchestre import SyncLedger
 
-    lgr_path = tmp_path / "demo.lgr"
-    ledger = SyncLedger(lgr_path)
-
-    for i, op in enumerate(["clone", "checkout", "commit", "push", "freeze_release"]):
-        ledger.record_event(
-            operation=op,
-            workspace_hash=str(i) * 64,
-            gts_snapshot_id=f"gts-{i + 1:06d}",
-            affected_repos=["demo"],
-            actor="user",
-        )
+    ledger = SyncLedger(_legacy_lgr(tmp_path / "demo.lgr", ["clone", "checkout", "commit", "push", "freeze_release"]))
 
     history = ledger.history()
     assert len(history) == 5
@@ -2200,17 +2127,9 @@ def test_sync_ledger_history_returns_topological_order(tmp_path):
 def test_sync_ledger_replay_is_alias_for_history(tmp_path):
     from ComplexGitSync.orchestre import SyncLedger
 
-    lgr_path = tmp_path / "demo.lgr"
-    ledger = SyncLedger(lgr_path)
-    ledger.record_event(
-        operation="load",
-        workspace_hash="c" * 64,
-        gts_snapshot_id="gts-000001",
-        affected_repos=["demo"],
-        actor="user",
-    )
+    ledger = SyncLedger(_legacy_lgr(tmp_path / "demo.lgr", ["load"]))
 
-    assert ledger.replay() == ledger.history()
+    assert ledger.replay() == ledger.history() and len(ledger.history()) == 1
 
 
 def test_sync_ledger_empty_register_returns_empty_history(tmp_path):
@@ -2218,23 +2137,6 @@ def test_sync_ledger_empty_register_returns_empty_history(tmp_path):
 
     lgr_path = tmp_path / "nonexistent.lgr"
     assert SyncLedger(lgr_path).history() == []
-
-
-def test_sync_ledger_actor_auto_detected_when_none(tmp_path):
-    from ComplexGitSync.orchestre import SyncLedger
-
-    lgr_path = tmp_path / "demo.lgr"
-    ledger = SyncLedger(lgr_path)
-    ledger.record_event(
-        operation="load",
-        workspace_hash="d" * 64,
-        gts_snapshot_id="gts-000001",
-        affected_repos=["demo"],
-    )
-
-    events = ledger.history()
-    assert isinstance(events[0]["actor"], str)
-    assert events[0]["actor"] != ""
 
 
 def test_write_gts_snapshot_stores_no_cgs_anywhere_in_the_state_area(tmp_path):

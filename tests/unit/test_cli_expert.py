@@ -626,13 +626,13 @@ def test_import_submodules_dry_run_reports_without_apply(monkeypatch, capsys, tm
 
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    exit_code = _run(["submodules", "report", str(repo_root)])
+    exit_code = _run(["submodules", "import", str(repo_root), "--dry-run"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
     assert "Dry run" in captured.out
     assert "submodule: child" in captured.out
-    assert "Run 'cgitsync submodules import' with the same arguments to perform the conversion." in captured.out
+    assert "Run 'cgitsync submodules import --now' with the same arguments to perform the conversion." in captured.out
 
 
 def test_import_submodules_apply_converts(monkeypatch, capsys, tmp_path):
@@ -649,7 +649,7 @@ def test_import_submodules_apply_converts(monkeypatch, capsys, tmp_path):
 
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    exit_code = _run(["submodules", "import", str(repo_root)])
+    exit_code = _run(["submodules", "import", str(repo_root), "--now"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -666,7 +666,7 @@ def test_import_submodules_no_gitmodules_reports_nothing_to_import(monkeypatch, 
 
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    exit_code = _run(["submodules", "report", str(repo_root)])
+    exit_code = _run(["submodules", "import", str(repo_root), "--dry-run"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -1178,3 +1178,19 @@ def test_environment_tree_drops_empty_sections():
     )
 
     assert lines == []
+
+
+def test_submodules_import_needs_dry_run_or_now_and_refuses_both(capsys, tmp_path):
+    """Owner, 2026-10-27: bare `submodules import` is a syntax error; `--dry-run` is the old `report`, `--now` converts."""
+    for arguments in ([], ["--dry-run", "--now"]):
+        with pytest.raises(SystemExit) as refused:
+            _run(["submodules", "import", str(tmp_path), *arguments])
+        assert refused.value.code == 2
+        assert "--dry-run" in capsys.readouterr().err
+
+
+def test_the_old_submodules_report_command_is_gone(capsys, tmp_path):
+    with pytest.raises(SystemExit) as gone:
+        _run(["submodules", "report", str(tmp_path)])
+
+    assert gone.value.code == 2

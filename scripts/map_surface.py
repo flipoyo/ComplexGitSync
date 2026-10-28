@@ -61,9 +61,9 @@ UNLOCKED_WRITERS = {
 }
 
 #: Leaves whose write or read depends on a flag the client method cannot show, hand-checked against the handler.
-#: `verify repair` calls the same `verify` as `verify check` and rewrites the `HEAD` cache; `submodules report`
-#: is the dry run of `import_submodules`; `discover` writes a `.cgs` only with `--write`.
-LEAF_WRITES = {"verify repair": "writes", "submodules report": "reads"}
+#: `verify repair` calls the same `verify` as `verify check` and rewrites the `HEAD` cache; `submodules import` is
+#: `--dry-run` or `--now`; `discover` writes a `.cgs` only with `--write`.
+LEAF_WRITES = {"verify repair": "writes"}
 
 HASH_NAME = re.compile(r"(merkle|leaf|node_hash|_root$|^root$|digest|proof|gittree_root|os_id|state_hash|compute_.*hash)", re.I)
 #: The module that computes a hash, and the two adapters that hand it the State's leaves (`gts_document`, `operating_space`).
@@ -277,7 +277,6 @@ def _is_behaviour(name: str) -> bool:
 NAMED = {
     "branch create": "branch", "branch check": "branch_ancestry", "verify check": "verify", "verify repair": "verify",
     "memory mount": "add_memory_repo_cgs", "self-history list": "memory_self_history", "env show": "environment",
-    "submodules report": "import_submodules",
 }
 _GENERIC = {"get", "tree", "state", "resolve", "dependency", "registry"}
 

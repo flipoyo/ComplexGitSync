@@ -22,7 +22,7 @@ from ..memory.conformity import VALID_CONFORMITY_BASES, ConformityCriterion, Con
 from ..memory.conformity_scale import ConformityScale
 from ..memory.integrity import HistoryState
 from ..memory.self_history import VALID_AGENT_ROLES, AgentInfo
-from ..operations import MERGE_RESOLVE_HINT, MemoryMergeOperation
+from ..operations import MERGE_RESOLVE_HINT
 from ..orchestre import ComplexGitSyncClient
 from . import memory_asof, memory_prompt, omniscience_command
 from ._shared import (
@@ -578,15 +578,14 @@ def _add_init_from_submodules_arguments(subparser: argparse.ArgumentParser) -> N
 def _register_submodules(subparser: argparse.ArgumentParser) -> None:
     """``submodules <subcommand>``: report, import, or init a submodule checkout."""
     actions = subparser.add_subparsers(dest="submodules_command", required=True)
-    report = actions.add_parser(
-        "report", help="Print what converting the submodules would change; change nothing.", description="Print what converting the submodules would change; change nothing."
-    )
-    _add_import_submodules_arguments(report)
     convert = actions.add_parser(
         "import",
-        help="Convert git submodules to plain ComplexGitSync nested repositories: git rm --cached, .gitmodules and .gitignore.", description="Convert git submodules to plain ComplexGitSync nested repositories: git rm --cached, .gitmodules and .gitignore.",
+        help="Convert git submodules to plain ComplexGitSync nested repositories: git rm --cached, .gitmodules and .gitignore.", description="Convert git submodules to plain ComplexGitSync nested repositories: git rm --cached, .gitmodules and .gitignore. Say --dry-run to see what it would change, or --now to change it; one of the two is required.",
     )
     _add_import_submodules_arguments(convert)
+    when = convert.add_mutually_exclusive_group(required=True)
+    when.add_argument("--dry-run", dest="dry_run", action="store_true", help="Print what converting the submodules would change; change nothing.")
+    when.add_argument("--now", action="store_true", help="Convert the submodules now. The run is logged: one event per submodule converted.")
     init = actions.add_parser(
         "init", help="Adopt a submodule-based checkout: discover, initialise, then convert its submodules.", description="Adopt a submodule-based checkout: discover, initialise, then convert its submodules."
     )
@@ -1103,10 +1102,10 @@ def _handle_submodules(args: argparse.Namespace) -> int:
 
 def _handle_import_submodules(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).resolve()
-    apply = args.submodules_command == "import"
+    apply = args.now
     recursive = args.recursive
     return _run_with_logging(
-        command_name=f"submodules-{args.submodules_command}",
+        command_name="submodules-import",
         source=repo_root,
         runner=lambda client, source: _execute_import_submodules(
             client,
@@ -2055,7 +2054,7 @@ def _execute_merge(
 
 def _print_merged(client: ComplexGitSyncClient, merged: Sequence[tuple[str, str]]) -> None:
     """One line per repository a merge moved. The memory is *kept*, never merged (UnrelatedHistoryMerge)."""
-    memory = {repo.name for repo in client.get_dependency_registry().values() if MemoryMergeOperation.is_memory(repo)}
+    memory = client.memory_repo_names()
     for name, source in merged:
         print(f"kept {name}: its own memory stays whole; {source} is kept as history" if name in memory else f"merged {name} <- {source}")
 
@@ -2409,7 +2408,7 @@ def _execute_import_submodules(
     apply: bool = False,
     recursive: bool = False,
 ) -> int:
-    """Execute submodules report/import and print a human-readable report."""
+    """Execute ``submodules import`` (``--dry-run`` or ``--now``) and print a human-readable report."""
     report = client.import_submodules(source, apply=apply, recursive=recursive)
 
     if not report.submodules:
@@ -2422,7 +2421,7 @@ def _execute_import_submodules(
     # without saying which repository it was read from.
     if not apply:
         print(f"Dry run — {len(report.submodules)} submodule(s) under {source}")
-        print("Run 'cgitsync submodules import' with the same arguments to perform the conversion.\n")
+        print("Run 'cgitsync submodules import --now' with the same arguments to perform the conversion.\n")
         for sub in report.submodules:
             print(f"  submodule: {sub.name}")
             print(f"    path:        {report.path_from_scan_root(sub)}")

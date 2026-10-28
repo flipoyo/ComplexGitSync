@@ -1,4 +1,4 @@
-# ComplexGitSync v8.0.1
+# ComplexGitSync v8.0.2
 ## A distributed git-native Operating Space
 
 *Created: 2026-05-12*

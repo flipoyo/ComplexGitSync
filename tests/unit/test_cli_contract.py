@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 
 import pytest
+from support.ledgers import append_entry
 
 from ComplexGitSync.cli import main as cli_main
 from ComplexGitSync.cli.exit_codes import (
@@ -318,7 +319,7 @@ def test_verify_json_reports_findings_and_exits_one(tmp_path, capsys):
 
     (tmp_path / ".cgitsync").mkdir()
     lgr_dir = tmp_path / ".cgitsync" / "lgr"
-    LedgerStore(lgr_dir).append_entry(command="push", argv=["push"], state_id="a" * 64, state_dir=f"state({'a' * 64})_0", outcome="ok", clock=SystemClock())
+    append_entry(LedgerStore(lgr_dir), command="push", argv=["push"], state_id="a" * 64, state_dir=f"state({'a' * 64})_0", outcome="ok", clock=SystemClock())
     entry_path = lgr_dir / "000001.toml"
     data = tomllib.loads(entry_path.read_text(encoding="utf-8"))
     data["entry"]["command"] = "tampered-command"

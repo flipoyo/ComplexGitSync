@@ -268,25 +268,6 @@ def test_resolve_initialise_cgshome_reads_document_from_disk(monkeypatch, tmp_pa
     assert result == env_cgshome.resolve()
 
 
-def test_resolve_clone_root_uses_output_path_as_base(tmp_path):
-    config_path = _write_root_cgs(tmp_path)
-    output_path = tmp_path / "parent"
-    output_path.mkdir()
-
-    result = PathResolver.resolve_clone_root(config_path, output_path=output_path)
-
-    assert result == (output_path / "demo").resolve()
-
-
-def test_resolve_clone_root_uses_target_dir_when_given(tmp_path):
-    config_path = _write_root_cgs(tmp_path)
-    target_dir = tmp_path / "explicit-target"
-
-    result = PathResolver.resolve_clone_root(config_path, target_dir=target_dir)
-
-    assert result == target_dir.resolve()
-
-
 def test_resolve_project_root_rejects_non_empty_destination(tmp_path):
     document = CgsDocument.from_toml(_write_root_cgs(tmp_path))
     destination = tmp_path / "demo"

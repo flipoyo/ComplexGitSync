@@ -18,39 +18,14 @@ def test_gitrepo_defaults_match_plan_contract():
     repo = GitRepo(project_owner_name="flipoyo", project_name="ComplexGitSync")
 
     assert repo.gitprovider == GitProvider.GITHUB
-    assert repo.resolved_group_name == "ComplexGitSync"
     assert repo.access_protocol == AccessProtocol.SSH
-
-
-def test_gittree_correction_methods_force_sha_and_repo_keys():
-    repo = GitRepo(project_owner_name="flipoyo", project_name="ComplexGitSync")
-    tree = GitTree()
-    tree.add_repo(repo)
-
-    tree.force_repo_sha("ComplexGitSync", "abc123")
-    tree.force_repo_keys(
-        "ComplexGitSync",
-        gitprovider=GitProvider.CUSTOM,
-        project_owner_name="team-owner",
-        group_name="team-group",
-        gitprovider_url="https://git.example.com",
-        access_protocol=AccessProtocol.HTTPS,
-    )
-
-    updated = tree.repos["ComplexGitSync"]
-    assert updated.commit_sha == "abc123"
-    assert updated.gitprovider == GitProvider.CUSTOM
-    assert updated.project_owner_name == "team-owner"
-    assert updated.group_name == "team-group"
-    assert updated.gitprovider_url == "https://git.example.com"
-    assert updated.access_protocol == AccessProtocol.HTTPS
 
 
 def test_client_loaded_state_uses_orchestre_tree_registration():
     client = ComplexGitSyncClient()
     assert client.is_loaded() is False
 
-    client.orchestre.register_repo(
+    client.orchestre.git_tree.add_repo(
         GitRepo(project_owner_name="flipoyo", project_name="ComplexGitSync")
     )
     assert client.is_loaded() is True
@@ -74,36 +49,6 @@ def test_client_configure_is_noninteractive_and_delegates_to_cgs_format(
     assert isinstance(document, CgsDocument)
     assert document.to_dict() == CgsDocument.from_toml(output).to_dict()
     assert document.to_git_tree().repos["GX4G"].gitprovider == GitProvider.CODEBERG
-
-
-def test_gittree_correction_methods_fail_for_unknown_repo():
-    tree = GitTree()
-
-    with pytest.raises(KeyError, match="Unknown repository"):
-        tree.force_repo_sha("missing", "abc123")
-
-    with pytest.raises(KeyError, match="Unknown repository"):
-        tree.force_repo_keys("missing", project_owner_name="team-owner")
-
-
-def test_gittree_rename_rejects_existing_target_name():
-    tree = GitTree()
-    tree.add_repo(GitRepo(project_owner_name="owner-a", project_name="repo-a"))
-    tree.add_repo(GitRepo(project_owner_name="owner-b", project_name="repo-b"))
-
-    with pytest.raises(ValueError, match="target key already exists"):
-        tree.force_repo_keys("repo-a", project_name_override="repo-b")
-
-
-def test_gittree_rename_updates_repo_key_for_new_name():
-    tree = GitTree()
-    tree.add_repo(GitRepo(project_owner_name="owner-a", project_name="repo-a"))
-
-    tree.force_repo_keys("repo-a", project_name_override="repo-c")
-
-    assert "repo-a" not in tree.repos
-    assert "repo-c" in tree.repos
-    assert tree.repos["repo-c"].project_name == "repo-c"
 
 
 def test_gittree_to_cgs_returns_valid_reference_document():
@@ -273,20 +218,6 @@ def test_repo_address_custom_provider_bare_host_url():
         gitprovider_url="git.internal.io",
     )
     assert addr.to_ssh() == "git@git.internal.io:my-owner/my-repo.git"
-
-
-def test_repo_address_from_repo():
-    repo = GitRepo(
-        project_owner_name="flipoyo",
-        project_name="ComplexGitSync",
-        gitprovider=GitProvider.GITHUB,
-        access_protocol=AccessProtocol.SSH,
-    )
-    addr = RepoAddress.from_repo(repo)
-    assert addr.gitprovider == GitProvider.GITHUB
-    assert addr.project_name == "ComplexGitSync"
-    assert addr.project_owner_name == "flipoyo"
-    assert addr.to_ssh() == "git@github.com:flipoyo/ComplexGitSync.git"
 
 
 def test_repo_address_github_missing_owner_raises():

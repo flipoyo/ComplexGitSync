@@ -2,7 +2,7 @@
 
 Ring: 3
 Contract: Holds the one GitTree the client operates on.
-Imports: git_repo, git_tree
+Imports: git_tree
 """
 
 from __future__ import annotations
@@ -12,9 +12,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     pass
-from ..git_repo import (
-    GitRepo,
-)
 from ..git_tree import (
     GitTree,
 )
@@ -29,9 +26,6 @@ class Orchestre:
     """
 
     git_tree: GitTree = field(default_factory=GitTree)
-
-    def register_repo(self, repo: GitRepo) -> None:
-        self.git_tree.add_repo(repo)
 
 
 __all__ = [

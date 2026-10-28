@@ -97,12 +97,6 @@ class MemoryStates:
         return f"{MemoryStates.format_id(state_hash)}_{state_order}"
 
     @staticmethod
-    def temporary_directory_name(state_hash: str, state_order: int) -> str:
-        if state_order < 0:
-            raise ValueError("state_order must be non-negative")
-        return f".tmp-{MemoryStates.directory_name(state_hash, state_order)}"
-
-    @staticmethod
     def order_from_directory_name(name: str) -> int | None:
         match = _STATE_DIR_RE.fullmatch(name)
         return int(match.group(2)) if match else None
@@ -119,20 +113,6 @@ class MemoryStates:
                     continue
                 max_order = max(max_order, int(match.group(2)))
         return max_order + 1
-
-    def resolve_directory(self, state_hash: str) -> MemoryStateDirectory:
-        state_order = self.next_directory_order(state_hash)
-        while True:
-            final_path = self.cgitsync_dir / MemoryStates.directory_name(state_hash, state_order)
-            temporary_path = self.cgitsync_dir / MemoryStates.temporary_directory_name(state_hash, state_order)
-            if not final_path.exists() and not temporary_path.exists():
-                return MemoryStateDirectory(
-                    state_hash=state_hash,
-                    state_order=state_order,
-                    final_path=final_path,
-                    temporary_path=temporary_path,
-                )
-            state_order += 1
 
     def path(self, state_hash: str, suffix: str = ".gts") -> Path:
         """Where a State of *state_hash* is written: ``state/<hash><suffix>``.
@@ -161,16 +141,6 @@ class MemoryStates:
         flat_state_dir = self.cgitsync_dir / STATE_DIR_NAME
         if flat_state_dir.is_dir():
             candidates.extend(sorted(flat_state_dir.glob("*.gts")))
-        return candidates
-
-    def snapshot_candidates_for_id(self, state_id: str) -> list[Path]:
-        state_hash = MemoryStates.parse_hash(state_id)
-        if state_hash is None or not self.cgitsync_dir.is_dir():
-            return []
-        candidates: list[Path] = []
-        for state_dir in sorted(self.cgitsync_dir.glob(f"{state_id}_*"), key=lambda path: path.name):
-            if state_dir.is_dir() and _STATE_DIR_RE.fullmatch(state_dir.name) is not None:
-                candidates.extend(sorted(state_dir.glob("*.gts")))
         return candidates
 
     def artifact_candidates(self, filename: str) -> list[Path]:

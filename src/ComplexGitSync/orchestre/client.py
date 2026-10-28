@@ -22,12 +22,8 @@ from typing import TYPE_CHECKING, Any
 
 from .. import tree_env
 from ..cgs_format import CgsDocument
-from ..clone_guard import (
-    CloneGuard,
-)
-from ..discovery import (
-    ImportSubmodulesReport,
-)
+from ..clone_guard import CloneGuard
+from ..discovery import ImportSubmodulesReport
 from ..errors import (
     ComplexGitSyncError,
     GitSyncError,
@@ -70,6 +66,7 @@ from ..memory.commit_log import (
 from ..operating_space import OperatingSpace
 from ..operations import (
     BranchTopologyReport,
+    MemoryMergeOperation,
     RepoAncestry,
     RepoBranches,
     RepoOutcome,
@@ -106,7 +103,7 @@ from .reports import (
 )
 from .runtime_state_store import RuntimeStateStore
 from .tree_commands import TreeCommands
-from .workspace_locking import locks_writes
+from .workspace_locking import locks_writes, unlock_workspace
 
 
 @locks_writes
@@ -661,9 +658,9 @@ class ComplexGitSyncClient:
         """Release the tree, tagged ``<project-name>-<version or number>`` or ``--force-tag``'s."""
         return self._release_commands.freeze_release(commit_message, force_tag=force_tag, output_gts=output_gts, stage_all=stage_all, force_access_protocol=force_access_protocol)
 
-    def next_release_tag(self, force_tag: str | None = None) -> dict[str, str]:
-        """The tag ``release freeze`` would use now, and where its suffix came from."""
-        return self._release_commands.next_release_tag(force_tag)
+    def next_release_tag(self, force_tag: str | None = None, message: str | None = None) -> dict[str, str]:
+        """The tag ``release freeze`` would use now, where its suffix came from, and the subject *message* would give it."""
+        return self._release_commands.next_release_tag(force_tag, message)
 
     def omniscience_mount(self, cgs_path: str | Path | None, cgshome: str | Path, *, repository: str | None = None, contribute: bool = False) -> dict[str, Any]:
         """Declare the shared Omniscience repository in the .cgs and clone it at .omniscience (developer trees only)."""
@@ -846,6 +843,14 @@ class ComplexGitSyncClient:
     ) -> dict[str, Any]:
         """Create the memory branch another project branch will need."""
         return self._memory_commands.memory_branch(cgshome, project_branch, push=push)
+
+    def memory_repo_names(self) -> set[str]:
+        """The names of the repositories that are this project's memory mount: kept whole by a merge, never merged."""
+        return {repo.name for repo in self.get_dependency_registry().values() if MemoryMergeOperation.is_memory(repo)}
+
+    def unlock(self, cgshome: str | Path, *, force: bool = False) -> Any:
+        """Clear the workspace lock a killed command left (``cgitsync unlock``); the holder it had, or ``None``."""
+        return unlock_workspace(cgshome, self.clock, force=force)
 
     def memory_declared(self) -> bool:
         """Whether the loaded tree declares a memory mount at all."""
@@ -1066,9 +1071,7 @@ class ComplexGitSyncClient:
         """
         registry = self.get_dependency_registry()
         previous_state = registry.lifecycle_state
-        scope = GitProbes.scope_for(
-            registry, private=private, command="freeze", default=RepoScope.WRITABLE
-        )
+        scope = GitProbes.scope_for(registry, private=private, command="freeze", default=RepoScope.WRITABLE)
         self._log_event(
             "freeze_release_start",
             tag_name=tag_name,
@@ -1235,9 +1238,7 @@ class ComplexGitSyncClient:
             # Only asked when there is nothing to measure, since that is the
             # only case where the two answers differ — and it costs a git
             # subprocess per repository to ask.
-            upstream_configured = tracking_state is not None or self.git_runner.upstream_configured(
-                entry.absolute_path
-            )
+            upstream_configured = tracking_state is not None or self.git_runner.upstream_configured(entry.absolute_path)
         except GitSyncError:
             return (
                 entry.name,
@@ -1252,9 +1253,7 @@ class ComplexGitSyncClient:
             )
 
         local_state = GitProbes.local_status_from_porcelain(status_lines)
-        upstream_state = _status_tracking_label(
-            tracking_state, tracking_counts, upstream_configured=upstream_configured
-        )
+        upstream_state = _status_tracking_label(tracking_state, tracking_counts, upstream_configured=upstream_configured)
         recorded = GitProbes.short_sha(entry.commit_sha)
         head_short = GitProbes.short_sha(head)
         if entry.commit_sha and head and entry.commit_sha != head:
@@ -1371,9 +1370,7 @@ class ComplexGitSyncClient:
                 ) from exc
             raise
         current_ref = self.git_runner.current_branch(entry.absolute_path) or selected_ref
-        landed = BranchResolution.from_landed_ref(
-            entry, current_ref, selected_ref_kind, requested_name=selected_ref
-        )
+        landed = BranchResolution.from_landed_ref(entry, current_ref, selected_ref_kind, requested_name=selected_ref)
         fallback_applied = landed.fallback_applied
 
         entry.current_ref_kind = selected_ref_kind
@@ -1383,9 +1380,7 @@ class ComplexGitSyncClient:
         entry.commit_sha = self.git_runner.rev_parse_head(entry.absolute_path)
         entry.fallback_applied = fallback_applied
         entry.fallback_reason = landed.fallback_detail(entry)
-        entry.repo_lifecycle_state = (
-            RepoLifecycleState.FALLBACK_READY if fallback_applied else RepoLifecycleState.READY
-        )
+        entry.repo_lifecycle_state = (RepoLifecycleState.FALLBACK_READY if fallback_applied else RepoLifecycleState.READY)
         entry.sync_state = SyncState.FALLBACK_APPLIED if fallback_applied else SyncState.ALIGNED
         entry.worktree_state = "CLEAN"
         if fallback_applied:
@@ -1419,9 +1414,7 @@ class ComplexGitSyncClient:
         if entry.target_ref_kind == RefKind.TAG and entry.target_ref_name:
             if self.git_runner.remote_tag_exists(remote_url, entry.target_ref_name):
                 return (entry.target_ref_name, RefKind.TAG)
-            raise GitSyncError(
-                f"No cloneable tag found for {entry.name}: expected '{entry.target_ref_name}' on {remote_url}"
-            )
+            raise GitSyncError(f"No cloneable tag found for {entry.name}: expected '{entry.target_ref_name}' on {remote_url}")
 
         if entry.effective_private and entry.effective_writable:
             return self._select_private_local_ref(entry, remote_url)
@@ -1435,9 +1428,7 @@ class ComplexGitSyncClient:
             return (fallback_branch, RefKind.BRANCH)
 
         expected = [branch for branch in (target_branch, fallback_branch) if branch]
-        raise GitSyncError(
-            f"No cloneable branch found for {entry.name}: expected one of {expected} on {remote_url}"
-        )
+        raise GitSyncError(f"No cloneable branch found for {entry.name}: expected one of {expected} on {remote_url}")
 
     def _select_private_local_ref(self, entry: WorkingRepo, remote_url: str) -> tuple[str, RefKind]:
         """The branch to clone a private/local repository on, three rungs deep.
@@ -1481,9 +1472,7 @@ class ComplexGitSyncClient:
         root = self.get_dependency_registry().repos.get(ROOT_REPO_ID)
         if root is None:
             return DEFAULT_BRANCH
-        return (
-            root.resolved_ref_name or root.current_ref_name or root.target_ref_name or DEFAULT_BRANCH
-        )
+        return (root.resolved_ref_name or root.current_ref_name or root.target_ref_name or DEFAULT_BRANCH)
 
     def _build_remote_url(self, entry: WorkingRepo) -> str:
         if not entry.gitprovider_declared:
@@ -1530,9 +1519,7 @@ class ComplexGitSyncClient:
             fell_back = dev and entry.effective_private and entry.effective_writable and entry.fallback_applied
             unresolved = entry.nested_config not in {None, "disabled"} and entry.discovery_state != DiscoveryState.RESOLVED
             if unresolved and not (fell_back and entry.discovery_state == DiscoveryState.MISSING):
-                raise GitSyncError(
-                    f"Nested configuration for {entry.name} is not resolved: {entry.discovery_state.value}"
-                )
+                raise GitSyncError(f"Nested configuration for {entry.name} is not resolved: {entry.discovery_state.value}")
             if not fell_back:
                 continue
             is_memory = entry is branches.memory

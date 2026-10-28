@@ -84,7 +84,6 @@ class TestDeclaredChain:
         assert resolution.source is BranchSource.BUILTIN_DEFAULT
         # The point of recording the source: a reader can tell a tree that
         # chose main from one that was never asked.
-        assert resolution.is_default is True
         assert "built-in default" in resolution.reason
 
     def test_a_tag_wins_outright_and_no_branch_is_consulted(self):

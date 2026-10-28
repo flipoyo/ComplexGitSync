@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 
 from ..orchestre import ComplexGitSyncClient
-from ..orchestre.release_commands import ReleaseCommands, ReleaseLoad
+from ..orchestre.release_commands import ReleaseLoad
 from ._shared import (
     _format_tree_state_line,
     _load_ready_registry_source,
@@ -81,10 +81,10 @@ def handle(args: argparse.Namespace) -> int:
 
 def _execute_freeze(client: ComplexGitSyncClient, source: Path, args: argparse.Namespace) -> int:
     _load_ready_registry_source(client, source)
-    plan = client.next_release_tag(args.force_tag)
+    plan = client.next_release_tag(args.force_tag, args.message)
     print(f"release={plan['tag']} from={plan['source']}")
     if args.dry_run:
-        print(f"tag_subject={plan['tag']}: {ReleaseCommands.subject(args.message, plan['project'])}")
+        print(f"tag_subject={plan['tag']}: {plan['subject']}")
         actions = ("git add --all", f"git commit -m {args.message!r}", "cgitsync pull", "git push", f"tag {plan['tag']} and record the State")
         _print_dry_run_plan(client, command_name="release-freeze", actions=actions)
         return 0

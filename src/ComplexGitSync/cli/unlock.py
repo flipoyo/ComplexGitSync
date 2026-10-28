@@ -1,10 +1,10 @@
 """cli.unlock — `cgitsync unlock`: clear the lock a killed cgitsync left in a workspace.
 
 Ring: 4 (CLI adapter)
-Contract: find the workspace the way every command does, ask ``WorkspaceLock`` to
+Contract: find the workspace the way every command does, ask the client (``unlock``) to
     clear its lock and say what was cleared. A lock whose process still
     runs is refused unless ``--force``. Loads no tree and writes no State.
-Imports: _shared, exit_codes, help_text, workspace_lock
+Imports: _shared, exit_codes, help_text, orchestre
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 
 from ..errors import GitSyncError
-from ..workspace_lock import WorkspaceLock
+from ..orchestre import ComplexGitSyncClient
 from ._shared import _resolve_gts_path
 from .exit_codes import EXIT_OK
 from .help_text import SEARCH_DIR_HELP
@@ -33,8 +33,8 @@ def _handle_unlock(args: argparse.Namespace) -> int:
     state_dir = next((parent for parent in source.resolve().parents if parent.name == ".cgitsync"), None)
     if state_dir is None:
         raise GitSyncError(f"{source} is not inside a workspace's .cgitsync directory; use --search-dir.")
-    lock = WorkspaceLock(state_dir)
-    holder = lock.clear(force=args.force)
+    client = ComplexGitSyncClient()
+    holder = client.unlock(state_dir.parent, force=args.force)
     if holder is None:
         print(f"no lock in {state_dir.parent}; nothing to clear.")
     else:

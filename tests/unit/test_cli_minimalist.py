@@ -471,8 +471,8 @@ def test_freeze_release_command_uses_client_handler(monkeypatch, capsys, tmp_pat
         def load_gts(self, path):
             captured_call["gts_path"] = Path(path)
 
-        def next_release_tag(self, force_tag=None):
-            return {"tag": f"demo-{force_tag or 1}", "project": "demo", "version": "", "source": "--force-tag" if force_tag else "next number"}
+        def next_release_tag(self, force_tag=None, message=None):
+            return {"tag": f"demo-{force_tag or 1}", "project": "demo", "version": "", "source": "--force-tag" if force_tag else "next number", "subject": (message or "").splitlines()[0] if message else "release of demo"}
 
         def freeze_release(self, message, *, force_tag=None, **kwargs):
             captured_call["message"] = message
@@ -512,8 +512,8 @@ def test_freeze_release_dry_run_skips_mutation(monkeypatch, capsys, tmp_path):
         def load_gts(self, path):
             pass
 
-        def next_release_tag(self, force_tag=None):
-            return {"tag": "demo-1", "project": "demo", "version": "", "source": "next number"}
+        def next_release_tag(self, force_tag=None, message=None):
+            return {"tag": "demo-1", "project": "demo", "version": "", "source": "next number", "subject": (message or "release of demo").splitlines()[0]}
 
         def freeze_release(self, message, **kwargs):
             raise AssertionError("freeze_release should not be called during --dry-run")

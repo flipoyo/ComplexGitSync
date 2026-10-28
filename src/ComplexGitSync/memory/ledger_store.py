@@ -485,41 +485,6 @@ class LedgerStore:
         entries = self.read_all_entries()
         return entries[-1].seq + 1 if entries else 1
 
-    def append_entry(
-        self,
-        *,
-        command: str,
-        argv: Sequence[str],
-        state_id: str,
-        state_dir: str,
-        outcome: str,
-        clock: ClockProtocol,
-        toolchain: Sequence[tuple[str, str]] = (),
-        tree_root: Path | None = None,
-        commit_log: str = "",
-        environment: str = "",
-        release: Sequence[tuple[str, str]] = (),
-        relocations: Sequence[Relocation] = (),
-    ) -> LedgerEntry:
-        """Scrub ``argv``, build the next chain entry, and persist it.
-
-        The single entry point real callers are expected to use: ``argv`` is
-        scrubbed *before*
-        :func:`~ComplexGitSync.ledger_entry.build_next_entry` ever sees it, so
-        the returned entry's ``entry_hash`` commits to the scrubbed form — the
-        secret never exists in anything that gets hashed or written. The
-        current chain tail is determined by reading every entry already in
-        the directory (§2.3's files are the source of truth, not the ``HEAD``
-        cache).
-        """
-        scrubbed_argv = ArgvScrubber.scrub(argv, tree_root=tree_root)
-        existing_entries = self.read_all_entries()
-        prev_entry = existing_entries[-1] if existing_entries else None
-
-        entry = LedgerEntry.build_next(prev_entry, command=command, argv=scrubbed_argv, state_id=state_id, state_dir=state_dir, outcome=outcome, clock=clock, toolchain=toolchain, commit_log=commit_log, environment=environment, release=release, relocations=relocations)
-        self.write_entry(entry)
-        return entry
-
 
 __all__ = [
     "HEAD_FILENAME",
