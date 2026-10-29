@@ -28,6 +28,7 @@ from ..orchestre import (
     create_run_logger,
     resolve_command_scope,
 )
+from ..orchestre.op_boundary import RoutedClient
 from ..tree.cgs_format import CgsDocument
 from ..tree.git_tree import ProjectTreeState, iter_tree_leaf_first, resolve_repo_for_path
 from ..tree.settings import Settings
@@ -190,7 +191,7 @@ def _run_with_logging(
 
     try:
         with memory_prompt.silenced_setup_warning():
-            exit_code = runner(active_client, resolved_source)
+            exit_code = runner(RoutedClient(active_client), resolved_source)  # the CLI enters OP as `internal` (OpBoundary)
     except Exception as exc:
         if active_client.run_logger is not None:
             active_client.run_logger.log_event(

@@ -17,7 +17,7 @@
     },
     "cli/_shared.py": {
       "internal_imports": 21,
-      "loc": 611,
+      "loc": 612,
       "public_symbols": 0
     },
     "cli/branch_command.py": {
@@ -187,7 +187,7 @@
     },
     "omniscience/omniscience_record.py": {
       "internal_imports": 3,
-      "loc": 183,
+      "loc": 188,
       "public_symbols": 1
     },
     "omniscience/omniscience_repository.py": {

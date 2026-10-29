@@ -54,6 +54,8 @@ class OmniscienceRecord:
     memory_ref: str
     memory_commit: str
     published_state_id: str | None = None
+    #: ``*G``'s Sigma (OpBoundary O6): committed when present, like ``published_state_id``, so a record without it keeps its hash.
+    sigma: int | None = None
     # Not committed: claims, addressing and evidence (see the module docstring).
     recorded_at: str = ""
     contributor: str = ""
@@ -115,6 +117,8 @@ class OmniscienceRecord:
         }
         if self.published_state_id is not None:
             committed["published_state_id"] = self.published_state_id
+        if self.sigma is not None:
+            committed["sigma"] = self.sigma
         return committed
 
     @property
@@ -170,6 +174,7 @@ class OmniscienceRecord:
                 "project": self.project,
                 "recorded_at": self.recorded_at,
                 "contributor": self.contributor,
+                **({"sigma": self.sigma} if self.sigma is not None else {}),
             },
             "operating_space": {**self._operating_space(), "os_state_hash": self.os_state_hash},
             "memory_repo": memory,
@@ -202,6 +207,7 @@ class OmniscienceRecord:
                 remote_locator=str(memory["remote_locator"]) if "remote_locator" in memory else None,
                 published_state_id=str(published["id"]) if "id" in published else None,
                 published_rows=tuple(dict(row) for row in published.get("repo", ())),
+                sigma=int(header["sigma"]) if "sigma" in header else None,
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ConfigValidationError(f"not a registration record: {exc!r}") from exc
