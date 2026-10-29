@@ -6,7 +6,7 @@ Contract: an operation on G is one client method, asked by G (``internal``)
     level. ``Op.run`` runs it on the GitTree, which may refuse (IntegrityMount);
     ``Op.is_poe`` returns ``OP*``, what of it can be proved to exist, bounded
     by the level's vector. ``*NAME{NODE, EDGE*} = G{NAME, NODE, EDGE, OP*}``.
-Imports: errors, merkle, operating_space, git_tree, workspace_locking
+Imports: errors, merkle, operating_space, git_tree, op_levels, workspace_locking
 
 The model (owner, ExplDistantLocal and OpBoundary, 2026-10-29)
 --------------------------------------------------------------
@@ -33,6 +33,7 @@ level is read from the tree's profile (owner): USER is ``.USER``, DEV is ``.DEV`
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
@@ -40,7 +41,8 @@ from typing import TYPE_CHECKING, Any
 from ..errors import GitSyncError
 from ..merkle import MerkleRoot
 from ..operating_space.operating_space import OperatingSpace
-from ..tree.git_tree import ROOT_REPO_ID, TreeProfile
+from ..tree.git_tree import ROOT_REPO_ID
+from .op_levels import DEV, LEVELS, OPX, PUBLIC, USER, Leaves, LevelCommand, PoE
 from .workspace_locking import WRITING_METHODS, WRITING_WHEN
 
 if TYPE_CHECKING:
@@ -58,32 +60,6 @@ class Origin(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class PoE:
-    """A level's Proof-of-Existence vector over ``{NAME, NODE, EDGE, OP}``; four bits, ``.PUBLIC`` the invariant."""
-
-    name: bool
-    node: bool
-    edge: bool
-    op: bool
-
-    @property
-    def sigma(self) -> int:
-        """How many of the four parts the level exposes."""
-        return sum((self.name, self.node, self.edge, self.op))
-
-    @staticmethod
-    def of_profile(profile: TreeProfile) -> PoE:
-        """The level a tree's profile stands for, until MemoryMount records it at install."""
-        return USER if profile is TreeProfile.USER else DEV
-
-
-PUBLIC = PoE(True, True, True, True)
-USER = PoE(True, True, False, False)
-DEV = PoE(True, False, False, False)
-OPX = PoE(False, False, False, False)
-
-
-@dataclass(frozen=True, slots=True)
 class OpStar:
     """``OP*``: what of one operation can be proved to exist, at one level. Never the operation itself."""
 
@@ -93,6 +69,7 @@ class OpStar:
     nodes: tuple[str, ...]
     edges: tuple[tuple[str, str], ...]
     level: PoE
+    leaves: tuple[tuple[str, str], ...] = ()
 
     @property
     def poe(self) -> dict[str, Any]:
@@ -103,6 +80,8 @@ class OpStar:
             proof["merkle_root_sha256"] = self.merkle_root_hash
         if self.level.node:
             proof["nodes"] = list(self.nodes)
+            if self.leaves:
+                proof["leaves"] = dict(self.leaves)
         if self.level.edge:
             star = {"op": self.operation} if self.level.op else {}
             proof["edges"] = [{"from": a, "to": b, **star} for a, b in self.edges]
@@ -140,8 +119,12 @@ class Op:
         """Whether a call goes through OP: a routed name, and ``verify`` only with ``repair`` (owner, Q2)."""
         return operation in ROUTED and (operation not in WRITING_WHEN or bool(kwargs.get(WRITING_WHEN[operation])))
 
-    def is_poe(self) -> OpStar:
-        """``isPoE(OP)``: ``OP*``, read from the tree as it now is, bounded by the level. The origin never enters."""
+    def is_poe(self, beta: Mapping[str, str] | None = None) -> OpStar:
+        """``isPoE(OP)``: ``OP*``, read from the tree as it now is, bounded by the level. The origin never enters.
+
+        *beta* is the other side's leaves (``Leaves.of_state`` of a registered State): each leaf of the tree is then
+        ``equal``, ``different`` or absent on one side, a field of ``OP*`` (FD3). Without it every leaf is ``unverified``.
+        """
         registry = self.client.get_dependency_registry()
         level = self.level or PoE.of_profile(registry.profile)
         root = registry.repos.get(ROOT_REPO_ID)
@@ -155,6 +138,7 @@ class Op:
             nodes=tuple(sorted(e.name for e in registry.values())),
             edges=tuple(sorted((names[e.parent_id], e.name) for e in registry.values() if e.parent_id in names)),
             level=level,
+            leaves=tuple(Leaves.compare(Leaves.of_tree(self.client), beta).items()),
         )
 
 
@@ -178,4 +162,4 @@ class RoutedClient:
         setattr(self._client, name, value)
 
 
-__all__ = ["DEV", "OPX", "PUBLIC", "ROUTED", "USER", "Op", "OpStar", "Origin", "PoE", "RoutedClient"]
+__all__ = ["DEV", "LEVELS", "OPX", "PUBLIC", "ROUTED", "USER", "LevelCommand", "Leaves", "Op", "OpStar", "Origin", "PoE", "RoutedClient"]

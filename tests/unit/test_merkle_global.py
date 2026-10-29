@@ -19,6 +19,8 @@ from ComplexGitSync.merkle import MerkleRoot
 from ComplexGitSync.omniscience.global_index import GlobalIndex
 from ComplexGitSync.omniscience.omniscience_record import OmniscienceRecord
 
+pytestmark = pytest.mark.golden  # CI's golden-vectors job runs these on every OS
+
 OS_ID = hashlib.sha256(b"demo").hexdigest()
 STATE = "state(" + "ab" * 32 + ")"
 ROOT = "cd" * 32

@@ -29,6 +29,8 @@ from ComplexGitSync.tree.gts_document import (
     _repo_ref_token,
 )
 
+pytestmark = pytest.mark.golden  # CI's golden-vectors job runs these on every OS
+
 INTEGRITY_SCHEMA = MerkleRoot.SCHEMA
 
 MINIMAL_GTS: dict = {

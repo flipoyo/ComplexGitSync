@@ -36,6 +36,7 @@ from ..git_repo.git_repo import AccessProtocol, GitProvider, GitRepo
 from . import environment_spec
 from .config_document import ConfigDocument
 from .config_document_io import ConfigDocumentIOMixin
+from .named_cgs import NamedCgs
 
 if TYPE_CHECKING:
     from .git_tree import GitTree
@@ -192,7 +193,7 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
         if repo.get("repo_name") is None and repo.get("project_name") is not None:
             repo["repo_name"] = repo["project_name"]
 
-        git_branch.apply_declared_defaults(repo, project["default_branch"])
+        git_branch.apply_declared_defaults(repo, project["default_branch"], project.get("fallback_branch"))
         repo["access_protocol"] = str(repo.get("access_protocol") or DEFAULT_ACCESS_PROTOCOL)
         repo["nested_config"] = str(repo.get("nested_config") or DEFAULT_NESTED_CONFIG)
         # Defaulted, never coerced: bool("yes") is True, which would hide a
@@ -445,7 +446,9 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
     @classmethod
     def from_toml(cls, path: Path | str) -> CgsDocument:
         """Run the explicit TOML parse, normalization, and validation pipeline."""
-        return cls.from_dict(parse_cgs(path))
+        raw = parse_cgs(path)
+        NamedCgs.check(path, raw)  # a yyyy-xxx.cgs whose project line contradicts its name is refused (BeforeCGS-BETA §7)
+        return cls.from_dict(raw)
 
     @classmethod
     def from_git_tree(cls, tree: GitTree) -> CgsDocument:
@@ -751,7 +754,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 "private": repo.get("private"),
                 "writable": repo.get("writable"),
             }
-            git_branch.apply_declared_defaults(implied, project_default_branch)
+            git_branch.apply_declared_defaults(implied, project_default_branch, project.get("fallback_branch"))
             _resolve_override(
                 overrides, "fallback_branch", repo.get("fallback_branch"), implied["fallback_branch"]
             )

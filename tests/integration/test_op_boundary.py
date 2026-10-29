@@ -16,9 +16,12 @@ from ComplexGitSync.omniscience.omniscience_record import OmniscienceRecord
 from ComplexGitSync.operating_space.operating_space import OperatingSpace
 from ComplexGitSync.orchestre.op_boundary import (
     DEV,
+    LEVELS,
     OPX,
     PUBLIC,
     USER,
+    Leaves,
+    LevelCommand,
     Op,
     Origin,
     PoE,
@@ -62,7 +65,7 @@ def test_op_star_keeps_the_name_and_the_merkle_root_hash_never_branches_or_paths
 
 @pytest.mark.parametrize(
     ("level", "parts"),
-    [(PUBLIC, {"name", "merkle_root_sha256", "nodes", "edges"}), (USER, {"name", "merkle_root_sha256", "nodes"}), (DEV, {"name", "merkle_root_sha256"}), (OPX, set())],
+    [(PUBLIC, {"name", "merkle_root_sha256", "nodes", "leaves", "edges"}), (USER, {"name", "merkle_root_sha256", "nodes", "leaves"}), (DEV, {"name", "merkle_root_sha256"}), (OPX, set())],
 )
 def test_the_level_bounds_what_op_star_proves(tmp_path, level, parts):
     tree = _two_repo_workspace(tmp_path)
@@ -166,3 +169,56 @@ def test_sigma_is_shown_in_the_record_and_committed_only_when_present():
     assert with_sigma.record_hash != without.record_hash
     assert OmniscienceRecord.from_dict(with_sigma.to_dict()) == with_sigma
     assert OmniscienceRecord.from_dict(without.to_dict()).record_hash == without.record_hash
+
+
+# -- BeforeCGS-BETA §7.0: the level's command; §6: GitRepo-ALPHA == GitRepo-BETA --------------------------
+
+
+def test_each_level_calls_for_one_command_and_pub_for_none():
+    assert LevelCommand.of("gx4g", "OPX") == "cgitsync bootstrap gx4g-opx.cgs"
+    assert LevelCommand.of("gx4g", "DEV") == "cgitsync bootstrap gx4g-dev.cgs"
+    assert LevelCommand.of("gx4g", "USR") == "cgitsync initialise ../install.cgs"
+    assert LevelCommand.of("gx4g", "PUB") is None
+    assert LEVELS["USR"] == USER
+
+
+@pytest.mark.parametrize("code", ["usr", "USER", "XXX", ""])
+def test_a_level_code_is_three_letters_and_case_sensitive(code):
+    with pytest.raises(GitSyncError, match="is not a level"):
+        LevelCommand.of("gx4g", code)
+
+
+def test_a_leaf_is_compared_by_hash_and_only_the_verdict_leaves():
+    alpha = {"a": "1" * 64, "b": "2" * 64, "c": "3" * 64}
+    beta = {"a": "1" * 64, "b": "9" * 64, "d": "4" * 64}
+
+    verdict = Leaves.compare(alpha, beta)
+
+    assert verdict == {"a": "equal", "b": "different", "c": "absent-beta", "d": "absent-alpha"}
+    assert Leaves.compare(alpha, None) == {"a": "unverified", "b": "unverified", "c": "unverified"}
+    assert "1" * 64 not in str(verdict)
+
+
+def test_op_star_says_per_leaf_whether_alpha_and_beta_agree(tmp_path):
+    tree = _two_repo_workspace(tmp_path)
+    client = _loaded(tree["snapshot"])
+    alpha = Leaves.of_tree(client)
+
+    unverified = Op(client, "branch", level=USER).is_poe().poe["leaves"]
+    agreed = Op(client, "branch", level=USER).is_poe(beta=alpha).poe["leaves"]
+    drifted = Op(client, "branch", level=USER).is_poe(beta={**alpha, ".": "0" * 64}).poe["leaves"]
+
+    assert set(unverified.values()) == {"unverified"}
+    assert set(agreed.values()) == {"equal"}
+    assert list(drifted.values()).count("different") == 1
+    assert "leaves" not in Op(client, "branch", level=OPX).is_poe(beta=alpha).poe
+
+
+def test_beta_leaves_are_read_from_a_registered_state(tmp_path):
+    tree = _two_repo_workspace(tmp_path)
+    client = _loaded(tree["snapshot"])
+    from ComplexGitSync.tree.registry import RegistryTranslator
+
+    document = RegistryTranslator.to_gts_document(client.get_dependency_registry(), command_origin="load", source_cgs_path=None)
+
+    assert Leaves.of_state(document) == Leaves.of_tree(client)

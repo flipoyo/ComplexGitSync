@@ -102,7 +102,7 @@
     },
     "git_repo/git_branch.py": {
       "internal_imports": 2,
-      "loc": 444,
+      "loc": 445,
       "public_symbols": 18
     },
     "git_repo/git_repo.py": {

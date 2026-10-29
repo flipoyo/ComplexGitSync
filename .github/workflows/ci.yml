@@ -12,7 +12,15 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # The full suite on every platform pixi.toml declares (BeforeCGS-BETA §8, BD3).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: prefix-dev/setup-pixi@v0.8.1
@@ -39,8 +47,8 @@ jobs:
       - uses: prefix-dev/setup-pixi@v0.8.1
       - name: Install package
         run: pixi install
-      - name: Golden vectors and the snapshot document
-        run: pixi run python -m pytest tests/unit/test_gts_integrity.py tests/unit/test_gts_document.py
+      - name: Golden vectors and the snapshot document (the tests marked golden)
+        run: pixi run python -m pytest -m golden
 
   versioning:
     # Verifies, never decides: a commit that moves __build__ must also raise

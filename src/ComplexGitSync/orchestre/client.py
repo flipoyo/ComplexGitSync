@@ -1435,10 +1435,11 @@ class ComplexGitSyncClient:
             return (target_branch, RefKind.BRANCH)
 
         fallback_branch = entry.fallback_branch
-        if fallback_branch and self.git_runner.remote_branch_exists(remote_url, fallback_branch):
-            return (fallback_branch, RefKind.BRANCH)
+        for rung in dict.fromkeys(b for b in (fallback_branch, DEFAULT_BRANCH) if b):  # CGS-BETA, then main (BeforeCGS-BETA AD3)
+            if self.git_runner.remote_branch_exists(remote_url, rung):
+                return (rung, RefKind.BRANCH)
 
-        expected = [branch for branch in (target_branch, fallback_branch) if branch]
+        expected = list(dict.fromkeys(branch for branch in (target_branch, fallback_branch, DEFAULT_BRANCH) if branch))
         raise GitSyncError(f"No cloneable branch found for {entry.name}: expected one of {expected} on {remote_url}")
 
     def _select_private_local_ref(self, entry: WorkingRepo, remote_url: str) -> tuple[str, RefKind]:

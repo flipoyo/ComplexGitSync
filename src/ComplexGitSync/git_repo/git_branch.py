@@ -205,7 +205,7 @@ class BranchResolution:
         )
 
 
-def apply_declared_defaults(repo: MutableMapping[str, Any], project_default: str) -> None:
+def apply_declared_defaults(repo: MutableMapping[str, Any], project_default: str, project_fallback: str | None = None) -> None:
     """Fill *repo*'s ``default_branch`` and ``fallback_branch`` in place.
 
     This is the *authoring-time* half of the chain, applied by
@@ -215,7 +215,8 @@ def apply_declared_defaults(repo: MutableMapping[str, Any], project_default: str
     branch it falls back to.
 
     ``default_branch`` defaults to *project_default* (itself defaulted to
-    :data:`DEFAULT_BRANCH`), ``fallback_branch`` to :data:`DEFAULT_BRANCH`, so
+    :data:`DEFAULT_BRANCH`), ``fallback_branch`` to *project_fallback* (the
+    project's own, when its ``.cgs`` declares one) and then :data:`DEFAULT_BRANCH`, so
     target and fallback never collapse into one branch (FallbackMain). A
     private/local entry falls back to its own ``default_branch`` instead —
     never another project's ``main`` — and its real target is computed later
@@ -226,7 +227,7 @@ def apply_declared_defaults(repo: MutableMapping[str, Any], project_default: str
     repo["default_branch"] = default_branch
     private_local = repo.get("private") is True and repo.get("writable") is True
     repo["fallback_branch"] = str(
-        repo.get("fallback_branch") or (default_branch if private_local else DEFAULT_BRANCH)
+        repo.get("fallback_branch") or (default_branch if private_local else project_fallback or DEFAULT_BRANCH)
     )
 
 

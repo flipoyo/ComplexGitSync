@@ -13,6 +13,8 @@ import pytest
 
 from ComplexGitSync.merkle import MerkleError, MerkleRoot
 
+pytestmark = pytest.mark.golden  # CI's golden-vectors job runs these on every OS
+
 
 def _leaf(index: int) -> dict:
     return {
