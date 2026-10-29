@@ -232,7 +232,7 @@
     },
     "orchestre/discovery_commands.py": {
       "internal_imports": 19,
-      "loc": 671,
+      "loc": 678,
       "public_symbols": 1
     },
     "orchestre/document_loader.py": {
@@ -307,7 +307,7 @@
     },
     "orchestre/tree_commands.py": {
       "internal_imports": 38,
-      "loc": 1071,
+      "loc": 1075,
       "public_symbols": 1
     },
     "status_render.py": {
@@ -367,7 +367,7 @@
     },
     "tree/discovery.py": {
       "internal_imports": 21,
-      "loc": 231,
+      "loc": 236,
       "public_symbols": 3
     },
     "tree/environment_spec.py": {
@@ -382,7 +382,7 @@
     },
     "tree/git_tree_branch.py": {
       "internal_imports": 17,
-      "loc": 411,
+      "loc": 413,
       "public_symbols": 4
     },
     "tree/gts_document.py": {
@@ -502,7 +502,7 @@
     },
     "tree/operations/merge.py": {
       "internal_imports": 12,
-      "loc": 513,
+      "loc": 514,
       "public_symbols": 5
     },
     "tree/operations/outcome.py": {

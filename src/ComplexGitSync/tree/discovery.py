@@ -4,7 +4,7 @@ Ring: 1 (filesystem only, no subprocess)
 Contract: given a WorkingGitTree with pending nested_config entries, resolve
     and promote each one's nested .cgs into the parent registry in place; and,
     independently, parse .gitmodules file content into structured entries.
-Imports: cgs_format, errors, git_branch, git_repo, git_tree, mount_alias
+Imports: cgs_format, errors, git_branch, git_repo, git_tree, mount_guard
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from .git_tree import (
     propagate_privacy,
     register_relative_path,
 )
-from .mount_alias import MountAlias
+from .mount_guard import MountGuard
 
 # ============================================================
 #  Nested .cgs auto-discovery
@@ -56,7 +56,7 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
         and entry.nested_config not in {None, "disabled"}
         and entry.discovery_state != DiscoveryState.RESOLVED
     ]
-    pending_entries.sort(key=lambda entry: MountAlias.depth(registry, entry))  # shallow first, so a nearer mount is always known
+    pending_entries.sort(key=lambda entry: MountGuard.depth(registry, entry))  # shallow first, so a nearer mount is always known
 
     # Pre-build a set of all known absolute paths for O(1) circularity detection.
     # Updated in-place as new entries are added during this call.
@@ -73,7 +73,9 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
             # "auto" finding zero *.cgs files is a normal leaf, not a
             # mistake — only an explicit path that doesn't exist is a real
             # error, since the user asserted a specific file must be there.
-            entry.discovery_state = DiscoveryState.RESOLVED if effective_nested_config == "auto" else DiscoveryState.MISSING
+            entry.discovery_state = (
+                DiscoveryState.RESOLVED if effective_nested_config == "auto" else DiscoveryState.MISSING
+            )
             continue
 
         nested_document = CgsDocument.from_toml(nested_path)
@@ -121,11 +123,8 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
             # fix_circularities() function handles any pre-existing duplicates that
             # were not prevented by this guard (e.g., loaded from an older .gts).
             if child_absolute_path in registered_paths:
-                MountAlias.refuse_clash(registry, child_absolute_path, repo, nested_path)  # a different repository there is an error
-                continue
-            master = MountAlias.master_of(registry, entry, repo)  # the mount nearest the trunk wins (NestedAgentMaster)
-            if master is not None and MountAlias.link(registry, master, child_absolute_path):
-                changes.append(f"aliased:{child_id}->{master.repo_id}")
+                if (why := MountGuard.clash(registry, child_absolute_path, repo)) is not None:
+                    changes.append(f"denied:{child_id} | {why}")  # a different repository there (IntegrityMount, denial 1)
                 continue
 
             target = resolve_declared_ref(
@@ -146,12 +145,22 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
                     fallback_branch=str(repo.get("fallback_branch")) if repo.get("fallback_branch") else None,
                     discovery_state=_initial_discovery_state(repo.get("nested_config")),
                     gitprovider=_parse_enum(GitProvider, repo.get("gitprovider"), GitProvider.GITHUB),
-                    project_owner_name=str(repo.get("project_owner_name")) if repo.get("project_owner_name") else None,
+                    project_owner_name=str(repo.get("project_owner_name"))
+                    if repo.get("project_owner_name")
+                    else None,
                     project_name=str(repo.get("project_name")) if repo.get("project_name") else None,
-                    repo_name=(str(repo.get("repo_name")) if repo.get("repo_name") is not None else (str(repo.get("project_name")) if repo.get("project_name") is not None else None)),
+                    repo_name=(
+                        str(repo.get("repo_name"))
+                        if repo.get("repo_name") is not None
+                        else (str(repo.get("project_name")) if repo.get("project_name") is not None else None)
+                    ),
                     group_name=str(repo.get("group_name")) if repo.get("group_name") else None,
-                    gitprovider_url=str(repo.get("gitprovider_url")) if repo.get("gitprovider_url") else None,
-                    access_protocol=_parse_enum(AccessProtocol, repo.get("access_protocol"), AccessProtocol.SSH),
+                    gitprovider_url=str(repo.get("gitprovider_url"))
+                    if repo.get("gitprovider_url")
+                    else None,
+                    access_protocol=_parse_enum(
+                        AccessProtocol, repo.get("access_protocol"), AccessProtocol.SSH
+                    ),
                     default_branch=str(repo.get("default_branch") or nested_document.default_branch),
                     nested_config=str(repo.get("nested_config")) if repo.get("nested_config") else None,
                     private=bool(repo.get("private", False)),
@@ -171,6 +180,7 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
         # optional enrichment, not a requirement; one that only ever lists
         # children, like this test's own fixture, is equally valid.
 
+    propagate_privacy(registry)
     normalize_node_types(registry)
     propagate_privacy(registry)
     registry.recompute_tree_state()

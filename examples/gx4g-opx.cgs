@@ -1,0 +1,65 @@
+CORRection: 
+@dev-agent: 
+OPX is gx4g4opx its PoE is {0,0,0,0}. Sigma = 0. G credentials {DEV for CGS-BETA, DEV for CGS-ALPHA }
+CMD: Compress Commentaries in 10 LOC
+
+
+# The OPX tree for GX4G: the gate, ComplexGitSync's own developer tree
+# mounted beneath it, and the repositories GX4G is developed with.
+#
+#     cd ComplexGitSync
+#     pixi run cgitsync bootstrap ../examples/gx4g4dev.cgs gx4g
+#
+# bootstrap clones into an isolated $HOME/.cgs/gx4g-<timestamp>/gx4g, never
+# into the checkout it runs from. That isolation is what puts DEV on the
+# COMPUTO hardware, apart from the USER install on the GATE hardware.
+#
+# install.cgs, at the repository root, is the USER install and mounts
+# ComplexGitSync as a leaf. This file points ComplexGitSync's entry at
+# examples/complexgitsync4dev.cgs instead, which adds, relative to
+# ComplexGitSync/: its documentation, its .agent/ configuration and its
+# .cgitsync/.memory.
+#
+# .agent/.distant — shared, read-only, the same for every project that
+#   conforms to DevSpecs (DevSpecs.md, "mounted under .agent/.distant/"),
+#   exactly as complexgitsync4dev.cgs mounts them:
+#   ticket         .ticketing: the planning-ticket lifecycle
+#   dev-sync       DevSpec: DevSpecs.md, AgentConduct.md, Versioning.md
+#                  (SemVer and the build counter), SpecTree.md
+#   documentation  DocSpec: DOCSTYLE.md, DocSpecs.md
+#
+# .agent/.local — GX4G's own, writable, on branch gx4g
+#   .dev         gx4g-dev.md, Versioning.md, DevTickets/: GX4G's planning tickets
+#   .localSpec   AdditionalSpecs.md, AGENT.md, digest.md, AgenticManifest.md, audit.md
+#   .claude      CLAUDE.md and AGENT.md, linked from the project root
+#
+# .omniscience — the register, mounted by GX4G at the root, beside
+#   .cgitsync. It is private and writable (private/local), so cgitsync
+#   writes to it through the ordinary private/local mechanism:
+#   `cgitsync omniscience register` appends to it, and every query reads it.
+#   It is declared here, by the gate, rather than by
+#   `cgitsync omniscience mount`. A USER tree (install.cgs) never mounts it.
+#
+# This file lives in examples/ because nested_config = "auto" refuses a
+# repository root holding two .cgs files, and install.cgs is the one at the
+# root.
+
+project = { name = "gx4g", default_branch = "main" }
+
+repos = [
+    { repository = "codeberg:gx4g/gx4g", fallback_branch = "main" },
+    { repository = "github:flipoyo/ComplexGitSync", relative_path = "ComplexGitSync", fallback_branch = "main", nested_config = "examples/complexgitsync4dev.cgs" },
+
+    # .distant — shared, read-only
+    { repository = "github:flipoyo/.ticketing", relative_path = ".agent/.distant/ticket", default_branch = "main", fallback_branch = "main", private = true },
+    { repository = "github:flipoyo/DevSpec", relative_path = ".agent/.distant/dev-sync", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+    { repository = "github:flipoyo/DocSpec", relative_path = ".agent/.distant/documentation", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+
+    # .local — GX4G's own, writable
+    { repository = "github:flipoyo/.dev", relative_path = ".agent/.local/.dev", default_branch = "gx4g", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", default_branch = "gx4g", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.claude", relative_path = ".agent/.local/.claude", default_branch = "gx4g", fallback_branch = "main", private = true, writable = true },
+
+    # the register, held by the gate, beside .cgitsync
+    { repository = "codeberg:gx4g/.omniscience", relative_path = ".omniscience", default_branch = "gx4g", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
+]

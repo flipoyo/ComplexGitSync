@@ -40,6 +40,7 @@ from ..tree.git_tree import (
 from ..tree.git_tree_branch import GitTreeBranches, ProjectBranch, tree_project_name
 from ..tree.memory import HistoryState, Relocation
 from ..tree.memory.pending import PendingMemory
+from ..tree.mount_guard import MountGuard
 from ..tree.operations import (
     MERGE_INTO_ACTS,
     AncestorOperation,
@@ -976,7 +977,10 @@ class TreeCommands:
             (
                 repo.name,
                 *merge_status(
-                    repo, self.client.git_runner, project_branch, project_name=project_name
+                    repo,
+                    self.client.git_runner,
+                    project_branch,
+                    project_name=MountGuard.base(registry, repo, project_name),
                 ),
             )
             for repo in iter_tree_leaf_first(registry, scope)

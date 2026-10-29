@@ -7,7 +7,7 @@ Contract: given a tree and its runner, find each project branch that ended
     list``) and hands it over whole (``--json``, the client); gx4g, which holds
     the Omniscience register, is the one that records it. Nothing here appends
     to the register, calls a provider or touches a ref.
-Imports: git_branch, git_repo, git_tree, git_tree_branch, merkle, memory
+Imports: git_branch, git_repo, git_tree, git_tree_branch, merkle, memory, mount_guard
 
 Five kinds, by what Git and the ledger say (BranchProtection §8.2)::
 
@@ -50,6 +50,7 @@ from ..merkle import MerkleRoot
 from .git_tree import iter_tree
 from .git_tree_branch import GitTreeBranches
 from .memory.pending import PendingMemory
+from .mount_guard import MountGuard
 
 if TYPE_CHECKING:
     from ..orchestre import GitRunner
@@ -203,7 +204,8 @@ class BranchWatch:
             if not (repo.effective_private and repo.effective_writable and repo.absolute_path.is_dir()):
                 continue
             for branch in sorted(set(self._git.local_branches(repo.absolute_path)) | set(self._git.remote_tracking_branches(repo.absolute_path))):
-                base = next((b for b in bases if branch.startswith(b)), None)
+                own = private_local_branch(project, "x", owner=MountGuard.owner(self._tree, repo))[:-1]  # a nested Parent's <Parent>_<P>_B
+                base = next((b for b in sorted({own, *bases}, key=len, reverse=True) if branch.startswith(b)), None)
                 name = branch.removeprefix(base) if base else ""
                 if name and name not in known and closed_branch_origin(name) is None and ".archived-" not in name:  # `memory reboot` archives on purpose
                     orphaned.setdefault(name, []).append((repo.name, f"has '{branch}'"))

@@ -332,11 +332,12 @@ using §2, and run `pixi run cgitsync initialise <your.cgs>`.
 
 ### When your project nests another project's tree
 
-If a project you depend on brings its own `.cgs` (`nested_config`), it can mount the same shared repositories you do, at
-the same paths (DevSpec's `.agent/.distant/dev-sync`, say). A tree holds a repository once: the mount nearest your root is
-the one that is cloned, and the nested one becomes a link to it, so the other project's agents find their files where its
-`.cgs` says while there is a single clone to commit to. Its own mounts that you do not mount stay where it puts them, on
-your project's branch. Nothing for you to declare; `status` shows one line per clone.
+A project you depend on may bring its own `.cgs` (`nested_config`) and ask for the same shared
+repositories you mount, at the same paths. Your `.cgs` is a request and the State is what the tree
+holds: a nested request for a repository you already hold on the same branch, or for a path you already
+use, is refused before anything is cloned, and the command prints `denied:` with the reason. The nested
+project's own private repositories are on `<its name>_<your project>` (for example
+`ComplexGitSync_gx4g`), so they never share a branch with yours.
 
 ## 4. Working day to day
 

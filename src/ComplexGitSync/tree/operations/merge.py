@@ -27,6 +27,7 @@ from ..git_tree import (
     iter_tree_leaf_first,
 )
 from ..git_tree_branch import tree_project_name
+from ..mount_guard import MountGuard
 
 if TYPE_CHECKING:
     from ...orchestre import GitRunner
@@ -281,7 +282,7 @@ class MergeOperation:
         project_name = tree_project_name(tree)
         for repo in MergeOperation._iter_merge_scope_project_first(tree, scope):
             source, status, conflicts = MergeOperation.merge_status(
-                repo, git_runner, project_branch, project_name=project_name
+                repo, git_runner, project_branch, project_name=MountGuard.base(tree, repo, project_name)
             )
             if status == "up-to-date":
                 continue
@@ -446,7 +447,7 @@ class MergeOperation:
         project_name = tree_project_name(tree)
         plans = [
             MergeOperation.merge_into_status(
-                repo, git_runner, source_branch, target_branch, project_name=project_name
+                repo, git_runner, source_branch, target_branch, project_name=MountGuard.base(tree, repo, project_name)
             )
             for repo in MergeOperation._iter_merge_scope_project_first(tree, scope)
         ]
@@ -535,7 +536,7 @@ class MergeOperation:
 
         for position, repo in enumerate(repos):
             source, status, conflicts = MergeOperation.merge_status(
-                repo, git_runner, project_branch, project_name=project_name
+                repo, git_runner, project_branch, project_name=MountGuard.base(tree, repo, project_name)
             )
             if status in ("already-on-it", "no-branch", "up-to-date"):
                 if status == "no-branch":

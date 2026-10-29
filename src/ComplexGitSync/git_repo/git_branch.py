@@ -330,7 +330,7 @@ already exists.
 """
 
 
-def private_local_branch(project_name: str, project_branch: str, *, twin: bool = False) -> str:
+def private_local_branch(project_name: str, project_branch: str, *, twin: bool = False, owner: str | None = None) -> str:
     """The branch a private/local repository uses for *project_branch*.
 
     The one place the naming rule lives::
@@ -338,9 +338,10 @@ def private_local_branch(project_name: str, project_branch: str, *, twin: bool =
         X == "main"   ->  <project_name>
         otherwise     ->  <project_name>_<X>
 
-    *twin* is true only for the memory of a twin tree, whose base is
-    ``ComplexGitSync_<project_name>`` instead (:data:`TWIN_BRANCH_OWNER`);
-    the suffix rule is the same.
+    *owner* is the nested Parent a repository belongs to, when it sits under one: its base is
+    ``<owner>_<project_name>``, so it never meets the Project's own repository on one branch
+    (IntegrityMount, D1). *twin* is that rule for a twin tree's memory, whose owner is
+    ComplexGitSync (:data:`TWIN_BRANCH_OWNER`). The suffix rule is the same.
 
     The base is the **project's name**, not anything the entry declares:
     a private/local repository holds one project's settings, filed on a
@@ -353,7 +354,8 @@ def private_local_branch(project_name: str, project_branch: str, *, twin: bool =
     settings branch is simply ``<project_name>``, which is what every tree
     already has. Nothing else in the codebase composes these two strings.
     """
-    base = f"{TWIN_BRANCH_OWNER}{PRIVATE_LOCAL_SEPARATOR}{project_name}" if twin else project_name
+    owner = TWIN_BRANCH_OWNER if twin else owner
+    base = f"{owner}{PRIVATE_LOCAL_SEPARATOR}{project_name}" if owner else project_name
     if project_branch == DEFAULT_BRANCH:
         return base
     return f"{base}{PRIVATE_LOCAL_SEPARATOR}{project_branch}"
@@ -457,6 +459,7 @@ def resolve_propagated_ref(
     ref_kind: RefKind = RefKind.BRANCH,
     project_name: str | None = None,
     twin: bool = False,
+    owner: str | None = None,
 ) -> BranchResolution:
     """Resolve what *entry* targets when the whole tree moves to *ref_name*.
 
@@ -482,7 +485,8 @@ def resolve_propagated_ref(
     *project_name* is the tree's project, and only the private/local case
     needs it. Without it that case cannot be resolved at all, so it falls
     back to behaving like private/distant rather than guessing a name.
-    *twin* is true only for a twin tree's memory (:data:`TWIN_BRANCH_OWNER`).
+    *twin* is true only for a twin tree's memory (:data:`TWIN_BRANCH_OWNER`); *owner* names the
+    nested Parent of a repository that sits under one (:func:`private_local_branch`).
 
     For any private entry the returned ``kind`` is ``None``: the move must not
     rewrite the kind of ref that entry already carries.
@@ -491,7 +495,7 @@ def resolve_propagated_ref(
         declared = _as_optional_str(entry.default_branch) or DEFAULT_BRANCH
         if entry.effective_writable and project_name:
             return BranchResolution(
-                name=private_local_branch(project_name, ref_name, twin=twin),
+                name=private_local_branch(project_name, ref_name, twin=twin, owner=owner),
                 kind=None,
                 source=BranchSource.PRIVATE_LOCAL,
             )

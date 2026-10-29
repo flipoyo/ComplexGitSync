@@ -123,7 +123,7 @@ class OperatingSpace:
 
     @property
     def gittree_root(self) -> str:
-        """``H_GITTREE`` (schema 1, or 2 when the tree needs a ``tree_path``), computed from the tree: what its ``.gts`` must record."""
+        """``H_GITTREE`` (schema 1), computed from the tree: what its ``.gts`` must record."""
         return MerkleRoot.gittree_root(self._leaves())
 
     def inclusion_proof(self, repo_id: str) -> InclusionProof:
@@ -131,10 +131,10 @@ class OperatingSpace:
         from ..tree.registry import RegistryTranslator  # the writer builds on this class
 
         table = RegistryTranslator.repo_state_dict(self.tree, self.tree.get(repo_id))
-        return MerkleRoot.inclusion_proof(self._leaves(), str(table.get("tree_path", table["relative_path"])))  # schema 2 keys by tree_path
+        return MerkleRoot.inclusion_proof(self._leaves(), str(table["relative_path"]))
 
     def _leaves(self) -> list[dict[str, Any]]:
-        """Each repository's leaf (schema 1, or 2 with a ``tree_path``), built from the tree by the code a ``.gts`` is written and hashed with."""
+        """Each repository's schema-1 leaf, built from the tree by the code a ``.gts`` is written and hashed with."""
         from ..tree.registry import RegistryTranslator  # the writer builds on this class
 
         entries = sorted(self.tree.values(), key=lambda item: item.repo_id)

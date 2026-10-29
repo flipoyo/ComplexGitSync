@@ -2,7 +2,7 @@
 
 Ring: 3
 Contract: Find repositories and submodules and turn them into specs.
-Imports: cgs_format, client, discovery, errors, git_probes, git_tree, git_tree_branch, memory_facts, provider, reports
+Imports: cgs_format, client, discovery, errors, git_probes, git_tree, git_tree_branch, memory_facts, mount_denial, provider, reports
 """
 
 from __future__ import annotations
@@ -33,8 +33,10 @@ from ..git_repo.provider import (
 from ..tree.git_tree import (
     _update_gitignore_file,
     innermost_containing_path,
+    normalize_node_types,
 )
 from ..tree.git_tree_branch import GitTreeBranches
+from ..tree.mount_denial import MountDenial
 from .git_probes import GitProbes
 from .memory_facts import MemoryFacts
 from .reports import (
@@ -806,6 +808,12 @@ class DiscoveryCommands:
     def discover_nested_configs(self) -> tuple[str, ...]:
         registry = self.client.get_dependency_registry()
         changes = discover_nested_configs(registry)
+        # The .gts refuses, before any clone, what the tree could not hold (IntegrityMount, denials 2 and 3).
+        denied = MountDenial.deny(registry, [c.partition(":")[2] for c in changes if c.startswith("discovered:")])
+        if denied:
+            changes = tuple(c for c in changes if not c.startswith("discovered:") or c.partition(":")[2] in registry.repos) + tuple(denied)
+            normalize_node_types(registry)
+            registry.recompute_tree_state()
         # A nested `.cgs` names a project of its own; what a private/local
         # child targets is the *tree's* project's branch, which only a tree
         # (not a single document) can say.

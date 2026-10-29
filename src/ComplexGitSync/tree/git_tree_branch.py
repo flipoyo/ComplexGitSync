@@ -6,7 +6,7 @@ Contract: given a WorkingGitTree — and a GitRunner, for anything that reads
     disk — answer which branch the tree is on, which branch a repository
     targets when the tree moves, which branch it is actually on, and where
     those two disagree. Holds no branch *rule* of its own.
-Imports: errors, git_branch, git_repo, git_tree, memory
+Imports: errors, git_branch, git_repo, git_tree, memory, mount_guard
 
 Why this module exists
 ----------------------
@@ -63,6 +63,7 @@ from .git_tree import (
     iter_tree_leaf_first,
 )
 from .memory.repository import MOUNT_PATH
+from .mount_guard import MountGuard
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -205,8 +206,10 @@ class GitTreeBranches:
         (:attr:`WorkingGitTree.memory_twin`); no other repository ever is.
         """
         twin = self._tree.memory_twin and self.in_memory(repo)
+        # A nested Parent's own private repository is filed under <Parent>_<Project> (IntegrityMount).
+        owner = None if twin else MountGuard.owner(self._tree, repo)
         return resolve_propagated_ref(
-            repo, ref_name, ref_kind=ref_kind, project_name=self._project_name, twin=twin
+            repo, ref_name, ref_kind=ref_kind, project_name=self._project_name, twin=twin, owner=owner
         )
 
     def in_memory(self, repo: WorkingRepo) -> bool:

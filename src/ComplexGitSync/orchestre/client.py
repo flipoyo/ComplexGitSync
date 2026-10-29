@@ -1600,6 +1600,11 @@ class ComplexGitSyncClient:
         if registry is None:
             return
         for change in discovered:
+            if change.startswith("denied:"):  # the .gts refused a requested mount: said and logged, never in the State (IntegrityMount)
+                repo_id, _, why = change.removeprefix("denied:").partition(" | ")
+                self._log_event("mount_denied", repo_id=repo_id, reason=why)
+                warnings.warn(f"denied: {repo_id}: {why}", stacklevel=2)
+                continue
             _, _, repo_id = change.partition(":")
             if repo_id not in registry.repos:
                 continue
