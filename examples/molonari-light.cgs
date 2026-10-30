@@ -1,9 +1,20 @@
-project = "lMOLO"
+# MOLONARI light — installable CGS-ALPHA subset of molonari.cgs.
+# Keeps the legacy workspace name lMOLO, but removes the obsolete individual
+# API, data, hardware, gateway, compute, private-memory and dev-hub mounts.
+# The scientific root is MOLONARI1D; ComplexGitSync supplies CGS-ALPHA 8.5.0
+# as observed on main (no immutable release tag verified).
+#
+# Nested mode, when the root checkout is named lMOLO and contains the tool:
+#   cd lMOLO/ComplexGitSync
+#   pixi run cgitsync validate ../molonari-light.cgs
+#   pixi run cgitsync initialise ../molonari-light.cgs --force-protocol https
+#
+# Public/project-only configuration: no private/agentic repositories.
+# Full CGS-BETA target: molonari.cgs (requires ComplexGraphSync-0.m.p).
+
+project = { name = "lMOLO", default_branch = "CGS-MOLO", fallback_branch = "main" }
+
 repos = [
-    { repository = "github:flipoyo/MOLONARI1D", relative_path = ".", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-API", relative_path = "Molonaviz", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-hardware", relative_path = "hardware", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-gate", relative_path = "molonari.io", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-computo", relative_path = "pyheatmy", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/.memory", relative_path = ".cgitsync/.memory", default_branch = "lMOLO", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
+    { repository = "github:flipoyo/MOLONARI1D", relative_path = ".", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/ComplexGitSync", relative_path = "ComplexGitSync", default_branch = "main", fallback_branch = "main", nested_config = "disabled" },
 ]
