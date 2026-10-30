@@ -1,8 +1,9 @@
 # MOLONARI light — installable CGS-ALPHA subset of molonari.cgs.
 # Keeps the legacy workspace name lMOLO, but removes the obsolete individual
 # API, data, hardware, gateway, compute, private-memory and dev-hub mounts.
-# The scientific root is MOLONARI1D; ComplexGitSync supplies CGS-ALPHA 8.5.0
-# as observed on main (no immutable release tag verified).
+# The scientific root MOLONARI1D follows branch CGS-MOLO.
+# CGS-MOLO follows ComplexGitSync-8.5.0 = CGS-ALPHA-0.0.0.
+# The installed ComplexGitSync main declares 8.5.0 (no immutable release tag verified).
 #
 # Nested mode, when the root checkout is named lMOLO and contains the tool:
 #   cd lMOLO/ComplexGitSync
