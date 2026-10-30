@@ -89,7 +89,7 @@ DIGEST_PATH = ".agent/.local/.localSpec/digest.md"
 #: the SpecTreeManifest ticket, D1): the manifest is the one list, and this
 #: script holds none of its own.
 MANIFEST_PATH = ".agent/.local/.localSpec/AgenticManifest.md"
-DEV_CGS_PATH = "examples/complexgitsync4dev.cgs"
+DEV_CGS_PATH = "examples/complexgitsync-dev.cgs"
 _AGENT_MOUNT_PREFIX = ".agent/"
 
 

@@ -392,3 +392,132 @@ def test_push_succeeds_even_when_the_cgs_declares_a_branch_the_checkout_is_not_o
     client.push()  # must not raise
 
     assert _run_git(remote, "rev-parse", "branch1") == _run_git(repo, "rev-parse", "HEAD")
+
+
+# ---------------------------------------------------------------------------
+# 5. A branch with no upstream next to a remote branch of its name (NoUpstream)
+# ---------------------------------------------------------------------------
+
+
+def _commit(repo_path: Path, name: str) -> None:
+    (repo_path / name).write_text(f"{name}\n", encoding="utf-8")
+    _run_git(repo_path, "add", name)
+    _run_git(repo_path, "commit", "-m", name)
+
+
+def _untracked_local_twin(cloned_workspace, tmp_path: Path, *, remote_commits: int, local_commits: int) -> Path:
+    """The reported state: ``alpha`` on the remote, a local ``alpha`` that tracks nothing."""
+    remote = cloned_workspace["remote"]
+    repo = cloned_workspace["repo"]
+    other = tmp_path / "other"
+    _run_git(tmp_path, "clone", remote.as_posix(), other.as_posix())
+    _identify(other)
+    _run_git(other, "checkout", "-b", "alpha")
+    _commit(other, "base.txt")
+    _run_git(other, "push", "-u", "origin", "alpha")
+    _run_git(repo, "fetch", "origin")
+    _run_git(repo, "checkout", "--no-track", "-b", "alpha", "origin/alpha")
+    for index in range(remote_commits):
+        _commit(other, f"remote{index}.txt")
+    if remote_commits:
+        _run_git(other, "push", "origin", "alpha")
+    for index in range(local_commits):
+        _commit(repo, f"local{index}.txt")
+    _run_git(repo, "fetch", "origin")
+    assert not GitRunner().upstream_configured(repo)
+    return repo
+
+
+def _sync_row(capsys, snapshot: Path) -> list[str]:
+    capsys.readouterr()
+    assert cli_main(["status", "--gts", str(snapshot)]) == 0
+    out = capsys.readouterr().out
+    return [line for line in out.splitlines() if line.startswith("demo")][0].split()
+
+
+@pytest.mark.parametrize(
+    ("remote_commits", "local_commits", "sync"),
+    [(0, 0, "synced"), (2, 0, "behind(-2)"), (0, 1, "ahead(+1)"), (2, 1, "diverged(+1/-2)")],
+)
+def test_status_measures_a_branch_with_no_upstream_against_the_remote_branch_of_its_name(
+    cloned_workspace, tmp_path, capsys, remote_commits, local_commits, sync
+):
+    _untracked_local_twin(cloned_workspace, tmp_path, remote_commits=remote_commits, local_commits=local_commits)
+
+    row = _sync_row(capsys, cloned_workspace["snapshot"])
+
+    assert row[4:6] == ["origin/alpha", "(same"], row
+    assert row[6] == "name)", row
+    assert row[8] == sync, row
+
+
+def test_status_json_says_the_upstream_is_not_configured(cloned_workspace, tmp_path, capsys):
+    import json
+
+    _untracked_local_twin(cloned_workspace, tmp_path, remote_commits=1, local_commits=1)
+    capsys.readouterr()
+    assert cli_main(["status", "--json", "--gts", str(cloned_workspace["snapshot"])]) == 0
+    entry = json.loads(capsys.readouterr().out)["repositories"][0]
+
+    assert entry["upstream_branch"] == "origin/alpha"
+    assert entry["upstream_configured"] is False
+    assert entry["sync"].startswith("diverged")
+
+
+def test_push_refuses_a_diverged_branch_with_no_upstream_before_pushing(cloned_workspace, tmp_path, capsys):
+    repo = _untracked_local_twin(cloned_workspace, tmp_path, remote_commits=1, local_commits=1)
+    remote = cloned_workspace["remote"]
+    before = _run_git(remote, "rev-parse", "alpha")
+
+    assert cli_main(["push", "--gts", str(cloned_workspace["snapshot"])]) != 0
+
+    err = capsys.readouterr().err
+    assert "diverged from origin/alpha" in err, err
+    assert f"git -C {repo.resolve().as_posix()} merge origin/alpha" in err.replace("\\", "/"), err
+    assert _run_git(remote, "rev-parse", "alpha") == before
+
+
+def test_push_refuses_a_behind_branch_with_no_upstream_and_names_pull(cloned_workspace, tmp_path, capsys):
+    _untracked_local_twin(cloned_workspace, tmp_path, remote_commits=1, local_commits=0)
+
+    assert cli_main(["push", "--gts", str(cloned_workspace["snapshot"])]) != 0
+
+    assert "behind origin/alpha by 1" in capsys.readouterr().err
+
+
+def test_push_of_a_branch_the_remote_does_not_hold_still_sets_the_upstream(cloned_workspace, capsys):
+    repo = cloned_workspace["repo"]
+    assert cli_main(["branch", "create", "fresh", "--gts", str(cloned_workspace["snapshot"])]) == 0
+    assert cli_main(["checkout", "fresh", "--gts", str(_latest_gts(repo))]) == 0
+    assert not GitRunner().upstream_configured(repo)
+
+    assert cli_main(["push", "--gts", str(_latest_gts(repo))]) == 0
+
+    assert GitRunner().upstream_ref(repo) == "origin/fresh"
+
+
+def test_pull_sets_the_upstream_of_a_branch_that_names_none(cloned_workspace, tmp_path):
+    repo = cloned_workspace["repo"]
+    other = tmp_path / "other"
+    _run_git(tmp_path, "clone", cloned_workspace["remote"].as_posix(), other.as_posix())
+    _identify(other)
+    _commit(other, "ahead.txt")
+    _run_git(other, "push", "origin", "main")
+    _run_git(repo, "branch", "--unset-upstream", "main")
+    assert not GitRunner().upstream_configured(repo)
+
+    assert cli_main(["pull", str(cloned_workspace["snapshot"])]) == 0
+
+    assert GitRunner().upstream_ref(repo) == "origin/main"
+    assert GitRunner().branch_tracking_counts(repo) == (0, 0)
+
+
+def test_checkout_makes_a_remote_branch_track_its_remote(cloned_workspace, tmp_path):
+    repo = _untracked_local_twin(cloned_workspace, tmp_path, remote_commits=0, local_commits=0)
+    _run_git(repo, "checkout", "main")
+    head = _run_git(repo, "rev-parse", "alpha")
+
+    assert cli_main(["checkout", "alpha", "--gts", str(cloned_workspace["snapshot"])]) == 0
+
+    assert GitRunner().upstream_ref(repo) == "origin/alpha"
+    assert _run_git(repo, "rev-parse", "alpha") == head

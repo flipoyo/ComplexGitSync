@@ -1,0 +1,19 @@
+# The OPX tree for ComplexGitSync, one of complexgitsync-{opx,dev,usr,pub}.cgs.
+# Each file is named for the project and the level it installs; the project is
+# still ComplexGitSync, on main, so no branch has to exist for any level.
+# OPX: the project, its documentation and .agent/.distant (.ticketing, DevSpec, DocSpec),
+# shared and read-only, as in gx4g-opx.cgs. No private repository is writable.
+#     pixi run cgitsync bootstrap examples/complexgitsync-opx.cgs ComplexGitSync
+# Kept in examples/ beside gx4g-*.cgs, which mounts complexgitsync-dev.cgs.
+
+project = { name = "ComplexGitSync", default_branch = "main" }
+
+repos = [
+    { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
+    { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "auto" },
+
+    # .distant — shared, read-only, the same for every conforming project
+    { repository = "github:flipoyo/.ticketing", relative_path = ".agent/.distant/ticket", default_branch = "main", fallback_branch = "main", private = true },
+    { repository = "github:flipoyo/DevSpec", relative_path = ".agent/.distant/dev-sync", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+    { repository = "github:flipoyo/DocSpec", relative_path = ".agent/.distant/documentation", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+]

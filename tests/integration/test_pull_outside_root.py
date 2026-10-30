@@ -1,6 +1,6 @@
 """`pull` on a `.cgs` that does not sit at the tree's own root.
 
-`examples/complexgitsync4dev.cgs` — this project's own developer spec —
+`examples/complexgitsync-dev.cgs` — this project's own developer spec —
 deliberately does not sit at CGSHOME (`CLAUDE.md`, *Layout*: "where a `.cgs`
 lives never affects the tree it describes"). `pull`, called with that exact
 file on this exact project, broke on two separate bugs the day this
@@ -47,7 +47,7 @@ def _cgshome_with_a_cgs_not_at_its_root(tmp_path: Path) -> dict[str, Path]:
     """A real, cloned two-repo tree, with its `.cgs` filed away from the root.
 
     ``root/specs/topology.cgs`` — not ``root/topology.cgs`` — is the layout
-    `examples/complexgitsync4dev.cgs` uses for real: a developer spec that
+    `examples/complexgitsync-dev.cgs` uses for real: a developer spec that
     describes the tree it sits *inside*, not the directory that holds it.
     """
     root = tmp_path / "cgshome"
@@ -85,7 +85,7 @@ def _cgshome_with_a_cgs_not_at_its_root(tmp_path: Path) -> dict[str, Path]:
     # .cgitsync is established the way a real workspace's is: a .cgs sitting
     # AT the root it describes, the ordinary case load_cgs's own default
     # already serves. The non-root copy above is the one this test's `pull`
-    # calls are actually about -- the same shape examples/complexgitsync4dev.cgs
+    # calls are actually about -- the same shape examples/complexgitsync-dev.cgs
     # has to this project's own CGSHOME.
     root_cgs = root / "topology.cgs"
     root_cgs.write_text(content, encoding="utf-8")

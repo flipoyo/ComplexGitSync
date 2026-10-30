@@ -3,14 +3,14 @@
 #
 # Use this file to bootstrap a working checkout you can change:
 #
-#     pixi run cgitsync bootstrap examples/complexgitsync4dev.cgs ComplexGitSync
+#     pixi run cgitsync bootstrap examples/complexgitsync-dev.cgs ComplexGitSync
 #
 # Where this file sits does not affect the tree it describes. The root is
 # CGSHOME, resolved from --output-path (or $CGSHOME, or the working
 # directory) plus project.name -- never from the directory holding the
 # .cgs. Only install.cgs, the user install, stays at the repository root.
 #
-# install.cgs, beside it, is the USER install and mounts only the first two
+# install.cgs, at the repository root, is the USER install and mounts only the first two
 # entries. This file adds every agentic skill (AgentSkillsSplit) plus this
 # project's own private mounts, and is also tutorials/05_private_repos.md's
 # worked example, because it is the only checked-in spec using every kind

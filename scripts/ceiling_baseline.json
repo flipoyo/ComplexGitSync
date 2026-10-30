@@ -122,7 +122,7 @@
     },
     "json_render.py": {
       "internal_imports": 0,
-      "loc": 206,
+      "loc": 207,
       "public_symbols": 2
     },
     "omniscience/global_index.py": {
@@ -217,7 +217,7 @@
     },
     "orchestre/client.py": {
       "internal_imports": 69,
-      "loc": 1398,
+      "loc": 1404,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -287,7 +287,7 @@
     },
     "orchestre/release_commands.py": {
       "internal_imports": 20,
-      "loc": 344,
+      "loc": 345,
       "public_symbols": 2
     },
     "orchestre/reporting.py": {
@@ -312,7 +312,7 @@
     },
     "status_render.py": {
       "internal_imports": 2,
-      "loc": 254,
+      "loc": 255,
       "public_symbols": 12
     },
     "tree/autofix/__init__.py": {
@@ -482,7 +482,7 @@
     },
     "tree/operations/branch.py": {
       "internal_imports": 20,
-      "loc": 606,
+      "loc": 608,
       "public_symbols": 4
     },
     "tree/operations/commit.py": {
@@ -512,7 +512,7 @@
     },
     "tree/operations/preflight.py": {
       "internal_imports": 11,
-      "loc": 405,
+      "loc": 410,
       "public_symbols": 3
     },
     "tree/operations/push.py": {
@@ -527,7 +527,7 @@
     },
     "tree/operations/restart.py": {
       "internal_imports": 18,
-      "loc": 307,
+      "loc": 309,
       "public_symbols": 1
     },
     "tree/paths.py": {

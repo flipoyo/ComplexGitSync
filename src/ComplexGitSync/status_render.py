@@ -126,7 +126,8 @@ SYNC_NO_UPSTREAM = "no-upstream"
 
 SYNC_LEGEND = (
     "legend: SYNC — synced/ahead/behind/diverged are measured against the "
-    f"upstream branch; {SYNC_NO_UPSTREAM} = this branch was never pushed, so "
+    "upstream branch, or the remote branch of the same name when UPSTREAM_BRANCH says (same name); "
+    f"{SYNC_NO_UPSTREAM} = the remote holds no branch of this name, so "
     f"there is nothing to measure; {SYNC_UNKNOWN} = it names an upstream that "
     "does not resolve, which 'cgitsync pull' or 'cgitsync push' repairs"
 )

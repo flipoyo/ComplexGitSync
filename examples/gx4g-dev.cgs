@@ -2,8 +2,8 @@
 # G credentials {DEV for CGS-BETA, USER for CGS-ALPHA}. CGS-ALPHA is ComplexGitSync. G.EDGE.NAME = *NAME.OP.NAME = gx4g-dev.cgs.
 #     cd ComplexGitSync && pixi run cgitsync bootstrap ../examples/gx4g-dev.cgs gx4g
 # bootstrap clones into an isolated $HOME/.cgs/gx4g-<timestamp>/gx4g, never into this checkout.
-# ComplexGitSync is mounted with its developer tree (examples/complexgitsync4dev.cgs).
-# .agent/.distant: .ticketing, DevSpec, DocSpec, shared and read-only, as in complexgitsync4dev.cgs.
+# ComplexGitSync is mounted with its developer tree (examples/complexgitsync-dev.cgs).
+# .agent/.distant: .ticketing, DevSpec, DocSpec, shared and read-only, as in complexgitsync-dev.cgs.
 # .agent/.local: .dev, .localSpec, .claude, GX4G's own, writable, on branch gx4g.
 # .omniscience: the register, held by the gate at the root, private/local; a USER tree never mounts it.
 # A nested request the tree already holds is denied before cloning (IntegrityMount).
@@ -13,7 +13,7 @@ project = { name = "gx4g", default_branch = "dev", fallback_branch = "CGS-BETA" 
 
 repos = [
     { repository = "codeberg:gx4g/gx4g", fallback_branch = "main" },
-    { repository = "github:flipoyo/ComplexGitSync", relative_path = "ComplexGitSync", fallback_branch = "main", nested_config = "examples/complexgitsync4dev.cgs" },
+    { repository = "github:flipoyo/ComplexGitSync", relative_path = "ComplexGitSync", fallback_branch = "main", nested_config = "examples/complexgitsync-dev.cgs" },
     { repository = "github:flipoyo/.ticketing", relative_path = ".agent/.distant/ticket", default_branch = "main", fallback_branch = "main", private = true },
     { repository = "github:flipoyo/DevSpec", relative_path = ".agent/.distant/dev-sync", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
     { repository = "github:flipoyo/DocSpec", relative_path = ".agent/.distant/documentation", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },

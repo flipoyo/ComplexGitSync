@@ -23,6 +23,7 @@ from ...git_repo.git_repo import (
     WorkingRepo,
     convert_remote_url_protocol,
 )
+from ...git_repo.same_name_remote import SameNameRemote
 from ..git_tree import (
     ROOT_REPO_ID,
     WorkingGitTree,
@@ -220,6 +221,8 @@ class RestartOperation:
                         )
                 else:
                     git_runner.pull(repo.absolute_path, remote=remote, ref_name=target_branch)
+                    # `pull origin <branch>` writes no tracking configuration.
+                    SameNameRemote(git_runner, remote).adopt(repo.absolute_path)
 
             resolved_branch = git_runner.current_branch(repo.absolute_path) or current_branch
             BranchOperation.refresh_repo_after_checkout(repo, resolved_branch, RefKind.BRANCH, git_runner)

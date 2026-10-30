@@ -4,7 +4,7 @@
 #     pixi run cgitsync bootstrap install.cgs ComplexGitSync
 #
 # To work ON ComplexGitSync rather than with it, use
-# examples/complexgitsync4dev.cgs instead — it adds the repositories that
+# examples/complexgitsync-dev.cgs instead — it adds the repositories that
 # configure how the project is developed (.agent, .dev, .localSpec, .claude).
 #
 # USER and DEV are separated by which repositories a spec mounts, and the

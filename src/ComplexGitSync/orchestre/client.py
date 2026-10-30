@@ -42,6 +42,7 @@ from ..git_repo.git_repo import (
     WorkingRepo,
     repo_remote_url,
 )
+from ..git_repo.same_name_remote import SameNameRemote
 from ..json_render import JsonRender
 from ..omniscience.omniscience import Omniscience
 from ..omniscience.omniscience_commands import OmniscienceCommands
@@ -1250,6 +1251,11 @@ class ComplexGitSyncClient:
             # only case where the two answers differ — and it costs a git
             # subprocess per repository to ask.
             upstream_configured = tracking_state is not None or self.git_runner.upstream_configured(entry.absolute_path)
+            same_name = SameNameRemote(self.git_runner).counts(entry.absolute_path) if tracking_state is None else None
+            if same_name is not None:
+                upstream_ref = f"{same_name[0]} {SameNameRemote.MARKER}"
+                tracking_counts = same_name[1]
+                tracking_state = SameNameRemote.state(tracking_counts)
         except GitSyncError:
             return (
                 entry.name,

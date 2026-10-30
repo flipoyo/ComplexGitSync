@@ -461,7 +461,7 @@ class TestNestedPinningThroughDiscovery:
 
 
 class TestThisTreesOwnDeclaration:
-    """`complexgitsync4dev.cgs` is tutorial 5's worked example.
+    """`complexgitsync-dev.cgs` is tutorial 5's worked example.
 
     The developer spec, not the root `install.cgs`: the user install
     deliberately mounts no private repository at all, which
@@ -469,7 +469,7 @@ class TestThisTreesOwnDeclaration:
     """
 
     def test_the_two_project_owned_config_repos_are_writable(self):
-        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync4dev.cgs")
+        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync-dev.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
         assert by_name[".localSpec"]["writable"] is True
@@ -481,7 +481,7 @@ class TestThisTreesOwnDeclaration:
         This project's own, so writable, the same as `.localSpec`/`.claude`
         above. `.versioning` and `.auto` were folded into it and dropped.
         """
-        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync4dev.cgs")
+        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync-dev.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
         assert by_name[".dev"]["writable"] is True
@@ -497,7 +497,7 @@ class TestThisTreesOwnDeclaration:
         `.agent` repository nests them — `AgentMountSplit`), so its own
         `private`/`writable` flags are exactly its effective ones.
         """
-        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync4dev.cgs")
+        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync-dev.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
         for name in (".ticketing", "DevSpec", "DocSpec"):
@@ -505,7 +505,7 @@ class TestThisTreesOwnDeclaration:
             assert by_name[name]["writable"] is False
 
     def test_each_scope_selects_what_the_documentation_promises(self):
-        source = _REPO_ROOT / "examples" / "complexgitsync4dev.cgs"
+        source = _REPO_ROOT / "examples" / "complexgitsync-dev.cgs"
         tree = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(source), source)
 
         def names(scope: RepoScope) -> set[str]:
@@ -536,7 +536,7 @@ class TestUserInstallDeclaration:
 
     A user install must never mount a repository that configures how
     ComplexGitSync is developed. That is the whole difference between this
-    file and `complexgitsync4dev.cgs`, so it is worth a test: the
+    file and `complexgitsync-dev.cgs`, so it is worth a test: the
     two files are easy to edit in step by accident.
     """
 

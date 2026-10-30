@@ -19,6 +19,7 @@ from ...git_repo.git_repo import (
     SyncState,
     WorkingRepo,
 )
+from ...git_repo.same_name_remote import SameNameRemote
 from ..git_tree import (
     ROOT_REPO_ID,
     WorkingGitTree,
@@ -135,6 +136,12 @@ class Preflight:
         if check_branch_alignment:
             diagnostics.extend(Preflight._collect_branch_alignment_diagnostics(tree, git_runner, scope=scope))
         diagnostics.extend(Preflight._collect_tracking_diagnostics(tree, git_runner, scope=scope))
+        if operation_name == "push":
+            diagnostics.extend(
+                PreflightDiagnostic(PreflightSeverity.BLOCKING_ERROR, repo.name, why)
+                for repo in iter_tree_leaf_first(tree, scope)
+                if (why := SameNameRemote(git_runner).refusal(repo.absolute_path))
+            )
         diagnostics.extend(
             Preflight._collect_commit_sha_diagnostics(
                 tree,
