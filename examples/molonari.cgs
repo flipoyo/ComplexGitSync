@@ -1,10 +1,24 @@
-project = "MOLONARI"
+# CGS-MOLO -> CGS-BETA | OpFrontier CGS-BETA <- CGS-ALPHA.
+# PRIME G {MOLONARI,MOLO,TWIN,CGS-BETA}.
+# Frontier tuples are in molonari-opfrontier.toml, NOT in CGS-ALPHA .cgs grammar.
+# .opx {GG4G,DELTA,PoE,PRIVATE}
+# .dev {GX4G,DELTA,.opx,.distant}
+# .usr {GX4G,DELTA,.opx,.local}
+# .gts {CGS,ALPHA,.cgs,.cgitsync}
+#
+# CGS-MOLO follows ComplexGitSync-8.5.0 = CGS-ALPHA-0.0.0.
+# This file describes only actual Git repositories on the ALPHA side.
+# CGS-BETA is an OP target, NOT a Git repository to clone.
+# No agentic or private mount is exposed.
+# From a standalone CGS-ALPHA installation:
+#   pixi run cgitsync validate examples/molonari.cgs
+#   pixi run cgitsync bootstrap examples/molonari.cgs --force-protocol https
+# Do not use nested initialise from a running ComplexGitSync dependency:
+# 8.5.0 can re-clone dependencies already checked out.
+
+project = { name = "MOLONARI", default_branch = "CGS-MOLO", fallback_branch = "main" }
+
 repos = [
-    { repository = "github:flipoyo/MOLONARI1D", relative_path = ".", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-API", relative_path = "Molonaviz", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-data", relative_path = "data", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-hardware", relative_path = "hardware", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-gate", relative_path = "molonari.io", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-computo", relative_path = "pyheatmy", default_branch = "CGS-MOLO"},
-    { repository = "github:flipoyo/ComplexGitSync", relative_path = "dev-hub", private = true, writable = true },
+    { repository = "github:flipoyo/MOLONARI1D", relative_path = ".", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/ComplexGitSync", relative_path = "ComplexGitSync", default_branch = "main", fallback_branch = "main", nested_config = "disabled" },
 ]
