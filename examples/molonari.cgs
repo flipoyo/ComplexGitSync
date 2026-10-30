@@ -1,10 +1,29 @@
-project = "MOLONARI"
+# MOLONARI — scientific OperatingSpace for river–groundwater interactions.
+# Three-component target:
+#   CGS-BETA   ComplexGraphSync-0.m.p  (graph orchestration; planned)
+#   CGS-ALPHA  ComplexGitSync-8.5.0    (GitTree, synchronisation, memory)
+#   SCIENCE    GitRepo MOLONARI1D     (root checkout)
+#
+# Target CGS-BETA command: cgs initialise molonari.cgs
+# Current CGS-ALPHA 8.5.0 command, from MOLONARI/ComplexGitSync:
+#   pixi run cgitsync validate ../molonari.cgs
+#   pixi run cgitsync initialise ../molonari.cgs --force-protocol https
+#
+# The root directory must be named MOLONARI and be a checkout of MOLONARI1D.
+# IMPORTANT: github:flipoyo/ComplexGraphSync is a provisional repository
+# address and is not currently accessible via the configured GitHub connection.
+# This full example cannot complete initialise until that source exists and
+# the intended 0.m.p release/ref is available. For an installable ALPHA-only
+# subset, see molonari-light.cgs.
+#
+# Version labels document the intended compatibility, NOT immutable pins:
+# ComplexGitSync main currently declares 8.5.0, with no 8.5.0 tag verified.
+# This spec mounts only project repositories; no private or agentic mounts.
+
+project = { name = "MOLONARI", default_branch = "CGS-MOLO", fallback_branch = "main" }
+
 repos = [
-    { repository = "github:flipoyo/MOLONARI1D", relative_path = ".", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-API", relative_path = "Molonaviz", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-data", relative_path = "data", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-hardware", relative_path = "hardware", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-gate", relative_path = "molonari.io", default_branch = "CGS-MOLO" },
-    { repository = "github:flipoyo/MOLONARI-computo", relative_path = "pyheatmy", default_branch = "CGS-MOLO"},
-    { repository = "github:flipoyo/ComplexGitSync", relative_path = "dev-hub", private = true, writable = true },
+    { repository = "github:flipoyo/MOLONARI1D", relative_path = ".", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/ComplexGitSync", relative_path = "ComplexGitSync", default_branch = "main", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/ComplexGraphSync", relative_path = "ComplexGraphSync", default_branch = "main", fallback_branch = "main", nested_config = "disabled" },
 ]
