@@ -76,7 +76,7 @@
 # main is the project branch; repository entries declare only fallback, path,
 # nested-discovery and private overrides.
 
-project = { name = "ComplexGitSync", default_branch = "main" }
+project = { name = "ComplexGitSync", default_branch = "CGS-ALPHA", fallback_branch = "main" }
 
 repos = [
     { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
