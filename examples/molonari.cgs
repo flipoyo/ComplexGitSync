@@ -1,8 +1,8 @@
 # MOLONARI — scientific OperatingSpace for river–groundwater interactions.
 # Three-component target:
 #   CGS-BETA   ComplexGraphSync-0.m.p  (graph orchestration; planned)
-#   CGS-ALPHA  ComplexGitSync-8.5.0    (GitTree, synchronisation, memory)
-#   SCIENCE    GitRepo MOLONARI1D     (root checkout)
+#   CGS-ALPHA-0.0.0  ComplexGitSync-8.5.0  (GitTree, synchronisation, memory)
+#   SCIENCE          GitRepo MOLONARI1D     (root checkout, branch CGS-MOLO)
 #
 # Target CGS-BETA command: cgs initialise molonari.cgs
 # Current CGS-ALPHA 8.5.0 command, from MOLONARI/ComplexGitSync:
@@ -16,6 +16,7 @@
 # the intended 0.m.p release/ref is available. For an installable ALPHA-only
 # subset, see molonari-light.cgs.
 #
+# CGS-MOLO follows ComplexGitSync-8.5.0 = CGS-ALPHA-0.0.0.
 # Version labels document the intended compatibility, NOT immutable pins:
 # ComplexGitSync main currently declares 8.5.0, with no 8.5.0 tag verified.
 # This spec mounts only project repositories; no private or agentic mounts.
