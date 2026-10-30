@@ -1,3 +1,7 @@
+CORR: @agent-dev This is complexgitsync-opx.cgs, not DEV. Mimic gx4g-*.cgs and generates proper complexgitsync{-opx,-dev,-usr,-pub}. pub is install.sh, usr mount .cgitsync, dev mount .local, opx mounts .distant
+
+
+
 # The DEVELOPER tree for ComplexGitSync: the tool, its documentation, and
 # every repository that configures how the project is developed.
 #

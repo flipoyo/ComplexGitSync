@@ -68,8 +68,8 @@ def test_opfrontier_direction_is_alpha_to_beta():
 
 @pytest.mark.parametrize(
     ("filename", "repositories"),
-    [("molonari.cgs", {"MOLONARI1D", "ComplexGitSync"}),
-     ("molonari-light.cgs", {"MOLONARI1D"})],
+    [("molonari.cgs", {"MOLONARI1D", "MOLONARI-API", "MOLONARI-data", "MOLONARI-hardware", "MOLONARI-gate", "MOLONARI-computo", "ComplexGitSync"}),
+     ("molonari-light.cgs", {"MOLONARI1D", "MOLONARI-API", "MOLONARI-hardware", "MOLONARI-gate", "MOLONARI-computo"})],
 )
 def test_alpha_examples_are_valid_public_gittrees_without_beta_repo(filename, repositories):
     doc = CgsDocument.from_toml(_EXAMPLES / filename)

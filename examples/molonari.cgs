@@ -7,7 +7,9 @@
 # .gts {CGS,ALPHA,.cgs,.cgitsync}
 #
 # CGS-MOLO follows ComplexGitSync-8.5.0 = CGS-ALPHA-0.0.0.
-# This file describes only actual Git repositories on the ALPHA side.
+# This file describes only actual Git repositories on the ALPHA side:
+# the full MOLONARI constellation (1D, API, data, hardware, gate, computo)
+# plus ComplexGitSync as a public, read-only dependency.
 # CGS-BETA is an OP target, NOT a Git repository to clone.
 # No agentic or private mount is exposed.
 # From a standalone CGS-ALPHA installation:
@@ -20,5 +22,10 @@ project = { name = "MOLONARI", default_branch = "CGS-MOLO", fallback_branch = "m
 
 repos = [
     { repository = "github:flipoyo/MOLONARI1D", relative_path = ".", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/MOLONARI-API", relative_path = "Molonaviz", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/MOLONARI-data", relative_path = "data", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/MOLONARI-hardware", relative_path = "hardware", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/MOLONARI-gate", relative_path = "molonari.io", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/MOLONARI-computo", relative_path = "pyheatmy", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
     { repository = "github:flipoyo/ComplexGitSync", relative_path = "ComplexGitSync", default_branch = "main", fallback_branch = "main", nested_config = "disabled" },
 ]

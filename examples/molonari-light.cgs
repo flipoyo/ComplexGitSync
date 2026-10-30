@@ -1,12 +1,16 @@
-# Minimal public CGS-ALPHA MOLONARI1D tree.
+# Light public CGS-ALPHA MOLONARI constellation (no data repository).
 # CGS-MOLO -> CGS-BETA, OpFrontier CGS-BETA <- CGS-ALPHA.
 # PRIME G {MOLONARI,MOLO,TWIN,CGS-BETA}.
 # The four frontier tuples are in molonari-opfrontier.toml, not GitRepos.
 # CGS-MOLO follows ComplexGitSync-8.5.0 = CGS-ALPHA-0.0.0.
-# Bootstrap this root-only example from a standalone CGS-ALPHA installation.
-# No private or agentic mounts; no implicit BETA runtime.
+# Bootstrap from a standalone CGS-ALPHA installation.
+# No private or agentic mounts (.memory excluded); no implicit BETA runtime.
 project = { name = "MOLONARI", default_branch = "CGS-MOLO", fallback_branch = "main" }
 
 repos = [
     { repository = "github:flipoyo/MOLONARI1D", relative_path = ".", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/MOLONARI-API", relative_path = "Molonaviz", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/MOLONARI-hardware", relative_path = "hardware", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/MOLONARI-gate", relative_path = "molonari.io", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/MOLONARI-computo", relative_path = "pyheatmy", default_branch = "CGS-MOLO", fallback_branch = "main", nested_config = "disabled" },
 ]
