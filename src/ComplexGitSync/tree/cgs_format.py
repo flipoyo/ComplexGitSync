@@ -447,7 +447,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
     def from_toml(cls, path: Path | str) -> CgsDocument:
         """Run the explicit TOML parse, normalization, and validation pipeline."""
         raw = parse_cgs(path)
-        NamedCgs.check(path, raw)  # a yyyy-xxx.cgs whose project line contradicts its name is refused (BeforeCGS-BETA §7)
+        NamedCgs.check(path, raw)  # a yyyy-xxx.cgs whose project line contradicts its name is refused (LinkAtCGS §7)
         return cls.from_dict(raw)
 
     @classmethod

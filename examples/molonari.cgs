@@ -1,5 +1,5 @@
-# CGS-MOLO -> CGS-BETA | OpFrontier CGS-BETA <- CGS-ALPHA.
-# PRIME G {MOLONARI,MOLO,TWIN,CGS-BETA}.
+# CGS-MOLO -> @CGS | OpFrontier @CGS <- CGS-ALPHA.
+# PRIME G {MOLONARI,MOLO,TWIN,@CGS}.
 # Frontier tuples are in molonari-opfrontier.toml, NOT in CGS-ALPHA .cgs grammar.
 # .opx {GG4G,DELTA,PoE,PRIVATE}
 # .dev {GX4G,DELTA,.opx,.distant}
@@ -10,7 +10,7 @@
 # This file describes only actual Git repositories on the ALPHA side:
 # the full MOLONARI constellation (1D, API, data, hardware, gate, computo)
 # plus ComplexGitSync as a public, read-only dependency.
-# CGS-BETA is an OP target, NOT a Git repository to clone.
+# @CGS is an OP target, NOT a Git repository to clone.
 # No agentic or private mount is exposed.
 # From a standalone CGS-ALPHA installation:
 #   pixi run cgitsync validate examples/molonari.cgs

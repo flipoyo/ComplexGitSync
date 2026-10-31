@@ -1441,7 +1441,7 @@ class ComplexGitSyncClient:
             return (target_branch, RefKind.BRANCH)
 
         fallback_branch = entry.fallback_branch
-        for rung in dict.fromkeys(b for b in (fallback_branch, DEFAULT_BRANCH) if b):  # CGS-BETA, then main (BeforeCGS-BETA AD3)
+        for rung in dict.fromkeys(b for b in (fallback_branch, DEFAULT_BRANCH) if b):  # CGS-ALPHA, then main (LinkAtCGS AD3)
             if self.git_runner.remote_branch_exists(remote_url, rung):
                 return (rung, RefKind.BRANCH)
 

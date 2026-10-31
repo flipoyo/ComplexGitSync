@@ -1,10 +1,10 @@
-# CGS-MOLO -> CGS-BETA / OpFrontier CGS-BETA <- CGS-ALPHA.
+# CGS-MOLO -> @CGS / OpFrontier @CGS <- CGS-ALPHA.
 # Ontological fixture only: NOT an executable CGS-ALPHA .cgs.
 [prime_g]
 NAME = "MOLONARI"
 NODE = "MOLO"
 EDGE = "TWIN"
-OP = "CGS-BETA"
+OP = "@CGS"
 
 [opfrontier]
 ".opx" = ["GG4G", "DELTA", "PoE", "PRIVATE"]
@@ -14,7 +14,7 @@ OP = "CGS-BETA"
 
 [transition]
 source = "CGS-ALPHA"
-target = "CGS-BETA"
+target = "@CGS"
 project_branch = "CGS-MOLO"
 alpha_distribution = "ComplexGitSync-8.5.0"
 alpha_identity = "CGS-ALPHA-0.0.0"

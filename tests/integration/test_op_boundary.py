@@ -171,7 +171,7 @@ def test_sigma_is_shown_in_the_record_and_committed_only_when_present():
     assert OmniscienceRecord.from_dict(without.to_dict()).record_hash == without.record_hash
 
 
-# -- BeforeCGS-BETA §7.0: the level's command; §6: GitRepo-ALPHA == GitRepo-BETA --------------------------
+# -- LinkAtCGS §7.0: the level's command; §6: GitRepo-ALPHA == GitRepo-BETA --------------------------
 
 
 def test_each_level_calls_for_one_command_and_pub_for_none():

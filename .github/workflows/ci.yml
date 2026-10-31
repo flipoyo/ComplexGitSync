@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   test:
-    # The full suite on every platform pixi.toml declares (BeforeCGS-BETA §8, BD3).
+    # The full suite on every platform pixi.toml declares (LinkAtCGS §8, BD3).
     strategy:
       fail-fast: false
       matrix:

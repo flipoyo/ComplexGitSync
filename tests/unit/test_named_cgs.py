@@ -1,4 +1,4 @@
-"""A `yyyy-xxx.cgs` file's name is a contract (BeforeCGS-BETA §7): AD1 refused by name, AD2 cut at the last `-`."""
+"""A `yyyy-xxx.cgs` file's name is a contract (LinkAtCGS §7): AD1 refused by name, AD2 cut at the last `-`."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def test_a_file_that_follows_its_name_is_read(tmp_path):
     document = CgsDocument.from_toml(path)
 
     assert document.project_name == "gx4g"
-    assert {repo["fallback_branch"] for repo in document.repos} == {"CGS-BETA"}
+    assert {repo["fallback_branch"] for repo in document.repos} == {"CGS-ALPHA"}
     assert {repo["default_branch"] for repo in document.repos} == {"dev"}
 
 
@@ -46,7 +46,7 @@ def test_a_file_that_follows_its_name_is_read(tmp_path):
 def test_a_file_that_contradicts_its_name_is_refused_by_name_with_the_line_it_expects(tmp_path, project):
     path = _write(tmp_path, "gx4g-dev.cgs", project)
 
-    with pytest.raises(ConfigValidationError, match=r'default_branch = "dev", fallback_branch = "CGS-BETA"'):
+    with pytest.raises(ConfigValidationError, match=r'default_branch = "dev", fallback_branch = "CGS-ALPHA"'):
         CgsDocument.from_toml(path)
 
 
@@ -73,7 +73,7 @@ def test_the_checked_in_examples_follow_the_rule():
 
 
 def test_a_repository_without_the_projects_fallback_branch_falls_to_main(tmp_path):
-    """AD3: nobody creates CGS-BETA yet, so the chain is the target, then CGS-BETA, then main."""
+    """AD3: the chain is the target, then CGS-ALPHA, then main."""
     from types import SimpleNamespace
 
     from ComplexGitSync.git_repo.git_repo import RefKind
@@ -87,11 +87,11 @@ def test_a_repository_without_the_projects_fallback_branch_falls_to_main(tmp_pat
             return branch in self.held
 
     client = ComplexGitSyncClient(git_runner=Remote({"main"}))
-    entry = SimpleNamespace(target_ref_kind=RefKind.BRANCH, target_ref_name="dev", default_branch="dev", fallback_branch="CGS-BETA",
+    entry = SimpleNamespace(target_ref_kind=RefKind.BRANCH, target_ref_name="dev", default_branch="dev", fallback_branch="CGS-ALPHA",
                             effective_private=False, effective_writable=False, name="r")
 
     assert client._select_clone_ref(entry, "url") == ("main", RefKind.BRANCH)
-    client.git_runner = Remote({"CGS-BETA", "main"})
-    assert client._select_clone_ref(entry, "url") == ("CGS-BETA", RefKind.BRANCH)
+    client.git_runner = Remote({"CGS-ALPHA", "main"})
+    assert client._select_clone_ref(entry, "url") == ("CGS-ALPHA", RefKind.BRANCH)
     client.git_runner = Remote({"dev", "main"})
     assert client._select_clone_ref(entry, "url") == ("dev", RefKind.BRANCH)

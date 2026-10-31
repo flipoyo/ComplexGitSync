@@ -1,9 +1,9 @@
-"""named_cgs — a `yyyy-xxx.cgs` file's name is a contract (BeforeCGS-BETA §7).
+"""named_cgs — a `yyyy-xxx.cgs` file's name is a contract (LinkAtCGS §7).
 
 Ring: 0 (pure — reads a path's name and a parsed table; no I/O, no clock, no environment)
 Contract: a ``.cgs`` named ``<yyyy>-<xxx>.cgs``, where ``xxx`` is exactly three
     characters and ``yyyy`` (of any length) is the project's own name, opens the
-    project ``yyyy`` on branch ``xxx`` and falls back to ``CGS-BETA``. A file that
+    project ``yyyy`` on branch ``xxx`` and falls back to ``CGS-ALPHA``. A file that
     says otherwise is refused by name, before anything is cloned.
 Imports: errors
 
@@ -26,7 +26,7 @@ from typing import Any
 from ..errors import ConfigValidationError
 
 #: The branch every repository of such a tree falls back to; ``main`` still follows it (AD3).
-FALLBACK = "CGS-BETA"
+FALLBACK = "CGS-ALPHA"
 
 _NAMED = re.compile(r"(?P<project>.+)-(?P<operation>(?!v\d+$)[^-.]{3})")  # `-v10`..`-v99` is a memory reboot export, not an operation
 

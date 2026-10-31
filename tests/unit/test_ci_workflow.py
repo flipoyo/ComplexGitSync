@@ -1,4 +1,4 @@
-"""CI must run what it says it runs (BeforeCGS-BETA §8, F2).
+"""CI must run what it says it runs (LinkAtCGS §8, F2).
 
 ``golden-vectors`` named a test file MerkleRoot had deleted, so it ran no test on any system for seven releases
 and nothing said so. This reads ``.github/workflows/ci.yml`` and fails when a test path it names is gone, or when

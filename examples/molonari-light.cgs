@@ -1,6 +1,6 @@
 # Light public CGS-ALPHA MOLONARI constellation (no data repository).
-# CGS-MOLO -> CGS-BETA, OpFrontier CGS-BETA <- CGS-ALPHA.
-# PRIME G {MOLONARI,MOLO,TWIN,CGS-BETA}.
+# CGS-MOLO -> @CGS, OpFrontier @CGS <- CGS-ALPHA.
+# PRIME G {MOLONARI,MOLO,TWIN,@CGS}.
 # The four frontier tuples are in molonari-opfrontier.toml, not GitRepos.
 # CGS-MOLO follows ComplexGitSync-8.5.0 = CGS-ALPHA-0.0.0.
 # Bootstrap from a standalone CGS-ALPHA installation.

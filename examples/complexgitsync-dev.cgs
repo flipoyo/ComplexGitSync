@@ -73,7 +73,7 @@
 # by `cgitsync self-history adopt` as the one-time retrofit this project's
 # own memory needed, having been adopted before self-history existed.
 #
-# main is the project branch; repository entries declare only fallback, path,
+# CGS-ALPHA is the project branch, then main; repository entries declare only fallback, path,
 # nested-discovery and private overrides.
 
 project = { name = "ComplexGitSync", default_branch = "CGS-ALPHA", fallback_branch = "main" }
@@ -88,8 +88,8 @@ repos = [
     { repository = "github:flipoyo/DocSpec", relative_path = ".agent/.distant/documentation", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
 
     # .local — this project's own, writable
-    { repository = "github:flipoyo/.dev", relative_path = ".agent/.local/.dev", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
-    { repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
-    { repository = "github:flipoyo/.claude", relative_path = ".agent/.local/.claude", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
-    { repository = "github:flipoyo/.memory", relative_path = ".cgitsync/.memory", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true, nested_config = "config-memory.cgs" },
+    { repository = "github:flipoyo/.dev", relative_path = ".agent/.local/.dev", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.claude", relative_path = ".agent/.local/.claude", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.memory", relative_path = ".cgitsync/.memory", fallback_branch = "main", private = true, writable = true, nested_config = "config-memory.cgs" },
 ]

@@ -7,7 +7,7 @@ Contract: ``PoE``, a level's four-bit vector over ``{NAME, NODE, EDGE, OP}`` (``
     other side holds. ``OP`` (``op_boundary.py``) is what uses them.
 Imports: errors, merkle, git_tree, gts_document
 
-BeforeCGS-BETA §6 and §7.0, owner 2026-10-29.
+LinkAtCGS §6 and §7.0, owner 2026-10-29.
 """
 
 from __future__ import annotations
@@ -55,13 +55,13 @@ LEVELS: Mapping[str, PoE] = {"OPX": OPX, "DEV": DEV, "USR": USER, "PUB": PUBLIC}
 
 
 class LevelCommand:
-    """The one ``cgitsync`` command a level calls for on ``YYYY.node`` (BeforeCGS-BETA §7.0). ``.cgs`` is the only way in."""
+    """The one ``cgitsync`` command a level calls for on ``YYYY.node`` (LinkAtCGS §7.0). ``.cgs`` is the only way in."""
 
     @staticmethod
     def of(project: str, code: str) -> str | None:
         """``bootstrap yyyy-opx.cgs``, ``bootstrap yyyy-dev.cgs`` or ``initialise ../install.cgs``; ``None`` for ``PUB`` (``VOID``).
 
-        *code* comes from the caller, which is CGS-BETA through a GX4G node: ``OP`` never computes a level of its own,
+        *code* comes from the caller, which is a GX4G node: ``OP`` never computes a level of its own,
         and it only emits the command (AD7), never runs it, since a node may be another machine.
         """
         if code not in LEVELS:
@@ -70,7 +70,7 @@ class LevelCommand:
 
 
 class Leaves:
-    """GitRepo-ALPHA == GitRepo-BETA: whether a leaf of the tree is the leaf the other side holds (BeforeCGS-BETA §6)."""
+    """GitRepo-ALPHA == GitRepo-BETA: whether a leaf of the tree is the leaf the other side holds (LinkAtCGS §6)."""
 
     @staticmethod
     def of_tree(client: ComplexGitSyncClient) -> dict[str, str]:

@@ -1,4 +1,4 @@
-"""CGS-MOLO -> CGS-BETA: ALPHA-side OpFrontier contract (issue #191)."""
+"""CGS-MOLO -> @CGS: ALPHA-side OpFrontier contract (issue #191)."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def test_prime_g_and_opfrontier_are_exact_and_ordered():
         ("NAME", "MOLONARI"),
         ("NODE", "MOLO"),
         ("EDGE", "TWIN"),
-        ("OP", "CGS-BETA"),
+        ("OP", "@CGS"),
     )
     _check_frontier(data["opfrontier"])
 
@@ -60,7 +60,7 @@ def test_frontier_rejects_changed_order():
 def test_opfrontier_direction_is_alpha_to_beta():
     transition = _fixture()["transition"]
     assert transition["source"] == "CGS-ALPHA"
-    assert transition["target"] == "CGS-BETA"
+    assert transition["target"] == "@CGS"
     assert transition["project_branch"] == "CGS-MOLO"
     assert transition["alpha_distribution"] == "ComplexGitSync-8.5.0"
     assert transition["alpha_identity"] == "CGS-ALPHA-0.0.0"
@@ -86,7 +86,7 @@ def test_alpha_examples_are_valid_public_gittrees_without_beta_repo(filename, re
 def test_beta_frontier_is_not_an_implicit_repo_or_new_cgs_parser_fields():
     data = _fixture()
     assert data["prime_g"]["EDGE"] == "TWIN"
-    assert data["prime_g"]["OP"] == "CGS-BETA"
+    assert data["prime_g"]["OP"] == "@CGS"
     for name in ("molonari.cgs", "molonari-light.cgs"):
         doc = CgsDocument.from_toml(_EXAMPLES / name)
         normalized = doc.to_dict()

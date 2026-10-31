@@ -663,7 +663,7 @@ class TestCgsDocumentValid:
         repo_root = Path(__file__).parent.parent.parent
         doc = CgsDocument.from_toml(repo_root / "examples" / "complexgitsync-dev.cgs")
         assert doc.project_name == "ComplexGitSync"
-        assert doc.default_branch == "main"
+        assert doc.default_branch == "CGS-ALPHA"  # CGS-ALPHA first, then main (owner, 2026-10-31)
         assert len(doc.repos) == 9
 
     def test_from_toml_parses_doccomplexgitsync_example(self):

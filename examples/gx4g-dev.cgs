@@ -1,5 +1,5 @@
 # The DEV tree for GX4G: G.OP.NAME gx4g-dev (DEV only, not OPX), PoE {1,0,0,0}, Sigma = 1.
-# G credentials {DEV for CGS-BETA, USER for CGS-ALPHA}. CGS-ALPHA is ComplexGitSync. G.EDGE.NAME = *NAME.OP.NAME = gx4g-dev.cgs.
+# G credentials {DEV for @CGS, USER for CGS-ALPHA}. CGS-ALPHA is ComplexGitSync. G.EDGE.NAME = *NAME.OP.NAME = gx4g-dev.cgs.
 #     cd ComplexGitSync && pixi run cgitsync bootstrap ../examples/gx4g-dev.cgs gx4g
 # bootstrap clones into an isolated $HOME/.cgs/gx4g-<timestamp>/gx4g, never into this checkout.
 # ComplexGitSync is mounted with its developer tree (examples/complexgitsync-dev.cgs).
@@ -9,7 +9,7 @@
 # A nested request the tree already holds is denied before cloning (IntegrityMount).
 # Kept in examples/: nested_config = "auto" refuses a root holding two .cgs files (install.cgs).
 
-project = { name = "gx4g", default_branch = "dev", fallback_branch = "CGS-BETA" }
+project = { name = "gx4g", default_branch = "dev", fallback_branch = "CGS-ALPHA" }
 
 repos = [
     { repository = "codeberg:gx4g/gx4g", fallback_branch = "main" },
