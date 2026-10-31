@@ -22,7 +22,7 @@ def _write(tmp_path, name: str, project: str) -> Path:
 @pytest.mark.parametrize(
     ("name", "parsed"),
     [("gx4g-dev.cgs", ("gx4g", "dev")), ("my-long-name-opx.cgs", ("my-long-name", "opx")), ("molonari-light.cgs", None),
-     ("install.cgs", None), ("complexgitsync4dev.cgs", None), ("a-ab.cgs", None),
+     ("install.cgs", None), ("complexgitsync-dev.cgs", ("complexgitsync", "dev")), ("a-ab.cgs", None),
      ("gx4g-v9.cgs", None), ("gx4g-v10.cgs", None), ("gx4g-v99.cgs", None), ("gx4g-v100.cgs", None), ("gx4g-vxy.cgs", ("gx4g", "vxy"))],
 )
 def test_the_name_is_cut_at_the_last_dash_and_xxx_is_exactly_three_characters(name, parsed):
@@ -68,6 +68,8 @@ def test_the_checked_in_examples_follow_the_rule():
     for path in sorted(examples.glob("*.cgs")):
         CgsDocument.from_toml(path)  # refused by name if it were concerned and wrong
     assert NamedCgs.parse(examples / "gx4g-dev.cgs") == ("gx4g", "dev")
+    for level in ("opx", "dev", "usr", "pub"):
+        assert NamedCgs.parse(examples / f"complexgitsync-{level}.cgs") == ("complexgitsync", level)
 
 
 def test_a_repository_without_the_projects_fallback_branch_falls_to_main(tmp_path):

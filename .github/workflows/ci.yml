@@ -27,7 +27,7 @@ jobs:
       - name: Install package
         run: pixi install
       - name: Reconstitute the developer tree (dogfood cgitsync)
-        run: pixi run cgitsync initialise examples/complexgitsync4dev.cgs --output-path .. --force-protocol https
+        run: pixi run cgitsync initialise examples/complexgitsync-dev.cgs --output-path .. --force-protocol https
       - name: Lint
         run: pixi run lint
       - name: Run tests

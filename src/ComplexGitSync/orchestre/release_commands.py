@@ -33,6 +33,7 @@ import tomli_w
 from .. import __build__, __version__
 from ..errors import GitSyncError
 from ..git_repo.git_repo import AccessProtocol, RefKind, RepoScope
+from ..git_repo.same_name_remote import SameNameRemote
 from ..tree.git_tree import ROOT_REPO_ID, WorkingGitTree
 from ..tree.git_tree_branch import tree_project_name
 from ..tree.gts_document import GtsDocument
@@ -113,8 +114,8 @@ class ReleaseCommands:
     ) -> WorkingGitTree:
         """Release the tree: ``add → commit → pull → push → freeze``, tagged ``<project>-<suffix>``.
 
-        The pull is skipped when the root's branch names no upstream yet,
-        since there is nothing to pull. ``force_access_protocol`` reaches the
+        The pull is skipped when the root's branch names no upstream and the
+        remote holds no branch of its name, since there is nothing to pull. ``force_access_protocol`` reaches the
         pull and push steps (see :meth:`ComplexGitSyncClient.push`); the
         remote rewrite persists, so the tag push picks it up too.
 
@@ -133,10 +134,10 @@ class ReleaseCommands:
         self.client.add()
         self.client.commit(commit_message, stage_all=False)
         root_entry = self._root()
-        if self.client.git_runner.upstream_configured(root_entry.absolute_path):
+        if self.client.git_runner.upstream_configured(root_entry.absolute_path) or SameNameRemote(self.client.git_runner).ref(root_entry.absolute_path):
             self.client.pull(self.client.source_path, force_access_protocol=force_access_protocol)
         else:
-            self.client._log_event("freeze_release_pull_skipped", reason="current branch has no upstream yet — nothing to pull", absolute_path=root_entry.absolute_path)
+            self.client._log_event("freeze_release_pull_skipped", reason="current branch has no upstream and the remote holds no branch of its name — nothing to pull", absolute_path=root_entry.absolute_path)
         self.client.push(force_access_protocol=force_access_protocol)
         release = [("semver", __version__), ("git_tag", tag), ("artefact:src", __build__), ("project", plan["project"])]
         if plan["version"]:

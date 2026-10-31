@@ -76,7 +76,7 @@ def test_a_tree_from_install_cgs_is_user(tmp_path):
 
 
 def test_this_projects_developer_tree_is_dev(tmp_path):
-    client = _loaded(tmp_path / "d", (REPO_ROOT / "examples" / "complexgitsync4dev.cgs").read_text(encoding="utf-8"))
+    client = _loaded(tmp_path / "d", (REPO_ROOT / "examples" / "complexgitsync-dev.cgs").read_text(encoding="utf-8"))
 
     assert client.registry.profile is TreeProfile.DEV
     assert client.memory_setup_proposal() is None  # it declares its memory

@@ -1,0 +1,15 @@
+# The USR tree for ComplexGitSync, one of complexgitsync-{opx,dev,usr,pub}.cgs.
+# Each file is named for the project and the level it installs; the project is
+# still ComplexGitSync, on main, so no branch has to exist for any level.
+# USR: the tool and its documentation, nothing private. A USER tree still has a memory:
+# ComplexGitSync creates it locally at .cgitsync/.memory and never publishes it, so it
+# is not declared here (declaring it would make the tree DEV; see tutorials/06_memory.md).
+#     pixi run cgitsync bootstrap examples/complexgitsync-usr.cgs ComplexGitSync
+# Kept in examples/ beside gx4g-*.cgs, which mounts complexgitsync-dev.cgs.
+
+project = { name = "ComplexGitSync", default_branch = "main" }
+
+repos = [
+    { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
+    { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "disabled" },
+]

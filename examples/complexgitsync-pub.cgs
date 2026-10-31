@@ -1,0 +1,14 @@
+# The PUB tree for ComplexGitSync, one of complexgitsync-{opx,dev,usr,pub}.cgs.
+# Each file is named for the project and the level it installs; the project is
+# still ComplexGitSync, on main, so no branch has to exist for any level.
+# PUB: what the public repository's install.cgs installs, under a name of its own: the
+# tool and its documentation, nothing private. install.cgs stays at the root, unchanged.
+#     pixi run cgitsync bootstrap examples/complexgitsync-pub.cgs ComplexGitSync
+# Kept in examples/ beside gx4g-*.cgs, which mounts complexgitsync-dev.cgs.
+
+project = { name = "ComplexGitSync", default_branch = "main" }
+
+repos = [
+    { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
+    { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "disabled" },
+]

@@ -29,7 +29,7 @@ if not _SCRIPT_PATH.is_file():
     pytest.skip(
         "bump_version.py lives in the .dev mount (.agent/.local/.dev) "
         "and is not mounted in this checkout. Bootstrap "
-        "examples/complexgitsync4dev.cgs to run these. See "
+        "examples/complexgitsync-dev.cgs to run these. See "
         "AgentSkillsSplit.",
         allow_module_level=True,
     )
@@ -286,7 +286,7 @@ def test_apply_version_writes_nothing_when_a_manifest_is_absent(tmp_path):
 _DOCS_ABSENT_REASON = (
     "docs/ is a separate repository (DocComplexGitSync) and is not mounted in "
     "this checkout. Working on ComplexGitSync alone is legitimate; releasing "
-    "from there is not -- bootstrap examples/complexgitsync4dev.cgs to run "
+    "from there is not -- bootstrap examples/complexgitsync-dev.cgs to run "
     "these. See .agent/.local/.dev/DevTickets/archive/20260911_ReleaseDocsDebt_DevPlanTicket.md."
 )
 _DOCS_TEX_PRESENT = all(path.is_file() for path in bump_version.DOCS_TEX_PATHS)

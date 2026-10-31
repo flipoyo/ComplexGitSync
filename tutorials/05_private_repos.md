@@ -284,7 +284,7 @@ repos = [
 ```
 
 That is an excerpt of
-[`examples/complexgitsync4dev.cgs`](../examples/complexgitsync4dev.cgs)
+[`examples/complexgitsync-dev.cgs`](../examples/complexgitsync-dev.cgs)
 (three of its nine private entries left out, same pattern), the spec
 this tree's own developer checkout is built from. (The root `install.cgs`
 is the user install and stops after the first two entries — it mounts no

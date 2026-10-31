@@ -661,7 +661,7 @@ class TestCgsDocumentValid:
         plus .localSpec/.claude and the project's own memory
         (memory-dev_1-2_MemoryOnboarding, 2026-09-17)."""
         repo_root = Path(__file__).parent.parent.parent
-        doc = CgsDocument.from_toml(repo_root / "examples" / "complexgitsync4dev.cgs")
+        doc = CgsDocument.from_toml(repo_root / "examples" / "complexgitsync-dev.cgs")
         assert doc.project_name == "ComplexGitSync"
         assert doc.default_branch == "main"
         assert len(doc.repos) == 9

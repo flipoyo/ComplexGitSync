@@ -677,7 +677,7 @@ def _tree_cgs_paths() -> list[Path]:
     candidates = [
         _REPO_ROOT / "install.cgs",
         _REPO_ROOT / "ComplexGitSync.cgs",
-        _REPO_ROOT / "examples" / "complexgitsync4dev.cgs",
+        _REPO_ROOT / "examples" / "complexgitsync-dev.cgs",
         _REPO_ROOT / "examples" / "doccomplexgitsync.cgs",
         _REPO_ROOT / "docs" / "DocCGS.cgs",
     ]
@@ -726,7 +726,7 @@ def test_this_trees_own_cgs_pins_exactly_the_shared_mounts():
     The ticket's acceptance criterion 5 asks for this to be proved by a
     test rather than by inspection.
     """
-    document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync4dev.cgs")
+    document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "complexgitsync-dev.cgs")
     by_name = {repo["project_name"]: repo for repo in document.repos}
 
     private = {name for name, repo in by_name.items() if repo.get("private")}

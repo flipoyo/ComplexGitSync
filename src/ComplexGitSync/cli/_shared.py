@@ -43,6 +43,7 @@ from ..tree.snapshot_resolver import (
     describe_cgshome,
     describe_workspace_source,
 )
+from .cgshome_guard import CgshomeGuard
 
 
 def _add_json_argument(subparser: argparse.ArgumentParser) -> None:
@@ -178,6 +179,7 @@ def _run_with_logging(
     client: ComplexGitSyncClient | None = None,
     project_root: Path | None = None,
 ) -> int:
+    CgshomeGuard.check(command_name)
     resolved_source = source.resolve()
     active_client = client or ComplexGitSyncClient()
     active_client.run_logger = _create_command_logger(command_name, resolved_source)
@@ -331,6 +333,7 @@ def _print_warnings(warnings: list[str]) -> None:
 
 def _announce_cgshome_resolution(cgshome: CgshomeResolution) -> None:
     """Say which workspace was discovered, on whose say-so, and warn if surprising."""
+    CgshomeGuard.note(cgshome)
     _print_cgshome_line(cgshome)
     _print_workspace_hint(cgshome)
     _print_warnings(_cgshome_warnings(cgshome))
@@ -390,6 +393,7 @@ def _announce_source_resolution(resolution: SnapshotResolution) -> None:
         return
     cgshome = resolution.cgshome
     if cgshome is not None:
+        CgshomeGuard.note(cgshome)
         _print_cgshome_line(cgshome)
         _print_workspace_hint(cgshome)
     print(f"source={resolution.path} (from {resolution.origin})")

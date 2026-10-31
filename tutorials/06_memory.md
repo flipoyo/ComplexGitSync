@@ -204,11 +204,11 @@ safe.
 #### Step 2 — tell your `.cgs` about it
 
 ```bash
-pixi run cgitsync memory mount --cgs examples/complexgitsync4dev.cgs
+pixi run cgitsync memory mount --cgs examples/complexgitsync-dev.cgs
 ```
 
 ```
-cgs=examples/complexgitsync4dev.cgs
+cgs=examples/complexgitsync-dev.cgs
 entry={ repository = "github:YOURNAME/.memory", relative_path = ".cgitsync/.memory", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
 added=yes
 ```

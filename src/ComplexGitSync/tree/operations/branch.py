@@ -26,6 +26,7 @@ from ...git_repo.git_repo import (
     SyncState,
     WorkingRepo,
 )
+from ...git_repo.same_name_remote import SameNameRemote
 from ..git_tree import (
     ROOT_REPO_ID,
     WorkingGitTree,
@@ -318,6 +319,7 @@ class BranchOperation:
         for repo in iter_tree(tree, scope):
             ref = repo.target_ref_name or branch_name
             git_runner.checkout(repo.absolute_path, ref)
+            SameNameRemote(git_runner).adopt(repo.absolute_path)
             BranchOperation.refresh_repo_after_checkout(repo, ref, repo.target_ref_kind or ref_kind, git_runner)
 
         tree.recompute_tree_state()

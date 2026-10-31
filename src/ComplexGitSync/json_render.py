@@ -86,8 +86,10 @@ class JsonRender:
             head = entry["head"]
             entry["recorded_matches"] = not head.endswith("*")
             entry["head"] = head.rstrip("*")
-            if entry["upstream_branch"] == "-":
-                entry["upstream_branch"] = None
+            upstream = entry["upstream_branch"].removesuffix(" (same name)")
+            # ``unknown`` names an upstream that does not resolve; "(same name)" names none.
+            entry["upstream_configured"] = entry["sync"] == "unknown" or upstream == entry["upstream_branch"] != "-"
+            entry["upstream_branch"] = None if upstream == "-" else upstream
             repositories.append(entry)
 
         return {

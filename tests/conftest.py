@@ -21,6 +21,10 @@ def _isolate_cgshome(monkeypatch):
     which still works: this only removes what the surrounding shell leaked in.
     """
     monkeypatch.delenv("CGSHOME", raising=False)
+    # What an earlier test's workspace resolution noted must not refuse this test's command.
+    from ComplexGitSync.cli.cgshome_guard import CgshomeGuard
+
+    CgshomeGuard.reset()
 
 
 @pytest.fixture(autouse=True)
