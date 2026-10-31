@@ -304,6 +304,7 @@ class TestTutoCGSil1CLI:
         assert cli_main(["bootstrap", cgs, "CGSil1", "--cgs-path", str(tmp_path / "one")]) == 0
         home = tmp_path / "one" / "CGSil1"
         monkeypatch.setenv("CGSHOME", str(home))
+        monkeypatch.chdir(home)  # a writing command refuses a $CGSHOME the cwd is not inside
         capsys.readouterr()
 
         # Step 2: a branch of your own
@@ -344,6 +345,7 @@ class TestTutoCGSil1CLI:
         assert cli_main(["bootstrap", cgs, "CGSil1-latest", "--cgs-path", str(tmp_path / "two")]) == 0
         latest = tmp_path / "two" / "CGSil1-latest"
         monkeypatch.setenv("CGSHOME", str(latest))
+        monkeypatch.chdir(latest)  # a writing command refuses a $CGSHOME the cwd is not inside
         assert not (latest / "CGSil2" / "notes.txt").exists()
         assert (latest / ".gitignore").is_file()  # bootstrap's, untracked: main never received it
 
@@ -371,6 +373,7 @@ class TestTutoCGSil1CLI:
         assert cli_main(["bootstrap", cgs, "CGSil1", "--cgs-path", str(tmp_path / "one")]) == 0
         home = tmp_path / "one" / "CGSil1"
         monkeypatch.setenv("CGSHOME", str(home))
+        monkeypatch.chdir(home)  # a writing command refuses a $CGSHOME the cwd is not inside
         assert cli_main(["checkout", "feature"]) == 0
         (home / "CGSil2" / "notes.txt").write_text("a first note\n", encoding="utf-8")
         assert cli_main(["release", "freeze", "first release of the sandbox"]) == 0
@@ -378,6 +381,7 @@ class TestTutoCGSil1CLI:
         assert cli_main(["bootstrap", cgs, "CGSil1-latest", "--cgs-path", str(tmp_path / "two")]) == 0
         latest = tmp_path / "two" / "CGSil1-latest"
         monkeypatch.setenv("CGSHOME", str(latest))
+        monkeypatch.chdir(latest)  # a writing command refuses a $CGSHOME the cwd is not inside
         assert cli_main(["release", "load", "1"]) == 0
 
         assert (latest / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "a first note\n"
@@ -397,6 +401,7 @@ def _released_workspace(sandbox, monkeypatch, tmp_path, *, cgs: Path | None = No
     assert cli_main(["bootstrap", str(source), "CGSil1", "--cgs-path", str(tmp_path / "ws")]) == 0
     home = tmp_path / "ws" / "CGSil1"
     monkeypatch.setenv("CGSHOME", str(home))
+    monkeypatch.chdir(home)  # a writing command refuses a $CGSHOME the cwd is not inside
     (home / "CGSil2" / "notes.txt").write_text("a first note\n", encoding="utf-8")
     assert cli_main(["add"]) == 0
     assert cli_main(["commit", "first note"]) == 0

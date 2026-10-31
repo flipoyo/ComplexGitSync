@@ -12,12 +12,12 @@
     },
     "cli/__init__.py": {
       "internal_imports": 13,
-      "loc": 92,
+      "loc": 93,
       "public_symbols": 2
     },
     "cli/_shared.py": {
       "internal_imports": 21,
-      "loc": 612,
+      "loc": 616,
       "public_symbols": 0
     },
     "cli/branch_command.py": {

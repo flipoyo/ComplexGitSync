@@ -33,6 +33,7 @@ from collections.abc import Sequence
 from .. import __version__
 from ..json_render import JsonRender
 from . import _shared, configuration, environment, expert, help_format, minimalist, suggest, unlock
+from .cgshome_guard import CgshomeGuard
 from .exit_codes import EXIT_OK, diagnostic, exit_code_for
 from .minimalist import _validate_initialise_definition
 
@@ -68,6 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    CgshomeGuard.reset()
     parser = build_parser()
     args = suggest.parse_args_with_hint(parser, argv, _PLANNED_COMMANDS)
     if args.command == "initialise":

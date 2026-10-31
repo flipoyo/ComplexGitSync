@@ -34,6 +34,7 @@ def _workspace(sandbox, monkeypatch, tmp_path: Path, name: str) -> Path:
     assert cli_main(["bootstrap", str(sandbox["cgs_path"]), name, "--cgs-path", str(tmp_path / name)]) == 0
     home = tmp_path / name / name
     monkeypatch.setenv("CGSHOME", str(home))
+    monkeypatch.chdir(home)  # a writing command refuses a $CGSHOME the cwd is not inside
     return home
 
 

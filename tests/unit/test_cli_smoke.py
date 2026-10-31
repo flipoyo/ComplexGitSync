@@ -1137,7 +1137,7 @@ def test_gts_auto_discovery_uses_cgshome_env(monkeypatch, capsys, tmp_path):
     unrelated_cwd.mkdir(parents=True)
 
     monkeypatch.setenv("CGSHOME", str(workspace))
-    monkeypatch.chdir(unrelated_cwd)
+    monkeypatch.chdir(workspace)  # a writing command refuses a $CGSHOME the cwd is not inside
     exit_code = main(["push"])
     capsys.readouterr()
 
@@ -1306,6 +1306,7 @@ def test_checkout_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
     gts_path.touch()
 
     monkeypatch.setenv("CGSHOME", str(workspace))
+    monkeypatch.chdir(workspace)  # a writing command refuses a $CGSHOME the cwd is not inside
     exit_code = main(["checkout", "feature/demo"])
     capsys.readouterr()
 
@@ -1342,6 +1343,7 @@ def test_branch_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
     gts_path.touch()
 
     monkeypatch.setenv("CGSHOME", str(workspace))
+    monkeypatch.chdir(workspace)  # a writing command refuses a $CGSHOME the cwd is not inside
     exit_code = main(["branch", "create", "feature/demo"])
     capsys.readouterr()
 
@@ -1377,6 +1379,7 @@ def test_pull_command_auto_discovers_gts(monkeypatch, capsys, tmp_path):
     gts_path.touch()
 
     monkeypatch.setenv("CGSHOME", str(workspace))
+    monkeypatch.chdir(workspace)  # a writing command refuses a $CGSHOME the cwd is not inside
     exit_code = main(["pull"])
     capsys.readouterr()
 
