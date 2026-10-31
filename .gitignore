@@ -251,3 +251,4 @@ ComplexGitSync.lgr
 .agent/.local/.claude
 .agent/.local/.localSpec
 .agent/.local/.dev
+.omniscience
