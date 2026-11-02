@@ -6,7 +6,7 @@
 #     pixi run cgitsync bootstrap examples/complexgitsync-opx.cgs ComplexGitSync
 # Kept in examples/ beside gx4g-*.cgs, which mounts complexgitsync-dev.cgs.
 
-project = { name = "ComplexGitSync", default_branch = "main" }
+project = { name = "ComplexGitSync", default_branch = "CGS-ALPHA" }
 
 repos = [
     { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
