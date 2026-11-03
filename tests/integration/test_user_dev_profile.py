@@ -178,6 +178,27 @@ def test_the_proposal_is_data_with_every_default(tmp_path):
     assert client.memory_setup_proposal(provider="codeberg", owner="o")["create_with"].startswith("tea repo create")
 
 
+def test_the_proposed_entry_names_no_branch_so_it_validates_off_main(tmp_path):
+    """MemorySetupBranch: `declare` refused its own entry on any project branch but main."""
+    from ComplexGitSync.tree.memory.repository import MemoryRepository
+
+    assert "default_branch" not in MemoryRepository.mount_entry("someone", "demo")
+
+    cgs = (
+        'project = { name = "demo", default_branch = "opx", fallback_branch = "main" }\n\n'
+        'repos = [\n  "github:flipoyo/demo",\n'
+        '  { repository = "github:someone/conf", relative_path = "conf", private = true },\n]\n'
+    )
+    workspace = tmp_path / "d"
+    client = _loaded(workspace, cgs)
+    proposal = client.memory_setup_proposal()
+
+    result = client.add_memory_repo_cgs(workspace / "project.cgs", cgshome=workspace, entry=proposal["entry"])
+
+    assert result["added"] is True
+    _loaded(tmp_path / "again", (workspace / "project.cgs").read_text(encoding="utf-8"))  # still validates
+
+
 # ---------------------------------------------------------------------------
 # WP3d — a Python caller is warned, never refused, and the record is kept
 # ---------------------------------------------------------------------------

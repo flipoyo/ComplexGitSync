@@ -129,14 +129,13 @@ class MemoryRepository:
         """The `.cgs` entry that mounts this project's memory.
 
         An ordinary private, writable repository entry — nothing here is a new
-        kind of mount, and that is the whole argument for the shape. The branch
-        is left to the ordinary derivation: ``default_branch`` names the
-        project's own branch of the memory and the rule does the rest.
+        kind of mount, and that is the whole argument for the shape. The entry
+        names no branch: ``declare_targets`` derives it (:meth:`branch`), so it
+        validates on every project branch, not only ``main`` (MemorySetupBranch).
         """
         return {
             "repository": MemoryRepository.repository_id(owner, provider=provider, name=name),
             "relative_path": MOUNT_PATH,
-            "default_branch": project_name,
             "fallback_branch": DEFAULT_BRANCH,
             "private": True,
             "writable": True,
