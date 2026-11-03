@@ -17,7 +17,9 @@ was warned of nothing. This refuses it for every profile.
 
 Only the fallback base is refused. A mount on another branch of this project —
 one ``memory adopt --branch`` named, or one a merge is about to reconcile — is
-a deliberate choice, and stays the owner's to make.
+a deliberate choice, and stays the owner's to make. A mount on ``main`` is
+refused even when no branch can be derived (no State left once a push folded
+them all onto the mount's own branch): ``main`` holds no project's memory.
 """
 
 from __future__ import annotations
@@ -41,8 +43,8 @@ class MemoryBranchGuard:
 
     The project branch is the root's branch as Git reports it. When it cannot be
     read — no State in the workspace, a detached ``HEAD``, a root that is not a
-    repository — there is no project branch to derive from, so nothing is
-    refused: guessing ``main`` would refuse a push that may be right.
+    repository — there is no branch to derive, and only a mount on ``main``,
+    the built-in base, is refused: any other branch may be right.
 
     ``cgitsync memory push`` reaches :meth:`require` with no tree loaded, so
     the guard loads the workspace's State itself (read-only: ``load_gts``
@@ -86,11 +88,19 @@ class MemoryBranchGuard:
 
     def require(self, mount: Path) -> None:
         """Refuse *mount* when it sits on its fallback base and the tree's branch derives another."""
-        derived = self.derived(mount.parent.parent) if (mount / ".git").exists() else None
+        if not (mount / ".git").exists():
+            return
+        derived = self.derived(mount.parent.parent)
+        current = self.client.git_runner.current_branch(mount)
         if derived is None:
+            if current == DEFAULT_BRANCH:
+                raise GitSyncError(
+                    f"{mount} is on {current!r}, the base every memory branch starts from, and no State here "
+                    "says which branch this project records to, so nothing was folded, committed or pushed. "
+                    f"Put the memory back on its own branch ('git -C {mount} switch <branch>'), then push again."
+                )
             return
         project_branch, expected, base = derived
-        current = self.client.git_runner.current_branch(mount)
         if current != base or current == expected:
             return
         raise GitSyncError(
