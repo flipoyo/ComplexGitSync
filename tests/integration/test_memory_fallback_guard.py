@@ -13,7 +13,9 @@ The "remote" is a bare repository seeded, like ``flipoyo/.memory``, with a
 
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -124,3 +126,38 @@ def test_a_memory_branch_for_another_project_branch_leaves_the_mount_where_it_is
     _loaded(workspace).memory_branch(workspace, "dev")  # a merge's target, not this tree's branch
 
     assert _git(mount, "branch", "--show-current") == DERIVED
+
+
+# ---------------------------------------------------------------------------
+# The CLI path: `cgitsync memory push` loads no tree before pushing
+# ---------------------------------------------------------------------------
+
+
+def _cli(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+    env.pop("CGSHOME", None)
+    return subprocess.run([sys.executable, "-m", "ComplexGitSync", *args], cwd=cwd, env=env, capture_output=True, text=True)
+
+
+def test_an_unloaded_client_is_refused_too(fallen_back):
+    """The guard loads the workspace's State itself when nothing is loaded yet."""
+    workspace, remote = fallen_back["workspace"], fallen_back["remote"]
+    main_before = _remote_main(remote)
+
+    with pytest.raises(GitSyncError, match=rf"records to '{DERIVED}'"):
+        ComplexGitSyncClient().memory_push(workspace)
+
+    assert _remote_main(remote) == main_before
+
+
+def test_the_cli_memory_push_is_refused_and_main_is_untouched(fallen_back):
+    workspace, mount, remote = fallen_back["workspace"], fallen_back["mount"], fallen_back["remote"]
+    main_before = _remote_main(remote)
+    head_before = _git(mount, "rev-parse", "HEAD")
+
+    done = _cli("memory", "push", "--search-dir", str(workspace), cwd=workspace)
+
+    assert done.returncode != 0
+    assert f"records to '{DERIVED}'" in done.stdout + done.stderr
+    assert _remote_main(remote) == main_before
+    assert _git(mount, "rev-parse", "HEAD") == head_before
