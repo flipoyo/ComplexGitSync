@@ -86,6 +86,7 @@ from ..tree.registry import (
 from ..tree.snapshot_resolver import discover_gts_path
 from ..tree.toolchain import Toolchain
 from .default_memory import DefaultMemory
+from .memory_branch_guard import MemoryBranchGuard
 from .memory_facts import MemoryFacts
 from .memory_setup import MemorySetup
 
@@ -890,11 +891,8 @@ class MemoryCommands:
         what keeps a twin's ``ComplexGitSync_<project>`` from being read as
         ComplexGitSync's own branch ``<project>``.
 
-        When the memory's entry names a nested config the memory does not
-        hold — a DEV bootstrap that fell back to ``main`` because this branch
-        was missing (EnvConnect C7) — the new branch is checked out and given
-        its ``config-memory.cgs`` and ``.self-history`` (:meth:`self_history_adopt`)
-        before it is committed and pushed.
+        A branch for the tree's own project branch is checked out (MemoryFallbackGuard); one whose
+        entry names a nested config it lacks (EnvConnect C7) also gets it and its ``.self-history``.
         """
         workspace = Path(cgshome)
         mount = MemoryRepository(workspace).mount_path()
@@ -914,6 +912,7 @@ class MemoryCommands:
             # Every precondition first: a refusal leaves no half-made branch behind.
             self._self_history_remote(workspace, None, "memory branch")
         git.create_branch(mount, target)
+        MemoryBranchGuard(self.client).settle(mount, target, project_branch)  # off a fallback, onto its own branch
         if set_up:
             git.checkout(mount, target)
             self.self_history_adopt(workspace, branch=target)
@@ -1125,9 +1124,12 @@ class MemoryCommands:
         """
         workspace = Path(cgshome)
         defaulted = DefaultMemory(self.client).is_defaulted(workspace)
-        if not defaulted:
-            self._push_self_history(workspace)
         mount = MemoryRepository(workspace).mount_path()
+        if not defaulted:
+            # Refused before anything moves — self-history, fold, commit — when the mount is
+            # not on the branch its project branch derives, whatever the profile (MemoryFallbackGuard).
+            MemoryBranchGuard(self.client).require(mount)
+            self._push_self_history(workspace)
         if not (mount / ".git").exists():
             raise GitSyncError(
                 f"{mount} is not a repository yet. Run 'cgitsync memory init' for the "
