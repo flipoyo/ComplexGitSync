@@ -5,7 +5,7 @@
 # shared and read-only, as in gx4g-opx.cgs. No private repository is writable.
 #     pixi run cgitsync bootstrap examples/complexgitsync-opx.cgs ComplexGitSync
 
-project = { name = "ComplexGitSync", default_branch = "CGS-ALPHA" }
+project = { name = "ComplexGitSync", relative_path = ".", default_branch = "opx", fallback_branch = "CGS-ALPHA" }
 
 repos = [
     { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
