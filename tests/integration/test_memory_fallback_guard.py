@@ -161,3 +161,24 @@ def test_the_cli_memory_push_is_refused_and_main_is_untouched(fallen_back):
     assert f"records to '{DERIVED}'" in done.stdout + done.stderr
     assert _remote_main(remote) == main_before
     assert _git(mount, "rev-parse", "HEAD") == head_before
+
+
+def test_a_mount_switched_to_main_after_every_state_was_folded_is_refused(fallen_back):
+    """The field case of 2026-11-04: pushed on its own branch, then put on main by hand.
+
+    The push folded every pending State onto the derived branch, so on ``main``
+    no State is left to derive a branch from. ``main`` is still never written.
+    """
+    workspace, mount, remote = fallen_back["workspace"], fallen_back["mount"], fallen_back["remote"]
+    _loaded(workspace).memory_branch(workspace, PROJECT_BRANCH)
+    _loaded(workspace).memory_push(workspace)
+    _git(mount, "switch", "main")
+    main_before = _remote_main(remote)
+    head_before = _git(mount, "rev-parse", "HEAD")
+
+    done = _cli("memory", "push", "--search-dir", str(workspace), cwd=workspace)
+
+    assert done.returncode != 0
+    assert "the base every memory branch starts from" in done.stdout + done.stderr
+    assert _git(mount, "rev-parse", "HEAD") == head_before  # nothing committed
+    assert _remote_main(remote) == main_before
