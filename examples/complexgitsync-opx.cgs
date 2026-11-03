@@ -8,7 +8,7 @@
 project = { name = "ComplexGitSync", relative_path = ".", default_branch = "opx", fallback_branch = "CGS-ALPHA" }
 
 repos = [
-    { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
+    { repository = "github:flipoyo/ComplexGitSync" },
     { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "auto" },
 
     { repository = "github:flipoyo/.memory", relative_path = ".cgitsync/.memory", fallback_branch = "main", private = true, writable = true, nested_config = "config-memory.cgs" },
