@@ -295,6 +295,62 @@ def test_the_command_c7_names_sets_the_branch_up_and_a_later_install_finds_it(tm
     assert again.missing_private_branches == []
 
 
+def test_a_twin_memory_left_on_its_fallback_base_keeps_the_twin_target_the_state_recorded(tmp_path, monkeypatch):
+    """MemoryMount: a mount on ``main`` says nothing about whose memory it is; the State does."""
+    remotes = _tree(tmp_path, memory_branches=("main",))
+    remotes[".self-history"] = _self_history_remote(tmp_path, monkeypatch)
+    with monkeypatch.context() as standalone:
+        _, root = _c7_twin(tmp_path, standalone, remotes)
+    state = _snapshot_of(root)
+
+    later = _client(monkeypatch, remotes)  # the suite's default: a nested ComplexGitSync
+    registry = later.load(state)
+
+    assert _git(root / ".cgitsync" / ".memory", "branch", "--show-current") == "main"
+    assert registry.memory_twin
+    assert later.memory_branch(root, "main")["branch"] == "ComplexGitSync_demo"
+    assert "demo" not in _git(remotes[MEMORY], "branch", "--list").split()
+
+
+def test_a_clean_private_mount_waiting_for_its_branch_warns_and_lets_the_commit_through(tmp_path, monkeypatch):
+    """MemoryMount: a private repository on its fallback base, holding nothing, whose branch exists nowhere yet."""
+    client, root = _c7_twin(tmp_path, monkeypatch, _tree(tmp_path, memory_branches=("main",)))
+    (root / "work.txt").write_text("work\n", encoding="utf-8")
+    for variable, value in (("GIT_AUTHOR_NAME", "Tester"), ("GIT_COMMITTER_NAME", "Tester"), ("GIT_AUTHOR_EMAIL", "t@example.test"), ("GIT_COMMITTER_EMAIL", "t@example.test")):
+        monkeypatch.setenv(variable, value)
+
+    with pytest.warns(UserWarning, match="'ComplexGitSync_demo'.*does not exist yet, and nothing here is unsaved"):
+        client.commit("the work", all_writable=True)
+
+    assert _git(root, "log", "-1", "--format=%s") == "the work"
+    assert _git(root / ".cgitsync" / ".memory", "log", "-1", "--format=%s") == "initial"
+
+
+def test_a_private_mount_with_something_to_commit_on_its_fallback_base_still_blocks(tmp_path, monkeypatch):
+    client, root = _c7_twin(tmp_path, monkeypatch, _tree(tmp_path, memory_branches=("main",)))
+    (root / ".cgitsync" / ".memory" / "note.txt").write_text("would land on main\n", encoding="utf-8")
+
+    with pytest.raises(GitSyncError, match="branch misalignment: expected 'ComplexGitSync_demo'"):
+        client.commit("the work", all_writable=True)
+
+    assert _git(root / ".cgitsync" / ".memory", "log", "-1", "--format=%s") == "initial"
+
+
+def test_a_private_mount_on_its_fallback_base_with_no_upstream_and_a_local_commit_still_blocks(tmp_path, monkeypatch):
+    """No upstream is not level with one: a commit only this clone holds would reach origin/main."""
+    remotes = _tree(tmp_path, memory_branches=("main",))
+    client, root = _c7_twin(tmp_path, monkeypatch, remotes)
+    memory = root / ".cgitsync" / ".memory"
+    _git(memory, "branch", "--unset-upstream")
+    _git(memory, "-c", "user.email=t@example.test", "-c", "user.name=Tester", "commit", "--allow-empty", "-m", "local only")
+
+    for write in (lambda: client.commit("the work", all_writable=True), lambda: client.push(private=True)):
+        with pytest.raises(GitSyncError, match="branch misalignment: expected 'ComplexGitSync_demo'"):
+            write()
+
+    assert _git(remotes[MEMORY], "log", "-1", "--format=%s", "main") == "initial"
+
+
 def test_a_set_up_that_cannot_run_creates_nothing_and_can_be_run_again(tmp_path, monkeypatch):
     remotes = _tree(tmp_path, memory_branches=("main",))
     client, root = _c7_twin(tmp_path, monkeypatch, remotes)

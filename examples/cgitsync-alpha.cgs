@@ -1,0 +1,71 @@
+[project]
+name = "ComplexGitSync"
+default_branch = "CGS-ALPHA"
+
+[[repos]]
+repository = "github:flipoyo/ComplexGitSync"
+fallback_branch = "CGS-ALPHA"
+
+[[repos]]
+repository = "github:flipoyo/DevSpec"
+default_branch = "main"
+private = true
+relative_path = ".agent/.distant/dev-sync"
+
+[[repos]]
+repository = "github:flipoyo/DocSpec"
+default_branch = "main"
+private = true
+relative_path = ".agent/.distant/documentation"
+
+[[repos]]
+repository = "github:flipoyo/.ticketing"
+default_branch = "main"
+private = true
+relative_path = ".agent/.distant/ticket"
+
+[[repos]]
+repository = "github:flipoyo/.claude"
+default_branch = "ComplexGitSync_CGS-ALPHA"
+fallback_branch = "ComplexGitSync_CGS-ALPHA"
+private = true
+relative_path = ".agent/.local/.claude"
+
+[[repos]]
+repository = "github:flipoyo/.dev"
+default_branch = "ComplexGitSync_CGS-ALPHA"
+fallback_branch = "ComplexGitSync_CGS-ALPHA"
+private = true
+relative_path = ".agent/.local/.dev"
+
+[[repos]]
+repository = "github:flipoyo/.localSpec"
+default_branch = "ComplexGitSync_CGS-ALPHA"
+fallback_branch = "ComplexGitSync_CGS-ALPHA"
+private = true
+relative_path = ".agent/.local/.localSpec"
+
+[[repos]]
+repository = "github:flipoyo/.memory"
+default_branch = "ComplexGitSync_ComplexGitSync_CGS-ALPHA"
+fallback_branch = "ComplexGitSync_ComplexGitSync_CGS-ALPHA"
+private = true
+relative_path = ".cgitsync/.memory"
+
+[[repos]]
+repository = "github:flipoyo/.self-history"
+default_branch = "ComplexGitSync_ComplexGitSync_CGS-ALPHA"
+fallback_branch = "ComplexGitSync_ComplexGitSync_CGS-ALPHA"
+private = true
+relative_path = ".cgitsync/.memory/.self-history"
+
+[[repos]]
+repository = "github:flipoyo/omniscience"
+default_branch = "main"
+private = true
+relative_path = ".omniscience"
+
+[[repos]]
+repository = "github:flipoyo/DocComplexGitSync"
+fallback_branch = "CGS-ALPHA"
+relative_path = "docs"

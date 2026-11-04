@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C .cgitsync/.self-history status --short)",
+      "Bash(git -C .omniscience branch -a)",
+      "Bash(git -C .omniscience log --oneline -3)",
+      "Bash(git -C .omniscience status --short)"
+    ]
+  }
+}

@@ -235,11 +235,9 @@ class GitTreeBranches:
     def settle_memory_twin(self) -> bool:
         """Read back whether this tree is a twin, from the branch its memory is on.
 
-        A standalone install decides it once, when it first installs the
-        memory; afterwards the memory's branch is the record, so the answer
-        never depends on which ComplexGitSync runs the next command. The
-        branch Git has checked out wins, else the one the State recorded.
-        A not-yet-cloned memory is given its twin target here.
+        Decided once, at install; afterwards the memory's branch is the record, whichever
+        ComplexGitSync runs next: the one Git has checked out, else the State's, and on the
+        fallback base the State's target (MemoryMount). An uncloned memory gets its twin target.
         """
         memory = self.memory
         if memory is None or self._project_name is None:
@@ -249,8 +247,10 @@ class GitTreeBranches:
             try:
                 branch = self.observed(memory)
             except GitSyncError:
-                branch = None
+                pass
         branch = branch or _as_optional_str(memory.current_ref_name) or _as_optional_str(memory.resolved_ref_name)
+        if branch == (memory.fallback_branch or DEFAULT_BRANCH):
+            branch = _as_optional_str(memory.target_ref_name) or branch
         if branch and is_twin_branch(self._project_name, branch):
             self._tree.memory_twin = True
             self.declare_targets()

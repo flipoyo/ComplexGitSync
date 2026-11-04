@@ -14,11 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ...errors import GitSyncError, TreeNotReadyError
-from ...git_repo.git_repo import (
-    RepoScope,
-    SyncState,
-    WorkingRepo,
-)
+from ...git_repo.git_repo import RepoScope, SyncState, WorkingRepo
 from ...git_repo.same_name_remote import SameNameRemote
 from ..git_tree import (
     ROOT_REPO_ID,
@@ -134,7 +130,7 @@ class Preflight:
         diagnostics.extend(Preflight._collect_detached_head_diagnostics(tree, git_runner, scope=scope))
         diagnostics.extend(Preflight._collect_merge_diagnostics(tree, git_runner, scope=scope))
         if check_branch_alignment:
-            diagnostics.extend(Preflight._collect_branch_alignment_diagnostics(tree, git_runner, scope=scope))
+            diagnostics.extend(Preflight._collect_branch_alignment_diagnostics(tree, git_runner, scope=scope, lenient=operation_name in ("commit", "push")))
         diagnostics.extend(Preflight._collect_tracking_diagnostics(tree, git_runner, scope=scope))
         if operation_name == "push":
             diagnostics.extend(
@@ -205,13 +201,7 @@ class Preflight:
         detached: list[PreflightDiagnostic] = []
         for repo in iter_tree_leaf_first(tree, scope):
             if git_runner.current_branch(repo.absolute_path) is None:
-                detached.append(
-                    PreflightDiagnostic(
-                        PreflightSeverity.BLOCKING_ERROR,
-                        repo.name,
-                        "repository is in detached HEAD state.",
-                    )
-                )
+                detached.append(PreflightDiagnostic(PreflightSeverity.BLOCKING_ERROR, repo.name, "repository is in detached HEAD state."))
         return detached
 
     @staticmethod
@@ -243,29 +233,36 @@ class Preflight:
         git_runner: GitRunner,
         *,
         scope: RepoScope = RepoScope.ALL,
+        lenient: bool = False,
     ) -> list[PreflightDiagnostic]:
         if ROOT_REPO_ID not in tree.repos:
-            return [
-                PreflightDiagnostic(
-                    PreflightSeverity.BLOCKING_ERROR,
-                    "tree",
-                    "tree has no root repository.",
-                )
-            ]
+            return [PreflightDiagnostic(PreflightSeverity.BLOCKING_ERROR, "tree", "tree has no root repository.")]
         # A private repository is shared with other projects and stays on a
         # branch of its own, so the root's branch is not what it should be on.
         # GitTreeBranches asks git_branch.resolve_propagated_ref for each
-        # repository's own answer, which is where that rule lives.
+        # repository's own answer, which is where that rule lives. One still on
+        # its fallback base, holding nothing, whose branch exists nowhere yet,
+        # only waits for it (MemoryMount): to commit and push, which would write
+        # nothing there, a warning; to every other operation, a refusal.
         return [
             PreflightDiagnostic(
-                PreflightSeverity.BLOCKING_ERROR,
+                PreflightSeverity.WARNING if waiting else PreflightSeverity.BLOCKING_ERROR,
                 deviation.repo.name,
                 f"branch misalignment: expected {deviation.expected!r}"
                 f"{' (private to its own branch)' if deviation.repo.effective_private else ''}, "
-                f"found {deviation.observed!r}.",
+                f"found {deviation.observed!r}{'; that branch does not exist yet, and nothing here is unsaved' if waiting else ''}.",
             )
             for deviation in GitTreeBranches(tree, git_runner).deviations(scope=scope)
+            for waiting in [lenient and Preflight._waits_for_branch(deviation.repo, deviation.observed, deviation.expected, git_runner)]
         ]
+
+    @staticmethod
+    def _waits_for_branch(repo: WorkingRepo, observed: str, expected: str, git: GitRunner) -> bool:
+        """Whether a private *repo* sits clean and level on its fallback base, *expected* known nowhere."""
+        path = repo.absolute_path
+        return bool(repo.effective_private and observed == repo.fallback_branch) and not (
+            git.branch_known(path, expected) or git.has_uncommitted_changes(path)
+        ) and git.branch_tracking_state(path) is SyncState.ALIGNED
 
     @staticmethod
     def _collect_tracking_diagnostics(
