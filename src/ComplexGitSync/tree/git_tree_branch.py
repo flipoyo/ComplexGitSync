@@ -50,6 +50,7 @@ from ..errors import GitSyncError
 from ..git_repo.git_branch import (
     DEFAULT_BRANCH,
     BranchResolution,
+    behind_gate,
     closed_branch_origin,
     is_twin_branch,
     resolve_propagated_ref,
@@ -178,6 +179,30 @@ class GitTreeBranches:
             return None
 
     @property
+    def level(self) -> str | None:
+        """The branch private and guest branches derive from: :attr:`tree_branch`, or (:meth:`level_of`)."""
+        return self.level_of(self.tree_branch)
+
+    def level_of(self, branch: str | None) -> str | None:
+        """*branch*, or the root's recorded target while the root waits on its fallback (BehindGate, Q3).
+
+        A root that fell back (``fallback_applied``) to its ``fallback_branch`` or ``main`` is waiting
+        for its own branch, not on a new one: deriving from the fallback would create branches the next
+        install abandons. ``checkout`` clears the flag, so a branch moved to on purpose is taken as it is.
+        """
+        root = self.root
+        wanted = _as_optional_str(root.target_ref_name) if root is not None else None
+        waiting = root is not None and root.fallback_applied and root.target_ref_kind is not RefKind.TAG
+        if waiting and branch is not None and wanted not in (None, branch) and branch in (root.fallback_branch, DEFAULT_BRANCH):
+            return wanted
+        return branch
+
+    def guest(self, repo: WorkingRepo) -> bool:
+        """Whether *repo* is ComplexGitSync behind this project's gate (:func:`git_branch.behind_gate`)."""
+        root = self.root
+        return root is not None and repo is not root and behind_gate(repo, project_name=self._project_name, root_fallback=root.fallback_branch)
+
+    @property
     def is_detached(self) -> bool:
         """True when the root exists, Git answered, and it is on no branch."""
         root = self.root
@@ -194,8 +219,9 @@ class GitTreeBranches:
         ref_name: str,
         *,
         ref_kind: RefKind = RefKind.BRANCH,
+        level: str | None = None,
     ) -> BranchResolution:
-        """What *repo* targets when the tree moves to *ref_name*.
+        """What *repo* targets when the tree moves to *ref_name* (a derived repository: to *level*, if given).
 
         A thin pass to :func:`~ComplexGitSync.git_repo.git_branch.resolve_propagated_ref`
         with this tree's project name filled in — the privacy rule itself
@@ -208,8 +234,11 @@ class GitTreeBranches:
         twin = self._tree.memory_twin and self.in_memory(repo)
         # A nested Parent's own private repository is filed under <Parent>_<Project> (IntegrityMount).
         owner = None if twin else MountGuard.owner(self._tree, repo)
+        guest = self.guest(repo)
+        if level and (guest or (repo.effective_private and repo.effective_writable)):
+            ref_name = level
         return resolve_propagated_ref(
-            repo, ref_name, ref_kind=ref_kind, project_name=self._project_name, twin=twin, owner=owner
+            repo, ref_name, ref_kind=ref_kind, project_name=self._project_name, twin=twin, owner=owner, guest=guest
         )
 
     def in_memory(self, repo: WorkingRepo) -> bool:
@@ -283,7 +312,7 @@ class GitTreeBranches:
                 or repo.repo_lifecycle_state is not RepoLifecycleState.DECLARED
             ):
                 continue
-            if repo.effective_private and repo.effective_writable:
+            if (repo.effective_private and repo.effective_writable) or self.guest(repo):
                 declared = self.target(repo, tree_ref).name
                 repo.target_ref_name = declared
                 repo.default_branch = declared
@@ -337,7 +366,7 @@ class GitTreeBranches:
         tree_branch = self.tree_branch
         if tree_branch is None:
             return None
-        return self.target(repo, tree_branch).name
+        return self.target(repo, tree_branch, level=self.level_of(tree_branch)).name
 
     def observed(self, repo: WorkingRepo) -> str | None:
         """The branch Git says *repo* is on, or ``None`` for a detached ``HEAD``.
@@ -374,6 +403,7 @@ class GitTreeBranches:
         tree_branch = self.tree_branch
         if tree_branch is None:
             return ()
+        level = self.level_of(tree_branch)
         found: list[BranchDeviation] = []
         for repo in iter_tree_leaf_first(self._tree, scope):
             try:
@@ -384,7 +414,7 @@ class GitTreeBranches:
                 raise
             if current is None:
                 continue
-            expected = self.target(repo, tree_branch).name
+            expected = self.target(repo, tree_branch, level=level).name
             if current != expected:
                 found.append(
                     BranchDeviation(repo=repo, expected=expected, observed=current)

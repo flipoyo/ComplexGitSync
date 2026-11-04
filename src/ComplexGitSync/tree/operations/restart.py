@@ -178,7 +178,9 @@ class RestartOperation:
         # The runner matters here for the same reason it does in checkout_tree:
         # the loop below pulls whatever this decides, and a private/local repo's
         # derived branch has to be one that exists.
-        BranchOperation.propagate_global_branch(tree, current_branch, git_runner=git_runner)
+        level = GitTreeBranches(tree, git_runner).level_of(current_branch)  # a root waiting on its fallback keeps its level
+        waiting = (root_entry.target_ref_name, root_entry.fallback_applied) if level != current_branch else None
+        BranchOperation.propagate_global_branch(tree, current_branch, git_runner=git_runner, level=level)
         if force:
             RestartOperation._refuse_if_commits_would_be_dropped(tree, git_runner, current_branch, scope)
 
@@ -227,6 +229,8 @@ class RestartOperation:
             resolved_branch = git_runner.current_branch(repo.absolute_path) or current_branch
             BranchOperation.refresh_repo_after_checkout(repo, resolved_branch, RefKind.BRANCH, git_runner)
 
+        if waiting:  # the root pulled its fallback; its State still records the level it waits for
+            root_entry.target_ref_name, root_entry.fallback_applied = waiting
         tree.recompute_tree_state()
 
     @staticmethod

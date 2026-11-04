@@ -73,7 +73,7 @@ class MemoryBranchGuard:
         :meth:`MemoryRepository.branch` answers otherwise.
         """
         branches = self._branches(workspace)
-        project_branch = branches.tree_branch if branches is not None else None
+        project_branch = branches.level if branches is not None else None  # the level while the root waits (BehindGate)
         if branches is None or project_branch is None:
             return None
         memory = branches.memory

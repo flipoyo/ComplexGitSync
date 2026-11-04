@@ -91,7 +91,7 @@ class OmniscienceCommands:
         if (destination / ".git").exists():
             return {**declared, "destination": str(destination), "cloned": False, "branch": git.current_branch(destination)}
         remote = MemoryFacts.remote_url(repository)
-        project_branch = GitTreeBranches(registry, git).tree_branch or DEFAULT_BRANCH
+        project_branch = GitTreeBranches(registry, git).level or DEFAULT_BRANCH
         branch = next(
             (name for name in (OmniscienceRepository.branch(registry.project_name, project_branch), GLOBAL_BRANCH)
              if git.remote_branch_exists(remote, name)),

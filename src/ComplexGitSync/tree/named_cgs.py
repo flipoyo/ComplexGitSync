@@ -5,7 +5,7 @@ Contract: a ``.cgs`` named ``<yyyy>-<xxx>.cgs``, where ``xxx`` is exactly three
     characters and ``yyyy`` (of any length) is the project's own name, opens the
     project ``yyyy`` on branch ``xxx`` and falls back to ``CGS-ALPHA``. A file that
     says otherwise is refused by name, before anything is cloned.
-Imports: errors
+Imports: errors, git_branch
 
 ``yyyy`` is the project's name and ``xxx`` the operation's code (``opx``, ``dev``,
 ``usr``, ``pub``): the file is ``$G.NAME-$G.OP.NAME.cgs``, the edge's name. Only a file
@@ -24,9 +24,9 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import ConfigValidationError
-
-#: The branch every repository of such a tree falls back to; ``main`` still follows it (AD3).
-FALLBACK = "CGS-ALPHA"
+from ..git_repo.git_branch import (
+    LEVEL_FALLBACK as FALLBACK,  # every repository falls back to it; ``main`` still follows (AD3)
+)
 
 _NAMED = re.compile(r"(?P<project>.+)-(?P<operation>(?!v\d+$)[^-.]{3})")  # `-v10`..`-v99` is a memory reboot export, not an operation
 

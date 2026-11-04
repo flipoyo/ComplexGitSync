@@ -1490,7 +1490,8 @@ class ComplexGitSyncClient:
         root = self.get_dependency_registry().repos.get(ROOT_REPO_ID)
         if root is None:
             return DEFAULT_BRANCH
-        return (root.resolved_ref_name or root.current_ref_name or root.target_ref_name or DEFAULT_BRANCH)
+        on = root.resolved_ref_name or root.current_ref_name or root.target_ref_name or DEFAULT_BRANCH
+        return GitTreeBranches(self.get_dependency_registry()).level_of(on) or on  # the level, while the root waits (BehindGate)
 
     def _build_remote_url(self, entry: WorkingRepo) -> str:
         if not entry.gitprovider_declared:
@@ -1533,22 +1534,25 @@ class ComplexGitSyncClient:
         self.missing_private_branches = []
         branches = GitTreeBranches(registry, self.git_runner)
         dev = registry.profile is TreeProfile.DEV
+        project_branch = branches.level or DEFAULT_BRANCH
+        # The root waiting on its fallback: the level's branches are made by branch create, then checkout (BehindGate, Q2).
+        create = f"cgitsync branch create {project_branch} && cgitsync checkout {project_branch}" if project_branch != branches.tree_branch else None
         for entry in registry.values():
             fell_back = dev and entry.effective_private and entry.effective_writable and entry.fallback_applied
             unresolved = entry.nested_config not in {None, "disabled"} and entry.discovery_state != DiscoveryState.RESOLVED
             if unresolved and not (fell_back and entry.discovery_state == DiscoveryState.MISSING):
                 raise GitSyncError(f"Nested configuration for {entry.name} is not resolved: {entry.discovery_state.value}")
-            if not fell_back:
+            waits = create is not None and entry.fallback_applied and (entry is branches.root or branches.guest(entry))
+            if not (fell_back or waits):
                 continue
             is_memory = entry is branches.memory
-            project_branch = branches.tree_branch or DEFAULT_BRANCH
             missing = {
                 "repo": entry.name,
                 "path": str(entry.absolute_path),
                 "wanted": entry.target_ref_name,
                 "landed": entry.resolved_ref_name,
                 "config": entry.nested_config if unresolved else None,
-                "command": f"cgitsync memory branch --project-branch {project_branch}" if is_memory else None,
+                "command": f"cgitsync memory branch --project-branch {project_branch}" if is_memory else create,
                 "project_branch": project_branch if is_memory else None,
             }
             self.missing_private_branches.append(missing)

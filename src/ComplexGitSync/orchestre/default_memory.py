@@ -149,7 +149,7 @@ class DefaultMemory:
         if (mount / ".git").exists():
             return
         git = self.client.git_runner
-        branch = MemoryRepository.branch(registry.project_name, GitTreeBranches(registry, git).tree_branch or DEFAULT_BRANCH, twin=registry.memory_twin)
+        branch = MemoryRepository.branch(registry.project_name, GitTreeBranches(registry, git).level or DEFAULT_BRANCH, twin=registry.memory_twin)
         try:
             mount.mkdir(parents=True, exist_ok=True)
             git.init_repository(mount, branch=branch)

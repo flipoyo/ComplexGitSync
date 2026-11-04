@@ -134,6 +134,7 @@ def offer_after_command(client: ComplexGitSyncClient) -> None:
 
 def offer_missing_branches(client: ComplexGitSyncClient) -> None:
     """After an install that left a private/local repository on its fallback branch: say so by name, offer the fix (EnvConnect C7)."""
+    said: set[str] = set()
     for missing in getattr(client, "missing_private_branches", None) or []:
         lacking = f", which does not hold its {missing['config']}" if missing["config"] else ""
         print(
@@ -145,8 +146,10 @@ def offer_missing_branches(client: ComplexGitSyncClient) -> None:
         if missing["command"] is None:
             print(f"create the branch {missing['wanted']!r} in {missing['path']} to finish the install.", file=sys.stderr)
             continue
-        print(f"to create it, run: {missing['command']}", file=sys.stderr)
-        if not interactive():
+        if missing["command"] not in said:  # branch create && checkout covers every repository at once (BehindGate)
+            print(f"to create it, run: {missing['command']}", file=sys.stderr)
+            said.add(missing["command"])
+        if not interactive() or missing["project_branch"] is None:
             continue
         try:
             if _ask("Run it now? (y/N)", "n").lower() not in ("y", "yes"):

@@ -164,8 +164,9 @@ class BranchOperation:
         *,
         ref_kind: RefKind = RefKind.BRANCH,
         git_runner: GitRunner | None = None,
+        level: str | None = None,
     ) -> None:
-        """Set *branch_name* as the target ref on every repo in *tree*.
+        """Set *branch_name* as the target ref on every repo in *tree* (a derived one: *level*, if given).
 
         This is a pure in-memory operation: no git commands are issued.  It
         prepares the tree so that subsequent operations (create, checkout)
@@ -190,7 +191,7 @@ class BranchOperation:
         """
         branches = GitTreeBranches(tree)
         for repo in tree.values():
-            branches.target(repo, branch_name, ref_kind=ref_kind).apply_to(repo)
+            branches.target(repo, branch_name, ref_kind=ref_kind, level=level).apply_to(repo)
 
     @staticmethod
     def create_global_branch(

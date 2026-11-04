@@ -38,6 +38,7 @@ The public surface
     private_local_branch      <project>_<branch> for a private/local repo,
                               ComplexGitSync_<project>[_<branch>] for a twin's memory
     is_twin_branch            Whether a branch is a twin's memory branch for a project
+    behind_gate               Whether ComplexGitSync is mounted behind another project's gate
     structural_name_problem   Why a new project or branch name may not be created, or None
     resolve_propagated_ref    Target ref under a tree-wide branch move (privacy)
     closed_branch_name        closed/<branch> — the name a closed branch is renamed to
@@ -105,6 +106,10 @@ class BranchSource(StrEnum):
     """The declared ``fallback_branch`` was used because the target branch
     was not available."""
 
+    BEHIND_GATE = "behind_gate"
+    """The repository is ComplexGitSync, mounted by another project's level
+    tree, so it takes a branch of that project's: ``<project>_<branch>``."""
+
 
 _SOURCE_REASONS: dict[BranchSource, str] = {
     BranchSource.TAG: "entry declares a tag",
@@ -124,6 +129,7 @@ _SOURCE_REASONS: dict[BranchSource, str] = {
     BranchSource.ENTRY_RESOLVED: "the ref this repository last landed on",
     BranchSource.ENTRY_TARGET: "the ref this repository targets",
     BranchSource.FALLBACK: "target branch unavailable; used the declared fallback",
+    BranchSource.BEHIND_GATE: "ComplexGitSync behind another project's gate takes a branch of that project's",
 }
 
 
@@ -362,6 +368,24 @@ def private_local_branch(project_name: str, project_branch: str, *, twin: bool =
     return f"{base}{PRIVATE_LOCAL_SEPARATOR}{project_branch}"
 
 
+LEVEL_FALLBACK = "CGS-ALPHA"
+"""The branch every repository of a level tree falls back to (LinkAtCGS §7.1, ``tree/named_cgs.py``)."""
+
+
+def behind_gate(entry: WorkingRepo, *, project_name: str | None, root_fallback: str | None) -> bool:
+    """Whether *entry* is ComplexGitSync mounted behind another project's gate (BehindGate, Q1).
+
+    A level tree (its root falls back to :data:`LEVEL_FALLBACK`, as every ``yyyy-xxx.cgs`` does) of a
+    project other than ComplexGitSync, and *entry* a project repository named ComplexGitSync: its
+    branch is that project's, ``<project>_<branch>``, so no two projects' levels share one branch of
+    the tool. *entry* is never the root; the caller knows which that is.
+    """
+    return (
+        not entry.effective_private and root_fallback == LEVEL_FALLBACK and entry.repo_name == TWIN_BRANCH_OWNER
+        and project_name not in (None, TWIN_BRANCH_OWNER)
+    )
+
+
 def is_twin_branch(project_name: str, branch_name: str) -> bool:
     """Whether *branch_name* is a twin's memory branch for *project_name*.
 
@@ -461,6 +485,7 @@ def resolve_propagated_ref(
     project_name: str | None = None,
     twin: bool = False,
     owner: str | None = None,
+    guest: bool = False,
 ) -> BranchResolution:
     """Resolve what *entry* targets when the whole tree moves to *ref_name*.
 
@@ -487,7 +512,8 @@ def resolve_propagated_ref(
     needs it. Without it that case cannot be resolved at all, so it falls
     back to behaving like private/distant rather than guessing a name.
     *twin* is true only for a twin tree's memory (:data:`TWIN_BRANCH_OWNER`); *owner* names the
-    nested Parent of a repository that sits under one (:func:`private_local_branch`).
+    nested Parent of a repository that sits under one (:func:`private_local_branch`). *guest* is
+    :func:`behind_gate`'s answer: such a repository follows the move on ``<project_name>_<ref_name>``.
 
     For any private entry the returned ``kind`` is ``None``: the move must not
     rewrite the kind of ref that entry already carries.
@@ -501,6 +527,8 @@ def resolve_propagated_ref(
                 source=BranchSource.PRIVATE_LOCAL,
             )
         return BranchResolution(name=declared, kind=None, source=BranchSource.PRIVATE_DISTANT)
+    if guest and project_name and ref_kind is RefKind.BRANCH:
+        return BranchResolution(name=private_local_branch(project_name, ref_name), kind=ref_kind, source=BranchSource.BEHIND_GATE)
     source = BranchSource.TAG if ref_kind is RefKind.TAG else BranchSource.REPO_BRANCH
     return BranchResolution(name=ref_name, kind=ref_kind, source=source)
 
@@ -534,7 +562,9 @@ def _as_optional_str(value: Any) -> str | None:
 
 __all__ = [
     "ANCESTORS_BRANCH",
+    "LEVEL_FALLBACK",
     "TWIN_BRANCH_OWNER",
+    "behind_gate",
     "private_local_branch",
     "is_twin_branch",
     "structural_name_problem",

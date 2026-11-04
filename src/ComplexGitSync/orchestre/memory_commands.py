@@ -333,7 +333,7 @@ class MemoryCommands:
         return {
             "entry": entry,
             "line": CgsEntryEditor.format_entry(entry),
-            "branch": MemoryRepository.branch(registry.project_name, branches.tree_branch or DEFAULT_BRANCH, twin=registry.memory_twin),
+            "branch": MemoryRepository.branch(registry.project_name, branches.level or DEFAULT_BRANCH, twin=registry.memory_twin),
             "mount_path": str(MemoryRepository(workspace).mount_path()),
             "create_with": MemoryRepository.creation_command(entry),
             "mounted": DefaultMemory(self.client).is_published(workspace),
