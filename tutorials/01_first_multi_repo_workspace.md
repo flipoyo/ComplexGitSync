@@ -1,10 +1,10 @@
-# Tutorial 1 of 7 — Your First Multi-Repo Workspace
+# Tutorial 1 of 8 — Your First Multi-Repo Workspace
 
 *Created: 2026-06-30*
 
 ## Abstract — read this first
 
-**What this document is.** The first of seven tutorials in
+**What this document is.** The first of eight tutorials in
 [`tutorials/`](README.md): how to install a small sample project,
 `CGSil1`, as a GitTree — standalone with `bootstrap`, the usual way, or
 nested with `initialise` — and what the difference is.
@@ -12,8 +12,8 @@ nested with `initialise` — and what the difference is.
 **Why it exists.** Every other tutorial starts from a READY tree. This one
 gets you there, on a project where nothing of your own is at risk.
 
-**What you will find.** The sample tree, its `.cgs`, the two install modes
-side by side, then each install in a few commands.
+**What you will find.** A quick start, the sample tree and its `.cgs`, the
+two install modes side by side, then each install in a few commands.
 
 **Who it is for.** Anyone new to `cgitsync`.
 
@@ -29,6 +29,29 @@ graph LR
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
     class T1 here;
 ```
+
+---
+
+## Getting started
+
+Five minutes, bash (on Windows, Git Bash). Install the tool once, fetch the
+sample's description, and build the tree:
+
+```bash
+git clone https://github.com/flipoyo/ComplexGitSync.git "$HOME/tools/ComplexGitSync"
+cd "$HOME/tools/ComplexGitSync"
+pixi install
+curl -L -o "$HOME/CGSil1.cgs" https://gitlab.com/CGS_test/CGSil1/-/raw/main/CGSil1.cgs
+pixi run cgitsync bootstrap "$HOME/CGSil1.cgs" --force-protocol https
+export CGSHOME=/home/you/.cgs/CGSil1-<timestamp>   # the line bootstrap printed
+pixi run cgitsync status
+```
+
+`status` lists three repositories, `clean` and `synced`, and ends with
+`errors=0`. That is a READY tree. Every command is a Pixi task, typed from
+the ComplexGitSync clone: `pixi run cgitsync ...`, never a bare
+`cgitsync ...`. The rest of this tutorial explains what just happened, and
+shows the other way to install.
 
 ---
 
@@ -62,8 +85,6 @@ is the root. `CGSih2` is not listed: it comes from the `.cgs` that `CGSih1`
 carries itself. The user guide (`docs/MASTER.pdf`, *Local Authoring Spec*)
 describes every field.
 
----
-
 ## 2. Two ways to install
 
 ComplexGitSync manages a project from **outside** it (standalone) or from
@@ -89,26 +110,15 @@ Standalone — bootstrap                       Nested — initialise
 | One tool for several projects | Yes | No |
 | Use it for | **Any project — the usual choice** | Projects that ship the tool with their content, such as hydrological digital twins |
 
-Each command refuses the other's job and names the right one.
-
-> **SSH or HTTPS.** A `.cgs` clones over SSH by default. These tutorials add
-> `--force-protocol https` to every command that clones, so they work without
-> an SSH key. Why, and how to switch to SSH later: the user guide
-> (`docs/MASTER.pdf`, *SSH or HTTPS*).
-
----
+Each command refuses the other's job and names the right one. A `.cgs`
+clones over SSH by default; these tutorials add `--force-protocol https` to
+every command that clones, so they work without an SSH key (the user guide,
+*SSH or HTTPS*, says how to switch later).
 
 ## 3. Standalone install with `bootstrap`
 
-**Install the tool**, once, anywhere outside the project:
-
-```bash
-git clone https://github.com/flipoyo/ComplexGitSync.git "$HOME/tools/ComplexGitSync"
-cd "$HOME/tools/ComplexGitSync"
-pixi install
-```
-
-Every `pixi run cgitsync ...` is typed from this directory.
+**Install the tool**, once, anywhere outside the project, as in *Getting
+started*. Every `pixi run cgitsync ...` is typed from that directory.
 
 **Get the project's `.cgs`**, and check it without cloning anything:
 
@@ -143,11 +153,9 @@ pixi run cgitsync status
 ```
 
 Every command prints the workspace it is acting on. When you start another
-project in the same shell, export its `CGSHOME` too. To give a workspace a
-name of your own, add it after the `.cgs`: `bootstrap "$HOME/CGSil1.cgs" trial
+project in the same shell, export its `CGSHOME` too. To name a workspace
+yourself, add the name after the `.cgs`: `bootstrap "$HOME/CGSil1.cgs" trial
 --force-protocol https` lands on `$HOME/.cgs/trial-<timestamp>`.
-
----
 
 ## 4. Nested install with `initialise`
 
@@ -167,8 +175,6 @@ pixi run cgitsync status
 You cloned the root yourself, and its `CGSil1.cgs` came with it.
 `initialise` clones the other repositories around it. No export is needed:
 the tool finds the tree from where it sits.
-
----
 
 ## 5. What you have now
 

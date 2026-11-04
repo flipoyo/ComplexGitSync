@@ -1,41 +1,34 @@
-# Tutorial 4 of 7 — Adopting a Real Project: CaWaQS-Viz
+# Tutorial 4 of 8 — Adopting a Real Project: CaWaQS-Viz
 
 *Created: 2026-09-02*
 
 ## Abstract — read this first
 
 **What this document is.** One real, tested, end-to-end procedure for
-bringing an existing project — **`cawaqsviz`**
-(<https://gitlab.com/cawaqs/gviz/cawaqsviz>), which has no `.cgs` of its
-own and still uses git submodules — under ComplexGitSync: clone it, adopt
-the whole tree with one command, and commit/push the result. Four
-repositories on two levels, because one of `cawaqsviz`'s submodules has a
-submodule of its own.
+bringing an existing project, **`cawaqsviz`**
+(<https://gitlab.com/cawaqs/gviz/cawaqsviz>), under ComplexGitSync. It has no
+`.cgs` of its own and still uses git submodules, on two levels.
 
-**Why it exists.** Tutorials 1 and 2 hand-author a `.cgs` from scratch for
-a project you already fully understand. This one instead starts from a
-real project you don't control the source of and walks every step in the
-order you'd actually run them — no branching "modes" to choose between,
-one path, verified against the live repositories.
+**Why it exists.** Tutorials 1 to 3 write a `.cgs` for a project you
+understand. This one starts from a real project you do not control and walks
+every step in the order you would run it: one path, verified against the
+live repositories.
 
-**What you will find.** Seven steps: clone, check out the submodules,
-adopt the tree with `submodules init`, then `branch create`, `checkout`,
-`add`/`commit`, and `push`/`release freeze`. Step 3 is three commands in
-one; §3.1 opens it up and explains why their order cannot be changed.
+**What you will find.** A quick start, then seven steps: clone, check out
+the submodules, adopt the tree with `submodules init`, then branch, check
+out, commit and push. §3.1 explains why step 3's order cannot change.
 
-**Who it is for.** Anyone adopting a real project that both lacks a `.cgs`
-and still uses git submodules — the combination Tutorials 1 to 3 don't
-cover, and the messiest of the tutorials' starting points.
+**Who it is for.** Anyone adopting a project that lacks a `.cgs` and still
+uses git submodules — the messiest starting point of the tutorials.
 
-**What you need to do with it.** Read it after Tutorials 1 and 2. Follow
-the steps in order — the directory-naming detail in step 1 is easy to get
-wrong and is the one thing worth reading twice.
+**What you need to do with it.** Follow the steps in order. The directory
+name in step 1 is the one thing worth reading twice.
 
 ```mermaid
 graph LR
     T3["03 — real build tree"] --> T4["04 — adopting a real project<br/>YOU ARE HERE"]
-    T4 --> T5["05 — private repos<br/>local and distant"]
-    T5 --> REF["docs/MASTER.pdf<br/>full reference"]
+    T4 -->|"submodules init"| READY["READY tree,<br/>no submodules"]
+    T4 --> T5["05 — private repos"]
 
     classDef here fill:#1565C0,color:#fff,stroke:#111,stroke-width:2px;
     class T4 here;
@@ -43,21 +36,34 @@ graph LR
 
 ---
 
-> **Every command below is a Pixi task.** Always run `pixi run cgitsync
-> ...`, never a bare `cgitsync ...` — see the note in
-> [Tutorial 1](01_first_multi_repo_workspace.md) if this is new to you.
-> Every command runs from inside the ComplexGitSync clone (standalone
-> mode) and takes an absolute path to `cawaqsviz` — never `cd` into
-> `cawaqsviz` itself and run `cgitsync` from there.
+## Getting started
 
-> **`cgitsync` works with public projects only.** No credentials or tokens
-> are stored; authentication relies entirely on the ambient environment
-> (`ssh-agent`, an HTTPS credential helper, etc.).
+Clone the project into a directory named exactly like it, check out every
+submodule, then adopt the whole tree from your ComplexGitSync clone:
 
-`cawaqsviz` is a GitLab project made of four git repositories on two
-levels. The root, `cawaqs/gviz/cawaqsviz`, has two GitHub children tracked
-as git submodules. One of those children,
-`HydrologicalTwinAlphaSeries`, holds a submodule of its own:
+```bash
+export WORK=/home/user/work && mkdir -p "$WORK"
+git clone https://gitlab.com/cawaqs/gviz/cawaqsviz.git "$WORK/cawaqsviz"
+git -C "$WORK/cawaqsviz" submodule update --init --recursive
+cd /path/to/ComplexGitSync
+pixi run cgitsync submodules init "$WORK/cawaqsviz" --force-protocol https --dry-run
+pixi run cgitsync submodules init "$WORK/cawaqsviz" --force-protocol https
+export CGSHOME="$WORK/cawaqsviz"
+pixi run cgitsync branch create retire-submodules
+pixi run cgitsync checkout retire-submodules
+pixi run cgitsync add
+pixi run cgitsync commit "chore: retire git submodules in favour of ComplexGitSync"
+```
+
+The tree is READY, with every submodule turned into a plain nested clone and
+the conversion committed on a branch of its own. Push it only through a merge
+request: it is a visible change to a shared project (step 7).
+
+---
+
+The project is four repositories on two levels. `HydrologicalTwinAlphaSeries`
+is a **parent**: it holds a submodule of its own, which is what the
+`--recursive` flags are for.
 
 ```
 cawaqsviz  (GitLab: cawaqs/gviz/cawaqsviz, root)
@@ -66,90 +72,38 @@ cawaqsviz  (GitLab: cawaqs/gviz/cawaqsviz, root)
   └── user_guide_CaWaQS-Viz        (GitHub submodule, at docs/CWV_user_guide)
 ```
 
-`HydrologicalTwinAlphaSeries` is therefore a **parent**, not a leaf: it
-contains another repository. That second level is what the `--recursive`
-flags below are for, and the reason a tree like this is worth a tutorial
-of its own.
-
-Set up a working directory for the examples below (any empty parent
-directory works):
-
-```bash
-export WORK=/home/user/work
-mkdir -p "$WORK"
-```
-
----
+Every `cgitsync` command runs from your ComplexGitSync clone (standalone
+mode) and takes an absolute path to `cawaqsviz`; never run it from inside
+`cawaqsviz`.
 
 ## 1. Clone the project
 
-**Name the clone directory `cawaqsviz` — not `cawaqsviz-scan`, not
-anything else.** Step 3 derives the project name from the root
-repository's identifier (`cawaqs/gviz/cawaqsviz` → `cawaqsviz`), not from
-the directory name, and then resolves the workspace root as
-`<parent>/<project name>` — so a directory named anything else sends it
-looking for a sibling that doesn't exist. It refuses up front and tells
-you to rename, but naming it right from the start saves the round trip:
-
-```bash
-git clone https://gitlab.com/cawaqs/gviz/cawaqsviz.git "$WORK/cawaqsviz"
-```
+**Name the clone directory `cawaqsviz`, and nothing else.** Step 3 takes the
+project name from the root's identifier (`cawaqs/gviz/cawaqsviz` →
+`cawaqsviz`), not from the directory, then looks for the workspace at
+`<parent>/<project name>`. Any other name is refused up front, with a request
+to rename.
 
 ## 2. Update the submodules
 
-```bash
-cd "$WORK/cawaqsviz"
-git submodule update --init --recursive
-```
+`git submodule update --init --recursive` checks out both levels. Without
+`--recursive`, `hydrological_twin` stays an empty directory, and `discover`,
+which reads the filesystem, cannot find a repository that is not checked out.
 
-`--recursive` matters here. Without it git checks out the two direct
-submodules and stops, leaving `hydrological_twin` an empty directory
-inside `HydrologicalTwinAlphaSeries`. `discover` reads the filesystem, so
-a repository that is not checked out is a repository it cannot find.
-
-> **If this prompts for a GitHub username/password and then fails with
-> `error: RPC failed; HTTP 401` / `expected flush after ref listing`:**
-> the submodules are genuinely public repositories, but GitHub can still
-> `401` the anonymous object-fetch a real clone needs. The reliable fix is
-> to authenticate the request over HTTPS, once, with GitHub's own tool:
-> ```bash
-> gh auth login
-> gh auth setup-git
-> git submodule update --init --recursive
-> ```
-> `gh auth setup-git` makes `gh` Git's credential helper for GitHub, so
-> nothing asks for a password again (GitHub dropped account passwords for
-> Git in 2021). If you already have an SSH key registered with GitHub
-> (check with `ssh -T git@github.com`), you can instead rewrite the
-> submodule URLs to SSH for this clone only:
-> ```bash
-> git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
-> ```
-
-Back at the ComplexGitSync clone for every command from here on:
-
-```bash
-cd /path/to/ComplexGitSync
-```
+> **If GitHub answers `HTTP 401` / `expected flush after ref listing`**, it
+> refused the anonymous fetch. Authenticate HTTPS once with `gh auth login`
+> then `gh auth setup-git`, and run the update again. With an SSH key on
+> GitHub, `git -c url."git@github.com:".insteadOf="https://github.com/"
+> submodule update --init --recursive` does it over SSH for this clone only.
 
 ## 3. Adopt the tree with `submodules init`
 
-One command does the whole adoption: draft the `.cgs`, build the tree,
-and convert every submodule at both levels.
-
-```bash
-pixi run cgitsync submodules init "$WORK/cawaqsviz" --force-protocol https --dry-run   # show the plan
-pixi run cgitsync submodules init "$WORK/cawaqsviz" --force-protocol https             # do it
-```
-
-The dry run prints what it found and what it would convert, touching
-nothing:
+One command drafts the `.cgs`, builds the tree, and converts every submodule
+at both levels. The dry run touches nothing:
 
 ```
 Found 4 git repository(ies) under /home/user/work/cawaqsviz
 project name: cawaqsviz
-
-Dry run — nothing written, cloned, or converted.
   would write:  /home/user/work/cawaqsviz/cawaqsviz.cgs
   would adopt:  /home/user/work/cawaqsviz (CGSHOME)
   would convert 3 submodule(s):
@@ -158,56 +112,16 @@ Dry run — nothing written, cloned, or converted.
     - external/HydrologicalTwinAlphaSeries/docs/hydrological_twin  (declared in external/HydrologicalTwinAlphaSeries/.gitmodules)
 ```
 
-Two things to read here. Every path is counted from the directory you
-pointed the command at, and `declared in` names the `.gitmodules` file it
-came from — which matters, because the root also has a child at
-`docs/CWV_user_guide`, so two of the three submodules are called `docs/...`
-by their own repository. And `hydrological_twin`, four directories down,
-is found without needing any flag: the scan has no depth limit unless you
-give it one with `--max-depth`. **Don't pass `--max-depth 3` here** — that
-would stop the scan just above `hydrological_twin` and miss it. Whenever a
-given `--max-depth` does cut the walk short, the command says so in a
-warning rather than presenting a partial answer as a complete one.
-
-The real run ends at a `READY` tree:
-
-```
-.cgs written to: /home/user/work/cawaqsviz/cawaqsviz.cgs
-CGSHOME: /home/user/work/cawaqsviz
-Converted 3 submodule(s) to plain nested clones:
-  ✓ docs/CWV_user_guide  (docs/CWV_user_guide)
-  ✓ external/HydrologicalTwinAlphaSeries  (external/HydrologicalTwinAlphaSeries)
-  ✓ docs/hydrological_twin  (external/HydrologicalTwinAlphaSeries/docs/hydrological_twin)
-repos:
-cawaqsviz (project)
-├── HydrologicalTwinAlphaSeries (parent)
-│   └── hydrological_twin (leaf)
-└── user_guide_CaWaQS-Viz (leaf)
-
-The conversion is staged but not committed. Review it, then:
-  export CGSHOME=/home/user/work/cawaqsviz
-  cgitsync branch create <name> && cgitsync checkout <name>
-  cgitsync add && cgitsync commit "<message>"
-```
-
-`HydrologicalTwinAlphaSeries (parent)` with `hydrological_twin` under it is
-the whole point of the two levels: `cgitsync` now knows which repository
-holds which. That is what keeps `docs/hydrological_twin` in
-`HydrologicalTwinAlphaSeries`' own `.gitignore`, and therefore out of its
-index. Without it, the next `cgitsync add` would quietly turn the nested
-clone back into a submodule and undo the conversion.
-
-Set `CGSHOME` as the output tells you; every command from here on resolves
-the workspace automatically:
-
-```bash
-export CGSHOME="$WORK/cawaqsviz"
-pixi run cgitsync status
-```
+Paths count from the directory you named, and `declared in` names the
+`.gitmodules` each came from. `hydrological_twin`, four levels down, is found
+because the scan has no depth limit unless you pass `--max-depth`; a limit
+that cuts the walk short is reported as a warning. The real run ends READY,
+drawing `HydrologicalTwinAlphaSeries (parent)` with `hydrological_twin`
+under it. That nesting is what keeps `docs/hydrological_twin` in the parent's
+own `.gitignore`, so the next `add` never turns the clone back into a
+submodule. It ends by printing `export CGSHOME=/home/user/work/cawaqsviz`.
 
 ### 3.1 What it runs underneath, and why the order is fixed
-
-`submodules init` is three commands you can also run by hand:
 
 ```bash
 pixi run cgitsync discover "$WORK/cawaqsviz" --write "$WORK/cawaqsviz/cawaqsviz.cgs"
@@ -215,92 +129,35 @@ pixi run cgitsync initialise "$WORK/cawaqsviz/cawaqsviz.cgs" --output-path "$WOR
 pixi run cgitsync submodules import "$WORK/cawaqsviz" --recursive --now
 ```
 
-1. **`discover`** reads the filesystem and drafts the `.cgs`. It sees
-   `hydrological_twin` sitting *inside* `HydrologicalTwinAlphaSeries` and
-   drafts it as that repository's child, not the root's. Only what is
-   checked out can be found — which is what step 2 was for.
+1. **`discover`** drafts the `.cgs` from what is checked out, with
+   `hydrological_twin` as `HydrologicalTwinAlphaSeries`' child. It records
+   the root's checked-out branch as `project.default_branch`; if that is not
+   the branch you are adopting, fix it in the draft before going on.
+2. **`initialise`** adopts the root at `--output-path/<project-name>` in
+   place and clones everything else — the step-1 naming rule.
+3. **`submodules import --recursive --now`** turns each gitlink into a plain
+   clone: `git rm --cached`, its `.gitmodules` stanza removed, its path
+   added to that repository's `.gitignore`.
 
-   > **If the checkout is not on `main`, check the draft before running
-   > `initialise`.** `discover --write` records the root's own checked-out
-   > branch as `project.default_branch`, and drafts `default_branch` on any
-   > other repository scanned on a *different* branch — open the drafted
-   > `.cgs` and confirm `project.default_branch` actually names the branch
-   > you are adopting, especially if you hand-edit the file afterwards.
-   > Every repository also keeps its scanned branch as `fallback_branch`,
-   > used only if the target branch turns out to be missing from the
-   > remote; setting *only* `fallback_branch` by hand, with no
-   > `default_branch` anywhere in a repository's own chain, still targets
-   > whatever `project.default_branch` says — `main` by default — and
-   > **not** the branch named in `fallback_branch`. That mismatch is silent
-   > until `push`: `status`, `add` and `commit` all measure a repository
-   > against whatever branch the tree already agrees it is on, and only a
-   > push against the *remote* first notices the target was wrong.
-2. **`initialise`** *adopts* the root already on disk at
-   `CGSHOME = --output-path/<project-name>` in place, without touching it,
-   and clones everything else. `--output-path "$WORK"` plus
-   `project = "cawaqsviz"` from the `.cgs` is what resolves `CGSHOME` to
-   the exact `$WORK/cawaqsviz` already there; a directory named anything
-   else would send it looking for a sibling that doesn't exist. That is the
-   step-1 naming rule, and `submodules init` checks it up front rather
-   than letting `initialise` fail halfway.
-3. **`submodules import --recursive --now`** turns each submodule's
-   gitlink into a plain, independent clone: `git rm --cached <path>`,
-   remove its `.gitmodules` stanza (deleting the file once every stanza is
-   gone), and append `<path>` to that repository's own `.gitignore`.
-   `--recursive` is what reaches the second level; without it,
-   `HydrologicalTwinAlphaSeries` would keep its own `.gitmodules`.
+> **The conversion must come last.** `initialise` deletes and re-clones every
+> repository but the root, from remotes that still use submodules. Convert
+> first, and `HydrologicalTwinAlphaSeries` comes back with its submodule
+> intact; a second `import` then reports "nothing to import", because the
+> root's `.gitmodules` it walks from is gone. `bootstrap` is no route either:
+> it refuses a destination that is not empty, and elsewhere would adopt a
+> fresh copy instead of your checkout.
 
-> **The conversion has to come last, and cannot be moved.** `initialise`
-> adopts the root in place but **deletes and re-clones every other
-> repository** straight from its remote — and those remotes still use
-> submodules, since the conversion is a local, uncommitted change. Convert
-> first and `HydrologicalTwinAlphaSeries` comes back from GitHub with its
-> `.gitmodules` and its gitlink intact: a half-converted tree that looks
-> finished. Running `submodules import --now` again afterwards does **not** fix
-> it either — the recursive walk follows the submodule graph declared by
-> the *root's* `.gitmodules`, which the first pass deleted, so it reports
-> "nothing to import" and never reaches the second level.
+## 4 and 5. Branch and check out
 
-> **Why not `bootstrap`?** `bootstrap` always clones the *whole* tree
-> fresh, root included, into an empty destination — pointed at
-> `$WORK/cawaqsviz`, which already has content from steps 1–2, it fails
-> outright with `Clone destination already exists and is not empty`. Worse,
-> pointed anywhere else it would clone the root fresh from GitLab, and you
-> would be adopting a copy rather than the checkout in front of you.
-
-## 4. Branch
-
-```bash
-pixi run cgitsync branch create retire-submodules
-```
-
-Creates a purely local branch across the whole tree — nothing pushed yet —
-as in [Tutorial 2](02_working_with_a_tree.md), step 2; `branch list` shows
-it.
-
-One repository can opt out. A repository marked `private = true` in the
-`.cgs` is one you **share with other projects**, so a tree-wide branch move
-skips it and leaves it on its own branch. A tag is different: `cgitsync tag`
-reaches every repository, private or not, so a frozen release stays complete.
-Section 9 below uses this, and the user guide's "Branches in a `.cgs`"
-section has the full rule.
-
-## 5. Checkout
-
-```bash
-pixi run cgitsync checkout retire-submodules
-```
+`branch create retire-submodules` then `checkout retire-submodules` make a
+local branch across the tree, as in [Tutorial 2](02_working_with_a_tree.md).
+A repository marked `private = true` keeps its own branch
+([Tutorial 5](05_private_repos.md)).
 
 ## 6. Stage and commit
 
-```bash
-pixi run cgitsync add
-pixi run cgitsync commit "chore: retire git submodules in favour of ComplexGitSync"
-```
-
-Two repositories have something to commit, because step 3 converted
-submodules at two levels. Both hold the same kind of change: the staged
-`.gitmodules` removal, the dropped gitlinks, and the new `.gitignore`.
+Two repositories have something to commit, because step 3 converted two
+levels:
 
 ```
 $ git -C "$WORK/cawaqsviz" status --porcelain
@@ -309,184 +166,45 @@ D  docs/CWV_user_guide
 D  external/HydrologicalTwinAlphaSeries
 ?? .gitignore
 ?? cawaqsviz.cgs
-
-$ git -C "$WORK/cawaqsviz/external/HydrologicalTwinAlphaSeries" status --porcelain
-D  .gitmodules
-D  docs/hydrological_twin
-?? .gitignore
 ```
 
-`hydrological_twin` and `CWV_user_guide` are unchanged, so they have
-nothing to stage.
-
-The root also has the `.cgs` step 3 wrote, still untracked. `add` stages it
-along with the rest, which is what you want: from this commit on, the
-project carries its own topology description, and anyone can rebuild the
-tree from it with `initialise` alone. The new `.gitignore` next to it holds
-`.cgitsync/` and `cawaqsviz.lgr` — ComplexGitSync's own generated state,
-which stays out of the repository — plus one line per child repository.
-
-`HydrologicalTwinAlphaSeries` is a repository you may not own. Its half of
-this commit lands on *its* remote, not on `cawaqsviz`'s — see the live
-migration note in step 7 before pushing.
+`HydrologicalTwinAlphaSeries` shows the same kind of change for its own
+submodule. `add` also stages `cawaqsviz.cgs`, so from this commit on the
+project carries its own topology and anyone can rebuild it with
+`initialise`. The new `.gitignore` holds `.cgitsync/` and `cawaqsviz.lgr`
+(ComplexGitSync's own state) and one line per child repository.
 
 ## 7. Push, or freeze a release
 
 ```bash
 pixi run cgitsync push
-```
-
-`branch create`+`checkout` created a purely local branch with no upstream yet;
-`push` publishes it, the same way `git push -u` would.
-
-> **If `push` fails with `could not read Username` / `terminal prompts
-> disabled` (or, on an older `cgitsync` build, hangs until you `Ctrl+C`
-> it):** the tree was cloned over HTTPS, and pushing needs write
-> credentials that anonymous HTTPS access doesn't have. Give Git an HTTPS
-> credential helper, once, with the provider's own tool, then push again:
-> ```bash
-> glab auth login      # answer yes when it offers to set Git up for HTTPS
-> pixi run cgitsync push
-> ```
-> (`gh auth login` then `gh auth setup-git` for a GitHub repository.)
-> `cgitsync` never reads or stores the token. Its own hint also names the
-> other way: if you have an SSH key registered with GitLab (check with
-> `ssh -T git@gitlab.com`), `pixi run cgitsync push --force-protocol ssh`
-> switches the remotes to SSH. That rewrite persists, so every command
-> after it uses SSH too. More in the user guide (`docs/MASTER.pdf`,
-> *SSH or HTTPS*).
-
-For a versioned snapshot instead of a plain push, use the minimalist
-cycle:
-
-```bash
 pixi run cgitsync release freeze "retire git submodules" --force-tag retire-submodules-v1
 ```
 
-It is tagged `<project-name>-retire-submodules-v1`: without `--force-tag`, the
-release would take the version in the root's `pixi.toml`, or the next
-number. `release freeze` (`add → commit → pull → push → freeze`) skips the `pull`
-step when the current branch has no upstream — there is nothing to pull
-for a branch that was never published — so no manual `push` beforehand is
-needed either way.
+`push` publishes the new branch with its upstream. `release freeze` does
+`add → commit → pull → push → tag` and records the State, tagged
+`cawaqsviz-retire-submodules-v1`; it skips `pull` on a branch never
+published. If `push` says `could not read Username`, the tree needs HTTPS
+write credentials: `glab auth login` (or `gh auth login`, `gh auth
+setup-git`), then push again, or `push --force-protocol ssh` with an SSH key,
+which switches the remotes for good.
 
-> **Live migration note:** pushing the conversion `submodules import` made to the
-> real `cawaqsviz` project on GitLab is a visible, permanent change to a
-> shared repository. Open a merge request for maintainer review rather
-> than pushing straight to `main`.
-
----
+> **Live migration note.** Pushing this to the real `cawaqsviz` is a
+> permanent change to a shared project, half of it on a GitHub repository
+> you may not own. Open a merge request rather than pushing to `main`.
 
 ## 8. Summary
 
 | Step | Command | Description |
 |------|---------|-------------|
-| 1 | `git clone .../cawaqsviz.git "$WORK/cawaqsviz"` | Clone, named to match the project name `discover` will derive |
-| 2 | `git submodule update --init --recursive` | Check out all three submodules, both levels |
-| 3 | `pixi run cgitsync submodules init "$WORK/cawaqsviz" --force-protocol https` | Draft the `.cgs`, adopt the root in place, clone the rest, convert every submodule |
-| 4 | `pixi run cgitsync branch create retire-submodules` | Create a local branch |
-| 5 | `pixi run cgitsync checkout retire-submodules` | Switch to it |
-| 6 | `pixi run cgitsync add` / `commit "..."` | Stage and commit the conversion |
-| 7 | `pixi run cgitsync push` (or `release freeze MSG`) | Publish the branch, or cut a versioned release |
+| 1 | `git clone .../cawaqsviz.git "$WORK/cawaqsviz"` | Clone, named like the project |
+| 2 | `git submodule update --init --recursive` | Check out every submodule, both levels |
+| 3 | `pixi run cgitsync submodules init "$WORK/cawaqsviz" --force-protocol https` | Draft the `.cgs`, adopt the root, clone the rest, convert every submodule |
+| 4–5 | `branch create retire-submodules`, `checkout retire-submodules` | A local branch across the tree |
+| 6 | `add`, `commit "..."` | Stage and commit the conversion |
+| 7 | `push`, or `release freeze MSG` | Publish the branch, or cut a release |
 
-If your own project already has a `.cgs`, or you'd rather write one by
-hand than let step 3 draft it, pass it with `--cgs FILE` — the rest of the
-sequence is unchanged. See `examples/cawaqsviz.cgs` in this repository for
-a worked, hand-authored example of the same topology, and
-[Tutorial 3](03_onboarding_a_real_build_tree.md) for the habits behind it.
-
-## 9. Reusing this project owner's agent-facing documents
-
-A project adopted this way can also mount the same generic and
-project-specific agent-facing documents ComplexGitSync itself uses —
-`CLAUDE.md`, the `DevSpecs.md` philosophy, `DOCSTYLE.md`,
-`TICKETLIFECYCLE.md` — instead of writing its own from scratch. Add three
-entries to the project's `.cgs`:
-
-```toml
-{ repository = "github:flipoyo/.ticketing", relative_path = ".agent/.distant/ticket", default_branch = "main", fallback_branch = "main", private = true },
-{ repository = "github:flipoyo/DevSpec", relative_path = ".agent/.distant/dev-sync", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
-{ repository = "github:flipoyo/DocSpec", relative_path = ".agent/.distant/documentation", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
-{ repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", default_branch = "<ProjectName>", fallback_branch = "main", private = true, writable = true },
-{ repository = "github:flipoyo/.claude", relative_path = ".agent/.local/.claude", default_branch = "<ProjectName>", fallback_branch = "main", private = true, writable = true },
-```
-
-Five entries, none of them named `.agent` — `.agent/` is never itself a
-repository, only the shared prefix these `relative_path`s happen to nest
-inside (`AgentMountSplit`; the naming and split into `ticket`/`dev-sync`/
-`documentation` is `AgentSkillsSplit`). `DevSpec`'s own
-`nested_config = "disabled"` matters here: without it, its own
-`install.cgs` would still discover itself a second time nested one level
-inside `.agentSpec` — which this project no longer mounts at all, having
-split its one thing (`TICKETLIFECYCLE.md`) into `.ticketing` directly.
-`.localSpec` and `.claude` answer only to their own `private`/`writable`
-flags — nothing nests them under anything, so there is nothing for a
-shared, read-only mount's privacy to cap them through. See
-`tutorials/05_private_repos.md` for what the two kinds mean.
-
-`private = true` keeps each mount on its own branch when you run a tree-wide
-`branch create`, `checkout` or `pull`. Without it, a feature branch you create for
-this project would also be created inside `.ticketing`, `DevSpec` or
-`DocSpec`, each of which every other project mounts too. `writable = true`
-on `.localSpec`/`.claude` is what lets *this* project commit to its own
-settings branch there.
-
-### Seeing privacy work
-
-ComplexGitSync manages itself this way, so its own tree is the worked
-example. Here it is while a feature branch called `multi-branch` is
-checked out, printed by `cgitsync view-tree`:
-
-```text
-ComplexGitSync (root) [ALIGNED] @9c9298a br=multi-branch fb=main
-├── .ticketing (leaf) [ALIGNED] @412759b br=main
-├── DevSpec (leaf) [ALIGNED] @a5d3432 br=main
-├── DocSpec (leaf) [ALIGNED] @02ee0b1 br=main
-├── .claude (leaf) [ALIGNED] @df4221c br=ComplexGitSync fb=main
-├── .localSpec (leaf) [ALIGNED] @9f50519 br=ComplexGitSync fb=main
-└── DocComplexGitSync (parent) [ALIGNED] @ac1176e br=multi-branch fb=main
-```
-
-`br=` is the branch each repository is on. Read it top to bottom:
-
-- The two repositories this project actually owns — `ComplexGitSync` and
-  `DocComplexGitSync` — moved to `multi-branch`.
-- The five private mounts above did not. `.localSpec` and `.claude` stayed
-  on `ComplexGitSync`, the branch named after this project. `.ticketing`,
-  `DevSpec` and `DocSpec` stayed on `main`, which every project that
-  mounts them reads.
-- `fb=` is shown only where the declared fallback branch differs from the
-  branch targeted. It is what `cgitsync` would clone if the target branch
-  did not exist on the remote.
-
-**That last difference decides how carefully you commit.** A mount private to
-a branch named after your project (`.localSpec`, `.claude` above) is yours —
-push to it freely. A mount private to `main` (`.ticketing`, `DevSpec`,
-`DocSpec` above) is
-read by every project that mounts it, so a push there is published
-immediately, with no branch and no pull request in between. Check which kind
-you are looking at before committing to a private mount.
-
-Each of these five sits at its own path under `.agent/` — `.distant/` or
-`.local/` — and that is the whole
-point: the path alone says which is which. None of them is declared
-as `.agent` itself, and `.agent/` is never a repository — a private/local
-mount (`.localSpec`, `.claude`, which this project writes) cannot sit
-under a private/distant repository and stay writable (nesting caps a
-child's writability at its parent's, with no override), so nothing here
-is nested under anything; each entry answers only to its own
-`private`/`writable` flags.
-
-Then create the `<ProjectName>` branch on `.localSpec`, `.claude` and `.dev`
-(from their shared `main`) and write that project's own
-`.agent/.local/.localSpec/AdditionalSpecs.md`, `AGENT.md`, and `audit.md`. Planning
-goes in the private `.dev` mount, at `.agent/.local/.dev/DevTickets/` — keeping
-the project's own repository free of tickets, so what you publish is the
-product and not the workshop. Run `cgitsync initialise` and the mounts land
-alongside the ones above; `.gitignore` is updated for you.
-
-**Next:** [Tutorial 5 — Private repos: the ones that configure your
-project](05_private_repos.md) picks up exactly where
-the three mounts above leave off: what `private = true` protects, what it
-does *not* protect, and the safe order for committing and pushing a change
-that touches a shared mount.
+With a `.cgs` of your own, pass it as `--cgs FILE`; the rest is unchanged.
+`examples/cawaqsviz.cgs` is a hand-written `.cgs` for the same topology. To
+mount shared documents or agent instructions as well, see
+[Tutorial 5](05_private_repos.md).

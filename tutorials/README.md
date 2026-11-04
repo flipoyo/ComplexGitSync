@@ -14,8 +14,9 @@ tutorials instead walk one topology end to end,
 so a first-time user sees the full lifecycle before hand-authoring their
 own `.cgs`.
 
-**What you will find.** Eight tutorials, each building on the last, a
-reminder that every command shown is a Pixi task, which shell they
+**What you will find.** Eight tutorials, each building on the last and
+each opening with a *Getting started* section — the commands alone, in about
+twenty lines, for a quick run — a reminder that every command shown is a Pixi task, which shell they
 assume (bash, which on Windows is Git Bash) and how to adapt another, and
 why they clone over HTTPS.
 
@@ -45,7 +46,8 @@ graph LR
 ---
 
 Eight worked examples, ordered from the simplest to the most advanced. Do
-them in order — each one builds on the last:
+them in order — each one builds on the last. Each is about 200 lines, and its
+*Getting started* section is enough to run it once without reading the rest:
 
 1. **[01 — Your First Multi-Repo Workspace](01_first_multi_repo_workspace.md)**
    Install a small sandbox tree (`CGSil1`) in either of the two modes —
@@ -63,7 +65,7 @@ them in order — each one builds on the last:
    project's own build.
 4. **[04 — Adopting a Real Project: CaWaQS-Viz](04_adopting_a_real_project.md)**
    The messiest starting point: a real project (`cawaqsviz`) with no `.cgs`
-   of its own that still uses git submodules — one real, verified, ten-step
+   of its own that still uses git submodules — one real, verified, seven-step
    procedure from `git clone` to a pushed, `READY` tree.
 5. **[05 — Private repos: the ones that configure your project](05_private_repos.md)**
    Repositories you share between projects: how `private = true` declares

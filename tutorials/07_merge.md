@@ -1,4 +1,4 @@
-# Tutorial 7 of 7 — Merging a tree: scopes, conflicts, the memory, and what to do afterwards
+# Tutorial 7 of 8 — Merging a tree: scopes, conflicts, the memory, and what to do afterwards
 
 *Created: 2026-10-09*
 
@@ -15,9 +15,9 @@ are spread over [Tutorial 5](05_private_repos.md), [Tutorial 6](06_memory.md)
 and the user guide; this is the one place that teaches merge from start to
 finish.
 
-**What you will find.** What a tree merge is (§1), the preview (§2), the
-scopes (§3), conflicts and `--resolve` (§4), the memory (§5), unrelated
-histories (§6), the steps after the merge (§7), and a summary table (§8).
+**What you will find.** A quick start, what a tree merge is (§1), the
+preview (§2), the scopes (§3), conflicts and `--resolve` (§4), the memory
+(§5), unrelated histories (§6), what comes after (§7), and a summary (§8).
 
 **Who it is for.** Anyone who has a tree, private repositories
 ([Tutorial 5](05_private_repos.md)) and a memory ([Tutorial 6](06_memory.md)).
@@ -39,11 +39,27 @@ graph LR
 
 ---
 
-> **Every command below is a Pixi task.** Run `pixi install` once per
-> checkout, then always call the CLI as `pixi run cgitsync ...`.
+## Getting started
 
-The examples merge the project branch `feature` into `main`: a branch
-started as in [Tutorial 2](02_working_with_a_tree.md), step 2.
+Merge a finished branch `feature` (started as in
+[Tutorial 2](02_working_with_a_tree.md), step 2) into `main`, across the
+whole tree, private repositories included:
+
+```bash
+pixi run cgitsync merge feature --into main --dry-run   # the plan; nothing changes
+pixi run cgitsync merge feature --into main --all       # all or nothing
+pixi run cgitsync status                                # errors=0
+pixi run cgitsync push --private && pixi run cgitsync push
+pixi run cgitsync branch close feature                  # keep what only feature held
+```
+
+The dry run names, per repository, the branch it would merge and anything
+that needs attention. The merge checks every repository before touching any:
+if one would conflict, nothing is merged and each conflict is named; §4 says
+how to go on. The memory is never merged file by file; the target's is kept
+whole (§5). Every command is a Pixi task: `pixi run cgitsync ...`.
+
+---
 
 ## 1. What a tree merge is
 
@@ -173,12 +189,10 @@ built. In a tree with none they are refused and change nothing.
 A closed branch's memory is safe once merged: it is reachable from the target,
 and `branch close` records anything it alone holds before renaming it.
 
-Afterwards `branch list` (and `status`) end with a line for each branch that ended
-some other way than this one: `error: vanished` for a branch pushed once and since
-gone from origin without a trace in the ledger, say after someone deleted it with
-plain Git. `info: closed branch 'feature'` is the healthy end you just made. Nothing
-is recorded by the listing; `branch list --json` hands each finding over for gx4g
-to record.
+`branch list` (and `status`) then show `info: closed branch 'feature'`, the
+healthy end, and `error: vanished` for any branch gone from origin with no trace
+in the ledger. The listing records nothing; `branch list --json` hands each
+finding to gx4g.
 
 ## 8. Summary
 
