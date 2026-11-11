@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -67,9 +68,10 @@ def test_the_checked_in_examples_follow_the_rule():
 
     for path in sorted(examples.glob("*.cgs")):
         CgsDocument.from_toml(path)  # refused by name if it were concerned and wrong
-    assert NamedCgs.parse(examples / "gx4g-dev.cgs") == ("gx4g", "dev")
-    for level in ("opx", "dev", "usr", "pub"):
-        assert NamedCgs.parse(examples / f"complexgitsync-{level}.cgs") == ("complexgitsync", level)
+    # The alpha series has one branch and no level file: "alpha" has five characters, so no name is cut from it.
+    for name in ("cgitsync-alpha.cgs", "gx4g-alpha.cgs"):
+        assert NamedCgs.parse(examples / name) is None
+    assert not [p.name for p in examples.glob("*.cgs") if re.fullmatch(r".+-(opx|dev|usr|pub)\.cgs", p.name)]
 
 
 def test_a_repository_without_the_projects_fallback_branch_falls_to_main(tmp_path):

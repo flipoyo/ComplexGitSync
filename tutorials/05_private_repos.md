@@ -128,18 +128,18 @@ private one if needed, and `branch create` does the same without moving.
 ## 4. Declaring them
 
 ```toml
-project = { name = "ComplexGitSync", default_branch = "main" }
+project = { name = "ComplexGitSync", default_branch = "CGS-ALPHA" }
 
 repos = [
-    { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "main" },
-    { repository = "github:flipoyo/DocComplexGitSync", fallback_branch = "main", relative_path = "docs", nested_config = "auto" },
+    { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "CGS-ALPHA", nested_config = "disabled" },
+    { repository = "github:flipoyo/DocComplexGitSync", relative_path = "docs", fallback_branch = "CGS-ALPHA", nested_config = "disabled" },
     { repository = "github:flipoyo/.ticketing", relative_path = ".agent/.distant/ticket", default_branch = "main", fallback_branch = "main", private = true },
     { repository = "github:flipoyo/DevSpec", relative_path = ".agent/.distant/dev-sync", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
-    { repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", default_branch = "ComplexGitSync", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", fallback_branch = "main", private = true, writable = true },
 ]
 ```
 
-An excerpt of [`examples/complexgitsync-dev.cgs`](../examples/complexgitsync-dev.cgs);
+An excerpt of [`examples/cgitsync-alpha.cgs`](../examples/cgitsync-alpha.cgs), which types no branch for a private, writable entry;
 the user install, `install.cgs`, stops after the first two entries. For a
 `private, writable` entry the branch is **computed**: the project's name on
 `main`, `<project>_<branch>` elsewhere. A `default_branch` that is neither

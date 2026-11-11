@@ -659,12 +659,13 @@ class TestCgsDocumentValid:
         """The developer install adds every agentic skill (AgentSkillsSplit:
         ticket, dev-sync, documentation, .dev),
         plus .localSpec/.claude and the project's own memory
-        (memory-dev_1-2_MemoryOnboarding, 2026-09-17)."""
+        (memory-dev_1-2_MemoryOnboarding, 2026-09-17), and since the alpha
+        standard the register (.omniscience) and the memory's .self-history."""
         repo_root = Path(__file__).parent.parent.parent
-        doc = CgsDocument.from_toml(repo_root / "examples" / "complexgitsync-dev.cgs")
+        doc = CgsDocument.from_toml(repo_root / "examples" / "cgitsync-alpha.cgs")
         assert doc.project_name == "ComplexGitSync"
         assert doc.default_branch == "CGS-ALPHA"  # CGS-ALPHA first, then main (owner, 2026-10-31)
-        assert len(doc.repos) == 9
+        assert len(doc.repos) == 11
 
     def test_from_toml_parses_doccomplexgitsync_example(self):
         examples = Path(__file__).parent.parent.parent / "examples"

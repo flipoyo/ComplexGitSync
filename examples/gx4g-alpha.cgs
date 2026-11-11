@@ -1,0 +1,36 @@
+# The workspace of GX4G: the one tree the Owner installs, project gx4g, on CGS-ALPHA, the one branch of the alpha series.
+# No level branch (opx, dev, usr) and no level file: the standard of atCGS's examples/cgs-alpha.cgs.
+# The name is not a level file: cgitsync reads <yyyy>-<xxx>.cgs as branch xxx only for a three-character xxx,
+# and "alpha" has five.
+#     cd ComplexGitSync && pixi run cgitsync bootstrap ../examples/gx4g-alpha.cgs gx4g
+# bootstrap clones into an isolated $HOME/.cgs/gx4g-<timestamp>/gx4g, never into this checkout.
+# ComplexGitSync is mounted with its own tree (examples/cgitsync-alpha.cgs).
+# Every private, writable mount falls back to main and derives its branch from the tree
+# (git_branch.private_local_branch), so no branch is typed here.
+# .agent/.distant: .ticketing, DevSpec, DocSpec, shared and read-only.
+# .agent/.local: .dev, .localSpec, .claude, GX4G's own, writable.
+# .omniscience: the register, held by the gate at the root, private/local; a USER tree never mounts it.
+# A nested request the tree already holds is denied before cloning (IntegrityMount).
+# Kept in examples/: nested_config = "auto" refuses a root holding two .cgs files (install.cgs).
+
+environment_root = "root"
+environment = { tools = { python = "3.11", git = "2.30", pixi = "0.65" }, manifests = ["pixi.toml"] }
+
+project = { name = "gx4g", default_branch = "CGS-ALPHA" }
+
+repos = [
+    { repository = "codeberg:gx4g/gx4g", fallback_branch = "main" },
+    { repository = "github:flipoyo/ComplexGitSync", relative_path = "ComplexGitSync", fallback_branch = "CGS-ALPHA", nested_config = "examples/cgitsync-alpha.cgs" },
+
+    { repository = "codeberg:gx4g/.omniscience", relative_path = ".omniscience", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
+
+    # .distant — shared, read-only, the same for every conforming project
+    { repository = "github:flipoyo/.ticketing", relative_path = ".agent/.distant/ticket", default_branch = "main", fallback_branch = "main", private = true },
+    { repository = "github:flipoyo/DevSpec", relative_path = ".agent/.distant/dev-sync", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+    { repository = "github:flipoyo/DocSpec", relative_path = ".agent/.distant/documentation", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+
+    # .local — this project's own, writable
+    { repository = "github:flipoyo/.dev", relative_path = ".agent/.local/.dev", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.claude", relative_path = ".agent/.local/.claude", fallback_branch = "main", private = true, writable = true },
+]

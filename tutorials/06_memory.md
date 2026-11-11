@@ -100,7 +100,7 @@ runs `gh` (or `glab`, `tea`); a missing or signed-out tool is named, and a
 repository already there gives `created=already-there`.
 
 **Step 2 — declare it**: `pixi run cgitsync memory mount --cgs
-examples/complexgitsync-dev.cgs` adds one line to `repos`, leaving the rest
+examples/cgitsync-alpha.cgs` adds one line to `repos`, leaving the rest
 of the file as it was:
 
 ```

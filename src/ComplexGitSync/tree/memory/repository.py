@@ -303,8 +303,8 @@ class CgsEntryEditor:
 
         **The file is edited, not regenerated.** A `.cgs` is hand-written and
         its comments are the half a person reads —
-        ``examples/complexgitsync-dev.cgs`` is thirty lines of explanation and
-        five of ``repos``. Re-serialising it through ``cgs_format.to_cgs()``
+        ``examples/cgitsync-alpha.cgs`` is twenty lines of explanation and
+        eleven of ``repos``. Re-serialising it through ``cgs_format.to_cgs()``
         would produce a valid file that had lost every one of them. So the entry
         is spliced in before the array's closing bracket and everything else is
         left byte for byte as it was.
