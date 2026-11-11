@@ -1,71 +1,42 @@
-[project]
-name = "ComplexGitSync"
-default_branch = "CGS-ALPHA"
+# The workspace of ComplexGitSync for its development: the one tree the Owner installs,
+# project ComplexGitSync, on CGS-ALPHA, the one branch of the whole alpha series.
+# No level branch (opx, dev, usr) and no level file: the standard of atCGS's examples/cgs-alpha.cgs.
+# The name is not a level file: cgitsync reads <yyyy>-<xxx>.cgs as branch xxx only for a
+# three-character xxx, and "alpha" has five.
+#     pixi run cgitsync bootstrap examples/cgitsync-alpha.cgs ComplexGitSync
+#
+# Every private, writable mount falls back to main and derives its branch from the tree
+# (git_branch.private_local_branch), so no branch is typed here:
+#   .agent/.local      .dev, .localSpec, .claude          ComplexGitSync_CGS-ALPHA
+#   .cgitsync/.memory  the memory, and its .self-history  ComplexGitSync_ComplexGitSync_CGS-ALPHA
+#                      (a bootstrap is a twin, so its memory is filed under ComplexGitSync)
+#   .omniscience       the ledger                         ComplexGitSync_CGS-ALPHA
+# .cgitsync is cgitsync's own directory, not a mount; only its .memory is (cgitsync >= 8.7.1).
+# The memory's nested config-memory.cgs is disabled: .self-history is declared here, once,
+# since a nested request the tree already holds is denied (IntegrityMount).
+# The planning surface (short tickets, planning tickets, archive) is .agent/.local/.dev/DevTickets.
+#   .agent/.distant    .ticketing, DevSpec, DocSpec, shared and read-only, on main
 
-[[repos]]
-repository = "github:flipoyo/ComplexGitSync"
-fallback_branch = "CGS-ALPHA"
+environment_root = "root"
+environment = { tools = { python = "3.11", git = "2.30", pixi = "0.65" }, manifests = ["pixi.toml"] }
 
-[[repos]]
-repository = "github:flipoyo/DevSpec"
-default_branch = "main"
-private = true
-relative_path = ".agent/.distant/dev-sync"
+project = { name = "ComplexGitSync", default_branch = "CGS-ALPHA" }
 
-[[repos]]
-repository = "github:flipoyo/DocSpec"
-default_branch = "main"
-private = true
-relative_path = ".agent/.distant/documentation"
+repos = [
+    { repository = "github:flipoyo/ComplexGitSync", fallback_branch = "CGS-ALPHA", nested_config = "disabled" },
+    { repository = "github:flipoyo/DocComplexGitSync", relative_path = "docs", fallback_branch = "CGS-ALPHA", nested_config = "disabled" },
 
-[[repos]]
-repository = "github:flipoyo/.ticketing"
-default_branch = "main"
-private = true
-relative_path = ".agent/.distant/ticket"
+    { repository = "github:flipoyo/omniscience", relative_path = ".omniscience", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
+    { repository = "github:flipoyo/.memory", relative_path = ".cgitsync/.memory", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
+    { repository = "github:flipoyo/.self-history", relative_path = ".cgitsync/.memory/.self-history", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
 
-[[repos]]
-repository = "github:flipoyo/.claude"
-default_branch = "ComplexGitSync_CGS-ALPHA"
-fallback_branch = "ComplexGitSync_CGS-ALPHA"
-private = true
-relative_path = ".agent/.local/.claude"
+    # .distant — shared, read-only, the same for every conforming project
+    { repository = "github:flipoyo/.ticketing", relative_path = ".agent/.distant/ticket", default_branch = "main", fallback_branch = "main", private = true },
+    { repository = "github:flipoyo/DevSpec", relative_path = ".agent/.distant/dev-sync", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
+    { repository = "github:flipoyo/DocSpec", relative_path = ".agent/.distant/documentation", default_branch = "main", fallback_branch = "main", nested_config = "disabled", private = true },
 
-[[repos]]
-repository = "github:flipoyo/.dev"
-default_branch = "ComplexGitSync_CGS-ALPHA"
-fallback_branch = "ComplexGitSync_CGS-ALPHA"
-private = true
-relative_path = ".agent/.local/.dev"
-
-[[repos]]
-repository = "github:flipoyo/.localSpec"
-default_branch = "ComplexGitSync_CGS-ALPHA"
-fallback_branch = "ComplexGitSync_CGS-ALPHA"
-private = true
-relative_path = ".agent/.local/.localSpec"
-
-[[repos]]
-repository = "github:flipoyo/.memory"
-default_branch = "ComplexGitSync_ComplexGitSync_CGS-ALPHA"
-fallback_branch = "ComplexGitSync_ComplexGitSync_CGS-ALPHA"
-private = true
-relative_path = ".cgitsync/.memory"
-
-[[repos]]
-repository = "github:flipoyo/.self-history"
-default_branch = "ComplexGitSync_ComplexGitSync_CGS-ALPHA"
-fallback_branch = "ComplexGitSync_ComplexGitSync_CGS-ALPHA"
-private = true
-relative_path = ".cgitsync/.memory/.self-history"
-
-[[repos]]
-repository = "github:flipoyo/omniscience"
-default_branch = "main"
-private = true
-relative_path = ".omniscience"
-
-[[repos]]
-repository = "github:flipoyo/DocComplexGitSync"
-fallback_branch = "CGS-ALPHA"
-relative_path = "docs"
+    # .local — this project's own, writable
+    { repository = "github:flipoyo/.dev", relative_path = ".agent/.local/.dev", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.localSpec", relative_path = ".agent/.local/.localSpec", fallback_branch = "main", private = true, writable = true },
+    { repository = "github:flipoyo/.claude", relative_path = ".agent/.local/.claude", fallback_branch = "main", private = true, writable = true },
+]
