@@ -22,6 +22,10 @@ _SPEC = importlib.util.spec_from_file_location("spec_tree", _SCRIPT_PATH)
 spec_tree = importlib.util.module_from_spec(_SPEC)
 assert _SPEC.loader is not None
 sys.modules[_SPEC.name] = spec_tree
+# The spec tree lives in private mounts. Where they are absent (the CI job that runs the golden vectors on a plain clone,
+# a user's tree) importing the script would end collection of the whole suite, not skip these tests (LinkAtCGS §8).
+if not (_SCRIPT_PATH.parents[1] / ".agent" / ".local" / ".localSpec" / "AgenticManifest.md").is_file():
+    pytest.skip("the spec tree is private: .agent/.local/.localSpec is not mounted here", allow_module_level=True)
 _SPEC.loader.exec_module(spec_tree)
 
 

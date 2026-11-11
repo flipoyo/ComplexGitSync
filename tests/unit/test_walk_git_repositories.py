@@ -9,6 +9,8 @@ stack. ``max_depth`` stays available as an opt-in bound.
 from __future__ import annotations
 
 import os
+import sys
+import traceback
 from pathlib import Path
 
 from ComplexGitSync.orchestre import _walk_git_repositories
@@ -82,11 +84,18 @@ class TestDeepTreeDoesNotRecurse:
         # is itself recursive in the stdlib and would hit the same wall.
         deep_root = tmp_path / "deep"
         deep_root.mkdir()
+        # As deep as the platform's path limit lets a path go (macOS: 1024 bytes, Windows: 260), at most 1500 levels, and the
+        # recursion limit is set under that depth, so a recursive walk would still fail where the real one must not.
+        path_limit = 255 if os.name == "nt" else os.pathconf(tmp_path, "PC_PATH_MAX")
+        depth = min(1500, (path_limit - len(str(deep_root)) - 40) // 2)
+        assert depth >= 40, f"no room for a deep tree under {deep_root}"
         deep = deep_root
-        for _ in range(1500):
+        for _ in range(depth):
             deep = deep / "d"
             os.mkdir(deep)
         _make_git_dir(deep)
+        limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(len(traceback.extract_stack()) + depth // 2)
 
         try:
             found, stopped_early = _walk_git_repositories(tmp_path)
@@ -94,6 +103,7 @@ class TestDeepTreeDoesNotRecurse:
             assert deep in found
             assert stopped_early is False
         finally:
+            sys.setrecursionlimit(limit)
             # shutil.rmtree (what pytest's own tmp_path cleanup uses) is
             # itself recursive and would hit the same wall on the way out.
             _iterative_rmtree(deep_root)

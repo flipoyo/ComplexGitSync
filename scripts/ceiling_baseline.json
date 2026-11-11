@@ -12,7 +12,7 @@
     },
     "cli/__init__.py": {
       "internal_imports": 13,
-      "loc": 97,
+      "loc": 99,
       "public_symbols": 2
     },
     "cli/_shared.py": {
