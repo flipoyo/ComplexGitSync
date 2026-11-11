@@ -63,7 +63,7 @@ def test_every_leaf_command_of_the_real_parser_has_one_row(found):
         sub = subparsers(child)
         expected += len(sub.choices) if sub else 1
 
-    assert len(found) == expected == 65  # 66 before CliReduction merged submodules report into import --dry-run
+    assert len(found) == expected == 68  # 66 before CliReduction merged submodules report into import --dry-run; 3 more with `version`
     assert len({leaf.path for leaf in found}) == len(found)
 
 
@@ -120,6 +120,7 @@ KNOWN_PROVIDER_CALLS = {
     ("orchestre/discovery_commands", "run_tool"): 1,
     ("orchestre/memory_setup", "creation_plan"): 1,
     ("tree/tree_env", "run_tool"): 2,
+    ("tree/operations/version", "run_tool"): 1,  # `pixi`, a tool and never a provider (TreeVersion); the same kind as `ssh -V`
 }
 
 

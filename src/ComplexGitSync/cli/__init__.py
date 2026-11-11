@@ -36,6 +36,8 @@ from . import _shared, configuration, environment, expert, help_format, minimali
 from .cgshome_guard import CgshomeGuard
 from .exit_codes import EXIT_OK, diagnostic, exit_code_for
 from .minimalist import _validate_initialise_definition
+from .version_command import COMMANDS as _VERSION_COMMANDS
+from .version_command import register_parsers as _register_version
 
 _PLANNED_COMMANDS: dict[str, str] = {
     **minimalist.COMMANDS,
@@ -44,6 +46,7 @@ _PLANNED_COMMANDS: dict[str, str] = {
     **environment.COMMANDS,
     **help_format.COMMANDS,
     **unlock.COMMANDS,
+    **_VERSION_COMMANDS,
 }
 
 
@@ -63,6 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     configuration.register_parsers(subparsers, non_negative_int=_shared._non_negative_int)
     environment.register_parsers(subparsers)
     unlock.register_parsers(subparsers)
+    _register_version(subparsers)
     help_format.register(subparsers, parser)
     help_format.apply(parser)
     return parser

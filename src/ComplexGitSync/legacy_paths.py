@@ -66,7 +66,6 @@ MOVED_PATHS: dict[str, str] = {
     "orchestre.omniscience_reader": "omniscience.omniscience_reader",
     "orchestre.omniscience_view": "omniscience.omniscience_view",
     "paths": "tree.paths",
-    "project_version": "tree.project_version",
     "provider": "git_repo.provider",
     "registry": "tree.registry",
     "settings": "tree.settings",

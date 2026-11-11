@@ -4,9 +4,9 @@ Ring: 1
 Contract: decide whether a message a person or an agent wrote by hand keeps
     the shape ``AgentConduct.md`` §2 gives it, and say which rule it broke.
     Reads the tree's ``pyproject.toml`` and, for the version, its
-    ``pixi.toml`` (``ProjectVersion``); runs no Git; never rewrites a
+    ``pixi.toml`` (``VersionScheme``); runs no Git; never rewrites a
     message -- a validator that rewrites is a second author.
-Imports: errors, project_version
+Imports: errors, version_scheme
 
 Commit ``701a98f`` reached this project's public remote with every
 backtick-quoted phrase replaced by whatever the shell had substituted for it,
@@ -23,7 +23,7 @@ holds both a ``pyproject.toml`` naming a project and version, and the
 commits exactly as before. The prefix is accepted under the project's
 packaging name *or* its console-script name, because ``pyproject.toml`` says
 ``ComplexGitSync`` and this project writes ``cgitsync-5.2.1``. The version is
-the one a release is tagged with (``project_version.py``), read from
+the one a release is tagged with (``version_scheme.py``), read from
 ``pixi.toml`` first and from ``pyproject.toml`` only when that declares none.
 
 **What it can and cannot see.** A message the shell has already mangled
@@ -49,7 +49,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..errors import GitSyncError
-from .project_version import ProjectVersion
+from .version_scheme import VersionScheme
 
 __all__ = ["CommitMessagePolicy"]
 
@@ -96,7 +96,7 @@ class CommitMessagePolicy:
         except (OSError, tomllib.TOMLDecodeError):
             return None
         name = project.get("name")
-        version = ProjectVersion.read(root) or project.get("version")
+        version = VersionScheme.read(root) or project.get("version")
         if not isinstance(name, str) or not isinstance(version, str) or not name or not version:
             return None
         scripts = project.get("scripts", {})

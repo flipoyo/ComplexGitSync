@@ -52,7 +52,7 @@ UNLOCKED_WRITERS = {
     "initialise", "initialise_cgs", "initialise_cgs_document", "bootstrap", "clone_cgs", "configure", "import_submodules",
     "init_from_submodules", "launch_state", "freeze_state", "repo_create", "memory_clone", "memory_setup_decline",
     "omniscience_register", "omniscience_observe", "omniscience_mount", "write_gts_snapshot", "discover_repos",
-    "add_memory_repo_cgs",
+    "add_memory_repo_cgs", "version_init", "version_bump",
 }
 
 #: Leaves whose write or read depends on a flag the client method cannot show, hand-checked against the handler.

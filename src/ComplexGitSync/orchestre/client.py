@@ -5,7 +5,7 @@ Contract: hold one client's state (registry, runner, clock, the last results a
     caller reads back) and expose every public method unchanged, each
     delegating to the collaborator that owns it; keep the private helpers that
     several collaborators share, and the ones tests reach through the client.
-Imports: auth_hints, autofix, cgs_format, clone_guard, command_run_logger, discovery, discovery_commands, document_loader, environment_commands, errors, git_branch, git_probes, git_repo, git_runner, git_tree, git_tree_branch, gitignore_sync, installer, memory, memory_commands, memory_setup, operations, orchestre, release_commands, reporting, reports, runtime_state_store, status_render, tree_commands, tree, universal_clock, workspace_locking
+Imports: auth_hints, autofix, cgs_format, clone_guard, command_run_logger, discovery, discovery_commands, document_loader, environment_commands, errors, git_branch, git_probes, git_repo, git_runner, git_tree, git_tree_branch, gitignore_sync, installer, memory, memory_commands, memory_setup, operations, orchestre, release_commands, reporting, reports, runtime_state_store, status_render, tree_commands, tree, universal_clock, version_commands, workspace_locking
 """
 
 from __future__ import annotations
@@ -106,6 +106,7 @@ from .reports import (
 )
 from .runtime_state_store import RuntimeStateStore
 from .tree_commands import TreeCommands
+from .version_commands import VersionCommands
 from .workspace_locking import locks_writes, unlock_workspace
 
 
@@ -204,6 +205,7 @@ class ComplexGitSyncClient:
         self._tree_commands = TreeCommands(self)
         self._memory_commands = MemoryCommands(self)
         self._release_commands = ReleaseCommands(self)
+        self._version_commands = VersionCommands(self)
         self._omniscience_commands = OmniscienceCommands(self)
         self._integrity_control = IntegrityControl(self)
         self._omniscience_observer = OmniscienceObserver(self)
@@ -669,6 +671,18 @@ class ComplexGitSyncClient:
     ) -> WorkingGitTree:
         """Release the tree, tagged ``<project-name>-<version or number>`` or ``--force-tag``'s."""
         return self._release_commands.freeze_release(commit_message, force_tag=force_tag, output_gts=output_gts, stage_all=stage_all, force_access_protocol=force_access_protocol)
+
+    def version_diagnose(self) -> tuple[Any, ...]:
+        """How each repository is versioned (a ``VersionRow`` each), in a DEV or OPX tree; reads only."""
+        return self._version_commands.diagnose()
+
+    def version_init(self, repositories: Sequence[str] = (), *, version: str = "0.1.0") -> tuple[Any, ...]:
+        """Install *version* with Pixi in each named repository that has none; nothing is committed."""
+        return self._version_commands.init(repositories, version=version)
+
+    def version_bump(self, level: str = "patch", *, dry_run: bool = False) -> tuple[Any, ...]:
+        """Bump each modified repository, leaf first, then the root, by *level* (patch, minor, major); nothing is committed."""
+        return self._version_commands.bump(level, dry_run=dry_run)
 
     def next_release_tag(self, force_tag: str | None = None, message: str | None = None) -> dict[str, str]:
         """The tag ``release freeze`` would use now, where its suffix came from, and the subject *message* would give it."""

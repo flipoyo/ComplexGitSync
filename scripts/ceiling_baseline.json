@@ -12,7 +12,7 @@
     },
     "cli/__init__.py": {
       "internal_imports": 13,
-      "loc": 93,
+      "loc": 97,
       "public_symbols": 2
     },
     "cli/_shared.py": {
@@ -103,7 +103,7 @@
     "git_repo/git_branch.py": {
       "internal_imports": 2,
       "loc": 469,
-      "public_symbols": 20
+      "public_symbols": 21
     },
     "git_repo/git_repo.py": {
       "internal_imports": 0,
@@ -217,7 +217,7 @@
     },
     "orchestre/client.py": {
       "internal_imports": 69,
-      "loc": 1407,
+      "loc": 1418,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -534,11 +534,6 @@
       "internal_imports": 7,
       "loc": 269,
       "public_symbols": 2
-    },
-    "tree/project_version.py": {
-      "internal_imports": 0,
-      "loc": 37,
-      "public_symbols": 1
     },
     "tree/registry.py": {
       "internal_imports": 43,

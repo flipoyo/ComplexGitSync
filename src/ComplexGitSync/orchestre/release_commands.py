@@ -5,7 +5,7 @@ Contract: name a release ``<project-name>-<suffix>``, freeze it across the
     tree with the root's annotated tag carrying the project-scope State, list
     the project's releases from the ledger and the root's tags, and put a
     tree back at one, in place or in a new workspace.
-Imports: __build__, __version__, client, errors, git_repo, git_tree, git_tree_branch, gts_document, tree, operations, project_version, registry
+Imports: __build__, __version__, client, errors, git_repo, git_tree, git_tree_branch, gts_document, tree, operations, version_scheme, registry
 
 **Where a release lives** (ReleaseCommand D1, D2). The ledger is the
 release register and holds the full State, but a USER tree's ledger never
@@ -42,8 +42,8 @@ from ..tree.memory.pending import PendingMemory
 from ..tree.memory.repository import MEMORY_SUBDIR_NAME, MOUNT_PATH
 from ..tree.memory.states import MemoryStates
 from ..tree.operations import BranchOperation
-from ..tree.project_version import ProjectVersion
 from ..tree.registry import RegistryTranslator
+from ..tree.version_scheme import VersionScheme
 from .memory_chapters import MemoryChapters
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -96,7 +96,7 @@ class ReleaseCommands:
     def next_release_tag(self, force_tag: str | None = None, message: str | None = None) -> dict[str, str]:
         """The tag ``release freeze`` would use now: ``tag``, ``version``, ``source``, and the ``subject`` of *message* when given."""
         project = self.project_name()
-        version = ProjectVersion.read(self._root().absolute_path)
+        version = VersionScheme.read(self._root().absolute_path)
         tags = [row["tag"] for row in self.list_releases()]
         suffix, source = self.suffix(project, force_tag=force_tag, version=version, tags=tags)
         return {"tag": f"{project}-{suffix}", "project": project, "version": version or "", "source": source, **({"subject": self.subject(message, project)} if message else {})}

@@ -372,18 +372,14 @@ LEVEL_FALLBACK = "CGS-ALPHA"
 """The branch every repository of a level tree falls back to (LinkAtCGS §7.1, ``tree/named_cgs.py``)."""
 
 
-def behind_gate(entry: WorkingRepo, *, project_name: str | None, root_fallback: str | None) -> bool:
-    """Whether *entry* is ComplexGitSync mounted behind another project's gate (BehindGate, Q1).
+def foreign_tool(entry: WorkingRepo, *, project_name: str | None) -> bool:
+    """Whether *entry* is ComplexGitSync mounted as a tool of another project, so none of this tree's commands owns it."""
+    return not entry.effective_private and entry.repo_name == TWIN_BRANCH_OWNER and project_name not in (None, TWIN_BRANCH_OWNER)
 
-    A level tree (its root falls back to :data:`LEVEL_FALLBACK`, as every ``yyyy-xxx.cgs`` does) of a
-    project other than ComplexGitSync, and *entry* a project repository named ComplexGitSync: its
-    branch is that project's, ``<project>_<branch>``, so no two projects' levels share one branch of
-    the tool. *entry* is never the root; the caller knows which that is.
-    """
-    return (
-        not entry.effective_private and root_fallback == LEVEL_FALLBACK and entry.repo_name == TWIN_BRANCH_OWNER
-        and project_name not in (None, TWIN_BRANCH_OWNER)
-    )
+
+def behind_gate(entry: WorkingRepo, *, project_name: str | None, root_fallback: str | None) -> bool:
+    """ComplexGitSync behind another project's gate (BehindGate, Q1): a level tree's :func:`foreign_tool`, on ``<project>_<branch>``."""
+    return root_fallback == LEVEL_FALLBACK and foreign_tool(entry, project_name=project_name)
 
 
 def is_twin_branch(project_name: str, branch_name: str) -> bool:
@@ -565,6 +561,7 @@ __all__ = [
     "LEVEL_FALLBACK",
     "TWIN_BRANCH_OWNER",
     "behind_gate",
+    "foreign_tool",
     "private_local_branch",
     "is_twin_branch",
     "structural_name_problem",

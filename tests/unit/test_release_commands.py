@@ -11,7 +11,7 @@ import pytest
 from ComplexGitSync.git_repo.git_repo import WorkingRepo
 from ComplexGitSync.orchestre.release_commands import ReleaseCommands
 from ComplexGitSync.tree.git_tree import WorkingGitTree
-from ComplexGitSync.tree.project_version import ProjectVersion
+from ComplexGitSync.tree.version_scheme import VersionScheme
 
 
 @pytest.mark.parametrize(
@@ -27,11 +27,11 @@ from ComplexGitSync.tree.project_version import ProjectVersion
 )
 def test_the_version_is_read_from_pixi_toml_as_written(tmp_path, manifest, expected):
     (tmp_path / "pixi.toml").write_text(manifest)
-    assert ProjectVersion.read(tmp_path) == expected
+    assert VersionScheme.read(tmp_path) == expected
 
 
 def test_no_manifest_means_no_version(tmp_path):
-    assert ProjectVersion.read(tmp_path) is None
+    assert VersionScheme.read(tmp_path) is None
 
 
 def test_a_forced_tag_comes_first_and_is_prefixed_once():
