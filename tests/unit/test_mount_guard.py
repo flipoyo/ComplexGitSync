@@ -98,7 +98,6 @@ def test_a_nested_parents_private_repository_is_on_parent_underscore_project(tmp
 
     assert own.target_ref_name == "ComplexGitSync_gx4g"
     assert GitTreeBranches(registry).target(own, "feature").name == "ComplexGitSync_gx4g_feature"
-    assert MountGuard.base(registry, own, "gx4g") == "ComplexGitSync_gx4g"
 
 
 def test_the_projects_own_private_repository_stays_on_the_project_branch(tmp_path):
@@ -110,7 +109,6 @@ def test_the_projects_own_private_repository_stays_on_the_project_branch(tmp_pat
 
     assert dev.target_ref_name == "gx4g"
     assert MountGuard.owner(registry, dev) is None
-    assert MountGuard.base(registry, dev, "gx4g") == "gx4g"
 
 
 def test_what_a_private_holder_nests_stays_on_the_project_branch(tmp_path):

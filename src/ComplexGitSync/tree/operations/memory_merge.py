@@ -115,7 +115,7 @@ class MemoryMergeOperation:
 
     @staticmethod
     def tree_status(
-        repo: WorkingRepo, git_runner: GitRunner, source: str, target: str | None = None
+        repo: WorkingRepo, git_runner: GitRunner, source: str, target: str | None = None, *, fast_forward: bool = False
     ) -> str | None:
         """What the histories alone say about merging *source* into *target*, or ``None``.
 
@@ -127,7 +127,7 @@ class MemoryMergeOperation:
           chain, and two of them collide on the same numbered files or
           interleave into a chain that no longer verifies, related or not.
           ``"kept"`` means its own side stays whole and *source* is recorded
-          as history; ``"up-to-date"`` means *source* is already part of it.
+          as history; ``"up-to-date"`` means *source* is already part of it; ``"fast-forward"`` (asked for, TwinMemoryMerge D1) that *target* is behind it.
         - **Any other repository** whose two branches share no commit is
           ``"unrelated"``: a refusal that names the cause, not a conflict that
           names no file and invites ``--resolve``.
@@ -145,7 +145,7 @@ class MemoryMergeOperation:
                     f"{repo.name}: the memory is on no branch, so there is no memory to keep. Check out a branch first."
                 )
             decided = MemoryMergeOperation.plan(git_runner, path, source, into, MemoryMergeOperation.KEEP_TARGET, remote=remote)
-            return "up-to-date" if decided.status == "already-merged" else "kept"
+            return "up-to-date" if decided.status == "already-merged" else "fast-forward" if (fast_forward and decided.status == "merge" and git_runner.is_ancestor(path, decided.target_tip, decided.source_tip)) else "kept"
         # Both sides through the one resolver: a branch held only as `<remote>/<name>` is a real history, and a
         # bare name Git cannot read is not an absent one (MergeIntoLocalTarget).
         if git_runner.merge_base(path, git_runner.resolve_merge_ref(path, into, remote=remote) if into else "HEAD", git_runner.resolve_merge_ref(path, source, remote=remote)) is None:

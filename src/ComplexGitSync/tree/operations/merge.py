@@ -2,7 +2,7 @@
 
 Ring: 2
 Contract: Merge a branch across the tree, with a preflight over every repository first.
-Imports: branch, errors, git_branch, git_repo, git_tree, git_tree_branch, memory_merge, merge_target, orchestre, preflight
+Imports: branch, errors, git_repo, git_tree, git_tree_branch, memory_merge, merge_target, orchestre, preflight
 """
 
 from __future__ import annotations
@@ -14,9 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ...errors import GitSyncError
-from ...git_repo.git_branch import (
-    resolve_propagated_ref,
-)
 from ...git_repo.git_repo import (
     RefKind,
     RepoScope,
@@ -26,8 +23,7 @@ from ..git_tree import (
     WorkingGitTree,
     iter_tree_leaf_first,
 )
-from ..git_tree_branch import tree_project_name
-from ..mount_guard import MountGuard
+from ..git_tree_branch import GitTreeBranches
 
 if TYPE_CHECKING:
     from ...orchestre import GitRunner
@@ -106,23 +102,19 @@ class MergeOperation:
     """Merge a branch across the tree, with a preflight over every repository first."""
 
     @staticmethod
-    def merge_source_ref(
-        repo: WorkingRepo, project_branch: str, *, project_name: str | None = None
-    ) -> str:
+    def merge_source_ref(repo: WorkingRepo, project_branch: str, *, tree: WorkingGitTree) -> str:
         """The branch *repo* should merge when the project merges *project_branch*.
 
         The argument a user types is always the **project's** branch. Each
-        repository then resolves its own source through the one rule that owns
-        branch propagation, so ``merge --private multi-branch`` merges
-        ``<project>_multi-branch`` into a private/local repository rather than
-        ``multi-branch``, which does not exist there.
-
-        This is the whole reason the private case needs no code of its own: it
-        is the same command with a different scope and this one translation.
+        repository then resolves its own through the one resolver that owns
+        branch propagation, :meth:`GitTreeBranches.target`, which is what
+        ``checkout`` asks too: ``merge --private multi-branch`` merges
+        ``<project>_multi-branch`` into a private/local repository, a twin's
+        memory ``ComplexGitSync_<project>_multi-branch``, a nested Parent's
+        repository ``<Parent>_<project>_multi-branch`` (TwinMemoryMerge). No
+        branch name is composed here.
         """
-        return resolve_propagated_ref(
-            repo, project_branch, project_name=project_name
-        ).name
+        return GitTreeBranches(tree).target(repo, project_branch).name
 
     @staticmethod
     def merge_status(
@@ -130,7 +122,7 @@ class MergeOperation:
         git_runner: GitRunner,
         project_branch: str,
         *,
-        project_name: str | None = None,
+        tree: WorkingGitTree,
     ) -> tuple[str, str, tuple[Path, ...]]:
         """What ``merge`` would do to *repo*, as ``(source_ref, status, paths)``.
 
@@ -143,14 +135,14 @@ class MergeOperation:
         for every status but ``"conflicts"``, and empty for that one too when
         git blamed no file.
         """
-        source = MergeOperation.merge_source_ref(repo, project_branch, project_name=project_name)
+        source = MergeOperation.merge_source_ref(repo, project_branch, tree=tree)
         if git_runner.current_branch(repo.absolute_path) == source:
             return source, "already-on-it", ()
         if not git_runner.branch_known(
             repo.absolute_path, source, remote=repo.remote_name or "origin"
         ):
             return source, "no-branch", ()
-        history = MemoryMergeOperation.tree_status(repo, git_runner, source)
+        history = MemoryMergeOperation.tree_status(repo, git_runner, source, fast_forward=True)
         if history is not None:
             return source, history, ()
         check = git_runner.can_merge_cleanly(repo.absolute_path, source)
@@ -281,10 +273,9 @@ class MergeOperation:
         blocked: list[str] = []
         unrelated: list[str] = []
         on_source: list[str] = []
-        project_name = tree_project_name(tree)
         for repo in MergeOperation._iter_merge_scope_project_first(tree, scope):
             source, status, conflicts = MergeOperation.merge_status(
-                repo, git_runner, project_branch, project_name=MountGuard.base(tree, repo, project_name)
+                repo, git_runner, project_branch, tree=tree
             )
             if status == "up-to-date":
                 continue
@@ -340,7 +331,7 @@ class MergeOperation:
         source_branch: str,
         target_branch: str,
         *,
-        project_name: str | None = None,
+        tree: WorkingGitTree,
     ) -> MergeIntoPlan:
         """What merging *source_branch* into *target_branch* would do to *repo*.
 
@@ -365,20 +356,21 @@ class MergeOperation:
           merge, so never a conflict.
         - ``unrelated`` — the two branches share no commit.
         """
-        source = MergeOperation.merge_source_ref(repo, source_branch, project_name=project_name)
-        target = MergeOperation.merge_source_ref(repo, target_branch, project_name=project_name)
+        source = MergeOperation.merge_source_ref(repo, source_branch, tree=tree)
+        target = MergeOperation.merge_source_ref(repo, target_branch, tree=tree)
         remote = repo.remote_name or "origin"
 
         def plan(status: str, paths: tuple[Path, ...] = (), hint: str = "") -> MergeIntoPlan:
             return MergeIntoPlan(repo.name, source, target, status, paths, hint)
 
         if not git_runner.branch_known(repo.absolute_path, source, remote=remote):
-            return plan("no-source")
-        held = MergeTarget.held(repo, git_runner, target_branch, target, lambda n: MergeOperation.merge_source_ref(repo, n, project_name=project_name), remote)
+            stranded = MergeTarget.stranded_memory(repo, git_runner, tree, source_branch, source, target)
+            return plan("memory-cannot-follow", hint=stranded) if stranded else plan("no-source")
+        held = MergeTarget.held(repo, git_runner, target_branch, target, lambda n: MergeOperation.merge_source_ref(repo, n, tree=tree), remote)
         if held:
             return plan(held[0], hint=held[1])
-        history = MemoryMergeOperation.tree_status(repo, git_runner, source, target)
-        if history in ("kept", "unrelated"):
+        history = MemoryMergeOperation.tree_status(repo, git_runner, source, target, fast_forward=True)
+        if history in ("kept", "unrelated", "fast-forward"):
             return plan(history)
         if history == "up-to-date" or git_runner.is_ancestor(repo.absolute_path, source, target):
             return plan("already-merged")
@@ -447,10 +439,9 @@ class MergeOperation:
             check_branch_alignment=False,
         )
 
-        project_name = tree_project_name(tree)
         plans = [
             MergeOperation.merge_into_status(
-                repo, git_runner, source_branch, target_branch, project_name=MountGuard.base(tree, repo, project_name)
+                repo, git_runner, source_branch, target_branch, tree=tree
             )
             for repo in MergeOperation._iter_merge_scope_project_first(tree, scope)
         ]
@@ -525,13 +516,12 @@ class MergeOperation:
         """
         Preflight.assert_ready(tree)
 
-        project_name = tree_project_name(tree)
         repos = list(MergeOperation._iter_merge_scope_project_first(tree, scope))
         merged: list[tuple[str, str]] = []
 
         for position, repo in enumerate(repos):
             source, status, conflicts = MergeOperation.merge_status(
-                repo, git_runner, project_branch, project_name=MountGuard.base(tree, repo, project_name)
+                repo, git_runner, project_branch, tree=tree
             )
             if status in ("already-on-it", "no-branch", "up-to-date"):
                 if status == "no-branch":

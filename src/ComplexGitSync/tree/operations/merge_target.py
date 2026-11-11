@@ -1,9 +1,10 @@
 """merge_target — what to tell a user whose ``merge --into`` target is not a local branch.
 
 Ring: 2
-Contract: decide and word the two refusals of ``merge --into`` about how a target is spelled or held: a target typed with
-    its remote's prefix, and a target the remote has and this clone does not; reads refs, writes nothing, creates no branch.
-Imports: errors, git_repo
+Contract: decide and word the refusals of ``merge --into`` about its target: a target typed with its remote's prefix, a
+    target the remote has and this clone does not, and a memory that has no branch to follow the project on; reads refs,
+    writes nothing, creates no branch.
+Imports: errors, git_tree_branch, git_repo
 
 **Why its own module.** ``merge_into_status`` decides, and this says what to do about it; the decision and its words
 had grown past the size ``merge.py`` is held to (MergeIntoLocalTarget).
@@ -15,10 +16,12 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from ...errors import GitSyncError
+from ..git_tree_branch import GitTreeBranches
 
 if TYPE_CHECKING:
     from ...git_repo.git_repo import WorkingRepo
     from ...orchestre import GitRunner
+    from ..git_tree import WorkingGitTree
 
 __all__ = ["MergeTarget"]
 
@@ -47,6 +50,21 @@ class MergeTarget:
         return "no-target", (f"--into takes a project branch: type {rest!r}, not {typed!r}" if known else "")
 
     @staticmethod
+    def stranded_memory(
+        repo: WorkingRepo, git_runner: GitRunner, tree: WorkingGitTree, source_branch: str, source: str, target: str
+    ) -> str:
+        """Why the tree's memory, which has no branch *source*, cannot follow the project onto *target*; ``""`` when it can.
+
+        Only the memory (and the repository it nests) is asked: it is the one repository a merge must not leave
+        behind, since the next ``push`` refuses a memory on another branch than the tree's. A memory already on the
+        target, or waiting on its fallback base, is not stranded (TwinMemoryMerge, D3).
+        """
+        current = git_runner.current_branch(repo.absolute_path)
+        if not GitTreeBranches(tree).in_memory(repo) or current in (target, repo.fallback_branch):
+            return ""
+        return f"its memory has no branch {source!r}; 'cgitsync memory branch --project-branch {source_branch}' creates it"
+
+    @staticmethod
     def refuse(target_branch: str, plans: list) -> None:
         """Raise the one refusal for every plan whose target is missing or only the remote's; nothing otherwise."""
         missing = [plan for plan in plans if plan.status == "no-target"]
@@ -57,6 +75,13 @@ class MergeTarget:
                 "Create the branch where the work is, then run this again — this command "
                 "never creates its own target, because a branch that is not there is as "
                 "likely to be a typing mistake as a new branch."
+            )
+        stranded = [plan for plan in plans if plan.status == "memory-cannot-follow"]
+        if stranded:
+            named = "; ".join(f"{plan.name}: {plan.hint}" for plan in stranded)
+            raise GitSyncError(
+                f"merge --into {target_branch}: refused, and nothing was changed. The memory cannot follow the project: "
+                f"{named}. Merging now would leave it on its old branch, and the next push would refuse the split."
             )
         remote_only = [plan for plan in plans if plan.status == "no-local-target"]
         if remote_only:

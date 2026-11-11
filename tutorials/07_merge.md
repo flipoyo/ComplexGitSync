@@ -156,6 +156,13 @@ the other as history:
 kept .memory: its own memory stays whole; demo_feature is kept as history
 ```
 
+**When the memory of the branch you merge into is simply behind** (an ancestor of the other, so nothing of it
+would be lost), it moves forward instead: `fast-forward`, no commit. In a bootstrap tree, whose memory is filed
+under `ComplexGitSync_<project>`, the memory and the `.self-history` it nests follow the project by those
+names, like every other repository. If the memory has no branch to follow the project on, `merge --into`
+refuses before anything moves, naming it and the `memory branch --project-branch` command that creates it;
+a memory already on the target branch, or waiting on its fallback base, is not a refusal.
+
 To continue the other chain instead, say so:
 
 ```bash

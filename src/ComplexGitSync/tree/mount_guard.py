@@ -8,7 +8,7 @@ Contract: a `.cgs`, and each nested `.cgs`, is a request for mounts; the GitTree
     applies), and which nested Parent a private repository belongs to, which is
     what keeps two such mounts on two branches. Denials 2 and 3 need the branch
     a repository would be on, so ``mount_denial`` (ring 2) applies them.
-Imports: git_branch, git_repo, git_tree
+Imports: git_repo, git_tree
 
 The three denials (owner, IntegrityMount §3). **Integrity is one repository on one
 branch, once**, under one schema-1 key:
@@ -30,7 +30,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..git_repo.git_branch import DEFAULT_BRANCH, private_local_branch
 from ..git_repo.git_repo import WorkingRepo
 from .git_tree import ROOT_REPO_ID, WorkingGitTree
 
@@ -79,16 +78,6 @@ class MountGuard:
         if held is not None and (held == spec or held.is_relative_to(parent.absolute_path)):
             return MountGuard.owner(registry, parent) if parent.effective_private else parent.name
         return None
-
-    @staticmethod
-    def base(registry: WorkingGitTree, entry: WorkingRepo, project_name: str | None) -> str | None:
-        """The project name *entry*'s private branches are based on: ``<Parent>_<Project>`` under a nested Parent.
-
-        For a caller that resolves branches one repository at a time with only a project name to give
-        (``merge``): ``private_local_branch(base, X)`` is then the branch the tree's rule gives *entry*.
-        """
-        owner = MountGuard.owner(registry, entry)
-        return private_local_branch(project_name, DEFAULT_BRANCH, owner=owner) if project_name and owner else project_name
 
     @staticmethod
     def clash(registry: WorkingGitTree, path: Path, repo: dict[str, Any]) -> str | None:

@@ -2048,7 +2048,7 @@ class TestMergeTree:
         runner._conflicting_paths[root] = [Path("a.txt")]
 
         root_repo = registry.get("root")
-        source, status, paths = merge_status(root_repo, runner, "multi-branch")
+        source, status, paths = merge_status(root_repo, runner, "multi-branch", tree=registry)
 
         assert status == "conflicts"
         assert paths == (Path("a.txt"),)
@@ -2155,12 +2155,12 @@ class TestMergeTree:
         registry = self._tree(tmp_path)
 
         assert (
-            merge_source_ref(registry.get("root"), "multi-branch", project_name="project")
+            merge_source_ref(registry.get("root"), "multi-branch", tree=registry)
             == "multi-branch"
         )
         assert (
             merge_source_ref(
-                registry.get("root:deps/leaf"), "multi-branch", project_name="project"
+                registry.get("root:deps/leaf"), "multi-branch", tree=registry
             )
             == "project_multi-branch"
         )
@@ -2299,7 +2299,7 @@ class TestMergeNamesHistoriesWithNothingInCommon:
         runner._unrelated[root.absolute_path] = {"multi-branch"}
         runner._unmergeable[root.absolute_path] = {"multi-branch"}  # what Git itself used to answer
 
-        _, status, paths = merge_status(root, runner, "multi-branch")
+        _, status, paths = merge_status(root, runner, "multi-branch", tree=registry)
 
         assert (status, paths) == ("unrelated", ())
 
@@ -2371,8 +2371,8 @@ class TestMergeRefusesToMergeABranchIntoItself:
         registry, runner = self._tree_and_runner(tmp_path)
         root = registry.get("root")
 
-        assert merge_status(root, runner, "multi-branch")[1] == "already-on-it"
-        assert merge_status(root, runner, "main")[1] == "merge"
+        assert merge_status(root, runner, "multi-branch", tree=registry)[1] == "already-on-it"
+        assert merge_status(root, runner, "main", tree=registry)[1] == "merge"
 
 
 class TestRefreshPrivateTree:

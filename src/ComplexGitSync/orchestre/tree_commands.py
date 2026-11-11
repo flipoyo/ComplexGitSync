@@ -40,7 +40,6 @@ from ..tree.git_tree import (
 from ..tree.git_tree_branch import GitTreeBranches, ProjectBranch, tree_project_name
 from ..tree.memory import HistoryState, Relocation
 from ..tree.memory.pending import PendingMemory
-from ..tree.mount_guard import MountGuard
 from ..tree.operations import (
     MERGE_INTO_ACTS,
     AncestorOperation,
@@ -742,14 +741,13 @@ class TreeCommands:
         self._warn_if_build_changes(target_branch, offer_remedy=False)
         registry = self.client.get_dependency_registry()
         scope = self.client._write_scope(registry, "merge", private, all_writable)
-        project_name = tree_project_name(registry)
         return tuple(
             merge_into_status(
                 repo,
                 self.client.git_runner,
                 source_branch,
                 target_branch,
-                project_name=project_name,
+                tree=registry,
             )
             for repo in iter_tree_leaf_first(registry, scope)
         )
@@ -972,7 +970,6 @@ class TreeCommands:
 
         registry = self.client.get_dependency_registry()
         scope = self.client._write_scope(registry, "merge", private, all_writable)
-        project_name = tree_project_name(registry)
         return tuple(
             (
                 repo.name,
@@ -980,7 +977,7 @@ class TreeCommands:
                     repo,
                     self.client.git_runner,
                     project_branch,
-                    project_name=MountGuard.base(registry, repo, project_name),
+                    tree=registry,
                 ),
             )
             for repo in iter_tree_leaf_first(registry, scope)

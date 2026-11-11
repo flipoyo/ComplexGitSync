@@ -2075,7 +2075,7 @@ def _execute_merge_into(
         "already-merged": " (already has it — nothing to merge)",
         "no-source": " (no such branch here — skipped)",
         "no-target": " (no such branch here — would refuse)",
-        "no-local-target": " (no local branch here, only the remote's — would refuse)",
+        "no-local-target": " (no local branch here, only the remote's — would refuse)", "memory-cannot-follow": " (the memory has no branch to follow the project on — would refuse)",
         "conflicts": " (conflicts — would block the merge)",
         "kept": " (memory — its own side is kept whole, the source stays as history)",
         "unrelated": " (no commit in common — would block the merge)",
@@ -2096,13 +2096,13 @@ def _execute_merge_into(
     )
 
     if dry_run:
-        blocked = [row for row in plan if row.status in ("conflicts", "no-target", "no-local-target", "unrelated")]
+        blocked = [row for row in plan if row.status in ("conflicts", "no-target", "no-local-target", "memory-cannot-follow", "unrelated")]
         if blocked:
             print("refused=true")
             for row in blocked:
                 listed = ", ".join(str(path) for path in row.conflicting_paths)
-                if row.status == "no-local-target":
-                    print(f"  {row.name}: no local branch {row.target!r}; create it from the remote with: {row.hint}")
+                if row.status in ("no-local-target", "memory-cannot-follow"):
+                    print(f"  {row.name}: " + (f"no local branch {row.target!r}; create it from the remote with: " if row.status == "no-local-target" else "the memory cannot follow: ") + row.hint)
                     continue
                 print(f"  {row.name}: {'share no commit' if row.status == 'unrelated' else listed or f'no branch {row.target!r}'}" + (f" ({row.hint})" if row.hint else ""))
             print("note: nothing would be checked out and nothing would be merged.")
@@ -2232,7 +2232,7 @@ def _print_merge_plan(
     # RepoScope.WRITABLE is the internal name; --all is the word the user typed.
     scope_value = "all" if all_writable else scope_value
     labels = {
-        "merge": "",
+        "merge": "", "fast-forward": " (fast-forward — the branch just moves)",
         "already-on-it": " (already on it — nothing to merge into)",
         "no-branch": " (no such branch here — skipped)",
         "conflicts": " (conflicts — would block the merge)",
