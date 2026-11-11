@@ -268,6 +268,106 @@ def test_a_missing_source_is_skipped_and_said_out_loud(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# A target that only the remote has (MergeIntoLocalTarget)
+# ---------------------------------------------------------------------------
+
+
+def _remote_only_targets(tree: dict[str, Path]) -> None:
+    """Leave `main` and `demo` as `origin/main` and `origin/demo` only, as a clone of a branch other than main does."""
+    _git(tree["root"], "branch", "-D", "main")
+    _git(tree["config"], "branch", "-D", "demo")
+
+
+def test_a_target_held_only_by_the_remote_is_not_an_unrelated_history(tmp_path):
+    tree = _tree(tmp_path)
+    _remote_only_targets(tree)
+
+    [plan] = _loaded(tree["snapshot"]).merge_into_plan("feature", "main")
+
+    assert plan.status == "no-local-target"
+    assert plan.hint == f"git -C {tree['root']} branch main origin/main"
+
+
+def test_the_refusal_names_every_repository_and_the_command_that_creates_its_branch(tmp_path):
+    tree = _tree(tmp_path)
+    _remote_only_targets(tree)
+
+    with pytest.raises(GitSyncError) as refused:
+        _loaded(tree["snapshot"]).merge_into("feature", "main", all_writable=True)
+
+    message = str(refused.value)
+    assert "no local branch for the target" in message
+    assert f"git -C {tree['root']} branch main origin/main" in message
+    assert f"git -C {tree['config']} branch demo origin/demo" in message
+    assert "share no commit" not in message
+    assert _git(tree["root"], "branch", "--show-current") == "feature"
+    assert _git(tree["config"], "branch", "--show-current") == "demo_feature"
+    assert "main" not in _git(tree["root"], "branch", "--format=%(refname:short)").split()
+
+
+def test_after_the_named_command_the_merge_fast_forwards(tmp_path):
+    tree = _tree(tmp_path)
+    _remote_only_targets(tree)
+    client = _loaded(tree["snapshot"])
+    with pytest.raises(GitSyncError):
+        client.merge_into("feature", "main")
+
+    _git(tree["root"], "branch", "main", "origin/main")
+    outcomes = client.merge_into("feature", "main")
+
+    assert [row.status for row in outcomes] == ["fast-forward"]
+    assert _git(tree["root"], "rev-parse", "main") == _git(tree["root"], "rev-parse", "feature")
+
+
+def test_branches_that_really_share_no_commit_are_still_unrelated(tmp_path):
+    tree = _tree(tmp_path)
+    _git(tree["root"], "checkout", "--orphan", "island")
+    (tree["root"] / "island.txt").write_text("alone\n", encoding="utf-8")
+    _git(tree["root"], "add", "island.txt")
+    _git(tree["root"], "commit", "-m", "an unrelated root")
+    _git(tree["root"], "checkout", "feature")
+
+    [plan] = _loaded(tree["snapshot"]).merge_into_plan("island", "main")
+
+    assert plan.status == "unrelated"
+
+
+def test_a_target_typed_with_its_remote_prefix_is_refused_with_the_word_to_type(tmp_path):
+    tree = _tree(tmp_path)
+
+    with pytest.raises(GitSyncError, match=r"type 'main', not 'origin/main'"):
+        _loaded(tree["snapshot"]).merge_into("feature", "origin/main")
+
+    assert _git(tree["root"], "branch", "--show-current") == "feature"
+
+
+def test_a_prefix_is_never_cut_from_a_name_that_is_not_a_branch(tmp_path):
+    tree = _tree(tmp_path)
+
+    [plan] = _loaded(tree["snapshot"]).merge_into_plan("feature", "origin/not-there")
+
+    assert plan.status == "no-target"
+    assert plan.hint == ""
+
+
+def test_the_dry_run_says_no_local_branch_and_refuses(tmp_path, capsys):
+    from ComplexGitSync.cli.expert import _execute_merge_into
+
+    tree = _tree(tmp_path)
+    _remote_only_targets(tree)
+
+    _execute_merge_into(
+        _loaded(tree["snapshot"]), scope_value="writable", source_branch="feature", target_branch="main",
+        private=False, all_writable=False, ff_only=False, no_ff=False, dry_run=True,
+    )
+
+    out = capsys.readouterr().out
+    assert "no local branch here, only the remote's" in out
+    assert "refused=true" in out
+    assert "no commit in common" not in out
+
+
+# ---------------------------------------------------------------------------
 # The dry run cannot disagree with the merge
 # ---------------------------------------------------------------------------
 

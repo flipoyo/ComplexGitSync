@@ -2,7 +2,7 @@
 
 Ring: 2
 Contract: Merge a branch across the tree, with a preflight over every repository first.
-Imports: branch, errors, git_branch, git_repo, git_tree, git_tree_branch, memory_merge, orchestre, preflight
+Imports: branch, errors, git_branch, git_repo, git_tree, git_tree_branch, memory_merge, merge_target, orchestre, preflight
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
 from .branch import BranchOperation
 from .memory_merge import MemoryMergeOperation
+from .merge_target import MergeTarget
 from .preflight import Preflight
 
 
@@ -52,6 +53,7 @@ class MergeIntoPlan:
     target: str
     status: str
     conflicting_paths: tuple[Path, ...] = ()
+    hint: str = ""  # how to put a refusal right (MergeIntoLocalTarget)
 
 #: What a repository's fate can be. ``fast-forward``, ``merge`` and ``kept``
 #: act; the rest do not. They are told apart because a fast-forward makes no
@@ -347,11 +349,11 @@ class MergeOperation:
         private/local repository merges ``<base>_<source>`` into ``<base>``
         while the project's own repositories take both names literally.
 
-        Seven answers:
+        Eight answers:
 
-        - ``no-source`` / ``no-target`` — that branch is not here and not on the
-          remote. Neither is invented: a branch that is missing is as likely to
-          be a typing mistake as a new branch.
+        - ``no-source`` / ``no-target`` / ``no-local-target`` — that branch is not here, or (the last) only the remote
+          has it. None is invented: a branch that is missing is as likely to be a typing mistake as a new branch.
+          The hint names the ``git branch`` that creates the last, or the word to type instead of ``origin/main``.
         - ``already-merged`` — the target already contains the source. Nothing
           to do, and not a failure.
         - ``fast-forward`` — the target is an ancestor of the source, so it only
@@ -367,13 +369,14 @@ class MergeOperation:
         target = MergeOperation.merge_source_ref(repo, target_branch, project_name=project_name)
         remote = repo.remote_name or "origin"
 
-        def plan(status: str, paths: tuple[Path, ...] = ()) -> MergeIntoPlan:
-            return MergeIntoPlan(repo.name, source, target, status, paths)
+        def plan(status: str, paths: tuple[Path, ...] = (), hint: str = "") -> MergeIntoPlan:
+            return MergeIntoPlan(repo.name, source, target, status, paths, hint)
 
         if not git_runner.branch_known(repo.absolute_path, source, remote=remote):
             return plan("no-source")
-        if not git_runner.branch_known(repo.absolute_path, target, remote=remote):
-            return plan("no-target")
+        held = MergeTarget.held(repo, git_runner, target_branch, target, lambda n: MergeOperation.merge_source_ref(repo, n, project_name=project_name), remote)
+        if held:
+            return plan(held[0], hint=held[1])
         history = MemoryMergeOperation.tree_status(repo, git_runner, source, target)
         if history in ("kept", "unrelated"):
             return plan(history)
@@ -467,15 +470,7 @@ class MergeOperation:
                 + "; ".join(blocked + unrelated) + (MERGE_RESOLVE_HINT if blocked else "")
             )
 
-        missing = [plan for plan in plans if plan.status == "no-target"]
-        if missing:
-            named = "; ".join(f"{plan.name}: no branch {plan.target!r}" for plan in missing)
-            raise GitSyncError(
-                f"merge --into {target_branch}: refused, and nothing was changed. {named}. "
-                "Create the branch where the work is, then run this again — this command "
-                "never creates its own target, because a branch that is not there is as "
-                "likely to be a typing mistake as a new branch."
-            )
+        MergeTarget.refuse(target_branch, plans)
 
         for plan in plans:
             if plan.status == "no-source":

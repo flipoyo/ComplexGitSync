@@ -156,3 +156,19 @@ def test_a_memory_on_a_detached_head_that_already_holds_the_source_is_up_to_date
     assert MemoryMergeOperation.tree_status(mount, git, "trunk") == "up-to-date"  # trunk is behind fork_a
     with pytest.raises(GitSyncError, match="the memory is on no branch"):
         MemoryMergeOperation.tree_status(mount, git, "fork_b")  # something to keep, and nowhere to put it
+
+
+def test_a_target_held_only_as_a_remote_tracking_ref_is_judged_on_its_real_history(repo, tmp_path_factory):
+    """MergeIntoLocalTarget: `merge-base trunk ahead` fails on a bare name that only `origin/` holds, and that failure
+    used to be read as "no common commit". Both sides go through the one resolver now."""
+    from types import SimpleNamespace
+
+    git = GitRunner()
+    _git(repo, "remote", "add", "origin", repo.as_posix())
+    _git(repo, "fetch", "-q", "origin")
+    _git(repo, "checkout", "-q", "fork_a")
+    _git(repo, "branch", "-D", "trunk")  # `origin/trunk` is all that is left of it
+    plain = SimpleNamespace(absolute_path=repo, remote_name="origin", relative_path=Path("src"), name="project")
+
+    assert MemoryMergeOperation.tree_status(plain, git, "fork_a", "trunk") is None
+    assert MemoryMergeOperation.tree_status(plain, git, "orphan", "trunk") == "unrelated"

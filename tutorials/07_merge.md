@@ -80,6 +80,10 @@ ComplexGitSync (a separate `checkout` would install that older build):
 pixi run cgitsync merge feature --into main
 ```
 
+`--into` takes the project branch, `main`, never `origin/main`. If a repository only holds the remote's `main` (a clone
+that never checked it out), the merge refuses by name and prints the `git branch main origin/main` that creates it there;
+run those, then run the merge again. It never creates its own target.
+
 By default a merge is **all or nothing**: every repository is checked first,
 and if any would conflict, nothing is merged and the message names each one.
 

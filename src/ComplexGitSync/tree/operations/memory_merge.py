@@ -146,7 +146,9 @@ class MemoryMergeOperation:
                 )
             decided = MemoryMergeOperation.plan(git_runner, path, source, into, MemoryMergeOperation.KEEP_TARGET, remote=remote)
             return "up-to-date" if decided.status == "already-merged" else "kept"
-        if git_runner.merge_base(path, into or "HEAD", git_runner.resolve_merge_ref(path, source, remote=remote)) is None:
+        # Both sides through the one resolver: a branch held only as `<remote>/<name>` is a real history, and a
+        # bare name Git cannot read is not an absent one (MergeIntoLocalTarget).
+        if git_runner.merge_base(path, git_runner.resolve_merge_ref(path, into, remote=remote) if into else "HEAD", git_runner.resolve_merge_ref(path, source, remote=remote)) is None:
             return "unrelated"
         return None
 
