@@ -1,0 +1,38 @@
+# CGSenc — the test tree for repositories encrypted with git-crypt.
+#
+# Workstream: data-encrypt (ticket EncryptedRepos, in
+# .agent/.local/.dev/DevTickets/openTickets/). Every repository below lands
+# its work on `data-encrypt` and falls back to its stable branch while that
+# branch does not exist there yet.
+#
+# The smallest tree that exercises every encrypted case:
+#
+#   CGSenc          root, in clear: README and this kind of .cgs. No git-crypt.
+#   ComplexGitSync  the tool under development, on data-encrypt, so the tree
+#                   is driven by the code that implements the ticket.
+#   CGSenc-data     a leaf whose .gitattributes says
+#                   `data/** filter=git-crypt diff=git-crypt`; README.md stays
+#                   in clear. Case: locked and unlocked leaf.
+#   CGSenc-space    a nested space, encrypted like CGSenc-data, carrying its
+#                   own CGSenc-space.cgs (template: .config/CGSenc-space.cgs)
+#                   that declares itself at "." so it can be bootstrapped
+#                   alone. Nested here, that self entry resolves to this
+#                   entry's path and is skipped (probed 2026-11-21: it is).
+#
+# The three CGSenc repositories do not exist yet: creating them (GitHub,
+# private) is step 0 of the ticket, on the owner's word. They hold synthetic
+# data only, never real figures. Their git-crypt keys are test keys kept with
+# the test fixtures, so CI can unlock one tree and leave another locked; they
+# protect nothing and are never reused.
+#
+#     pixi run cgitsync validate .config/cgitsync-encrypt.cgs
+#     pixi run cgitsync bootstrap .config/cgitsync-encrypt.cgs CGSenc
+
+project = { name = "CGSenc", default_branch = "data-encrypt", fallback_branch = "main" }
+
+repos = [
+    { repository = "github:flipoyo/CGSenc", relative_path = ".", default_branch = "data-encrypt", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/ComplexGitSync", default_branch = "data-encrypt", fallback_branch = "CGS-ALPHA", nested_config = "disabled" },
+    { repository = "github:flipoyo/CGSenc-data", relative_path = "data-repo", default_branch = "data-encrypt", fallback_branch = "main", nested_config = "disabled" },
+    { repository = "github:flipoyo/CGSenc-space", relative_path = "spaces/space1", default_branch = "data-encrypt", fallback_branch = "main", nested_config = "auto" },
+]
