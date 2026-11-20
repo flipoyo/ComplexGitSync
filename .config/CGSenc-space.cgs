@@ -14,11 +14,12 @@
 #                        once.
 #
 # The repository's .gitattributes: `data/** filter=git-crypt diff=git-crypt`.
+# Key: .keys/unsafe-key-2 of ComplexGitSync, data-encrypt branch (unsafe, test only).
 # This file, README.md and .gitattributes stay in clear: cgitsync must read
 # the .cgs of a locked space.
 
-project = { name = "CGSenc-space", default_branch = "data-encrypt", fallback_branch = "main" }
+project = { name = "CGSenc-space", default_branch = "main" }
 
 repos = [
-    { repository = "github:flipoyo/CGSenc-space", relative_path = ".", default_branch = "data-encrypt", fallback_branch = "main" },
+    { repository = "github:flipoyo/CGSenc-space", relative_path = "." },
 ]
