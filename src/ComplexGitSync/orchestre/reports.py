@@ -169,6 +169,9 @@ class _StatusView:
     # memory mount at all, so `status()` can print the hint with no further
     # check of its own.
     memory_dirty: bool = False
+    # Per row of ``rows``: ``locked`` / ``unlocked`` for a repository with
+    # git-crypt paths, ``None`` for one without. Empty when not collected.
+    crypt: tuple[str | None, ...] = ()
     # USER or DEV, from `WorkingGitTree.profile`; an empty tree holds nothing private.
     profile: str = "user"
 

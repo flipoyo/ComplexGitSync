@@ -19,8 +19,8 @@
 #                      main and derives its branch from the tree.
 # No .agent/ mounts: the tree tests encryption, not the spec tree.
 #
-# The memory repository does not exist yet either: step 0 creates it with the
-# three CGSenc repositories (GitHub, private).
+# The memory repository exists too (private, 2026-11-21), made with the three
+# CGSenc repositories at step 0.
 #
 # Run from the root of this ComplexGitSync checkout; the tree lands in ./CGSenc-devel:
 #     pixi run cgitsync validate .config/cgitsync-encrypt-devel.cgs

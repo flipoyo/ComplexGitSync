@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 from ..errors import GitSyncError
+from ..git_repo.git_crypt import GitCrypt
 from ..git_repo.git_repo import (
     WorkingRepo,
 )
@@ -57,6 +58,7 @@ from .git_probes import GitProbes
 from .reports import (
     _StatusView,
 )
+from .status_crypt import CRYPT_LEGEND, with_crypt_column
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..tree.branch_findings import BranchFinding
@@ -142,6 +144,8 @@ class Reporting:
         rows = [
             self.client._repo_status_row(registry, entry, root_path, branches) for entry in entries
         ]
+        crypt_probe = GitCrypt(self.client.git_runner)
+        crypt = tuple(crypt_probe.state(entry.absolute_path) for entry in entries)
         memory_dirty = any(
             entry.relative_path == Path(MOUNT_PATH) and row[5] != "clean"
             for entry, row in zip(entries, rows, strict=True)
@@ -159,6 +163,7 @@ class Reporting:
             is_empty=False,
             memory_dirty=memory_dirty,
             profile=registry.profile.value,
+            crypt=crypt,
         )
 
     def status_json(self) -> str:
@@ -170,7 +175,7 @@ class Reporting:
         if view.is_empty:
             payload = JsonRender.empty_status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value, profile=view.profile)
         else:
-            payload = JsonRender.status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value, is_ready=view.tree_state.is_ready, registry_complete=view.tree_state.registry_complete, rows=view.rows, counts=view.counts, warnings=view.incoherent, profile=view.profile)
+            payload = JsonRender.status(cgshome=str(view.workspace), use_case=view.use_case, cgitsync_branch=view.branch_label, lifecycle_state=view.tree_state.lifecycle_state.value, is_ready=view.tree_state.is_ready, registry_complete=view.tree_state.registry_complete, rows=view.rows, counts=view.counts, warnings=view.incoherent, profile=view.profile, crypt=view.crypt)
         payload["branch_findings"] = [finding.to_record() for finding in self._findings()]
         return JsonRender.dumps(OperatingSpace(self.client.get_dependency_registry()).stamp(payload))
 
@@ -209,7 +214,7 @@ class Reporting:
                 f"unmeasured={counts.unmeasured} recorded_mismatch={counts.recorded_mismatch} errors={counts.errors}"
             )
         ]
-        lines.append(_render_status_table(rows))
+        lines.append(with_crypt_column(_render_status_table(rows), view.crypt))
         incoherent = view.incoherent
         if incoherent:
             lines.append(
@@ -220,6 +225,8 @@ class Reporting:
         lines.extend(f"{finding.kind.severity}: {finding.describe()}" for finding in self._findings())
         if any(row[2] != PROJECT_SCOPE_LABEL for row in rows):
             lines.append(SCOPE_LEGEND)
+        if any(view.crypt):
+            lines.append(CRYPT_LEGEND)
         if counts.unmeasured:
             lines.append(SYNC_LEGEND)
         if counts.recorded_mismatch:

@@ -68,6 +68,7 @@ class JsonRender:
         counts: Any,
         warnings: Sequence[str] = (),
         profile: str = "user",
+        crypt: Sequence[str | None] = (),
     ) -> dict[str, Any]:
         """What ``cgitsync status --json`` prints.
 
@@ -81,8 +82,10 @@ class JsonRender:
         ``null``.
         """
         repositories = []
-        for row in rows:
+        for index, row in enumerate(rows):
             entry = dict(zip(_REPOSITORY_FIELDS, row, strict=True))
+            # ``null`` for a repository with no git-crypt path, else ``locked`` or ``unlocked``.
+            entry["crypt"] = crypt[index] if index < len(crypt) else None
             head = entry["head"]
             entry["recorded_matches"] = not head.endswith("*")
             entry["head"] = head.rstrip("*")

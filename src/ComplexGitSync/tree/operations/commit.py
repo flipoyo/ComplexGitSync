@@ -23,6 +23,7 @@ from ..git_tree import (
 if TYPE_CHECKING:
     from ...orchestre import GitRunner
 
+from .encryption_guard import EncryptionGuard
 from .outcome import RepoOutcome
 from .preflight import Preflight
 
@@ -119,10 +120,17 @@ class CommitOperation:
             scope=scope,
         )
 
-        outcomes: list[RepoOutcome] = []
-        for repo in iter_tree_leaf_first(tree, scope):
-            if stage_all:
+        repos = list(iter_tree_leaf_first(tree, scope))
+        if stage_all:
+            for repo in repos:
                 git_runner.stage_all(repo.absolute_path)
+        # After staging and before any commit: the index is where a file that
+        # should be encrypted but is not can be seen, and one refusal leaves
+        # every repository uncommitted (EncryptedRepos E1).
+        EncryptionGuard.assert_encrypted(tree, git_runner, operation_name="commit", scope=scope)
+
+        outcomes: list[RepoOutcome] = []
+        for repo in repos:
             if not git_runner.has_staged_changes(repo.absolute_path):
                 outcomes.append(
                     RepoOutcome(

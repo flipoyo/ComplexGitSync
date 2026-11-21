@@ -1,5 +1,17 @@
 # Changelog
 
+## 8.10.0 - 2026-11-21
+
+- Repositories encrypted with `git-crypt` are now guarded. In a clone that was
+  never unlocked, `commit` and `release freeze` refuse a new file under an
+  encrypted path, and `push` refuses commits that hold one in clear, each
+  naming the repository and the file; there is no override. `status` gains a
+  `CRYPT` column (`locked`, `unlocked`) when a repository of the tree is
+  encrypted, and `status --json` a `crypt` field on every repository.
+  `bootstrap` and `initialise` end with one line naming the repositories that
+  are encrypted and locked. `cgitsync` still never unlocks a repository and
+  never handles a key.
+
 ## 4.4.3 - 2026-10-08
 
 - No change to the tool's behaviour. `pixi run check-ceilings` now also finds a

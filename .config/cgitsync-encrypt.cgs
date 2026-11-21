@@ -28,9 +28,9 @@
 # The keys are unsafe, committed on data-encrypt only, for the prototype
 # (owner, 2026-11-21): see .keys/README.md. Synthetic data only.
 #
-# The three CGSenc repositories do not exist yet: creating them (GitHub,
-# private) is step 0 of the ticket. They are new, so they live on main; the
-# tree's branch is main too.
+# The three CGSenc repositories exist, private on GitHub, made on 2026-11-21
+# (step 0 of the ticket). They are new, so they live on main; the tree's
+# branch is main too. Their data is encrypted with the keys above.
 #
 # Run from the root of this ComplexGitSync checkout; the tree lands in ./CGSenc:
 #     pixi run cgitsync validate .config/cgitsync-encrypt.cgs

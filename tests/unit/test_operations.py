@@ -9,6 +9,7 @@ import re
 import subprocess
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -215,6 +216,16 @@ class _FakeGitRunnerForOperations:
 
     Tracks calls and simulates branch existence.
     """
+
+    # git-crypt probes (EncryptedRepos): a fake repository has no attributes, no filter and no blobs.
+    def _query(self, *args, cwd=None):
+        return SimpleNamespace(returncode=1, stdout="", stderr="")
+
+    def _query_bytes(self, *args, cwd=None):
+        return SimpleNamespace(returncode=1, stdout=b"", stderr=b"")
+
+    def upstream_ref(self, repo_path):
+        return None
 
     def init_repository(self, repo_path: Path | str, *, branch: str) -> None:
         """Makes no repository, so the default memory is declined and recorded nothing."""

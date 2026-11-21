@@ -194,6 +194,22 @@ a lock: `cgitsync` refuses, `git` does not. `pull` reaches every repository,
 read-only ones included; `tag` skips read-only ones, whose exact commit the
 State records anyway.
 
+## Encrypted repositories
+
+A repository, private or not, can keep some files encrypted with
+`git-crypt`. `cgitsync` works with it as with any other and never unlocks it
+or touches a key: that stays with the project that uses the encryption.
+
+What it adds is one guard. A clone that was never unlocked holds ciphertext
+on disk, and Git then commits a **new** file under an encrypted path in
+clear. So `commit` refuses it, and `push` refuses a commit made outside
+`cgitsync` that holds one, each naming the repository and the file. There is
+no override: a file meant to be in clear belongs outside the encrypted
+pattern in `.gitattributes`. `status` gains a `CRYPT` column (`locked` or
+`unlocked`) when a repository of the tree is encrypted, and `bootstrap` ends
+with one line naming the ones that are locked. The details are in the user
+guide, *Encrypted repositories*.
+
 ## 6. Summary
 
 | What you want | Command | What it touches |
