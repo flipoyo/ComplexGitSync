@@ -1,5 +1,12 @@
 # Changelog
 
+## 8.10.1 - 2026-11-21
+
+- `status` no longer lists and checks every tracked file of a repository that
+  has no attributes at all: a repository with no tracked `.gitattributes` and
+  no `info/attributes` file is answered `-` in the `CRYPT` column at once.
+  No change to what is shown or refused.
+
 ## 8.10.0 - 2026-11-21
 
 - Repositories encrypted with `git-crypt` are now guarded. In a clone that was

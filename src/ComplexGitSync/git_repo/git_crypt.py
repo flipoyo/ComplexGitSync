@@ -45,6 +45,8 @@ class GitCrypt:
 
     def state(self, repo_path: Path | str) -> str | None:
         """:attr:`LOCKED` or :attr:`UNLOCKED` for a repository with an encrypted path, else ``None``."""
+        if not self._has_attributes(repo_path):
+            return None
         tracked = self.runner._query("ls-files", "-z", cwd=repo_path)
         if tracked.returncode != 0 or not self.attributed(repo_path, self._split(tracked.stdout)):
             return None
@@ -100,6 +102,18 @@ class GitCrypt:
         if content.returncode != 0:
             return True  # Cannot be read: not this check's to refuse.
         return not content.stdout or content.stdout.startswith(self.MAGIC)
+
+    def _has_attributes(self, repo_path: Path | str) -> bool:
+        """``False`` only when nothing can give a path a ``filter``: no tracked ``.gitattributes`` and no ``info/attributes``.
+
+        The cheap question asked first, so ``status`` never lists and checks every tracked file of a repository
+        that has no attributes at all. A failed question answers ``True``: the full check then decides.
+        """
+        tracked = self.runner._query("ls-files", "-z", "--", ":(glob)**/.gitattributes", cwd=repo_path)
+        if tracked.returncode != 0 or tracked.stdout:
+            return True
+        info = self.runner._query("rev-parse", "--git-path", "info/attributes", cwd=repo_path)
+        return info.returncode != 0 or (Path(repo_path) / info.stdout.strip()).is_file()
 
     def _filter_configured(self, repo_path: Path | str) -> bool:
         """``True`` once ``git-crypt unlock`` has written its filter into this clone's configuration."""

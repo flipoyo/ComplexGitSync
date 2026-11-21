@@ -53,6 +53,14 @@ def test_a_path_is_attributed_only_when_its_filter_is_git_crypt():
     assert GitCrypt(runner).attributed(".", ["data/a.csv", "README.md", "x.bin"]) == ["data/a.csv"]
 
 
+def test_a_repository_with_no_attributes_file_is_never_listed_or_checked(tmp_path):
+    runner = _Runner({"ls-files": "", "rev-parse": str(tmp_path / "info-attributes") + "\n"})
+
+    assert GitCrypt(runner).state(tmp_path) is None
+    assert [a[0] for a in runner.asked] == ["ls-files", "rev-parse"]
+    assert "check-attr" not in [a[0] for a in runner.asked]
+
+
 def test_a_repository_is_not_encrypted_when_no_tracked_path_asks_for_it():
     runner = _Runner({"ls-files": f"README.md{NUL}", "check-attr": _attrs(**{"README.md": "unspecified"})})
 
