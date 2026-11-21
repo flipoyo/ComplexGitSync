@@ -86,6 +86,7 @@ from ..tree.operations import (
     ResolveOutcome,
 )
 from ..universal_clock import ClockProtocol, SystemClock
+from .anonymise import Anonymise
 from .auth_hints import AuthFailureHints
 from .command_run_logger import CommandRunLogger
 from .discovery_commands import DiscoveryCommands
@@ -501,6 +502,10 @@ class ComplexGitSyncClient:
     def fetch(self, *, private: bool = False) -> tuple[RepoOutcome, ...]:
         """Fetch origin, pruned, into every repository in the tree, without moving any branch."""
         return self._tree_commands.fetch(private=private)
+
+    def anonymise(self, cgs: str | Path, *, dry_run: bool = True, delete_old: bool = False, confirm: Any = None) -> Any:
+        """Move the shared branches named after the project onto its alias; ``dry_run`` lists the moves and writes nothing."""
+        return Anonymise(self).run(Path(cgs), dry_run=dry_run, delete_old=delete_old, confirm=confirm)
 
     def tree_branch_label(self) -> str:
         """The branch the project is on, as `status` prints `cgitsync_branch`: a name, `detached` or `unknown`."""

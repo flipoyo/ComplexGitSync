@@ -18,6 +18,7 @@ from ..errors import (
     InstallFrontierError,
 )
 from ..tree.cgs_format import CgsDocument
+from .anonymous_install import AnonymousInstall
 
 if TYPE_CHECKING:
     pass
@@ -302,7 +303,7 @@ class Installer:
         )
         project_root = cgshome
 
-        self.client.registry = RegistryTranslator.from_cgs_document(document, source_path, project_root=project_root)
+        self.client.registry = AnonymousInstall(self.client).registry(document, source_path, project_root, resolve=True)
         self.client.orchestre.git_tree.git.bind_tree(self.client.registry)
         self.client.source_path = source_path
 
@@ -372,7 +373,7 @@ class Installer:
             AccessProtocol(force_access_protocol) if force_access_protocol else None
         )
 
-        self.client.registry = RegistryTranslator.from_cgs_document(document, source_path, project_root=project_root)
+        self.client.registry = AnonymousInstall(self.client).registry(document, source_path, project_root, resolve=True)
         self.client.orchestre.git_tree.git.bind_tree(self.client.registry)
         self.client.source_path = source_path
         self._mark_twin(project_root)

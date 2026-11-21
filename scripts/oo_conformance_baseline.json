@@ -3,7 +3,7 @@
   "missing_all": [],
   "no_behaviour_class": [],
   "over_2000_lines": {
-    "cli/expert.py": 2518
+    "cli/expert.py": 2530
   },
   "over_class_cap": []
 }

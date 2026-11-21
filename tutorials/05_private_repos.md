@@ -210,6 +210,25 @@ pattern in `.gitattributes`. `status` gains a `CRYPT` column (`locked` or
 with one line naming the ones that are locked. The details are in the user
 guide, *Encrypted repositories*.
 
+## Hiding the project's name
+
+Every private/local branch of a shared repository is named after the project,
+so anyone who can list the branches of `.dev`, `.localSpec` or `.memory` reads
+the name. A project whose name is private says so in its `.cgs`:
+
+```toml
+project = { name = "PATRIMOINE", default_branch = "main", anonymous = "sequence" }
+```
+
+`cgitsync` then files the project under an alias (`anonymous-1`, or the six
+digits of a hash with `"hash"`) in every shared repository: branches, the
+States kept in the memory, the memory's commit messages, the omniscience
+record. You never type the alias. A tree that already shares its name is moved
+with `cgitsync anonymise --dry-run`, then `cgitsync anonymise`; history is
+not rewritten, so commits already written keep the old name. Do not bootstrap
+such a `.cgs` with a `cgitsync` older than the version that added the option:
+it would ignore it. See the user guide, *anonymise*.
+
 ## 6. Summary
 
 | What you want | Command | What it touches |

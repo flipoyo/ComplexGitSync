@@ -42,7 +42,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 40,
-      "loc": 2219,
+      "loc": 2229,
       "public_symbols": 1
     },
     "cli/fetch_command.py": {
@@ -57,7 +57,7 @@
     },
     "cli/help_text.py": {
       "internal_imports": 0,
-      "loc": 209,
+      "loc": 210,
       "public_symbols": 2
     },
     "cli/memory_asof.py": {
@@ -217,7 +217,7 @@
     },
     "orchestre/client.py": {
       "internal_imports": 69,
-      "loc": 1418,
+      "loc": 1422,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -237,7 +237,7 @@
     },
     "orchestre/document_loader.py": {
       "internal_imports": 20,
-      "loc": 357,
+      "loc": 358,
       "public_symbols": 1
     },
     "orchestre/environment_commands.py": {
@@ -257,7 +257,7 @@
     },
     "orchestre/installer.py": {
       "internal_imports": 25,
-      "loc": 715,
+      "loc": 716,
       "public_symbols": 1
     },
     "orchestre/memory_chapters.py": {
@@ -482,7 +482,7 @@
     },
     "tree/operations/branch.py": {
       "internal_imports": 20,
-      "loc": 609,
+      "loc": 612,
       "public_symbols": 4
     },
     "tree/operations/commit.py": {
@@ -537,7 +537,7 @@
     },
     "tree/registry.py": {
       "internal_imports": 43,
-      "loc": 459,
+      "loc": 470,
       "public_symbols": 1
     },
     "tree/settings.py": {

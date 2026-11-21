@@ -24,6 +24,8 @@ from ..errors import (
 from ..git_repo.git_branch import DEFAULT_BRANCH
 from ..tree.cgs_format import CgsDocument, repo_identifier
 from ..tree.operations import AncestorOperation, MemoryMergeOperation
+from ..tree.operations.project_claim import ProjectClaim
+from .anonymous_install import AnonymousInstall
 from .memory_chapters import MemoryChapters
 
 if TYPE_CHECKING:
@@ -774,7 +776,7 @@ class MemoryCommands:
         user_name, user_email = MasterConfig.resolve_identity(mount, self.client.git_runner)
         self.client.git_runner.commit(
             mount,
-            MemoryRepository.self_history_commit_message(workspace.name, 0, clock=self.client.clock),
+            MemoryRepository.self_history_commit_message(AnonymousInstall.label(self.client, workspace.name), 0, clock=self.client.clock),
             user_name=user_name,
             user_email=user_email,
             allow_empty=True,
@@ -912,6 +914,8 @@ class MemoryCommands:
             # Every precondition first: a refusal leaves no half-made branch behind.
             self._self_history_remote(workspace, None, "memory branch")
         git.create_branch(mount, target)
+        if registry.anonymous:
+            ProjectClaim.stamp(git, mount, target, registry.claim)
         MemoryBranchGuard(self.client).settle(mount, target, project_branch)  # off a fallback, onto its own branch
         if set_up:
             git.checkout(mount, target)
@@ -1077,7 +1081,7 @@ class MemoryCommands:
             user_name, user_email = MasterConfig.resolve_identity(mount, self.client.git_runner)
             self.client.git_runner.commit(
                 mount,
-                MemoryRepository.self_history_commit_message(workspace.name, moved, clock=self.client.clock),
+                MemoryRepository.self_history_commit_message(AnonymousInstall.label(self.client, workspace.name), moved, clock=self.client.clock),
                 user_name=user_name,
                 user_email=user_email,
             )
@@ -1146,7 +1150,7 @@ class MemoryCommands:
             self.client.git_runner.commit(
                 mount,
                 message
-                or MemoryRepository.commit_message(Path(str(status["cgshome"])).name, int(status["states"]), int(status["entries"]), clock=self.client.clock),
+                or MemoryRepository.commit_message(AnonymousInstall.label(self.client, Path(str(status["cgshome"])).name), int(status["states"]), int(status["entries"]), clock=self.client.clock),
                 user_name=user_name,
                 user_email=user_email,
             )

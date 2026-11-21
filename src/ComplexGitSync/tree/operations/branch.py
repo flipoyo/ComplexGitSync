@@ -35,6 +35,7 @@ from ..git_tree import (
 )
 from ..git_tree_branch import GitTreeBranches
 from ..memory.repository import MOUNT_PATH
+from .project_claim import ProjectClaim
 
 if TYPE_CHECKING:
     from ...orchestre import GitRunner
@@ -256,6 +257,8 @@ class BranchOperation:
                 )
                 continue
             git_runner.create_branch(repo.absolute_path, target)
+            if tree.anonymous and repo.effective_private:
+                ProjectClaim.stamp(git_runner, repo.absolute_path, target, tree.claim)
 
     @staticmethod
     def refuse_unnamed_commits(tree: WorkingGitTree, git_runner: GitRunner, *, scope: RepoScope = RepoScope.ALL) -> None:

@@ -68,6 +68,7 @@ COMMAND_HELP: dict[tuple[str, ...], tuple[str | None, tuple[str, ...]]] = {
     ("branch", "check"): (None, ("cgitsync branch check feature-x", "cgitsync branch check closed/feature-x")),
     ("branch", "delete"): (None, ("cgitsync branch delete feature-x", "cgitsync branch delete closed/feature-x --private")),
     ("fetch",): (None, ("cgitsync fetch", "cgitsync fetch --private")),
+    ("anonymise",): (None, ("cgitsync anonymise --dry-run", "cgitsync anonymise", "cgitsync anonymise --delete-old")),
     ("add",): (None, ("cgitsync add", "cgitsync add README.md docs/Text/user_guide.tex", "cgitsync add --dry-run")),
     ("rm",): (None, ("cgitsync rm old_notes.md", "cgitsync rm old_notes.md --dry-run")),
     ("commit",): (None, ('cgitsync commit "Fix the install section"', 'cgitsync commit -m "Fix the install section" --private')),

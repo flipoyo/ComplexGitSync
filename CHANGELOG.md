@@ -1,5 +1,19 @@
 # Changelog
 
+## 8.11.0 - 2026-11-21
+
+- A project can keep its name out of the repositories it shares: `anonymous =
+  "sequence"` or `"hash"` in the `project` table of its `.cgs` files it under
+  an alias in every shared repository (branches, the States in the memory, the
+  memory's commit messages, the omniscience record). The alias is chosen at
+  `bootstrap` and `initialise` against the claim file each alias branch
+  carries, and recorded in the State; a State of an anonymous project records
+  no machine path. New command `cgitsync anonymise [--dry-run] [--delete-old]`
+  moves a tree that already shares its name onto its alias without rewriting
+  history. An anonymous project whose name is shaped like an alias, and any unknown key in the
+  `project` table, are now refused by `validate`. Nothing changes for a
+  project without the option.
+
 ## 8.10.1 - 2026-11-21
 
 - `status` no longer lists and checks every tracked file of a repository that

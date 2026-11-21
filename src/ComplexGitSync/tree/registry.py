@@ -57,6 +57,7 @@ from ..git_repo.git_repo import (
     WorkingRepo,
 )
 from ..universal_clock import ClockProtocol, SystemClock
+from .anonymous_state import AnonymousState
 from .cgs_format import CgsDocument
 from .git_tree import (
     ROOT_REPO_ID,
@@ -141,15 +142,21 @@ class RegistryTranslator:
         config_path: Path | str,
         *,
         project_root: Path | str | None = None,
+        alias: str | None = None,
+        claim: str | None = None,
     ) -> WorkingGitTree:
-        """Build a :class:`WorkingGitTree` from a ``.cgs`` document."""
+        """Build a :class:`WorkingGitTree` from a ``.cgs`` document.
+
+        With *alias* the project is anonymous: the tree is named by the alias. The root repository keeps its own
+        names in memory, since they are its address, and a State says the alias in their place.
+        """
         source_path = Path(config_path).resolve()
         root_path = (
             Path(project_root).resolve() if project_root is not None else source_path.parent.resolve()
         )
         root_entry = WorkingRepo(
             repo_id=ROOT_REPO_ID,
-            name=document.project_name or source_path.stem,
+            name=alias or document.project_name or source_path.stem,
             node_type=NodeType.ROOT,
             parent_id=None,
             absolute_path=root_path,
@@ -163,6 +170,7 @@ class RegistryTranslator:
         )
 
         registry = WorkingGitTree()
+        registry.anonymous, registry.claim = alias is not None, claim
         registry.add(root_entry)
 
         seen_relative_paths: set[Path] = set()
@@ -306,6 +314,8 @@ class RegistryTranslator:
         """
         registry = WorkingGitTree()
         registry._name_project(_as_optional_str(document.read("project.name")))
+        registry.anonymous = document.read("project.anonymous") is True
+        registry.claim = _as_optional_str(document.read("project.claim"))
         path_to_repo_id: dict[Path, str] = {}
         project_source_cgs_path = document.read("project.source_cgs_path")
         tree_root = RegistryTranslator._tree_root_of(document, tree_root)
@@ -416,6 +426,8 @@ class RegistryTranslator:
             # written against it, so nothing else about the disk survives.
             "root_absolute_path": PathResolver.to_environment_marker(root_entry.absolute_path),
         }
+        if AnonymousState.project_block(registry, block):
+            return block
         if source_cgs_path is not None:
             recorded = PathResolver.against_tree(source_cgs_path, root_entry.absolute_path)
             if recorded is not None:
@@ -438,12 +450,12 @@ class RegistryTranslator:
             "worktree_state": entry.worktree_state,
             "source_cgs_path": (
                 PathResolver.against_tree(entry.source_cgs_path, tree_root)
-                if entry.source_cgs_path
+                if entry.source_cgs_path and not (registry.anonymous and entry.source_cgs_path == registry.get(ROOT_REPO_ID).source_cgs_path)
                 else None
             ),
             "project_owner_name": entry.project_owner_name,
-            "project_name": entry.project_name,
-            "repo_name": entry.repo_name,
+            "project_name": AnonymousState.name(registry, entry.project_name),
+            "repo_name": AnonymousState.name(registry, entry.repo_name),
             "gitprovider": entry.gitprovider.value,
             "group_name": entry.group_name,
             "gitprovider_url": entry.gitprovider_url,

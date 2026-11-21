@@ -258,6 +258,11 @@ class WorkingGitTree(GitTree):
     #: and read back afterwards from the branch the memory is on
     #: (``GitTreeBranches.settle_memory_twin``); never stored anywhere else.
     memory_twin: bool = False
+    #: Whether the tree is an anonymous project (AnonymousProject): ``project_name`` is then its alias, and no
+    #: State written from it carries the real name or a path that could. Recorded in the State, so a reload keeps it.
+    anonymous: bool = False
+    #: The claim an anonymous project stamps on the branches it makes: the SHA-256 of its real name (``None`` otherwise).
+    claim: str | None = None
 
     def add(self, repo: WorkingRepo) -> WorkingRepo:
         """Register *repo* and return it. The root names the project, once."""
