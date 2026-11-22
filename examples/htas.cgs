@@ -6,7 +6,7 @@
 # uses, and has no .cgs of its own; all repositories use autoTest with
 # main as fallback.
 
-project = { name = "HydrologicalTwinAlphaSeries", default_branch = "autoTest" }
+project = { name = "HydrologicalTwinAlphaSeries", default_branch = "HT-BETA" }
 
 repos = [
     { repository = "github:flipoyo/HydrologicalTwinAlphaSeries", fallback_branch = "main" },
