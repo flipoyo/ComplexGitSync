@@ -50,6 +50,7 @@ from ..errors import GitSyncError
 from ..git_repo.git_branch import (
     DEFAULT_BRANCH,
     BranchResolution,
+    BranchSource,
     behind_gate,
     closed_branch_origin,
     is_twin_branch,
@@ -200,13 +201,11 @@ class GitTreeBranches:
     def guest(self, repo: WorkingRepo) -> bool:
         """Whether *repo* is shared with other projects, so it is on ``<project>_<branch>`` (:func:`git_branch.behind_gate`).
 
-        A nested Parent, a project repository its nested ``.cgs`` declares, or ComplexGitSync mounted as
-        a tool: in every tree (ParentBranch). The root is never one.
+        Every repository that is not private, in every tree (RootBareBranch): only the root is on the
+        project's bare branch. What it follows is a tag only where the move is to one (:func:`resolve_propagated_ref`).
         """
         root = self.root
-        if root is None or repo is root or repo.target_ref_kind is RefKind.TAG:
-            return False
-        return behind_gate(repo, project_name=self._project_name, parent=MountGuard.follows_parent(self._tree, repo))
+        return root is not None and repo is not root and behind_gate(repo)
 
     @property
     def is_detached(self) -> bool:
@@ -245,7 +244,7 @@ class GitTreeBranches:
             ref_name = level
         return resolve_propagated_ref(
             repo, ref_name, ref_kind=ref_kind, project_name=self._project_name, twin=twin, owner=owner, guest=guest,
-            pinnable=guest and MountGuard.owner(self._tree, repo) is None and MountGuard.is_parent(self._tree, repo),
+            pinnable=guest and MountGuard.owner(self._tree, repo) is None,
             tree_default=self.root.default_branch if self.root is not None else None,
         )
 
@@ -321,9 +320,9 @@ class GitTreeBranches:
             ):
                 continue
             if (repo.effective_private and repo.effective_writable) or self.guest(repo):
-                declared = self.target(repo, tree_ref).name
-                repo.target_ref_name = declared
-                repo.default_branch = declared
+                resolution = self.target(repo, tree_ref)
+                if resolution.source is not BranchSource.REPO_DEFAULT:  # a branch typed on the entry stays as typed
+                    repo.target_ref_name = repo.default_branch = resolution.name
 
     def settle_recorded_tags(self) -> tuple[str, ...]:
         """Record the branch Git has checked out where a State recorded a tag.

@@ -646,6 +646,7 @@ class BranchOperation:
         for repo in iter_tree(tree):
             current = branches.observed(repo)
             repo_branches[repo.name] = current
+            wanted = branches.expected(repo) if branches.guest(repo) else reference_branch  # RootBareBranch
 
             if current is None:
                 # Detached HEAD: allowed only when the repo carries a tag reference
@@ -657,12 +658,12 @@ class BranchOperation:
                 conflicts.append(
                     BranchTopologyConflict(
                         repo_name=repo.name,
-                        expected_branch=reference_branch,
+                        expected_branch=wanted,
                         actual_branch=None,
                         conflict_kind=kind,
                     )
                 )
-            elif reference_branch is not None and current != reference_branch:
+            elif wanted is not None and current != wanted:
                 kind = (
                     "tag_divergence"
                     if repo.resolved_ref_kind == RefKind.TAG
@@ -671,7 +672,7 @@ class BranchOperation:
                 conflicts.append(
                     BranchTopologyConflict(
                         repo_name=repo.name,
-                        expected_branch=reference_branch,
+                        expected_branch=wanted,
                         actual_branch=current,
                         conflict_kind=kind,
                     )

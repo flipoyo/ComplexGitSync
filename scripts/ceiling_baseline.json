@@ -67,7 +67,7 @@
     },
     "cli/memory_prompt.py": {
       "internal_imports": 9,
-      "loc": 141,
+      "loc": 142,
       "public_symbols": 5
     },
     "cli/minimalist.py": {
@@ -482,7 +482,7 @@
     },
     "tree/operations/branch.py": {
       "internal_imports": 20,
-      "loc": 609,
+      "loc": 610,
       "public_symbols": 4
     },
     "tree/operations/commit.py": {

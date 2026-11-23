@@ -20,7 +20,8 @@ def git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo, check=True, text=True, capture_output=True).stdout.strip()
 
 
-def _remote(tmp_path: Path, name: str) -> Path:
+def _remote(tmp_path: Path, name: str, branch: str = "main") -> Path:
+    """A bare remote holding ``main`` and *branch*, its HEAD on *branch* (a leaf's is ``<project>``, RootBareBranch)."""
     remote = tmp_path / f"{name}.git"
     git(tmp_path, "init", "--bare", "-b", "main", remote.as_posix())
     seed = tmp_path / f"{name}-seed"
@@ -34,11 +35,15 @@ def _remote(tmp_path: Path, name: str) -> Path:
     git(seed, "commit", "-m", "initial")
     git(seed, "remote", "add", "origin", remote.as_posix())
     git(seed, "push", "-u", "origin", "main")
+    if branch != "main":
+        git(seed, "push", "origin", f"main:{branch}")
+        git(remote, "symbolic-ref", "HEAD", f"refs/heads/{branch}")
     return remote
 
 
 def _entry(name: str, path: Path, root: Path, sha: str) -> str:
     leaf = name != "demo"
+    branch = "demo" if leaf else "main"  # only the root is on the project's bare branch
     parent = f'parent_absolute_path = "{root.as_posix()}"\nrelative_path = ".{name}"\n' if leaf else 'relative_path = "."\n'
     return f"""
 [[repo_state]]
@@ -48,11 +53,11 @@ absolute_path = "{path.as_posix()}"
 {parent}repo_lifecycle_state = "READY"
 sync_state = "ALIGNED"
 current_ref_kind = "branch"
-current_ref_name = "main"
+current_ref_name = "{branch}"
 target_ref_kind = "branch"
-target_ref_name = "main"
+target_ref_name = "{branch}"
 resolved_ref_kind = "branch"
-resolved_ref_name = "main"
+resolved_ref_name = "{branch}"
 commit_sha = "{sha}"
 project_owner_name = "owner"
 project_name = "{name}"
@@ -64,11 +69,11 @@ def three_repo_tree(tmp_path: Path, *, ahead: bool = True) -> dict[str, Path]:
     """Clone three repositories, give each one unpushed commit, and write the ``.gts`` that loads them."""
     root = tmp_path / "demo"
     paths = {"demo": root, "alpha": root / ".alpha", "beta": root / ".beta"}
-    remotes = {name: _remote(tmp_path, name) for name in ORDER}
+    remotes = {name: _remote(tmp_path, name, "main" if name == "demo" else "demo") for name in ORDER}
     git(tmp_path, "clone", "-b", "main", remotes["demo"].as_posix(), root.as_posix())
     (root / ".cgitsync").mkdir()  # a workspace that has been used, so its writing commands take the lock
     for name in ("alpha", "beta"):
-        git(tmp_path, "clone", "-b", "main", remotes[name].as_posix(), paths[name].as_posix())
+        git(tmp_path, "clone", "-b", "demo", remotes[name].as_posix(), paths[name].as_posix())
     for name, path in paths.items():
         git(path, "config", "user.email", "t@e.st")
         git(path, "config", "user.name", "Test")
@@ -108,7 +113,7 @@ def loaded(snapshot: Path, runner: object | None = None) -> ComplexGitSyncClient
 
 
 def remote_head(remote: Path) -> str:
-    return git(remote, "rev-parse", "main")
+    return git(remote, "rev-parse", "HEAD")  # the branch the tree pushes there
 
 
 def remote_tags(remote: Path) -> list[str]:

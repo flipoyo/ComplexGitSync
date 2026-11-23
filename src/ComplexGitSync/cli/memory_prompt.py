@@ -136,9 +136,10 @@ def offer_missing_branches(client: ComplexGitSyncClient) -> None:
     """After an install that left a private/local repository on its fallback branch: say so by name, offer the fix (EnvConnect C7)."""
     said: set[str] = set()
     for missing in getattr(client, "missing_private_branches", None) or []:
+        level = "info" if client.get_dependency_registry().profile == "user" else "warning"  # a USER tree never commits (Q2)
         lacking = f", which does not hold its {missing['config']}" if missing["config"] else ""
         print(
-            f"warning: {missing['repo']} has no branch {missing['wanted']!r} yet, so it was cloned on "
+            f"{level}: {missing['repo']} has no branch {missing['wanted']!r} yet, so it was cloned on "
             f"{missing['landed']!r}{lacking}. Do not commit to it there: "
             "a writable repository left on a fallback branch would write to that branch.",
             file=sys.stderr,

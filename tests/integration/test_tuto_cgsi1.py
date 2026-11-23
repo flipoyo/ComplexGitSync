@@ -107,6 +107,9 @@ def cgsi1_sandbox(tmp_path: Path, monkeypatch) -> dict[str, Path]:
     cgsi1_remote, _ = _seed_remote_repo(tmp_path, "CGSil1")
     cgsi2_remote, _ = _seed_remote_repo(tmp_path, "CGSil2")
     cgsih1_remote, _ = _seed_remote_repo(tmp_path, "CGSih1")
+    # Only the root is on the project's bare branch: on main, every other repository is on <project> (RootBareBranch).
+    for leaf in (cgsi2_remote, cgsih1_remote):
+        _run_git(leaf, "branch", "CGSil1", "main")
 
     cgs_path = tmp_path / "CGSil1.cgs"
     cgs_path.write_text(_cgsi1_tutorial_cgs(), encoding="utf-8")
@@ -323,7 +326,7 @@ class TestTutoCGSil1CLI:
         assert cli_main(["commit", "tutorial: a first note and a README line"]) == 0
         capsys.readouterr()
         assert cli_main(["push"]) == 0
-        assert "pushed CGSil2: origin/feature (upstream set)" in capsys.readouterr().out
+        assert "pushed CGSil2: origin/CGSil1_feature (upstream set)" in capsys.readouterr().out
         refused = subprocess.run(["git", "push", "origin", "HEAD:main"], cwd=home, capture_output=True, text=True)
         assert refused.returncode != 0 and "protected branches" in refused.stderr
 
@@ -339,7 +342,7 @@ class TestTutoCGSil1CLI:
         assert cli_main(["commit", "tutorial: a change we will regret"]) == 0
         capsys.readouterr()
         assert cli_main(["push"]) == 0
-        assert "pushed CGSil2: origin/feature (+1)" in capsys.readouterr().out
+        assert "pushed CGSil2: origin/CGSil1_feature (+1)" in capsys.readouterr().out
 
         # Step 9: a colleague installs from the .cgs: main never got the work
         assert cli_main(["bootstrap", cgs, "CGSil1-latest", "--cgs-path", str(tmp_path / "two")]) == 0
@@ -428,11 +431,11 @@ class TestReleaseTags:
 
         out = _change_and_push(home, "after the release", capsys)
 
-        assert "pushed CGSil2: origin/main (+1)" in out
+        assert "pushed CGSil2: origin/CGSil1 (+1)" in out
         assert "origin/CGSil1-v1.0" not in out
         remote = cgsi1_sandbox["CGSil2_remote"]
-        assert "after the release" in _run_git(remote, "show", "main:notes.txt")
-        assert _run_git(remote, "rev-parse", "CGSil1-v1.0^{commit}") != _run_git(remote, "rev-parse", "main")
+        assert "after the release" in _run_git(remote, "show", "CGSil1:notes.txt")
+        assert _run_git(remote, "rev-parse", "CGSil1-v1.0^{commit}") != _run_git(remote, "rev-parse", "CGSil1")
 
     def test_checkout_of_the_tag_restores_the_release_and_creates_no_branch(
         self, cgsi1_sandbox, monkeypatch, tmp_path, capsys
@@ -462,7 +465,7 @@ class TestReleaseTags:
         client.commit("after v1.1")
         client.push()
 
-        assert "after v1.1" in _run_git(cgsi1_sandbox["CGSil2_remote"], "show", "main:notes.txt")
+        assert "after v1.1" in _run_git(cgsi1_sandbox["CGSil2_remote"], "show", "CGSil1:notes.txt")
 
     def test_a_read_only_repository_is_left_alone_and_a_missing_tag_refuses(
         self, cgsi1_sandbox, monkeypatch, tmp_path
@@ -480,7 +483,7 @@ class TestReleaseTags:
 
         with pytest.warns(UserWarning, match="left as they are.*CGSih1"):
             assert cli_main(["checkout", "CGSil1-v1.0", "--ref-kind", "tag"]) == 0
-        assert _run_git(home / "CGSih1", "branch", "--show-current") == "main"
+        assert _run_git(home / "CGSih1", "branch", "--show-current") == "main"  # private/distant: it keeps its own branch
         assert _run_git(home / "CGSil2", "branch", "--show-current") == ""
 
         assert cli_main(["checkout", "main"]) == 0
@@ -506,8 +509,8 @@ class TestReleaseTags:
         client.freeze("v2.0")
 
         remote = cgsi1_sandbox["CGSil2_remote"]
-        assert _run_git(remote, "rev-parse", "main") == _run_git(remote, "rev-parse", "v2.0^{commit}")
-        assert "in the release step" in _run_git(remote, "show", "main:notes.txt")
+        assert _run_git(remote, "rev-parse", "CGSil1") == _run_git(remote, "rev-parse", "v2.0^{commit}")
+        assert "in the release step" in _run_git(remote, "show", "CGSil1:notes.txt")
 
     def test_a_workspace_left_by_the_old_freeze_release_pushes_main(
         self, cgsi1_sandbox, monkeypatch, tmp_path, capsys
@@ -529,8 +532,8 @@ class TestReleaseTags:
         with pytest.warns(UserWarning, match="older freeze-release"):
             out = _change_and_push(home, "after the release", capsys)
 
-        assert "pushed CGSil2: origin/main (+1)" in out
-        assert "after the release" in _run_git(cgsi1_sandbox["CGSil2_remote"], "show", "main:notes.txt")
+        assert "pushed CGSil2: origin/CGSil1 (+1)" in out
+        assert "after the release" in _run_git(cgsi1_sandbox["CGSil2_remote"], "show", "CGSil1:notes.txt")
         assert Path(snapshot).read_bytes() == old_state
 
 
@@ -540,12 +543,12 @@ class TestReleaseTags:
 
 
 def _protect_main(remote: Path) -> None:
-    """Make *remote* refuse any push to ``main``, with the words GitLab uses for a protected branch."""
+    """Make *remote* refuse any push to ``main``, and to ``CGSil1`` (what a leaf is on when the root is on ``main``), with the words GitLab uses for a protected branch."""
     hook = remote / "hooks" / "pre-receive"
     hook.write_text(
         "#!/bin/sh\n"
         "while read old new ref; do\n"
-        '  if [ "$ref" = refs/heads/main ]; then\n'
+        '  if [ "$ref" = refs/heads/main ] || [ "$ref" = refs/heads/CGSil1 ]; then\n'
         "    echo 'GitLab: You are not allowed to push code to protected branches on this project.'\n"
         "    exit 1\n"
         "  fi\n"

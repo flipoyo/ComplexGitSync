@@ -101,17 +101,6 @@ class MountGuard:
         return name is not None and name != registry.project_name
 
     @staticmethod
-    def follows_parent(registry: WorkingGitTree, entry: WorkingRepo) -> bool:
-        """Whether *entry* is a nested Parent, or a project repository one declares (ParentBranch, Q1)."""
-        if MountGuard.is_parent(registry, entry):
-            return True
-        parent = registry.repos.get(entry.parent_id) if entry.parent_id else None
-        if parent is None or parent is registry.repos.get(ROOT_REPO_ID) or entry.effective_private or entry.target_ref_kind is RefKind.TAG:
-            return False
-        held = parent.source_cgs_path
-        return held is not None and entry.source_cgs_path == held and MountGuard.follows_parent(registry, parent)
-
-    @staticmethod
     def _spec_project(spec: Path) -> str | None:
         """The project a ``.cgs`` names, read once per file state; ``None`` for one that cannot be read."""
         try:

@@ -199,7 +199,9 @@ def test_target_applies_the_private_local_naming_rule(tree):
     distant = tree.get("root:.agentSpec")
     docs = tree.get("root:docs")
 
-    assert branches.target(docs, "apoub").name == "apoub"
+    # Only the root is on the bare branch: a project repository takes <project>_<branch> too (RootBareBranch).
+    assert branches.target(docs, "apoub").name == "Demo_apoub"
+    assert branches.target(docs, "main").name == "Demo"
     assert branches.target(local, "apoub").name == "Demo_apoub"
     assert branches.target(local, "main").name == "Demo"
     assert branches.target(distant, "apoub").name == "main"
@@ -210,7 +212,7 @@ def test_expected_measures_against_the_trees_own_branch(tree):
 
     branches = GitTreeBranches(tree, runner)
 
-    assert branches.expected(tree.get("root:docs")) == "apoub"
+    assert branches.expected(tree.get("root:docs")) == "Demo_apoub"
     assert branches.expected(tree.get("root:.localSpec")) == "Demo_apoub"
 
 
@@ -246,7 +248,7 @@ def test_a_private_local_repo_on_its_derived_branch_is_not_a_deviation(tree, tmp
     runner = _BranchReadingRunner(
         {
             tmp_path: "apoub",
-            tmp_path / "docs": "apoub",
+            tmp_path / "docs": "Demo_apoub",
             tmp_path / ".localSpec": "Demo_apoub",
             tmp_path / ".agentSpec": "main",
         }
@@ -269,7 +271,7 @@ def test_a_repo_left_behind_is_reported_with_both_branches(tree, tmp_path):
 
     assert len(deviations) == 1
     assert deviations[0].repo.name == "docs"
-    assert deviations[0].expected == "apoub"
+    assert deviations[0].expected == "Demo_apoub"
     assert deviations[0].observed == "main"
 
 

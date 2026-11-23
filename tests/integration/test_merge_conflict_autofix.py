@@ -49,23 +49,24 @@ def _git(repo_path: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo_path, check=True, capture_output=True)
 
 
-def _init_repo(repo_path: Path, *, conflicting: bool) -> None:
+def _init_repo(repo_path: Path, *, conflicting: bool, branch: str = "main") -> None:
+    merge_branch = _MERGE_BRANCH if branch == "main" else f"{branch}_{_MERGE_BRANCH}"  # a leaf merges its derived branch
     repo_path.mkdir(parents=True, exist_ok=True)
     target = repo_path / "prose.txt"
 
-    _git(repo_path, "init", "-b", "main")
+    _git(repo_path, "init", "-b", branch)
     _git(repo_path, "config", "user.email", "t@example.com")
     _git(repo_path, "config", "user.name", "Test")
     target.write_text("base\n", encoding="utf-8")
     _git(repo_path, "add", "-A")
     _git(repo_path, "commit", "-m", "base")
 
-    _git(repo_path, "checkout", "-b", _MERGE_BRANCH)
+    _git(repo_path, "checkout", "-b", merge_branch)
     target.write_text("from-feature\n", encoding="utf-8")
     _git(repo_path, "add", "-A")
     _git(repo_path, "commit", "-m", "feature change")
 
-    _git(repo_path, "checkout", "main")
+    _git(repo_path, "checkout", branch)
     if conflicting:
         target.write_text("from-main\n", encoding="utf-8")
         _git(repo_path, "add", "-A")
@@ -76,11 +77,11 @@ def _init_repo(repo_path: Path, *, conflicting: bool) -> None:
         ["git", "init", "--bare", str(remote_path)], check=True, capture_output=True
     )
     _git(repo_path, "remote", "add", "origin", str(remote_path))
-    _git(repo_path, "push", "-u", "origin", "main")
-    _git(repo_path, "push", "origin", _MERGE_BRANCH)
+    _git(repo_path, "push", "-u", "origin", branch)
+    _git(repo_path, "push", "origin", merge_branch)
 
 
-def _entry(repo_id, name, node_type, parent_id, absolute_path, root_path) -> WorkingRepo:
+def _entry(repo_id, name, node_type, parent_id, absolute_path, root_path, branch: str = "main") -> WorkingRepo:
     return WorkingRepo(
         repo_id=repo_id,
         name=name,
@@ -91,11 +92,11 @@ def _entry(repo_id, name, node_type, parent_id, absolute_path, root_path) -> Wor
             Path(".") if parent_id is None else absolute_path.relative_to(root_path)
         ),
         current_ref_kind=RefKind.BRANCH,
-        current_ref_name="main",
+        current_ref_name=branch,
         target_ref_kind=RefKind.BRANCH,
-        target_ref_name="main",
+        target_ref_name=branch,
         resolved_ref_kind=RefKind.BRANCH,
-        resolved_ref_name="main",
+        resolved_ref_name=branch,
         commit_sha=GitRunner().rev_parse_head(absolute_path),
         repo_lifecycle_state=RepoLifecycleState.READY,
         sync_state=SyncState.ALIGNED,
@@ -105,7 +106,7 @@ def _entry(repo_id, name, node_type, parent_id, absolute_path, root_path) -> Wor
         project_owner_name="owner",
         project_name=name,
         access_protocol=AccessProtocol.SSH,
-        default_branch="main",
+        default_branch=branch,
         remote_name="origin",
     )
 
@@ -116,7 +117,7 @@ def refused_merge(tmp_path):
     root_path = tmp_path / "project"
     leaf_path = root_path / "deps" / "leaf"
     _init_repo(root_path, conflicting=True)
-    _init_repo(leaf_path, conflicting=False)
+    _init_repo(leaf_path, conflicting=False, branch="project")
     (root_path / ".gitignore").write_text("deps/\n", encoding="utf-8")
     _git(root_path, "add", "-A")
     _git(root_path, "commit", "-m", "ignore nested repo")
@@ -124,7 +125,7 @@ def refused_merge(tmp_path):
     tree = WorkingGitTree()
     tree.add(_entry("root", "project", NodeType.ROOT, None, root_path, root_path))
     tree.add(
-        _entry("root:deps/leaf", "leaf", NodeType.LEAF, "root", leaf_path, root_path)
+        _entry("root:deps/leaf", "leaf", NodeType.LEAF, "root", leaf_path, root_path, "project")
     )
     tree.recompute_tree_state()
     assert tree.is_ready()

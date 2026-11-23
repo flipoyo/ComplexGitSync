@@ -86,7 +86,8 @@ def _snapshot_of(root: Path) -> Path:
 
 
 def _tree(tmp_path: Path, *, memory_branches: tuple[str, ...]) -> dict[str, Path]:
-    remotes = {"demo": _seed(tmp_path, "demo")[0], "leaf": _seed(tmp_path, "leaf")[0]}
+    # Only the root is on the project's bare branch: the leaf's remote holds ``demo`` (RootBareBranch).
+    remotes = {"demo": _seed(tmp_path, "demo")[0], "leaf": _seed(tmp_path, "leaf", branches=("main", "demo"))[0]}
     remotes[MEMORY] = _seed(tmp_path, "memory", branches=memory_branches)[0]
     return remotes
 

@@ -38,8 +38,8 @@ The public surface
     private_local_branch      <project>_<branch> for a private/local repo,
                               ComplexGitSync_<project>[_<branch>] for a twin's memory
     is_twin_branch            Whether a branch is a twin's memory branch for a project
-    behind_gate               Whether a repository is shared with other projects: a nested Parent,
-                              or ComplexGitSync mounted by another project
+    behind_gate               Whether a repository takes <project>_<branch>: every one that is not private
+                              (the root, which is on the bare branch, is ruled out by the tree)
     structural_name_problem   Why a new project or branch name may not be created, or None
     resolve_propagated_ref    Target ref under a tree-wide branch move (privacy)
     closed_branch_name        closed/<branch> — the name a closed branch is renamed to
@@ -379,13 +379,13 @@ def foreign_tool(entry: WorkingRepo, *, project_name: str | None) -> bool:
     return not entry.effective_private and entry.repo_name == TWIN_BRANCH_OWNER and project_name not in (None, TWIN_BRANCH_OWNER)
 
 
-def behind_gate(entry: WorkingRepo, *, project_name: str | None, parent: bool = False) -> bool:
-    """Whether *entry* is shared with other projects, so it takes ``<project>_<branch>`` (ParentBranch, Q1 and Q4).
+def behind_gate(entry: WorkingRepo) -> bool:
+    """Whether *entry* takes ``<project>_<branch>``: every repository that is not private (RootBareBranch).
 
-    A nested Parent (*parent*, which only the tree can say: ``MountGuard.follows_parent``), or
-    ComplexGitSync mounted as a tool of another project (:func:`foreign_tool`), in every tree.
+    Only the root is on the project's bare branch, and :meth:`GitTreeBranches.guest` has already ruled the
+    root and a tag out. A library, a Parent and what a Parent declares are shared with other projects alike.
     """
-    return not entry.effective_private and (parent or foreign_tool(entry, project_name=project_name))
+    return not entry.effective_private
 
 
 def _declared_pin(entry: WorkingRepo, *, project_name: str | None, tree_default: str | None) -> str | None:
@@ -515,8 +515,8 @@ def resolve_propagated_ref(
     not, so a frozen release stays reproducible; branches stop at a private
     repository and tags do not, which is the whole meaning of the field.
 
-    **Not private** — the repository is this project's own, and follows the
-    move to *ref_name*.
+    **The root** follows the move to *ref_name*, the only repository on the project's bare
+    branch; **any other repository that is not private** takes ``<project_name>_<ref_name>``.
 
     **private/distant** (``private``) — the repository is private to its
     owner. This project reads it and cannot commit to it, so nothing this

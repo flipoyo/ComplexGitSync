@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from ComplexGitSync.errors import GitSyncError, TreeNotReadyError
-from ComplexGitSync.git_repo.git_branch import resolve_propagated_ref
+from ComplexGitSync.git_repo.git_branch import private_local_branch, resolve_propagated_ref
 from ComplexGitSync.git_repo.git_repo import (
     NodeType,
     RefKind,
@@ -97,6 +97,15 @@ def _ledger_entries(root_path: Path):
     return LedgerStore(root_path / ".cgitsync" / "lgr").read_all_entries()
 
 
+_BUILT_TREES: list[WorkingGitTree] = []  # the fixtures' trees, so the fake runner can say where a repository is
+
+
+def _branch_of(registry: WorkingGitTree, repo, name: str) -> str:
+    """The branch *repo* has when the tree is on *name*: the root's own, any other's ``<project>_<name>``."""
+    root = registry.get("root")
+    return name if repo is root else private_local_branch(root.name, name)
+
+
 def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:
     """Build a minimal 3-entry READY registry backed by real directories."""
     from ComplexGitSync.git_repo.git_repo import (
@@ -117,6 +126,7 @@ def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:
             if parent_id is None
             else absolute_path.relative_to(root_path)
         )
+        branch = "main"
         return WorkingRepo(
             repo_id=repo_id,
             name=name,
@@ -125,11 +135,11 @@ def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:
             absolute_path=absolute_path,
             relative_path=relative_path,
             current_ref_kind=RefKind.BRANCH,
-            current_ref_name="main",
+            current_ref_name=branch,
             target_ref_kind=RefKind.BRANCH,
-            target_ref_name="main",
+            target_ref_name=branch,
             resolved_ref_kind=RefKind.BRANCH,
-            resolved_ref_name="main",
+            resolved_ref_name=branch,
             commit_sha="abc123",
             repo_lifecycle_state=RepoLifecycleState.READY,
             sync_state=SyncState.ALIGNED,
@@ -139,7 +149,7 @@ def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:
             project_owner_name="owner",
             project_name=name,
             access_protocol=AccessProtocol.SSH,
-            default_branch="main",
+            default_branch=branch,
             remote_name="origin",
         )
 
@@ -152,6 +162,7 @@ def _make_ready_registry(tmp_path: Path) -> WorkingGitTree:
     )
     registry.recompute_tree_state()
     assert registry.is_ready(), "Fixture must produce a READY registry"
+    _BUILT_TREES.append(registry)
     return registry
 
 
@@ -171,6 +182,7 @@ def _make_deep_ready_registry(tmp_path: Path) -> WorkingGitTree:
         p.mkdir(parents=True)
 
     def _entry(repo_id, name, node_type, parent_id, absolute_path, parent_root):
+        branch = "main"
         return WorkingRepo(
             repo_id=repo_id,
             name=name,
@@ -183,11 +195,11 @@ def _make_deep_ready_registry(tmp_path: Path) -> WorkingGitTree:
                 else absolute_path.relative_to(parent_root)
             ),
             current_ref_kind=RefKind.BRANCH,
-            current_ref_name="main",
+            current_ref_name=branch,
             target_ref_kind=RefKind.BRANCH,
-            target_ref_name="main",
+            target_ref_name=branch,
             resolved_ref_kind=RefKind.BRANCH,
-            resolved_ref_name="main",
+            resolved_ref_name=branch,
             commit_sha="abc123",
             repo_lifecycle_state=RepoLifecycleState.READY,
             sync_state=SyncState.ALIGNED,
@@ -197,7 +209,7 @@ def _make_deep_ready_registry(tmp_path: Path) -> WorkingGitTree:
             project_owner_name="owner",
             project_name=name,
             access_protocol=AccessProtocol.SSH,
-            default_branch="main",
+            default_branch=branch,
             remote_name="origin",
         )
 
@@ -207,6 +219,7 @@ def _make_deep_ready_registry(tmp_path: Path) -> WorkingGitTree:
     registry.add(_entry("root:middle:sub", "sub", NodeType.LEAF, "root:middle", sub_path, middle_path))
     registry.recompute_tree_state()
     assert registry.is_ready(), "Deep fixture must produce a READY registry"
+    _BUILT_TREES.append(registry)
     return registry
 
 
@@ -286,7 +299,18 @@ class _FakeGitRunnerForOperations:
 
     # --- branch / checkout ---
     def current_branch(self, repo_path: Path | str) -> str | None:
-        return self._current_branches.get(Path(repo_path), "main")
+        """What a test set, else where the rule puts the repository (RootBareBranch): the root on the
+        bare branch, every other repository on ``<project>_<root's branch>``."""
+        path = Path(repo_path)
+        if path in self._current_branches:
+            return self._current_branches[path]
+        for tree in _BUILT_TREES:
+            entry = next((e for e in tree.values() if e.absolute_path == path), None)
+            root = tree.repos.get("root")
+            if entry is not None and root is not None and entry is not root:
+                return private_local_branch(root.name, self._current_branches.get(root.absolute_path) or "main")
+        return "main"
+
     def unnamed_head_commits(self, repo_path: Path | str) -> list[str]:
         return []
 
@@ -718,13 +742,14 @@ def test_restart_tree_pulls_root_and_children(tmp_path):
     # A pull needs something on the remote to pull from — see
     # TestPullSkipsUnpushedBranches for the "nothing there yet" case.
     runner._remote_tracking_branches[root_path] = {"feature-restart"}
-    runner._remote_tracking_branches[leaf_path] = {"feature-restart"}
+    runner._remote_tracking_branches[leaf_path] = {"project_feature-restart"}
 
     restart_tree(registry, runner)
 
+    # Only the root is on the bare branch; the leaf is on <project>_<branch> (RootBareBranch).
     assert runner.pulled == [
         (root_path, "origin", "feature-restart"),
-        (root_path / "deps" / "leaf", "origin", "feature-restart"),
+        (root_path / "deps" / "leaf", "origin", "project_feature-restart"),
     ]
     assert registry.is_ready()
 
@@ -741,7 +766,7 @@ def test_client_pull_gts_pulls_root_then_updates_parents_and_leaves(tmp_path):
         tmp_path / "deep" / "middle",
         tmp_path / "deep" / "middle" / "sub",
     ):
-        runner._remote_tracking_branches[path] = {"main"}
+        runner._remote_tracking_branches[path] = {"main", "deep"}
     client = ComplexGitSyncClient(
         git_runner=runner,
         state_store=RuntimeStateStore(tmp_path / "state-store"),
@@ -752,8 +777,8 @@ def test_client_pull_gts_pulls_root_then_updates_parents_and_leaves(tmp_path):
     assert result.is_ready()
     assert runner.pulled == [
         (tmp_path / "deep", "origin", "main"),
-        (tmp_path / "deep" / "middle", "origin", "main"),
-        (tmp_path / "deep" / "middle" / "sub", "origin", "main"),
+        (tmp_path / "deep" / "middle", "origin", "deep"),
+        (tmp_path / "deep" / "middle" / "sub", "origin", "deep"),
     ]
     assert runner.command_order == [
         ("pull", tmp_path / "deep"),
@@ -768,13 +793,14 @@ def test_restart_tree_propagates_branch_to_all_entries(tmp_path):
     root_path = tmp_path / "project"
     runner._current_branches[root_path] = "sync-branch"
     runner._remote_tracking_branches[root_path] = {"sync-branch"}
-    runner._remote_tracking_branches[root_path / "deps" / "leaf"] = {"sync-branch"}
+    runner._remote_tracking_branches[root_path / "deps" / "leaf"] = {"project_sync-branch"}
 
     restart_tree(registry, runner)
 
     for entry in registry.values():
-        assert entry.target_ref_name == "sync-branch"
-        assert entry.current_ref_name == "sync-branch"
+        expected = "sync-branch" if entry.repo_id == "root" else "project_sync-branch"
+        assert entry.target_ref_name == expected
+        assert entry.current_ref_name == expected
 
 
 def test_restart_tree_runs_pull_parent_first(tmp_path):
@@ -783,7 +809,7 @@ def test_restart_tree_runs_pull_parent_first(tmp_path):
     root_path = tmp_path / "deep"
     runner._current_branches[root_path] = "main"
     for path in (root_path, root_path / "middle", root_path / "middle" / "sub"):
-        runner._remote_tracking_branches[path] = {"main"}
+        runner._remote_tracking_branches[path] = {"main", "deep"}
 
     restart_tree(registry, runner)
 
@@ -806,12 +832,14 @@ class TestABranchSomebodyElsePushedIsThatBranch:
         registry = _make_ready_registry(tmp_path)
         runner = _FakeGitRunnerForOperations()
         for repo in registry.values():
-            runner._remote_tracking_branches[repo.absolute_path] = {"colleague"}
+            runner._remote_tracking_branches[repo.absolute_path] = {_branch_of(registry, repo, "colleague")}
 
         create_global_branch(registry, runner, "colleague")
 
+        assert runner.created_from
         for _, branch, start_point in runner.created_from:
-            assert (branch, start_point) == ("colleague", "origin/colleague")
+            assert start_point == f"origin/{branch}"
+            assert branch in ("colleague", "project_colleague")
 
     def test_an_unknown_branch_still_starts_where_we_stand(self, tmp_path):
         registry = _make_ready_registry(tmp_path)
@@ -836,8 +864,8 @@ class TestABranchSomebodyElsePushedIsThatBranch:
         registry = _make_ready_registry(tmp_path)
         runner = _FakeGitRunnerForOperations()
         for repo in registry.values():
-            runner._local_branches[repo.absolute_path] = {"colleague"}
-            runner._remote_tracking_branches[repo.absolute_path] = {"colleague"}
+            runner._local_branches[repo.absolute_path] = {_branch_of(registry, repo, "colleague")}
+            runner._remote_tracking_branches[repo.absolute_path] = {_branch_of(registry, repo, "colleague")}
 
         create_global_branch(registry, runner, "colleague")
 
@@ -855,12 +883,14 @@ class TestABranchSomebodyElsePushedIsThatBranch:
         runner = _FakeGitRunnerForOperations()
         for repo in registry.values():
             url = runner.remote_get_url(repo.absolute_path)
-            runner._remote_server_branches.setdefault(url, set()).add("never-fetched")
+            runner._remote_server_branches.setdefault(url, set()).add(_branch_of(registry, repo, "never-fetched"))
 
         create_global_branch(registry, runner, "never-fetched")
 
+        assert runner.created_from
         for _, branch, start_point in runner.created_from:
-            assert (branch, start_point) == ("never-fetched", "origin/never-fetched")
+            assert start_point == f"origin/{branch}"
+            assert branch in ("never-fetched", "project_never-fetched")
         assert len(runner.fetched_on_demand) == len(list(registry.values()))
 
     def test_a_name_truly_unknown_to_the_remote_pays_the_round_trip_and_still_forks_fresh(
@@ -958,11 +988,11 @@ class TestPullSkipsUnpushedBranches:
         sub_path = middle_path / "sub"
         runner._current_branches[root_path] = "main"
         # Only the middle repository was ever pushed under this name.
-        runner._remote_tracking_branches[middle_path] = {"main"}
+        runner._remote_tracking_branches[middle_path] = {"deep"}
 
         restart_tree(registry, runner)
 
-        assert runner.pulled == [(middle_path, "origin", "main")]
+        assert runner.pulled == [(middle_path, "origin", "deep")]
         assert root_path not in [path for path, _, _ in runner.pulled]
         assert sub_path not in [path for path, _, _ in runner.pulled]
 
@@ -1035,14 +1065,14 @@ def test_restart_tree_force_pulls_parent_first(tmp_path):
     root_path = tmp_path / "deep"
     runner._current_branches[root_path] = "main"
     for path in (root_path, root_path / "middle", root_path / "middle" / "sub"):
-        runner._remote_tracking_branches[path] = {"main"}
+        runner._remote_tracking_branches[path] = {"main", "deep"}
 
     restart_tree_force(registry, runner)
 
     assert runner.force_pulled == [
         (root_path, "origin", "main"),
-        (root_path / "middle", "origin", "main"),
-        (root_path / "middle" / "sub", "origin", "main"),
+        (root_path / "middle", "origin", "deep"),
+        (root_path / "middle" / "sub", "origin", "deep"),
     ]
     executed_force_paths = [
         path for action, path in runner.command_order if action == "force_pull"
@@ -1060,7 +1090,7 @@ def test_restart_tree_falls_back_to_resolved_ref_when_no_current_branch(tmp_path
     root_path = tmp_path / "project"
     runner._current_branches[root_path] = None
     runner._remote_tracking_branches[root_path] = {"fallback-branch"}
-    runner._remote_tracking_branches[root_path / "deps" / "leaf"] = {"fallback-branch"}
+    runner._remote_tracking_branches[root_path / "deps" / "leaf"] = {"project_fallback-branch"}
     # Set a resolved ref name on the root entry as fallback
     registry.get("root").resolved_ref_name = "fallback-branch"
 
@@ -1068,7 +1098,7 @@ def test_restart_tree_falls_back_to_resolved_ref_when_no_current_branch(tmp_path
 
     assert runner.pulled == [
         (root_path, "origin", "fallback-branch"),
-        (root_path / "deps" / "leaf", "origin", "fallback-branch"),
+        (root_path / "deps" / "leaf", "origin", "project_fallback-branch"),
     ]
 
 
@@ -1104,7 +1134,7 @@ def test_propagate_global_branch_updates_all_entries(tmp_path):
     propagate_global_branch(registry, "feature-x")
 
     for entry in registry.values():
-        assert entry.target_ref_name == "feature-x"
+        assert entry.target_ref_name == _branch_of(registry, entry, "feature-x")
         assert entry.target_ref_kind == RefKind.BRANCH
 
 
@@ -1171,7 +1201,7 @@ def test_propagate_global_branch_does_not_require_ready_tree(tmp_path):
     propagate_global_branch(registry, "any-branch")
 
     for entry in registry.values():
-        assert entry.target_ref_name == "any-branch"
+        assert entry.target_ref_name == _branch_of(registry, entry, "any-branch")
 
 
 # ---------------------------------------------------------------------------
@@ -1206,7 +1236,7 @@ def test_create_global_branch_creates_only_missing_branches(tmp_path):
     create_global_branch(registry, runner, "feature-x")
 
     # Only leaf should have had branch created
-    assert (leaf_path, "feature-x") in runner.created
+    assert (leaf_path, "project_feature-x") in runner.created
     assert (root_path, "feature-x") not in runner.created
 
 
@@ -1246,7 +1276,7 @@ def test_branch_tree_creates_branch_without_checkout(tmp_path):
     created_paths = {path for path, _ in runner.created}
     for entry in registry.values():
         assert entry.absolute_path in created_paths
-        assert entry.target_ref_name == "feature-x"
+        assert entry.target_ref_name == _branch_of(registry, entry, "feature-x")
         assert entry.target_ref_kind == RefKind.BRANCH
     assert runner.checked_out == []
     assert registry.recompute_tree_state() == TreeLifecycleState.READY
@@ -1281,8 +1311,8 @@ def test_checkout_tree_propagates_creates_and_checks_out(tmp_path):
 
     # Registry entries must reflect the new branch
     for entry in registry.values():
-        assert entry.current_ref_name == "feature-x"
-        assert entry.resolved_ref_name == "feature-x"
+        assert entry.current_ref_name == _branch_of(registry, entry, "feature-x")
+        assert entry.resolved_ref_name == _branch_of(registry, entry, "feature-x")
         assert entry.repo_lifecycle_state == RepoLifecycleState.READY
         assert entry.sync_state == SyncState.ALIGNED
         assert entry.fallback_applied is False
@@ -1310,7 +1340,7 @@ def test_checkout_tree_does_not_recreate_existing_branch(tmp_path):
     leaf_path = registry.get("root:deps/leaf").absolute_path
 
     runner = _FakeGitRunnerForOperations(
-        existing_local_branches={root_path: {"feature-x"}, leaf_path: {"feature-x"}}
+        existing_local_branches={root_path: {"feature-x"}, leaf_path: {"project_feature-x"}}
     )
 
     checkout_tree(registry, runner, "feature-x")
@@ -1338,7 +1368,7 @@ def test_operating_space_checkout_allows_direct_tree_manipulation(tmp_path):
     OperatingSpace(registry).checkout(runner, "feature-direct")
 
     for entry in registry.values():
-        assert entry.current_ref_name == "feature-direct"
+        assert entry.current_ref_name == _branch_of(registry, entry, "feature-direct")
     assert registry.recompute_tree_state() == TreeLifecycleState.READY
 
 
@@ -1350,7 +1380,7 @@ def test_branch_tree_via_operating_space_creates_branch_without_checkout(tmp_pat
     assert runner.checked_out == []
     assert len(runner.created) == len(registry.values())
     for entry in registry.values():
-        assert entry.target_ref_name == "feature-branch"
+        assert entry.target_ref_name == _branch_of(registry, entry, "feature-branch")
         assert entry.target_ref_kind == RefKind.BRANCH
 
 
@@ -1540,8 +1570,8 @@ def test_push_tree_sets_upstream_when_current_branch_is_unpublished(tmp_path):
     runner = _FakeGitRunnerForOperations()
 
     for entry in registry.values():
-        entry.resolved_ref_name = "btest0"
-        runner._current_branches[entry.absolute_path] = "btest0"
+        entry.resolved_ref_name = _branch_of(registry, entry, "btest0")
+        runner._current_branches[entry.absolute_path] = _branch_of(registry, entry, "btest0")
         runner._has_upstream[entry.absolute_path] = False
 
     push_tree(registry, runner)
@@ -1550,7 +1580,7 @@ def test_push_tree_sets_upstream_when_current_branch_is_unpublished(tmp_path):
     for path, remote, branch in runner.pushed_with_upstream:
         entry = next(e for e in registry.values() if e.absolute_path == path)
         assert remote == (entry.remote_name or "origin")
-        assert branch == "btest0"
+        assert branch == _branch_of(registry, entry, "btest0")
 
 
 def test_push_tree_does_not_set_upstream_when_upstream_exists(tmp_path):
@@ -1639,7 +1669,7 @@ def test_freeze_release_tree_pushes_the_branch_when_its_own_step_commits(tmp_pat
 
     for entry in registry.values():
         pushed = [ref for path, _, ref in runner.pushed if path == entry.absolute_path]
-        assert pushed == ["main", "release-1"], entry.name
+        assert pushed == [_branch_of(registry, entry, "main"), "release-1"], entry.name
         assert entry.current_ref_kind is not RefKind.TAG
         assert entry.target_ref_kind is not RefKind.TAG
 
@@ -1664,7 +1694,8 @@ def test_push_tree_pushes_the_checked_out_branch_when_a_tag_was_recorded(tmp_pat
 
     push_tree(registry, runner)
 
-    assert [ref for _, _, ref in runner.pushed] == ["main"] * len(registry.repos)
+    # the branch Git has checked out: the root's own, the leaf's <project>_<branch>
+    assert sorted(ref for _, _, ref in runner.pushed) == ["main", "project"]
 
 
 def test_push_tree_refuses_a_repository_detached_on_a_tag_before_pushing_any(tmp_path):
@@ -1933,8 +1964,8 @@ class TestMergeTree:
         root = registry.get("root").absolute_path
         leaf = registry.get("root:deps/leaf").absolute_path
         for path in (root, leaf):
-            runner._current_branches[path] = "main"
-            runner._local_branches[path] = {"main", "multi-branch"}
+            runner._current_branches[path] = _branch_of(registry, registry.get("root" if path == root else "root:deps/leaf"), "main")
+            runner._local_branches[path] = {runner._current_branches[path], _branch_of(registry, registry.get("root" if path == root else "root:deps/leaf"), "multi-branch")}
         # The root conflicts; the leaf is merged first, leaf-first order.
         runner._unmergeable[root] = {"multi-branch"}
 
@@ -1947,9 +1978,9 @@ class TestMergeTree:
         registry = _make_ready_registry(tmp_path)
         runner = _FakeGitRunnerForOperations()
         for repo in registry.values():
-            runner._current_branches[repo.absolute_path] = "main"
-            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
-            runner._unmergeable[repo.absolute_path] = {"multi-branch"}
+            runner._current_branches[repo.absolute_path] = _branch_of(registry, repo, "main")
+            runner._local_branches[repo.absolute_path] = {_branch_of(registry, repo, "main"), _branch_of(registry, repo, "multi-branch")}
+            runner._unmergeable[repo.absolute_path] = {_branch_of(registry, repo, "multi-branch")}
 
         with pytest.raises(GitSyncError) as excinfo:
             merge_tree(registry, runner, "multi-branch")
@@ -1970,8 +2001,8 @@ class TestMergeTree:
         runner = _FakeGitRunnerForOperations()
         root = registry.get("root").absolute_path
         for repo in registry.values():
-            runner._current_branches[repo.absolute_path] = "main"
-            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+            runner._current_branches[repo.absolute_path] = _branch_of(registry, repo, "main")
+            runner._local_branches[repo.absolute_path] = {_branch_of(registry, repo, "main"), _branch_of(registry, repo, "multi-branch")}
         runner._unmergeable[root] = {"multi-branch"}
         runner._conflicting_paths[root] = [
             Path("tests/unit/test_documents.py"),
@@ -1993,8 +2024,8 @@ class TestMergeTree:
         runner = _FakeGitRunnerForOperations()
         root = registry.get("root").absolute_path
         for repo in registry.values():
-            runner._current_branches[repo.absolute_path] = "main"
-            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+            runner._current_branches[repo.absolute_path] = _branch_of(registry, repo, "main")
+            runner._local_branches[repo.absolute_path] = {_branch_of(registry, repo, "main"), _branch_of(registry, repo, "multi-branch")}
         # Leaf-first order, so the leaf merges before the root conflicts.
         runner._unmergeable[root] = {"multi-branch"}
         runner._conflicting_paths[root] = [Path("a.txt")]
@@ -2002,7 +2033,7 @@ class TestMergeTree:
         outcome = merge_tree_one_at_a_time(registry, runner, "multi-branch")
 
         leaf = registry.get("root:deps/leaf").absolute_path
-        assert (leaf, "multi-branch") in runner.merged, "the clean leaf must merge"
+        assert (leaf, "project_multi-branch") in runner.merged, "the clean leaf must merge"
         assert outcome.stopped_at == "project"
         assert outcome.stopped_paths == (Path("a.txt"),)
 
@@ -2012,8 +2043,8 @@ class TestMergeTree:
         runner = _FakeGitRunnerForOperations()
         root = registry.get("root").absolute_path
         for repo in registry.values():
-            runner._current_branches[repo.absolute_path] = "main"
-            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+            runner._current_branches[repo.absolute_path] = _branch_of(registry, repo, "main")
+            runner._local_branches[repo.absolute_path] = {_branch_of(registry, repo, "main"), _branch_of(registry, repo, "multi-branch")}
         runner._unmergeable[root] = {"multi-branch"}
 
         outcome = merge_tree_one_at_a_time(registry, runner, "multi-branch")
@@ -2027,8 +2058,8 @@ class TestMergeTree:
         runner = _FakeGitRunnerForOperations()
         root = registry.get("root").absolute_path
         for repo in registry.values():
-            runner._current_branches[repo.absolute_path] = "main"
-            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+            runner._current_branches[repo.absolute_path] = _branch_of(registry, repo, "main")
+            runner._local_branches[repo.absolute_path] = {_branch_of(registry, repo, "main"), _branch_of(registry, repo, "multi-branch")}
         runner._unmergeable[root] = {"multi-branch"}
 
         with pytest.raises(GitSyncError):
@@ -2042,8 +2073,8 @@ class TestMergeTree:
         runner = _FakeGitRunnerForOperations()
         root = registry.get("root").absolute_path
         for repo in registry.values():
-            runner._current_branches[repo.absolute_path] = "main"
-            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+            runner._current_branches[repo.absolute_path] = _branch_of(registry, repo, "main")
+            runner._local_branches[repo.absolute_path] = {_branch_of(registry, repo, "main"), _branch_of(registry, repo, "multi-branch")}
         runner._unmergeable[root] = {"multi-branch"}
         runner._conflicting_paths[root] = [Path("a.txt")]
 
@@ -2180,7 +2211,7 @@ class TestCheckoutAndBranchBothUseTheProjectRule:
         registry = _make_registry_with_config_repo(tmp_path)
         runner = _FakeGitRunnerForOperations()
         for repo in registry.values():
-            runner._current_branches[repo.absolute_path] = "main"
+            runner._current_branches[repo.absolute_path] = _branch_of(registry, repo, "main")
             runner._local_branches[repo.absolute_path] = {"main"}
         leaf = registry.get("root:deps/leaf").absolute_path
         runner._current_branches[leaf] = "project"
@@ -2289,8 +2320,8 @@ class TestMergeNamesHistoriesWithNothingInCommon:
         registry = _make_ready_registry(tmp_path)
         runner = _FakeGitRunnerForOperations()
         for repo in registry.values():
-            runner._current_branches[repo.absolute_path] = "main"
-            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+            runner._current_branches[repo.absolute_path] = _branch_of(registry, repo, "main")
+            runner._local_branches[repo.absolute_path] = {_branch_of(registry, repo, "main"), _branch_of(registry, repo, "multi-branch")}
         return registry, runner
 
     def test_the_plan_says_unrelated_not_conflicts(self, tmp_path):
@@ -2344,8 +2375,8 @@ class TestMergeRefusesToMergeABranchIntoItself:
         registry = _make_ready_registry(tmp_path)
         runner = _FakeGitRunnerForOperations()
         for repo in registry.values():
-            runner._current_branches[repo.absolute_path] = "multi-branch"
-            runner._local_branches[repo.absolute_path] = {"main", "multi-branch"}
+            runner._current_branches[repo.absolute_path] = _branch_of(registry, repo, "multi-branch")
+            runner._local_branches[repo.absolute_path] = {_branch_of(registry, repo, "main"), _branch_of(registry, repo, "multi-branch")}
         return registry, runner
 
     def test_it_refuses_and_says_what_to_do(self, tmp_path):
@@ -2364,7 +2395,7 @@ class TestMergeRefusesToMergeABranchIntoItself:
 
         merge_tree(registry, runner, "main")
 
-        assert [ref for _, ref in runner.merged] == ["main", "main"]
+        assert sorted(ref for _, ref in runner.merged) == ["main", "project"]
 
     def test_the_plan_and_the_merge_agree(self, tmp_path):
         """One function decides both, so a dry run cannot promise a refusal."""
@@ -2568,7 +2599,7 @@ def test_client_checkout_updates_registry_and_writes_gts(tmp_path):
 
     # Registry updated
     for entry in result.values():
-        assert entry.current_ref_name == "feature-x"
+        assert entry.current_ref_name == _branch_of(result, entry, "feature-x")
     assert result.recompute_tree_state() == TreeLifecycleState.READY
 
     snapshot_path = _current_state_path(root_path)
@@ -2975,10 +3006,10 @@ def test_client_launch_state_loads_gts_clones_and_checks_out(tmp_path):
 
 
 def test_validate_branch_topology_coherent_tree(tmp_path):
-    """All repos on the same branch → coherent, no conflicts."""
+    """The root on its branch and the leaf on its derived one → coherent, no conflicts."""
     registry = _make_ready_registry(tmp_path)
     runner = _FakeGitRunnerForOperations()
-    # Default: current_branch returns "main" for all repos
+    # Default: the root is on "main", the leaf on "project" (the project name, on main)
 
     report = validate_branch_topology(registry, runner)
 
@@ -2986,7 +3017,7 @@ def test_validate_branch_topology_coherent_tree(tmp_path):
     assert report.reference_branch == "main"
     assert report.conflicts == []
     assert set(report.repo_branches.keys()) == {"project", "leaf"}
-    assert all(b == "main" for b in report.repo_branches.values())
+    assert report.repo_branches == {"project": "main", "leaf": "project"}
 
 
 def test_validate_branch_topology_misaligned_branch(tmp_path):
@@ -3003,7 +3034,7 @@ def test_validate_branch_topology_misaligned_branch(tmp_path):
     assert len(report.conflicts) == 1
     conflict = report.conflicts[0]
     assert conflict.repo_name == "leaf"
-    assert conflict.expected_branch == "main"
+    assert conflict.expected_branch == "project"
     assert conflict.actual_branch == "feature-x"
     assert conflict.conflict_kind == "misaligned_branch"
 
@@ -3065,11 +3096,11 @@ def test_validate_branch_topology_repo_branches_map(tmp_path):
     root_path = registry.get("root").absolute_path
     leaf_path = registry.get("root:deps/leaf").absolute_path
     runner._current_branches[root_path] = "develop"
-    runner._current_branches[leaf_path] = "develop"
+    runner._current_branches[leaf_path] = "project_develop"
 
     report = validate_branch_topology(registry, runner)
 
-    assert report.repo_branches == {"project": "develop", "leaf": "develop"}
+    assert report.repo_branches == {"project": "develop", "leaf": "project_develop"}
     assert report.is_coherent is True
 
 

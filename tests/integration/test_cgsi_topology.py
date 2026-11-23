@@ -1465,7 +1465,9 @@ class TestDiscoverRepos:
 
         document = CgsDocument.from_toml(output)
         tree = RegistryTranslator.from_cgs_document(document, output)
-        assert tree.get("root:same").target_ref_name == "branch1"
+        # Only the root is on the project's bare branch (RootBareBranch): the one scanned on the
+        # root's branch takes ``<project>_<branch>``, the one with its own explicit branch keeps it.
+        assert tree.get("root:same").target_ref_name == "proj_branch1"
         assert tree.get("root:other").target_ref_name == "branch2"
 
     def test_max_depth_bounds_the_walk(self, tmp_path):

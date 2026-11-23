@@ -355,13 +355,15 @@ repos = [
         # branch is the default one, so that reading view-tree tells you the
         # branch each repository targets without consulting the .cgs
         # (MultiBranchSync ticket, D5). This .cgs names no branch anywhere, so
-        # every entry resolves to git_branch.DEFAULT_BRANCH.
+        # the root resolves to git_branch.DEFAULT_BRANCH, and every other
+        # repository to the project's name on ``main`` (RootBareBranch), with
+        # the fallback it waits on named (fb=).
         assert lines[0] == "CGSil1 (root) [PENDING] @? br=main"
 
         # Children rendered with box-drawing branch prefixes, alphabetically
         # ordered, each carrying the same "(node_type) [sync] @sha br=" shape.
-        assert lines[1] == "├── CGSih1 (leaf) [PENDING] @? br=main"
-        assert lines[2] == "└── CGSil2 (leaf) [PENDING] @? br=main"
+        assert lines[1] == "├── CGSih1 (leaf) [PENDING] @? br=CGSil1 fb=main"
+        assert lines[2] == "└── CGSil2 (leaf) [PENDING] @? br=CGSil1 fb=main"
 
         # Presence/ordering checks that stay meaningful even if rendering
         # details (exact bracket punctuation) shift under refactor: both

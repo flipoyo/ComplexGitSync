@@ -1,5 +1,5 @@
-# CaWaQS tracks a shared branch name across the whole tree and falls back to
-# main when a dependency repo does not carry that branch.
+# CaWaQS is on the branch named here; every library it mounts is on cawaqs_<branch> (cawaqs on main),
+# so that no two projects share one branch of a library, and falls back to main until that branch exists.
 
 project = { name = "cawaqs", default_branch = "C365" }
 

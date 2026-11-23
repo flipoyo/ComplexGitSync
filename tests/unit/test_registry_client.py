@@ -1571,20 +1571,19 @@ def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
     assert root_entry.absolute_path == (tmp_path / "workspace" / "demo").resolve()
     assert root_entry.repo_lifecycle_state == RepoLifecycleState.FALLBACK_READY
     assert root_entry.resolved_ref_name == "main"
-    # The child is a Parent: once its .cgs is read it is cloned again on demo_autoTest (ParentBranch),
-    # which does not exist, so it waits on its fallback, and says so.
+    # Only the root is on the bare branch (RootBareBranch): the child targets demo_autoTest from the start,
+    # which does not exist, so it waits on its fallback, and says so. It is cloned once, never on autoTest.
     assert child_entry.target_ref_name == "demo_autoTest"
     assert child_entry.repo_lifecycle_state == RepoLifecycleState.FALLBACK_READY
     assert child_entry.resolved_ref_name == "main"
     assert docs_entry.repo_lifecycle_state == RepoLifecycleState.FALLBACK_READY
     assert docs_entry.resolved_ref_name == "main"
-    assert [branch for _, _, branch in fake_runner.clones] == ["main", "autoTest", "main", "main"]
+    assert [branch for _, _, branch in fake_runner.clones] == ["main", "main", "main"]
     assert [
         (remote, destination)
         for remote, destination, _ in fake_runner.clones
     ] == [
         ("git@github.com:owner/demo.git", root_entry.absolute_path),
-        ("git@github.com:owner/child-repo.git", child_entry.absolute_path),
         ("git@github.com:owner/child-repo.git", child_entry.absolute_path),
         ("git@github.com:owner/docs.git", docs_entry.absolute_path),
     ]

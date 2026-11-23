@@ -129,20 +129,24 @@ def test_two_projects_on_one_branch_name_never_share_a_branch_of_the_parent(tmp_
     assert _by_name(other)["lib"].target_ref_name == "other_dev"
 
 
-def test_a_nested_spec_naming_the_tree_itself_is_the_same_project_and_keeps_the_branch(tmp_path, monkeypatch):
+def test_a_nested_spec_naming_the_tree_itself_is_not_the_root_so_it_takes_the_derived_branch(tmp_path, monkeypatch):
+    """RootBareBranch, Q3: one project split across repositories keeps only its root on the bare branch."""
     remotes = _remotes(tmp_path, lib_cgs=_lib_cgs("demo", branch="dev"))
-    client, registry, root = _install(tmp_path, monkeypatch, remotes)
+    client, registry, _ = _install(tmp_path, monkeypatch, remotes)
 
-    assert {d.repo.name for d in GitTreeBranches(registry, client.git_runner).deviations()}.isdisjoint({"lib", "libdoc"})
-    assert (_on(root, "lib"), _on(root, "lib/libdoc")) == ("dev", "dev")
-    assert not client.missing_private_branches or "lib" not in {m["repo"] for m in client.missing_private_branches}
+    repos = _by_name(registry)
+    assert (repos["lib"].target_ref_name, repos["libdoc"].target_ref_name) == ("demo_dev", "demo_dev")
+    waiting = {m["repo"]: m for m in client.missing_private_branches}
+    assert waiting["lib"]["wanted"] == "demo_dev" and waiting["libdoc"]["wanted"] == "demo_dev"  # no silent fallback
 
 
-def test_nested_config_disabled_keeps_a_plain_leaf_on_the_projects_branch(tmp_path, monkeypatch):
-    _, registry, root = _install(tmp_path, monkeypatch, _remotes(tmp_path), lib_entry=', nested_config = "disabled"')
+def test_nested_config_disabled_leaf_takes_the_derived_branch_not_the_projects(tmp_path, monkeypatch):
+    """RootBareBranch: a plain leaf is not the root, whatever it holds."""
+    client, registry, root = _install(tmp_path, monkeypatch, _remotes(tmp_path), lib_entry=', nested_config = "disabled"')
 
-    assert _by_name(registry)["lib"].target_ref_name == "dev"
-    assert _on(root, "lib") == "dev"
+    assert _by_name(registry)["lib"].target_ref_name == "demo_dev"
+    assert {m["repo"]: m["wanted"] for m in client.missing_private_branches}["lib"] == "demo_dev"
+    assert _on(root, "lib") != "dev"
 
 
 def test_a_parent_inside_a_parent_is_on_the_projects_branch_never_doubled(tmp_path, monkeypatch):

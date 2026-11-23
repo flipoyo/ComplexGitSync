@@ -163,7 +163,7 @@ PRIVATE_LOCAL_SCOPE_LABEL = "private/local"
 PRIVATE_DISTANT_SCOPE_LABEL = "private/distant"
 
 SCOPE_LEGEND = (
-    "legend: SCOPE — project = the work itself; "
+    "legend: SCOPE — project = the work itself, only its root on the project's branch; "
     "private = a repository that configures the project, shared with your "
     "other projects; local = yours to write, distant = read-only"
 )

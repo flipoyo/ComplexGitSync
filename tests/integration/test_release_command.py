@@ -112,7 +112,7 @@ def test_a_second_workspace_lists_and_loads_a_release_it_never_saw(sandbox, monk
     head = _run_git(one / "CGSil2", "rev-parse", "CGSil1-1^{commit}")
     assert _run_git(two / "CGSil2", "rev-parse", "HEAD") == head
     # Detached: load never moves a branch.
-    assert "regret" in _run_git(two / "CGSil2", "show", "main:notes.txt")
+    assert "regret" in _run_git(two / "CGSil2", "show", "CGSil1:notes.txt")
 
 
 def test_load_refuses_a_dirty_tree_and_an_unknown_release(sandbox, monkeypatch, tmp_path, capsys):
@@ -193,6 +193,7 @@ def test_two_projects_sharing_a_repository_both_release_1_0_and_each_lists_its_o
         '    { repository = "github:flipoyo/CGSih1", nested_config = "disabled" },\n]\n',
         encoding="utf-8",
     )
+    _run_git(sandbox["CGSih1_remote"], "branch", "CGSil2", "main")  # a leaf of project CGSil2 on main is on CGSil2
     a = _workspace(sandbox, monkeypatch, tmp_path, "a")
     _note(a, "from A\n")
     assert cli_main(["release", "freeze", "A one", "--force-tag", "1.0"]) == 0
@@ -266,7 +267,7 @@ def test_a_repository_git_cannot_move_puts_every_other_one_back(sandbox, monkeyp
     assert "back where it was" in capsys.readouterr().err
     for repo, sha in before.items():
         assert _run_git(home / repo, "rev-parse", "HEAD") == sha
-        assert _run_git(home / repo, "branch", "--show-current") == "main"
+        assert _run_git(home / repo, "branch", "--show-current") == ("main" if repo == "." else "CGSil1")
 
 
 def _released_then_loaded(sandbox, monkeypatch, tmp_path) -> Path:
@@ -293,7 +294,7 @@ def test_checkout_a_branch_re_attaches_a_loaded_release(sandbox, monkeypatch, tm
 
     assert cli_main(["checkout", "main"]) == 0
 
-    assert _run_git(home / "CGSil2", "branch", "--show-current") == "main"
+    assert _run_git(home / "CGSil2", "branch", "--show-current") == "CGSil1"  # a leaf is on <project>, only the root on main
     assert (home / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "later\n"
     capsys.readouterr()
     assert cli_main(["status"]) == 0
@@ -308,13 +309,13 @@ def test_a_branch_made_from_a_loaded_release_keeps_a_commit_made_while_detached(
     assert cli_main(["branch", "create", "fix"]) == 0
     assert cli_main(["checkout", "fix"]) == 0
 
-    assert _run_git(home / "CGSil2", "branch", "--show-current") == "fix"
-    assert _run_git(home / "CGSil2", "rev-parse", "fix~1") == release
+    assert _run_git(home / "CGSil2", "branch", "--show-current") == "CGSil1_fix"
+    assert _run_git(home / "CGSil2", "rev-parse", "CGSil1_fix~1") == release
     assert (home / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "a fix to the release\n"
-    assert _run_git(home / "CGSil2", "show", "main:notes.txt") == "later"
+    assert _run_git(home / "CGSil2", "show", "CGSil1:notes.txt") == "later"
     assert cli_main(["push"]) == 0
-    assert _run_git(sandbox["CGSil2_remote"], "show", "fix:notes.txt") == "a fix to the release"
-    assert _run_git(sandbox["CGSil2_remote"], "show", "main:notes.txt") == "later"
+    assert _run_git(sandbox["CGSil2_remote"], "show", "CGSil1_fix:notes.txt") == "a fix to the release"
+    assert _run_git(sandbox["CGSil2_remote"], "show", "CGSil1:notes.txt") == "later"
 
 
 def test_checkout_refuses_to_leave_a_commit_made_while_detached(sandbox, monkeypatch, tmp_path, capsys):
@@ -425,4 +426,4 @@ def test_load_in_place_clones_a_repository_the_tree_lacks_and_says_how_to_leave(
     assert _run_git(one / "CGSih1", "rev-parse", "HEAD") == _run_git(sandbox["CGSih1_remote"], "rev-parse", "CGSil1-1^{commit}")
     assert (one / "CGSil2" / "notes.txt").read_text(encoding="utf-8") == "a first note\n"
     assert cli_main(["checkout", "main"]) == 0
-    assert _run_git(one / "CGSih1", "branch", "--show-current") == "main"
+    assert _run_git(one / "CGSih1", "branch", "--show-current") == "CGSil1"

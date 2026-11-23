@@ -5,6 +5,8 @@
 # three-character xxx, and "alpha" has five.
 #     pixi run cgitsync bootstrap examples/cgitsync-alpha.cgs ComplexGitSync
 #
+# Only the root is on the project's branch: docs, like every mount that is not private, is on
+# ComplexGitSync_<branch> (ComplexGitSync on main), falling back to its declared fallback_branch until that exists.
 # Every private, writable mount falls back to main and derives its branch from the tree
 # (git_branch.private_local_branch), so no branch is typed here:
 #   .agent/.local      .dev, .localSpec, .claude          ComplexGitSync_CGS-ALPHA
