@@ -198,9 +198,15 @@ class GitTreeBranches:
         return branch
 
     def guest(self, repo: WorkingRepo) -> bool:
-        """Whether *repo* is ComplexGitSync behind this project's gate (:func:`git_branch.behind_gate`)."""
+        """Whether *repo* is shared with other projects, so it is on ``<project>_<branch>`` (:func:`git_branch.behind_gate`).
+
+        A nested Parent, a project repository its nested ``.cgs`` declares, or ComplexGitSync mounted as
+        a tool: in every tree (ParentBranch). The root is never one.
+        """
         root = self.root
-        return root is not None and repo is not root and behind_gate(repo, project_name=self._project_name, root_fallback=root.fallback_branch)
+        if root is None or repo is root or repo.target_ref_kind is RefKind.TAG:
+            return False
+        return behind_gate(repo, project_name=self._project_name, parent=MountGuard.follows_parent(self._tree, repo))
 
     @property
     def is_detached(self) -> bool:
@@ -238,7 +244,9 @@ class GitTreeBranches:
         if level and (guest or (repo.effective_private and repo.effective_writable)):
             ref_name = level
         return resolve_propagated_ref(
-            repo, ref_name, ref_kind=ref_kind, project_name=self._project_name, twin=twin, owner=owner, guest=guest
+            repo, ref_name, ref_kind=ref_kind, project_name=self._project_name, twin=twin, owner=owner, guest=guest,
+            pinnable=guest and MountGuard.owner(self._tree, repo) is None and MountGuard.is_parent(self._tree, repo),
+            tree_default=self.root.default_branch if self.root is not None else None,
         )
 
     def in_memory(self, repo: WorkingRepo) -> bool:

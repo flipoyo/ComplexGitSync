@@ -102,7 +102,7 @@
     },
     "git_repo/git_branch.py": {
       "internal_imports": 2,
-      "loc": 469,
+      "loc": 491,
       "public_symbols": 21
     },
     "git_repo/git_repo.py": {
@@ -217,7 +217,7 @@
     },
     "orchestre/client.py": {
       "internal_imports": 69,
-      "loc": 1418,
+      "loc": 1419,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -252,12 +252,12 @@
     },
     "orchestre/gitignore_sync.py": {
       "internal_imports": 7,
-      "loc": 162,
+      "loc": 171,
       "public_symbols": 1
     },
     "orchestre/installer.py": {
       "internal_imports": 25,
-      "loc": 715,
+      "loc": 745,
       "public_symbols": 1
     },
     "orchestre/memory_chapters.py": {
@@ -292,7 +292,7 @@
     },
     "orchestre/reporting.py": {
       "internal_imports": 32,
-      "loc": 288,
+      "loc": 291,
       "public_symbols": 1
     },
     "orchestre/reports.py": {
@@ -367,7 +367,7 @@
     },
     "tree/discovery.py": {
       "internal_imports": 21,
-      "loc": 236,
+      "loc": 239,
       "public_symbols": 3
     },
     "tree/environment_spec.py": {
@@ -382,7 +382,7 @@
     },
     "tree/git_tree_branch.py": {
       "internal_imports": 17,
-      "loc": 439,
+      "loc": 446,
       "public_symbols": 4
     },
     "tree/gts_document.py": {

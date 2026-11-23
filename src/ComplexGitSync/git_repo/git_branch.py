@@ -38,7 +38,8 @@ The public surface
     private_local_branch      <project>_<branch> for a private/local repo,
                               ComplexGitSync_<project>[_<branch>] for a twin's memory
     is_twin_branch            Whether a branch is a twin's memory branch for a project
-    behind_gate               Whether ComplexGitSync is mounted behind another project's gate
+    behind_gate               Whether a repository is shared with other projects: a nested Parent,
+                              or ComplexGitSync mounted by another project
     structural_name_problem   Why a new project or branch name may not be created, or None
     resolve_propagated_ref    Target ref under a tree-wide branch move (privacy)
     closed_branch_name        closed/<branch> — the name a closed branch is renamed to
@@ -107,8 +108,9 @@ class BranchSource(StrEnum):
     was not available."""
 
     BEHIND_GATE = "behind_gate"
-    """The repository is ComplexGitSync, mounted by another project's level
-    tree, so it takes a branch of that project's: ``<project>_<branch>``."""
+    """The repository is shared with other projects (a nested Parent, or
+    ComplexGitSync mounted by this one), so it takes a branch of this
+    project's: ``<project>_<branch>``."""
 
 
 _SOURCE_REASONS: dict[BranchSource, str] = {
@@ -129,7 +131,7 @@ _SOURCE_REASONS: dict[BranchSource, str] = {
     BranchSource.ENTRY_RESOLVED: "the ref this repository last landed on",
     BranchSource.ENTRY_TARGET: "the ref this repository targets",
     BranchSource.FALLBACK: "target branch unavailable; used the declared fallback",
-    BranchSource.BEHIND_GATE: "ComplexGitSync behind another project's gate takes a branch of that project's",
+    BranchSource.BEHIND_GATE: "a repository other projects share takes a branch of this project's: <project>_<branch>",
 }
 
 
@@ -377,9 +379,30 @@ def foreign_tool(entry: WorkingRepo, *, project_name: str | None) -> bool:
     return not entry.effective_private and entry.repo_name == TWIN_BRANCH_OWNER and project_name not in (None, TWIN_BRANCH_OWNER)
 
 
-def behind_gate(entry: WorkingRepo, *, project_name: str | None, root_fallback: str | None) -> bool:
-    """ComplexGitSync behind another project's gate (BehindGate, Q1): a level tree's :func:`foreign_tool`, on ``<project>_<branch>``."""
-    return root_fallback == LEVEL_FALLBACK and foreign_tool(entry, project_name=project_name)
+def behind_gate(entry: WorkingRepo, *, project_name: str | None, parent: bool = False) -> bool:
+    """Whether *entry* is shared with other projects, so it takes ``<project>_<branch>`` (ParentBranch, Q1 and Q4).
+
+    A nested Parent (*parent*, which only the tree can say: ``MountGuard.follows_parent``), or
+    ComplexGitSync mounted as a tool of another project (:func:`foreign_tool`), in every tree.
+    """
+    return not entry.effective_private and (parent or foreign_tool(entry, project_name=project_name))
+
+
+def _declared_pin(entry: WorkingRepo, *, project_name: str | None, tree_default: str | None) -> str | None:
+    """The branch the Project's own ``.cgs`` types on a Parent's entry, which wins over the derived one (ParentBranch, Q6).
+
+    ``default_branch`` and ``branch`` are both read, and a tag is never one (it wins outright
+    elsewhere). Normalisation fills an untyped ``default_branch`` with the project's, so *tree_default*
+    is not a pin, and a name in ``<project>_...`` is the derived one written back by
+    ``declare_targets``, so it is not either. Only a name that is neither is typed.
+    """
+    if entry.target_ref_kind is RefKind.TAG:
+        return None
+    for name in (_as_optional_str(entry.default_branch), _as_optional_str(entry.target_ref_name)):
+        derived = project_name is not None and (name == project_name or str(name).startswith(f"{project_name}{PRIVATE_LOCAL_SEPARATOR}"))
+        if name and name != tree_default and not derived:
+            return name
+    return None
 
 
 def is_twin_branch(project_name: str, branch_name: str) -> bool:
@@ -482,6 +505,8 @@ def resolve_propagated_ref(
     twin: bool = False,
     owner: str | None = None,
     guest: bool = False,
+    pinnable: bool = False,
+    tree_default: str | None = None,
 ) -> BranchResolution:
     """Resolve what *entry* targets when the whole tree moves to *ref_name*.
 
@@ -509,7 +534,9 @@ def resolve_propagated_ref(
     back to behaving like private/distant rather than guessing a name.
     *twin* is true only for a twin tree's memory (:data:`TWIN_BRANCH_OWNER`); *owner* names the
     nested Parent of a repository that sits under one (:func:`private_local_branch`). *guest* is
-    :func:`behind_gate`'s answer: such a repository follows the move on ``<project_name>_<ref_name>``.
+    :func:`behind_gate`'s answer: such a repository follows the move on ``<project_name>_<ref_name>``,
+    unless the Project's own ``.cgs`` types a branch on its entry (*pinnable*, which only the tree can say: a
+    Parent that Project declared; :func:`_declared_pin` against *tree_default*), which it keeps (ParentBranch, Q6).
 
     For any private entry the returned ``kind`` is ``None``: the move must not
     rewrite the kind of ref that entry already carries.
@@ -523,6 +550,9 @@ def resolve_propagated_ref(
                 source=BranchSource.PRIVATE_LOCAL,
             )
         return BranchResolution(name=declared, kind=None, source=BranchSource.PRIVATE_DISTANT)
+    pin = _declared_pin(entry, project_name=project_name, tree_default=tree_default) if guest and pinnable else None
+    if pin and ref_kind is RefKind.BRANCH:
+        return BranchResolution(name=pin, kind=ref_kind, source=BranchSource.REPO_DEFAULT)
     if guest and project_name and ref_kind is RefKind.BRANCH:
         return BranchResolution(name=private_local_branch(project_name, ref_name), kind=ref_kind, source=BranchSource.BEHIND_GATE)
     source = BranchSource.TAG if ref_kind is RefKind.TAG else BranchSource.REPO_BRANCH

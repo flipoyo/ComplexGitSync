@@ -186,7 +186,7 @@ def test_initialise_cgs_derives_cgshome_from_output_path_and_project_name(tmp_pa
     config_path = _write_clone_ready_cgs(tmp_path)
     fake_runner = _FakeGitRunner(
         {
-            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/child-repo.git": {"autoTest", "main"},
             "git@github.com:owner/docs.git": {"main"},
         }
     )
@@ -224,7 +224,7 @@ def test_initialise_cgs_writes_gitignore_for_every_parent_bearing_repo(tmp_path,
     config_path = _write_clone_ready_cgs(tmp_path)
     fake_runner = _FakeGitRunner(
         {
-            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/child-repo.git": {"autoTest", "main"},
             "git@github.com:owner/docs.git": {"main"},
         }
     )
@@ -259,7 +259,7 @@ def test_initialise_cgs_pulls_parent_bearing_repos_before_gitignore_write(tmp_pa
     config_path = _write_clone_ready_cgs(tmp_path)
     fake_runner = _FakeGitRunner(
         {
-            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/child-repo.git": {"autoTest", "main"},
             "git@github.com:owner/docs.git": {"main"},
         }
     )
@@ -299,7 +299,7 @@ def test_initialise_cgs_raises_and_blocks_readiness_when_gitignore_preflight_pul
     state_store = RuntimeStateStore(base_dir=tmp_path / "runtime-state")
     fake_runner = _FailingPullGitRunner(
         {
-            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/child-repo.git": {"autoTest", "main"},
             "git@github.com:owner/docs.git": {"main"},
         }
     )
@@ -327,7 +327,7 @@ def test_initialise_cgs_default_does_not_commit_gitignore(tmp_path, monkeypatch)
     config_path = _write_clone_ready_cgs(tmp_path)
     fake_runner = _FakeGitRunner(
         {
-            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/child-repo.git": {"autoTest", "main"},
             "git@github.com:owner/docs.git": {"main"},
         }
     )
@@ -353,7 +353,7 @@ def test_initialise_cgs_commit_gitignore_stages_commits_and_pushes(tmp_path, mon
     config_path = _write_clone_ready_cgs(tmp_path)
     fake_runner = _FakeGitRunner(
         {
-            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/child-repo.git": {"autoTest", "main", "demo_autoTest"},
             "git@github.com:owner/docs.git": {"main"},
         }
     )
@@ -368,7 +368,7 @@ def test_initialise_cgs_commit_gitignore_stages_commits_and_pushes(tmp_path, mon
     assert {path for path, _ in fake_runner.commits} == {root_path, child_path}
     pushed_by_path = {path: (remote, ref_name) for path, remote, ref_name in fake_runner.pushed}
     assert pushed_by_path[root_path][0] == "origin"
-    assert pushed_by_path[child_path] == ("origin", "autoTest")
+    assert pushed_by_path[child_path] == ("origin", "demo_autoTest")  # a Parent is on <project>_<branch> (ParentBranch)
 
     commit_by_path = dict(fake_runner.commits)
     assert commit_by_path[root_path] == (
@@ -397,7 +397,7 @@ def test_initialise_cgs_git_user_flags_persist_and_are_used_for_the_commit(tmp_p
     config_path = _write_clone_ready_cgs(tmp_path)
     fake_runner = _FakeGitRunner(
         {
-            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/child-repo.git": {"autoTest", "main", "demo_autoTest"},
             "git@github.com:owner/docs.git": {"main"},
         }
     )
@@ -458,7 +458,7 @@ def test_initialise_cgs_skips_the_gitignore_pre_pull_on_a_detached_head(tmp_path
     config_path = _write_clone_ready_cgs(tmp_path)
     fake_runner = _FakeGitRunner(
         {
-            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/child-repo.git": {"autoTest", "main"},
             "git@github.com:owner/docs.git": {"main"},
         }
     )
@@ -1553,7 +1553,7 @@ def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
     fake_runner = _FakeGitRunner(
         {
             "git@github.com:owner/demo.git": {"main"},
-            "git@github.com:owner/child-repo.git": {"autoTest"},
+            "git@github.com:owner/child-repo.git": {"autoTest", "main"},
             "git@github.com:owner/docs.git": {"main"},
         }
     )
@@ -1571,16 +1571,20 @@ def test_client_clone_cgs_clones_tree_and_applies_fallback(tmp_path):
     assert root_entry.absolute_path == (tmp_path / "workspace" / "demo").resolve()
     assert root_entry.repo_lifecycle_state == RepoLifecycleState.FALLBACK_READY
     assert root_entry.resolved_ref_name == "main"
-    assert child_entry.repo_lifecycle_state == RepoLifecycleState.READY
-    assert child_entry.resolved_ref_name == "autoTest"
+    # The child is a Parent: once its .cgs is read it is cloned again on demo_autoTest (ParentBranch),
+    # which does not exist, so it waits on its fallback, and says so.
+    assert child_entry.target_ref_name == "demo_autoTest"
+    assert child_entry.repo_lifecycle_state == RepoLifecycleState.FALLBACK_READY
+    assert child_entry.resolved_ref_name == "main"
     assert docs_entry.repo_lifecycle_state == RepoLifecycleState.FALLBACK_READY
     assert docs_entry.resolved_ref_name == "main"
-    assert [branch for _, _, branch in fake_runner.clones] == ["main", "autoTest", "main"]
+    assert [branch for _, _, branch in fake_runner.clones] == ["main", "autoTest", "main", "main"]
     assert [
         (remote, destination)
         for remote, destination, _ in fake_runner.clones
     ] == [
         ("git@github.com:owner/demo.git", root_entry.absolute_path),
+        ("git@github.com:owner/child-repo.git", child_entry.absolute_path),
         ("git@github.com:owner/child-repo.git", child_entry.absolute_path),
         ("git@github.com:owner/docs.git", docs_entry.absolute_path),
     ]
@@ -1609,7 +1613,7 @@ def test_clone_cgs_raises_when_default_root_is_occupied(tmp_path, monkeypatch):
         git_runner=_FakeGitRunner(
             {
                 "git@github.com:owner/demo.git": {"main"},
-                "git@github.com:owner/child-repo.git": {"autoTest"},
+                "git@github.com:owner/child-repo.git": {"autoTest", "main"},
             }
         )
     )
@@ -2681,7 +2685,7 @@ nested_config = "disabled"
         resolved = Path(repo_path).resolve()
         if resolved in self.branch_overrides:
             return self.branch_overrides[resolved]
-        for _, destination, branch in self.clones:
+        for _, destination, branch in reversed(self.clones):
             if destination == resolved:
                 return branch
         return None

@@ -634,6 +634,7 @@ class Installer:
         already names every repository, so there is nothing left to find.
         """
         client = self.client
+        fresh: set[str] = set()
         while True:
             cloned_any = False
             pending = client._pending_clone_entries(sync_stack)
@@ -644,6 +645,8 @@ class Installer:
                 pin = pins.get(entry.repo_id) if pins else None
                 if pin is not None:
                     self._apply_pin(entry, pin)
+                else:
+                    fresh.add(entry.repo_id)
                 cloned_any = True
 
             if not discover:
@@ -652,8 +655,37 @@ class Installer:
                 continue
             discovered = client.discover_nested_configs()
             client._log_nested_discovery(discovered)
-            if not cloned_any and not discovered:
+            aimed = self._reaim_parents(fresh, sync_stack)
+            if not cloned_any and not discovered and not aimed:
                 return
+
+    def _reaim_parents(self, fresh: set[str], sync_stack: set[Path]) -> bool:
+        """Clone again, on its own branch, a Parent that only its nested ``.cgs`` revealed (ParentBranch).
+
+        A repository is a Parent once its ``.cgs`` has been read, which needs it cloned, on the
+        project's branch. One cloned *by this run* holds nothing of the user's, so it is cloned again
+        on ``<project>_<branch>`` (its target, ``fallback_branch``, then ``main``: the one clone chain),
+        and its fallback is reported (``missing_private_branches``). One already on disk is never
+        moved: ``status`` reports it off its target.
+        """
+        registry = self.client.get_dependency_registry()
+        branches = GitTreeBranches(registry)
+        tree_ref = registry.get(ROOT_REPO_ID).target_ref_name or DEFAULT_BRANCH
+        moved = False
+        for entry in list(registry.values()):
+            if entry.repo_id not in fresh or entry.repo_lifecycle_state is RepoLifecycleState.DECLARED or not branches.guest(entry):
+                continue
+            wanted = branches.target(entry, tree_ref)
+            if entry.target_ref_name == wanted.name:
+                continue
+            entry.target_ref_kind = wanted.kind or RefKind.BRANCH
+            entry.target_ref_name = entry.default_branch = wanted.name
+            entry.repo_lifecycle_state = RepoLifecycleState.DECLARED
+            entry.sync_state = SyncState.PENDING
+            sync_stack.discard(entry.absolute_path)
+            fresh.discard(entry.repo_id)
+            moved = True
+        return moved
 
     def clone_recorded(self, document: GtsDocument, names: Collection[str]) -> list[str]:
         """Clone the repositories of *document* named in *names* into the live tree, each at its recorded commit.

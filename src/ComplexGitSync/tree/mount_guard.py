@@ -1,12 +1,14 @@
 """mount_guard — the `.gts` refuses a requested mount that would break the GitTree.
 
-Ring: 1 (reads the registry only: no subprocess, no file written)
+Ring: 1 (reads the registry and a Parent's nested ``.cgs``: no subprocess, no file written)
 Contract: a `.cgs`, and each nested `.cgs`, is a request for mounts; the GitTree
     is what the tree is. This class answers the questions a denial asks of the
     registry: which repository a mount names, how far from the trunk it sits,
     whether a path already holds another repository (denial 1, which discovery
     applies), and which nested Parent a private repository belongs to, which is
-    what keeps two such mounts on two branches. Denials 2 and 3 need the branch
+    what keeps two such mounts on two branches, and which repositories are themselves
+    such a Parent (or declared by one), so the tree puts them on ``<project>_<branch>``.
+    Denials 2 and 3 need the branch
     a repository would be on, so ``mount_denial`` (ring 2) applies them.
 Imports: git_repo, git_tree
 
@@ -30,8 +32,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..git_repo.git_repo import WorkingRepo
+from ..git_repo.git_repo import RefKind, WorkingRepo
+from .cgs_format import CgsDocument
 from .git_tree import ROOT_REPO_ID, WorkingGitTree
+
+_PROJECT_OF_SPEC: dict[tuple[Path, int], str | None] = {}
 
 
 class MountGuard:
@@ -78,6 +83,47 @@ class MountGuard:
         if held is not None and (held == spec or held.is_relative_to(parent.absolute_path)):
             return MountGuard.owner(registry, parent) if parent.effective_private else parent.name
         return None
+
+    @staticmethod
+    def is_parent(registry: WorkingGitTree, entry: WorkingRepo) -> bool:
+        """Whether *entry* is a nested Parent: a project of its own, mounted in this tree (ParentBranch, Q2).
+
+        Not the root, not private, and holding a nested ``.cgs`` that discovery read in its own directory and
+        whose project is not the tree's: the same project split across repositories keeps the project's
+        branch. ``nested_config = "disabled"`` is never read, so such a repository stays a plain leaf.
+        """
+        spec, root = entry.source_cgs_path, registry.repos.get(ROOT_REPO_ID)
+        if root is None or entry is root or entry.effective_private or entry.target_ref_kind is RefKind.TAG:
+            return False
+        if spec is None or spec == root.source_cgs_path or not spec.is_relative_to(entry.absolute_path):
+            return False
+        name = MountGuard._spec_project(spec)
+        return name is not None and name != registry.project_name
+
+    @staticmethod
+    def follows_parent(registry: WorkingGitTree, entry: WorkingRepo) -> bool:
+        """Whether *entry* is a nested Parent, or a project repository one declares (ParentBranch, Q1)."""
+        if MountGuard.is_parent(registry, entry):
+            return True
+        parent = registry.repos.get(entry.parent_id) if entry.parent_id else None
+        if parent is None or parent is registry.repos.get(ROOT_REPO_ID) or entry.effective_private or entry.target_ref_kind is RefKind.TAG:
+            return False
+        held = parent.source_cgs_path
+        return held is not None and entry.source_cgs_path == held and MountGuard.follows_parent(registry, parent)
+
+    @staticmethod
+    def _spec_project(spec: Path) -> str | None:
+        """The project a ``.cgs`` names, read once per file state; ``None`` for one that cannot be read."""
+        try:
+            key = (spec, spec.stat().st_mtime_ns)
+        except OSError:
+            return None
+        if key not in _PROJECT_OF_SPEC:
+            try:
+                _PROJECT_OF_SPEC[key] = CgsDocument.from_toml(spec).project_name
+            except Exception:  # an unreadable spec makes no Parent; discovery reports it
+                _PROJECT_OF_SPEC[key] = None
+        return _PROJECT_OF_SPEC[key]
 
     @staticmethod
     def clash(registry: WorkingGitTree, path: Path, repo: dict[str, Any]) -> str | None:

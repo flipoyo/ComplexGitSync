@@ -20,6 +20,7 @@ from ..tree.git_tree import (
     iter_tree,
     sync_gitignore,
 )
+from ..tree.git_tree_branch import GitTreeBranches
 from ..tree.master import MasterConfig
 from .reports import (
     GitignoreSyncEntry,
@@ -169,7 +170,15 @@ class GitignoreSync:
         commit with a message listing exactly which children were added,
         then push. Never force-pushes.
         """
+        registry = self.client.get_dependency_registry()
+        branches = GitTreeBranches(registry)
         for record in entries:
+            waiting = registry.repos.get(record.repo_id)
+            if waiting is not None and waiting.fallback_applied and branches.guest(waiting):
+                raise GitSyncError(  # a repository other projects share is never written on its fallback (ParentBranch, Q5)
+                    f"{record.name} waits for {waiting.target_ref_name!r} and sits on {waiting.resolved_ref_name!r}: "
+                    "not committing to it there; create the branch first (cgitsync branch create <branch> && cgitsync checkout <branch>)."
+                )
             current_branch = self.client.git_runner.current_branch(record.absolute_path)
             self.client.git_runner.stage_path(record.absolute_path, ".gitignore")
             message_lines = [

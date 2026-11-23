@@ -116,9 +116,10 @@ def test_a_pull_while_the_root_waits_keeps_the_level(tmp_path, monkeypatch):
     assert GitTreeBranches(registry, client.git_runner).level == "opx"
 
 
-def test_a_tree_that_is_not_a_level_keeps_the_tool_on_the_project_branch(tmp_path, monkeypatch):
+def test_a_tree_that_is_not_a_level_puts_the_tool_on_the_projects_branch_too(tmp_path, monkeypatch):
     _, registry, root, _ = _level_tree(tmp_path, monkeypatch, name="demo.cgs", project='name = "demo", default_branch = "CGS-ALPHA"')
 
     repos = _by_name(registry)
-    assert (repos["ComplexGitSync"].target_ref_name, _on(root, "ComplexGitSync")) == ("CGS-ALPHA", "CGS-ALPHA")
+    assert repos["ComplexGitSync"].target_ref_name == "demo_CGS-ALPHA"  # ParentBranch, Q4: in every tree, never the bare branch
+    assert _on(root, "ComplexGitSync") == "CGS-ALPHA"  # the fallback, until `branch create` makes it
     assert repos[".localSpec"].target_ref_name == "demo_CGS-ALPHA"

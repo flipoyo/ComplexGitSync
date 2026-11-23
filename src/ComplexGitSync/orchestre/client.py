@@ -1550,13 +1550,15 @@ class ComplexGitSyncClient:
         dev = registry.profile is TreeProfile.DEV
         project_branch = branches.level or DEFAULT_BRANCH
         # The root waiting on its fallback: the level's branches are made by branch create, then checkout (BehindGate, Q2).
-        create = f"cgitsync branch create {project_branch} && cgitsync checkout {project_branch}" if project_branch != branches.tree_branch else None
+        create_all = f"cgitsync branch create {project_branch} && cgitsync checkout {project_branch}"
+        create = create_all if project_branch != branches.tree_branch else None
         for entry in registry.values():
             fell_back = dev and entry.effective_private and entry.effective_writable and entry.fallback_applied
             unresolved = entry.nested_config not in {None, "disabled"} and entry.discovery_state != DiscoveryState.RESOLVED
             if unresolved and not (fell_back and entry.discovery_state == DiscoveryState.MISSING):
                 raise GitSyncError(f"Nested configuration for {entry.name} is not resolved: {entry.discovery_state.value}")
-            waits = create is not None and entry.fallback_applied and (entry is branches.root or branches.guest(entry))
+            # A repository other projects share (a Parent, the tool) never falls back unannounced (ParentBranch, Q5).
+            waits = entry.fallback_applied and ((create is not None and entry is branches.root) or branches.guest(entry))
             if not (fell_back or waits):
                 continue
             is_memory = entry is branches.memory
@@ -1566,7 +1568,7 @@ class ComplexGitSyncClient:
                 "wanted": entry.target_ref_name,
                 "landed": entry.resolved_ref_name,
                 "config": entry.nested_config if unresolved else None,
-                "command": f"cgitsync memory branch --project-branch {project_branch}" if is_memory else create,
+                "command": f"cgitsync memory branch --project-branch {project_branch}" if is_memory else (create_all if branches.guest(entry) else create),
                 "project_branch": project_branch if is_memory else None,
             }
             self.missing_private_branches.append(missing)

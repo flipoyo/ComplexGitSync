@@ -97,7 +97,12 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
         for repo in nested_document.repos:
             _validate_repo_shape(repo)
             if _is_root_repo_spec(repo, nested_document.project_name, root_identity_assigned):
+                declared_by_project = (entry.default_branch, entry.target_ref_kind, entry.target_ref_name)
                 _apply_repo_identity(entry, repo, nested_document.default_branch)
+                if not ({"branch", "tag"} & repo.keys() or repo.get("default_branch") not in (None, nested_document.default_branch)) and MountGuard.is_parent(registry, entry):
+                    # A Parent typing no branch of its own keeps the one the mounting Project asked for, not its
+                    # project's default (ParentBranch): that is what the tree derives from.
+                    entry.default_branch, entry.target_ref_kind, entry.target_ref_name = declared_by_project
                 # This nested document has just been resolved for ``entry``.
                 entry.discovery_state = DiscoveryState.RESOLVED
                 root_identity_assigned = True

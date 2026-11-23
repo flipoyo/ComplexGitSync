@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 from ..errors import GitSyncError
+from ..git_repo.git_branch import DEFAULT_BRANCH
 from ..git_repo.git_repo import (
     WorkingRepo,
 )
@@ -252,9 +253,12 @@ class Reporting:
         other six.
         """
         branches = branches or GitTreeBranches(registry, self.client.git_runner)
+        level = branches.level or DEFAULT_BRANCH
         return [
             f"{deviation.repo.name} is on {deviation.observed!r}, "
             f"expected {deviation.expected!r}"
+            # A repository other projects share is never moved by itself (ParentBranch, Q5): say how.
+            + (f"; to put it there, run: cgitsync branch create {level} && cgitsync checkout {level}" if branches.guest(deviation.repo) else "")
             for deviation in branches.deviations(ignore_unreadable=True)
         ]
 
