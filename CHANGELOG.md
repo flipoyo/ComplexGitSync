@@ -1,5 +1,23 @@
 # Changelog
 
+## 8.12.0 - 2026-11-24
+
+- The run log's `private_branch_missing` event is renamed `branch_missing`. It
+  was also written for libraries and other repositories that are not private,
+  which made a normal first install look like a fault. Each event now carries
+  `scope` (`project` or `private/local`, as `status` shows it), `root` (the
+  root waiting on its level) and `tree_branch`. The Python attribute
+  `ComplexGitSyncClient.missing_private_branches` is renamed
+  `missing_branches`, with the same new fields, and no alias is kept.
+- The install no longer prints one warning per repository left on its
+  fallback branch. It ends with one block: the repositories still waiting,
+  grouped by scope, that this is expected on the first install of a branch,
+  and one line to run, `cgitsync branch create <branch> && cgitsync checkout
+  <branch> && cgitsync push` (without `push` in a tree that holds no private
+  repository). A private, writable repository now gets that same line instead
+  of being asked to create its branch by hand. `status` prints the command
+  once, after the list of repositories off their branch.
+
 ## 4.4.3 - 2026-10-08
 
 - No change to the tool's behaviour. `pixi run check-ceilings` now also finds a

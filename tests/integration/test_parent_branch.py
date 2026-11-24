@@ -100,7 +100,7 @@ def test_a_parent_and_what_it_declares_target_the_projects_branch_and_wait_on_th
         assert (_on(root, name if name == "lib" else "lib/libdoc"), repos[name].fallback_applied) == ("main", True)
     assert (repos["demo"].target_ref_name, _on(root, ".")) == ("dev", "dev")
     assert repos[".localSpec"].target_ref_name == "demo_dev"
-    waiting = {m["repo"]: m for m in client.missing_private_branches}
+    waiting = {m["repo"]: m for m in client.missing_branches}
     assert {"lib", "libdoc"} <= set(waiting)
     assert waiting["lib"]["wanted"] == "demo_dev" and waiting["lib"]["landed"] == "main" and waiting["lib"]["command"] == CREATE
     expected = {d.repo.name: d.expected for d in GitTreeBranches(registry, client.git_runner).deviations()}
@@ -136,7 +136,7 @@ def test_a_nested_spec_naming_the_tree_itself_is_not_the_root_so_it_takes_the_de
 
     repos = _by_name(registry)
     assert (repos["lib"].target_ref_name, repos["libdoc"].target_ref_name) == ("demo_dev", "demo_dev")
-    waiting = {m["repo"]: m for m in client.missing_private_branches}
+    waiting = {m["repo"]: m for m in client.missing_branches}
     assert waiting["lib"]["wanted"] == "demo_dev" and waiting["libdoc"]["wanted"] == "demo_dev"  # no silent fallback
 
 
@@ -145,7 +145,7 @@ def test_nested_config_disabled_leaf_takes_the_derived_branch_not_the_projects(t
     client, registry, root = _install(tmp_path, monkeypatch, _remotes(tmp_path), lib_entry=', nested_config = "disabled"')
 
     assert _by_name(registry)["lib"].target_ref_name == "demo_dev"
-    assert {m["repo"]: m["wanted"] for m in client.missing_private_branches}["lib"] == "demo_dev"
+    assert {m["repo"]: m["wanted"] for m in client.missing_branches}["lib"] == "demo_dev"
     assert _on(root, "lib") != "dev"
 
 
@@ -184,7 +184,9 @@ def test_a_parent_already_on_the_projects_branch_is_reported_off_target_and_neve
 
     assert off["lib"] == ("dev", "demo_dev")
     assert _on(root, "lib") == "dev"
-    assert any("lib is on 'dev', expected 'demo_dev'" in line and CREATE in line for line in client._reporting._branch_incoherence(registry, branches))
+    lines = client._reporting._branch_incoherence(registry, branches)
+    assert "lib is on 'dev', expected 'demo_dev'" in lines
+    assert lines[-1].endswith(CREATE)  # the command follows the list once (BranchMissingEventName)
     blocking = Preflight._collect_branch_alignment_diagnostics(registry, client.git_runner)
     assert any(d.repo_name == "lib" for d in blocking)
 

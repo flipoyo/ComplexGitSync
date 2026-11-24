@@ -178,10 +178,11 @@ class ComplexGitSyncClient:
     last_release_load: ReleaseLoad | None = None
     #: Set when this run recorded a State in a DEV tree whose ``.cgs`` declares no memory (`MemorySetup`).
     memory_setup_due: bool = False
-    #: The private/local repositories the last install left on their fallback
-    #: branch with their nested config missing for that reason (EnvConnect C7):
-    #: reported by name, each with the command that creates its branch.
-    missing_private_branches: list[dict[str, Any]] = field(default_factory=list)
+    #: The repositories the last install left on their fallback branch because
+    #: their own branch does not exist yet (EnvConnect C7, RootBareBranch):
+    #: reported by name, each with its ``scope``, whether it is the root, and
+    #: the command that creates its branch (BranchMissingEventName).
+    missing_branches: list[dict[str, Any]] = field(default_factory=list)
     run_logger: CommandRunLogger | None = None
     _forced_access_protocol: AccessProtocol | None = field(default=None, init=False, repr=False)
     #: Where a memory mounted before WorkingTransitionState sits: directly
@@ -1538,27 +1539,28 @@ class ComplexGitSyncClient:
         project does not exist yet falls back, and the fallback branch need
         not hold the nested config the entry names. That is expected on a
         first install (EnvConnect C7): it is recorded in
-        :attr:`missing_private_branches`, logged, and the install goes on. So
+        :attr:`missing_branches`, logged as ``branch_missing``, and the install goes on. So
         is every other writable private repository that fell back, nested
         config or not, since committing to it there would write to the
         fallback branch. A nested config missing on the branch a repository
-        really targets is still refused.
+        really targets is still refused. So is every other repository waiting for its branch: ``scope`` says which.
         """
         registry = self.get_dependency_registry()
-        self.missing_private_branches = []
+        self.missing_branches = []
         branches = GitTreeBranches(registry, self.git_runner)
         dev = registry.profile is TreeProfile.DEV
         project_branch = branches.level or DEFAULT_BRANCH
-        # The root waiting on its fallback: the level's branches are made by branch create, then checkout (BehindGate, Q2).
+        # One tree-wide pair makes every missing branch, the root's level included (BehindGate, Q2): a library, a Parent
+        # and a private/local repository alike, since branch create derives each one's name (BranchMissingEventName).
         create_all = f"cgitsync branch create {project_branch} && cgitsync checkout {project_branch}"
-        create = create_all if project_branch != branches.tree_branch else None
+        root_waits = project_branch != branches.tree_branch
         for entry in registry.values():
             fell_back = dev and entry.effective_private and entry.effective_writable and entry.fallback_applied
             unresolved = entry.nested_config not in {None, "disabled"} and entry.discovery_state != DiscoveryState.RESOLVED
             if unresolved and not (fell_back and entry.discovery_state == DiscoveryState.MISSING):
                 raise GitSyncError(f"Nested configuration for {entry.name} is not resolved: {entry.discovery_state.value}")
             # A repository other projects share (a Parent, the tool) never falls back unannounced (ParentBranch, Q5).
-            waits = entry.fallback_applied and ((create is not None and entry is branches.root) or branches.guest(entry))
+            waits = entry.fallback_applied and ((root_waits and entry is branches.root) or branches.guest(entry))
             if not (fell_back or waits):
                 continue
             is_memory = entry is branches.memory
@@ -1568,11 +1570,12 @@ class ComplexGitSyncClient:
                 "wanted": entry.target_ref_name,
                 "landed": entry.resolved_ref_name,
                 "config": entry.nested_config if unresolved else None,
-                "command": f"cgitsync memory branch --project-branch {project_branch}" if is_memory else (create_all if branches.guest(entry) else create),
-                "project_branch": project_branch if is_memory else None,
+                "command": f"cgitsync memory branch --project-branch {project_branch}" if is_memory else create_all,
+                # tree_branch: the bare branch the command takes, never the derived one; scope: the case, in status's words.
+                "project_branch": project_branch if is_memory else None, "tree_branch": project_branch, "scope": _status_scope_label(entry), "root": entry is branches.root,
             }
-            self.missing_private_branches.append(missing)
-            self._log_event("private_branch_missing", level=logging.WARNING, **missing)
+            self.missing_branches.append(missing)
+            self._log_event("branch_missing", level=logging.WARNING, **missing)
 
     def _log_event(self, event: str, *, level: int = logging.INFO, **fields: object) -> None:
         if self.run_logger is None:

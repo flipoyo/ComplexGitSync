@@ -665,7 +665,7 @@ class Installer:
         A repository is a Parent once its ``.cgs`` has been read, which needs it cloned, on the
         project's branch. One cloned *by this run* holds nothing of the user's, so it is cloned again
         on ``<project>_<branch>`` (its target, ``fallback_branch``, then ``main``: the one clone chain),
-        and its fallback is reported (``missing_private_branches``). One already on disk is never
+        and its fallback is reported (``missing_branches``). One already on disk is never
         moved: ``status`` reports it off its target.
         """
         registry = self.client.get_dependency_registry()

@@ -254,13 +254,12 @@ class Reporting:
         """
         branches = branches or GitTreeBranches(registry, self.client.git_runner)
         level = branches.level or DEFAULT_BRANCH
-        return [
-            f"{deviation.repo.name} is on {deviation.observed!r}, "
-            f"expected {deviation.expected!r}"
-            # A repository other projects share is never moved by itself (ParentBranch, Q5): say how.
-            + (f"; to put it there, run: cgitsync branch create {level} && cgitsync checkout {level}" if branches.guest(deviation.repo) else "")
-            for deviation in branches.deviations(ignore_unreadable=True)
-        ]
+        deviations = branches.deviations(ignore_unreadable=True)
+        lines = [f"{deviation.repo.name} is on {deviation.observed!r}, expected {deviation.expected!r}" for deviation in deviations]
+        # A repository other projects share is never moved by itself (ParentBranch, Q5): say how, once (BranchMissingEventName).
+        if any(branches.guest(deviation.repo) for deviation in deviations):
+            lines.append(f"to put every shared repository on its branch, run: cgitsync branch create {level} && cgitsync checkout {level}")
+        return lines
 
     def _managed_status_lines(
         self,

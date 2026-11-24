@@ -244,7 +244,7 @@ def test_a_dev_bootstrap_whose_memory_branch_is_missing_ends_ready_and_names_the
     registry = client.bootstrap(_write_cgs(tmp_path / "demo.cgs", memory_config="config-memory.cgs"), "demo", cgs_path=tmp_path / "one")
 
     assert registry.is_ready()
-    [missing] = client.missing_private_branches
+    [missing] = client.missing_branches
     assert missing["repo"] == MEMORY
     assert missing["wanted"] == "ComplexGitSync_demo"
     assert missing["landed"] == "main"
@@ -285,7 +285,7 @@ def test_the_command_c7_names_sets_the_branch_up_and_a_later_install_finds_it(tm
     remotes[".self-history"] = _self_history_remote(tmp_path, monkeypatch)
     client, root = _c7_twin(tmp_path, monkeypatch, remotes)
 
-    answer = client.memory_branch(root, client.missing_private_branches[0]["project_branch"])
+    answer = client.memory_branch(root, client.missing_branches[0]["project_branch"])
 
     assert answer["branch"] == "ComplexGitSync_demo" and answer["set_up"] and answer["pushed"]
     assert "config-memory.cgs" in _git(remotes[MEMORY], "ls-tree", "-r", "--name-only", "ComplexGitSync_demo")
@@ -293,7 +293,7 @@ def test_the_command_c7_names_sets_the_branch_up_and_a_later_install_finds_it(tm
     again.bootstrap(tmp_path / "demo.cgs", "demo", cgs_path=tmp_path / "two")
     nested = tmp_path / "two" / "demo" / ".cgitsync" / ".memory" / ".self-history"
     assert _git(nested, "branch", "--show-current") == "ComplexGitSync_demo"
-    assert again.missing_private_branches == []
+    assert again.missing_branches == []
 
 
 def test_a_twin_memory_left_on_its_fallback_base_keeps_the_twin_target_the_state_recorded(tmp_path, monkeypatch):
@@ -390,10 +390,15 @@ def test_every_writable_private_repository_left_on_a_fallback_branch_is_reported
 
     client.bootstrap(cgs, "demo", cgs_path=tmp_path / "one")
 
-    [missing] = client.missing_private_branches
-    assert (missing["repo"], missing["wanted"], missing["landed"], missing["config"], missing["command"]) == (
-        "settings", "demo", "main", None, None,
+    [missing] = client.missing_branches
+    assert (missing["repo"], missing["wanted"], missing["landed"], missing["config"], missing["scope"]) == (
+        "settings", "demo", "main", None, "private/local",
     )
+    # The same tree-wide pair a library is given (BranchMissingEventName): branch create derives the private name.
+    assert missing["command"] == "cgitsync branch create main && cgitsync checkout main"
+    client.branch("main")
+    client.checkout("main")
+    assert _git(tmp_path / "one" / "demo" / "settings", "branch", "--show-current") == "demo"
 
 
 def test_the_cli_names_the_repository_warns_and_prints_the_command(tmp_path, monkeypatch, capsys):
@@ -405,9 +410,12 @@ def test_the_cli_names_the_repository_warns_and_prints_the_command(tmp_path, mon
     memory_prompt.offer_missing_branches(client)
 
     err = capsys.readouterr().err
-    assert "warning: .memory has no branch 'ComplexGitSync_demo' yet, so it was cloned on 'main'" in err
-    assert "Do not commit to it there" in err
-    assert "to create it, run: cgitsync memory branch --project-branch main" in err
+    assert err.startswith("warning: branch main is new here: 1 repository has no branch of their own yet")
+    assert "private/local: .memory (wait for 'ComplexGitSync_demo', cloned on 'main')" in err
+    assert ".memory was cloned without its config-memory.cgs" in err
+    assert "Do not commit to them until their branches exist" in err
+    assert "to create it, run:\n  cgitsync memory branch --project-branch main\n" in err
+    assert "cgitsync push" not in err  # the memory's own command pushes what it sets up
 
 
 def test_os_id_survives_every_way_the_tree_is_materialised(tmp_path, monkeypatch):

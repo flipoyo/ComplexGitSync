@@ -67,7 +67,7 @@
     },
     "cli/memory_prompt.py": {
       "internal_imports": 9,
-      "loc": 142,
+      "loc": 158,
       "public_symbols": 5
     },
     "cli/minimalist.py": {

@@ -88,7 +88,7 @@ def test_every_private_branch_derives_from_the_level_and_the_tool_takes_the_proj
 
 def test_the_install_names_branch_create_then_checkout_and_both_make_every_branch_locally(tmp_path, monkeypatch):
     client, registry, root, remotes = _level_tree(tmp_path, monkeypatch)
-    commands = {m["repo"]: m["command"] for m in client.missing_private_branches}
+    commands = {m["repo"]: m["command"] for m in client.missing_branches}
 
     assert commands["demo"] == commands["ComplexGitSync"] == commands[".localSpec"] == "cgitsync branch create opx && cgitsync checkout opx"
     assert commands[MEMORY] == "cgitsync memory branch --project-branch opx"

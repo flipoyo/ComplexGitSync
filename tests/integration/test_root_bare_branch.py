@@ -98,7 +98,7 @@ def test_a_library_without_its_derived_branch_waits_on_its_fallback_and_is_named
     client, registry, root = _install(tmp_path, monkeypatch)
 
     assert _git(root / "lib", "branch", "--show-current") == "main"
-    waiting = {m["repo"]: m for m in client.missing_private_branches}
+    waiting = {m["repo"]: m for m in client.missing_branches}
     assert (waiting["lib"]["wanted"], waiting["lib"]["landed"]) == ("demo_dev", "main")
     assert waiting["lib"]["command"] == "cgitsync branch create dev && cgitsync checkout dev"
     assert {d.repo.name: d.expected for d in GitTreeBranches(registry, client.git_runner).deviations()}["lib"] == "demo_dev"
@@ -137,5 +137,53 @@ def test_a_tree_without_a_private_repository_is_told_with_info_and_a_developer_t
     dev, _, _ = _install(tmp_path, monkeypatch, root="other", workdir="two")
     memory_prompt.offer_missing_branches(dev)
 
-    assert said.startswith("info: lib has no branch 'demo_dev' yet")
-    assert capsys.readouterr().err.startswith("warning: lib has no branch 'other_dev' yet")
+    assert said.startswith("info: branch dev is new here: 1 repository has no branch of their own yet")
+    assert "project: lib (wait for 'demo_dev', cloned on 'main')" in said
+    assert "to create it, run:\n  cgitsync branch create dev && cgitsync checkout dev\n" in said
+    assert "Do not commit" not in said and "cgitsync push" not in said  # a USER tree never commits (Q2)
+    assert capsys.readouterr().err.startswith("warning: branch dev is new here: 2 repositories have no branch of their own yet")
+
+
+def test_the_install_logs_branch_missing_with_the_scope_of_each_case(tmp_path, monkeypatch):
+    """BranchMissingEventName, Q1/Q2: one event, one attribute, and a scope that says which case fired."""
+    events: list[tuple[str, dict]] = []
+    monkeypatch.setattr(ComplexGitSyncClient, "_log_event", lambda self, event, level=0, **fields: events.append((event, fields)))
+    client, _, _ = _install(tmp_path, monkeypatch)
+
+    logged = {fields["repo"]: fields for event, fields in events if event == "branch_missing"}
+    assert "private_branch_missing" not in {event for event, _ in events}
+    assert {repo: (m["scope"], m["root"], m["tree_branch"]) for repo, m in logged.items()} == {
+        "lib": ("project", False, "dev"),
+        ".localSpec": ("private/local", False, "dev"),
+    }
+    assert {m["repo"]: m["scope"] for m in client.missing_branches} == {"lib": "project", ".localSpec": "private/local"}
+    assert not hasattr(client, "missing_private_branches")  # renamed, no alias (Q2)
+
+
+def test_a_developer_tree_closes_with_one_block_and_one_command_that_also_pushes(tmp_path, monkeypatch, capsys):
+    """BranchMissingEventName, Q3/Q4: grouped by scope, the bare branch in the command, printed once."""
+    from ComplexGitSync.cli import memory_prompt
+
+    monkeypatch.setattr(memory_prompt, "interactive", lambda: False)
+    client, _, _ = _install(tmp_path, monkeypatch)
+    memory_prompt.offer_missing_branches(client)
+    err = capsys.readouterr().err
+
+    assert err.count("warning:") == 1
+    assert "This is expected on the first install of a branch." in err
+    assert "  project: lib (wait for 'demo_dev', cloned on 'main')" in err
+    assert "  private/local: .localSpec (wait for 'demo_dev', cloned on 'main')" in err
+    assert err.endswith("run:\n  cgitsync branch create dev && cgitsync checkout dev && cgitsync push\n")
+    assert err.count("cgitsync branch create") == 1
+
+
+def test_status_names_the_creating_command_once_for_every_shared_repository(tmp_path, monkeypatch):
+    """BranchMissingEventName: the deviations are listed, the command that fixes them all follows once."""
+    client, registry, _ = _install(tmp_path, monkeypatch)
+
+    lines = client._reporting._branch_incoherence(registry)
+
+    assert "lib is on 'main', expected 'demo_dev'" in lines
+    assert [line for line in lines if "branch create" in line] == [
+        "to put every shared repository on its branch, run: cgitsync branch create dev && cgitsync checkout dev"
+    ]

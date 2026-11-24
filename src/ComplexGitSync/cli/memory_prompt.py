@@ -133,35 +133,55 @@ def offer_after_command(client: ComplexGitSyncClient) -> None:
 
 
 def offer_missing_branches(client: ComplexGitSyncClient) -> None:
-    """After an install that left a private/local repository on its fallback branch: say so by name, offer the fix (EnvConnect C7)."""
-    said: set[str] = set()
-    for missing in getattr(client, "missing_private_branches", None) or []:
-        level = "info" if client.get_dependency_registry().profile == "user" else "warning"  # a USER tree never commits (Q2)
-        lacking = f", which does not hold its {missing['config']}" if missing["config"] else ""
-        print(
-            f"{level}: {missing['repo']} has no branch {missing['wanted']!r} yet, so it was cloned on "
-            f"{missing['landed']!r}{lacking}. Do not commit to it there: "
-            "a writable repository left on a fallback branch would write to that branch.",
-            file=sys.stderr,
-        )
-        if missing["command"] is None:
-            print(f"create the branch {missing['wanted']!r} in {missing['path']} to finish the install.", file=sys.stderr)
-            continue
-        if missing["command"] not in said:  # branch create && checkout covers every repository at once (BehindGate)
-            print(f"to create it, run: {missing['command']}", file=sys.stderr)
-            said.add(missing["command"])
-        if not interactive() or missing["project_branch"] is None:
-            continue
-        try:
-            if _ask("Run it now? (y/N)", "n").lower() not in ("y", "yes"):
-                continue
-            root = client.get_dependency_registry().get("root").absolute_path
-            answer = client.memory_branch(root, missing["project_branch"])
-        except (EOFError, KeyboardInterrupt):
-            # The install itself already succeeded; an unanswered question must not cost it that.
-            print("", file=sys.stderr)
-            continue
-        print(f"branch={answer['branch']} set_up={'yes' if answer['set_up'] else 'no'} pushed={'yes' if answer['pushed'] else 'no'}")
+    """After an install that left repositories on their fallback branch: one closing block per command (BranchMissingEventName).
+
+    Which repositories wait, by scope, for which branch, that this is expected, and the one line to run; each
+    repository's detail stays in the run log (``branch_missing``) and in ``--json``.
+    """
+    missing = getattr(client, "missing_branches", None) or []
+    user = bool(missing) and client.get_dependency_registry().profile == "user"
+    groups: dict[str | None, list[dict]] = {}
+    for entry in missing:
+        groups.setdefault(entry["command"], []).append(entry)
+    for command, group in groups.items():
+        _print_missing_block(group, command, user=user)
+        if command is not None and not user and group[0]["project_branch"] is not None and interactive():
+            _offer_memory_branch(client, group[0]["project_branch"])
+
+
+def _print_missing_block(group: list[dict], command: str | None, *, user: bool) -> None:
+    """One block for the repositories *command* gives their branch to; a USER tree never commits (RootBareBranch Q2)."""
+    count = f"{len(group)} repositories have" if len(group) > 1 else "1 repository has"
+    lines = [
+        f"{'info' if user else 'warning'}: branch {group[0].get('tree_branch') or group[0]['wanted']} is new here: {count} no "
+        "branch of their own yet, so each was cloned on its fallback branch. This is expected on the first install of a branch."
+    ]
+    if not user:
+        lines.append("  Do not commit to them until their branches exist: a commit there would write to the fallback branch.")
+    rows: dict[tuple[str, str, str], list[str]] = {}
+    for entry in group:
+        rows.setdefault((entry["scope"] + (" (root)" if entry.get("root") else ""), entry["wanted"], entry["landed"]), []).append(entry["repo"])
+    lines += [f"  {scope}: {', '.join(names)} (wait for {wanted!r}, cloned on {landed!r})" for (scope, wanted, landed), names in rows.items()]
+    lines += [f"  {e['repo']} was cloned without its {e['config']}, which its own branch holds." for e in group if e["config"]]
+    if command is None:
+        lines += [f"create the branch {e['wanted']!r} in {e['path']} to finish the install." for e in group]
+    elif group[0]["project_branch"] is not None or user:  # the memory's own command; a USER tree publishes nothing
+        lines.append(f"to create it, run:\n  {command}")
+    else:
+        lines.append(f"to create, check out and publish every missing branch at once, run:\n  {command} && cgitsync push")
+    print("\n".join(lines), file=sys.stderr)
+
+
+def _offer_memory_branch(client: ComplexGitSyncClient, project_branch: str) -> None:
+    """In a terminal, offer to create the memory's branch now (EnvConnect C7)."""
+    try:
+        if _ask("Run it now? (y/N)", "n").lower() not in ("y", "yes"):
+            return
+        answer = client.memory_branch(client.get_dependency_registry().get("root").absolute_path, project_branch)
+    except (EOFError, KeyboardInterrupt):
+        print("", file=sys.stderr)  # the install itself already succeeded; an unanswered question must not cost it that
+        return
+    print(f"branch={answer['branch']} set_up={'yes' if answer['set_up'] else 'no'} pushed={'yes' if answer['pushed'] else 'no'}")
 
 
 __all__ = ["interactive", "offer_after_command", "offer_missing_branches", "register", "silenced_setup_warning"]
