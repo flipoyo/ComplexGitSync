@@ -287,7 +287,7 @@
     },
     "orchestre/orchestre.py": {
       "internal_imports": 2,
-      "loc": 28,
+      "loc": 24,
       "public_symbols": 1
     },
     "orchestre/release_commands.py": {
@@ -369,6 +369,21 @@
       "internal_imports": 1,
       "loc": 99,
       "public_symbols": 1
+    },
+    "tree/data_command.py": {
+      "internal_imports": 0,
+      "loc": 103,
+      "public_symbols": 3
+    },
+    "tree/data_manager.py": {
+      "internal_imports": 8,
+      "loc": 150,
+      "public_symbols": 2
+    },
+    "tree/data_result.py": {
+      "internal_imports": 0,
+      "loc": 54,
+      "public_symbols": 3
     },
     "tree/discovery.py": {
       "internal_imports": 21,
@@ -577,6 +592,8 @@
     }
   },
   "ring0_modules": [
+    "data_command",
+    "data_result",
     "errors",
     "global_index",
     "omniscience_record"
