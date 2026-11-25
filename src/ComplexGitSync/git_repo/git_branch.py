@@ -7,6 +7,9 @@ Contract: given already-read declared fields (a ``.cgs``/``.gts`` repository
     Decides nothing about the filesystem, the remote, or the tree's shape.
 Imports: git_repo
 
+The public statement of the rule this module implements is the user guide's section "The branch-naming
+contract" (``docs/Text/user_guide.tex``); a change to the rule is a breaking change.
+
 Why this module exists
 ----------------------
 Three ``.cgs`` fields decide the branch a repository targets, and a fourth
@@ -16,12 +19,10 @@ the branch it falls back to when that target is missing on the remote:
     fallback:  repos[].fallback_branch -> DEFAULT_BRANCH ("main")
                (private/local: repos[].fallback_branch -> repos[].default_branch)
 
-Before this module, that chain was written out by hand in six places across
-five modules, and not one of them read :data:`DEFAULT_BRANCH` — each spelled
-the literal ``"main"`` again and each stopped at a different link, so
-changing the constant moved only one of them. ``CLAUDE.md`` already forbids
-a second repository-identifier parser (``parse_repo_id`` is the only one);
-this module is that same rule applied to branches.
+Before this module, that chain was written out by hand in six places across five modules, and not one of them
+read :data:`DEFAULT_BRANCH` — each spelled the literal ``"main"`` again and each stopped at a different link, so
+changing the constant moved only one of them. ``CLAUDE.md`` already forbids a second repository-identifier parser
+(``parse_repo_id`` is the only one); this module is that same rule applied to branches.
 
 It is a **resolver, not a registry**. It holds no tree, no root and no
 privacy state — ``git_tree.py`` owns those. Callers hand it the declared

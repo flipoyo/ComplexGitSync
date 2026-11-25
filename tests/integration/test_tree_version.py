@@ -415,3 +415,107 @@ def test_init_naming_a_repository_that_is_not_waiting_prints_the_refusal_not_not
 
     with pytest.raises(GitSyncError, match="tool is ready"):
         version_command._init(_loaded(tree), tree["snapshot"], argparse.Namespace(repositories=["tool"], version="0.1.0", yes=True))
+
+
+# VersionFeatureTasks: a task declared in a Pixi feature is found, and run in its environment.
+
+
+def _featured(name: str, tables: str, version: str = "5.0.0") -> dict[str, str]:
+    head = f'[workspace]\nname = "{name}"\nversion = "{version}"\nchannels = ["conda-forge"]\nplatforms = {PLATFORMS}\n'
+    return {"pixi.toml": head + tables, "bump.py": BUMP}
+
+
+def _feature_row(tmp_path: Path, tables: str):
+    tree = _tree(tmp_path, extra={"feat": _featured("feat", tables)})
+    return tree, _rows(_loaded(tree))["feat"]
+
+
+TASK = f'bump-version = "{PY} bump.py"\nbump-build = "{PY} bump.py"\n'
+
+
+def test_a_task_in_one_feature_is_ready_and_named_with_its_environment(tmp_path):
+    tree, row = _feature_row(tmp_path, f"\n[feature.dev.tasks]\n{TASK}\n[environments]\ndev = [\"dev\"]\n")
+
+    assert (row.verdict, row.bump, row.build, row.environment) == ("ready", "task (dev)", "task (dev)", "dev")
+    _dirty(tree["feat"])
+    moves = {m.name: m for m in _loaded(tree).version_bump("minor", dry_run=True)}
+    assert moves["feat"].route == "task (dev)" and moves["feat"].new == "5.1.0"
+
+
+def test_a_feature_task_really_runs_in_its_environment(tmp_path):
+    tree = _tree(tmp_path, extra={"feat": _featured("feat", f"\n[feature.dev.tasks]\n{TASK}\n[environments]\ndev = [\"dev\"]\n")})
+    _dirty(tree["feat"])
+
+    _loaded(tree).version_bump("patch")
+
+    assert _version(tree["feat"]) == "5.0.1"
+
+
+def test_a_task_in_tasks_needs_no_environment(tmp_path):
+    _, row = _feature_row(tmp_path, f"\n[tasks]\n{TASK}")
+
+    assert (row.bump, row.build, row.environment) == ("task", "task", None)
+
+
+def test_a_task_in_a_feature_the_default_environment_includes_needs_no_environment(tmp_path):
+    _, row = _feature_row(tmp_path, f"\n[feature.dev.tasks]\n{TASK}\n[environments]\ndefault = [\"dev\"]\ndev = [\"dev\"]\n")
+
+    assert (row.bump, row.environment) == ("task", None)
+
+
+def test_a_bump_with_a_task_in_two_environments_runs_in_the_first_and_moves_the_root(tmp_path):
+    tree = _tree(tmp_path, extra={"feat": _featured("feat", f"\n[feature.dev.tasks]\n{TASK}\n[environments]\nzeta = [\"dev\"]\nalpha = [\"dev\"]\n")})
+    _dirty(tree["feat"])
+
+    moves = {m.name: m for m in _loaded(tree).version_bump("minor")}
+
+    assert moves["feat"].route == "task (zeta)" and moves["demo"].route == "task"
+    assert (_version(tree["feat"]), _version(tree["demo"])) == ("5.1.0", "1.1.0")
+
+
+def test_a_task_in_several_environments_takes_the_first_one_listed(tmp_path):
+    _, row = _feature_row(tmp_path, f"\n[feature.dev.tasks]\n{TASK}\n[environments]\nzeta = [\"dev\"]\nalpha = [\"dev\"]\n")
+
+    assert (row.verdict, row.bump, row.environment) == ("ready", "task (zeta)", "zeta")
+
+
+def test_the_table_form_of_an_environment_is_read(tmp_path):
+    _, row = _feature_row(tmp_path, f"\n[feature.dev.tasks]\n{TASK}\n[environments]\nci = {{ features = [\"dev\"], no-default-feature = true }}\n")
+
+    assert (row.bump, row.environment) == ("task (ci)", "ci")
+
+
+def test_a_task_of_the_default_feature_is_not_seen_by_an_environment_that_drops_it(tmp_path):
+    _, row = _feature_row(tmp_path, f"\n[tasks]\n{TASK}\n[environments]\nci = {{ features = [], no-default-feature = true }}\n")
+
+    assert (row.bump, row.environment) == ("task", None)
+
+
+def test_a_feature_no_environment_lists_is_ignored(tmp_path):
+    _, row = _feature_row(tmp_path, f"\n[feature.dev.tasks]\n{TASK}")
+
+    assert (row.bump, row.build, row.environment) == ("pixi", "-", None)
+
+
+def test_a_script_in_a_mount_that_is_not_checked_out_is_not_mounted(tmp_path):
+    tables = f'\n[feature.dev.tasks]\nbump-version = "{PY} .priv/scripts/bump.py"\n\n[environments]\ndev = ["dev"]\n'
+    tree = _tree(tmp_path, extra={"feat": _featured("feat", tables)})
+    entries = tree["snapshot"].read_text(encoding="utf-8")
+    ghost = tree["demo"] / "feat" / ".priv"
+    entries += _entry(".priv", ghost, ".priv", "0" * 40, root=tree["feat"], private=False)
+    tree["snapshot"].write_text(entries, encoding="utf-8")
+    client = _loaded(tree)
+
+    row = _rows(client)["feat"]
+
+    assert row.verdict == "not mounted" and ".priv" in row.detail and "not checked out" in row.detail
+    _dirty(tree["feat"])
+    with pytest.raises(GitSyncError, match="not mounted"):
+        client.version_bump("patch")
+
+
+def test_a_missing_script_elsewhere_stays_task_needed(tmp_path):
+    tables = f'\n[feature.dev.tasks]\nbump-version = "{PY} nowhere.py"\n\n[environments]\ndev = ["dev"]\n'
+    _, row = _feature_row(tmp_path, tables)
+
+    assert row.verdict == "task needed" and "nowhere.py" in row.detail

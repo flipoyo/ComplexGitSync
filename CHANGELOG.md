@@ -1,5 +1,21 @@
 # Changelog
 
+## 8.13.1 - 2026-11-25
+
+- `cgitsync version diagnose` and `version bump` now find a `bump-version` or
+  `bump-build` task declared in a Pixi feature (`[feature.<name>.tasks]`), as
+  well as in `[tasks]`. A task the default environment does not have is run
+  with `pixi run -e <environment>`, the first environment of `[environments]`
+  that has it, and the `BUMP` and `BUILD` columns and the bump report say
+  `task (<environment>)`. `--json` rows carry a new `environment` key. A task
+  whose script is in a repository the tree declares but has not checked out,
+  such as a private mount, is the new verdict `not mounted` (it refuses a bump
+  like `task needed`) instead of `task needed`.
+- The rule that names every repository's branch is now a documented contract:
+  the user guide has one section, "The branch-naming contract". The rule itself
+  is unchanged. From now on a change to it is a breaking change, released as a
+  major version.
+
 ## 8.12.0 - 2026-11-24
 
 - The run log's `private_branch_missing` event is renamed `branch_missing`. It

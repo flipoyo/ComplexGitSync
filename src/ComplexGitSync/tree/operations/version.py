@@ -2,7 +2,8 @@
 
 Ring: 2
 Contract: ``VersionOperation`` reads every repository's ``pixi.toml`` version (``diagnose``), installs one with Pixi where
-    a repository has none (``init``), and runs each modified repository's own ``bump-version`` task, or Pixi's own bump,
+    a repository has none (``init``), and runs each modified repository's own ``bump-version`` task (from ``[tasks]``
+    or a ``[feature.<f>.tasks]``, run with ``-e <environment>`` when the default environment lacks it), or Pixi's own bump,
     leaf first and the root last, checking the root moved by the level asked (``bump``). Writes no State, no ledger entry
     and no commit; refused outside a DEV tree before anything is read.
 Imports: errors, git_branch, git_repo, git_tree, toolchain, version_scheme, preflight
@@ -15,6 +16,7 @@ version; Pixi's bump is only used for plain SemVer that nothing else copies. ``c
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import tomllib
@@ -59,6 +61,7 @@ class VersionRow:
     detail: str = ""
     modified: bool = False
     is_root: bool = False
+    environment: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -92,12 +95,44 @@ class VersionOperation:
             )
 
     @staticmethod
-    def _tasks(path: Path) -> dict[str, object]:
+    def _tasks(path: Path) -> dict[str, tuple[str | None, object]]:
+        """Each task the manifest declares, with the environment to run it in (``None``: the default one).
+
+        ``[tasks]`` belongs to the default feature, which every environment includes unless it says
+        ``no-default-feature``; ``[feature.<f>.tasks]`` belongs to the environments that list ``<f>``. A task the
+        default environment sees needs no ``-e``; any other takes the first environment of ``[environments]`` that has it.
+        """
         try:
-            tasks = tomllib.loads((path / VersionScheme.MANIFEST).read_text(encoding="utf-8")).get("tasks", {})
+            data = tomllib.loads((path / VersionScheme.MANIFEST).read_text(encoding="utf-8"))
         except (OSError, tomllib.TOMLDecodeError):
             return {}
-        return tasks if isinstance(tasks, dict) else {}
+        tables: dict[str, dict] = {}
+        for key in ("tasks", "feature", "environments"):
+            value = data.get(key)
+            tables[key] = value if isinstance(value, dict) else {}
+        environments: dict[str, object] = {"default": []} | tables["environments"]
+        found: dict[str, tuple[str | None, object]] = {}
+        for env in ["default", *(name for name in environments if name != "default")]:
+            spec = environments[env]
+            features = spec.get("features", []) if isinstance(spec, dict) else spec
+            drops_default = isinstance(spec, dict) and bool(spec.get("no-default-feature"))
+            visible = {} if drops_default else dict(tables["tasks"])
+            for feature in features if isinstance(features, list) else []:
+                own = tables["feature"].get(feature)
+                feature_tasks = own.get("tasks") if isinstance(own, dict) else None
+                if isinstance(feature_tasks, dict):
+                    visible |= feature_tasks
+            for name, task in visible.items():
+                found.setdefault(name, (None if env == "default" else env, task))
+        return found
+
+    @staticmethod
+    def _label(tasks: dict[str, tuple[str | None, object]], name: str) -> str:
+        """``-`` when *name* is no task, ``task`` when the default environment runs it, else ``task (<env>)``."""
+        if name not in tasks:
+            return "-"
+        environment = tasks[name][0]
+        return "task" if environment is None else f"task ({environment})"
 
     @staticmethod
     def _command(task: object) -> str:
@@ -131,7 +166,7 @@ class VersionOperation:
         return found
 
     @staticmethod
-    def _row(repo: WorkingRepo, git_runner: GitRunner, project_name: str | None, pixi: bool) -> VersionRow:
+    def _row(repo: WorkingRepo, git_runner: GitRunner, project_name: str | None, pixi: bool, absent: dict[Path, str] | None = None) -> VersionRow:
         path = repo.absolute_path
         label = repo.relative_path.as_posix() if repo.relative_path else "."
         tasks = VersionOperation._tasks(path) if (path / VersionScheme.MANIFEST).is_file() else {}
@@ -139,17 +174,17 @@ class VersionOperation:
         scheme = VersionScheme.classify(version)
         kept = {"repo_id": repo.repo_id, "name": repo.name, "path": label, "version": version, "scheme": scheme, "is_root": repo.repo_id == ROOT_REPO_ID}
         manifest = VersionScheme.MANIFEST if (path / VersionScheme.MANIFEST).is_file() else "none"
-        build = "task" if VersionOperation.BUILD_TASK in tasks else "-"
+        build = VersionOperation._label(tasks, VersionOperation.BUILD_TASK)
         if repo.effective_private:
             return VersionRow(manifest=manifest, bump="-", build=build, mirrors=0, verdict="private", **kept)
         if foreign_tool(repo, project_name=project_name):
             return VersionRow(manifest=manifest, bump="-", build=build, mirrors=0, verdict="other project", **kept)
         if manifest == "none":
             return VersionRow(manifest=manifest, bump="-", build="-", mirrors=0, verdict="not versioned", **kept)
-        command = VersionOperation._command(tasks.get(VersionOperation.TASK))
+        environment, command = (tasks[VersionOperation.TASK][0], VersionOperation._command(tasks[VersionOperation.TASK][1])) if VersionOperation.TASK in tasks else (None, "")
         mirrors = VersionOperation._mirrors(path, version, git_runner) if version else 0
         missing = VersionOperation._missing_script(path, command) if command else None
-        bump = "task" if command else ("pixi" if scheme in ("semver", "semver-pre") and not mirrors else "none")
+        bump = VersionOperation._label(tasks, VersionOperation.TASK) if command else ("pixi" if scheme in ("semver", "semver-pre") and not mirrors else "none")
         verdict, detail = "ready", ""
         if not pixi:
             verdict, detail = "no pixi", "pixi is not on PATH"
@@ -157,11 +192,14 @@ class VersionOperation:
             verdict = "init"
         elif missing:
             verdict, detail = "task needed", f"the {VersionOperation.TASK} task runs {missing}, which is not in this repository"
+            lost = next((where for there, where in (absent or {}).items() if Path(os.path.normpath(path / missing)).is_relative_to(there)), None)
+            if lost:
+                verdict, detail = "not mounted", f"developer task: its script {missing} is in {lost}, which is not checked out here"
         elif bump == "none":
             verdict = "task needed"
             detail = f"{mirrors} other file(s) hold {version}" if mirrors else f"{version} is not SemVer"
             detail += f": declare a {VersionOperation.TASK} task that updates them"
-        return VersionRow(manifest=manifest, bump=bump, build=build, mirrors=mirrors, verdict=verdict, detail=detail, **kept)
+        return VersionRow(manifest=manifest, bump=bump, build=build, mirrors=mirrors, verdict=verdict, detail=detail, environment=environment, **kept)
 
     @staticmethod
     def _modified(repo: WorkingRepo, git_runner: GitRunner) -> bool:
@@ -174,8 +212,9 @@ class VersionOperation:
         VersionOperation.require_dev(tree, "version diagnose")
         pixi = Toolchain.tool_version("pixi", git_runner) != ABSENT
         rows = []
+        absent = {repo.absolute_path: repo.relative_path.as_posix() for repo in iter_tree(tree) if repo.relative_path and not (repo.absolute_path / ".git").exists()}
         for repo in iter_tree(tree):
-            row = VersionOperation._row(repo, git_runner, project_name, pixi)
+            row = VersionOperation._row(repo, git_runner, project_name, pixi, absent)
             rows.append(row if row.verdict in SKIPPED else VersionRow(**{**row.to_dict(), "modified": VersionOperation._modified(repo, git_runner)}))
         return tuple(rows)
 
@@ -226,9 +265,10 @@ class VersionOperation:
         """``(old, new)`` for *row*: its own task (dry, or real), or Pixi's own bump (computed, or real)."""
         old = row.version or ""
         manifest = str(VersionOperation._repo_dir(tree, row) / VersionScheme.MANIFEST)
-        if row.bump == "task":
+        if row.bump.startswith("task"):
             extra = () if apply else ("--dry-run",)
-            out = VersionOperation._pixi(git_runner, row, "run", "--manifest-path", manifest, VersionOperation.TASK, level, *extra)
+            where = ("-e", row.environment) if row.environment else ()
+            out = VersionOperation._pixi(git_runner, row, "run", "--manifest-path", manifest, *where, VersionOperation.TASK, level, *extra)
             said = _ARROW.search(out.strip().splitlines()[-1]) if out.strip() else None
             if not said:
                 raise GitSyncError(f"{row.name} ({row.path}): its {VersionOperation.TASK} task did not end on 'old -> new'.")

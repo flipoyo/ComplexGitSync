@@ -20,8 +20,8 @@ __all__ = ["COMMANDS", "handle", "register_parsers"]
 
 HELP = "Every repository's version, through Pixi: diagnose it, install one where there is none, bump it (diagnose, init, bump)."
 COMMANDS = {"version": HELP}
-_VERDICTS = ("ready", "init", "task needed", "not versioned", "private", "other project", "no pixi")
-_COLUMNS = (("REPOSITORY", "name", 18), ("PATH", "path", 30), ("MANIFEST", "manifest", 9), ("VERSION", "version", 12), ("SCHEME", "scheme", 11), ("BUMP", "bump", 5), ("BUILD", "build", 5), ("MIRRORS", "mirrors", 7), ("MODIFIED", "modified", 8), ("VERDICT", "verdict", 14))
+_VERDICTS = ("ready", "init", "task needed", "not mounted", "not versioned", "private", "other project", "no pixi")
+_COLUMNS = (("REPOSITORY", "name", 18), ("PATH", "path", 30), ("MANIFEST", "manifest", 9), ("VERSION", "version", 12), ("SCHEME", "scheme", 11), ("BUMP", "bump", 12), ("BUILD", "build", 12), ("MIRRORS", "mirrors", 7), ("MODIFIED", "modified", 8), ("VERDICT", "verdict", 14))
 
 
 def register_parsers(subparsers: argparse._SubParsersAction) -> None:
@@ -69,8 +69,8 @@ def _print_rows(rows) -> None:
     print("summary " + " ".join(f"{verdict.replace(' ', '_')}={count}" for verdict, count in counts.items()))
     if counts["init"]:
         print("next: cgitsync version init")
-    elif counts["task needed"] or counts["no pixi"]:
-        print("next: give each repository marked 'task needed' a bump-version task, or install Pixi, then diagnose again")
+    elif counts["task needed"] or counts["not mounted"] or counts["no pixi"]:
+        print("next: give each repository marked 'task needed' a bump-version task, check out each mount marked 'not mounted', or install Pixi, then diagnose again")
     else:
         print("next: cgitsync version bump [patch|minor|major]")
 
