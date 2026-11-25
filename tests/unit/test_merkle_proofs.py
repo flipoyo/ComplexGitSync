@@ -130,7 +130,7 @@ def test_any_altered_field_fails():
     assert not _replaced(proof, tree_size=proof.tree_size + 1).verify(leaf_hash, root, 5)
     assert not _replaced(proof, tree_size=proof.tree_size - 1).verify(leaf_hash, root, 5)
     assert not proof.verify(leaf_hash, root, 6)  # the size is trusted with the root
-    assert not _replaced(proof, schema=2).verify(leaf_hash, root, 5)
+    assert not _replaced(proof, schema=MerkleRoot.SCHEMAS[-1] + 1).verify(leaf_hash, root, 5)  # schemas 1 and 2 walk one tree (DataSchema)
     assert not proof.verify(leaf_hash, other_root, 5)
     assert not _replaced(proof, root=other_root).verify(leaf_hash, other_root, 6)
     assert not proof.verify(MerkleRoot.repo_leaf_hash(_leaf(4)), root, 5)

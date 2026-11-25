@@ -100,6 +100,11 @@
       "loc": 127,
       "public_symbols": 2
     },
+    "git_repo/data_spec.py": {
+      "internal_imports": 0,
+      "loc": 85,
+      "public_symbols": 1
+    },
     "git_repo/git_branch.py": {
       "internal_imports": 2,
       "loc": 491,
@@ -367,7 +372,7 @@
     },
     "tree/discovery.py": {
       "internal_imports": 21,
-      "loc": 239,
+      "loc": 241,
       "public_symbols": 3
     },
     "tree/environment_spec.py": {
@@ -387,7 +392,7 @@
     },
     "tree/gts_document.py": {
       "internal_imports": 9,
-      "loc": 375,
+      "loc": 382,
       "public_symbols": 1
     },
     "tree/master.py": {
@@ -537,7 +542,7 @@
     },
     "tree/registry.py": {
       "internal_imports": 43,
-      "loc": 459,
+      "loc": 464,
       "public_symbols": 1
     },
     "tree/settings.py": {

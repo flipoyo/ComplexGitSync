@@ -96,3 +96,57 @@ def test_a_leaf_without_a_relative_path_is_refused():
     del leaf["relative_path"]
     with pytest.raises(MerkleError, match="no relative_path"):
         MerkleRoot.gittree_root([_leaf(0), leaf])
+
+
+# --- integrity_schema = 2 (DataSchema): a repository that holds data ------------------
+#
+# Generated the same way as the schema-1 vectors above: an independent, from-scratch
+# computation (plain hashlib over the tags and canonical JSON), not the module under test.
+# A Git-only leaf is schema 1's, so the schema-1 vectors above are schema 2's too.
+
+
+def _data_leaf(index: int) -> dict:
+    return dict(_leaf(index), data={"backend": "dvc"})
+
+
+GOLDEN_DATA_LEAF_0 = "8131c15343fe2216a5c74fe137dd7c88edea9c4b0f6e1ed799488a9524fd9ff0"
+GOLDEN_DATA_ROOT_2 = "559b5ee794a52c08e376ba001e33007c931bce9bea060bf1b318b6945e6a177c"  # leaf 1 holds data
+GOLDEN_DATA_ROOT_3 = "a9d40312d4e8651565c6f857deef187870843b7c9b24993f9c74721dc14d33e9"  # leaf 2 holds data
+GOLDEN_DATA_STATE_1 = "d0756a975d5f31d696ee2afa1a7840c34906b2afdfee06ee7695753acac5f476"
+
+
+def test_the_schemas_this_build_reads_are_one_and_two():
+    assert MerkleRoot.SCHEMAS == (1, 2) and MerkleRoot.DATA_SCHEMA == 2
+
+
+def test_golden_data_leaf():
+    assert MerkleRoot.repo_leaf_hash(_data_leaf(0)) == GOLDEN_DATA_LEAF_0 != GOLDEN_LEAF_0
+
+
+def test_golden_data_roots():
+    assert MerkleRoot.gittree_root([_leaf(0), _data_leaf(1)]) == GOLDEN_DATA_ROOT_2
+    assert MerkleRoot.gittree_root([_leaf(0), _leaf(1), _data_leaf(2)]) == GOLDEN_DATA_ROOT_3
+
+
+def test_golden_data_state():
+    payload = {
+        "project": {"name": "demo"},
+        "tree_state": {"lifecycle_state": "READY", "is_ready": True, "registry_complete": True},
+        "gittree_root": MerkleRoot.gittree_root([_data_leaf(0)]),
+        "freeze_manifest": None,
+    }
+    assert MerkleRoot.state_hash(payload) == GOLDEN_DATA_STATE_1
+
+
+def test_a_state_declares_two_only_when_a_repository_holds_data():
+    assert MerkleRoot.schema_for([_leaf(0), _leaf(1)]) == 1
+    assert MerkleRoot.schema_for([_leaf(0), _data_leaf(1)]) == 2
+    assert MerkleRoot.schema_for([]) == 1
+
+
+def test_an_inclusion_proof_in_a_data_tree_says_schema_two_and_verifies():
+    leaves = [_leaf(0), _data_leaf(1), _leaf(2)]
+    proof = MerkleRoot.inclusion_proof(leaves, "lib/r1")
+    assert proof.schema == 2
+    assert proof.verify(MerkleRoot.repo_leaf_hash(_data_leaf(1)), MerkleRoot.gittree_root(leaves), 3)
+    assert not proof.verify(MerkleRoot.repo_leaf_hash(_leaf(1)), MerkleRoot.gittree_root(leaves), 3)

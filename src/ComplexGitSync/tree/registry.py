@@ -10,7 +10,7 @@ Contract: given a parsed ``.cgs`` (``CgsDocument``) or ``.gts``
     env-marker path expansion inherited from the ``.gts``/``.cgs`` wire
     format itself (``$HOME``-style markers), which is why this module sits
     at Ring 2 rather than Ring 0/1.
-Imports: cgs_format, errors, git_branch, git_repo, git_tree, git_tree_branch, gts_document,
+Imports: cgs_format, data_spec, errors, git_branch, git_repo, git_tree, git_tree_branch, gts_document,
     universal_clock
 
 Extracted from ``orchestre/`` (Wave 2, P5-registry of
@@ -45,6 +45,7 @@ from typing import Any
 
 from .. import __version__ as CGS_VERSION
 from ..errors import ConfigValidationError, GitSyncError
+from ..git_repo.data_spec import DataSpec
 from ..git_repo.git_branch import DEFAULT_BRANCH, resolve_declared_ref
 from ..git_repo.git_repo import (
     AccessProtocol,
@@ -254,6 +255,7 @@ class RegistryTranslator:
                 nested_config=_as_optional_str(repo.get("nested_config")),
                 private=bool(repo.get("private", False)),
                 writable=bool(repo.get("writable", False)),
+                data=DataSpec.from_entry(repo),
                 remote_name=str(repo.get("remote_name") or document.read("project.default_remote_name", "origin")),
             )
             registry.add(entry)
@@ -388,6 +390,7 @@ class RegistryTranslator:
                 ),
                 private=bool(repo_state.get("private", False)),
                 writable=bool(repo_state.get("writable", False)),
+                data=DataSpec.from_entry(repo_state),  # a .gts restores a data repository with no .cgs (DataSchema)
             )
             registry.add(entry)
             path_to_repo_id[absolute_path] = repo_id
@@ -458,6 +461,8 @@ class RegistryTranslator:
             repo_data["private"] = True
         if entry.writable:
             repo_data["writable"] = True
+        if entry.data is not None:  # in the leaf, unlike private/writable: integrity schema 2 (DataSchema D3, D4)
+            repo_data[DataSpec.KEY] = entry.data.to_dict()
         # The branch this entry *declares*, recorded separately from the ref
         # it currently sits on. Without it, reloading a snapshot re-derives
         # default_branch from the target ref -- which for a private/local

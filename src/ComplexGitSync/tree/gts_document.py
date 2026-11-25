@@ -4,7 +4,7 @@ Ring: 0 core + Ring-1 I/O adapter, co-located — see note below.
 Contract: parse, validate, and compute the canonical SHA-256 content hash of
     a ``.gts`` Git Tree State snapshot; the sole builder of that canonical
     payload (one hash code path, no fork).
-Imports: config_document, config_document_io, errors, git_repo, merkle
+Imports: config_document, config_document_io, data_spec, errors, git_repo, merkle
 
 Ring-classification note (found during P2-integrate, same shape as the
 config_document.py/config_document_io.py split from WP-CFG): every real
@@ -51,6 +51,7 @@ from typing import Any
 
 from .. import __version__ as CGS_VERSION
 from ..errors import ConfigValidationError, UnsupportedSnapshotFormatError
+from ..git_repo.data_spec import DataSpec
 from ..git_repo.git_repo import NodeType, RefKind, RepoLifecycleState
 from ..merkle import MerkleError, MerkleRoot
 from .config_document import ConfigDocument
@@ -197,6 +198,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 for key in self._REQUIRED_REPO_STATE_KEYS:
                     if not repo.get(key):
                         errors.append(f"repo_state[{idx}] missing required key: '{key}'")
+                errors.extend(f"repo_state[{idx}] ({repo.get('relative_path')}) {problem}" for problem in DataSpec.problems(repo))
                 node_type: NodeType | None = None
                 try:
                     node_type = _parse_gts_node_type(repo.get("node_type"))
@@ -330,15 +332,17 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         "corrupt" (SnapshotVersionGuard). A document with no ``snapshot_hash``
         is still being built and is hashed under the current schema.
         """
-        declared = self.integrity_schema
-        if declared is not None and declared > MerkleRoot.SCHEMA:
+        declared, newest = self.integrity_schema, MerkleRoot.SCHEMAS[-1]
+        if declared is not None and declared > newest:
             raise UnsupportedSnapshotFormatError(
                 "this snapshot was written by a newer ComplexGitSync "
                 f"(integrity schema {declared}; this build reads up to "
-                f"{MerkleRoot.SCHEMA}). Upgrade, or pass --gts with a snapshot this build wrote."
+                f"{newest}). Upgrade, or pass --gts with a snapshot this build wrote."
             )
-        if self.snapshot_hash is not None and declared != MerkleRoot.SCHEMA:
+        if self.snapshot_hash is not None and declared not in MerkleRoot.SCHEMAS:
             raise UnsupportedSnapshotFormatError(f"this snapshot was written before integrity schema {MerkleRoot.SCHEMA} — run `cgitsync memory reboot`.")
+        if self.snapshot_hash is not None and declared != MerkleRoot.schema_for(self._repo_dicts()):  # DataSchema D4
+            raise ConfigValidationError(f"Invalid .gts document: integrity_schema {declared} disagrees with its repositories: a State declares {MerkleRoot.DATA_SCHEMA} exactly when one holds data (a schema-2 State from 8.2.x, withdrawn in 8.3.0, is not this one: run `cgitsync memory reboot`)")
 
     def compute_gittree_root(self) -> str:
         """``H_GITTREE``: the Merkle root over this document's repositories."""
@@ -358,7 +362,7 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
         root = MerkleRoot.gittree_root(self._repo_leaves())  # refuses before anything is stamped
         document = self._data.setdefault("document", {})
         document["CGS_VERSION"] = str(document.get("CGS_VERSION") or CGS_VERSION)
-        document["integrity_schema"] = MerkleRoot.SCHEMA
+        document["integrity_schema"] = MerkleRoot.schema_for(self._repo_dicts())
         document["hash_canonicalisation"] = self.LEGACY_READER_FENCE
         for repo, leaf in zip(self._repo_dicts(), self._repo_leaves()):
             repo["repo_hash"] = MerkleRoot.repo_leaf_hash(leaf)
@@ -433,7 +437,11 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
 
     @staticmethod
     def repo_leaf(repo: dict[str, Any]) -> dict[str, Any]:
-        """The schema-1 leaf of one ``[[repo_state]]`` table, read from a file or built from a tree."""
+        """The leaf of one ``[[repo_state]]`` table, read from a file or built from a tree.
+
+        Schema 2 adds ``data`` for a repository that holds data and nothing else,
+        so a Git-only leaf is schema 1's, bit for bit (DataSchema D4).
+        """
         canonical_repo = {
             "name": repo.get("name"),
             "node_type": repo.get("node_type"),
@@ -479,6 +487,8 @@ class GtsDocument(ConfigDocument, ConfigDocumentIOMixin):
             "worktree_state": repo.get("worktree_state"),
             "is_reachable": bool(repo.get("is_reachable", True)),
         }
+        if repo.get(DataSpec.KEY):
+            canonical_repo[DataSpec.KEY] = repo[DataSpec.KEY]
         return canonical_repo
 
 __all__ = ["GtsDocument"]

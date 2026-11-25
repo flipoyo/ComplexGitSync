@@ -53,23 +53,25 @@ def test_the_public_surface_of_merkle_root_is_one_list():
     public = {name for name in dir(MerkleRoot) if not name.startswith("_")}
 
     assert public == {
-        "ALGORITHM", "GENESIS_PREV", "GLOBAL_SCHEMA", "SCHEMA",
+        "ALGORITHM", "DATA_SCHEMA", "GENESIS_PREV", "GLOBAL_SCHEMA", "SCHEMA", "SCHEMAS",
         "canonical_json", "check_leaves", "checkpoint_hash", "content_digest", "digest", "gittree_root",
         "global_inclusion_proof", "global_root", "inclusion_proof", "leaf_digest", "observation_hash",
-        "os_state_hash", "prefixed", "record_hash", "repo_leaf_hash", "state_hash", "stream_digest",
+        "os_state_hash", "prefixed", "record_hash", "repo_leaf_hash", "schema_for", "state_hash", "stream_digest",
     }
 
 
 def test_no_public_method_returns_a_node_a_level_or_a_sibling():
-    """What a public method may return: a hex string, a leaf's raw digest, canonical bytes, a proof object, nothing."""
+    """What a public method may return: a hex string, a leaf's raw digest, canonical bytes, a proof object, nothing,
+    or a schema number (``schema_for``, DataSchema)."""
     allowed = {"str", "bytes", "None", "InclusionProof", "GlobalInclusionProof"}
+    schema_number = {"schema_for": "int"}  # the one method that answers a number, and it is a schema, never a level
     returns = {
         name: str(inspect.signature(member).return_annotation)
         for name, member in inspect.getmembers(MerkleRoot, inspect.isroutine)
         if not name.startswith("_")
     }
 
-    assert {name: kind for name, kind in returns.items() if kind not in allowed} == {}
+    assert {name: kind for name, kind in returns.items() if kind not in allowed and schema_number.get(name) != kind} == {}
     for proof in (InclusionProof, GlobalInclusionProof):
         assert {n for n in dir(proof) if not n.startswith("_")} >= {"verify", "summary"}
         assert not {"siblings", "path", "to_dict", "from_dict"} & set(dir(proof))
@@ -105,6 +107,14 @@ def test_a_repositorys_leaf_has_exactly_these_fields():
         "project_owner_name", "relative_path", "repo_lifecycle_state", "repo_name", "resolved_ref", "sync_state",
         "target_ref", "worktree_state",
     ]
+
+
+def test_a_data_repositorys_leaf_adds_data_and_nothing_else():
+    """Integrity schema 2 (DataSchema): ``data`` enters the leaf of a repository that holds data, and only there."""
+    git_only = GtsDocument.repo_leaf({})
+    data_backed = GtsDocument.repo_leaf({"data": {"backend": "dvc"}})
+    assert sorted(set(data_backed) - set(git_only)) == ["data"] and data_backed["data"] == {"backend": "dvc"}
+    assert "data" not in git_only and MerkleRoot.repo_leaf_hash(git_only) != MerkleRoot.repo_leaf_hash(data_backed)
 
 
 # --- LEFT = RIGHT, bit for bit ---------------------------------------------------------

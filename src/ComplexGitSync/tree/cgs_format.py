@@ -4,7 +4,7 @@ Ring: 0 core plus the co-located Ring-1 ``ConfigDocumentIOMixin`` adapter.
 Contract: own the textual repository grammar and deterministic, offline
 ``.cgs`` parse/normalize/validate/serialize pipeline. See ``gts_document``
 and the archived Isolation ticket for the co-location rationale.
-Imports: config_document, config_document_io, environment_spec, errors, git_repo
+Imports: config_document, config_document_io, data_spec, environment_spec, errors, git_repo
 
 TOML remains the lexical format. This module exclusively owns the textual
 ``provider:owner/repository`` grammar through :func:`parse_repo_id`.
@@ -31,6 +31,7 @@ import tomli_w
 
 from ..errors import ConfigValidationError
 from ..git_repo import git_branch, git_repo
+from ..git_repo.data_spec import DataSpec
 from ..git_repo.git_branch import DEFAULT_BRANCH
 from ..git_repo.git_repo import AccessProtocol, GitProvider, GitRepo
 from . import environment_spec
@@ -386,10 +387,9 @@ def _repo_data_from_tree(
     nested_config = getattr(repo, "nested_config", None)
     if nested_config is not None:
         data["nested_config"] = str(nested_config)
-    if getattr(repo, "private", False):
-        data["private"] = True
-    if getattr(repo, "writable", False):
-        data["writable"] = True
+    data.update({flag: True for flag in ("private", "writable") if getattr(repo, flag, False)})
+    if getattr(repo, "data", None) is not None:  # a tree read from a .gts carries no .cgs metadata (DataSchema)
+        data[DataSpec.KEY] = repo.data.to_dict()
 
     data["default_branch"] = getattr(repo, "default_branch", None) or data.get("default_branch")
     data["fallback_branch"] = getattr(repo, "fallback_branch", None) or data.get("fallback_branch")
@@ -520,6 +520,7 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 access_protocol=AccessProtocol(
                     str(repo_data.get("access_protocol", DEFAULT_ACCESS_PROTOCOL))
                 ),
+                data=DataSpec.from_entry(repo_data),
             )
             tree_key = _unique_tree_key(tree, repo)
             tree.repos[tree_key] = repo
@@ -599,6 +600,8 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
                 # 'writable = true' beside it is what makes such a repo private/local.
                 if "pinned" in repo:
                     errors.append(f"repos[{idx}] uses the removed key 'pinned'; use 'private'")
+                named = f"repos[{idx}] ({repo.get('gitprovider')}:{repo.get('project_owner_name')}/{repo.get('repo_name')})"
+                errors.extend(f"{named} {problem}" for problem in DataSpec.problems(repo))
 
                 gitprovider = repo.get("gitprovider", GitProvider.GITHUB.value)
                 custom_url = repo.get("gitprovider_url")

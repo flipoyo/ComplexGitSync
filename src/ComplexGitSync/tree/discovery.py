@@ -4,7 +4,7 @@ Ring: 1 (filesystem only, no subprocess)
 Contract: given a WorkingGitTree with pending nested_config entries, resolve
     and promote each one's nested .cgs into the parent registry in place; and,
     independently, parse .gitmodules file content into structured entries.
-Imports: cgs_format, errors, git_branch, git_repo, git_tree, mount_guard
+Imports: cgs_format, data_spec, errors, git_branch, git_repo, git_tree, mount_guard
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..errors import NestedConfigDiscoveryError
+from ..git_repo.data_spec import DataSpec
 from ..git_repo.git_branch import resolve_declared_ref
 from ..git_repo.git_repo import (
     AccessProtocol,
@@ -170,6 +171,7 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
                     nested_config=str(repo.get("nested_config")) if repo.get("nested_config") else None,
                     private=bool(repo.get("private", False)),
                     writable=bool(repo.get("writable", False)),
+                    data=DataSpec.from_entry(repo),
                     remote_name=str(repo.get("remote_name") or entry.remote_name or "origin"),
                 )
             )

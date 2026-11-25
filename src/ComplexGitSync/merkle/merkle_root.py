@@ -2,7 +2,7 @@
 
 Ring: 0 (pure — no I/O, no clock, no environment)
 Contract: ``MerkleRoot`` computes every hash the project records or compares:
-    a repository's leaf, the GitTree root, a State's name (``integrity_schema = 1``),
+    a repository's leaf, the GitTree root, a State's name (``integrity_schema`` 1 and 2),
     the Omniscience register's hashes (``GLOBAL_SCHEMA = 1``), and the content
     hashes of a ledger entry, a commit log, an Environment and the other records.
     It takes plain values and gives back hex strings, names and verdicts. It never
@@ -24,6 +24,16 @@ plain values in, so this folder imports nothing, not even ``GitRepo``.
 schema, with the old one still verifiable. The golden vectors in
 ``tests/unit/test_merkle_root.py`` are the cross-platform contract, unchanged
 since ``integrity_schema = 1`` and ``GLOBAL_SCHEMA = 1`` were written.
+
+**Schema 2 (DataSchema, owner, 2026-11-23 and 2026-11-25).** A repository that
+holds data carries ``data = { backend = ... }`` in its leaf; a Git-only leaf has
+no ``data`` key, so it hashes exactly as under schema 1. Nothing else moved: the
+same tags, the same tree, the same State payload. A State declares 2 only when
+some repository holds data (``schema_for``), so a Git-only State stays byte for
+byte what schema 1 wrote, and every schema-1 State still verifies. A schema-1
+State holding data is refused: schema 1 never hashed it. 8.2.0 shipped a different
+schema 2 (keyed by ``tree_path``), withdrawn in 8.3.0 and never tagged; this is not it,
+and a leftover State of that one is refused, pointing at ``memory reboot``.
 """
 
 from __future__ import annotations
@@ -41,8 +51,13 @@ class MerkleError(ValueError):
 class MerkleRoot:
     """Every hash, as stateless class methods. See the module docstring."""
 
-    #: The hash contract a new ``.gts`` declares in ``document.integrity_schema``.
+    #: The hash contract a State declares in ``document.integrity_schema`` when no
+    #: repository holds data, and the one every State before DataSchema declares.
     SCHEMA = 1
+    #: The hash contract of a State in which some repository holds data.
+    DATA_SCHEMA = 2
+    #: Every integrity schema this build reads and verifies, oldest first.
+    SCHEMAS = (SCHEMA, DATA_SCHEMA)
     #: The hash contract a register record declares in ``record.schema``.
     GLOBAL_SCHEMA = 1
     ALGORITHM = "sha256"
@@ -108,6 +123,11 @@ class MerkleRoot:
         cls._ordered(leaves)
 
     @classmethod
+    def schema_for(cls, leaves: Iterable[Mapping[str, Any]]) -> int:
+        """The integrity schema a State of *leaves* declares: 2 when one holds ``data``, else 1."""
+        return cls.DATA_SCHEMA if any(leaf.get("data") for leaf in leaves) else cls.SCHEMA
+
+    @classmethod
     def state_hash(cls, state_payload: Mapping[str, Any]) -> str:
         """``H_STATE`` of the State payload (which carries ``gittree_root``), as hex."""
         return hashlib.sha256(cls._STATE_TAG + cls.canonical_json(state_payload)).hexdigest()
@@ -159,7 +179,7 @@ class MerkleRoot:
             raise MerkleError(f"no repository at {relative_path!r} in this GitTree")
         index = paths.index(relative_path)
         digests = [bytes.fromhex(cls.repo_leaf_hash(leaf)) for leaf in ordered]
-        return InclusionProof(cls.SCHEMA, index, len(ordered), cls.gittree_root(ordered), tuple(cls._path(index, digests, cls._NODE_TAG)))
+        return InclusionProof(cls.schema_for(ordered), index, len(ordered), cls.gittree_root(ordered), tuple(cls._path(index, digests, cls._NODE_TAG)))
 
     @classmethod
     def global_inclusion_proof(cls, leaf_digests: Sequence[bytes], index: int) -> GlobalInclusionProof:
@@ -230,7 +250,7 @@ class InclusionProof:
 
     __slots__ = ("schema", "leaf_index", "tree_size", "root", "_path")
     _TAG = MerkleRoot._NODE_TAG
-    _SCHEMA = MerkleRoot.SCHEMA
+    _SCHEMAS = MerkleRoot.SCHEMAS
 
     def __init__(self, schema: int, leaf_index: int, tree_size: int, root: str, path: tuple[str, ...]) -> None:
         for name, value in zip(InclusionProof.__slots__, (schema, leaf_index, tree_size, root, tuple(path))):
@@ -256,10 +276,11 @@ class InclusionProof:
 
         The size is trusted with the root, as RFC 9162 trusts a signed tree head: the path alone
         does not fix it (leaf 3 walks the same path in a tree of 5 and of 6). Dispatched on
-        ``schema``: a later schema adds a branch and never reinterprets this one. A malformed
+        ``schema``: a later schema adds a branch and never reinterprets this one; schema 2 changed
+        only what a leaf holds, so it walks the same tree as schema 1. A malformed
         proof is ``False``, never an error.
         """
-        if self.schema != self._SCHEMA:
+        if self.schema not in self._SCHEMAS:
             return False
         if self.root != trusted_root or self.tree_size != trusted_size or not 0 <= self.leaf_index < self.tree_size:
             return False
@@ -291,7 +312,7 @@ class GlobalInclusionProof(InclusionProof):
 
     __slots__ = ()
     _TAG = MerkleRoot._GNODE_TAG
-    _SCHEMA = MerkleRoot.GLOBAL_SCHEMA
+    _SCHEMAS = (MerkleRoot.GLOBAL_SCHEMA,)
 
 
 __all__ = ["GlobalInclusionProof", "InclusionProof", "MerkleError", "MerkleRoot"]

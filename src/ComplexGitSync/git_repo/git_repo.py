@@ -4,7 +4,7 @@ Ring: 0 (pure — no I/O, no clock, no environment)
 Contract: define per-repository identity types, state enumerations, and
     remote-URL construction; parse nothing (textual repository-ID authoring
     syntax is parsed only by cgs_format.parse_repo_id).
-Imports: none
+Imports: data_spec
 
 This module is the **GitRepo anchor** — the authoritative source for all
 per-repository identity types, state enumerations, and structural definitions.
@@ -20,7 +20,8 @@ Classes / enums defined here (Tier 1 — Core State):
     RepoLifecycleState  Per-repo lifecycle progression
     SyncState           Synchronization status relative to the remote
     DiscoveryState      Nested .cgs discovery status
-    GitRepo             Canonical reference identity of a single repository
+    GitRepo             Canonical reference identity of a single repository,
+                        with its data declaration (``data_spec.DataSpec``)
     WorkingRepo         Mutable runtime repository used by WorkingGitTree
     RepoAddress         Derives the remote URL from a GitRepo
 """
@@ -33,6 +34,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+
+from .data_spec import DataSpec
 
 # ---------------------------------------------------------------------------
 # Enumerations
@@ -229,6 +232,8 @@ class GitRepo:
     gitprovider_url: str | None = None
     access_protocol: AccessProtocol = AccessProtocol.SSH
     commit_sha: str | None = None
+    #: ``data = { backend = ... }`` when the repository holds data; ``None`` for a Git-only one (DataSchema).
+    data: DataSpec | None = None
 
 # ---------------------------------------------------------------------------
 # RepoAddress — URL derivation from GitRepo
