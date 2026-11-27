@@ -1,0 +1,45 @@
+# CGSenc, USER level — the test tree for repositories encrypted with git-crypt.
+#
+# Workstream: git-crypt (ticket EncryptedRepos, merged into HT-BETA; archived in
+# .agent/.local/.dev/DevTickets/archive/). Its DEV twin is
+# tests/fixtures/git-crypt/cgitsync-encrypt-devel.cgs.
+#
+# Level: USER. No repository is private, so the tree has no synced memory and
+# no .agent/ mounts (AdditionalSpecs, *The tree profile*). It is a fixture, not
+# a workspace: it is driven by the cgitsync of the checkout that bootstraps it
+# (this ComplexGitSync, on HT-BETA) and holds no copy of the tool itself.
+#
+#   CGSenc          root, in clear: README and this kind of .cgs. No git-crypt.
+#   CGSenc-data     data-repo: .gitattributes says
+#                   `data/** filter=git-crypt diff=git-crypt`; README.md stays
+#                   in clear. Key: tests/fixtures/git-crypt/keys/unsafe-key-1.
+#   CGSenc-space    spaces/space1: a nested space, encrypted like CGSenc-data,
+#                   carrying its own CGSenc-space.cgs (template:
+#                   tests/fixtures/git-crypt/CGSenc-space.cgs) that declares itself at "." so it
+#                   can be bootstrapped alone. Nested here, that self entry
+#                   resolves to this entry's path and is skipped (probed
+#                   2026-11-21: it is). Key: tests/fixtures/git-crypt/keys/unsafe-key-2.
+#
+# Locked or unlocked is not declared here: it is a fact of each clone, which
+# cgitsync detects (the ticket's CRYPT column). One bootstrap gives one tree:
+#   locked     bootstrap, and nothing else
+#   unlocked   bootstrap, then `git-crypt unlock <this repo>/tests/fixtures/git-crypt/keys/unsafe-key-i`
+#              inside data-repo (i=1) and spaces/space1 (i=2)
+# The keys are unsafe, committed in this repository, for the prototype
+# (owner, 2026-11-21): see keys/README.md. Synthetic data only.
+#
+# The three CGSenc repositories exist, private on GitHub, made on 2026-11-21
+# (step 0 of the ticket). They are new, so they live on main; the tree's
+# branch is main too. Their data is encrypted with the keys above.
+#
+# Run from the root of this ComplexGitSync checkout; the tree lands in ./CGSenc:
+#     pixi run cgitsync validate tests/fixtures/git-crypt/cgitsync-encrypt.cgs
+#     pixi run cgitsync bootstrap tests/fixtures/git-crypt/cgitsync-encrypt.cgs CGSenc
+
+project = { name = "CGSenc", default_branch = "main" }
+
+repos = [
+    { repository = "github:flipoyo/CGSenc", relative_path = ".", nested_config = "disabled" },
+    { repository = "github:flipoyo/CGSenc-data", relative_path = "data-repo", nested_config = "disabled" },
+    { repository = "github:flipoyo/CGSenc-space", relative_path = "spaces/space1", nested_config = "auto" },
+]

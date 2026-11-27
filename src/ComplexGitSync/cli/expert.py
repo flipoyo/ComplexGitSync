@@ -45,6 +45,7 @@ from ._shared import (
     _run_with_logging,
     _warn_paths_reaching_configuration_repos,
 )
+from .anonymise_command import handle as _handle_anonymise_command
 from .branch_command import handle as _handle_branch_command
 from .branch_command import print_ancestry as _print_ancestry
 from .exit_codes import EXIT_OK, EXIT_REFUSED
@@ -55,6 +56,7 @@ COMMANDS: dict[str, str] = {
     "validate": "Parse, normalize, and validate a .cgs or validate a .gts topology.",
     "pull": "Resynchronise an existing project tree from .cgs or .gts; --force resets it to the remote, refusing while commits exist only here.",
     "fetch": "Update every repository's view of its origin, without moving any branch.",
+    "anonymise": "Move the shared branches named after the project onto its alias (the .cgs declares 'anonymous'); history is not rewritten.",
     "autofix": "Diagnose and repair the situation named by the last failing command's error.",
     "checkout": "Synchronize the tree to a branch or tag.",
     "branch": "Create, list or close a project branch across the tree (create, list, close).",
@@ -333,6 +335,15 @@ def _register_branch(subparser: argparse.ArgumentParser) -> None:
     _add_search_dir_argument(delete)
     _add_private_argument(delete, verb="Delete the branch in")
     subparser.set_defaults(handler=_handle_branch)
+
+
+def _register_anonymise(subparser: argparse.ArgumentParser) -> None:
+    subparser.add_argument("--cgs", metavar="FILE", help="The .cgs that declares 'anonymous' (default: the one this tree was built from).")
+    subparser.add_argument("--dry-run", action="store_true", help="List the branches that would be created and write nothing.")
+    subparser.add_argument("--delete-old", action="store_true", help="Also delete each old branch, after a confirmation naming it.")
+    _add_gts_argument(subparser)
+    _add_search_dir_argument(subparser)
+    subparser.set_defaults(handler=_handle_anonymise_command)
 
 
 def _register_fetch(subparser: argparse.ArgumentParser) -> None:
@@ -870,6 +881,7 @@ _PARSER_BUILDERS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "validate": _register_validate,
     "pull": _register_pull,
     "fetch": _register_fetch,
+    "anonymise": _register_anonymise,
     "autofix": _register_autofix,
     "checkout": _register_checkout,
     "branch": _register_branch,
@@ -2188,11 +2200,8 @@ def _execute_merge_resolve(
     else:
         listed = ", ".join(str(path) for path in outcome.stopped_paths)
         print(f"stopped at {outcome.stopped_at}: {listed or '(no file named)'}")
-    for path in outcome.binary_paths:
-        print(
-            f"binary file {path}: Git left this branch's version in place; the "
-            f"other version is on {outcome.stopped_source!r}. Nothing was staged for you."
-        )
+    for note in outcome.binary_notes:
+        print(note)
     if outcome.not_reached:
         print(f"not reached: {', '.join(outcome.not_reached)}")
 

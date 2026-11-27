@@ -17,7 +17,7 @@
     },
     "cli/_shared.py": {
       "internal_imports": 21,
-      "loc": 616,
+      "loc": 617,
       "public_symbols": 0
     },
     "cli/branch_command.py": {
@@ -42,7 +42,7 @@
     },
     "cli/expert.py": {
       "internal_imports": 40,
-      "loc": 2219,
+      "loc": 2229,
       "public_symbols": 1
     },
     "cli/fetch_command.py": {
@@ -57,7 +57,7 @@
     },
     "cli/help_text.py": {
       "internal_imports": 0,
-      "loc": 209,
+      "loc": 210,
       "public_symbols": 2
     },
     "cli/memory_asof.py": {
@@ -127,7 +127,7 @@
     },
     "json_render.py": {
       "internal_imports": 0,
-      "loc": 207,
+      "loc": 209,
       "public_symbols": 2
     },
     "omniscience/global_index.py": {
@@ -222,7 +222,7 @@
     },
     "orchestre/client.py": {
       "internal_imports": 69,
-      "loc": 1419,
+      "loc": 1423,
       "public_symbols": 1
     },
     "orchestre/command_run_logger.py": {
@@ -242,7 +242,7 @@
     },
     "orchestre/document_loader.py": {
       "internal_imports": 20,
-      "loc": 357,
+      "loc": 358,
       "public_symbols": 1
     },
     "orchestre/environment_commands.py": {
@@ -262,7 +262,7 @@
     },
     "orchestre/installer.py": {
       "internal_imports": 25,
-      "loc": 745,
+      "loc": 746,
       "public_symbols": 1
     },
     "orchestre/memory_chapters.py": {
@@ -297,12 +297,12 @@
     },
     "orchestre/reporting.py": {
       "internal_imports": 32,
-      "loc": 291,
+      "loc": 297,
       "public_symbols": 1
     },
     "orchestre/reports.py": {
       "internal_imports": 4,
-      "loc": 154,
+      "loc": 155,
       "public_symbols": 4
     },
     "orchestre/runtime_state_store.py": {
@@ -352,7 +352,7 @@
     },
     "tree/cgs_format.py": {
       "internal_imports": 12,
-      "loc": 683,
+      "loc": 686,
       "public_symbols": 9
     },
     "tree/commit_message.py": {
@@ -507,7 +507,7 @@
     },
     "tree/operations/commit.py": {
       "internal_imports": 7,
-      "loc": 128,
+      "loc": 132,
       "public_symbols": 1
     },
     "tree/operations/fetch.py": {
@@ -537,7 +537,7 @@
     },
     "tree/operations/push.py": {
       "internal_imports": 12,
-      "loc": 220,
+      "loc": 224,
       "public_symbols": 1
     },
     "tree/operations/removal.py": {
@@ -557,7 +557,7 @@
     },
     "tree/registry.py": {
       "internal_imports": 43,
-      "loc": 464,
+      "loc": 475,
       "public_symbols": 1
     },
     "tree/settings.py": {

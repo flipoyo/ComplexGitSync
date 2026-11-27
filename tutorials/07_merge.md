@@ -218,3 +218,10 @@ finding to gx4g.
 | I want the other branch's memory | `memory merge feature --into main --theirs` |
 | "share no commit" | fix the branch name or leave that repository out |
 | Merged and pushed | `branch close feature`, then `branch delete feature` |
+
+## When the file is encrypted
+
+If both branches changed a file a `.gitattributes` asks git-crypt to encrypt, Git cannot merge the two edits, and
+`merge --resolve` stops with an `encrypted file` line instead of opening a merge tool, even when your clone is
+unlocked and the file reads as plain text. Choose a side by hand, `git checkout --ours -- <path>` or `--theirs`,
+then `git add <path>`, then run `cgitsync merge --resolve <branch>` again.

@@ -30,11 +30,11 @@ class NewBranch:
 
     @dataclass(frozen=True)
     class Start:
-        """A derived branch created at the tip of the bare branch, not at ``HEAD``: what the report says."""
+        """A branch this run created: at the tip of the bare branch (``base``, reported), or at ``HEAD`` (``base`` is ``None``)."""
 
         repo: str
         branch: str
-        base: str
+        base: str | None
         sha: str
 
         @property
@@ -47,7 +47,7 @@ class NewBranch:
 
     @classmethod
     def start(cls, git_runner: GitRunner, repo: WorkingRepo, target: str, bare: str) -> Start | None:
-        """Create *target* in *repo* unless it exists, and return how it began when that was not ``HEAD``.
+        """Create *target* in *repo* unless it exists, and return how a branch this run made fresh began (``None``: it was not made).
 
         A branch this clone already knows from the remote is that branch, never a new one that shares its
         name (CheckoutForkGuard). Else a derived *target* begins at the tip of *bare* when *repo* holds it,
@@ -74,14 +74,14 @@ class NewBranch:
                 base = f"{remote}/{bare}"
         if base is None:
             git_runner.create_branch(path, target)
-            return None
+            return cls.Start(repo.name, target, None, "")
         git_runner.create_branch(path, target, start_point=base, track=False)
         return cls.Start(repo.name, target, bare, git_runner.ref_sha(path, target) or "")
 
     @staticmethod
     def report(started: Iterable[Start], log_event: Callable[..., None]) -> None:
         """Say, in the run log and to the caller, which branches began at a bare tip (``branch_started_at_bare_tip``)."""
-        for start in started:
+        for start in (s for s in started if s.base is not None):
             log_event("branch_started_at_bare_tip", repo=start.repo, branch=start.branch, base=start.base, sha=start.sha)
             warnings.warn(start.text, stacklevel=2)
 

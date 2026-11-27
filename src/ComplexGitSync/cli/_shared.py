@@ -189,7 +189,7 @@ def _run_with_logging(
         source_path=resolved_source,
         project_root=project_root,
     )
-    from . import memory_prompt  # imported here: memory_prompt builds on this module
+    from . import encryption_notice, memory_prompt  # here: memory_prompt builds on this module
 
     try:
         with memory_prompt.silenced_setup_warning():
@@ -241,6 +241,7 @@ def _run_with_logging(
 
     memory_prompt.offer_after_command(active_client)
     memory_prompt.offer_missing_branches(active_client)
+    encryption_notice.announce(active_client, command_name)
     if active_client.run_logger is not None:
         tree_state = active_client.get_tree_state() if getattr(active_client, "registry", None) is not None else None
         active_client.run_logger.log_event(

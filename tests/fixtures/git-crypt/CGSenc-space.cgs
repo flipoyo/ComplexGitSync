@@ -1,0 +1,25 @@
+# CGSenc-space — template of the .cgs that lives at the root of the
+# github:flipoyo/CGSenc-space repository (copied there at step 0 of the
+# EncryptedRepos ticket; this copy is the reference).
+#
+# It makes the encrypted space an Operating Space of its own:
+#
+#   bootstrapped alone   pixi run cgitsync bootstrap CGSenc-space.cgs
+#                        -> a one-repository tree, data/ locked until
+#                           git-crypt unlock
+#   nested in CGSenc     tests/fixtures/git-crypt/cgitsync-encrypt.cgs mounts it at
+#                        spaces/space1 with nested_config = "auto"; the self
+#                        entry below resolves to that same path and is
+#                        skipped by the discovery guard, so the space is held
+#                        once.
+#
+# The repository's .gitattributes: `data/** filter=git-crypt diff=git-crypt`.
+# Key: tests/fixtures/git-crypt/keys/unsafe-key-2 of ComplexGitSync (unsafe, test only).
+# This file, README.md and .gitattributes stay in clear: cgitsync must read
+# the .cgs of a locked space.
+
+project = { name = "CGSenc-space", default_branch = "main" }
+
+repos = [
+    { repository = "github:flipoyo/CGSenc-space", relative_path = "." },
+]

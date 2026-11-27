@@ -1,5 +1,28 @@
 # Changelog
 
+## 8.16.0 - 2026-11-27
+
+- The work of the `data-encrypt` line is merged into `HT-BETA`; its three entries (8.10.0, 8.10.1 and 8.11.0 there,
+  never released under those numbers here) are this one.
+- Repositories encrypted with `git-crypt` are now guarded. In a clone that was never unlocked, `commit` and
+  `release freeze` refuse a new file under an encrypted path, and `push` refuses commits that hold one in clear, each
+  naming the repository and the file; there is no override. `status` gains a `CRYPT` column (`locked`, `unlocked`)
+  when a repository of the tree is encrypted, and `status --json` a `crypt` field on every repository. A repository
+  with no attributes at all is answered `-` at once, so a large one costs nothing more. `bootstrap` and `initialise`
+  end with one line naming the repositories that are encrypted and locked. `cgitsync` still never unlocks a
+  repository and never handles a key.
+- A project can keep its name out of the repositories it shares: `anonymous = "sequence"` or `"hash"` in the `project`
+  table of its `.cgs` files it under an alias in every shared repository (branches, the States in the memory, the
+  memory's commit messages, the omniscience record). The alias is chosen at `bootstrap` and `initialise` against the
+  claim file each alias branch carries, and recorded in the State; a State of an anonymous project records no machine
+  path. New command `cgitsync anonymise [--dry-run] [--delete-old]` moves a tree that already shares its name onto its
+  alias without rewriting history. An anonymous project whose name is shaped like an alias, and any unknown key in the
+  `project` table, are now refused by `validate`. Nothing changes for a project without the option.
+- A branch made fresh in a shared repository of an anonymous tree carries the claim whether it begins at the bare
+  branch's tip (8.15.1) or at the commit the repository is on.
+- The unsafe git-crypt keys and the encrypted test tree of the prototype moved from the root of the repository to
+  `tests/fixtures/git-crypt/`, so a branch users install holds no key file, even a test one.
+
 ## 8.15.1 - 2026-11-27
 
 - A derived branch begins where the bare branch is. `checkout` and `branch create` used to start a missing

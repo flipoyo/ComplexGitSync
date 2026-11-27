@@ -142,6 +142,34 @@ def test_a_binary_conflict_is_named_and_never_staged(tmp_path, monkeypatch, caps
     assert _git(tree["conf"], "diff", "--name-only", "--diff-filter=U") == "logo.bin"
 
 
+def test_an_encrypted_file_conflict_is_named_with_the_way_out_and_no_merge_tool_is_opened(tmp_path, monkeypatch, capsys):
+    """EncryptedMerge E3: in an unlocked clone the file reads as plain text with no binary look, yet it is encrypted."""
+    tree = _tree(tmp_path)
+    conf = tree["conf"]
+    for branch in ("demo_feature", "demo"):  # the same attribute on both sides, so it is no conflict itself
+        _git(conf, "checkout", branch)
+        (conf / ".gitattributes").write_text("secret/** filter=git-crypt diff=git-crypt\n", encoding="utf-8")
+        _git(conf, "add", ".gitattributes")
+        _git(conf, "commit", "-m", "git-crypt attributes")
+    for branch, content in (("demo_feature", "theirs\n"), ("demo", "ours\n")):
+        _git(conf, "checkout", branch)
+        (conf / "secret").mkdir(exist_ok=True)  # the other branch's commit removed the directory
+        (conf / "secret/amounts.csv").write_text(content, encoding="utf-8")
+        _git(conf, "add", "secret/amounts.csv")
+        _git(conf, "commit", "-m", f"amounts on {branch}")
+    monkeypatch.setattr(
+        ComplexGitSyncClient, "open_merge_tool", lambda self, repo_id: (_ for _ in ()).throw(AssertionError("tool opened"))
+    )
+
+    code = cli_main(["merge", "feature", "--all", "--resolve", "--all-conflicts", "--gts", str(tree["snapshot"])])
+    out = capsys.readouterr().out
+
+    assert code == 1
+    assert "encrypted file secret/amounts.csv: Git cannot merge two edits of an encrypted file" in out
+    assert "git checkout --ours -- secret/amounts.csv" in out and "cgitsync merge --resolve demo_feature" in out
+    assert _git(conf, "diff", "--name-only", "--diff-filter=U") == "secret/amounts.csv"
+
+
 def test_all_conflicts_across_clean_repositories_and_one_conflict(tmp_path, monkeypatch):
     tree = _tree(tmp_path)
     _conflict_in_conf(tree, "notes.txt", "ours\n", "theirs\n")

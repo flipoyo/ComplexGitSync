@@ -1,0 +1,41 @@
+# CGSenc, DEV level — the same encrypted tree, as a development workspace.
+#
+# Workstream: git-crypt (ticket EncryptedRepos, merged into HT-BETA with MergeDataEncrypt). Its USER twin is
+# tests/fixtures/git-crypt/cgitsync-encrypt.cgs; the encrypted repositories, their keys and the
+# locked/unlocked procedure are the same, and are described there.
+# The name ends in "-devel", not "-dev": cgitsync reads <name>-<xxx>.cgs as
+# branch xxx for a three-character xxx (examples/cgitsync-alpha.cgs).
+#
+# Level: DEV, because it holds one private, writable repository, the memory.
+# What DEV adds to the USER tree, and why each is here:
+#   ComplexGitSync     the tool, on HT-BETA, mounted inside the tree and
+#                      named as environment_root: inside this tree,
+#                      `cd ComplexGitSync && pixi run cgitsync ...` is the code
+#                      under test, not the checkout that bootstrapped it.
+#   CGSenc-memory      .cgitsync/.memory, a private test memory, so a State, a
+#                      memory push and a merge are exercised next to locked
+#                      data. A repository of its own, never github:flipoyo/.memory:
+#                      a test never writes into the real memory. It falls back to
+#                      main and derives its branch from the tree.
+# No .agent/ mounts: the tree tests encryption, not the spec tree.
+#
+# The memory repository exists too (private, 2026-11-21), made with the three
+# CGSenc repositories at step 0.
+#
+# Run from the root of this ComplexGitSync checkout; the tree lands in ./CGSenc-devel:
+#     pixi run cgitsync validate tests/fixtures/git-crypt/cgitsync-encrypt-devel.cgs
+#     pixi run cgitsync bootstrap tests/fixtures/git-crypt/cgitsync-encrypt-devel.cgs CGSenc-devel
+
+environment_root = "ComplexGitSync"
+environment = { tools = { python = "3.11", git = "2.30", pixi = "0.65" }, manifests = ["ComplexGitSync/pixi.toml"] }
+
+project = { name = "CGSenc", default_branch = "main" }
+
+repos = [
+    { repository = "github:flipoyo/CGSenc", relative_path = ".", nested_config = "disabled" },
+    { repository = "github:flipoyo/ComplexGitSync", default_branch = "HT-BETA", fallback_branch = "CGS-ALPHA", nested_config = "disabled" },
+    { repository = "github:flipoyo/CGSenc-data", relative_path = "data-repo", nested_config = "disabled" },
+    { repository = "github:flipoyo/CGSenc-space", relative_path = "spaces/space1", nested_config = "auto" },
+
+    { repository = "github:flipoyo/CGSenc-memory", relative_path = ".cgitsync/.memory", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
+]

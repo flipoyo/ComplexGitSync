@@ -4,6 +4,7 @@ import json
 import re
 import tomllib
 from pathlib import Path, PureWindowsPath
+from types import SimpleNamespace
 
 import pytest
 
@@ -2561,6 +2562,14 @@ writable = true
 
 
 class _FakeGitRunner:
+
+    # git-crypt probes (EncryptedRepos): a fake repository has no attributes, no filter and no blobs.
+    def _query(self, *args, cwd=None):
+        return SimpleNamespace(returncode=1, stdout="", stderr="")
+
+    def _query_bytes(self, *args, cwd=None):
+        return SimpleNamespace(returncode=1, stdout=b"", stderr=b"")
+
     def init_repository(self, repo_path: Path | str, *, branch: str) -> None:
         """Makes no repository, so the default memory is declined and recorded nothing."""
         raise GitSyncError("the fake runner makes no repositories")

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..tree.cgs_format import CgsDocument
+from .anonymous_install import AnonymousInstall
 
 if TYPE_CHECKING:
     pass
@@ -90,7 +91,7 @@ class DocumentLoader:
         previous_tree_state = self.client.registry.lifecycle_state if self.client.registry else TreeLifecycleState.UNLOADED
         source_path = Path(config_path).resolve()
         document = CgsDocument.from_toml(source_path)
-        self.client.registry = RegistryTranslator.from_cgs_document(document, source_path, project_root=project_root)
+        self.client.registry = AnonymousInstall(self.client).registry(document, source_path, project_root)
         self.client.orchestre.git_tree.git.bind_tree(self.client.registry)
         GitTreeBranches(self.client.registry, self.client.git_runner).settle_memory_twin()
         self.client.source_path = source_path

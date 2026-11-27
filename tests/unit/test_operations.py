@@ -9,6 +9,7 @@ import re
 import subprocess
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -228,6 +229,16 @@ class _FakeGitRunnerForOperations:
 
     Tracks calls and simulates branch existence.
     """
+
+    # git-crypt probes (EncryptedRepos): a fake repository has no attributes, no filter and no blobs.
+    def _query(self, *args, cwd=None):
+        return SimpleNamespace(returncode=1, stdout="", stderr="")
+
+    def _query_bytes(self, *args, cwd=None):
+        return SimpleNamespace(returncode=1, stdout=b"", stderr=b"")
+
+    def upstream_ref(self, repo_path):
+        return None
 
     def init_repository(self, repo_path: Path | str, *, branch: str) -> None:
         """Makes no repository, so the default memory is declined and recorded nothing."""
@@ -868,6 +879,31 @@ class TestABranchSomebodyElsePushedIsThatBranch:
         create_global_branch(registry, runner, "shared")
 
         assert (root.absolute_path, "shared", "upstream/shared") in runner.created_from
+
+    def test_a_branch_joined_from_the_remote_is_never_stamped_with_a_claim_but_a_fresh_one_is(self, tmp_path, monkeypatch):
+        """AnonymousProject x CheckoutBareTip: the claim marks a branch this run made, never one the remote already had."""
+        from ComplexGitSync.tree.operations.project_claim import ProjectClaim
+
+        stamped: list[str] = []
+        monkeypatch.setattr(ProjectClaim, "stamp", staticmethod(lambda runner, path, branch, claim: stamped.append(branch) or True))
+
+        def run(*, known_on_remote: bool) -> list[str]:
+            (tmp_path / str(known_on_remote)).mkdir()
+            registry = _make_ready_registry(tmp_path / str(known_on_remote))
+            registry.anonymous, registry.claim = True, "claim"
+            for repo in registry.values():
+                if repo is not registry.get("root"):
+                    repo.private = repo.writable = True
+            runner = _FakeGitRunnerForOperations()
+            if known_on_remote:
+                for repo in registry.values():
+                    runner._remote_tracking_branches[repo.absolute_path] = {_branch_of(registry, repo, "alias-branch")}
+            stamped.clear()
+            create_global_branch(registry, runner, "alias-branch")
+            return list(stamped)
+
+        assert run(known_on_remote=True) == []
+        assert run(known_on_remote=False) == ["project_alias-branch"]  # the one private repository that began its own branch; the root is not private
 
     def test_a_branch_that_already_exists_locally_is_left_alone(self, tmp_path):
         registry = _make_ready_registry(tmp_path)

@@ -185,8 +185,8 @@ packages:
   timestamp: 1733218222191
 - pypi: ./
   name: complexgitsync
-  version: 8.15.1
-  sha256: e0d86ed55ea14f46b9589ed12f565d134cf07e8c7568411d086115743645918d
+  version: 8.16.0
+  sha256: 9678484ddee404cb1df667c634b9b0034bbcfd25f20a71ff1fe1e982a2b84ee4
   requires_dist:
   - tomli-w>=1.0,<2
   - pyyaml>=6,<7 ; extra == 'yaml'

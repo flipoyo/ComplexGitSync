@@ -26,6 +26,7 @@ from ..git_tree import (
 if TYPE_CHECKING:
     from ...orchestre import GitRunner
 
+from .encryption_guard import EncryptionGuard
 from .outcome import RepoOutcome
 from .partial_failure import TreeSweep
 from .preflight import Preflight
@@ -71,6 +72,7 @@ class PushOperation:
             operation_name="push",
             scope=scope,
         )
+        EncryptionGuard.assert_encrypted(tree, git_runner, operation_name="push", scope=scope)
 
         # Every repository's branch is decided before any is pushed, so a
         # refusal leaves the whole tree unpushed.
@@ -223,6 +225,10 @@ class PushOperation:
             operation_name="freeze_release",
             scope=scope,
         )
+        if stage_all:
+            for repo in iter_tree_leaf_first(tree, scope):
+                git_runner.stage_all(repo.absolute_path)
+        EncryptionGuard.assert_encrypted(tree, git_runner, operation_name="freeze_release", scope=scope)
         commit_message = message or f"freeze release {tag_name}"
 
         # The default is WRITABLE for the same reason as tag_tree: this commits,

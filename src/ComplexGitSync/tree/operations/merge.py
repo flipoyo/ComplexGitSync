@@ -24,6 +24,7 @@ from ..git_tree import (
     iter_tree_leaf_first,
 )
 from ..git_tree_branch import GitTreeBranches
+from .encrypted_conflict import EncryptedConflict
 
 if TYPE_CHECKING:
     from ...orchestre import GitRunner
@@ -83,8 +84,10 @@ class ResolveOutcome:
 
     ``stopped_status``: ``"conflicts"``, ``"unrelated"`` (nothing attempted)
     or ``None``; ``stopped_source``: the branch it was merging;
-    ``binary_paths``: conflicting non-text files, never staged;
-    ``hand_command``: what to run when no merge tool could be opened.
+    ``binary_paths``: conflicting non-text files, never staged, and every conflicting git-crypt file, locked or
+    unlocked, since Git cannot merge two edits of the ciphertext (EncryptedMerge); ``encrypted_paths``: the
+    git-crypt ones among them; ``binary_notes``: one line each, the way out of an encrypted one included, for the
+    caller to print; ``hand_command``: what to run when no merge tool could be opened.
     """
 
     merged: tuple[tuple[str, str], ...]
@@ -96,6 +99,8 @@ class ResolveOutcome:
     stopped_source: str | None = None
     binary_paths: tuple[Path, ...] = ()
     hand_command: str | None = None
+    encrypted_paths: tuple[Path, ...] = ()
+    binary_notes: tuple[str, ...] = ()
 
 
 class MergeOperation:
@@ -151,11 +156,11 @@ class MergeOperation:
         return source, "merge", ()
 
     @staticmethod
-    def _binary_paths(repo_path: Path, paths: tuple[Path, ...]) -> tuple[Path, ...]:
-        """The conflicting *paths* that are not text (a NUL byte in the first 8 KiB, as Git judges)."""
+    def _binary_paths(repo_path: Path, paths: tuple[Path, ...], encrypted: tuple[Path, ...] = ()) -> tuple[Path, ...]:
+        """The conflicting *paths* that are not text (a NUL byte in the first 8 KiB, as Git judges) or are *encrypted*."""
         root = Path(repo_path)
         return tuple(
-            path for path in paths if (root / path).is_file() and b"\0" in (root / path).read_bytes()[:8000]
+            path for path in paths if path in encrypted or ((root / path).is_file() and b"\0" in (root / path).read_bytes()[:8000])
         )
 
     @staticmethod
@@ -540,6 +545,8 @@ class MergeOperation:
                     except GitSyncError:
                         pass
                 tree.recompute_tree_state()
+                encrypted = EncryptedConflict.paths(git_runner, repo.absolute_path, conflicts)
+                binary = MergeOperation._binary_paths(repo.absolute_path, conflicts, encrypted)
                 return ResolveOutcome(
                     merged=tuple(merged),
                     stopped_at=repo.name,
@@ -548,7 +555,9 @@ class MergeOperation:
                     not_reached=tuple(r.name for r in repos[position + 1 :]),
                     stopped_status=status,
                     stopped_source=source,
-                    binary_paths=MergeOperation._binary_paths(repo.absolute_path, conflicts),
+                    binary_paths=binary,
+                    encrypted_paths=encrypted,
+                    binary_notes=tuple(EncryptedConflict.notes(binary, encrypted, source)),
                 )
             before = git_runner.rev_parse_head(repo.absolute_path)
             if status == "kept":

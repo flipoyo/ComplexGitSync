@@ -63,7 +63,7 @@ def test_every_leaf_command_of_the_real_parser_has_one_row(found):
         sub = subparsers(child)
         expected += len(sub.choices) if sub else 1
 
-    assert len(found) == expected == 68  # 66 before CliReduction merged submodules report into import --dry-run; 3 more with `version`
+    assert len(found) == expected == 69  # 66 before CliReduction merged submodules report into import --dry-run; 3 more with `version`; 1 with `anonymise`
     assert len({leaf.path for leaf in found}) == len(found)
 
 

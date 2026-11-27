@@ -38,6 +38,7 @@ from . import environment_spec
 from .config_document import ConfigDocument
 from .config_document_io import ConfigDocumentIOMixin
 from .named_cgs import NamedCgs
+from .project_table import project_table_problems
 
 if TYPE_CHECKING:
     from .git_tree import GitTree
@@ -137,6 +138,7 @@ def normalize_cgs(data: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
 
     if isinstance(project.get("name"), str) and not project["name"].strip():
         errors.append("project name must not be empty")
+    errors.extend(project_table_problems(project))
     project.setdefault("default_branch", DEFAULT_BRANCH)
     canonical["project"] = project
 
@@ -681,6 +683,12 @@ class CgsDocument(ConfigDocument, ConfigDocumentIOMixin):
     @property
     def default_branch(self) -> str | None:
         return self.read("project.default_branch")
+
+    @property
+    def anonymous(self) -> str | None:
+        """The ``anonymous`` mode (``"hash"`` or ``"sequence"``) the project table declares, or ``None``."""
+        value = self.read("project.anonymous")
+        return value if isinstance(value, str) else None
 
     @property
     def environment_root(self) -> str | None:

@@ -36,6 +36,7 @@ from ..git_tree import (
 from ..git_tree_branch import GitTreeBranches
 from ..memory.repository import MOUNT_PATH
 from .new_branch import NewBranch
+from .project_claim import ProjectClaim
 
 if TYPE_CHECKING:
     from ...orchestre import GitRunner
@@ -231,12 +232,17 @@ class BranchOperation:
         a name truly unknown starts at ``HEAD``, after that one round-trip, as before.
         """
         branches = GitTreeBranches(tree)
-        started = (
-            NewBranch.start(git_runner, repo, branches.target(repo, branch_name).name, branch_name)
-            for repo in iter_tree(tree, scope)
-            if not (repo.effective_private and not repo.effective_writable)
-        )
-        return tuple(start for start in started if start is not None)
+        started = []
+        for repo in iter_tree(tree, scope):
+            if repo.effective_private and not repo.effective_writable:
+                continue
+            target = branches.target(repo, branch_name).name
+            if (start := NewBranch.start(git_runner, repo, target, branch_name)) is None:
+                continue
+            if tree.anonymous and repo.effective_private:  # a branch made fresh in a shared repository carries the claim (AnonymousProject)
+                ProjectClaim.stamp(git_runner, repo.absolute_path, target, tree.claim)
+            started.append(start)
+        return tuple(started)
 
     @staticmethod
     def refuse_unnamed_commits(tree: WorkingGitTree, git_runner: GitRunner, *, scope: RepoScope = RepoScope.ALL) -> None:
