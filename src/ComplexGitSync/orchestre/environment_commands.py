@@ -70,7 +70,8 @@ class EnvironmentCommands:
 
         ``None`` when the workspace does not contain the running
         installation, or when the branch does not carry a readable version —
-        both mean there is nothing to warn about.
+        both mean there is nothing to warn about. A branch the root holds only
+        from its remote is read there, since ``checkout`` creates it from that ref (CheckoutBareTip CD2).
 
         This exists because a checkout of this tree rewrites the running
         tool. Knowing what the next command will be is the difference
@@ -82,9 +83,8 @@ class EnvironmentCommands:
         root = registry.get(ROOT_REPO_ID)
         if Settings.resolve_use_case(root.absolute_path) is not UseCase.NESTED:
             return None
-        manifest = self.client.git_runner.show_file(root.absolute_path, branch, "pyproject.toml")
-        if not manifest:
-            return None
+        refs = (branch, f"{root.remote_name or 'origin'}/{branch}")
+        manifest = next(filter(None, (self.client.git_runner.show_file(root.absolute_path, ref, "pyproject.toml") for ref in refs)), "")
         found = re.search(r'^version\s*=\s*"([^"]+)"', manifest, re.MULTILINE)
         return found.group(1) if found else None
 

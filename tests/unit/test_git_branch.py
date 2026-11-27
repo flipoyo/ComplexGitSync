@@ -810,3 +810,38 @@ def test_the_workspace_mounts_sit_on_the_branches_their_cgs_names():
             )
         else:
             assert head == base, f"{relative} is on {head!r}, its .cgs names {base!r}"
+
+
+class TestALandedNameIsARecordNotAPin:
+    """CheckoutBareTip CD1: where the tree landed never pins a shared repository; only what the ``.cgs`` typed does."""
+
+    @staticmethod
+    def _shared(*, default_branch: str, landed: str) -> WorkingRepo:
+        return WorkingRepo(repo_id="docs", name="docs", default_branch=default_branch, target_ref_name=landed, target_ref_kind=RefKind.BRANCH)
+
+    @staticmethod
+    def _target(entry: WorkingRepo, branch: str) -> str:
+        return resolve_propagated_ref(entry, branch, project_name="proj", guest=True, pinnable=True, tree_default="HT-BETA").name
+
+    def test_a_bare_name_landed_beside_a_derived_default_does_not_pin(self):
+        """The State of 2026-11-27: ``declare_targets`` wrote ``proj_HT-BETA``, an older tool landed ``data-encryupt``."""
+        entry = self._shared(default_branch="proj_HT-BETA", landed="data-encryupt")
+
+        assert self._target(entry, "HT-BETA") == "proj_HT-BETA"
+
+    def test_a_default_branch_typed_in_the_cgs_still_pins(self):
+        entry = self._shared(default_branch="stable", landed="stable")
+
+        assert self._target(entry, "HT-BETA") == "stable"
+
+    def test_a_branch_typed_in_the_cgs_still_pins(self):
+        """``branch = "stable"`` leaves the project's default beside it and the typed name as the target."""
+        entry = self._shared(default_branch="HT-BETA", landed="stable")
+
+        assert self._target(entry, "feature") == "stable"
+
+    def test_an_untyped_entry_follows_the_tree(self):
+        entry = self._shared(default_branch="HT-BETA", landed="HT-BETA")
+
+        assert self._target(entry, "feature") == "proj_feature"
+

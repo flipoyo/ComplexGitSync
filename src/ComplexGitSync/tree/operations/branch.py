@@ -35,6 +35,7 @@ from ..git_tree import (
 )
 from ..git_tree_branch import GitTreeBranches
 from ..memory.repository import MOUNT_PATH
+from .new_branch import NewBranch
 
 if TYPE_CHECKING:
     from ...orchestre import GitRunner
@@ -200,8 +201,8 @@ class BranchOperation:
         branch_name: str,
         *,
         scope: RepoScope = RepoScope.ALL,
-    ) -> None:
-        """Create *branch_name* in every repo where it does not already exist locally.
+    ) -> tuple[NewBranch.Start, ...]:
+        """Create *branch_name* in every repo where it does not already exist locally, and return how each derived one began.
 
         Iterates the tree parent-first so that parent repositories always have the
         branch before their children are processed.  Requires each repo to have
@@ -225,37 +226,17 @@ class BranchOperation:
         former at HEAD forks it under a name the user believes they are joining
         (CheckoutForkGuard,
         ``.agent/.local/.dev/DevTickets/archive/20260918_CheckoutForkGuard_DevPlanTicket.md``).
-        A name truly unknown to the remote still costs nothing beyond that one
-        round-trip and falls through to today's behaviour unchanged.
+        A derived name the repository lacks begins at the tip of the bare *branch_name* it holds, locally or on its
+        remote, with no upstream, and is returned so the command can say so (:class:`NewBranch`, CheckoutBareTip);
+        a name truly unknown starts at ``HEAD``, after that one round-trip, as before.
         """
         branches = GitTreeBranches(tree)
-        for repo in iter_tree(tree, scope):
-            if repo.effective_private and not repo.effective_writable:
-                continue
-            target = branches.target(repo, branch_name).name
-            if git_runner.local_branch_exists(repo.absolute_path, target):
-                continue
-            # A branch this clone already knows from the remote is that branch,
-            # not a new one that happens to share its name. Starting it at HEAD
-            # instead forked a second history under a name the user believed they
-            # were joining, and `checkout` then reported success on the wrong
-            # commits — a colleague's work simply was not there
-            # (.agent/.local/.dev/DevTickets/archive/20260911_UpstreamBranchDisplay_DevPlanTicket.md §3).
-            remote = repo.remote_name or "origin"
-            if git_runner.remote_tracking_branch_exists(repo.absolute_path, target, remote=remote):
-                git_runner.create_branch(
-                    repo.absolute_path, target, start_point=f"{remote}/{target}"
-                )
-                continue
-            remote_url = git_runner.remote_get_url(repo.absolute_path, remote)
-            if remote_url and git_runner.fetch_branch_if_remote_has_it(
-                repo.absolute_path, remote_url, target, remote=remote
-            ):
-                git_runner.create_branch(
-                    repo.absolute_path, target, start_point=f"{remote}/{target}"
-                )
-                continue
-            git_runner.create_branch(repo.absolute_path, target)
+        started = (
+            NewBranch.start(git_runner, repo, branches.target(repo, branch_name).name, branch_name)
+            for repo in iter_tree(tree, scope)
+            if not (repo.effective_private and not repo.effective_writable)
+        )
+        return tuple(start for start in started if start is not None)
 
     @staticmethod
     def refuse_unnamed_commits(tree: WorkingGitTree, git_runner: GitRunner, *, scope: RepoScope = RepoScope.ALL) -> None:
@@ -283,8 +264,8 @@ class BranchOperation:
         *,
         ref_kind: RefKind = RefKind.BRANCH,
         scope: RepoScope = RepoScope.ALL,
-    ) -> None:
-        """Check out *branch_name* across the whole tree.
+    ) -> tuple[NewBranch.Start, ...]:
+        """Check out *branch_name* across the whole tree; returns each branch begun at a bare tip.
 
         Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
         otherwise.  After a successful execution the tree remains ``READY``.
@@ -304,7 +285,8 @@ class BranchOperation:
         BranchOperation.refuse_unnamed_commits(tree, git_runner, scope=scope)
         if ref_kind is RefKind.TAG:
             BranchOperation.checkout_tag_tree(tree, git_runner, branch_name, scope=scope)
-            return
+            return ()
+        NewBranch.refuse_misspelt(tree, git_runner, branch_name, scope=scope)
 
         # Step 1: propagate target ref across the whole tree. The runner is
         # passed because step 3 is about to `git checkout` what this decides:
@@ -314,7 +296,7 @@ class BranchOperation:
         # Step 2: create the branch in each repo where it does not exist yet --
         # including the private/local name, so `checkout <B>` alone puts the whole
         # tree where it belongs and the user never has to spell the derived branch.
-        BranchOperation.create_global_branch(tree, git_runner, branch_name, scope=scope)
+        started = BranchOperation.create_global_branch(tree, git_runner, branch_name, scope=scope)
 
         # Step 3: checkout and refresh each repo (parent-first)
         for repo in iter_tree(tree, scope):
@@ -324,6 +306,7 @@ class BranchOperation:
             BranchOperation.refresh_repo_after_checkout(repo, ref, repo.target_ref_kind or ref_kind, git_runner)
 
         tree.recompute_tree_state()
+        return started
 
     @staticmethod
     def checkout_tag_tree(
@@ -421,16 +404,17 @@ class BranchOperation:
         branch_name: str,
         *,
         scope: RepoScope = RepoScope.ALL,
-    ) -> None:
-        """Create *branch_name* across the whole tree without checkout.
+    ) -> tuple[NewBranch.Start, ...]:
+        """Create *branch_name* across the whole tree without checkout; returns each branch begun at a bare tip.
 
         Requires a ``READY`` tree; raises :exc:`~.errors.TreeNotReadyError`
         otherwise. After a successful execution the tree remains ``READY``.
         """
         Preflight.assert_ready(tree)
         BranchOperation.propagate_global_branch(tree, branch_name, ref_kind=RefKind.BRANCH)
-        BranchOperation.create_global_branch(tree, git_runner, branch_name, scope=scope)
+        started = BranchOperation.create_global_branch(tree, git_runner, branch_name, scope=scope)
         tree.recompute_tree_state()
+        return started
 
     @staticmethod
     def list_branches(

@@ -680,6 +680,7 @@ def test_client_branch_delegates_to_operating_space_branch(monkeypatch):
         captured["git_runner"] = git_runner
         captured["branch_name"] = branch_name
         captured["tree"] = self.tree
+        return ()
 
     monkeypatch.setattr(OperatingSpace, "branch", _spy_branch)
 

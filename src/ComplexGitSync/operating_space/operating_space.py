@@ -156,17 +156,17 @@ class OperatingSpace:
         *,
         ref_kind: RefKind = RefKind.BRANCH,
         scope: RepoScope = RepoScope.ALL,
-    ) -> None:
-        """Check *branch_name* out across the tree."""
+    ) -> tuple[object, ...]:
+        """Check *branch_name* out across the tree; returns each branch begun at a bare tip."""
         from ..tree.operations import checkout_tree
 
-        checkout_tree(self._ready(), git_runner, branch_name, ref_kind=ref_kind, scope=scope)
+        return checkout_tree(self._ready(), git_runner, branch_name, ref_kind=ref_kind, scope=scope)
 
-    def branch(self, git_runner: GitRunner, branch_name: str, *, scope: RepoScope = RepoScope.ALL) -> None:
-        """Create *branch_name* across the tree."""
+    def branch(self, git_runner: GitRunner, branch_name: str, *, scope: RepoScope = RepoScope.ALL) -> tuple[object, ...]:
+        """Create *branch_name* across the tree; returns each branch begun at a bare tip."""
         from ..tree.operations import branch_tree
 
-        branch_tree(self._ready(), git_runner, branch_name, scope=scope)
+        return branch_tree(self._ready(), git_runner, branch_name, scope=scope)
 
     def list_branches(
         self,

@@ -395,15 +395,14 @@ def _declared_pin(entry: WorkingRepo, *, project_name: str | None, tree_default:
     ``default_branch`` and ``branch`` are both read, and a tag is never one (it wins outright
     elsewhere). Normalisation fills an untyped ``default_branch`` with the project's, so *tree_default*
     is not a pin, and a name in ``<project>_...`` is the derived one written back by
-    ``declare_targets``, so it is not either. Only a name that is neither is typed.
+    ``declare_targets``, so it is not either. A derived ``default_branch`` also means the tool owns this
+    entry: the ref beside it is where the tree landed, a record, and never a pin (CheckoutBareTip CD1).
     """
     if entry.target_ref_kind is RefKind.TAG:
         return None
-    for name in (_as_optional_str(entry.default_branch), _as_optional_str(entry.target_ref_name)):
-        derived = project_name is not None and (name == project_name or str(name).startswith(f"{project_name}{PRIVATE_LOCAL_SEPARATOR}"))
-        if name and name != tree_default and not derived:
-            return name
-    return None
+    named = [_as_optional_str(entry.default_branch), _as_optional_str(entry.target_ref_name)]
+    derived = [project_name is not None and (n == project_name or str(n).startswith(f"{project_name}{PRIVATE_LOCAL_SEPARATOR}")) for n in named]
+    return None if derived[0] else next((n for n, d in zip(named, derived) if n and n != tree_default and not d), None)
 
 
 def is_twin_branch(project_name: str, branch_name: str) -> bool:

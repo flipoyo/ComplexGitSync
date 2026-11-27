@@ -982,7 +982,7 @@ class _FakeGitRunner:
     ) -> bool:
         return False
 
-    def create_branch(self, repo_path, branch: str, *, start_point: str | None = None) -> None:
+    def create_branch(self, repo_path, branch: str, *, start_point: str | None = None, track: bool = True) -> None:
         return None
 
     def checkout(self, repo_path, branch: str) -> None:

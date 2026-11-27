@@ -51,6 +51,7 @@ from ..tree.operations import (
     fetch_tree,
     paths_outside_scope,
 )
+from ..tree.operations.new_branch import NewBranch
 from ..tree.snapshot_resolver import discover_cgshome
 from ..tree.ticket_gate import TicketGate
 from .auth_hints import AuthFailureHints
@@ -257,12 +258,13 @@ class TreeCommands:
         # Said before the tree moves, because afterwards the build that
         # would say it is gone.
         self._warn_if_build_changes(branch_name)
-        OperatingSpace(self.client.get_dependency_registry()).checkout(
+        started = OperatingSpace(self.client.get_dependency_registry()).checkout(
             self.client.git_runner,
             branch_name,
             ref_kind=ref_kind,
             scope=GitProbes.scope_for(registry, private=private, command="checkout"),
         )
+        NewBranch.report(started, self.client._log_event)
         snapshot_path = self.client.write_gts_snapshot(command_origin="checkout")
         if self.client.source_path is not None:
             self.client.state_store.record_snapshot(self.client.source_path, snapshot_path)
@@ -284,7 +286,7 @@ class TreeCommands:
         previous_state = registry.lifecycle_state
         self.client._log_event("branch_start", branch_name=branch_name)
         scope = GitProbes.scope_for(registry, private=private, command="branch")
-        OperatingSpace(self.client.get_dependency_registry()).branch(self.client.git_runner, branch_name, scope=scope)
+        NewBranch.report(OperatingSpace(self.client.get_dependency_registry()).branch(self.client.git_runner, branch_name, scope=scope), self.client._log_event)
         if ROOT_REPO_ID in registry.repos:
             snapshot_path = self.client.write_gts_snapshot(command_origin="branch")
             if self.client.source_path is not None:

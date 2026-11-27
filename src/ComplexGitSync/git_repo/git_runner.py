@@ -311,7 +311,7 @@ class GitRunnerProtocol(Protocol):
     ) -> bool: ...
 
     def create_branch(
-        self, repo_path: Path | str, branch: str, *, start_point: str | None = None
+        self, repo_path: Path | str, branch: str, *, start_point: str | None = None, track: bool = True
     ) -> None: ...
 
     def checkout(self, repo_path: Path | str, branch: str) -> None: ...
@@ -832,19 +832,20 @@ class GitRunner:
         return ref_name
 
     def create_branch(
-        self, repo_path: Path | str, branch: str, *, start_point: str | None = None
+        self, repo_path: Path | str, branch: str, *, start_point: str | None = None, track: bool = True
     ) -> None:
         """Create *branch* in *repo_path* without switching to it (``git branch``).
 
         *start_point* is where the branch begins, defaulting to ``HEAD``.
         Given a remote-tracking ref it is passed with ``--track``, so the new
         branch both starts from that history and records it as its upstream —
-        which is what makes ``status`` measure it from the first command.
+        which is what makes ``status`` measure it from the first command. ``track=False``
+        starts it there with no upstream, for a branch that must not follow another.
         """
         if start_point is None:
             self._run("branch", branch, cwd=repo_path)
             return
-        self._run("branch", "--track", branch, start_point, cwd=repo_path)
+        self._run("branch", "--track" if track else "--no-track", branch, start_point, cwd=repo_path)
 
     def checkout(self, repo_path: Path | str, branch: str) -> None:
         """Switch *repo_path* to *branch* (``git checkout``), past an untracked twin (:meth:`_checkout_past_twins`)."""

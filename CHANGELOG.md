@@ -1,5 +1,21 @@
 # Changelog
 
+## 8.15.1 - 2026-11-27
+
+- A derived branch begins where the bare branch is. `checkout` and `branch create` used to start a missing
+  `<project>_<branch>` at the commit a repository was on, even when it already held the bare `<branch>`, so a
+  shared repository such as the docs landed on another branch's content. It now begins at the tip of the bare
+  branch (local, or its remote's), with no upstream so that a push creates the derived name and never writes to
+  the bare one, and says so with one line per repository.
+- A branch the tree merely landed on is no longer taken for one the `.cgs` typed. A shared repository whose
+  recorded `default_branch` is a derived name is the tool's own, so the ref beside it, written by an older tool or
+  a typo, no longer pins it and every later `checkout` follows the tree. A branch typed on an entry still wins.
+- `checkout` of a name no repository holds, when it is close to one the tree has (`data-encryupt` for
+  `data-encrypt`), is refused before anything moves, naming the branch it may mean and the `branch create` line
+  that makes the new name on purpose. `checkout` still creates any other new name.
+- The warning that a `checkout` replaces the running ComplexGitSync is now given when the root holds the branch only
+  from its remote, which is the case when the branch has never been checked out here.
+
 ## 8.13.1 - 2026-11-25
 
 - `cgitsync version diagnose` and `version bump` now find a `bump-version` or

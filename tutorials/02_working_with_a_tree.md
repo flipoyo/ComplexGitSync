@@ -97,7 +97,10 @@ cgitsync_branch=feature  (origin as of the last fetch; cgitsync fetch refreshes 
 ```
 
 `branch create` makes the branch and leaves you where you are; `checkout`
-moves the tree (alone, it would also have created it). `*` marks the current
+moves the tree (alone, it would also have created it, unless the name looks like
+a slip for a branch the tree already has: `checkout featur` when `feature`
+exists is refused, and says which `branch create` line makes the new name on
+purpose). `*` marks the current
 branch, the second column says where it exists, the last which repositories
 hold it.
 

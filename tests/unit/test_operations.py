@@ -240,6 +240,7 @@ class _FakeGitRunnerForOperations:
         self._remote_tracking_branches: dict[Path, set[str]] = {}
         self.created: list[tuple[Path, str]] = []
         self.created_from: list[tuple[Path, str, str | None]] = []
+        self.untracked: list[tuple[Path, str]] = []
         self.checked_out: list[tuple[Path, str]] = []
         self.staged: list[Path] = []
         self.staged_paths: list[tuple[Path, str]] = []
@@ -316,6 +317,12 @@ class _FakeGitRunnerForOperations:
 
     def local_branch_exists(self, repo_path: Path | str, branch: str) -> bool:
         return branch in self._local_branches.get(Path(repo_path), set())
+
+    def local_branches(self, repo_path: Path | str) -> list[str]:
+        return sorted(self._local_branches.get(Path(repo_path), set()))
+
+    def remote_tracking_branches(self, repo_path: Path | str, remote: str = "origin") -> list[str]:
+        return sorted(self._remote_tracking_branches.get(Path(repo_path), set()))
 
     def branch_known(
         self, repo_path: Path | str, branch: str, *, remote: str = "origin"
@@ -404,12 +411,14 @@ class _FakeGitRunnerForOperations:
         return True
 
     def create_branch(
-        self, repo_path: Path | str, branch: str, *, start_point: str | None = None
+        self, repo_path: Path | str, branch: str, *, start_point: str | None = None, track: bool = True
     ) -> None:
         path = Path(repo_path)
         self._local_branches.setdefault(path, set()).add(branch)
         self.created.append((path, branch))
         self.created_from.append((path, branch, start_point))
+        if not track:
+            self.untracked.append((path, branch))
 
     def checkout(self, repo_path: Path | str, branch: str) -> None:
         self.checked_out.append((Path(repo_path), branch))
@@ -2618,6 +2627,7 @@ def test_client_checkout_delegates_to_operating_space_checkout(tmp_path, monkeyp
         captured_call["git_runner"] = git_runner
         captured_call["branch_name"] = branch_name
         captured_call["ref_kind"] = ref_kind
+        return ()
 
     monkeypatch.setattr(OperatingSpace, "checkout", _spy_checkout)
 
@@ -2638,6 +2648,7 @@ def test_client_branch_delegates_to_operating_space_branch(tmp_path, monkeypatch
         captured_call["tree"] = self.tree
         captured_call["git_runner"] = git_runner
         captured_call["branch_name"] = branch_name
+        return ()
 
     monkeypatch.setattr(OperatingSpace, "branch", _spy_branch)
 
