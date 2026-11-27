@@ -178,7 +178,7 @@ def test_an_anonymous_state_that_holds_data_is_schema_two_and_valid(tmp_path, mo
 
 
 def _every_spec() -> list[Path]:
-    found = [REPO_ROOT / "install.cgs", *sorted((REPO_ROOT / "examples").glob("*.cgs")), *sorted((REPO_ROOT / "tests/fixtures").rglob("*.cgs"))]
+    found = [REPO_ROOT / "install.cgs", *sorted((REPO_ROOT / "examples").glob("*.cgs")), *sorted((REPO_ROOT / ".config").glob("*.cgs")), *sorted((REPO_ROOT / "tests/fixtures").rglob("*.cgs"))]
     return [path for path in found if path.is_file()]
 
 

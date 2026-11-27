@@ -662,7 +662,7 @@ class TestCgsDocumentValid:
         (memory-dev_1-2_MemoryOnboarding, 2026-09-17), and since the alpha
         standard the register (.omniscience) and the memory's .self-history."""
         repo_root = Path(__file__).parent.parent.parent
-        doc = CgsDocument.from_toml(repo_root / "examples" / "cgitsync-alpha.cgs")
+        doc = CgsDocument.from_toml(repo_root / ".config" / "cgitsync-alpha.cgs")
         assert doc.project_name == "ComplexGitSync"
         assert doc.default_branch == "CGS-ALPHA"  # CGS-ALPHA first, then main (owner, 2026-10-31)
         assert len(doc.repos) == 11

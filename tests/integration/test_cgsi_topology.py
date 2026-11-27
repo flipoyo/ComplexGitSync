@@ -473,7 +473,7 @@ class TestExampleFiles:
     def test_every_example_has_a_semantic_tree_and_toml_round_trip(self, tmp_path):
         from ComplexGitSync.tree.cgs_format import CgsDocument, parse_cgs
 
-        for source in sorted(self.examples.glob("*.cgs")):
+        for source in sorted([*self.examples.glob("*.cgs"), *(self.examples.parent / ".config").glob("*.cgs")]):
             before = CgsDocument.from_toml(source)
             output = tmp_path / source.name
 

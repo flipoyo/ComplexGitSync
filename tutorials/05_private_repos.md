@@ -139,7 +139,7 @@ repos = [
 ]
 ```
 
-An excerpt of [`examples/cgitsync-alpha.cgs`](../examples/cgitsync-alpha.cgs), which types no branch for a private, writable entry;
+An excerpt of [`.config/cgitsync-alpha.cgs`](../.config/cgitsync-alpha.cgs), which types no branch for a private, writable entry;
 the user install, `install.cgs`, stops after the first two entries. For a
 `private, writable` entry the branch is **computed**: the project's name on
 `main`, `<project>_<branch>` elsewhere. A `default_branch` that is neither
@@ -245,3 +245,24 @@ it would ignore it. See the user guide, *anonymise*.
 with their own size and versioning rhythm, are not defined yet. The full
 branch model is in the user guide, *Branches in a `.cgs`*
 ([docs/MASTER.pdf](../docs/MASTER.pdf)).
+
+## Mounting another project's repository
+
+`nested_config` says whether `cgitsync` reads the mounted repository's own `.cgs`:
+
+| You write | What happens |
+|---|---|
+| nothing, or `"auto"`, and the root holds one `*.cgs` | That file is read and its repositories join your tree. The install names the file and how many repositories it brought |
+| nothing, or `"auto"`, and the root holds none | The repository is a plain leaf. If it keeps specs in `.config/`, `install` and `status` warn, name them and give the spelling below |
+| `".config/<file>.cgs"` | That exact file is read, wherever the project keeps it |
+| `"disabled"` | Nothing is read, and nothing is said |
+
+For a project that keeps `.config/cawaqs.cgs`, mounted read-only:
+
+```toml
+{ repository = "gitlab:cawaqs/cawaqs", relative_path = "cawaqs", default_branch = "4X", private = true, nested_config = ".config/cawaqs.cgs" },
+```
+
+Its libraries are then cloned on the branch its own spec declares. Leave `nested_config` off and `cgitsync` warns that
+`cawaqs` was mounted as a plain repository, naming `.config/cawaqs.cgs`.
+

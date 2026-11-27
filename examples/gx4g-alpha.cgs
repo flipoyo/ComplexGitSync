@@ -4,7 +4,7 @@
 # and "alpha" has five.
 #     cd ComplexGitSync && pixi run cgitsync bootstrap ../examples/gx4g-alpha.cgs gx4g
 # bootstrap clones into an isolated $HOME/.cgs/gx4g-<timestamp>/gx4g, never into this checkout.
-# ComplexGitSync is mounted with its own tree (examples/cgitsync-alpha.cgs).
+# ComplexGitSync is mounted with its own tree (.config/cgitsync-alpha.cgs).
 # Every private, writable mount falls back to main and derives its branch from the tree
 # (git_branch.private_local_branch), so no branch is typed here.
 # .agent/.distant: .ticketing, DevSpec, DocSpec, shared and read-only.
@@ -14,13 +14,13 @@
 # Kept in examples/: nested_config = "auto" refuses a root holding two .cgs files (install.cgs).
 
 environment_root = "root"
-environment = { tools = { python = "3.11", git = "2.30", pixi = "0.65" }, manifests = ["pixi.toml"] }
+environment = { tools = { python = "3.11", git = "2.30", pixi = "0.65" } }
 
 project = { name = "gx4g", default_branch = "CGS-ALPHA" }
 
 repos = [
     { repository = "codeberg:gx4g/gx4g", fallback_branch = "main" },
-    { repository = "github:flipoyo/ComplexGitSync", relative_path = "ComplexGitSync", fallback_branch = "CGS-ALPHA", nested_config = "examples/cgitsync-alpha.cgs" },
+    { repository = "github:flipoyo/ComplexGitSync", relative_path = "ComplexGitSync", fallback_branch = "CGS-ALPHA", nested_config = ".config/cgitsync-alpha.cgs" },
 
     { repository = "codeberg:gx4g/.omniscience", relative_path = ".omniscience", fallback_branch = "main", private = true, writable = true, nested_config = "disabled" },
 

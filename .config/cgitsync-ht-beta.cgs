@@ -3,7 +3,7 @@
 # No level branch (opx, dev, usr) and no level file: the standard of atCGS's examples/cgs-alpha.cgs.
 # The name is not a level file: cgitsync reads <yyyy>-<xxx>.cgs as branch xxx only for a
 # three-character xxx, and "alpha" has five.
-#     pixi run cgitsync bootstrap examples/cgitsync-alpha.cgs ComplexGitSync
+#     pixi run cgitsync bootstrap .config/cgitsync-alpha.cgs ComplexGitSync
 #
 # Only the root is on the project's branch: docs, like every mount that is not private, is on
 # ComplexGitSync_<branch> (ComplexGitSync on main), falling back to its declared fallback_branch until that exists.
@@ -20,7 +20,7 @@
 #   .agent/.distant    .ticketing, DevSpec, DocSpec, shared and read-only, on main
 
 environment_root = "root"
-environment = { tools = { python = "3.11", git = "2.30", pixi = "0.65" }, manifests = ["pixi.toml"] }
+environment = { tools = { python = "3.11", git = "2.30", pixi = "0.65" } }
 
 project = { name = "ComplexGitSync", default_branch = "HT-BETA" }
 

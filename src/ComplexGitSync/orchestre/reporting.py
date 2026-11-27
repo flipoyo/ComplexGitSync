@@ -11,8 +11,6 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    pass
 from ..errors import GitSyncError
 from ..git_repo.git_branch import DEFAULT_BRANCH
 from ..git_repo.git_crypt import GitCrypt
@@ -54,6 +52,7 @@ from ..tree.memory.pending import (
 from ..tree.memory.repository import (
     MOUNT_PATH,
 )
+from ..tree.nested_hint import NestedHint
 from ..tree.settings import Settings
 from .git_probes import GitProbes
 from .reports import (
@@ -223,7 +222,7 @@ class Reporting:
                 + "; ".join(incoherent)
                 + ". Run 'cgitsync checkout <branch>' to put it back."
             )
-        lines.extend(f"{finding.kind.severity}: {finding.describe()}" for finding in self._findings())
+        lines.extend([f"{finding.kind.severity}: {finding.describe()}" for finding in self._findings()] + NestedHint.status_lines(self.client.get_dependency_registry()))
         if any(row[2] != PROJECT_SCOPE_LABEL for row in rows):
             lines.append(SCOPE_LEGEND)
         if any(view.crypt):

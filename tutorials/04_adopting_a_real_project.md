@@ -208,3 +208,18 @@ With a `.cgs` of your own, pass it as `--cgs FILE`; the rest is unchanged.
 `examples/cawaqsviz.cgs` is a hand-written `.cgs` for the same topology. To
 mount shared documents or agent instructions as well, see
 [Tutorial 5](05_private_repos.md).
+
+## Declaring ComplexGitSync in a nested spec
+
+A project that lives inside a workspace and runs `cgitsync initialise` from its own clone of ComplexGitSync can list that
+clone like any other dependency, so the tool's version is part of the tree and of every State:
+
+```toml
+{ repository = "github:owner/ComplexGitSync", relative_path = "ComplexGitSync", default_branch = "HT-BETA", private = true, nested_config = "disabled" },
+```
+
+`initialise` normally deletes and re-clones a dependency whose folder already holds files. It does not do that to the
+ComplexGitSync that is running it: it checks the clone's `origin` is the repository you declared, records its branch and
+commit, and leaves it exactly where it is. If the clone is on another branch than the one the tree expects, it says so
+and prints the `git checkout` line to run afterwards.
+

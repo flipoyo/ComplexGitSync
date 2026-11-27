@@ -4,7 +4,7 @@ Ring: 1 (filesystem only, no subprocess)
 Contract: given a WorkingGitTree with pending nested_config entries, resolve
     and promote each one's nested .cgs into the parent registry in place; and,
     independently, parse .gitmodules file content into structured entries.
-Imports: cgs_format, data_spec, errors, git_branch, git_repo, git_tree, mount_guard
+Imports: cgs_format, data_spec, errors, git_branch, git_repo, git_tree, mount_guard, nested_hint
 """
 
 from __future__ import annotations
@@ -17,13 +17,7 @@ from pathlib import Path
 from ..errors import NestedConfigDiscoveryError
 from ..git_repo.data_spec import DataSpec
 from ..git_repo.git_branch import resolve_declared_ref
-from ..git_repo.git_repo import (
-    AccessProtocol,
-    DiscoveryState,
-    GitProvider,
-    NodeType,
-    WorkingRepo,
-)
+from ..git_repo.git_repo import AccessProtocol, DiscoveryState, GitProvider, NodeType, WorkingRepo
 from .cgs_format import CgsDocument
 from .git_tree import (
     ROOT_REPO_ID,
@@ -41,6 +35,7 @@ from .git_tree import (
     register_relative_path,
 )
 from .mount_guard import MountGuard
+from .nested_hint import NestedHint
 
 # ============================================================
 #  Nested .cgs auto-discovery
@@ -74,12 +69,12 @@ def discover_nested_configs(registry: WorkingGitTree) -> tuple[str, ...]:
             # "auto" finding zero *.cgs files is a normal leaf, not a
             # mistake — only an explicit path that doesn't exist is a real
             # error, since the user asserted a specific file must be there.
-            entry.discovery_state = (
-                DiscoveryState.RESOLVED if effective_nested_config == "auto" else DiscoveryState.MISSING
-            )
+            entry.discovery_state = DiscoveryState.RESOLVED if effective_nested_config == "auto" else DiscoveryState.MISSING
+            NestedHint.warn_leaf(entry, effective_nested_config)
             continue
 
         nested_document = CgsDocument.from_toml(nested_path)
+        NestedHint.warn_graft(entry, nested_path, len(nested_document.repos), effective_nested_config)
         promote_to_parent(registry, entry.repo_id, nested_path)
         entry.discovery_state = DiscoveryState.RESOLVED
 

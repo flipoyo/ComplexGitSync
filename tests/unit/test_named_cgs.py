@@ -66,12 +66,13 @@ def test_a_project_without_a_fallback_keeps_main_as_it_always_did(tmp_path):
 def test_the_checked_in_examples_follow_the_rule():
     examples = Path(__file__).resolve().parents[2] / "examples"
 
-    for path in sorted(examples.glob("*.cgs")):
+    shipped = sorted([*examples.glob("*.cgs"), *(examples.parent / ".config").glob("*.cgs")])  # the developer specs live in .config/
+    for path in shipped:
         CgsDocument.from_toml(path)  # refused by name if it were concerned and wrong
     # The alpha series has one branch and no level file: "alpha" has five characters, so no name is cut from it.
-    for name in ("cgitsync-alpha.cgs", "gx4g-alpha.cgs"):
-        assert NamedCgs.parse(examples / name) is None
-    assert not [p.name for p in examples.glob("*.cgs") if re.fullmatch(r".+-(opx|dev|usr|pub)\.cgs", p.name)]
+    for path in (examples.parent / ".config" / "cgitsync-alpha.cgs", examples / "gx4g-alpha.cgs"):
+        assert NamedCgs.parse(path) is None
+    assert not [p.name for p in shipped if re.fullmatch(r".+-(opx|dev|usr|pub)\.cgs", p.name)]
 
 
 def test_a_repository_without_the_projects_fallback_branch_falls_to_main(tmp_path):

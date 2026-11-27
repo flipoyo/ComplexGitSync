@@ -1,5 +1,21 @@
 # Changelog
 
+## 8.16.2 - 2026-11-27
+
+- A nested `.cgs` can declare the ComplexGitSync that runs `initialise`. A declared entry that holds the running tool is
+  adopted where it is: its `origin` is checked against the declared repository (a clone of another repository is refused by
+  name before anything is deleted), its branch and commit are recorded in the State, and it is never deleted, re-cloned or
+  moved. A branch other than the one the tree derives is reported with the `git checkout` line to run afterwards.
+- `nested_config = "auto"` still reads only a `*.cgs` at the root of a repository, but it no longer fails silently on one
+  that keeps its specs in `.config/`: the install and `status` warn, naming the files and the `nested_config =
+  ".config/<file>.cgs"` spelling. When `auto` does graft a root `.cgs`, the install names the file and the number of
+  repositories it brought. No tree changes, and no State changes.
+- Documented: the three environment keys of a `.cgs` (`environment.tools`, `environment.manifests`, `environment_root`),
+  with tutorial 3 and the user guide. `environment_root` is a label. The example specs no longer repeat the built-in
+  manifest patterns, which changes nothing that is read.
+- The developer specs `cgitsync-alpha.cgs` and `cgitsync-ht-beta.cgs` moved from `examples/` to `.config/` at the root,
+  where the projects that conform to the agentic layout keep theirs.
+
 ## 8.16.0 - 2026-11-27
 
 - The work of the `data-encrypt` line is merged into `HT-BETA`; its three entries (8.10.0, 8.10.1 and 8.11.0 there,

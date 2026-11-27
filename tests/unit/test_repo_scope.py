@@ -469,7 +469,7 @@ class TestThisTreesOwnDeclaration:
     """
 
     def test_the_two_project_owned_config_repos_are_writable(self):
-        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "cgitsync-alpha.cgs")
+        document = CgsDocument.from_toml(_REPO_ROOT / ".config" / "cgitsync-alpha.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
         assert by_name[".localSpec"]["writable"] is True
@@ -481,7 +481,7 @@ class TestThisTreesOwnDeclaration:
         This project's own, so writable, the same as `.localSpec`/`.claude`
         above. `.versioning` and `.auto` were folded into it and dropped.
         """
-        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "cgitsync-alpha.cgs")
+        document = CgsDocument.from_toml(_REPO_ROOT / ".config" / "cgitsync-alpha.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
         assert by_name[".dev"]["writable"] is True
@@ -497,7 +497,7 @@ class TestThisTreesOwnDeclaration:
         `.agent` repository nests them — `AgentMountSplit`), so its own
         `private`/`writable` flags are exactly its effective ones.
         """
-        document = CgsDocument.from_toml(_REPO_ROOT / "examples" / "cgitsync-alpha.cgs")
+        document = CgsDocument.from_toml(_REPO_ROOT / ".config" / "cgitsync-alpha.cgs")
         by_name = {r["project_name"]: r for r in document.repos}
 
         for name in (".ticketing", "DevSpec", "DocSpec"):
@@ -505,7 +505,7 @@ class TestThisTreesOwnDeclaration:
             assert by_name[name]["writable"] is False
 
     def test_each_scope_selects_what_the_documentation_promises(self):
-        source = _REPO_ROOT / "examples" / "cgitsync-alpha.cgs"
+        source = _REPO_ROOT / ".config" / "cgitsync-alpha.cgs"
         tree = RegistryTranslator.from_cgs_document(CgsDocument.from_toml(source), source)
 
         def names(scope: RepoScope) -> set[str]:

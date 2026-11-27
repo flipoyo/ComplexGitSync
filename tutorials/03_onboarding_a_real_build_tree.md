@@ -168,6 +168,45 @@ export LIB_HYDROSYSTEM_PATH=  # unset, or point at the bootstrapped root
 make -f Makefile
 ```
 
+### Step 6 (optional) — Say what the build needs, and check it
+
+`cgitsync` records the environment it runs in whatever the `.cgs` says. A project adds one line when it wants a
+machine below some versions to be told, not silently accepted (ComplexGitSync's own spec,
+`.config/cgitsync-alpha.cgs`, declares these three):
+
+```toml
+environment = { tools = { python = "3.11", git = "2.30", pixi = "0.65" } }
+```
+
+`tools` lists **minimum versions**: each name is an executable `cgitsync` looks for, so `pixi` appears in the record
+even though `cgitsync` does not drive it. The key `manifests` is for a file `cgitsync` does not already look for
+(`Cargo.lock`); the built-in list holds `pixi.toml`, `pixi.lock`, `pyproject.toml`, `requirements*.txt`,
+`environment.yml`, `package.json`, `Makefile` and `.tool-versions`. The key `environment_root` is a label recorded
+with the environment and checked against the repositories you configured; it changes nothing that is read.
+
+```bash
+pixi run cgitsync env show                       # what this machine and tree look like, one fact per line
+pixi run cgitsync env check --cgs .config/cgitsync-alpha.cgs   # this machine against the minimums that spec declares
+```
+
+```
+tool git version=2.34.1 raw=git version 2.34.1
+tool pixi version=0.65.0 raw=pixi 0.65.0
+...
+manifest repository=root path=pixi.toml digest=sha256:2041c3f4... platforms=none
+```
+
+```
+matches=true
+undeclared=cgitsync
+undeclared=gh
+undeclared=ssh
+```
+
+`env check` exits non-zero when a declared tool is missing or older than its minimum, which makes it a one-line check
+for continuous integration; a tool it saw that the `.cgs` did not declare is listed as `undeclared` and never fails
+it. `initialise` and `pull` warn about the same drift and carry on.
+
 ## 4. Summary
 
 | Step | Command | Description |
@@ -176,6 +215,7 @@ make -f Makefile
 | 2 | `pixi run cgitsync bootstrap examples/cawaqs.cgs cawaqs-smoke-test --force-protocol https` | Clone all 19 repos into an isolated `CGSHOME` |
 | 3 | `pixi run cgitsync view-tree --search-dir <path>` | Render the tree summary |
 | 4 | `pixi run cgitsync checkout my-feature-branch` | Retarget the whole tree, with a fallback per repository |
+| 6 (optional) | `pixi run cgitsync env check --cgs <spec.cgs>` | Check this machine against the minimum versions a `.cgs` declares |
 | hand-off | `make -f Makefile` (the project's own build) | Out of scope for `cgitsync`: compiles the checked-out tree |
 
 `discover` (Tutorial 4) is **not** a route into this file: the 17 libraries

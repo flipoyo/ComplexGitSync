@@ -4,7 +4,7 @@
 # tests/fixtures/git-crypt/cgitsync-encrypt.cgs; the encrypted repositories, their keys and the
 # locked/unlocked procedure are the same, and are described there.
 # The name ends in "-devel", not "-dev": cgitsync reads <name>-<xxx>.cgs as
-# branch xxx for a three-character xxx (examples/cgitsync-alpha.cgs).
+# branch xxx for a three-character xxx (.config/cgitsync-alpha.cgs).
 #
 # Level: DEV, because it holds one private, writable repository, the memory.
 # What DEV adds to the USER tree, and why each is here:

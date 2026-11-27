@@ -17,11 +17,6 @@ from ..errors import (
     GitSyncError,
     InstallFrontierError,
 )
-from ..tree.cgs_format import CgsDocument
-from .anonymous_install import AnonymousInstall
-
-if TYPE_CHECKING:
-    pass
 from ..git_repo.git_branch import DEFAULT_BRANCH, is_twin_branch, structural_name_problem
 from ..git_repo.git_repo import (
     AccessProtocol,
@@ -30,6 +25,7 @@ from ..git_repo.git_repo import (
     SyncState,
     WorkingRepo,
 )
+from ..tree.cgs_format import CgsDocument
 from ..tree.git_tree import (
     ROOT_REPO_ID,
     TreeLifecycleState,
@@ -39,12 +35,12 @@ from ..tree.git_tree_branch import GitTreeBranches
 from ..tree.gts_document import GtsDocument
 from ..tree.master import MasterConfig
 from ..tree.paths import PathResolver
-from ..tree.registry import (
-    RegistryTranslator,
-)
+from ..tree.registry import RegistryTranslator
 from ..tree.settings import Settings, UseCase
 from ..tree.snapshot_resolver import discover_cgshome
+from .anonymous_install import AnonymousInstall
 from .auth_hints import AuthFailureHints
+from .running_install import RunningInstall
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .client import ComplexGitSyncClient
@@ -638,7 +634,7 @@ class Installer:
         fresh: set[str] = set()
         while True:
             cloned_any = False
-            pending = client._pending_clone_entries(sync_stack)
+            pending = RunningInstall.adopt(client, client._pending_clone_entries(sync_stack))
             client._guard_clone_destinations(pending)
             for entry in pending:
                 sync_stack.add(entry.absolute_path)
